@@ -688,11 +688,7 @@ export class ErrorSourceSyncService {
     try {
       const pluginId = readSourcePluginId(source)
       const plugin = this.pluginRuntime.getPlugin(pluginId)
-      if (
-        source.sourceType !== 'sentry' &&
-        source.sourceType !== 'posthog' &&
-        plugin?.metadata?.errorSource?.sourceType === source.sourceType
-      ) {
+      if (plugin?.metadata?.errorSource?.sourceType === source.sourceType) {
         return await this.syncCustomPluginSource(source)
       }
 
