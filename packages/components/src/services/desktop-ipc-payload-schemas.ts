@@ -112,7 +112,7 @@ export function createDesktopIpcPayloadValidator(
     needLabel: z.string().optional(),
     sourceId: z.string().optional(),
     sourceName: z.string().optional(),
-    sourceType: z.enum(["sentry", "wazuh", "posthog"]).optional(),
+    sourceType: z.string().trim().min(1).optional(),
     incidentThreadId: z.string().optional(),
   });
   const runbookIdleTimeoutSchema = z.number().int().min(0).max(1440);

@@ -1,7 +1,7 @@
 import type { DbClient } from '../desktop/desktop-database-client'
 import log from 'electron-log'
 import { z } from 'zod'
-import { POSTHOG_DEFAULT_BASE_URL } from './error-sources.schemas'
+import { errorSourceTypeSchema, POSTHOG_DEFAULT_BASE_URL } from './error-sources.schemas'
 import { assertAllowedPostHogBaseUrl } from './posthog-base-url'
 import { getErrorMessage } from '../../shared/errors'
 import { SqliteErrorSourcesRepositoryAdapter } from './desktop-sqlite-error-sources.adapter'
@@ -30,7 +30,6 @@ import {
 } from '../plugins/node'
 import {
   OAUTH_PLUGIN_ERROR_SOURCE_TYPES,
-  PLUGIN_BACKED_ERROR_SOURCE_TYPES,
 } from './plugin-backed-error-sources'
 import { resolveErrorSourceProviderActionId } from './desktop-plugin-error-source-actions'
 
@@ -45,7 +44,7 @@ const handlerPayloadSchema = z.record(z.string(), z.unknown())
 const createErrorSourcePayloadSchema = z
   .object({
     pluginId: z.string().optional(),
-    sourceType: z.enum(PLUGIN_BACKED_ERROR_SOURCE_TYPES),
+    sourceType: errorSourceTypeSchema,
     name: z.string().min(1),
     setupValues: handlerPayloadSchema.optional(),
     authToken: z.string().optional(),

@@ -174,6 +174,30 @@ describe('posthog error source support', () => {
     })
   })
 
+  it('accepts marketplace plugin create inputs in the shared schema', () => {
+    expect(
+      createErrorSourceSchema.parse({
+        pluginId: 'github',
+        sourceType: 'github',
+        name: 'GitHub Issues',
+        setupValues: {
+          owner: 'bitsentry-ai',
+          repo: 'monorepo',
+        },
+        configuration: {
+          defaultQuery: 'is:issue is:open',
+        },
+      }),
+    ).toMatchObject({
+      pluginId: 'github',
+      sourceType: 'github',
+      name: 'GitHub Issues',
+      logLevelThreshold: 'error',
+      syncEnabled: true,
+      autoDiagnosisEnabled: false,
+    })
+  })
+
   it('registers PostHog when a code plugin descriptor is available and preserves custom host binding', () => {
     const factory = new ErrorSourceProviderFactory(
       createPluginRuntime([posthogPluginDescriptor]),
