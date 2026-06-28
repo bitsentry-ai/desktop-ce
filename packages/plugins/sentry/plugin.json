@@ -244,7 +244,35 @@
         }
       ],
       "transport": {
-        "kind": "builtin"
+        "kind": "http",
+        "method": "GET",
+        "url": "https://sentry.io/api/0/organizations/{{input.orgSlug}}/issues/",
+        "headers": {
+          "Authorization": "Bearer {{auth.accessToken}}",
+          "Accept": "application/json"
+        },
+        "query": {
+          "project": "{{input.projectIds}}",
+          "query": {
+            "kind": "join",
+            "values": [
+              "lastSeen:>={{input.since}}",
+              "lastSeen:<={{input.until}}"
+            ],
+            "separator": " "
+          },
+          "limit": "{{input.limit}}",
+          "cursor": "{{input.cursor}}"
+        },
+        "response": {
+          "itemsKey": "issues",
+          "pagination": {
+            "kind": "link_header_cursor"
+          }
+        },
+        "successStatusCodes": [
+          200
+        ]
       }
     },
     {

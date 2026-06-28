@@ -16,6 +16,17 @@ const desktopLocalHttpPluginPaginationSchema = z.object({
   maxPages: z.number().int().positive().max(50).optional(),
 });
 
+const desktopLocalHttpPluginJoinTemplateSchema = z.object({
+  kind: z.literal("join"),
+  values: z.array(z.string().min(1)).min(1),
+  separator: z.string().default(" "),
+});
+
+const desktopLocalHttpPluginTemplateValueSchema = z.union([
+  z.string().min(1),
+  desktopLocalHttpPluginJoinTemplateSchema,
+]);
+
 const desktopLocalHttpPluginResponsePaginationSchema = z.object({
   kind: z.literal("link_header_cursor"),
   header: z.string().min(1).optional(),
@@ -38,7 +49,7 @@ const desktopLocalHttpPluginTransportSchema = z.object({
   method: z.enum(["GET", "POST", "PUT", "PATCH", "DELETE"]),
   url: z.string().min(1),
   headers: z.record(z.string(), z.string()).optional(),
-  query: z.record(z.string(), z.string()).optional(),
+  query: z.record(z.string(), desktopLocalHttpPluginTemplateValueSchema).optional(),
   body: z.unknown().optional(),
   successStatusCodes: z.array(z.number().int().nonnegative()).optional(),
   pagination: desktopLocalHttpPluginPaginationSchema.optional(),

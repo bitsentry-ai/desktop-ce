@@ -47,6 +47,12 @@ type TemplateContext = {
   input: Record<string, unknown>;
 };
 
+type JoinTransportTemplate = {
+  kind: "join";
+  values: unknown[];
+  separator?: string;
+};
+
 const githubScaffoldActions = new Map(
   githubScaffold.actions.map((action) => [action.id, action] as const),
 );
@@ -228,6 +234,32 @@ function renderTransportTemplateValue(
   template: unknown,
   context: TemplateContext,
 ): unknown {
+  if (isJoinTransportTemplate(template)) {
+    const values = template.values;
+    const separator = typeof template.separator === "string" ? template.separator : " ";
+    const renderedValues = values
+      .map((value) => renderTransportTemplateValue(value, context))
+      .flatMap((value) => {
+        if (value === undefined || value === null) {
+          return [];
+        }
+        if (Array.isArray(value)) {
+          return value.flatMap((item) => {
+            const normalized = String(item).trim();
+            return normalized.length > 0 ? [normalized] : [];
+          });
+        }
+        const normalized = String(value).trim();
+        return normalized.length > 0 ? [normalized] : [];
+      });
+
+    if (renderedValues.length === 0) {
+      return undefined;
+    }
+
+    return renderedValues.join(separator);
+  }
+
   if (typeof template === "string") {
     try {
       return renderTemplateString(template, context);
@@ -259,9 +291,19 @@ function renderTransportTemplateValue(
   return template;
 }
 
+function isJoinTransportTemplate(template: unknown): template is JoinTransportTemplate {
+  return (
+    template !== null &&
+    typeof template === "object" &&
+    !Array.isArray(template) &&
+    (template as { kind?: unknown }).kind === "join" &&
+    Array.isArray((template as { values?: unknown }).values)
+  );
+}
+
 function appendPluginQuery(
   url: URL,
-  query: Record<string, string> | undefined,
+  query: Record<string, unknown> | undefined,
   context: TemplateContext,
 ): void {
   if (query === undefined) {

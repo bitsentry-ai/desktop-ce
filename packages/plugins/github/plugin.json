@@ -1385,7 +1385,36 @@
       ],
       "referencePath": ".repos/references/plugins/stackstorm-github/actions/list_issues.yaml",
       "transport": {
-        "kind": "builtin"
+        "kind": "http",
+        "method": "GET",
+        "url": "{{auth.baseUrl}}/repos/{{input.owner}}/{{input.repo}}/issues",
+        "headers": {
+          "Authorization": "Bearer {{auth.token}}",
+          "Accept": "application/vnd.github+json",
+          "X-GitHub-Api-Version": "2022-11-28"
+        },
+        "query": {
+          "milestone": "{{input.milestone}}",
+          "state": "{{input.state}}",
+          "assignee": "{{input.assignee}}",
+          "creator": "{{input.creator}}",
+          "mentioned": "{{input.mentioned}}",
+          "labels": {
+            "kind": "join",
+            "values": [
+              "{{input.labels}}"
+            ],
+            "separator": ","
+          },
+          "sort": "{{input.sort}}",
+          "direction": "{{input.direction}}",
+          "since": "{{input.since}}",
+          "page": "{{input.page}}",
+          "per_page": "{{input.perPage}}"
+        },
+        "successStatusCodes": [
+          200
+        ]
       }
     },
     {
