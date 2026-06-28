@@ -32,7 +32,7 @@ import type {
 } from "../services/contracts";
 import { useTranslation } from "@bitsentry-ce/i18n";
 import { Pencil, RefreshCw, Trash2 } from "lucide-react";
-import { ProviderIcon, type ProviderIconKind } from "./icons";
+import { PluginIcon } from "./icons";
 
 type StatusKind = "info" | "success" | "error";
 type Translate = (key: string, options?: Record<string, unknown>) => string;
@@ -167,14 +167,6 @@ function normalizeLastUsedExternalSourceId(
   }
 
   return value.trim();
-}
-
-function toProviderIconKind(sourceType: ErrorSourceType): ProviderIconKind {
-  if (sourceType === "sentry" || sourceType === "wazuh" || sourceType === "posthog") {
-    return sourceType;
-  }
-
-  return "plugin";
 }
 
 function readPluginErrorSourceType(
@@ -344,7 +336,6 @@ interface ProviderCard {
   pluginId: string;
   sourceType: ErrorSourceType;
   label: string;
-  icon: ProviderIconKind;
 }
 
 function FieldLabel({ children, required = false }: FieldLabelProps) {
@@ -493,7 +484,6 @@ export default function ErrorSourcesManager({
               pluginId: plugin.id,
               sourceType: pluginSourceType,
               label: plugin.name,
-              icon: toProviderIconKind(pluginSourceType),
             },
           ];
         })
@@ -1434,11 +1424,7 @@ export default function ErrorSourcesManager({
                       aria-pressed={selected}
                       className={`flex flex-col items-center gap-2 rounded-lg border p-3 text-sm transition-colors ${cardClassName}`}
                     >
-                      <ProviderIcon
-                        kind={card.icon}
-                        size={32}
-                        className={iconClassName}
-                      />
+                      <PluginIcon size={32} className={iconClassName} />
                       <span className="font-medium">{card.label}</span>
                     </button>
                   );
