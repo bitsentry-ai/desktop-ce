@@ -6,7 +6,7 @@ import type {
   ErrorSourceRow,
   ErrorSourceSyncResult,
   PluginActionExecutionResult,
-  PluginManifest,
+  PluginDescriptor,
   UpdateErrorSourceInput,
   GlobalVariable,
   GlobalVariableInput,
@@ -269,16 +269,16 @@ export function createDesktopLocalBitsentryServices({
   }
 
   const pluginsService = {
-    async list(): Promise<PluginManifest[]> {
-      const response = await ipcInvoke<{ data: PluginManifest[] }>('plugins:list', {})
+    async list(): Promise<PluginDescriptor[]> {
+      const response = await ipcInvoke<{ data: PluginDescriptor[] }>('plugins:list', {})
       if (Array.isArray(response.data)) {
         return response.data
       }
 
       return []
     },
-    async get(pluginId: string): Promise<PluginManifest | null> {
-      return ipcInvoke<PluginManifest | null>('plugins:get', { pluginId })
+    async get(pluginId: string): Promise<PluginDescriptor | null> {
+      return ipcInvoke<PluginDescriptor | null>('plugins:get', { pluginId })
     },
     async getStoredAuth(pluginId: string): Promise<Record<string, unknown>> {
       return ipcInvoke<Record<string, unknown>>('plugins:getStoredAuth', { pluginId })

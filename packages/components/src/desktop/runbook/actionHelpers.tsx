@@ -18,7 +18,7 @@ import type {
   RunbookHttpHeader,
   RunbookHttpMethod,
   RunbookLlmProviderKey,
-  PluginManifest,
+  PluginDescriptor,
 } from "../../services";
 import type { TranslationFn } from "./types";
 
@@ -172,7 +172,7 @@ export function actionSummary(
   action: RunbookActionRecord,
   errorSourceLabelsById: Record<string, string>,
   providerLabelsByKey: Partial<Record<RunbookLlmProviderKey, string>>,
-  pluginManifests: PluginManifest[],
+  pluginDescriptors: PluginDescriptor[],
   t: (key: string, options?: Record<string, unknown>) => string,
 ): string {
   const suffix = getActionSummarySuffix(action, t);
@@ -185,7 +185,7 @@ export function actionSummary(
     case "http":
       return summarizeHttpAction(action, suffix);
     case "plugin":
-      return summarizePluginAction(action, pluginManifests, suffix, t);
+      return summarizePluginAction(action, pluginDescriptors, suffix, t);
     case "external_source":
       return summarizeExternalSourceAction(
         action,
@@ -406,14 +406,14 @@ function summarizeHttpAction(
 
 function summarizePluginAction(
   action: RunbookActionRecord,
-  pluginManifests: PluginManifest[],
+  pluginDescriptors: PluginDescriptor[],
   suffix: string,
   t: (key: string) => string,
 ): string {
   let pluginLabel = t("runbooks.runbook.noPluginSelected");
-  let selectedPlugin: PluginManifest | undefined;
+  let selectedPlugin: PluginDescriptor | undefined;
   if (action.pluginId !== undefined && action.pluginId.length > 0) {
-    selectedPlugin = pluginManifests.find((plugin) => plugin.id === action.pluginId);
+    selectedPlugin = pluginDescriptors.find((plugin) => plugin.id === action.pluginId);
     pluginLabel =
       selectedPlugin?.name ?? `${t("runbooks.runbook.plugin")} (${action.pluginId})`;
   }

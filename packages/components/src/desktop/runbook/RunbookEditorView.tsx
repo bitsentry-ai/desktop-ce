@@ -3,7 +3,7 @@ import type { ReactNode, RefObject } from "react";
 import { BookOpen, Plus } from "../../icons";
 import type {
   GlobalVariable,
-  PluginManifest,
+  PluginDescriptor,
   RunbookActionRecord,
   RunbookLlmProviderKey,
   RunbookRecord,
@@ -81,7 +81,7 @@ type RunbookEditorViewProps = {
   errorSourcesLoading: boolean;
   errorSourceCount: number;
   validErrorSourceIds: Set<string>;
-  pluginManifests: PluginManifest[];
+  pluginDescriptors: PluginDescriptor[];
   pluginOptions: Array<{ id: string; label: string }>;
   pluginsLoading: boolean;
   validPluginActionIdsByPluginId: Map<string, Set<string>>;
@@ -137,7 +137,7 @@ export function RunbookEditorView({
   errorSourcesLoading,
   errorSourceCount,
   validErrorSourceIds,
-  pluginManifests,
+  pluginDescriptors,
   pluginOptions,
   pluginsLoading,
   validPluginActionIdsByPluginId,
@@ -283,7 +283,7 @@ export function RunbookEditorView({
                     onModelDropdownOpenChange={onModelDropdownOpenChange}
                     errorSourceOptions={errorSourceOptions}
                     errorSourcesLoading={errorSourcesLoading}
-                    pluginManifests={pluginManifests}
+                    pluginDescriptors={pluginDescriptors}
                     pluginOptions={pluginOptions}
                     pluginsLoading={pluginsLoading}
                     isMissingErrorSource={isMissingErrorSource}
@@ -333,7 +333,7 @@ export function RunbookEditorView({
                       action,
                       errorSourceLabelsById,
                       llmProviderLabelsByKey,
-                      pluginManifests,
+                      pluginDescriptors,
                       t,
                     )}
                     isDragging={sortableApi.isDragging}

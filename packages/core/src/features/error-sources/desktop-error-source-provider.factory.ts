@@ -2,7 +2,7 @@ import type { ErrorSourceType } from './desktop-error-sources.types'
 import type { ErrorSourceProvider } from './desktop-error-source-provider.interface'
 import { PluginBackedSentryProviderAdapter } from './desktop-plugin-backed-sentry-provider.adapter'
 import { PluginBackedPostHogProviderAdapter } from './desktop-plugin-backed-posthog-provider.adapter'
-import type { DesktopPluginManifest } from '../plugins/plugins.types'
+import type { DesktopPluginDescriptor } from '../plugins/plugins.types'
 import type { DesktopPluginRuntimeService } from '../plugins/desktop-plugin-registry'
 import { createDesktopNodePluginRuntimeService } from '../plugins/desktop-plugin-runtime.node'
 
@@ -58,7 +58,7 @@ export class ErrorSourceProviderFactory {
     return this.getProvider(source.sourceType)
   }
 
-  getPlugin(pluginId: string): DesktopPluginManifest | null {
+  getPlugin(pluginId: string): DesktopPluginDescriptor | null {
     return this.runtime.getPlugin(pluginId)
   }
 

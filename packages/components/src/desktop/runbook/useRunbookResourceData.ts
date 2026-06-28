@@ -8,7 +8,7 @@ import type {
   DesktopRpcChannel,
   ErrorSourceRow,
   LLMProviderDto,
-  PluginManifest,
+  PluginDescriptor,
   RunbookLlmProviderKey,
 } from "../../services";
 import { getDesktopApi } from "../../services/desktop-api";
@@ -29,7 +29,7 @@ export function useRunbookResourceData({
   const [errorSources, setErrorSources] = useState<ErrorSourceRow[]>([]);
   const [errorSourcesLoading, setErrorSourcesLoading] = useState(true);
   const [llmProviders, setLlmProviders] = useState<LLMProviderDto[]>([]);
-  const [pluginManifests, setPluginManifests] = useState<PluginManifest[]>([]);
+  const [pluginDescriptors, setPluginDescriptors] = useState<PluginDescriptor[]>([]);
   const [pluginsLoading, setPluginsLoading] = useState(true);
 
   const errorSourceNameCounts = errorSources.reduce<Record<string, number>>(
@@ -111,22 +111,22 @@ export function useRunbookResourceData({
 
   const pluginOptions = useMemo(
     () =>
-      pluginManifests.map((plugin) => ({
+      pluginDescriptors.map((plugin) => ({
         id: plugin.id,
         label: plugin.name,
       })),
-    [pluginManifests],
+    [pluginDescriptors],
   );
 
   const validPluginActionIdsByPluginId = useMemo(
     () =>
       new Map(
-        pluginManifests.map((plugin) => [
+        pluginDescriptors.map((plugin) => [
           plugin.id,
           new Set(plugin.actions.map((action) => action.id)),
         ]),
       ),
-    [pluginManifests],
+    [pluginDescriptors],
   );
 
   useEffect(() => {
@@ -166,17 +166,17 @@ export function useRunbookResourceData({
     const loadPlugins = async () => {
       setPluginsLoading(true);
       try {
-        const response = await ipcInvoke<{ data: PluginManifest[] }>(
+        const response = await ipcInvoke<{ data: PluginDescriptor[] }>(
           "plugins:list",
           {},
         );
         if (!cancelled) {
-          setPluginManifests(Array.isArray(response.data) ? response.data : []);
+          setPluginDescriptors(Array.isArray(response.data) ? response.data : []);
         }
       } catch (error) {
         console.error("Failed to load plugins:", error);
         if (!cancelled) {
-          setPluginManifests([]);
+          setPluginDescriptors([]);
         }
       } finally {
         if (!cancelled) {
@@ -292,7 +292,7 @@ export function useRunbookResourceData({
     errorSourcesLoading,
     errorSourceCount: errorSources.length,
     validErrorSourceIds,
-    pluginManifests,
+    pluginDescriptors,
     pluginOptions,
     pluginsLoading,
     validPluginActionIdsByPluginId,

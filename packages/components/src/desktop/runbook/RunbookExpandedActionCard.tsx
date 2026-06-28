@@ -3,7 +3,7 @@ import type { RefObject } from "react";
 import { Check, Trash2 } from "../../icons";
 import type {
   GlobalVariable,
-  PluginManifest,
+  PluginDescriptor,
   RunbookActionParameter,
   RunbookActionRecord,
   RunbookHttpHeader,
@@ -37,7 +37,7 @@ type RunbookExpandedActionCardProps = {
   onModelDropdownOpenChange: (open: boolean) => void;
   errorSourceOptions: Array<{ id: string; label: string }>;
   errorSourcesLoading: boolean;
-  pluginManifests: PluginManifest[];
+  pluginDescriptors: PluginDescriptor[];
   pluginOptions: Array<{ id: string; label: string }>;
   pluginsLoading: boolean;
   isMissingErrorSource: boolean;
@@ -88,7 +88,7 @@ export function RunbookExpandedActionCard({
   onModelDropdownOpenChange,
   errorSourceOptions,
   errorSourcesLoading,
-  pluginManifests,
+  pluginDescriptors,
   pluginOptions,
   pluginsLoading,
   isMissingErrorSource,
@@ -189,7 +189,7 @@ export function RunbookExpandedActionCard({
           onModelDropdownOpenChange={onModelDropdownOpenChange}
           errorSourceOptions={errorSourceOptions}
           errorSourcesLoading={errorSourcesLoading}
-          pluginManifests={pluginManifests}
+          pluginDescriptors={pluginDescriptors}
           pluginOptions={pluginOptions}
           pluginsLoading={pluginsLoading}
           isMissingErrorSource={isMissingErrorSource}

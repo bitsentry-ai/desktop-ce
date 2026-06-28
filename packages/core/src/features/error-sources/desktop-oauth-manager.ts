@@ -255,7 +255,7 @@ export interface DesktopOauthManagerOptions {
     pluginId?: string;
     providerBaseUrl?: string;
   }): DesktopOAuthProvider;
-  resolvePluginManifest?: (
+  resolvePluginDescriptor?: (
     pluginId: string,
   ) => {
     metadata?: {
@@ -319,7 +319,7 @@ export function createDesktopOauthManagerBindings(
                 posthogBaseUrl: providerBaseUrl,
               },
             }),
-          resolvePluginManifest: (pluginId) =>
+          resolvePluginDescriptor: (pluginId) =>
             providerFactory.getPlugin?.(pluginId) ?? null,
         });
       }
@@ -341,12 +341,12 @@ export class DesktopOauthManagerService {
     if (
       normalizedPluginId === undefined ||
       normalizedPluginId.length === 0 ||
-      this.options.resolvePluginManifest === undefined
+      this.options.resolvePluginDescriptor === undefined
     ) {
       return undefined;
     }
 
-    const plugin = this.options.resolvePluginManifest(normalizedPluginId);
+    const plugin = this.options.resolvePluginDescriptor(normalizedPluginId);
     if (plugin?.metadata?.errorSource?.sourceType !== sourceType) {
       return undefined;
     }

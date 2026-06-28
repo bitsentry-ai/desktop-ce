@@ -5,7 +5,7 @@ import type { RunbookActionTypeFieldsProps } from "./RunbookActionFieldShared";
 type RunbookPluginActionFieldsProps = Pick<
   RunbookActionTypeFieldsProps,
   | "action"
-  | "pluginManifests"
+  | "pluginDescriptors"
   | "pluginOptions"
   | "pluginsLoading"
   | "onActionChange"
@@ -401,13 +401,13 @@ function PluginStructuredFieldsEditor({
 
 export function RunbookPluginActionFields({
   action,
-  pluginManifests,
+  pluginDescriptors,
   pluginOptions,
   pluginsLoading,
   onActionChange,
   t,
 }: RunbookPluginActionFieldsProps) {
-  const selectedPlugin = pluginManifests.find(
+  const selectedPlugin = pluginDescriptors.find(
     (plugin) => plugin.id === action.pluginId,
   );
   const pluginActions = selectedPlugin?.actions ?? [];
@@ -442,7 +442,7 @@ export function RunbookPluginActionFields({
           disabled={pluginsLoading || pluginOptions.length === 0}
           onChange={(event) => {
             const pluginId = event.target.value.trim();
-            const nextPlugin = pluginManifests.find((plugin) => plugin.id === pluginId);
+            const nextPlugin = pluginDescriptors.find((plugin) => plugin.id === pluginId);
             const nextPluginAuthValue = normalizeJsonForFields(
               nextPlugin?.auth.fields ?? [],
               action.pluginAuth,

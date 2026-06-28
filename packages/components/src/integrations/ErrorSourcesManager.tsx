@@ -28,7 +28,7 @@ import type {
   PluginErrorSourceSetupField,
   ErrorSourceRow,
   LogLevelThreshold,
-  PluginManifest,
+  PluginDescriptor,
 } from "../services/contracts";
 import { useTranslation } from "@bitsentry-ce/i18n";
 import { Pencil, RefreshCw, Trash2 } from "lucide-react";
@@ -178,13 +178,13 @@ function toProviderIconKind(sourceType: ErrorSourceType): ProviderIconKind {
 }
 
 function readPluginErrorSourceType(
-  plugin: PluginManifest,
+  plugin: PluginDescriptor,
 ): ErrorSourceType | null {
   return plugin.metadata?.errorSource?.sourceType ?? null;
 }
 
 function readPluginErrorSourceSetupField(
-  plugin: PluginManifest | null,
+  plugin: PluginDescriptor | null,
   target: PluginErrorSourceSetupField["target"],
 ): PluginErrorSourceSetupField | null {
   const setupFields = plugin?.metadata?.errorSource?.setupFields;
@@ -211,10 +211,10 @@ function readSourcePluginId(source: ErrorSourceRow): string {
   return source.sourceType;
 }
 
-function findPluginManifestForSource(
-  plugins: PluginManifest[],
+function findPluginDescriptorForSource(
+  plugins: PluginDescriptor[],
   source: ErrorSourceRow,
-): PluginManifest | null {
+): PluginDescriptor | null {
   const pluginId = readSourcePluginId(source);
   return (
     plugins.find((plugin) => plugin.id === pluginId) ??
@@ -288,7 +288,7 @@ function readPluginSetupFieldDisplayValue(
 
 function buildInitialEditSetupFieldValues(
   source: ErrorSourceRow,
-  plugin: PluginManifest | null,
+  plugin: PluginDescriptor | null,
 ): Record<string, string> {
   const setupFields = plugin?.metadata?.errorSource?.setupFields ?? [];
   return Object.fromEntries(
@@ -665,7 +665,7 @@ export default function ErrorSourcesManager({
     () =>
       editDialogSource === null
         ? null
-        : findPluginManifestForSource(plugins, editDialogSource),
+        : findPluginDescriptorForSource(plugins, editDialogSource),
     [editDialogSource, plugins],
   );
 
@@ -939,7 +939,7 @@ export default function ErrorSourcesManager({
   };
 
   const openEditDialog = (source: ErrorSourceRow) => {
-    const plugin = findPluginManifestForSource(plugins, source);
+    const plugin = findPluginDescriptorForSource(plugins, source);
     setEditName(source.name);
     setEditLogThreshold(source.logLevelThreshold ?? "error");
     setEditSyncEnabled(source.syncEnabled);
@@ -962,7 +962,7 @@ export default function ErrorSourcesManager({
 
   function readEditValidationError(
     source: ErrorSourceRow,
-    plugin: PluginManifest | null,
+    plugin: PluginDescriptor | null,
     trimmedName: string,
   ): string | null {
     if (trimmedName.length === 0) {
@@ -1002,7 +1002,7 @@ export default function ErrorSourcesManager({
   const saveEdit = async () => {
     if (editDialogSource === null) return;
     const source = editDialogSource;
-    const plugin = findPluginManifestForSource(plugins, source);
+    const plugin = findPluginDescriptorForSource(plugins, source);
     const trimmedName = editName.trim();
     const validationError = readEditValidationError(source, plugin, trimmedName);
     if (validationError !== null) {
@@ -1972,7 +1972,7 @@ function readStringArrayFromConfig(
 
 function renderEditConnectionFields(input: {
   source: ErrorSourceRow;
-  plugin: PluginManifest | null;
+  plugin: PluginDescriptor | null;
   values: Record<string, string>;
   onChange: (fieldKey: string, nextValue: string) => void;
   t: (key: string) => string;

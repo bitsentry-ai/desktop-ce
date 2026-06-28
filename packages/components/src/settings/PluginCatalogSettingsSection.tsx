@@ -4,7 +4,7 @@ import { AlertCircle, CheckCircle2, Loader2, PlugZap } from "lucide-react";
 import type {
   PluginActionDefinition,
   PluginFieldDefinition,
-  PluginManifest,
+  PluginDescriptor,
 } from "../services";
 import {
   useClearPluginStoredAuth,
@@ -355,7 +355,7 @@ function PluginList({
   selectedPluginId,
   onSelect,
 }: {
-  plugins: PluginManifest[];
+  plugins: PluginDescriptor[];
   selectedPluginId: string;
   onSelect: (pluginId: string) => void;
 }) {
@@ -565,8 +565,8 @@ export function PluginCatalogSettingsSection({
       <div className="mb-4">
         <h2 className="text-sm font-semibold text-foreground">Plugins</h2>
         <p className="text-xs text-muted-foreground">
-          Explore manifest-driven desktop plugins, inspect their declared auth and action
-          schemas, and execute GitHub pack actions through a safer typed surface.
+          Explore code-driven desktop plugins, inspect the auth and action schemas exported by
+          plugin code, and execute actions through the typed host runtime.
         </p>
       </div>
 
@@ -740,7 +740,7 @@ export function PluginCatalogSettingsSection({
                               Action execution
                             </h3>
                             <p className="mt-1 text-xs text-muted-foreground">
-                              Every form field is generated from the plugin manifest instead of
+                              Every form field comes from the plugin code export instead of
                               bespoke UI code.
                             </p>
                           </div>
@@ -883,8 +883,8 @@ export function PluginCatalogSettingsSection({
                     <div className="rounded-xl border border-border bg-background/70 p-4">
                       <h3 className="text-sm font-semibold text-foreground">Declared triggers</h3>
                       <p className="mt-1 text-xs text-muted-foreground">
-                        Triggers are manifest metadata today. Webhook and poll execution will
-                        sit on top of these definitions in later passes.
+                        Triggers are plugin code declarations today. Webhook and poll execution
+                        will sit on top of these definitions in later passes.
                       </p>
                       <div className="mt-4 space-y-3">
                         {selectedPlugin.triggers.map((trigger) => (
@@ -926,10 +926,7 @@ export function PluginCatalogSettingsSection({
                     <div className="rounded-xl border border-border bg-background/70 p-4">
                       <h3 className="text-sm font-semibold text-foreground">Safety notes</h3>
                       <ul className="mt-3 space-y-2 text-xs text-muted-foreground">
-                        <li>
-                          Actions can only accept fields that the plugin manifest explicitly
-                          declares.
-                        </li>
+                        <li>Actions can only accept fields that plugin code explicitly declares.</li>
                         <li>
                           Secret auth fields are modeled separately from action input fields so
                           agent surfaces can redact them.

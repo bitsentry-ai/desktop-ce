@@ -1,15 +1,16 @@
-import { createRequire } from "node:module";
 import fs from "node:fs";
-import { cp, mkdtemp, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { cp, mkdtemp, mkdir, readdir, rm, stat } from "node:fs/promises";
+import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { z } from "zod";
 
 import type {
   DesktopPluginExecutionRequest,
   DesktopPluginExecutionResult,
   DesktopPluginFieldDefinition,
+  DesktopPluginInstallResult,
 } from "./plugins.types";
+import { desktopCodePluginSchema } from "./plugins.types";
 import {
   NOOP_DESKTOP_PLUGIN_STORED_AUTH_STORE,
   type DesktopPluginStoredAuthRecord,
@@ -23,107 +24,20 @@ import {
 
 const localRequire = createRequire(__filename);
 
-const githubDeploymentEventInputSchema = z.object({
-  repo_fullname: z.string().min(1),
-  repo_name: z.string().min(1),
-  deploy_ref: z.string().min(1).default("master"),
-  deploy_env: z.string().min(1).default("production"),
-  deploy_sha: z.string().min(1),
-  deploy_desc: z.string().min(1),
-  deploy_id: z.coerce.number().int().positive(),
-  ssh_url: z.string().min(1),
-  creator: z.string().min(1),
-  deploy_payload: z.unknown().optional(),
-});
-
 function readTrimmedString(value: unknown): string | undefined {
   if (typeof value !== "string") {
     return undefined;
   }
 
   const normalized = value.trim();
-  return normalized.length > 0 ? normalized : undefined;
-}
-
-function splitRepoFullname(repoFullname: string): {
-  owner: string;
-  repo: string;
-} {
-  const [owner, repo, ...rest] = repoFullname
-    .split("/")
-    .map((segment) => segment.trim())
-    .filter((segment) => segment.length > 0);
-
-  if (
-    owner === undefined ||
-    repo === undefined ||
-    rest.length > 0
-  ) {
-    throw new Error(
-      `repo_fullname must be shaped like owner/repo. Received "${repoFullname}".`,
-    );
+  if (normalized.length > 0) {
+    return normalized;
   }
 
-  return { owner, repo };
+  return undefined;
 }
 
-function buildGitHubArchiveUrl(
-  auth: Record<string, unknown>,
-  repoFullname: string,
-  ref: string,
-): string {
-  const configuredBaseUrl = readTrimmedString(auth.baseUrl);
-  const baseUrl =
-    configuredBaseUrl === undefined
-      ? "https://api.github.com"
-      : configuredBaseUrl.replace(/\/+$/, "");
-  return `${baseUrl}/repos/${repoFullname
-    .split("/")
-    .map((segment) => encodeURIComponent(segment))
-    .join("/")}/tarball/${encodeURIComponent(ref)}`;
-}
-
-function buildGitHubHeaders(
-  auth: Record<string, unknown>,
-  accept: string,
-): Record<string, string> {
-  const headers: Record<string, string> = {
-    Accept: accept,
-    "X-GitHub-Api-Version": "2022-11-28",
-  };
-  const token = readTrimmedString(auth.token);
-  if (token !== undefined) {
-    headers.Authorization = `Bearer ${token}`;
-  }
-  return headers;
-}
-
-async function downloadGitHubArchive(input: {
-  auth: Record<string, unknown>;
-  repoFullname: string;
-  ref: string;
-}): Promise<Buffer> {
-  const response = await fetch(
-    buildGitHubArchiveUrl(input.auth, input.repoFullname, input.ref),
-    {
-      method: "GET",
-      headers: buildGitHubHeaders(input.auth, "application/octet-stream"),
-    },
-  );
-
-  if (!response.ok) {
-    const body = await response.text();
-    throw new Error(
-      body.trim().length > 0
-        ? body.trim()
-        : `Failed to download plugin archive with status ${String(response.status)}`,
-    );
-  }
-
-  return Buffer.from(await response.arrayBuffer());
-}
-
-async function collectPluginManifestPaths(rootDirectory: string): Promise<string[]> {
+async function collectPluginEntryPaths(rootDirectory: string): Promise<string[]> {
   const matches: string[] = [];
   const pending = [rootDirectory];
 
@@ -145,7 +59,7 @@ async function collectPluginManifestPaths(rootDirectory: string): Promise<string
         continue;
       }
 
-      if (entry.isFile() && entry.name === "plugin.json") {
+      if (entry.isFile() && entry.name === "plugin.js") {
         matches.push(nextPath);
       }
     }
@@ -166,11 +80,7 @@ async function collectPluginManifestPaths(rootDirectory: string): Promise<string
 async function installPluginFromArchive(input: {
   archive: Buffer;
   installRoot: string;
-}): Promise<{
-  pluginId: string;
-  installedPath: string;
-  extractedManifestPath: string;
-}> {
+}): Promise<DesktopPluginInstallResult> {
   const tempRoot = await mkdtemp(path.join(tmpdir(), "bitsentry-plugin-deploy-"));
 
   try {
@@ -180,29 +90,44 @@ async function installPluginFromArchive(input: {
     const archivePath = path.join(tempRoot, "plugin.tar.gz");
     const extractDirectory = path.join(tempRoot, "extract");
     await mkdir(extractDirectory, { recursive: true });
-    await writeFile(archivePath, input.archive);
+    await fs.promises.writeFile(archivePath, input.archive);
     await tar.x({
       file: archivePath,
       cwd: extractDirectory,
     });
 
-    const manifestPaths = await collectPluginManifestPaths(extractDirectory);
-    const manifestPath = manifestPaths[0];
-    if (manifestPath === undefined) {
+    const entryPaths = await collectPluginEntryPaths(extractDirectory);
+    const entryPath = entryPaths[0];
+    if (entryPath === undefined) {
       throw new Error(
-        "Downloaded deployment archive does not contain a plugin.json manifest.",
+        "Downloaded plugin archive does not contain a plugin.js code entrypoint.",
       );
     }
 
-    const rawManifest = JSON.parse(await readFile(manifestPath, "utf8")) as {
-      id?: unknown;
-    };
-    const pluginId = readTrimmedString(rawManifest.id);
+    const pluginRoot = path.dirname(entryPath);
+    const modulePath = localRequire.resolve(entryPath);
+    Reflect.deleteProperty(localRequire.cache, modulePath);
+    const moduleExports = localRequire(modulePath) as unknown;
+    let rawPlugin = moduleExports;
+    if (
+      moduleExports !== null &&
+      typeof moduleExports === "object" &&
+      "plugin" in moduleExports
+    ) {
+      rawPlugin = (moduleExports as { plugin?: unknown }).plugin;
+    } else if (
+      moduleExports !== null &&
+      typeof moduleExports === "object" &&
+      "default" in moduleExports
+    ) {
+      rawPlugin = (moduleExports as { default?: unknown }).default;
+    }
+    const parsedPlugin = desktopCodePluginSchema.parse(rawPlugin);
+    const pluginId = readTrimmedString(parsedPlugin.id);
     if (pluginId === undefined) {
-      throw new Error("Downloaded plugin manifest is missing a valid id.");
+      throw new Error("Downloaded code plugin is missing a valid id.");
     }
 
-    const pluginRoot = path.dirname(manifestPath);
     const installedPath = path.join(input.installRoot, pluginId);
     await mkdir(input.installRoot, { recursive: true });
     await rm(installedPath, { recursive: true, force: true });
@@ -211,7 +136,7 @@ async function installPluginFromArchive(input: {
     return {
       pluginId,
       installedPath,
-      extractedManifestPath: path.relative(extractDirectory, manifestPath),
+      extractedEntryPath: path.relative(extractDirectory, entryPath),
     };
   } finally {
     await rm(tempRoot, { recursive: true, force: true });
@@ -232,13 +157,23 @@ function resolveRepoManagedPluginDirectory(workspaceRoot: string): string {
   return path.join(workspaceRoot, "packages", "plugins");
 }
 
+function resolveBundledPluginDirectory(): string {
+  return path.resolve(__dirname, "..", "..", "..", "..", "plugins");
+}
+
 function defaultLocalPluginDirectories(): string[] {
   const configured = process.env.BITSENTRY_PLUGIN_DIR;
+  const bundledDirectory = resolveBundledPluginDirectory();
   if (typeof configured === "string" && configured.trim().length > 0) {
-    return configured
-      .split(path.delimiter)
-      .map((directory) => directory.trim())
-      .filter((directory) => directory.length > 0);
+    return Array.from(
+      new Set([
+        ...configured
+          .split(path.delimiter)
+          .map((directory) => directory.trim())
+          .filter((directory) => directory.length > 0),
+        bundledDirectory,
+      ]),
+    );
   }
 
   let workspaceRoot = process.cwd();
@@ -257,18 +192,23 @@ function defaultLocalPluginDirectories(): string[] {
     currentDirectory = parentDirectory;
   }
 
-  return [
-    resolveRepoManagedPluginDirectory(workspaceRoot),
-    path.join(workspaceRoot, ".bitsentry", "plugins"),
-  ];
+  return Array.from(
+    new Set([
+      resolveRepoManagedPluginDirectory(workspaceRoot),
+      bundledDirectory,
+      path.join(workspaceRoot, ".bitsentry", "plugins"),
+    ]),
+  );
 }
 
 function parseStoredFieldValue(
   field: DesktopPluginFieldDefinition,
   rawValue: unknown,
 ): unknown {
-  const normalized =
-    typeof rawValue === "string" ? rawValue.trim() : undefined;
+  let normalized: string | undefined;
+  if (typeof rawValue === "string") {
+    normalized = rawValue.trim();
+  }
 
   if (field.type === "boolean") {
     if (typeof rawValue === "boolean") {
@@ -387,121 +327,38 @@ function applyFieldDefaults(
 
 class DesktopNodePluginRuntimeService extends DesktopPluginRuntimeService {
   constructor(
-    registry: DesktopPluginRegistry,
     private readonly storedAuthStore: DesktopPluginStoredAuthStore,
     private readonly localPluginDirectories: string[],
   ) {
-    super(registry);
+    super(new DesktopPluginRegistry());
+    this.reloadRegistry();
   }
 
   private reloadRegistry(): void {
     this.registry = new DesktopPluginRegistry(
       loadDesktopLocalPlugins(this.localPluginDirectories),
+      {
+        localPluginDirectories: this.localPluginDirectories,
+        installPluginFromArchive: ({ archive, installRoot }) => {
+          let resolvedInstallRoot = installRoot;
+          if (resolvedInstallRoot === undefined) {
+            resolvedInstallRoot = this.localPluginDirectories[0];
+          }
+          if (resolvedInstallRoot === undefined) {
+            resolvedInstallRoot = path.join(process.cwd(), ".bitsentry", "plugins");
+          }
+
+          return installPluginFromArchive({
+            archive: Buffer.from(archive),
+            installRoot: resolvedInstallRoot,
+          });
+        },
+        reloadPlugins: () => {
+          this.reloadRegistry();
+          return Promise.resolve();
+        },
+      },
     );
-  }
-
-  private async executeGitHubDeploymentEvent(
-    request: DesktopPluginExecutionRequest,
-  ): Promise<DesktopPluginExecutionResult> {
-    const input = githubDeploymentEventInputSchema.parse(request.input);
-    const expectedEnvironment =
-      readTrimmedString(request.auth?.deploymentEnvironment) ?? "production";
-
-    if (input.deploy_env !== expectedEnvironment) {
-      return {
-        pluginId: "github",
-        actionId: "deployment_event",
-        ok: true,
-        status: 200,
-        summary: `Skipped deployment for environment "${input.deploy_env}" because the desktop runtime is configured for "${expectedEnvironment}".`,
-        data: {
-          matchedEnvironment: false,
-          expectedEnvironment,
-          deployEnvironment: input.deploy_env,
-          repoFullname: input.repo_fullname,
-          deployRef: input.deploy_ref,
-        },
-      };
-    }
-
-    const installRoot = this.localPluginDirectories[0];
-    if (installRoot === undefined) {
-      throw new Error("No local plugin installation directory is configured.");
-    }
-
-    const { owner, repo } = splitRepoFullname(input.repo_fullname);
-
-    try {
-      const archive = await downloadGitHubArchive({
-        auth: request.auth ?? {},
-        repoFullname: input.repo_fullname,
-        ref: input.deploy_ref,
-      });
-      const installed = await installPluginFromArchive({
-        archive,
-        installRoot,
-      });
-      this.reloadRegistry();
-
-      const deploymentStatus = await super.executeAction({
-        pluginId: "github",
-        actionId: "create_deployment_status",
-        auth: request.auth ?? {},
-        input: {
-          owner,
-          repo,
-          deploymentId: input.deploy_id,
-          state: "success",
-          description: `Completed deployment of ${input.repo_fullname} on ${input.deploy_env}.`,
-        },
-      });
-
-      return {
-        pluginId: "github",
-        actionId: "deployment_event",
-        ok: true,
-        status: deploymentStatus.status,
-        summary: `Installed plugin "${installed.pluginId}" from ${input.repo_fullname}@${input.deploy_ref} into ${installRoot}.`,
-        data: {
-          matchedEnvironment: true,
-          expectedEnvironment,
-          deployEnvironment: input.deploy_env,
-          repoFullname: input.repo_fullname,
-          repoName: input.repo_name,
-          deployRef: input.deploy_ref,
-          deploySha: input.deploy_sha,
-          deployDescription: input.deploy_desc,
-          deployId: input.deploy_id,
-          creator: input.creator,
-          sshUrl: input.ssh_url,
-          deployPayload: input.deploy_payload ?? null,
-          installedPluginId: installed.pluginId,
-          installedPath: installed.installedPath,
-          installRoot,
-          extractedManifestPath: installed.extractedManifestPath,
-          deploymentStatus: deploymentStatus.data,
-        },
-      };
-    } catch (error) {
-      try {
-        await super.executeAction({
-          pluginId: "github",
-          actionId: "create_deployment_status",
-          auth: request.auth ?? {},
-          input: {
-            owner,
-            repo,
-            deploymentId: input.deploy_id,
-            state: "failure",
-            description: `Failed deployment of ${input.repo_fullname} on ${input.deploy_env}.`,
-          },
-        });
-      } catch {
-        // Keep the original deployment error as the primary failure signal.
-      }
-
-      throw error;
-    }
   }
 
   override async executeAction(
@@ -519,16 +376,6 @@ class DesktopNodePluginRuntimeService extends DesktopPluginRuntimeService {
       });
     }
 
-    if (
-      request.pluginId === "github" &&
-      request.actionId === "deployment_event"
-    ) {
-      return this.executeGitHubDeploymentEvent({
-        ...request,
-        auth,
-      });
-    }
-
     return super.executeAction({
       ...request,
       auth,
@@ -541,7 +388,6 @@ export function createDesktopNodePluginRuntimeService(
   storedAuthStore: DesktopPluginStoredAuthStore = NOOP_DESKTOP_PLUGIN_STORED_AUTH_STORE,
 ): DesktopPluginRuntimeService {
   return new DesktopNodePluginRuntimeService(
-    new DesktopPluginRegistry(loadDesktopLocalPlugins(localPluginDirectories)),
     storedAuthStore,
     localPluginDirectories,
   );

@@ -30,6 +30,12 @@ import {
   PROVIDER_CONFIGS,
 } from '../main/features/error-sources/services/oauth-manager.service'
 import type { DbClient } from '@bitsentry-ce/core/features/desktop/desktop-database-client'
+import {
+  DesktopPluginRuntimeService,
+  type DesktopPluginExecutionRequest,
+  type DesktopPluginExecutionResult,
+  DesktopPluginDescriptor,
+} from '@bitsentry-ce/core/features/plugins'
 
 function getOpenExternalInvocation(urlMatcher: unknown): { command: string; args: unknown[] } {
   if (process.platform === 'darwin') {
@@ -53,6 +59,54 @@ function requestBodyText(body: BodyInit | null | undefined): string {
   }
 
   throw new Error('Expected request body to be form encoded text')
+}
+
+const posthogPluginDescriptor: DesktopPluginDescriptor = {
+  id: 'posthog',
+  name: 'PostHog',
+  version: 'test',
+  description: 'Test PostHog code plugin descriptor.',
+  metadata: {
+    errorSource: {
+      sourceType: 'posthog',
+      setupFields: [],
+      providerActions: {
+        listOrganizations: 'list_organizations',
+        listProjects: 'list_projects',
+        getProject: 'get_project',
+        queryIssues: 'query_issues',
+        listIssues: 'list_issues',
+        listIssueEvents: 'list_issue_events',
+      },
+    },
+  },
+  auth: {
+    fields: [],
+  },
+  actions: [],
+  triggers: [],
+}
+
+function createPluginRuntime(
+  descriptors: DesktopPluginDescriptor[],
+): DesktopPluginRuntimeService {
+  return new (class TestPluginRuntimeService extends DesktopPluginRuntimeService {
+    listPlugins() {
+      return descriptors
+    }
+
+    getPlugin(pluginId: string) {
+      return descriptors.find((plugin) => plugin.id === pluginId) ?? null
+    }
+
+    executeAction(
+      _input: DesktopPluginExecutionRequest,
+    ): Promise<DesktopPluginExecutionResult> {
+      return Promise.reject(
+        new Error('executeAction is not used by these PostHog OAuth tests'),
+      )
+    }
+  })()
 }
 
 describe('posthog error source support', () => {
@@ -120,16 +174,18 @@ describe('posthog error source support', () => {
     })
   })
 
-  it('registers PostHog as a desktop provider and preserves custom host binding', () => {
-    const factory = new ErrorSourceProviderFactory()
+  it('registers PostHog when a code plugin descriptor is available and preserves custom host binding', () => {
+    const factory = new ErrorSourceProviderFactory(
+      createPluginRuntime([posthogPluginDescriptor]),
+    )
 
-    expect(factory.getProvider('posthog')).toBeInstanceOf(PostHogProviderAdapter)
+    expect(factory.getProvider('posthog')).toMatchObject({ sourceType: 'posthog' })
     expect(
       getProviderForSource(factory, {
         sourceType: 'posthog',
         configuration: { posthogBaseUrl: 'https://eu.posthog.com' },
       }),
-    ).toBeInstanceOf(PostHogProviderAdapter)
+    ).toMatchObject({ sourceType: 'posthog' })
     expect(() =>
       getProviderForSource(factory, {
         sourceType: 'posthog',
@@ -269,7 +325,7 @@ describe('posthog error source support', () => {
     }
     const manager = new OauthManagerService(
       db,
-      new ErrorSourceProviderFactory(),
+      new ErrorSourceProviderFactory(createPluginRuntime([posthogPluginDescriptor])),
     )
 
     const initiated = await manager.initiateOAuth('posthog', {

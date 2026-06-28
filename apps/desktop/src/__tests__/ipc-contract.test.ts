@@ -13,6 +13,12 @@ import type {
 
 // Registered handler channels (must match handler factory keys)
 const HANDLER_CHANNELS = [
+  'plugins:list',
+  'plugins:get',
+  'plugins:getStoredAuth',
+  'plugins:updateStoredAuth',
+  'plugins:clearStoredAuth',
+  'plugins:execute',
   'errorSources:getAll',
   'errorSources:getOne',
   'errorSources:create',

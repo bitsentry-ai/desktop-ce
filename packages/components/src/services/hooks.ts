@@ -19,7 +19,7 @@ import type {
   MagicLinkRequest,
   MagicLinkVerifyRequest,
   PluginActionExecutionResult,
-  PluginManifest,
+  PluginDescriptor,
   ResolvedTicketsQuery,
   RunbooksServicePort,
   SyncResolutionStatusesInput,
@@ -774,7 +774,7 @@ export function usePlugin(pluginId?: string) {
     queryKey: queryKeys.pluginDetail(pluginId ?? ''),
     queryFn: () => {
       if (pluginId === undefined || pluginId.trim().length === 0) {
-        return Promise.resolve<PluginManifest | null>(null);
+        return Promise.resolve<PluginDescriptor | null>(null);
       }
 
       return port.get(pluginId);

@@ -654,17 +654,17 @@ export interface PluginErrorSourceSetupField {
   control: PluginErrorSourceSetupFieldControl;
 }
 
-export interface PluginManifestMetadata {
+export interface PluginDescriptorMetadata {
   errorSource?: PluginErrorSourceMetadata;
 }
 
-export interface PluginManifest {
+export interface PluginDescriptor {
   id: string;
   name: string;
   version: string;
   description: string;
   referenceRepositoryPath?: string;
-  metadata?: PluginManifestMetadata;
+  metadata?: PluginDescriptorMetadata;
   auth: {
     fields: PluginFieldDefinition[];
   };
@@ -684,8 +684,8 @@ export interface PluginActionExecutionResult {
 export type PluginStoredAuthRecord = Record<string, unknown>;
 
 export interface PluginsServicePort {
-  list(): Promise<PluginManifest[]>;
-  get(pluginId: string): Promise<PluginManifest | null>;
+  list(): Promise<PluginDescriptor[]>;
+  get(pluginId: string): Promise<PluginDescriptor | null>;
   getStoredAuth(pluginId: string): Promise<PluginStoredAuthRecord>;
   updateStoredAuth(
     pluginId: string,

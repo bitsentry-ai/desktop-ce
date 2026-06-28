@@ -51,7 +51,7 @@ export const desktopPluginFieldDefinitionSchema = z.object({
 }).superRefine((field, context) => {
   if (field.enumValues !== undefined && field.type !== "string") {
     context.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["enumValues"],
       message: "enumValues are only supported for string fields.",
     });
@@ -86,7 +86,7 @@ export const desktopPluginFieldDefinitionSchema = z.object({
 
   if (!defaultValueIsValid) {
     context.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["defaultValue"],
       message: `defaultValue must match the "${field.type}" field type.`,
     });
@@ -99,7 +99,7 @@ export const desktopPluginFieldDefinitionSchema = z.object({
     !field.enumValues.includes(field.defaultValue)
   ) {
     context.addIssue({
-      code: z.ZodIssueCode.custom,
+      code: "custom",
       path: ["defaultValue"],
       message: "defaultValue must be one of the declared enumValues.",
     });
@@ -213,7 +213,7 @@ export const desktopPluginErrorSourceSetupFieldSchema = z
       field.configurationKey !== undefined
     ) {
       context.addIssue({
-        code: z.ZodIssueCode.custom,
+        code: "custom",
         path: ["configurationKey"],
         message:
           "configurationKey is only valid for configuration-backed setup fields.",
@@ -252,7 +252,7 @@ export type DesktopPluginErrorSourceOauth = z.infer<
   typeof desktopPluginErrorSourceOauthSchema
 >;
 
-export const desktopPluginManifestMetadataSchema = z.object({
+export const desktopPluginDescriptorMetadataSchema = z.object({
   errorSource: z
     .object({
       sourceType: desktopPluginErrorSourceTypeSchema,
@@ -263,23 +263,23 @@ export const desktopPluginManifestMetadataSchema = z.object({
     .optional(),
 });
 
-export type DesktopPluginManifestMetadata = z.infer<
-  typeof desktopPluginManifestMetadataSchema
+export type DesktopPluginDescriptorMetadata = z.infer<
+  typeof desktopPluginDescriptorMetadataSchema
 >;
 
-export const desktopPluginManifestSchema = z.object({
+export const desktopPluginDescriptorSchema = z.object({
   id: z.string().min(1),
   name: z.string().min(1),
   version: z.string().min(1),
   description: z.string().min(1),
   referenceRepositoryPath: z.string().min(1).optional(),
-  metadata: desktopPluginManifestMetadataSchema.optional(),
+  metadata: desktopPluginDescriptorMetadataSchema.optional(),
   auth: desktopPluginAuthSchema,
   actions: z.array(desktopPluginActionDefinitionSchema),
   triggers: z.array(desktopPluginTriggerDefinitionSchema),
 });
 
-export type DesktopPluginManifest = z.infer<typeof desktopPluginManifestSchema>;
+export type DesktopPluginDescriptor = z.infer<typeof desktopPluginDescriptorSchema>;
 
 export const desktopPluginExecutionRequestSchema = z.object({
   pluginId: z.string().min(1),
@@ -304,3 +304,60 @@ export const desktopPluginExecutionResultSchema = z.object({
 export type DesktopPluginExecutionResult = z.infer<
   typeof desktopPluginExecutionResultSchema
 >;
+
+export type DesktopPluginInstallResult = {
+  pluginId: string;
+  installedPath: string;
+  extractedEntryPath: string;
+};
+
+export type DesktopPluginCodeActionContext = {
+  pluginId: string;
+  actionId: string;
+  auth: Record<string, unknown>;
+  input: Record<string, unknown>;
+  host: {
+    pluginRoot: string;
+    entryPath: string;
+    localPluginDirectories: string[];
+    installPluginFromArchive(input: {
+      archive: Uint8Array;
+      installRoot?: string;
+    }): Promise<DesktopPluginInstallResult>;
+    reloadPlugins(): Promise<void>;
+  };
+};
+
+export type DesktopPluginCodeActionHandlerResult = {
+  ok?: boolean;
+  status: number;
+  summary: string;
+  data?: unknown;
+};
+
+export type DesktopPluginCodeActionHandler = (
+  context: DesktopPluginCodeActionContext,
+) =>
+  | DesktopPluginCodeActionHandlerResult
+  | Promise<DesktopPluginCodeActionHandlerResult>;
+
+export const desktopCodePluginActionSchema = desktopPluginActionDefinitionSchema.extend({
+  execute: z.custom<DesktopPluginCodeActionHandler>(
+    (value) => typeof value === "function",
+    "execute must be a function.",
+  ),
+});
+
+export type DesktopCodePluginAction = z.infer<typeof desktopCodePluginActionSchema>;
+
+export const desktopCodePluginSchema = desktopPluginDescriptorSchema
+  .omit({
+    actions: true,
+    triggers: true,
+  })
+  .extend({
+    actions: z.array(desktopCodePluginActionSchema),
+    triggers: z.array(desktopPluginTriggerDefinitionSchema).default([]),
+  });
+
+export type DesktopCodePlugin = z.infer<typeof desktopCodePluginSchema>;

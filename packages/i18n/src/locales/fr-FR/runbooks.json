@@ -534,7 +534,7 @@
   "runbooks.runbook.pluginInputJsonHelp": "Provide a JSON object for the plugin action input. Runtime placeholders are resolved before execution.",
   "runbooks.runbook.pluginInputJsonPlaceholder": "{\"owner\":\"bitsentry-ai\",\"repo\":\"bitsentry-monorepo\"}",
   "runbooks.runbook.pluginRiskLevel": "Risk level",
-  "runbooks.runbook.pluginStructuredFieldsHelp": "Use the plugin manifest to edit declared fields safely. The raw JSON below stays in sync.",
+  "runbooks.runbook.pluginStructuredFieldsHelp": "Use the plugin's declared fields safely. The raw JSON below stays in sync.",
   "runbooks.runbook.pluginStructuredFieldsInvalidJson": "Structured editing is disabled until the JSON below is a valid object.",
   "runbooks.runbook.pluginStructuredFieldsRawJsonOnly": "Use valid JSON for this field.",
   "runbooks.runbook.selectAPlugin": "Select a plugin",
