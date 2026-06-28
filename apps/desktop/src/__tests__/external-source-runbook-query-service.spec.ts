@@ -35,6 +35,33 @@ function makeWazuhSource(overrides: Partial<ErrorSource> = {}): ErrorSource {
   }
 }
 
+function makeSentrySource(overrides: Partial<ErrorSource> = {}): ErrorSource {
+  return {
+    id: 'source-sentry',
+    sourceType: 'sentry',
+    name: 'Sentry',
+    accessTokenRef: 'sentry-secret',
+    refreshTokenRef: null,
+    expiresAt: null,
+    grantedScopes: [],
+    configuration: {
+      orgSlug: 'bitsentry',
+      projectIds: ['101', '102'],
+      projectSlugs: ['api', 'worker'],
+    },
+    logLevelThreshold: 'error',
+    additionalMetadata: null,
+    syncEnabled: true,
+    autoDiagnosisEnabled: false,
+    lastSyncAt: null,
+    lastSyncStatus: null,
+    lastSyncError: null,
+    createdAt: '2026-06-01T00:00:00.000Z',
+    updatedAt: '2026-06-01T00:00:00.000Z',
+    ...overrides,
+  }
+}
+
 function createWazuhDescriptor(): DesktopPluginDescriptor {
   return {
     id: 'wazuh',
@@ -86,6 +113,56 @@ function createWazuhDescriptor(): DesktopPluginDescriptor {
   }
 }
 
+function createSentryDescriptor(): DesktopPluginDescriptor {
+  return {
+    id: 'sentry',
+    name: 'Sentry',
+    version: '1.0.0',
+    description: 'Sentry code plugin.',
+    metadata: {
+      errorSource: {
+        sourceType: 'sentry',
+        setupFields: [
+          {
+            key: 'authToken',
+            target: 'authToken',
+            storage: 'accessTokenRef',
+            label: 'Sentry auth token',
+            required: true,
+            control: 'password',
+          },
+          {
+            key: 'organizationSlug',
+            target: 'organizationSlug',
+            storage: 'configuration',
+            configurationKey: 'orgSlug',
+            label: 'Organization slug',
+            required: true,
+            control: 'text',
+          },
+          {
+            key: 'projectSlugs',
+            target: 'projectSlugs',
+            storage: 'configuration',
+            configurationKey: 'projectSlugs',
+            label: 'Project slugs',
+            required: false,
+            control: 'multiline_list',
+          },
+        ],
+        providerActions: {
+          queryIssues: 'query_issues',
+        },
+      },
+    },
+    auth: {
+      fields: [],
+    },
+    actions: [],
+    triggers: [],
+  }
+}
+
 class TestPluginRuntimeService extends DesktopPluginRuntimeService {
   readonly executeActionMock = vi.fn<
     (input: DesktopPluginExecutionRequest) => Promise<DesktopPluginExecutionResult>
@@ -107,6 +184,73 @@ class TestPluginRuntimeService extends DesktopPluginRuntimeService {
 }
 
 describe('ExternalSourceRunbookQueryService code plugin queries', () => {
+  it('routes Sentry runbook queries through the executable plugin action', async () => {
+    const source = makeSentrySource()
+    const sourcesRepository = {
+      findById: vi.fn().mockResolvedValue(source),
+      update: vi.fn(),
+    }
+    const providerFactory = {
+      getProvider: vi.fn(() => {
+        throw new Error('Sentry should not use a built-in provider')
+      }),
+    }
+    const pluginRuntime = new TestPluginRuntimeService([createSentryDescriptor()])
+    pluginRuntime.executeActionMock.mockResolvedValue({
+      pluginId: 'sentry',
+      actionId: 'query_issues',
+      ok: true,
+      status: 200,
+      summary: 'Fetched 1 Sentry issue.',
+      data: {
+        issues: [{ id: 'ISSUE-1', title: 'API is unhappy' }],
+        hasMore: false,
+      },
+    })
+
+    const service = new ExternalSourceRunbookQueryService(
+      sourcesRepository,
+      providerFactory,
+      { defaultLimit: 3 },
+      pluginRuntime,
+    )
+
+    await expect(
+      service.execute({
+        sourceId: source.id,
+        query: 'is:unresolved',
+      }),
+    ).resolves.toContain('API is unhappy')
+
+    expect(providerFactory.getProvider).not.toHaveBeenCalled()
+    const firstPluginCall = pluginRuntime.executeActionMock.mock.calls[0]
+    if (firstPluginCall === undefined) {
+      throw new Error('Expected Sentry runbook query to execute a plugin action')
+    }
+    const [pluginRequest] = firstPluginCall
+    expect(pluginRequest.auth).toMatchObject({
+      accessToken: 'sentry-secret',
+      authToken: 'sentry-secret',
+      orgSlug: 'bitsentry',
+      organizationSlug: 'bitsentry',
+      projectSlugs: ['api', 'worker'],
+    })
+    expect(pluginRequest).toMatchObject({
+      pluginId: 'sentry',
+      actionId: 'query_issues',
+      input: {
+        query: 'is:unresolved',
+        limit: 3,
+        sourceId: source.id,
+        sourceName: source.name,
+        sourceType: 'sentry',
+        orgSlug: 'bitsentry',
+        projectIds: ['101', '102'],
+        projectSlugs: ['api', 'worker'],
+      },
+    })
+  })
+
   it('routes Wazuh runbook queries through the executable plugin action', async () => {
     const source = makeWazuhSource()
     const sourcesRepository = {
