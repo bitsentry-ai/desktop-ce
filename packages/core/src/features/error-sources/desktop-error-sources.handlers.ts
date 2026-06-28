@@ -230,11 +230,22 @@ function readOAuthConfigurationOverrides(
   const oauthClientSecret = readOptionalTrimmed(configuration.oauthClientSecret)
   const oauthRedirectUri = readOptionalTrimmed(configuration.oauthRedirectUri)
 
-  return {
-    ...(oauthClientId === undefined ? {} : { oauthClientId }),
-    ...(oauthClientSecret === undefined ? {} : { oauthClientSecret }),
-    ...(oauthRedirectUri === undefined ? {} : { oauthRedirectUri }),
+  const overrides: {
+    oauthClientId?: string
+    oauthClientSecret?: string
+    oauthRedirectUri?: string
+  } = {}
+  if (oauthClientId !== undefined) {
+    overrides.oauthClientId = oauthClientId
   }
+  if (oauthClientSecret !== undefined) {
+    overrides.oauthClientSecret = oauthClientSecret
+  }
+  if (oauthRedirectUri !== undefined) {
+    overrides.oauthRedirectUri = oauthRedirectUri
+  }
+
+  return overrides
 }
 
 function parsePostHogExtraAllowedHosts(): string[] {
@@ -417,10 +428,10 @@ function mergeErrorSourceAdditionalMetadata(
   additionalMetadata: Record<string, unknown> | null | undefined,
   pluginId: string | undefined,
 ): Record<string, unknown> | null {
-  const nextMetadata =
-    additionalMetadata === null || additionalMetadata === undefined
-      ? {}
-      : { ...additionalMetadata }
+  let nextMetadata: Record<string, unknown> = {}
+  if (additionalMetadata !== null && additionalMetadata !== undefined) {
+    nextMetadata = { ...additionalMetadata }
+  }
 
   if (pluginId !== undefined && pluginId.length > 0) {
     nextMetadata.pluginId = pluginId
@@ -492,6 +503,17 @@ function readStringArray(value: unknown): string[] {
 
     return [normalized]
   })
+}
+
+function firstNonEmptyStringArray(readers: Array<() => string[]>): string[] {
+  for (const reader of readers) {
+    const values = reader()
+    if (values.length > 0) {
+      return values
+    }
+  }
+
+  return []
 }
 
 function readWazuhConnectionIndexPattern(
@@ -591,6 +613,24 @@ function readPluginIssueBatch(data: unknown): {
   }
 }
 
+function readUnknownArray(value: unknown): unknown[] {
+  if (Array.isArray(value)) {
+    return value
+  }
+
+  return []
+}
+
+function readConfiguredOrganizationCount(
+  configuration: ErrorSourceConfiguration,
+): number {
+  if (readOptionalTrimmed(configuration.orgSlug) === undefined) {
+    return 0
+  }
+
+  return 1
+}
+
 function buildGenericPluginConnectionInput(source: ErrorSource): Record<string, unknown> {
   const input: Record<string, unknown> = {
     query: '*',
@@ -640,7 +680,11 @@ function isPostHogProjectScopedEndpointError(error: unknown): boolean {
 }
 
 function isSupportedOAuthType(value: unknown): value is ErrorSourceType {
-  return typeof value === 'string' && SUPPORTED_OAUTH_SOURCE_TYPES.includes(value as ErrorSourceType)
+  if (typeof value !== 'string') {
+    return false
+  }
+
+  return SUPPORTED_OAUTH_SOURCE_TYPES.some((sourceType) => sourceType === value)
 }
 
 function normalizePostHogBaseUrl(value: unknown): string {
@@ -875,12 +919,11 @@ export function createDesktopErrorSourcesHandlers(
           readOptionalTrimmed(persistedSetup.configuration.orgSlug) ??
           payload.organizationSlug?.trim() ??
           ''
-        const projectSlugs =
-          readSetupStringArray(setupValues, 'projectSlugs').length > 0
-            ? readSetupStringArray(setupValues, 'projectSlugs')
-            : readStringArray(persistedSetup.configuration.projectSlugs).length > 0
-              ? readStringArray(persistedSetup.configuration.projectSlugs)
-              : payload.projectSlugs ?? []
+        const projectSlugs = firstNonEmptyStringArray([
+          () => readSetupStringArray(setupValues, 'projectSlugs'),
+          () => readStringArray(persistedSetup.configuration.projectSlugs),
+          () => readStringArray(payload.projectSlugs),
+        ])
         const sentryBaseUrl = readOptionalTrimmed(
           setupValues.baseUrl ?? payload.sentryBaseUrl,
         )
@@ -967,16 +1010,16 @@ export function createDesktopErrorSourcesHandlers(
             payload.posthogBaseUrl ??
             persistedSetup.configuration.posthogBaseUrl,
         )
-        const requestedProjectIds =
-          readSetupStringArray(setupValues, 'projectIds').length > 0
-            ? readSetupStringArray(setupValues, 'projectIds')
-            : readSetupStringArray(setupValues, 'projectSlugs').length > 0
-              ? readSetupStringArray(setupValues, 'projectSlugs')
-              : readStringArray(persistedSetup.configuration.projectIds).length > 0
-                ? readStringArray(persistedSetup.configuration.projectIds)
-                : readStringArray(persistedSetup.configuration.projectSlugs).length > 0
-                  ? readStringArray(persistedSetup.configuration.projectSlugs)
-              : readStringArray(payload.projectIds ?? payload.projectSlugs)
+        const requestedProjectIds = firstNonEmptyStringArray([
+          () => readSetupStringArray(setupValues, 'projectIds'),
+          () => readSetupStringArray(setupValues, 'projectSlugs'),
+          () => readStringArray(persistedSetup.configuration.projectIds),
+          () => readStringArray(persistedSetup.configuration.projectSlugs),
+          () => firstNonEmptyStringArray([
+            () => readStringArray(payload.projectIds),
+            () => readStringArray(payload.projectSlugs),
+          ]),
+        ])
         const requestedOrgId = readOptionalTrimmed(
           setupValues.organizationId ??
             setupValues.organizationSlug ??
@@ -1183,12 +1226,21 @@ export function createDesktopErrorSourcesHandlers(
             payload.baseUrl ??
             persistedSetup.configuration.baseUrl,
         )
-        const indexPatterns =
-          readSetupStringArray(setupValues, 'indexPatterns').length > 0
-            ? readSetupStringArray(setupValues, 'indexPatterns')
-            : readStringArray(persistedSetup.configuration.indexPatterns).length > 0
-              ? readStringArray(persistedSetup.configuration.indexPatterns)
-              : readStringArray(payload.indexPatterns)
+        const indexPatterns = firstNonEmptyStringArray([
+          () => readSetupStringArray(setupValues, 'indexPatterns'),
+          () => readStringArray(persistedSetup.configuration.indexPatterns),
+          () => readStringArray(payload.indexPatterns),
+        ])
+        const wazuhConfiguration = {
+          ...persistedSetup.configuration,
+          ...(readPayloadRecord(payload.configuration) ?? {}),
+        }
+        if (baseUrl !== undefined) {
+          wazuhConfiguration.baseUrl = baseUrl
+        }
+        if (indexPatterns.length > 0) {
+          wazuhConfiguration.indexPatterns = indexPatterns
+        }
 
         const created = await sourcesRepository.create({
           sourceType,
@@ -1201,12 +1253,7 @@ export function createDesktopErrorSourcesHandlers(
           refreshTokenRef: null,
           expiresAt: null,
           grantedScopes: [],
-          configuration: {
-            ...persistedSetup.configuration,
-            ...(readPayloadRecord(payload.configuration) ?? {}),
-            ...(baseUrl === undefined ? {} : { baseUrl }),
-            ...(indexPatterns.length === 0 ? {} : { indexPatterns }),
-          },
+          configuration: wazuhConfiguration,
           logLevelThreshold: toLogLevelThreshold(payload.logLevelThreshold),
           syncEnabled: payload.syncEnabled !== false,
           autoDiagnosisEnabled: payload.autoDiagnosisEnabled === true,
@@ -1215,6 +1262,11 @@ export function createDesktopErrorSourcesHandlers(
       }
 
       try {
+        let customPluginAuthToken = authToken
+        if (customPluginAuthToken.length === 0) {
+          customPluginAuthToken = persistedSetup.accessTokenRef ?? ''
+        }
+
         const created = await sourcesRepository.create({
           sourceType,
           name: sourceName,
@@ -1222,9 +1274,7 @@ export function createDesktopErrorSourcesHandlers(
             readPayloadRecord(payload.additionalMetadata),
             pluginId,
           ),
-          accessTokenRef: nullableNonEmptyString(
-            authToken.length > 0 ? authToken : persistedSetup.accessTokenRef ?? '',
-          ),
+          accessTokenRef: nullableNonEmptyString(customPluginAuthToken),
           refreshTokenRef: null,
           expiresAt: null,
           grantedScopes: [],
@@ -1811,6 +1861,14 @@ export function createDesktopErrorSourcesHandlers(
       // instead of throwing "Access token not found".
       if (source.sourceType === 'wazuh') {
         const indexPattern = readWazuhConnectionIndexPattern(source.configuration)
+        const input: Record<string, unknown> = {
+          query: '*',
+          limit: 1,
+        }
+        if (indexPattern !== undefined) {
+          input.indexPattern = indexPattern
+        }
+
         try {
           const result = await pluginRuntime.executeAction({
             pluginId,
@@ -1821,11 +1879,7 @@ export function createDesktopErrorSourcesHandlers(
               action: 'searchAlerts',
             }),
             auth: buildWazuhPluginAuth(source),
-            input: {
-              query: '*',
-              limit: 1,
-              ...(indexPattern === undefined ? {} : { indexPattern }),
-            },
+            input,
           })
           const issueCount = readPluginIssueCount(result.data)
           log.info(
@@ -1880,7 +1934,7 @@ export function createDesktopErrorSourcesHandlers(
           return {
             success: true,
             provider: source.sourceType,
-            organizationCount: readOptionalTrimmed(source.configuration.orgSlug) === undefined ? 0 : 1,
+            organizationCount: readConfiguredOrganizationCount(source.configuration),
             projectCount: issueCount,
           }
         }
@@ -1901,7 +1955,7 @@ export function createDesktopErrorSourcesHandlers(
           return {
             success: true,
             provider: source.sourceType,
-            organizationCount: readOptionalTrimmed(source.configuration.orgSlug) === undefined ? 0 : 1,
+            organizationCount: readConfiguredOrganizationCount(source.configuration),
             projectCount: issueCount,
           }
         }
@@ -1918,7 +1972,7 @@ export function createDesktopErrorSourcesHandlers(
             auth,
             input: {},
           })
-          const organizations = Array.isArray(result.data) ? result.data : []
+          const organizations = readUnknownArray(result.data)
           return {
             success: true,
             provider: source.sourceType,
