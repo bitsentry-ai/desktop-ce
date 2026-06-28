@@ -445,11 +445,18 @@ function readPluginIssueBatch(data: unknown): {
   const issues = readRecordArray(rawIssues)
   const nextCursor = readOptionalString((data as { nextCursor?: unknown }).nextCursor)
 
-  return {
+  const page = {
     issues,
     hasMore: (data as { hasMore?: unknown }).hasMore === true,
-    ...(nextCursor === null ? {} : { nextCursor }),
   }
+  if (nextCursor !== null) {
+    return {
+      ...page,
+      nextCursor,
+    }
+  }
+
+  return page
 }
 
 function readPluginEventBatch(data: unknown): {
@@ -469,11 +476,18 @@ function readPluginEventBatch(data: unknown): {
   const events = readRecordArray(rawEvents)
   const nextCursor = readOptionalString((data as { nextCursor?: unknown }).nextCursor)
 
-  return {
+  const page = {
     events,
     hasMore: (data as { hasMore?: unknown }).hasMore === true,
-    ...(nextCursor === null ? {} : { nextCursor }),
   }
+  if (nextCursor !== null) {
+    return {
+      ...page,
+      nextCursor,
+    }
+  }
+
+  return page
 }
 
 function readPluginExternalId(record: ExternalPayloadRecord): string | null {
@@ -663,7 +677,11 @@ function buildWazuhTags(hit: ExternalPayloadRecord): Record<string, unknown> | n
   const decoderName = readOptionalString(readRecord(source?.decoder)?.name)
   if (decoderName !== null) tags.decoderName = decoderName
 
-  return Object.keys(tags).length > 0 ? tags : null
+  if (Object.keys(tags).length === 0) {
+    return null
+  }
+
+  return tags
 }
 
 function parseLevelToRuleLevel(level: string | null): number {
@@ -1435,6 +1453,21 @@ export class ErrorSourceSyncService {
       pageCount += 1
       const pageStartMs = Date.now()
       const pluginId = readSourcePluginId(source)
+      const pluginInput: Record<string, unknown> = {
+        query: '*',
+        limit,
+        offset,
+      }
+      if (indexPattern !== undefined) {
+        pluginInput.indexPattern = indexPattern
+      }
+      if (since !== undefined) {
+        pluginInput.since = since
+      }
+      if (until !== undefined) {
+        pluginInput.until = until
+      }
+
       const result = await this.pluginRuntime.executeAction({
         pluginId,
         actionId: resolveErrorSourceProviderActionId({
@@ -1444,14 +1477,7 @@ export class ErrorSourceSyncService {
           action: 'searchAlerts',
         }),
         auth,
-        input: {
-          query: '*',
-          limit,
-          offset,
-          ...(indexPattern === undefined ? {} : { indexPattern }),
-          ...(since === undefined ? {} : { since }),
-          ...(until === undefined ? {} : { until }),
-        },
+        input: pluginInput,
       })
       const items = readWazuhItems(result.data)
       hasMore = readWazuhHasMore(result.data) && items.length > 0
@@ -1600,7 +1626,10 @@ export class ErrorSourceSyncService {
     while (hasMore && pageCount < MAX_GENERIC_PLUGIN_ISSUE_PAGES) {
       pageCount += 1
       const pageStartMs = Date.now()
-      const action = providerActions.listIssues !== undefined ? 'listIssues' : 'queryIssues'
+      let action: 'listIssues' | 'queryIssues' = 'queryIssues'
+      if (providerActions.listIssues !== undefined) {
+        action = 'listIssues'
+      }
       const result = await this.pluginRuntime.executeAction({
         pluginId,
         actionId: resolveErrorSourceProviderActionId({
