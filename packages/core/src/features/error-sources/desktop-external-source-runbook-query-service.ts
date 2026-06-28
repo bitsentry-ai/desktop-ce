@@ -54,10 +54,6 @@ type SupportedExternalSource = ErrorSource & {
   sourceType: "sentry" | "posthog";
 };
 
-type WazuhExternalSource = ErrorSource & {
-  sourceType: "wazuh";
-};
-
 type QueryIssuesResponse = {
   issues: unknown[];
   hasMore: boolean;
@@ -114,7 +110,7 @@ function readQueryInput(input: ExternalSourceRunbookQueryInput): {
   return { sourceId, query };
 }
 
-function isSupportedExternalSource(
+function isBuiltinOAuthExternalSource(
   source: ErrorSource,
 ): source is SupportedExternalSource {
   return (
@@ -123,14 +119,8 @@ function isSupportedExternalSource(
   );
 }
 
-function isWazuhExternalSource(
-  source: ErrorSource,
-): source is WazuhExternalSource {
-  return source.sourceType === "wazuh";
-}
-
 function requireSupportedSource(source: ErrorSource): SupportedExternalSource {
-  if (isSupportedExternalSource(source)) {
+  if (isBuiltinOAuthExternalSource(source)) {
     return source;
   }
 
@@ -180,7 +170,7 @@ function readConfiguredStringArray(value: unknown): string[] {
     .filter((item) => item.length > 0);
 }
 
-function readWazuhIndexPattern(
+function readPluginIndexPattern(
   configuration: ErrorSourceConfiguration,
 ): string | undefined {
   const configuredIndexPatterns = readConfiguredStringArray(
@@ -198,23 +188,6 @@ function readWazuhIndexPattern(
   }
 
   return undefined;
-}
-
-function buildWazuhPluginAuth(
-  source: WazuhExternalSource,
-): Record<string, unknown> {
-  const auth: Record<string, unknown> = {};
-  const indexUrl = source.configuration.baseUrl?.trim();
-  if (indexUrl !== undefined && indexUrl.length > 0) {
-    auth.indexUrl = indexUrl.replace(/\/+$/, "");
-  }
-
-  const indexPassword = source.accessTokenRef?.trim();
-  if (indexPassword !== undefined && indexPassword.length > 0) {
-    auth.indexPassword = indexPassword;
-  }
-
-  return auth;
 }
 
 function readSourcePluginId(source: ErrorSource): string {
@@ -236,7 +209,7 @@ function readPluginOutput(data: unknown): string {
     return ((data as { output: string }).output).trim();
   }
 
-  throw new Error("External Source Wazuh plugin returned no output");
+  throw new Error("External Source code plugin returned no output");
 }
 
 function readPluginErrorSourceSetupFields(
@@ -311,7 +284,7 @@ function buildGenericPluginQueryInput(
     input.projectSlugs = configuredProjectSlugs;
   }
 
-  const indexPattern = readWazuhIndexPattern(source.configuration);
+  const indexPattern = readPluginIndexPattern(source.configuration);
   if (indexPattern !== undefined) {
     input.indexPattern = indexPattern;
   }
@@ -535,7 +508,7 @@ export class ExternalSourceRunbookQueryService
       throw new Error(`Selected external source ${sourceId} was not found`);
     }
 
-    if (!isRunbookQueryPluginErrorSourceType(source.sourceType)) {
+    if (!isBuiltinOAuthExternalSource(source)) {
       const customQuery = await executeCustomPluginQuery({
         source,
         query,
@@ -553,10 +526,6 @@ export class ExternalSourceRunbookQueryService
         hasMore: customQuery.hasMore === true,
         limit: this.options?.defaultLimit ?? DEFAULT_EXTERNAL_SOURCE_QUERY_LIMIT,
       });
-    }
-
-    if (isWazuhExternalSource(source)) {
-      return this.executeWazuhQuery(source, query);
     }
 
     const supportedSource = requireSupportedSource(source);
@@ -589,37 +558,6 @@ export class ExternalSourceRunbookQueryService
       hasMore: page.hasMore,
       limit,
     });
-  }
-
-  private async executeWazuhQuery(
-    source: WazuhExternalSource,
-    query: string,
-  ): Promise<string> {
-    const limit =
-      this.options?.defaultLimit ?? DEFAULT_EXTERNAL_SOURCE_QUERY_LIMIT;
-    const indexPattern = readWazuhIndexPattern(source.configuration);
-    const pluginId = readSourcePluginId(source);
-    const pluginInput: Record<string, unknown> = {
-      query,
-      limit,
-    };
-    if (indexPattern !== undefined) {
-      pluginInput.indexPattern = indexPattern;
-    }
-
-    const result = await this.pluginRuntime.executeAction({
-      pluginId,
-      actionId: resolveErrorSourceProviderActionId({
-        runtime: this.pluginRuntime,
-        pluginId,
-        sourceType: source.sourceType,
-        action: "searchAlerts",
-      }),
-      auth: buildWazuhPluginAuth(source),
-      input: pluginInput,
-    });
-
-    return readPluginOutput(result.data);
   }
 
   private async resolveAccessToken(
