@@ -223,6 +223,68 @@ function findPluginDescriptorForSource(
   );
 }
 
+function findEditDialogPlugin(
+  plugins: PluginDescriptor[],
+  source: ErrorSourceRow | null,
+): PluginDescriptor | null {
+  if (source === null) {
+    return null;
+  }
+
+  return findPluginDescriptorForSource(plugins, source);
+}
+
+function baseUrlLabelKey(sourceType: ErrorSourceType): string {
+  if (sourceType === "posthog") {
+    return "common.errorSourcesManager.labelPosthogHost";
+  }
+
+  return "common.errorSourcesManager.labelApiBaseUrl";
+}
+
+function emptySourcePrompt(
+  availableProviderSummary: string,
+  t: Translate,
+): string {
+  if (availableProviderSummary.length > 0) {
+    return `Available plugin-backed sources: ${availableProviderSummary}.`;
+  }
+
+  return t("common.errorSourcesManager.addASentryWazuhOrPostHog");
+}
+
+function setupFieldInputType(field: PluginErrorSourceSetupField): string {
+  if (field.control === "password") {
+    return "password";
+  }
+
+  return "text";
+}
+
+function setupFieldDescription(
+  field: PluginErrorSourceSetupField,
+): string {
+  if (field.description !== undefined) {
+    return field.description;
+  }
+
+  if (field.control === "multiline_list") {
+    return "Separate multiple values with commas or new lines.";
+  }
+
+  return "";
+}
+
+function editSetupFieldPlaceholder(
+  field: PluginErrorSourceSetupField,
+): string {
+  if (field.target === "authToken" || field.storage === "accessTokenRef") {
+    return "Leave blank to keep the current token.";
+  }
+
+  return field.placeholder ?? "";
+}
+
 function readArrayDisplayValue(value: unknown): string {
   if (!Array.isArray(value)) {
     return "";
@@ -662,10 +724,7 @@ export default function ErrorSourcesManager({
     [selectedSetupFields],
   );
   const editDialogPlugin = useMemo(
-    () =>
-      editDialogSource === null
-        ? null
-        : findPluginDescriptorForSource(plugins, editDialogSource),
+    () => findEditDialogPlugin(plugins, editDialogSource),
     [editDialogSource, plugins],
   );
 
@@ -869,9 +928,7 @@ export default function ErrorSourcesManager({
         }
         case "baseUrl": {
           const value = readSetupFieldTextValue(field);
-          if (field.control === "posthog_base_url") {
-            input.baseUrl = value;
-          } else if (value.length > 0) {
+          if (field.control === "posthog_base_url" || value.length > 0) {
             input.baseUrl = value;
           }
           break;
@@ -1213,11 +1270,7 @@ export default function ErrorSourcesManager({
     projectsSetupField?.required ?? sourceType === "posthog";
   const baseUrlLabel =
     baseUrlSetupField?.label ??
-    t(
-      sourceType === "posthog"
-        ? "common.errorSourcesManager.labelPosthogHost"
-        : "common.errorSourcesManager.labelApiBaseUrl",
-    );
+    t(baseUrlLabelKey(sourceType));
   const baseUrlDescription = baseUrlSetupField?.description;
   const baseUrlPlaceholder =
     baseUrlSetupField?.placeholder ??
@@ -1304,9 +1357,7 @@ export default function ErrorSourcesManager({
             {t("common.errorSourcesManager.noExternalSourcesConnected")}
           </p>
           <p className="mt-1 text-xs text-muted-foreground">
-            {availableProviderSummary.length > 0
-              ? `Available plugin-backed sources: ${availableProviderSummary}.`
-              : t("common.errorSourcesManager.addASentryWazuhOrPostHog")}
+            {emptySourcePrompt(availableProviderSummary, t)}
           </p>
         </div>
       )}
@@ -1675,8 +1726,7 @@ export default function ErrorSourcesManager({
                       {customSetupFields.map((field) => {
                         const value = customSetupFieldValues[field.key] ?? "";
                         const placeholder = field.placeholder ?? "";
-                        const isPassword = field.control === "password";
-                        const isList = field.control === "multiline_list";
+                        const description = setupFieldDescription(field);
 
                         return (
                           <div key={field.key} className="space-y-1">
@@ -1685,7 +1735,7 @@ export default function ErrorSourcesManager({
                             </FieldLabel>
                             <Input
                               placeholder={placeholder}
-                              type={isPassword ? "password" : "text"}
+                              type={setupFieldInputType(field)}
                               value={value}
                               onChange={(e) => {
                                 const nextValue = e.target.value;
@@ -1696,10 +1746,7 @@ export default function ErrorSourcesManager({
                               }}
                             />
                             <p className="text-xs text-muted-foreground">
-                              {field.description ??
-                                (isList
-                                  ? "Separate multiple values with commas or new lines."
-                                  : "")}
+                              {description}
                             </p>
                           </div>
                         );
@@ -1989,16 +2036,8 @@ function renderEditConnectionFields(input: {
     <>
       {setupFields.map((field) => {
         const value = values[field.key] ?? "";
-        const placeholder =
-          field.target === "authToken" || field.storage === "accessTokenRef"
-            ? "Leave blank to keep the current token."
-            : (field.placeholder ?? "");
-        const isPassword = field.control === "password";
-        const description =
-          field.description ??
-          (field.control === "multiline_list"
-            ? "Separate multiple values with commas or new lines."
-            : "");
+        const placeholder = editSetupFieldPlaceholder(field);
+        const description = setupFieldDescription(field);
 
         return (
           <div key={field.key} className="space-y-1">
@@ -2008,7 +2047,7 @@ function renderEditConnectionFields(input: {
             <Input
               value={value}
               placeholder={placeholder}
-              type={isPassword ? "password" : "text"}
+              type={setupFieldInputType(field)}
               onChange={(event) => { onChange(field.key, event.target.value); }}
               disabled={disabled}
             />
