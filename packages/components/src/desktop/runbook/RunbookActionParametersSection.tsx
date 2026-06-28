@@ -39,6 +39,10 @@ function getParameterInjectionTarget(actionType: RunbookActionRecord["type"]) {
     return "URL, headers, or body";
   }
 
+  if (actionType === "plugin") {
+    return "auth JSON or input JSON";
+  }
+
   return "query";
 }
 

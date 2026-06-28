@@ -2,6 +2,7 @@ import type { ErrorSourceType } from "./desktop-error-sources.types";
 
 type SourceWithPostHogConfig<TSourceType extends ErrorSourceType> = {
   sourceType: TSourceType;
+  additionalMetadata?: unknown;
   configuration?: {
     posthogBaseUrl?: unknown;
   };
@@ -9,6 +10,9 @@ type SourceWithPostHogConfig<TSourceType extends ErrorSourceType> = {
 
 type ProviderFactory<TSourceType extends ErrorSourceType, TProvider> = {
   getProvider(sourceType: TSourceType): TProvider;
+  getProviderForSource?: (
+    source: SourceWithPostHogConfig<TSourceType>,
+  ) => TProvider;
 };
 
 function hasWithApiBase<TProvider>(
@@ -37,7 +41,8 @@ export function getProviderForSource<
   factory: ProviderFactory<TSourceType, TProvider>,
   source: SourceWithPostHogConfig<TSourceType>,
 ): TProvider {
-  const provider = factory.getProvider(source.sourceType);
+  const provider =
+    factory.getProviderForSource?.(source) ?? factory.getProvider(source.sourceType);
   if (source.sourceType !== "posthog") {
     return provider;
   }

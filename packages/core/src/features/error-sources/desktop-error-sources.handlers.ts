@@ -8,7 +8,6 @@ import { SqliteErrorSourcesRepositoryAdapter } from './desktop-sqlite-error-sour
 import { SqliteErrorIssuesRepositoryAdapter } from './desktop-sqlite-error-issues.adapter'
 import { SqliteErrorEventsRepositoryAdapter } from './desktop-sqlite-error-events.adapter'
 import { ErrorSourceProviderFactory } from './desktop-error-source-provider.factory'
-import { PostHogProviderAdapter } from './desktop-posthog-provider.adapter'
 import { ErrorSourceSyncService } from './desktop-error-source-sync.service'
 import { getProviderForSource } from './desktop-posthog-provider-binding'
 import {
@@ -17,9 +16,26 @@ import {
 } from './desktop-sentry-project-selection'
 import { SyncSchedulerService } from './desktop-sync-scheduler.service'
 import type { DesktopOauthManagerService } from './desktop-oauth-manager'
+import type {
+  ErrorSourceProvider,
+  ProjectSummary,
+} from './desktop-error-source-provider.interface'
 import type { ErrorSource, ErrorSourceConfiguration, ErrorSourceType, LogLevelThreshold } from './desktop-error-sources.types'
+import type {
+  DesktopPluginErrorSourceSetupField,
+  DesktopPluginRuntimeService,
+} from '../plugins'
+import {
+  createDesktopNodePluginRuntimeService,
+} from '../plugins/node'
+import {
+  OAUTH_PLUGIN_ERROR_SOURCE_TYPES,
+  PLUGIN_BACKED_ERROR_SOURCE_TYPES,
+} from './plugin-backed-error-sources'
+import { resolveErrorSourceProviderActionId } from './desktop-plugin-error-source-actions'
 
-const SUPPORTED_OAUTH_SOURCE_TYPES: ReadonlyArray<ErrorSourceType> = ['sentry', 'posthog']
+const SUPPORTED_OAUTH_SOURCE_TYPES: ReadonlyArray<ErrorSourceType> =
+  OAUTH_PLUGIN_ERROR_SOURCE_TYPES
 const POSTHOG_PROJECT_SCOPED_API_KEY_MESSAGE =
   'This PostHog API key is scoped to specific projects. Add at least one numeric Project ID so BitSentry can use PostHog project-based endpoints.'
 const POSTHOG_PROJECT_SCOPED_ENDPOINT_ERROR =
@@ -28,13 +44,16 @@ const INTERRUPTED_SYNC_MESSAGE = 'Previous sync was interrupted before completio
 const handlerPayloadSchema = z.record(z.string(), z.unknown())
 const createErrorSourcePayloadSchema = z
   .object({
-    sourceType: z.enum(['sentry', 'wazuh', 'posthog']),
+    pluginId: z.string().optional(),
+    sourceType: z.enum(PLUGIN_BACKED_ERROR_SOURCE_TYPES),
     name: z.string().min(1),
+    setupValues: handlerPayloadSchema.optional(),
     authToken: z.string().optional(),
     organizationSlug: z.string().optional(),
     organizationId: z.string().optional(),
     projectSlugs: z.array(z.string()).optional(),
     projectIds: z.array(z.string()).optional(),
+    indexPatterns: z.array(z.string()).optional(),
     sentryBaseUrl: z.string().optional(),
     baseUrl: z.string().optional(),
     posthogBaseUrl: z.string().optional(),
@@ -50,12 +69,14 @@ const updateErrorSourcePayloadSchema = z
   .object({
     id: z.string().min(1),
     name: z.string().optional(),
+    setupValues: handlerPayloadSchema.optional(),
     configuration: handlerPayloadSchema.optional(),
     additionalMetadata: handlerPayloadSchema.optional(),
     organizationSlug: z.string().optional(),
     organizationId: z.string().optional(),
     projectSlugs: z.array(z.string()).optional(),
     projectIds: z.array(z.string()).optional(),
+    indexPatterns: z.array(z.string()).optional(),
     sentryBaseUrl: z.string().optional(),
     baseUrl: z.string().optional(),
     posthogBaseUrl: z.string().optional(),
@@ -67,7 +88,9 @@ const updateErrorSourcePayloadSchema = z
 type UpdateErrorSourcePayload = z.infer<typeof updateErrorSourcePayloadSchema>
 const initiateOAuthPayloadSchema = z
   .object({
-    sourceType: z.enum(['sentry', 'posthog']).optional().default('sentry'),
+    pluginId: z.string().optional(),
+    sourceType: z.enum(OAUTH_PLUGIN_ERROR_SOURCE_TYPES).optional().default('sentry'),
+    setupValues: handlerPayloadSchema.optional(),
     clientId: z.string().optional(),
     redirectUri: z.string().optional(),
     baseUrl: z.string().optional(),
@@ -78,7 +101,9 @@ const initiateOAuthPayloadSchema = z
 type InitiateOAuthPayload = z.infer<typeof initiateOAuthPayloadSchema>
 const completeOAuthPayloadSchema = z
   .object({
-    sourceType: z.enum(['sentry', 'posthog']).optional().default('sentry'),
+    pluginId: z.string().optional(),
+    sourceType: z.enum(OAUTH_PLUGIN_ERROR_SOURCE_TYPES).optional().default('sentry'),
+    setupValues: handlerPayloadSchema.optional(),
     code: z.string().min(1),
     state: z.string().min(1),
     clientId: z.string().optional(),
@@ -91,6 +116,7 @@ const completeOAuthPayloadSchema = z
     projectIds: z.array(z.string()).optional(),
     baseUrl: z.string().optional(),
     posthogBaseUrl: z.string().optional(),
+    additionalMetadata: handlerPayloadSchema.optional(),
     logLevelThreshold: z.enum(['error', 'warning', 'info', 'debug']).optional(),
     syncEnabled: z.boolean().optional(),
     autoDiagnosisEnabled: z.boolean().optional(),
@@ -121,6 +147,14 @@ type DesktopOauthManagerServiceClass = new (
   db: DbClient,
   providerFactory: ErrorSourceProviderFactory,
 ) => DesktopOauthManagerService
+
+type PostHogProjectProvider = ErrorSourceProvider & {
+  getProject(input: {
+    accessToken: string
+    projectId: string
+    signal?: AbortSignal
+  }): Promise<ProjectSummary>
+}
 
 let syncScheduler: SyncSchedulerService | null = null
 let interruptedSyncRecovery: Promise<void> | null = null
@@ -182,6 +216,24 @@ function applyOptionalOAuthConfiguration(
   }
   if (values.oauthRedirectUri !== undefined) {
     configuration.oauthRedirectUri = values.oauthRedirectUri
+  }
+}
+
+function readOAuthConfigurationOverrides(
+  configuration: Record<string, unknown>,
+): {
+  oauthClientId?: string
+  oauthClientSecret?: string
+  oauthRedirectUri?: string
+} {
+  const oauthClientId = readOptionalTrimmed(configuration.oauthClientId)
+  const oauthClientSecret = readOptionalTrimmed(configuration.oauthClientSecret)
+  const oauthRedirectUri = readOptionalTrimmed(configuration.oauthRedirectUri)
+
+  return {
+    ...(oauthClientId === undefined ? {} : { oauthClientId }),
+    ...(oauthClientSecret === undefined ? {} : { oauthClientSecret }),
+    ...(oauthRedirectUri === undefined ? {} : { oauthRedirectUri }),
   }
 }
 
@@ -254,6 +306,143 @@ function readSourceType(value: unknown): ErrorSourceType | null {
   return null
 }
 
+function readPluginId(value: unknown): string | undefined {
+  const normalized = readOptionalTrimmed(value)
+  if (normalized === undefined || normalized.length === 0) {
+    return undefined
+  }
+
+  return normalized
+}
+
+function readSetupTrimmed(
+  setupValues: Record<string, unknown>,
+  key: string,
+): string | undefined {
+  return readOptionalTrimmed(setupValues[key])
+}
+
+function readSetupStringArray(
+  setupValues: Record<string, unknown>,
+  key: string,
+): string[] {
+  return readStringArray(setupValues[key])
+}
+
+type PersistedPluginSetup = {
+  accessTokenRef?: string
+  configuration: Record<string, unknown>
+}
+
+function readDelimitedStringArray(value: unknown): string[] {
+  if (typeof value === 'string') {
+    return value
+      .split(/[,\n]/g)
+      .map((entry) => entry.trim())
+      .filter((entry) => entry.length > 0)
+  }
+
+  return readStringArray(value)
+}
+
+function readPluginSetupFieldValue(
+  field: DesktopPluginErrorSourceSetupField,
+  setupValues: Record<string, unknown>,
+): unknown {
+  const rawValue = setupValues[field.key]
+
+  if (field.control === 'multiline_list') {
+    const items = readDelimitedStringArray(rawValue)
+    if (items.length === 0) {
+      return undefined
+    }
+
+    return items
+  }
+
+  const normalized = readOptionalTrimmed(rawValue)
+  if (normalized === undefined) {
+    return undefined
+  }
+
+  return normalized
+}
+
+function readPluginErrorSourceSetupFields(
+  pluginRuntime: DesktopPluginRuntimeService,
+  pluginId: string,
+): DesktopPluginErrorSourceSetupField[] {
+  const plugin = pluginRuntime.getPlugin(pluginId)
+  return plugin?.metadata?.errorSource?.setupFields ?? []
+}
+
+function resolvePersistedPluginSetup(
+  pluginRuntime: DesktopPluginRuntimeService,
+  pluginId: string,
+  setupValues: Record<string, unknown>,
+): PersistedPluginSetup {
+  const persisted: PersistedPluginSetup = {
+    configuration: {},
+  }
+
+  for (const field of readPluginErrorSourceSetupFields(pluginRuntime, pluginId)) {
+    const value = readPluginSetupFieldValue(field, setupValues)
+    if (value === undefined) {
+      continue
+    }
+
+    if (field.storage === 'accessTokenRef') {
+      if (typeof value === 'string') {
+        persisted.accessTokenRef = value
+      }
+      continue
+    }
+
+    persisted.configuration[field.configurationKey ?? field.key] = value
+  }
+
+  return persisted
+}
+
+function readSourcePluginId(source: ErrorSource): string {
+  const pluginId = readPluginId(source.additionalMetadata?.pluginId)
+  if (pluginId !== undefined) {
+    return pluginId
+  }
+
+  return source.sourceType
+}
+
+function mergeErrorSourceAdditionalMetadata(
+  additionalMetadata: Record<string, unknown> | null | undefined,
+  pluginId: string | undefined,
+): Record<string, unknown> | null {
+  const nextMetadata =
+    additionalMetadata === null || additionalMetadata === undefined
+      ? {}
+      : { ...additionalMetadata }
+
+  if (pluginId !== undefined && pluginId.length > 0) {
+    nextMetadata.pluginId = pluginId
+  }
+
+  if (Object.keys(nextMetadata).length === 0) {
+    return null
+  }
+
+  return nextMetadata
+}
+
+function hasPostHogProjectAccess(
+  provider: unknown,
+): provider is PostHogProjectProvider {
+  if (provider === null || provider === undefined) {
+    return false
+  }
+
+  return typeof (provider as { getProject?: unknown }).getProject === 'function'
+}
+
 function resolveStoredErrorSourceToken(
   value: string | null | undefined,
 ): string {
@@ -261,8 +450,10 @@ function resolveStoredErrorSourceToken(
 }
 
 function toRendererErrorSource(source: ErrorSource) {
+  const pluginId = readPluginId(source.additionalMetadata?.pluginId)
   return {
     id: source.id,
+    pluginId,
     sourceType: source.sourceType,
     name: source.name,
     syncEnabled: source.syncEnabled,
@@ -303,6 +494,147 @@ function readStringArray(value: unknown): string[] {
   })
 }
 
+function readWazuhConnectionIndexPattern(
+  configuration: ErrorSourceConfiguration,
+): string | undefined {
+  const indexPatterns = readStringArray(configuration.indexPatterns)
+  if (indexPatterns.length > 0) {
+    return indexPatterns.join(',')
+  }
+
+  const legacyProjectSlugs = readStringArray(configuration.projectSlugs)
+  if (legacyProjectSlugs.length > 0) {
+    return legacyProjectSlugs.join(',')
+  }
+
+  return undefined
+}
+
+function buildWazuhPluginAuth(source: ErrorSource): Record<string, unknown> {
+  const auth: Record<string, unknown> = {}
+  const baseUrl = readOptionalTrimmed(source.configuration.baseUrl)
+  if (baseUrl !== undefined) {
+    auth.indexUrl = baseUrl.replace(/\/+$/, '')
+  }
+
+  const accessToken = resolveStoredErrorSourceToken(source.accessTokenRef)
+  if (accessToken.length > 0) {
+    auth.indexPassword = accessToken
+  }
+
+  return auth
+}
+
+function buildPluginAuthFromSource(
+  source: ErrorSource,
+  pluginRuntime: DesktopPluginRuntimeService,
+): Record<string, unknown> {
+  const pluginId = readSourcePluginId(source)
+  const auth: Record<string, unknown> = {}
+  const accessToken = resolveStoredErrorSourceToken(source.accessTokenRef)
+
+  for (const field of readPluginErrorSourceSetupFields(pluginRuntime, pluginId)) {
+    if (field.storage === 'accessTokenRef') {
+      if (accessToken.length > 0) {
+        auth[field.key] = accessToken
+      }
+      continue
+    }
+
+    const configurationKey = field.configurationKey ?? field.key
+    const value = (source.configuration as Record<string, unknown>)[configurationKey]
+    if (value === undefined) {
+      continue
+    }
+
+    auth[field.key] = value
+    if (configurationKey !== field.key) {
+      auth[configurationKey] = value
+    }
+  }
+
+  return auth
+}
+
+function readPluginIssueCount(data: unknown): number {
+  if (
+    data !== null &&
+    typeof data === 'object' &&
+    !Array.isArray(data) &&
+    typeof (data as { issueCount?: unknown }).issueCount === 'number'
+  ) {
+    const issueCount = (data as { issueCount: number }).issueCount
+    if (Number.isFinite(issueCount) && issueCount >= 0) {
+      return Math.trunc(issueCount)
+    }
+  }
+
+  return 0
+}
+
+function readPluginIssueBatch(data: unknown): {
+  issues: unknown[]
+  hasMore: boolean
+} | null {
+  if (data === null || typeof data !== 'object' || Array.isArray(data)) {
+    return null
+  }
+
+  const rawIssues = (data as { issues?: unknown }).issues
+  if (!Array.isArray(rawIssues)) {
+    return null
+  }
+
+  return {
+    issues: rawIssues,
+    hasMore: (data as { hasMore?: unknown }).hasMore === true,
+  }
+}
+
+function buildGenericPluginConnectionInput(source: ErrorSource): Record<string, unknown> {
+  const input: Record<string, unknown> = {
+    query: '*',
+    limit: 1,
+    sourceId: source.id,
+    sourceName: source.name,
+    sourceType: source.sourceType,
+  }
+
+  const orgSlug = readOptionalTrimmed(source.configuration.orgSlug)
+  if (orgSlug !== undefined) {
+    input.orgSlug = orgSlug
+  }
+
+  const projectIds = readStringArray(source.configuration.projectIds)
+  if (projectIds.length > 0) {
+    input.projectIds = projectIds
+  }
+
+  const projectSlugs = readStringArray(source.configuration.projectSlugs)
+  if (projectSlugs.length > 0) {
+    input.projectSlugs = projectSlugs
+  }
+
+  const indexPattern = readWazuhConnectionIndexPattern(source.configuration)
+  if (indexPattern !== undefined) {
+    input.indexPattern = indexPattern
+  }
+
+  return input
+}
+
+function isMissingWazuhPluginAuthError(error: unknown): boolean {
+  if (!(error instanceof Error)) {
+    return false
+  }
+
+  return (
+    error.message.includes('indexUrl') ||
+    error.message.includes('indexUsername') ||
+    error.message.includes('indexPassword')
+  )
+}
+
 function isPostHogProjectScopedEndpointError(error: unknown): boolean {
   return error instanceof Error && error.message.includes(POSTHOG_PROJECT_SCOPED_ENDPOINT_ERROR)
 }
@@ -339,12 +671,15 @@ export function createDesktopErrorSourcesHandlers(
   db: DbClient,
   dependencies: {
     OauthManagerService: DesktopOauthManagerServiceClass
+    pluginRuntime?: DesktopPluginRuntimeService
   },
 ): Record<string, (payload: unknown) => Promise<unknown>> {
   const sourcesRepository = new SqliteErrorSourcesRepositoryAdapter(db)
   const issuesRepository = new SqliteErrorIssuesRepositoryAdapter(db)
   const eventsRepository = new SqliteErrorEventsRepositoryAdapter(db)
-  const providerFactory = new ErrorSourceProviderFactory()
+  const pluginRuntime =
+    dependencies.pluginRuntime ?? createDesktopNodePluginRuntimeService()
+  const providerFactory = new ErrorSourceProviderFactory(pluginRuntime)
   const oauthManager = new dependencies.OauthManagerService(db, providerFactory)
   const syncService = new ErrorSourceSyncService(
     db,
@@ -352,6 +687,7 @@ export function createDesktopErrorSourcesHandlers(
     issuesRepository,
     eventsRepository,
     providerFactory,
+    pluginRuntime,
   )
   const syncRecovery = recoverInterruptedSyncs(sourcesRepository)
 
@@ -362,7 +698,10 @@ export function createDesktopErrorSourcesHandlers(
     })
   }
 
-  function getPostHogProviderForBaseUrl(baseUrl: string): PostHogProviderAdapter {
+  function getPostHogProviderForBaseUrl(
+    baseUrl: string,
+    pluginId = 'posthog',
+  ): PostHogProjectProvider {
     // Re-run the allowlist on the caller-supplied URL here too - the call
     // sites should already validate, but treating this helper as a single
     // chokepoint keeps the invariant locally enforceable and means a future
@@ -370,12 +709,14 @@ export function createDesktopErrorSourcesHandlers(
     const validated = validatePostHogBaseUrl(baseUrl)
     const base = getProviderForSource(providerFactory, {
       sourceType: 'posthog',
+      additionalMetadata: { pluginId },
       configuration: { posthogBaseUrl: validated },
     })
-    if (base instanceof PostHogProviderAdapter) {
+    if (hasPostHogProjectAccess(base)) {
       return base
     }
-    return new PostHogProviderAdapter({ apiBase: validated })
+
+    throw new Error('PostHog provider does not support project-based lookups')
   }
 
   function filterProbeOrganizations<T extends { slug: string }>(
@@ -404,6 +745,7 @@ export function createDesktopErrorSourcesHandlers(
       const requestedOrgSlug = readOptionalTrimmed(
         payload.organizationSlug ?? payload.organizationId,
       )
+      const pluginId = readPluginId(payload.pluginId) ?? sourceType
       const baseUrl = readOptionalTrimmed(
         payload.baseUrl ?? payload.posthogBaseUrl,
       )
@@ -417,7 +759,10 @@ export function createDesktopErrorSourcesHandlers(
 
       try {
         if (sourceType === 'sentry') {
-          const provider = providerFactory.getProvider('sentry')
+          const provider = getProviderForSource(providerFactory, {
+            sourceType,
+            additionalMetadata: { pluginId },
+          })
           const orgs = await provider.listOrganizations(authToken)
           const visibleOrgs = filterProbeOrganizations(orgs, requestedOrgSlug)
 
@@ -448,9 +793,12 @@ export function createDesktopErrorSourcesHandlers(
         }
 
         // posthog
-        const provider = getPostHogProviderForBaseUrl(
-          validatePostHogBaseUrl(baseUrl),
-        )
+        const validatedBaseUrl = validatePostHogBaseUrl(baseUrl)
+        const provider = getProviderForSource(providerFactory, {
+          sourceType,
+          additionalMetadata: { pluginId },
+          configuration: { posthogBaseUrl: validatedBaseUrl },
+        })
         const orgs = await provider.listOrganizations(authToken)
         const visibleOrgs = filterProbeOrganizations(orgs, requestedOrgSlug)
 
@@ -506,13 +854,36 @@ export function createDesktopErrorSourcesHandlers(
     'errorSources:create': async (rawPayload: unknown) => {
       const payload = readCreateErrorSourcePayload(rawPayload)
       const sourceType = payload.sourceType
-      const authToken = payload.authToken?.trim() ?? ''
+      const pluginId = readPluginId(payload.pluginId) ?? sourceType
+      const setupValues = readPayloadRecord(payload.setupValues) ?? {}
+      const persistedSetup = resolvePersistedPluginSetup(
+        pluginRuntime,
+        pluginId,
+        setupValues,
+      )
+      const authToken =
+        readSetupTrimmed(setupValues, 'authToken') ??
+        payload.authToken?.trim() ??
+        persistedSetup.accessTokenRef ??
+        ''
       const sourceName = payload.name
 
       if (sourceType === 'sentry') {
-        const organizationSlug = payload.organizationSlug?.trim() ?? ''
-        const projectSlugs = payload.projectSlugs ?? []
-        const sentryBaseUrl = readOptionalTrimmed(payload.sentryBaseUrl)
+        const organizationSlug =
+          readSetupTrimmed(setupValues, 'organizationSlug') ??
+          readSetupTrimmed(setupValues, 'organizationId') ??
+          readOptionalTrimmed(persistedSetup.configuration.orgSlug) ??
+          payload.organizationSlug?.trim() ??
+          ''
+        const projectSlugs =
+          readSetupStringArray(setupValues, 'projectSlugs').length > 0
+            ? readSetupStringArray(setupValues, 'projectSlugs')
+            : readStringArray(persistedSetup.configuration.projectSlugs).length > 0
+              ? readStringArray(persistedSetup.configuration.projectSlugs)
+              : payload.projectSlugs ?? []
+        const sentryBaseUrl = readOptionalTrimmed(
+          setupValues.baseUrl ?? payload.sentryBaseUrl,
+        )
 
         if (authToken.length === 0) {
           log.warn('[error-sources] create: missing authToken')
@@ -528,8 +899,14 @@ export function createDesktopErrorSourcesHandlers(
         )
 
         try {
-          const additionalConfig = payload.configuration ?? {}
-          const provider = providerFactory.getProvider(sourceType)
+          const additionalConfig = {
+            ...persistedSetup.configuration,
+            ...(payload.configuration ?? {}),
+          }
+          const provider = getProviderForSource(providerFactory, {
+            sourceType,
+            additionalMetadata: { pluginId },
+          })
           const projects = await provider.listProjects({
             accessToken: authToken,
             orgSlug: organizationSlug,
@@ -548,7 +925,10 @@ export function createDesktopErrorSourcesHandlers(
           const created = await sourcesRepository.create({
             sourceType,
             name: sourceName,
-            additionalMetadata: readPayloadRecord(payload.additionalMetadata),
+            additionalMetadata: mergeErrorSourceAdditionalMetadata(
+              readPayloadRecord(payload.additionalMetadata),
+              pluginId,
+            ),
             accessTokenRef: authToken,
             refreshTokenRef: null,
             expiresAt: null,
@@ -581,12 +961,28 @@ export function createDesktopErrorSourcesHandlers(
           throw new Error('authToken is required')
         }
 
-        const baseUrl = validatePostHogBaseUrl(payload.baseUrl ?? payload.posthogBaseUrl)
-        const requestedProjectIds = readStringArray(
-          payload.projectIds ?? payload.projectSlugs,
+        const baseUrl = validatePostHogBaseUrl(
+          setupValues.baseUrl ??
+            payload.baseUrl ??
+            payload.posthogBaseUrl ??
+            persistedSetup.configuration.posthogBaseUrl,
         )
+        const requestedProjectIds =
+          readSetupStringArray(setupValues, 'projectIds').length > 0
+            ? readSetupStringArray(setupValues, 'projectIds')
+            : readSetupStringArray(setupValues, 'projectSlugs').length > 0
+              ? readSetupStringArray(setupValues, 'projectSlugs')
+              : readStringArray(persistedSetup.configuration.projectIds).length > 0
+                ? readStringArray(persistedSetup.configuration.projectIds)
+                : readStringArray(persistedSetup.configuration.projectSlugs).length > 0
+                  ? readStringArray(persistedSetup.configuration.projectSlugs)
+              : readStringArray(payload.projectIds ?? payload.projectSlugs)
         const requestedOrgId = readOptionalTrimmed(
-          payload.organizationId ?? payload.organizationSlug,
+          setupValues.organizationId ??
+            setupValues.organizationSlug ??
+            persistedSetup.configuration.orgSlug ??
+            payload.organizationId ??
+            payload.organizationSlug,
         )
 
         log.info(
@@ -594,7 +990,7 @@ export function createDesktopErrorSourcesHandlers(
         )
 
         try {
-          const provider = getPostHogProviderForBaseUrl(baseUrl)
+          const provider = getPostHogProviderForBaseUrl(baseUrl, pluginId)
           let organizationId = requestedOrgId
           let organizationName: string | undefined
           let projects: Awaited<ReturnType<typeof provider.listProjects>> | undefined
@@ -750,12 +1146,16 @@ export function createDesktopErrorSourcesHandlers(
           const created = await sourcesRepository.create({
             sourceType,
             name: sourceName,
-            additionalMetadata: readPayloadRecord(payload.additionalMetadata),
+            additionalMetadata: mergeErrorSourceAdditionalMetadata(
+              readPayloadRecord(payload.additionalMetadata),
+              pluginId,
+            ),
             accessTokenRef: authToken,
             refreshTokenRef: null,
             expiresAt: null,
             grantedScopes: [],
             configuration: {
+              ...persistedSetup.configuration,
               orgSlug: organizationId,
               orgName: organizationName,
               projectIds: resolvedProjectIds,
@@ -777,16 +1177,61 @@ export function createDesktopErrorSourcesHandlers(
         }
       }
 
-      try {
+      if (sourceType === 'wazuh') {
+        const baseUrl = readOptionalTrimmed(
+          setupValues.baseUrl ??
+            payload.baseUrl ??
+            persistedSetup.configuration.baseUrl,
+        )
+        const indexPatterns =
+          readSetupStringArray(setupValues, 'indexPatterns').length > 0
+            ? readSetupStringArray(setupValues, 'indexPatterns')
+            : readStringArray(persistedSetup.configuration.indexPatterns).length > 0
+              ? readStringArray(persistedSetup.configuration.indexPatterns)
+              : readStringArray(payload.indexPatterns)
+
         const created = await sourcesRepository.create({
           sourceType,
           name: sourceName,
-          additionalMetadata: readPayloadRecord(payload.additionalMetadata),
+          additionalMetadata: mergeErrorSourceAdditionalMetadata(
+            readPayloadRecord(payload.additionalMetadata),
+            pluginId,
+          ),
           accessTokenRef: nullableNonEmptyString(authToken),
           refreshTokenRef: null,
           expiresAt: null,
           grantedScopes: [],
-          configuration: readPayloadRecord(payload.configuration) ?? {},
+          configuration: {
+            ...persistedSetup.configuration,
+            ...(readPayloadRecord(payload.configuration) ?? {}),
+            ...(baseUrl === undefined ? {} : { baseUrl }),
+            ...(indexPatterns.length === 0 ? {} : { indexPatterns }),
+          },
+          logLevelThreshold: toLogLevelThreshold(payload.logLevelThreshold),
+          syncEnabled: payload.syncEnabled !== false,
+          autoDiagnosisEnabled: payload.autoDiagnosisEnabled === true,
+        })
+        return toRendererErrorSource(created)
+      }
+
+      try {
+        const created = await sourcesRepository.create({
+          sourceType,
+          name: sourceName,
+          additionalMetadata: mergeErrorSourceAdditionalMetadata(
+            readPayloadRecord(payload.additionalMetadata),
+            pluginId,
+          ),
+          accessTokenRef: nullableNonEmptyString(
+            authToken.length > 0 ? authToken : persistedSetup.accessTokenRef ?? '',
+          ),
+          refreshTokenRef: null,
+          expiresAt: null,
+          grantedScopes: [],
+          configuration: {
+            ...persistedSetup.configuration,
+            ...(readPayloadRecord(payload.configuration) ?? {}),
+          },
           logLevelThreshold: toLogLevelThreshold(payload.logLevelThreshold),
           syncEnabled: payload.syncEnabled !== false,
           autoDiagnosisEnabled: payload.autoDiagnosisEnabled === true,
@@ -802,12 +1247,25 @@ export function createDesktopErrorSourcesHandlers(
       const payload = readUpdateErrorSourcePayload(rawPayload)
       const existing = await sourcesRepository.findById(payload.id)
       if (existing === null) throw new Error(`Error source ${payload.id} not found`)
+      const setupValues = readPayloadRecord(payload.setupValues) ?? {}
+      const pluginId = readSourcePluginId(existing)
+      const persistedSetup = resolvePersistedPluginSetup(
+        pluginRuntime,
+        pluginId,
+        setupValues,
+      )
 
       let nextConfiguration = { ...existing.configuration }
       if (payload.configuration !== undefined) {
         nextConfiguration = {
           ...nextConfiguration,
           ...payload.configuration,
+        }
+      }
+      if (Object.keys(persistedSetup.configuration).length > 0) {
+        nextConfiguration = {
+          ...nextConfiguration,
+          ...persistedSetup.configuration,
         }
       }
 
@@ -817,9 +1275,19 @@ export function createDesktopErrorSourcesHandlers(
       if (typeof payload.organizationId === 'string' && payload.organizationId.trim().length > 0) {
         nextConfiguration.orgSlug = payload.organizationId.trim()
       }
+      const setupOrganizationSlug =
+        readSetupTrimmed(setupValues, 'organizationSlug') ??
+        readSetupTrimmed(setupValues, 'organizationId')
+      if (setupOrganizationSlug !== undefined) {
+        nextConfiguration.orgSlug = setupOrganizationSlug
+      }
 
       if (Array.isArray(payload.projectSlugs)) {
         nextConfiguration.projectSlugs = readStringArray(payload.projectSlugs)
+      }
+      const setupProjectSlugs = readSetupStringArray(setupValues, 'projectSlugs')
+      if (setupProjectSlugs.length > 0) {
+        nextConfiguration.projectSlugs = setupProjectSlugs
       }
       if (Array.isArray(payload.projectIds)) {
         const nextProjectIds = readStringArray(payload.projectIds)
@@ -833,6 +1301,32 @@ export function createDesktopErrorSourcesHandlers(
           if (existing.sourceType === 'posthog') {
             nextConfiguration.projectSlugs = nextConfiguration.projectIds
           }
+        }
+      }
+      const setupProjectIds = readSetupStringArray(setupValues, 'projectIds')
+      if (setupProjectIds.length > 0) {
+        nextConfiguration.projectIds = setupProjectIds
+        if (existing.sourceType === 'posthog') {
+          nextConfiguration.projectSlugs = nextConfiguration.projectIds
+        }
+      }
+      if (existing.sourceType === 'wazuh') {
+        const nextIndexPatterns = readStringArray(payload.indexPatterns)
+        if (Array.isArray(payload.indexPatterns)) {
+          nextConfiguration.indexPatterns = nextIndexPatterns
+        }
+        const setupIndexPatterns = readSetupStringArray(setupValues, 'indexPatterns')
+        if (setupIndexPatterns.length > 0) {
+          nextConfiguration.indexPatterns = setupIndexPatterns
+        }
+
+        const nextBaseUrl = readOptionalTrimmed(payload.baseUrl)
+        if (nextBaseUrl !== undefined) {
+          nextConfiguration.baseUrl = nextBaseUrl
+        }
+        const setupBaseUrl = readSetupTrimmed(setupValues, 'baseUrl')
+        if (setupBaseUrl !== undefined) {
+          nextConfiguration.baseUrl = setupBaseUrl
         }
       }
       // Accept either `baseUrl` (the field create/IPC uses) or
@@ -849,8 +1343,22 @@ export function createDesktopErrorSourcesHandlers(
       if (baseUrlInput !== null) {
         nextConfiguration.posthogBaseUrl = validatePostHogBaseUrl(baseUrlInput)
       }
+      const setupBaseUrl = readSetupTrimmed(setupValues, 'baseUrl')
+      if (existing.sourceType === 'posthog' && setupBaseUrl !== undefined) {
+        nextConfiguration.posthogBaseUrl = validatePostHogBaseUrl(setupBaseUrl)
+        baseUrlInput = setupBaseUrl
+      }
 
-      if (existing.sourceType === 'sentry' && (Array.isArray(payload.projectSlugs) || payload.organizationSlug != null)) {
+      if (
+        existing.sourceType === 'sentry' &&
+        (
+          Array.isArray(payload.projectSlugs) ||
+          payload.organizationSlug != null ||
+          readSetupTrimmed(setupValues, 'organizationSlug') !== undefined ||
+          readSetupTrimmed(setupValues, 'organizationId') !== undefined ||
+          readSetupStringArray(setupValues, 'projectSlugs').length > 0
+        )
+      ) {
         const accessToken = resolveStoredErrorSourceToken(existing.accessTokenRef)
         if (accessToken.length === 0) {
           throw new Error('Access token not found for this source')
@@ -863,6 +1371,7 @@ export function createDesktopErrorSourcesHandlers(
 
         const provider = getProviderForSource(providerFactory, {
           sourceType: existing.sourceType,
+          additionalMetadata: existing.additionalMetadata,
           configuration: nextConfiguration,
         })
         const projects = await provider.listProjects({ accessToken, orgSlug })
@@ -913,8 +1422,11 @@ export function createDesktopErrorSourcesHandlers(
       // next sync surfaces a generic "unknown project" failure.
       const posthogProjectIdsChanged =
         existing.sourceType === 'posthog' &&
-        Array.isArray(payload.projectIds) &&
-        readStringArray(payload.projectIds).length > 0
+        (
+          (Array.isArray(payload.projectIds) &&
+            readStringArray(payload.projectIds).length > 0) ||
+          readSetupStringArray(setupValues, 'projectIds').length > 0
+        )
 
       if (posthogHostChanged || posthogOrgChanged || posthogProjectIdsChanged) {
         const accessToken = resolveStoredErrorSourceToken(existing.accessTokenRef)
@@ -924,6 +1436,7 @@ export function createDesktopErrorSourcesHandlers(
 
         const provider = getProviderForSource(providerFactory, {
           sourceType: existing.sourceType,
+          additionalMetadata: existing.additionalMetadata,
           configuration: nextConfiguration,
         })
 
@@ -977,6 +1490,7 @@ export function createDesktopErrorSourcesHandlers(
         id: existing.id,
         name: readOptionalTrimmed(payload.name),
         additionalMetadata: readPayloadRecord(payload.additionalMetadata) ?? undefined,
+        accessTokenRef: persistedSetup.accessTokenRef,
         configuration: nextConfiguration,
         logLevelThreshold: payload.logLevelThreshold,
         syncEnabled: payload.syncEnabled,
@@ -1000,11 +1514,32 @@ export function createDesktopErrorSourcesHandlers(
     'errorSources:initiateOAuth': async (rawPayload: unknown) => {
       const payload = readInitiateOAuthPayload(rawPayload)
       const sourceType = payload.sourceType
+      const pluginId = readPluginId(payload.pluginId)
+      const setupValues = readPayloadRecord(payload.setupValues) ?? {}
+      const persistedSetup = resolvePersistedPluginSetup(
+        pluginRuntime,
+        pluginId ?? sourceType,
+        setupValues,
+      )
+      const oauthConfigOverrides = readOAuthConfigurationOverrides(
+        persistedSetup.configuration,
+      )
+      const baseUrl = readOptionalTrimmed(
+        payload.baseUrl ??
+          payload.posthogBaseUrl ??
+          persistedSetup.configuration.posthogBaseUrl ??
+          persistedSetup.configuration.baseUrl,
+      )
       log.info(`[error-sources] initiateOAuth:start sourceType=${sourceType}`)
       return oauthManager.initiateOAuth(sourceType, {
-        clientId: readOptionalTrimmed(payload.clientId),
-        redirectUri: readOptionalTrimmed(payload.redirectUri),
-        baseUrl: readOptionalTrimmed(payload.baseUrl ?? payload.posthogBaseUrl),
+        pluginId,
+        clientId:
+          readOptionalTrimmed(payload.clientId) ??
+          oauthConfigOverrides.oauthClientId,
+        redirectUri:
+          readOptionalTrimmed(payload.redirectUri) ??
+          oauthConfigOverrides.oauthRedirectUri,
+        baseUrl,
       })
     },
 
@@ -1014,18 +1549,41 @@ export function createDesktopErrorSourcesHandlers(
       const sourceType = payload.sourceType
       const code = payload.code.trim()
       const state = payload.state.trim()
+      const pluginId = readPluginId(payload.pluginId) ?? sourceType
+      const setupValues = readPayloadRecord(payload.setupValues) ?? {}
+      const persistedSetup = resolvePersistedPluginSetup(
+        pluginRuntime,
+        pluginId,
+        setupValues,
+      )
+      const oauthConfigOverrides = readOAuthConfigurationOverrides(
+        persistedSetup.configuration,
+      )
+      const oauthBaseUrl = readOptionalTrimmed(
+        payload.baseUrl ??
+          payload.posthogBaseUrl ??
+          persistedSetup.configuration.posthogBaseUrl ??
+          persistedSetup.configuration.baseUrl,
+      )
 
       log.info(`[error-sources] completeOAuth:start sourceType=${sourceType}`)
-      const oauthClientId = readOptionalTrimmed(payload.clientId)
-      const oauthClientSecret = readOptionalTrimmed(payload.clientSecret)
-      const oauthRedirectUri = readOptionalTrimmed(payload.redirectUri)
+      const oauthClientId =
+        readOptionalTrimmed(payload.clientId) ??
+        oauthConfigOverrides.oauthClientId
+      const oauthClientSecret =
+        readOptionalTrimmed(payload.clientSecret) ??
+        oauthConfigOverrides.oauthClientSecret
+      const oauthRedirectUri =
+        readOptionalTrimmed(payload.redirectUri) ??
+        oauthConfigOverrides.oauthRedirectUri
       const tokenResult = await oauthManager.completeOAuth(sourceType, {
         code,
         state,
+        pluginId,
         clientId: oauthClientId,
         clientSecret: oauthClientSecret,
         redirectUri: oauthRedirectUri,
-        baseUrl: readOptionalTrimmed(payload.baseUrl ?? payload.posthogBaseUrl),
+        baseUrl: oauthBaseUrl,
       })
       try {
         log.info('[error-sources] completeOAuth: token exchange succeeded')
@@ -1035,7 +1593,10 @@ export function createDesktopErrorSourcesHandlers(
         }
 
         if (sourceType === 'sentry') {
-          const provider = providerFactory.getProvider('sentry')
+          const provider = getProviderForSource(providerFactory, {
+            sourceType,
+            additionalMetadata: { pluginId },
+          })
           const organizations = await provider.listOrganizations(accessToken)
           log.info(`[error-sources] completeOAuth: fetched organizations count=${String(organizations.length)}`)
           let orgSlug = ''
@@ -1067,6 +1628,7 @@ export function createDesktopErrorSourcesHandlers(
           }
 
           const configuration: ErrorSourceConfiguration = {
+            ...persistedSetup.configuration,
             orgSlug,
             orgName: organizations.find((org) => org.slug === orgSlug)?.name,
             projectIds: resolvedProjects.projectIds,
@@ -1082,6 +1644,10 @@ export function createDesktopErrorSourcesHandlers(
           const source = await sourcesRepository.create({
             sourceType: 'sentry',
             name: payload.name ?? `Sentry (${orgSlug})`,
+            additionalMetadata: mergeErrorSourceAdditionalMetadata(
+              readPayloadRecord(payload.additionalMetadata),
+              pluginId,
+            ),
             accessTokenRef: tokenResult.accessToken,
             refreshTokenRef: tokenResult.refreshToken,
             expiresAt: tokenResult.expiresAt,
@@ -1099,8 +1665,12 @@ export function createDesktopErrorSourcesHandlers(
         }
 
         // posthog
-        const baseUrl = validatePostHogBaseUrl(payload.baseUrl ?? payload.posthogBaseUrl)
-        const provider = getPostHogProviderForBaseUrl(baseUrl)
+        const baseUrl = validatePostHogBaseUrl(oauthBaseUrl)
+        const provider = getProviderForSource(providerFactory, {
+          sourceType,
+          additionalMetadata: { pluginId },
+          configuration: { posthogBaseUrl: baseUrl },
+        })
         const organizations = await provider.listOrganizations(accessToken)
         log.info(`[error-sources] completeOAuth: fetched PostHog organizations count=${String(organizations.length)}`)
         const requestedOrgSlug = payload.orgSlug?.trim() ?? payload.organizationId?.trim() ?? ''
@@ -1185,6 +1755,7 @@ export function createDesktopErrorSourcesHandlers(
         const resolvedOrgName =
           organizations.find((org) => org.slug === orgSlug)?.name ?? orgSlug
         const configuration: ErrorSourceConfiguration = {
+          ...persistedSetup.configuration,
           orgSlug,
           orgName: organizations.find((org) => org.slug === orgSlug)?.name,
           projectIds: resolvedProjects.map((project) => project.id),
@@ -1201,6 +1772,10 @@ export function createDesktopErrorSourcesHandlers(
         const source = await sourcesRepository.create({
           sourceType: 'posthog',
           name: payload.name ?? `PostHog (${resolvedOrgName})`,
+          additionalMetadata: mergeErrorSourceAdditionalMetadata(
+            readPayloadRecord(payload.additionalMetadata),
+            pluginId,
+          ),
           accessTokenRef: tokenResult.accessToken,
           refreshTokenRef: tokenResult.refreshToken,
           expiresAt: tokenResult.expiresAt,
@@ -1227,24 +1802,129 @@ export function createDesktopErrorSourcesHandlers(
       log.info(`[error-sources] testConnection:start sourceId=${sourceId}`)
       const source = await sourcesRepository.findById(payload.id)
       if (source === null) throw new Error(`Error source ${payload.id} not found`)
+      const pluginId = readSourcePluginId(source)
+      const plugin = pluginRuntime.getPlugin(pluginId)
 
       // Wazuh credentials are optional in the shared schema (they may be
       // provided later via env/system-settings), so a saved Wazuh source
       // with blank fields should return a clean "no creds yet" result here
       // instead of throwing "Access token not found".
       if (source.sourceType === 'wazuh') {
-        const accessToken = resolveStoredErrorSourceToken(source.accessTokenRef)
-        log.info(
-          `[error-sources] testConnection:wazuh sourceId=${source.id} hasToken=${String(accessToken.length > 0)}`,
-        )
-        let organizationCount = 0
-        if (accessToken.length > 0) {
-          organizationCount = 1
+        const indexPattern = readWazuhConnectionIndexPattern(source.configuration)
+        try {
+          const result = await pluginRuntime.executeAction({
+            pluginId,
+            actionId: resolveErrorSourceProviderActionId({
+              runtime: pluginRuntime,
+              pluginId,
+              sourceType: source.sourceType,
+              action: 'searchAlerts',
+            }),
+            auth: buildWazuhPluginAuth(source),
+            input: {
+              query: '*',
+              limit: 1,
+              ...(indexPattern === undefined ? {} : { indexPattern }),
+            },
+          })
+          const issueCount = readPluginIssueCount(result.data)
+          log.info(
+            `[error-sources] testConnection:wazuh sourceId=${source.id} issueCount=${String(issueCount)}`,
+          )
+          return {
+            success: true,
+            provider: source.sourceType,
+            organizationCount: 1,
+            projectCount: issueCount,
+          }
+        } catch (error) {
+          if (isMissingWazuhPluginAuthError(error)) {
+            log.info(
+              `[error-sources] testConnection:wazuh sourceId=${source.id} missing plugin auth`,
+            )
+            return {
+              success: false,
+              provider: source.sourceType,
+              organizationCount: 0,
+              projectCount: 0,
+            }
+          }
+
+          throw error
         }
-        return {
-          success: accessToken.length > 0,
-          provider: source.sourceType,
-          organizationCount,
+      }
+
+      if (
+        source.sourceType !== 'sentry' &&
+        source.sourceType !== 'posthog' &&
+        plugin?.metadata?.errorSource?.sourceType === source.sourceType
+      ) {
+        const providerActions = plugin.metadata.errorSource.providerActions
+        const auth = buildPluginAuthFromSource(source, pluginRuntime)
+        const input = buildGenericPluginConnectionInput(source)
+
+        if (providerActions?.queryIssues !== undefined) {
+          const result = await pluginRuntime.executeAction({
+            pluginId,
+            actionId: resolveErrorSourceProviderActionId({
+              runtime: pluginRuntime,
+              pluginId,
+              sourceType: source.sourceType,
+              action: 'queryIssues',
+            }),
+            auth,
+            input,
+          })
+          const issueBatch = readPluginIssueBatch(result.data)
+          const issueCount = issueBatch?.issues.length ?? readPluginIssueCount(result.data)
+          return {
+            success: true,
+            provider: source.sourceType,
+            organizationCount: readOptionalTrimmed(source.configuration.orgSlug) === undefined ? 0 : 1,
+            projectCount: issueCount,
+          }
+        }
+
+        if (providerActions?.searchAlerts !== undefined) {
+          const result = await pluginRuntime.executeAction({
+            pluginId,
+            actionId: resolveErrorSourceProviderActionId({
+              runtime: pluginRuntime,
+              pluginId,
+              sourceType: source.sourceType,
+              action: 'searchAlerts',
+            }),
+            auth,
+            input,
+          })
+          const issueCount = readPluginIssueCount(result.data)
+          return {
+            success: true,
+            provider: source.sourceType,
+            organizationCount: readOptionalTrimmed(source.configuration.orgSlug) === undefined ? 0 : 1,
+            projectCount: issueCount,
+          }
+        }
+
+        if (providerActions?.listOrganizations !== undefined) {
+          const result = await pluginRuntime.executeAction({
+            pluginId,
+            actionId: resolveErrorSourceProviderActionId({
+              runtime: pluginRuntime,
+              pluginId,
+              sourceType: source.sourceType,
+              action: 'listOrganizations',
+            }),
+            auth,
+            input: {},
+          })
+          const organizations = Array.isArray(result.data) ? result.data : []
+          return {
+            success: true,
+            provider: source.sourceType,
+            organizationCount: organizations.length,
+            projectCount: 0,
+          }
         }
       }
 
@@ -1255,7 +1935,7 @@ export function createDesktopErrorSourcesHandlers(
 
       const provider = getProviderForSource(providerFactory, source)
 
-      if (source.sourceType === 'posthog' && provider instanceof PostHogProviderAdapter) {
+      if (source.sourceType === 'posthog' && hasPostHogProjectAccess(provider)) {
         const projectIds = readStringArray(
           source.configuration.projectIds ?? source.configuration.projectSlugs,
         )

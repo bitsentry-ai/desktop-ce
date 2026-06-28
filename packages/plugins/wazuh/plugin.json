@@ -1,0 +1,149 @@
+{
+  "id": "wazuh",
+  "name": "Wazuh",
+  "version": "desktop-runtime-v1",
+  "description": "Typed desktop plugin that exposes bounded Wazuh alert index queries through manifest-defined actions.",
+  "metadata": {
+    "errorSource": {
+      "sourceType": "wazuh",
+      "setupFields": [
+        {
+          "key": "baseUrl",
+          "target": "baseUrl",
+          "storage": "configuration",
+          "configurationKey": "baseUrl",
+          "label": "API Base URL",
+          "placeholder": "https://wazuh.example.com:9200",
+          "description": "Optional OpenSearch index base URL. Leave blank when the desktop runtime is configured elsewhere.",
+          "required": false,
+          "control": "text"
+        },
+        {
+          "key": "authToken",
+          "target": "authToken",
+          "storage": "accessTokenRef",
+          "label": "Auth Token",
+          "placeholder": "OpenSearch password or token",
+          "description": "Optional credential used for bounded alert-index queries.",
+          "required": false,
+          "control": "password"
+        },
+        {
+          "key": "indexPatterns",
+          "target": "indexPatterns",
+          "storage": "configuration",
+          "configurationKey": "indexPatterns",
+          "label": "Index Patterns",
+          "placeholder": "wazuh-alerts-4.x-*",
+          "description": "Optional index patterns used for sync and runbook query defaults.",
+          "required": false,
+          "control": "multiline_list"
+        }
+      ]
+    }
+  },
+  "auth": {
+    "fields": [
+      {
+        "key": "indexUrl",
+        "label": "Index URL",
+        "description": "OpenSearch index base URL, for example https://wazuh.example.com:9200.",
+        "type": "string",
+        "required": false
+      },
+      {
+        "key": "indexUsername",
+        "label": "Index Username",
+        "description": "Username used for the Wazuh/OpenSearch index API.",
+        "type": "string",
+        "required": false
+      },
+      {
+        "key": "indexPassword",
+        "label": "Index Password",
+        "description": "Password used for the Wazuh/OpenSearch index API.",
+        "type": "string",
+        "required": false,
+        "secret": true
+      }
+    ]
+  },
+  "actions": [
+    {
+      "id": "search_alerts",
+      "title": "Search Alerts",
+      "description": "Query Wazuh alert indexes with a bounded read-only OpenSearch search request.",
+      "riskLevel": "read",
+      "fields": [
+        {
+          "key": "query",
+          "label": "Query",
+          "type": "string",
+          "required": true
+        },
+        {
+          "key": "limit",
+          "label": "Limit",
+          "type": "number",
+          "required": false
+        },
+        {
+          "key": "offset",
+          "label": "Offset",
+          "description": "Optional page offset for bounded sync or large alert result sets.",
+          "type": "number",
+          "required": false
+        },
+        {
+          "key": "indexPattern",
+          "label": "Index Pattern",
+          "description": "Optional Wazuh index pattern such as wazuh-alerts-4.x-*.",
+          "type": "string",
+          "required": false
+        },
+        {
+          "key": "since",
+          "label": "Since",
+          "description": "Optional lower bound on @timestamp for bounded sync reads.",
+          "type": "string",
+          "required": false
+        },
+        {
+          "key": "until",
+          "label": "Until",
+          "description": "Optional upper bound on @timestamp for bounded sync reads.",
+          "type": "string",
+          "required": false
+        }
+      ],
+      "transport": {
+        "kind": "builtin"
+      }
+    }
+  ],
+  "triggers": [
+    {
+      "id": "alert_detected",
+      "title": "Alert Detected",
+      "description": "Poll-driven trigger for newly detected Wazuh alerts in a configured index pattern.",
+      "kind": "poll",
+      "eventTypes": [
+        "alert.detected"
+      ],
+      "fields": [
+        {
+          "key": "indexPattern",
+          "label": "Index Pattern",
+          "type": "string",
+          "required": false
+        },
+        {
+          "key": "query",
+          "label": "Query Filter",
+          "type": "string",
+          "required": false
+        }
+      ]
+    }
+  ]
+}

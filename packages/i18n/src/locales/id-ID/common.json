@@ -1500,5 +1500,6 @@
   "common.useVulnerabilityNotifications.severity": "Tingkat Keparahan:",
   "common.results.noResultsYetRunThisRunbook": "Belum ada hasil. Jalankan runbook ini untuk melihat hasil di sini.",
   "common.results.noRuntimeParameterValuesCaptured": "Tidak ada nilai parameter runtime yang terekam untuk eksekusi ini.",
-  "common.results.noInputMetadataCaptured": "Tidak ada metadata input yang terekam untuk langkah ini."
+  "common.results.noInputMetadataCaptured": "Tidak ada metadata input yang terekam untuk langkah ini.",
+  "common.incidentArtifactsRail.actionType.plugin": "Plugin"
 }

@@ -5,6 +5,8 @@ import type {
   CreateErrorSourceInput,
   ErrorSourceRow,
   ErrorSourceSyncResult,
+  PluginActionExecutionResult,
+  PluginManifest,
   UpdateErrorSourceInput,
   GlobalVariable,
   GlobalVariableInput,
@@ -266,6 +268,43 @@ export function createDesktopLocalBitsentryServices({
     },
   }
 
+  const pluginsService = {
+    async list(): Promise<PluginManifest[]> {
+      const response = await ipcInvoke<{ data: PluginManifest[] }>('plugins:list', {})
+      if (Array.isArray(response.data)) {
+        return response.data
+      }
+
+      return []
+    },
+    async get(pluginId: string): Promise<PluginManifest | null> {
+      return ipcInvoke<PluginManifest | null>('plugins:get', { pluginId })
+    },
+    async getStoredAuth(pluginId: string): Promise<Record<string, unknown>> {
+      return ipcInvoke<Record<string, unknown>>('plugins:getStoredAuth', { pluginId })
+    },
+    async updateStoredAuth(
+      pluginId: string,
+      auth: Record<string, unknown>,
+    ): Promise<Record<string, unknown>> {
+      return ipcInvoke<Record<string, unknown>>('plugins:updateStoredAuth', {
+        pluginId,
+        auth,
+      })
+    },
+    async clearStoredAuth(pluginId: string): Promise<void> {
+      await ipcInvoke('plugins:clearStoredAuth', { pluginId })
+    },
+    async execute(input: {
+      pluginId: string
+      actionId: string
+      auth?: Record<string, unknown>
+      input?: Record<string, unknown>
+    }): Promise<PluginActionExecutionResult> {
+      return ipcInvoke<PluginActionExecutionResult>('plugins:execute', input)
+    },
+  }
+
   return {
     settings: {
       async getSystemSettings() {
@@ -308,6 +347,7 @@ export function createDesktopLocalBitsentryServices({
     },
 
     errorSources: errorSourcesService,
+    plugins: pluginsService,
 
     llmProviders: {
       async listProviders(): Promise<LLMProviderDto[]> {

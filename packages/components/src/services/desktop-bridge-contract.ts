@@ -1,5 +1,5 @@
 import type { AgentThreadSnapshot } from "../chat/types";
-import type { AgentEvent } from "./contracts";
+import type { AgentEvent, ErrorSourceType } from "./contracts";
 
 export interface DesktopOAuthCallbackPayload {
   url: string;
@@ -129,14 +129,14 @@ export interface DesktopRunbookTriggerContext {
   needLabel?: string;
   sourceId?: string;
   sourceName?: string;
-  sourceType?: "sentry" | "wazuh" | "posthog";
+  sourceType?: ErrorSourceType;
   incidentThreadId?: string;
 }
 
 export interface DesktopRunbookExecutionStep {
   actionId: string;
   order: number;
-  type: "shell" | "llm" | "http" | "external_source";
+  type: "shell" | "llm" | "http" | "plugin" | "external_source";
   title: string;
   status: "pending" | "running" | "completed" | "failed" | "cancelled";
   startedAt?: string;

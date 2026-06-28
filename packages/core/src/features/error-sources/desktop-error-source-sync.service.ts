@@ -26,6 +26,14 @@ import {
   isCompactExternalSourceTelemetryPayload,
   summarizeExternalSourcePayload,
 } from './desktop-external-source-telemetry-storage'
+import {
+  createDesktopNodePluginRuntimeService,
+} from '../plugins/node'
+import type {
+  DesktopPluginRuntimeService,
+} from '../plugins'
+import type { DesktopPluginErrorSourceSetupField } from '../plugins/plugins.types'
+import { resolveErrorSourceProviderActionId } from './desktop-plugin-error-source-actions'
 
 type ExternalPayloadRecord = Record<string, unknown>
 
@@ -74,6 +82,9 @@ const MAX_SENTRY_ISSUE_PAGES = 1
 const MAX_SENTRY_ISSUES_PER_PAGE = 20
 const MAX_SENTRY_EVENT_PAGES_PER_ISSUE = 1
 const MAX_SENTRY_TOTAL_EVENT_PAGES = 20
+const MAX_GENERIC_PLUGIN_ISSUE_PAGES = 10
+const MAX_GENERIC_PLUGIN_ISSUES_PER_PAGE = 100
+const MAX_GENERIC_PLUGIN_EVENT_PAGES_PER_ISSUE = 10
 
 function readRecord(value: unknown): ExternalPayloadRecord | null {
   const parsed = externalPayloadRecordSchema.safeParse(value)
@@ -280,6 +291,381 @@ function toIsoOrNow(value: unknown): string {
   return new Date().toISOString()
 }
 
+function readStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return []
+  }
+
+  return value
+    .filter((item): item is string => typeof item === 'string')
+    .map((item) => item.trim())
+    .filter((item) => item.length > 0)
+}
+
+function readWazuhIndexPattern(source: ErrorSource): string | undefined {
+  const indexPatterns = readStringArray(source.configuration.indexPatterns)
+  if (indexPatterns.length > 0) {
+    return indexPatterns.join(',')
+  }
+
+  const legacyProjectSlugs = readStringArray(source.configuration.projectSlugs)
+  if (legacyProjectSlugs.length > 0) {
+    return legacyProjectSlugs.join(',')
+  }
+
+  return undefined
+}
+
+function buildWazuhPluginAuth(source: ErrorSource): Record<string, unknown> {
+  const auth: Record<string, unknown> = {}
+  const indexUrl = readOptionalString(source.configuration.baseUrl)
+  if (indexUrl !== null) {
+    auth.indexUrl = indexUrl.replace(/\/+$/, '')
+  }
+
+  const indexPassword = readOptionalString(source.accessTokenRef)
+  if (indexPassword !== null) {
+    auth.indexPassword = indexPassword
+  }
+
+  return auth
+}
+
+function readSourcePluginId(source: ErrorSource): string {
+  const pluginId = source.additionalMetadata?.pluginId
+  if (typeof pluginId === 'string' && pluginId.trim().length > 0) {
+    return pluginId.trim()
+  }
+
+  return source.sourceType
+}
+
+function readPluginErrorSourceSetupFields(
+  pluginRuntime: DesktopPluginRuntimeService,
+  pluginId: string,
+): DesktopPluginErrorSourceSetupField[] {
+  return pluginRuntime.getPlugin(pluginId)?.metadata?.errorSource?.setupFields ?? []
+}
+
+function buildPluginAuthFromSource(
+  source: ErrorSource,
+  pluginRuntime: DesktopPluginRuntimeService,
+): Record<string, unknown> {
+  const pluginId = readSourcePluginId(source)
+  const auth: Record<string, unknown> = {}
+  const accessToken = source.accessTokenRef?.trim()
+
+  for (const field of readPluginErrorSourceSetupFields(pluginRuntime, pluginId)) {
+    if (field.storage === 'accessTokenRef') {
+      if (accessToken !== undefined && accessToken.length > 0) {
+        auth[field.key] = accessToken
+      }
+      continue
+    }
+
+    const configurationKey = field.configurationKey ?? field.key
+    const value = (source.configuration as Record<string, unknown>)[configurationKey]
+    if (value === undefined) {
+      continue
+    }
+
+    auth[field.key] = value
+    if (configurationKey !== field.key) {
+      auth[configurationKey] = value
+    }
+  }
+
+  return auth
+}
+
+function buildGenericPluginSyncInput(args: {
+  source: ErrorSource
+  query: string
+  limit: number
+  cursor?: string
+  since?: string
+  until?: string
+}): Record<string, unknown> {
+  const { source, query, limit, cursor, since, until } = args
+  const input: Record<string, unknown> = {
+    query,
+    limit,
+    sourceId: source.id,
+    sourceName: source.name,
+    sourceType: source.sourceType,
+  }
+
+  const orgSlug = readOptionalString(source.configuration.orgSlug)
+  if (orgSlug !== null) {
+    input.orgSlug = orgSlug
+  }
+
+  const projectIds = readStringArray(source.configuration.projectIds)
+  if (projectIds.length > 0) {
+    input.projectIds = projectIds
+  }
+
+  const projectSlugs = readStringArray(source.configuration.projectSlugs)
+  if (projectSlugs.length > 0) {
+    input.projectSlugs = projectSlugs
+  }
+
+  const indexPattern = readWazuhIndexPattern(source)
+  if (indexPattern !== undefined) {
+    input.indexPattern = indexPattern
+  }
+
+  if (cursor !== undefined && cursor.length > 0) {
+    input.cursor = cursor
+  }
+  if (since !== undefined) {
+    input.since = since
+  }
+  if (until !== undefined) {
+    input.until = until
+  }
+
+  return input
+}
+
+function readPluginIssueBatch(data: unknown): {
+  issues: ExternalPayloadRecord[]
+  hasMore: boolean
+  nextCursor?: string
+} | null {
+  if (data === null || typeof data !== 'object' || Array.isArray(data)) {
+    return null
+  }
+
+  const rawIssues = (data as { issues?: unknown }).issues
+  if (!Array.isArray(rawIssues)) {
+    return null
+  }
+
+  const issues = readRecordArray(rawIssues)
+  const nextCursor = readOptionalString((data as { nextCursor?: unknown }).nextCursor)
+
+  return {
+    issues,
+    hasMore: (data as { hasMore?: unknown }).hasMore === true,
+    ...(nextCursor === null ? {} : { nextCursor }),
+  }
+}
+
+function readPluginEventBatch(data: unknown): {
+  events: ExternalPayloadRecord[]
+  hasMore: boolean
+  nextCursor?: string
+} | null {
+  if (data === null || typeof data !== 'object' || Array.isArray(data)) {
+    return null
+  }
+
+  const rawEvents = (data as { events?: unknown }).events
+  if (!Array.isArray(rawEvents)) {
+    return null
+  }
+
+  const events = readRecordArray(rawEvents)
+  const nextCursor = readOptionalString((data as { nextCursor?: unknown }).nextCursor)
+
+  return {
+    events,
+    hasMore: (data as { hasMore?: unknown }).hasMore === true,
+    ...(nextCursor === null ? {} : { nextCursor }),
+  }
+}
+
+function readPluginExternalId(record: ExternalPayloadRecord): string | null {
+  return (
+    readOptionalString(record.externalIssueId) ??
+    readOptionalString(record.issueId) ??
+    readOptionalString(record.externalEventId) ??
+    readOptionalString(record.eventId) ??
+    readOptionalString(record.id)
+  )
+}
+
+function readPluginProjectIdentifier(record: ExternalPayloadRecord): string | null {
+  const direct =
+    readOptionalString(record.projectIdentifier) ??
+    readOptionalString(record.projectId) ??
+    readOptionalString(record.projectSlug)
+  if (direct !== null) {
+    return direct
+  }
+
+  const project = readRecord(record.project)
+  return (
+    readOptionalString(project?.slug) ??
+    readOptionalString(project?.name) ??
+    readOptionalString(project?.id)
+  )
+}
+
+function readPluginRelease(record: ExternalPayloadRecord): string | null {
+  const direct = readOptionalString(record.release)
+  if (direct !== null) {
+    return direct
+  }
+
+  return readRecordString(readRecord(record.release), 'version')
+}
+
+function readPluginNumericCount(value: unknown): number | null {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return Math.trunc(value)
+  }
+
+  if (typeof value === 'string' && value.trim().length > 0) {
+    const numeric = Number(value)
+    if (Number.isFinite(numeric)) {
+      return Math.trunc(numeric)
+    }
+  }
+
+  return null
+}
+
+function readPluginBoolean(value: unknown): boolean | null {
+  if (typeof value === 'boolean') {
+    return value
+  }
+
+  return null
+}
+
+function readPluginIssueTimestamp(record: ExternalPayloadRecord, fallback: string): string {
+  return toIsoOrNow(
+    record.lastSeen ??
+      record.last_seen ??
+      record.firstSeen ??
+      record.first_seen ??
+      record.timestamp ??
+      record.dateCreated ??
+      record.createdAt ??
+      fallback,
+  )
+}
+
+function readPluginEventTimestamp(record: ExternalPayloadRecord, fallback: string): string {
+  return toIsoOrNow(
+    record.timestamp ??
+      record.dateCreated ??
+      record.createdAt ??
+      record.receivedAt ??
+      record.lastSeen ??
+      record.last_seen ??
+      fallback,
+  )
+}
+
+function readWazuhItems(data: unknown): ExternalPayloadRecord[] {
+  if (
+    data === null ||
+    typeof data !== 'object' ||
+    Array.isArray(data) ||
+    !('items' in data)
+  ) {
+    return []
+  }
+
+  return readRecordArray((data as { items?: unknown }).items)
+}
+
+function readWazuhHasMore(data: unknown): boolean {
+  if (
+    data !== null &&
+    typeof data === 'object' &&
+    !Array.isArray(data) &&
+    typeof (data as { hasMore?: unknown }).hasMore === 'boolean'
+  ) {
+    return (data as { hasMore: boolean }).hasMore
+  }
+
+  return false
+}
+
+function readWazuhExternalId(hit: ExternalPayloadRecord): string | null {
+  return readOptionalString(hit._id)
+}
+
+function readWazuhSourceRecord(hit: ExternalPayloadRecord): ExternalPayloadRecord | null {
+  return readRecord(hit._source)
+}
+
+function readWazuhRuleRecord(hit: ExternalPayloadRecord): ExternalPayloadRecord | null {
+  return readRecord(readWazuhSourceRecord(hit)?.rule)
+}
+
+function readWazuhAgentRecord(hit: ExternalPayloadRecord): ExternalPayloadRecord | null {
+  return readRecord(readWazuhSourceRecord(hit)?.agent)
+}
+
+function readWazuhManagerRecord(hit: ExternalPayloadRecord): ExternalPayloadRecord | null {
+  return readRecord(readWazuhSourceRecord(hit)?.manager)
+}
+
+function readWazuhDescription(hit: ExternalPayloadRecord): string {
+  const rule = readWazuhRuleRecord(hit)
+  const description = readOptionalString(rule?.description)
+  if (description !== null) {
+    return description
+  }
+
+  const source = readWazuhSourceRecord(hit)
+  const fullLog = readOptionalString(source?.full_log)
+  if (fullLog !== null) {
+    return fullLog
+  }
+
+  return 'Wazuh alert'
+}
+
+function readWazuhTimestamp(hit: ExternalPayloadRecord): string {
+  const source = readWazuhSourceRecord(hit)
+  return toIsoOrNow(source?.['@timestamp'])
+}
+
+function readWazuhLevelText(hit: ExternalPayloadRecord): string {
+  const rule = readWazuhRuleRecord(hit)
+  const rawLevel = Number(rule?.level)
+  if (!Number.isFinite(rawLevel)) {
+    return 'warning'
+  }
+
+  if (rawLevel >= 12) return 'fatal'
+  if (rawLevel >= 8) return 'error'
+  if (rawLevel >= 4) return 'warning'
+  return 'info'
+}
+
+function buildWazuhTags(hit: ExternalPayloadRecord): Record<string, unknown> | null {
+  const source = readWazuhSourceRecord(hit)
+  const rule = readWazuhRuleRecord(hit)
+  const agent = readWazuhAgentRecord(hit)
+  const manager = readWazuhManagerRecord(hit)
+  const tags: Record<string, unknown> = {}
+
+  const ruleId = readOptionalString(rule?.id)
+  if (ruleId !== null) tags.ruleId = ruleId
+  if (rule?.level !== undefined) tags.ruleLevel = rule.level
+  const ruleDescription = readOptionalString(rule?.description)
+  if (ruleDescription !== null) tags.ruleDescription = ruleDescription
+  const agentId = readOptionalString(agent?.id)
+  if (agentId !== null) tags.agentId = agentId
+  const agentName = readOptionalString(agent?.name)
+  if (agentName !== null) tags.agentName = agentName
+  const managerName = readOptionalString(manager?.name)
+  if (managerName !== null) tags.managerName = managerName
+  const location = readOptionalString(source?.location)
+  if (location !== null) tags.location = location
+  const decoderName = readOptionalString(readRecord(source?.decoder)?.name)
+  if (decoderName !== null) tags.decoderName = decoderName
+
+  return Object.keys(tags).length > 0 ? tags : null
+}
+
 function parseLevelToRuleLevel(level: string | null): number {
   const normalized = (level ?? '').toLowerCase()
   if (normalized === 'fatal') return 10
@@ -362,6 +748,7 @@ export class ErrorSourceSyncService {
     private readonly issuesRepository: ErrorIssuesRepository,
     private readonly eventsRepository: ErrorEventsRepository,
     private readonly providerFactory: ErrorSourceProviderRegistry,
+    private readonly pluginRuntime: DesktopPluginRuntimeService = createDesktopNodePluginRuntimeService(),
   ) {}
 
   async syncSourceById(sourceId: string): Promise<{ sourceId: string; syncedIssues: number; syncedEvents: number }> {
@@ -406,6 +793,20 @@ export class ErrorSourceSyncService {
     )
 
     try {
+      if (source.sourceType === 'wazuh') {
+        return await this.syncWazuhSource(source)
+      }
+
+      const pluginId = readSourcePluginId(source)
+      const plugin = this.pluginRuntime.getPlugin(pluginId)
+      if (
+        source.sourceType !== 'sentry' &&
+        source.sourceType !== 'posthog' &&
+        plugin?.metadata?.errorSource?.sourceType === source.sourceType
+      ) {
+        return await this.syncCustomPluginSource(source)
+      }
+
       const provider = getProviderForSource(this.providerFactory, source)
       const token = await this.resolveAccessToken(source)
       const orgSlug = source.configuration.orgSlug?.trim()
@@ -434,10 +835,10 @@ export class ErrorSourceSyncService {
       // Reading the overlap window is safe because event/issue upserts are
       // idempotent on `externalEventId`/`externalIssueId`.
       //
-      // Sentry must keep strict `since = lastSyncAt` semantics: its
-      // `listIssueEvents` adapter does not honor `since`, so combining an
-      // overlap with a low event-page cap would re-walk the same
-      // high-volume issues on every sync and trip the cap.
+      // Sentry keeps strict `since = lastSyncAt` semantics while PostHog
+      // reads an overlap window. PostHog SDK events carry a user-set
+      // `timestamp` that can lag ingest by minutes for batched/offline
+      // clients; a strict cursor can permanently skip backfilled errors.
       let previousLastSyncAtMs = Number.NaN
       if (source.lastSyncAt !== null) {
         previousLastSyncAtMs = Date.parse(source.lastSyncAt)
@@ -461,13 +862,14 @@ export class ErrorSourceSyncService {
       // page was already read but before the sync finished.
       const syncStartedAt = new Date().toISOString()
 
-      // PostHog HogQL queries accept an `until` upper bound that stabilises
-      // OFFSET pagination across pages. Sentry's REST API has no
-      // equivalent, so we only pass it for PostHog.
-      let until: string | undefined
-      if (isPostHog) {
-        until = syncStartedAt
-      }
+      // Both providers now accept an upper-bound watermark on issue/event
+      // reads. PostHog uses a dedicated `until` input; Sentry issue listing
+      // translates it into a bounded `lastSeen` query.
+      const issueUntil = syncStartedAt
+      // Sentry issue-event pages now honor `start`/`end`, so event reads for
+      // both providers can be bounded to the sync watermark even though only
+      // PostHog supports an issue-list upper bound.
+      const eventUntil = syncStartedAt
 
       // Hard caps stop a runaway sync from monopolising the desktop app on
       // high-volume sources. Sentry sync is intentionally a bounded latest
@@ -501,7 +903,7 @@ export class ErrorSourceSyncService {
           cursor: issueCursor,
           limit: issueLimit,
           since,
-          until,
+          until: issueUntil,
         })
         log.info(
           `[sync] id=${source.id} listIssues page=${String(issuePageCount)} returned=${String(page.issues.length)} hasMore=${String(page.hasMore)} elapsedMs=${formatElapsedMs(pageStartMs)}`,
@@ -557,22 +959,14 @@ export class ErrorSourceSyncService {
               sentryTotalEventPages += 1
             }
             const evtStartMs = Date.now()
-            let eventSince: string | undefined
-            if (isPostHog) {
-              eventSince = since
-            }
             const eventsPage = await provider.listIssueEvents({
               accessToken: token,
               orgSlug,
               issueId: externalIssueId,
               cursor: eventCursor,
               projectIds,
-              // PostHog HogQL honors `since`/`until` here; Sentry's
-              // adapter ignores them and walks the full event history for
-              // each issue. Only forward bounds for PostHog so Sentry
-              // matches its pre-PR semantics.
-              since: eventSince,
-              until,
+              since,
+              until: eventUntil,
             })
             log.info(
               `[sync] id=${source.id} listIssueEvents issue=${externalIssueId} page=${String(eventPages)} returned=${String(eventsPage.events.length)} hasMore=${String(eventsPage.hasMore)} elapsedMs=${formatElapsedMs(evtStartMs)}`,
@@ -1017,6 +1411,503 @@ export class ErrorSourceSyncService {
       const issue = toDiagnosisIssueContext(readRecord(payload.issue))
       const event = toDiagnosisEventContext(readRecord(payload.event))
       await this.ensureDefaultDiagnosisEntry(row.id, { source, issue, event })
+    }
+  }
+
+  private async syncWazuhSource(
+    source: ErrorSource,
+  ): Promise<{ sourceId: string; syncedIssues: number; syncedEvents: number }> {
+    const syncStartedAt = new Date().toISOString()
+    const since = source.lastSyncAt ?? undefined
+    const until = syncStartedAt
+    const limit = 100
+    const maxPages = 10
+    const indexPattern = readWazuhIndexPattern(source)
+    const auth = buildWazuhPluginAuth(source)
+
+    let offset = 0
+    let pageCount = 0
+    let hasMore = true
+    let syncedIssues = 0
+    let syncedEvents = 0
+
+    while (hasMore && pageCount < maxPages) {
+      pageCount += 1
+      const pageStartMs = Date.now()
+      const pluginId = readSourcePluginId(source)
+      const result = await this.pluginRuntime.executeAction({
+        pluginId,
+        actionId: resolveErrorSourceProviderActionId({
+          runtime: this.pluginRuntime,
+          pluginId,
+          sourceType: source.sourceType,
+          action: 'searchAlerts',
+        }),
+        auth,
+        input: {
+          query: '*',
+          limit,
+          offset,
+          ...(indexPattern === undefined ? {} : { indexPattern }),
+          ...(since === undefined ? {} : { since }),
+          ...(until === undefined ? {} : { until }),
+        },
+      })
+      const items = readWazuhItems(result.data)
+      hasMore = readWazuhHasMore(result.data) && items.length > 0
+      log.info(
+        `[sync] id=${source.id} wazuhSearch page=${String(pageCount)} returned=${String(items.length)} hasMore=${String(hasMore)} elapsedMs=${formatElapsedMs(pageStartMs)}`,
+      )
+
+      for (const hit of items) {
+        const externalId = readWazuhExternalId(hit)
+        if (externalId === null) {
+          continue
+        }
+
+        const timestamp = readWazuhTimestamp(hit)
+        const description = readWazuhDescription(hit)
+        const level = readWazuhLevelText(hit)
+        if (!shouldIngestByThreshold(level, source.logLevelThreshold)) {
+          continue
+        }
+
+        const sourceRecord = readWazuhSourceRecord(hit)
+        const ruleRecord = readWazuhRuleRecord(hit)
+        const agentRecord = readWazuhAgentRecord(hit)
+        const managerRecord = readWazuhManagerRecord(hit)
+        const tags = buildWazuhTags(hit)
+        const issue = await this.issuesRepository.upsert({
+          sourceId: source.id,
+          externalIssueId: externalId,
+          externalShortId: null,
+          title: description,
+          culprit:
+            readOptionalString(agentRecord?.name) ??
+            readOptionalString(sourceRecord?.location),
+          type: readOptionalString(ruleRecord?.id),
+          metadata: ruleRecord,
+          projectIdentifier: readOptionalString(hit._index),
+          level,
+          status: 'unresolved',
+          isUnhandled: true,
+          firstSeen: timestamp,
+          lastSeen: timestamp,
+          eventCount: 1,
+          userCount: null,
+          tags,
+          environment: readOptionalString(managerRecord?.name),
+          release: null,
+          platform: 'wazuh',
+          additionalMetadata: hit,
+        })
+        syncedIssues += 1
+
+        await this.eventsRepository.upsert({
+          sourceId: source.id,
+          issueId: issue.id,
+          externalEventId: externalId,
+          timestamp,
+          message: readOptionalString(sourceRecord?.full_log) ?? description,
+          exceptionType: null,
+          exceptionValue: null,
+          exceptionMechanism: null,
+          stacktrace: null,
+          inAppFrames: null,
+          tags,
+          contexts: sourceRecord,
+          userContext: agentRecord,
+          requestContext: null,
+          environment: readOptionalString(managerRecord?.name),
+          release: null,
+          serverName:
+            readOptionalString(agentRecord?.name) ??
+            readOptionalString(managerRecord?.name),
+          traceId: null,
+          requestId: null,
+          transactionName: readOptionalString(sourceRecord?.location),
+          additionalMetadata: hit,
+        })
+        syncedEvents += 1
+        await this.projectEventToDiagnosis(source, issue, {
+          id: externalId,
+          externalEventId: externalId,
+          timestamp,
+          message: readOptionalString(sourceRecord?.full_log) ?? description,
+          exceptionType: null,
+          exceptionValue: null,
+          environment: readOptionalString(managerRecord?.name),
+          serverName:
+            readOptionalString(agentRecord?.name) ??
+            readOptionalString(managerRecord?.name),
+        })
+      }
+
+      if (items.length < limit) {
+        hasMore = false
+      }
+      offset += items.length
+    }
+
+    await this.backfillMissingDiagnosisEntriesForSource(source.id)
+    await this.sourcesRepository.update({
+      id: source.id,
+      lastSyncAt: syncStartedAt,
+      lastSyncStatus: 'success',
+      lastSyncError: null,
+    })
+    log.info(
+      `[sync] success id=${source.id} type=${source.sourceType} issues=${String(syncedIssues)} events=${String(syncedEvents)}`,
+    )
+    return {
+      sourceId: source.id,
+      syncedIssues,
+      syncedEvents,
+    }
+  }
+
+  private async syncCustomPluginSource(
+    source: ErrorSource,
+  ): Promise<{ sourceId: string; syncedIssues: number; syncedEvents: number }> {
+    const pluginId = readSourcePluginId(source)
+    const plugin = this.pluginRuntime.getPlugin(pluginId)
+    if (plugin?.metadata?.errorSource?.sourceType !== source.sourceType) {
+      throw new Error(
+        `Error source plugin "${pluginId}" does not match source type ${source.sourceType}`,
+      )
+    }
+
+    const providerActions = plugin.metadata.errorSource.providerActions
+    if (
+      providerActions?.listIssues === undefined &&
+      providerActions?.queryIssues === undefined
+    ) {
+      throw new Error(
+        `Error source plugin "${pluginId}" does not declare listIssues or queryIssues`,
+      )
+    }
+
+    const auth = buildPluginAuthFromSource(source, this.pluginRuntime)
+    const syncStartedAt = new Date().toISOString()
+    const since = source.lastSyncAt ?? undefined
+    const until = syncStartedAt
+    let cursor: string | undefined
+    let pageCount = 0
+    let hasMore = true
+    let syncedIssues = 0
+    let syncedEvents = 0
+
+    while (hasMore && pageCount < MAX_GENERIC_PLUGIN_ISSUE_PAGES) {
+      pageCount += 1
+      const pageStartMs = Date.now()
+      const action = providerActions.listIssues !== undefined ? 'listIssues' : 'queryIssues'
+      const result = await this.pluginRuntime.executeAction({
+        pluginId,
+        actionId: resolveErrorSourceProviderActionId({
+          runtime: this.pluginRuntime,
+          pluginId,
+          sourceType: source.sourceType,
+          action,
+        }),
+        auth,
+        input: buildGenericPluginSyncInput({
+          source,
+          query: '*',
+          limit: MAX_GENERIC_PLUGIN_ISSUES_PER_PAGE,
+          cursor,
+          since,
+          until,
+        }),
+      })
+
+      const page = readPluginIssueBatch(result.data)
+      if (page === null) {
+        throw new Error(
+          `Plugin "${pluginId}" returned an invalid issue batch for source sync`,
+        )
+      }
+
+      hasMore = page.hasMore && page.issues.length > 0
+      cursor = page.nextCursor
+      log.info(
+        `[sync] id=${source.id} pluginListIssues page=${String(pageCount)} returned=${String(page.issues.length)} hasMore=${String(hasMore)} elapsedMs=${formatElapsedMs(pageStartMs)}`,
+      )
+
+      for (const issueRecord of page.issues) {
+        const externalIssueId = readPluginExternalId(issueRecord)
+        if (externalIssueId === null) {
+          continue
+        }
+
+        const title =
+          readOptionalString(issueRecord.title) ??
+          readOptionalString(issueRecord.message) ??
+          readOptionalString(issueRecord.name) ??
+          'Untitled issue'
+        const level = readOptionalString(issueRecord.level) ?? 'error'
+        if (!shouldIngestByThreshold(level, source.logLevelThreshold)) {
+          continue
+        }
+
+        const firstSeen = readPluginIssueTimestamp(issueRecord, syncStartedAt)
+        const lastSeen = toIsoOrNow(
+          issueRecord.lastSeen ??
+            issueRecord.last_seen ??
+            issueRecord.timestamp ??
+            issueRecord.updatedAt ??
+            firstSeen,
+        )
+        const tags = parseIssueTags(issueRecord.tags)
+        const issue = await this.issuesRepository.upsert({
+          sourceId: source.id,
+          externalIssueId,
+          externalShortId:
+            readOptionalString(issueRecord.shortId) ??
+            readOptionalString(issueRecord.externalShortId),
+          title,
+          culprit: readOptionalString(issueRecord.culprit),
+          type: readOptionalString(issueRecord.type),
+          metadata: readRecord(issueRecord.metadata),
+          projectIdentifier: readPluginProjectIdentifier(issueRecord),
+          level,
+          status:
+            readOptionalString(issueRecord.status) ??
+            readOptionalString(issueRecord.state) ??
+            'unresolved',
+          isUnhandled: readPluginBoolean(issueRecord.isUnhandled),
+          firstSeen,
+          lastSeen,
+          eventCount: readPluginNumericCount(
+            issueRecord.eventCount ?? issueRecord.count,
+          ) ?? 1,
+          userCount: readPluginNumericCount(issueRecord.userCount),
+          tags,
+          environment:
+            readOptionalString(issueRecord.environment) ??
+            extractTagValue(tags, 'environment'),
+          release: readPluginRelease(issueRecord) ?? extractTagValue(tags, 'release'),
+          platform: readOptionalString(issueRecord.platform) ?? source.sourceType,
+          additionalMetadata: issueRecord,
+        })
+        syncedIssues += 1
+
+        if (providerActions.listIssueEvents !== undefined) {
+          let eventCursor: string | undefined
+          let eventPageCount = 0
+          let eventsHasMore = true
+
+          while (
+            eventsHasMore &&
+            eventPageCount < MAX_GENERIC_PLUGIN_EVENT_PAGES_PER_ISSUE
+          ) {
+            eventPageCount += 1
+            const eventPageStartMs = Date.now()
+            const eventResult = await this.pluginRuntime.executeAction({
+              pluginId,
+              actionId: resolveErrorSourceProviderActionId({
+                runtime: this.pluginRuntime,
+                pluginId,
+                sourceType: source.sourceType,
+                action: 'listIssueEvents',
+              }),
+              auth,
+              input: {
+                ...buildGenericPluginSyncInput({
+                  source,
+                  query: '*',
+                  limit: MAX_GENERIC_PLUGIN_ISSUES_PER_PAGE,
+                  since,
+                  until,
+                }),
+                issueId: externalIssueId,
+                cursor: eventCursor,
+              },
+            })
+            const eventPage = readPluginEventBatch(eventResult.data)
+            if (eventPage === null) {
+              throw new Error(
+                `Plugin "${pluginId}" returned an invalid event batch for source sync`,
+              )
+            }
+
+            eventsHasMore = eventPage.hasMore && eventPage.events.length > 0
+            eventCursor = eventPage.nextCursor
+            log.info(
+              `[sync] id=${source.id} pluginListIssueEvents issue=${externalIssueId} page=${String(eventPageCount)} returned=${String(eventPage.events.length)} hasMore=${String(eventsHasMore)} elapsedMs=${formatElapsedMs(eventPageStartMs)}`,
+            )
+
+            for (const eventRecord of eventPage.events) {
+              const externalEventId =
+                readPluginExternalId(eventRecord) ??
+                `${externalIssueId}:event:${String(syncedEvents + 1)}`
+              const eventLevel =
+                readOptionalString(eventRecord.level) ?? issue.level
+              if (!shouldIngestByThreshold(eventLevel, source.logLevelThreshold)) {
+                continue
+              }
+
+              const parsedEventTags = parseIssueTags(eventRecord.tags)
+              const exception = extractException(eventRecord)
+              const breadcrumbs = extractBreadcrumbs(eventRecord)
+              const contexts = readRecord(eventRecord.contexts)
+              const trace = readRecord(contexts?.trace)
+              const contextsWithBreadcrumbs = mergeContextsWithBreadcrumbs(contexts, breadcrumbs)
+              const eventTimestamp = readPluginEventTimestamp(eventRecord, lastSeen)
+              const message =
+                readOptionalString(eventRecord.message) ??
+                readOptionalString(eventRecord.title) ??
+                readOptionalString(eventRecord.name) ??
+                readOptionalString(eventRecord.culprit) ??
+                title
+              const environment =
+                readOptionalString(eventRecord.environment) ??
+                extractTagValue(parsedEventTags, 'environment') ??
+                issue.environment
+              const release =
+                readPluginRelease(eventRecord) ??
+                extractTagValue(parsedEventTags, 'release') ??
+                issue.release
+              const serverName =
+                readOptionalString(eventRecord.serverName) ??
+                readOptionalString(readRecord(eventRecord.host)?.name) ??
+                readOptionalString(eventRecord.hostname)
+
+              await this.eventsRepository.upsert({
+                sourceId: source.id,
+                issueId: issue.id,
+                externalEventId,
+                timestamp: eventTimestamp,
+                message,
+                exceptionType:
+                  exception.exceptionType ??
+                  readOptionalString(eventRecord.type),
+                exceptionValue:
+                  exception.exceptionValue ??
+                  readOptionalString(eventRecord.value),
+                exceptionMechanism:
+                  exception.mechanism ??
+                  readRecord(eventRecord.mechanism),
+                stacktrace:
+                  exception.stacktrace ??
+                  readRecord(eventRecord.stacktrace),
+                inAppFrames:
+                  exception.inAppFrames ??
+                  readRecordArray(eventRecord.inAppFrames),
+                tags: parsedEventTags,
+                contexts: contextsWithBreadcrumbs,
+                userContext: readRecord(eventRecord.user),
+                requestContext: readRecord(eventRecord.request),
+                environment,
+                release,
+                serverName,
+                traceId:
+                  readOptionalString(trace?.trace_id ?? trace?.traceId) ??
+                  readOptionalString(eventRecord.traceId),
+                requestId:
+                  readOptionalString(trace?.span_id ?? trace?.spanId) ??
+                  readOptionalString(eventRecord.requestId),
+                transactionName:
+                  readOptionalString(eventRecord.transaction) ??
+                  readOptionalString(eventRecord.transactionName),
+                additionalMetadata: eventRecord,
+              })
+              syncedEvents += 1
+              await this.projectEventToDiagnosis(source, issue, {
+                id: externalEventId,
+                externalEventId,
+                timestamp: eventTimestamp,
+                message,
+                exceptionType:
+                  exception.exceptionType ??
+                  readOptionalString(eventRecord.type),
+                exceptionValue:
+                  exception.exceptionValue ??
+                  readOptionalString(eventRecord.value),
+                environment,
+                serverName,
+              })
+            }
+
+            if (
+              eventPage.nextCursor === undefined &&
+              eventPage.events.length < MAX_GENERIC_PLUGIN_ISSUES_PER_PAGE
+            ) {
+              eventsHasMore = false
+            }
+          }
+        } else {
+          const syntheticEventId =
+            readOptionalString(issueRecord.latestEventId) ??
+            readOptionalString(issueRecord.eventId) ??
+            `${externalIssueId}:latest`
+          const syntheticMessage =
+            readOptionalString(issueRecord.message) ??
+            readOptionalString(issueRecord.culprit) ??
+            title
+          const serverName =
+            readOptionalString(issueRecord.serverName) ??
+            readOptionalString(readRecord(issueRecord.host)?.name) ??
+            readOptionalString(issueRecord.hostname)
+          const environment =
+            readOptionalString(issueRecord.environment) ??
+            extractTagValue(tags, 'environment')
+
+          await this.eventsRepository.upsert({
+            sourceId: source.id,
+            issueId: issue.id,
+            externalEventId: syntheticEventId,
+            timestamp: lastSeen,
+            message: syntheticMessage,
+            exceptionType: readOptionalString(issueRecord.type),
+            exceptionValue: readOptionalString(issueRecord.value),
+            exceptionMechanism: null,
+            stacktrace: readRecord(issueRecord.stacktrace),
+            inAppFrames: readRecordArray(issueRecord.inAppFrames),
+            tags,
+            contexts: readRecord(issueRecord.contexts),
+            userContext: readRecord(issueRecord.user),
+            requestContext: readRecord(issueRecord.request),
+            environment,
+            release: readPluginRelease(issueRecord),
+            serverName,
+            traceId: readOptionalString(issueRecord.traceId),
+            requestId: readOptionalString(issueRecord.requestId),
+            transactionName: readOptionalString(issueRecord.transactionName),
+            additionalMetadata: issueRecord,
+          })
+          syncedEvents += 1
+          await this.projectEventToDiagnosis(source, issue, {
+            id: syntheticEventId,
+            externalEventId: syntheticEventId,
+            timestamp: lastSeen,
+            message: syntheticMessage,
+            exceptionType: readOptionalString(issueRecord.type),
+            exceptionValue: readOptionalString(issueRecord.value),
+            environment,
+            serverName,
+          })
+        }
+      }
+
+      if (page.nextCursor === undefined && page.issues.length < MAX_GENERIC_PLUGIN_ISSUES_PER_PAGE) {
+        hasMore = false
+      }
+    }
+
+    await this.backfillMissingDiagnosisEntriesForSource(source.id)
+    await this.sourcesRepository.update({
+      id: source.id,
+      lastSyncAt: syncStartedAt,
+      lastSyncStatus: 'success',
+      lastSyncError: null,
+    })
+    log.info(
+      `[sync] success id=${source.id} type=${source.sourceType} issues=${String(syncedIssues)} events=${String(syncedEvents)}`,
+    )
+    return {
+      sourceId: source.id,
+      syncedIssues,
+      syncedEvents,
     }
   }
 }

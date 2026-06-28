@@ -3,6 +3,7 @@ import type { ReactNode, RefObject } from "react";
 import { BookOpen, Plus } from "../../icons";
 import type {
   GlobalVariable,
+  PluginManifest,
   RunbookActionRecord,
   RunbookLlmProviderKey,
   RunbookRecord,
@@ -80,6 +81,10 @@ type RunbookEditorViewProps = {
   errorSourcesLoading: boolean;
   errorSourceCount: number;
   validErrorSourceIds: Set<string>;
+  pluginManifests: PluginManifest[];
+  pluginOptions: Array<{ id: string; label: string }>;
+  pluginsLoading: boolean;
+  validPluginActionIdsByPluginId: Map<string, Set<string>>;
   llmProviderLabelsByKey: Partial<Record<RunbookLlmProviderKey, string>>;
   llmModelOptions: LlmModelOption[];
   selectableLlmProviderCount: number;
@@ -132,6 +137,10 @@ export function RunbookEditorView({
   errorSourcesLoading,
   errorSourceCount,
   validErrorSourceIds,
+  pluginManifests,
+  pluginOptions,
+  pluginsLoading,
+  validPluginActionIdsByPluginId,
   llmProviderLabelsByKey,
   llmModelOptions,
   selectableLlmProviderCount,
@@ -243,6 +252,7 @@ export function RunbookEditorView({
                   action,
                   modelDropdownOpen,
                   validErrorSourceIds,
+                  validPluginActionIdsByPluginId,
                   selectableLlmProviderCount,
                   llmProviderLabelsByKey,
                   errorSourcesLoading,
@@ -273,6 +283,9 @@ export function RunbookEditorView({
                     onModelDropdownOpenChange={onModelDropdownOpenChange}
                     errorSourceOptions={errorSourceOptions}
                     errorSourcesLoading={errorSourcesLoading}
+                    pluginManifests={pluginManifests}
+                    pluginOptions={pluginOptions}
+                    pluginsLoading={pluginsLoading}
                     isMissingErrorSource={isMissingErrorSource}
                     sourceHelpClass={sourceHelpClass}
                     sourceHelpText={sourceHelpText}
@@ -302,6 +315,7 @@ export function RunbookEditorView({
                   action,
                   modelDropdownOpen,
                   validErrorSourceIds,
+                  validPluginActionIdsByPluginId,
                   selectableLlmProviderCount,
                   llmProviderLabelsByKey,
                   errorSourcesLoading,
@@ -319,6 +333,7 @@ export function RunbookEditorView({
                       action,
                       errorSourceLabelsById,
                       llmProviderLabelsByKey,
+                      pluginManifests,
                       t,
                     )}
                     isDragging={sortableApi.isDragging}

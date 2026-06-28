@@ -28,6 +28,8 @@ import { executeShellCommandTool } from '../agent-runtime/capabilities/execute-s
 import type {
   ExternalSourceRunbookQueryExecutor,
 } from '../error-sources/desktop-external-source-runbook-query-service'
+import { createDesktopNodePluginRuntimeService } from '../plugins/desktop-plugin-runtime.node'
+import type { DesktopPluginRuntimeService } from '../plugins/desktop-plugin-registry'
 import type { DesktopGlobalVariablesService } from './desktop-global-variables-service'
 import type { RunbookResultPersistence } from './desktop-runbook-result.store'
 import type { DesktopRunbookStore as RunbookStore } from './desktop-runbook.store'
@@ -362,6 +364,11 @@ interface ResolvedTemplate {
   warnings: string[]
 }
 
+interface ResolvedJsonTemplate {
+  value: Record<string, unknown>
+  warnings: string[]
+}
+
 interface ResolvedHttpHeaders {
   requestHeaders: Headers | undefined
   snapshotHeaders: RunbookHttpHeader[] | undefined
@@ -419,6 +426,7 @@ export class RunbookExecutionService {
     private readonly windowGetter: () => RunbookExecutionWindowPort | null,
     options?: { httpTimeoutMs?: number; edition?: RunbookExecutionEdition },
     private readonly localAiProvider?: RunbookExecutionLocalAiProvider,
+    private readonly pluginRuntime: DesktopPluginRuntimeService = createDesktopNodePluginRuntimeService(),
   ) {
     this.httpTimeoutMs = options?.httpTimeoutMs ?? HTTP_STEP_TIMEOUT_MS
     this.edition = options?.edition ?? 'pro'
@@ -869,6 +877,12 @@ export class RunbookExecutionService {
           action.logFilter,
           await this.executeHttpStep(session, action, actionIndex, parameters),
       )
+      case 'plugin':
+        return this.applyConfiguredLogFilter(
+          session,
+          action.logFilter,
+          await this.executePluginStep(session, action, actionIndex, parameters),
+        )
       case 'external_source':
         return this.applyConfiguredLogFilter(
           session,
@@ -877,6 +891,72 @@ export class RunbookExecutionService {
         )
       default:
         throw new Error(`Unsupported runbook action type: ${action.type}`)
+    }
+  }
+
+  private async executePluginStep(
+    session: RunbookExecutionSession,
+    action: RunbookActionRecord,
+    actionIndex: number,
+    parameters: RunbookActionParameter[],
+  ): Promise<ExecutedStepResult> {
+    const pluginId = action.pluginId?.trim()
+    if (pluginId === undefined || pluginId.length === 0) {
+      throw new Error('Plugin action is missing a selected plugin')
+    }
+
+    const pluginActionId = action.pluginActionId?.trim()
+    if (pluginActionId === undefined || pluginActionId.length === 0) {
+      throw new Error('Plugin action is missing a selected plugin action')
+    }
+
+    const auth = this.resolveOptionalJsonTemplate(
+      session,
+      action.pluginAuth,
+      'Plugin auth JSON',
+      parameters,
+    )
+    const input = this.resolveOptionalJsonTemplate(
+      session,
+      action.pluginInput,
+      'Plugin input JSON',
+      parameters,
+    )
+
+    this.setStepInput(session, actionIndex, {
+      actionType: 'plugin',
+      pluginId,
+      pluginActionId,
+      pluginAuthTemplate: action.pluginAuth,
+      pluginAuth: auth?.value,
+      pluginInputTemplate: action.pluginInput,
+      pluginInput: input?.value,
+      parameterValues: session.redactedParameterValues,
+    })
+    addSharedStepTemplateWarnings(
+      session.redactor,
+      session.snapshot.steps[actionIndex],
+      [...(auth?.warnings ?? []), ...(input?.warnings ?? [])],
+    )
+    this.recordActivity(session)
+    await this.emitSnapshot(session)
+
+    const result = await this.pluginRuntime.executeAction({
+      pluginId,
+      actionId: pluginActionId,
+      auth: auth?.value ?? {},
+      input: input?.value ?? {},
+    })
+    this.recordActivity(session)
+
+    return {
+      output: this.formatPluginSuccess(result),
+      metadata: {
+        statusCode: result.status,
+        pluginId,
+        pluginActionId,
+      },
+      structuredOutput: this.structuredPluginOutput(result.data),
     }
   }
 
@@ -1313,6 +1393,88 @@ export class RunbookExecutionService {
       '',
       body,
     ].join('\n')
+  }
+
+  private resolveOptionalJsonTemplate(
+    session: RunbookExecutionSession,
+    value: string | undefined,
+    fieldLabel: string,
+    parameters: RunbookActionParameter[],
+  ): ResolvedJsonTemplate | undefined {
+    const resolved = this.resolveOptionalTemplate(
+      session,
+      value,
+      parameters,
+      'raw',
+    )
+    if (resolved === undefined) {
+      return undefined
+    }
+
+    const trimmed = resolved.value.trim()
+    if (trimmed.length === 0) {
+      return undefined
+    }
+
+    let parsed: unknown
+    try {
+      parsed = JSON.parse(trimmed)
+    } catch (error) {
+      throw new Error(
+        `${fieldLabel} must resolve to a valid JSON object: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      )
+    }
+
+    if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      throw new Error(`${fieldLabel} must resolve to a JSON object`)
+    }
+
+    return {
+      value: parsed as Record<string, unknown>,
+      warnings: resolved.warnings,
+    }
+  }
+
+  private formatPluginSuccess(result: {
+    summary: string
+    data?: unknown
+  }): string {
+    const parts = [result.summary.trim()]
+    const serializedData = this.formatPluginResultData(result.data)
+    if (serializedData !== undefined) {
+      parts.push('', serializedData)
+    }
+
+    return parts.join('\n').trim()
+  }
+
+  private formatPluginResultData(data: unknown): string | undefined {
+    if (data === undefined || data === null) {
+      return undefined
+    }
+
+    if (typeof data === 'string') {
+      const trimmed = data.trim()
+      return trimmed.length > 0 ? trimmed : undefined
+    }
+
+    try {
+      return JSON.stringify(data, null, 2)
+    } catch {
+      return String(data)
+    }
+  }
+
+  private structuredPluginOutput(
+    data: unknown,
+  ): Record<string, unknown> | undefined {
+    if (data === null || typeof data !== 'object' || Array.isArray(data)) {
+      return undefined
+    }
+
+    return data as Record<string, unknown>
   }
 
   private async executeAiStep(
@@ -1892,6 +2054,7 @@ export class RunbookExecutionService {
       shell: 0,
       llm: 0,
       http: 0,
+      plugin: 0,
       external_source: 0,
       telemetry_existing_entry: 0,
       data_source_query: 0,

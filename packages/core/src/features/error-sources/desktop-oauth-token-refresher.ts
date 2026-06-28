@@ -7,9 +7,13 @@ import type {
   OAuthProviderConfig,
 } from "./desktop-oauth-manager";
 import { getProviderForSource } from "./desktop-posthog-provider-binding";
+import {
+  isOAuthPluginErrorSourceType,
+  type OAuthPluginErrorSourceType,
+} from "./plugin-backed-error-sources";
 
 type DesktopOAuthProviderConfigMap = Record<
-  Extract<ErrorSourceType, "sentry" | "posthog">,
+  OAuthPluginErrorSourceType,
   Pick<
     OAuthProviderConfig,
     "envClientIdName" | "envClientSecretName" | "publicClient"
@@ -27,6 +31,22 @@ const DESKTOP_OAUTH_PROVIDER_CONFIGS: DesktopOAuthProviderConfigMap = {
     envClientSecretName: "POSTHOG_OAUTH_CLIENT_SECRET",
     publicClient: true,
   },
+};
+
+type PluginOAuthProviderConfigOverride = Partial<
+  Pick<
+    OAuthProviderConfig,
+    "envClientIdName" | "envClientSecretName" | "publicClient"
+  >
+>;
+
+type DesktopPluginMetadataLike = {
+  metadata?: {
+    errorSource?: {
+      sourceType?: ErrorSourceType;
+      oauth?: PluginOAuthProviderConfigOverride;
+    };
+  };
 };
 
 function readOptionalString(value: unknown): string | null {
@@ -49,13 +69,48 @@ function getRequiredEnv(name: string): string {
 function getProviderConfig(
   sourceType: ErrorSourceType,
 ):
-  | DesktopOAuthProviderConfigMap[Extract<ErrorSourceType, "sentry" | "posthog">]
+  | DesktopOAuthProviderConfigMap[OAuthPluginErrorSourceType]
   | undefined {
-  if (sourceType === "sentry" || sourceType === "posthog") {
+  if (isOAuthPluginErrorSourceType(sourceType)) {
     return DESKTOP_OAUTH_PROVIDER_CONFIGS[sourceType];
   }
 
   return undefined;
+}
+
+function readSourcePluginId(source: Pick<DesktopOAuthSource, "sourceType" | "additionalMetadata">): string {
+  const additionalMetadata = source.additionalMetadata;
+  if (
+    additionalMetadata === null ||
+    additionalMetadata === undefined ||
+    typeof additionalMetadata !== "object" ||
+    Array.isArray(additionalMetadata)
+  ) {
+    return source.sourceType;
+  }
+
+  const pluginId = (additionalMetadata as { pluginId?: unknown }).pluginId;
+  const normalizedPluginId = readOptionalString(pluginId);
+  if (normalizedPluginId !== null) {
+    return normalizedPluginId;
+  }
+
+  return source.sourceType;
+}
+
+function getPluginProviderConfigOverride(
+  source: Pick<DesktopOAuthSource, "sourceType" | "additionalMetadata">,
+  providerFactory: {
+    getPlugin?: (pluginId: string) => DesktopPluginMetadataLike | null;
+  },
+): PluginOAuthProviderConfigOverride | undefined {
+  const pluginId = readSourcePluginId(source);
+  const plugin = providerFactory.getPlugin?.(pluginId);
+  if (plugin?.metadata?.errorSource?.sourceType !== source.sourceType) {
+    return undefined;
+  }
+
+  return plugin.metadata.errorSource.oauth;
 }
 
 function getExpiresAtMs(expiresAt: string | null): number {
@@ -114,7 +169,7 @@ function getNextGrantedScopes(
 }
 
 function getClientSecret(
-  config: DesktopOAuthProviderConfigMap[keyof DesktopOAuthProviderConfigMap],
+  config: DesktopOAuthProviderConfigMap[OAuthPluginErrorSourceType],
   sourceConfigSecret: unknown,
 ): string {
   const configuredSecret = readOptionalString(sourceConfigSecret);
@@ -176,6 +231,14 @@ export interface RefreshAccessTokenInput<
   sourcesRepository: DesktopOAuthSourcesRepository;
   providerFactory: {
     getProvider(sourceType: TSource["sourceType"]): TProvider;
+    getProviderForSource?: (source: {
+      sourceType: TSource["sourceType"];
+      additionalMetadata?: unknown;
+      configuration?: {
+        posthogBaseUrl?: unknown;
+      };
+    }) => TProvider;
+    getPlugin?: (pluginId: string) => DesktopPluginMetadataLike | null;
   };
   signal?: AbortSignal;
 }
@@ -262,7 +325,11 @@ async function performTokenRefresh<
   refreshToken: string,
 ): Promise<string> {
   const { source, sourcesRepository, providerFactory, signal } = input;
-  const provider = getProviderForSource(providerFactory, source);
+  const provider = getProviderForSource(providerFactory, {
+    sourceType: source.sourceType,
+    additionalMetadata: source.additionalMetadata,
+    configuration: source.configuration,
+  });
   const config = source.configuration ?? {};
   const providerConfig = getProviderConfig(source.sourceType);
   if (providerConfig === undefined) {
@@ -270,11 +337,24 @@ async function performTokenRefresh<
       `OAuth refresh is not configured for source type: ${source.sourceType}`,
     );
   }
+  const pluginConfigOverride = getPluginProviderConfigOverride(
+    source,
+    providerFactory,
+  );
+  const effectiveProviderConfig = {
+    envClientIdName:
+      pluginConfigOverride?.envClientIdName ?? providerConfig.envClientIdName,
+    envClientSecretName:
+      pluginConfigOverride?.envClientSecretName ??
+      providerConfig.envClientSecretName,
+    publicClient:
+      pluginConfigOverride?.publicClient ?? providerConfig.publicClient,
+  };
   const oauthClientId =
     readOptionalString(config.oauthClientId) ??
-    getRequiredEnv(providerConfig.envClientIdName);
+    getRequiredEnv(effectiveProviderConfig.envClientIdName);
   const oauthClientSecret = getClientSecret(
-    providerConfig,
+    effectiveProviderConfig,
     config.oauthClientSecret,
   );
 

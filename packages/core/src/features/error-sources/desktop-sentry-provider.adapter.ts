@@ -315,13 +315,14 @@ export class SentryProviderAdapter implements ErrorSourceProvider {
     cursor?: string
     limit?: number
     since?: string
+    until?: string
   }): Promise<IssueBatchResponse> {
     const url = this.buildIssuesUrl({
       orgSlug: input.orgSlug,
       projectIds: input.projectIds,
       cursor: input.cursor,
       limit: input.limit,
-      query: this.getSinceQuery(input.since),
+      query: this.buildLastSeenQuery(input.since, input.until),
     })
 
     const response = await this.requestWithRetry(url.toString(), {
@@ -342,6 +343,8 @@ export class SentryProviderAdapter implements ErrorSourceProvider {
     orgSlug: string
     issueId: string
     cursor?: string
+    since?: string
+    until?: string
   }): Promise<EventBatchResponse> {
     const url = new URL(
       `${SENTRY_API_BASE}/organizations/${encodeURIComponent(input.orgSlug)}/issues/${encodeURIComponent(input.issueId)}/events/`,
@@ -349,6 +352,12 @@ export class SentryProviderAdapter implements ErrorSourceProvider {
     url.searchParams.set('limit', '50')
     if (input.cursor !== undefined && input.cursor.length > 0) {
       url.searchParams.set('cursor', input.cursor)
+    }
+    if (input.since !== undefined && input.since.length > 0) {
+      url.searchParams.set('start', input.since)
+    }
+    if (input.until !== undefined && input.until.length > 0) {
+      url.searchParams.set('end', input.until)
     }
 
     const response = await this.requestWithRetry(url.toString(), {
@@ -400,12 +409,20 @@ export class SentryProviderAdapter implements ErrorSourceProvider {
     return url
   }
 
-  private getSinceQuery(since: string | undefined): string | undefined {
-    if (since !== undefined && since.length > 0) {
-      return `lastSeen:>=${since}`
+  private buildLastSeenQuery(
+    since: string | undefined,
+    until: string | undefined,
+  ): string | undefined {
+    const clauses = [
+      since !== undefined && since.length > 0 ? `lastSeen:>=${since}` : undefined,
+      until !== undefined && until.length > 0 ? `lastSeen:<=${until}` : undefined,
+    ].filter((clause): clause is string => clause !== undefined)
+
+    if (clauses.length === 0) {
+      return undefined
     }
 
-    return undefined
+    return clauses.join(' ')
   }
 
   private getIssuesLimit(limit: number | undefined): number {

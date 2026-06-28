@@ -375,6 +375,10 @@ function normalizeRunbookActionFingerprint(
     method?: RunbookHttpMethod;
     headers?: RunbookHttpHeader[];
     body?: string;
+    pluginId?: string;
+    pluginActionId?: string;
+    pluginInput?: string;
+    pluginAuth?: string;
     query?: string;
     sourceId?: string;
     sourceRef?: string;
@@ -436,6 +440,15 @@ function normalizeRunbookActionFingerprint(
       }
 
       return fingerprint;
+    }
+    case "plugin": {
+      return {
+        ...shared,
+        pluginId: action.pluginId ?? "",
+        pluginActionId: action.pluginActionId ?? "",
+        pluginAuth: action.pluginAuth ?? "",
+        pluginInput: action.pluginInput ?? "",
+      };
     }
     case "external_source": {
       const sourceId = action.sourceId?.trim();
@@ -833,6 +846,10 @@ function parseTelemetryConfig(
 function serializeRunbookActionBody(
   action: DesktopRunbookActionRecord,
 ): string | null {
+  if (action.type === "plugin") {
+    return action.pluginInput ?? null;
+  }
+
   if (isTelemetryActionType(action.type)) {
     if (action.telemetryConfig !== undefined) {
       return JSON.stringify(action.telemetryConfig);
@@ -844,11 +861,42 @@ function serializeRunbookActionBody(
   return action.body ?? null;
 }
 
+function serializeStoredRunbookActionUrl(
+  action: DesktopRunbookActionRecord,
+): string | null {
+  if (action.type === "plugin") {
+    return action.pluginAuth ?? null;
+  }
+
+  return action.url ?? null;
+}
+
+function serializeStoredRunbookActionQuery(
+  action: DesktopRunbookActionRecord,
+): string | null {
+  if (action.type === "plugin") {
+    return action.pluginActionId ?? null;
+  }
+
+  return action.query ?? null;
+}
+
+function serializeStoredRunbookActionSourceId(
+  action: DesktopRunbookActionRecord,
+): string | null {
+  if (action.type === "plugin") {
+    return action.pluginId ?? null;
+  }
+
+  return action.sourceId ?? null;
+}
+
 function createEmptyActionTypeCounts(): DesktopRunbookContext["summary"]["actionTypeCounts"] {
   return {
     shell: 0,
     llm: 0,
     http: 0,
+    plugin: 0,
     external_source: 0,
     telemetry_existing_entry: 0,
     data_source_query: 0,
@@ -916,6 +964,21 @@ function sanitizeRunbookAction(
       }
       return sanitized;
     }
+    case "plugin": {
+      if (typeof action.pluginId === "string") {
+        sanitized.pluginId = action.pluginId;
+      }
+      if (typeof action.pluginActionId === "string") {
+        sanitized.pluginActionId = action.pluginActionId;
+      }
+      if (typeof action.pluginInput === "string") {
+        sanitized.pluginInput = action.pluginInput;
+      }
+      if (typeof action.pluginAuth === "string") {
+        sanitized.pluginAuth = action.pluginAuth;
+      }
+      return sanitized;
+    }
     case "external_source": {
       if (typeof action.query === "string") {
         sanitized.query = action.query;
@@ -965,6 +1028,18 @@ function assertValidAction(action: DesktopRunbookActionRecord): void {
       throw new Error("External Source action is missing a source selection");
     }
   }
+
+  if (action.type === "plugin") {
+    if (action.pluginId === undefined || action.pluginId.trim().length === 0) {
+      throw new Error("Plugin action is missing a selected plugin");
+    }
+    if (
+      action.pluginActionId === undefined ||
+      action.pluginActionId.trim().length === 0
+    ) {
+      throw new Error("Plugin action is missing a selected plugin action");
+    }
+  }
 }
 
 function parseIncomingRunbookAction(
@@ -985,6 +1060,10 @@ function parseIncomingRunbookAction(
     method: parseRunbookHttpMethod(action.method),
     headers: normalizeRunbookHeaders(action.headers),
     body: asOptionalString(action.body),
+    pluginId: asOptionalString(action.pluginId),
+    pluginActionId: asOptionalString(action.pluginActionId),
+    pluginInput: asOptionalString(action.pluginInput),
+    pluginAuth: asOptionalString(action.pluginAuth),
     query: asOptionalString(action.query),
     sourceId: asOptionalString(action.sourceId),
     parameters: normalizeRunbookParameters(action.parameters),
@@ -1009,12 +1088,17 @@ function toRunbookAction(raw: Record<string, unknown>): DesktopRunbookActionReco
     prompt: asOptionalString(raw.prompt),
     llmProviderKey: parseRunbookLlmProviderKey(raw.llmProviderKey),
     llmModel: asOptionalString(raw.llmModel),
-    url: asOptionalString(raw.url),
+    url: type === "plugin" ? undefined : asOptionalString(raw.url),
     method: parseRunbookHttpMethod(raw.method),
     headers: parseRunbookHeaders(raw.headersJson ?? raw.headers),
-    body: asOptionalString(raw.body),
-    query: asOptionalString(raw.query),
-    sourceId: asOptionalString(raw.sourceId),
+    body: type === "plugin" ? undefined : asOptionalString(raw.body),
+    pluginId: type === "plugin" ? asOptionalString(raw.sourceId) : undefined,
+    pluginActionId:
+      type === "plugin" ? asOptionalString(raw.query) : undefined,
+    pluginInput: type === "plugin" ? asOptionalString(raw.body) : undefined,
+    pluginAuth: type === "plugin" ? asOptionalString(raw.url) : undefined,
+    query: type === "plugin" ? undefined : asOptionalString(raw.query),
+    sourceId: type === "plugin" ? undefined : asOptionalString(raw.sourceId),
     parameters: parseRunbookParameters(raw.parametersJson ?? raw.parameters),
     logFilter: parseRunbookLogFilter(raw.logFilterJson ?? raw.logFilter),
     telemetryConfig: parseTelemetryConfig(
@@ -1067,6 +1151,24 @@ function actionPayload(
       }
       if (typeof action.body === "string") {
         payload.body = action.body;
+      }
+      return payload;
+    }
+    case "plugin": {
+      if (action.pluginId !== undefined && action.pluginId.length > 0) {
+        payload.pluginId = action.pluginId;
+      }
+      if (
+        action.pluginActionId !== undefined &&
+        action.pluginActionId.length > 0
+      ) {
+        payload.pluginActionId = action.pluginActionId;
+      }
+      if (typeof action.pluginAuth === "string") {
+        payload.pluginAuth = action.pluginAuth;
+      }
+      if (typeof action.pluginInput === "string") {
+        payload.pluginInput = action.pluginInput;
       }
       return payload;
     }
@@ -1356,12 +1458,12 @@ export class DesktopRunbookStore {
             prompt: action.prompt ?? null,
             llmProviderKey: action.llmProviderKey ?? null,
             llmModel: action.llmModel ?? null,
-            url: action.url ?? null,
+            url: serializeStoredRunbookActionUrl(action),
             method: action.method ?? null,
             headersJson,
             body: serializeRunbookActionBody(action),
-            query: action.query ?? null,
-            sourceId: action.sourceId ?? null,
+            query: serializeStoredRunbookActionQuery(action),
+            sourceId: serializeStoredRunbookActionSourceId(action),
             parametersJson,
             logFilterJson,
             createdAt: now,
@@ -1407,12 +1509,12 @@ export class DesktopRunbookStore {
           prompt: nextAction.prompt ?? null,
           llmProviderKey: nextAction.llmProviderKey ?? null,
           llmModel: nextAction.llmModel ?? null,
-          url: nextAction.url ?? null,
+          url: serializeStoredRunbookActionUrl(nextAction),
           method: nextAction.method ?? null,
           headersJson: serializeOptionalJson(nextAction.headers),
           body: serializeRunbookActionBody(nextAction),
-          query: nextAction.query ?? null,
-          sourceId: nextAction.sourceId ?? null,
+          query: serializeStoredRunbookActionQuery(nextAction),
+          sourceId: serializeStoredRunbookActionSourceId(nextAction),
           parametersJson: serializeOptionalJson(nextAction.parameters),
           logFilterJson: serializeOptionalJson(nextAction.logFilter),
           updatedAt: now,
@@ -1457,12 +1559,12 @@ export class DesktopRunbookStore {
         prompt: nextAction.prompt ?? null,
         llmProviderKey: nextAction.llmProviderKey ?? null,
         llmModel: nextAction.llmModel ?? null,
-        url: nextAction.url ?? null,
+        url: serializeStoredRunbookActionUrl(nextAction),
         method: nextAction.method ?? null,
         headersJson: serializeOptionalJson(nextAction.headers),
         body: serializeRunbookActionBody(nextAction),
-        query: nextAction.query ?? null,
-        sourceId: nextAction.sourceId ?? null,
+        query: serializeStoredRunbookActionQuery(nextAction),
+        sourceId: serializeStoredRunbookActionSourceId(nextAction),
         parametersJson: serializeOptionalJson(nextAction.parameters),
         logFilterJson: serializeOptionalJson(nextAction.logFilter),
         createdAt: now,
@@ -1634,6 +1736,10 @@ export class DesktopRunbookStore {
             method: action.method,
             headers: action.headers,
             body: action.body,
+            pluginId: action.pluginId,
+            pluginActionId: action.pluginActionId,
+            pluginInput: action.pluginInput,
+            pluginAuth: action.pluginAuth,
             query: action.query,
             sourceRef,
             sourceName,
@@ -2015,11 +2121,18 @@ export class DesktopRunbookStore {
 
           const normalizedParameters = normalizeRunbookParameters(action.parameters);
           let body = action.body ?? null;
+          let url = action.url ?? null;
+          let query = action.query ?? null;
           if (isTelemetryActionType(action.type) && action.telemetryConfig !== undefined) {
             body = JSON.stringify(action.telemetryConfig);
           }
           let sourceId: string | null = null;
-          if (action.sourceRef !== undefined && action.sourceRef.length > 0) {
+          if (action.type === "plugin") {
+            body = action.pluginInput ?? null;
+            url = action.pluginAuth ?? null;
+            query = action.pluginActionId ?? null;
+            sourceId = action.pluginId ?? null;
+          } else if (action.sourceRef !== undefined && action.sourceRef.length > 0) {
             sourceId = importedExternalSources.sourceIdByRef.get(action.sourceRef) ?? null;
           }
 
@@ -2034,11 +2147,11 @@ export class DesktopRunbookStore {
               prompt: action.prompt ?? null,
               llmProviderKey: action.llmProviderKey ?? null,
               llmModel: action.llmModel ?? null,
-              url: action.url ?? null,
+              url,
               method: action.method ?? null,
               headersJson: serializeOptionalJson(action.headers),
               body,
-              query: action.query ?? null,
+              query,
               sourceId,
               parametersJson: serializeOptionalJson(normalizedParameters),
               logFilterJson: serializeOptionalJson(action.logFilter),

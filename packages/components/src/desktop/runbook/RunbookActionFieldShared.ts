@@ -1,6 +1,7 @@
 import type { RefObject } from "react";
 
 import type {
+  PluginManifest,
   RunbookActionRecord,
   RunbookHttpHeader,
   RunbookHttpMethod,
@@ -44,6 +45,9 @@ export type RunbookActionTypeFieldsProps = {
   onModelDropdownOpenChange: (open: boolean) => void;
   errorSourceOptions: Array<{ id: string; label: string }>;
   errorSourcesLoading: boolean;
+  pluginManifests: PluginManifest[];
+  pluginOptions: Array<{ id: string; label: string }>;
+  pluginsLoading: boolean;
   isMissingErrorSource: boolean;
   sourceHelpClass: string;
   sourceHelpText: string;

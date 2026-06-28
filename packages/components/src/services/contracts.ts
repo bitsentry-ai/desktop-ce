@@ -503,10 +503,11 @@ export interface RuntimeServicePort {
 
 export type LogLevelThreshold = "error" | "warning" | "info" | "debug";
 
-export type ErrorSourceType = "sentry" | "wazuh" | "posthog";
+export type ErrorSourceType = string;
 
 export interface ErrorSourceRow {
   id: string;
+  pluginId?: string;
   sourceType: ErrorSourceType;
   name: string;
   syncEnabled: boolean;
@@ -519,8 +520,10 @@ export interface ErrorSourceRow {
 }
 
 export interface CreateErrorSourceInput {
+  pluginId?: string;
   sourceType: ErrorSourceType;
   name: string;
+  setupValues?: Record<string, unknown>;
   authToken?: string;
   organizationSlug?: string;
   organizationId?: string;
@@ -536,6 +539,7 @@ export interface CreateErrorSourceInput {
 export interface UpdateErrorSourceInput {
   id: string;
   name?: string;
+  setupValues?: Record<string, unknown>;
   logLevelThreshold?: LogLevelThreshold;
   syncEnabled?: boolean;
   autoDiagnosisEnabled?: boolean;
@@ -559,10 +563,148 @@ export interface ErrorSourcesServicePort {
   ): Promise<ErrorSourceSyncResult>;
 }
 
+export type PluginFieldType =
+  | "string"
+  | "number"
+  | "boolean"
+  | "json"
+  | "string_array";
+
+export interface PluginFieldDefinition {
+  key: string;
+  label: string;
+  description?: string;
+  placeholder?: string;
+  type: PluginFieldType;
+  required: boolean;
+  secret?: boolean;
+  defaultValue?: unknown;
+  enumValues?: string[];
+}
+
+export interface PluginActionDefinition {
+  id: string;
+  title: string;
+  description: string;
+  riskLevel: "read" | "write";
+  fields: PluginFieldDefinition[];
+  referencePath?: string;
+}
+
+export interface PluginTriggerDefinition {
+  id: string;
+  title: string;
+  description: string;
+  kind: "poll" | "webhook";
+  eventTypes: string[];
+  fields: PluginFieldDefinition[];
+  referencePath?: string;
+}
+
+export interface PluginErrorSourceMetadata {
+  sourceType: ErrorSourceType;
+  setupFields: PluginErrorSourceSetupField[];
+  providerActions?: {
+    listOrganizations?: string;
+    listProjects?: string;
+    getProject?: string;
+    queryIssues?: string;
+    listIssues?: string;
+    listIssueEvents?: string;
+    searchAlerts?: string;
+  };
+  oauth?: {
+    envClientIdName?: string;
+    envClientSecretName?: string;
+    envRedirectUriName?: string;
+    defaultRedirectUri?: string;
+    scopes?: string[];
+    publicClient?: boolean;
+  };
+}
+
+export type PluginErrorSourceSetupFieldTarget =
+  | "authToken"
+  | "organizationSlug"
+  | "organizationId"
+  | "projectSlugs"
+  | "projectIds"
+  | "baseUrl"
+  | "indexPatterns";
+
+export type PluginErrorSourceSetupFieldControl =
+  | "text"
+  | "password"
+  | "multiline_list"
+  | "posthog_base_url";
+
+export type PluginErrorSourceSetupFieldStorage =
+  | "accessTokenRef"
+  | "configuration";
+
+export interface PluginErrorSourceSetupField {
+  key: string;
+  target?: PluginErrorSourceSetupFieldTarget;
+  storage: PluginErrorSourceSetupFieldStorage;
+  configurationKey?: string;
+  label: string;
+  placeholder?: string;
+  description?: string;
+  required: boolean;
+  control: PluginErrorSourceSetupFieldControl;
+}
+
+export interface PluginManifestMetadata {
+  errorSource?: PluginErrorSourceMetadata;
+}
+
+export interface PluginManifest {
+  id: string;
+  name: string;
+  version: string;
+  description: string;
+  referenceRepositoryPath?: string;
+  metadata?: PluginManifestMetadata;
+  auth: {
+    fields: PluginFieldDefinition[];
+  };
+  actions: PluginActionDefinition[];
+  triggers: PluginTriggerDefinition[];
+}
+
+export interface PluginActionExecutionResult {
+  pluginId: string;
+  actionId: string;
+  ok: boolean;
+  status: number;
+  summary: string;
+  data?: unknown;
+}
+
+export type PluginStoredAuthRecord = Record<string, unknown>;
+
+export interface PluginsServicePort {
+  list(): Promise<PluginManifest[]>;
+  get(pluginId: string): Promise<PluginManifest | null>;
+  getStoredAuth(pluginId: string): Promise<PluginStoredAuthRecord>;
+  updateStoredAuth(
+    pluginId: string,
+    auth: PluginStoredAuthRecord,
+  ): Promise<PluginStoredAuthRecord>;
+  clearStoredAuth(pluginId: string): Promise<void>;
+  execute(input: {
+    pluginId: string;
+    actionId: string;
+    auth?: Record<string, unknown>;
+    input?: Record<string, unknown>;
+  }): Promise<PluginActionExecutionResult>;
+}
+
 export type RunbookActionType =
   | "shell"
   | "llm"
   | "http"
+  | "plugin"
   | "external_source"
   | "telemetry_existing_entry"
   | "data_source_query"
@@ -624,7 +766,7 @@ export interface RunbookTriggerContext {
   needLabel?: string;
   sourceId?: string;
   sourceName?: string;
-  sourceType?: "sentry" | "wazuh" | "posthog";
+  sourceType?: ErrorSourceType;
   entrypoint: RunbookTriggerSurface;
   incidentThreadId?: string;
 }
@@ -633,7 +775,7 @@ export interface TelemetryActionConfig {
   needId?: string;
   needLabel?: string;
   sourceId?: string;
-  sourceType?: "sentry" | "wazuh" | "posthog";
+  sourceType?: ErrorSourceType;
   sourceName?: string;
   queryMode?: "search" | "collector";
   queryLimit?: number;
@@ -663,6 +805,10 @@ export interface RunbookActionRecord {
   method?: RunbookHttpMethod;
   headers?: RunbookHttpHeader[];
   body?: string;
+  pluginId?: string;
+  pluginActionId?: string;
+  pluginInput?: string;
+  pluginAuth?: string;
   query?: string;
   sourceId?: string;
   parameters?: RunbookActionParameter[];
@@ -1445,6 +1591,7 @@ export interface BitsentryServicePorts {
   auth?: AuthServicePort;
   runtime?: RuntimeServicePort;
   errorSources?: ErrorSourcesServicePort;
+  plugins?: PluginsServicePort;
   runbooks: RunbooksServicePort;
   agent?: AgentServicePort;
   llmProviders?: LLMProviderServicePort;

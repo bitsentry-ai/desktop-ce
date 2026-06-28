@@ -1499,5 +1499,6 @@
   "common.useVulnerabilityNotifications.severity": "Severity:",
   "common.results.noResultsYetRunThisRunbook": "No results yet. Run this runbook to see results here.",
   "common.results.noRuntimeParameterValuesCaptured": "No runtime parameter values were captured for this execution.",
-  "common.results.noInputMetadataCaptured": "No input metadata was captured for this step."
+  "common.results.noInputMetadataCaptured": "No input metadata was captured for this step.",
+  "common.incidentArtifactsRail.actionType.plugin": "Plugin"
 }

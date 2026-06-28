@@ -18,6 +18,8 @@ import type {
   LogLevelThreshold,
   MagicLinkRequest,
   MagicLinkVerifyRequest,
+  PluginActionExecutionResult,
+  PluginManifest,
   ResolvedTicketsQuery,
   RunbooksServicePort,
   SyncResolutionStatusesInput,
@@ -87,6 +89,12 @@ const queryKeys = {
   currentUser: () => [...queryKeys.authRoot, 'current-user'] as const,
   totpStatus: () => [...queryKeys.authRoot, 'totp-status'] as const,
   passkeys: () => [...queryKeys.authRoot, 'passkeys'] as const,
+
+  pluginsRoot: ['bitsentry', 'plugins'] as const,
+  pluginsList: () => [...queryKeys.pluginsRoot, 'list'] as const,
+  pluginDetail: (pluginId: string) => [...queryKeys.pluginsRoot, 'detail', pluginId] as const,
+  pluginStoredAuth: (pluginId: string) =>
+    [...queryKeys.pluginsRoot, 'stored-auth', pluginId] as const,
 
   errorSourcesRoot: ['bitsentry', 'error-sources'] as const,
   errorSourcesList: () => [...queryKeys.errorSourcesRoot, 'list'] as const,
@@ -744,6 +752,109 @@ export function useAppLogout() {
       void runtime.logout();
     }
   };
+}
+
+export function usePlugins() {
+  const { plugins } = useBitsentryServices();
+  const port = requirePort(plugins, 'plugins');
+
+  return useQuery({
+    queryKey: queryKeys.pluginsList(),
+    queryFn: () => port.list(),
+    staleTime: 1000 * 30,
+    gcTime: 1000 * 60 * 5,
+  });
+}
+
+export function usePlugin(pluginId?: string) {
+  const { plugins } = useBitsentryServices();
+  const port = requirePort(plugins, 'plugins');
+
+  return useQuery({
+    queryKey: queryKeys.pluginDetail(pluginId ?? ''),
+    queryFn: () => {
+      if (pluginId === undefined || pluginId.trim().length === 0) {
+        return Promise.resolve<PluginManifest | null>(null);
+      }
+
+      return port.get(pluginId);
+    },
+    enabled: typeof pluginId === 'string' && pluginId.trim().length > 0,
+    staleTime: 1000 * 30,
+    gcTime: 1000 * 60 * 5,
+  });
+}
+
+export function usePluginStoredAuth(pluginId?: string) {
+  const { plugins } = useBitsentryServices();
+  const port = requirePort(plugins, 'plugins');
+
+  return useQuery({
+    queryKey: queryKeys.pluginStoredAuth(pluginId ?? ''),
+    queryFn: () => {
+      if (pluginId === undefined || pluginId.trim().length === 0) {
+        return Promise.resolve<Record<string, unknown>>({});
+      }
+
+      return port.getStoredAuth(pluginId);
+    },
+    enabled: typeof pluginId === 'string' && pluginId.trim().length > 0,
+    staleTime: 1000 * 30,
+    gcTime: 1000 * 60 * 5,
+  });
+}
+
+export function useUpdatePluginStoredAuth() {
+  const { plugins } = useBitsentryServices();
+  const port = requirePort(plugins, 'plugins');
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (input: { pluginId: string; auth: Record<string, unknown> }) =>
+      port.updateStoredAuth(input.pluginId, input.auth),
+    onSuccess: (result, variables) => {
+      queryClient.setQueryData(queryKeys.pluginStoredAuth(variables.pluginId), result);
+      void queryClient.invalidateQueries({
+        queryKey: queryKeys.pluginStoredAuth(variables.pluginId),
+      });
+    },
+  });
+}
+
+export function useClearPluginStoredAuth() {
+  const { plugins } = useBitsentryServices();
+  const port = requirePort(plugins, 'plugins');
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (pluginId: string) => port.clearStoredAuth(pluginId),
+    onSuccess: (_result, pluginId) => {
+      queryClient.setQueryData(queryKeys.pluginStoredAuth(pluginId), {});
+      void queryClient.invalidateQueries({
+        queryKey: queryKeys.pluginStoredAuth(pluginId),
+      });
+    },
+  });
+}
+
+export function useExecutePluginAction() {
+  const { plugins } = useBitsentryServices();
+  const port = requirePort(plugins, 'plugins');
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (input: {
+      pluginId: string;
+      actionId: string;
+      auth?: Record<string, unknown>;
+      input?: Record<string, unknown>;
+    }) => port.execute(input),
+    onSuccess: (result: PluginActionExecutionResult) => {
+      void queryClient.invalidateQueries({
+        queryKey: queryKeys.pluginDetail(result.pluginId),
+      });
+    },
+  });
 }
 
 export function useErrorSources() {

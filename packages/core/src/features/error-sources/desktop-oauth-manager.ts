@@ -3,6 +3,10 @@ import { createHash, randomBytes } from "crypto";
 import type { ErrorSourceType } from "./error-sources.schemas";
 import { getProviderForSource } from "./desktop-posthog-provider-binding";
 import { assertAllowedPostHogBaseUrl } from "./posthog-base-url";
+import {
+  isOAuthPluginErrorSourceType,
+  type OAuthPluginErrorSourceType,
+} from "./plugin-backed-error-sources";
 
 export interface DesktopOAuthSettingsDatabase {
   setting: {
@@ -55,6 +59,7 @@ export interface DesktopOAuthProvider {
 }
 
 export interface InitiateOAuthInput {
+  pluginId?: string;
   clientId?: string;
   redirectUri?: string;
   baseUrl?: string;
@@ -64,6 +69,7 @@ export interface InitiateOAuthInput {
 export interface CompleteOAuthInput {
   code: string;
   state: string;
+  pluginId?: string;
   clientId?: string;
   clientSecret?: string;
   redirectUri?: string;
@@ -82,12 +88,13 @@ export interface OAuthProviderConfig {
 
 type PendingOauthState = {
   sourceType: ErrorSourceType;
+  pluginId?: string;
   codeVerifier: string;
   createdAt: string;
   providerBaseUrl?: string;
 };
 
-export type OAuthSourceType = Extract<ErrorSourceType, "sentry" | "posthog">;
+export type OAuthSourceType = OAuthPluginErrorSourceType;
 
 export function createDesktopOAuthProviderConfigs(
   defaultRedirectUri: string,
@@ -245,12 +252,40 @@ export interface DesktopOauthManagerOptions {
   providerConfigs: Record<OAuthSourceType, OAuthProviderConfig>;
   resolveProvider(input: {
     sourceType: ErrorSourceType;
+    pluginId?: string;
     providerBaseUrl?: string;
   }): DesktopOAuthProvider;
+  resolvePluginManifest?: (
+    pluginId: string,
+  ) => {
+    metadata?: {
+      errorSource?: {
+        sourceType?: ErrorSourceType;
+        oauth?: Partial<OAuthProviderConfig>;
+      };
+    };
+  } | null;
 }
 
 export interface DesktopOauthManagerProviderFactory {
   getProvider(sourceType: ErrorSourceType): DesktopOAuthProvider;
+  getProviderForSource?: (source: {
+    sourceType: ErrorSourceType;
+    additionalMetadata?: unknown;
+    configuration?: {
+      posthogBaseUrl?: unknown;
+    };
+  }) => DesktopOAuthProvider;
+  getPlugin?: (
+    pluginId: string,
+  ) => {
+    metadata?: {
+      errorSource?: {
+        sourceType?: ErrorSourceType;
+        oauth?: Partial<OAuthProviderConfig>;
+      };
+    };
+  } | null;
 }
 
 export interface DesktopOauthManagerBindings {
@@ -275,13 +310,17 @@ export function createDesktopOauthManagerBindings(
       ) {
         super(db, {
           providerConfigs,
-          resolveProvider: ({ sourceType, providerBaseUrl }) =>
+          resolveProvider: ({ sourceType, pluginId, providerBaseUrl }) =>
             getProviderForSource(providerFactory, {
               sourceType,
+              additionalMetadata:
+                pluginId === undefined ? undefined : { pluginId },
               configuration: {
                 posthogBaseUrl: providerBaseUrl,
               },
             }),
+          resolvePluginManifest: (pluginId) =>
+            providerFactory.getPlugin?.(pluginId) ?? null,
         });
       }
     },
@@ -294,19 +333,65 @@ export class DesktopOauthManagerService {
     private readonly options: DesktopOauthManagerOptions,
   ) {}
 
-  private getProviderConfig(sourceType: ErrorSourceType): OAuthProviderConfig {
-    if (sourceType === "wazuh") {
+  private getPluginProviderConfig(
+    sourceType: ErrorSourceType,
+    pluginId?: string,
+  ): Partial<OAuthProviderConfig> | undefined {
+    const normalizedPluginId = pluginId?.trim();
+    if (
+      normalizedPluginId === undefined ||
+      normalizedPluginId.length === 0 ||
+      this.options.resolvePluginManifest === undefined
+    ) {
+      return undefined;
+    }
+
+    const plugin = this.options.resolvePluginManifest(normalizedPluginId);
+    if (plugin?.metadata?.errorSource?.sourceType !== sourceType) {
+      return undefined;
+    }
+
+    return plugin.metadata.errorSource.oauth;
+  }
+
+  private getProviderConfig(
+    sourceType: ErrorSourceType,
+    pluginId?: string,
+  ): OAuthProviderConfig {
+    if (!isOAuthPluginErrorSourceType(sourceType)) {
       throw new Error(`OAuth is not configured for source type: ${sourceType}`);
     }
 
-    return this.options.providerConfigs[sourceType];
+    const baseConfig = this.options.providerConfigs[sourceType];
+    const pluginOverrides = this.getPluginProviderConfig(sourceType, pluginId);
+    if (pluginOverrides === undefined) {
+      return baseConfig;
+    }
+
+    return {
+      envClientIdName:
+        pluginOverrides.envClientIdName ?? baseConfig.envClientIdName,
+      envClientSecretName:
+        pluginOverrides.envClientSecretName ?? baseConfig.envClientSecretName,
+      envRedirectUriName:
+        pluginOverrides.envRedirectUriName ?? baseConfig.envRedirectUriName,
+      defaultRedirectUri:
+        pluginOverrides.defaultRedirectUri ?? baseConfig.defaultRedirectUri,
+      scopes: pluginOverrides.scopes ?? baseConfig.scopes,
+      publicClient: pluginOverrides.publicClient ?? baseConfig.publicClient,
+    };
   }
 
   private getProviderForOAuth(
     sourceType: ErrorSourceType,
+    pluginId?: string,
     providerBaseUrl?: string,
   ): DesktopOAuthProvider {
-    return this.options.resolveProvider({ sourceType, providerBaseUrl });
+    return this.options.resolveProvider({
+      sourceType,
+      pluginId,
+      providerBaseUrl,
+    });
   }
 
   async initiateOAuth(
@@ -315,7 +400,8 @@ export class DesktopOauthManagerService {
   ): Promise<{ state: string; authUrl: string; redirectUri: string }> {
     await this.pruneExpiredPendingStates();
 
-    const config = this.getProviderConfig(sourceType);
+    const pluginId = input?.pluginId?.trim() || undefined;
+    const config = this.getProviderConfig(sourceType, pluginId);
     let clientId = input?.clientId?.trim() ?? "";
     if (clientId.length === 0) {
       clientId = getRequiredEnv(config.envClientIdName, sourceType);
@@ -340,7 +426,11 @@ export class DesktopOauthManagerService {
         readPostHogBaseUrl(input ?? {}),
       );
     }
-    const provider = this.getProviderForOAuth(sourceType, providerBaseUrl);
+    const provider = this.getProviderForOAuth(
+      sourceType,
+      pluginId,
+      providerBaseUrl,
+    );
     const authUrl = provider.buildAuthorizeUrl({
       clientId,
       redirectUri,
@@ -351,6 +441,7 @@ export class DesktopOauthManagerService {
 
     const record: PendingOauthState = {
       sourceType,
+      pluginId,
       codeVerifier,
       createdAt: nowIso(),
     };
@@ -396,9 +487,11 @@ export class DesktopOauthManagerService {
       } catch {
         throw new Error("Corrupted OAuth state payload");
       }
+      const requestedPluginId = input.pluginId?.trim() || undefined;
 
       if (
         pending.sourceType !== sourceType ||
+        (pending.pluginId !== undefined && pending.pluginId !== requestedPluginId) ||
         pending.codeVerifier.length === 0
       ) {
         throw new Error("Invalid OAuth state payload");
@@ -408,7 +501,8 @@ export class DesktopOauthManagerService {
         throw new Error("OAuth state expired. Please try again.");
       }
 
-      const config = this.getProviderConfig(sourceType);
+      const effectivePluginId = pending.pluginId ?? requestedPluginId;
+      const config = this.getProviderConfig(sourceType, effectivePluginId);
       let pendingBaseUrl: string | undefined;
       if (
         pending.sourceType === "posthog" &&
@@ -438,7 +532,11 @@ export class DesktopOauthManagerService {
         );
       }
       const providerBaseUrl = pendingBaseUrl ?? validatedRequestedBaseUrl;
-      const provider = this.getProviderForOAuth(sourceType, providerBaseUrl);
+      const provider = this.getProviderForOAuth(
+        sourceType,
+        effectivePluginId,
+        providerBaseUrl,
+      );
       let clientId = input.clientId?.trim() ?? "";
       if (clientId.length === 0) {
         clientId = getRequiredEnv(config.envClientIdName, sourceType);

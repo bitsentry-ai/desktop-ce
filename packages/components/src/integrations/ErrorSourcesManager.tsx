@@ -15,6 +15,7 @@ import {
   useCreateErrorSource,
   useDeleteErrorSource,
   useErrorSources,
+  usePlugins,
   useSyncErrorSource,
   useSystemSettings,
   useUpdateErrorSource,
@@ -23,16 +24,17 @@ import {
 import { toast } from "sonner";
 import type {
   CreateErrorSourceInput,
+  ErrorSourceType,
+  PluginErrorSourceSetupField,
   ErrorSourceRow,
   LogLevelThreshold,
+  PluginManifest,
 } from "../services/contracts";
 import { useTranslation } from "@bitsentry-ce/i18n";
 import { Pencil, RefreshCw, Trash2 } from "lucide-react";
 import { ProviderIcon, type ProviderIconKind } from "./icons";
 
 type StatusKind = "info" | "success" | "error";
-
-type SourceType = "sentry" | "wazuh" | "posthog";
 type Translate = (key: string, options?: Record<string, unknown>) => string;
 
 function normalizeSyncErrorMessage(message: string): string {
@@ -167,6 +169,229 @@ function normalizeLastUsedExternalSourceId(
   return value.trim();
 }
 
+function toProviderIconKind(sourceType: ErrorSourceType): ProviderIconKind {
+  if (sourceType === "sentry" || sourceType === "wazuh" || sourceType === "posthog") {
+    return sourceType;
+  }
+
+  return "plugin";
+}
+
+function readPluginErrorSourceType(
+  plugin: PluginManifest,
+): ErrorSourceType | null {
+  return plugin.metadata?.errorSource?.sourceType ?? null;
+}
+
+function readPluginErrorSourceSetupField(
+  plugin: PluginManifest | null,
+  target: PluginErrorSourceSetupField["target"],
+): PluginErrorSourceSetupField | null {
+  const setupFields = plugin?.metadata?.errorSource?.setupFields;
+  if (setupFields === undefined) {
+    return null;
+  }
+
+  return setupFields.find((field) => field.target === target) ?? null;
+}
+
+function formatSetupFieldRequiredMessage(label: string): string {
+  return `${label} is required.`;
+}
+
+function formatCustomHostRequiredMessage(label: string): string {
+  return `${label} is required when using a custom host.`;
+}
+
+function readSourcePluginId(source: ErrorSourceRow): string {
+  if (typeof source.pluginId === "string" && source.pluginId.trim().length > 0) {
+    return source.pluginId.trim();
+  }
+
+  return source.sourceType;
+}
+
+function findPluginManifestForSource(
+  plugins: PluginManifest[],
+  source: ErrorSourceRow,
+): PluginManifest | null {
+  const pluginId = readSourcePluginId(source);
+  return (
+    plugins.find((plugin) => plugin.id === pluginId) ??
+    plugins.find((plugin) => readPluginErrorSourceType(plugin) === source.sourceType) ??
+    null
+  );
+}
+
+function readArrayDisplayValue(value: unknown): string {
+  if (!Array.isArray(value)) {
+    return "";
+  }
+
+  return value.filter((item): item is string => typeof item === "string").join(", ");
+}
+
+function readPluginSetupFieldDisplayValue(
+  source: ErrorSourceRow,
+  field: PluginErrorSourceSetupField,
+): string {
+  const config = source.configuration;
+  if (config === undefined) {
+    return "";
+  }
+
+  const key = field.configurationKey ?? field.key;
+
+  switch (field.target) {
+    case "organizationSlug":
+    case "organizationId":
+      return readStringFromConfig(config, "orgSlug");
+    case "projectSlugs":
+      return readStringArrayFromConfig(config, "projectSlugs");
+    case "projectIds": {
+      const configuredProjectIds = readStringArrayFromConfig(config, "projectIds");
+      if (configuredProjectIds.length > 0) {
+        return configuredProjectIds;
+      }
+
+      return readStringArrayFromConfig(config, "projectSlugs");
+    }
+    case "baseUrl": {
+      if (source.sourceType === "posthog") {
+        return (
+          readStringFromConfig(config, "posthogBaseUrl") ||
+          readStringFromConfig(config, "baseUrl")
+        );
+      }
+
+      return readStringFromConfig(config, "baseUrl");
+    }
+    case "indexPatterns":
+      return readStringArrayFromConfig(config, "indexPatterns");
+    case "authToken":
+      return "";
+    default: {
+      const value = config[key];
+      if (typeof value === "string") {
+        return value;
+      }
+      if (Array.isArray(value)) {
+        return readArrayDisplayValue(value);
+      }
+      if (value !== null && typeof value === "object") {
+        return JSON.stringify(value);
+      }
+      return "";
+    }
+  }
+}
+
+function buildInitialEditSetupFieldValues(
+  source: ErrorSourceRow,
+  plugin: PluginManifest | null,
+): Record<string, string> {
+  const setupFields = plugin?.metadata?.errorSource?.setupFields ?? [];
+  return Object.fromEntries(
+    setupFields.map((field) => [field.key, readPluginSetupFieldDisplayValue(source, field)]),
+  );
+}
+
+function renderLegacyEditConnectionFields(
+  source: ErrorSourceRow,
+  t: (key: string) => string,
+): ReactNode {
+  const config = source.configuration;
+
+  if (source.sourceType === "sentry") {
+    return (
+      <>
+        <div className="space-y-1">
+          <FieldLabel>
+            {t("common.errorSourcesManager.labelOrganization")}
+          </FieldLabel>
+          <Input
+            value={readStringFromConfig(config, "orgSlug")}
+            readOnly
+            disabled
+          />
+        </div>
+        <div className="space-y-1">
+          <FieldLabel>
+            {t("common.errorSourcesManager.labelProjects")}
+          </FieldLabel>
+          <Input
+            value={readStringArrayFromConfig(config, "projectSlugs")}
+            readOnly
+            disabled
+          />
+        </div>
+      </>
+    );
+  }
+
+  if (source.sourceType === "posthog") {
+    return (
+      <>
+        <div className="space-y-1">
+          <FieldLabel>
+            {t("common.errorSourcesManager.labelPosthogHost")}
+          </FieldLabel>
+          <Input
+            value={readStringFromConfig(config, "posthogBaseUrl")}
+            readOnly
+            disabled
+          />
+        </div>
+        <div className="space-y-1">
+          <FieldLabel>
+            {t("common.errorSourcesManager.labelOrganization")}
+          </FieldLabel>
+          <Input
+            value={readStringFromConfig(config, "orgSlug")}
+            readOnly
+            disabled
+          />
+        </div>
+        <div className="space-y-1">
+          <FieldLabel>
+            {t("common.errorSourcesManager.labelProjects")}
+          </FieldLabel>
+          <Input
+            value={readStringArrayFromConfig(config, "projectIds")}
+            readOnly
+            disabled
+          />
+        </div>
+      </>
+    );
+  }
+
+  return (
+    <>
+      <div className="space-y-1">
+        <FieldLabel>
+          {t("common.errorSourcesManager.labelApiBaseUrl")}
+        </FieldLabel>
+        <Input
+          value={readStringFromConfig(config, "baseUrl")}
+          readOnly
+          disabled
+        />
+      </div>
+      <div className="space-y-1">
+        <FieldLabel>
+          {t("common.errorSourcesManager.labelIndexPatterns")}
+        </FieldLabel>
+        <Input
+          value={readStringArrayFromConfig(config, "indexPatterns")}
+          readOnly
+          disabled
+        />
+      </div>
+    </>
+  );
+}
+
 interface ErrorSourcesManagerProps {
   showHeader?: boolean;
 }
@@ -174,6 +399,20 @@ interface ErrorSourcesManagerProps {
 interface FieldLabelProps {
   children: ReactNode;
   required?: boolean;
+}
+
+interface ProviderCard {
+  pluginId: string;
+  sourceType: ErrorSourceType;
+  label: string;
+  icon: ProviderIconKind;
+}
+
+function readProviderSortOrder(sourceType: ErrorSourceType): number {
+  if (sourceType === "sentry") return 0;
+  if (sourceType === "wazuh") return 1;
+  if (sourceType === "posthog") return 2;
+  return 99;
 }
 
 function FieldLabel({ children, required = false }: FieldLabelProps) {
@@ -222,7 +461,8 @@ export default function ErrorSourcesManager({
 
   // ---- Create-source dialog state ----
   const [addDialogOpen, setAddDialogOpen] = useState(false);
-  const [sourceType, setSourceType] = useState<SourceType>("sentry");
+  const [sourceType, setSourceType] = useState<ErrorSourceType>("sentry");
+  const [selectedProviderId, setSelectedProviderId] = useState("sentry");
   const [sourceName, setSourceName] = useState("Sentry");
   const [authToken, setAuthToken] = useState("");
 
@@ -243,6 +483,9 @@ export default function ErrorSourcesManager({
   // because they bind to the same inputs the user already sees.
   const [advancedOrgInput, setAdvancedOrgInput] = useState("");
   const [advancedProjectsInput, setAdvancedProjectsInput] = useState("");
+  const [customSetupFieldValues, setCustomSetupFieldValues] = useState<
+    Record<string, string>
+  >({});
 
   const [logLevelThreshold, setLogLevelThreshold] =
     useState<LogLevelThreshold>("error");
@@ -269,6 +512,9 @@ export default function ErrorSourcesManager({
   const [editLogThreshold, setEditLogThreshold] =
     useState<LogLevelThreshold>("error");
   const [editSyncEnabled, setEditSyncEnabled] = useState(true);
+  const [editSetupFieldValues, setEditSetupFieldValues] = useState<
+    Record<string, string>
+  >({});
   const [editDialogError, setEditDialogError] = useState<string | null>(null);
 
   const {
@@ -276,6 +522,7 @@ export default function ErrorSourcesManager({
     isLoading,
     refetch: refetchSources,
   } = useErrorSources();
+  const { data: plugins = [] } = usePlugins();
   const { data: systemSettings } = useSystemSettings();
   const createMutation = useCreateErrorSource();
   const deleteMutation = useDeleteErrorSource();
@@ -300,6 +547,127 @@ export default function ErrorSourcesManager({
     () => toProjectSlugs(advancedProjectsInput),
     [advancedProjectsInput],
   );
+  const providerCards = useMemo<ProviderCard[]>(
+    () => {
+      const discovered = plugins
+        .flatMap((plugin) => {
+          const pluginSourceType = readPluginErrorSourceType(plugin);
+          if (pluginSourceType === null) {
+            return [];
+          }
+
+          return [
+            {
+              pluginId: plugin.id,
+              sourceType: pluginSourceType,
+              label: plugin.name,
+              icon: toProviderIconKind(pluginSourceType),
+            },
+          ];
+        })
+        .sort((left, right) => {
+          const sourceTypeOrder =
+            readProviderSortOrder(left.sourceType) -
+            readProviderSortOrder(right.sourceType);
+          if (sourceTypeOrder !== 0) {
+            return sourceTypeOrder;
+          }
+
+          const labelOrder = left.label.localeCompare(right.label);
+          if (labelOrder !== 0) {
+            return labelOrder;
+          }
+
+          return left.pluginId.localeCompare(right.pluginId);
+        });
+
+      if (discovered.length > 0) {
+        return discovered;
+      }
+
+      return [
+        {
+          pluginId: "sentry",
+          sourceType: "sentry" as const,
+          label: "Sentry",
+          icon: "sentry" as const,
+        },
+        {
+          pluginId: "wazuh",
+          sourceType: "wazuh" as const,
+          label: "Wazuh",
+          icon: "wazuh" as const,
+        },
+        {
+          pluginId: "posthog",
+          sourceType: "posthog" as const,
+          label: "PostHog",
+          icon: "posthog" as const,
+        },
+      ];
+    },
+    [plugins],
+  );
+  const selectedProviderCard = useMemo(
+    () =>
+      providerCards.find((card) => card.pluginId === selectedProviderId) ??
+      null,
+    [providerCards, selectedProviderId],
+  );
+  const availableProviderSummary = useMemo(
+    () => providerCards.map((card) => card.label).join(", "),
+    [providerCards],
+  );
+  const pluginsById = useMemo(
+    () => new Map(plugins.map((plugin) => [plugin.id, plugin])),
+    [plugins],
+  );
+  const selectedPlugin = useMemo(
+    () =>
+      plugins.find((plugin) => plugin.id === selectedProviderId) ??
+      plugins.find((plugin) => readPluginErrorSourceType(plugin) === sourceType) ??
+      null,
+    [plugins, selectedProviderId, sourceType],
+  );
+  const selectedSetupFields = useMemo(
+    () => selectedPlugin?.metadata?.errorSource?.setupFields ?? [],
+    [selectedPlugin],
+  );
+  const authSetupField = useMemo(
+    () => readPluginErrorSourceSetupField(selectedPlugin, "authToken"),
+    [selectedPlugin],
+  );
+  const baseUrlSetupField = useMemo(
+    () => readPluginErrorSourceSetupField(selectedPlugin, "baseUrl"),
+    [selectedPlugin],
+  );
+  const orgSetupField = useMemo(
+    () =>
+      readPluginErrorSourceSetupField(selectedPlugin, "organizationSlug") ??
+      readPluginErrorSourceSetupField(selectedPlugin, "organizationId"),
+    [selectedPlugin],
+  );
+  const projectsSetupField = useMemo(
+    () =>
+      readPluginErrorSourceSetupField(selectedPlugin, "projectSlugs") ??
+      readPluginErrorSourceSetupField(selectedPlugin, "projectIds"),
+    [selectedPlugin],
+  );
+  const indexPatternsSetupField = useMemo(
+    () => readPluginErrorSourceSetupField(selectedPlugin, "indexPatterns"),
+    [selectedPlugin],
+  );
+  const customSetupFields = useMemo(
+    () => selectedSetupFields.filter((field) => field.target === undefined),
+    [selectedSetupFields],
+  );
+  const editDialogPlugin = useMemo(
+    () =>
+      editDialogSource === null
+        ? null
+        : findPluginManifestForSource(plugins, editDialogSource),
+    [editDialogSource, plugins],
+  );
 
   useEffect(() => {
     if (pendingSyncIds.size === 0) return;
@@ -312,6 +680,25 @@ export default function ErrorSourcesManager({
     return () => { window.clearInterval(intervalId); };
   }, [pendingSyncIds, refetchSources]);
 
+  useEffect(() => {
+    if (selectedProviderCard !== null) {
+      if (selectedProviderCard.sourceType !== sourceType) {
+        setSourceType(selectedProviderCard.sourceType);
+      }
+      return;
+    }
+
+    const fallbackCard =
+      providerCards.find((card) => card.sourceType === sourceType) ??
+      providerCards[0];
+    if (fallbackCard !== undefined) {
+      setSelectedProviderId(fallbackCard.pluginId);
+      if (fallbackCard.sourceType !== sourceType) {
+        setSourceType(fallbackCard.sourceType);
+      }
+    }
+  }, [providerCards, selectedProviderCard, sourceType]);
+
   function resetCreateDialog() {
     setAuthToken("");
     setIndexPatternsText("");
@@ -320,6 +707,7 @@ export default function ErrorSourcesManager({
     setPosthogBaseUrlMode("us");
     setAdvancedOrgInput("");
     setAdvancedProjectsInput("");
+    setCustomSetupFieldValues({});
     setDialogError(null);
     setShowAdvanced(false);
     setLogLevelThreshold("error");
@@ -332,94 +720,180 @@ export default function ErrorSourcesManager({
     return posthogCustomBaseUrl.trim();
   }
 
+  function readSetupFieldTextValue(
+    field: PluginErrorSourceSetupField,
+  ): string {
+    switch (field.target) {
+      case "authToken":
+        return authToken.trim();
+      case "organizationSlug":
+      case "organizationId":
+        return advancedOrgInput.trim();
+      case "baseUrl":
+        if (field.control === "posthog_base_url") {
+          return getPosthogResolvedBaseUrl();
+        }
+        return wazuhBaseUrl.trim();
+      default:
+        return customSetupFieldValues[field.key]?.trim() ?? "";
+    }
+  }
+
+  function readSetupFieldListValue(
+    field: PluginErrorSourceSetupField,
+  ): string[] {
+    switch (field.target) {
+      case "projectSlugs":
+      case "projectIds":
+        return toProjectSlugs(advancedProjectsInput);
+      case "indexPatterns":
+        return toProjectSlugs(indexPatternsText);
+      default:
+        return toProjectSlugs(customSetupFieldValues[field.key] ?? "");
+    }
+  }
+
+  function readCreateSourceValidationError(
+    trimmedName: string,
+  ): string | null {
+    if (trimmedName.length === 0) {
+      return t("common.errorSourcesManager.sourceNameRequired");
+    }
+
+    for (const field of selectedSetupFields) {
+      if (field.target === "baseUrl" && field.control === "posthog_base_url") {
+        if (
+          posthogBaseUrlMode === "custom" &&
+          getPosthogResolvedBaseUrl().length === 0
+        ) {
+          return formatCustomHostRequiredMessage(field.label);
+        }
+        continue;
+      }
+
+      if (!field.required) {
+        continue;
+      }
+
+      if (
+        field.control === "multiline_list" ||
+        field.target === "projectSlugs" ||
+        field.target === "projectIds" ||
+        field.target === "indexPatterns"
+      ) {
+        if (readSetupFieldListValue(field).length === 0) {
+          return formatSetupFieldRequiredMessage(field.label);
+        }
+        continue;
+      }
+
+      if (readSetupFieldTextValue(field).length === 0) {
+        return formatSetupFieldRequiredMessage(field.label);
+      }
+    }
+
+    return null;
+  }
+
+  function buildCreateSourceInput(
+    trimmedName: string,
+  ): CreateErrorSourceInput {
+    const setupValues: Record<string, unknown> = {};
+    const input: CreateErrorSourceInput = {
+      pluginId: selectedPlugin?.id ?? selectedProviderCard?.pluginId ?? sourceType,
+      sourceType,
+      name: trimmedName,
+      setupValues,
+      logLevelThreshold,
+      syncEnabled: syncEnabledOnCreate,
+      autoDiagnosisEnabled: false,
+    };
+
+    for (const field of selectedSetupFields) {
+      if (
+        field.control === "multiline_list" ||
+        field.target === "projectSlugs" ||
+        field.target === "projectIds" ||
+        field.target === "indexPatterns"
+      ) {
+        setupValues[field.key] = readSetupFieldListValue(field);
+      } else {
+        const value = readSetupFieldTextValue(field);
+        if (value.length > 0 || field.control === "posthog_base_url") {
+          setupValues[field.key] = value;
+        }
+      }
+
+      switch (field.target) {
+        case "authToken": {
+          const value = readSetupFieldTextValue(field);
+          if (value.length > 0) {
+            setupValues.authToken = value;
+            input.authToken = value;
+          }
+          break;
+        }
+        case "organizationSlug": {
+          const value = readSetupFieldTextValue(field);
+          if (value.length > 0) {
+            setupValues.organizationSlug = value;
+            input.organizationSlug = value;
+          }
+          break;
+        }
+        case "organizationId": {
+          const value = readSetupFieldTextValue(field);
+          if (value.length > 0) {
+            setupValues.organizationId = value;
+            input.organizationId = value;
+          }
+          break;
+        }
+        case "projectSlugs": {
+          const value = readSetupFieldListValue(field);
+          setupValues.projectSlugs = value;
+          input.projectSlugs = value;
+          break;
+        }
+        case "projectIds": {
+          const value = readSetupFieldListValue(field);
+          setupValues.projectIds = value;
+          input.projectIds = value;
+          break;
+        }
+        case "indexPatterns": {
+          const value = readSetupFieldListValue(field);
+          setupValues.indexPatterns = value;
+          input.indexPatterns = value;
+          break;
+        }
+        case "baseUrl": {
+          const value = readSetupFieldTextValue(field);
+          if (field.control === "posthog_base_url") {
+            input.baseUrl = value;
+          } else if (value.length > 0) {
+            input.baseUrl = value;
+          }
+          break;
+        }
+        default:
+          break;
+      }
+    }
+
+    return input;
+  }
+
   // Submit — uses the typed org/project ids.
   const createSource = async () => {
     const trimmedName = sourceName.trim();
-    const trimmedToken = authToken.trim();
-
-    if (trimmedName.length === 0) {
-      setDialogError(t("common.errorSourcesManager.sourceNameRequired"));
+    const validationError = readCreateSourceValidationError(trimmedName);
+    if (validationError !== null) {
+      setDialogError(validationError);
       return;
     }
 
-    let input: CreateErrorSourceInput;
-    if (sourceType === "wazuh") {
-      // Wazuh credentials are optional in the shared schema (the worker can
-      // be wired up later via env vars or the system-settings page), so
-      // mirror that here instead of rejecting blank fields up front.
-      const trimmedBaseUrl = wazuhBaseUrl.trim();
-      input = {
-        sourceType,
-        name: trimmedName,
-        indexPatterns: toProjectSlugs(indexPatternsText),
-        logLevelThreshold,
-        syncEnabled: syncEnabledOnCreate,
-        autoDiagnosisEnabled: false,
-      };
-      if (trimmedBaseUrl.length > 0) {
-        input.baseUrl = trimmedBaseUrl;
-      }
-      if (trimmedToken.length > 0) {
-        input.authToken = trimmedToken;
-      }
-    } else if (sourceType === "posthog") {
-      if (trimmedToken.length === 0) {
-        setDialogError(t("common.errorSourcesManager.posthogApiTokenRequired"));
-        return;
-      }
-
-      const resolvedBaseUrl = getPosthogResolvedBaseUrl();
-      if (posthogBaseUrlMode === "custom" && resolvedBaseUrl.length === 0) {
-        setDialogError(t("common.errorSourcesManager.posthogBaseUrlRequired"));
-        return;
-      }
-
-      const trimmedOrgId = advancedOrgInput.trim();
-      const projectIds = toProjectSlugs(advancedProjectsInput);
-      if (projectIds.length === 0) {
-        setDialogError(
-          t("common.errorSourcesManager.posthogProjectIdsRequired"),
-        );
-        return;
-      }
-
-      input = {
-        sourceType,
-        name: trimmedName,
-        authToken: trimmedToken,
-        baseUrl: resolvedBaseUrl,
-        projectIds,
-        logLevelThreshold,
-        syncEnabled: syncEnabledOnCreate,
-        autoDiagnosisEnabled: false,
-      };
-      if (trimmedOrgId.length > 0) {
-        input.organizationId = trimmedOrgId;
-      }
-    } else {
-      // sentry
-      const trimmedOrg = advancedOrgInput.trim();
-
-      if (trimmedOrg.length === 0 || trimmedToken.length === 0) {
-        setDialogError(
-          t("common.errorSourcesManager.sentryOrgAndTokenRequired"),
-        );
-        return;
-      }
-
-      const projectSlugs = toProjectSlugs(advancedProjectsInput);
-
-      input = {
-        sourceType,
-        name: trimmedName,
-        authToken: trimmedToken,
-        organizationSlug: trimmedOrg,
-        projectSlugs,
-        logLevelThreshold,
-        syncEnabled: syncEnabledOnCreate,
-        autoDiagnosisEnabled: false,
-      };
-    }
+    const input = buildCreateSourceInput(trimmedName);
 
     try {
       const created = await createMutation.mutateAsync(input);
@@ -465,29 +939,140 @@ export default function ErrorSourcesManager({
   };
 
   const openEditDialog = (source: ErrorSourceRow) => {
+    const plugin = findPluginManifestForSource(plugins, source);
     setEditName(source.name);
     setEditLogThreshold(source.logLevelThreshold ?? "error");
     setEditSyncEnabled(source.syncEnabled);
+    setEditSetupFieldValues(buildInitialEditSetupFieldValues(source, plugin));
     setEditDialogError(null);
     setEditDialogSource(source);
   };
 
+  function readEditSetupFieldTextValue(
+    field: PluginErrorSourceSetupField,
+  ): string {
+    return editSetupFieldValues[field.key]?.trim() ?? "";
+  }
+
+  function readEditSetupFieldListValue(
+    field: PluginErrorSourceSetupField,
+  ): string[] {
+    return toProjectSlugs(editSetupFieldValues[field.key] ?? "");
+  }
+
+  function readEditValidationError(
+    source: ErrorSourceRow,
+    plugin: PluginManifest | null,
+    trimmedName: string,
+  ): string | null {
+    if (trimmedName.length === 0) {
+      return t("common.errorSourcesManager.sourceNameRequired");
+    }
+
+    const setupFields = plugin?.metadata?.errorSource?.setupFields ?? [];
+    for (const field of setupFields) {
+      if (!field.required) {
+        continue;
+      }
+
+      if (field.target === "authToken" || field.storage === "accessTokenRef") {
+        continue;
+      }
+
+      if (
+        field.control === "multiline_list" ||
+        field.target === "projectSlugs" ||
+        field.target === "projectIds" ||
+        field.target === "indexPatterns"
+      ) {
+        if (readEditSetupFieldListValue(field).length === 0) {
+          return formatSetupFieldRequiredMessage(field.label);
+        }
+        continue;
+      }
+
+      if (readEditSetupFieldTextValue(field).length === 0) {
+        return formatSetupFieldRequiredMessage(field.label);
+      }
+    }
+
+    return null;
+  }
+
   const saveEdit = async () => {
     if (editDialogSource === null) return;
     const source = editDialogSource;
+    const plugin = findPluginManifestForSource(plugins, source);
     const trimmedName = editName.trim();
-    if (trimmedName.length === 0) {
-      setEditDialogError(t("common.errorSourcesManager.sourceNameRequired"));
+    const validationError = readEditValidationError(source, plugin, trimmedName);
+    if (validationError !== null) {
+      setEditDialogError(validationError);
       return;
+    }
+
+    const setupFields = plugin?.metadata?.errorSource?.setupFields ?? [];
+    const setupValues: Record<string, unknown> = {};
+    for (const field of setupFields) {
+      if (
+        field.control === "multiline_list" ||
+        field.target === "projectSlugs" ||
+        field.target === "projectIds" ||
+        field.target === "indexPatterns"
+      ) {
+        const value = readEditSetupFieldListValue(field);
+        if (value.length === 0) {
+          continue;
+        }
+        setupValues[field.key] = value;
+        switch (field.target) {
+          case "projectSlugs":
+            setupValues.projectSlugs = value;
+            break;
+          case "projectIds":
+            setupValues.projectIds = value;
+            break;
+          case "indexPatterns":
+            setupValues.indexPatterns = value;
+            break;
+          default:
+            break;
+        }
+        continue;
+      }
+
+      const value = readEditSetupFieldTextValue(field);
+      if (value.length === 0) {
+        continue;
+      }
+
+      setupValues[field.key] = value;
+      switch (field.target) {
+        case "authToken":
+          setupValues.authToken = value;
+          break;
+        case "organizationSlug":
+          setupValues.organizationSlug = value;
+          break;
+        case "organizationId":
+          setupValues.organizationId = value;
+          break;
+        case "baseUrl":
+          setupValues.baseUrl = value;
+          break;
+        default:
+          break;
+      }
     }
 
     try {
       await updateMutation.mutateAsync({
         id: source.id,
         name: trimmedName,
+        setupValues,
         logLevelThreshold: editLogThreshold,
         syncEnabled: editSyncEnabled,
       });
+      setEditSetupFieldValues({});
       setEditDialogSource(null);
       toast.success(
         t("common.errorSourcesManager.updatedSource", { name: trimmedName }),
@@ -558,16 +1143,6 @@ export default function ErrorSourcesManager({
 
   // ---- Render helpers ----
 
-  const providerCards: Array<{
-    type: SourceType;
-    label: string;
-    icon: ProviderIconKind;
-  }> = [
-    { type: "sentry", label: "Sentry", icon: "sentry" },
-    { type: "wazuh", label: "Wazuh", icon: "wazuh" },
-    { type: "posthog", label: "PostHog", icon: "posthog" },
-  ];
-
   let namePlaceholderKey = "common.errorSourcesManager.namePlaceholderPosthog";
   if (sourceType === "sentry") {
     namePlaceholderKey = "common.errorSourcesManager.namePlaceholderSentry";
@@ -620,15 +1195,46 @@ export default function ErrorSourcesManager({
     projectsLabelKey = "common.errorSourcesManager.labelProjects";
     projectsPlaceholderKey = "common.errorSourcesManager.posthogProjectIds";
   }
+  const authLabel = authSetupField?.label ?? t(authLabelKey);
+  const authPlaceholder =
+    authSetupField?.placeholder ?? t(authPlaceholderKey);
+  const authDescription = authSetupField?.description;
+  const orgLabel =
+    orgSetupField?.label ?? t("common.errorSourcesManager.labelOrganization");
+  const orgPlaceholder =
+    orgSetupField?.placeholder ?? t(orgPlaceholderKey);
+  const orgDescription = orgSetupField?.description;
+  const orgRequired = orgSetupField?.required ?? sourceType === "sentry";
+  const projectsLabel = projectsSetupField?.label ?? t(projectsLabelKey);
+  const projectsPlaceholder =
+    projectsSetupField?.placeholder ?? t(projectsPlaceholderKey);
+  const projectsDescription = projectsSetupField?.description;
+  const projectsRequired =
+    projectsSetupField?.required ?? sourceType === "posthog";
+  const baseUrlLabel =
+    baseUrlSetupField?.label ??
+    t(
+      sourceType === "posthog"
+        ? "common.errorSourcesManager.labelPosthogHost"
+        : "common.errorSourcesManager.labelApiBaseUrl",
+    );
+  const baseUrlDescription = baseUrlSetupField?.description;
+  const baseUrlPlaceholder =
+    baseUrlSetupField?.placeholder ??
+    t("common.errorSourcesManager.wazuhBaseUrlOptional");
+  const indexPatternsLabel =
+    indexPatternsSetupField?.label ??
+    t("common.errorSourcesManager.labelIndexPatterns");
+  const indexPatternsPlaceholder =
+    indexPatternsSetupField?.placeholder ??
+    t("common.errorSourcesManager.wazuhAlerts");
+  const indexPatternsDescription = indexPatternsSetupField?.description;
+  const createSourceDisabled =
+    actionLoading || readCreateSourceValidationError(sourceName.trim()) !== null;
 
   let createButtonLabel = t("common.errorSourcesManager.saveSource");
   if (createMutation.isPending) {
     createButtonLabel = t("common.errorSourcesManager.connecting");
-  }
-
-  let editAuthLabelKey = "common.errorSourcesManager.labelAuthToken";
-  if (editDialogSource?.sourceType === "posthog") {
-    editAuthLabelKey = "common.errorSourcesManager.labelApiKey";
   }
 
   let editDialogErrorContent: ReactNode = null;
@@ -698,13 +1304,20 @@ export default function ErrorSourcesManager({
             {t("common.errorSourcesManager.noExternalSourcesConnected")}
           </p>
           <p className="mt-1 text-xs text-muted-foreground">
-            {t("common.errorSourcesManager.addASentryWazuhOrPostHog")}
+            {availableProviderSummary.length > 0
+              ? `Available plugin-backed sources: ${availableProviderSummary}.`
+              : t("common.errorSourcesManager.addASentryWazuhOrPostHog")}
           </p>
         </div>
       )}
       {!isLoading && sources.length > 0 && (
         <div className="rounded-lg border border-border divide-y divide-border">
           {sources.map((source) => {
+            const sourcePluginName = pluginsById.get(readSourcePluginId(source))?.name;
+            const normalizedPluginName = sourcePluginName?.trim().toLowerCase() ?? "";
+            const showPluginNameBadge =
+              normalizedPluginName.length > 0 &&
+              normalizedPluginName !== source.sourceType.trim().toLowerCase();
             const sourceIsSyncing =
               pendingSyncIds.has(source.id) ||
               source.lastSyncStatus === "in_progress";
@@ -740,6 +1353,11 @@ export default function ErrorSourcesManager({
                     <span className="text-sm font-medium text-foreground">
                       {source.name}
                     </span>
+                    {showPluginNameBadge && (
+                      <Badge variant="secondary">
+                        {sourcePluginName}
+                      </Badge>
+                    )}
                     <Badge variant="secondary">{source.sourceType}</Badge>
                     {source.syncEnabled && (
                       <Badge variant="secondary">
@@ -823,9 +1441,9 @@ export default function ErrorSourcesManager({
               <label className="text-sm text-muted-foreground">
                 {t("common.errorSourcesManager.sourceType")}
               </label>
-              <div className="grid grid-cols-3 gap-2">
+              <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
                 {providerCards.map((card) => {
-                  const selected = sourceType === card.type;
+                  const selected = selectedProviderId === card.pluginId;
                   let cardClassName = "border-border bg-card hover:border-primary/50";
                   if (selected) {
                     cardClassName = "border-primary bg-primary/10 ring-1 ring-primary";
@@ -839,10 +1457,11 @@ export default function ErrorSourcesManager({
 
                   return (
                     <button
-                      key={card.type}
+                      key={card.pluginId}
                       type="button"
                       onClick={() => {
-                        setSourceType(card.type);
+                        setSelectedProviderId(card.pluginId);
+                        setSourceType(card.sourceType);
                         // Each provider has its own credential format
                         // (Sentry tokens are not PostHog tokens; org slugs
                         // are not numeric ids), so clear everything on
@@ -855,6 +1474,7 @@ export default function ErrorSourcesManager({
                         setPosthogBaseUrlMode("us");
                         setAdvancedOrgInput("");
                         setAdvancedProjectsInput("");
+                        setCustomSetupFieldValues({});
                         setDialogError(null);
                       }}
                       aria-pressed={selected}
@@ -897,42 +1517,47 @@ export default function ErrorSourcesManager({
                     <>
                       <div className="space-y-1">
                         <FieldLabel required>
-                          {t("common.errorSourcesManager.labelApiBaseUrl")}
+                          {baseUrlLabel}
                         </FieldLabel>
                         <Input
-                          placeholder={t(
-                            "common.errorSourcesManager.wazuhBaseUrlOptional",
-                          )}
+                          placeholder={baseUrlPlaceholder}
                           value={wazuhBaseUrl}
                           onChange={(e) => { setWazuhBaseUrl(e.target.value); }}
                         />
+                        {baseUrlDescription && (
+                          <p className="text-xs text-muted-foreground">
+                            {baseUrlDescription}
+                          </p>
+                        )}
                       </div>
                       <div className="space-y-1">
                         <FieldLabel required>
-                          {t("common.errorSourcesManager.labelAuthToken")}
+                          {authLabel}
                         </FieldLabel>
                         <Input
-                          placeholder={t(
-                            "common.errorSourcesManager.wazuhAuthTokenOptional",
-                          )}
+                          placeholder={authPlaceholder}
                           type="password"
                           value={authToken}
                           onChange={(e) => { setAuthToken(e.target.value); }}
                         />
+                        {authDescription && (
+                          <p className="text-xs text-muted-foreground">
+                            {authDescription}
+                          </p>
+                        )}
                       </div>
                       <div className="space-y-1">
                         <FieldLabel>
-                          {t("common.errorSourcesManager.labelIndexPatterns")}
+                          {indexPatternsLabel}
                         </FieldLabel>
                         <Input
-                          placeholder={t(
-                            "common.errorSourcesManager.wazuhAlerts",
-                          )}
+                          placeholder={indexPatternsPlaceholder}
                           value={indexPatternsText}
                           onChange={(e) => { setIndexPatternsText(e.target.value); }}
                         />
                         <p className="text-xs text-muted-foreground">
-                          {t("common.errorSourcesManager.indexPatternsHelp")}
+                          {indexPatternsDescription ??
+                            t("common.errorSourcesManager.indexPatternsHelp")}
                         </p>
                       </div>
                     </>
@@ -942,7 +1567,7 @@ export default function ErrorSourcesManager({
                       {sourceType === "posthog" && (
                         <div className="space-y-1">
                           <FieldLabel required>
-                            {t("common.errorSourcesManager.labelPosthogHost")}
+                            {baseUrlLabel}
                           </FieldLabel>
                           <div className="grid gap-2 md:grid-cols-[8rem_1fr]">
                             <div className="relative">
@@ -971,9 +1596,12 @@ export default function ErrorSourcesManager({
                               <SelectChevron />
                             </div>
                             <Input
-                              placeholder={t(
-                                "common.errorSourcesManager.posthogApiBaseCustomPlaceholder",
-                              )}
+                              placeholder={
+                                baseUrlSetupField?.placeholder ??
+                                t(
+                                  "common.errorSourcesManager.posthogApiBaseCustomPlaceholder",
+                                )
+                              }
                               value={posthogBaseUrlValue}
                               onChange={(e) =>
                                 { setPosthogCustomBaseUrl(e.target.value); }
@@ -982,44 +1610,100 @@ export default function ErrorSourcesManager({
                               disabled={posthogBaseUrlMode !== "custom"}
                             />
                           </div>
+                          {baseUrlDescription && (
+                            <p className="text-xs text-muted-foreground">
+                              {baseUrlDescription}
+                            </p>
+                          )}
                         </div>
                       )}
 
                       <div className="space-y-1">
                         <FieldLabel required>
-                          {t(authLabelKey)}
+                          {authLabel}
                         </FieldLabel>
                         <Input
-                          placeholder={t(authPlaceholderKey)}
+                          placeholder={authPlaceholder}
                           type="password"
                           value={authToken}
                           onChange={(e) => { setAuthToken(e.target.value); }}
                         />
+                        {authDescription && (
+                          <p className="text-xs text-muted-foreground">
+                            {authDescription}
+                          </p>
+                        )}
                       </div>
 
                       <div className="space-y-1">
-                        <FieldLabel required={sourceType === "sentry"}>
-                          {t("common.errorSourcesManager.labelOrganization")}
+                        <FieldLabel required={orgRequired}>
+                          {orgLabel}
                         </FieldLabel>
                         <Input
-                          placeholder={t(orgPlaceholderKey)}
+                          placeholder={orgPlaceholder}
                           value={advancedOrgInput}
                           onChange={(e) => { setAdvancedOrgInput(e.target.value); }}
                         />
+                        {orgDescription && (
+                          <p className="text-xs text-muted-foreground">
+                            {orgDescription}
+                          </p>
+                        )}
                       </div>
                       <div className="space-y-1">
-                        <FieldLabel required={sourceType === "posthog"}>
-                          {t(projectsLabelKey)}
+                        <FieldLabel required={projectsRequired}>
+                          {projectsLabel}
                         </FieldLabel>
                         <Input
-                          placeholder={t(projectsPlaceholderKey)}
+                          placeholder={projectsPlaceholder}
                           value={advancedProjectsInput}
                           onChange={(e) =>
                             { setAdvancedProjectsInput(e.target.value); }
                           }
-                          required={sourceType === "posthog"}
+                          required={projectsRequired}
                         />
+                        {projectsDescription && (
+                          <p className="text-xs text-muted-foreground">
+                            {projectsDescription}
+                          </p>
+                        )}
                       </div>
+                    </>
+                  )}
+                  {customSetupFields.length > 0 && (
+                    <>
+                      {customSetupFields.map((field) => {
+                        const value = customSetupFieldValues[field.key] ?? "";
+                        const placeholder = field.placeholder ?? "";
+                        const isPassword = field.control === "password";
+                        const isList = field.control === "multiline_list";
+
+                        return (
+                          <div key={field.key} className="space-y-1">
+                            <FieldLabel required={field.required}>
+                              {field.label}
+                            </FieldLabel>
+                            <Input
+                              placeholder={placeholder}
+                              type={isPassword ? "password" : "text"}
+                              value={value}
+                              onChange={(e) => {
+                                const nextValue = e.target.value;
+                                setCustomSetupFieldValues((current) => ({
+                                  ...current,
+                                  [field.key]: nextValue,
+                                }));
+                              }}
+                            />
+                            <p className="text-xs text-muted-foreground">
+                              {field.description ??
+                                (isList
+                                  ? "Separate multiple values with commas or new lines."
+                                  : "")}
+                            </p>
+                          </div>
+                        );
+                      })}
                     </>
                   )}
                 </div>
@@ -1139,18 +1823,7 @@ export default function ErrorSourcesManager({
             <Button
               variant="outline"
               onClick={() => void createSource()}
-              disabled={
-                actionLoading ||
-                // Sentry needs an explicit organization slug. PostHog can
-                // auto-detect the org from project ids server-side, so don't
-                // block save when the PostHog org field is blank. Project ids
-                // are still required because project-scoped PostHog keys cannot
-                // call organization/project list endpoints. Wazuh has
-                // optional credentials in the shared schema, so don't gate on
-                // those either.
-                (sourceType === "sentry" && !advancedOrgInput.trim()) ||
-                (sourceType === "posthog" && posthogProjectIds.length === 0)
-              }
+              disabled={createSourceDisabled}
             >
               {createButtonLabel}
             </Button>
@@ -1162,6 +1835,7 @@ export default function ErrorSourcesManager({
         open={editDialogSource != null}
         onOpenChange={(open) => {
           if (!open) {
+            setEditSetupFieldValues({});
             setEditDialogSource(null);
             setEditDialogError(null);
           }
@@ -1190,14 +1864,19 @@ export default function ErrorSourcesManager({
                 />
               </div>
 
-              <div className="space-y-1">
-                <FieldLabel>
-                  {t(editAuthLabelKey)}
-                </FieldLabel>
-                <Input type="password" value="••••••••••••" readOnly disabled />
-              </div>
-
-              {renderEditConnectionFields(editDialogSource, t)}
+              {renderEditConnectionFields({
+                source: editDialogSource,
+                plugin: editDialogPlugin,
+                values: editSetupFieldValues,
+                onChange: (fieldKey, nextValue) => {
+                  setEditSetupFieldValues((current) => ({
+                    ...current,
+                    [fieldKey]: nextValue,
+                  }));
+                },
+                t,
+                disabled: updateMutation.isPending,
+              })}
 
               <div className="flex items-center justify-between gap-3">
                 <label className="text-sm text-muted-foreground">
@@ -1249,6 +1928,7 @@ export default function ErrorSourcesManager({
             <Button
               variant="outline"
               onClick={() => {
+                setEditSetupFieldValues({});
                 setEditDialogSource(null);
                 setEditDialogError(null);
               }}
@@ -1290,99 +1970,56 @@ function readStringArrayFromConfig(
   return value.filter((v): v is string => typeof v === "string").join(", ");
 }
 
-function renderEditConnectionFields(
-  source: ErrorSourceRow,
-  t: (key: string) => string,
-): ReactNode {
-  const config = source.configuration;
+function renderEditConnectionFields(input: {
+  source: ErrorSourceRow;
+  plugin: PluginManifest | null;
+  values: Record<string, string>;
+  onChange: (fieldKey: string, nextValue: string) => void;
+  t: (key: string) => string;
+  disabled: boolean;
+}): ReactNode {
+  const { source, plugin, values, onChange, t, disabled } = input;
+  const setupFields = plugin?.metadata?.errorSource?.setupFields ?? [];
 
-  if (source.sourceType === "sentry") {
-    return (
-      <>
-        <div className="space-y-1">
-          <FieldLabel>
-            {t("common.errorSourcesManager.labelOrganization")}
-          </FieldLabel>
-          <Input
-            value={readStringFromConfig(config, "orgSlug")}
-            readOnly
-            disabled
-          />
-        </div>
-        <div className="space-y-1">
-          <FieldLabel>
-            {t("common.errorSourcesManager.labelProjects")}
-          </FieldLabel>
-          <Input
-            value={readStringArrayFromConfig(config, "projectSlugs")}
-            readOnly
-            disabled
-          />
-        </div>
-      </>
-    );
+  if (setupFields.length === 0) {
+    return renderLegacyEditConnectionFields(source, t);
   }
 
-  if (source.sourceType === "posthog") {
-    return (
-      <>
-        <div className="space-y-1">
-          <FieldLabel>
-            {t("common.errorSourcesManager.labelPosthogHost")}
-          </FieldLabel>
-          <Input
-            value={readStringFromConfig(config, "posthogBaseUrl")}
-            readOnly
-            disabled
-          />
-        </div>
-        <div className="space-y-1">
-          <FieldLabel>
-            {t("common.errorSourcesManager.labelOrganization")}
-          </FieldLabel>
-          <Input
-            value={readStringFromConfig(config, "orgSlug")}
-            readOnly
-            disabled
-          />
-        </div>
-        <div className="space-y-1">
-          <FieldLabel>
-            {t("common.errorSourcesManager.labelProjects")}
-          </FieldLabel>
-          <Input
-            value={readStringArrayFromConfig(config, "projectIds")}
-            readOnly
-            disabled
-          />
-        </div>
-      </>
-    );
-  }
-
-  // wazuh
   return (
     <>
-      <div className="space-y-1">
-        <FieldLabel>
-          {t("common.errorSourcesManager.labelApiBaseUrl")}
-        </FieldLabel>
-        <Input
-          value={readStringFromConfig(config, "baseUrl")}
-          readOnly
-          disabled
-        />
-      </div>
-      <div className="space-y-1">
-        <FieldLabel>
-          {t("common.errorSourcesManager.labelIndexPatterns")}
-        </FieldLabel>
-        <Input
-          value={readStringArrayFromConfig(config, "indexPatterns")}
-          readOnly
-          disabled
-        />
-      </div>
+      {setupFields.map((field) => {
+        const value = values[field.key] ?? "";
+        const placeholder =
+          field.target === "authToken" || field.storage === "accessTokenRef"
+            ? "Leave blank to keep the current token."
+            : (field.placeholder ?? "");
+        const isPassword = field.control === "password";
+        const description =
+          field.description ??
+          (field.control === "multiline_list"
+            ? "Separate multiple values with commas or new lines."
+            : "");
+
+        return (
+          <div key={field.key} className="space-y-1">
+            <FieldLabel required={field.required}>
+              {field.label}
+            </FieldLabel>
+            <Input
+              value={value}
+              placeholder={placeholder}
+              type={isPassword ? "password" : "text"}
+              onChange={(event) => { onChange(field.key, event.target.value); }}
+              disabled={disabled}
+            />
+            {description.length > 0 && (
+              <p className="text-xs text-muted-foreground">
+                {description}
+              </p>
+            )}
+          </div>
+        );
+      })}
     </>
   );
 }

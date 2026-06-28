@@ -1,0 +1,14 @@
+{
+  "name": "@bitsentry/plugins",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Repo-managed BitSentry plugin manifests for desktop integrations.",
+  "type": "module",
+  "files": [
+    "README.md",
+    "github",
+    "posthog",
+    "sentry",
+    "wazuh"
+  ]
+}

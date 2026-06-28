@@ -1,0 +1,1934 @@
+{
+  "id": "github",
+  "name": "GitHub",
+  "version": "stackstorm-reference-2.1.5",
+  "description": "Typed desktop plugin port of the StackStorm GitHub integration pack, with manifest-defined actions and trigger metadata for safer agent execution.",
+  "referenceRepositoryPath": ".repos/references/plugins/stackstorm-github",
+  "auth": {
+    "fields": [
+      {
+        "key": "token",
+        "label": "Access Token",
+        "description": "GitHub personal access token or GitHub App installation token. Optional for public read-only calls.",
+        "type": "string",
+        "required": false,
+        "secret": true
+      },
+      {
+        "key": "deploymentEnvironment",
+        "label": "Deployment Environment",
+        "description": "Expected deployment environment for the StackStorm-style deployment_event workflow.",
+        "type": "string",
+        "required": false,
+        "defaultValue": "production"
+      },
+      {
+        "key": "baseUrl",
+        "label": "API Base URL",
+        "description": "Optional GitHub Enterprise API base URL, for example https://github.example.com/api/v3.",
+        "type": "string",
+        "required": false,
+        "defaultValue": "https://api.github.com"
+      }
+    ]
+  },
+  "actions": [
+    {
+      "id": "add_comment",
+      "title": "Add Comment",
+      "description": "Add a comment to an issue or pull request.",
+      "riskLevel": "write",
+      "fields": [
+        {
+          "key": "owner",
+          "label": "Owner",
+          "description": "GitHub user or organization that owns the repository.",
+          "type": "string",
+          "required": true
+        },
+        {
+          "key": "repo",
+          "label": "Repository",
+          "description": "Repository name.",
+          "type": "string",
+          "required": true
+        },
+        {
+          "key": "issueNumber",
+          "label": "Issue Number",
+          "type": "number",
+          "required": true
+        },
+        {
+          "key": "body",
+          "label": "Comment",
+          "type": "string",
+          "required": true
+        }
+      ],
+      "referencePath": ".repos/references/plugins/stackstorm-github/actions/add_comment.yaml",
+      "transport": {
+        "kind": "http",
+        "method": "POST",
+        "url": "{{auth.baseUrl}}/repos/{{input.owner}}/{{input.repo}}/issues/{{input.issueNumber}}/comments",
+        "headers": {
+          "Authorization": "Bearer {{auth.token}}",
+          "Accept": "application/vnd.github+json",
+          "X-GitHub-Api-Version": "2022-11-28"
+        },
+        "body": {
+          "body": "{{input.body}}"
+        },
+        "successStatusCodes": [
+          201
+        ]
+      }
+    },
+    {
+      "id": "add_status",
+      "title": "Add Commit Status",
+      "description": "Create a commit status for a SHA.",
+      "riskLevel": "write",
+      "fields": [
+        {
+          "key": "owner",
+          "label": "Owner",
+          "description": "GitHub user or organization that owns the repository.",
+          "type": "string",
+          "required": true
+        },
+        {
+          "key": "repo",
+          "label": "Repository",
+          "description": "Repository name.",
+          "type": "string",
+          "required": true
+        },
+        {
+          "key": "sha",
+          "label": "SHA",
+          "type": "string",
+          "required": true
+        },
+        {
+          "key": "state",
+          "label": "State",
+          "type": "string",
+          "required": true
+        },
+        {
+          "key": "description",
+          "label": "Description",
+          "type": "string",
+          "required": false
+        },
+        {
+          "key": "targetUrl",
+          "label": "Target URL",
+          "type": "string",
+          "required": false
+        },
+        {
+          "key": "context",
+          "label": "Context",
+          "type": "string",
+          "required": false
+        }
+      ],
+      "referencePath": ".repos/references/plugins/stackstorm-github/actions/add_status.yaml",
+      "transport": {
+        "kind": "http",
+        "method": "POST",
+        "url": "{{auth.baseUrl}}/repos/{{input.owner}}/{{input.repo}}/statuses/{{input.sha}}",
+        "headers": {
+          "Authorization": "Bearer {{auth.token}}",
+          "Accept": "application/vnd.github+json",
+          "X-GitHub-Api-Version": "2022-11-28"
+        },
+        "body": {
+          "state": "{{input.state}}",
+          "description": "{{input.description}}",
+          "target_url": "{{input.targetUrl}}",
+          "context": "{{input.context}}"
+        },
+        "successStatusCodes": [
+          201
+        ]
+      }
+    },
+    {
+      "id": "add_team_membership",
+      "title": "Add Team Membership",
+      "description": "Add a user to an organization team.",
+      "riskLevel": "write",
+      "fields": [
+        {
+          "key": "org",
+          "label": "Organization",
+          "type": "string",
+          "required": true
+        },
+        {
+          "key": "teamSlug",
+          "label": "Team Slug",
+          "type": "string",
+          "required": true
+        },
+        {
+          "key": "username",
+          "label": "Username",
+          "type": "string",
+          "required": true
+        },
+        {
+          "key": "role",
+          "label": "Role",
+          "type": "string",
+          "required": false
+        }
+      ],
+      "referencePath": ".repos/references/plugins/stackstorm-github/actions/add_team_membership.yaml",
+      "transport": {
+        "kind": "http",
+        "method": "PUT",
+        "url": "{{auth.baseUrl}}/orgs/{{input.org}}/teams/{{input.teamSlug}}/memberships/{{input.username}}",
+        "headers": {
+          "Authorization": "Bearer {{auth.token}}",
+          "Accept": "application/vnd.github+json",
+          "X-GitHub-Api-Version": "2022-11-28"
+        },
+        "body": {
+          "role": "{{input.role}}"
+        },
+        "successStatusCodes": [
+          200,
+          201
+        ]
+      }
+    },
+    {
+      "id": "check_deployment_env",
+      "title": "Check Deployment Environment",
+      "description": "Validate that an incoming deployment environment matches the expected target environment.",
+      "riskLevel": "read",
+      "fields": [
+        {
+          "key": "environment",
+          "label": "Environment",
+          "type": "string",
+          "required": true
+        },
+        {
+          "key": "expectedEnvironment",
+          "label": "Expected Environment",
+          "type": "string",
+          "required": true
+        }
+      ],
+      "referencePath": ".repos/references/plugins/stackstorm-github/actions/check_deployment_env.yaml",
+      "transport": {
+        "kind": "builtin"
+      }
+    },
+    {
+      "id": "create_deployment",
+      "title": "Create Deployment",
+      "description": "Create a repository deployment.",
+      "riskLevel": "write",
+      "fields": [
+        {
+          "key": "owner",
+          "label": "Owner",
+          "description": "GitHub user or organization that owns the repository.",
+          "type": "string",
+          "required": true
+        },
+        {
+          "key": "repo",
+          "label": "Repository",
+          "description": "Repository name.",
+          "type": "string",
+          "required": true
+        },
+        {
+          "key": "ref",
+          "label": "Ref",
+          "type": "string",
+          "required": true
+        },
+        {
+          "key": "task",
+          "label": "Task",
+          "type": "string",
+          "required": false
+        },
+        {
+          "key": "description",
+          "label": "Description",
+          "type": "string",
+          "required": false
+        },
+        {
+          "key": "environment",
+          "label": "Environment",
+          "type": "string",
+          "required": false
+        },
+        {
+          "key": "payload",
+          "label": "Payload",
+          "type": "json",
+          "required": false
+        },
+        {
+          "key": "requiredContexts",
+          "label": "Required Contexts",
+          "type": "string_array",
+          "required": false
+        },
+        {
+          "key": "autoMerge",
+          "label": "Auto Merge",
+          "type": "boolean",
+          "required": false
+        },
+        {
+          "key": "transientEnvironment",
+          "label": "Transient Environment",
+          "type": "boolean",
+          "required": false
+        },
+        {
+          "key": "productionEnvironment",
+          "label": "Production Environment",
+          "type": "boolean",
+          "required": false
+        }
+      ],
+      "referencePath": ".repos/references/plugins/stackstorm-github/actions/create_deployment.yaml",
+      "transport": {
+        "kind": "http",
+        "method": "POST",
+        "url": "{{auth.baseUrl}}/repos/{{input.owner}}/{{input.repo}}/deployments",
+        "headers": {
+          "Authorization": "Bearer {{auth.token}}",
+          "Accept": "application/vnd.github+json",
+          "X-GitHub-Api-Version": "2022-11-28"
+        },
+        "body": {
+          "ref": "{{input.ref}}",
+          "task": "{{input.task}}",
+          "auto_merge": "{{input.autoMerge}}",
+          "required_contexts": "{{input.requiredContexts}}",
+          "payload": "{{input.payload}}",
+          "environment": "{{input.environment}}",
+          "description": "{{input.description}}",
+          "transient_environment": "{{input.transientEnvironment}}",
+          "production_environment": "{{input.productionEnvironment}}"
+        },
+        "successStatusCodes": [
+          200,
+          201,
+          202
+        ]
+      }
+    },
+    {
+      "id": "create_deployment_status",
+      "title": "Create Deployment Status",
+      "description": "Post a deployment status update.",
+      "riskLevel": "write",
+      "fields": [
+        {
+          "key": "owner",
+          "label": "Owner",
+          "description": "GitHub user or organization that owns the repository.",
+          "type": "string",
+          "required": true
+        },
+        {
+          "key": "repo",
+          "label": "Repository",
+          "description": "Repository name.",
+          "type": "string",
+          "required": true
+        },
+        {
+          "key": "deploymentId",
+          "label": "Deployment ID",
+          "type": "number",
+          "required": true
+        },
+        {
+          "key": "state",
+          "label": "State",
+          "type": "string",
+          "required": true
+        },
+        {
+          "key": "description",
+          "label": "Description",
+          "type": "string",
+          "required": false
+        },
+        {
+          "key": "targetUrl",
+          "label": "Target URL",
+          "type": "string",
+          "required": false
+        },
+        {
+          "key": "logUrl",
+          "label": "Log URL",
+          "type": "string",
+          "required": false
+        },
+        {
+          "key": "environment",
+          "label": "Environment",
+          "type": "string",
+          "required": false
+        },
+        {
+          "key": "autoInactive",
+          "label": "Auto Inactive",
+          "type": "boolean",
+          "required": false
+        }
+      ],
+      "referencePath": ".repos/references/plugins/stackstorm-github/actions/create_deployment_status.yaml",
+      "transport": {
+        "kind": "http",
+        "method": "POST",
+        "url": "{{auth.baseUrl}}/repos/{{input.owner}}/{{input.repo}}/deployments/{{input.deploymentId}}/statuses",
+        "headers": {
+          "Authorization": "Bearer {{auth.token}}",
+          "Accept": "application/vnd.github+json",
+          "X-GitHub-Api-Version": "2022-11-28"
+        },
+        "body": {
+          "state": "{{input.state}}",
+          "description": "{{input.description}}",
+          "target_url": "{{input.targetUrl}}",
+          "log_url": "{{input.logUrl}}",
+          "environment": "{{input.environment}}",
+          "auto_inactive": "{{input.autoInactive}}"
+        },
+        "successStatusCodes": [
+          200,
+          201
+        ]
+      }
+    },
+    {
+      "id": "deployment_event",
+      "title": "Deployment Event",
+      "description": "Process a GitHub deployment event and install or update a local desktop plugin when the deployment environment matches.",
+      "riskLevel": "write",
+      "fields": [
+        {
+          "key": "repo_fullname",
+          "label": "Repository Full Name",
+          "description": "The full repo path, for example org/repository.",
+          "type": "string",
+          "required": true
+        },
+        {
+          "key": "repo_name",
+          "label": "Repository Name",
+          "description": "Repository name.",
+          "type": "string",
+          "required": true
+        },
+        {
+          "key": "deploy_ref",
+          "label": "Deploy Ref",
+          "description": "The branch, tag, or ref to deploy.",
+          "type": "string",
+          "required": false,
+          "defaultValue": "master"
+        },
+        {
+          "key": "deploy_env",
+          "label": "Deployment Environment",
+          "description": "Target environment carried by the deployment event.",
+          "type": "string",
+          "required": false,
+          "defaultValue": "production"
+        },
+        {
+          "key": "deploy_sha",
+          "label": "Deployment SHA",
+          "description": "Commit SHA for the deployment.",
+          "type": "string",
+          "required": true
+        },
+        {
+          "key": "deploy_desc",
+          "label": "Deployment Description",
+          "description": "Human description of the deployment.",
+          "type": "string",
+          "required": true
+        },
+        {
+          "key": "deploy_id",
+          "label": "Deployment ID",
+          "description": "GitHub deployment identifier.",
+          "type": "number",
+          "required": true
+        },
+        {
+          "key": "ssh_url",
+          "label": "Repository SSH URL",
+          "description": "Repository SSH URL from the deployment payload.",
+          "type": "string",
+          "required": true
+        },
+        {
+          "key": "creator",
+          "label": "Creator",
+          "description": "Login that created the deployment. Desktop uses the configured plugin token for follow-up status updates.",
+          "type": "string",
+          "required": true
+        },
+        {
+          "key": "deploy_payload",
+          "label": "Deployment Payload",
+          "description": "Additional payload information from GitHub.",
+          "type": "json",
+          "required": false,
+          "defaultValue": {}
+        }
+      ],
+      "referencePath": ".repos/references/plugins/stackstorm-github/actions/deployment_event.yaml",
+      "transport": {
+        "kind": "builtin"
+      }
+    },
+    {
+      "id": "create_file",
+      "title": "Create File",
+      "description": "Create a new repository file.",
+      "riskLevel": "write",
+      "fields": [
+        {
+          "key": "owner",
+          "label": "Owner",
+          "description": "GitHub user or organization that owns the repository.",
+          "type": "string",
+          "required": true
+        },
+        {
+          "key": "repo",
+          "label": "Repository",
+          "description": "Repository name.",
+          "type": "string",
+          "required": true
+        },
+        {
+          "key": "path",
+          "label": "Path",
+          "type": "string",
+          "required": true
+        },
+        {
+          "key": "content",
+          "label": "Content",
+          "type": "string",
+          "required": true
+        },
+        {
+          "key": "message",
+          "label": "Commit Message",
+          "type": "string",
+          "required": true
+        },
+        {
+          "key": "branch",
+          "label": "Branch",
+          "type": "string",
+          "required": false
+        },
+        {
+          "key": "committerName",
+          "label": "Committer Name",
+          "type": "string",
+          "required": false
+        },
+        {
+          "key": "committerEmail",
+          "label": "Committer Email",
+          "type": "string",
+          "required": false
+        },
+        {
+          "key": "authorName",
+          "label": "Author Name",
+          "type": "string",
+          "required": false
+        },
+        {
+          "key": "authorEmail",
+          "label": "Author Email",
+          "type": "string",
+          "required": false
+        }
+      ],
+      "referencePath": ".repos/references/plugins/stackstorm-github/actions/create_file.yaml",
+      "transport": {
+        "kind": "builtin"
+      }
+    },
+    {
+      "id": "create_issue",
+      "title": "Create Issue",
+      "description": "Create a repository issue.",
+      "riskLevel": "write",
+      "fields": [
+        {
+          "key": "owner",
+          "label": "Owner",
+          "description": "GitHub user or organization that owns the repository.",
+          "type": "string",
+          "required": true
+        },
+        {
+          "key": "repo",
+          "label": "Repository",
+          "description": "Repository name.",
+          "type": "string",
+          "required": true
+        },
+        {
+          "key": "title",
+          "label": "Title",
+          "type": "string",
+          "required": true
+        },
+        {
+          "key": "body",
+          "label": "Body",
+          "type": "string",
+          "required": false
+        },
+        {
+          "key": "assignees",
+          "label": "Assignees",
+          "type": "string_array",
+          "required": false
+        },
+        {
+          "key": "labels",
+          "label": "Labels",
+          "type": "string_array",
+          "required": false
+        },
+        {
+          "key": "milestone",
+          "label": "Milestone",
+          "type": "number",
+          "required": false
+        }
+      ],
+      "referencePath": ".repos/references/plugins/stackstorm-github/actions/create_issue.yaml",
+      "transport": {
+        "kind": "http",
+        "method": "POST",
+        "url": "{{auth.baseUrl}}/repos/{{input.owner}}/{{input.repo}}/issues",
+        "headers": {
+          "Authorization": "Bearer {{auth.token}}",
+          "Accept": "application/vnd.github+json",
+          "X-GitHub-Api-Version": "2022-11-28"
+        },
+        "body": {
+          "title": "{{input.title}}",
+          "body": "{{input.body}}",
+          "assignees": "{{input.assignees}}",
+          "labels": "{{input.labels}}",
+          "milestone": "{{input.milestone}}"
+        },
+        "successStatusCodes": [
+          201
+        ]
+      }
+    },
+    {
+      "id": "create_pull",
+      "title": "Create Pull Request",
+      "description": "Create a pull request.",
+      "riskLevel": "write",
+      "fields": [
+        {
+          "key": "owner",
+          "label": "Owner",
+          "description": "GitHub user or organization that owns the repository.",
+          "type": "string",
+          "required": true
+        },
+        {
+          "key": "repo",
+          "label": "Repository",
+          "description": "Repository name.",
+          "type": "string",
+          "required": true
+        },
+        {
+          "key": "title",
+          "label": "Title",
+          "type": "string",
+          "required": true
+        },
+        {
+          "key": "head",
+          "label": "Head",
+          "type": "string",
+          "required": true
+        },
+        {
+          "key": "base",
+          "label": "Base",
+          "type": "string",
+          "required": true
+        },
+        {
+          "key": "body",
+          "label": "Body",
+          "type": "string",
+          "required": false
+        },
+        {
+          "key": "draft",
+          "label": "Draft",
+          "type": "boolean",
+          "required": false
+        },
+        {
+          "key": "maintainerCanModify",
+          "label": "Maintainer Can Modify",
+          "type": "boolean",
+          "required": false
+        }
+      ],
+      "referencePath": ".repos/references/plugins/stackstorm-github/actions/create_pull.yaml",
+      "transport": {
+        "kind": "http",
+        "method": "POST",
+        "url": "{{auth.baseUrl}}/repos/{{input.owner}}/{{input.repo}}/pulls",
+        "headers": {
+          "Authorization": "Bearer {{auth.token}}",
+          "Accept": "application/vnd.github+json",
+          "X-GitHub-Api-Version": "2022-11-28"
+        },
+        "body": {
+          "title": "{{input.title}}",
+          "head": "{{input.head}}",
+          "base": "{{input.base}}",
+          "body": "{{input.body}}",
+          "draft": "{{input.draft}}",
+          "maintainer_can_modify": "{{input.maintainerCanModify}}"
+        },
+        "successStatusCodes": [
+          201
+        ]
+      }
+    },
+    {
+      "id": "create_release",
+      "title": "Create Release",
+      "description": "Create a repository release.",
+      "riskLevel": "write",
+      "fields": [
+        {
+          "key": "owner",
+          "label": "Owner",
+          "description": "GitHub user or organization that owns the repository.",
+          "type": "string",
+          "required": true
+        },
+        {
+          "key": "repo",
+          "label": "Repository",
+          "description": "Repository name.",
+          "type": "string",
+          "required": true
+        },
+        {
+          "key": "tagName",
+          "label": "Tag Name",
+          "type": "string",
+          "required": true
+        },
+        {
+          "key": "targetCommitish",
+          "label": "Target Commitish",
+          "type": "string",
+          "required": false
+        },
+        {
+          "key": "name",
+          "label": "Release Name",
+          "type": "string",
+          "required": false
+        },
+        {
+          "key": "body",
+          "label": "Body",
+          "type": "string",
+          "required": false
+        },
+        {
+          "key": "draft",
+          "label": "Draft",
+          "type": "boolean",
+          "required": false
+        },
+        {
+          "key": "prerelease",
+          "label": "Prerelease",
+          "type": "boolean",
+          "required": false
+        },
+        {
+          "key": "generateReleaseNotes",
+          "label": "Generate Release Notes",
+          "type": "boolean",
+          "required": false
+        }
+      ],
+      "referencePath": ".repos/references/plugins/stackstorm-github/actions/create_release.yaml",
+      "transport": {
+        "kind": "http",
+        "method": "POST",
+        "url": "{{auth.baseUrl}}/repos/{{input.owner}}/{{input.repo}}/releases",
+        "headers": {
+          "Authorization": "Bearer {{auth.token}}",
+          "Accept": "application/vnd.github+json",
+          "X-GitHub-Api-Version": "2022-11-28"
+        },
+        "body": {
+          "tag_name": "{{input.tagName}}",
+          "target_commitish": "{{input.targetCommitish}}",
+          "name": "{{input.name}}",
+          "body": "{{input.body}}",
+          "draft": "{{input.draft}}",
+          "prerelease": "{{input.prerelease}}",
+          "generate_release_notes": "{{input.generateReleaseNotes}}"
+        },
+        "successStatusCodes": [
+          201
+        ]
+      }
+    },
+    {
+      "id": "delete_branch_protection",
+      "title": "Delete Branch Protection",
+      "description": "Remove branch protection rules from a branch.",
+      "riskLevel": "write",
+      "fields": [
+        {
+          "key": "owner",
+          "label": "Owner",
+          "description": "GitHub user or organization that owns the repository.",
+          "type": "string",
+          "required": true
+        },
+        {
+          "key": "repo",
+          "label": "Repository",
+          "description": "Repository name.",
+          "type": "string",
+          "required": true
+        },
+        {
+          "key": "branch",
+          "label": "Branch",
+          "type": "string",
+          "required": true
+        }
+      ],
+      "referencePath": ".repos/references/plugins/stackstorm-github/actions/delete_branch_protection.yaml",
+      "transport": {
+        "kind": "http",
+        "method": "DELETE",
+        "url": "{{auth.baseUrl}}/repos/{{input.owner}}/{{input.repo}}/branches/{{input.branch}}/protection",
+        "headers": {
+          "Authorization": "Bearer {{auth.token}}",
+          "Accept": "application/vnd.github+json",
+          "X-GitHub-Api-Version": "2022-11-28"
+        },
+        "successStatusCodes": [
+          204
+        ]
+      }
+    },
+    {
+      "id": "get_branch_protection",
+      "title": "Get Branch Protection",
+      "description": "Read branch protection rules for a branch.",
+      "riskLevel": "read",
+      "fields": [
+        {
+          "key": "owner",
+          "label": "Owner",
+          "description": "GitHub user or organization that owns the repository.",
+          "type": "string",
+          "required": true
+        },
+        {
+          "key": "repo",
+          "label": "Repository",
+          "description": "Repository name.",
+          "type": "string",
+          "required": true
+        },
+        {
+          "key": "branch",
+          "label": "Branch",
+          "type": "string",
+          "required": true
+        }
+      ],
+      "referencePath": ".repos/references/plugins/stackstorm-github/actions/get_branch_protection.yaml",
+      "transport": {
+        "kind": "http",
+        "method": "GET",
+        "url": "{{auth.baseUrl}}/repos/{{input.owner}}/{{input.repo}}/branches/{{input.branch}}/protection",
+        "headers": {
+          "Authorization": "Bearer {{auth.token}}",
+          "Accept": "application/vnd.github+json",
+          "X-GitHub-Api-Version": "2022-11-28"
+        },
+        "successStatusCodes": [
+          200
+        ]
+      }
+    },
+    {
+      "id": "get_clone_stats",
+      "title": "Get Clone Stats",
+      "description": "Read clone traffic statistics for a repository.",
+      "riskLevel": "read",
+      "fields": [
+        {
+          "key": "owner",
+          "label": "Owner",
+          "description": "GitHub user or organization that owns the repository.",
+          "type": "string",
+          "required": true
+        },
+        {
+          "key": "repo",
+          "label": "Repository",
+          "description": "Repository name.",
+          "type": "string",
+          "required": true
+        }
+      ],
+      "referencePath": ".repos/references/plugins/stackstorm-github/actions/get_clone_stats.yaml",
+      "transport": {
+        "kind": "http",
+        "method": "GET",
+        "url": "{{auth.baseUrl}}/repos/{{input.owner}}/{{input.repo}}/traffic/clones",
+        "headers": {
+          "Authorization": "Bearer {{auth.token}}",
+          "Accept": "application/vnd.github+json",
+          "X-GitHub-Api-Version": "2022-11-28"
+        },
+        "successStatusCodes": [
+          200
+        ]
+      }
+    },
+    {
+      "id": "get_contents",
+      "title": "Get Contents",
+      "description": "Read repository file or directory contents.",
+      "riskLevel": "read",
+      "fields": [
+        {
+          "key": "owner",
+          "label": "Owner",
+          "description": "GitHub user or organization that owns the repository.",
+          "type": "string",
+          "required": true
+        },
+        {
+          "key": "repo",
+          "label": "Repository",
+          "description": "Repository name.",
+          "type": "string",
+          "required": true
+        },
+        {
+          "key": "path",
+          "label": "Path",
+          "type": "string",
+          "required": false
+        },
+        {
+          "key": "ref",
+          "label": "Ref",
+          "type": "string",
+          "required": false
+        }
+      ],
+      "referencePath": ".repos/references/plugins/stackstorm-github/actions/get_contents.yaml",
+      "transport": {
+        "kind": "builtin"
+      }
+    },
+    {
+      "id": "get_deployment_statuses",
+      "title": "Get Deployment Statuses",
+      "description": "List statuses for a deployment.",
+      "riskLevel": "read",
+      "fields": [
+        {
+          "key": "owner",
+          "label": "Owner",
+          "description": "GitHub user or organization that owns the repository.",
+          "type": "string",
+          "required": true
+        },
+        {
+          "key": "repo",
+          "label": "Repository",
+          "description": "Repository name.",
+          "type": "string",
+          "required": true
+        },
+        {
+          "key": "deploymentId",
+          "label": "Deployment ID",
+          "type": "number",
+          "required": true
+        },
+        {
+          "key": "page",
+          "label": "Page",
+          "description": "Optional page number for paginated GitHub endpoints.",
+          "type": "number",
+          "required": false
+        },
+        {
+          "key": "perPage",
+          "label": "Per Page",
+          "description": "Optional page size for paginated GitHub endpoints.",
+          "type": "number",
+          "required": false
+        }
+      ],
+      "referencePath": ".repos/references/plugins/stackstorm-github/actions/get_deployment_statuses.yaml",
+      "transport": {
+        "kind": "http",
+        "method": "GET",
+        "url": "{{auth.baseUrl}}/repos/{{input.owner}}/{{input.repo}}/deployments/{{input.deploymentId}}/statuses",
+        "headers": {
+          "Authorization": "Bearer {{auth.token}}",
+          "Accept": "application/vnd.github+json",
+          "X-GitHub-Api-Version": "2022-11-28"
+        },
+        "query": {
+          "page": "{{input.page}}",
+          "per_page": "{{input.perPage}}"
+        },
+        "successStatusCodes": [
+          200
+        ]
+      }
+    },
+    {
+      "id": "get_issue",
+      "title": "Get Issue",
+      "description": "Read an issue or pull request issue record.",
+      "riskLevel": "read",
+      "fields": [
+        {
+          "key": "owner",
+          "label": "Owner",
+          "description": "GitHub user or organization that owns the repository.",
+          "type": "string",
+          "required": true
+        },
+        {
+          "key": "repo",
+          "label": "Repository",
+          "description": "Repository name.",
+          "type": "string",
+          "required": true
+        },
+        {
+          "key": "issueNumber",
+          "label": "Issue Number",
+          "type": "number",
+          "required": true
+        }
+      ],
+      "referencePath": ".repos/references/plugins/stackstorm-github/actions/get_issue.yaml",
+      "transport": {
+        "kind": "http",
+        "method": "GET",
+        "url": "{{auth.baseUrl}}/repos/{{input.owner}}/{{input.repo}}/issues/{{input.issueNumber}}",
+        "headers": {
+          "Authorization": "Bearer {{auth.token}}",
+          "Accept": "application/vnd.github+json",
+          "X-GitHub-Api-Version": "2022-11-28"
+        },
+        "successStatusCodes": [
+          200
+        ]
+      }
+    },
+    {
+      "id": "get_pull",
+      "title": "Get Pull Request",
+      "description": "Read a pull request.",
+      "riskLevel": "read",
+      "fields": [
+        {
+          "key": "owner",
+          "label": "Owner",
+          "description": "GitHub user or organization that owns the repository.",
+          "type": "string",
+          "required": true
+        },
+        {
+          "key": "repo",
+          "label": "Repository",
+          "description": "Repository name.",
+          "type": "string",
+          "required": true
+        },
+        {
+          "key": "pullNumber",
+          "label": "Pull Number",
+          "type": "number",
+          "required": true
+        }
+      ],
+      "referencePath": ".repos/references/plugins/stackstorm-github/actions/get_pull.yaml",
+      "transport": {
+        "kind": "http",
+        "method": "GET",
+        "url": "{{auth.baseUrl}}/repos/{{input.owner}}/{{input.repo}}/pulls/{{input.pullNumber}}",
+        "headers": {
+          "Authorization": "Bearer {{auth.token}}",
+          "Accept": "application/vnd.github+json",
+          "X-GitHub-Api-Version": "2022-11-28"
+        },
+        "successStatusCodes": [
+          200
+        ]
+      }
+    },
+    {
+      "id": "get_traffic_stats",
+      "title": "Get Traffic Stats",
+      "description": "Read view traffic statistics for a repository.",
+      "riskLevel": "read",
+      "fields": [
+        {
+          "key": "owner",
+          "label": "Owner",
+          "description": "GitHub user or organization that owns the repository.",
+          "type": "string",
+          "required": true
+        },
+        {
+          "key": "repo",
+          "label": "Repository",
+          "description": "Repository name.",
+          "type": "string",
+          "required": true
+        }
+      ],
+      "referencePath": ".repos/references/plugins/stackstorm-github/actions/get_traffic_stats.yaml",
+      "transport": {
+        "kind": "http",
+        "method": "GET",
+        "url": "{{auth.baseUrl}}/repos/{{input.owner}}/{{input.repo}}/traffic/views",
+        "headers": {
+          "Authorization": "Bearer {{auth.token}}",
+          "Accept": "application/vnd.github+json",
+          "X-GitHub-Api-Version": "2022-11-28"
+        },
+        "successStatusCodes": [
+          200
+        ]
+      }
+    },
+    {
+      "id": "get_user",
+      "title": "Get User",
+      "description": "Read a GitHub user profile or the authenticated user.",
+      "riskLevel": "read",
+      "fields": [
+        {
+          "key": "username",
+          "label": "Username",
+          "description": "Optional username. When omitted, the authenticated user endpoint is used.",
+          "type": "string",
+          "required": false
+        }
+      ],
+      "referencePath": ".repos/references/plugins/stackstorm-github/actions/get_user.yaml",
+      "transport": {
+        "kind": "builtin"
+      }
+    },
+    {
+      "id": "latest_release",
+      "title": "Latest Release",
+      "description": "Read the latest published release.",
+      "riskLevel": "read",
+      "fields": [
+        {
+          "key": "owner",
+          "label": "Owner",
+          "description": "GitHub user or organization that owns the repository.",
+          "type": "string",
+          "required": true
+        },
+        {
+          "key": "repo",
+          "label": "Repository",
+          "description": "Repository name.",
+          "type": "string",
+          "required": true
+        }
+      ],
+      "referencePath": ".repos/references/plugins/stackstorm-github/actions/latest_release.yaml",
+      "transport": {
+        "kind": "http",
+        "method": "GET",
+        "url": "{{auth.baseUrl}}/repos/{{input.owner}}/{{input.repo}}/releases/latest",
+        "headers": {
+          "Authorization": "Bearer {{auth.token}}",
+          "Accept": "application/vnd.github+json",
+          "X-GitHub-Api-Version": "2022-11-28"
+        },
+        "successStatusCodes": [
+          200
+        ]
+      }
+    },
+    {
+      "id": "list_deployments",
+      "title": "List Deployments",
+      "description": "List repository deployments.",
+      "riskLevel": "read",
+      "fields": [
+        {
+          "key": "owner",
+          "label": "Owner",
+          "description": "GitHub user or organization that owns the repository.",
+          "type": "string",
+          "required": true
+        },
+        {
+          "key": "repo",
+          "label": "Repository",
+          "description": "Repository name.",
+          "type": "string",
+          "required": true
+        },
+        {
+          "key": "sha",
+          "label": "SHA",
+          "type": "string",
+          "required": false
+        },
+        {
+          "key": "ref",
+          "label": "Ref",
+          "type": "string",
+          "required": false
+        },
+        {
+          "key": "task",
+          "label": "Task",
+          "type": "string",
+          "required": false
+        },
+        {
+          "key": "environment",
+          "label": "Environment",
+          "type": "string",
+          "required": false
+        },
+        {
+          "key": "page",
+          "label": "Page",
+          "description": "Optional page number for paginated GitHub endpoints.",
+          "type": "number",
+          "required": false
+        },
+        {
+          "key": "perPage",
+          "label": "Per Page",
+          "description": "Optional page size for paginated GitHub endpoints.",
+          "type": "number",
+          "required": false
+        }
+      ],
+      "referencePath": ".repos/references/plugins/stackstorm-github/actions/list_deployments.yaml",
+      "transport": {
+        "kind": "http",
+        "method": "GET",
+        "url": "{{auth.baseUrl}}/repos/{{input.owner}}/{{input.repo}}/deployments",
+        "headers": {
+          "Authorization": "Bearer {{auth.token}}",
+          "Accept": "application/vnd.github+json",
+          "X-GitHub-Api-Version": "2022-11-28"
+        },
+        "query": {
+          "sha": "{{input.sha}}",
+          "ref": "{{input.ref}}",
+          "task": "{{input.task}}",
+          "environment": "{{input.environment}}",
+          "page": "{{input.page}}",
+          "per_page": "{{input.perPage}}"
+        },
+        "successStatusCodes": [
+          200
+        ]
+      }
+    },
+    {
+      "id": "list_issues",
+      "title": "List Issues",
+      "description": "List issues in a repository.",
+      "riskLevel": "read",
+      "fields": [
+        {
+          "key": "owner",
+          "label": "Owner",
+          "description": "GitHub user or organization that owns the repository.",
+          "type": "string",
+          "required": true
+        },
+        {
+          "key": "repo",
+          "label": "Repository",
+          "description": "Repository name.",
+          "type": "string",
+          "required": true
+        },
+        {
+          "key": "milestone",
+          "label": "Milestone",
+          "type": "string",
+          "required": false
+        },
+        {
+          "key": "state",
+          "label": "State",
+          "type": "string",
+          "required": false
+        },
+        {
+          "key": "assignee",
+          "label": "Assignee",
+          "type": "string",
+          "required": false
+        },
+        {
+          "key": "creator",
+          "label": "Creator",
+          "type": "string",
+          "required": false
+        },
+        {
+          "key": "mentioned",
+          "label": "Mentioned",
+          "type": "string",
+          "required": false
+        },
+        {
+          "key": "labels",
+          "label": "Labels",
+          "type": "string_array",
+          "required": false
+        },
+        {
+          "key": "sort",
+          "label": "Sort",
+          "type": "string",
+          "required": false
+        },
+        {
+          "key": "direction",
+          "label": "Direction",
+          "type": "string",
+          "required": false
+        },
+        {
+          "key": "since",
+          "label": "Since",
+          "type": "string",
+          "required": false
+        },
+        {
+          "key": "page",
+          "label": "Page",
+          "description": "Optional page number for paginated GitHub endpoints.",
+          "type": "number",
+          "required": false
+        },
+        {
+          "key": "perPage",
+          "label": "Per Page",
+          "description": "Optional page size for paginated GitHub endpoints.",
+          "type": "number",
+          "required": false
+        }
+      ],
+      "referencePath": ".repos/references/plugins/stackstorm-github/actions/list_issues.yaml",
+      "transport": {
+        "kind": "builtin"
+      }
+    },
+    {
+      "id": "list_pulls",
+      "title": "List Pull Requests",
+      "description": "List pull requests in a repository.",
+      "riskLevel": "read",
+      "fields": [
+        {
+          "key": "owner",
+          "label": "Owner",
+          "description": "GitHub user or organization that owns the repository.",
+          "type": "string",
+          "required": true
+        },
+        {
+          "key": "repo",
+          "label": "Repository",
+          "description": "Repository name.",
+          "type": "string",
+          "required": true
+        },
+        {
+          "key": "state",
+          "label": "State",
+          "type": "string",
+          "required": false
+        },
+        {
+          "key": "head",
+          "label": "Head",
+          "type": "string",
+          "required": false
+        },
+        {
+          "key": "base",
+          "label": "Base",
+          "type": "string",
+          "required": false
+        },
+        {
+          "key": "sort",
+          "label": "Sort",
+          "type": "string",
+          "required": false
+        },
+        {
+          "key": "direction",
+          "label": "Direction",
+          "type": "string",
+          "required": false
+        },
+        {
+          "key": "page",
+          "label": "Page",
+          "description": "Optional page number for paginated GitHub endpoints.",
+          "type": "number",
+          "required": false
+        },
+        {
+          "key": "perPage",
+          "label": "Per Page",
+          "description": "Optional page size for paginated GitHub endpoints.",
+          "type": "number",
+          "required": false
+        }
+      ],
+      "referencePath": ".repos/references/plugins/stackstorm-github/actions/list_pulls.yaml",
+      "transport": {
+        "kind": "http",
+        "method": "GET",
+        "url": "{{auth.baseUrl}}/repos/{{input.owner}}/{{input.repo}}/pulls",
+        "headers": {
+          "Authorization": "Bearer {{auth.token}}",
+          "Accept": "application/vnd.github+json",
+          "X-GitHub-Api-Version": "2022-11-28"
+        },
+        "query": {
+          "state": "{{input.state}}",
+          "head": "{{input.head}}",
+          "base": "{{input.base}}",
+          "sort": "{{input.sort}}",
+          "direction": "{{input.direction}}",
+          "page": "{{input.page}}",
+          "per_page": "{{input.perPage}}"
+        },
+        "successStatusCodes": [
+          200
+        ]
+      }
+    },
+    {
+      "id": "list_releases",
+      "title": "List Releases",
+      "description": "List repository releases.",
+      "riskLevel": "read",
+      "fields": [
+        {
+          "key": "owner",
+          "label": "Owner",
+          "description": "GitHub user or organization that owns the repository.",
+          "type": "string",
+          "required": true
+        },
+        {
+          "key": "repo",
+          "label": "Repository",
+          "description": "Repository name.",
+          "type": "string",
+          "required": true
+        },
+        {
+          "key": "page",
+          "label": "Page",
+          "description": "Optional page number for paginated GitHub endpoints.",
+          "type": "number",
+          "required": false
+        },
+        {
+          "key": "perPage",
+          "label": "Per Page",
+          "description": "Optional page size for paginated GitHub endpoints.",
+          "type": "number",
+          "required": false
+        }
+      ],
+      "referencePath": ".repos/references/plugins/stackstorm-github/actions/list_releases.yaml",
+      "transport": {
+        "kind": "http",
+        "method": "GET",
+        "url": "{{auth.baseUrl}}/repos/{{input.owner}}/{{input.repo}}/releases",
+        "headers": {
+          "Authorization": "Bearer {{auth.token}}",
+          "Accept": "application/vnd.github+json",
+          "X-GitHub-Api-Version": "2022-11-28"
+        },
+        "query": {
+          "page": "{{input.page}}",
+          "per_page": "{{input.perPage}}"
+        },
+        "successStatusCodes": [
+          200
+        ]
+      }
+    },
+    {
+      "id": "list_teams",
+      "title": "List Teams",
+      "description": "List teams in an organization.",
+      "riskLevel": "read",
+      "fields": [
+        {
+          "key": "org",
+          "label": "Organization",
+          "type": "string",
+          "required": true
+        },
+        {
+          "key": "page",
+          "label": "Page",
+          "description": "Optional page number for paginated GitHub endpoints.",
+          "type": "number",
+          "required": false
+        },
+        {
+          "key": "perPage",
+          "label": "Per Page",
+          "description": "Optional page size for paginated GitHub endpoints.",
+          "type": "number",
+          "required": false
+        }
+      ],
+      "referencePath": ".repos/references/plugins/stackstorm-github/actions/list_teams.yaml",
+      "transport": {
+        "kind": "http",
+        "method": "GET",
+        "url": "{{auth.baseUrl}}/orgs/{{input.org}}/teams",
+        "headers": {
+          "Authorization": "Bearer {{auth.token}}",
+          "Accept": "application/vnd.github+json",
+          "X-GitHub-Api-Version": "2022-11-28"
+        },
+        "query": {
+          "page": "{{input.page}}",
+          "per_page": "{{input.perPage}}"
+        },
+        "successStatusCodes": [
+          200
+        ]
+      }
+    },
+    {
+      "id": "merge_pull",
+      "title": "Merge Pull Request",
+      "description": "Merge a pull request.",
+      "riskLevel": "write",
+      "fields": [
+        {
+          "key": "owner",
+          "label": "Owner",
+          "description": "GitHub user or organization that owns the repository.",
+          "type": "string",
+          "required": true
+        },
+        {
+          "key": "repo",
+          "label": "Repository",
+          "description": "Repository name.",
+          "type": "string",
+          "required": true
+        },
+        {
+          "key": "pullNumber",
+          "label": "Pull Number",
+          "type": "number",
+          "required": true
+        },
+        {
+          "key": "commitTitle",
+          "label": "Commit Title",
+          "type": "string",
+          "required": false
+        },
+        {
+          "key": "commitMessage",
+          "label": "Commit Message",
+          "type": "string",
+          "required": false
+        },
+        {
+          "key": "mergeMethod",
+          "label": "Merge Method",
+          "type": "string",
+          "required": false
+        },
+        {
+          "key": "sha",
+          "label": "SHA",
+          "type": "string",
+          "required": false
+        }
+      ],
+      "referencePath": ".repos/references/plugins/stackstorm-github/actions/merge_pull.yaml",
+      "transport": {
+        "kind": "http",
+        "method": "PUT",
+        "url": "{{auth.baseUrl}}/repos/{{input.owner}}/{{input.repo}}/pulls/{{input.pullNumber}}/merge",
+        "headers": {
+          "Authorization": "Bearer {{auth.token}}",
+          "Accept": "application/vnd.github+json",
+          "X-GitHub-Api-Version": "2022-11-28"
+        },
+        "body": {
+          "commit_title": "{{input.commitTitle}}",
+          "commit_message": "{{input.commitMessage}}",
+          "merge_method": "{{input.mergeMethod}}",
+          "sha": "{{input.sha}}"
+        },
+        "successStatusCodes": [
+          200
+        ]
+      }
+    },
+    {
+      "id": "review_pull",
+      "title": "Review Pull Request",
+      "description": "Create a review on a pull request.",
+      "riskLevel": "write",
+      "fields": [
+        {
+          "key": "owner",
+          "label": "Owner",
+          "description": "GitHub user or organization that owns the repository.",
+          "type": "string",
+          "required": true
+        },
+        {
+          "key": "repo",
+          "label": "Repository",
+          "description": "Repository name.",
+          "type": "string",
+          "required": true
+        },
+        {
+          "key": "pullNumber",
+          "label": "Pull Number",
+          "type": "number",
+          "required": true
+        },
+        {
+          "key": "event",
+          "label": "Event",
+          "type": "string",
+          "required": false
+        },
+        {
+          "key": "body",
+          "label": "Body",
+          "type": "string",
+          "required": false
+        },
+        {
+          "key": "commitId",
+          "label": "Commit ID",
+          "type": "string",
+          "required": false
+        },
+        {
+          "key": "comments",
+          "label": "Comments",
+          "type": "json",
+          "required": false
+        }
+      ],
+      "referencePath": ".repos/references/plugins/stackstorm-github/actions/review_pull.yaml",
+      "transport": {
+        "kind": "http",
+        "method": "POST",
+        "url": "{{auth.baseUrl}}/repos/{{input.owner}}/{{input.repo}}/pulls/{{input.pullNumber}}/reviews",
+        "headers": {
+          "Authorization": "Bearer {{auth.token}}",
+          "Accept": "application/vnd.github+json",
+          "X-GitHub-Api-Version": "2022-11-28"
+        },
+        "body": {
+          "event": "{{input.event}}",
+          "body": "{{input.body}}",
+          "commit_id": "{{input.commitId}}",
+          "comments": "{{input.comments}}"
+        },
+        "successStatusCodes": [
+          200,
+          201
+        ]
+      }
+    },
+    {
+      "id": "store_oauth_token",
+      "title": "Store OAuth Token",
+      "description": "Normalize a GitHub OAuth token payload for desktop use. Desktop does not persist StackStorm kv tokens through this action.",
+      "riskLevel": "write",
+      "fields": [
+        {
+          "key": "token",
+          "label": "Token",
+          "type": "string",
+          "required": true,
+          "secret": true
+        }
+      ],
+      "referencePath": ".repos/references/plugins/stackstorm-github/actions/store_oauth_token.yaml",
+      "transport": {
+        "kind": "builtin"
+      }
+    },
+    {
+      "id": "update_branch_protection",
+      "title": "Update Branch Protection",
+      "description": "Replace branch protection rules for a branch.",
+      "riskLevel": "write",
+      "fields": [
+        {
+          "key": "owner",
+          "label": "Owner",
+          "description": "GitHub user or organization that owns the repository.",
+          "type": "string",
+          "required": true
+        },
+        {
+          "key": "repo",
+          "label": "Repository",
+          "description": "Repository name.",
+          "type": "string",
+          "required": true
+        },
+        {
+          "key": "branch",
+          "label": "Branch",
+          "type": "string",
+          "required": true
+        },
+        {
+          "key": "protection",
+          "label": "Protection",
+          "description": "Branch protection payload shaped like GitHub's REST API body.",
+          "type": "json",
+          "required": true
+        }
+      ],
+      "referencePath": ".repos/references/plugins/stackstorm-github/actions/update_branch_protection.yaml",
+      "transport": {
+        "kind": "http",
+        "method": "PUT",
+        "url": "{{auth.baseUrl}}/repos/{{input.owner}}/{{input.repo}}/branches/{{input.branch}}/protection",
+        "headers": {
+          "Authorization": "Bearer {{auth.token}}",
+          "Accept": "application/vnd.github+json",
+          "X-GitHub-Api-Version": "2022-11-28"
+        },
+        "body": "{{input.protection}}",
+        "successStatusCodes": [
+          200
+        ]
+      }
+    },
+    {
+      "id": "update_file",
+      "title": "Update File",
+      "description": "Update an existing repository file.",
+      "riskLevel": "write",
+      "fields": [
+        {
+          "key": "owner",
+          "label": "Owner",
+          "description": "GitHub user or organization that owns the repository.",
+          "type": "string",
+          "required": true
+        },
+        {
+          "key": "repo",
+          "label": "Repository",
+          "description": "Repository name.",
+          "type": "string",
+          "required": true
+        },
+        {
+          "key": "path",
+          "label": "Path",
+          "type": "string",
+          "required": true
+        },
+        {
+          "key": "content",
+          "label": "Content",
+          "type": "string",
+          "required": true
+        },
+        {
+          "key": "message",
+          "label": "Commit Message",
+          "type": "string",
+          "required": true
+        },
+        {
+          "key": "branch",
+          "label": "Branch",
+          "type": "string",
+          "required": false
+        },
+        {
+          "key": "sha",
+          "label": "SHA",
+          "type": "string",
+          "required": false
+        },
+        {
+          "key": "committerName",
+          "label": "Committer Name",
+          "type": "string",
+          "required": false
+        },
+        {
+          "key": "committerEmail",
+          "label": "Committer Email",
+          "type": "string",
+          "required": false
+        },
+        {
+          "key": "authorName",
+          "label": "Author Name",
+          "type": "string",
+          "required": false
+        },
+        {
+          "key": "authorEmail",
+          "label": "Author Email",
+          "type": "string",
+          "required": false
+        }
+      ],
+      "referencePath": ".repos/references/plugins/stackstorm-github/actions/update_file.yaml",
+      "transport": {
+        "kind": "builtin"
+      }
+    }
+  ],
+  "triggers": [
+    {
+      "id": "repository_event",
+      "title": "Repository Event",
+      "description": "Poll or webhook-driven repository event ingestion modeled after the StackStorm repository sensor.",
+      "kind": "poll",
+      "eventTypes": [
+        "IssuesEvent",
+        "IssueCommentEvent",
+        "ForkEvent",
+        "WatchEvent",
+        "ReleaseEvent",
+        "PushEvent"
+      ],
+      "fields": [
+        {
+          "key": "repositories",
+          "label": "Repositories",
+          "description": "List of owner/repository pairs to watch. Mirrors repository_sensor.repositories.",
+          "type": "json",
+          "required": true
+        },
+        {
+          "key": "eventTypeWhitelist",
+          "label": "Event Type Whitelist",
+          "description": "Repository event types to ingest, for example PushEvent or ReleaseEvent.",
+          "type": "string_array",
+          "required": false
+        },
+        {
+          "key": "count",
+          "label": "History Count",
+          "description": "Maximum number of previously seen events to fetch during poll reconciliation.",
+          "type": "number",
+          "required": false
+        }
+      ],
+      "referencePath": ".repos/references/plugins/stackstorm-github/sensors/github_repository_sensor.yaml"
+    },
+    {
+      "id": "deployment_event",
+      "title": "Deployment Event Webhook",
+      "description": "Webhook-driven deployment event trigger modeled after StackStorm's deployment_event rule.",
+      "kind": "webhook",
+      "eventTypes": [
+        "deployment"
+      ],
+      "fields": [
+        {
+          "key": "environment",
+          "label": "Environment",
+          "description": "Expected deployment environment used to route or filter deployment webhooks.",
+          "type": "string",
+          "required": false
+        }
+      ],
+      "referencePath": ".repos/references/plugins/stackstorm-github/rules/deploy_pack_on_deployment_event.yaml"
+    }
+  ]
+}

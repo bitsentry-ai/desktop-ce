@@ -26,6 +26,7 @@ import {
   approveRunbookExportPath,
   approveRunbookImportPaths,
 } from '@bitsentry-ce/core/features/runbooks/desktop-trusted-runbook-paths'
+import { createDesktopNodePluginRuntimeService } from '@bitsentry-ce/core/features/plugins/node'
 import {
   setRuntimeDefaultAppDataName,
 } from './runtime-paths'
@@ -93,6 +94,9 @@ export function createDesktopEditionRunbookRuntime(
     RunbookResultStore: SqliteRunbookResultStore,
     LocalAiProvider: CodingAgentsProviderService,
     RunbookExecutionService: options.RunbookExecutionService,
+    createPluginRuntime() {
+      return createDesktopNodePluginRuntimeService()
+    },
     createRunbookHandlers: createRuntimeRunbookHandlers,
     approveRunbookExportPath,
     approveRunbookImportPaths,

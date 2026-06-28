@@ -124,6 +124,10 @@ export default function DesktopRunbookPage({
     errorSourcesLoading,
     errorSourceCount,
     validErrorSourceIds,
+    pluginManifests,
+    pluginOptions,
+    pluginsLoading,
+    validPluginActionIdsByPluginId,
     llmProviderLabelsByKey,
     llmModelOptions,
     selectableLlmProviderCount,
@@ -177,6 +181,7 @@ export default function DesktopRunbookPage({
     summarizeRunbookActionForTelemetry,
     replaceRunbook,
     validErrorSourceIds,
+    validPluginActionIdsByPluginId,
   });
 
   const {
@@ -341,6 +346,10 @@ export default function DesktopRunbookPage({
         errorSourcesLoading,
         errorSourceCount,
         validErrorSourceIds,
+        pluginManifests,
+        pluginOptions,
+        pluginsLoading,
+        validPluginActionIdsByPluginId,
         llmProviderLabelsByKey,
         llmModelOptions,
         selectableLlmProviderCount,

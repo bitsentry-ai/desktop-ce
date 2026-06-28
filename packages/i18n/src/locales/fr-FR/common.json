@@ -1500,5 +1500,6 @@
   "common.useVulnerabilityNotifications.severity": "Sévérité :",
   "common.results.noResultsYetRunThisRunbook": "Aucun résultat pour le moment. Exécutez ce runbook pour voir les résultats ici.",
   "common.results.noRuntimeParameterValuesCaptured": "Aucune valeur de paramètre d’exécution n’a été capturée pour cette exécution.",
-  "common.results.noInputMetadataCaptured": "Aucune métadonnée d’entrée n’a été capturée pour cette étape."
+  "common.results.noInputMetadataCaptured": "Aucune métadonnée d’entrée n’a été capturée pour cette étape.",
+  "common.incidentArtifactsRail.actionType.plugin": "Plugin"
 }

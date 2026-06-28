@@ -194,12 +194,27 @@ assert(
               },
             ],
           },
+          {
+            id: "action-2",
+            type: "plugin",
+            title: "List GitHub issues",
+            pluginId: "github",
+            pluginActionId: "list_issues",
+            pluginInput:
+              "{\"owner\":\"bitsentry-ai\",\"repo\":\"monorepo\",\"limit\":10}",
+            pluginAuth: "{\"token\":\"${globals.github_token}\"}",
+          },
         ],
       },
     ],
     globals: [
       {
         key: "incident_webhook",
+        secure: true,
+        redacted: true,
+      },
+      {
+        key: "github_token",
         secure: true,
         redacted: true,
       },
@@ -234,7 +249,7 @@ assert(
       description: "Checks global references",
       revisionNumber: 3,
       updatedAt: "2026-04-15T00:00:00.000Z",
-      actionCount: 1,
+      actionCount: 2,
     },
     summary: {
       purposeText: "Checks global references",
@@ -242,6 +257,7 @@ assert(
         shell: 1,
         llm: 0,
         http: 0,
+        plugin: 1,
         external_source: 0,
         telemetry_existing_entry: 0,
         data_source_query: 0,
@@ -250,7 +266,7 @@ assert(
         diagnosis_verify: 0,
         diagnosis_recommend: 0,
       },
-      orderedActionTitles: ["Echo env"],
+      orderedActionTitles: ["Echo env", "List GitHub issues"],
     },
     globalReferences: [
       {
@@ -261,6 +277,10 @@ assert(
         key: "incident_api_token",
         secure: true,
       },
+      {
+        key: "github_token",
+        secure: true,
+      },
     ],
     actions: [
       {
@@ -268,11 +288,24 @@ assert(
         order: 1,
         type: "shell",
         title: "Echo env",
-        payload: {
-          command: "echo ${globals.environment}",
+          payload: {
+            command: "echo ${globals.environment}",
+          },
         },
-      },
-    ],
+        {
+          id: "action-2",
+          order: 2,
+          type: "plugin",
+          title: "List GitHub issues",
+          payload: {
+            pluginId: "github",
+            pluginActionId: "list_issues",
+            pluginInput:
+              "{\"owner\":\"bitsentry-ai\",\"repo\":\"monorepo\",\"limit\":5}",
+            pluginAuth: "{\"token\":\"${globals.github_token}\"}",
+          },
+        },
+      ],
   }).success,
   "runbook context schema should accept metadata-only global references",
 );
@@ -306,7 +339,7 @@ assert(
         description: "Checks globals",
         revisionNumber: 1,
         updatedAt: "2026-04-15T00:00:00.000Z",
-        actionCount: 1,
+        actionCount: 2,
       },
       summary: {
         purposeText: "Checks globals",
@@ -314,6 +347,7 @@ assert(
           shell: 1,
           llm: 0,
           http: 0,
+          plugin: 1,
           external_source: 0,
           telemetry_existing_entry: 0,
           data_source_query: 0,
@@ -322,7 +356,7 @@ assert(
           diagnosis_verify: 0,
           diagnosis_recommend: 0,
         },
-        orderedActionTitles: ["Echo env"],
+        orderedActionTitles: ["Echo env", "List GitHub issues"],
       },
       actions: [
         {
@@ -334,13 +368,30 @@ assert(
             command: "echo ${globals.environment}",
           },
         },
+        {
+          id: "action-2",
+          order: 2,
+          type: "plugin",
+          title: "List GitHub issues",
+          payload: {
+            pluginId: "github",
+            pluginActionId: "list_issues",
+            pluginInput:
+              "{\"owner\":\"bitsentry-ai\",\"repo\":\"monorepo\",\"limit\":5}",
+            pluginAuth: "{\"token\":\"${globals.github_token}\"}",
+          },
+        },
       ],
     },
     resolvedGlobals: {
       values: {
         environment: "production",
+        github_token: "secret-token",
       },
-      definitions: [{ key: "environment" }],
+      definitions: [
+        { key: "environment" },
+        { key: "github_token", secure: true },
+      ],
     },
   }).success,
   "worker execution context schema should require resolved globals",
@@ -369,6 +420,15 @@ assert(
               type: "external_source",
               title: "Import external source",
               sourceId: "source-1",
+            },
+            {
+              id: "action-2",
+              type: "plugin",
+              title: "Import plugin action",
+              pluginId: "github",
+              pluginActionId: "list_issues",
+              pluginInput:
+                "{\"owner\":\"bitsentry-ai\",\"repo\":\"monorepo\"}",
             },
           ],
         },
@@ -401,6 +461,25 @@ const globalRefs = collectRunbookGlobalReferences({
 assert(
   JSON.stringify(globalRefs) === JSON.stringify(["api_host", "api_token"]),
   "global reference helper should detect references in URLs and headers",
+);
+
+const pluginGlobalRefs = collectRunbookGlobalReferences({
+  actions: [
+    {
+      type: "plugin",
+      title: "Query GitHub issues",
+      pluginId: "github",
+      pluginActionId: "list_issues",
+      pluginInput:
+        "{\"owner\":\"bitsentry-ai\",\"repo\":\"monorepo\",\"limit\":\"${globals.issue_limit}\"}",
+      pluginAuth: "{\"token\":\"${globals.github_token}\"}",
+    },
+  ],
+});
+assert(
+  JSON.stringify(pluginGlobalRefs) ===
+    JSON.stringify(["github_token", "issue_limit"]),
+  "global reference helper should detect references in plugin auth and input payloads",
 );
 
 const duplicateActionId = findDuplicateRunbookActionId({

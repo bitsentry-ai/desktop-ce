@@ -3,10 +3,13 @@ import type {
 } from "./runbooks.schemas";
 import type { RunbookExportArtifactV1 } from "./export.schemas";
 
+import type { ErrorSourceType } from "../error-sources/desktop-error-sources.types";
+
 export type RunbookActionType =
   | "shell"
   | "llm"
   | "http"
+  | "plugin"
   | "external_source"
   | "telemetry_existing_entry"
   | "data_source_query"
@@ -57,6 +60,10 @@ export interface RunbookActionRecord<TTelemetryActionConfig = unknown> {
   method?: RunbookHttpMethod;
   headers?: RunbookHttpHeader[];
   body?: string;
+  pluginId?: string;
+  pluginActionId?: string;
+  pluginInput?: string;
+  pluginAuth?: string;
   query?: string;
   sourceId?: string;
   parameters?: RunbookActionParameter[];
@@ -122,6 +129,10 @@ export interface RunbookContextV1<TTelemetryActionConfig = unknown> {
       method?: RunbookHttpMethod;
       headers?: RunbookHttpHeader[];
       body?: string;
+      pluginId?: string;
+      pluginActionId?: string;
+      pluginInput?: string;
+      pluginAuth?: string;
       query?: string;
       sourceId?: string;
       parameters?: RunbookActionParameter[];
@@ -165,7 +176,7 @@ export interface RunbookTriggerContext {
   needLabel?: string;
   sourceId?: string;
   sourceName?: string;
-  sourceType?: "sentry" | "wazuh" | "posthog";
+  sourceType?: ErrorSourceType;
   incidentThreadId?: string;
 }
 
@@ -519,6 +530,7 @@ const RUNBOOK_ACTION_TYPE_VALUES = [
   "shell",
   "llm",
   "http",
+  "plugin",
   "external_source",
   "telemetry_existing_entry",
   "data_source_query",

@@ -1,6 +1,9 @@
 import { z } from 'zod';
+import {
+  OAUTH_PLUGIN_ERROR_SOURCE_TYPES,
+} from './plugin-backed-error-sources';
 
-export const errorSourceTypeSchema = z.enum(['sentry', 'wazuh', 'posthog']);
+export const errorSourceTypeSchema = z.string().trim().min(1);
 export type ErrorSourceType = z.infer<typeof errorSourceTypeSchema>;
 
 export const POSTHOG_DEFAULT_BASE_URL = 'https://us.posthog.com';
@@ -99,7 +102,7 @@ export const errorSourceSyncResultSchema = z.object({
 
 export const testErrorSourceConnectionResultSchema = z.object({
   success: z.boolean(),
-  provider: errorSourceTypeSchema,
+  provider: z.string().trim().min(1),
   organizationCount: z.number(),
   projectCount: z.number(),
 });
@@ -114,7 +117,7 @@ export const testErrorSourceConnectionResultSchema = z.object({
  * from the sentry/posthog flow.
  */
 export const probeErrorSourceSchema = z.object({
-  sourceType: z.enum(['sentry', 'posthog']),
+  sourceType: z.enum(OAUTH_PLUGIN_ERROR_SOURCE_TYPES),
   authToken: z.string().trim().min(1),
   baseUrl: z.url().optional(),
   /**

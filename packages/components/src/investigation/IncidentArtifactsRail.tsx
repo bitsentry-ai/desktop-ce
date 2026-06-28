@@ -8,6 +8,7 @@ import {
   FileText,
   Globe,
   Loader2,
+  Puzzle,
   ScanSearch,
   ShieldCheck,
   Terminal,
@@ -175,6 +176,8 @@ function actionIcon(type: RunbookActionType) {
       return Bot;
     case "http":
       return Globe;
+    case "plugin":
+      return Puzzle;
     case "external_source":
       return AlertCircle;
     case "telemetry_existing_entry":
@@ -202,6 +205,8 @@ function actionTypeLabel(t: TranslationFn, type: RunbookActionType): string {
       return t("common.incidentArtifactsRail.actionType.llm");
     case "http":
       return t("common.incidentArtifactsRail.actionType.http");
+    case "plugin":
+      return t("common.incidentArtifactsRail.actionType.plugin");
     case "external_source":
       return t("common.incidentArtifactsRail.actionType.external_source");
     case "telemetry_existing_entry":
