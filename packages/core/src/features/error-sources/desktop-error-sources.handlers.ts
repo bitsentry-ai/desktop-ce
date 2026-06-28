@@ -515,7 +515,7 @@ function firstNonEmptyStringArray(readers: Array<() => string[]>): string[] {
   return []
 }
 
-function readWazuhConnectionIndexPattern(
+function readPluginConnectionIndexPattern(
   configuration: ErrorSourceConfiguration,
 ): string | undefined {
   const indexPatterns = readStringArray(configuration.indexPatterns)
@@ -529,21 +529,6 @@ function readWazuhConnectionIndexPattern(
   }
 
   return undefined
-}
-
-function buildWazuhPluginAuth(source: ErrorSource): Record<string, unknown> {
-  const auth: Record<string, unknown> = {}
-  const baseUrl = readOptionalTrimmed(source.configuration.baseUrl)
-  if (baseUrl !== undefined) {
-    auth.indexUrl = baseUrl.replace(/\/+$/, '')
-  }
-
-  const accessToken = resolveStoredErrorSourceToken(source.accessTokenRef)
-  if (accessToken.length > 0) {
-    auth.indexPassword = accessToken
-  }
-
-  return auth
 }
 
 function buildPluginAuthFromSource(
@@ -654,7 +639,7 @@ function buildGenericPluginConnectionInput(source: ErrorSource): Record<string, 
     input.projectSlugs = projectSlugs
   }
 
-  const indexPattern = readWazuhConnectionIndexPattern(source.configuration)
+  const indexPattern = readPluginConnectionIndexPattern(source.configuration)
   if (indexPattern !== undefined) {
     input.indexPattern = indexPattern
   }
@@ -662,15 +647,14 @@ function buildGenericPluginConnectionInput(source: ErrorSource): Record<string, 
   return input
 }
 
-function isMissingWazuhPluginAuthError(error: unknown): boolean {
+function isMissingPluginAuthError(error: unknown): boolean {
   if (!(error instanceof Error)) {
     return false
   }
 
   return (
-    error.message.includes('indexUrl') ||
-    error.message.includes('indexUsername') ||
-    error.message.includes('indexPassword')
+    error.message.startsWith('Missing required auth field:') ||
+    error.message.endsWith(' is required')
   )
 }
 
@@ -1854,46 +1838,83 @@ export function createDesktopErrorSourcesHandlers(
       const pluginId = readSourcePluginId(source)
       const plugin = pluginRuntime.getPlugin(pluginId)
 
-      // Wazuh credentials are optional in the shared schema (they may be
-      // provided later via env/system-settings), so a saved Wazuh source
-      // with blank fields should return a clean "no creds yet" result here
-      // instead of throwing "Access token not found".
-      if (source.sourceType === 'wazuh') {
-        const indexPattern = readWazuhConnectionIndexPattern(source.configuration)
-        const input: Record<string, unknown> = {
-          query: '*',
-          limit: 1,
-        }
-        if (indexPattern !== undefined) {
-          input.indexPattern = indexPattern
-        }
+      if (
+        source.sourceType !== 'sentry' &&
+        source.sourceType !== 'posthog' &&
+        plugin?.metadata?.errorSource?.sourceType === source.sourceType
+      ) {
+        const providerActions = plugin.metadata.errorSource.providerActions
+        const auth = buildPluginAuthFromSource(source, pluginRuntime)
+        const input = buildGenericPluginConnectionInput(source)
 
         try {
-          const result = await pluginRuntime.executeAction({
-            pluginId,
-            actionId: resolveErrorSourceProviderActionId({
-              runtime: pluginRuntime,
+          if (providerActions?.queryIssues !== undefined) {
+            const result = await pluginRuntime.executeAction({
               pluginId,
-              sourceType: source.sourceType,
-              action: 'searchAlerts',
-            }),
-            auth: buildWazuhPluginAuth(source),
-            input,
-          })
-          const issueCount = readPluginIssueCount(result.data)
-          log.info(
-            `[error-sources] testConnection:wazuh sourceId=${source.id} issueCount=${String(issueCount)}`,
-          )
-          return {
-            success: true,
-            provider: source.sourceType,
-            organizationCount: 1,
-            projectCount: issueCount,
+              actionId: resolveErrorSourceProviderActionId({
+                runtime: pluginRuntime,
+                pluginId,
+                sourceType: source.sourceType,
+                action: 'queryIssues',
+              }),
+              auth,
+              input,
+            })
+            const issueBatch = readPluginIssueBatch(result.data)
+            const issueCount = issueBatch?.issues.length ?? readPluginIssueCount(result.data)
+            return {
+              success: true,
+              provider: source.sourceType,
+              organizationCount: readConfiguredOrganizationCount(source.configuration),
+              projectCount: issueCount,
+            }
+          }
+
+          if (providerActions?.searchAlerts !== undefined) {
+            const result = await pluginRuntime.executeAction({
+              pluginId,
+              actionId: resolveErrorSourceProviderActionId({
+                runtime: pluginRuntime,
+                pluginId,
+                sourceType: source.sourceType,
+                action: 'searchAlerts',
+              }),
+              auth,
+              input,
+            })
+            const issueCount = readPluginIssueCount(result.data)
+            return {
+              success: true,
+              provider: source.sourceType,
+              organizationCount: readConfiguredOrganizationCount(source.configuration),
+              projectCount: issueCount,
+            }
+          }
+
+          if (providerActions?.listOrganizations !== undefined) {
+            const result = await pluginRuntime.executeAction({
+              pluginId,
+              actionId: resolveErrorSourceProviderActionId({
+                runtime: pluginRuntime,
+                pluginId,
+                sourceType: source.sourceType,
+                action: 'listOrganizations',
+              }),
+              auth,
+              input: {},
+            })
+            const organizations = readUnknownArray(result.data)
+            return {
+              success: true,
+              provider: source.sourceType,
+              organizationCount: organizations.length,
+              projectCount: 0,
+            }
           }
         } catch (error) {
-          if (isMissingWazuhPluginAuthError(error)) {
+          if (isMissingPluginAuthError(error)) {
             log.info(
-              `[error-sources] testConnection:wazuh sourceId=${source.id} missing plugin auth`,
+              `[error-sources] testConnection:plugin sourceId=${source.id} missing plugin auth`,
             )
             return {
               success: false,
@@ -1904,80 +1925,6 @@ export function createDesktopErrorSourcesHandlers(
           }
 
           throw error
-        }
-      }
-
-      if (
-        source.sourceType !== 'sentry' &&
-        source.sourceType !== 'posthog' &&
-        plugin?.metadata?.errorSource?.sourceType === source.sourceType
-      ) {
-        const providerActions = plugin.metadata.errorSource.providerActions
-        const auth = buildPluginAuthFromSource(source, pluginRuntime)
-        const input = buildGenericPluginConnectionInput(source)
-
-        if (providerActions?.queryIssues !== undefined) {
-          const result = await pluginRuntime.executeAction({
-            pluginId,
-            actionId: resolveErrorSourceProviderActionId({
-              runtime: pluginRuntime,
-              pluginId,
-              sourceType: source.sourceType,
-              action: 'queryIssues',
-            }),
-            auth,
-            input,
-          })
-          const issueBatch = readPluginIssueBatch(result.data)
-          const issueCount = issueBatch?.issues.length ?? readPluginIssueCount(result.data)
-          return {
-            success: true,
-            provider: source.sourceType,
-            organizationCount: readConfiguredOrganizationCount(source.configuration),
-            projectCount: issueCount,
-          }
-        }
-
-        if (providerActions?.searchAlerts !== undefined) {
-          const result = await pluginRuntime.executeAction({
-            pluginId,
-            actionId: resolveErrorSourceProviderActionId({
-              runtime: pluginRuntime,
-              pluginId,
-              sourceType: source.sourceType,
-              action: 'searchAlerts',
-            }),
-            auth,
-            input,
-          })
-          const issueCount = readPluginIssueCount(result.data)
-          return {
-            success: true,
-            provider: source.sourceType,
-            organizationCount: readConfiguredOrganizationCount(source.configuration),
-            projectCount: issueCount,
-          }
-        }
-
-        if (providerActions?.listOrganizations !== undefined) {
-          const result = await pluginRuntime.executeAction({
-            pluginId,
-            actionId: resolveErrorSourceProviderActionId({
-              runtime: pluginRuntime,
-              pluginId,
-              sourceType: source.sourceType,
-              action: 'listOrganizations',
-            }),
-            auth,
-            input: {},
-          })
-          const organizations = readUnknownArray(result.data)
-          return {
-            success: true,
-            provider: source.sourceType,
-            organizationCount: organizations.length,
-            projectCount: 0,
-          }
         }
       }
 
