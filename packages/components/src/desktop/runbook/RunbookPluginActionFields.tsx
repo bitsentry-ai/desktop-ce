@@ -1,5 +1,7 @@
+import type { ReactNode } from "react";
+
 import { cn } from "../../lib/utils";
-import type { PluginFieldDefinition } from "../../services";
+import type { PluginActionDefinition, PluginFieldDefinition } from "../../services";
 import type { RunbookActionTypeFieldsProps } from "./RunbookActionFieldShared";
 
 type RunbookPluginActionFieldsProps = Pick<
@@ -21,9 +23,13 @@ function describePluginFields(
   }
 
   return fields
-    .map((field) =>
-      `${field.key}${field.required ? ` ${t("runbooks.runbook.required").toLowerCase()}` : ""}`,
-    )
+    .map((field) => {
+      let label = field.key;
+      if (field.required) {
+        label = `${label} ${t("runbooks.runbook.required").toLowerCase()}`;
+      }
+      return label;
+    })
     .join(", ");
 }
 
@@ -136,7 +142,10 @@ function readStructuredFieldStringValue(
       }
       return "";
     case "boolean":
-      return rawValue === true ? "true" : "false";
+      if (rawValue === true) {
+        return "true";
+      }
+      return "false";
     case "string_array":
       if (!Array.isArray(rawValue)) {
         return "";
@@ -160,6 +169,21 @@ function readStructuredFieldStringValue(
   }
 }
 
+function omitRecordField(
+  record: Record<string, unknown>,
+  keyToRemove: string,
+): Record<string, unknown> {
+  const nextRecord: Record<string, unknown> = {};
+
+  for (const [key, value] of Object.entries(record)) {
+    if (key !== keyToRemove) {
+      nextRecord[key] = value;
+    }
+  }
+
+  return nextRecord;
+}
+
 function updateStructuredFieldRecord(input: {
   record: Record<string, unknown>;
   field: PluginFieldDefinition;
@@ -175,8 +199,7 @@ function updateStructuredFieldRecord(input: {
     }
     case "number": {
       if (typeof nextValue !== "string" || nextValue.trim().length === 0) {
-        delete nextRecord[field.key];
-        return nextRecord;
+        return omitRecordField(nextRecord, field.key);
       }
 
       const numeric = Number(nextValue);
@@ -189,14 +212,12 @@ function updateStructuredFieldRecord(input: {
     }
     case "string_array": {
       if (typeof nextValue !== "string") {
-        delete nextRecord[field.key];
-        return nextRecord;
+        return omitRecordField(nextRecord, field.key);
       }
 
       const items = readStringArrayInput(nextValue);
       if (items.length === 0) {
-        delete nextRecord[field.key];
-        return nextRecord;
+        return omitRecordField(nextRecord, field.key);
       }
 
       nextRecord[field.key] = items;
@@ -204,8 +225,7 @@ function updateStructuredFieldRecord(input: {
     }
     case "json": {
       if (typeof nextValue !== "string" || nextValue.trim().length === 0) {
-        delete nextRecord[field.key];
-        return nextRecord;
+        return omitRecordField(nextRecord, field.key);
       }
 
       try {
@@ -219,19 +239,181 @@ function updateStructuredFieldRecord(input: {
     case "string":
     default: {
       if (typeof nextValue !== "string") {
-        delete nextRecord[field.key];
-        return nextRecord;
+        return omitRecordField(nextRecord, field.key);
       }
 
       if (nextValue.length === 0 && !field.required) {
-        delete nextRecord[field.key];
-        return nextRecord;
+        return omitRecordField(nextRecord, field.key);
       }
 
       nextRecord[field.key] = nextValue;
       return nextRecord;
     }
   }
+}
+
+function readStructuredFieldDescription(
+  field: PluginFieldDefinition,
+  rawJsonOnlyText: string,
+): string {
+  if (field.description !== undefined) {
+    return field.description;
+  }
+
+  if (field.type === "json") {
+    return rawJsonOnlyText;
+  }
+
+  if (field.type === "string_array") {
+    return "Separate multiple values with commas or new lines.";
+  }
+
+  return "";
+}
+
+function readStructuredTextareaRows(field: PluginFieldDefinition): number {
+  if (field.type === "json") {
+    return 5;
+  }
+
+  return 3;
+}
+
+function readStructuredTextareaPlaceholder(
+  field: PluginFieldDefinition,
+): string {
+  if (field.placeholder !== undefined) {
+    return field.placeholder;
+  }
+
+  if (field.type === "string_array") {
+    return "value-a\nvalue-b";
+  }
+
+  return "{}";
+}
+
+function readStructuredInputType(field: PluginFieldDefinition): string {
+  if (field.secret === true) {
+    return "password";
+  }
+
+  if (field.type === "number") {
+    return "number";
+  }
+
+  return "text";
+}
+
+function readStructuredInputPlaceholder(
+  field: PluginFieldDefinition,
+): string | undefined {
+  if (field.placeholder !== undefined) {
+    return field.placeholder;
+  }
+
+  if (field.type === "number") {
+    return "0";
+  }
+
+  return undefined;
+}
+
+function renderStructuredFieldInput({
+  field,
+  fieldValue,
+  inputId,
+  parsedValue,
+  onJsonChange,
+}: {
+  field: PluginFieldDefinition;
+  fieldValue: string;
+  inputId: string;
+  parsedValue: Record<string, unknown> | null;
+  onJsonChange: (nextValue: string | undefined) => void;
+}): ReactNode {
+  const updateField = (nextValue: string | boolean): void => {
+    if (parsedValue === null) {
+      return;
+    }
+
+    const nextRecord = updateStructuredFieldRecord({
+      record: parsedValue,
+      field,
+      nextValue,
+    });
+    onJsonChange(serializeJsonObject(nextRecord));
+  };
+
+  const disabled = parsedValue === null;
+
+  if (field.type === "boolean") {
+    return (
+      <select
+        id={inputId}
+        value={fieldValue}
+        disabled={disabled}
+        onChange={(event) => {
+          updateField(event.target.value === "true");
+        }}
+        className="w-full rounded-lg border border-border bg-background px-3 py-2 text-xs outline-none transition-colors focus:border-primary/50"
+      >
+        <option value="false">false</option>
+        <option value="true">true</option>
+      </select>
+    );
+  }
+
+  if (field.type === "string" && field.enumValues !== undefined) {
+    return (
+      <select
+        id={inputId}
+        value={fieldValue}
+        disabled={disabled}
+        onChange={(event) => {
+          updateField(event.target.value);
+        }}
+        className="w-full rounded-lg border border-border bg-background px-3 py-2 text-xs outline-none transition-colors focus:border-primary/50"
+      >
+        {!field.required && <option value="">Use plugin default</option>}
+        {field.enumValues.map((value) => (
+          <option key={value} value={value}>
+            {value}
+          </option>
+        ))}
+      </select>
+    );
+  }
+
+  if (field.type === "string_array" || field.type === "json") {
+    return (
+      <textarea
+        id={inputId}
+        value={fieldValue}
+        disabled={disabled}
+        rows={readStructuredTextareaRows(field)}
+        onChange={(event) => {
+          updateField(event.target.value);
+        }}
+        placeholder={readStructuredTextareaPlaceholder(field)}
+        className="w-full resize-none rounded-lg border border-border bg-background px-3 py-2 font-mono text-xs outline-none transition-colors focus:border-primary/50"
+      />
+    );
+  }
+
+  return (
+    <input
+      id={inputId}
+      type={readStructuredInputType(field)}
+      value={fieldValue}
+      disabled={disabled}
+      onChange={(event) => {
+        updateField(event.target.value);
+      }}
+      placeholder={readStructuredInputPlaceholder(field)}
+      className="w-full rounded-lg border border-border bg-background px-3 py-2 text-xs outline-none transition-colors focus:border-primary/50"
+    />
+  );
 }
 
 type PluginStructuredFieldsEditorProps = {
@@ -275,12 +457,15 @@ function PluginStructuredFieldsEditor({
       )}
 
       {fields.map((field) => {
-        const fieldValue =
-          parsed.value === null
-            ? ""
-            : readStructuredFieldStringValue(parsed.value, field);
+        let fieldValue = "";
+        if (parsed.value !== null) {
+          fieldValue = readStructuredFieldStringValue(parsed.value, field);
+        }
         const inputId = `plugin-structured-${label}-${field.key}`;
-        const isRawJsonOnlyField = field.type === "json";
+        const fieldDescription = readStructuredFieldDescription(
+          field,
+          rawJsonOnlyText,
+        );
 
         return (
           <div key={field.key} className="space-y-1.5">
@@ -289,114 +474,92 @@ function PluginStructuredFieldsEditor({
               className="block text-[10px] font-medium uppercase tracking-wide text-muted-foreground/60"
             >
               {field.label}
-              {field.required ? " *" : ""}
+              {field.required && " *"}
             </label>
 
-            {field.type === "boolean" ? (
-              <select
-                id={inputId}
-                value={fieldValue}
-                disabled={parsed.value === null}
-                onChange={(event) => {
-                  if (parsed.value === null) return;
-
-                  const nextRecord = updateStructuredFieldRecord({
-                    record: parsed.value,
-                    field,
-                    nextValue: event.target.value === "true",
-                  });
-                  onJsonChange(serializeJsonObject(nextRecord));
-                }}
-                className="w-full rounded-lg border border-border bg-background px-3 py-2 text-xs outline-none transition-colors focus:border-primary/50"
-              >
-                <option value="false">false</option>
-                <option value="true">true</option>
-              </select>
-            ) : field.type === "string" && field.enumValues !== undefined ? (
-              <select
-                id={inputId}
-                value={fieldValue}
-                disabled={parsed.value === null}
-                onChange={(event) => {
-                  if (parsed.value === null) return;
-
-                  const nextRecord = updateStructuredFieldRecord({
-                    record: parsed.value,
-                    field,
-                    nextValue: event.target.value,
-                  });
-                  onJsonChange(serializeJsonObject(nextRecord));
-                }}
-                className="w-full rounded-lg border border-border bg-background px-3 py-2 text-xs outline-none transition-colors focus:border-primary/50"
-              >
-                {!field.required && <option value="">Use plugin default</option>}
-                {field.enumValues.map((value) => (
-                  <option key={value} value={value}>
-                    {value}
-                  </option>
-                ))}
-              </select>
-            ) : field.type === "string_array" || field.type === "json" ? (
-              <textarea
-                id={inputId}
-                value={fieldValue}
-                disabled={parsed.value === null}
-                rows={field.type === "json" ? 5 : 3}
-                onChange={(event) => {
-                  if (parsed.value === null) return;
-
-                  const nextRecord = updateStructuredFieldRecord({
-                    record: parsed.value,
-                    field,
-                    nextValue: event.target.value,
-                  });
-                  onJsonChange(serializeJsonObject(nextRecord));
-                }}
-                placeholder={
-                  field.placeholder ??
-                  (field.type === "string_array" ? "value-a\nvalue-b" : "{}")
-                }
-                className="w-full resize-none rounded-lg border border-border bg-background px-3 py-2 font-mono text-xs outline-none transition-colors focus:border-primary/50"
-              />
-            ) : (
-              <input
-                id={inputId}
-                type={
-                  field.secret ? "password" : field.type === "number" ? "number" : "text"
-                }
-                value={fieldValue}
-                disabled={parsed.value === null}
-                onChange={(event) => {
-                  if (parsed.value === null) return;
-
-                  const nextRecord = updateStructuredFieldRecord({
-                    record: parsed.value,
-                    field,
-                    nextValue: event.target.value,
-                  });
-                  onJsonChange(serializeJsonObject(nextRecord));
-                }}
-                placeholder={
-                  field.placeholder ??
-                  (field.type === "number" ? "0" : undefined)
-                }
-                className="w-full rounded-lg border border-border bg-background px-3 py-2 text-xs outline-none transition-colors focus:border-primary/50"
-              />
-            )}
+            {renderStructuredFieldInput({
+              field,
+              fieldValue,
+              inputId,
+              parsedValue: parsed.value,
+              onJsonChange,
+            })}
 
             <p className="text-[11px] text-muted-foreground/60">
-              {field.description ??
-                (isRawJsonOnlyField
-                  ? rawJsonOnlyText
-                  : field.type === "string_array"
-                    ? "Separate multiple values with commas or new lines."
-                    : "")}
+              {fieldDescription}
             </p>
           </div>
         );
       })}
     </div>
   );
+}
+
+function readPluginPlaceholderText({
+  pluginsLoading,
+  pluginOptionsLength,
+  t,
+}: {
+  pluginsLoading: boolean;
+  pluginOptionsLength: number;
+  t: RunbookPluginActionFieldsProps["t"];
+}): string {
+  if (pluginsLoading) {
+    return t("runbooks.runbook.loadingPlugins");
+  }
+
+  if (pluginOptionsLength === 0) {
+    return t("runbooks.runbook.noPluginsAvailable");
+  }
+
+  return t("runbooks.runbook.selectAPlugin");
+}
+
+function readPluginActionPlaceholderText({
+  selectedPlugin,
+  pluginActionsLength,
+  t,
+}: {
+  selectedPlugin: unknown;
+  pluginActionsLength: number;
+  t: RunbookPluginActionFieldsProps["t"];
+}): string {
+  if (selectedPlugin === undefined) {
+    return t("runbooks.runbook.selectAPlugin");
+  }
+
+  if (pluginActionsLength === 0) {
+    return t("runbooks.runbook.noPluginActionsAvailable");
+  }
+
+  return t("runbooks.runbook.selectAPluginAction");
+}
+
+function resolvePluginActionSelection({
+  actions,
+  currentActionId,
+}: {
+  actions: PluginActionDefinition[];
+  currentActionId: string | undefined;
+}): PluginActionDefinition | null {
+  if (currentActionId !== undefined && currentActionId.length > 0) {
+    const preservedAction = actions.find(
+      (pluginAction) => pluginAction.id === currentActionId,
+    );
+    if (preservedAction !== undefined) {
+      return preservedAction;
+    }
+  }
+
+  return actions[0] ?? null;
+}
+
+function readActionSelectClassName(selectedPlugin: unknown): string {
+  if (selectedPlugin === undefined) {
+    return "border-border/60 text-muted-foreground/60";
+  }
+
+  return "border-border focus:border-primary/50";
 }
 
 export function RunbookPluginActionFields({
@@ -419,17 +582,16 @@ export function RunbookPluginActionFields({
   );
   const pluginInputTemplate = buildFieldTemplateJson(selectedAction?.fields ?? []);
 
-  const pluginPlaceholderText = pluginsLoading
-    ? t("runbooks.runbook.loadingPlugins")
-    : pluginOptions.length === 0
-      ? t("runbooks.runbook.noPluginsAvailable")
-      : t("runbooks.runbook.selectAPlugin");
-  const pluginActionPlaceholderText =
-    selectedPlugin === undefined
-      ? t("runbooks.runbook.selectAPlugin")
-      : pluginActions.length === 0
-        ? t("runbooks.runbook.noPluginActionsAvailable")
-        : t("runbooks.runbook.selectAPluginAction");
+  const pluginPlaceholderText = readPluginPlaceholderText({
+    pluginsLoading,
+    pluginOptionsLength: pluginOptions.length,
+    t,
+  });
+  const pluginActionPlaceholderText = readPluginActionPlaceholderText({
+    selectedPlugin,
+    pluginActionsLength: pluginActions.length,
+    t,
+  });
 
   return (
     <div className="space-y-3">
@@ -448,29 +610,32 @@ export function RunbookPluginActionFields({
               action.pluginAuth,
             );
             const currentActionId = action.pluginActionId?.trim();
-            const preservesAction =
-              currentActionId !== undefined &&
-              currentActionId.length > 0 &&
-              nextPlugin?.actions.some(
-                (pluginAction) => pluginAction.id === currentActionId,
-              ) === true;
-            const nextPluginAction = preservesAction
-              ? nextPlugin?.actions.find(
-                  (pluginAction) => pluginAction.id === currentActionId,
-                ) ?? null
-              : nextPlugin?.actions[0] ?? null;
+            const nextPluginAction = resolvePluginActionSelection({
+              actions: nextPlugin?.actions ?? [],
+              currentActionId,
+            });
             const nextPluginInputValue = normalizeJsonForFields(
               nextPluginAction?.fields ?? [],
               action.pluginInput,
             );
+            let nextPluginId: string | undefined;
+            let nextPluginActionId: string | undefined;
+            let nextPluginInput: string | undefined;
+            let nextPluginAuth: string | undefined;
+
+            if (pluginId.length > 0) {
+              nextPluginId = pluginId;
+              nextPluginActionId = nextPluginAction?.id;
+              nextPluginInput = nextPluginInputValue;
+              nextPluginAuth = nextPluginAuthValue;
+            }
 
             onActionChange({
               ...action,
-              pluginId: pluginId.length > 0 ? pluginId : undefined,
-              pluginActionId:
-                pluginId.length > 0 ? nextPluginAction?.id : undefined,
-              pluginInput: pluginId.length > 0 ? nextPluginInputValue : undefined,
-              pluginAuth: pluginId.length > 0 ? nextPluginAuthValue : undefined,
+              pluginId: nextPluginId,
+              pluginActionId: nextPluginActionId,
+              pluginInput: nextPluginInput,
+              pluginAuth: nextPluginAuth,
             });
           }}
           className="w-full rounded-lg border border-border bg-background px-3 py-2 text-xs outline-none transition-colors focus:border-primary/50"
@@ -506,19 +671,22 @@ export function RunbookPluginActionFields({
               )?.fields ?? [],
               action.pluginInput,
             );
+            let nextPluginActionId: string | undefined;
+            let nextPluginInput: string | undefined;
+            if (pluginActionId.length > 0) {
+              nextPluginActionId = pluginActionId;
+              nextPluginInput = nextActionValue;
+            }
+
             onActionChange({
               ...action,
-              pluginActionId:
-                pluginActionId.length > 0 ? pluginActionId : undefined,
-              pluginInput:
-                pluginActionId.length > 0 ? nextActionValue : undefined,
+              pluginActionId: nextPluginActionId,
+              pluginInput: nextPluginInput,
             });
           }}
           className={cn(
             "w-full rounded-lg border bg-background px-3 py-2 text-xs outline-none transition-colors",
-            selectedPlugin === undefined
-              ? "border-border/60 text-muted-foreground/60"
-              : "border-border focus:border-primary/50",
+            readActionSelectClassName(selectedPlugin),
           )}
         >
           <option value="" disabled>
