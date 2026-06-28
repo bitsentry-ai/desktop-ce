@@ -605,6 +605,9 @@ export interface PluginErrorSourceMetadata {
   sourceType: ErrorSourceType;
   setupFields: PluginErrorSourceSetupField[];
   providerActions?: {
+    buildAuthorizeUrl?: string;
+    exchangeCodeForToken?: string;
+    refreshToken?: string;
     listOrganizations?: string;
     listProjects?: string;
     getProject?: string;
