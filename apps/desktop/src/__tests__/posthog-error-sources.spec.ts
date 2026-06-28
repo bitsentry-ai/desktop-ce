@@ -158,7 +158,7 @@ describe('posthog error source support', () => {
     vi.restoreAllMocks()
   })
 
-  it('validates built-in and explicitly allowed PostHog hosts', () => {
+  it('validates default and explicitly allowed PostHog hosts', () => {
     expect(assertAllowedPostHogBaseUrl(undefined)).toBe('https://us.posthog.com')
     expect(assertAllowedPostHogBaseUrl('https://eu.posthog.com/path')).toBe(
       'https://eu.posthog.com',
@@ -195,16 +195,22 @@ describe('posthog error source support', () => {
     ).toThrow('Refusing to follow cross-origin PostHog pagination URL')
   })
 
-  it('accepts PostHog create inputs in the shared schema', () => {
+  it('accepts PostHog code-plugin create inputs in the shared schema', () => {
     expect(
       createErrorSourceSchema.parse({
+        pluginId: 'posthog',
         sourceType: 'posthog',
         name: 'Production PostHog',
         authToken: 'phx-token',
         projectIds: ['123', '456'],
         baseUrl: 'https://eu.posthog.com',
+        setupValues: {
+          baseUrl: 'https://eu.posthog.com',
+          projectIds: ['123', '456'],
+        },
       }),
     ).toMatchObject({
+      pluginId: 'posthog',
       sourceType: 'posthog',
       projectIds: ['123', '456'],
       baseUrl: 'https://eu.posthog.com',

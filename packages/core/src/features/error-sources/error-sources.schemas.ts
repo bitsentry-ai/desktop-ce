@@ -1,7 +1,6 @@
 import { z } from 'zod';
 import {
   OAUTH_PLUGIN_ERROR_SOURCE_TYPES,
-  isPluginBackedErrorSourceType,
 } from './plugin-backed-error-sources';
 
 export const errorSourceTypeSchema = z.string().trim().min(1);
@@ -28,52 +27,19 @@ export const errorSourceRowSchema = z.object({
   lastSyncError: z.string().nullable(),
 });
 
-export const createSentryErrorSourceSchema = z.object({
-  sourceType: z.literal('sentry'),
-  name: z.string().trim().min(1),
-  authToken: z.string().trim().min(1),
-  organizationSlug: z.string().trim().min(1),
-  projectSlugs: z.array(z.string().trim().min(1)).default([]),
-  logLevelThreshold: logLevelThresholdSchema.default('error'),
-  syncEnabled: z.boolean().default(true),
-  autoDiagnosisEnabled: z.boolean().default(false),
-});
-
-export const createWazuhErrorSourceSchema = z.object({
-  sourceType: z.literal('wazuh'),
-  name: z.string().trim().min(1),
-  baseUrl: z.url().optional(),
-  authToken: z.string().trim().optional(),
-  indexPatterns: z.array(z.string().trim().min(1)).default([]),
-  logLevelThreshold: logLevelThresholdSchema.default('error'),
-  syncEnabled: z.boolean().default(true),
-  autoDiagnosisEnabled: z.boolean().default(false),
-});
-
-export const createPostHogErrorSourceSchema = z.object({
-  sourceType: z.literal('posthog'),
-  name: z.string().trim().min(1),
-  authToken: z.string().trim().min(1),
-  organizationId: z.string().trim().min(1).optional(),
-  projectIds: z.array(z.string().trim().min(1)).default([]),
-  baseUrl: z.url().default(POSTHOG_DEFAULT_BASE_URL),
-  logLevelThreshold: logLevelThresholdSchema.default('error'),
-  syncEnabled: z.boolean().default(true),
-  autoDiagnosisEnabled: z.boolean().default(false),
-});
-
-export const createGenericPluginErrorSourceSchema = z.object({
+export const createPluginErrorSourceSchema = z.object({
   pluginId: z.string().trim().min(1).optional(),
-  sourceType: errorSourceTypeSchema.refine(
-    (sourceType) => !isPluginBackedErrorSourceType(sourceType),
-    {
-      message:
-        'Use the provider-specific schema for sentry, wazuh, or posthog sources.',
-    },
-  ),
+  sourceType: errorSourceTypeSchema,
   name: z.string().trim().min(1),
   setupValues: z.record(z.string(), z.unknown()).optional(),
   authToken: z.string().trim().optional(),
+  organizationSlug: z.string().trim().min(1).optional(),
+  organizationId: z.string().trim().min(1).optional(),
+  projectSlugs: z.array(z.string().trim().min(1)).default([]),
+  projectIds: z.array(z.string().trim().min(1)).default([]),
+  baseUrl: z.url().optional(),
+  posthogBaseUrl: z.url().optional(),
+  indexPatterns: z.array(z.string().trim().min(1)).default([]),
   configuration: z.record(z.string(), z.unknown()).optional(),
   additionalMetadata: z.record(z.string(), z.unknown()).optional(),
   logLevelThreshold: logLevelThresholdSchema.default('error'),
@@ -81,12 +47,7 @@ export const createGenericPluginErrorSourceSchema = z.object({
   autoDiagnosisEnabled: z.boolean().default(false),
 });
 
-export const createErrorSourceSchema = z.union([
-  createSentryErrorSourceSchema,
-  createWazuhErrorSourceSchema,
-  createPostHogErrorSourceSchema,
-  createGenericPluginErrorSourceSchema,
-]);
+export const createErrorSourceSchema = createPluginErrorSourceSchema;
 
 export const syncErrorSourceSchema = z.object({
   id: z.string().trim().min(1),
