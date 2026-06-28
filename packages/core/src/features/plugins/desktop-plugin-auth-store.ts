@@ -21,14 +21,16 @@ export interface DesktopPluginStoredAuthStore {
 }
 
 export const NOOP_DESKTOP_PLUGIN_STORED_AUTH_STORE: DesktopPluginStoredAuthStore = {
-  async get(): Promise<DesktopPluginStoredAuthRecord> {
-    return {};
+  get(): Promise<DesktopPluginStoredAuthRecord> {
+    return Promise.resolve({});
   },
-  async set(
+  set(
     _pluginId: string,
     values: DesktopPluginStoredAuthRecord,
   ): Promise<DesktopPluginStoredAuthRecord> {
-    return values;
+    return Promise.resolve(values);
   },
-  async clear(): Promise<void> {},
+  clear(): Promise<void> {
+    return Promise.resolve();
+  },
 };

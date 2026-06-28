@@ -1,5 +1,6 @@
 import type {
   DesktopPluginExecutionRequest,
+  DesktopPluginFieldType,
 } from "./plugins.types";
 import {
   NOOP_DESKTOP_PLUGIN_STORED_AUTH_STORE,
@@ -10,68 +11,139 @@ import {
 import { type DesktopPluginRuntimeService } from "./desktop-plugin-registry";
 import { createDesktopNodePluginRuntimeService } from "./desktop-plugin-runtime.node";
 
-function normalizeStoredAuthValue(
-  fieldType: "string" | "number" | "boolean" | "json" | "string_array",
+function asPayloadRecord(payload: unknown): Record<string, unknown> {
+  if (payload !== null && typeof payload === "object" && !Array.isArray(payload)) {
+    return payload as Record<string, unknown>;
+  }
+
+  return {};
+}
+
+function readRequiredPluginId(payload: unknown): string {
+  const pluginId = asPayloadRecord(payload).pluginId;
+  if (typeof pluginId !== "string") {
+    throw new Error("pluginId is required");
+  }
+
+  const normalized = pluginId.trim();
+  if (normalized.length === 0) {
+    throw new Error("pluginId is required");
+  }
+
+  return normalized;
+}
+
+function readAuthRecord(payload: unknown): Record<string, unknown> {
+  const auth = asPayloadRecord(payload).auth;
+  if (auth !== null && typeof auth === "object" && !Array.isArray(auth)) {
+    return auth as Record<string, unknown>;
+  }
+
+  return {};
+}
+
+function normalizeStringAuthValue(
   value: unknown,
 ): DesktopPluginStoredAuthValue | undefined {
-  if (fieldType === "string") {
-    if (typeof value !== "string" || value.trim().length === 0) {
-      return undefined;
-    }
+  if (typeof value !== "string" || value.trim().length === 0) {
+    return undefined;
+  }
 
+  return value;
+}
+
+function normalizeNumberAuthValue(
+  value: unknown,
+): DesktopPluginStoredAuthValue | undefined {
+  if (typeof value === "number" && Number.isFinite(value)) {
     return value;
   }
 
-  if (fieldType === "number") {
-    if (typeof value === "number" && Number.isFinite(value)) {
-      return value;
-    }
-    if (typeof value === "string" && value.trim().length > 0) {
-      const numeric = Number(value);
-      if (Number.isFinite(numeric)) {
-        return numeric;
-      }
-    }
+  if (typeof value !== "string" || value.trim().length === 0) {
     return undefined;
   }
 
-  if (fieldType === "boolean") {
-    if (typeof value === "boolean") {
-      return value;
-    }
-    if (value === "true") {
-      return true;
-    }
-    if (value === "false") {
-      return false;
-    }
+  const numeric = Number(value);
+  if (Number.isFinite(numeric)) {
+    return numeric;
+  }
+
+  return undefined;
+}
+
+function normalizeBooleanAuthValue(
+  value: unknown,
+): DesktopPluginStoredAuthValue | undefined {
+  if (typeof value === "boolean") {
+    return value;
+  }
+
+  if (value === "true") {
+    return true;
+  }
+
+  if (value === "false") {
+    return false;
+  }
+
+  return undefined;
+}
+
+function normalizeStringArrayItems(items: string[]): string[] | undefined {
+  if (items.length === 0) {
     return undefined;
   }
 
-  if (fieldType === "string_array") {
-    if (Array.isArray(value)) {
-      const items = value
+  return items;
+}
+
+function normalizeStringArrayAuthValue(value: unknown): string[] | undefined {
+  if (Array.isArray(value)) {
+    return normalizeStringArrayItems(
+      value
         .filter((item): item is string => typeof item === "string")
         .map((item) => item.trim())
-        .filter((item) => item.length > 0);
-      return items.length > 0 ? items : undefined;
-    }
+        .filter((item) => item.length > 0),
+    );
+  }
 
-    if (typeof value === "string" && value.trim().length > 0) {
-      const items = value
-        .split(/\r?\n|,/)
-        .map((item) => item.trim())
-        .filter((item) => item.length > 0);
-      return items.length > 0 ? items : undefined;
-    }
-
+  if (typeof value !== "string" || value.trim().length === 0) {
     return undefined;
   }
 
+  return normalizeStringArrayItems(
+    value
+      .split(/\r?\n|,/)
+      .map((item) => item.trim())
+      .filter((item) => item.length > 0),
+  );
+}
+
+function normalizeJsonAuthValue(
+  value: unknown,
+): DesktopPluginStoredAuthValue | undefined {
   try {
     return JSON.parse(JSON.stringify(value)) as DesktopPluginStoredAuthValue;
   } catch {
     return undefined;
+  }
+}
+
+function normalizeStoredAuthValue(
+  fieldType: DesktopPluginFieldType,
+  value: unknown,
+): DesktopPluginStoredAuthValue | undefined {
+  switch (fieldType) {
+    case "string":
+      return normalizeStringAuthValue(value);
+    case "number":
+      return normalizeNumberAuthValue(value);
+    case "boolean":
+      return normalizeBooleanAuthValue(value);
+    case "string_array":
+      return normalizeStringArrayAuthValue(value);
+    case "json":
+      return normalizeJsonAuthValue(value);
   }
 }
 
@@ -80,70 +152,32 @@ export function createDesktopPluginHandlers(
   storedAuthStore: DesktopPluginStoredAuthStore = NOOP_DESKTOP_PLUGIN_STORED_AUTH_STORE,
 ): Record<string, (payload: unknown) => Promise<unknown>> {
   return {
-    "plugins:list": async () => ({
+    "plugins:list": () => Promise.resolve({
       data: service.listPlugins(),
     }),
-    "plugins:get": async (payload) => {
-      const pluginId =
-        payload !== null &&
-        typeof payload === "object" &&
-        "pluginId" in payload &&
-        typeof (payload as { pluginId?: unknown }).pluginId === "string"
-          ? (payload as { pluginId: string }).pluginId
-          : "";
+    "plugins:get": (payload) => {
+      const pluginId = readRequiredPluginId(payload);
 
-      if (pluginId.trim().length === 0) {
-        throw new Error("pluginId is required");
-      }
-
-      return service.getPlugin(pluginId.trim());
+      return Promise.resolve(service.getPlugin(pluginId));
     },
-    "plugins:getStoredAuth": async (payload) => {
-      const pluginId =
-        payload !== null &&
-        typeof payload === "object" &&
-        "pluginId" in payload &&
-        typeof (payload as { pluginId?: unknown }).pluginId === "string"
-          ? (payload as { pluginId: string }).pluginId
-          : "";
+    "plugins:getStoredAuth": (payload) => {
+      const pluginId = readRequiredPluginId(payload);
 
-      if (pluginId.trim().length === 0) {
-        throw new Error("pluginId is required");
+      if (service.getPlugin(pluginId) === null) {
+        throw new Error(`Unknown plugin: ${pluginId}`);
       }
 
-      if (service.getPlugin(pluginId.trim()) === null) {
-        throw new Error(`Unknown plugin: ${pluginId.trim()}`);
-      }
-
-      return storedAuthStore.get(pluginId.trim());
+      return storedAuthStore.get(pluginId);
     },
-    "plugins:updateStoredAuth": async (payload) => {
-      const pluginId =
-        payload !== null &&
-        typeof payload === "object" &&
-        "pluginId" in payload &&
-        typeof (payload as { pluginId?: unknown }).pluginId === "string"
-          ? (payload as { pluginId: string }).pluginId
-          : "";
+    "plugins:updateStoredAuth": (payload) => {
+      const pluginId = readRequiredPluginId(payload);
 
-      if (pluginId.trim().length === 0) {
-        throw new Error("pluginId is required");
-      }
-
-      const plugin = service.getPlugin(pluginId.trim());
+      const plugin = service.getPlugin(pluginId);
       if (plugin === null) {
-        throw new Error(`Unknown plugin: ${pluginId.trim()}`);
+        throw new Error(`Unknown plugin: ${pluginId}`);
       }
 
-      const auth =
-        payload !== null &&
-        typeof payload === "object" &&
-        "auth" in payload &&
-        (payload as { auth?: unknown }).auth !== null &&
-        typeof (payload as { auth?: unknown }).auth === "object"
-          ? (payload as { auth: Record<string, unknown> }).auth
-          : {};
-
+      const auth = readAuthRecord(payload);
       const allowedKeys = new Set(plugin.auth.fields.map((field) => field.key));
       const normalized: DesktopPluginStoredAuthRecord = {};
       for (const [key, value] of Object.entries(auth)) {
@@ -162,25 +196,15 @@ export function createDesktopPluginHandlers(
         }
       }
 
-      return storedAuthStore.set(pluginId.trim(), normalized);
+      return storedAuthStore.set(pluginId, normalized);
     },
     "plugins:clearStoredAuth": async (payload) => {
-      const pluginId =
-        payload !== null &&
-        typeof payload === "object" &&
-        "pluginId" in payload &&
-        typeof (payload as { pluginId?: unknown }).pluginId === "string"
-          ? (payload as { pluginId: string }).pluginId
-          : "";
+      const pluginId = readRequiredPluginId(payload);
 
-      if (pluginId.trim().length === 0) {
-        throw new Error("pluginId is required");
-      }
-
-      await storedAuthStore.clear(pluginId.trim());
+      await storedAuthStore.clear(pluginId);
       return { success: true };
     },
-    "plugins:execute": async (payload) =>
+    "plugins:execute": (payload) =>
       service.executeAction(payload as DesktopPluginExecutionRequest),
   };
 }

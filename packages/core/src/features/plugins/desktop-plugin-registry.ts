@@ -93,7 +93,7 @@ export function buildPluginInputSchema(
     shape[field.key] = schema;
   }
 
-  return z.looseObject(shape) as ZodType<Record<string, unknown>>;
+  return z.looseObject(shape);
 }
 
 function createActionRuntime(

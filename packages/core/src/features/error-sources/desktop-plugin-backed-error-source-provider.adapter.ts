@@ -1,9 +1,9 @@
 import { z } from "zod";
 
 import { createDesktopNodePluginRuntimeService } from "../plugins/desktop-plugin-runtime.node";
-import { DesktopPluginRuntimeService } from "../plugins/desktop-plugin-registry";
-import { PostHogProviderAdapter } from "./desktop-posthog-provider.adapter";
+import type { DesktopPluginRuntimeService } from "../plugins/desktop-plugin-registry";
 import { resolveErrorSourceProviderActionId } from "./desktop-plugin-error-source-actions";
+import type { ErrorSourceType } from "./desktop-error-sources.types";
 import type {
   ErrorSourceProvider,
   EventBatchResponse,
@@ -15,6 +15,29 @@ import type {
   OrganizationSummary,
   ProjectSummary,
 } from "./desktop-error-source-provider.interface";
+
+type ErrorSourceOauthDelegate = Pick<
+  ErrorSourceProvider,
+  | "buildAuthorizeUrl"
+  | "exchangeCodeForToken"
+  | "refreshToken"
+>;
+
+type ErrorSourceOauthDelegateFactoryInput = {
+  baseUrl?: string;
+};
+
+export type ErrorSourceOauthDelegateFactory = (
+  input: ErrorSourceOauthDelegateFactoryInput,
+) => ErrorSourceOauthDelegate;
+
+type PluginBackedErrorSourceProviderOptions = {
+  runtime?: DesktopPluginRuntimeService;
+  pluginId: string;
+  sourceType: ErrorSourceType;
+  baseUrl?: string;
+  createOauthDelegate?: ErrorSourceOauthDelegateFactory;
+};
 
 const organizationSummarySchema = z.object({
   slug: z.string().min(1),
@@ -83,51 +106,87 @@ function normalizeProjectSummary(value: unknown): ProjectSummary {
   const record = asRecord(value);
   const id = primitiveString(record.id);
   const slug = primitiveString(record.slug, id);
-  const project: ProjectSummary = projectSummarySchema.parse({
+  let nameFallback = id;
+  if (slug.length > 0) {
+    nameFallback = slug;
+  }
+
+  return projectSummarySchema.parse({
     id,
     slug,
-    name: primitiveString(record.name, slug.length > 0 ? slug : id),
+    name: primitiveString(record.name, nameFallback),
     organizationId: optionalTrimmedPrimitiveString(
       record.organizationId ?? record.organization,
     ),
   });
-
-  return project;
 }
 
-export class PluginBackedPostHogProviderAdapter implements ErrorSourceProvider {
-  readonly sourceType = "posthog" as const;
+function requireOauthDelegate(
+  sourceType: ErrorSourceType,
+  oauthDelegate?: ErrorSourceOauthDelegate,
+): ErrorSourceOauthDelegate {
+  if (oauthDelegate === undefined) {
+    throw new Error(`OAuth is not configured for plugin source type: ${sourceType}`);
+  }
 
-  constructor(
-    private readonly runtime = createDesktopNodePluginRuntimeService(),
-    private readonly pluginId = "posthog",
-    private readonly baseUrl?: string,
-    private readonly oauthAdapter = new PostHogProviderAdapter({ apiBase: baseUrl }),
-  ) {}
+  return oauthDelegate;
+}
 
-  withApiBase(baseUrl: string | null | undefined): PluginBackedPostHogProviderAdapter {
+export class PluginBackedErrorSourceProviderAdapter
+  implements ErrorSourceProvider
+{
+  readonly sourceType: ErrorSourceType;
+
+  private readonly runtime: DesktopPluginRuntimeService;
+
+  private readonly pluginId: string;
+
+  private readonly baseUrl?: string;
+
+  private readonly createOauthDelegate?: ErrorSourceOauthDelegateFactory;
+
+  private readonly oauthDelegateInstance?: ErrorSourceOauthDelegate;
+
+  constructor(options: PluginBackedErrorSourceProviderOptions) {
+    this.runtime = options.runtime ?? createDesktopNodePluginRuntimeService();
+    this.pluginId = options.pluginId;
+    this.sourceType = options.sourceType;
+    this.baseUrl = options.baseUrl;
+    this.createOauthDelegate = options.createOauthDelegate;
+    this.oauthDelegateInstance = options.createOauthDelegate?.({
+      baseUrl: options.baseUrl,
+    });
+  }
+
+  withApiBase(
+    baseUrl: string | null | undefined,
+  ): PluginBackedErrorSourceProviderAdapter {
     const nextBaseUrl = (baseUrl ?? "").trim();
     if (nextBaseUrl.length === 0 || nextBaseUrl === this.baseUrl) {
       return this;
     }
 
-    return new PluginBackedPostHogProviderAdapter(
-      this.runtime,
-      this.pluginId,
-      nextBaseUrl,
-    );
+    return new PluginBackedErrorSourceProviderAdapter({
+      runtime: this.runtime,
+      pluginId: this.pluginId,
+      sourceType: this.sourceType,
+      baseUrl: nextBaseUrl,
+      createOauthDelegate: this.createOauthDelegate,
+    });
   }
 
   buildAuthorizeUrl(input: OAuthAuthorizeInput): string {
-    return this.oauthAdapter.buildAuthorizeUrl(input);
+    return this.oauthDelegate().buildAuthorizeUrl(input);
   }
 
-  exchangeCodeForToken(input: OAuthTokenExchangeInput): Promise<OAuthTokenResponse> {
-    return this.oauthAdapter.exchangeCodeForToken(input);
+  exchangeCodeForToken(
+    input: OAuthTokenExchangeInput,
+  ): Promise<OAuthTokenResponse> {
+    return this.oauthDelegate().exchangeCodeForToken(input);
   }
 
   refreshToken(input: OAuthTokenRefreshInput): Promise<OAuthTokenResponse> {
-    return this.oauthAdapter.refreshToken(input);
+    return this.oauthDelegate().refreshToken(input);
   }
 
   async listOrganizations(accessToken: string): Promise<OrganizationSummary[]> {
@@ -143,7 +202,7 @@ export class PluginBackedPostHogProviderAdapter implements ErrorSourceProvider {
 
   async listProjects(input: {
     accessToken: string;
-    orgSlug?: string;
+    orgSlug: string;
     signal?: AbortSignal;
   }): Promise<ProjectSummary[]> {
     void input.signal;
@@ -258,11 +317,19 @@ export class PluginBackedPostHogProviderAdapter implements ErrorSourceProvider {
     return eventBatchResponseSchema.parse(result.data);
   }
 
+  private oauthDelegate(): ErrorSourceOauthDelegate {
+    return requireOauthDelegate(
+      this.sourceType,
+      this.oauthDelegateInstance,
+    );
+  }
+
   private auth(accessToken: string): Record<string, unknown> {
     const auth: Record<string, unknown> = { accessToken };
     if (this.baseUrl !== undefined && this.baseUrl.length > 0) {
       auth.baseUrl = this.baseUrl;
     }
+
     return auth;
   }
 
