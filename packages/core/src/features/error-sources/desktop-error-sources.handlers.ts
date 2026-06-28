@@ -1776,11 +1776,7 @@ export function createDesktopErrorSourcesHandlers(
       const pluginId = readSourcePluginId(source)
       const plugin = pluginRuntime.getPlugin(pluginId)
 
-      if (
-        source.sourceType !== 'sentry' &&
-        source.sourceType !== 'posthog' &&
-        plugin?.metadata?.errorSource?.sourceType === source.sourceType
-      ) {
+      if (plugin?.metadata?.errorSource?.sourceType === source.sourceType) {
         const providerActions = plugin.metadata.errorSource.providerActions
         const auth = buildPluginAuthFromSource(source, pluginRuntime)
         const input = buildGenericPluginConnectionInput(source)
