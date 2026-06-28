@@ -74,6 +74,30 @@ function createPostHogPluginDescriptor(): DesktopPluginDescriptor {
 
 function createTestDb() {
   const now = new Date().toISOString()
+  const existingSource = {
+    id: 'source-1',
+    sourceType: 'posthog',
+    name: 'Production PostHog',
+    accessTokenRef: 'phx-token',
+    refreshTokenRef: null,
+    expiresAt: null,
+    grantedScopes: JSON.stringify([]),
+    configuration: JSON.stringify({
+      orgSlug: 'org-1',
+      projectIds: ['177710'],
+    }),
+    logLevelThreshold: 'error',
+    additionalMetadata: JSON.stringify({
+      pluginId: 'posthog',
+    }),
+    syncEnabled: true,
+    autoDiagnosisEnabled: false,
+    lastSyncAt: null,
+    lastSyncStatus: null,
+    lastSyncError: null,
+    createdAt: now,
+    updatedAt: now,
+  }
   const create = vi.fn(
     ({ data }: { data: Record<string, unknown> }) =>
       Promise.resolve({
@@ -85,41 +109,31 @@ function createTestDb() {
         updatedAt: now,
       }),
   )
+  const update = vi.fn(
+    ({
+      data,
+    }: {
+      where: { id: string }
+      data: Record<string, unknown>
+    }) =>
+      Promise.resolve({
+        ...existingSource,
+        ...data,
+        updatedAt: now,
+      }),
+  )
 
   const db: unknown = {
     errorSource: {
       create,
       delete: vi.fn(),
       findMany: vi.fn(),
-      findUnique: vi.fn().mockResolvedValue({
-        id: 'source-1',
-        sourceType: 'posthog',
-        name: 'Production PostHog',
-        accessTokenRef: 'phx-token',
-        refreshTokenRef: null,
-        expiresAt: null,
-        grantedScopes: JSON.stringify([]),
-        configuration: JSON.stringify({
-          orgSlug: 'org-1',
-          projectIds: ['177710'],
-        }),
-        logLevelThreshold: 'error',
-        additionalMetadata: JSON.stringify({
-          pluginId: 'posthog',
-        }),
-        syncEnabled: true,
-        autoDiagnosisEnabled: false,
-        lastSyncAt: null,
-        lastSyncStatus: null,
-        lastSyncError: null,
-        createdAt: now,
-        updatedAt: now,
-      }),
-      update: vi.fn(),
+      findUnique: vi.fn().mockResolvedValue(existingSource),
+      update,
       updateMany: vi.fn().mockResolvedValue({ count: 0 }),
     },
   }
-  return { db: db as DbClient, create }
+  return { db: db as DbClient, create, update }
 }
 
 function createDb(): DbClient {
@@ -235,6 +249,45 @@ describe('desktop error source handlers', () => {
       baseUrl: 'https://eu.posthog.com',
       orgSlug: 'org-1',
       projectIds: ['177710'],
+    })
+  })
+
+  it('updates built-in-named sources through matching code plugin metadata', async () => {
+    vi.useFakeTimers()
+    const runtime = new TestPluginRuntimeService([createPostHogPluginDescriptor()])
+    const { db, update } = createTestDb()
+    const oauthBindings = createDesktopOauthManagerBindings(
+      'bitsentry-desktop-ce://oauth/callback',
+    )
+    const handlers = createDesktopErrorSourcesHandlers(db, {
+      OauthManagerService: oauthBindings.OauthManagerService,
+      pluginRuntime: runtime,
+    })
+
+    await expect(
+      handlers['errorSources:update']?.({
+        id: 'source-1',
+        projectIds: ['999'],
+        baseUrl: 'https://metadata.google.internal',
+      }),
+    ).resolves.toMatchObject({
+      pluginId: 'posthog',
+      sourceType: 'posthog',
+      configuration: {
+        baseUrl: 'https://metadata.google.internal',
+        orgSlug: 'org-1',
+        projectIds: ['999'],
+      },
+    })
+
+    expect(runtime.executeActionMock).not.toHaveBeenCalled()
+
+    const updateCall = update.mock.calls[0]?.[0]
+    expect(updateCall).toBeDefined()
+    expect(JSON.parse(String(updateCall?.data.configuration))).toEqual({
+      baseUrl: 'https://metadata.google.internal',
+      orgSlug: 'org-1',
+      projectIds: ['999'],
     })
   })
 })

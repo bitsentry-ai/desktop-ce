@@ -1267,6 +1267,11 @@ export function createDesktopErrorSourcesHandlers(
         pluginId,
         setupValues,
       )
+      const usePluginUpdatePath = hasMatchingErrorSourcePlugin(
+        pluginRuntime,
+        pluginId,
+        existing.sourceType,
+      )
 
       let nextConfiguration = { ...existing.configuration }
       if (payload.configuration !== undefined) {
@@ -1311,7 +1316,7 @@ export function createDesktopErrorSourcesHandlers(
         // user-visible signal.
         if (nextProjectIds.length > 0) {
           nextConfiguration.projectIds = nextProjectIds
-          if (existing.sourceType === 'posthog') {
+          if (!usePluginUpdatePath && existing.sourceType === 'posthog') {
             nextConfiguration.projectSlugs = nextConfiguration.projectIds
           }
         }
@@ -1319,7 +1324,7 @@ export function createDesktopErrorSourcesHandlers(
       const setupProjectIds = readSetupStringArray(setupValues, 'projectIds')
       if (setupProjectIds.length > 0) {
         nextConfiguration.projectIds = setupProjectIds
-        if (existing.sourceType === 'posthog') {
+        if (!usePluginUpdatePath && existing.sourceType === 'posthog') {
           nextConfiguration.projectSlugs = nextConfiguration.projectIds
         }
       }
@@ -1327,7 +1332,10 @@ export function createDesktopErrorSourcesHandlers(
         nextConfiguration.indexPatterns = readStringArray(payload.indexPatterns)
       }
       const nextBaseUrl = readOptionalTrimmed(payload.baseUrl)
-      if (nextBaseUrl !== undefined && existing.sourceType !== 'posthog') {
+      if (
+        nextBaseUrl !== undefined &&
+        (usePluginUpdatePath || existing.sourceType !== 'posthog')
+      ) {
         nextConfiguration.baseUrl = nextBaseUrl
       }
       // Accept either `baseUrl` (the field create/IPC uses) or
@@ -1336,21 +1344,29 @@ export function createDesktopErrorSourcesHandlers(
       // `errorSources:update` would silently keep the old host because only
       // `posthogBaseUrl` was being read.
       let baseUrlInput: string | null = null
-      if (payload.posthogBaseUrl !== undefined && payload.posthogBaseUrl.trim().length > 0) {
-        baseUrlInput = payload.posthogBaseUrl
+      const payloadPostHogBaseUrl = readOptionalTrimmed(payload.posthogBaseUrl)
+      if (payloadPostHogBaseUrl !== undefined) {
+        baseUrlInput = payloadPostHogBaseUrl
       } else if (payload.baseUrl !== undefined && payload.baseUrl.trim().length > 0) {
         baseUrlInput = payload.baseUrl
       }
-      if (baseUrlInput !== null) {
+      if (!usePluginUpdatePath && baseUrlInput !== null) {
         nextConfiguration.posthogBaseUrl = validatePostHogBaseUrl(baseUrlInput)
       }
       const setupBaseUrl = readSetupTrimmed(setupValues, 'baseUrl')
-      if (existing.sourceType === 'posthog' && setupBaseUrl !== undefined) {
+      if (
+        !usePluginUpdatePath &&
+        existing.sourceType === 'posthog' &&
+        setupBaseUrl !== undefined
+      ) {
         nextConfiguration.posthogBaseUrl = validatePostHogBaseUrl(setupBaseUrl)
         baseUrlInput = setupBaseUrl
+      } else if (usePluginUpdatePath && payloadPostHogBaseUrl !== undefined) {
+        nextConfiguration.posthogBaseUrl = payloadPostHogBaseUrl
       }
 
       if (
+        !usePluginUpdatePath &&
         existing.sourceType === 'sentry' &&
         (
           Array.isArray(payload.projectSlugs) ||
@@ -1408,12 +1424,14 @@ export function createDesktopErrorSourcesHandlers(
         nextConfiguration.posthogBaseUrl,
       )
       const posthogHostChanged =
+        !usePluginUpdatePath &&
         existing.sourceType === 'posthog' &&
         baseUrlInput != null &&
         previousPostHogBaseUrl !== nextPostHogBaseUrl
       const previousPostHogOrgSlug = existing.configuration.orgSlug?.trim() ?? ''
       const nextPostHogOrgSlug = nextConfiguration.orgSlug?.trim() ?? ''
       const posthogOrgChanged =
+        !usePluginUpdatePath &&
         existing.sourceType === 'posthog' &&
         nextPostHogOrgSlug.length > 0 &&
         previousPostHogOrgSlug !== nextPostHogOrgSlug
@@ -1422,6 +1440,7 @@ export function createDesktopErrorSourcesHandlers(
       // current PostHog org and the bad ids would silently persist until the
       // next sync surfaces a generic "unknown project" failure.
       const posthogProjectIdsChanged =
+        !usePluginUpdatePath &&
         existing.sourceType === 'posthog' &&
         (
           (Array.isArray(payload.projectIds) &&
