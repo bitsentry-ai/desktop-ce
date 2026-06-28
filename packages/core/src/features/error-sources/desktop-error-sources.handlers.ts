@@ -1203,51 +1203,23 @@ export function createDesktopErrorSourcesHandlers(
         }
       }
 
-      if (sourceType === 'wazuh') {
-        const baseUrl = readOptionalTrimmed(
-          setupValues.baseUrl ??
-            payload.baseUrl ??
-            persistedSetup.configuration.baseUrl,
-        )
-        const indexPatterns = firstNonEmptyStringArray([
-          () => readSetupStringArray(setupValues, 'indexPatterns'),
-          () => readStringArray(persistedSetup.configuration.indexPatterns),
-          () => readStringArray(payload.indexPatterns),
-        ])
-        const wazuhConfiguration = {
-          ...persistedSetup.configuration,
-          ...(readPayloadRecord(payload.configuration) ?? {}),
-        }
-        if (baseUrl !== undefined) {
-          wazuhConfiguration.baseUrl = baseUrl
-        }
-        if (indexPatterns.length > 0) {
-          wazuhConfiguration.indexPatterns = indexPatterns
-        }
-
-        const created = await sourcesRepository.create({
-          sourceType,
-          name: sourceName,
-          additionalMetadata: mergeErrorSourceAdditionalMetadata(
-            readPayloadRecord(payload.additionalMetadata),
-            pluginId,
-          ),
-          accessTokenRef: nullableNonEmptyString(authToken),
-          refreshTokenRef: null,
-          expiresAt: null,
-          grantedScopes: [],
-          configuration: wazuhConfiguration,
-          logLevelThreshold: toLogLevelThreshold(payload.logLevelThreshold),
-          syncEnabled: payload.syncEnabled !== false,
-          autoDiagnosisEnabled: payload.autoDiagnosisEnabled === true,
-        })
-        return toRendererErrorSource(created)
-      }
-
       try {
         let customPluginAuthToken = authToken
         if (customPluginAuthToken.length === 0) {
           customPluginAuthToken = persistedSetup.accessTokenRef ?? ''
+        }
+        const customPluginConfiguration = {
+          ...persistedSetup.configuration,
+          ...(readPayloadRecord(payload.configuration) ?? {}),
+        }
+        const legacyBaseUrl = readOptionalTrimmed(payload.baseUrl)
+        if (legacyBaseUrl !== undefined) {
+          customPluginConfiguration.baseUrl = legacyBaseUrl
+        }
+        if (Array.isArray(payload.indexPatterns)) {
+          customPluginConfiguration.indexPatterns = readStringArray(
+            payload.indexPatterns,
+          )
         }
 
         const created = await sourcesRepository.create({
@@ -1261,10 +1233,7 @@ export function createDesktopErrorSourcesHandlers(
           refreshTokenRef: null,
           expiresAt: null,
           grantedScopes: [],
-          configuration: {
-            ...persistedSetup.configuration,
-            ...(readPayloadRecord(payload.configuration) ?? {}),
-          },
+          configuration: customPluginConfiguration,
           logLevelThreshold: toLogLevelThreshold(payload.logLevelThreshold),
           syncEnabled: payload.syncEnabled !== false,
           autoDiagnosisEnabled: payload.autoDiagnosisEnabled === true,
@@ -1343,24 +1312,12 @@ export function createDesktopErrorSourcesHandlers(
           nextConfiguration.projectSlugs = nextConfiguration.projectIds
         }
       }
-      if (existing.sourceType === 'wazuh') {
-        const nextIndexPatterns = readStringArray(payload.indexPatterns)
-        if (Array.isArray(payload.indexPatterns)) {
-          nextConfiguration.indexPatterns = nextIndexPatterns
-        }
-        const setupIndexPatterns = readSetupStringArray(setupValues, 'indexPatterns')
-        if (setupIndexPatterns.length > 0) {
-          nextConfiguration.indexPatterns = setupIndexPatterns
-        }
-
-        const nextBaseUrl = readOptionalTrimmed(payload.baseUrl)
-        if (nextBaseUrl !== undefined) {
-          nextConfiguration.baseUrl = nextBaseUrl
-        }
-        const setupBaseUrl = readSetupTrimmed(setupValues, 'baseUrl')
-        if (setupBaseUrl !== undefined) {
-          nextConfiguration.baseUrl = setupBaseUrl
-        }
+      if (Array.isArray(payload.indexPatterns)) {
+        nextConfiguration.indexPatterns = readStringArray(payload.indexPatterns)
+      }
+      const nextBaseUrl = readOptionalTrimmed(payload.baseUrl)
+      if (nextBaseUrl !== undefined && existing.sourceType !== 'posthog') {
+        nextConfiguration.baseUrl = nextBaseUrl
       }
       // Accept either `baseUrl` (the field create/IPC uses) or
       // `posthogBaseUrl` here; without honoring `baseUrl`, callers updating a
