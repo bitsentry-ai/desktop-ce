@@ -626,8 +626,7 @@ export type PluginErrorSourceSetupFieldTarget =
 export type PluginErrorSourceSetupFieldControl =
   | "text"
   | "password"
-  | "multiline_list"
-  | "posthog_base_url";
+  | "multiline_list";
 
 export type PluginErrorSourceSetupFieldStorage =
   | "accessTokenRef"

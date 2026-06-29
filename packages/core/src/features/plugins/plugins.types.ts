@@ -177,7 +177,6 @@ export const desktopPluginErrorSourceSetupFieldControlSchema = z.enum([
   "text",
   "password",
   "multiline_list",
-  "posthog_base_url",
 ]);
 
 export type DesktopPluginErrorSourceSetupFieldControl = z.infer<

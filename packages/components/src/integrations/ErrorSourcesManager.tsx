@@ -179,10 +179,6 @@ function formatSetupFieldRequiredMessage(label: string): string {
   return `${label} is required.`;
 }
 
-function formatCustomHostRequiredMessage(label: string): string {
-  return `${label} is required when using a custom host.`;
-}
-
 function readSourcePluginId(source: ErrorSourceRow): string {
   if (typeof source.pluginId === "string" && source.pluginId.trim().length > 0) {
     return source.pluginId.trim();
@@ -389,16 +385,8 @@ export default function ErrorSourcesManager({
   const [sourceName, setSourceName] = useState("");
   const [authToken, setAuthToken] = useState("");
 
-  // Wazuh-only state (no probe — Wazuh has no orgs/projects concept).
-  const [wazuhBaseUrl, setWazuhBaseUrl] = useState("");
+  const [baseUrlInput, setBaseUrlInput] = useState("");
   const [indexPatternsText, setIndexPatternsText] = useState("");
-
-  // PostHog base URL state (still needed for Step 1 — the probe must know
-  // which PostHog host to hit).
-  const [posthogBaseUrlMode, setPosthogBaseUrlMode] = useState<
-    "us" | "eu" | "custom"
-  >("us");
-  const [posthogCustomBaseUrl, setPosthogCustomBaseUrl] = useState("");
 
   // Manual org/project entry. A probe-then-pick flow used to live here but
   // the picker UI was never wired up to a button, so callers always typed
@@ -466,10 +454,6 @@ export default function ErrorSourcesManager({
     deleteMutation.isPending ||
     updateMutation.isPending ||
     updateSystemSettingsMutation.isPending;
-  const posthogProjectIds = useMemo(
-    () => toProjectSlugs(advancedProjectsInput),
-    [advancedProjectsInput],
-  );
   const providerCards = useMemo<ProviderCard[]>(
     () => {
       const discovered = plugins
@@ -573,9 +557,7 @@ export default function ErrorSourcesManager({
   function resetCreateDialog() {
     setAuthToken("");
     setIndexPatternsText("");
-    setWazuhBaseUrl("");
-    setPosthogCustomBaseUrl("");
-    setPosthogBaseUrlMode("us");
+    setBaseUrlInput("");
     setAdvancedOrgInput("");
     setAdvancedProjectsInput("");
     setCustomSetupFieldValues({});
@@ -583,12 +565,6 @@ export default function ErrorSourcesManager({
     setShowAdvanced(false);
     setLogLevelThreshold("error");
     setSyncEnabledOnCreate(true);
-  }
-
-  function getPosthogResolvedBaseUrl(): string {
-    if (posthogBaseUrlMode === "us") return "https://us.posthog.com";
-    if (posthogBaseUrlMode === "eu") return "https://eu.posthog.com";
-    return posthogCustomBaseUrl.trim();
   }
 
   function readSetupFieldTextValue(
@@ -601,10 +577,7 @@ export default function ErrorSourcesManager({
       case "organizationId":
         return advancedOrgInput.trim();
       case "baseUrl":
-        if (field.control === "posthog_base_url") {
-          return getPosthogResolvedBaseUrl();
-        }
-        return wazuhBaseUrl.trim();
+        return baseUrlInput.trim();
       default:
         return customSetupFieldValues[field.key]?.trim() ?? "";
     }
@@ -637,13 +610,7 @@ export default function ErrorSourcesManager({
       case "projectIds":
         return advancedProjectsInput;
       case "baseUrl":
-        if (field.control === "posthog_base_url") {
-          if (posthogBaseUrlMode === "custom") {
-            return posthogCustomBaseUrl;
-          }
-          return getPosthogResolvedBaseUrl();
-        }
-        return wazuhBaseUrl;
+        return baseUrlInput;
       case "indexPatterns":
         return indexPatternsText;
       default:
@@ -668,11 +635,7 @@ export default function ErrorSourcesManager({
         setAdvancedProjectsInput(nextValue);
         break;
       case "baseUrl":
-        if (field.control === "posthog_base_url") {
-          setPosthogCustomBaseUrl(nextValue);
-        } else {
-          setWazuhBaseUrl(nextValue);
-        }
+        setBaseUrlInput(nextValue);
         break;
       case "indexPatterns":
         setIndexPatternsText(nextValue);
@@ -697,16 +660,6 @@ export default function ErrorSourcesManager({
     }
 
     for (const field of selectedSetupFields) {
-      if (field.target === "baseUrl" && field.control === "posthog_base_url") {
-        if (
-          posthogBaseUrlMode === "custom" &&
-          getPosthogResolvedBaseUrl().length === 0
-        ) {
-          return formatCustomHostRequiredMessage(field.label);
-        }
-        continue;
-      }
-
       if (!field.required) {
         continue;
       }
@@ -745,7 +698,7 @@ export default function ErrorSourcesManager({
         setupValues[field.key] = readSetupFieldListValue(field);
       } else {
         const value = readSetupFieldTextValue(field);
-        if (value.length > 0 || field.control === "posthog_base_url") {
+        if (value.length > 0) {
           setupValues[field.key] = value;
         }
       }
@@ -795,7 +748,7 @@ export default function ErrorSourcesManager({
         }
         case "baseUrl": {
           const value = readSetupFieldTextValue(field);
-          if (field.control === "posthog_base_url" || value.length > 0) {
+          if (value.length > 0) {
             input.baseUrl = value;
           }
           break;
@@ -1089,69 +1042,10 @@ export default function ErrorSourcesManager({
       "absolute inset-0 space-y-4 transition-all duration-300 ease-out translate-x-0 opacity-100";
   }
 
-  let posthogBaseUrlValue = getPosthogResolvedBaseUrl();
-  if (posthogBaseUrlMode === "custom") {
-    posthogBaseUrlValue = posthogCustomBaseUrl;
-  }
-
   function renderCreateSetupField(
     field: PluginErrorSourceSetupField,
   ): ReactNode {
     const description = setupFieldDescription(field);
-
-    if (field.target === "baseUrl" && field.control === "posthog_base_url") {
-      return (
-        <div key={field.key} className="space-y-1">
-          <FieldLabel required={field.required}>
-            {field.label}
-          </FieldLabel>
-          <div className="grid gap-2 md:grid-cols-[8rem_1fr]">
-            <div className="relative">
-              <select
-                className="h-9 w-full appearance-none rounded-md border bg-background pl-3 pr-8 text-sm"
-                value={posthogBaseUrlMode}
-                onChange={(event) => {
-                  setPosthogBaseUrlMode(
-                    event.target.value as "us" | "eu" | "custom",
-                  );
-                }}
-                aria-label={t("common.errorSourcesManager.posthogApiBase")}
-              >
-                <option value="us">
-                  {t("common.errorSourcesManager.regionUs")}
-                </option>
-                <option value="eu">
-                  {t("common.errorSourcesManager.regionEu")}
-                </option>
-                <option value="custom">
-                  {t("common.errorSourcesManager.regionCustom")}
-                </option>
-              </select>
-              <SelectChevron />
-            </div>
-            <Input
-              placeholder={
-                field.placeholder ??
-                t(
-                  "common.errorSourcesManager.posthogApiBaseCustomPlaceholder",
-                )
-              }
-              value={posthogBaseUrlValue}
-              onChange={(event) => {
-                setSetupFieldInputValue(field, event.target.value);
-              }}
-              readOnly={posthogBaseUrlMode !== "custom"}
-              disabled={posthogBaseUrlMode !== "custom"}
-            />
-          </div>
-          {description.length > 0 && (
-            <p className="text-xs text-muted-foreground">
-              {description}
-            </p>
-          )}
-        </div>
-      );
-    }
 
     return (
       <div key={field.key} className="space-y-1">
@@ -1412,10 +1306,8 @@ export default function ErrorSourcesManager({
                         // switch instead of carrying garbage across.
                         setSourceName("");
                         setAuthToken("");
-                        setWazuhBaseUrl("");
+                        setBaseUrlInput("");
                         setIndexPatternsText("");
-                        setPosthogCustomBaseUrl("");
-                        setPosthogBaseUrlMode("us");
                         setAdvancedOrgInput("");
                         setAdvancedProjectsInput("");
                         setCustomSetupFieldValues({});

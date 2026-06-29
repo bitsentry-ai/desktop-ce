@@ -1141,7 +1141,7 @@ exports.plugin = {
           label: "PostHog base URL",
           placeholder: POSTHOG_DEFAULT_BASE_URL,
           required: false,
-          control: "posthog_base_url",
+          control: "text",
         },
         {
           key: "organizationId",
