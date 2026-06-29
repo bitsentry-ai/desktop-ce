@@ -2,7 +2,10 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import type { DbClient } from '@bitsentry-ce/core/features/desktop/desktop-database-client'
 import { createDesktopErrorSourcesHandlers } from '@bitsentry-ce/core/features/error-sources/desktop-error-sources.handlers'
-import { createDesktopOauthManagerBindings } from '@bitsentry-ce/core/features/error-sources/desktop-oauth-manager'
+import {
+  createDesktopOauthManagerBindings,
+  type OAuthProviderConfig,
+} from '@bitsentry-ce/core/features/error-sources/desktop-oauth-manager'
 import {
   DesktopPluginRuntimeService,
   type DesktopPluginDescriptor,
@@ -46,6 +49,15 @@ function createProviderAction(
   }
 }
 
+const posthogOauthConfig: OAuthProviderConfig = {
+  envClientIdName: 'POSTHOG_OAUTH_CLIENT_ID',
+  envClientSecretName: 'POSTHOG_OAUTH_CLIENT_SECRET',
+  envRedirectUriName: 'POSTHOG_OAUTH_REDIRECT_URI',
+  defaultRedirectUri: 'bitsentry-desktop-ce://oauth/callback',
+  scopes: ['organization:read', 'project:read', 'query:read'],
+  publicClient: true,
+}
+
 function createPostHogPluginDescriptor(): DesktopPluginDescriptor {
   return {
     id: 'posthog',
@@ -55,6 +67,7 @@ function createPostHogPluginDescriptor(): DesktopPluginDescriptor {
     metadata: {
       errorSource: {
         sourceType: 'posthog',
+        oauth: posthogOauthConfig,
         setupFields: [
           {
             key: 'accessToken',
@@ -188,9 +201,7 @@ describe('desktop error source handlers', () => {
         hasMore: false,
       },
     })
-    const oauthBindings = createDesktopOauthManagerBindings(
-      'bitsentry-desktop-ce://oauth/callback',
-    )
+    const oauthBindings = createDesktopOauthManagerBindings()
     const handlers = createDesktopErrorSourcesHandlers(createDb(), {
       OauthManagerService: oauthBindings.OauthManagerService,
       pluginRuntime: runtime,
@@ -222,9 +233,7 @@ describe('desktop error source handlers', () => {
 
   it('rejects connection tests without a matching code plugin', async () => {
     const runtime = new TestPluginRuntimeService([])
-    const oauthBindings = createDesktopOauthManagerBindings(
-      'bitsentry-desktop-ce://oauth/callback',
-    )
+    const oauthBindings = createDesktopOauthManagerBindings()
     const handlers = createDesktopErrorSourcesHandlers(createDb(), {
       OauthManagerService: oauthBindings.OauthManagerService,
       pluginRuntime: runtime,
@@ -266,9 +275,7 @@ describe('desktop error source handlers', () => {
         ],
       })
     })
-    const oauthBindings = createDesktopOauthManagerBindings(
-      'bitsentry-desktop-ce://oauth/callback',
-    )
+    const oauthBindings = createDesktopOauthManagerBindings()
     const handlers = createDesktopErrorSourcesHandlers(createDb(), {
       OauthManagerService: oauthBindings.OauthManagerService,
       pluginRuntime: runtime,
@@ -317,9 +324,7 @@ describe('desktop error source handlers', () => {
 
   it('rejects connection probes without a matching code plugin', async () => {
     const runtime = new TestPluginRuntimeService([])
-    const oauthBindings = createDesktopOauthManagerBindings(
-      'bitsentry-desktop-ce://oauth/callback',
-    )
+    const oauthBindings = createDesktopOauthManagerBindings()
     const handlers = createDesktopErrorSourcesHandlers(createDb(), {
       OauthManagerService: oauthBindings.OauthManagerService,
       pluginRuntime: runtime,
@@ -341,9 +346,7 @@ describe('desktop error source handlers', () => {
     vi.useFakeTimers()
     const runtime = new TestPluginRuntimeService([createPostHogPluginDescriptor()])
     const { db, create } = createTestDb()
-    const oauthBindings = createDesktopOauthManagerBindings(
-      'bitsentry-desktop-ce://oauth/callback',
-    )
+    const oauthBindings = createDesktopOauthManagerBindings()
     const handlers = createDesktopErrorSourcesHandlers(db, {
       OauthManagerService: oauthBindings.OauthManagerService,
       pluginRuntime: runtime,
@@ -400,9 +403,7 @@ describe('desktop error source handlers', () => {
   it('rejects source creation without a matching code plugin', async () => {
     const runtime = new TestPluginRuntimeService([])
     const { db, create } = createTestDb()
-    const oauthBindings = createDesktopOauthManagerBindings(
-      'bitsentry-desktop-ce://oauth/callback',
-    )
+    const oauthBindings = createDesktopOauthManagerBindings()
     const handlers = createDesktopErrorSourcesHandlers(db, {
       OauthManagerService: oauthBindings.OauthManagerService,
       pluginRuntime: runtime,
@@ -430,9 +431,7 @@ describe('desktop error source handlers', () => {
     vi.useFakeTimers()
     const runtime = new TestPluginRuntimeService([createPostHogPluginDescriptor()])
     const { db, update } = createTestDb()
-    const oauthBindings = createDesktopOauthManagerBindings(
-      'bitsentry-desktop-ce://oauth/callback',
-    )
+    const oauthBindings = createDesktopOauthManagerBindings()
     const handlers = createDesktopErrorSourcesHandlers(db, {
       OauthManagerService: oauthBindings.OauthManagerService,
       pluginRuntime: runtime,
@@ -468,9 +467,7 @@ describe('desktop error source handlers', () => {
   it('rejects source updates without a matching code plugin', async () => {
     const runtime = new TestPluginRuntimeService([])
     const { db, update } = createTestDb()
-    const oauthBindings = createDesktopOauthManagerBindings(
-      'bitsentry-desktop-ce://oauth/callback',
-    )
+    const oauthBindings = createDesktopOauthManagerBindings()
     const handlers = createDesktopErrorSourcesHandlers(db, {
       OauthManagerService: oauthBindings.OauthManagerService,
       pluginRuntime: runtime,
@@ -503,9 +500,7 @@ describe('desktop error source handlers', () => {
       },
     })
     const { db, create } = createTestDb()
-    const oauthBindings = createDesktopOauthManagerBindings(
-      'bitsentry-desktop-ce://oauth/callback',
-    )
+    const oauthBindings = createDesktopOauthManagerBindings()
     const handlers = createDesktopErrorSourcesHandlers(db, {
       OauthManagerService: oauthBindings.OauthManagerService,
       pluginRuntime: runtime,
@@ -566,9 +561,7 @@ describe('desktop error source handlers', () => {
   it('rejects OAuth completion without a matching code plugin', async () => {
     const runtime = new TestPluginRuntimeService([])
     const { db, create } = createTestDb()
-    const oauthBindings = createDesktopOauthManagerBindings(
-      'bitsentry-desktop-ce://oauth/callback',
-    )
+    const oauthBindings = createDesktopOauthManagerBindings()
     const handlers = createDesktopErrorSourcesHandlers(db, {
       OauthManagerService: oauthBindings.OauthManagerService,
       pluginRuntime: runtime,

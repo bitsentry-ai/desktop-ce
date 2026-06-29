@@ -27,10 +27,12 @@ import {
 } from '@bitsentry-ce/core/features/error-sources'
 import {
   OauthManagerService,
-  PROVIDER_CONFIGS,
 } from '../main/features/error-sources/services/oauth-manager.service'
 import type { DbClient } from '@bitsentry-ce/core/features/desktop/desktop-database-client'
-import type { DesktopOauthManagerProviderFactory } from '@bitsentry-ce/core/features/error-sources/desktop-oauth-manager'
+import type {
+  DesktopOauthManagerProviderFactory,
+  OAuthProviderConfig,
+} from '@bitsentry-ce/core/features/error-sources/desktop-oauth-manager'
 import {
   DesktopPluginRuntimeService,
   type DesktopPluginExecutionRequest,
@@ -63,6 +65,15 @@ function requestBodyText(body: BodyInit | null | undefined): string {
   throw new Error('Expected request body to be form encoded text')
 }
 
+const posthogOauthConfig: OAuthProviderConfig = {
+  envClientIdName: 'POSTHOG_OAUTH_CLIENT_ID',
+  envClientSecretName: 'POSTHOG_OAUTH_CLIENT_SECRET',
+  envRedirectUriName: 'POSTHOG_OAUTH_REDIRECT_URI',
+  defaultRedirectUri: 'bitsentry-desktop-ce://oauth/callback',
+  scopes: ['organization:read', 'project:read', 'query:read'],
+  publicClient: true,
+}
+
 const posthogPluginDescriptor: DesktopPluginDescriptor = {
   id: 'posthog',
   name: 'PostHog',
@@ -71,6 +82,7 @@ const posthogPluginDescriptor: DesktopPluginDescriptor = {
   metadata: {
     errorSource: {
       sourceType: 'posthog',
+      oauth: posthogOauthConfig,
       setupFields: [],
     },
   },
@@ -306,17 +318,6 @@ describe('posthog error source support', () => {
     })
   })
 
-  it('keeps PostHog OAuth configured as a public-client PKCE provider', () => {
-    expect(PROVIDER_CONFIGS.posthog).toMatchObject({
-      envClientIdName: 'POSTHOG_OAUTH_CLIENT_ID',
-      envClientSecretName: 'POSTHOG_OAUTH_CLIENT_SECRET',
-      publicClient: true,
-    })
-    expect(PROVIDER_CONFIGS.posthog.scopes).toEqual(
-      expect.arrayContaining(['organization:read', 'project:read', 'query:read']),
-    )
-  })
-
   it('routes PostHog OAuth authorize and token requests through the selected base URL', async () => {
     const provider = createRepoPostHogProvider()
 
@@ -476,6 +477,7 @@ describe('posthog error source support', () => {
           metadata: {
             errorSource: {
               sourceType: 'posthog',
+              oauth: posthogOauthConfig,
             },
           },
         }
@@ -511,6 +513,50 @@ describe('posthog error source support', () => {
     })
   })
 
+  it('rejects built-in-named code plugins without plugin OAuth metadata', async () => {
+    const db = {
+      setting: {
+        findMany: vi.fn().mockResolvedValue([]),
+        upsert: vi.fn().mockResolvedValue({}),
+        findUnique: vi.fn().mockResolvedValue(null),
+        delete: vi.fn().mockResolvedValue({}),
+      },
+    }
+    const provider = {
+      buildAuthorizeUrl: vi.fn(),
+      exchangeCodeForToken: vi.fn(),
+    }
+    const providerFactory: DesktopOauthManagerProviderFactory = {
+      getProvider: vi.fn(() => provider),
+      getProviderForSource: vi.fn(() => provider),
+      getPlugin: vi.fn((pluginId: string) => {
+        if (pluginId !== 'posthog') return null
+
+        return {
+          metadata: {
+            errorSource: {
+              sourceType: 'posthog',
+            },
+          },
+        }
+      }),
+    }
+    const manager = new OauthManagerService(
+      db,
+      providerFactory,
+    )
+
+    await expect(
+      manager.initiateOAuth('posthog', {
+        pluginId: 'posthog',
+        clientId: 'client-id',
+        baseUrl: 'https://eu.posthog.com',
+      }),
+    ).rejects.toThrow('OAuth is not configured for source type: posthog')
+    expect(providerFactory.getProviderForSource).not.toHaveBeenCalled()
+    expect(provider.buildAuthorizeUrl).not.toHaveBeenCalled()
+  })
+
   it('preserves the selected PostHog base URL across OAuth state and token exchange', async () => {
     const upsertSetting = vi.fn<DbClient['setting']['upsert']>().mockResolvedValue({})
     const db = {
@@ -521,6 +567,7 @@ describe('posthog error source support', () => {
           key: 'errorSources.oauth.state-1',
           value: JSON.stringify({
             sourceType: 'posthog',
+            pluginId: 'posthog',
             codeVerifier: 'verifier-1',
             createdAt: new Date().toISOString(),
             providerBaseUrl: 'https://eu.posthog.com',
@@ -535,6 +582,7 @@ describe('posthog error source support', () => {
     )
 
     const initiated = await manager.initiateOAuth('posthog', {
+      pluginId: 'posthog',
       clientId: 'client-id',
       baseUrl: 'https://eu.posthog.com',
     })
@@ -555,6 +603,7 @@ describe('posthog error source support', () => {
     const upsertInput = upsertSetting.mock.calls[0][0]
     expect(JSON.parse(String(upsertInput.create.value))).toMatchObject({
       sourceType: 'posthog',
+      pluginId: 'posthog',
       providerBaseUrl: 'https://eu.posthog.com',
     })
 
@@ -572,6 +621,7 @@ describe('posthog error source support', () => {
     )
 
     await manager.completeOAuth('posthog', {
+      pluginId: 'posthog',
       code: 'code-1',
       state: 'state-1',
       clientId: 'client-id',

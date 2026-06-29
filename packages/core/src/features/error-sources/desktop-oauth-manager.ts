@@ -90,46 +90,6 @@ type PendingOauthState = {
   providerBaseUrl?: string;
 };
 
-export type OAuthSourceType = ErrorSourceType;
-export type OAuthProviderConfigMap = Partial<
-  Record<OAuthSourceType, OAuthProviderConfig>
->;
-export type BuiltInOAuthSourceType = "sentry" | "posthog";
-export type BuiltInOAuthProviderConfigMap = Record<
-  BuiltInOAuthSourceType,
-  OAuthProviderConfig
-> &
-  OAuthProviderConfigMap;
-
-export function createDesktopOAuthProviderConfigs(
-  defaultRedirectUri: string,
-): BuiltInOAuthProviderConfigMap {
-  return {
-    sentry: {
-      envClientIdName: "SENTRY_OAUTH_CLIENT_ID",
-      envClientSecretName: "SENTRY_OAUTH_CLIENT_SECRET",
-      envRedirectUriName: "SENTRY_OAUTH_REDIRECT_URI",
-      defaultRedirectUri,
-      scopes: ["org:read", "project:read", "event:read"],
-      publicClient: false,
-    },
-    posthog: {
-      envClientIdName: "POSTHOG_OAUTH_CLIENT_ID",
-      envClientSecretName: "POSTHOG_OAUTH_CLIENT_SECRET",
-      envRedirectUriName: "POSTHOG_OAUTH_REDIRECT_URI",
-      defaultRedirectUri,
-      scopes: [
-        "organization:read",
-        "project:read",
-        "error_tracking:read",
-        "query:read",
-        "event:read",
-      ],
-      publicClient: true,
-    },
-  };
-}
-
 const OAUTH_STATE_PREFIX = "errorSources.oauth.";
 const OAUTH_STATE_TTL_MS = 10 * 60 * 1000;
 
@@ -182,27 +142,22 @@ function readMissingOAuthProviderConfigKeys(
 
 function mergeOAuthProviderConfig(input: {
   sourceType: ErrorSourceType;
-  baseConfig?: OAuthProviderConfig;
-  pluginOverrides?: Partial<OAuthProviderConfig>;
+  pluginConfig?: Partial<OAuthProviderConfig>;
 }): OAuthProviderConfig {
-  if (input.baseConfig === undefined && input.pluginOverrides === undefined) {
+  if (input.pluginConfig === undefined) {
     throw new Error(
       `OAuth is not configured for source type: ${input.sourceType}`,
     );
   }
 
-  const merged: Partial<OAuthProviderConfig> = {
-    ...(input.baseConfig ?? {}),
-    ...(input.pluginOverrides ?? {}),
-  };
-  const missingKeys = readMissingOAuthProviderConfigKeys(merged);
+  const missingKeys = readMissingOAuthProviderConfigKeys(input.pluginConfig);
   if (missingKeys.length > 0) {
     throw new Error(
       `OAuth config for source type "${input.sourceType}" is incomplete. Missing: ${missingKeys.join(", ")}`,
     );
   }
 
-  const config = merged as OAuthProviderConfig;
+  const config = input.pluginConfig as OAuthProviderConfig;
   return {
     envClientIdName: config.envClientIdName,
     envClientSecretName: config.envClientSecretName,
@@ -314,7 +269,6 @@ async function openExternalUrl(url: string): Promise<void> {
 }
 
 export interface DesktopOauthManagerOptions {
-  providerConfigs: OAuthProviderConfigMap;
   resolveProvider(input: {
     sourceType: ErrorSourceType;
     pluginId?: string;
@@ -354,20 +308,14 @@ export interface DesktopOauthManagerProviderFactory {
 }
 
 export interface DesktopOauthManagerBindings {
-  providerConfigs: BuiltInOAuthProviderConfigMap;
   OauthManagerService: new (
     db: DesktopOAuthSettingsDatabase,
     providerFactory: DesktopOauthManagerProviderFactory,
   ) => DesktopOauthManagerService;
 }
 
-export function createDesktopOauthManagerBindings(
-  defaultRedirectUri: string,
-): DesktopOauthManagerBindings {
-  const providerConfigs = createDesktopOAuthProviderConfigs(defaultRedirectUri);
-
+export function createDesktopOauthManagerBindings(): DesktopOauthManagerBindings {
   return {
-    providerConfigs,
     OauthManagerService: class OauthManagerService extends DesktopOauthManagerService {
       constructor(
         db: DesktopOAuthSettingsDatabase,
@@ -393,7 +341,6 @@ export function createDesktopOauthManagerBindings(
         };
 
         super(db, {
-          providerConfigs,
           resolveProvider: resolveSourceProvider,
           resolvePluginDescriptor: (pluginId) =>
             providerFactory.getPlugin?.(pluginId) ?? null,
@@ -453,13 +400,11 @@ export class DesktopOauthManagerService {
     sourceType: ErrorSourceType,
     pluginId?: string,
   ): OAuthProviderConfig {
-    const baseConfig = this.options.providerConfigs[sourceType];
-    const pluginOverrides = this.getPluginProviderConfig(sourceType, pluginId);
+    const pluginConfig = this.getPluginProviderConfig(sourceType, pluginId);
 
     return mergeOAuthProviderConfig({
       sourceType,
-      baseConfig,
-      pluginOverrides,
+      pluginConfig,
     });
   }
 
@@ -690,22 +635,6 @@ export class DesktopOauthManagerService {
     } finally {
       await this.deletePendingState(key);
     }
-  }
-
-  initiateSentryOAuth(input?: InitiateOAuthInput) {
-    return this.initiateOAuth("sentry", input);
-  }
-
-  completeSentryOAuth(input: CompleteOAuthInput) {
-    return this.completeOAuth("sentry", input);
-  }
-
-  initiatePostHogOAuth(input?: InitiateOAuthInput) {
-    return this.initiateOAuth("posthog", input);
-  }
-
-  completePostHogOAuth(input: CompleteOAuthInput) {
-    return this.completeOAuth("posthog", input);
   }
 
   private async pruneExpiredPendingStates(): Promise<void> {
