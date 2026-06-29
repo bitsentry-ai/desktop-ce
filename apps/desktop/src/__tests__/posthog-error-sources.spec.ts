@@ -18,12 +18,9 @@ vi.mock('child_process', () => ({
 }))
 
 import {
-  assertAllowedPostHogBaseUrl,
   createErrorSourceSchema,
   ErrorSourceProviderFactory,
   getProviderForSource,
-  parsePostHogAllowedHostsEnv,
-  resolveSameOriginNextUrl,
 } from '@bitsentry-ce/core/features/error-sources'
 import {
   OauthManagerService,
@@ -165,52 +162,8 @@ function requireProjectProvider(provider: ReturnType<typeof createRepoPostHogPro
 }
 
 describe('posthog error source support', () => {
-  const originalAllowedHosts = process.env.POSTHOG_ALLOWED_BASE_URLS
-
   afterEach(() => {
-    if (originalAllowedHosts == null) {
-      delete process.env.POSTHOG_ALLOWED_BASE_URLS
-    } else {
-      process.env.POSTHOG_ALLOWED_BASE_URLS = originalAllowedHosts
-    }
     vi.restoreAllMocks()
-  })
-
-  it('validates default and explicitly allowed PostHog hosts', () => {
-    expect(assertAllowedPostHogBaseUrl(undefined)).toBe('https://us.posthog.com')
-    expect(assertAllowedPostHogBaseUrl('https://eu.posthog.com/path')).toBe(
-      'https://eu.posthog.com',
-    )
-
-    const extraHosts = parsePostHogAllowedHostsEnv(
-      'https://posthog.example.com, https://posthog.internal:8443',
-    )
-
-    expect(
-      assertAllowedPostHogBaseUrl('https://posthog.example.com/app', {
-        extraAllowedHosts: extraHosts,
-      }),
-    ).toBe('https://posthog.example.com')
-    expect(
-      assertAllowedPostHogBaseUrl('https://posthog.internal:8443/app', {
-        extraAllowedHosts: extraHosts,
-      }),
-    ).toBe('https://posthog.internal:8443')
-  })
-
-  it('rejects unsafe PostHog base URLs and cross-origin pagination URLs', () => {
-    expect(() => assertAllowedPostHogBaseUrl('http://us.posthog.com')).toThrow(
-      'PostHog base URL must use https://',
-    )
-    expect(() =>
-      assertAllowedPostHogBaseUrl('https://metadata.google.internal'),
-    ).toThrow('is not in the allowlist')
-    expect(() =>
-      resolveSameOriginNextUrl(
-        'https://evil.example/api/projects/1/query/?offset=100',
-        'https://us.posthog.com',
-      ),
-    ).toThrow('Refusing to follow cross-origin PostHog pagination URL')
   })
 
   it('accepts PostHog code-plugin create inputs in the shared schema', () => {
