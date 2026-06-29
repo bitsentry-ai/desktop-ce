@@ -1,7 +1,7 @@
 import type { DbClient } from '../desktop/desktop-database-client'
 import log from 'electron-log'
 import { z } from 'zod'
-import { errorSourceTypeSchema, POSTHOG_DEFAULT_BASE_URL } from './error-sources.schemas'
+import { errorSourceTypeSchema } from './error-sources.schemas'
 import { assertAllowedPostHogBaseUrl } from './posthog-base-url'
 import { getErrorMessage } from '../../shared/errors'
 import { SqliteErrorSourcesRepositoryAdapter } from './desktop-sqlite-error-sources.adapter'
@@ -11,7 +11,6 @@ import { ErrorSourceProviderFactory } from './desktop-error-source-provider.fact
 import { ErrorSourceSyncService } from './desktop-error-source-sync.service'
 import { getProviderForSource } from './desktop-posthog-provider-binding'
 import {
-  readConfiguredProjectIds,
   resolveSentryProjectSelection,
 } from './desktop-sentry-project-selection'
 import { SyncSchedulerService } from './desktop-sync-scheduler.service'
@@ -708,12 +707,6 @@ function isPostHogProjectScopedEndpointError(error: unknown): boolean {
   return error instanceof Error && error.message.includes(POSTHOG_PROJECT_SCOPED_ENDPOINT_ERROR)
 }
 
-function normalizePostHogBaseUrl(value: unknown): string {
-  const raw = readOptionalTrimmed(value)
-  if (raw === undefined) return POSTHOG_DEFAULT_BASE_URL
-  return raw.replace(/\/+$/, '')
-}
-
 function recoverInterruptedSyncs(
   sourcesRepository: SqliteErrorSourcesRepositoryAdapter,
 ): Promise<void> {
@@ -963,7 +956,6 @@ export function createDesktopErrorSourcesHandlers(
       }
     },
 
-    // eslint-disable-next-line sonarjs/cognitive-complexity -- Update coordinates persisted config merge plus provider-specific project revalidation.
     'errorSources:update': async (rawPayload: unknown) => {
       const payload = readUpdateErrorSourcePayload(rawPayload)
       const existing = await sourcesRepository.findById(payload.id)
@@ -975,11 +967,11 @@ export function createDesktopErrorSourcesHandlers(
         pluginId,
         setupValues,
       )
-      const usePluginUpdatePath = hasMatchingErrorSourcePlugin(
-        pluginRuntime,
-        pluginId,
-        existing.sourceType,
-      )
+      if (!hasMatchingErrorSourcePlugin(pluginRuntime, pluginId, existing.sourceType)) {
+        throw new Error(
+          `Error source plugin "${pluginId}" does not match source type ${existing.sourceType}`,
+        )
+      }
 
       let nextConfiguration = { ...existing.configuration }
       if (payload.configuration !== undefined) {
@@ -1024,194 +1016,22 @@ export function createDesktopErrorSourcesHandlers(
         // user-visible signal.
         if (nextProjectIds.length > 0) {
           nextConfiguration.projectIds = nextProjectIds
-          if (!usePluginUpdatePath && existing.sourceType === 'posthog') {
-            nextConfiguration.projectSlugs = nextConfiguration.projectIds
-          }
         }
       }
       const setupProjectIds = readSetupStringArray(setupValues, 'projectIds')
       if (setupProjectIds.length > 0) {
         nextConfiguration.projectIds = setupProjectIds
-        if (!usePluginUpdatePath && existing.sourceType === 'posthog') {
-          nextConfiguration.projectSlugs = nextConfiguration.projectIds
-        }
       }
       if (Array.isArray(payload.indexPatterns)) {
         nextConfiguration.indexPatterns = readStringArray(payload.indexPatterns)
       }
       const nextBaseUrl = readOptionalTrimmed(payload.baseUrl)
-      if (
-        nextBaseUrl !== undefined &&
-        (usePluginUpdatePath || existing.sourceType !== 'posthog')
-      ) {
+      if (nextBaseUrl !== undefined) {
         nextConfiguration.baseUrl = nextBaseUrl
       }
-      // Accept either `baseUrl` (the field create/IPC uses) or
-      // `posthogBaseUrl` here; without honoring `baseUrl`, callers updating a
-      // PostHog source (e.g. switching US -> EU) through
-      // `errorSources:update` would silently keep the old host because only
-      // `posthogBaseUrl` was being read.
-      let baseUrlInput: string | null = null
       const payloadPostHogBaseUrl = readOptionalTrimmed(payload.posthogBaseUrl)
       if (payloadPostHogBaseUrl !== undefined) {
-        baseUrlInput = payloadPostHogBaseUrl
-      } else if (payload.baseUrl !== undefined && payload.baseUrl.trim().length > 0) {
-        baseUrlInput = payload.baseUrl
-      }
-      if (!usePluginUpdatePath && baseUrlInput !== null) {
-        nextConfiguration.posthogBaseUrl = validatePostHogBaseUrl(baseUrlInput)
-      }
-      const setupBaseUrl = readSetupTrimmed(setupValues, 'baseUrl')
-      if (
-        !usePluginUpdatePath &&
-        existing.sourceType === 'posthog' &&
-        setupBaseUrl !== undefined
-      ) {
-        nextConfiguration.posthogBaseUrl = validatePostHogBaseUrl(setupBaseUrl)
-        baseUrlInput = setupBaseUrl
-      } else if (usePluginUpdatePath && payloadPostHogBaseUrl !== undefined) {
         nextConfiguration.posthogBaseUrl = payloadPostHogBaseUrl
-      }
-
-      if (
-        !usePluginUpdatePath &&
-        existing.sourceType === 'sentry' &&
-        (
-          Array.isArray(payload.projectSlugs) ||
-          payload.organizationSlug != null ||
-          readSetupTrimmed(setupValues, 'organizationSlug') !== undefined ||
-          readSetupTrimmed(setupValues, 'organizationId') !== undefined ||
-          readSetupStringArray(setupValues, 'projectSlugs').length > 0
-        )
-      ) {
-        const accessToken = resolveStoredErrorSourceToken(existing.accessTokenRef)
-        if (accessToken.length === 0) {
-          throw new Error('Access token not found for this source')
-        }
-
-        const orgSlug = nextConfiguration.orgSlug?.trim() ?? ''
-        if (orgSlug.length === 0) {
-          throw new Error('organizationSlug is required')
-        }
-
-        const provider = getProviderForSource(providerFactory, {
-          sourceType: existing.sourceType,
-          additionalMetadata: existing.additionalMetadata,
-          configuration: nextConfiguration,
-        })
-        const projects = await provider.listProjects({ accessToken, orgSlug })
-        const resolvedProjects = resolveSentryProjectSelection(projects, {
-          projectIds: readConfiguredProjectIds(nextConfiguration),
-          projectSlugs: readStringArray(nextConfiguration.projectSlugs),
-          defaultToAll:
-            !Array.isArray(nextConfiguration.projectSlugs) ||
-            nextConfiguration.projectSlugs.length === 0,
-        })
-
-        if (resolvedProjects.missingProjectSlugs.length > 0) {
-          throw new Error(
-            `Unknown Sentry project slug(s): ${resolvedProjects.missingProjectSlugs.join(', ')}`,
-          )
-        }
-
-        nextConfiguration.projectIds = resolvedProjects.projectIds
-        nextConfiguration.projectSlugs = resolvedProjects.projectSlugs
-        nextConfiguration.projectNames = resolvedProjects.projectNames
-      }
-
-      // PostHog host/org-change handling: when the user pins a new
-      // `posthogBaseUrl` (US -> EU, or self-hosted) or switches to a
-      // different organization, the previously persisted
-      // `projectIds`/`projectSlugs`/`projectNames` were resolved against the
-      // old host/org and may not exist in the new tenant. Re-resolve them
-      // against the new (host, org) pair so the saved config stays coherent
-      // - otherwise the next sync or runbook query would silently fail with
-      // "unknown project id".
-      const previousPostHogBaseUrl = normalizePostHogBaseUrl(existing.configuration.posthogBaseUrl)
-      const nextPostHogBaseUrl = normalizePostHogBaseUrl(
-        nextConfiguration.posthogBaseUrl,
-      )
-      const posthogHostChanged =
-        !usePluginUpdatePath &&
-        existing.sourceType === 'posthog' &&
-        baseUrlInput != null &&
-        previousPostHogBaseUrl !== nextPostHogBaseUrl
-      const previousPostHogOrgSlug = existing.configuration.orgSlug?.trim() ?? ''
-      const nextPostHogOrgSlug = nextConfiguration.orgSlug?.trim() ?? ''
-      const posthogOrgChanged =
-        !usePluginUpdatePath &&
-        existing.sourceType === 'posthog' &&
-        nextPostHogOrgSlug.length > 0 &&
-        previousPostHogOrgSlug !== nextPostHogOrgSlug
-      // Validate `projectIds` even when host and org are unchanged. Without
-      // this, a caller can update `projectIds` to ids that don't exist in the
-      // current PostHog org and the bad ids would silently persist until the
-      // next sync surfaces a generic "unknown project" failure.
-      const posthogProjectIdsChanged =
-        !usePluginUpdatePath &&
-        existing.sourceType === 'posthog' &&
-        (
-          (Array.isArray(payload.projectIds) &&
-            readStringArray(payload.projectIds).length > 0) ||
-          readSetupStringArray(setupValues, 'projectIds').length > 0
-        )
-
-      if (posthogHostChanged || posthogOrgChanged || posthogProjectIdsChanged) {
-        const accessToken = resolveStoredErrorSourceToken(existing.accessTokenRef)
-        if (accessToken.length === 0) {
-          throw new Error('Access token not found for this source')
-        }
-
-        const provider = getProviderForSource(providerFactory, {
-          sourceType: existing.sourceType,
-          additionalMetadata: existing.additionalMetadata,
-          configuration: nextConfiguration,
-        })
-
-        const orgSlug = nextConfiguration.orgSlug?.trim() ?? ''
-        if (orgSlug.length === 0) {
-          throw new Error('organizationId is required')
-        }
-
-        const projects = await provider.listProjects({ accessToken, orgSlug })
-        if (projects.length === 0) {
-          throw new Error('No PostHog projects are accessible for this organization')
-        }
-        const projectsById = new Map(projects.map((project) => [project.id, project]))
-
-        // If the caller supplied project ids in the same payload, validate
-        // them against the new host. If the host changed but no project ids
-        // were supplied, drop the stale list and re-fetch all projects from
-        // the new host.
-        const requestedProjectIds = payload.projectIds ?? []
-
-        if (requestedProjectIds.length > 0) {
-          const missing: string[] = []
-          const matched: typeof projects = []
-          for (const projectId of requestedProjectIds) {
-            const project = projectsById.get(projectId)
-            if (project === undefined) {
-              missing.push(projectId)
-              continue
-            }
-            matched.push(project)
-          }
-          if (missing.length > 0) {
-            throw new Error(
-              `Unknown PostHog project id(s): ${missing.join(', ')}`,
-            )
-          }
-          nextConfiguration.projectIds = matched.map((project) => project.id)
-          nextConfiguration.projectSlugs = matched.map((project) => project.id)
-          nextConfiguration.projectNames = matched.map((project) => project.name)
-        } else {
-          // Host changed and caller didn't pin specific projects: drop the
-          // stale list and default to all projects in the new host so we
-          // don't carry over ids that don't exist in the new tenant.
-          nextConfiguration.projectIds = projects.map((project) => project.id)
-          nextConfiguration.projectSlugs = projects.map((project) => project.id)
-          nextConfiguration.projectNames = projects.map((project) => project.name)
-        }
       }
 
       const updated = await sourcesRepository.update({

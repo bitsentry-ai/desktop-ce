@@ -346,6 +346,28 @@ describe('desktop error source handlers', () => {
     })
   })
 
+  it('rejects source updates without a matching code plugin', async () => {
+    const runtime = new TestPluginRuntimeService([])
+    const { db, update } = createTestDb()
+    const oauthBindings = createDesktopOauthManagerBindings(
+      'bitsentry-desktop-ce://oauth/callback',
+    )
+    const handlers = createDesktopErrorSourcesHandlers(db, {
+      OauthManagerService: oauthBindings.OauthManagerService,
+      pluginRuntime: runtime,
+    })
+
+    await expect(
+      handlers['errorSources:update']?.({
+        id: 'source-1',
+        projectIds: ['999'],
+      }),
+    ).rejects.toThrow(
+      'Error source plugin "posthog" does not match source type posthog',
+    )
+    expect(update).not.toHaveBeenCalled()
+  })
+
   it('completes OAuth for built-in-named sources through matching code plugin metadata', async () => {
     vi.useFakeTimers()
     const runtime = new TestPluginRuntimeService([createPostHogPluginDescriptor()])
