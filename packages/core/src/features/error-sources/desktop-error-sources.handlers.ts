@@ -2,7 +2,6 @@ import type { DbClient } from '../desktop/desktop-database-client'
 import log from 'electron-log'
 import { z } from 'zod'
 import { errorSourceTypeSchema } from './error-sources.schemas'
-import { assertAllowedPostHogBaseUrl } from './posthog-base-url'
 import { getErrorMessage } from '../../shared/errors'
 import { SqliteErrorSourcesRepositoryAdapter } from './desktop-sqlite-error-sources.adapter'
 import { SqliteErrorIssuesRepositoryAdapter } from './desktop-sqlite-error-issues.adapter'
@@ -10,9 +9,6 @@ import { SqliteErrorEventsRepositoryAdapter } from './desktop-sqlite-error-event
 import { ErrorSourceProviderFactory } from './desktop-error-source-provider.factory'
 import { ErrorSourceSyncService } from './desktop-error-source-sync.service'
 import { getProviderForSource } from './desktop-posthog-provider-binding'
-import {
-  resolveSentryProjectSelection,
-} from './desktop-sentry-project-selection'
 import { SyncSchedulerService } from './desktop-sync-scheduler.service'
 import type { DesktopOauthManagerService } from './desktop-oauth-manager'
 import type {
@@ -282,33 +278,6 @@ function buildPluginOAuthConfiguration(input: {
     oauthRedirectUri: input.oauthRedirectUri,
   })
   return configuration
-}
-
-function parsePostHogExtraAllowedHosts(): string[] {
-  const raw = process.env.POSTHOG_ALLOWED_BASE_URLS
-  if (raw === undefined || raw.length === 0) return []
-  const out: string[] = []
-  for (const entry of raw.split(',')) {
-    const trimmed = entry.trim()
-    if (trimmed.length === 0) continue
-    try {
-      out.push(new URL(trimmed).host.toLowerCase())
-    } catch {
-      out.push(trimmed.toLowerCase())
-    }
-  }
-  return out
-}
-
-function validatePostHogBaseUrl(value: unknown): string {
-  let candidate: string | undefined
-  if (typeof value === 'string') {
-    candidate = value
-  }
-
-  return assertAllowedPostHogBaseUrl(candidate, {
-    extraAllowedHosts: parsePostHogExtraAllowedHosts(),
-  })
 }
 
 function toLogLevelThreshold(value: unknown): LogLevelThreshold {
@@ -1094,7 +1063,6 @@ export function createDesktopErrorSourcesHandlers(
       })
     },
 
-    // eslint-disable-next-line sonarjs/cognitive-complexity -- OAuth completion handles provider-specific org/project binding after token exchange.
     'errorSources:completeOAuth': async (rawPayload: unknown) => {
       const payload = readCompleteOAuthPayload(rawPayload)
       const sourceType = readRequiredSourceType(
@@ -1130,6 +1098,13 @@ export function createDesktopErrorSourcesHandlers(
       const oauthRedirectUri =
         readOptionalTrimmed(payload.redirectUri) ??
         oauthConfigOverrides.oauthRedirectUri
+
+      if (!hasMatchingErrorSourcePlugin(pluginRuntime, pluginId, sourceType)) {
+        throw new Error(
+          `Error source plugin "${pluginId}" does not match source type ${sourceType}`,
+        )
+      }
+
       const tokenResult = await oauthManager.completeOAuth(sourceType, {
         code,
         state,
@@ -1146,234 +1121,21 @@ export function createDesktopErrorSourcesHandlers(
           throw new Error(`Failed to resolve ${sourceType} access token`)
         }
 
-        const usePluginOAuthCompletePath = hasMatchingErrorSourcePlugin(
-          pluginRuntime,
-          pluginId,
-          sourceType,
-        )
-        if (usePluginOAuthCompletePath) {
-          const configuration = buildPluginOAuthConfiguration({
-            payload,
-            persistedSetup,
-            oauthClientId,
-            oauthClientSecret,
-            oauthRedirectUri,
-          })
-          const source = await sourcesRepository.create({
-            sourceType,
-            name:
-              payload.name ??
-              pluginRuntime.getPlugin(pluginId)?.name ??
-              sourceType,
-            additionalMetadata: mergeErrorSourceAdditionalMetadata(
-              readPayloadRecord(payload.additionalMetadata),
-              pluginId,
-            ),
-            accessTokenRef: accessToken,
-            refreshTokenRef: tokenResult.refreshToken,
-            expiresAt: tokenResult.expiresAt,
-            grantedScopes: tokenResult.scopes,
-            configuration,
-            logLevelThreshold: toLogLevelThreshold(payload.logLevelThreshold),
-            syncEnabled: payload.syncEnabled !== false,
-            autoDiagnosisEnabled: payload.autoDiagnosisEnabled === true,
-          })
-          log.info(
-            `[error-sources] completeOAuth:success id=${source.id} type=${sourceType} plugin=${pluginId}`,
-          )
-
-          return {
-            source: toRendererErrorSource(source),
-            organizations: [],
-            projects: [],
-          }
-        }
-
-        if (sourceType === 'sentry') {
-          const provider = getProviderForSource(providerFactory, {
-            sourceType,
-            additionalMetadata: { pluginId },
-          })
-          const organizations = await provider.listOrganizations(accessToken)
-          log.info(`[error-sources] completeOAuth: fetched organizations count=${String(organizations.length)}`)
-          let orgSlug = ''
-          if (payload.orgSlug !== undefined) {
-            orgSlug = payload.orgSlug.trim()
-          }
-          if (orgSlug.length === 0 && organizations.length === 0) {
-            throw new Error('No accessible Sentry organization found')
-          }
-          if (orgSlug.length === 0) {
-            orgSlug = organizations[0].slug
-          }
-          if (orgSlug.length === 0) {
-            throw new Error('No accessible Sentry organization found')
-          }
-
-          const projects = await provider.listProjects({ accessToken, orgSlug })
-          log.info(`[error-sources] completeOAuth: fetched projects org="${orgSlug}" count=${String(projects.length)}`)
-          const selectedProjects = readStringArray(payload.projectSlugs)
-          const resolvedProjects = resolveSentryProjectSelection(projects, {
-            projectSlugs: selectedProjects,
-            defaultToAll: selectedProjects.length === 0,
-          })
-
-          if (resolvedProjects.missingProjectSlugs.length > 0) {
-            throw new Error(
-              `Unknown Sentry project slug(s): ${resolvedProjects.missingProjectSlugs.join(', ')}`,
-            )
-          }
-
-          const configuration: ErrorSourceConfiguration = {
-            ...persistedSetup.configuration,
-            orgSlug,
-            orgName: organizations.find((org) => org.slug === orgSlug)?.name,
-            projectIds: resolvedProjects.projectIds,
-            projectSlugs: resolvedProjects.projectSlugs,
-            projectNames: resolvedProjects.projectNames,
-          }
-          applyOptionalOAuthConfiguration(configuration, {
-            oauthClientId,
-            oauthClientSecret,
-            oauthRedirectUri,
-          })
-
-          const source = await sourcesRepository.create({
-            sourceType: 'sentry',
-            name: payload.name ?? `Sentry (${orgSlug})`,
-            additionalMetadata: mergeErrorSourceAdditionalMetadata(
-              readPayloadRecord(payload.additionalMetadata),
-              pluginId,
-            ),
-            accessTokenRef: tokenResult.accessToken,
-            refreshTokenRef: tokenResult.refreshToken,
-            expiresAt: tokenResult.expiresAt,
-            grantedScopes: tokenResult.scopes,
-            configuration,
-            logLevelThreshold: toLogLevelThreshold(payload.logLevelThreshold),
-            syncEnabled: payload.syncEnabled !== false,
-            autoDiagnosisEnabled: payload.autoDiagnosisEnabled === true,
-          })
-          log.info(
-            `[error-sources] completeOAuth:success id=${source.id} org="${orgSlug}" selectedProjects=${String(resolvedProjects.projectIds.length)}`,
-          )
-
-          return { source: toRendererErrorSource(source), organizations, projects }
-        }
-
-        // posthog
-        const baseUrl = validatePostHogBaseUrl(oauthBaseUrl)
-        const provider = getProviderForSource(providerFactory, {
-          sourceType,
-          additionalMetadata: { pluginId },
-          configuration: { posthogBaseUrl: baseUrl },
-        })
-        const organizations = await provider.listOrganizations(accessToken)
-        log.info(`[error-sources] completeOAuth: fetched PostHog organizations count=${String(organizations.length)}`)
-        const requestedOrgSlug = payload.orgSlug?.trim() ?? payload.organizationId?.trim() ?? ''
-        const selectedProjectIds = readStringArray(
-          payload.projectIds ?? payload.projectSlugs,
-        )
-        let orgSlug = requestedOrgSlug
-        let projects: Awaited<ReturnType<typeof provider.listProjects>> | undefined
-        if (orgSlug.length === 0) {
-          if (organizations.length === 0) {
-            throw new Error('No accessible PostHog organization found')
-          }
-          // OAuth tokens may unlock multiple PostHog organizations; mirror the
-          // API-key flow and probe each org so we don't reject project ids
-          // that exist in a different accessible org.
-          if (selectedProjectIds.length > 0 && organizations.length > 1) {
-            const matches: Array<{
-              slug: string
-              name?: string
-              projects: Awaited<ReturnType<typeof provider.listProjects>>
-            }> = []
-            for (const org of organizations) {
-              const orgProjects = await provider.listProjects({ accessToken, orgSlug: org.slug })
-              // Require every requested id be present in this org (see the
-              // API-key flow above for rationale).
-              const orgIdSet = new Set(orgProjects.map((p) => p.id))
-              const ownsAll = selectedProjectIds.every((id) => orgIdSet.has(id))
-              if (ownsAll) {
-                matches.push({ slug: org.slug, name: org.name, projects: orgProjects })
-              }
-            }
-            if (matches.length === 0) {
-              throw new Error(
-                `Unknown PostHog project id(s): ${selectedProjectIds.join(', ')}`,
-              )
-            }
-            if (matches.length > 1) {
-              throw new Error(
-                `Requested PostHog project id(s) match multiple organizations (${matches
-                  .map((m) => m.slug)
-                  .join(', ')}). Specify organizationId to disambiguate.`,
-              )
-            }
-            orgSlug = matches[0].slug
-            projects = matches[0].projects
-          } else if (organizations.length > 1) {
-            // Refuse to auto-pick when the OAuth token can reach multiple
-            // organizations and the caller did not pin one. Binding to
-            // organizations[0] silently lands in whichever workspace the
-            // API returns first, and the wrong-tenant mistake only surfaces
-            // later when issues sync from an unexpected source.
-            throw new Error(
-              `OAuth token has access to multiple PostHog organizations (${organizations
-                .map((org) => org.slug)
-                .join(', ')}). Specify organizationId to disambiguate.`,
-            )
-          } else {
-            orgSlug = organizations[0].slug
-          }
-        }
-        if (orgSlug.length === 0) {
-          throw new Error('No accessible PostHog organization found')
-        }
-
-        if (projects === undefined) {
-          projects = await provider.listProjects({ accessToken, orgSlug })
-        }
-        log.info(`[error-sources] completeOAuth: fetched PostHog projects org="${orgSlug}" count=${String(projects.length)}`)
-        const projectsById = new Map(projects.map((project) => [project.id, project]))
-        let resolvedProjects = projects
-        if (selectedProjectIds.length > 0) {
-          resolvedProjects = selectedProjectIds.map((id) => {
-            const project = projectsById.get(id)
-            if (project === undefined) throw new Error(`Unknown PostHog project id: ${id}`)
-            return project
-          })
-        }
-        if (resolvedProjects.length === 0) {
-          throw new Error('No PostHog projects are accessible with this OAuth token')
-        }
-
-        const resolvedOrgName =
-          organizations.find((org) => org.slug === orgSlug)?.name ?? orgSlug
-        const configuration: ErrorSourceConfiguration = {
-          ...persistedSetup.configuration,
-          orgSlug,
-          orgName: organizations.find((org) => org.slug === orgSlug)?.name,
-          projectIds: resolvedProjects.map((project) => project.id),
-          projectSlugs: resolvedProjects.map((project) => project.id),
-          projectNames: resolvedProjects.map((project) => project.name),
-          posthogBaseUrl: baseUrl,
-        }
-        applyOptionalOAuthConfiguration(configuration, {
+        const configuration = buildPluginOAuthConfiguration({
+          payload,
+          persistedSetup,
           oauthClientId,
           oauthClientSecret,
           oauthRedirectUri,
         })
-
         const source = await sourcesRepository.create({
-          sourceType: 'posthog',
-          name: payload.name ?? `PostHog (${resolvedOrgName})`,
+          sourceType,
+          name: payload.name ?? pluginRuntime.getPlugin(pluginId)?.name ?? sourceType,
           additionalMetadata: mergeErrorSourceAdditionalMetadata(
             readPayloadRecord(payload.additionalMetadata),
             pluginId,
           ),
-          accessTokenRef: tokenResult.accessToken,
+          accessTokenRef: accessToken,
           refreshTokenRef: tokenResult.refreshToken,
           expiresAt: tokenResult.expiresAt,
           grantedScopes: tokenResult.scopes,
@@ -1383,10 +1145,14 @@ export function createDesktopErrorSourcesHandlers(
           autoDiagnosisEnabled: payload.autoDiagnosisEnabled === true,
         })
         log.info(
-          `[error-sources] completeOAuth:success id=${source.id} type=posthog org="${orgSlug}" projects=${String(resolvedProjects.length)}`,
+          `[error-sources] completeOAuth:success id=${source.id} type=${sourceType} plugin=${pluginId}`,
         )
 
-        return { source: toRendererErrorSource(source), organizations, projects }
+        return {
+          source: toRendererErrorSource(source),
+          organizations: [],
+          projects: [],
+        }
       } catch (error) {
         log.error('[error-sources] completeOAuth:failed', error)
         throw error

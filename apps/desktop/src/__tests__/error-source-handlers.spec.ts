@@ -443,4 +443,29 @@ describe('desktop error source handlers', () => {
       projectIds: ['999'],
     })
   })
+
+  it('rejects OAuth completion without a matching code plugin', async () => {
+    const runtime = new TestPluginRuntimeService([])
+    const { db, create } = createTestDb()
+    const oauthBindings = createDesktopOauthManagerBindings(
+      'bitsentry-desktop-ce://oauth/callback',
+    )
+    const handlers = createDesktopErrorSourcesHandlers(db, {
+      OauthManagerService: oauthBindings.OauthManagerService,
+      pluginRuntime: runtime,
+    })
+
+    await expect(
+      handlers['errorSources:completeOAuth']?.({
+        pluginId: 'posthog',
+        sourceType: 'posthog',
+        code: 'code-1',
+        state: 'state-1',
+      }),
+    ).rejects.toThrow(
+      'Error source plugin "posthog" does not match source type posthog',
+    )
+    expect(runtime.executeActionMock).not.toHaveBeenCalled()
+    expect(create).not.toHaveBeenCalled()
+  })
 })
