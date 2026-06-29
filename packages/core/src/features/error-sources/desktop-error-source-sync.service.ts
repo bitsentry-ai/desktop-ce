@@ -5,13 +5,6 @@ import { mapDiagnosisSourceContext } from '../diagnosis-workflow'
 import { SqliteErrorEventsRepositoryAdapter } from './desktop-sqlite-error-events.adapter'
 import { SqliteErrorIssuesRepositoryAdapter } from './desktop-sqlite-error-issues.adapter'
 import { SqliteErrorSourcesRepositoryAdapter } from './desktop-sqlite-error-sources.adapter'
-import {
-  readConfiguredProjectIds,
-  readConfiguredProjectSlugs,
-  resolveSentryProjectSelection,
-} from './desktop-sentry-project-selection'
-import { getProviderForSource } from './desktop-posthog-provider-binding'
-import { refreshSourceAccessToken } from './desktop-oauth-token-refresher'
 import type {
   ErrorEvent,
   ErrorIssue,
@@ -77,14 +70,6 @@ type DiagnosisEventContext = Pick<
   | 'serverName'
 >
 
-const POSTHOG_SYNC_LOOKBACK_MS = 60 * 60 * 1000
-const SENTRY_INITIAL_SYNC_LOOKBACK_MS = 7 * 24 * 60 * 60 * 1000
-const MAX_POSTHOG_ISSUE_PAGES = 20
-const MAX_POSTHOG_EVENT_PAGES_PER_ISSUE = 5
-const MAX_SENTRY_ISSUE_PAGES = 1
-const MAX_SENTRY_ISSUES_PER_PAGE = 20
-const MAX_SENTRY_EVENT_PAGES_PER_ISSUE = 1
-const MAX_SENTRY_TOTAL_EVENT_PAGES = 20
 const MAX_GENERIC_PLUGIN_ISSUE_PAGES = 10
 const MAX_GENERIC_PLUGIN_ISSUES_PER_PAGE = 100
 const MAX_GENERIC_PLUGIN_EVENT_PAGES_PER_ISSUE = 10
@@ -643,9 +628,11 @@ export class ErrorSourceSyncService {
     private readonly sourcesRepository: ErrorSourcesRepository,
     private readonly issuesRepository: ErrorIssuesRepository,
     private readonly eventsRepository: ErrorEventsRepository,
-    private readonly providerFactory: ErrorSourceProviderRegistry,
+    providerFactory: ErrorSourceProviderRegistry,
     private readonly pluginRuntime: DesktopPluginRuntimeService = createDesktopNodePluginRuntimeService(),
-  ) {}
+  ) {
+    void providerFactory
+  }
 
   async syncSourceById(sourceId: string): Promise<{ sourceId: string; syncedIssues: number; syncedEvents: number }> {
     const source = await this.sourcesRepository.findById(sourceId)
@@ -680,7 +667,6 @@ export class ErrorSourceSyncService {
     return results
   }
 
-  // eslint-disable-next-line sonarjs/cognitive-complexity -- Sync coordinates paging, watermarks, upserts, and diagnosis projection.
   private async syncSource(source: ErrorSource): Promise<{ sourceId: string; syncedIssues: number; syncedEvents: number }> {
     await this.sourcesRepository.updateSyncStatus(source.id, 'in_progress')
     const syncStartMs = Date.now()
@@ -689,280 +675,7 @@ export class ErrorSourceSyncService {
     )
 
     try {
-      const pluginId = readSourcePluginId(source)
-      const plugin = this.pluginRuntime.getPlugin(pluginId)
-      if (plugin?.metadata?.errorSource?.sourceType === source.sourceType) {
-        return await this.syncCustomPluginSource(source)
-      }
-
-      const provider = getProviderForSource(this.providerFactory, source)
-      const token = await this.resolveAccessToken(source)
-      const orgSlug = source.configuration.orgSlug?.trim()
-      if (orgSlug === undefined || orgSlug.length === 0) {
-        throw new Error(`Source ${source.id} is missing configuration.orgSlug`)
-      }
-
-      const projectIds = await this.resolveProjectIds(source, token, orgSlug)
-      log.info(
-        `[sync] id=${source.id} resolved org="${orgSlug}" projects=${String(projectIds.length)} [${projectIds.join(',')}]`,
-      )
-
-      let issueCursor: string | undefined
-      let hasMore = true
-      let issuePageCount = 0
-      let syncedIssues = 0
-      let syncedEvents = 0
-
-      const isPostHog = source.sourceType === 'posthog'
-      // PostHog-only: look back POSTHOG_SYNC_LOOKBACK_MS before the previous
-      // watermark so events that arrive after their `timestamp` would
-      // otherwise place them in a window we've already advanced past are
-      // still picked up. PostHog SDK events carry a user-set `timestamp`
-      // that can lag ingest by minutes for batched/offline clients; a
-      // strict `since = lastSyncAt` permanently skips backfilled exceptions.
-      // Reading the overlap window is safe because event/issue upserts are
-      // idempotent on `externalEventId`/`externalIssueId`.
-      //
-      // Sentry keeps strict `since = lastSyncAt` semantics while PostHog
-      // reads an overlap window. PostHog SDK events carry a user-set
-      // `timestamp` that can lag ingest by minutes for batched/offline
-      // clients; a strict cursor can permanently skip backfilled errors.
-      let previousLastSyncAtMs = Number.NaN
-      if (source.lastSyncAt !== null) {
-        previousLastSyncAtMs = Date.parse(source.lastSyncAt)
-      }
-      let sentrySince = new Date(Date.now() - SENTRY_INITIAL_SYNC_LOOKBACK_MS).toISOString()
-      if (source.lastSyncAt !== null) {
-        sentrySince = source.lastSyncAt
-      }
-      let since: string | undefined = sentrySince
-      if (isPostHog) {
-        since = undefined
-        if (Number.isFinite(previousLastSyncAtMs)) {
-          since = new Date(previousLastSyncAtMs - POSTHOG_SYNC_LOOKBACK_MS).toISOString()
-        }
-      }
-      // Capture the watermark BEFORE we start reading pages. Persisting
-      // `new Date()` at sync completion would silently drop any issue or
-      // event whose `last_seen`/`timestamp` lands between the start and end
-      // of this sync run, because the next run would query with
-      // `since = completionTime` and never see rows that arrived after a
-      // page was already read but before the sync finished.
-      const syncStartedAt = new Date().toISOString()
-
-      // Both providers now accept an upper-bound watermark on issue/event
-      // reads. PostHog uses a dedicated `until` input; Sentry issue listing
-      // translates it into a bounded `lastSeen` query.
-      const issueUntil = syncStartedAt
-      // Sentry issue-event pages now honor `start`/`end`, so event reads for
-      // both providers can be bounded to the sync watermark even though only
-      // PostHog supports an issue-list upper bound.
-      const eventUntil = syncStartedAt
-
-      // Hard caps stop a runaway sync from monopolising the desktop app on
-      // high-volume sources. Sentry sync is intentionally a bounded latest
-      // snapshot: runbook queries hit Sentry live, while this background sync
-      // feeds local diagnosis views. A first sync of a busy org can otherwise
-      // walk years of per-issue event history and leave the settings row stuck
-      // in "Syncing..." for many minutes.
-      let maxIssuePages = MAX_SENTRY_ISSUE_PAGES
-      let maxEventPagesPerIssue = MAX_SENTRY_EVENT_PAGES_PER_ISSUE
-      if (isPostHog) {
-        maxIssuePages = MAX_POSTHOG_ISSUE_PAGES
-        maxEventPagesPerIssue = MAX_POSTHOG_EVENT_PAGES_PER_ISSUE
-      }
-      let sentryTotalEventPages = 0
-      let sentryEventBudgetExhausted = false
-
-      while (hasMore && issuePageCount < maxIssuePages && !sentryEventBudgetExhausted) {
-        issuePageCount += 1
-        const pageStartMs = Date.now()
-        log.info(
-          `[sync] id=${source.id} listIssues page=${String(issuePageCount)} cursor=${issueCursor ?? 'start'}`,
-        )
-        let issueLimit: number | undefined = MAX_SENTRY_ISSUES_PER_PAGE
-        if (isPostHog) {
-          issueLimit = undefined
-        }
-        const page = await provider.listIssues({
-          accessToken: token,
-          orgSlug,
-          projectIds,
-          cursor: issueCursor,
-          limit: issueLimit,
-          since,
-          until: issueUntil,
-        })
-        log.info(
-          `[sync] id=${source.id} listIssues page=${String(issuePageCount)} returned=${String(page.issues.length)} hasMore=${String(page.hasMore)} elapsedMs=${formatElapsedMs(pageStartMs)}`,
-        )
-
-        for (const rawIssue of page.issues) {
-          const issue = rawIssue
-          const externalIssueId = readOptionalString(issue.id)
-          if (externalIssueId === null) continue
-          const project = readRecord(issue.project)
-
-          let userCount: number | null = null
-          if (issue.userCount != null) {
-            userCount = Number(issue.userCount)
-          }
-
-          const upsertedIssue = await this.issuesRepository.upsert({
-            sourceId: source.id,
-            externalIssueId,
-            externalShortId: readOptionalString(issue.shortId),
-            title: readRequiredString(issue.title ?? issue.culprit, 'Untitled issue'),
-            culprit: readOptionalString(issue.culprit),
-            type: readOptionalString(issue.type),
-            metadata: extractIssueMetadata(issue),
-            projectIdentifier: readRecordString(project, 'slug'),
-            level: readRequiredString(issue.level, 'error'),
-            status: readRequiredString(issue.status, 'unresolved'),
-            isUnhandled: readNullableBoolean(issue.isUnhandled),
-            firstSeen: readRequiredString(issue.firstSeen, new Date().toISOString()),
-            lastSeen: readRequiredString(issue.lastSeen, new Date().toISOString()),
-            eventCount: Number(issue.count ?? 1),
-            userCount,
-            tags: parseIssueTags(issue.tags),
-            environment: extractIssueField(issue, 'environment'),
-            release: extractIssueField(issue, 'release'),
-            platform: readOptionalString(issue.platform),
-            additionalMetadata: null,
-          })
-
-          syncedIssues += 1
-
-          let eventCursor: string | undefined
-          let eventsHasMore = true
-          let eventPages = 0
-
-          while (
-            eventsHasMore &&
-            eventPages < maxEventPagesPerIssue &&
-            (isPostHog || sentryTotalEventPages < MAX_SENTRY_TOTAL_EVENT_PAGES)
-          ) {
-            eventPages += 1
-            if (!isPostHog) {
-              sentryTotalEventPages += 1
-            }
-            const evtStartMs = Date.now()
-            const eventsPage = await provider.listIssueEvents({
-              accessToken: token,
-              orgSlug,
-              issueId: externalIssueId,
-              cursor: eventCursor,
-              projectIds,
-              since,
-              until: eventUntil,
-            })
-            log.info(
-              `[sync] id=${source.id} listIssueEvents issue=${externalIssueId} page=${String(eventPages)} returned=${String(eventsPage.events.length)} hasMore=${String(eventsPage.hasMore)} elapsedMs=${formatElapsedMs(evtStartMs)}`,
-            )
-
-            for (const rawEvent of eventsPage.events) {
-              const event = rawEvent
-              let externalEventId = readOptionalString(event.id)
-              if (externalEventId === null) {
-                externalEventId = readOptionalString(event.eventID)
-              }
-              if (externalEventId === null) continue
-              const eventLevel = readRequiredString(event.level ?? issue.level, 'error')
-              if (!shouldIngestByThreshold(eventLevel, source.logLevelThreshold)) {
-                continue
-              }
-
-              const parsedEventTags = parseIssueTags(event.tags)
-              const exception = extractException(event)
-              const breadcrumbs = extractBreadcrumbs(event)
-              const contexts = readRecord(event.contexts)
-              const trace = readRecord(contexts?.trace)
-              const contextsWithBreadcrumbs = mergeContextsWithBreadcrumbs(contexts, breadcrumbs)
-
-              const upsertedEvent = await this.eventsRepository.upsert({
-                sourceId: source.id,
-                issueId: upsertedIssue.id,
-                externalEventId,
-                timestamp: toIsoOrNow(event.dateCreated ?? event.timestamp),
-                message: readOptionalString(event.message),
-                exceptionType: exception.exceptionType,
-                exceptionValue: exception.exceptionValue,
-                exceptionMechanism: exception.mechanism,
-                stacktrace: exception.stacktrace,
-                inAppFrames: exception.inAppFrames,
-                tags: parsedEventTags,
-                contexts: contextsWithBreadcrumbs,
-                userContext: readRecord(event.user),
-                requestContext: readRecord(event.request),
-                environment:
-                  readOptionalString(event.environment) ??
-                  extractTagValue(parsedEventTags, 'environment') ??
-                  upsertedIssue.environment,
-                release:
-                  readRecordString(readRecord(event.release), 'version') ??
-                  extractTagValue(parsedEventTags, 'release') ??
-                  upsertedIssue.release,
-                serverName: readOptionalString(event.serverName),
-                traceId: readOptionalString(trace?.trace_id ?? trace?.traceId),
-                requestId: readOptionalString(trace?.span_id ?? trace?.spanId),
-                transactionName: readOptionalString(event.transaction),
-                additionalMetadata: null,
-              })
-
-              syncedEvents += 1
-
-              // Temporary desktop mock behavior: always project synced Sentry events
-              // into diagnosis rows so diagnosis view reflects entry-level issues.
-              await this.projectEventToDiagnosis(source, upsertedIssue, upsertedEvent)
-            }
-
-            eventsHasMore = eventsPage.hasMore
-            eventCursor = eventsPage.nextCursor
-          }
-
-          if (eventsHasMore && isPostHog) {
-            throw new Error(
-              `PostHog event page cap (${String(MAX_POSTHOG_EVENT_PAGES_PER_ISSUE)}) reached for issue "${externalIssueId}" with more pages remaining; lastSyncAt will not advance`,
-            )
-          }
-
-          if (!isPostHog && sentryTotalEventPages >= MAX_SENTRY_TOTAL_EVENT_PAGES) {
-            log.info(
-              `[sync] id=${source.id} reached Sentry event page budget (${String(MAX_SENTRY_TOTAL_EVENT_PAGES)}); finishing latest snapshot`,
-            )
-            sentryEventBudgetExhausted = true
-            break
-          }
-        }
-
-        hasMore = page.hasMore
-        issueCursor = page.nextCursor
-      }
-
-      if (hasMore && isPostHog) {
-        throw new Error(
-          `PostHog issue page cap (${String(MAX_POSTHOG_ISSUE_PAGES)}) reached with more pages remaining; lastSyncAt will not advance`,
-        )
-      }
-
-      await this.backfillMissingDiagnosisEntriesForSource(source.id)
-
-      await this.sourcesRepository.update({
-        id: source.id,
-        lastSyncStatus: 'success',
-        lastSyncError: null,
-        lastSyncAt: syncStartedAt,
-      })
-
-      log.info(
-        `[sync] success id=${source.id} issues=${String(syncedIssues)} events=${String(syncedEvents)} pages=${String(issuePageCount)} elapsedMs=${formatElapsedMs(syncStartMs)}`,
-      )
-
-      return {
-        sourceId: source.id,
-        syncedIssues,
-        syncedEvents,
-      }
+      return await this.syncCustomPluginSource(source)
     } catch (error) {
       let message = String(error)
       if (error instanceof Error) {
@@ -978,66 +691,6 @@ export class ErrorSourceSyncService {
       })
       throw error
     }
-  }
-
-  private async resolveProjectIds(
-    source: ErrorSource,
-    accessToken: string,
-    orgSlug: string,
-  ): Promise<string[]> {
-    const configuredProjectIds = readConfiguredProjectIds(source.configuration)
-    if (configuredProjectIds.length > 0) {
-      return configuredProjectIds
-    }
-
-    const configuredProjectSlugs = readConfiguredProjectSlugs(source.configuration)
-    if (configuredProjectSlugs.length === 0) {
-      return []
-    }
-
-    const provider = getProviderForSource(this.providerFactory, source)
-    const projects = await provider.listProjects({ accessToken, orgSlug })
-    const resolvedProjects = resolveSentryProjectSelection(projects, {
-      projectSlugs: configuredProjectSlugs,
-    })
-
-    if (resolvedProjects.projectIds.length === 0) {
-      throw new Error(
-        `Source ${source.id} has Sentry project slugs that could not be resolved to numeric project IDs`,
-      )
-    }
-
-    await this.sourcesRepository.update({
-      id: source.id,
-      configuration: {
-        ...source.configuration,
-        projectIds: resolvedProjects.projectIds,
-        projectSlugs: resolvedProjects.projectSlugs,
-        projectNames: resolvedProjects.projectNames,
-      },
-    })
-
-    source.configuration = {
-      ...source.configuration,
-      projectIds: resolvedProjects.projectIds,
-      projectSlugs: resolvedProjects.projectSlugs,
-      projectNames: resolvedProjects.projectNames,
-    }
-
-    return resolvedProjects.projectIds
-  }
-
-  private async resolveAccessToken(source: ErrorSource): Promise<string> {
-    // Delegated to the shared `refreshSourceAccessToken` so the per-source
-    // mutex covers both this service and the runbook external-source query
-    // service. A class-local lock would let a concurrent runbook query
-    // refresh past this service and invalidate its just-rotated refresh
-    // token.
-    return refreshSourceAccessToken({
-      source,
-      sourcesRepository: this.sourcesRepository,
-      providerFactory: this.providerFactory,
-    })
   }
 
   private async projectEventToDiagnosis(

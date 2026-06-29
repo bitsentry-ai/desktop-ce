@@ -5,7 +5,6 @@ import {
 } from '@bitsentry-ce/core/features/error-sources/desktop-sqlite-error-sources.adapter'
 import { ErrorSourceProviderFactory } from '@bitsentry-ce/core/features/error-sources'
 import { ErrorSourceSyncService } from '@bitsentry-ce/core/features/error-sources/desktop-error-source-sync.service'
-import type { ErrorSourceProvider } from '@bitsentry-ce/core/features/error-sources/desktop-error-source-provider.interface'
 import type { UpsertErrorIssueInput } from '@bitsentry-ce/core/features/error-sources/desktop-sqlite-error-issues.adapter'
 import type { ErrorIssue, ErrorSource } from '@bitsentry-ce/core/features/error-sources/desktop-error-sources.types'
 import {
@@ -158,43 +157,18 @@ describe('Sentry external source sync', () => {
     vi.restoreAllMocks()
   })
 
-  it('bounds the first Sentry sync to a latest snapshot instead of walking full event history', async () => {
-    vi.useFakeTimers()
-    vi.setSystemTime(new Date('2026-06-01T09:00:00.000Z'))
-
+  it('requires sync to run through a matching code plugin', async () => {
     const source = makeSource()
-    const issues = Array.from({ length: 20 }, (_, index) => ({
-      id: `issue-${String(index + 1)}`,
-      title: `Issue ${String(index + 1)}`,
-      level: 'error',
-      count: 1,
-      firstSeen: '2026-06-01T08:00:00.000Z',
-      lastSeen: '2026-06-01T08:00:00.000Z',
-    }))
-    const provider = {
-      sourceType: 'sentry',
-      buildAuthorizeUrl: vi.fn(),
-      exchangeCodeForToken: vi.fn(),
-      refreshToken: vi.fn(),
-      listOrganizations: vi.fn(),
-      listProjects: vi.fn(),
-      queryIssues: vi.fn(),
-      listIssues: vi.fn().mockResolvedValue({
-        issues,
-        hasMore: true,
-        nextCursor: 'next-issues',
-      }),
-      listIssueEvents: vi.fn().mockResolvedValue({
-        events: [],
-        hasMore: true,
-        nextCursor: 'next-events',
-      }),
-    } satisfies ErrorSourceProvider
     const sourcesRepository = {
       findById: vi.fn().mockResolvedValue(source),
       findSyncEnabled: vi.fn().mockResolvedValue([source]),
       updateSyncStatus: vi.fn().mockResolvedValue(undefined),
       update: vi.fn().mockResolvedValue(source),
+    }
+    const providerFactory = {
+      getProvider: vi.fn(() => {
+        throw new Error('Legacy provider should not be used for source sync')
+      }),
     }
     const service = new ErrorSourceSyncService(
       {
@@ -216,33 +190,20 @@ describe('Sentry external source sync', () => {
         upsert: vi.fn(),
         findById: vi.fn(),
       },
-      {
-        getProvider: vi.fn(() => provider),
-      },
+      providerFactory,
       new TestPluginRuntimeService([]),
     )
 
-    const result = await service.syncSourceById(source.id)
-
-    expect(result).toEqual({
-      sourceId: source.id,
-      syncedIssues: 20,
-      syncedEvents: 0,
-    })
-    expect(provider.listIssues).toHaveBeenCalledTimes(1)
-    expect(provider.listIssues).toHaveBeenCalledWith(
-      expect.objectContaining({
-        limit: 20,
-        since: '2026-05-25T09:00:00.000Z',
-      }),
+    await expect(service.syncSourceById(source.id)).rejects.toThrow(
+      'Error source plugin "sentry" does not match source type sentry',
     )
-    expect(provider.listIssueEvents).toHaveBeenCalledTimes(20)
+    expect(providerFactory.getProvider).not.toHaveBeenCalled()
     expect(sourcesRepository.update).toHaveBeenLastCalledWith(
       expect.objectContaining({
         id: source.id,
-        lastSyncStatus: 'success',
-        lastSyncError: null,
-        lastSyncAt: '2026-06-01T09:00:00.000Z',
+        lastSyncStatus: 'failed',
+        lastSyncError:
+          'Error source plugin "sentry" does not match source type sentry',
       }),
     )
   })
