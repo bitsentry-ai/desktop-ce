@@ -33,7 +33,7 @@
     "typecheck:contract": "tsc --noEmit -p tsconfig.contract.json",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
-    "test": "vitest run --config vitest.config.ts",
+    "test": "pnpm --dir ../.. run plugins:build && vitest run --config vitest.config.ts",
     "test:watch": "vitest --config vitest.config.ts",
     "test:contracts": "pnpm run typecheck:contract",
     "test:cli-smoke": "pnpm run build:shared-cli && pnpm run build:scripts && pnpm run prepare:native-deps && pnpm run build:cli-bundle && node scripts/dist/cli-smoke-test.js",
