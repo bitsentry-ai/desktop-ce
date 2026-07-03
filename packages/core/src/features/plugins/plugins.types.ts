@@ -223,25 +223,24 @@ export const desktopPluginDescriptorSchema = z.object({
 
 export type DesktopPluginDescriptor = z.infer<typeof desktopPluginDescriptorSchema>;
 
-export const desktopPluginInstallFromArchiveRequestSchema = z.object({
-  archiveBase64: z.string().min(1),
+export const desktopPluginInstallFromArtifactRequestSchema = z.object({
+  artifactBase64: z.string().min(1),
   installRoot: z.string().min(1).optional(),
 });
 
-export type DesktopPluginInstallFromArchiveRequest = z.infer<
-  typeof desktopPluginInstallFromArchiveRequestSchema
+export type DesktopPluginInstallFromArtifactRequest = z.infer<
+  typeof desktopPluginInstallFromArtifactRequestSchema
 >;
 
-export const desktopPluginInstallFromArchiveResultSchema = z.object({
+export const desktopPluginInstallFromArtifactResultSchema = z.object({
   pluginId: z.string().min(1),
   installedPath: z.string().min(1),
   extractedEntryPath: z.string().min(1),
   descriptor: desktopPluginDescriptorSchema,
 });
 
-export type DesktopPluginInstallFromArchiveResult = z.infer<
-  typeof desktopPluginInstallFromArchiveResultSchema
->;
+export type DesktopPluginInstallFromArtifactResult =
+  z.infer<typeof desktopPluginInstallFromArtifactResultSchema>;
 
 export const desktopPluginExecutionRequestSchema = z.object({
   pluginId: z.string().min(1),
@@ -277,10 +276,6 @@ export type DesktopPluginCodeHostContext = {
   pluginRoot: string;
   entryPath: string;
   localPluginDirectories: string[];
-  installPluginFromArchive(input: {
-    archive: Uint8Array;
-    installRoot?: string;
-  }): Promise<DesktopPluginInstallResult>;
   reloadPlugins(): Promise<void>;
 };
 

@@ -114,7 +114,7 @@ function parseGitHubErrorBody(raw) {
   return raw;
 }
 
-async function requestGitHub(auth, pathname, params = {}) {
+async function requestGitHubJson(auth, pathname, params = {}, options = {}) {
   const accessToken = readString(auth.accessToken ?? auth.authToken ?? auth.token);
   const apiBase = auth.apiBase ?? auth.baseUrl;
   const headers: Record<string, string> = {
@@ -125,22 +125,45 @@ async function requestGitHub(auth, pathname, params = {}) {
   if (accessToken.length > 0) {
     headers.Authorization = `Bearer ${accessToken}`;
   }
+  const requestBody = readRecord(options).body;
+  if (requestBody !== undefined) {
+    headers["Content-Type"] = "application/json";
+  }
 
-  const response = await fetch(buildGitHubUrl(apiBase, pathname, params), {
+  const requestInit = {
+    method: readString(readRecord(options).method, "GET"),
     headers,
-  });
-  const body = await response.text();
+  };
+  if (requestBody !== undefined) {
+    Object.assign(requestInit, {
+      body: JSON.stringify(requestBody),
+    });
+  }
+
+  const response = await fetch(buildGitHubUrl(apiBase, pathname, params), requestInit);
+  const responseBody = await response.text();
   if (!response.ok) {
     throw new Error(
-      `GitHub API ${String(response.status)}: ${parseGitHubErrorBody(body)}`,
+      `GitHub API ${String(response.status)}: ${parseGitHubErrorBody(responseBody)}`,
     );
   }
 
-  if (body.trim().length === 0) {
-    return null;
+  if (responseBody.trim().length === 0) {
+    return {
+      status: response.status,
+      data: null,
+    };
   }
 
-  return JSON.parse(body);
+  return {
+    status: response.status,
+    data: JSON.parse(responseBody),
+  };
+}
+
+async function requestGitHub(auth, pathname, params = {}) {
+  const result = await requestGitHubJson(auth, pathname, params);
+  return result.data;
 }
 
 function isGitHubNotFoundError(error) {
@@ -336,6 +359,57 @@ async function queryGitHubIssues(context) {
       hasMore,
       nextCursor: hasMore ? String(page + 1) : undefined,
     },
+  };
+}
+
+function buildCreateIssueBody(input) {
+  const title = readString(input.title);
+  if (title.length === 0) {
+    throw new Error("GitHub issue title is required");
+  }
+
+  const body: Record<string, unknown> = {
+    title,
+  };
+  const description = readString(input.body);
+  if (description.length > 0) {
+    body.body = description;
+  }
+  const labels = readStringArray(input.labels);
+  if (labels.length > 0) {
+    body.labels = labels;
+  }
+  const assignees = readStringArray(input.assignees);
+  if (assignees.length > 0) {
+    body.assignees = assignees;
+  }
+  const milestone = readString(input.milestone);
+  if (milestone.length > 0) {
+    const numericMilestone = Number(milestone);
+    if (!Number.isFinite(numericMilestone)) {
+      throw new Error("GitHub issue milestone must be a number");
+    }
+    body.milestone = Math.trunc(numericMilestone);
+  }
+
+  return body;
+}
+
+async function createGitHubIssue(context) {
+  const auth = readRecord(context.auth);
+  const input = readRecord(context.input);
+  const owner = resolveOwner(input, auth);
+  const repo = resolveRepos(input, auth)[0];
+  const pathname = `/repos/${encodePathSegment(owner)}/${encodePathSegment(repo)}/issues`;
+  const result = await requestGitHubJson(auth, pathname, {}, {
+    method: "POST",
+    body: buildCreateIssueBody(input),
+  });
+
+  return {
+    status: result.status,
+    summary: `POST ${pathname} completed successfully.`,
+    data: result.data,
   };
 }
 
@@ -636,6 +710,58 @@ const plugin: DesktopCodePlugin = {
         },
       ],
       execute: queryGitHubIssues,
+    },
+    {
+      id: "create_issue",
+      title: "Create GitHub issue",
+      description:
+        "Create an issue in a GitHub repository as executable plugin-owned code.",
+      riskLevel: "write",
+      fields: [
+        {
+          key: "owner",
+          label: "Owner or organization",
+          type: "string",
+          required: false,
+        },
+        {
+          key: "repo",
+          label: "Repository",
+          type: "string",
+          required: true,
+        },
+        {
+          key: "title",
+          label: "Title",
+          type: "string",
+          required: true,
+        },
+        {
+          key: "body",
+          label: "Body",
+          type: "string",
+          required: false,
+        },
+        {
+          key: "labels",
+          label: "Labels",
+          type: "string_array",
+          required: false,
+        },
+        {
+          key: "assignees",
+          label: "Assignees",
+          type: "string_array",
+          required: false,
+        },
+        {
+          key: "milestone",
+          label: "Milestone number",
+          type: "string",
+          required: false,
+        },
+      ],
+      execute: createGitHubIssue,
     },
   ],
   triggers: [],

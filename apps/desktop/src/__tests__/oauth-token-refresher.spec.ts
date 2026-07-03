@@ -112,7 +112,7 @@ describe('refreshSourceAccessToken', () => {
     ).resolves.toBe('stored-access-token')
   })
 
-  it('refreshes marketplace-style code plugin sources from plugin OAuth metadata', async () => {
+  it('refreshes index-installed plugin sources from plugin OAuth metadata', async () => {
     const update = vi.fn().mockResolvedValue({})
     const { runtime, executeAction } = createOAuthPluginRuntime({
       pluginId: 'github',

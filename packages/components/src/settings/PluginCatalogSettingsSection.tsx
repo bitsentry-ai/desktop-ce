@@ -1,5 +1,5 @@
-import { useEffect, useState, type ChangeEvent, type ReactNode } from "react";
-import { AlertCircle, CheckCircle2, Loader2, PlugZap, UploadCloud } from "lucide-react";
+import { useEffect, useState, type ReactNode } from "react";
+import { AlertCircle, CheckCircle2, Loader2, PlugZap } from "lucide-react";
 
 import type {
   PluginActionDefinition,
@@ -9,7 +9,6 @@ import type {
 import {
   useClearPluginStoredAuth,
   useExecutePluginAction,
-  useInstallPluginFromArchive,
   usePlugins,
   usePluginStoredAuth,
   useUpdatePluginStoredAuth,
@@ -104,21 +103,6 @@ function errorMessage(error: unknown): string {
   }
 
   return String(error);
-}
-
-function bytesToBase64(bytes: Uint8Array): string {
-  const chunkSize = 0x8000;
-  let binary = "";
-
-  for (let index = 0; index < bytes.length; index += chunkSize) {
-    binary += String.fromCharCode(...bytes.subarray(index, index + chunkSize));
-  }
-
-  return btoa(binary);
-}
-
-async function pluginArchiveFileToBase64(file: File): Promise<string> {
-  return bytesToBase64(new Uint8Array(await file.arrayBuffer()));
 }
 
 function parseFieldValue(field: PluginFieldDefinition, rawValue: string): unknown {
@@ -613,11 +597,9 @@ export function PluginCatalogSettingsSection({
   const [inputValues, setInputValues] = useState<Record<string, string>>({});
   const [validationError, setValidationError] = useState<string | null>(null);
   const [storageMessage, setStorageMessage] = useState<string | null>(null);
-  const [installMessage, setInstallMessage] = useState<string | null>(null);
   const pluginsQuery = usePlugins();
   const storedAuthQuery = usePluginStoredAuth(authLookupPluginId(selectedPluginId));
   const executeActionMutation = useExecutePluginAction();
-  const installPluginMutation = useInstallPluginFromArchive();
   const updateStoredAuthMutation = useUpdatePluginStoredAuth();
   const clearStoredAuthMutation = useClearPluginStoredAuth();
 
@@ -650,23 +632,6 @@ export function PluginCatalogSettingsSection({
         Executing...
       </>
     );
-  }
-  let installStatusIcon = <UploadCloud className="h-4 w-4" />;
-  let installStatusVariant: "default" | "destructive" = "default";
-  if (installPluginMutation.isPending) {
-    installStatusIcon = <Loader2 className="h-4 w-4 animate-spin" />;
-  } else if (installPluginMutation.isError) {
-    installStatusIcon = <AlertCircle className="h-4 w-4" />;
-    installStatusVariant = "destructive";
-  } else if (installPluginMutation.isSuccess) {
-    installStatusIcon = <CheckCircle2 className="h-4 w-4" />;
-  }
-  let installAlertTitle = "Plugin archive install";
-  let installAlertDescription =
-    installMessage ?? errorMessage(installPluginMutation.error);
-  if (installPluginMutation.isPending) {
-    installAlertTitle = "Installing plugin";
-    installAlertDescription = "Extracting the archive and loading plugin code...";
   }
   let executionResultVariant: "default" | "destructive" = "destructive";
   let executionResultIcon = <AlertCircle className="h-4 w-4" />;
@@ -763,31 +728,6 @@ export function PluginCatalogSettingsSection({
     }
   }
 
-  async function handleInstallArchive(
-    event: ChangeEvent<HTMLInputElement>,
-  ): Promise<void> {
-    const inputElement = event.currentTarget;
-    const file = inputElement.files?.[0];
-    if (file === undefined) {
-      return;
-    }
-
-    setInstallMessage(null);
-
-    try {
-      const archiveBase64 = await pluginArchiveFileToBase64(file);
-      const result = await installPluginMutation.mutateAsync({ archiveBase64 });
-      setSelectedPluginId(result.pluginId);
-      setInstallMessage(
-        `Installed ${result.descriptor.name} from ${result.extractedEntryPath}.`,
-      );
-    } catch (error) {
-      setInstallMessage(errorMessage(error));
-    } finally {
-      inputElement.value = "";
-    }
-  }
-
   async function handleExecute(): Promise<void> {
     if (selectedPlugin === null || selectedAction === null) {
       return;
@@ -837,44 +777,27 @@ export function PluginCatalogSettingsSection({
             <div className="rounded-xl border border-border bg-background/70 p-4">
               <h3 className="text-sm font-semibold text-foreground">Catalog</h3>
               <p className="mt-1 text-xs text-muted-foreground">
-                Install and run TypeScript code plugins packaged with a plugin.js entrypoint,
-                similar to how StackStorm packs bundle executable actions.
+                Inspect, configure, and run TypeScript plugins installed from the first-party
+                plugin index.
               </p>
             </div>
 
             <div className="rounded-xl border border-border bg-background/70 p-4">
               <div className="flex items-start gap-3">
                 <div className="rounded-lg border border-border bg-card p-2 text-muted-foreground">
-                  <UploadCloud className="h-4 w-4" />
+                  <PlugZap className="h-4 w-4" />
                 </div>
                 <div className="min-w-0 flex-1">
                   <h3 className="text-sm font-semibold text-foreground">
-                    Install plugin archive
+                    Install from the CLI
                   </h3>
                   <p className="mt-1 text-xs text-muted-foreground">
-                    Choose a marketplace-style .tar.gz or .tgz bundle. The desktop runtime
-                    installs the package containing plugin.js and reloads the catalog.
+                    Plugins are fetched from the first-party YAML index as single-file
+                    artifacts. Use <code>bitsentry plugin install &lt;name&gt;</code>, then
+                    return here to configure auth fields and execute actions.
                   </p>
                 </div>
               </div>
-              <Input
-                className="mt-4"
-                type="file"
-                accept=".tar,.tar.gz,.tgz,application/gzip,application/x-gzip,application/x-tar"
-                disabled={installPluginMutation.isPending}
-                onChange={(event) => {
-                  void handleInstallArchive(event);
-                }}
-              />
-              {(installMessage !== null ||
-                installPluginMutation.isPending ||
-                installPluginMutation.isError) && (
-                <Alert className="mt-4" variant={installStatusVariant}>
-                  {installStatusIcon}
-                  <AlertTitle>{installAlertTitle}</AlertTitle>
-                  <AlertDescription>{installAlertDescription}</AlertDescription>
-                </Alert>
-              )}
             </div>
 
             {pluginsQuery.isLoading && (
@@ -1209,8 +1132,8 @@ export function PluginCatalogSettingsSection({
                           agent surfaces can redact them.
                         </li>
                         <li>
-                          Installed plugin archives run as local JavaScript code, while their
-                          exported schemas keep auth and input fields visible to the host.
+                          Installed plugins run as local JavaScript code, while their exported
+                          schemas keep auth and input fields visible to the host.
                         </li>
                       </ul>
                     </div>

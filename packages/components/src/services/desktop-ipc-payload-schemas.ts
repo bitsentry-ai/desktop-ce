@@ -265,8 +265,8 @@ export function createDesktopIpcPayloadValidator(
     "plugins:clearStoredAuth": z.object({
       pluginId: z.string().min(1),
     }),
-    "plugins:installFromArchive": z.object({
-      archiveBase64: z.string().min(1),
+    "plugins:installFromArtifact": z.object({
+      artifactBase64: z.string().min(1),
       installRoot: z.string().min(1).optional(),
     }),
     "plugins:execute": z.object({

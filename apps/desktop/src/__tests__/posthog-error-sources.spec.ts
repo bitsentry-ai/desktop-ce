@@ -33,6 +33,14 @@ import {
 } from '@bitsentry-ce/core/features/plugins'
 import { createDesktopNodePluginRuntimeService } from '@bitsentry-ce/core/features/plugins/node'
 
+function asRecord(value: unknown): Record<string, unknown> {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+    return {}
+  }
+
+  return value as Record<string, unknown>
+}
+
 function getOpenExternalInvocation(urlMatcher: unknown): { command: string; args: unknown[] } {
   if (process.platform === 'darwin') {
     return { command: 'open', args: [urlMatcher] }
@@ -232,26 +240,21 @@ describe('posthog error source support', () => {
   it('routes PostHog OAuth authorize and token requests through the selected base URL', async () => {
     const runtime = createRepoPluginRuntime()
 
-    const authorizeUrl = new URL(
-      String(
-        (
-          await runtime.executeAction({
-            pluginId: 'posthog',
-            actionId: 'build_authorize_url',
-            auth: {
-              baseUrl: 'https://eu.posthog.com',
-            },
-            input: {
-              clientId: 'client-id',
-              redirectUri: 'bitsentry-desktop-ce://oauth/callback',
-              scopes: ['project:read', 'query:read'],
-              state: 'state-1',
-              codeChallenge: 'challenge-1',
-            },
-          })
-        ).data.authUrl,
-      ),
-    )
+    const authorizeResult = await runtime.executeAction({
+      pluginId: 'posthog',
+      actionId: 'build_authorize_url',
+      auth: {
+        baseUrl: 'https://eu.posthog.com',
+      },
+      input: {
+        clientId: 'client-id',
+        redirectUri: 'bitsentry-desktop-ce://oauth/callback',
+        scopes: ['project:read', 'query:read'],
+        state: 'state-1',
+        codeChallenge: 'challenge-1',
+      },
+    })
+    const authorizeUrl = new URL(String(asRecord(authorizeResult.data).authUrl))
     expect(authorizeUrl.origin).toBe('https://eu.posthog.com')
     expect(authorizeUrl.pathname).toBe('/oauth/authorize/')
     expect(authorizeUrl.searchParams.get('client_id')).toBe('client-id')
@@ -320,7 +323,7 @@ describe('posthog error source support', () => {
     expect(requestBodyText(refreshRequestInit?.body)).toContain('grant_type=refresh_token')
   })
 
-  it('starts OAuth for marketplace-style code plugin source types', async () => {
+  it('starts OAuth for index-installed plugin source types', async () => {
     const upsertSetting = vi.fn<DbClient['setting']['upsert']>().mockResolvedValue({})
     const db = {
       setting: {

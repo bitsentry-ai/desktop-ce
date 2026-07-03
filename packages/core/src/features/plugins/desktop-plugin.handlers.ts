@@ -1,7 +1,7 @@
 import type {
   DesktopPluginExecutionRequest,
   DesktopPluginFieldType,
-  DesktopPluginInstallFromArchiveRequest,
+  DesktopPluginInstallFromArtifactRequest,
 } from "./plugins.types";
 import {
   NOOP_DESKTOP_PLUGIN_STORED_AUTH_STORE,
@@ -205,9 +205,9 @@ export function createDesktopPluginHandlers(
       await storedAuthStore.clear(pluginId);
       return { success: true };
     },
-    "plugins:installFromArchive": (payload) =>
-      service.installFromArchive(
-        payload as DesktopPluginInstallFromArchiveRequest,
+    "plugins:installFromArtifact": (payload) =>
+      service.installFromArtifact(
+        payload as DesktopPluginInstallFromArtifactRequest,
       ),
     "plugins:execute": (payload) =>
       service.executeAction(payload as DesktopPluginExecutionRequest),

@@ -47,6 +47,10 @@ import { composeServices } from '../compose-services'
 import type { DesktopServices } from '../compose-services'
 import { validateIpcPayload } from '../ipc/schemas'
 import { createDesktopSettingsHandlers } from '@bitsentry-ce/core/features/settings'
+import {
+  createDesktopNodePluginRuntimeService,
+  createDesktopPluginHandlers,
+} from '@bitsentry-ce/core/features/plugins/node'
 import { createDesktopYamlRunbookHandlers as createRunbookHandlers } from '@bitsentry-ce/core/features/runbooks/desktop-runbook-handler-yaml-bindings'
 import { createDesktopStateHandlers } from '@bitsentry-ce/core/features/desktop-state/desktop-state.handlers'
 import {
@@ -85,6 +89,7 @@ import {
 } from './oauth-callback'
 import { getAutoUpdaterEnablement } from '@bitsentry-ce/core/features/updater/desktop-updater-policy'
 import { startAutoUpdater } from '@bitsentry-ce/desktop-cli/runtime/desktop-updater'
+import { LocalPluginCredentialsStore } from '@bitsentry-ce/desktop-cli/runtime/plugin-credentials-store'
 
 type UpdaterController = ReturnType<typeof startAutoUpdater> | null
 type LocalAiProviderService = InstanceType<typeof CodingAgentsProviderService>
@@ -387,10 +392,22 @@ app
 
       services = await composeServices(db)
       const desktopServices = services
+      const userDataPath = app.getPath('userData')
+      const pluginCredentialsStore = new LocalPluginCredentialsStore(userDataPath)
+      const pluginRuntime = createDesktopNodePluginRuntimeService(
+        [path.join(userDataPath, 'plugins')],
+        pluginCredentialsStore,
+      )
 
       // Register IPC handlers
       dispatcher.registerAll(
-        createDesktopErrorSourcesHandlers(db, { OauthManagerService }),
+        createDesktopErrorSourcesHandlers(db, {
+          OauthManagerService,
+          pluginRuntime,
+        }),
+      )
+      dispatcher.registerAll(
+        createDesktopPluginHandlers(pluginRuntime, pluginCredentialsStore),
       )
       dispatcher.registerAll(createDesktopSettingsHandlers(desktopServices.settingsUseCases))
       const agentLlmAdapter = createDesktopAgentLlmAdapter(db)
@@ -398,6 +415,8 @@ app
       const runbookStore = new RunbookStore(db, globalVariablesService)
       const externalSourceRunbookQueryService = new ExternalSourceRunbookQueryService(
         new SqliteErrorSourcesRepositoryAdapter(db),
+        undefined,
+        pluginRuntime,
       )
       const runbookResultStore = new SqliteRunbookResultStore(db)
       await runbookResultStore.markStaleRunningSessionsFailed()
@@ -415,6 +434,7 @@ app
         () => desktopShell.mainWindow,
         undefined,
         localAiProvider,
+        pluginRuntime,
       )
       dispatcher.registerAll(createRunbookHandlers(db, {
         executionService: runbookExecutionService,

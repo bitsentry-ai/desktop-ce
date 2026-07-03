@@ -27,9 +27,6 @@ const host: DesktopPluginCodeHostContext = {
   pluginRoot: "",
   entryPath: "",
   localPluginDirectories: [],
-  installPluginFromArchive: () => {
-    throw new Error("Not needed in plugin tests.");
-  },
   reloadPlugins: () => Promise.resolve(),
 };
 

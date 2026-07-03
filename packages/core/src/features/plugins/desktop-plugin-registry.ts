@@ -10,8 +10,8 @@ import type {
   DesktopPluginPersistedErrorSourceSetup,
   DesktopPluginErrorSourceRecord,
   DesktopCodePluginErrorSource,
-  DesktopPluginInstallFromArchiveRequest,
-  DesktopPluginInstallFromArchiveResult,
+  DesktopPluginInstallFromArtifactRequest,
+  DesktopPluginInstallFromArtifactResult,
   DesktopPluginCodeHostContext,
 } from "./plugins.types";
 import {
@@ -47,14 +47,6 @@ type PluginRuntime = {
 type LoadedPluginRuntimeContext = {
   loadedPlugin: LoadedDesktopCodePlugin;
   localPluginDirectories: string[];
-  installPluginFromArchive(input: {
-    archive: Uint8Array;
-    installRoot?: string;
-  }): Promise<{
-    pluginId: string;
-    installedPath: string;
-    extractedEntryPath: string;
-  }>;
   reloadPlugins(): Promise<void>;
 };
 
@@ -113,8 +105,6 @@ function createPluginHostContext(
     pluginRoot: context.loadedPlugin.pluginRoot,
     entryPath: context.loadedPlugin.entryPath,
     localPluginDirectories: context.localPluginDirectories,
-    installPluginFromArchive: (archiveInput) =>
-      context.installPluginFromArchive(archiveInput),
     reloadPlugins: () => context.reloadPlugins(),
   };
 }
@@ -257,11 +247,6 @@ export class DesktopPluginRegistry {
     localPlugins: LoadedDesktopCodePlugin[] = [],
     context: Omit<LoadedPluginRuntimeContext, "loadedPlugin"> = {
       localPluginDirectories: [],
-      installPluginFromArchive() {
-        return Promise.reject(
-          new Error("Plugin installation is not available in this runtime."),
-        );
-      },
       reloadPlugins() {
         return Promise.resolve();
       },
@@ -381,9 +366,9 @@ export class DesktopPluginRuntimeService {
     return this.registry.getErrorSource(pluginId)?.probeProjectIdentity ?? "id";
   }
 
-  installFromArchive(
-    request: DesktopPluginInstallFromArchiveRequest,
-  ): Promise<DesktopPluginInstallFromArchiveResult> {
+  installFromArtifact(
+    request: DesktopPluginInstallFromArtifactRequest,
+  ): Promise<DesktopPluginInstallFromArtifactResult> {
     void request;
     return Promise.reject(
       new Error("Plugin installation is not available in this runtime."),

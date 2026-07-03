@@ -27,8 +27,6 @@ import type {
   AgentSendRequest,
   AgentSessionStatus,
   AgentStartRequest,
-  PluginInstallFromArchiveInput,
-  PluginInstallFromArchiveResult,
 } from './contracts'
 import type {
   AllSettingsDto,
@@ -296,14 +294,6 @@ export function createDesktopLocalBitsentryServices({
     },
     async clearStoredAuth(pluginId: string): Promise<void> {
       await ipcInvoke('plugins:clearStoredAuth', { pluginId })
-    },
-    async installFromArchive(
-      input: PluginInstallFromArchiveInput,
-    ): Promise<PluginInstallFromArchiveResult> {
-      return ipcInvoke<PluginInstallFromArchiveResult>(
-        'plugins:installFromArchive',
-        input,
-      )
     },
     async execute(input: {
       pluginId: string

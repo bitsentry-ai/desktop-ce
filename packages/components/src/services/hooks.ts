@@ -20,8 +20,6 @@ import type {
   MagicLinkVerifyRequest,
   PluginActionExecutionResult,
   PluginDescriptor,
-  PluginInstallFromArchiveInput,
-  PluginInstallFromArchiveResult,
   ResolvedTicketsQuery,
   RunbooksServicePort,
   SyncResolutionStatusesInput,
@@ -834,28 +832,6 @@ export function useClearPluginStoredAuth() {
       queryClient.setQueryData(queryKeys.pluginStoredAuth(pluginId), {});
       void queryClient.invalidateQueries({
         queryKey: queryKeys.pluginStoredAuth(pluginId),
-      });
-    },
-  });
-}
-
-export function useInstallPluginFromArchive() {
-  const { plugins } = useBitsentryServices();
-  const port = requirePort(plugins, 'plugins');
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: (input: PluginInstallFromArchiveInput) => port.installFromArchive(input),
-    onSuccess: (result: PluginInstallFromArchiveResult) => {
-      queryClient.setQueryData(
-        queryKeys.pluginDetail(result.pluginId),
-        result.descriptor,
-      );
-      void queryClient.invalidateQueries({
-        queryKey: queryKeys.pluginsList(),
-      });
-      void queryClient.invalidateQueries({
-        queryKey: queryKeys.pluginDetail(result.pluginId),
       });
     },
   });

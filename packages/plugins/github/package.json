@@ -1,9 +1,13 @@
 {
   "name": "@bitsentry-ce/plugin-github",
   "version": "0.1.0",
-  "private": true,
+  "description": "BitSentry code plugin for GitHub repositories and issues.",
+  "license": "Apache-2.0",
   "main": "./dist/plugin.js",
   "types": "./dist/plugin.d.ts",
+  "files": [
+    "dist"
+  ],
   "exports": {
     ".": {
       "types": "./dist/plugin.d.ts",
