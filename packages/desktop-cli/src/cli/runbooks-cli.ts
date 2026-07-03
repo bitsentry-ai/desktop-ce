@@ -10,6 +10,7 @@ import {
   createDesktopNodePluginRuntimeService,
   resolveDesktopPluginDirectories,
 } from '@bitsentry-ce/core/features/plugins/node'
+import type { ErrorSourceType } from '@bitsentry-ce/core/features/error-sources'
 import type {
   DesktopPluginDescriptor,
   DesktopPluginFieldDefinition,
@@ -35,7 +36,7 @@ export interface RunbookCliExecuteInput {
     needLabel?: string
     sourceId?: string
     sourceName?: string
-    sourceType?: 'sentry' | 'wazuh' | 'posthog'
+    sourceType?: ErrorSourceType
     incidentThreadId?: string
   }
 }
