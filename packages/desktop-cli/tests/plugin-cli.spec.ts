@@ -324,6 +324,43 @@ exports.plugin = {
     ).rejects.toThrow('first-party origin https://plugins.bitsentry.ai')
   })
 
+  it('rejects remote plugin artifacts outside the first-party origin', async () => {
+    const tempRoot = await mkdtemp(path.join(tmpdir(), 'bitsentry-plugin-cli-'))
+    tempRoots.push(tempRoot)
+
+    const indexUrl = 'https://plugins.bitsentry.ai/index.yaml'
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() =>
+        Promise.resolve(
+          new Response(
+            [
+              'plugins:',
+              '  github:',
+              '    description: Test plugin from the remote first-party index.',
+              '    artifactUrl: https://example.com/github.plugin.js',
+              '',
+            ].join('\n'),
+            { status: 200 },
+          ),
+        ),
+      ),
+    )
+
+    await expect(
+      runPluginCli([
+        'plugin',
+        'install',
+        'github',
+        '--index-url',
+        indexUrl,
+        '--plugin-dir',
+        path.join(tempRoot, 'plugins'),
+        '--json',
+      ]),
+    ).rejects.toThrow('Remote plugin artifacts')
+  })
+
   it('installs one plugin from an HTTPS first-party index without bundling implementations', async () => {
     const tempRoot = await mkdtemp(path.join(tmpdir(), 'bitsentry-plugin-cli-'))
     tempRoots.push(tempRoot)

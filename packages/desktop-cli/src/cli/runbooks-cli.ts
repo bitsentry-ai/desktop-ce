@@ -787,22 +787,26 @@ function resolvePluginIndexUrl(args: ParsedArgs): string {
   const configured = getFlag(args, 'index-url') ?? process.env.BITSENTRY_PLUGIN_INDEX_URL
   if (configured !== undefined && configured.trim().length > 0 && configured !== 'true') {
     const indexUrl = configured.trim()
-    assertFirstPartyPluginIndexUrl(indexUrl)
+    assertFirstPartyRemoteUrl(indexUrl, 'indexes')
     return indexUrl
   }
 
   return DEFAULT_PLUGIN_INDEX_URL
 }
 
-function assertFirstPartyPluginIndexUrl(indexUrl: string): void {
-  if (!indexUrl.startsWith('http://') && !indexUrl.startsWith('https://')) {
+function isRemoteUrl(source: string): boolean {
+  return source.startsWith('http://') || source.startsWith('https://')
+}
+
+function assertFirstPartyRemoteUrl(source: string, label: string): void {
+  if (!isRemoteUrl(source)) {
     return
   }
 
-  const parsed = new URL(indexUrl)
+  const parsed = new URL(source)
   if (parsed.origin !== DEFAULT_PLUGIN_INDEX_ORIGIN) {
     throw new Error(
-      `Remote plugin indexes must use the first-party origin ${DEFAULT_PLUGIN_INDEX_ORIGIN}`,
+      `Remote plugin ${label} must use the first-party origin ${DEFAULT_PLUGIN_INDEX_ORIGIN}`,
     )
   }
 }
@@ -927,8 +931,13 @@ async function readPluginIndex(args: ParsedArgs): Promise<{
 }> {
   const indexUrl = resolvePluginIndexUrl(args)
   const raw = await readTextSource(indexUrl)
+  const entries = parsePluginIndex(raw)
+  for (const entry of entries) {
+    assertFirstPartyRemoteUrl(sourceRelativeUrl(indexUrl, entry.artifactUrl), 'artifacts')
+  }
+
   return {
-    entries: parsePluginIndex(raw),
+    entries,
     indexUrl,
   }
 }
