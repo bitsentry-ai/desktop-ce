@@ -103,7 +103,7 @@ describe('plugin error source provider actions', () => {
     ).toBe('query_issues')
   })
 
-  it('executes marketplace source provider actions from code plugin metadata', async () => {
+  it('executes first-party source provider actions from code plugin metadata', async () => {
     const runtime = new TestExecutablePluginRuntimeService([
       createPluginDescriptor({
         id: 'github',

@@ -17,7 +17,7 @@ function createValidator() {
 }
 
 describe('desktop IPC payload validation', () => {
-  it('accepts marketplace source types for error source probes', () => {
+  it('accepts first-party plugin source types for error source probes', () => {
     const validate = createValidator()
 
     expect(

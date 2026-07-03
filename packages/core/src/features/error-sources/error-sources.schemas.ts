@@ -81,9 +81,8 @@ export const testErrorSourceConnectionResultSchema = z.object({
  * against a provider's listOrganizations / listProjects endpoints so the UI
  * can render org/project pickers without forcing the user to type slugs.
  *
- * The source type is intentionally open-ended: installed code plugins decide
- * whether probing is supported by declaring listOrganizations/listProjects
- * provider actions.
+ * The source type is owned by the installed first-party code plugin. Probing is
+ * supported when that plugin declares listOrganizations/listProjects actions.
  */
 export const probeErrorSourceSchema = z.object({
   pluginId: z.string().trim().min(1),

@@ -171,7 +171,7 @@ describe('posthog error source support', () => {
     })
   })
 
-  it('accepts marketplace plugin create inputs in the shared schema', () => {
+  it('accepts first-party code-plugin create inputs in the shared schema', () => {
     expect(
       createErrorSourceSchema.parse({
         pluginId: 'github',
