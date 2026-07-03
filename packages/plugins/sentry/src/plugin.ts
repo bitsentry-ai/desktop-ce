@@ -57,7 +57,12 @@ function readApiBase(auth) {
     return SENTRY_API_BASE;
   }
 
-  const normalized = configured.replace(/\/+$/, "");
+  const parsed = new URL(configured);
+  if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
+    throw new Error("Sentry API base URL must use http:// or https://");
+  }
+
+  const normalized = `${parsed.origin}${parsed.pathname.replace(/\/+$/, "")}`;
   if (normalized.endsWith("/api/0")) {
     return normalized;
   }

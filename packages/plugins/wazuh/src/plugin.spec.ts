@@ -123,4 +123,22 @@ describe("Wazuh plugin package", () => {
       },
     });
   });
+
+  it("rejects non-HTTP Wazuh index URLs before sending basic credentials", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(
+      action("search_alerts").execute({
+        ...context("search_alerts", {
+          indexPattern: "wazuh-alerts-*",
+        }),
+        auth: {
+          indexUrl: "file:///tmp/wazuh",
+          indexPassword: "wazuh-secret",
+        },
+      }),
+    ).rejects.toThrow("Wazuh index URL must use http:// or https://");
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
 });

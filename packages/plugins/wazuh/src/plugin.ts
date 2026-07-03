@@ -23,6 +23,15 @@ function readRecordOrEmpty(value): Record<string, unknown> {
   return readRecord(value) ?? {};
 }
 
+function resolveWazuhIndexUrl(value) {
+  const parsed = new URL(requireString(value, "indexUrl"));
+  if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
+    throw new Error("Wazuh index URL must use http:// or https://");
+  }
+
+  return `${parsed.origin}${parsed.pathname.replace(/\/+$/, "")}`;
+}
+
 function readStringArray(value) {
   if (!Array.isArray(value)) {
     return [];
@@ -324,7 +333,7 @@ function formatOutput(input) {
 }
 
 async function searchAlerts({ auth, input }) {
-  const indexUrl = requireString(auth.indexUrl, "indexUrl").replace(/\/+$/, "");
+  const indexUrl = resolveWazuhIndexUrl(auth.indexUrl);
   const indexUsername = readString(auth.indexUsername, "admin");
   const indexPassword = requireString(auth.indexPassword, "indexPassword");
   const indexPattern = readString(input.indexPattern, "wazuh-alerts-*");
