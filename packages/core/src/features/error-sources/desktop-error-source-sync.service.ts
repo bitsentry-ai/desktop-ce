@@ -66,6 +66,19 @@ type DiagnosisEventContext = Pick<
   | 'serverName'
 >
 
+interface CustomPluginSyncCapabilities {
+  issueAction: 'listIssues' | 'queryIssues'
+  hasListIssueEvents: boolean
+}
+
+interface CustomPluginIssueContext {
+  issue: ErrorIssue
+  externalIssueId: string
+  title: string
+  tags: Record<string, unknown>
+  lastSeen: string
+}
+
 const MAX_GENERIC_PLUGIN_ISSUE_PAGES = 10
 const MAX_GENERIC_PLUGIN_ISSUES_PER_PAGE = 100
 const MAX_GENERIC_PLUGIN_EVENT_PAGES_PER_ISSUE = 10
@@ -934,10 +947,10 @@ export class ErrorSourceSyncService {
     }
   }
 
-  private async syncCustomPluginSource(
+  private readCustomPluginSyncCapabilities(
     source: ErrorSource,
-  ): Promise<{ sourceId: string; syncedIssues: number; syncedEvents: number }> {
-    const pluginId = readSourcePluginId(source)
+    pluginId: string,
+  ): CustomPluginSyncCapabilities {
     const plugin = this.pluginRuntime.getPlugin(pluginId)
     if (plugin?.metadata?.errorSource?.sourceType !== source.sourceType) {
       throw new Error(
@@ -952,11 +965,357 @@ export class ErrorSourceSyncService {
         `Error source plugin "${pluginId}" does not declare listIssues or queryIssues`,
       )
     }
-    const hasListIssueEvents = hasErrorSourceProviderAction(
-      plugin,
-      'listIssueEvents',
-    )
 
+    let issueAction: 'listIssues' | 'queryIssues' = 'queryIssues'
+    if (hasListIssues) {
+      issueAction = 'listIssues'
+    }
+
+    return {
+      issueAction,
+      hasListIssueEvents: hasErrorSourceProviderAction(plugin, 'listIssueEvents'),
+    }
+  }
+
+  private async fetchCustomPluginIssuePage(args: {
+    source: ErrorSource
+    pluginId: string
+    auth: Record<string, unknown>
+    issueAction: 'listIssues' | 'queryIssues'
+    cursor: string | undefined
+    since: string | undefined
+    until: string
+    pageCount: number
+  }) {
+    const pageStartMs = Date.now()
+    const result = await this.pluginRuntime.executeAction({
+      pluginId: args.pluginId,
+      actionId: resolveErrorSourceProviderActionId({
+        runtime: this.pluginRuntime,
+        pluginId: args.pluginId,
+        sourceType: args.source.sourceType,
+        action: args.issueAction,
+      }),
+      auth: args.auth,
+      input: buildGenericPluginSyncInput({
+        source: args.source,
+        query: '*',
+        limit: MAX_GENERIC_PLUGIN_ISSUES_PER_PAGE,
+        cursor: args.cursor,
+        since: args.since,
+        until: args.until,
+      }),
+    })
+
+    const page = readPluginIssueBatch(result.data)
+    if (page === null) {
+      throw new Error(
+        `Plugin "${args.pluginId}" returned an invalid issue batch for source sync`,
+      )
+    }
+
+    log.info(
+      `[sync] id=${args.source.id} pluginListIssues page=${String(args.pageCount)} returned=${String(page.issues.length)} hasMore=${String(page.hasMore && page.issues.length > 0)} elapsedMs=${formatElapsedMs(pageStartMs)}`,
+    )
+    return page
+  }
+
+  private async upsertCustomPluginIssue(
+    source: ErrorSource,
+    issueRecord: ExternalPayloadRecord,
+    syncStartedAt: string,
+  ): Promise<CustomPluginIssueContext | null> {
+    const externalIssueId = readPluginExternalId(issueRecord)
+    if (externalIssueId === null) {
+      return null
+    }
+
+    const title =
+      readOptionalString(issueRecord.title) ??
+      readOptionalString(issueRecord.message) ??
+      readOptionalString(issueRecord.name) ??
+      'Untitled issue'
+    const level = readOptionalString(issueRecord.level) ?? 'error'
+    if (!shouldIngestByThreshold(level, source.logLevelThreshold)) {
+      return null
+    }
+
+    const firstSeen = readPluginIssueTimestamp(issueRecord, syncStartedAt)
+    const lastSeen = toIsoOrNow(
+      issueRecord.lastSeen ??
+        issueRecord.last_seen ??
+        issueRecord.timestamp ??
+        issueRecord.updatedAt ??
+        firstSeen,
+    )
+    const tags = parseIssueTags(issueRecord.tags)
+    const issue = await this.issuesRepository.upsert({
+      sourceId: source.id,
+      externalIssueId,
+      externalShortId:
+        readOptionalString(issueRecord.shortId) ??
+        readOptionalString(issueRecord.externalShortId),
+      title,
+      culprit: readOptionalString(issueRecord.culprit),
+      type: readOptionalString(issueRecord.type),
+      metadata: readRecord(issueRecord.metadata),
+      projectIdentifier: readPluginProjectIdentifier(issueRecord),
+      level,
+      status:
+        readOptionalString(issueRecord.status) ??
+        readOptionalString(issueRecord.state) ??
+        'unresolved',
+      isUnhandled: readPluginBoolean(issueRecord.isUnhandled),
+      firstSeen,
+      lastSeen,
+      eventCount: readPluginNumericCount(
+        issueRecord.eventCount ?? issueRecord.count,
+      ) ?? 1,
+      userCount: readPluginNumericCount(issueRecord.userCount),
+      tags,
+      environment:
+        readOptionalString(issueRecord.environment) ??
+        extractTagValue(tags, 'environment'),
+      release: readPluginRelease(issueRecord) ?? extractTagValue(tags, 'release'),
+      platform: readOptionalString(issueRecord.platform) ?? source.sourceType,
+      additionalMetadata: issueRecord,
+    })
+
+    return { issue, externalIssueId, title, tags, lastSeen }
+  }
+
+  private async upsertListedCustomPluginEvent(args: {
+    source: ErrorSource
+    issue: ErrorIssue
+    eventRecord: ExternalPayloadRecord
+    externalIssueId: string
+    title: string
+    lastSeen: string
+    syncedEvents: number
+  }): Promise<boolean> {
+    const eventLevel =
+      readOptionalString(args.eventRecord.level) ?? args.issue.level
+    if (!shouldIngestByThreshold(eventLevel, args.source.logLevelThreshold)) {
+      return false
+    }
+
+    const externalEventId =
+      readPluginExternalId(args.eventRecord) ??
+      `${args.externalIssueId}:event:${String(args.syncedEvents + 1)}`
+    const parsedEventTags = parseIssueTags(args.eventRecord.tags)
+    const exception = extractException(args.eventRecord)
+    const breadcrumbs = extractBreadcrumbs(args.eventRecord)
+    const contexts = readRecord(args.eventRecord.contexts)
+    const trace = readRecord(contexts?.trace)
+    const contextsWithBreadcrumbs = mergeContextsWithBreadcrumbs(contexts, breadcrumbs)
+    const eventTimestamp = readPluginEventTimestamp(args.eventRecord, args.lastSeen)
+    const message =
+      readOptionalString(args.eventRecord.message) ??
+      readOptionalString(args.eventRecord.title) ??
+      readOptionalString(args.eventRecord.name) ??
+      readOptionalString(args.eventRecord.culprit) ??
+      args.title
+    const environment =
+      readOptionalString(args.eventRecord.environment) ??
+      extractTagValue(parsedEventTags, 'environment') ??
+      args.issue.environment
+    const release =
+      readPluginRelease(args.eventRecord) ??
+      extractTagValue(parsedEventTags, 'release') ??
+      args.issue.release
+    const serverName =
+      readOptionalString(args.eventRecord.serverName) ??
+      readOptionalString(readRecord(args.eventRecord.host)?.name) ??
+      readOptionalString(args.eventRecord.hostname)
+    const exceptionType =
+      exception.exceptionType ?? readOptionalString(args.eventRecord.type)
+    const exceptionValue =
+      exception.exceptionValue ?? readOptionalString(args.eventRecord.value)
+
+    await this.eventsRepository.upsert({
+      sourceId: args.source.id,
+      issueId: args.issue.id,
+      externalEventId,
+      timestamp: eventTimestamp,
+      message,
+      exceptionType,
+      exceptionValue,
+      exceptionMechanism:
+        exception.mechanism ?? readRecord(args.eventRecord.mechanism),
+      stacktrace: exception.stacktrace ?? readRecord(args.eventRecord.stacktrace),
+      inAppFrames:
+        exception.inAppFrames ?? readRecordArray(args.eventRecord.inAppFrames),
+      tags: parsedEventTags,
+      contexts: contextsWithBreadcrumbs,
+      userContext: readRecord(args.eventRecord.user),
+      requestContext: readRecord(args.eventRecord.request),
+      environment,
+      release,
+      serverName,
+      traceId:
+        readOptionalString(trace?.trace_id ?? trace?.traceId) ??
+        readOptionalString(args.eventRecord.traceId),
+      requestId:
+        readOptionalString(trace?.span_id ?? trace?.spanId) ??
+        readOptionalString(args.eventRecord.requestId),
+      transactionName:
+        readOptionalString(args.eventRecord.transaction) ??
+        readOptionalString(args.eventRecord.transactionName),
+      additionalMetadata: args.eventRecord,
+    })
+    await this.projectEventToDiagnosis(args.source, args.issue, {
+      id: externalEventId,
+      externalEventId,
+      timestamp: eventTimestamp,
+      message,
+      exceptionType,
+      exceptionValue,
+      environment,
+      serverName,
+    })
+    return true
+  }
+
+  private async syncListedCustomPluginIssueEvents(args: {
+    source: ErrorSource
+    pluginId: string
+    auth: Record<string, unknown>
+    issueContext: CustomPluginIssueContext
+    since: string | undefined
+    until: string
+  }): Promise<number> {
+    let syncedEvents = 0
+    let eventCursor: string | undefined
+    let eventPageCount = 0
+    let eventsHasMore = true
+
+    while (
+      eventsHasMore &&
+      eventPageCount < MAX_GENERIC_PLUGIN_EVENT_PAGES_PER_ISSUE
+    ) {
+      eventPageCount += 1
+      const eventPageStartMs = Date.now()
+      const eventResult = await this.pluginRuntime.executeAction({
+        pluginId: args.pluginId,
+        actionId: resolveErrorSourceProviderActionId({
+          runtime: this.pluginRuntime,
+          pluginId: args.pluginId,
+          sourceType: args.source.sourceType,
+          action: 'listIssueEvents',
+        }),
+        auth: args.auth,
+        input: {
+          ...buildGenericPluginSyncInput({
+            source: args.source,
+            query: '*',
+            limit: MAX_GENERIC_PLUGIN_ISSUES_PER_PAGE,
+            since: args.since,
+            until: args.until,
+          }),
+          issueId: args.issueContext.externalIssueId,
+          cursor: eventCursor,
+        },
+      })
+      const eventPage = readPluginEventBatch(eventResult.data)
+      if (eventPage === null) {
+        throw new Error(
+          `Plugin "${args.pluginId}" returned an invalid event batch for source sync`,
+        )
+      }
+
+      eventsHasMore = eventPage.hasMore && eventPage.events.length > 0
+      eventCursor = eventPage.nextCursor
+      log.info(
+        `[sync] id=${args.source.id} pluginListIssueEvents issue=${args.issueContext.externalIssueId} page=${String(eventPageCount)} returned=${String(eventPage.events.length)} hasMore=${String(eventsHasMore)} elapsedMs=${formatElapsedMs(eventPageStartMs)}`,
+      )
+
+      for (const eventRecord of eventPage.events) {
+        const didSync = await this.upsertListedCustomPluginEvent({
+          source: args.source,
+          issue: args.issueContext.issue,
+          eventRecord,
+          externalIssueId: args.issueContext.externalIssueId,
+          title: args.issueContext.title,
+          lastSeen: args.issueContext.lastSeen,
+          syncedEvents,
+        })
+        if (didSync) {
+          syncedEvents += 1
+        }
+      }
+
+      if (
+        eventPage.nextCursor === undefined &&
+        eventPage.events.length < MAX_GENERIC_PLUGIN_ISSUES_PER_PAGE
+      ) {
+        eventsHasMore = false
+      }
+    }
+
+    return syncedEvents
+  }
+
+  private async upsertSyntheticCustomPluginEvent(
+    source: ErrorSource,
+    issueContext: CustomPluginIssueContext,
+    issueRecord: ExternalPayloadRecord,
+  ): Promise<void> {
+    const syntheticEventId =
+      readOptionalString(issueRecord.latestEventId) ??
+      readOptionalString(issueRecord.eventId) ??
+      `${issueContext.externalIssueId}:latest`
+    const syntheticMessage =
+      readOptionalString(issueRecord.message) ??
+      readOptionalString(issueRecord.culprit) ??
+      issueContext.title
+    const serverName =
+      readOptionalString(issueRecord.serverName) ??
+      readOptionalString(readRecord(issueRecord.host)?.name) ??
+      readOptionalString(issueRecord.hostname)
+    const environment =
+      readOptionalString(issueRecord.environment) ??
+      extractTagValue(issueContext.tags, 'environment')
+
+    await this.eventsRepository.upsert({
+      sourceId: source.id,
+      issueId: issueContext.issue.id,
+      externalEventId: syntheticEventId,
+      timestamp: issueContext.lastSeen,
+      message: syntheticMessage,
+      exceptionType: readOptionalString(issueRecord.type),
+      exceptionValue: readOptionalString(issueRecord.value),
+      exceptionMechanism: null,
+      stacktrace: readRecord(issueRecord.stacktrace),
+      inAppFrames: readRecordArray(issueRecord.inAppFrames),
+      tags: issueContext.tags,
+      contexts: readRecord(issueRecord.contexts),
+      userContext: readRecord(issueRecord.user),
+      requestContext: readRecord(issueRecord.request),
+      environment,
+      release: readPluginRelease(issueRecord),
+      serverName,
+      traceId: readOptionalString(issueRecord.traceId),
+      requestId: readOptionalString(issueRecord.requestId),
+      transactionName: readOptionalString(issueRecord.transactionName),
+      additionalMetadata: issueRecord,
+    })
+    await this.projectEventToDiagnosis(source, issueContext.issue, {
+      id: syntheticEventId,
+      externalEventId: syntheticEventId,
+      timestamp: issueContext.lastSeen,
+      message: syntheticMessage,
+      exceptionType: readOptionalString(issueRecord.type),
+      exceptionValue: readOptionalString(issueRecord.value),
+      environment,
+      serverName,
+    })
+  }
+
+  private async syncCustomPluginSource(
+    source: ErrorSource,
+  ): Promise<{ sourceId: string; syncedIssues: number; syncedEvents: number }> {
+    const pluginId = readSourcePluginId(source)
+    const capabilities = this.readCustomPluginSyncCapabilities(source, pluginId)
     const auth = await buildPluginAuthFromSource(source, this.pluginRuntime)
     const syncStartedAt = new Date().toISOString()
     const since = source.lastSyncAt ?? undefined
@@ -969,296 +1328,42 @@ export class ErrorSourceSyncService {
 
     while (hasMore && pageCount < MAX_GENERIC_PLUGIN_ISSUE_PAGES) {
       pageCount += 1
-      const pageStartMs = Date.now()
-      let action: 'listIssues' | 'queryIssues' = 'queryIssues'
-      if (hasListIssues) {
-        action = 'listIssues'
-      }
-      const result = await this.pluginRuntime.executeAction({
+      const page = await this.fetchCustomPluginIssuePage({
+        source,
         pluginId,
-        actionId: resolveErrorSourceProviderActionId({
-          runtime: this.pluginRuntime,
-          pluginId,
-          sourceType: source.sourceType,
-          action,
-        }),
         auth,
-        input: buildGenericPluginSyncInput({
-          source,
-          query: '*',
-          limit: MAX_GENERIC_PLUGIN_ISSUES_PER_PAGE,
-          cursor,
-          since,
-          until,
-        }),
+        issueAction: capabilities.issueAction,
+        cursor,
+        since,
+        until,
+        pageCount,
       })
-
-      const page = readPluginIssueBatch(result.data)
-      if (page === null) {
-        throw new Error(
-          `Plugin "${pluginId}" returned an invalid issue batch for source sync`,
-        )
-      }
-
       hasMore = page.hasMore && page.issues.length > 0
       cursor = page.nextCursor
-      log.info(
-        `[sync] id=${source.id} pluginListIssues page=${String(pageCount)} returned=${String(page.issues.length)} hasMore=${String(hasMore)} elapsedMs=${formatElapsedMs(pageStartMs)}`,
-      )
 
       for (const issueRecord of page.issues) {
-        const externalIssueId = readPluginExternalId(issueRecord)
-        if (externalIssueId === null) {
-          continue
-        }
-
-        const title =
-          readOptionalString(issueRecord.title) ??
-          readOptionalString(issueRecord.message) ??
-          readOptionalString(issueRecord.name) ??
-          'Untitled issue'
-        const level = readOptionalString(issueRecord.level) ?? 'error'
-        if (!shouldIngestByThreshold(level, source.logLevelThreshold)) {
-          continue
-        }
-
-        const firstSeen = readPluginIssueTimestamp(issueRecord, syncStartedAt)
-        const lastSeen = toIsoOrNow(
-          issueRecord.lastSeen ??
-            issueRecord.last_seen ??
-            issueRecord.timestamp ??
-            issueRecord.updatedAt ??
-            firstSeen,
+        const issueContext = await this.upsertCustomPluginIssue(
+          source,
+          issueRecord,
+          syncStartedAt,
         )
-        const tags = parseIssueTags(issueRecord.tags)
-        const issue = await this.issuesRepository.upsert({
-          sourceId: source.id,
-          externalIssueId,
-          externalShortId:
-            readOptionalString(issueRecord.shortId) ??
-            readOptionalString(issueRecord.externalShortId),
-          title,
-          culprit: readOptionalString(issueRecord.culprit),
-          type: readOptionalString(issueRecord.type),
-          metadata: readRecord(issueRecord.metadata),
-          projectIdentifier: readPluginProjectIdentifier(issueRecord),
-          level,
-          status:
-            readOptionalString(issueRecord.status) ??
-            readOptionalString(issueRecord.state) ??
-            'unresolved',
-          isUnhandled: readPluginBoolean(issueRecord.isUnhandled),
-          firstSeen,
-          lastSeen,
-          eventCount: readPluginNumericCount(
-            issueRecord.eventCount ?? issueRecord.count,
-          ) ?? 1,
-          userCount: readPluginNumericCount(issueRecord.userCount),
-          tags,
-          environment:
-            readOptionalString(issueRecord.environment) ??
-            extractTagValue(tags, 'environment'),
-          release: readPluginRelease(issueRecord) ?? extractTagValue(tags, 'release'),
-          platform: readOptionalString(issueRecord.platform) ?? source.sourceType,
-          additionalMetadata: issueRecord,
-        })
+        if (issueContext === null) {
+          continue
+        }
         syncedIssues += 1
 
-        if (hasListIssueEvents) {
-          let eventCursor: string | undefined
-          let eventPageCount = 0
-          let eventsHasMore = true
-
-          while (
-            eventsHasMore &&
-            eventPageCount < MAX_GENERIC_PLUGIN_EVENT_PAGES_PER_ISSUE
-          ) {
-            eventPageCount += 1
-            const eventPageStartMs = Date.now()
-            const eventResult = await this.pluginRuntime.executeAction({
-              pluginId,
-              actionId: resolveErrorSourceProviderActionId({
-                runtime: this.pluginRuntime,
-                pluginId,
-                sourceType: source.sourceType,
-                action: 'listIssueEvents',
-              }),
-              auth,
-              input: {
-                ...buildGenericPluginSyncInput({
-                  source,
-                  query: '*',
-                  limit: MAX_GENERIC_PLUGIN_ISSUES_PER_PAGE,
-                  since,
-                  until,
-                }),
-                issueId: externalIssueId,
-                cursor: eventCursor,
-              },
-            })
-            const eventPage = readPluginEventBatch(eventResult.data)
-            if (eventPage === null) {
-              throw new Error(
-                `Plugin "${pluginId}" returned an invalid event batch for source sync`,
-              )
-            }
-
-            eventsHasMore = eventPage.hasMore && eventPage.events.length > 0
-            eventCursor = eventPage.nextCursor
-            log.info(
-              `[sync] id=${source.id} pluginListIssueEvents issue=${externalIssueId} page=${String(eventPageCount)} returned=${String(eventPage.events.length)} hasMore=${String(eventsHasMore)} elapsedMs=${formatElapsedMs(eventPageStartMs)}`,
-            )
-
-            for (const eventRecord of eventPage.events) {
-              const externalEventId =
-                readPluginExternalId(eventRecord) ??
-                `${externalIssueId}:event:${String(syncedEvents + 1)}`
-              const eventLevel =
-                readOptionalString(eventRecord.level) ?? issue.level
-              if (!shouldIngestByThreshold(eventLevel, source.logLevelThreshold)) {
-                continue
-              }
-
-              const parsedEventTags = parseIssueTags(eventRecord.tags)
-              const exception = extractException(eventRecord)
-              const breadcrumbs = extractBreadcrumbs(eventRecord)
-              const contexts = readRecord(eventRecord.contexts)
-              const trace = readRecord(contexts?.trace)
-              const contextsWithBreadcrumbs = mergeContextsWithBreadcrumbs(contexts, breadcrumbs)
-              const eventTimestamp = readPluginEventTimestamp(eventRecord, lastSeen)
-              const message =
-                readOptionalString(eventRecord.message) ??
-                readOptionalString(eventRecord.title) ??
-                readOptionalString(eventRecord.name) ??
-                readOptionalString(eventRecord.culprit) ??
-                title
-              const environment =
-                readOptionalString(eventRecord.environment) ??
-                extractTagValue(parsedEventTags, 'environment') ??
-                issue.environment
-              const release =
-                readPluginRelease(eventRecord) ??
-                extractTagValue(parsedEventTags, 'release') ??
-                issue.release
-              const serverName =
-                readOptionalString(eventRecord.serverName) ??
-                readOptionalString(readRecord(eventRecord.host)?.name) ??
-                readOptionalString(eventRecord.hostname)
-
-              await this.eventsRepository.upsert({
-                sourceId: source.id,
-                issueId: issue.id,
-                externalEventId,
-                timestamp: eventTimestamp,
-                message,
-                exceptionType:
-                  exception.exceptionType ??
-                  readOptionalString(eventRecord.type),
-                exceptionValue:
-                  exception.exceptionValue ??
-                  readOptionalString(eventRecord.value),
-                exceptionMechanism:
-                  exception.mechanism ??
-                  readRecord(eventRecord.mechanism),
-                stacktrace:
-                  exception.stacktrace ??
-                  readRecord(eventRecord.stacktrace),
-                inAppFrames:
-                  exception.inAppFrames ??
-                  readRecordArray(eventRecord.inAppFrames),
-                tags: parsedEventTags,
-                contexts: contextsWithBreadcrumbs,
-                userContext: readRecord(eventRecord.user),
-                requestContext: readRecord(eventRecord.request),
-                environment,
-                release,
-                serverName,
-                traceId:
-                  readOptionalString(trace?.trace_id ?? trace?.traceId) ??
-                  readOptionalString(eventRecord.traceId),
-                requestId:
-                  readOptionalString(trace?.span_id ?? trace?.spanId) ??
-                  readOptionalString(eventRecord.requestId),
-                transactionName:
-                  readOptionalString(eventRecord.transaction) ??
-                  readOptionalString(eventRecord.transactionName),
-                additionalMetadata: eventRecord,
-              })
-              syncedEvents += 1
-              await this.projectEventToDiagnosis(source, issue, {
-                id: externalEventId,
-                externalEventId,
-                timestamp: eventTimestamp,
-                message,
-                exceptionType:
-                  exception.exceptionType ??
-                  readOptionalString(eventRecord.type),
-                exceptionValue:
-                  exception.exceptionValue ??
-                  readOptionalString(eventRecord.value),
-                environment,
-                serverName,
-              })
-            }
-
-            if (
-              eventPage.nextCursor === undefined &&
-              eventPage.events.length < MAX_GENERIC_PLUGIN_ISSUES_PER_PAGE
-            ) {
-              eventsHasMore = false
-            }
-          }
+        if (capabilities.hasListIssueEvents) {
+          syncedEvents += await this.syncListedCustomPluginIssueEvents({
+            source,
+            pluginId,
+            auth,
+            issueContext,
+            since,
+            until,
+          })
         } else {
-          const syntheticEventId =
-            readOptionalString(issueRecord.latestEventId) ??
-            readOptionalString(issueRecord.eventId) ??
-            `${externalIssueId}:latest`
-          const syntheticMessage =
-            readOptionalString(issueRecord.message) ??
-            readOptionalString(issueRecord.culprit) ??
-            title
-          const serverName =
-            readOptionalString(issueRecord.serverName) ??
-            readOptionalString(readRecord(issueRecord.host)?.name) ??
-            readOptionalString(issueRecord.hostname)
-          const environment =
-            readOptionalString(issueRecord.environment) ??
-            extractTagValue(tags, 'environment')
-
-          await this.eventsRepository.upsert({
-            sourceId: source.id,
-            issueId: issue.id,
-            externalEventId: syntheticEventId,
-            timestamp: lastSeen,
-            message: syntheticMessage,
-            exceptionType: readOptionalString(issueRecord.type),
-            exceptionValue: readOptionalString(issueRecord.value),
-            exceptionMechanism: null,
-            stacktrace: readRecord(issueRecord.stacktrace),
-            inAppFrames: readRecordArray(issueRecord.inAppFrames),
-            tags,
-            contexts: readRecord(issueRecord.contexts),
-            userContext: readRecord(issueRecord.user),
-            requestContext: readRecord(issueRecord.request),
-            environment,
-            release: readPluginRelease(issueRecord),
-            serverName,
-            traceId: readOptionalString(issueRecord.traceId),
-            requestId: readOptionalString(issueRecord.requestId),
-            transactionName: readOptionalString(issueRecord.transactionName),
-            additionalMetadata: issueRecord,
-          })
+          await this.upsertSyntheticCustomPluginEvent(source, issueContext, issueRecord)
           syncedEvents += 1
-          await this.projectEventToDiagnosis(source, issue, {
-            id: syntheticEventId,
-            externalEventId: syntheticEventId,
-            timestamp: lastSeen,
-            message: syntheticMessage,
-            exceptionType: readOptionalString(issueRecord.type),
-            exceptionValue: readOptionalString(issueRecord.value),
-            environment,
-            serverName,
-          })
         }
       }
 

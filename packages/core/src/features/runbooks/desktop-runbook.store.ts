@@ -870,6 +870,102 @@ function copySharedRunbookActionFields(
   }
 }
 
+function sanitizeShellRunbookAction(
+  target: DesktopRunbookActionRecord,
+  action: DesktopRunbookActionRecord,
+): DesktopRunbookActionRecord {
+  if (typeof action.command === "string") {
+    target.command = action.command;
+  }
+  return target;
+}
+
+function sanitizeLlmRunbookAction(
+  target: DesktopRunbookActionRecord,
+  action: DesktopRunbookActionRecord,
+): DesktopRunbookActionRecord {
+  if (typeof action.prompt === "string") {
+    target.prompt = action.prompt;
+  }
+  if (typeof action.llmProviderKey === "string") {
+    target.llmProviderKey = action.llmProviderKey;
+  }
+  if (typeof action.llmModel === "string") {
+    target.llmModel = action.llmModel;
+  }
+  return target;
+}
+
+function sanitizeHttpRunbookAction(
+  target: DesktopRunbookActionRecord,
+  action: DesktopRunbookActionRecord,
+): DesktopRunbookActionRecord {
+  if (typeof action.url === "string") {
+    target.url = action.url;
+  }
+  if (action.method !== undefined) {
+    target.method = action.method;
+  }
+  if (action.headers !== undefined && action.headers.length > 0) {
+    target.headers = action.headers;
+  }
+  if (typeof action.body === "string") {
+    target.body = action.body;
+  }
+  return target;
+}
+
+function sanitizePluginRunbookAction(
+  target: DesktopRunbookActionRecord,
+  action: DesktopRunbookActionRecord,
+): DesktopRunbookActionRecord {
+  if (typeof action.pluginId === "string") {
+    target.pluginId = action.pluginId;
+  }
+  if (typeof action.pluginActionId === "string") {
+    target.pluginActionId = action.pluginActionId;
+  }
+  if (typeof action.pluginInput === "string") {
+    target.pluginInput = action.pluginInput;
+  }
+  if (typeof action.pluginAuth === "string") {
+    target.pluginAuth = action.pluginAuth;
+  }
+  return target;
+}
+
+function sanitizeExternalSourceRunbookAction(
+  target: DesktopRunbookActionRecord,
+  action: DesktopRunbookActionRecord,
+): DesktopRunbookActionRecord {
+  if (typeof action.query === "string") {
+    target.query = action.query;
+  }
+  if (typeof action.sourceId === "string") {
+    target.sourceId = action.sourceId;
+  }
+  return target;
+}
+
+function sanitizeTelemetryRunbookAction(
+  target: DesktopRunbookActionRecord,
+  action: DesktopRunbookActionRecord,
+): DesktopRunbookActionRecord {
+  if (typeof action.body === "string") {
+    target.body = action.body;
+  }
+  if (typeof action.query === "string") {
+    target.query = action.query;
+  }
+  if (typeof action.sourceId === "string") {
+    target.sourceId = action.sourceId;
+  }
+  if (action.telemetryConfig !== undefined) {
+    target.telemetryConfig = action.telemetryConfig;
+  }
+  return target;
+}
+
 function sanitizeRunbookAction(
   action: DesktopRunbookActionRecord,
 ): DesktopRunbookActionRecord {
@@ -881,83 +977,23 @@ function sanitizeRunbookAction(
   copySharedRunbookActionFields(sanitized, action);
 
   switch (action.type) {
-    case "shell": {
-      if (typeof action.command === "string") {
-        sanitized.command = action.command;
-      }
-      return sanitized;
-    }
-    case "llm": {
-      if (typeof action.prompt === "string") {
-        sanitized.prompt = action.prompt;
-      }
-      if (typeof action.llmProviderKey === "string") {
-        sanitized.llmProviderKey = action.llmProviderKey;
-      }
-      if (typeof action.llmModel === "string") {
-        sanitized.llmModel = action.llmModel;
-      }
-      return sanitized;
-    }
-    case "http": {
-      if (typeof action.url === "string") {
-        sanitized.url = action.url;
-      }
-      if (action.method !== undefined) {
-        sanitized.method = action.method;
-      }
-      if (action.headers !== undefined && action.headers.length > 0) {
-        sanitized.headers = action.headers;
-      }
-      if (typeof action.body === "string") {
-        sanitized.body = action.body;
-      }
-      return sanitized;
-    }
-    case "plugin": {
-      if (typeof action.pluginId === "string") {
-        sanitized.pluginId = action.pluginId;
-      }
-      if (typeof action.pluginActionId === "string") {
-        sanitized.pluginActionId = action.pluginActionId;
-      }
-      if (typeof action.pluginInput === "string") {
-        sanitized.pluginInput = action.pluginInput;
-      }
-      if (typeof action.pluginAuth === "string") {
-        sanitized.pluginAuth = action.pluginAuth;
-      }
-      return sanitized;
-    }
-    case "external_source": {
-      if (typeof action.query === "string") {
-        sanitized.query = action.query;
-      }
-      if (typeof action.sourceId === "string") {
-        sanitized.sourceId = action.sourceId;
-      }
-      return sanitized;
-    }
+    case "shell":
+      return sanitizeShellRunbookAction(sanitized, action);
+    case "llm":
+      return sanitizeLlmRunbookAction(sanitized, action);
+    case "http":
+      return sanitizeHttpRunbookAction(sanitized, action);
+    case "plugin":
+      return sanitizePluginRunbookAction(sanitized, action);
+    case "external_source":
+      return sanitizeExternalSourceRunbookAction(sanitized, action);
     case "telemetry_existing_entry":
     case "data_source_query":
     case "telemetry_ingest":
     case "diagnosis_diagnose":
     case "diagnosis_verify":
-    case "diagnosis_recommend": {
-      if (typeof action.body === "string") {
-        sanitized.body = action.body;
-      }
-      if (typeof action.query === "string") {
-        sanitized.query = action.query;
-      }
-      if (typeof action.sourceId === "string") {
-        sanitized.sourceId = action.sourceId;
-      }
-      if (action.telemetryConfig !== undefined) {
-        sanitized.telemetryConfig = action.telemetryConfig;
-      }
-      return sanitized;
-    }
+    case "diagnosis_recommend":
+      return sanitizeTelemetryRunbookAction(sanitized, action);
     default:
       throw new Error(
         `Unsupported runbook action type: ${String(action.type)}`,
