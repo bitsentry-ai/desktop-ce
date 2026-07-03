@@ -40,7 +40,7 @@
     "desktop:start": "pnpm --filter @bitsentry-ce/desktop start",
     "desktop:package": "pnpm run build:packages && pnpm --filter @bitsentry-ce/desktop package",
     "desktop:test": "pnpm --filter @bitsentry-ce/desktop test",
-    "desktop:test:plugin-installation": "pnpm --filter @bitsentry-ce/desktop test -- src/__tests__/desktop-plugin-installation.spec.ts",
+    "desktop:test:plugin-installation": "pnpm --filter @bitsentry-ce/desktop test:plugin-installation",
     "desktop:test:cli": "pnpm --filter @bitsentry-ce/desktop test:cli-smoke",
     "desktop:test:cli:stress": "pnpm --filter @bitsentry-ce/desktop test:cli-stress",
     "desktop:test:cli:packaged": "pnpm --filter @bitsentry-ce/desktop test:cli-packaged-smoke",

@@ -36,6 +36,7 @@
     "test": "pnpm --dir ../.. run plugins:build && vitest run --config vitest.config.ts",
     "test:watch": "vitest --config vitest.config.ts",
     "test:contracts": "pnpm run typecheck:contract",
+    "test:plugin-installation": "vitest run --config vitest.config.ts src/__tests__/desktop-plugin-installation.spec.ts",
     "test:cli-smoke": "pnpm run build:shared-cli && pnpm run build:scripts && pnpm run prepare:native-deps && pnpm run build:cli-bundle && node scripts/dist/cli-smoke-test.js",
     "test:cli-stress": "pnpm run build:shared-cli && pnpm run build:scripts && pnpm run prepare:native-deps && pnpm run build:cli-bundle && node scripts/dist/cli-stress-test.js",
     "test:cli-packaged-smoke": "pnpm run build:shared-cli && pnpm run build:scripts && node scripts/dist/packaged-cli-smoke.js",
