@@ -95,6 +95,7 @@ type PluginIndexEntry = {
 }
 
 const DEFAULT_PLUGIN_INDEX_URL = 'https://plugins.bitsentry.ai/index.yaml'
+const DEFAULT_PLUGIN_INDEX_ORIGIN = new URL(DEFAULT_PLUGIN_INDEX_URL).origin
 
 const DETACHED_EXECUTION_START_TIMEOUT_MS = 15_000
 const DETACHED_EXECUTION_START_POLL_MS = 50
@@ -785,10 +786,25 @@ async function readTextSource(source: string): Promise<string> {
 function resolvePluginIndexUrl(args: ParsedArgs): string {
   const configured = getFlag(args, 'index-url') ?? process.env.BITSENTRY_PLUGIN_INDEX_URL
   if (configured !== undefined && configured.trim().length > 0 && configured !== 'true') {
-    return configured.trim()
+    const indexUrl = configured.trim()
+    assertFirstPartyPluginIndexUrl(indexUrl)
+    return indexUrl
   }
 
   return DEFAULT_PLUGIN_INDEX_URL
+}
+
+function assertFirstPartyPluginIndexUrl(indexUrl: string): void {
+  if (!indexUrl.startsWith('http://') && !indexUrl.startsWith('https://')) {
+    return
+  }
+
+  const parsed = new URL(indexUrl)
+  if (parsed.origin !== DEFAULT_PLUGIN_INDEX_ORIGIN) {
+    throw new Error(
+      `Remote plugin indexes must use the first-party origin ${DEFAULT_PLUGIN_INDEX_ORIGIN}`,
+    )
+  }
 }
 
 function readPluginName(args: ParsedArgs): string {
