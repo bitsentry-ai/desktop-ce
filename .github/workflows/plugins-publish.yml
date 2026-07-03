@@ -55,6 +55,14 @@ jobs:
         shell: bash
         run: pnpm --dir packages/electron-trpc install --frozen-lockfile
 
+      - name: Lint plugin packages
+        shell: bash
+        run: pnpm run plugins:lint
+
+      - name: Test plugin packages
+        shell: bash
+        run: pnpm run plugins:test
+
       - name: Build and publish plugin artifacts
         shell: bash
         env:
