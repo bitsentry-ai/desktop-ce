@@ -95,12 +95,15 @@ async function listPublishableArtifacts() {
     }
   }
 
-  files.sort((left, right) => left.localeCompare(right));
   if (!files.includes("index.yaml")) {
     throw new Error("Plugin artifact index build/plugins/index.yaml is missing.");
   }
 
-  return files;
+  const pluginArtifacts = files
+    .filter((fileName) => fileName !== "index.yaml")
+    .sort((left, right) => left.localeCompare(right));
+
+  return [...pluginArtifacts, "index.yaml"];
 }
 
 function createR2Client(r2Environment) {
