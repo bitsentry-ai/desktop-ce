@@ -3,7 +3,6 @@ import type {
   ErrorSourceType,
 } from "./desktop-error-sources.types";
 import type {
-  DesktopOAuthTokenResponse,
   OAuthProviderConfig,
 } from "./desktop-oauth-manager";
 import type { DesktopPluginRuntimeService } from "../plugins";
