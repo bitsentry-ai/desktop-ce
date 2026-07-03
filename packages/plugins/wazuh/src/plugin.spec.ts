@@ -117,6 +117,7 @@ describe("Wazuh plugin package", () => {
     expect(url).toBe("https://wazuh.example.com:9200/wazuh-alerts-*/_search");
     expect(request).toMatchObject({
       method: "POST",
+      redirect: "error",
       headers: {
         Authorization: `Basic ${Buffer.from("admin:wazuh-secret").toString("base64")}`,
         "Content-Type": "application/json",

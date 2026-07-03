@@ -207,7 +207,10 @@ async function requestPostHog(url, init, maxAttempts = 5) {
 
   while (attempt < maxAttempts) {
     attempt += 1;
-    const response = await fetch(url, init);
+    const response = await fetch(url, {
+      ...init,
+      redirect: "error",
+    });
     if (response.ok) {
       return response;
     }

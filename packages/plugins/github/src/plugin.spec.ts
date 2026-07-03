@@ -118,6 +118,7 @@ describe("GitHub plugin package", () => {
       Authorization: "Bearer gh-token",
       Accept: "application/vnd.github+json",
     });
+    expect(request?.redirect).toBe("error");
   });
 
   it("keeps setup and auth mapping inside plugin code", async () => {

@@ -66,4 +66,41 @@ describe("Sentry plugin package", () => {
     );
     expect(fetchMock).not.toHaveBeenCalled();
   });
+
+  it("refuses redirects when sending bearer credentials to Sentry", async () => {
+    const fetchMock = vi
+      .fn<(url: string, request?: RequestInit) => Promise<Response>>()
+      .mockResolvedValue(
+        new Response(JSON.stringify([{ slug: "bitsentry", name: "BitSentry" }]), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const context: DesktopPluginCodeActionContext = {
+      pluginId: plugin.id,
+      actionId: "list_organizations",
+      auth: {
+        accessToken: "sentry-token",
+        baseUrl: "https://sentry.example.com",
+      },
+      input: {},
+      host,
+    };
+
+    await expect(action("list_organizations").execute(context)).resolves.toMatchObject(
+      {
+        data: [{ slug: "bitsentry", name: "BitSentry" }],
+      },
+    );
+
+    const [url, request] = fetchMock.mock.calls[0] ?? [];
+    expect(url).toBe("https://sentry.example.com/api/0/organizations/");
+    expect(request?.headers).toMatchObject({
+      Authorization: "Bearer sentry-token",
+      Accept: "application/json",
+    });
+    expect(request?.redirect).toBe("error");
+  });
 });

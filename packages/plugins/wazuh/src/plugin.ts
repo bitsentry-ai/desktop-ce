@@ -345,6 +345,7 @@ async function searchAlerts({ auth, input }) {
   ).toString("base64");
   const response = await fetch(`${indexUrl}/${indexPattern}/_search`, {
     method: "POST",
+    redirect: "error",
     headers: {
       Authorization: `Basic ${credentials}`,
       "Content-Type": "application/json",

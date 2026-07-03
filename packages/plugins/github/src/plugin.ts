@@ -133,6 +133,7 @@ async function requestGitHubJson(auth, pathname, params = {}, options = {}) {
   const requestInit = {
     method: readString(readRecord(options).method, "GET"),
     headers,
+    redirect: "error" as const,
   };
   if (requestBody !== undefined) {
     Object.assign(requestInit, {

@@ -127,5 +127,6 @@ describe("PostHog plugin package", () => {
       Authorization: "Bearer phx-token",
       "Content-Type": "application/json",
     });
+    expect(request?.redirect).toBe("error");
   });
 });
