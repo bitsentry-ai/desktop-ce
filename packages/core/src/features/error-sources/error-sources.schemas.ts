@@ -23,7 +23,7 @@ export const errorSourceRowSchema = z.object({
 });
 
 export const createPluginErrorSourceSchema = z.object({
-  pluginId: z.string().trim().min(1).optional(),
+  pluginId: z.string().trim().min(1),
   sourceType: errorSourceTypeSchema,
   name: z.string().trim().min(1),
   setupValues: z.record(z.string(), z.unknown()).optional(),
@@ -86,7 +86,7 @@ export const testErrorSourceConnectionResultSchema = z.object({
  * provider actions.
  */
 export const probeErrorSourceSchema = z.object({
-  pluginId: z.string().trim().min(1).optional(),
+  pluginId: z.string().trim().min(1),
   sourceType: errorSourceTypeSchema,
   setupValues: z.record(z.string(), z.unknown()).optional(),
 });

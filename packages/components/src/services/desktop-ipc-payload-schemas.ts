@@ -276,7 +276,7 @@ export function createDesktopIpcPayloadValidator(
       input: z.record(z.string(), z.unknown()).optional(),
     }),
     "errorSources:create": z.object({
-      pluginId: z.string().min(1).optional(),
+      pluginId: z.string().min(1),
       sourceType: z.string().min(1),
       name: z.string().min(1),
       setupValues: z.record(z.string(), z.unknown()).optional(),
@@ -302,17 +302,15 @@ export function createDesktopIpcPayloadValidator(
     }),
     "errorSources:initiateOAuth": z
       .object({
-        pluginId: z.string().min(1).optional(),
-        sourceType: z.string().min(1).optional(),
+        pluginId: z.string().min(1),
+        sourceType: z.string().min(1),
         setupValues: z.record(z.string(), z.unknown()).optional(),
         clientId: z.string().min(1).optional(),
         redirectUri: z.string().min(1).optional(),
-      })
-      .optional()
-      .default({}),
+      }),
     "errorSources:completeOAuth": z.object({
-      pluginId: z.string().min(1).optional(),
-      sourceType: z.string().min(1).optional(),
+      pluginId: z.string().min(1),
+      sourceType: z.string().min(1),
       setupValues: z.record(z.string(), z.unknown()).optional(),
       code: z.string().min(1),
       state: z.string().min(1),
@@ -327,7 +325,7 @@ export function createDesktopIpcPayloadValidator(
       id: z.string().min(1),
     }),
     "errorSources:probeConnection": z.object({
-      pluginId: z.string().min(1).optional(),
+      pluginId: z.string().min(1),
       sourceType: z.string().min(1),
       setupValues: z.record(z.string(), z.unknown()).optional(),
     }),

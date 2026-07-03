@@ -28,7 +28,7 @@ const INTERRUPTED_SYNC_MESSAGE = 'Previous sync was interrupted before completio
 const handlerPayloadSchema = z.record(z.string(), z.unknown())
 const createErrorSourcePayloadSchema = z
   .object({
-    pluginId: z.string().optional(),
+    pluginId: z.string().min(1),
     sourceType: errorSourceTypeSchema,
     name: z.string().min(1),
     setupValues: handlerPayloadSchema.optional(),
@@ -54,26 +54,24 @@ const updateErrorSourcePayloadSchema = z
   .loose()
 type UpdateErrorSourcePayload = z.infer<typeof updateErrorSourcePayloadSchema>
 const probeConnectionPayloadSchema = z.object({
-  pluginId: z.string().optional(),
+  pluginId: z.string().min(1),
   sourceType: errorSourceTypeSchema,
   setupValues: handlerPayloadSchema.optional(),
 })
 type ProbeConnectionPayload = z.infer<typeof probeConnectionPayloadSchema>
 const initiateOAuthPayloadSchema = z
   .object({
-    pluginId: z.string().optional(),
-    sourceType: errorSourceTypeSchema.optional(),
+    pluginId: z.string().min(1),
+    sourceType: errorSourceTypeSchema,
     setupValues: handlerPayloadSchema.optional(),
     clientId: z.string().optional(),
     redirectUri: z.string().optional(),
   })
-  .optional()
-  .default({})
 type InitiateOAuthPayload = z.infer<typeof initiateOAuthPayloadSchema>
 const completeOAuthPayloadSchema = z
   .object({
-    pluginId: z.string().optional(),
-    sourceType: errorSourceTypeSchema.optional(),
+    pluginId: z.string().min(1),
+    sourceType: errorSourceTypeSchema,
     setupValues: handlerPayloadSchema.optional(),
     code: z.string().min(1),
     state: z.string().min(1),
@@ -698,7 +696,7 @@ export function createDesktopErrorSourcesHandlers(
     'errorSources:probeConnection': async (rawPayload: unknown) => {
       const payload = readProbeConnectionPayload(rawPayload)
       const sourceType = payload.sourceType
-      const pluginId = readPluginId(payload.pluginId) ?? sourceType
+      const pluginId = payload.pluginId.trim()
       const setupValues = readPayloadRecord(payload.setupValues) ?? {}
       const persistedSetup = await resolvePersistedPluginSetup(
         pluginRuntime,
@@ -809,7 +807,7 @@ export function createDesktopErrorSourcesHandlers(
     'errorSources:create': async (rawPayload: unknown) => {
       const payload = readCreateErrorSourcePayload(rawPayload)
       const sourceType = payload.sourceType
-      const pluginId = readPluginId(payload.pluginId) ?? sourceType
+      const pluginId = payload.pluginId.trim()
       const setupValues = readPayloadRecord(payload.setupValues) ?? {}
       const persistedSetup = await resolvePersistedPluginSetup(
         pluginRuntime,
@@ -921,7 +919,7 @@ export function createDesktopErrorSourcesHandlers(
         payload.sourceType,
         'OAuth initiation',
       )
-      const pluginId = readPluginId(payload.pluginId) ?? sourceType
+      const pluginId = payload.pluginId.trim()
       const setupValues = readPayloadRecord(payload.setupValues) ?? {}
       const persistedSetup = await resolvePersistedPluginSetup(
         pluginRuntime,
@@ -955,7 +953,7 @@ export function createDesktopErrorSourcesHandlers(
       )
       const code = payload.code.trim()
       const state = payload.state.trim()
-      const pluginId = readPluginId(payload.pluginId) ?? sourceType
+      const pluginId = payload.pluginId.trim()
       const setupValues = readPayloadRecord(payload.setupValues) ?? {}
       const persistedSetup = await resolvePersistedPluginSetup(
         pluginRuntime,

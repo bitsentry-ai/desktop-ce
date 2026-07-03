@@ -36,4 +36,20 @@ describe('desktop IPC payload validation', () => {
       },
     })
   })
+
+  it('rejects source-type-only error source activation payloads', () => {
+    const validate = createValidator()
+
+    expect(() =>
+      validate('errorSources:create', {
+        sourceType: 'github',
+        name: 'GitHub Issues',
+      }),
+    ).toThrow()
+    expect(() =>
+      validate('errorSources:probeConnection', {
+        sourceType: 'github',
+      }),
+    ).toThrow()
+  })
 })

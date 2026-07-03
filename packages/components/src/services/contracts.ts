@@ -520,7 +520,7 @@ export interface ErrorSourceRow {
 }
 
 export interface CreateErrorSourceInput {
-  pluginId?: string;
+  pluginId: string;
   sourceType: ErrorSourceType;
   name: string;
   setupValues?: Record<string, unknown>;
