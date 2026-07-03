@@ -618,8 +618,7 @@ const plugin: DesktopCodePlugin = {
     {
       id: "list_issues",
       title: "List GitHub issues",
-      description:
-        "Retrieve issues for one or more repositories, similar to StackStorm's list_issues action.",
+      description: "Retrieve issues for one or more repositories.",
       riskLevel: "read",
       fields: [
         {

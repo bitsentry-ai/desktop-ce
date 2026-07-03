@@ -86,7 +86,7 @@ describe('plugin error source provider actions', () => {
     ).toBe('queryIssues')
   })
 
-  it('resolves StackStorm-style snake_case code action IDs', () => {
+  it('resolves snake_case code action IDs', () => {
     const runtime = new TestPluginRuntimeService([
       createPluginDescriptor({
         actions: [createProviderAction('query_issues')],
