@@ -113,7 +113,6 @@ function createWazuhDescriptor(): DesktopPluginDescriptor {
       createProviderAction('query_issues'),
       createProviderAction('search_alerts'),
     ],
-    triggers: [],
   }
 }
 
@@ -152,7 +151,6 @@ function createSentryDescriptor(): DesktopPluginDescriptor {
       fields: [],
     },
     actions: [createProviderAction('query_issues')],
-    triggers: [],
   }
 }
 

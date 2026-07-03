@@ -764,7 +764,6 @@ const plugin: DesktopCodePlugin = {
       execute: createGitHubIssue,
     },
   ],
-  triggers: [],
 };
 
 export { plugin };

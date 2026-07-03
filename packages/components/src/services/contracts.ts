@@ -584,16 +584,6 @@ export interface PluginActionDefinition {
   referencePath?: string;
 }
 
-export interface PluginTriggerDefinition {
-  id: string;
-  title: string;
-  description: string;
-  kind: "poll" | "webhook";
-  eventTypes: string[];
-  fields: PluginFieldDefinition[];
-  referencePath?: string;
-}
-
 export interface PluginErrorSourceMetadata {
   sourceType: ErrorSourceType;
   setupFields: PluginErrorSourceSetupField[];
@@ -636,7 +626,6 @@ export interface PluginDescriptor {
     fields: PluginFieldDefinition[];
   };
   actions: PluginActionDefinition[];
-  triggers: PluginTriggerDefinition[];
 }
 
 export interface PluginActionExecutionResult {

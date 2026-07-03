@@ -594,7 +594,6 @@ const plugin: DesktopCodePlugin = {
       execute: searchAlerts,
     },
   ],
-  triggers: [],
 };
 
 export { plugin };

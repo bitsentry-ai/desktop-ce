@@ -134,7 +134,6 @@ function createOAuthDescriptor(input: {
       riskLevel: 'read',
       fields: [],
     })),
-    triggers: [],
   }
 }
 

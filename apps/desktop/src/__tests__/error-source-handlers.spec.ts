@@ -219,7 +219,6 @@ function createPostHogPluginDescriptor(): DesktopPluginDescriptor {
       createProviderAction('list_projects'),
       createProviderAction('query_issues'),
     ],
-    triggers: [],
   }
 }
 

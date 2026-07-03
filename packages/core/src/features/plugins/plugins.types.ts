@@ -128,25 +128,6 @@ export type DesktopPluginActionDefinition = z.infer<
   typeof desktopPluginActionDefinitionSchema
 >;
 
-export const desktopPluginTriggerKindSchema = z.enum(["poll", "webhook"]);
-export type DesktopPluginTriggerKind = z.infer<
-  typeof desktopPluginTriggerKindSchema
->;
-
-export const desktopPluginTriggerDefinitionSchema = z.object({
-  id: z.string().min(1),
-  title: z.string().min(1),
-  description: z.string().min(1),
-  kind: desktopPluginTriggerKindSchema,
-  eventTypes: z.array(z.string().min(1)).default([]),
-  fields: z.array(desktopPluginFieldDefinitionSchema).default([]),
-  referencePath: z.string().min(1).optional(),
-});
-
-export type DesktopPluginTriggerDefinition = z.infer<
-  typeof desktopPluginTriggerDefinitionSchema
->;
-
 export const desktopPluginAuthSchema = z.object({
   fields: z.array(desktopPluginFieldDefinitionSchema),
 });
@@ -218,7 +199,6 @@ export const desktopPluginDescriptorSchema = z.object({
   metadata: desktopPluginDescriptorMetadataSchema.optional(),
   auth: desktopPluginAuthSchema,
   actions: z.array(desktopPluginActionDefinitionSchema),
-  triggers: z.array(desktopPluginTriggerDefinitionSchema),
 });
 
 export type DesktopPluginDescriptor = z.infer<typeof desktopPluginDescriptorSchema>;
@@ -397,11 +377,9 @@ export type DesktopCodePluginAction = z.infer<typeof desktopCodePluginActionSche
 export const desktopCodePluginSchema = desktopPluginDescriptorSchema
   .omit({
     actions: true,
-    triggers: true,
   })
   .extend({
     actions: z.array(desktopCodePluginActionSchema),
-    triggers: z.array(desktopPluginTriggerDefinitionSchema).default([]),
     errorSource: desktopCodePluginErrorSourceSchema.optional(),
   });
 

@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm, writeFile } from 'fs/promises'
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'fs/promises'
 import { pathToFileURL } from 'url'
 import { tmpdir } from 'os'
 import path from 'path'
@@ -18,6 +18,7 @@ describe('desktop plugin CLI lifecycle', () => {
 
   afterEach(async () => {
     vi.restoreAllMocks()
+    vi.unstubAllGlobals()
     await Promise.all(
       tempRoots.map((tempRoot) => rm(tempRoot, { recursive: true, force: true })),
     )
@@ -64,7 +65,6 @@ exports.plugin = {
       },
     },
   ],
-  triggers: [],
 }
 `,
     )
@@ -306,6 +306,72 @@ exports.plugin = {
       ]),
     ).rejects.toThrow('version')
   })
+
+  it('installs one plugin from an HTTPS first-party index without bundling implementations', async () => {
+    const tempRoot = await mkdtemp(path.join(tmpdir(), 'bitsentry-plugin-cli-'))
+    tempRoots.push(tempRoot)
+
+    const artifactPath = await writePluginArtifact({
+      tempRoot,
+      pluginId: 'remote-index-plugin-test',
+    })
+    const artifact = await readFile(artifactPath)
+    const indexUrl = 'https://plugins.bitsentry.ai/index.yaml'
+    const artifactUrl = 'https://plugins.bitsentry.ai/remote-index-plugin-test.plugin.js'
+    const fetchMock = vi.fn((input: string | URL | Request) => {
+      let url: string
+      if (typeof input === 'string') {
+        url = input
+      } else if (input instanceof URL) {
+        url = input.toString()
+      } else {
+        url = input.url
+      }
+      if (url === indexUrl) {
+        return new Response(
+          [
+            'plugins:',
+            '  remote-index-plugin-test:',
+            '    description: Test plugin from the remote first-party index.',
+            '    artifactUrl: ./remote-index-plugin-test.plugin.js',
+            '',
+          ].join('\n'),
+          { status: 200 },
+        )
+      }
+
+      if (url === artifactUrl) {
+        return new Response(artifact, { status: 200 })
+      }
+
+      return new Response('not found', { status: 404, statusText: 'Not Found' })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const pluginDirectory = path.join(tempRoot, 'plugins')
+    const installOutput = await runPluginCli([
+      'plugin',
+      'install',
+      'remote-index-plugin-test',
+      '--index-url',
+      indexUrl,
+      '--plugin-dir',
+      pluginDirectory,
+      '--json',
+    ])
+    const installResult = parseJson(installOutput) as {
+      pluginId: string
+      artifactUrl: string
+      descriptor: { id: string }
+    }
+
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(installResult).toMatchObject({
+      pluginId: 'remote-index-plugin-test',
+      artifactUrl,
+      descriptor: { id: 'remote-index-plugin-test' },
+    })
+  })
 })
 
 describe('desktop plugin discovery', () => {
@@ -346,7 +412,6 @@ exports.plugin = {
   description: 'This should not load from Electron resources in v1.',
   auth: { fields: [] },
   actions: [],
-  triggers: [],
 }
 `,
     )

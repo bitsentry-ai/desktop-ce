@@ -81,7 +81,6 @@ function createPostHogPluginDescriptor(): DesktopPluginDescriptor {
       ],
     },
     actions: [createProviderAction('list_issues')],
-    triggers: [],
   }
 }
 

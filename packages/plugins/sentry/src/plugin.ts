@@ -885,7 +885,6 @@ const plugin: DesktopCodePlugin = {
       execute: listIssueEvents,
     },
   ],
-  triggers: [],
 };
 
 export { plugin };

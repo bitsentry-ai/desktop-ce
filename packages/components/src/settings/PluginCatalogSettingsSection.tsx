@@ -577,7 +577,6 @@ function PluginList({
             </div>
             <div className="mt-3 flex flex-wrap gap-2 text-xs text-muted-foreground">
               <span>{plugin.actions.length} actions</span>
-              <span>{plugin.triggers.length} triggers</span>
               <span>{plugin.auth.fields.length} auth fields</span>
             </div>
           </button>
@@ -860,9 +859,6 @@ export function PluginCatalogSettingsSection({
                       <Badge className="border-border bg-muted text-muted-foreground">
                         {selectedPlugin.actions.length} actions
                       </Badge>
-                      <Badge className="border-border bg-muted text-muted-foreground">
-                        {selectedPlugin.triggers.length} triggers
-                      </Badge>
                     </div>
                   </div>
 
@@ -1080,49 +1076,6 @@ export function PluginCatalogSettingsSection({
                   </div>
 
                   <div className="space-y-5">
-                    <div className="rounded-xl border border-border bg-background/70 p-4">
-                      <h3 className="text-sm font-semibold text-foreground">Declared triggers</h3>
-                      <p className="mt-1 text-xs text-muted-foreground">
-                        Triggers are plugin code declarations today. Webhook and poll execution
-                        will sit on top of these definitions in later passes.
-                      </p>
-                      <div className="mt-4 space-y-3">
-                        {selectedPlugin.triggers.map((trigger) => (
-                          <div
-                            key={trigger.id}
-                            className="rounded-xl border border-border bg-card p-3"
-                          >
-                            <div className="flex flex-wrap items-center gap-2">
-                              <span className="text-sm font-medium text-foreground">
-                                {trigger.title}
-                              </span>
-                              <Badge className="border-border bg-muted text-muted-foreground">
-                                {trigger.kind}
-                              </Badge>
-                              <Badge className="border-border bg-muted text-muted-foreground">
-                                {trigger.id}
-                              </Badge>
-                            </div>
-                            <p className="mt-2 text-xs text-muted-foreground">
-                              {trigger.description}
-                            </p>
-                            {trigger.eventTypes.length > 0 && (
-                              <div className="mt-3 flex flex-wrap gap-2">
-                                {trigger.eventTypes.map((eventType) => (
-                                  <Badge
-                                    key={eventType}
-                                    className="border-border bg-background text-muted-foreground"
-                                  >
-                                    {eventType}
-                                  </Badge>
-                                ))}
-                              </div>
-                            )}
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-
                     <div className="rounded-xl border border-border bg-background/70 p-4">
                       <h3 className="text-sm font-semibold text-foreground">Safety notes</h3>
                       <ul className="mt-3 space-y-2 text-xs text-muted-foreground">

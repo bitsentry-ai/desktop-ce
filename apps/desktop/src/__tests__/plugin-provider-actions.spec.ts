@@ -52,7 +52,6 @@ function createPluginDescriptor(
       fields: [],
     },
     actions: [],
-    triggers: [],
     ...overrides,
   }
 }

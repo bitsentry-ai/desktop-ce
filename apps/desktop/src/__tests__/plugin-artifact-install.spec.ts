@@ -52,7 +52,6 @@ exports.plugin = {
       },
     },
   ],
-  triggers: [],
 }
 `
   }

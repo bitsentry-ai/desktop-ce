@@ -48,7 +48,6 @@ function createOAuthPluginRuntime(input: {
         fields: [],
       },
     ],
-    triggers: [],
   }
   const executeAction = vi.fn(
     (_request: DesktopPluginExecutionRequest): Promise<DesktopPluginExecutionResult> =>

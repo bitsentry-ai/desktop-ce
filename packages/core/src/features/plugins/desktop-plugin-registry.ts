@@ -165,7 +165,6 @@ function createPluginRuntime(
     actions: plugin.actions.map(
       ({ execute: _execute, ...action }) => action,
     ),
-    triggers: plugin.triggers ?? [],
   });
   const runtimeContext = {
     ...context,
