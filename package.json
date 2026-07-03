@@ -27,6 +27,7 @@
     "plugins:lint": "pnpm --filter './packages/plugins/*' lint",
     "plugins:publish-artifacts": "pnpm run plugins:build && node scripts/plugins/publish-artifacts.mjs",
     "plugins:test": "pnpm --filter './packages/plugins/*' test",
+    "core:test": "pnpm --filter @bitsentry-ce/core test",
     "desktop-cli:test": "pnpm --filter @bitsentry-ce/desktop-cli test",
     "coding-agents:build": "pnpm --filter @bitsentry-ce/coding-agents build",
     "electron-trpc:build": "pnpm --filter electron-trpc run build",

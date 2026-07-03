@@ -2,10 +2,10 @@ import { mkdir, mkdtemp, readdir, rm, writeFile } from 'fs/promises'
 import { tmpdir } from 'os'
 import path from 'path'
 
-import { createDesktopNodePluginRuntimeService } from '@bitsentry-ce/core/features/plugins/node'
+import { createDesktopNodePluginRuntimeService } from '../src/features/plugins/node'
 import { afterEach, describe, expect, it } from 'vitest'
 
-describe('desktop code plugin artifact installation', () => {
+describe('code plugin artifact installation', () => {
   const tempRoots: string[] = []
 
   afterEach(async () => {
