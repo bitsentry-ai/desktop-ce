@@ -9,7 +9,6 @@ import {
   type DesktopPluginStoredAuthValue,
   type DesktopPluginStoredAuthStore,
 } from "./desktop-plugin-auth-store";
-import type { DesktopPluginRuntimeService } from "./desktop-plugin-registry";
 import { createDesktopNodePluginRuntimeService } from "./desktop-plugin-runtime.node";
 
 function asPayloadRecord(payload: unknown): Record<string, unknown> {
