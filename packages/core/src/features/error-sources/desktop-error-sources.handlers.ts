@@ -927,14 +927,16 @@ export function createDesktopErrorSourcesHandlers(
         throw new Error(`Error source ${payload.id} not found`);
       const setupValues = readPayloadRecord(payload.setupValues);
       const pluginId = readSourcePluginId(existing);
-      const persistedSetup =
-        setupValues === null
-          ? { configuration: {} }
-          : await resolvePersistedPluginSetup(
-              pluginRuntime,
-              pluginId,
-              setupValues,
-            );
+      let persistedSetup: DesktopPluginPersistedDataSourceSetup = {
+        configuration: {},
+      };
+      if (setupValues !== null) {
+        persistedSetup = await resolvePersistedPluginSetup(
+          pluginRuntime,
+          pluginId,
+          setupValues,
+        );
+      }
       if (
         !hasMatchingErrorSourcePlugin(
           pluginRuntime,
