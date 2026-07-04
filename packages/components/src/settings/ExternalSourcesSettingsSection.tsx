@@ -15,9 +15,9 @@ interface ExternalSourcesSettingsSectionProps {
   className?: string;
 }
 
-function formatDate(value: string | null): string {
+function formatDate(value: string | null, t: (key: string) => string): string {
   if (value === null || value.length === 0) {
-    return "Never";
+    return t("common.dataSourcesManager.never");
   }
 
   const date = new Date(value);
@@ -28,12 +28,24 @@ function formatDate(value: string | null): string {
   return date.toLocaleString();
 }
 
-function formatSyncStatus(value: string | null): string {
-  if (value === null || value.length === 0) {
-    return "";
-  }
+function formatSyncStatus(
+  value: string | null,
+  t: (key: string) => string,
+): string {
+  switch (value) {
+    case "in_progress":
+      return t("common.dataSourcesManager.syncInProgress");
+    case "success":
+      return t("common.dataSourcesManager.lastSyncSucceeded");
+    case "failed":
+      return t("common.dataSourcesManager.lastSyncFailed");
+    default:
+      if (value !== null && value.length > 0) {
+        return value.replace(/_/g, " ");
+      }
 
-  return value.replace(/_/g, " ");
+      return "";
+  }
 }
 
 export function ExternalSourcesSettingsSection({
@@ -57,27 +69,27 @@ export function ExternalSourcesSettingsSection({
         <div className="flex items-center justify-between">
           <div>
             <h2 className="text-sm font-semibold text-foreground">
-              External Sources
+              {t("common.dataSourcesManager.externalSources")}
             </h2>
             <p className="text-xs text-muted-foreground">
-              Connect external services to feed data into Diagnosis.
+              {t("common.dataSourcesManager.connectExternalServicesToFeed")}
             </p>
           </div>
           <Button size="sm" variant="outline" disabled>
-            + Add Source
+            {t("common.dataSourcesManager.installPlugin")}
           </Button>
         </div>
 
         {isLoading && (
           <p className="text-sm text-muted-foreground">
-            Loading external sources...
+            {t("common.dataSourcesManager.loadingExternalSources")}
           </p>
         )}
 
         {!isLoading && sortedSources.length === 0 && (
           <div className="rounded-lg border border-dashed border-border p-8 text-center">
             <p className="text-sm text-muted-foreground">
-              No external sources connected.
+              {t("common.dataSourcesManager.noExternalSourcesConnected")}
             </p>
           </div>
         )}
@@ -91,8 +103,10 @@ export function ExternalSourcesSettingsSection({
                 refreshClassName = "animate-spin";
               }
               const syncSummary = [
-                `Last sync: ${formatDate(source.lastSyncAt)}`,
-                formatSyncStatus(source.lastSyncStatus),
+                t("common.dataSourcesManager.lastSyncAt", {
+                  value: formatDate(source.lastSyncAt, t),
+                }),
+                formatSyncStatus(source.lastSyncStatus, t),
               ]
                 .filter((part) => part.length > 0)
                 .join(" - ");
@@ -126,11 +140,16 @@ export function ExternalSourcesSettingsSection({
                           {
                             onSuccess: () => {
                               toast.success(
-                                `Sync complete for ${source.name}`,
+                                t("common.dataSourcesManager.syncCompleteForSource", {
+                                  source: source.name,
+                                }),
                               );
                             },
                             onError: (error) => {
-                              let message = `Sync failed for ${source.name}`;
+                              let message = t(
+                                "common.dataSourcesManager.syncFailedForSource",
+                                { source: source.name },
+                              );
                               if (error instanceof Error) {
                                 message = error.message;
                               }
@@ -155,10 +174,16 @@ export function ExternalSourcesSettingsSection({
                       onClick={() => {
                         deleteMutation.mutate(source.id, {
                           onSuccess: () => {
-                            toast.success(`Removed "${source.name}".`);
+                            toast.success(
+                              t("common.dataSourcesManager.removedSource", {
+                                name: source.name,
+                              }),
+                            );
                           },
                           onError: (error) => {
-                            let message = `Failed to remove ${source.name}`;
+                            let message = t(
+                              "common.dataSourcesManager.removeSource",
+                            );
                             if (error instanceof Error) {
                               message = error.message;
                             }
@@ -167,8 +192,8 @@ export function ExternalSourcesSettingsSection({
                         });
                       }}
                       disabled={deleteMutation.isPending}
-                      aria-label="Remove source"
-                      title="Remove source"
+                      aria-label={t("common.dataSourcesManager.removeSource")}
+                      title={t("common.dataSourcesManager.removeSource")}
                       className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-red-600 disabled:opacity-50"
                     >
                       <Trash2 size={16} aria-hidden="true" />
