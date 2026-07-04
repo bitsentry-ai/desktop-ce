@@ -185,6 +185,79 @@ describe("RunbookStore importRunbooks", () => {
     });
   });
 
+  it("includes plugin action fields in skip-conflict fingerprints", async () => {
+    const existingRunbookId = "runbook-existing-plugin";
+    const action = {
+      id: "action-existing-plugin",
+      runbookId: existingRunbookId,
+      sortOrder: 0,
+      type: "plugin",
+      title: "Query GitHub issues",
+      sourceId: "github",
+      query: "list_issues",
+      body: '{"owner":"bitsentry-ai","repo":"desktop"}',
+      url: '{"token":"${globals.github_token}"}',
+    };
+    const { store } = createStore({
+      runbook: {
+        findMany: vi.fn(() => [
+          {
+            id: existingRunbookId,
+            title: "Existing plugin runbook",
+            description: "",
+            revisionNumber: 1,
+            createdAt: "2026-05-31T00:00:00.000Z",
+            updatedAt: "2026-05-31T00:00:00.000Z",
+          },
+        ]),
+      },
+      runbookAction: {
+        findMany: vi.fn(({ where }: { where: { runbookId: string } }) => {
+          if (where.runbookId === existingRunbookId) {
+            return [action];
+          }
+
+          return [];
+        }),
+      },
+    });
+    const artifact: DesktopRunbookExportArtifactV1 = {
+      format: "bitsentry.runbooks.export",
+      version: 1,
+      exportedAt: "2026-05-31T00:00:00.000Z",
+      runbooks: [
+        {
+          title: "Plugin runbook",
+          actions: [
+            {
+              type: "plugin",
+              title: "Query GitHub issues",
+              pluginId: "github",
+              pluginActionId: "list_issues",
+              pluginInput: '{"owner":"bitsentry-ai","repo":"api"}',
+              pluginAuth: '{"token":"${globals.github_token}"}',
+            },
+          ],
+        },
+      ],
+    };
+
+    const summary = await store.importRunbooks({
+      artifact,
+      options: { conflictPolicy: "skip", dryRun: true },
+    });
+
+    expect(summary).toMatchObject({
+      imported: 1,
+      skipped: 0,
+      failed: 0,
+    });
+    expect(summary.results[0]).toMatchObject({
+      status: "imported",
+      title: "Plugin runbook",
+    });
+  });
+
   it("imports legacy external source actions without artifact externalSources", async () => {
     const { store, db } = createStore();
     const artifact: DesktopRunbookExportArtifactV1 = {

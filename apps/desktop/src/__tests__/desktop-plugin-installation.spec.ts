@@ -55,4 +55,30 @@ exports.plugin = {
     const runtime = createDesktopNodePluginRuntimeService()
     expect(runtime.getPlugin('bundled-code-plugin')).toBeNull()
   })
+
+  it('rejects artifact plugin ids that escape the install root', async () => {
+    const tempRoot = await mkdtemp(path.join(tmpdir(), 'bitsentry-plugin-install-'))
+    tempRoots.push(tempRoot)
+    const installRoot = path.join(tempRoot, 'plugins')
+    await mkdir(installRoot, { recursive: true })
+
+    const runtime = createDesktopNodePluginRuntimeService([installRoot])
+    const artifact = Buffer.from(`
+exports.plugin = {
+  id: '../outside',
+  name: 'Escaping Code Plugin',
+  version: '1.0.0',
+  description: 'This must not install outside the plugin root.',
+  auth: { fields: [] },
+  actions: [],
+}
+`)
+
+    await expect(
+      runtime.installFromArtifact({
+        artifactBase64: artifact.toString('base64'),
+        installRoot,
+      }),
+    ).rejects.toThrow('Invalid code plugin id')
+  })
 })

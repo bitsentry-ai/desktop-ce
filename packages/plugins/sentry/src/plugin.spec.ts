@@ -103,4 +103,42 @@ describe("Sentry plugin package", () => {
     });
     expect(request?.redirect).toBe("error");
   });
+
+  it("applies configured project slug filters to issue queries", async () => {
+    const fetchMock = vi
+      .fn<(url: string, request?: RequestInit) => Promise<Response>>()
+      .mockResolvedValue(
+        new Response(JSON.stringify([]), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const context: DesktopPluginCodeActionContext = {
+      pluginId: plugin.id,
+      actionId: "list_issues",
+      auth: {
+        accessToken: "sentry-token",
+        baseUrl: "https://sentry.example.com",
+      },
+      input: {
+        orgSlug: "bitsentry",
+        projectIds: ["123"],
+        projectSlugs: ["frontend"],
+      },
+      host,
+    };
+
+    await expect(action("list_issues").execute(context)).resolves.toMatchObject({
+      data: { issues: [] },
+    });
+
+    const [url] = fetchMock.mock.calls[0] ?? [];
+    const parsedUrl = new URL(url ?? "");
+    expect(parsedUrl.searchParams.getAll("project")).toEqual([
+      "123",
+      "frontend",
+    ]);
+  });
 });

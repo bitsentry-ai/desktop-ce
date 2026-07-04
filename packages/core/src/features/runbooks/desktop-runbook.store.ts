@@ -2028,6 +2028,10 @@ export class DesktopRunbookStore {
           method: action.method,
           headers: action.headers,
           body: action.body,
+          pluginId: action.pluginId,
+          pluginActionId: action.pluginActionId,
+          pluginInput: action.pluginInput,
+          pluginAuth: action.pluginAuth,
           query: action.query,
           sourceId: sourceIdFromArtifactRef(
             action.sourceRef,

@@ -2375,6 +2375,8 @@ export class RunbookExecutionService {
         return this.toLlmActionContextPayload(action);
       case "http":
         return this.toHttpActionContextPayload(action);
+      case "plugin":
+        return this.toPluginActionContextPayload(action);
       case "external_source":
         return this.toExternalSourceActionContextPayload(action);
       default:
@@ -2442,6 +2444,30 @@ export class RunbookExecutionService {
     }
     if (action.sourceId !== undefined && action.sourceId.length > 0) {
       payload.sourceId = action.sourceId;
+    }
+
+    this.addCommonActionContextPayload(payload, action);
+    return payload;
+  }
+
+  private toPluginActionContextPayload(
+    action: RunbookActionRecord,
+  ): RunbookActionContextPayload {
+    const payload: RunbookActionContextPayload = {};
+    if (action.pluginId !== undefined && action.pluginId.length > 0) {
+      payload.pluginId = action.pluginId;
+    }
+    if (
+      action.pluginActionId !== undefined &&
+      action.pluginActionId.length > 0
+    ) {
+      payload.pluginActionId = action.pluginActionId;
+    }
+    if (typeof action.pluginInput === "string") {
+      payload.pluginInput = action.pluginInput;
+    }
+    if (typeof action.pluginAuth === "string") {
+      payload.pluginAuth = action.pluginAuth;
     }
 
     this.addCommonActionContextPayload(payload, action);

@@ -287,6 +287,7 @@ describe("Sentry external source sync", () => {
         projectIds: ["4504367120777216"],
         projectSlugs: ["frontend"],
       },
+      lastSyncAt: "2026-06-01T08:30:00.000Z",
     });
     const runtime = new TestPluginRuntimeService([
       createPostHogPluginDescriptor(),
@@ -357,6 +358,7 @@ describe("Sentry external source sync", () => {
       projectSlugs: ["frontend"],
       query: "*",
       limit: 100,
+      since: "2026-06-01T07:30:00.000Z",
       until: "2026-06-01T09:00:00.000Z",
     });
     expect(sourcesRepository.update).toHaveBeenLastCalledWith(

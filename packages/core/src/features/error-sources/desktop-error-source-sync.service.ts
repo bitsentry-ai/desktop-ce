@@ -91,6 +91,7 @@ interface CustomPluginIssueContext {
 const MAX_GENERIC_PLUGIN_ISSUE_PAGES = 10;
 const MAX_GENERIC_PLUGIN_ISSUES_PER_PAGE = 100;
 const MAX_GENERIC_PLUGIN_EVENT_PAGES_PER_ISSUE = 10;
+const POSTHOG_SYNC_LOOKBACK_MS = 60 * 60 * 1000;
 
 function readRecord(value: unknown): ExternalPayloadRecord | null {
   const parsed = externalPayloadRecordSchema.safeParse(value);
@@ -490,9 +491,28 @@ function readPluginExternalId(record: ExternalPayloadRecord): string | null {
     readOptionalString(record.externalIssueId) ??
     readOptionalString(record.issueId) ??
     readOptionalString(record.externalEventId) ??
+    readOptionalString(record.eventID) ??
+    readOptionalString(record.event_id) ??
     readOptionalString(record.eventId) ??
     readOptionalString(record.id)
   );
+}
+
+function readCustomPluginSyncSince(source: ErrorSource): string | undefined {
+  if (source.lastSyncAt === null) {
+    return undefined;
+  }
+
+  if (source.sourceType !== "posthog") {
+    return source.lastSyncAt;
+  }
+
+  const timestamp = new Date(source.lastSyncAt).getTime();
+  if (!Number.isFinite(timestamp)) {
+    return source.lastSyncAt;
+  }
+
+  return new Date(timestamp - POSTHOG_SYNC_LOOKBACK_MS).toISOString();
 }
 
 function readPluginProjectIdentifier(
@@ -1390,7 +1410,7 @@ export class ErrorSourceSyncService {
     );
     const auth = await buildPluginAuthFromSource(source, this.pluginRuntime);
     const syncStartedAt = new Date().toISOString();
-    const since = source.lastSyncAt ?? undefined;
+    const since = readCustomPluginSyncSince(source);
     const until = syncStartedAt;
     let cursor: string | undefined;
     let pageCount = 0;

@@ -235,7 +235,15 @@ function buildLastSeenQuery(since, until) {
   return clauses.join(" ");
 }
 
-function buildIssuesUrl({ apiBase, orgSlug, projectIds, cursor, limit, query }) {
+function buildIssuesUrl({
+  apiBase,
+  orgSlug,
+  projectIds,
+  projectSlugs,
+  cursor,
+  limit,
+  query,
+}) {
   const url = new URL(
     `${apiBase}/organizations/${encodeURIComponent(orgSlug)}/issues/`,
   );
@@ -250,6 +258,10 @@ function buildIssuesUrl({ apiBase, orgSlug, projectIds, cursor, limit, query }) 
     if (/^\d+$/.test(projectId)) {
       url.searchParams.append("project", projectId);
     }
+  }
+
+  for (const projectSlug of readStringArray(projectSlugs)) {
+    url.searchParams.append("project", projectSlug);
   }
 
   const normalizedQuery = readString(query);
@@ -486,6 +498,7 @@ async function fetchIssues({ auth, input }) {
     apiBase,
     orgSlug,
     projectIds: input.projectIds,
+    projectSlugs: input.projectSlugs,
     cursor: input.cursor,
     limit,
     query: input.query,
@@ -769,6 +782,13 @@ const plugin: DesktopCodePlugin = {
           defaultValue: [],
         },
         {
+          key: "projectSlugs",
+          label: "Project slugs",
+          type: "string_array",
+          required: false,
+          defaultValue: [],
+        },
+        {
           key: "query",
           label: "Query",
           type: "string",
@@ -806,6 +826,13 @@ const plugin: DesktopCodePlugin = {
         {
           key: "projectIds",
           label: "Project IDs",
+          type: "string_array",
+          required: false,
+          defaultValue: [],
+        },
+        {
+          key: "projectSlugs",
+          label: "Project slugs",
           type: "string_array",
           required: false,
           defaultValue: [],

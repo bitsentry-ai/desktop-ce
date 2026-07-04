@@ -640,6 +640,22 @@ function createPluginRuntime(args: ParsedArgs) {
   }
 }
 
+function resolvePluginInstallPath(installRoot: string, pluginId: string): string {
+  const resolvedInstallRoot = path.resolve(installRoot)
+  const pluginPath = path.resolve(resolvedInstallRoot, pluginId)
+  const relativePath = path.relative(resolvedInstallRoot, pluginPath)
+
+  if (
+    relativePath.length === 0 ||
+    relativePath.startsWith('..') ||
+    path.isAbsolute(relativePath)
+  ) {
+    throw new Error(`Invalid code plugin id: "${pluginId}".`)
+  }
+
+  return pluginPath
+}
+
 function normalizeCliStoredAuthValue(
   field: DesktopPluginFieldDefinition,
   value: unknown,
@@ -1017,7 +1033,7 @@ async function handlePluginUpdateCommand({ args, asJson }: PluginCommandContext)
 async function handlePluginRemoveCommand({ args, asJson }: PluginCommandContext): Promise<void> {
   const pluginId = readPluginName(args)
   const { authStore, installRoot } = createPluginRuntime(args)
-  await rm(path.join(installRoot, pluginId), { recursive: true, force: true })
+  await rm(resolvePluginInstallPath(installRoot, pluginId), { recursive: true, force: true })
   await authStore.clear(pluginId)
   printOutput({
     pluginId,

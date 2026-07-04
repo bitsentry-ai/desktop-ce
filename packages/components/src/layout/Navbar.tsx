@@ -452,7 +452,6 @@ const adminSettingsSections = [
   { labelKey: "navigation.navbar.passwordSecurity", hash: "password-security" },
   { labelKey: "navigation.navbar.sessionSecurity", hash: "session-security" },
   { labelKey: "navigation.navbar.userManagement", hash: "users" },
-  { labelKey: "navigation.navbar.externalSources", hash: "external-sources" },
   { labelKey: "navigation.navbar.globalVariables", hash: "global-variables" },
   { labelKey: "navigation.navbar.llmProviders", hash: "llm-providers" },
   { labelKey: "navigation.navbar.help", hash: "help" },

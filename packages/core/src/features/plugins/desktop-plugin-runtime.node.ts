@@ -42,6 +42,24 @@ function readTrimmedString(value: unknown): string | undefined {
   return undefined;
 }
 
+function resolvePluginInstallPath(
+  installRoot: string,
+  pluginId: string,
+): string {
+  const resolvedInstallRoot = path.resolve(installRoot);
+  const installedPath = path.resolve(resolvedInstallRoot, pluginId);
+  const relativePath = path.relative(resolvedInstallRoot, installedPath);
+  if (
+    relativePath.length === 0 ||
+    relativePath.startsWith("..") ||
+    path.isAbsolute(relativePath)
+  ) {
+    throw new Error(`Invalid code plugin id: "${pluginId}".`);
+  }
+
+  return installedPath;
+}
+
 async function installPluginFromArtifact(input: {
   artifact: Buffer;
   installRoot: string;
@@ -76,7 +94,7 @@ async function installPluginFromArtifact(input: {
       throw new Error("Downloaded code plugin is missing a valid id.");
     }
 
-    const installedPath = path.join(input.installRoot, pluginId);
+    const installedPath = resolvePluginInstallPath(input.installRoot, pluginId);
     await rm(installedPath, { recursive: true, force: true });
     await mkdir(installedPath, { recursive: true });
     await writeFile(path.join(installedPath, "plugin.js"), input.artifact);
