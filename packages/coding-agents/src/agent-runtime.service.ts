@@ -661,6 +661,19 @@ function normalizeRunbookMention(value: string): string {
     .replace(/\s+/g, ' ')
 }
 
+function hasExplicitRunbookExecutionIntent(rawText: string, normalizedText: string): boolean {
+  const lowerText = rawText.toLowerCase()
+  if (/\b(don't|dont|do not|never|not)\b/.test(lowerText)) {
+    return false
+  }
+
+  if (/\b(should|would)\s+(we|i|you)\s+(run|start|execute|trigger|launch)\b/.test(normalizedText)) {
+    return false
+  }
+
+  return /\b(run|start|execute|trigger|launch)\b/.test(normalizedText)
+}
+
 function findLatestUserMessageIndex(messages: ChatMessage[]): number {
   for (let index = messages.length - 1; index >= 0; index--) {
     if (messages[index]?.role === 'user') {
@@ -2440,6 +2453,9 @@ export class AgentRuntimeService {
     const userText = readChatMessageText(latestUserMessage.content)
     const normalizedUserText = normalizeRunbookMention(userText)
     if (normalizedUserText.length === 0) {
+      return null
+    }
+    if (!hasExplicitRunbookExecutionIntent(userText, normalizedUserText)) {
       return null
     }
 
