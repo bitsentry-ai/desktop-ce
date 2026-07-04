@@ -1,7 +1,8 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { I18nProvider } from '@bitsentry-ce/i18n'
-import { MemoryRouter } from 'react-router-dom'
+import { MemoryRouter, useLocation } from 'react-router-dom'
 import { createRoot } from 'react-dom/client'
+import { useEffect } from 'react'
 import type { ComponentType, ReactNode } from 'react'
 import { BitsentryServicesProvider } from '../services'
 import type { BitsentryServicePorts } from '../services/contracts'
@@ -25,6 +26,23 @@ function readInitialRoute(): string {
   } catch {
     return '/'
   }
+}
+
+function DesktopRouteUrlSync(): null {
+  const location = useLocation()
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    if (window.location.protocol !== 'http:' && window.location.protocol !== 'https:') return
+
+    const nextPath = `${location.pathname}${location.search}${location.hash}`
+    const currentPath = `${window.location.pathname}${window.location.search}${window.location.hash}`
+    if (nextPath !== currentPath) {
+      window.history.replaceState(null, '', nextPath)
+    }
+  }, [location.hash, location.pathname, location.search])
+
+  return null
 }
 
 export async function renderDesktopRendererEntry(options: {
@@ -56,6 +74,7 @@ export async function renderDesktopRendererEntry(options: {
         <ThemeProvider>
           <BitsentryServicesProvider services={services}>
             <MemoryRouter initialEntries={[readInitialRoute()]}>
+              <DesktopRouteUrlSync />
               <DesktopStateBootstrap>
                 <App />
               </DesktopStateBootstrap>
