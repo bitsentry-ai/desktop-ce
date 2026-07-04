@@ -323,9 +323,9 @@
   "common.dataSourcesManager.cancel": "Cancel",
   "common.dataSourcesManager.cancel_2": "Cancel",
   "common.dataSourcesManager.connect": "Connect",
-  "common.dataSourcesManager.connectAnErrorTrackingIntegration": "Configure an installed plugin to feed Diagnosis.",
+  "common.dataSourcesManager.connectAnErrorTrackingIntegration": "Add an installed plugin as a data source.",
   "common.dataSourcesManager.connectExternalServicesToFeed": "Install plugins that feed data into Diagnosis.",
-  "common.dataSourcesManager.connectExternalSource": "Install Plugin",
+  "common.dataSourcesManager.connectExternalSource": "Add Source",
   "common.dataSourcesManager.connecting": "Connecting...",
   "common.dataSourcesManager.connectionFailed": "Connection failed",
   "common.dataSourcesManager.debug": "Debug",
@@ -355,7 +355,7 @@
   "common.dataSourcesManager.removeSource": "Remove plugin",
   "common.dataSourcesManager.removeSource_2": "Remove plugin",
   "common.dataSourcesManager.requiredIndicator": "*",
-  "common.dataSourcesManager.saveSource": "Save Plugin",
+  "common.dataSourcesManager.saveSource": "Save Source",
   "common.dataSourcesManager.selectALogLevelThreshold": "Select a log level threshold before running sync.",
   "common.dataSourcesManager.sourceName": "Plugin name",
   "common.dataSourcesManager.sourceNameRequired": "Plugin name is required.",
@@ -1464,5 +1464,7 @@
   "common.dataSourcesManager.installFromFileHelp": "Choose a plugin artifact built locally.",
   "common.dataSourcesManager.installChooseFile": "Choose file",
   "common.dataSourcesManager.installFromFileButton": "Install selected file",
-  "common.dataSourcesManager.installSuccess": "Plugin installed."
+  "common.dataSourcesManager.installSuccess": "Plugin installed.",
+  "common.dataSourcesManager.installLoading": "Loading",
+  "common.dataSourcesManager.installNoFileChosen": "No file chosen"
 }

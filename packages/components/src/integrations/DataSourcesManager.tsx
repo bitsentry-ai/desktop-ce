@@ -31,7 +31,7 @@ import type {
   PluginDescriptor,
 } from "../services/contracts";
 import { useTranslation } from "@bitsentry-ce/i18n";
-import { Pencil, RefreshCw, Trash2 } from "lucide-react";
+import { Download, Pencil, RefreshCw, Trash2 } from "lucide-react";
 import { PluginIcon } from "./icons";
 import InstallPluginDialog from "./InstallPluginDialog";
 
@@ -973,6 +973,7 @@ export default function DataSourcesManager({
               }}
               data-tour="data-sources-install-plugin"
             >
+              <Download className="size-4" />
               {t("common.dataSourcesManager.installPlugin")}
             </Button>
             <Button
@@ -999,6 +1000,7 @@ export default function DataSourcesManager({
             }}
             data-tour="data-sources-install-plugin"
           >
+            <Download className="size-4" />
             {t("common.dataSourcesManager.installPlugin")}
           </Button>
           <Button

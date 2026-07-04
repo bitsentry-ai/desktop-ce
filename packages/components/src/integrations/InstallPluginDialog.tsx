@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { toast } from "sonner";
 import { useTranslation } from "@bitsentry-ce/i18n";
 import { Button } from "../ui/button";
@@ -55,6 +55,7 @@ export default function InstallPluginDialog({
   const installFromArtifact = useInstallPluginFromArtifact();
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [pendingName, setPendingName] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const entries: AvailablePlugin[] = availableQuery.data?.data ?? [];
 
@@ -109,7 +110,7 @@ export default function InstallPluginDialog({
     if (availableQuery.isLoading) {
       return (
         <p className="text-sm text-muted-foreground">
-          {t("common.dataSourcesManager.installBusy")}
+          {t("common.dataSourcesManager.installLoading")}
         </p>
       );
     }
@@ -207,15 +208,29 @@ export default function InstallPluginDialog({
             <p className="text-xs text-muted-foreground">
               {t("common.dataSourcesManager.installFromFileHelp")}
             </p>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".tgz,.tar.gz,.gz,application/gzip"
+              className="hidden"
+              onChange={(event) => {
+                setSelectedFile(event.target.files?.[0] ?? null);
+              }}
+            />
             <div className="flex items-center gap-2">
-              <input
-                type="file"
-                accept=".tgz,.tar.gz,.gz,application/gzip"
-                className="text-sm"
-                onChange={(event) => {
-                  setSelectedFile(event.target.files?.[0] ?? null);
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  fileInputRef.current?.click();
                 }}
-              />
+              >
+                {t("common.dataSourcesManager.installChooseFile")}
+              </Button>
+              <span className="flex-1 truncate text-sm text-muted-foreground">
+                {selectedFile?.name ??
+                  t("common.dataSourcesManager.installNoFileChosen")}
+              </span>
               <Button
                 variant="outline"
                 size="sm"
