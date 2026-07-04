@@ -439,7 +439,7 @@ app
       dispatcher.registerAll(createRunbookHandlers(db, {
         executionService: runbookExecutionService,
         globalVariablesService,
-      }))
+      }, { edition: 'ce' }))
       dispatcher.registerAll(createDesktopStateHandlers(db))
       dispatcher.registerAll(
         createDesktopDialogHandlers({

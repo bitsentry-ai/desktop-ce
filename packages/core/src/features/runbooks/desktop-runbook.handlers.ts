@@ -13,19 +13,33 @@ import {
 import { runbookExportArtifactV1Schema } from "./export.schemas";
 import type { z } from "zod";
 
-const SUPPORTED_RUNBOOK_IMPORT_LLM_PROVIDERS = [
-  "groq",
-  "kilocode",
-  "openai",
-  "anthropic",
-  "gemini",
-  "openrouter",
-  "claude_code",
-  "codex",
-  "opencode",
+const SUPPORTED_RUNBOOK_IMPORT_LLM_PROVIDERS = {
+  ce: [
+    "claude_code",
+    "codex",
+    "opencode",
+    "cursor",
+  ],
+  pro: [
+    "groq",
+    "kilocode",
+    "openai",
+    "anthropic",
+    "gemini",
+    "openrouter",
+    "claude_code",
+    "codex",
+    "opencode",
+    "cursor",
+  ],
+} as const;
+const ALL_SUPPORTED_RUNBOOK_IMPORT_LLM_PROVIDERS = [
+  ...SUPPORTED_RUNBOOK_IMPORT_LLM_PROVIDERS.pro,
 ] as const;
 
 type RunbookImportIssue = z.core.$ZodIssue;
+export type DesktopRunbookImportEdition =
+  keyof typeof SUPPORTED_RUNBOOK_IMPORT_LLM_PROVIDERS;
 
 export interface DesktopRunbookHandlerExecutionService {
   start(
@@ -216,6 +230,7 @@ function toGlobalVariableInput(
 
 function validateRunbookImportArtifact(
   parsed: unknown,
+  edition: DesktopRunbookImportEdition = "pro",
 ): DesktopRunbookExportArtifactV1 {
   const normalizedParsed = normalizeLegacyRunbookImportArtifact(parsed);
   const result = runbookExportArtifactV1Schema.safeParse(normalizedParsed);
@@ -225,6 +240,8 @@ function validateRunbookImportArtifact(
       formatRunbookImportValidationError(firstIssue, normalizedParsed),
     );
   }
+
+  assertSupportedRunbookImportProviders(result.data, edition);
 
   const input = asObject(normalizedParsed);
   let rawRunbooks: unknown[] = [];
@@ -255,6 +272,31 @@ function validateRunbookImportArtifact(
   };
 }
 
+function assertSupportedRunbookImportProviders(
+  artifact: DesktopRunbookExportArtifactV1,
+  edition: DesktopRunbookImportEdition,
+): void {
+  const supportedProviders = SUPPORTED_RUNBOOK_IMPORT_LLM_PROVIDERS[edition];
+  const supportedProviderSet = new Set<string>(supportedProviders);
+
+  for (const runbook of artifact.runbooks) {
+    const runbookTitle = runbook.title.trim() || "Imported runbook";
+    for (const action of runbook.actions) {
+      const provider =
+        action.llmProviderKey?.trim() ||
+        action.telemetryConfig?.llmProviderKey?.trim() ||
+        "";
+      if (provider.length === 0 || supportedProviderSet.has(provider)) {
+        continue;
+      }
+
+      throw new Error(
+        `Runbook "${runbookTitle}" action "${action.title}" uses unsupported LLM provider "${provider}". Supported providers: ${supportedProviders.join(", ")}.`,
+      );
+    }
+  }
+}
+
 function formatRunbookImportValidationError(
   issue: RunbookImportIssue | undefined,
   artifact: unknown,
@@ -268,7 +310,7 @@ function formatRunbookImportValidationError(
       asObject(actionContext.action.telemetryConfig).llmProviderKey,
     );
     if (provider.length > 0) {
-      return `Runbook "${actionContext.runbookTitle}" action "${actionContext.actionTitle}" uses unsupported LLM provider "${provider}". Supported providers: ${SUPPORTED_RUNBOOK_IMPORT_LLM_PROVIDERS.join(", ")}.`;
+      return `Runbook "${actionContext.runbookTitle}" action "${actionContext.actionTitle}" uses unsupported LLM provider "${provider}". Supported providers: ${ALL_SUPPORTED_RUNBOOK_IMPORT_LLM_PROVIDERS.join(", ")}.`;
     }
   }
 
@@ -319,6 +361,9 @@ function findRunbookActionContextForIssue(
 export function createDesktopRunbookHandlers(
   db: DesktopRunbookHandlersDatabase,
   dependencies: DesktopRunbookHandlerDependencies,
+  options?: {
+    edition?: DesktopRunbookImportEdition;
+  },
 ) {
   const {
     executionService,
@@ -328,12 +373,16 @@ export function createDesktopRunbookHandlers(
     trustedRunbookPaths,
     logger,
   } = dependencies;
+  const edition = options?.edition ?? "pro";
   const store = new DesktopRunbookStore(db, globalVariablesService);
 
   const readValidatedRunbookImportArtifact = (
     raw: string,
   ): DesktopRunbookExportArtifactV1 => {
-    return validateRunbookImportArtifact(artifactIo.parseRunbookArtifactFile(raw));
+    return validateRunbookImportArtifact(
+      artifactIo.parseRunbookArtifactFile(raw),
+      edition,
+    );
   };
 
   const logRunbookAccess = async (
@@ -431,7 +480,7 @@ export function createDesktopRunbookHandlers(
       const input = asObject(payload);
       return store.importRunbooks({
         ...input,
-        artifact: validateRunbookImportArtifact(input.artifact),
+        artifact: validateRunbookImportArtifact(input.artifact, edition),
       });
     },
     "runbooks:readImportArtifact": async (payload: unknown) => {

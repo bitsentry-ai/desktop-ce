@@ -9,6 +9,14 @@ type SettingRecord = {
   value?: unknown
 }
 
+type RunbookActionRecord = {
+  id?: unknown
+  title?: unknown
+  prompt?: unknown
+  llmProviderKey?: unknown
+  llmModel?: unknown
+}
+
 export type DesktopDatabaseSeedClient = {
   role: {
     findUnique(args: { where: { id: number } }): Promise<unknown>
@@ -39,11 +47,19 @@ export type DesktopDatabaseSeedClient = {
   threatIntelligence: CreateModel
   threatIndicator: CreateModel
   auditLog: CreateModel
+  runbookAction: {
+    findMany(args: { where?: Record<string, unknown> }): Promise<RunbookActionRecord[]>
+    update(args: {
+      where: { id: string }
+      data: { llmProviderKey: string; llmModel: string; updatedAt: string }
+    }): Promise<unknown>
+  }
 }
 
 export type DesktopDatabaseSeedingOptions = {
   defaultLlmProvider: string
   migrateRemovedCloudLlmSettings?: boolean
+  migrateCeKanyeRestRunbook?: boolean
   logger?: {
     info(message: string, ...args: unknown[]): void
     error(message: string, ...args: unknown[]): void
@@ -60,6 +76,10 @@ const REMOVED_CLOUD_PROVIDER_KEYS = [
   'openrouter',
   'flowise',
 ]
+const KANYE_REST_ACTION_TITLE = 'What did kanye say?'
+const KANYE_REST_ACTION_PROMPT = 'Make a philosophical break down of what Kanye said.'
+const KANYE_REST_CE_PROVIDER = 'codex'
+const KANYE_REST_CE_MODEL = 'gpt-5.4-mini'
 
 async function createSeedRows<T extends SeedRow>(
   rows: T[],
@@ -73,6 +93,53 @@ async function createSeedRows<T extends SeedRow>(
 function readSettingString(value: unknown): string {
   if (typeof value !== 'string') return ''
   return value.trim()
+}
+
+async function migrateCeKanyeRestRunbook(
+  client: DesktopDatabaseSeedClient,
+  logger: NonNullable<DesktopDatabaseSeedingOptions['logger']>,
+): Promise<void> {
+  const actions = await client.runbookAction.findMany({
+    where: {
+      title: KANYE_REST_ACTION_TITLE,
+    },
+  })
+
+  let migratedCount = 0
+
+  for (const action of actions) {
+    const id = readSettingString(action.id)
+    if (id.length === 0) {
+      continue
+    }
+
+    if (readSettingString(action.prompt) !== KANYE_REST_ACTION_PROMPT) {
+      continue
+    }
+
+    if (
+      readSettingString(action.llmProviderKey) === KANYE_REST_CE_PROVIDER &&
+      readSettingString(action.llmModel) === KANYE_REST_CE_MODEL
+    ) {
+      continue
+    }
+
+    await client.runbookAction.update({
+      where: { id },
+      data: {
+        llmProviderKey: KANYE_REST_CE_PROVIDER,
+        llmModel: KANYE_REST_CE_MODEL,
+        updatedAt: new Date().toISOString(),
+      },
+    })
+    migratedCount += 1
+  }
+
+  if (migratedCount > 0) {
+    logger.info(
+      `[database] Migrated ${String(migratedCount)} Kanye Rest action(s) to ${KANYE_REST_CE_PROVIDER}/${KANYE_REST_CE_MODEL}`,
+    )
+  }
 }
 
 async function migrateRemovedCloudLlmSettings(
@@ -163,6 +230,10 @@ export function createDesktopDatabaseSeeders(options: DesktopDatabaseSeedingOpti
 
       if (options.migrateRemovedCloudLlmSettings === true) {
         await migrateRemovedCloudLlmSettings(client, options.defaultLlmProvider, logger)
+      }
+
+      if (options.migrateCeKanyeRestRunbook === true) {
+        await migrateCeKanyeRestRunbook(client, logger)
       }
     } catch (error) {
       logger.error('[database] Failed to seed defaults:', error)

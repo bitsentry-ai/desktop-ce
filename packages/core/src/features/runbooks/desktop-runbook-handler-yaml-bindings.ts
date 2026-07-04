@@ -10,6 +10,7 @@ import type {
 } from "./desktop-global-variables-service";
 import type {
   DesktopRunbookHandlersDatabase,
+  DesktopRunbookImportEdition,
 } from "./desktop-runbook.handlers";
 import type {
   RunbookExecutionService,
@@ -26,6 +27,9 @@ export function createDesktopYamlRunbookHandlers(
     executionService: RunbookExecutionService;
     globalVariablesService: DesktopGlobalVariablesService;
   },
+  options?: {
+    edition?: DesktopRunbookImportEdition;
+  },
 ) {
-  return runbookHandlerBindings.createRunbookHandlers(db, dependencies);
+  return runbookHandlerBindings.createRunbookHandlers(db, dependencies, options);
 }

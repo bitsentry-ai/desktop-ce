@@ -534,3 +534,48 @@ describe("RunbookStore importRunbooks", () => {
     );
   });
 });
+
+describe("Runbook import handlers", () => {
+  it("rejects Pro-only LLM providers in CE imports", async () => {
+    const db = createDb();
+    const executionService = {};
+    const globalVariablesService = {
+      list: vi.fn(() => []),
+    };
+    const handlers = createRunbookHandlers(
+      db as never,
+      {
+        executionService: executionService as never,
+        globalVariablesService: globalVariablesService as never,
+      },
+      { edition: "ce" },
+    );
+
+    await expect(
+      handlers["runbooks:import"]({
+        artifact: {
+          format: "bitsentry.runbooks.export",
+          version: 1,
+          exportedAt: "2026-06-15T00:00:00.000Z",
+          runbooks: [
+            {
+              title: "Kanye Rest",
+              actions: [
+                {
+                  type: "llm",
+                  title: "What did kanye say?",
+                  prompt: "Make a philosophical break down of what Kanye said.",
+                  llmProviderKey: "groq",
+                  llmModel: "openai/gpt-oss-20b",
+                },
+              ],
+            },
+          ],
+        },
+        options: { dryRun: true },
+      }),
+    ).rejects.toThrow(
+      'Runbook "Kanye Rest" action "What did kanye say?" uses unsupported LLM provider "groq". Supported providers: claude_code, codex, opencode, cursor.',
+    );
+  });
+});
