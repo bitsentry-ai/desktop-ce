@@ -204,10 +204,12 @@ function buildWazuhTags(hit) {
 }
 
 function mapAlertToIssue(hit) {
-  const externalId = readString(hit?._id);
-  if (externalId.length === 0) {
+  const rawId = readString(hit?._id);
+  if (rawId.length === 0) {
     return undefined;
   }
+  const index = readString(hit?._index);
+  const externalId = index.length > 0 ? `${index}:${rawId}` : rawId;
 
   const source = readWazuhSourceRecord(hit);
   const rule = readWazuhRuleRecord(hit);
@@ -228,7 +230,7 @@ function mapAlertToIssue(hit) {
     culprit: agentName || readString(source?.location),
     type: readString(rule?.id),
     metadata: rule,
-    projectIdentifier: readString(hit?._index),
+    projectIdentifier: index,
     level: readWazuhLevelText(hit),
     status: "unresolved",
     isUnhandled: true,
