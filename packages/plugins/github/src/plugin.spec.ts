@@ -57,6 +57,7 @@ function context(
 describe("GitHub plugin package", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
+    vi.unstubAllEnvs();
   });
 
   it("declares a typed GitHub error-source code plugin", () => {
@@ -75,6 +76,7 @@ describe("GitHub plugin package", () => {
   });
 
   it("executes list_issues through plugin code", async () => {
+    vi.stubEnv("GITHUB_ALLOWED_BASE_URLS", "github.example.com");
     const fetchMock = vi.fn<(url: string, request?: RequestInit) => Promise<Response>>();
     fetchMock.mockResolvedValue(
       new Response(JSON.stringify([createGitHubIssue()]), {
@@ -122,6 +124,7 @@ describe("GitHub plugin package", () => {
   });
 
   it("keeps list_issues page size within the GitHub API limit", async () => {
+    vi.stubEnv("GITHUB_ALLOWED_BASE_URLS", "github.example.com");
     const fetchMock = vi.fn<(url: string, request?: RequestInit) => Promise<Response>>();
     fetchMock.mockResolvedValue(
       new Response(
@@ -156,6 +159,46 @@ describe("GitHub plugin package", () => {
       hasMore: true,
       nextCursor: "2",
     });
+  });
+
+  it("rejects non-HTTPS GitHub API bases before sending bearer credentials", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(
+      action("list_issues").execute({
+        ...context("list_issues", {
+          owner: "bitsentry-ai",
+          repo: "monorepo",
+        }),
+        auth: {
+          accessToken: "gh-token",
+          apiBase: "http://github.example.com/api/v3",
+        },
+      }),
+    ).rejects.toThrow("GitHub API base URL must use https://");
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("rejects unallowlisted GitHub API bases before sending bearer credentials", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(
+      action("list_issues").execute({
+        ...context("list_issues", {
+          owner: "bitsentry-ai",
+          repo: "monorepo",
+        }),
+        auth: {
+          accessToken: "gh-token",
+          apiBase: "https://evil.example.com/api/v3",
+        },
+      }),
+    ).rejects.toThrow(
+      "GitHub API base URL \"evil.example.com\" is not in the allowlist",
+    );
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it("keeps setup and auth mapping inside plugin code", async () => {

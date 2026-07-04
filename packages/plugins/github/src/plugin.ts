@@ -3,6 +3,8 @@ import type { DesktopCodePlugin } from "@bitsentry-ce/core/features/plugins";
 const GITHUB_API_BASE = "https://api.github.com";
 const DEFAULT_LIMIT = 20;
 const MAX_LIMIT = 100;
+const GITHUB_ALLOWED_BASE_URLS_ENV = "GITHUB_ALLOWED_BASE_URLS";
+const GITHUB_BUILTIN_ALLOWED_HOSTS = new Set(["api.github.com"]);
 
 function readRecord(value): Record<string, unknown> {
   if (value === null || typeof value !== "object" || Array.isArray(value)) {
@@ -76,11 +78,53 @@ function readCursorPage(value) {
   return Math.trunc(numeric);
 }
 
+function readGitHubAllowedBaseUrlsEnv() {
+  if (typeof process === "undefined" || process.env === undefined) {
+    return "";
+  }
+
+  return readString(process.env[GITHUB_ALLOWED_BASE_URLS_ENV]);
+}
+
+function normalizeAllowedGitHubHost(value) {
+  const normalized = readString(value).toLowerCase();
+  if (normalized.length === 0) {
+    return "";
+  }
+
+  if (!normalized.includes("://")) {
+    return normalized;
+  }
+
+  try {
+    return new URL(normalized).host.toLowerCase();
+  } catch {
+    return normalized;
+  }
+}
+
+function readExtraAllowedGitHubHosts() {
+  return new Set(
+    readGitHubAllowedBaseUrlsEnv()
+      .split(",")
+      .map(normalizeAllowedGitHubHost)
+      .filter((host) => host.length > 0),
+  );
+}
+
 function resolveGitHubApiBase(value) {
   const normalized = readString(value, GITHUB_API_BASE);
   const parsed = new URL(normalized);
-  if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
-    throw new Error("GitHub API base URL must use http:// or https://");
+  if (parsed.protocol !== "https:") {
+    throw new Error("GitHub API base URL must use https://");
+  }
+
+  const host = parsed.host.toLowerCase();
+  const extraAllowedHosts = readExtraAllowedGitHubHosts();
+  if (!GITHUB_BUILTIN_ALLOWED_HOSTS.has(host) && !extraAllowedHosts.has(host)) {
+    throw new Error(
+      `GitHub API base URL "${host}" is not in the allowlist. Set ${GITHUB_ALLOWED_BASE_URLS_ENV} to whitelist enterprise instances.`,
+    );
   }
 
   return parsed.origin + parsed.pathname.replace(/\/$/, "");
