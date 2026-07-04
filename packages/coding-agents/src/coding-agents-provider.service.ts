@@ -29,29 +29,7 @@ import {
 } from "./cli-binary-resolution";
 
 const SETTINGS_KEY = "local_ai_settings";
-const CLAUDE_CODE_CATALOG_MODELS = [
-  "claude-sonnet-5",
-  "claude-fable-5",
-  "claude-opus-4-8",
-  "claude-opus-4-8-fast",
-  "claude-opus-4-7",
-  "claude-opus-4-6",
-  "claude-opus-4-5",
-  "claude-sonnet-4-6",
-  "claude-haiku-4-5",
-];
-const CURSOR_CATALOG_MODELS = [
-  "auto",
-  "composer-2.5",
-  "opus-4.8",
-  "gpt-5.5",
-  "fable-5",
-  "sonnet-5",
-  "sonnet-4.6",
-  "codex-5.3",
-  "opus-4.7",
-  "grok-build-0.1",
-];
+const CURSOR_CATALOG_MODELS = ["composer-2.5"];
 const OPEN_CODE_MODELS_LOCK_RETRY_DELAYS_MS = [150, 350];
 
 export interface CodingAgentsSettingsStore {
@@ -572,7 +550,7 @@ export class CodingAgentsProviderService {
 
   async listModels(provider: LocalAiProviderKey): Promise<string[]> {
     if (provider === "claude_code") {
-      return [...CLAUDE_CODE_CATALOG_MODELS];
+      return ["claude-sonnet-4-6", "claude-opus-4-6", "claude-haiku-4-5"];
     }
 
     if (provider === "opencode") {

@@ -388,19 +388,12 @@ function extractSessionId(value: unknown): string | undefined {
 }
 
 function getModelConfigOptionId(sessionResult: unknown): string | undefined {
-  return getConfigOptionId(sessionResult, isModelConfigOption)
-}
-
-function getConfigOptionId(
-  sessionResult: unknown,
-  predicate: (option: Record<string, unknown>) => boolean,
-): string | undefined {
   const configOptions = asArray(asRecord(sessionResult)?.configOptions)
   for (const rawOption of configOptions) {
     const option = asRecord(rawOption)
     if (option === undefined) continue
     const id = asString(option.id)
-    if (id !== undefined && predicate(option)) {
+    if (id !== undefined && isModelConfigOption(option)) {
       return id
     }
   }
@@ -412,22 +405,6 @@ function isModelConfigOption(option: Record<string, unknown>): boolean {
   const id = asString(option.id)?.toLowerCase()
   const name = asString(option.name)?.toLowerCase()
   return category === 'model' || id === 'model' || name?.includes('model') === true
-}
-
-function isEffortConfigOption(option: Record<string, unknown>): boolean {
-  const category = asString(option.category)?.toLowerCase()
-  const id = asString(option.id)?.toLowerCase()
-  const name = asString(option.name)?.toLowerCase()
-  return (
-    category === 'effort' ||
-    category === 'reasoning' ||
-    id === 'effort' ||
-    id === 'reasoning' ||
-    id === 'thinking' ||
-    name?.includes('effort') === true ||
-    name?.includes('reasoning') === true ||
-    name?.includes('thinking') === true
-  )
 }
 
 function collectConfigOptionModels(configOptions: unknown): Set<string> {
@@ -633,32 +610,6 @@ async function setCursorModel(
   )
 }
 
-async function setCursorEffort(
-  client: CursorAcpClient,
-  sessionResult: unknown,
-  sessionId: string,
-  effort: string | boolean | undefined,
-): Promise<void> {
-  if (typeof effort !== 'string' || effort === '') return
-
-  const effortConfigOptionId = getConfigOptionId(sessionResult, isEffortConfigOption)
-  if (effortConfigOptionId === undefined) return
-
-  try {
-    await withTimeout(
-      client.sendRequest('session/set_config_option', {
-        sessionId,
-        configId: effortConfigOptionId,
-        value: effort,
-      }),
-      CURSOR_SETUP_TIMEOUT_MS,
-      'Cursor ACP session/set_config_option',
-    )
-  } catch (err) {
-    log.warn('[cursor-provider] Failed to set effort via config option:', err)
-  }
-}
-
 export async function listCursorModels(binaryPath: string): Promise<string[]> {
   const client = new CursorAcpClient(binaryPath, os.tmpdir())
 
@@ -789,7 +740,6 @@ async function runCursorSession(
   state.sessionId = requireCursorSessionId(sessionResult)
 
   await setCursorModel(client, sessionResult, state.sessionId, options.model)
-  await setCursorEffort(client, sessionResult, state.sessionId, options.traitValues?.effort)
 
   const promptResult = await sendCursorPrompt(client, state.sessionId, options.prompt)
   return cursorPromptResult(promptResult, options, accessLevel, state)

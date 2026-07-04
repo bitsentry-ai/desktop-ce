@@ -338,18 +338,7 @@ describe("CodingAgentsProviderService", () => {
 
     const models = await service.listModels("cursor");
 
-    expect(models).toEqual([
-      "auto",
-      "composer-2.5",
-      "opus-4.8",
-      "gpt-5.5",
-      "fable-5",
-      "sonnet-5",
-      "sonnet-4.6",
-      "codex-5.3",
-      "opus-4.7",
-      "grok-build-0.1",
-    ]);
+    expect(models).toEqual(["composer-2.5"]);
     expect(detectBinary).not.toHaveBeenCalled();
     expect(service.getSettings().cursor.binaryPath).toBe("cursor-agent");
   });
