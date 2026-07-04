@@ -3,3 +3,12 @@ packages:
   - 'packages/*'
   - 'packages/plugins/*'
   - 'packages/electron-trpc/packages/*'
+allowBuilds:
+  '@sentry/cli': true
+  better-sqlite3: true
+  core-js: true
+  electron: true
+  electron-winstaller: true
+  esbuild: true
+  node-pty: true
+  protobufjs: true
