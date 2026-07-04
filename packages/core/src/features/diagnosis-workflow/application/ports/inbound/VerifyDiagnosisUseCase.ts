@@ -18,6 +18,9 @@ export interface VerifyDiagnosisOutput {
   verificationText: string;
   mcpToolsUsed: string[];
   verificationPassed: boolean;
+  verificationMethod?: string;
+  evidenceSourcesUsed?: string[];
+  evidenceQueries?: Array<Record<string, unknown>>;
   providerUsed?: DiagnosisLlmProviderKey;
   modelUsed?: string;
   currentActionLabel?: string;

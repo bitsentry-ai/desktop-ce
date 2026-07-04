@@ -26,6 +26,9 @@ export interface MCPVerificationResult {
   verificationText: string;
   toolsUsed: string[];
   passed: boolean;
+  verificationMethod?: string;
+  evidenceSourcesUsed?: string[];
+  evidenceQueries?: Array<Record<string, unknown>>;
   providerUsed?: DiagnosisLlmProviderKey;
   modelUsed?: string;
 }
