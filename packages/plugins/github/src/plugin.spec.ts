@@ -161,6 +161,50 @@ describe("GitHub plugin package", () => {
     });
   });
 
+  it("filters pull requests out of synced GitHub issue batches", async () => {
+    vi.stubEnv("GITHUB_ALLOWED_BASE_URLS", "github.example.com");
+    const fetchMock = vi.fn<(url: string, request?: RequestInit) => Promise<Response>>();
+    fetchMock.mockResolvedValue(
+      new Response(
+        JSON.stringify([
+          createGitHubIssue(),
+          createGitHubIssue({
+            id: 202,
+            number: 43,
+            title: "Review plugin PR",
+            html_url: "https://github.com/bitsentry-ai/monorepo/pull/43",
+            pull_request: {
+              url: "https://api.github.com/repos/bitsentry-ai/monorepo/pulls/43",
+            },
+          }),
+        ]),
+        {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        },
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await action("list_issues").execute(
+      context("list_issues", {
+        owner: "bitsentry-ai",
+        repo: "monorepo",
+        limit: 10,
+      }),
+    );
+
+    expect(result.data).toMatchObject({
+      issues: [
+        {
+          externalIssueId: "bitsentry-ai/monorepo#42",
+          type: "issue",
+        },
+      ],
+      hasMore: false,
+    });
+  });
+
   it("rejects non-HTTPS GitHub API bases before sending bearer credentials", async () => {
     const fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);
