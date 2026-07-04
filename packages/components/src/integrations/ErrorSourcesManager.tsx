@@ -1208,7 +1208,9 @@ export default function ErrorSourcesManager({
                 <div className="space-y-3">
                   {selectedSetupFields.length === 0 && (
                     <p className="text-sm text-muted-foreground">
-                      This code plugin does not require connection fields.
+                      {t(
+                        "common.errorSourcesManager.pluginDoesNotRequireConnectionFields",
+                      )}
                     </p>
                   )}
                   {selectedSetupFields.map((field) =>
@@ -1390,6 +1392,9 @@ export default function ErrorSourcesManager({
                   }));
                 },
                 disabled: updateMutation.isPending,
+                noConnectionFieldsText: t(
+                  "common.errorSourcesManager.installOrEnablePluginToEditConnectionFields",
+                ),
               })}
 
               <div className="flex items-center justify-between gap-3">
@@ -1471,14 +1476,15 @@ function renderEditConnectionFields(input: {
   values: Record<string, string>;
   onChange: (fieldKey: string, nextValue: string) => void;
   disabled: boolean;
+  noConnectionFieldsText: string;
 }): ReactNode {
-  const { plugin, values, onChange, disabled } = input;
+  const { plugin, values, onChange, disabled, noConnectionFieldsText } = input;
   const setupFields = plugin?.metadata?.errorSource?.setupFields ?? [];
 
   if (setupFields.length === 0) {
     return (
       <div className="rounded-md border border-dashed border-border px-3 py-2 text-sm text-muted-foreground">
-        Install or enable this source's code plugin to edit connection fields.
+        {noConnectionFieldsText}
       </div>
     );
   }

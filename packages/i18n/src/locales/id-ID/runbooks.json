@@ -517,6 +517,7 @@
   "runbooks.runbooks.startedTelemetryRunForNeed": "Started telemetry run for {{need}}.",
   "runbooks.runbook.actionTypePlugin": "Plugin",
   "runbooks.runbook.exampleQueryGitHubIssues": "e.g. Query GitHub issues",
+  "runbooks.runbook.fillTemplate": "Isi template",
   "runbooks.runbook.loadingPlugins": "Loading plugins...",
   "runbooks.runbook.noPluginActionSelected": "No plugin action selected",
   "runbooks.runbook.noPluginActionsAvailable": "This plugin does not declare any actions.",
@@ -533,7 +534,12 @@
   "runbooks.runbook.pluginInputJson": "Plugin input JSON",
   "runbooks.runbook.pluginInputJsonHelp": "Provide a JSON object for the plugin action input. Runtime placeholders are resolved before execution.",
   "runbooks.runbook.pluginInputJsonPlaceholder": "{\"owner\":\"bitsentry-ai\",\"repo\":\"bitsentry-monorepo\"}",
+  "runbooks.runbook.pluginStructuredFieldsHelp": "Gunakan field yang dideklarasikan plugin dengan aman. JSON mentah di bawah tetap tersinkron.",
+  "runbooks.runbook.pluginStructuredFieldsInvalidJson": "Pengeditan terstruktur dinonaktifkan sampai JSON di bawah menjadi objek yang valid.",
+  "runbooks.runbook.pluginStructuredFieldsRawJsonOnly": "Gunakan JSON yang valid untuk field ini.",
+  "runbooks.runbook.savedPluginAuthMergedAtExecution": "Auth plugin tersimpan dari pengaturan tetap digabungkan saat eksekusi ketika JSON ini menghilangkan field.",
   "runbooks.runbook.pluginRiskLevel": "Risk level",
   "runbooks.runbook.selectAPlugin": "Select a plugin",
-  "runbooks.runbook.selectAPluginAction": "Select a plugin action"
+  "runbooks.runbook.selectAPluginAction": "Select a plugin action",
+  "runbooks.runbook.usePluginDefault": "Gunakan default plugin"
 }

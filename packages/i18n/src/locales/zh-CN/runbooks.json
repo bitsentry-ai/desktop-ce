@@ -517,6 +517,7 @@
   "runbooks.runbooks.startedTelemetryRunForNeed": "Started telemetry run for {{need}}.",
   "runbooks.runbook.actionTypePlugin": "Plugin",
   "runbooks.runbook.exampleQueryGitHubIssues": "e.g. Query GitHub issues",
+  "runbooks.runbook.fillTemplate": "填充模板",
   "runbooks.runbook.loadingPlugins": "Loading plugins...",
   "runbooks.runbook.noPluginActionSelected": "No plugin action selected",
   "runbooks.runbook.noPluginActionsAvailable": "This plugin does not declare any actions.",
@@ -533,7 +534,12 @@
   "runbooks.runbook.pluginInputJson": "Plugin input JSON",
   "runbooks.runbook.pluginInputJsonHelp": "Provide a JSON object for the plugin action input. Runtime placeholders are resolved before execution.",
   "runbooks.runbook.pluginInputJsonPlaceholder": "{\"owner\":\"bitsentry-ai\",\"repo\":\"bitsentry-monorepo\"}",
+  "runbooks.runbook.pluginStructuredFieldsHelp": "安全使用插件声明的字段。下方的原始 JSON 会保持同步。",
+  "runbooks.runbook.pluginStructuredFieldsInvalidJson": "在下方 JSON 成为有效对象之前，结构化编辑会保持禁用。",
+  "runbooks.runbook.pluginStructuredFieldsRawJsonOnly": "请为此字段使用有效 JSON。",
+  "runbooks.runbook.savedPluginAuthMergedAtExecution": "当此 JSON 省略字段时，设置中保存的插件认证仍会在执行时合并。",
   "runbooks.runbook.pluginRiskLevel": "Risk level",
   "runbooks.runbook.selectAPlugin": "Select a plugin",
-  "runbooks.runbook.selectAPluginAction": "Select a plugin action"
+  "runbooks.runbook.selectAPluginAction": "Select a plugin action",
+  "runbooks.runbook.usePluginDefault": "使用插件默认值"
 }

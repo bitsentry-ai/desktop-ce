@@ -517,6 +517,7 @@
   "runbooks.runbooks.startedTelemetryRunForNeed": "Started telemetry run for {{need}}.",
   "runbooks.runbook.actionTypePlugin": "Plugin",
   "runbooks.runbook.exampleQueryGitHubIssues": "e.g. Query GitHub issues",
+  "runbooks.runbook.fillTemplate": "Fill template",
   "runbooks.runbook.loadingPlugins": "Loading plugins...",
   "runbooks.runbook.noPluginActionSelected": "No plugin action selected",
   "runbooks.runbook.noPluginActionsAvailable": "This plugin does not declare any actions.",
@@ -537,6 +538,8 @@
   "runbooks.runbook.pluginStructuredFieldsHelp": "Use the plugin's declared fields safely. The raw JSON below stays in sync.",
   "runbooks.runbook.pluginStructuredFieldsInvalidJson": "Structured editing is disabled until the JSON below is a valid object.",
   "runbooks.runbook.pluginStructuredFieldsRawJsonOnly": "Use valid JSON for this field.",
+  "runbooks.runbook.savedPluginAuthMergedAtExecution": "Saved plugin auth from settings is still merged at execution time when this JSON omits fields.",
   "runbooks.runbook.selectAPlugin": "Select a plugin",
-  "runbooks.runbook.selectAPluginAction": "Select a plugin action"
+  "runbooks.runbook.selectAPluginAction": "Select a plugin action",
+  "runbooks.runbook.usePluginDefault": "Use plugin default"
 }

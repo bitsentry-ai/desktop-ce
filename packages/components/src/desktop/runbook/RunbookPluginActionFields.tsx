@@ -1,7 +1,10 @@
 import type { ReactNode } from "react";
 
 import { cn } from "../../lib/utils";
-import type { PluginActionDefinition, PluginFieldDefinition } from "../../services";
+import type {
+  PluginActionDefinition,
+  PluginFieldDefinition,
+} from "../../services";
 import type { RunbookActionTypeFieldsProps } from "./RunbookActionFieldShared";
 
 type RunbookPluginActionFieldsProps = Pick<
@@ -57,7 +60,9 @@ function buildFieldTemplateValue(field: PluginFieldDefinition): unknown {
   }
 }
 
-function buildFieldTemplateJson(fields: PluginFieldDefinition[]): string | undefined {
+function buildFieldTemplateJson(
+  fields: PluginFieldDefinition[],
+): string | undefined {
   const template: Record<string, unknown> = {};
 
   for (const field of fields) {
@@ -74,16 +79,21 @@ function buildFieldTemplateJson(fields: PluginFieldDefinition[]): string | undef
   return JSON.stringify(template, null, 2);
 }
 
-function parseJsonObject(
-  raw: string | undefined,
-): { value: Record<string, unknown> | null; error: boolean } {
+function parseJsonObject(raw: string | undefined): {
+  value: Record<string, unknown> | null;
+  error: boolean;
+} {
   if (raw === undefined || raw.trim().length === 0) {
     return { value: {}, error: false };
   }
 
   try {
     const parsed = JSON.parse(raw) as unknown;
-    if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+    if (
+      parsed === null ||
+      typeof parsed !== "object" ||
+      Array.isArray(parsed)
+    ) {
       return { value: null, error: true };
     }
 
@@ -93,7 +103,9 @@ function parseJsonObject(
   }
 }
 
-function serializeJsonObject(value: Record<string, unknown>): string | undefined {
+function serializeJsonObject(
+  value: Record<string, unknown>,
+): string | undefined {
   if (Object.keys(value).length === 0) {
     return undefined;
   }
@@ -324,12 +336,14 @@ function renderStructuredFieldInput({
   fieldValue,
   inputId,
   parsedValue,
+  t,
   onJsonChange,
 }: {
   field: PluginFieldDefinition;
   fieldValue: string;
   inputId: string;
   parsedValue: Record<string, unknown> | null;
+  t: RunbookPluginActionFieldsProps["t"];
   onJsonChange: (nextValue: string | undefined) => void;
 }): ReactNode {
   const updateField = (nextValue: string | boolean): void => {
@@ -375,7 +389,9 @@ function renderStructuredFieldInput({
         }}
         className="w-full rounded-lg border border-border bg-background px-3 py-2 text-xs outline-none transition-colors focus:border-primary/50"
       >
-        {!field.required && <option value="">Use plugin default</option>}
+        {!field.required && (
+          <option value="">{t("runbooks.runbook.usePluginDefault")}</option>
+        )}
         {field.enumValues.map((value) => (
           <option key={value} value={value}>
             {value}
@@ -423,6 +439,7 @@ type PluginStructuredFieldsEditorProps = {
   helpText: string;
   invalidJsonText: string;
   rawJsonOnlyText: string;
+  t: RunbookPluginActionFieldsProps["t"];
   onJsonChange: (nextValue: string | undefined) => void;
 };
 
@@ -433,6 +450,7 @@ function PluginStructuredFieldsEditor({
   helpText,
   invalidJsonText,
   rawJsonOnlyText,
+  t,
   onJsonChange,
 }: PluginStructuredFieldsEditorProps) {
   if (fields.length === 0) {
@@ -482,6 +500,7 @@ function PluginStructuredFieldsEditor({
               fieldValue,
               inputId,
               parsedValue: parsed.value,
+              t,
               onJsonChange,
             })}
 
@@ -580,7 +599,9 @@ export function RunbookPluginActionFields({
   const pluginAuthTemplate = buildFieldTemplateJson(
     selectedPlugin?.auth.fields ?? [],
   );
-  const pluginInputTemplate = buildFieldTemplateJson(selectedAction?.fields ?? []);
+  const pluginInputTemplate = buildFieldTemplateJson(
+    selectedAction?.fields ?? [],
+  );
 
   const pluginPlaceholderText = readPluginPlaceholderText({
     pluginsLoading,
@@ -604,7 +625,9 @@ export function RunbookPluginActionFields({
           disabled={pluginsLoading || pluginOptions.length === 0}
           onChange={(event) => {
             const pluginId = event.target.value.trim();
-            const nextPlugin = pluginDescriptors.find((plugin) => plugin.id === pluginId);
+            const nextPlugin = pluginDescriptors.find(
+              (plugin) => plugin.id === pluginId,
+            );
             const nextPluginAuthValue = normalizeJsonForFields(
               nextPlugin?.auth.fields ?? [],
               action.pluginAuth,
@@ -721,8 +744,13 @@ export function RunbookPluginActionFields({
           jsonValue={action.pluginAuth}
           label={t("runbooks.runbook.pluginAuthFields")}
           helpText={t("runbooks.runbook.pluginStructuredFieldsHelp")}
-          invalidJsonText={t("runbooks.runbook.pluginStructuredFieldsInvalidJson")}
-          rawJsonOnlyText={t("runbooks.runbook.pluginStructuredFieldsRawJsonOnly")}
+          invalidJsonText={t(
+            "runbooks.runbook.pluginStructuredFieldsInvalidJson",
+          )}
+          rawJsonOnlyText={t(
+            "runbooks.runbook.pluginStructuredFieldsRawJsonOnly",
+          )}
+          t={t}
           onJsonChange={(nextValue) => {
             onActionChange({
               ...action,
@@ -734,20 +762,21 @@ export function RunbookPluginActionFields({
           <label className="block text-[10px] font-medium uppercase tracking-wide text-muted-foreground/60">
             {t("runbooks.runbook.pluginAuthJson")}
           </label>
-          {selectedPlugin !== undefined && selectedPlugin.auth.fields.length > 0 && (
-            <button
-              type="button"
-              onClick={() => {
-                onActionChange({
-                  ...action,
-                  pluginAuth: pluginAuthTemplate,
-                });
-              }}
-              className="rounded-md border border-border px-2 py-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground transition-colors hover:bg-muted/40"
-            >
-              Fill template
-            </button>
-          )}
+          {selectedPlugin !== undefined &&
+            selectedPlugin.auth.fields.length > 0 && (
+              <button
+                type="button"
+                onClick={() => {
+                  onActionChange({
+                    ...action,
+                    pluginAuth: pluginAuthTemplate,
+                  });
+                }}
+                className="rounded-md border border-border px-2 py-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground transition-colors hover:bg-muted/40"
+              >
+                {t("runbooks.runbook.fillTemplate")}
+              </button>
+            )}
         </div>
         <textarea
           value={action.pluginAuth ?? ""}
@@ -770,12 +799,12 @@ export function RunbookPluginActionFields({
             </>
           )}
         </p>
-        {selectedPlugin !== undefined && selectedPlugin.auth.fields.length > 0 && (
-          <p className="mt-1 text-[11px] text-muted-foreground/60">
-            Saved plugin auth from settings is still merged at execution time when this JSON omits
-            fields.
-          </p>
-        )}
+        {selectedPlugin !== undefined &&
+          selectedPlugin.auth.fields.length > 0 && (
+            <p className="mt-1 text-[11px] text-muted-foreground/60">
+              {t("runbooks.runbook.savedPluginAuthMergedAtExecution")}
+            </p>
+          )}
       </div>
 
       <div>
@@ -784,8 +813,13 @@ export function RunbookPluginActionFields({
           jsonValue={action.pluginInput}
           label={t("runbooks.runbook.pluginInputFields")}
           helpText={t("runbooks.runbook.pluginStructuredFieldsHelp")}
-          invalidJsonText={t("runbooks.runbook.pluginStructuredFieldsInvalidJson")}
-          rawJsonOnlyText={t("runbooks.runbook.pluginStructuredFieldsRawJsonOnly")}
+          invalidJsonText={t(
+            "runbooks.runbook.pluginStructuredFieldsInvalidJson",
+          )}
+          rawJsonOnlyText={t(
+            "runbooks.runbook.pluginStructuredFieldsRawJsonOnly",
+          )}
+          t={t}
           onJsonChange={(nextValue) => {
             onActionChange({
               ...action,
@@ -808,7 +842,7 @@ export function RunbookPluginActionFields({
               }}
               className="rounded-md border border-border px-2 py-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground transition-colors hover:bg-muted/40"
             >
-              Fill template
+              {t("runbooks.runbook.fillTemplate")}
             </button>
           )}
         </div>

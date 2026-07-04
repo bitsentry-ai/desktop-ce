@@ -251,16 +251,19 @@ describe("CodingAgentsProviderService", () => {
 
   it("dedupes concurrent OpenCode model sync requests", async () => {
     vi.mocked(detectBinary).mockResolvedValue(null);
-    let completeModelsCommand:
-      | ((error: Error | null, stdout: string, stderr: string) => void)
-      | undefined;
+    let completeModelsCommand: ((stdout: string) => void) | undefined;
     vi.mocked(execFile).mockImplementation(
       (_command, _args, options, callback) => {
         let cb = callback;
         if (typeof options === "function") {
           cb = options;
         }
-        completeModelsCommand = cb;
+        if (cb === undefined || cb === null) {
+          throw new Error("Expected execFile callback");
+        }
+        completeModelsCommand = (stdout: string) => {
+          cb(null, stdout, "");
+        };
         return new ChildProcess();
       },
     );
@@ -279,7 +282,7 @@ describe("CodingAgentsProviderService", () => {
     await Promise.resolve();
 
     expect(execFile).toHaveBeenCalledTimes(1);
-    completeModelsCommand?.(null, "opencode/big-pickle\n", "");
+    completeModelsCommand?.("opencode/big-pickle\n");
     await expect(Promise.all([first, second])).resolves.toEqual([
       ["opencode/big-pickle"],
       ["opencode/big-pickle"],
