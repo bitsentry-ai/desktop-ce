@@ -210,7 +210,6 @@ function defaultBuildErrorSourceAuth(
   const accessToken = source.accessTokenRef?.trim();
   if (accessToken !== undefined && accessToken.length > 0) {
     auth.accessToken = accessToken;
-    auth.authToken ??= accessToken;
   }
   const refreshToken = source.refreshTokenRef?.trim();
   if (refreshToken !== undefined && refreshToken.length > 0) {

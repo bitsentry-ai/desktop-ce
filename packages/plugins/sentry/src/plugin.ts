@@ -98,10 +98,7 @@ function readRecord(value): Record<string, unknown> {
 function resolveSentryErrorSourceSetup(context) {
   const setupValues = readRecord(context.setupValues);
   const authToken = readString(setupValues.authToken);
-  const orgSlug = readString(
-    setupValues.orgSlug,
-    readString(setupValues.organizationSlug),
-  );
+  const orgSlug = readString(setupValues.orgSlug);
   const projectSlugs = readStringArray(setupValues.projectSlugs);
   const configuration: Record<string, unknown> = {};
   if (orgSlug.length > 0) {
@@ -122,12 +119,7 @@ function buildSentryErrorSourceAuthFromParts(accessTokenRef, configuration) {
   const auth = { ...config };
   const accessToken = readString(accessTokenRef);
   if (accessToken.length > 0) {
-    auth.authToken = accessToken;
     auth.accessToken = accessToken;
-  }
-  const orgSlug = readString(config.orgSlug);
-  if (orgSlug.length > 0) {
-    auth.organizationSlug = orgSlug;
   }
 
   return auth;

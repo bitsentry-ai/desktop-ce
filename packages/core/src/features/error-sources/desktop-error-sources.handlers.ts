@@ -494,11 +494,6 @@ function readPluginConnectionIndexPattern(
     return indexPatterns.join(',')
   }
 
-  const legacyProjectSlugs = readStringArray(configuration.projectSlugs)
-  if (legacyProjectSlugs.length > 0) {
-    return legacyProjectSlugs.join(',')
-  }
-
   return undefined
 }
 

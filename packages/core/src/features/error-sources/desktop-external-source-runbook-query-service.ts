@@ -77,13 +77,6 @@ function readPluginIndexPattern(
     return configuredIndexPatterns.join(",");
   }
 
-  const fallbackProjectSlugs = readConfiguredStringArray(
-    configuration.projectSlugs,
-  );
-  if (fallbackProjectSlugs.length > 0) {
-    return fallbackProjectSlugs.join(",");
-  }
-
   return undefined;
 }
 
@@ -156,13 +149,6 @@ function buildGenericPluginQueryInput(
   );
   if (configuredProjectIds.length > 0) {
     input.projectIds = configuredProjectIds;
-  }
-
-  const configuredProjectSlugs = readConfiguredStringArray(
-    source.configuration.projectSlugs,
-  );
-  if (configuredProjectSlugs.length > 0) {
-    input.projectSlugs = configuredProjectSlugs;
   }
 
   const indexPattern = readPluginIndexPattern(source.configuration);

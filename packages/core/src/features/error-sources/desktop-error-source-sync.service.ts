@@ -305,11 +305,6 @@ function readPluginIndexPattern(source: ErrorSource): string | undefined {
     return indexPatterns.join(',')
   }
 
-  const legacyProjectSlugs = readStringArray(source.configuration.projectSlugs)
-  if (legacyProjectSlugs.length > 0) {
-    return legacyProjectSlugs.join(',')
-  }
-
   return undefined
 }
 
@@ -371,11 +366,6 @@ function buildGenericPluginSyncInput(args: {
   const projectIds = readStringArray(source.configuration.projectIds)
   if (projectIds.length > 0) {
     input.projectIds = projectIds
-  }
-
-  const projectSlugs = readStringArray(source.configuration.projectSlugs)
-  if (projectSlugs.length > 0) {
-    input.projectSlugs = projectSlugs
   }
 
   const indexPattern = readPluginIndexPattern(source)

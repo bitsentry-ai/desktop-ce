@@ -52,10 +52,7 @@ function resolvePostHogErrorSourceSetup(context) {
   const setupValues = readRecord(context.setupValues);
   const authToken = readString(setupValues.authToken);
   const baseUrl = readString(setupValues.baseUrl);
-  const orgSlug = readString(
-    setupValues.orgSlug,
-    readString(setupValues.organizationId),
-  );
+  const orgSlug = readString(setupValues.orgSlug);
   const projectIds = readStringArray(setupValues.projectIds);
   const configuration: Record<string, unknown> = {};
   if (baseUrl.length > 0) {
@@ -79,12 +76,7 @@ function buildPostHogErrorSourceAuthFromParts(accessTokenRef, configuration) {
   const auth = { ...config };
   const accessToken = readString(accessTokenRef);
   if (accessToken.length > 0) {
-    auth.authToken = accessToken;
     auth.accessToken = accessToken;
-  }
-  const orgSlug = readString(config.orgSlug);
-  if (orgSlug.length > 0) {
-    auth.organizationId = orgSlug;
   }
 
   return auth;

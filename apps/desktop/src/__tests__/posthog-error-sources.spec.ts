@@ -389,7 +389,7 @@ describe('posthog error source support', () => {
     })
   })
 
-  it('starts OAuth for legacy-named code plugins without host-owned base URL restrictions', async () => {
+  it('starts OAuth for code plugins without host-owned base URL restrictions', async () => {
     const upsertSetting = vi.fn<DbClient['setting']['upsert']>().mockResolvedValue({})
     const db = {
       setting: {
@@ -451,7 +451,7 @@ describe('posthog error source support', () => {
     })
   })
 
-  it('rejects legacy-named code plugins without plugin OAuth metadata', async () => {
+  it('rejects code plugins without plugin OAuth metadata', async () => {
     const db = {
       setting: {
         findMany: vi.fn().mockResolvedValue([]),

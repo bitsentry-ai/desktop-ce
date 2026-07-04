@@ -115,7 +115,7 @@ function parseGitHubErrorBody(raw) {
 }
 
 async function requestGitHubJson(auth, pathname, params = {}, options = {}) {
-  const accessToken = readString(auth.accessToken ?? auth.authToken ?? auth.token);
+  const accessToken = readString(auth.accessToken);
   const apiBase = auth.apiBase ?? auth.baseUrl;
   const headers: Record<string, string> = {
     Accept: "application/vnd.github+json",
@@ -502,7 +502,6 @@ function buildGitHubErrorSourceAuthFromParts(accessTokenRef, configuration) {
   const accessToken = readString(accessTokenRef);
   if (accessToken.length > 0) {
     auth.accessToken = accessToken;
-    auth.authToken = accessToken;
   }
   if (Array.isArray(config.projectIds)) {
     auth.repos = config.projectIds;

@@ -103,7 +103,7 @@ function buildPostHogPersistedSetup(
 ): DesktopPluginPersistedErrorSourceSetup {
   const configuration: Record<string, unknown> = {}
   const baseUrl = readString(setupValues.baseUrl)
-  const orgSlug = readString(setupValues.orgSlug) || readString(setupValues.organizationId)
+  const orgSlug = readString(setupValues.orgSlug)
   const projectIds = readStringArray(setupValues.projectIds)
   if (baseUrl.length > 0) {
     configuration.baseUrl = baseUrl
@@ -115,7 +115,7 @@ function buildPostHogPersistedSetup(
     configuration.projectIds = projectIds
   }
 
-  const accessToken = readString(setupValues.accessToken) || readString(setupValues.authToken)
+  const accessToken = readString(setupValues.authToken)
   let accessTokenRef: string | undefined
   if (accessToken.length > 0) {
     accessTokenRef = accessToken
@@ -133,12 +133,7 @@ function buildPostHogAuth(
   const auth = { ...(configuration ?? {}) }
   const accessToken = readString(accessTokenRef)
   if (accessToken.length > 0) {
-    auth.authToken = accessToken
     auth.accessToken = accessToken
-  }
-  const orgSlug = readString(configuration?.orgSlug)
-  if (orgSlug.length > 0) {
-    auth.organizationId = orgSlug
   }
 
   return auth
@@ -310,7 +305,7 @@ describe('desktop error source handlers', () => {
     vi.useRealTimers()
   })
 
-  it('tests legacy-named sources through matching code plugin actions', async () => {
+  it('tests sources through matching code plugin actions', async () => {
     vi.useFakeTimers()
     const runtime = new TestPluginRuntimeService([createPostHogPluginDescriptor()])
     runtime.executeActionMock.mockResolvedValue({
@@ -393,8 +388,8 @@ describe('desktop error source handlers', () => {
         ok: true,
         status: 200,
         summary: 'Listed projects.',
-        data: [
-          { id: '177710', slug: 'product-analytics', name: 'Product Analytics' },
+          data: [
+            { id: '177710', slug: 'product-analytics', name: 'Product Analytics' },
         ],
       })
     })
@@ -409,8 +404,8 @@ describe('desktop error source handlers', () => {
         pluginId: 'posthog',
         sourceType: 'posthog',
         setupValues: {
-          accessToken: 'phx-token',
-          organizationId: 'org-1',
+          authToken: 'phx-token',
+          orgSlug: 'org-1',
           baseUrl: 'https://self-hosted.posthog.internal',
         },
       }),
@@ -438,7 +433,6 @@ describe('desktop error source handlers', () => {
       accessToken: 'phx-token',
       baseUrl: 'https://self-hosted.posthog.internal',
       orgSlug: 'org-1',
-      organizationId: 'org-1',
     })
     expect(runtime.executeActionMock).toHaveBeenNthCalledWith(
       2,
@@ -472,7 +466,7 @@ describe('desktop error source handlers', () => {
     expect(runtime.executeActionMock).not.toHaveBeenCalled()
   })
 
-  it('creates legacy-named sources through matching code plugin metadata', async () => {
+  it('creates sources through matching code plugin metadata', async () => {
     vi.useFakeTimers()
     const runtime = new TestPluginRuntimeService([createPostHogPluginDescriptor()])
     const { db, create } = createTestDb()
@@ -488,8 +482,8 @@ describe('desktop error source handlers', () => {
         sourceType: 'posthog',
         name: 'Production PostHog',
         setupValues: {
-          accessToken: 'phx-token',
-          organizationId: 'org-1',
+          authToken: 'phx-token',
+          orgSlug: 'org-1',
           projectIds: ['177710'],
           baseUrl: 'https://eu.posthog.com',
         },
@@ -557,7 +551,7 @@ describe('desktop error source handlers', () => {
     expect(create).not.toHaveBeenCalled()
   })
 
-  it('updates legacy-named sources through matching code plugin metadata', async () => {
+  it('updates sources through matching code plugin metadata', async () => {
     vi.useFakeTimers()
     const runtime = new TestPluginRuntimeService([createPostHogPluginDescriptor()])
     const { db, update } = createTestDb()
@@ -618,7 +612,7 @@ describe('desktop error source handlers', () => {
     expect(update).not.toHaveBeenCalled()
   })
 
-  it('completes OAuth for legacy-named sources through matching code plugin metadata', async () => {
+  it('completes OAuth for sources through matching code plugin metadata', async () => {
     vi.useFakeTimers()
     const runtime = new TestPluginRuntimeService([createPostHogPluginDescriptor()])
     runtime.executeActionMock.mockResolvedValue({

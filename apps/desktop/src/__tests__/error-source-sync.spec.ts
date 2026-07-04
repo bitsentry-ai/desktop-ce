@@ -256,7 +256,7 @@ describe('Sentry external source sync', () => {
     })
   })
 
-  it('syncs legacy-named sources through matching code plugin actions', async () => {
+  it('syncs sources through matching code plugin actions', async () => {
     vi.useFakeTimers()
     vi.setSystemTime(new Date('2026-06-01T09:00:00.000Z'))
 

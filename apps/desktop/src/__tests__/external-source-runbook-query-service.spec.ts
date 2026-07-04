@@ -48,7 +48,6 @@ function makeSentrySource(overrides: Partial<ErrorSource> = {}): ErrorSource {
     configuration: {
       orgSlug: 'bitsentry',
       projectIds: ['101', '102'],
-      projectSlugs: ['api', 'worker'],
     },
     logLevelThreshold: 'error',
     additionalMetadata: null,
@@ -202,12 +201,7 @@ function buildSentryAuth(
   const auth: Record<string, unknown> = { ...source.configuration }
   const accessToken = readString(source.accessTokenRef)
   if (accessToken.length > 0) {
-    auth.authToken = accessToken
     auth.accessToken = accessToken
-  }
-  const orgSlug = readString(source.configuration.orgSlug)
-  if (orgSlug.length > 0) {
-    auth.organizationSlug = orgSlug
   }
 
   return auth
@@ -269,10 +263,7 @@ describe('ExternalSourceRunbookQueryService code plugin queries', () => {
     const [pluginRequest] = firstPluginCall
     expect(pluginRequest.auth).toMatchObject({
       accessToken: 'sentry-secret',
-      authToken: 'sentry-secret',
       orgSlug: 'bitsentry',
-      organizationSlug: 'bitsentry',
-      projectSlugs: ['api', 'worker'],
     })
     expect(pluginRequest).toMatchObject({
       pluginId: 'sentry',
@@ -285,7 +276,6 @@ describe('ExternalSourceRunbookQueryService code plugin queries', () => {
         sourceType: 'sentry',
         orgSlug: 'bitsentry',
         projectIds: ['101', '102'],
-        projectSlugs: ['api', 'worker'],
       },
     })
   })
