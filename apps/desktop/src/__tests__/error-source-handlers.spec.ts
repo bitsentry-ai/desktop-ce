@@ -8,11 +8,11 @@ import {
 } from "@bitsentry-ce/core/features/error-sources/desktop-oauth-manager";
 import {
   DesktopPluginRuntimeService,
-  type DesktopPluginErrorSourceRecord,
+  type DesktopPluginDataSourceRecord,
   type DesktopPluginDescriptor,
   type DesktopPluginExecutionRequest,
   type DesktopPluginExecutionResult,
-  type DesktopPluginPersistedErrorSourceSetup,
+  type DesktopPluginPersistedDataSourceSetup,
 } from "@bitsentry-ce/core/features/plugins";
 
 class TestPluginRuntimeService extends DesktopPluginRuntimeService {
@@ -38,7 +38,7 @@ class TestPluginRuntimeService extends DesktopPluginRuntimeService {
   override resolveErrorSourceSetup(input: {
     pluginId: string;
     setupValues: Record<string, unknown>;
-  }): Promise<DesktopPluginPersistedErrorSourceSetup> {
+  }): Promise<DesktopPluginPersistedDataSourceSetup> {
     if (input.pluginId !== "posthog") {
       return super.resolveErrorSourceSetup(input);
     }
@@ -48,7 +48,7 @@ class TestPluginRuntimeService extends DesktopPluginRuntimeService {
 
   override buildErrorSourceAuth(input: {
     pluginId: string;
-    source: DesktopPluginErrorSourceRecord;
+    source: DesktopPluginDataSourceRecord;
   }): Promise<Record<string, unknown>> {
     if (input.pluginId !== "posthog") {
       return super.buildErrorSourceAuth(input);
@@ -61,7 +61,7 @@ class TestPluginRuntimeService extends DesktopPluginRuntimeService {
 
   override buildErrorSourceProbeAuth(input: {
     pluginId: string;
-    persistedSetup: DesktopPluginPersistedErrorSourceSetup;
+    persistedSetup: DesktopPluginPersistedDataSourceSetup;
   }): Promise<Record<string, unknown>> {
     if (input.pluginId !== "posthog") {
       return super.buildErrorSourceProbeAuth(input);
@@ -103,7 +103,7 @@ function readStringArray(value: unknown): string[] {
 
 function buildPostHogPersistedSetup(
   setupValues: Record<string, unknown>,
-): DesktopPluginPersistedErrorSourceSetup {
+): DesktopPluginPersistedDataSourceSetup {
   const configuration: Record<string, unknown> = {};
   const baseUrl = readString(setupValues.baseUrl);
   const orgSlug = readString(setupValues.orgSlug);

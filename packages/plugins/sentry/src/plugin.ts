@@ -564,6 +564,7 @@ async function listIssueEvents({ auth, input }) {
 }
 
 const plugin: DesktopCodePlugin = {
+  type: "data_source",
   id: "sentry",
   name: "Sentry",
   version: "0.1.0",

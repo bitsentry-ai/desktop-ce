@@ -4,7 +4,7 @@ import { ExternalSourceRunbookQueryService } from '@bitsentry-ce/core/features/e
 import type { ErrorSource } from '@bitsentry-ce/core/features/error-sources/desktop-error-sources.types'
 import {
   DesktopPluginRuntimeService,
-  type DesktopPluginErrorSourceRecord,
+  type DesktopPluginDataSourceRecord,
   type DesktopPluginDescriptor,
   type DesktopPluginExecutionRequest,
   type DesktopPluginExecutionResult,
@@ -168,7 +168,7 @@ class TestPluginRuntimeService extends DesktopPluginRuntimeService {
 
   override buildErrorSourceAuth(input: {
     pluginId: string
-    source: DesktopPluginErrorSourceRecord
+    source: DesktopPluginDataSourceRecord
   }): Promise<Record<string, unknown>> {
     if (input.pluginId === 'sentry') {
       return Promise.resolve(buildSentryAuth(input.source))
@@ -196,7 +196,7 @@ function readString(value: unknown): string {
 }
 
 function buildSentryAuth(
-  source: DesktopPluginErrorSourceRecord,
+  source: DesktopPluginDataSourceRecord,
 ): Record<string, unknown> {
   const auth: Record<string, unknown> = { ...source.configuration }
   const accessToken = readString(source.accessTokenRef)
@@ -208,7 +208,7 @@ function buildSentryAuth(
 }
 
 function buildWazuhAuth(
-  source: DesktopPluginErrorSourceRecord,
+  source: DesktopPluginDataSourceRecord,
 ): Record<string, unknown> {
   const auth: Record<string, unknown> = { ...source.configuration }
   const baseUrl = readString(source.configuration.baseUrl)
@@ -225,7 +225,13 @@ function buildWazuhAuth(
 
 describe('ExternalSourceRunbookQueryService code plugin queries', () => {
   it('routes Sentry runbook queries through the executable plugin action', async () => {
-    const source = makeSentrySource()
+    const source = makeSentrySource({
+      configuration: {
+        orgSlug: 'bitsentry',
+        projectIds: ['101', '102'],
+        projectSlugs: ['frontend', 'api'],
+      },
+    })
     const sourcesRepository = {
       findById: vi.fn().mockResolvedValue(source),
       update: vi.fn(),
@@ -276,6 +282,7 @@ describe('ExternalSourceRunbookQueryService code plugin queries', () => {
         sourceType: 'sentry',
         orgSlug: 'bitsentry',
         projectIds: ['101', '102'],
+        projectSlugs: ['frontend', 'api'],
       },
     })
   })

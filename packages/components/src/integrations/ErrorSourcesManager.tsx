@@ -25,7 +25,7 @@ import { toast } from "sonner";
 import type {
   CreateErrorSourceInput,
   ErrorSourceType,
-  PluginErrorSourceSetupField,
+  PluginDataSourceSetupField,
   ErrorSourceRow,
   LogLevelThreshold,
   PluginDescriptor,
@@ -166,7 +166,7 @@ function normalizeLastUsedExternalSourceId(
   return value.trim();
 }
 
-function readPluginErrorSourceType(
+function readPluginDataSourceType(
   plugin: PluginDescriptor,
 ): ErrorSourceType | null {
   return plugin.metadata?.errorSource?.sourceType ?? null;
@@ -195,7 +195,7 @@ function findPluginDescriptorForSource(
   return (
     plugins.find((plugin) => plugin.id === pluginId) ??
     plugins.find(
-      (plugin) => readPluginErrorSourceType(plugin) === source.sourceType,
+      (plugin) => readPluginDataSourceType(plugin) === source.sourceType,
     ) ??
     null
   );
@@ -220,7 +220,7 @@ function emptySourcePrompt(availableProviderSummary: string): string {
   return "Install or enable a code plugin that declares an error source.";
 }
 
-function setupFieldInputType(field: PluginErrorSourceSetupField): string {
+function setupFieldInputType(field: PluginDataSourceSetupField): string {
   if (field.control === "password") {
     return "password";
   }
@@ -228,7 +228,7 @@ function setupFieldInputType(field: PluginErrorSourceSetupField): string {
   return "text";
 }
 
-function setupFieldDescription(field: PluginErrorSourceSetupField): string {
+function setupFieldDescription(field: PluginDataSourceSetupField): string {
   if (field.description !== undefined) {
     return field.description;
   }
@@ -240,7 +240,7 @@ function setupFieldDescription(field: PluginErrorSourceSetupField): string {
   return "";
 }
 
-function editSetupFieldPlaceholder(field: PluginErrorSourceSetupField): string {
+function editSetupFieldPlaceholder(field: PluginDataSourceSetupField): string {
   if (field.control === "password") {
     return "Leave blank to keep the current token.";
   }
@@ -248,7 +248,7 @@ function editSetupFieldPlaceholder(field: PluginErrorSourceSetupField): string {
   return field.placeholder ?? "";
 }
 
-function isListSetupField(field: PluginErrorSourceSetupField): boolean {
+function isListSetupField(field: PluginDataSourceSetupField): boolean {
   return field.control === "multiline_list";
 }
 
@@ -263,7 +263,7 @@ function readArrayDisplayValue(value: unknown): string {
 }
 
 function setupFieldConfigurationKeys(
-  field: PluginErrorSourceSetupField,
+  field: PluginDataSourceSetupField,
 ): string[] {
   const keys = new Set([field.key]);
   if (field.key === "owner") {
@@ -280,7 +280,7 @@ function setupFieldConfigurationKeys(
 
 function readPluginSetupFieldDisplayValue(
   source: ErrorSourceRow,
-  field: PluginErrorSourceSetupField,
+  field: PluginDataSourceSetupField,
 ): string {
   const config = source.configuration;
   if (config === undefined) {
@@ -453,7 +453,7 @@ export default function ErrorSourcesManager({
   const providerCards = useMemo<ProviderCard[]>(() => {
     const discovered = plugins
       .flatMap((plugin) => {
-        const pluginSourceType = readPluginErrorSourceType(plugin);
+        const pluginSourceType = readPluginDataSourceType(plugin);
         if (pluginSourceType === null) {
           return [];
         }
@@ -495,7 +495,7 @@ export default function ErrorSourcesManager({
     () =>
       plugins.find((plugin) => plugin.id === selectedProviderId) ??
       plugins.find(
-        (plugin) => readPluginErrorSourceType(plugin) === sourceType,
+        (plugin) => readPluginDataSourceType(plugin) === sourceType,
       ) ??
       null,
     [plugins, selectedProviderId, sourceType],
@@ -559,24 +559,24 @@ export default function ErrorSourcesManager({
     setSyncEnabledOnCreate(true);
   }
 
-  function readSetupFieldTextValue(field: PluginErrorSourceSetupField): string {
+  function readSetupFieldTextValue(field: PluginDataSourceSetupField): string {
     return customSetupFieldValues[field.key]?.trim() ?? "";
   }
 
   function readSetupFieldListValue(
-    field: PluginErrorSourceSetupField,
+    field: PluginDataSourceSetupField,
   ): string[] {
     return toProjectSlugs(customSetupFieldValues[field.key] ?? "");
   }
 
   function readSetupFieldInputValue(
-    field: PluginErrorSourceSetupField,
+    field: PluginDataSourceSetupField,
   ): string {
     return customSetupFieldValues[field.key] ?? "";
   }
 
   function setSetupFieldInputValue(
-    field: PluginErrorSourceSetupField,
+    field: PluginDataSourceSetupField,
     nextValue: string,
   ): void {
     setCustomSetupFieldValues((current) => ({
@@ -707,13 +707,13 @@ export default function ErrorSourcesManager({
   };
 
   function readEditSetupFieldTextValue(
-    field: PluginErrorSourceSetupField,
+    field: PluginDataSourceSetupField,
   ): string {
     return editSetupFieldValues[field.key]?.trim() ?? "";
   }
 
   function readEditSetupFieldListValue(
-    field: PluginErrorSourceSetupField,
+    field: PluginDataSourceSetupField,
   ): string[] {
     return toProjectSlugs(editSetupFieldValues[field.key] ?? "");
   }
@@ -898,7 +898,7 @@ export default function ErrorSourcesManager({
   }
 
   function renderCreateSetupField(
-    field: PluginErrorSourceSetupField,
+    field: PluginDataSourceSetupField,
   ): ReactNode {
     const description = setupFieldDescription(field);
 

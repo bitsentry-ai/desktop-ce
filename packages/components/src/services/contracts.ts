@@ -584,9 +584,9 @@ export interface PluginActionDefinition {
   referencePath?: string;
 }
 
-export interface PluginErrorSourceMetadata {
+export interface PluginDataSourceMetadata {
   sourceType: ErrorSourceType;
-  setupFields: PluginErrorSourceSetupField[];
+  setupFields: PluginDataSourceSetupField[];
   oauth?: {
     envClientIdName?: string;
     envClientSecretName?: string;
@@ -597,22 +597,22 @@ export interface PluginErrorSourceMetadata {
   };
 }
 
-export type PluginErrorSourceSetupFieldControl =
+export type PluginDataSourceSetupFieldControl =
   | "text"
   | "password"
   | "multiline_list";
 
-export interface PluginErrorSourceSetupField {
+export interface PluginDataSourceSetupField {
   key: string;
   label: string;
   placeholder?: string;
   description?: string;
   required: boolean;
-  control: PluginErrorSourceSetupFieldControl;
+  control: PluginDataSourceSetupFieldControl;
 }
 
 export interface PluginDescriptorMetadata {
-  errorSource?: PluginErrorSourceMetadata;
+  errorSource?: PluginDataSourceMetadata;
 }
 
 export interface PluginDescriptor {

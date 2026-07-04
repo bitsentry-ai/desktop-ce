@@ -20,13 +20,14 @@ import {
 } from "./desktop-external-source-telemetry-storage";
 import { createDesktopNodePluginRuntimeService } from "../plugins/node";
 import type {
-  DesktopPluginErrorSourceRecord,
+  DesktopPluginDataSourceRecord,
   DesktopPluginRuntimeService,
 } from "../plugins";
 import {
   hasErrorSourceProviderAction,
   resolveErrorSourceProviderActionId,
 } from "./desktop-plugin-error-source-actions";
+import { refreshSourceAccessToken } from "./desktop-oauth-token-refresher";
 
 type ExternalPayloadRecord = Record<string, unknown>;
 
@@ -346,7 +347,7 @@ function readSourcePluginId(source: ErrorSource): string {
 
 function pluginSourceRecord(
   source: ErrorSource,
-): DesktopPluginErrorSourceRecord {
+): DesktopPluginDataSourceRecord {
   return {
     id: source.id,
     sourceType: source.sourceType,
@@ -1408,7 +1409,16 @@ export class ErrorSourceSyncService {
       source,
       pluginId,
     );
-    const auth = await buildPluginAuthFromSource(source, this.pluginRuntime);
+    const accessTokenRef = await refreshSourceAccessToken({
+      source,
+      sourcesRepository: this.sourcesRepository,
+      pluginRuntime: this.pluginRuntime,
+    });
+    const refreshedSource = { ...source, accessTokenRef };
+    const auth = await buildPluginAuthFromSource(
+      refreshedSource,
+      this.pluginRuntime,
+    );
     const syncStartedAt = new Date().toISOString();
     const since = readCustomPluginSyncSince(source);
     const until = syncStartedAt;

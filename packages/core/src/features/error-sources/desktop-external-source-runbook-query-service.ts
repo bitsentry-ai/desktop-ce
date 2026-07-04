@@ -11,11 +11,12 @@ import {
 import type {
   DesktopPluginRuntimeService,
 } from "../plugins/desktop-plugin-registry";
-import type { DesktopPluginErrorSourceRecord } from "../plugins/plugins.types";
+import type { DesktopPluginDataSourceRecord } from "../plugins/plugins.types";
 import {
   hasErrorSourceProviderAction,
   resolveErrorSourceProviderActionId,
 } from "./desktop-plugin-error-source-actions";
+import { refreshSourceAccessToken } from "./desktop-oauth-token-refresher";
 
 export interface ExternalSourceRunbookQueryInput {
   sourceId: string;
@@ -102,7 +103,7 @@ function readPluginOutput(data: unknown): string {
   throw new Error("External Source code plugin returned no output");
 }
 
-function pluginSourceRecord(source: ErrorSource): DesktopPluginErrorSourceRecord {
+function pluginSourceRecord(source: ErrorSource): DesktopPluginDataSourceRecord {
   return {
     id: source.id,
     sourceType: source.sourceType,
@@ -149,6 +150,13 @@ function buildGenericPluginQueryInput(
   );
   if (configuredProjectIds.length > 0) {
     input.projectIds = configuredProjectIds;
+  }
+
+  const configuredProjectSlugs = readConfiguredStringArray(
+    source.configuration.projectSlugs,
+  );
+  if (configuredProjectSlugs.length > 0) {
+    input.projectSlugs = configuredProjectSlugs;
   }
 
   const indexPattern = readPluginIndexPattern(source.configuration);
@@ -295,13 +303,16 @@ async function executeCustomPluginQuery(args: {
   source: ErrorSource;
   query: string;
   limit: number;
+  sourcesRepository: DesktopExternalSourceSourcesRepository;
   pluginRuntime: DesktopPluginRuntimeService;
+  signal?: AbortSignal;
 }): Promise<{
   output?: string;
   issues?: unknown[];
   hasMore?: boolean;
 }> {
-  const { source, query, limit, pluginRuntime } = args;
+  const { source, query, limit, sourcesRepository, pluginRuntime, signal } =
+    args;
   const pluginId = readSourcePluginId(source);
   const plugin = pluginRuntime.getPlugin(pluginId);
   const metadata = plugin?.metadata?.errorSource;
@@ -311,8 +322,15 @@ async function executeCustomPluginQuery(args: {
     );
   }
 
-  const auth = await buildPluginAuthFromSource(source, pluginRuntime);
-  const input = buildGenericPluginQueryInput(source, query, limit);
+  const accessTokenRef = await refreshSourceAccessToken({
+    source,
+    sourcesRepository,
+    pluginRuntime,
+    signal,
+  });
+  const refreshedSource = { ...source, accessTokenRef };
+  const auth = await buildPluginAuthFromSource(refreshedSource, pluginRuntime);
+  const input = buildGenericPluginQueryInput(refreshedSource, query, limit);
 
   if (hasErrorSourceProviderAction(plugin, "queryIssues")) {
     return pluginRuntime.executeAction({
@@ -379,7 +397,9 @@ export class ExternalSourceRunbookQueryService
       source,
       query,
       limit,
+      sourcesRepository: this.sourcesRepository,
       pluginRuntime: this.pluginRuntime,
+      signal: input.signal,
     });
     if (typeof customQuery.output === "string" && customQuery.output.length > 0) {
       return customQuery.output;

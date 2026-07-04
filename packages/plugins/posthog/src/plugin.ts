@@ -1156,6 +1156,7 @@ async function listIssueEvents({ auth, input }) {
 }
 
 const plugin: DesktopCodePlugin = {
+  type: "data_source",
   id: "posthog",
   name: "PostHog",
   version: "0.1.0",
@@ -1187,7 +1188,7 @@ const plugin: DesktopCodePlugin = {
           key: "projectIds",
           label: "Project IDs",
           placeholder: "177710\n177711",
-          required: false,
+          required: true,
           control: "multiline_list",
         },
       ],

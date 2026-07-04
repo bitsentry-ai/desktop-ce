@@ -16,9 +16,9 @@ import type {
   LogLevelThreshold,
 } from "./desktop-error-sources.types";
 import type {
-  DesktopPluginErrorSourceSetupField,
-  DesktopPluginErrorSourceRecord,
-  DesktopPluginPersistedErrorSourceSetup,
+  DesktopPluginDataSourceSetupField,
+  DesktopPluginDataSourceRecord,
+  DesktopPluginPersistedDataSourceSetup,
   DesktopPluginRuntimeService,
 } from "../plugins";
 import { createDesktopNodePluginRuntimeService } from "../plugins/node";
@@ -214,7 +214,7 @@ function readOAuthConfigurationOverrides(
 }
 
 function buildPluginOAuthConfiguration(input: {
-  persistedSetup: DesktopPluginPersistedErrorSourceSetup;
+  persistedSetup: DesktopPluginPersistedDataSourceSetup;
   oauthClientId?: string;
   oauthClientSecret?: string;
   oauthRedirectUri?: string;
@@ -297,7 +297,7 @@ function readDelimitedStringArray(value: unknown): string[] {
 }
 
 function readPluginSetupFieldValue(
-  field: DesktopPluginErrorSourceSetupField,
+  field: DesktopPluginDataSourceSetupField,
   setupValues: Record<string, unknown>,
 ): unknown {
   const rawValue = setupValues[field.key];
@@ -320,7 +320,7 @@ function readPluginSetupFieldValue(
 }
 
 function pluginSetupFieldConfigurationKeys(
-  field: DesktopPluginErrorSourceSetupField,
+  field: DesktopPluginDataSourceSetupField,
 ): string[] {
   const keys = new Set([field.key]);
   if (field.key === "owner") {
@@ -342,7 +342,7 @@ function pluginSetupConfigurationKeysToReset(
 ): string[] {
   const submittedKeys = new Set(Object.keys(setupValues));
   const keys = new Set<string>();
-  for (const field of readPluginErrorSourceSetupFields(
+  for (const field of readPluginDataSourceSetupFields(
     pluginRuntime,
     pluginId,
   )) {
@@ -357,10 +357,10 @@ function pluginSetupConfigurationKeysToReset(
   return [...keys];
 }
 
-function readPluginErrorSourceSetupFields(
+function readPluginDataSourceSetupFields(
   pluginRuntime: DesktopPluginRuntimeService,
   pluginId: string,
-): DesktopPluginErrorSourceSetupField[] {
+): DesktopPluginDataSourceSetupField[] {
   const plugin = pluginRuntime.getPlugin(pluginId);
   return plugin?.metadata?.errorSource?.setupFields ?? [];
 }
@@ -378,8 +378,8 @@ async function resolvePersistedPluginSetup(
   pluginRuntime: DesktopPluginRuntimeService,
   pluginId: string,
   setupValues: Record<string, unknown>,
-): Promise<DesktopPluginPersistedErrorSourceSetup> {
-  const setupFields = readPluginErrorSourceSetupFields(pluginRuntime, pluginId);
+): Promise<DesktopPluginPersistedDataSourceSetup> {
+  const setupFields = readPluginDataSourceSetupFields(pluginRuntime, pluginId);
   const setupFieldKeys = new Set(setupFields.map((field) => field.key));
   const normalizedSetupValues: Record<string, unknown> = Object.fromEntries(
     Object.entries(setupValues).filter(([key]) => !setupFieldKeys.has(key)),
@@ -552,7 +552,7 @@ function readPluginConnectionIndexPattern(
 
 function pluginSourceRecord(
   source: ErrorSource,
-): DesktopPluginErrorSourceRecord {
+): DesktopPluginDataSourceRecord {
   return {
     id: source.id,
     sourceType: source.sourceType,
@@ -579,7 +579,7 @@ async function buildPluginAuthFromSource(
 function buildPluginProbeAuth(input: {
   pluginRuntime: DesktopPluginRuntimeService;
   pluginId: string;
-  persistedSetup: DesktopPluginPersistedErrorSourceSetup;
+  persistedSetup: DesktopPluginPersistedDataSourceSetup;
 }): Promise<Record<string, unknown>> {
   return input.pluginRuntime.buildErrorSourceProbeAuth({
     pluginId: input.pluginId,

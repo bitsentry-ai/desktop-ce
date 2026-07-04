@@ -440,6 +440,7 @@ async function queryIssues(context) {
 }
 
 const plugin: DesktopCodePlugin = {
+  type: "data_source",
   id: "wazuh",
   name: "Wazuh",
   version: "0.1.0",
@@ -461,7 +462,7 @@ const plugin: DesktopCodePlugin = {
           label: "Wazuh index password",
           description:
             "Password for the Wazuh index user. The username defaults to admin.",
-          required: false,
+          required: true,
           control: "password",
         },
         {

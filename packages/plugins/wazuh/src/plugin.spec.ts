@@ -53,6 +53,10 @@ describe("Wazuh plugin package", () => {
               key: "indexUrl",
               required: true,
             }),
+            expect.objectContaining({
+              key: "indexPassword",
+              required: true,
+            }),
           ]),
         },
       },

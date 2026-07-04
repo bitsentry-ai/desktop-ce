@@ -6,7 +6,10 @@ import {
   DesktopPluginRuntimeService,
   type DesktopPluginStoredAuthRecord,
 } from '../src/features/plugins'
-import { createDesktopNodePluginRuntimeService } from '../src/features/plugins/node'
+import {
+  createDesktopNodePluginRuntimeService,
+  resolveDesktopPluginDirectories,
+} from '../src/features/plugins/node'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 const originalCwd = process.cwd()
@@ -25,6 +28,7 @@ async function writeCodePlugin(input: {
 describe('DesktopPluginRuntimeService', () => {
   afterEach(() => {
     vi.restoreAllMocks()
+    vi.unstubAllEnvs()
     process.chdir(originalCwd)
   })
 
@@ -157,6 +161,17 @@ describe('DesktopPluginRuntimeService', () => {
     } finally {
       await rm(tempRoot, { recursive: true, force: true })
     }
+  })
+
+  it('loads default plugin directories before explicit directories so explicit plugins override', () => {
+    const defaultRoot = path.join(tmpdir(), 'bitsentry-default-plugins')
+    const explicitRoot = path.join(tmpdir(), 'bitsentry-explicit-plugins')
+    vi.stubEnv('BITSENTRY_PLUGIN_DIR', defaultRoot)
+
+    expect(resolveDesktopPluginDirectories([explicitRoot])).toEqual([
+      defaultRoot,
+      explicitRoot,
+    ])
   })
 
   it('merges typed stored auth values before code plugin execution', async () => {

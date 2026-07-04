@@ -45,6 +45,12 @@ describe("PostHog plugin package", () => {
       metadata: {
         errorSource: {
           sourceType: "posthog",
+          setupFields: expect.arrayContaining([
+            expect.objectContaining({
+              key: "projectIds",
+              required: true,
+            }),
+          ]),
         },
       },
     });

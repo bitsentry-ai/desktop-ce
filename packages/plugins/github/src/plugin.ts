@@ -527,6 +527,7 @@ function buildGitHubErrorSourceProbeAuth(context) {
 }
 
 const plugin: DesktopCodePlugin = {
+  type: "data_source",
   id: "github",
   name: "GitHub",
   version: "0.1.0",

@@ -7,16 +7,16 @@ import type {
   DesktopPluginExecutionResult,
   DesktopPluginFieldDefinition,
   DesktopPluginDescriptor,
-  DesktopPluginPersistedErrorSourceSetup,
-  DesktopPluginErrorSourceRecord,
-  DesktopCodePluginErrorSource,
+  DesktopPluginPersistedDataSourceSetup,
+  DesktopPluginDataSourceRecord,
+  DesktopCodePluginDataSource,
   DesktopPluginInstallFromArtifactRequest,
   DesktopPluginInstallFromArtifactResult,
   DesktopPluginCodeHostContext,
 } from "./plugins.types";
 import {
-  desktopPluginPersistedErrorSourceSetupSchema,
-  desktopPluginErrorSourceRecordSchema,
+  desktopPluginPersistedDataSourceSetupSchema,
+  desktopPluginDataSourceRecordSchema,
   desktopPluginExecutionRequestSchema,
   desktopPluginExecutionResultSchema,
   desktopPluginDescriptorSchema,
@@ -40,7 +40,7 @@ type PluginActionRuntime = {
 type PluginRuntime = {
   descriptor: DesktopPluginDescriptor;
   actions: Map<string, PluginActionRuntime>;
-  errorSource?: DesktopCodePluginErrorSource;
+  errorSource?: DesktopCodePluginDataSource;
   host: DesktopPluginCodeHostContext;
 };
 
@@ -195,14 +195,14 @@ function normalizeOptionalRecord(value: unknown): Record<string, unknown> {
 
 function defaultResolveErrorSourceSetup(
   setupValues: Record<string, unknown>,
-): DesktopPluginPersistedErrorSourceSetup {
+): DesktopPluginPersistedDataSourceSetup {
   return {
     configuration: { ...setupValues },
   };
 }
 
 function defaultBuildErrorSourceAuth(
-  source: DesktopPluginErrorSourceRecord,
+  source: DesktopPluginDataSourceRecord,
 ): Record<string, unknown> {
   const auth: Record<string, unknown> = {
     ...normalizeOptionalRecord(source.configuration),
@@ -226,7 +226,7 @@ function defaultBuildErrorSourceAuth(
 }
 
 function defaultBuildErrorSourceProbeAuth(
-  persistedSetup: DesktopPluginPersistedErrorSourceSetup,
+  persistedSetup: DesktopPluginPersistedDataSourceSetup,
 ): Record<string, unknown> {
   return defaultBuildErrorSourceAuth({
     sourceType: "plugin",
@@ -271,7 +271,7 @@ export class DesktopPluginRegistry {
     return this.plugins.get(pluginId)?.actions.get(actionId) ?? null;
   }
 
-  getErrorSource(pluginId: string): DesktopCodePluginErrorSource | null {
+  getErrorSource(pluginId: string): DesktopCodePluginDataSource | null {
     return this.plugins.get(pluginId)?.errorSource ?? null;
   }
 
@@ -294,9 +294,9 @@ export class DesktopPluginRuntimeService {
   async resolveErrorSourceSetup(input: {
     pluginId: string;
     setupValues: Record<string, unknown>;
-  }): Promise<DesktopPluginPersistedErrorSourceSetup> {
+  }): Promise<DesktopPluginPersistedDataSourceSetup> {
     const errorSource = this.registry.getErrorSource(input.pluginId);
-    let resolved: DesktopPluginPersistedErrorSourceSetup;
+    let resolved: DesktopPluginPersistedDataSourceSetup;
     if (errorSource?.resolveSetup === undefined) {
       resolved = defaultResolveErrorSourceSetup(input.setupValues);
     } else {
@@ -311,14 +311,14 @@ export class DesktopPluginRuntimeService {
       });
     }
 
-    return desktopPluginPersistedErrorSourceSetupSchema.parse(resolved);
+    return desktopPluginPersistedDataSourceSetupSchema.parse(resolved);
   }
 
   async buildErrorSourceAuth(input: {
     pluginId: string;
-    source: DesktopPluginErrorSourceRecord;
+    source: DesktopPluginDataSourceRecord;
   }): Promise<Record<string, unknown>> {
-    const source = desktopPluginErrorSourceRecordSchema.parse(input.source);
+    const source = desktopPluginDataSourceRecordSchema.parse(input.source);
     const errorSource = this.registry.getErrorSource(input.pluginId);
     if (errorSource?.buildAuth === undefined) {
       return defaultBuildErrorSourceAuth(source);
@@ -338,9 +338,9 @@ export class DesktopPluginRuntimeService {
 
   async buildErrorSourceProbeAuth(input: {
     pluginId: string;
-    persistedSetup: DesktopPluginPersistedErrorSourceSetup;
+    persistedSetup: DesktopPluginPersistedDataSourceSetup;
   }): Promise<Record<string, unknown>> {
-    const persistedSetup = desktopPluginPersistedErrorSourceSetupSchema.parse(
+    const persistedSetup = desktopPluginPersistedDataSourceSetupSchema.parse(
       input.persistedSetup,
     );
     const errorSource = this.registry.getErrorSource(input.pluginId);

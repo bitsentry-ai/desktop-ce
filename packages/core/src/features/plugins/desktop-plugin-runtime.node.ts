@@ -134,10 +134,10 @@ export function resolveDesktopPluginDirectories(
 ): string[] {
   return Array.from(
     new Set([
+      ...defaultLocalPluginDirectories(),
       ...additionalDirectories
         .map((directory) => directory.trim())
         .filter((directory) => directory.length > 0),
-      ...defaultLocalPluginDirectories(),
     ]),
   );
 }

@@ -66,6 +66,11 @@ function createPostHogPluginDescriptor(): DesktopPluginDescriptor {
     metadata: {
       errorSource: {
         sourceType: "posthog",
+        oauth: {
+          envClientIdName: "POSTHOG_OAUTH_CLIENT_ID",
+          envClientSecretName: "POSTHOG_OAUTH_CLIENT_SECRET",
+          publicClient: false,
+        },
         setupFields: [
           {
             key: "accessToken",
@@ -86,7 +91,10 @@ function createPostHogPluginDescriptor(): DesktopPluginDescriptor {
         },
       ],
     },
-    actions: [createProviderAction("list_issues")],
+    actions: [
+      createProviderAction("refresh_token"),
+      createProviderAction("list_issues"),
+    ],
   };
 }
 
@@ -281,27 +289,49 @@ describe("Sentry external source sync", () => {
       id: "source-posthog",
       sourceType: "posthog",
       name: "Production PostHog",
+      accessTokenRef: "stale-token",
+      refreshTokenRef: "stored-refresh-token",
+      expiresAt: "2026-06-01T08:59:00.000Z",
       additionalMetadata: { pluginId: "posthog" },
       configuration: {
         orgSlug: "jagad",
         projectIds: ["4504367120777216"],
         projectSlugs: ["frontend"],
+        oauthClientId: "posthog-client-id",
+        oauthClientSecret: "posthog-client-secret",
       },
       lastSyncAt: "2026-06-01T08:30:00.000Z",
     });
     const runtime = new TestPluginRuntimeService([
       createPostHogPluginDescriptor(),
     ]);
-    runtime.executeActionMock.mockResolvedValue({
-      pluginId: "posthog",
-      actionId: "list_issues",
-      ok: true,
-      status: 200,
-      summary: "Listed PostHog issues.",
-      data: {
-        issues: [],
-        hasMore: false,
-      },
+    runtime.executeActionMock.mockImplementation((request) => {
+      if (request.actionId === "refresh_token") {
+        return Promise.resolve({
+          pluginId: "posthog",
+          actionId: "refresh_token",
+          ok: true,
+          status: 200,
+          summary: "Refreshed PostHog token.",
+          data: {
+            accessToken: "refreshed-access-token",
+            refreshToken: "rotated-refresh-token",
+            expiresIn: 3600,
+          },
+        });
+      }
+
+      return Promise.resolve({
+        pluginId: "posthog",
+        actionId: "list_issues",
+        ok: true,
+        status: 200,
+        summary: "Listed PostHog issues.",
+        data: {
+          issues: [],
+          hasMore: false,
+        },
+      });
     });
     const sourcesRepository = {
       findById: vi.fn().mockResolvedValue(source),
@@ -341,14 +371,35 @@ describe("Sentry external source sync", () => {
       syncedIssues: 0,
       syncedEvents: 0,
     });
-    const executionRequest = runtime.executeActionMock.mock.calls[0]?.[0];
+    const refreshRequest = runtime.executeActionMock.mock.calls.find(
+      ([request]) => request.actionId === "refresh_token",
+    )?.[0];
+    expect(refreshRequest).toMatchObject({
+      pluginId: "posthog",
+      actionId: "refresh_token",
+      input: {
+        clientId: "posthog-client-id",
+        clientSecret: "posthog-client-secret",
+        refreshToken: "stored-refresh-token",
+      },
+    });
+    const executionRequest = runtime.executeActionMock.mock.calls.find(
+      ([request]) => request.actionId === "list_issues",
+    )?.[0];
     expect(executionRequest).toMatchObject({
       pluginId: "posthog",
       actionId: "list_issues",
       auth: {
-        accessToken: "token",
+        accessToken: "refreshed-access-token",
       },
     });
+    expect(sourcesRepository.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: source.id,
+        accessTokenRef: "refreshed-access-token",
+        refreshTokenRef: "rotated-refresh-token",
+      }),
+    );
     expect(executionRequest?.input).toMatchObject({
       sourceId: source.id,
       sourceName: "Production PostHog",
