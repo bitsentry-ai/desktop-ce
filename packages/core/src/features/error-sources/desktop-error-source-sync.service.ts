@@ -1468,7 +1468,7 @@ export class ErrorSourceSyncService {
         until,
         pageCount,
       });
-      hasMore = page.hasMore && page.issues.length > 0;
+      hasMore = page.hasMore;
       cursor = page.nextCursor;
 
       for (const issueRecord of page.issues) {
@@ -1486,6 +1486,7 @@ export class ErrorSourceSyncService {
 
       if (
         page.nextCursor === undefined &&
+        !page.hasMore &&
         page.issues.length < MAX_GENERIC_PLUGIN_ISSUES_PER_PAGE
       ) {
         hasMore = false;
