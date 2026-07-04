@@ -293,13 +293,9 @@ export function createDesktopLocalBitsentryServices({
         indexUrl: string
         data: AvailablePlugin[]
       }>('plugins:listAvailable', payload)
-      const data: AvailablePlugin[] = []
-      if (Array.isArray(response.data)) {
-        data.push(...response.data)
-      }
       return {
         indexUrl: response.indexUrl,
-        data,
+        data: response.data,
       }
     },
     async installFromIndex(
