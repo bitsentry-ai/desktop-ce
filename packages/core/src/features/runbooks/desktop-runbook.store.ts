@@ -1766,7 +1766,6 @@ export class DesktopRunbookStore {
             pluginId: action.pluginId,
             pluginActionId: action.pluginActionId,
             pluginInput: action.pluginInput,
-            pluginAuth: action.pluginAuth,
             query: action.query,
             sourceRef,
             sourceName,
