@@ -1,4 +1,4 @@
-# @bitsentry-ce/plugin-posthog
+# @bitsentry/plugin-posthog
 
 BitSentry code plugin for PostHog projects and event queries.
 

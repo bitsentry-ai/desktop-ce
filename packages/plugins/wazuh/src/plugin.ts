@@ -1,4 +1,4 @@
-import type { DesktopCodePlugin } from "@bitsentry-ce/core/features/plugins";
+import type { DesktopCodePlugin } from "@bitsentry/plugin-sdk";
 
 function readString(value, fallback = "") {
   if (typeof value === "string") {

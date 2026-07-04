@@ -1,4 +1,4 @@
-import type { DesktopCodePlugin } from "@bitsentry-ce/core/features/plugins";
+import type { DesktopCodePlugin } from "@bitsentry/plugin-sdk";
 
 const SENTRY_API_BASE = "https://sentry.io/api/0";
 const DEFAULT_ISSUES_LIMIT = 50;

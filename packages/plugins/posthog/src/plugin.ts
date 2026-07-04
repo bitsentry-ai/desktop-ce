@@ -1,4 +1,4 @@
-import type { DesktopCodePlugin } from "@bitsentry-ce/core/features/plugins";
+import type { DesktopCodePlugin } from "@bitsentry/plugin-sdk";
 
 const DEFAULT_ISSUES_LIMIT = 50;
 const DEFAULT_EVENTS_LIMIT = 50;

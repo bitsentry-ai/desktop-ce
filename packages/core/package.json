@@ -229,6 +229,7 @@
     "test": "vitest run --config vitest.config.ts"
   },
   "dependencies": {
+    "@bitsentry/plugin-sdk": "workspace:*",
     "better-sqlite3": "^12.6.2",
     "drizzle-orm": "^0.45.2",
     "electron-log": "^5.4.3",

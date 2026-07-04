@@ -1,4 +1,4 @@
-# @bitsentry-ce/plugin-sentry
+# @bitsentry/plugin-sentry
 
 BitSentry code plugin for Sentry organizations, projects, and issues.
 

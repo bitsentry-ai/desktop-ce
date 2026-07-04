@@ -4,7 +4,7 @@ import plugin from "./plugin";
 import type {
   DesktopPluginCodeActionContext,
   DesktopPluginCodeHostContext,
-} from "@bitsentry-ce/core/features/plugins";
+} from "@bitsentry/plugin-sdk";
 
 const host: DesktopPluginCodeHostContext = {
   pluginRoot: "",

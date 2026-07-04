@@ -1,4 +1,4 @@
-# @bitsentry-ce/plugin-github
+# @bitsentry/plugin-github
 
 BitSentry code plugin for GitHub repositories and issues.
 

@@ -1,4 +1,4 @@
-import type { DesktopCodePlugin } from "@bitsentry-ce/core/features/plugins";
+import type { DesktopCodePlugin } from "@bitsentry/plugin-sdk";
 
 const GITHUB_API_BASE = "https://api.github.com";
 const DEFAULT_LIMIT = 20;

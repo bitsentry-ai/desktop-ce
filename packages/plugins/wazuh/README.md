@@ -1,4 +1,4 @@
-# @bitsentry-ce/plugin-wazuh
+# @bitsentry/plugin-wazuh
 
 BitSentry code plugin for Wazuh alerts and index queries.
 
