@@ -4,6 +4,8 @@ const DEFAULT_ISSUES_LIMIT = 50;
 const DEFAULT_EVENTS_LIMIT = 50;
 const MAX_LIMIT = 100;
 const POSTHOG_DEFAULT_BASE_URL = "https://us.posthog.com";
+const POSTHOG_EU_BASE_URL = "https://eu.posthog.com";
+const POSTHOG_DEFAULT_LOCATION = "us";
 const POSTHOG_BUILTIN_ALLOWED_HOSTS = new Set([
   "us.posthog.com",
   "eu.posthog.com",
@@ -53,16 +55,69 @@ function readRecord(value): Record<string, unknown> {
   return value;
 }
 
+function inferPostHogLocation(baseUrl) {
+  const normalized = readString(baseUrl);
+  if (normalized.length === 0) {
+    return POSTHOG_DEFAULT_LOCATION;
+  }
+
+  try {
+    const host = new URL(normalized).host.toLowerCase();
+    if (host === "eu.posthog.com") {
+      return "eu";
+    }
+    if (host === "us.posthog.com") {
+      return "us";
+    }
+  } catch {
+    // Let base URL validation report malformed self-hosted URLs later.
+  }
+
+  return "self_hosted";
+}
+
+function readPostHogLocation(location, baseUrl) {
+  const normalized = readString(location).toLowerCase();
+  if (
+    normalized === "us" ||
+    normalized === "eu" ||
+    normalized === "self_hosted"
+  ) {
+    return normalized;
+  }
+
+  return inferPostHogLocation(baseUrl);
+}
+
+function resolvePostHogSetupBaseUrl(location, baseUrl) {
+  if (location === "eu") {
+    return POSTHOG_EU_BASE_URL;
+  }
+  if (location === "us") {
+    return POSTHOG_DEFAULT_BASE_URL;
+  }
+
+  const selfHostedBaseUrl = readString(baseUrl);
+  if (selfHostedBaseUrl.length === 0) {
+    throw new Error("PostHog base URL is required for self-hosted location");
+  }
+
+  return selfHostedBaseUrl;
+}
+
 function resolvePostHogErrorSourceSetup(context) {
   const setupValues = readRecord(context.setupValues);
   const authToken = readString(setupValues.authToken);
-  const baseUrl = readString(setupValues.baseUrl);
+  const location = readPostHogLocation(
+    setupValues.location,
+    setupValues.baseUrl,
+  );
+  const baseUrl = resolvePostHogSetupBaseUrl(location, setupValues.baseUrl);
   const orgSlug = readString(setupValues.orgSlug);
   const projectIds = readStringArray(setupValues.projectIds);
   const configuration: Record<string, unknown> = {};
-  if (baseUrl.length > 0) {
-    configuration.baseUrl = baseUrl;
-  }
+  configuration.location = location;
+  configuration.baseUrl = baseUrl;
   if (orgSlug.length > 0) {
     configuration.orgSlug = orgSlug;
   }
@@ -1224,8 +1279,22 @@ const plugin: DesktopCodePlugin = {
           control: "password",
         },
         {
+          key: "location",
+          label: "Location",
+          description: "Choose the PostHog region for this project.",
+          required: true,
+          control: "select",
+          defaultValue: POSTHOG_DEFAULT_LOCATION,
+          options: [
+            { label: "US", value: "us" },
+            { label: "EU", value: "eu" },
+            { label: "Self-hosted", value: "self_hosted" },
+          ],
+        },
+        {
           key: "baseUrl",
-          label: "PostHog base URL",
+          label: "Self-hosted PostHog base URL",
+          description: "Only required when location is self-hosted.",
           placeholder: POSTHOG_DEFAULT_BASE_URL,
           required: false,
           control: "text",

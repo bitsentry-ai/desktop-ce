@@ -249,6 +249,10 @@ function editSetupFieldPlaceholder(field: PluginDataSourceSetupField): string {
   return field.placeholder ?? "";
 }
 
+function setupFieldDefaultValue(field: PluginDataSourceSetupField): string {
+  return field.defaultValue ?? field.options?.[0]?.value ?? "";
+}
+
 function isListSetupField(field: PluginDataSourceSetupField): boolean {
   return field.control === "multiline_list";
 }
@@ -279,6 +283,26 @@ function setupFieldConfigurationKeys(
   return [...keys];
 }
 
+function inferLocationFromBaseUrl(baseUrl: unknown): string | null {
+  if (typeof baseUrl !== "string" || baseUrl.trim().length === 0) {
+    return null;
+  }
+
+  try {
+    const host = new URL(baseUrl).host.toLowerCase();
+    if (host === "eu.posthog.com") {
+      return "eu";
+    }
+    if (host === "us.posthog.com") {
+      return "us";
+    }
+  } catch {
+    return "self_hosted";
+  }
+
+  return "self_hosted";
+}
+
 function readPluginSetupFieldDisplayValue(
   source: ErrorSourceRow,
   field: PluginDataSourceSetupField,
@@ -299,6 +323,12 @@ function readPluginSetupFieldDisplayValue(
       break;
     }
   }
+  if (field.key === "location" && value === undefined) {
+    const inferred = inferLocationFromBaseUrl(config.baseUrl);
+    if (inferred !== null) {
+      return inferred;
+    }
+  }
   if (typeof value === "string") {
     return value;
   }
@@ -307,6 +337,9 @@ function readPluginSetupFieldDisplayValue(
   }
   if (value !== null && typeof value === "object") {
     return JSON.stringify(value);
+  }
+  if (field.control === "select") {
+    return setupFieldDefaultValue(field);
   }
   return "";
 }
@@ -562,7 +595,9 @@ export default function DataSourcesManager({
   }
 
   function readSetupFieldTextValue(field: PluginDataSourceSetupField): string {
-    return customSetupFieldValues[field.key]?.trim() ?? "";
+    return (
+      customSetupFieldValues[field.key] ?? setupFieldDefaultValue(field)
+    ).trim();
   }
 
   function readSetupFieldListValue(
@@ -574,7 +609,7 @@ export default function DataSourcesManager({
   function readSetupFieldInputValue(
     field: PluginDataSourceSetupField,
   ): string {
-    return customSetupFieldValues[field.key] ?? "";
+    return customSetupFieldValues[field.key] ?? setupFieldDefaultValue(field);
   }
 
   function setSetupFieldInputValue(
@@ -711,7 +746,9 @@ export default function DataSourcesManager({
   function readEditSetupFieldTextValue(
     field: PluginDataSourceSetupField,
   ): string {
-    return editSetupFieldValues[field.key]?.trim() ?? "";
+    return (
+      editSetupFieldValues[field.key] ?? setupFieldDefaultValue(field)
+    ).trim();
   }
 
   function readEditSetupFieldListValue(
@@ -907,18 +944,38 @@ export default function DataSourcesManager({
     field: PluginDataSourceSetupField,
   ): ReactNode {
     const description = setupFieldDescription(field);
+    const value = readSetupFieldInputValue(field);
 
     return (
       <div key={field.key} className="space-y-1">
         <FieldLabel required={field.required}>{field.label}</FieldLabel>
-        <Input
-          placeholder={field.placeholder ?? ""}
-          type={setupFieldInputType(field)}
-          value={readSetupFieldInputValue(field)}
-          onChange={(event) => {
-            setSetupFieldInputValue(field, event.target.value);
-          }}
-        />
+        {field.control === "select" && field.options !== undefined ? (
+          <div className="relative">
+            <select
+              className="h-10 w-full appearance-none rounded-md border bg-background pl-3 pr-9 text-sm"
+              value={value}
+              onChange={(event) => {
+                setSetupFieldInputValue(field, event.target.value);
+              }}
+            >
+              {field.options.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+            <SelectChevron />
+          </div>
+        ) : (
+          <Input
+            placeholder={field.placeholder ?? ""}
+            type={setupFieldInputType(field)}
+            value={value}
+            onChange={(event) => {
+              setSetupFieldInputValue(field, event.target.value);
+            }}
+          />
+        )}
         {description.length > 0 && (
           <p className="text-xs text-muted-foreground">{description}</p>
         )}
@@ -1527,22 +1584,42 @@ function renderEditConnectionFields(input: {
   return (
     <>
       {setupFields.map((field) => {
-        const value = values[field.key] ?? "";
+        const value = values[field.key] ?? setupFieldDefaultValue(field);
         const placeholder = editSetupFieldPlaceholder(field);
         const description = setupFieldDescription(field);
 
         return (
           <div key={field.key} className="space-y-1">
             <FieldLabel required={field.required}>{field.label}</FieldLabel>
-            <Input
-              value={value}
-              placeholder={placeholder}
-              type={setupFieldInputType(field)}
-              onChange={(event) => {
-                onChange(field.key, event.target.value);
-              }}
-              disabled={disabled}
-            />
+            {field.control === "select" && field.options !== undefined ? (
+              <div className="relative">
+                <select
+                  className="h-10 w-full appearance-none rounded-md border bg-background pl-3 pr-9 text-sm"
+                  value={value}
+                  onChange={(event) => {
+                    onChange(field.key, event.target.value);
+                  }}
+                  disabled={disabled}
+                >
+                  {field.options.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+                <SelectChevron />
+              </div>
+            ) : (
+              <Input
+                value={value}
+                placeholder={placeholder}
+                type={setupFieldInputType(field)}
+                onChange={(event) => {
+                  onChange(field.key, event.target.value);
+                }}
+                disabled={disabled}
+              />
+            )}
             {description.length > 0 && (
               <p className="text-xs text-muted-foreground">{description}</p>
             )}

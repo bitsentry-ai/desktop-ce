@@ -144,6 +144,7 @@ export const desktopPluginDataSourceSetupFieldControlSchema = z.enum([
   "text",
   "password",
   "multiline_list",
+  "select",
 ]);
 
 export type DesktopPluginDataSourceSetupFieldControl = z.infer<
@@ -157,6 +158,16 @@ export const desktopPluginDataSourceSetupFieldSchema = z.object({
   description: z.string().min(1).optional(),
   required: z.boolean().default(false),
   control: desktopPluginDataSourceSetupFieldControlSchema.default("text"),
+  defaultValue: z.string().min(1).optional(),
+  options: z
+    .array(
+      z.object({
+        label: z.string().min(1),
+        value: z.string().min(1),
+      }),
+    )
+    .min(1)
+    .optional(),
 });
 
 export type DesktopPluginDataSourceSetupField = z.infer<

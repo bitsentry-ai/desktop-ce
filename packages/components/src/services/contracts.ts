@@ -600,7 +600,8 @@ export interface PluginDataSourceMetadata {
 export type PluginDataSourceSetupFieldControl =
   | "text"
   | "password"
-  | "multiline_list";
+  | "multiline_list"
+  | "select";
 
 export interface PluginDataSourceSetupField {
   key: string;
@@ -609,6 +610,8 @@ export interface PluginDataSourceSetupField {
   description?: string;
   required: boolean;
   control: PluginDataSourceSetupFieldControl;
+  defaultValue?: string;
+  options?: Array<{ label: string; value: string }>;
 }
 
 export interface PluginDescriptorMetadata {
