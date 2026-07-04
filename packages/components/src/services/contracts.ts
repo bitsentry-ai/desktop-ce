@@ -639,9 +639,30 @@ export interface PluginActionExecutionResult {
 
 export type PluginStoredAuthRecord = Record<string, unknown>;
 
+export interface AvailablePlugin {
+  name: string;
+  artifactUrl: string;
+  description?: string;
+  installed: boolean;
+}
+
+export interface PluginInstallSummary {
+  pluginId: string;
+  installedPath: string;
+  name?: string;
+}
+
 export interface PluginsServicePort {
   list(): Promise<PluginDescriptor[]>;
   get(pluginId: string): Promise<PluginDescriptor | null>;
+  listAvailable(
+    indexUrl?: string,
+  ): Promise<{ indexUrl: string; data: AvailablePlugin[] }>;
+  installFromIndex(
+    name: string,
+    indexUrl?: string,
+  ): Promise<PluginInstallSummary>;
+  installFromArtifact(artifactBase64: string): Promise<PluginInstallSummary>;
   getStoredAuth(pluginId: string): Promise<PluginStoredAuthRecord>;
   updateStoredAuth(
     pluginId: string,

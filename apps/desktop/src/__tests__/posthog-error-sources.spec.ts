@@ -113,6 +113,7 @@ function createOAuthDescriptor(input: {
     name: input.pluginId,
     version: 'test',
     description: `${input.pluginId} OAuth test plugin`,
+    type: "data_source",
     metadata: {
       dataSource: {
         sourceType: input.sourceType,

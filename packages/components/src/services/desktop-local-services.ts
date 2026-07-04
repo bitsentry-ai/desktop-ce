@@ -1,12 +1,14 @@
 import type { AgentThreadSnapshot } from '../chat/types'
 import type {
   AuthSessionState,
+  AvailablePlugin,
   BitsentryServicePorts,
   CreateErrorSourceInput,
   ErrorSourceRow,
   ErrorSourceSyncResult,
   PluginActionExecutionResult,
   PluginDescriptor,
+  PluginInstallSummary,
   UpdateErrorSourceInput,
   GlobalVariable,
   GlobalVariableInput,
@@ -279,6 +281,46 @@ export function createDesktopLocalBitsentryServices({
     },
     async get(pluginId: string): Promise<PluginDescriptor | null> {
       return ipcInvoke<PluginDescriptor | null>('plugins:get', { pluginId })
+    },
+    async listAvailable(
+      indexUrl?: string,
+    ): Promise<{ indexUrl: string; data: AvailablePlugin[] }> {
+      const payload: { indexUrl?: string } = {}
+      if (indexUrl !== undefined) {
+        payload.indexUrl = indexUrl
+      }
+      const response = await ipcInvoke<{
+        indexUrl: string
+        data: AvailablePlugin[]
+      }>('plugins:listAvailable', payload)
+      const data: AvailablePlugin[] = []
+      if (Array.isArray(response.data)) {
+        data.push(...response.data)
+      }
+      return {
+        indexUrl: response.indexUrl,
+        data,
+      }
+    },
+    async installFromIndex(
+      name: string,
+      indexUrl?: string,
+    ): Promise<PluginInstallSummary> {
+      const payload: { name: string; indexUrl?: string } = { name }
+      if (indexUrl !== undefined) {
+        payload.indexUrl = indexUrl
+      }
+      return ipcInvoke<PluginInstallSummary>(
+        'plugins:installFromIndex',
+        payload,
+      )
+    },
+    async installFromArtifact(
+      artifactBase64: string,
+    ): Promise<PluginInstallSummary> {
+      return ipcInvoke<PluginInstallSummary>('plugins:installFromArtifact', {
+        artifactBase64,
+      })
     },
     async getStoredAuth(pluginId: string): Promise<Record<string, unknown>> {
       return ipcInvoke<Record<string, unknown>>('plugins:getStoredAuth', { pluginId })

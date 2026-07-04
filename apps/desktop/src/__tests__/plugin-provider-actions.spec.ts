@@ -42,6 +42,7 @@ function createPluginDescriptor(
     name: 'PostHog',
     version: '1.0.0',
     description: 'Code plugin descriptor for PostHog.',
+    type: "data_source",
     metadata: {
       dataSource: {
         sourceType: 'posthog',

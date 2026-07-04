@@ -169,6 +169,7 @@ function createPostHogPluginDescriptor(): DesktopPluginDescriptor {
     name: "PostHog",
     version: "1.0.0",
     description: "PostHog code plugin.",
+    type: "data_source",
     metadata: {
       dataSource: {
         sourceType: "posthog",

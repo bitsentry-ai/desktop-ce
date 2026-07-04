@@ -80,6 +80,7 @@ function createWazuhDescriptor(): DesktopPluginDescriptor {
     name: 'Wazuh',
     version: '1.0.0',
     description: 'Wazuh code plugin.',
+    type: "data_source",
     metadata: {
       dataSource: {
         sourceType: 'wazuh',
@@ -121,6 +122,7 @@ function createSentryDescriptor(): DesktopPluginDescriptor {
     name: 'Sentry',
     version: '1.0.0',
     description: 'Sentry code plugin.',
+    type: "data_source",
     metadata: {
       dataSource: {
         sourceType: 'sentry',

@@ -92,6 +92,7 @@ const queryKeys = {
 
   pluginsRoot: ['bitsentry', 'plugins'] as const,
   pluginsList: () => [...queryKeys.pluginsRoot, 'list'] as const,
+  pluginsAvailable: () => [...queryKeys.pluginsRoot, 'available'] as const,
   pluginDetail: (pluginId: string) => [...queryKeys.pluginsRoot, 'detail', pluginId] as const,
   pluginStoredAuth: (pluginId: string) =>
     [...queryKeys.pluginsRoot, 'stored-auth', pluginId] as const,
@@ -782,6 +783,57 @@ export function usePlugin(pluginId?: string) {
     enabled: typeof pluginId === 'string' && pluginId.trim().length > 0,
     staleTime: 1000 * 30,
     gcTime: 1000 * 60 * 5,
+  });
+}
+
+export function useAvailablePlugins(enabled = true) {
+  const { plugins } = useBitsentryServices();
+  const port = requirePort(plugins, 'plugins');
+
+  return useQuery({
+    queryKey: queryKeys.pluginsAvailable(),
+    queryFn: () => port.listAvailable(),
+    enabled,
+    staleTime: 1000 * 30,
+    gcTime: 1000 * 60 * 5,
+  });
+}
+
+function useInvalidatePluginsAfterInstall() {
+  const queryClient = useQueryClient();
+
+  return () => {
+    void queryClient.invalidateQueries({ queryKey: queryKeys.pluginsList() });
+    void queryClient.invalidateQueries({
+      queryKey: queryKeys.pluginsAvailable(),
+    });
+    void queryClient.invalidateQueries({
+      queryKey: queryKeys.errorSourcesList(),
+    });
+  };
+}
+
+export function useInstallPluginFromIndex() {
+  const { plugins } = useBitsentryServices();
+  const port = requirePort(plugins, 'plugins');
+  const invalidate = useInvalidatePluginsAfterInstall();
+
+  return useMutation({
+    mutationFn: (input: { name: string; indexUrl?: string }) =>
+      port.installFromIndex(input.name, input.indexUrl),
+    onSuccess: invalidate,
+  });
+}
+
+export function useInstallPluginFromArtifact() {
+  const { plugins } = useBitsentryServices();
+  const port = requirePort(plugins, 'plugins');
+  const invalidate = useInvalidatePluginsAfterInstall();
+
+  return useMutation({
+    mutationFn: (artifactBase64: string) =>
+      port.installFromArtifact(artifactBase64),
+    onSuccess: invalidate,
   });
 }
 

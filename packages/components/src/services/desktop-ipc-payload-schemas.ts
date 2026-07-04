@@ -269,6 +269,13 @@ export function createDesktopIpcPayloadValidator(
       artifactBase64: z.string().min(1),
       installRoot: z.string().min(1).optional(),
     }),
+    "plugins:listAvailable": z.object({
+      indexUrl: z.string().min(1).optional(),
+    }),
+    "plugins:installFromIndex": z.object({
+      name: z.string().min(1),
+      indexUrl: z.string().min(1).optional(),
+    }),
     "plugins:execute": z.object({
       pluginId: z.string().min(1),
       actionId: z.string().min(1),

@@ -10,6 +10,10 @@ import {
   type DesktopPluginStoredAuthStore,
 } from "./desktop-plugin-auth-store";
 import { createDesktopNodePluginRuntimeService } from "./desktop-plugin-runtime.node";
+import {
+  fetchPluginIndex,
+  installPluginFromIndex,
+} from "./desktop-plugin-index";
 
 function asPayloadRecord(payload: unknown): Record<string, unknown> {
   if (payload !== null && typeof payload === "object" && !Array.isArray(payload)) {
@@ -31,6 +35,24 @@ function readRequiredPluginId(payload: unknown): string {
   }
 
   return normalized;
+}
+
+function readRequiredName(payload: unknown): string {
+  const name = asPayloadRecord(payload).name;
+  if (typeof name !== "string" || name.trim().length === 0) {
+    throw new Error("name is required");
+  }
+
+  return name.trim();
+}
+
+function readOptionalIndexUrl(payload: unknown): string | undefined {
+  const indexUrl = asPayloadRecord(payload).indexUrl;
+  if (typeof indexUrl !== "string" || indexUrl.trim().length === 0) {
+    return undefined;
+  }
+
+  return indexUrl.trim();
 }
 
 function readAuthRecord(payload: unknown): Record<string, unknown> {
@@ -208,6 +230,25 @@ export function createDesktopPluginHandlers(
       service.installFromArtifact(
         payload as DesktopPluginInstallFromArtifactRequest,
       ),
+    "plugins:listAvailable": async (payload) => {
+      const { entries, indexUrl } = await fetchPluginIndex(
+        readOptionalIndexUrl(payload),
+      );
+
+      return {
+        indexUrl,
+        data: entries.map((entry) => ({
+          ...entry,
+          installed: service.getPlugin(entry.name) !== null,
+        })),
+      };
+    },
+    "plugins:installFromIndex": (payload) =>
+      installPluginFromIndex({
+        runtime: service,
+        name: readRequiredName(payload),
+        indexUrl: readOptionalIndexUrl(payload),
+      }),
     "plugins:execute": (payload) =>
       service.executeAction(payload as DesktopPluginExecutionRequest),
   };
