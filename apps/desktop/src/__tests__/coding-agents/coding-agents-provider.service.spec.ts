@@ -17,6 +17,16 @@ vi.mock('@bitsentry-ce/coding-agents/cli-probe.service', () => ({
   doctor: vi.fn(),
 }))
 
+vi.mock('@bitsentry-ce/coding-agents/claude-code-provider.service', async () => {
+  const actual = await vi.importActual<typeof import('@bitsentry-ce/coding-agents/claude-code-provider.service')>(
+    '@bitsentry-ce/coding-agents/claude-code-provider.service',
+  )
+  return {
+    ...actual,
+    executeClaudeCode: vi.fn(),
+  }
+})
+
 vi.mock('@bitsentry-ce/coding-agents/codex-provider.service', async () => {
   const actual = await vi.importActual<typeof import('@bitsentry-ce/coding-agents/codex-provider.service')>(
     '@bitsentry-ce/coding-agents/codex-provider.service',
@@ -55,9 +65,11 @@ import {
 } from '@bitsentry-ce/desktop-cli/runtime/desktop-coding-agents'
 import {
   detectBinary,
+  probeClaudeCode,
   probeCodex,
   probeOpenCode,
 } from '@bitsentry-ce/coding-agents/cli-probe.service'
+import { executeClaudeCode } from '@bitsentry-ce/coding-agents/claude-code-provider.service'
 import { executeCodex } from '@bitsentry-ce/coding-agents/codex-provider.service'
 import { executeOpenCode } from '@bitsentry-ce/coding-agents/opencode-provider.service'
 
@@ -261,6 +273,46 @@ describe('CodingAgentsProviderService', () => {
     ])
     expect(detectBinary).not.toHaveBeenCalled()
     expect(service.getSettings().cursor.binaryPath).toBe('cursor-agent')
+  })
+
+  it('passes Claude context window traits into execution', async () => {
+    vi.mocked(detectBinary).mockResolvedValue('/opt/homebrew/bin/claude')
+    vi.mocked(probeClaudeCode).mockResolvedValue({
+      installed: true,
+      version: '2.0.0',
+      auth: { status: 'authenticated' },
+      status: 'ready',
+    })
+    vi.mocked(executeClaudeCode).mockResolvedValue({
+      output: 'done',
+    })
+
+    const db = createDbMock()
+    const service = new CodingAgentsProviderService(db)
+    await service.saveSettings({
+      claudeCode: {
+        enabled: true,
+        binaryPath: 'claude',
+      },
+    })
+
+    await service.execute(
+      'claude_code',
+      'hello',
+      new AbortController(),
+      undefined,
+      undefined,
+      'claude-sonnet-5',
+      'supervised',
+      { effort: 'high', contextWindow: '1m' },
+    )
+
+    expect(executeClaudeCode).toHaveBeenCalledWith(expect.objectContaining({
+      binaryPath: '/opt/homebrew/bin/claude',
+      model: 'claude-sonnet-5',
+      maxTurns: 16,
+      contextWindow: '1m',
+    }))
   })
 
   it('silently detects and uses the resolved opencode binary without changing the saved path', async () => {

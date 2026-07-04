@@ -16,6 +16,27 @@ interface LoggedCursorMessage {
   params?: unknown
 }
 
+const DEFAULT_CURSOR_CONFIG_OPTIONS = [
+  {
+    id: 'model',
+    type: 'select',
+    category: 'model',
+    name: 'Model',
+    options: [{ value: 'composer-2.5', name: 'Composer 2.5' }],
+  },
+  {
+    id: 'reasoning',
+    type: 'select',
+    category: 'reasoning',
+    name: 'Reasoning',
+    options: [
+      { value: 'low', name: 'Low' },
+      { value: 'medium', name: 'Medium' },
+      { value: 'high', name: 'High' },
+    ],
+  },
+]
+
 function parseJsonLine(line: string): unknown {
   return JSON.parse(line) as unknown
 }
@@ -42,11 +63,14 @@ async function readLoggedMessages(logPath: string): Promise<LoggedCursorMessage[
     .map((line) => parseLoggedCursorMessage(line))
 }
 
-async function createMockCursorAgent(): Promise<{ binaryPath: string; logPath: string; cwd: string }> {
+async function createMockCursorAgent(
+  configOptions: unknown[] = DEFAULT_CURSOR_CONFIG_OPTIONS,
+): Promise<{ binaryPath: string; logPath: string; cwd: string }> {
   const cwd = await mkdtemp(path.join(os.tmpdir(), 'cursor-provider-'))
   tmpDirs.push(cwd)
 
   const logPath = path.join(cwd, 'messages.jsonl')
+  const configOptionsJson = JSON.stringify(configOptions)
   const script = `
 const fs = require('fs')
 const readline = require('readline')
@@ -80,26 +104,7 @@ rl.on('line', (line) => {
       id: message.id,
       result: {
         sessionId: 'session-1',
-        configOptions: [
-          {
-            id: 'model',
-            type: 'select',
-            category: 'model',
-            name: 'Model',
-            options: [{ value: 'composer-2.5', name: 'Composer 2.5' }],
-          },
-          {
-            id: 'reasoning',
-            type: 'select',
-            category: 'reasoning',
-            name: 'Reasoning',
-            options: [
-              { value: 'low', name: 'Low' },
-              { value: 'medium', name: 'Medium' },
-              { value: 'high', name: 'High' },
-            ],
-          },
-        ],
+        configOptions: ${configOptionsJson},
       },
     }) + '\\n')
     return
@@ -360,6 +365,47 @@ describe('Cursor provider behavior', () => {
         configId: 'model',
         value: 'composer-2.5',
       },
+    }))
+    expect(messages).toContainEqual(expect.objectContaining({
+      method: 'session/set_config_option',
+      params: {
+        sessionId: 'session-1',
+        configId: 'reasoning',
+        value: 'high',
+      },
+    }))
+  })
+
+  it('skips Cursor effort-looking options that cannot accept the selected value', async () => {
+    const mock = await createMockCursorAgent([
+      DEFAULT_CURSOR_CONFIG_OPTIONS[0],
+      {
+        id: 'thinking',
+        type: 'boolean',
+        category: 'reasoning',
+        name: 'Thinking',
+      },
+      DEFAULT_CURSOR_CONFIG_OPTIONS[1],
+    ])
+
+    await expect(
+      executeCursor({
+        prompt: 'Summarize the incident',
+        binaryPath: mock.binaryPath,
+        abortController: new AbortController(),
+        cwd: mock.cwd,
+        model: 'composer-2.5',
+        traitValues: { effort: 'high' },
+      }),
+    ).resolves.toMatchObject({ output: 'done' })
+
+    const messages = await readLoggedMessages(mock.logPath)
+    expect(messages).not.toContainEqual(expect.objectContaining({
+      method: 'session/set_config_option',
+      params: expect.objectContaining({
+        configId: 'thinking',
+        value: 'high',
+      }),
     }))
     expect(messages).toContainEqual(expect.objectContaining({
       method: 'session/set_config_option',

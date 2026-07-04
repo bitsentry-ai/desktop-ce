@@ -430,6 +430,50 @@ function isEffortConfigOption(option: Record<string, unknown>): boolean {
   )
 }
 
+function getEffortConfigOptionId(
+  sessionResult: unknown,
+  effort: string,
+): string | undefined {
+  const configOptions = asArray(asRecord(sessionResult)?.configOptions)
+  for (const rawOption of configOptions) {
+    const option = asRecord(rawOption)
+    if (option === undefined || !isEffortConfigOption(option)) continue
+    if (!selectConfigOptionHasValue(option, effort)) continue
+
+    const id = asString(option.id)
+    if (id !== undefined) return id
+  }
+
+  return undefined
+}
+
+function selectConfigOptionHasValue(
+  option: Record<string, unknown>,
+  value: string,
+): boolean {
+  if (option.type !== 'select') return false
+  return optionValuesContain(asArray(option.options), value)
+}
+
+function optionValuesContain(rawValues: unknown[], expectedValue: string): boolean {
+  for (const rawValue of rawValues) {
+    const value = asRecord(rawValue)
+    if (value === undefined) continue
+
+    const nestedOptions = asArray(value.options)
+    if (nestedOptions.length > 0) {
+      if (optionValuesContain(nestedOptions, expectedValue)) return true
+      continue
+    }
+
+    const optionValue =
+      asString(value.value) ?? asString(value.modelId) ?? asString(value.id)
+    if (optionValue === expectedValue) return true
+  }
+
+  return false
+}
+
 function collectConfigOptionModels(configOptions: unknown): Set<string> {
   const modelIds = new Set<string>()
 
@@ -641,7 +685,7 @@ async function setCursorEffort(
 ): Promise<void> {
   if (typeof effort !== 'string' || effort === '') return
 
-  const effortConfigOptionId = getConfigOptionId(sessionResult, isEffortConfigOption)
+  const effortConfigOptionId = getEffortConfigOptionId(sessionResult, effort)
   if (effortConfigOptionId === undefined) return
 
   try {

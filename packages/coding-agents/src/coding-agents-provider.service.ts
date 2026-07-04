@@ -91,6 +91,12 @@ function effortToMaxTurns(effort: string | undefined): number | undefined {
   return EFFORT_MAX_TURNS[effort]
 }
 
+function readTraitString(value: string | boolean | undefined): string | undefined {
+  if (typeof value !== 'string') return undefined
+  const normalized = value.trim()
+  return normalized.length > 0 ? normalized : undefined
+}
+
 function createDefaultLocalAiSettings(): LocalAiSettings {
   return structuredClone(DEFAULT_LOCAL_AI_SETTINGS)
 }
@@ -460,7 +466,8 @@ export class CodingAgentsProviderService {
         cwd,
         model,
         accessLevel,
-        maxTurns: effortToMaxTurns(traitValues?.effort as string | undefined),
+        maxTurns: effortToMaxTurns(readTraitString(traitValues?.effort)),
+        contextWindow: readTraitString(traitValues?.contextWindow),
         onDelta,
       })
     }
