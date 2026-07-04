@@ -36,6 +36,26 @@ function normalizeHost(value: string): string {
   return value.trim().toLowerCase();
 }
 
+function normalizeAllowedHostEntry(value: string): string | null {
+  const normalized = normalizeHost(value);
+  if (normalized.length === 0) return null;
+
+  if (!normalized.includes("://")) {
+    return normalized;
+  }
+
+  try {
+    const host = normalizeHost(new URL(normalized).host);
+    if (host.length > 0) {
+      return host;
+    }
+
+    return null;
+  } catch {
+    return normalized;
+  }
+}
+
 /**
  * Parse a comma-separated allowlist env var into a `Set` of lowercased hosts.
  * Each entry may be a host (`grafana.example.com`) or a full URL — the host
@@ -49,10 +69,9 @@ export function parsePostHogAllowedHostsEnv(
   for (const entry of raw.split(",")) {
     const trimmed = entry.trim();
     if (trimmed.length === 0) continue;
-    try {
-      hosts.add(normalizeHost(new URL(trimmed).host));
-    } catch {
-      hosts.add(normalizeHost(trimmed));
+    const host = normalizeAllowedHostEntry(trimmed);
+    if (host !== null) {
+      hosts.add(host);
     }
   }
   return hosts;
@@ -125,8 +144,8 @@ function normalizeExtraAllowedHosts(
     return hosts;
 
   for (const entry of extraAllowedHosts) {
-    const candidate = normalizeHost(entry);
-    if (candidate.length > 0) hosts.add(candidate);
+    const candidate = normalizeAllowedHostEntry(entry);
+    if (candidate !== null) hosts.add(candidate);
   }
 
   return hosts;
