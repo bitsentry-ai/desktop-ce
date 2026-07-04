@@ -33,6 +33,7 @@ import type {
 import { useTranslation } from "@bitsentry-ce/i18n";
 import { Pencil, RefreshCw, Trash2 } from "lucide-react";
 import { PluginIcon } from "./icons";
+import InstallPluginDialog from "./InstallPluginDialog";
 
 type StatusKind = "info" | "success" | "error";
 type Translate = (key: string, options?: Record<string, unknown>) => string;
@@ -384,6 +385,7 @@ export default function DataSourcesManager({
 
   // ---- Create-source dialog state ----
   const [addDialogOpen, setAddDialogOpen] = useState(false);
+  const [installDialogOpen, setInstallDialogOpen] = useState(false);
   const [sourceType, setSourceType] = useState<ErrorSourceType>("");
   const [selectedProviderId, setSelectedProviderId] = useState("");
   const [sourceName, setSourceName] = useState("");
@@ -886,15 +888,19 @@ export default function DataSourcesManager({
     );
   }
 
+  // The active page stays in normal flow so the wrapper sizes to it; the
+  // inactive page is absolutely overlaid and clipped during the slide. Keeping
+  // the active page in flow prevents the taller advanced page from being forced
+  // into a short credentials page height and clipped by overflow-hidden.
   let credentialsPageClassName =
     "space-y-4 transition-all duration-300 ease-out translate-x-0 opacity-100";
   let advancedPageClassName =
     "absolute inset-0 space-y-4 transition-all duration-300 ease-out pointer-events-none translate-x-full opacity-0";
   if (showAdvanced) {
     credentialsPageClassName =
-      "space-y-4 transition-all duration-300 ease-out pointer-events-none -translate-x-full opacity-0";
+      "absolute inset-0 space-y-4 transition-all duration-300 ease-out pointer-events-none -translate-x-full opacity-0";
     advancedPageClassName =
-      "absolute inset-0 space-y-4 transition-all duration-300 ease-out translate-x-0 opacity-100";
+      "space-y-4 transition-all duration-300 ease-out translate-x-0 opacity-100";
   }
 
   function renderCreateSetupField(
@@ -958,21 +964,43 @@ export default function DataSourcesManager({
               {t("common.dataSourcesManager.connectExternalServicesToFeed")}
             </p>
           </div>
+          <div className="flex items-center gap-2">
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => {
+                setInstallDialogOpen(true);
+              }}
+              data-tour="data-sources-install-plugin"
+            >
+              {t("common.dataSourcesManager.installPlugin")}
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => {
+                setAddDialogOpen(true);
+              }}
+              disabled={actionLoading}
+              data-tour="data-sources-add-source"
+            >
+              {t("common.dataSourcesManager.addSource")}
+            </Button>
+          </div>
+        </div>
+      )}
+      {!showHeader && (
+        <div className="flex justify-end gap-2">
           <Button
             size="sm"
             variant="outline"
             onClick={() => {
-              setAddDialogOpen(true);
+              setInstallDialogOpen(true);
             }}
-            disabled={actionLoading}
-            data-tour="data-sources-add-source"
+            data-tour="data-sources-install-plugin"
           >
-            {t("common.dataSourcesManager.addSource")}
+            {t("common.dataSourcesManager.installPlugin")}
           </Button>
-        </div>
-      )}
-      {!showHeader && (
-        <div className="flex justify-end">
           <Button
             size="sm"
             variant="outline"
@@ -1115,6 +1143,11 @@ export default function DataSourcesManager({
           })}
         </div>
       )}
+
+      <InstallPluginDialog
+        open={installDialogOpen}
+        onOpenChange={setInstallDialogOpen}
+      />
 
       <Dialog
         open={addDialogOpen}
