@@ -7,6 +7,8 @@ const DEFAULT_ISSUES_LIMIT = 50;
 const DEFAULT_EVENTS_LIMIT = 50;
 const MAX_ISSUES_LIMIT = 100;
 const MAX_EVENTS_LIMIT = 100;
+const SENTRY_ALLOWED_BASE_URLS_ENV = "SENTRY_ALLOWED_BASE_URLS";
+const SENTRY_BUILTIN_ALLOWED_HOSTS = new Set(["sentry.io"]);
 
 function readString(value, fallback = "") {
   if (typeof value === "string") {
@@ -51,6 +53,40 @@ function boundedInteger(value, fallback, max) {
   return fallback;
 }
 
+function readSentryAllowedBaseUrlsEnv() {
+  if (typeof process === "undefined" || process.env === undefined) {
+    return "";
+  }
+
+  return readString(process.env[SENTRY_ALLOWED_BASE_URLS_ENV]);
+}
+
+function normalizeAllowedSentryHost(value) {
+  const normalized = readString(value).toLowerCase();
+  if (normalized.length === 0) {
+    return "";
+  }
+
+  if (!normalized.includes("://")) {
+    return normalized;
+  }
+
+  try {
+    return new URL(normalized).host.toLowerCase();
+  } catch {
+    return normalized;
+  }
+}
+
+function readExtraAllowedSentryHosts() {
+  return new Set(
+    readSentryAllowedBaseUrlsEnv()
+      .split(",")
+      .map(normalizeAllowedSentryHost)
+      .filter((host) => host.length > 0),
+  );
+}
+
 function readApiBase(auth) {
   const configured = readString(auth.apiBase, readString(auth.baseUrl));
   if (configured.length === 0) {
@@ -58,8 +94,16 @@ function readApiBase(auth) {
   }
 
   const parsed = new URL(configured);
-  if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
-    throw new Error("Sentry API base URL must use http:// or https://");
+  if (parsed.protocol !== "https:") {
+    throw new Error("Sentry API base URL must use https://");
+  }
+
+  const host = parsed.host.toLowerCase();
+  const extraAllowedHosts = readExtraAllowedSentryHosts();
+  if (!SENTRY_BUILTIN_ALLOWED_HOSTS.has(host) && !extraAllowedHosts.has(host)) {
+    throw new Error(
+      `Sentry API base URL "${host}" is not in the allowlist. Set ${SENTRY_ALLOWED_BASE_URLS_ENV} to whitelist self-hosted instances.`,
+    );
   }
 
   const normalized = `${parsed.origin}${parsed.pathname.replace(/\/+$/, "")}`;

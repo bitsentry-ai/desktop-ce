@@ -24,6 +24,7 @@ function action(id: string) {
 describe("Sentry plugin package", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
+    vi.unstubAllEnvs();
   });
 
   it("declares Sentry as a typed error-source code plugin", () => {
@@ -49,7 +50,7 @@ describe("Sentry plugin package", () => {
     );
   });
 
-  it("rejects non-HTTP Sentry API bases before sending bearer credentials", async () => {
+  it("rejects non-HTTPS Sentry API bases before sending bearer credentials", async () => {
     const fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);
 
@@ -65,12 +66,34 @@ describe("Sentry plugin package", () => {
     };
 
     await expect(action("list_organizations").execute(context)).rejects.toThrow(
-      "Sentry API base URL must use http:// or https://",
+      "Sentry API base URL must use https://",
+    );
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("rejects unallowlisted Sentry API bases before sending bearer credentials", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    const context: DesktopPluginCodeActionContext = {
+      pluginId: plugin.id,
+      actionId: "list_organizations",
+      auth: {
+        accessToken: "sentry-token",
+        baseUrl: "https://evil.example.com",
+      },
+      input: {},
+      host,
+    };
+
+    await expect(action("list_organizations").execute(context)).rejects.toThrow(
+      "Sentry API base URL \"evil.example.com\" is not in the allowlist",
     );
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it("refuses redirects when sending bearer credentials to Sentry", async () => {
+    vi.stubEnv("SENTRY_ALLOWED_BASE_URLS", "sentry.example.com");
     const fetchMock = vi
       .fn<(url: string, request?: RequestInit) => Promise<Response>>()
       .mockResolvedValue(
@@ -108,6 +131,7 @@ describe("Sentry plugin package", () => {
   });
 
   it("applies configured project slug filters to issue queries", async () => {
+    vi.stubEnv("SENTRY_ALLOWED_BASE_URLS", "sentry.example.com");
     const fetchMock = vi
       .fn<(url: string, request?: RequestInit) => Promise<Response>>()
       .mockResolvedValue(
