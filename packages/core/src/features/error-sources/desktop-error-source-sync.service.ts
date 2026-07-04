@@ -94,6 +94,7 @@ const MAX_GENERIC_PLUGIN_ISSUES_PER_PAGE = 100;
 const MAX_GENERIC_PLUGIN_EVENT_PAGES_PER_ISSUE = 10;
 const POSTHOG_SYNC_LOOKBACK_MS = 60 * 60 * 1000;
 const SENTRY_INITIAL_SYNC_LOOKBACK_MS = 24 * 60 * 60 * 1000;
+const GENERIC_PLUGIN_INITIAL_SYNC_LOOKBACK_MS = 24 * 60 * 60 * 1000;
 
 function readRecord(value: unknown): ExternalPayloadRecord | null {
   const parsed = externalPayloadRecordSchema.safeParse(value);
@@ -506,7 +507,7 @@ function readCustomPluginSyncSince(source: ErrorSource): string | undefined {
       return new Date(Date.now() - SENTRY_INITIAL_SYNC_LOOKBACK_MS).toISOString();
     }
 
-    return undefined;
+    return new Date(Date.now() - GENERIC_PLUGIN_INITIAL_SYNC_LOOKBACK_MS).toISOString();
   }
 
   if (source.sourceType !== "posthog") {
