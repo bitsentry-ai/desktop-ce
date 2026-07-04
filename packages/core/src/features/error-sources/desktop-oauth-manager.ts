@@ -246,16 +246,32 @@ export interface DesktopOauthManagerBindings {
   ) => DesktopOauthManagerService;
 }
 
-export function createDesktopOauthManagerBindings(): DesktopOauthManagerBindings {
+export function createDesktopOauthManagerBindings(
+  defaultRedirectUri?: string,
+): DesktopOauthManagerBindings {
+  class BoundDesktopOauthManagerService extends DesktopOauthManagerService {
+    constructor(
+      db: DesktopOAuthSettingsDatabase,
+      pluginRuntime?: DesktopPluginRuntimeService,
+    ) {
+      super(db, pluginRuntime, { defaultRedirectUri });
+    }
+  }
+
   return {
-    OauthManagerService: DesktopOauthManagerService,
+    OauthManagerService: BoundDesktopOauthManagerService,
   };
 }
+
+type DesktopOauthManagerOptions = {
+  defaultRedirectUri?: string;
+};
 
 export class DesktopOauthManagerService {
   constructor(
     private readonly db: DesktopOAuthSettingsDatabase,
     private readonly pluginRuntime: DesktopPluginRuntimeService = createDesktopNodePluginRuntimeService(),
+    private readonly options: DesktopOauthManagerOptions = {},
   ) {}
 
   private getProviderConfig(
@@ -268,12 +284,19 @@ export class DesktopOauthManagerService {
       pluginId,
     });
 
+    const config = mergeOAuthProviderConfig({
+      sourceType,
+      pluginConfig: pluginConfig.oauth,
+    });
+    const defaultRedirectUri = this.options.defaultRedirectUri?.trim();
+    let resolvedConfig = config;
+    if (defaultRedirectUri !== undefined && defaultRedirectUri.length > 0) {
+      resolvedConfig = { ...config, defaultRedirectUri };
+    }
+
     return {
       pluginId: pluginConfig.pluginId,
-      config: mergeOAuthProviderConfig({
-        sourceType,
-        pluginConfig: pluginConfig.oauth,
-      }),
+      config: resolvedConfig,
     };
   }
 
