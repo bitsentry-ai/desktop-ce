@@ -121,6 +121,43 @@ describe("GitHub plugin package", () => {
     expect(request?.redirect).toBe("error");
   });
 
+  it("keeps list_issues page size within the GitHub API limit", async () => {
+    const fetchMock = vi.fn<(url: string, request?: RequestInit) => Promise<Response>>();
+    fetchMock.mockResolvedValue(
+      new Response(
+        JSON.stringify(
+          Array.from({ length: 100 }, (_, index) =>
+            createGitHubIssue({
+              id: 1000 + index,
+              number: index + 1,
+              title: `Issue ${String(index + 1)}`,
+            }),
+          ),
+        ),
+        {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        },
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await action("list_issues").execute(
+      context("list_issues", {
+        owner: "bitsentry-ai",
+        repo: "monorepo",
+        limit: 100,
+      }),
+    );
+
+    const [url] = fetchMock.mock.calls[0] ?? [];
+    expect(new URL(String(url)).searchParams.get("per_page")).toBe("100");
+    expect(result.data).toMatchObject({
+      hasMore: true,
+      nextCursor: "2",
+    });
+  });
+
   it("keeps setup and auth mapping inside plugin code", async () => {
     expect(
       plugin.dataSource?.resolveSetup?.({

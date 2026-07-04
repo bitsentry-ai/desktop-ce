@@ -55,6 +55,18 @@ function boundedLimit(value, fallback = DEFAULT_LIMIT) {
   return fallback;
 }
 
+function sentinelRequestLimit(limit) {
+  return Math.min(MAX_LIMIT, limit + 1);
+}
+
+function pageHasMore(records, limit, requestLimit) {
+  if (records.length > limit) {
+    return true;
+  }
+
+  return requestLimit === MAX_LIMIT && records.length === MAX_LIMIT;
+}
+
 function readCursorPage(value) {
   const numeric = Number(readString(value, "1"));
   if (!Number.isFinite(numeric) || numeric < 1) {
@@ -255,7 +267,7 @@ function resolveRepos(input, auth) {
   throw new Error("GitHub repository is required");
 }
 
-function buildIssueParams(input, limit, page) {
+function buildIssueParams(input, requestLimit, page) {
   const labels = readStringArray(input.labels).join(",");
   const params = {
     state: readString(input.state, "open"),
@@ -263,7 +275,7 @@ function buildIssueParams(input, limit, page) {
     direction: readString(input.direction, "desc"),
     labels,
     since: readString(input.since),
-    per_page: String(limit + 1),
+    per_page: String(requestLimit),
     page: String(page),
   };
 
@@ -276,20 +288,22 @@ function buildIssueParams(input, limit, page) {
 
 async function listIssuesForRepo(auth, owner, repo, input) {
   const limit = boundedLimit(input.limit);
+  const requestLimit = sentinelRequestLimit(limit);
   const page = readCursorPage(input.cursor);
   const issues = await requestGitHub(
     auth,
     `/repos/${encodePathSegment(owner)}/${encodePathSegment(repo)}/issues`,
-    buildIssueParams(input, limit, page),
+    buildIssueParams(input, requestLimit, page),
   );
   const records = Array.isArray(issues)
     ? issues.map((issue) => normalizeGitHubIssue(owner, repo, issue))
     : [];
+  const hasMore = pageHasMore(records, limit, requestLimit);
 
   return {
     issues: records.slice(0, limit),
-    hasMore: records.length > limit,
-    nextCursor: records.length > limit ? String(page + 1) : undefined,
+    hasMore,
+    nextCursor: hasMore ? String(page + 1) : undefined,
   };
 }
 
@@ -332,6 +346,7 @@ async function queryGitHubIssues(context) {
   const owner = resolveOwner(input, auth);
   const repos = resolveRepos(input, auth);
   const limit = boundedLimit(input.limit);
+  const requestLimit = sentinelRequestLimit(limit);
   const page = readCursorPage(input.cursor);
   const issues = [];
   let hasMore = false;
@@ -341,7 +356,7 @@ async function queryGitHubIssues(context) {
       q: buildSearchQuery(input, owner, repo),
       sort: "updated",
       order: "desc",
-      per_page: String(limit + 1),
+      per_page: String(requestLimit),
       page: String(page),
     });
     const resultItems = readRecord(result).items;
@@ -349,7 +364,7 @@ async function queryGitHubIssues(context) {
     for (const item of items.slice(0, limit)) {
       issues.push(normalizeGitHubIssue(owner, repo, item));
     }
-    hasMore = hasMore || items.length > limit;
+    hasMore = hasMore || pageHasMore(items, limit, requestLimit);
   }
 
   return {

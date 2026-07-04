@@ -8,6 +8,7 @@ const POSTHOG_BUILTIN_ALLOWED_HOSTS = new Set([
   "us.posthog.com",
   "eu.posthog.com",
 ]);
+const POSTHOG_ALLOWED_BASE_URLS_ENV = "POSTHOG_ALLOWED_BASE_URLS";
 
 function readString(value, fallback = "") {
   if (typeof value === "string") {
@@ -110,6 +111,45 @@ function boundedLimit(value, fallback) {
   return fallback;
 }
 
+function readPostHogAllowedBaseUrlsEnv() {
+  if (typeof process === "undefined") {
+    return "";
+  }
+
+  const env = process.env;
+  if (env === undefined) {
+    return "";
+  }
+
+  return readString(env[POSTHOG_ALLOWED_BASE_URLS_ENV]);
+}
+
+function normalizeAllowedPostHogHost(value) {
+  const normalized = readString(value).toLowerCase();
+  if (normalized.length === 0) {
+    return "";
+  }
+
+  if (!normalized.includes("://")) {
+    return normalized;
+  }
+
+  try {
+    return new URL(normalized).host.toLowerCase();
+  } catch {
+    return normalized;
+  }
+}
+
+function readExtraAllowedPostHogHosts() {
+  return new Set(
+    readPostHogAllowedBaseUrlsEnv()
+      .split(",")
+      .map(normalizeAllowedPostHogHost)
+      .filter((host) => host.length > 0),
+  );
+}
+
 function resolvePostHogBaseUrl(baseUrl) {
   const normalized = readString(baseUrl, POSTHOG_DEFAULT_BASE_URL);
   const parsed = new URL(normalized);
@@ -117,9 +157,11 @@ function resolvePostHogBaseUrl(baseUrl) {
     throw new Error("PostHog base URL must use https://");
   }
 
-  if (!POSTHOG_BUILTIN_ALLOWED_HOSTS.has(parsed.host.toLowerCase())) {
+  const host = parsed.host.toLowerCase();
+  const extraAllowedHosts = readExtraAllowedPostHogHosts();
+  if (!POSTHOG_BUILTIN_ALLOWED_HOSTS.has(host) && !extraAllowedHosts.has(host)) {
     throw new Error(
-      `PostHog base URL "${parsed.host.toLowerCase()}" is not in the allowlist. Set POSTHOG_ALLOWED_BASE_URLS to whitelist self-hosted instances.`,
+      `PostHog base URL "${host}" is not in the allowlist. Set POSTHOG_ALLOWED_BASE_URLS to whitelist self-hosted instances.`,
     );
   }
 

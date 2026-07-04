@@ -37,6 +37,7 @@ function context(input: Record<string, unknown>): DesktopPluginCodeActionContext
 describe("PostHog plugin package", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
+    vi.unstubAllEnvs();
   });
 
   it("declares a typed PostHog error-source code plugin", () => {
@@ -149,5 +150,56 @@ describe("PostHog plugin package", () => {
         },
       }),
     ).rejects.toThrow("PostHog base URL \"self-hosted.posthog.internal\" is not in the allowlist");
+  });
+
+  it("allows self-hosted PostHog origins from the env allowlist", async () => {
+    vi.stubEnv(
+      "POSTHOG_ALLOWED_BASE_URLS",
+      "https://self-hosted.posthog.internal",
+    );
+    const fetchMock = vi
+      .fn<(url: string, request?: RequestInit) => Promise<Response>>()
+      .mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            columns: [
+              "fingerprint",
+              "message",
+              "exception_type",
+              "level",
+              "lib",
+              "environment",
+              "event_count",
+              "user_count",
+              "first_seen",
+              "last_seen",
+              "exception_list",
+              "project_id",
+            ],
+            results: [],
+          }),
+          {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          },
+        ),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(
+      action("query_issues").execute({
+        ...context({
+          orgSlug: "org-1",
+          projectIds: ["177710"],
+        }),
+        auth: {
+          accessToken: "phx-token",
+          baseUrl: "https://self-hosted.posthog.internal",
+        },
+      }),
+    ).resolves.toMatchObject({ status: 200 });
+
+    const [url] = fetchMock.mock.calls[0] ?? [];
+    expect(url).toBe("https://self-hosted.posthog.internal/api/projects/177710/query/");
   });
 });

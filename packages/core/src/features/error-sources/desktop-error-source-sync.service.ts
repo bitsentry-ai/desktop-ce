@@ -93,6 +93,7 @@ const MAX_GENERIC_PLUGIN_ISSUE_PAGES = 10;
 const MAX_GENERIC_PLUGIN_ISSUES_PER_PAGE = 100;
 const MAX_GENERIC_PLUGIN_EVENT_PAGES_PER_ISSUE = 10;
 const POSTHOG_SYNC_LOOKBACK_MS = 60 * 60 * 1000;
+const SENTRY_INITIAL_SYNC_LOOKBACK_MS = 24 * 60 * 60 * 1000;
 
 function readRecord(value: unknown): ExternalPayloadRecord | null {
   const parsed = externalPayloadRecordSchema.safeParse(value);
@@ -501,6 +502,10 @@ function readPluginExternalId(record: ExternalPayloadRecord): string | null {
 
 function readCustomPluginSyncSince(source: ErrorSource): string | undefined {
   if (source.lastSyncAt === null) {
+    if (source.sourceType === "sentry") {
+      return new Date(Date.now() - SENTRY_INITIAL_SYNC_LOOKBACK_MS).toISOString();
+    }
+
     return undefined;
   }
 
@@ -1312,6 +1317,12 @@ export class ErrorSourceSyncService {
           cursor: eventCursor,
         },
       });
+      if (!eventResult.ok) {
+        throw new Error(
+          `Plugin "${args.pluginId}" failed to list issue events for source sync: ${eventResult.summary}`,
+        );
+      }
+
       const eventPage = readPluginEventBatch(eventResult.data);
       if (eventPage === null) {
         throw new Error(

@@ -344,6 +344,12 @@ async function executeCustomPluginQuery(args: {
       auth,
       input,
     }).then((result) => {
+      if (!result.ok) {
+        throw new Error(
+          `Plugin "${pluginId}" failed to query issues for external source "${source.name}": ${result.summary}`,
+        )
+      }
+
       const page = readPluginIssueBatch(result.data);
       return {
         output: readOptionalPluginOutput(result.data),

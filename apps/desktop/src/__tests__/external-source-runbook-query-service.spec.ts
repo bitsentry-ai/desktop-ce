@@ -289,6 +289,41 @@ describe('ExternalSourceRunbookQueryService code plugin queries', () => {
     })
   })
 
+  it('fails Sentry runbook queries when plugin issue queries return ok false', async () => {
+    const source = makeSentrySource()
+    const sourcesRepository = {
+      findById: vi.fn().mockResolvedValue(source),
+      update: vi.fn(),
+    }
+    const pluginRuntime = new TestPluginRuntimeService([createSentryDescriptor()])
+    pluginRuntime.executeActionMock.mockResolvedValue({
+      pluginId: 'sentry',
+      actionId: 'query_issues',
+      ok: false,
+      status: 500,
+      summary: 'Sentry provider returned HTTP 500.',
+      data: {
+        issues: [],
+        hasMore: false,
+      },
+    })
+
+    const service = new ExternalSourceRunbookQueryService(
+      sourcesRepository,
+      { defaultLimit: 3 },
+      pluginRuntime,
+    )
+
+    await expect(
+      service.execute({
+        sourceId: source.id,
+        query: 'is:unresolved',
+      }),
+    ).rejects.toThrow(
+      'Plugin "sentry" failed to query issues for external source "Sentry": Sentry provider returned HTTP 500.',
+    )
+  })
+
   it('routes Wazuh runbook queries through the executable plugin action', async () => {
     const source = makeWazuhSource()
     const sourcesRepository = {
