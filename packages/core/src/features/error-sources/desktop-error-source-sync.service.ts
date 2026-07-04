@@ -1342,6 +1342,12 @@ export class ErrorSourceSyncService {
       }
     }
 
+    if (eventsHasMore) {
+      throw new Error(
+        `Plugin sync reached the ${String(MAX_GENERIC_PLUGIN_EVENT_PAGES_PER_ISSUE)} event page limit before all events were fetched.`,
+      );
+    }
+
     return syncedEvents;
   }
 
@@ -1427,6 +1433,10 @@ export class ErrorSourceSyncService {
     let hasMore = true;
     let syncedIssues = 0;
     let syncedEvents = 0;
+    const collectedIssues: {
+      issueContext: CustomPluginIssueContext;
+      issueRecord: ExternalPayloadRecord;
+    }[] = [];
 
     while (hasMore && pageCount < MAX_GENERIC_PLUGIN_ISSUE_PAGES) {
       pageCount += 1;
@@ -1453,24 +1463,7 @@ export class ErrorSourceSyncService {
           continue;
         }
         syncedIssues += 1;
-
-        if (capabilities.hasListIssueEvents) {
-          syncedEvents += await this.syncListedCustomPluginIssueEvents({
-            source,
-            pluginId,
-            auth,
-            issueContext,
-            since,
-            until,
-          });
-        } else {
-          await this.upsertSyntheticCustomPluginEvent(
-            source,
-            issueContext,
-            issueRecord,
-          );
-          syncedEvents += 1;
-        }
+        collectedIssues.push({ issueContext, issueRecord });
       }
 
       if (
@@ -1481,10 +1474,33 @@ export class ErrorSourceSyncService {
       }
     }
 
+    // Fail before fetching events if issue pagination hit its cap, so the
+    // watermark never advances past unfetched issues. Events are fetched only
+    // after every issue page has been collected.
     if (hasMore) {
       throw new Error(
         `Plugin sync reached the ${String(MAX_GENERIC_PLUGIN_ISSUE_PAGES)} page limit before all issues were fetched.`,
       );
+    }
+
+    for (const { issueContext, issueRecord } of collectedIssues) {
+      if (capabilities.hasListIssueEvents) {
+        syncedEvents += await this.syncListedCustomPluginIssueEvents({
+          source,
+          pluginId,
+          auth,
+          issueContext,
+          since,
+          until,
+        });
+      } else {
+        await this.upsertSyntheticCustomPluginEvent(
+          source,
+          issueContext,
+          issueRecord,
+        );
+        syncedEvents += 1;
+      }
     }
 
     await this.backfillMissingDiagnosisEntriesForSource(source.id);
