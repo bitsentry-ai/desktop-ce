@@ -98,7 +98,7 @@ type ChatMessage =
 
 interface RunbookActionRecord {
   id: string
-  type: 'shell' | 'llm' | 'http' | 'external_source'
+  type: 'shell' | 'llm' | 'http' | 'external_source' | 'plugin'
   title: string
   command?: string
   prompt?: string
@@ -110,6 +110,10 @@ interface RunbookActionRecord {
   body?: string
   query?: string
   sourceId?: string
+  pluginId?: string
+  pluginActionId?: string
+  pluginInput?: string
+  pluginAuth?: string
   logFilter?: LogFilterConfig
   parameters?: Array<{
     id: string
@@ -502,7 +506,7 @@ function normalizeRunbookAction(raw: unknown): RunbookActionRecord | null {
   const type = normalizeRunbookActionType(item.type) as RunbookActionRecord['type']
   if (actionId.length === 0) return null
 
-  return {
+  const action: RunbookActionRecord = {
     id: actionId,
     type,
     title: asString(item.title),
@@ -519,6 +523,14 @@ function normalizeRunbookAction(raw: unknown): RunbookActionRecord | null {
     logFilter: normalizeRunbookLogFilter(item.logFilter),
     parameters: normalizeRunbookParameters(item.parameters),
   }
+  if (type === 'plugin') {
+    action.pluginId = asOptionalString(item.pluginId)
+    action.pluginActionId = asOptionalString(item.pluginActionId)
+    action.pluginInput = asOptionalString(item.pluginInput)
+    action.pluginAuth = asOptionalString(item.pluginAuth)
+  }
+
+  return action
 }
 
 function normalizeRunbook(raw: unknown): RunbookRecord | null {
@@ -795,9 +807,10 @@ function addRunbookAction(
   if (runbookId.length === 0) return
 
   const list = actionsByRunbookId.get(runbookId) ?? []
-  list.push({
+  const type = normalizeRunbookActionType(action.type) as RunbookActionRecord['type']
+  const runbookAction: RunbookActionRecord = {
     id: asString(action.id),
-    type: normalizeRunbookActionType(action.type) as RunbookActionRecord['type'],
+    type,
     title: asString(action.title),
     command: asOptionalString(action.command),
     prompt: asOptionalString(action.prompt),
@@ -811,7 +824,18 @@ function addRunbookAction(
     sourceId: asOptionalString(action.sourceId),
     logFilter: normalizeRunbookLogFilter(action.logFilterJson),
     parameters: normalizeRunbookParameters(safeJsonParse(action.parametersJson, [])),
-  })
+  }
+  if (type === 'plugin') {
+    runbookAction.pluginId = asOptionalString(action.sourceId)
+    runbookAction.pluginActionId = asOptionalString(action.query)
+    runbookAction.pluginInput = asOptionalString(action.body)
+    runbookAction.pluginAuth = asOptionalString(action.url)
+    runbookAction.sourceId = undefined
+    runbookAction.query = undefined
+    runbookAction.body = undefined
+    runbookAction.url = undefined
+  }
+  list.push(runbookAction)
   actionsByRunbookId.set(runbookId, list)
 }
 
@@ -1166,6 +1190,17 @@ class DesktopStateStore {
     action: RunbookActionRecord,
     index: number,
   ): Promise<void> {
+    let url = action.url
+    let body = action.body
+    let query = action.query
+    let sourceId = action.sourceId
+    if (action.type === 'plugin') {
+      url = action.pluginAuth
+      body = action.pluginInput
+      query = action.pluginActionId
+      sourceId = action.pluginId
+    }
+
     await this.db.runbookAction.create({
       data: {
         id: action.id,
@@ -1177,12 +1212,12 @@ class DesktopStateStore {
         prompt: nullableValue(action.prompt),
         llmProviderKey: nullableValue(action.llmProviderKey),
         llmModel: nullableValue(action.llmModel),
-        url: nullableValue(action.url),
+        url: nullableValue(url),
         method: nullableValue(action.method),
         headersJson: serializeNullableJson(action.headers),
-        body: nullableValue(action.body),
-        query: nullableValue(action.query),
-        sourceId: nullableValue(action.sourceId),
+        body: nullableValue(body),
+        query: nullableValue(query),
+        sourceId: nullableValue(sourceId),
         logFilterJson: serializeNullableJson(action.logFilter),
         parametersJson: serializeNullableJson(action.parameters),
         createdAt: runbook.updatedAt,

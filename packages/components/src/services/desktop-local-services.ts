@@ -246,11 +246,7 @@ export function createDesktopLocalBitsentryServices({
   const errorSourcesService = {
     async getAll(): Promise<ErrorSourceRow[]> {
       const response = await ipcInvoke<{ data: ErrorSourceRow[] }>('errorSources:getAll', {})
-      if (Array.isArray(response.data)) {
-        return response.data
-      }
-
-      return []
+      return response.data
     },
     async create(input: CreateErrorSourceInput): Promise<ErrorSourceRow> {
       return ipcInvoke<ErrorSourceRow>('errorSources:create', input)
@@ -273,11 +269,7 @@ export function createDesktopLocalBitsentryServices({
   const pluginsService = {
     async list(): Promise<PluginDescriptor[]> {
       const response = await ipcInvoke<{ data: PluginDescriptor[] }>('plugins:list', {})
-      if (Array.isArray(response.data)) {
-        return response.data
-      }
-
-      return []
+      return response.data
     },
     async get(pluginId: string): Promise<PluginDescriptor | null> {
       return ipcInvoke<PluginDescriptor | null>('plugins:get', { pluginId })

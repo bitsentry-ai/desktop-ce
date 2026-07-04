@@ -600,6 +600,38 @@ describe("desktop error source handlers", () => {
     });
   });
 
+  it("clears stale OAuth refresh fields when setup replaces the access token", async () => {
+    const runtime = new TestPluginRuntimeService([
+      createPostHogPluginDescriptor(),
+    ]);
+    const { db, update } = createTestDb();
+    const oauthBindings = createDesktopOauthManagerBindings();
+    const handlers = createDesktopErrorSourcesHandlers(db, {
+      OauthManagerService: oauthBindings.OauthManagerService,
+      pluginRuntime: runtime,
+    });
+
+    await expect(
+      handlers["errorSources:update"]?.({
+        id: "source-1",
+        setupValues: {
+          authToken: "manual-replacement-token",
+        },
+      }),
+    ).resolves.toMatchObject({
+      sourceType: "posthog",
+    });
+
+    const updateCall = update.mock.calls[0]?.[0];
+    expect(updateCall).toBeDefined();
+    expect(updateCall?.data).toMatchObject({
+      accessTokenRef: "manual-replacement-token",
+      refreshTokenRef: null,
+      expiresAt: null,
+      grantedScopes: "[]",
+    });
+  });
+
   it("clears stale plugin setup configuration fields on update", async () => {
     const runtime = new TestPluginRuntimeService([
       createPostHogPluginDescriptor(),

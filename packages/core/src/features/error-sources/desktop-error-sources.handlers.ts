@@ -973,6 +973,17 @@ export function createDesktopErrorSourcesHandlers(
           ...persistedSetup.configuration,
         };
       }
+      const tokenReplacement = persistedSetup.accessTokenRef !== undefined;
+      const tokenReplacementUpdate: {
+        refreshTokenRef?: string | null;
+        expiresAt?: string | null;
+        grantedScopes?: string[];
+      } = {};
+      if (tokenReplacement) {
+        tokenReplacementUpdate.refreshTokenRef = null;
+        tokenReplacementUpdate.expiresAt = null;
+        tokenReplacementUpdate.grantedScopes = [];
+      }
 
       const updated = await sourcesRepository.update({
         id: existing.id,
@@ -980,6 +991,7 @@ export function createDesktopErrorSourcesHandlers(
         additionalMetadata:
           readPayloadRecord(payload.additionalMetadata) ?? undefined,
         accessTokenRef: persistedSetup.accessTokenRef,
+        ...tokenReplacementUpdate,
         configuration: nextConfiguration,
         logLevelThreshold: payload.logLevelThreshold,
         syncEnabled: payload.syncEnabled,
