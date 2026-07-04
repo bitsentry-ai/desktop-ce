@@ -3,7 +3,14 @@
  * Renders hardcoded demo data; no IPC, database, or localStorage access.
  */
 // i18n-ignore-file -- scripted demo content for product tour preview
-import { Bot, CheckCircle2, Code2, DatabaseZap, KeyRound, Play } from "lucide-react";
+import {
+  Bot,
+  CheckCircle2,
+  Code2,
+  DatabaseZap,
+  KeyRound,
+  Play,
+} from "lucide-react";
 import Navbar from "../../layout/Navbar";
 import TopBar from "../../layout/TopBar";
 
@@ -72,14 +79,17 @@ export default function TourSettingsPreview() {
           </div>
 
           <div className="space-y-10">
-            <section data-tour="settings-external-sources" className="space-y-4">
+            <section
+              data-tour="settings-external-sources"
+              className="space-y-4"
+            >
               <div className="flex items-start justify-between gap-4">
                 <SectionHeader
-                  title="External Sources"
+                  title="Plugins"
                   description="Connect code-plugin sources for runbook queries."
                 />
                 <button className="rounded-md border border-border px-3 py-1.5 text-xs font-medium">
-                  Add Source
+                  Install Plugin
                 </button>
               </div>
               <div className="rounded-lg border border-border">
@@ -104,7 +114,10 @@ export default function TourSettingsPreview() {
 
             <div className="border-t border-border" />
 
-            <section data-tour="settings-global-variables" className="space-y-4">
+            <section
+              data-tour="settings-global-variables"
+              className="space-y-4"
+            >
               <div className="flex items-start justify-between gap-4">
                 <SectionHeader
                   title="Global Variables"
@@ -117,7 +130,9 @@ export default function TourSettingsPreview() {
               <div className="rounded-lg border border-border bg-card">
                 <div className="flex items-center gap-2 px-4 py-3">
                   <KeyRound size={15} className="text-primary" />
-                  <span className="font-mono text-sm font-medium">environment</span>
+                  <span className="font-mono text-sm font-medium">
+                    environment
+                  </span>
                   <span className="rounded border border-border bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
                     shared
                   </span>
@@ -208,7 +223,7 @@ export default function TourSettingsPreview() {
                 description="Replay guided tours and onboarding walkthroughs."
               />
               <div className="rounded-lg border border-border divide-y divide-border">
-                {["Settings Tour", "Runbook Creation Tour", "External Sources Tour"].map(
+                {["Settings Tour", "Runbook Creation Tour", "Plugins Tour"].map(
                   (label) => (
                     <div
                       key={label}

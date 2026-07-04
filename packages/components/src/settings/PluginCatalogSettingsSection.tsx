@@ -35,8 +35,27 @@ interface PluginCatalogSettingsSectionProps {
 
 const EMPTY_PLUGINS: PluginDescriptor[] = [];
 const EMPTY_STORED_AUTH_VALUES: Record<string, unknown> = {};
+const UNSET_SELECT_VALUE = "__bitsentry_unset__";
 
-function riskBadgeClassName(riskLevel: PluginActionDefinition["riskLevel"]): string {
+function selectDisplayValue(value: string): string {
+  if (value.length > 0) {
+    return value;
+  }
+
+  return UNSET_SELECT_VALUE;
+}
+
+function readSelectValue(next: string): string {
+  if (next === UNSET_SELECT_VALUE) {
+    return "";
+  }
+
+  return next;
+}
+
+function riskBadgeClassName(
+  riskLevel: PluginActionDefinition["riskLevel"],
+): string {
   if (riskLevel === "write") {
     return "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300";
   }
@@ -105,7 +124,10 @@ function errorMessage(error: unknown): string {
   return String(error);
 }
 
-function parseFieldValue(field: PluginFieldDefinition, rawValue: string): unknown {
+function parseFieldValue(
+  field: PluginFieldDefinition,
+  rawValue: string,
+): unknown {
   const normalized = rawValue.trim();
 
   if (field.type === "boolean") {
@@ -155,10 +177,7 @@ function parseFieldValue(field: PluginFieldDefinition, rawValue: string): unknow
       .filter((item) => item.length > 0);
   }
 
-  if (
-    field.enumValues !== undefined &&
-    !field.enumValues.includes(rawValue)
-  ) {
+  if (field.enumValues !== undefined && !field.enumValues.includes(rawValue)) {
     throw new Error(
       `${field.label} must be one of: ${field.enumValues.join(", ")}.`,
     );
@@ -247,7 +266,9 @@ function serializeFieldValue(
       return "";
     }
 
-    return value.filter((item): item is string => typeof item === "string").join("\n");
+    return value
+      .filter((item): item is string => typeof item === "string")
+      .join("\n");
   }
 
   if (field.type === "json") {
@@ -483,12 +504,19 @@ function FieldInput({
 
   if (field.type === "boolean") {
     input = (
-      <Select value={value} onValueChange={onChange}>
+      <Select
+        value={selectDisplayValue(value)}
+        onValueChange={(next) => {
+          onChange(readSelectValue(next));
+        }}
+      >
         <SelectTrigger id={inputId}>
           <SelectValue placeholder={selectValuePlaceholder(field)} />
         </SelectTrigger>
         <SelectContent>
-          {!field.required && <SelectItem value="">Unset</SelectItem>}
+          {!field.required && (
+            <SelectItem value={UNSET_SELECT_VALUE}>Unset</SelectItem>
+          )}
           <SelectItem value="true">true</SelectItem>
           <SelectItem value="false">false</SelectItem>
         </SelectContent>
@@ -496,12 +524,19 @@ function FieldInput({
     );
   } else if (field.type === "string" && field.enumValues !== undefined) {
     input = (
-      <Select value={value} onValueChange={onChange}>
+      <Select
+        value={selectDisplayValue(value)}
+        onValueChange={(next) => {
+          onChange(readSelectValue(next));
+        }}
+      >
         <SelectTrigger id={inputId}>
           <SelectValue placeholder={selectValuePlaceholder(field)} />
         </SelectTrigger>
         <SelectContent>
-          {!field.required && <SelectItem value="">Unset</SelectItem>}
+          {!field.required && (
+            <SelectItem value={UNSET_SELECT_VALUE}>Unset</SelectItem>
+          )}
           {field.enumValues.map((enumValue) => (
             <SelectItem key={enumValue} value={enumValue}>
               {enumValue}
@@ -510,7 +545,11 @@ function FieldInput({
         </SelectContent>
       </Select>
     );
-  } else if (field.type === "json" || field.type === "string_array" || isLongTextField(field)) {
+  } else if (
+    field.type === "json" ||
+    field.type === "string_array" ||
+    isLongTextField(field)
+  ) {
     input = (
       <Textarea
         id={inputId}
@@ -529,22 +568,32 @@ function FieldInput({
       <div className="flex items-center gap-2">
         <Label htmlFor={inputId}>{field.label}</Label>
         {field.required && (
-          <Badge className="border-primary/20 bg-primary/10 text-primary">Required</Badge>
+          <Badge className="border-primary/20 bg-primary/10 text-primary">
+            Required
+          </Badge>
         )}
         {field.secret === true && (
-          <Badge className="border-border bg-muted text-muted-foreground">Secret</Badge>
+          <Badge className="border-border bg-muted text-muted-foreground">
+            Secret
+          </Badge>
         )}
       </div>
       {input}
       {field.description !== undefined && field.description.length > 0 && (
         <p className="text-xs text-muted-foreground">{field.description}</p>
       )}
-      {hint !== undefined && <p className="text-xs text-muted-foreground">{hint}</p>}
+      {hint !== undefined && (
+        <p className="text-xs text-muted-foreground">{hint}</p>
+      )}
       {enumHint !== undefined && (
-        <p className="whitespace-pre-wrap text-xs text-muted-foreground">{enumHint}</p>
+        <p className="whitespace-pre-wrap text-xs text-muted-foreground">
+          {enumHint}
+        </p>
       )}
       {defaultHint !== undefined && (
-        <p className="whitespace-pre-wrap text-xs text-muted-foreground">{defaultHint}</p>
+        <p className="whitespace-pre-wrap text-xs text-muted-foreground">
+          {defaultHint}
+        </p>
       )}
     </div>
   );
@@ -579,12 +628,16 @@ function PluginList({
             <div className="flex items-start justify-between gap-3">
               <div>
                 <div className="flex items-center gap-2">
-                  <span className="text-sm font-semibold text-foreground">{plugin.name}</span>
+                  <span className="text-sm font-semibold text-foreground">
+                    {plugin.name}
+                  </span>
                   <Badge className="border-border bg-muted text-muted-foreground">
                     v{plugin.version}
                   </Badge>
                 </div>
-                <p className="mt-1 text-xs text-muted-foreground">{plugin.description}</p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {plugin.description}
+                </p>
               </div>
               <PlugZap className="mt-0.5 h-4 w-4 text-muted-foreground" />
             </div>
@@ -610,7 +663,9 @@ export function PluginCatalogSettingsSection({
   const [validationError, setValidationError] = useState<string | null>(null);
   const [storageMessage, setStorageMessage] = useState<string | null>(null);
   const pluginsQuery = usePlugins();
-  const storedAuthQuery = usePluginStoredAuth(authLookupPluginId(selectedPluginId));
+  const storedAuthQuery = usePluginStoredAuth(
+    authLookupPluginId(selectedPluginId),
+  );
   const executeActionMutation = useExecutePluginAction();
   const updateStoredAuthMutation = useUpdatePluginStoredAuth();
   const clearStoredAuthMutation = useClearPluginStoredAuth();
@@ -708,10 +763,14 @@ export function PluginCatalogSettingsSection({
 
     const defaultValues = fieldDefaultValueMap(selectedPlugin.auth.fields);
     setAuthValues((current) => {
-      const next = mergeRawFieldValues(selectedPlugin.auth.fields, {}, {
-        ...defaultValues,
-        ...storedAuthValues,
-      });
+      const next = mergeRawFieldValues(
+        selectedPlugin.auth.fields,
+        {},
+        {
+          ...defaultValues,
+          ...storedAuthValues,
+        },
+      );
       if (stringRecordEquals(current, next)) {
         return current;
       }
@@ -749,7 +808,12 @@ export function PluginCatalogSettingsSection({
       return null;
     });
     resetExecuteActionMutationRef.current();
-  }, [selectedAction, selectedActionId, selectedActionSignature, selectedPluginId]);
+  }, [
+    selectedAction,
+    selectedActionId,
+    selectedActionSignature,
+    selectedPluginId,
+  ]);
 
   async function handleSaveAuth(): Promise<void> {
     if (selectedPlugin === null) {
@@ -830,8 +894,9 @@ export function PluginCatalogSettingsSection({
       <div className="mb-4">
         <h2 className="text-sm font-semibold text-foreground">Plugins</h2>
         <p className="text-xs text-muted-foreground">
-          Explore code-driven desktop plugins, inspect the auth and action schemas exported by
-          plugin code, and execute actions through the typed host runtime.
+          Explore code-driven desktop plugins, inspect the auth and action
+          schemas exported by plugin code, and execute actions through the typed
+          host runtime.
         </p>
       </div>
 
@@ -841,8 +906,8 @@ export function PluginCatalogSettingsSection({
             <div className="rounded-xl border border-border bg-background/70 p-4">
               <h3 className="text-sm font-semibold text-foreground">Catalog</h3>
               <p className="mt-1 text-xs text-muted-foreground">
-                Inspect, configure, and run TypeScript plugins installed from the first-party
-                plugin index.
+                Inspect, configure, and run TypeScript plugins installed from
+                the first-party plugin index.
               </p>
             </div>
 
@@ -856,8 +921,9 @@ export function PluginCatalogSettingsSection({
                     Install from the CLI
                   </h3>
                   <p className="mt-1 text-xs text-muted-foreground">
-                    Plugins are fetched from the first-party YAML index as single-file
-                    artifacts. Use <code>bitsentry plugin install &lt;name&gt;</code>, then
+                    Plugins are fetched from the first-party YAML index as
+                    single-file artifacts. Use{" "}
+                    <code>bitsentry plugin install &lt;name&gt;</code>, then
                     return here to configure auth fields and execute actions.
                   </p>
                 </div>
@@ -881,15 +947,18 @@ export function PluginCatalogSettingsSection({
               </Alert>
             )}
 
-            {!pluginsQuery.isLoading && !pluginsQuery.isError && plugins.length === 0 && (
-              <Alert>
-                <AlertCircle className="h-4 w-4" />
-                <AlertTitle>No plugins registered</AlertTitle>
-                <AlertDescription>
-                  The desktop runtime is up, but no plugins have been registered yet.
-                </AlertDescription>
-              </Alert>
-            )}
+            {!pluginsQuery.isLoading &&
+              !pluginsQuery.isError &&
+              plugins.length === 0 && (
+                <Alert>
+                  <AlertCircle className="h-4 w-4" />
+                  <AlertTitle>No plugins registered</AlertTitle>
+                  <AlertDescription>
+                    The desktop runtime is up, but no plugins have been
+                    registered yet.
+                  </AlertDescription>
+                </Alert>
+              )}
 
             {plugins.length > 0 && (
               <PluginList
@@ -947,9 +1016,9 @@ export function PluginCatalogSettingsSection({
                           Plugin authentication
                         </h3>
                         <p className="mt-1 text-xs text-muted-foreground">
-                          Saved values are reused by plugin execution in the desktop runtime,
-                          including runbooks and plugin-backed integrations when a step omits
-                          explicit auth.
+                          Saved values are reused by plugin execution in the
+                          desktop runtime, including runbooks and plugin-backed
+                          integrations when a step omits explicit auth.
                         </p>
                       </div>
                       <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border bg-card px-3 py-2">
@@ -1002,7 +1071,9 @@ export function PluginCatalogSettingsSection({
                         ))}
                       </div>
                       {storageMessage !== null && (
-                        <p className="mt-3 text-xs text-muted-foreground">{storageMessage}</p>
+                        <p className="mt-3 text-xs text-muted-foreground">
+                          {storageMessage}
+                        </p>
                       )}
                     </div>
 
@@ -1014,12 +1085,14 @@ export function PluginCatalogSettingsSection({
                               Action execution
                             </h3>
                             <p className="mt-1 text-xs text-muted-foreground">
-                              Every form field comes from the plugin code export instead of
-                              bespoke UI code.
+                              Every form field comes from the plugin code export
+                              instead of bespoke UI code.
                             </p>
                           </div>
                           <div className="w-full max-w-sm">
-                            <Label htmlFor={`${selectedPlugin.id}-action-select`}>
+                            <Label
+                              htmlFor={`${selectedPlugin.id}-action-select`}
+                            >
                               Selected action
                             </Label>
                             <Select
@@ -1028,7 +1101,9 @@ export function PluginCatalogSettingsSection({
                                 setSelectedActionId(next);
                               }}
                             >
-                              <SelectTrigger id={`${selectedPlugin.id}-action-select`}>
+                              <SelectTrigger
+                                id={`${selectedPlugin.id}-action-select`}
+                              >
                                 <SelectValue placeholder="Choose an action" />
                               </SelectTrigger>
                               <SelectContent>
@@ -1049,7 +1124,11 @@ export function PluginCatalogSettingsSection({
                                 <span className="text-sm font-semibold text-foreground">
                                   {selectedAction.title}
                                 </span>
-                                <Badge className={riskBadgeClassName(selectedAction.riskLevel)}>
+                                <Badge
+                                  className={riskBadgeClassName(
+                                    selectedAction.riskLevel,
+                                  )}
+                                >
                                   {selectedAction.riskLevel}
                                 </Badge>
                               </div>
@@ -1092,8 +1171,9 @@ export function PluginCatalogSettingsSection({
 
                           <div className="mt-5 flex items-center justify-between gap-3">
                             <p className="text-xs text-muted-foreground">
-                              Write actions are intentionally labeled so agent-facing surfaces
-                              can apply stronger guardrails later.
+                              Write actions are intentionally labeled so
+                              agent-facing surfaces can apply stronger
+                              guardrails later.
                             </p>
                             <Button
                               type="button"
@@ -1132,7 +1212,9 @@ export function PluginCatalogSettingsSection({
 
                     {executeActionMutation.data?.data !== undefined && (
                       <div className="rounded-xl border border-border bg-background/70 p-4">
-                        <h3 className="text-sm font-semibold text-foreground">Execution output</h3>
+                        <h3 className="text-sm font-semibold text-foreground">
+                          Execution output
+                        </h3>
                         <pre className="mt-3 max-h-96 overflow-auto rounded-lg border border-border bg-card p-3 text-xs text-foreground">
                           {renderResultData(executeActionMutation.data.data)}
                         </pre>
@@ -1142,16 +1224,22 @@ export function PluginCatalogSettingsSection({
 
                   <div className="space-y-5">
                     <div className="rounded-xl border border-border bg-background/70 p-4">
-                      <h3 className="text-sm font-semibold text-foreground">Safety notes</h3>
+                      <h3 className="text-sm font-semibold text-foreground">
+                        Safety notes
+                      </h3>
                       <ul className="mt-3 space-y-2 text-xs text-muted-foreground">
-                        <li>Actions can only accept fields that plugin code explicitly declares.</li>
                         <li>
-                          Secret auth fields are modeled separately from action input fields so
-                          agent surfaces can redact them.
+                          Actions can only accept fields that plugin code
+                          explicitly declares.
                         </li>
                         <li>
-                          Installed plugins run as local JavaScript code, while their exported
-                          schemas keep auth and input fields visible to the host.
+                          Secret auth fields are modeled separately from action
+                          input fields so agent surfaces can redact them.
+                        </li>
+                        <li>
+                          Installed plugins run as local JavaScript code, while
+                          their exported schemas keep auth and input fields
+                          visible to the host.
                         </li>
                       </ul>
                     </div>

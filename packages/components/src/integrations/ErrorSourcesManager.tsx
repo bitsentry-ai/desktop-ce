@@ -177,7 +177,10 @@ function formatSetupFieldRequiredMessage(label: string): string {
 }
 
 function readSourcePluginId(source: ErrorSourceRow): string {
-  if (typeof source.pluginId === "string" && source.pluginId.trim().length > 0) {
+  if (
+    typeof source.pluginId === "string" &&
+    source.pluginId.trim().length > 0
+  ) {
     return source.pluginId.trim();
   }
 
@@ -191,7 +194,9 @@ function findPluginDescriptorForSource(
   const pluginId = readSourcePluginId(source);
   return (
     plugins.find((plugin) => plugin.id === pluginId) ??
-    plugins.find((plugin) => readPluginErrorSourceType(plugin) === source.sourceType) ??
+    plugins.find(
+      (plugin) => readPluginErrorSourceType(plugin) === source.sourceType,
+    ) ??
     null
   );
 }
@@ -207,9 +212,7 @@ function findEditDialogPlugin(
   return findPluginDescriptorForSource(plugins, source);
 }
 
-function emptySourcePrompt(
-  availableProviderSummary: string,
-): string {
+function emptySourcePrompt(availableProviderSummary: string): string {
   if (availableProviderSummary.length > 0) {
     return `Available plugin-backed sources: ${availableProviderSummary}.`;
   }
@@ -225,9 +228,7 @@ function setupFieldInputType(field: PluginErrorSourceSetupField): string {
   return "text";
 }
 
-function setupFieldDescription(
-  field: PluginErrorSourceSetupField,
-): string {
+function setupFieldDescription(field: PluginErrorSourceSetupField): string {
   if (field.description !== undefined) {
     return field.description;
   }
@@ -239,9 +240,7 @@ function setupFieldDescription(
   return "";
 }
 
-function editSetupFieldPlaceholder(
-  field: PluginErrorSourceSetupField,
-): string {
+function editSetupFieldPlaceholder(field: PluginErrorSourceSetupField): string {
   if (field.control === "password") {
     return "Leave blank to keep the current token.";
   }
@@ -258,7 +257,25 @@ function readArrayDisplayValue(value: unknown): string {
     return "";
   }
 
-  return value.filter((item): item is string => typeof item === "string").join(", ");
+  return value
+    .filter((item): item is string => typeof item === "string")
+    .join(", ");
+}
+
+function setupFieldConfigurationKeys(
+  field: PluginErrorSourceSetupField,
+): string[] {
+  const keys = new Set([field.key]);
+  if (field.key === "owner") {
+    keys.add("orgSlug");
+  }
+  if (field.key === "repos") {
+    keys.add("projectIds");
+  }
+  if (field.key === "indexUrl") {
+    keys.add("baseUrl");
+  }
+  return [...keys];
 }
 
 function readPluginSetupFieldDisplayValue(
@@ -274,7 +291,13 @@ function readPluginSetupFieldDisplayValue(
     return "";
   }
 
-  const value = config[field.key];
+  let value: unknown;
+  for (const key of setupFieldConfigurationKeys(field)) {
+    value = config[key];
+    if (value !== undefined) {
+      break;
+    }
+  }
   if (typeof value === "string") {
     return value;
   }
@@ -293,7 +316,10 @@ function buildInitialEditSetupFieldValues(
 ): Record<string, string> {
   const setupFields = plugin?.metadata?.errorSource?.setupFields ?? [];
   return Object.fromEntries(
-    setupFields.map((field) => [field.key, readPluginSetupFieldDisplayValue(source, field)]),
+    setupFields.map((field) => [
+      field.key,
+      readPluginSetupFieldDisplayValue(source, field),
+    ]),
   );
 }
 
@@ -424,36 +450,33 @@ export default function ErrorSourcesManager({
     deleteMutation.isPending ||
     updateMutation.isPending ||
     updateSystemSettingsMutation.isPending;
-  const providerCards = useMemo<ProviderCard[]>(
-    () => {
-      const discovered = plugins
-        .flatMap((plugin) => {
-          const pluginSourceType = readPluginErrorSourceType(plugin);
-          if (pluginSourceType === null) {
-            return [];
-          }
+  const providerCards = useMemo<ProviderCard[]>(() => {
+    const discovered = plugins
+      .flatMap((plugin) => {
+        const pluginSourceType = readPluginErrorSourceType(plugin);
+        if (pluginSourceType === null) {
+          return [];
+        }
 
-          return [
-            {
-              pluginId: plugin.id,
-              sourceType: pluginSourceType,
-              label: plugin.name,
-            },
-          ];
-        })
-        .sort((left, right) => {
-          const labelOrder = left.label.localeCompare(right.label);
-          if (labelOrder !== 0) {
-            return labelOrder;
-          }
+        return [
+          {
+            pluginId: plugin.id,
+            sourceType: pluginSourceType,
+            label: plugin.name,
+          },
+        ];
+      })
+      .sort((left, right) => {
+        const labelOrder = left.label.localeCompare(right.label);
+        if (labelOrder !== 0) {
+          return labelOrder;
+        }
 
-          return left.pluginId.localeCompare(right.pluginId);
-        });
+        return left.pluginId.localeCompare(right.pluginId);
+      });
 
-      return discovered;
-    },
-    [plugins],
-  );
+    return discovered;
+  }, [plugins]);
   const selectedProviderCard = useMemo(
     () =>
       providerCards.find((card) => card.pluginId === selectedProviderId) ??
@@ -471,7 +494,9 @@ export default function ErrorSourcesManager({
   const selectedPlugin = useMemo(
     () =>
       plugins.find((plugin) => plugin.id === selectedProviderId) ??
-      plugins.find((plugin) => readPluginErrorSourceType(plugin) === sourceType) ??
+      plugins.find(
+        (plugin) => readPluginErrorSourceType(plugin) === sourceType,
+      ) ??
       null,
     [plugins, selectedProviderId, sourceType],
   );
@@ -492,7 +517,9 @@ export default function ErrorSourcesManager({
       void refetchSources();
     }, 2_000);
 
-    return () => { window.clearInterval(intervalId); };
+    return () => {
+      window.clearInterval(intervalId);
+    };
   }, [pendingSyncIds, refetchSources]);
 
   useEffect(() => {
@@ -532,9 +559,7 @@ export default function ErrorSourcesManager({
     setSyncEnabledOnCreate(true);
   }
 
-  function readSetupFieldTextValue(
-    field: PluginErrorSourceSetupField,
-  ): string {
+  function readSetupFieldTextValue(field: PluginErrorSourceSetupField): string {
     return customSetupFieldValues[field.key]?.trim() ?? "";
   }
 
@@ -560,9 +585,7 @@ export default function ErrorSourcesManager({
     }));
   }
 
-  function readCreateSourceValidationError(
-    trimmedName: string,
-  ): string | null {
+  function readCreateSourceValidationError(trimmedName: string): string | null {
     if (trimmedName.length === 0) {
       return t("common.errorSourcesManager.sourceNameRequired");
     }
@@ -590,12 +613,11 @@ export default function ErrorSourcesManager({
     return null;
   }
 
-  function buildCreateSourceInput(
-    trimmedName: string,
-  ): CreateErrorSourceInput {
+  function buildCreateSourceInput(trimmedName: string): CreateErrorSourceInput {
     const setupValues: Record<string, unknown> = {};
     const input: CreateErrorSourceInput = {
-      pluginId: selectedPlugin?.id ?? selectedProviderCard?.pluginId ?? sourceType,
+      pluginId:
+        selectedPlugin?.id ?? selectedProviderCard?.pluginId ?? sourceType,
       sourceType,
       name: trimmedName,
       setupValues,
@@ -735,7 +757,11 @@ export default function ErrorSourcesManager({
     const source = editDialogSource;
     const plugin = findPluginDescriptorForSource(plugins, source);
     const trimmedName = editName.trim();
-    const validationError = readEditValidationError(source, plugin, trimmedName);
+    const validationError = readEditValidationError(
+      source,
+      plugin,
+      trimmedName,
+    );
     if (validationError !== null) {
       setEditDialogError(validationError);
       return;
@@ -744,21 +770,20 @@ export default function ErrorSourcesManager({
     const setupFields = plugin?.metadata?.errorSource?.setupFields ?? [];
     const setupValues: Record<string, unknown> = {};
     for (const field of setupFields) {
-      if (isListSetupField(field)) {
-        const value = readEditSetupFieldListValue(field);
-        if (value.length === 0) {
-          continue;
+      if (field.control === "password") {
+        const value = readEditSetupFieldTextValue(field);
+        if (value.length > 0) {
+          setupValues[field.key] = value;
         }
-        setupValues[field.key] = value;
         continue;
       }
 
-      const value = readEditSetupFieldTextValue(field);
-      if (value.length === 0) {
+      if (isListSetupField(field)) {
+        setupValues[field.key] = readEditSetupFieldListValue(field);
         continue;
       }
 
-      setupValues[field.key] = value;
+      setupValues[field.key] = readEditSetupFieldTextValue(field);
     }
 
     try {
@@ -879,9 +904,7 @@ export default function ErrorSourcesManager({
 
     return (
       <div key={field.key} className="space-y-1">
-        <FieldLabel required={field.required}>
-          {field.label}
-        </FieldLabel>
+        <FieldLabel required={field.required}>{field.label}</FieldLabel>
         <Input
           placeholder={field.placeholder ?? ""}
           type={setupFieldInputType(field)}
@@ -891,16 +914,15 @@ export default function ErrorSourcesManager({
           }}
         />
         {description.length > 0 && (
-          <p className="text-xs text-muted-foreground">
-            {description}
-          </p>
+          <p className="text-xs text-muted-foreground">{description}</p>
         )}
       </div>
     );
   }
 
   const createSourceDisabled =
-    actionLoading || readCreateSourceValidationError(sourceName.trim()) !== null;
+    actionLoading ||
+    readCreateSourceValidationError(sourceName.trim()) !== null;
 
   let createButtonLabel = t("common.errorSourcesManager.saveSource");
   if (createMutation.isPending) {
@@ -939,7 +961,9 @@ export default function ErrorSourcesManager({
           <Button
             size="sm"
             variant="outline"
-            onClick={() => { setAddDialogOpen(true); }}
+            onClick={() => {
+              setAddDialogOpen(true);
+            }}
             disabled={actionLoading}
             data-tour="data-sources-add-source"
           >
@@ -952,7 +976,9 @@ export default function ErrorSourcesManager({
           <Button
             size="sm"
             variant="outline"
-            onClick={() => { setAddDialogOpen(true); }}
+            onClick={() => {
+              setAddDialogOpen(true);
+            }}
             disabled={actionLoading}
             data-tour="data-sources-add-source"
           >
@@ -981,8 +1007,11 @@ export default function ErrorSourcesManager({
       {!isLoading && sources.length > 0 && (
         <div className="rounded-lg border border-border divide-y divide-border">
           {sources.map((source) => {
-            const sourcePluginName = pluginsById.get(readSourcePluginId(source))?.name;
-            const normalizedPluginName = sourcePluginName?.trim().toLowerCase() ?? "";
+            const sourcePluginName = pluginsById.get(
+              readSourcePluginId(source),
+            )?.name;
+            const normalizedPluginName =
+              sourcePluginName?.trim().toLowerCase() ?? "";
             const showPluginNameBadge =
               normalizedPluginName.length > 0 &&
               normalizedPluginName !== source.sourceType.trim().toLowerCase();
@@ -1015,70 +1044,72 @@ export default function ErrorSourcesManager({
 
             return (
               <div key={source.id} className="px-4 py-3">
-              <div className="flex items-center justify-between gap-4">
-                <div className="min-w-0">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="text-sm font-medium text-foreground">
-                      {source.name}
-                    </span>
-                    {showPluginNameBadge && (
-                      <Badge variant="secondary">
-                        {sourcePluginName}
-                      </Badge>
-                    )}
-                    <Badge variant="secondary">{source.sourceType}</Badge>
-                    {source.syncEnabled && (
-                      <Badge variant="secondary">
-                        {t("common.errorSourcesManager.autoSyncOn")}
-                      </Badge>
-                    )}
+                <div className="flex items-center justify-between gap-4">
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-sm font-medium text-foreground">
+                        {source.name}
+                      </span>
+                      {showPluginNameBadge && (
+                        <Badge variant="secondary">{sourcePluginName}</Badge>
+                      )}
+                      <Badge variant="secondary">{source.sourceType}</Badge>
+                      {source.syncEnabled && (
+                        <Badge variant="secondary">
+                          {t("common.errorSourcesManager.autoSyncOn")}
+                        </Badge>
+                      )}
+                    </div>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {syncSummary}
+                      {lastSyncErrorContent}
+                    </p>
                   </div>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    {syncSummary}
-                    {lastSyncErrorContent}
-                  </p>
+                  <div className="flex shrink-0 items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        openEditDialog(source);
+                      }}
+                      disabled={actionLoading}
+                      aria-label={t("common.errorSourcesManager.editSource")}
+                      title={t("common.errorSourcesManager.editSource")}
+                      className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-50"
+                    >
+                      <Pencil size={16} aria-hidden="true" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        runSync(source);
+                      }}
+                      disabled={
+                        actionLoading ||
+                        pendingSyncIds.has(source.id) ||
+                        source.lastSyncStatus === "in_progress"
+                      }
+                      aria-label={t("common.errorSourcesManager.syncNow")}
+                      title={t("common.errorSourcesManager.syncNow")}
+                      className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-50"
+                    >
+                      <RefreshCw
+                        size={16}
+                        aria-hidden="true"
+                        className={refreshClassName}
+                      />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void removeSource(source)}
+                      disabled={actionLoading}
+                      aria-label={t("common.errorSourcesManager.removeSource")}
+                      title={t("common.errorSourcesManager.removeSource_2")}
+                      className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-red-600 disabled:opacity-50"
+                    >
+                      <Trash2 size={16} aria-hidden="true" />
+                    </button>
+                  </div>
                 </div>
-                <div className="flex shrink-0 items-center gap-1">
-                  <button
-                    type="button"
-                    onClick={() => { openEditDialog(source); }}
-                    disabled={actionLoading}
-                    aria-label={t("common.errorSourcesManager.editSource")}
-                    title={t("common.errorSourcesManager.editSource")}
-                    className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-50"
-                  >
-                    <Pencil size={16} aria-hidden="true" />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => { runSync(source); }}
-                    disabled={
-                      actionLoading ||
-                      pendingSyncIds.has(source.id) ||
-                      source.lastSyncStatus === "in_progress"
-                    }
-                    aria-label={t("common.errorSourcesManager.syncNow")}
-                    title={t("common.errorSourcesManager.syncNow")}
-                    className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-50"
-                  >
-                    <RefreshCw
-                      size={16}
-                      aria-hidden="true"
-                      className={refreshClassName}
-                    />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => void removeSource(source)}
-                    disabled={actionLoading}
-                    aria-label={t("common.errorSourcesManager.removeSource")}
-                    title={t("common.errorSourcesManager.removeSource_2")}
-                    className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-red-600 disabled:opacity-50"
-                  >
-                    <Trash2 size={16} aria-hidden="true" />
-                  </button>
-                </div>
-              </div>
               </div>
             );
           })}
@@ -1112,9 +1143,11 @@ export default function ErrorSourcesManager({
               <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
                 {providerCards.map((card) => {
                   const selected = selectedProviderId === card.pluginId;
-                  let cardClassName = "border-border bg-card hover:border-primary/50";
+                  let cardClassName =
+                    "border-border bg-card hover:border-primary/50";
                   if (selected) {
-                    cardClassName = "border-primary bg-primary/10 ring-1 ring-primary";
+                    cardClassName =
+                      "border-primary bg-primary/10 ring-1 ring-primary";
                   }
                   let iconClassName = t(
                     "common.errorSourcesManager.opacity40GrayscaleTransition",
@@ -1154,7 +1187,9 @@ export default function ErrorSourcesManager({
               <Input
                 placeholder={namePlaceholder}
                 value={sourceName}
-                onChange={(e) => { setSourceName(e.target.value); }}
+                onChange={(e) => {
+                  setSourceName(e.target.value);
+                }}
               />
             </div>
 
@@ -1162,7 +1197,10 @@ export default function ErrorSourcesManager({
              * swap pages. The provider picker and name above always stay
              * visible so the user keeps their visual context.
              */}
-            <div data-tour="data-sources-credentials" className="relative overflow-hidden">
+            <div
+              data-tour="data-sources-credentials"
+              className="relative overflow-hidden"
+            >
               <div
                 className={credentialsPageClassName}
                 aria-hidden={showAdvanced}
@@ -1180,7 +1218,9 @@ export default function ErrorSourcesManager({
 
                 <button
                   type="button"
-                  onClick={() => { setShowAdvanced(true); }}
+                  onClick={() => {
+                    setShowAdvanced(true);
+                  }}
                   className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
                 >
                   <span>{t("common.errorSourcesManager.advancedOptions")}</span>
@@ -1207,7 +1247,9 @@ export default function ErrorSourcesManager({
               >
                 <button
                   type="button"
-                  onClick={() => { setShowAdvanced(false); }}
+                  onClick={() => {
+                    setShowAdvanced(false);
+                  }}
                   className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
                 >
                   <svg
@@ -1234,11 +1276,11 @@ export default function ErrorSourcesManager({
                     <select
                       className="h-10 w-32 appearance-none rounded-md border bg-background pl-3 pr-9 text-sm"
                       value={logLevelThreshold}
-                      onChange={(e) =>
-                        { setLogLevelThreshold(
+                      onChange={(e) => {
+                        setLogLevelThreshold(
                           e.target.value as LogLevelThreshold,
-                        ); }
-                      }
+                        );
+                      }}
                     >
                       <option value="error">
                         {t("common.errorSourcesManager.error")}
@@ -1264,7 +1306,9 @@ export default function ErrorSourcesManager({
                   <input
                     type="checkbox"
                     checked={syncEnabledOnCreate}
-                    onChange={(e) => { setSyncEnabledOnCreate(e.target.checked); }}
+                    onChange={(e) => {
+                      setSyncEnabledOnCreate(e.target.checked);
+                    }}
                   />
                 </label>
               </div>
@@ -1329,7 +1373,9 @@ export default function ErrorSourcesManager({
                 </FieldLabel>
                 <Input
                   value={editName}
-                  onChange={(e) => { setEditName(e.target.value); }}
+                  onChange={(e) => {
+                    setEditName(e.target.value);
+                  }}
                   disabled={updateMutation.isPending}
                 />
               </div>
@@ -1354,9 +1400,9 @@ export default function ErrorSourcesManager({
                   <select
                     className="h-10 w-32 appearance-none rounded-md border bg-background pl-3 pr-9 text-sm"
                     value={editLogThreshold}
-                    onChange={(e) =>
-                      { setEditLogThreshold(e.target.value as LogLevelThreshold); }
-                    }
+                    onChange={(e) => {
+                      setEditLogThreshold(e.target.value as LogLevelThreshold);
+                    }}
                     disabled={updateMutation.isPending}
                   >
                     <option value="error">
@@ -1383,7 +1429,9 @@ export default function ErrorSourcesManager({
                 <input
                   type="checkbox"
                   checked={editSyncEnabled}
-                  onChange={(e) => { setEditSyncEnabled(e.target.checked); }}
+                  onChange={(e) => {
+                    setEditSyncEnabled(e.target.checked);
+                  }}
                   disabled={updateMutation.isPending}
                 />
               </label>
@@ -1444,20 +1492,18 @@ function renderEditConnectionFields(input: {
 
         return (
           <div key={field.key} className="space-y-1">
-            <FieldLabel required={field.required}>
-              {field.label}
-            </FieldLabel>
+            <FieldLabel required={field.required}>{field.label}</FieldLabel>
             <Input
               value={value}
               placeholder={placeholder}
               type={setupFieldInputType(field)}
-              onChange={(event) => { onChange(field.key, event.target.value); }}
+              onChange={(event) => {
+                onChange(field.key, event.target.value);
+              }}
               disabled={disabled}
             />
             {description.length > 0 && (
-              <p className="text-xs text-muted-foreground">
-                {description}
-              </p>
+              <p className="text-xs text-muted-foreground">{description}</p>
             )}
           </div>
         );

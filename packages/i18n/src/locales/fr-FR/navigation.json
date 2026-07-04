@@ -35,6 +35,7 @@
   "navigation.navbar.noRunbooksYet": "Aucun runbook pour le moment",
   "navigation.navbar.passwordSecurity": "Sécurité du mot de passe",
   "navigation.navbar.pendingCount": "En attente (",
+  "navigation.navbar.plugins": "Plugins",
   "navigation.navbar.profile": "Profil",
   "navigation.navbar.resolutionManagement": "Gestion des résolutions",
   "navigation.navbar.results": "Résultats",

@@ -1,267 +1,293 @@
-import log from 'electron-log'
-import { z } from 'zod'
-import type { DbClient } from '../desktop/desktop-database-client'
-import { mapDiagnosisSourceContext } from '../diagnosis-workflow'
-import { SqliteErrorEventsRepositoryAdapter } from './desktop-sqlite-error-events.adapter'
-import { SqliteErrorIssuesRepositoryAdapter } from './desktop-sqlite-error-issues.adapter'
-import { SqliteErrorSourcesRepositoryAdapter } from './desktop-sqlite-error-sources.adapter'
+import log from "electron-log";
+import { z } from "zod";
+import type { DbClient } from "../desktop/desktop-database-client";
+import { mapDiagnosisSourceContext } from "../diagnosis-workflow";
+import { SqliteErrorEventsRepositoryAdapter } from "./desktop-sqlite-error-events.adapter";
+import { SqliteErrorIssuesRepositoryAdapter } from "./desktop-sqlite-error-issues.adapter";
+import { SqliteErrorSourcesRepositoryAdapter } from "./desktop-sqlite-error-sources.adapter";
 import type {
   ErrorEvent,
   ErrorIssue,
   ErrorSource,
   LogLevelThreshold,
-} from './desktop-error-sources.types'
+} from "./desktop-error-sources.types";
 import {
   buildCompactExternalSourceEventFallback,
   buildCompactExternalSourceIssueFallback,
   buildCompactExternalSourceTelemetryPayload,
   isCompactExternalSourceTelemetryPayload,
   summarizeExternalSourcePayload,
-} from './desktop-external-source-telemetry-storage'
-import {
-  createDesktopNodePluginRuntimeService,
-} from '../plugins/node'
+} from "./desktop-external-source-telemetry-storage";
+import { createDesktopNodePluginRuntimeService } from "../plugins/node";
 import type {
   DesktopPluginErrorSourceRecord,
   DesktopPluginRuntimeService,
-} from '../plugins'
+} from "../plugins";
 import {
   hasErrorSourceProviderAction,
   resolveErrorSourceProviderActionId,
-} from './desktop-plugin-error-source-actions'
+} from "./desktop-plugin-error-source-actions";
 
-type ExternalPayloadRecord = Record<string, unknown>
+type ExternalPayloadRecord = Record<string, unknown>;
 
-const externalPayloadRecordSchema = z.record(z.string(), z.unknown())
+const externalPayloadRecordSchema = z.record(z.string(), z.unknown());
 
 interface ErrorSourceSyncDatabase {
-  telemetryDaily: Pick<DbClient['telemetryDaily'], 'upsert'>
-  telemetryEntry: Pick<DbClient['telemetryEntry'], 'create' | 'findUnique'>
-  diagnosisEntry: Pick<DbClient['diagnosisEntry'], 'upsert'>
-  diagnosisEntrySourceRef: Pick<DbClient['diagnosisEntrySourceRef'], 'upsert'>
-  $queryRawUnsafe: DbClient['$queryRawUnsafe']
+  telemetryDaily: Pick<DbClient["telemetryDaily"], "upsert">;
+  telemetryEntry: Pick<DbClient["telemetryEntry"], "create" | "findUnique">;
+  diagnosisEntry: Pick<DbClient["diagnosisEntry"], "upsert">;
+  diagnosisEntrySourceRef: Pick<DbClient["diagnosisEntrySourceRef"], "upsert">;
+  $queryRawUnsafe: DbClient["$queryRawUnsafe"];
 }
 
 type ErrorSourcesRepository = Pick<
   SqliteErrorSourcesRepositoryAdapter,
-  'findById' | 'findSyncEnabled' | 'update' | 'updateSyncStatus'
->
-type ErrorIssuesRepository = Pick<SqliteErrorIssuesRepositoryAdapter, 'findById' | 'upsert'>
-type ErrorEventsRepository = Pick<SqliteErrorEventsRepositoryAdapter, 'findById' | 'upsert'>
+  "findById" | "findSyncEnabled" | "update" | "updateSyncStatus"
+>;
+type ErrorIssuesRepository = Pick<
+  SqliteErrorIssuesRepositoryAdapter,
+  "findById" | "upsert"
+>;
+type ErrorEventsRepository = Pick<
+  SqliteErrorEventsRepositoryAdapter,
+  "findById" | "upsert"
+>;
 
 type DiagnosisIssueContext = Pick<
   ErrorIssue,
-  'id' | 'externalIssueId' | 'title' | 'projectIdentifier' | 'environment' | 'level'
->
+  | "id"
+  | "externalIssueId"
+  | "title"
+  | "projectIdentifier"
+  | "environment"
+  | "level"
+>;
 
 type DiagnosisEventContext = Pick<
   ErrorEvent,
-  | 'id'
-  | 'externalEventId'
-  | 'timestamp'
-  | 'message'
-  | 'exceptionType'
-  | 'exceptionValue'
-  | 'environment'
-  | 'serverName'
->
+  | "id"
+  | "externalEventId"
+  | "timestamp"
+  | "message"
+  | "exceptionType"
+  | "exceptionValue"
+  | "environment"
+  | "serverName"
+>;
 
 interface CustomPluginSyncCapabilities {
-  issueAction: 'listIssues' | 'queryIssues'
-  hasListIssueEvents: boolean
+  issueAction: "listIssues" | "queryIssues";
+  hasListIssueEvents: boolean;
 }
 
 interface CustomPluginIssueContext {
-  issue: ErrorIssue
-  externalIssueId: string
-  title: string
-  tags: Record<string, unknown>
-  lastSeen: string
+  issue: ErrorIssue;
+  externalIssueId: string;
+  title: string;
+  tags: Record<string, unknown>;
+  lastSeen: string;
 }
 
-const MAX_GENERIC_PLUGIN_ISSUE_PAGES = 10
-const MAX_GENERIC_PLUGIN_ISSUES_PER_PAGE = 100
-const MAX_GENERIC_PLUGIN_EVENT_PAGES_PER_ISSUE = 10
+const MAX_GENERIC_PLUGIN_ISSUE_PAGES = 10;
+const MAX_GENERIC_PLUGIN_ISSUES_PER_PAGE = 100;
+const MAX_GENERIC_PLUGIN_EVENT_PAGES_PER_ISSUE = 10;
 
 function readRecord(value: unknown): ExternalPayloadRecord | null {
-  const parsed = externalPayloadRecordSchema.safeParse(value)
+  const parsed = externalPayloadRecordSchema.safeParse(value);
   if (parsed.success) {
-    return parsed.data
+    return parsed.data;
   }
 
-  return null
+  return null;
 }
 
 function readRecordArray(value: unknown): ExternalPayloadRecord[] {
   if (!Array.isArray(value)) {
-    return []
+    return [];
   }
 
   return value.flatMap((item) => {
-    const record = readRecord(item)
+    const record = readRecord(item);
     if (record === null) {
-      return []
+      return [];
     }
 
-    return [record]
-  })
+    return [record];
+  });
 }
 
 function readOptionalString(value: unknown): string | null {
-  if (typeof value === 'string') {
-    const normalized = value.trim()
+  if (typeof value === "string") {
+    const normalized = value.trim();
     if (normalized.length > 0) {
-      return normalized
+      return normalized;
     }
   }
 
-  if (typeof value === 'number' || typeof value === 'boolean') {
-    return String(value)
+  if (typeof value === "number" || typeof value === "boolean") {
+    return String(value);
   }
 
-  return null
+  return null;
 }
 
 function readRequiredString(value: unknown, fallback: string): string {
-  return readOptionalString(value) ?? fallback
+  return readOptionalString(value) ?? fallback;
 }
 
 function readNullableBoolean(value: unknown): boolean | null {
   if (value === null || value === undefined) {
-    return null
+    return null;
   }
 
-  return Boolean(value)
+  return Boolean(value);
 }
 
-function readRecordString(record: ExternalPayloadRecord | null, key: string): string | null {
+function readRecordString(
+  record: ExternalPayloadRecord | null,
+  key: string,
+): string | null {
   if (record === null) {
-    return null
+    return null;
   }
 
-  return readOptionalString(record[key])
+  return readOptionalString(record[key]);
 }
 
 function formatElapsedMs(startMs: number): string {
-  return String(Date.now() - startMs)
+  return String(Date.now() - startMs);
 }
 
-function optionalJson(value: Record<string, unknown> | null | undefined): string | null {
+function optionalJson(
+  value: Record<string, unknown> | null | undefined,
+): string | null {
   if (value === null || value === undefined) {
-    return null
+    return null;
   }
 
-  return JSON.stringify(value)
+  return JSON.stringify(value);
 }
 
 function parseIssueTags(tags: unknown): Record<string, unknown> {
-  const output: Record<string, unknown> = {}
+  const output: Record<string, unknown> = {};
 
   if (Array.isArray(tags)) {
     for (const tag of tags) {
       if (Array.isArray(tag) && tag.length >= 2) {
-        const key = readOptionalString(tag[0])
-        if (key === null) continue
-        output[key] = tag[1]
-        continue
+        const key = readOptionalString(tag[0]);
+        if (key === null) continue;
+        output[key] = tag[1];
+        continue;
       }
 
-      const tagRecord = readRecord(tag)
-      if (tagRecord === null) continue
+      const tagRecord = readRecord(tag);
+      if (tagRecord === null) continue;
 
-      const key = readOptionalString(tagRecord.key)
-      if (key === null) continue
-      output[key] = tagRecord.value
+      const key = readOptionalString(tagRecord.key);
+      if (key === null) continue;
+      output[key] = tagRecord.value;
     }
-    return output
+    return output;
   }
 
-  const tagsRecord = readRecord(tags)
+  const tagsRecord = readRecord(tags);
   if (tagsRecord !== null) {
     for (const [key, value] of Object.entries(tagsRecord)) {
-      const normalizedKey = key.trim()
-      if (normalizedKey.length === 0) continue
-      output[normalizedKey] = value
+      const normalizedKey = key.trim();
+      if (normalizedKey.length === 0) continue;
+      output[normalizedKey] = value;
     }
   }
 
-  return output
+  return output;
 }
 
-function extractTagValue(tags: Record<string, unknown>, tagKey: string): string | null {
-  const value = tags[tagKey]
-  if (value == null) return null
-  return readOptionalString(value)
+function extractTagValue(
+  tags: Record<string, unknown>,
+  tagKey: string,
+): string | null {
+  const value = tags[tagKey];
+  if (value == null) return null;
+  return readOptionalString(value);
 }
 
-function extractIssueField(issue: ExternalPayloadRecord, tagKey: string): string | null {
-  const parsedTags = parseIssueTags(issue.tags)
-  return extractTagValue(parsedTags, tagKey)
+function extractIssueField(
+  issue: ExternalPayloadRecord,
+  tagKey: string,
+): string | null {
+  const parsedTags = parseIssueTags(issue.tags);
+  return extractTagValue(parsedTags, tagKey);
 }
 
 function extractException(event: ExternalPayloadRecord): {
-  exceptionType: string | null
-  exceptionValue: string | null
-  stacktrace: Record<string, unknown> | null
-  inAppFrames: Array<Record<string, unknown>> | null
-  mechanism: Record<string, unknown> | null
+  exceptionType: string | null;
+  exceptionValue: string | null;
+  stacktrace: Record<string, unknown> | null;
+  inAppFrames: Array<Record<string, unknown>> | null;
+  mechanism: Record<string, unknown> | null;
 } {
-  const entries = readRecordArray(event.entries)
-  const exceptionEntry = entries.find((entry) => entry.type === 'exception')
-  let exceptionDataInput: unknown
+  const entries = readRecordArray(event.entries);
+  const exceptionEntry = entries.find((entry) => entry.type === "exception");
+  let exceptionDataInput: unknown;
   if (exceptionEntry !== undefined) {
-    exceptionDataInput = exceptionEntry.data
+    exceptionDataInput = exceptionEntry.data;
   }
-  const exceptionData = readRecord(exceptionDataInput)
+  const exceptionData = readRecord(exceptionDataInput);
 
-  let valuesInput: unknown
+  let valuesInput: unknown;
   if (exceptionData !== null) {
-    valuesInput = exceptionData.values
+    valuesInput = exceptionData.values;
   }
-  const values = readRecordArray(valuesInput)
-  const first = values[0]
+  const values = readRecordArray(valuesInput);
+  const first = values[0];
 
-  let stacktraceInput: unknown
+  let stacktraceInput: unknown;
   if (first !== undefined) {
-    stacktraceInput = first.stacktrace
+    stacktraceInput = first.stacktrace;
   }
-  const stacktrace = readRecord(stacktraceInput)
+  const stacktrace = readRecord(stacktraceInput);
 
-  let framesInput: unknown
+  let framesInput: unknown;
   if (stacktrace !== null) {
-    framesInput = stacktrace.frames
+    framesInput = stacktrace.frames;
   }
-  const frames = readRecordArray(framesInput)
+  const frames = readRecordArray(framesInput);
 
-  let exceptionTypeInput: unknown
-  let exceptionValueInput: unknown
-  let mechanismInput: unknown
+  let exceptionTypeInput: unknown;
+  let exceptionValueInput: unknown;
+  let mechanismInput: unknown;
   if (first !== undefined) {
-    exceptionTypeInput = first.type
-    exceptionValueInput = first.value
-    mechanismInput = first.mechanism
+    exceptionTypeInput = first.type;
+    exceptionValueInput = first.value;
+    mechanismInput = first.mechanism;
   }
 
   return {
     exceptionType: readOptionalString(exceptionTypeInput),
     exceptionValue: readOptionalString(exceptionValueInput),
     stacktrace,
-    inAppFrames: frames.filter((frame) => frame.inApp === true || frame.in_app === true),
+    inAppFrames: frames.filter(
+      (frame) => frame.inApp === true || frame.in_app === true,
+    ),
     mechanism: readRecord(mechanismInput),
-  }
+  };
 }
 
-function extractBreadcrumbs(event: ExternalPayloadRecord): Array<Record<string, unknown>> {
-  const entries = readRecordArray(event.entries)
-  const breadcrumbsEntry = entries.find((entry) => entry.type === 'breadcrumbs')
-  const breadcrumbsData = readRecord(breadcrumbsEntry?.data)
-  const topLevelBreadcrumbs = readRecord(event.breadcrumbs)
-  const valuesFromEntries = readRecordArray(breadcrumbsData?.values)
+function extractBreadcrumbs(
+  event: ExternalPayloadRecord,
+): Array<Record<string, unknown>> {
+  const entries = readRecordArray(event.entries);
+  const breadcrumbsEntry = entries.find(
+    (entry) => entry.type === "breadcrumbs",
+  );
+  const breadcrumbsData = readRecord(breadcrumbsEntry?.data);
+  const topLevelBreadcrumbs = readRecord(event.breadcrumbs);
+  const valuesFromEntries = readRecordArray(breadcrumbsData?.values);
   if (valuesFromEntries.length > 0) {
-    return valuesFromEntries
+    return valuesFromEntries;
   }
 
-  return readRecordArray(topLevelBreadcrumbs?.values)
+  return readRecordArray(topLevelBreadcrumbs?.values);
 }
 
 function mergeContextsWithBreadcrumbs(
@@ -269,55 +295,57 @@ function mergeContextsWithBreadcrumbs(
   breadcrumbs: Array<Record<string, unknown>>,
 ): Record<string, unknown> | null {
   if (breadcrumbs.length === 0) {
-    return contexts
+    return contexts;
   }
-  let next: Record<string, unknown> = {}
+  let next: Record<string, unknown> = {};
   if (contexts !== null) {
-    next = { ...contexts }
+    next = { ...contexts };
   }
-  next.__breadcrumbs = breadcrumbs
-  return next
+  next.__breadcrumbs = breadcrumbs;
+  return next;
 }
 
 function toIsoOrNow(value: unknown): string {
-  const raw = readOptionalString(value) ?? ''
-  const parsed = new Date(raw)
+  const raw = readOptionalString(value) ?? "";
+  const parsed = new Date(raw);
   if (Number.isFinite(parsed.getTime())) {
-    return parsed.toISOString()
+    return parsed.toISOString();
   }
-  return new Date().toISOString()
+  return new Date().toISOString();
 }
 
 function readStringArray(value: unknown): string[] {
   if (!Array.isArray(value)) {
-    return []
+    return [];
   }
 
   return value
-    .filter((item): item is string => typeof item === 'string')
+    .filter((item): item is string => typeof item === "string")
     .map((item) => item.trim())
-    .filter((item) => item.length > 0)
+    .filter((item) => item.length > 0);
 }
 
 function readPluginIndexPattern(source: ErrorSource): string | undefined {
-  const indexPatterns = readStringArray(source.configuration.indexPatterns)
+  const indexPatterns = readStringArray(source.configuration.indexPatterns);
   if (indexPatterns.length > 0) {
-    return indexPatterns.join(',')
+    return indexPatterns.join(",");
   }
 
-  return undefined
+  return undefined;
 }
 
 function readSourcePluginId(source: ErrorSource): string {
-  const pluginId = source.additionalMetadata?.pluginId
-  if (typeof pluginId === 'string' && pluginId.trim().length > 0) {
-    return pluginId.trim()
+  const pluginId = source.additionalMetadata?.pluginId;
+  if (typeof pluginId === "string" && pluginId.trim().length > 0) {
+    return pluginId.trim();
   }
 
-  return source.sourceType
+  return source.sourceType;
 }
 
-function pluginSourceRecord(source: ErrorSource): DesktopPluginErrorSourceRecord {
+function pluginSourceRecord(
+  source: ErrorSource,
+): DesktopPluginErrorSourceRecord {
   return {
     id: source.id,
     sourceType: source.sourceType,
@@ -327,125 +355,134 @@ function pluginSourceRecord(source: ErrorSource): DesktopPluginErrorSourceRecord
     expiresAt: source.expiresAt,
     grantedScopes: source.grantedScopes,
     configuration: { ...source.configuration },
-  }
+  };
 }
 
 function buildPluginAuthFromSource(
   source: ErrorSource,
   pluginRuntime: DesktopPluginRuntimeService,
 ): Promise<Record<string, unknown>> {
-  const pluginId = readSourcePluginId(source)
+  const pluginId = readSourcePluginId(source);
   return pluginRuntime.buildErrorSourceAuth({
     pluginId,
     source: pluginSourceRecord(source),
-  })
+  });
 }
 
 function buildGenericPluginSyncInput(args: {
-  source: ErrorSource
-  query: string
-  limit: number
-  cursor?: string
-  since?: string
-  until?: string
+  source: ErrorSource;
+  query: string;
+  limit: number;
+  cursor?: string;
+  since?: string;
+  until?: string;
 }): Record<string, unknown> {
-  const { source, query, limit, cursor, since, until } = args
+  const { source, query, limit, cursor, since, until } = args;
   const input: Record<string, unknown> = {
     query,
     limit,
     sourceId: source.id,
     sourceName: source.name,
     sourceType: source.sourceType,
-  }
+  };
 
-  const orgSlug = readOptionalString(source.configuration.orgSlug)
+  const orgSlug = readOptionalString(source.configuration.orgSlug);
   if (orgSlug !== null) {
-    input.orgSlug = orgSlug
+    input.orgSlug = orgSlug;
   }
 
-  const projectIds = readStringArray(source.configuration.projectIds)
+  const projectIds = readStringArray(source.configuration.projectIds);
   if (projectIds.length > 0) {
-    input.projectIds = projectIds
+    input.projectIds = projectIds;
   }
 
-  const indexPattern = readPluginIndexPattern(source)
+  const projectSlugs = readStringArray(source.configuration.projectSlugs);
+  if (projectSlugs.length > 0) {
+    input.projectSlugs = projectSlugs;
+  }
+
+  const indexPattern = readPluginIndexPattern(source);
   if (indexPattern !== undefined) {
-    input.indexPattern = indexPattern
+    input.indexPattern = indexPattern;
   }
 
   if (cursor !== undefined && cursor.length > 0) {
-    input.cursor = cursor
+    input.cursor = cursor;
   }
   if (since !== undefined) {
-    input.since = since
+    input.since = since;
   }
   if (until !== undefined) {
-    input.until = until
+    input.until = until;
   }
 
-  return input
+  return input;
 }
 
 function readPluginIssueBatch(data: unknown): {
-  issues: ExternalPayloadRecord[]
-  hasMore: boolean
-  nextCursor?: string
+  issues: ExternalPayloadRecord[];
+  hasMore: boolean;
+  nextCursor?: string;
 } | null {
-  if (data === null || typeof data !== 'object' || Array.isArray(data)) {
-    return null
+  if (data === null || typeof data !== "object" || Array.isArray(data)) {
+    return null;
   }
 
-  const rawIssues = (data as { issues?: unknown }).issues
+  const rawIssues = (data as { issues?: unknown }).issues;
   if (!Array.isArray(rawIssues)) {
-    return null
+    return null;
   }
 
-  const issues = readRecordArray(rawIssues)
-  const nextCursor = readOptionalString((data as { nextCursor?: unknown }).nextCursor)
+  const issues = readRecordArray(rawIssues);
+  const nextCursor = readOptionalString(
+    (data as { nextCursor?: unknown }).nextCursor,
+  );
 
   const page = {
     issues,
     hasMore: (data as { hasMore?: unknown }).hasMore === true,
-  }
+  };
   if (nextCursor !== null) {
     return {
       ...page,
       nextCursor,
-    }
+    };
   }
 
-  return page
+  return page;
 }
 
 function readPluginEventBatch(data: unknown): {
-  events: ExternalPayloadRecord[]
-  hasMore: boolean
-  nextCursor?: string
+  events: ExternalPayloadRecord[];
+  hasMore: boolean;
+  nextCursor?: string;
 } | null {
-  if (data === null || typeof data !== 'object' || Array.isArray(data)) {
-    return null
+  if (data === null || typeof data !== "object" || Array.isArray(data)) {
+    return null;
   }
 
-  const rawEvents = (data as { events?: unknown }).events
+  const rawEvents = (data as { events?: unknown }).events;
   if (!Array.isArray(rawEvents)) {
-    return null
+    return null;
   }
 
-  const events = readRecordArray(rawEvents)
-  const nextCursor = readOptionalString((data as { nextCursor?: unknown }).nextCursor)
+  const events = readRecordArray(rawEvents);
+  const nextCursor = readOptionalString(
+    (data as { nextCursor?: unknown }).nextCursor,
+  );
 
   const page = {
     events,
     hasMore: (data as { hasMore?: unknown }).hasMore === true,
-  }
+  };
   if (nextCursor !== null) {
     return {
       ...page,
       nextCursor,
-    }
+    };
   }
 
-  return page
+  return page;
 }
 
 function readPluginExternalId(record: ExternalPayloadRecord): string | null {
@@ -455,59 +492,64 @@ function readPluginExternalId(record: ExternalPayloadRecord): string | null {
     readOptionalString(record.externalEventId) ??
     readOptionalString(record.eventId) ??
     readOptionalString(record.id)
-  )
+  );
 }
 
-function readPluginProjectIdentifier(record: ExternalPayloadRecord): string | null {
+function readPluginProjectIdentifier(
+  record: ExternalPayloadRecord,
+): string | null {
   const direct =
     readOptionalString(record.projectIdentifier) ??
     readOptionalString(record.projectId) ??
-    readOptionalString(record.projectSlug)
+    readOptionalString(record.projectSlug);
   if (direct !== null) {
-    return direct
+    return direct;
   }
 
-  const project = readRecord(record.project)
+  const project = readRecord(record.project);
   return (
     readOptionalString(project?.slug) ??
     readOptionalString(project?.name) ??
     readOptionalString(project?.id)
-  )
+  );
 }
 
 function readPluginRelease(record: ExternalPayloadRecord): string | null {
-  const direct = readOptionalString(record.release)
+  const direct = readOptionalString(record.release);
   if (direct !== null) {
-    return direct
+    return direct;
   }
 
-  return readRecordString(readRecord(record.release), 'version')
+  return readRecordString(readRecord(record.release), "version");
 }
 
 function readPluginNumericCount(value: unknown): number | null {
-  if (typeof value === 'number' && Number.isFinite(value)) {
-    return Math.trunc(value)
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return Math.trunc(value);
   }
 
-  if (typeof value === 'string' && value.trim().length > 0) {
-    const numeric = Number(value)
+  if (typeof value === "string" && value.trim().length > 0) {
+    const numeric = Number(value);
     if (Number.isFinite(numeric)) {
-      return Math.trunc(numeric)
+      return Math.trunc(numeric);
     }
   }
 
-  return null
+  return null;
 }
 
 function readPluginBoolean(value: unknown): boolean | null {
-  if (typeof value === 'boolean') {
-    return value
+  if (typeof value === "boolean") {
+    return value;
   }
 
-  return null
+  return null;
 }
 
-function readPluginIssueTimestamp(record: ExternalPayloadRecord, fallback: string): string {
+function readPluginIssueTimestamp(
+  record: ExternalPayloadRecord,
+  fallback: string,
+): string {
   return toIsoOrNow(
     record.lastSeen ??
       record.last_seen ??
@@ -517,10 +559,13 @@ function readPluginIssueTimestamp(record: ExternalPayloadRecord, fallback: strin
       record.dateCreated ??
       record.createdAt ??
       fallback,
-  )
+  );
 }
 
-function readPluginEventTimestamp(record: ExternalPayloadRecord, fallback: string): string {
+function readPluginEventTimestamp(
+  record: ExternalPayloadRecord,
+  fallback: string,
+): string {
   return toIsoOrNow(
     record.timestamp ??
       record.dateCreated ??
@@ -529,82 +574,87 @@ function readPluginEventTimestamp(record: ExternalPayloadRecord, fallback: strin
       record.lastSeen ??
       record.last_seen ??
       fallback,
-  )
+  );
 }
 
 function parseLevelToRuleLevel(level: string | null): number {
-  const normalized = (level ?? '').toLowerCase()
-  if (normalized === 'fatal') return 10
-  if (normalized === 'error') return 8
-  if (normalized === 'warning') return 6
-  if (normalized === 'info') return 4
-  return 5
+  const normalized = (level ?? "").toLowerCase();
+  if (normalized === "fatal") return 10;
+  if (normalized === "error") return 8;
+  if (normalized === "warning") return 6;
+  if (normalized === "info") return 4;
+  return 5;
 }
 
 function severityRank(level: string | null): number {
-  const normalized = (level ?? '').trim().toLowerCase()
-  if (normalized === 'fatal') return 50
-  if (normalized === 'error') return 40
-  if (normalized === 'warning' || normalized === 'warn') return 30
-  if (normalized === 'info') return 20
-  if (normalized === 'debug') return 10
-  return 20
+  const normalized = (level ?? "").trim().toLowerCase();
+  if (normalized === "fatal") return 50;
+  if (normalized === "error") return 40;
+  if (normalized === "warning" || normalized === "warn") return 30;
+  if (normalized === "info") return 20;
+  if (normalized === "debug") return 10;
+  return 20;
 }
 
-function shouldIngestByThreshold(level: string | null, threshold: LogLevelThreshold): boolean {
-  return severityRank(level) >= severityRank(threshold)
+function shouldIngestByThreshold(
+  level: string | null,
+  threshold: LogLevelThreshold,
+): boolean {
+  return severityRank(level) >= severityRank(threshold);
 }
 
 function parseJsonObject(value: unknown): Record<string, unknown> | null {
-  if (typeof value !== 'string' || value.trim().length === 0) {
-    return null
+  if (typeof value !== "string" || value.trim().length === 0) {
+    return null;
   }
   try {
-    return readRecord(JSON.parse(value))
+    return readRecord(JSON.parse(value));
   } catch {
     // no-op
   }
-  return null
+  return null;
 }
 
-function extractIssueMetadata(issue: ExternalPayloadRecord): Record<string, unknown> | null {
-  return readRecord(issue.metadata)
+function extractIssueMetadata(
+  issue: ExternalPayloadRecord,
+): Record<string, unknown> | null {
+  return readRecord(issue.metadata);
 }
 
 function toDiagnosisIssueContext(
   issue: ErrorIssue | ExternalPayloadRecord | null,
 ): DiagnosisIssueContext | null {
   if (issue === null) {
-    return null
+    return null;
   }
 
   return {
-    id: readRequiredString(issue.id, ''),
-    externalIssueId: readRequiredString(issue.externalIssueId, ''),
-    title: readRequiredString(issue.title, 'Untitled issue'),
+    id: readRequiredString(issue.id, ""),
+    externalIssueId: readRequiredString(issue.externalIssueId, ""),
+    title: readRequiredString(issue.title, "Untitled issue"),
     projectIdentifier: readOptionalString(issue.projectIdentifier),
     environment: readOptionalString(issue.environment),
-    level: readRequiredString(issue.level, 'error'),
-  }
+    level: readRequiredString(issue.level, "error"),
+  };
 }
 
 function toDiagnosisEventContext(
   event: ErrorEvent | ExternalPayloadRecord | null,
 ): DiagnosisEventContext | null {
   if (event === null) {
-    return null
+    return null;
   }
 
   return {
-    id: readRequiredString(event.id, ''),
-    externalEventId: readRequiredString(event.externalEventId, ''),
+    id: readRequiredString(event.id, ""),
+    externalEventId: readRequiredString(event.externalEventId, ""),
     timestamp: readRequiredString(event.timestamp, new Date().toISOString()),
     message: readOptionalString(event.message),
     exceptionType: readOptionalString(event.exceptionType),
     exceptionValue: readOptionalString(event.exceptionValue),
     environment: readOptionalString(event.environment),
     serverName: readOptionalString(event.serverName),
-  }
+  };
 }
 
 export class ErrorSourceSyncService {
@@ -616,62 +666,78 @@ export class ErrorSourceSyncService {
     private readonly pluginRuntime: DesktopPluginRuntimeService = createDesktopNodePluginRuntimeService(),
   ) {}
 
-  async syncSourceById(sourceId: string): Promise<{ sourceId: string; syncedIssues: number; syncedEvents: number }> {
-    const source = await this.sourcesRepository.findById(sourceId)
+  async syncSourceById(
+    sourceId: string,
+  ): Promise<{ sourceId: string; syncedIssues: number; syncedEvents: number }> {
+    const source = await this.sourcesRepository.findById(sourceId);
     if (source === null) {
-      throw new Error(`Error source ${sourceId} not found`)
+      throw new Error(`Error source ${sourceId} not found`);
     }
-    return this.syncSource(source)
+    return this.syncSource(source);
   }
 
-  async syncAllEnabled(): Promise<Array<{ sourceId: string; syncedIssues: number; syncedEvents: number; error?: string }>> {
-    const sources = await this.sourcesRepository.findSyncEnabled()
-    const results: Array<{ sourceId: string; syncedIssues: number; syncedEvents: number; error?: string }> = []
+  async syncAllEnabled(): Promise<
+    Array<{
+      sourceId: string;
+      syncedIssues: number;
+      syncedEvents: number;
+      error?: string;
+    }>
+  > {
+    const sources = await this.sourcesRepository.findSyncEnabled();
+    const results: Array<{
+      sourceId: string;
+      syncedIssues: number;
+      syncedEvents: number;
+      error?: string;
+    }> = [];
 
     for (const source of sources) {
       try {
-        const result = await this.syncSource(source)
-        results.push(result)
+        const result = await this.syncSource(source);
+        results.push(result);
       } catch (error) {
-        let message = String(error)
+        let message = String(error);
         if (error instanceof Error) {
-          message = error.message
+          message = error.message;
         }
         results.push({
           sourceId: source.id,
           syncedIssues: 0,
           syncedEvents: 0,
           error: message,
-        })
+        });
       }
     }
 
-    return results
+    return results;
   }
 
-  private async syncSource(source: ErrorSource): Promise<{ sourceId: string; syncedIssues: number; syncedEvents: number }> {
-    await this.sourcesRepository.updateSyncStatus(source.id, 'in_progress')
-    const syncStartMs = Date.now()
+  private async syncSource(
+    source: ErrorSource,
+  ): Promise<{ sourceId: string; syncedIssues: number; syncedEvents: number }> {
+    await this.sourcesRepository.updateSyncStatus(source.id, "in_progress");
+    const syncStartMs = Date.now();
     log.info(
-      `[sync] start id=${source.id} type=${source.sourceType} name="${source.name}" threshold=${source.logLevelThreshold} lastSyncAt=${source.lastSyncAt ?? 'never'}`,
-    )
+      `[sync] start id=${source.id} type=${source.sourceType} name="${source.name}" threshold=${source.logLevelThreshold} lastSyncAt=${source.lastSyncAt ?? "never"}`,
+    );
 
     try {
-      return await this.syncCustomPluginSource(source)
+      return await this.syncCustomPluginSource(source);
     } catch (error) {
-      let message = String(error)
+      let message = String(error);
       if (error instanceof Error) {
-        message = error.message
+        message = error.message;
       }
       log.error(
         `[sync] failed id=${source.id} elapsedMs=${formatElapsedMs(syncStartMs)}: ${message}`,
-      )
+      );
       await this.sourcesRepository.update({
         id: source.id,
-        lastSyncStatus: 'failed',
+        lastSyncStatus: "failed",
         lastSyncError: message,
-      })
-      throw error
+      });
+      throw error;
     }
   }
 
@@ -680,32 +746,32 @@ export class ErrorSourceSyncService {
     issue: DiagnosisIssueContext,
     event: DiagnosisEventContext,
   ): Promise<void> {
-    const eventTimestamp = toIsoOrNow(event.timestamp)
-    const telemetryDate = eventTimestamp.slice(0, 10)
+    const eventTimestamp = toIsoOrNow(event.timestamp);
+    const telemetryDate = eventTimestamp.slice(0, 10);
 
     const daily = await this.db.telemetryDaily.upsert({
       where: { telemetryDate },
       create: {
         telemetryDate,
-        currentState: 'pending',
+        currentState: "pending",
       },
       update: {},
-    })
+    });
 
     const existing = await this.db.telemetryEntry.findUnique({
       where: {
         telemetryId: Number(daily.id),
         entryId: event.externalEventId,
       },
-    })
+    });
 
     if (existing !== null) {
       await this.ensureDefaultDiagnosisEntry(Number(existing.id), {
         source,
         issue,
         event,
-      })
-      return
+      });
+      return;
     }
 
     const compactPayload = buildCompactExternalSourceTelemetryPayload({
@@ -713,12 +779,12 @@ export class ErrorSourceSyncService {
       sourceId: source.id,
       issue,
       event,
-    })
+    });
 
-    const sourceType = source.sourceType
-    let ruleDescription = issue.title
+    const sourceType = source.sourceType;
+    let ruleDescription = issue.title;
     if (ruleDescription.length === 0) {
-      ruleDescription = event.exceptionType ?? `${sourceType} Error`
+      ruleDescription = event.exceptionType ?? `${sourceType} Error`;
     }
     const created = await this.db.telemetryEntry.create({
       data: {
@@ -740,67 +806,69 @@ export class ErrorSourceSyncService {
         hostname: event.serverName,
         groups: JSON.stringify([sourceType]),
         ruleGroups: JSON.stringify([sourceType]),
-        category: 'application',
-        state: 'pending',
+        category: "application",
+        state: "pending",
       },
-    })
+    });
 
     await this.ensureDefaultDiagnosisEntry(Number(created.id), {
       source,
       issue,
       event,
-    })
+    });
   }
 
   private async ensureDefaultDiagnosisEntry(
     telemetryEntryId: number,
     context?: {
-      source: ErrorSource
-      issue: DiagnosisIssueContext | null
-      event: DiagnosisEventContext | null
+      source: ErrorSource;
+      issue: DiagnosisIssueContext | null;
+      event: DiagnosisEventContext | null;
     },
   ): Promise<void> {
-    let sourceCategory = 'telemetry'
-    let sourceKind = 'telemetry_entry'
-    let logLevel = 'infrastructure'
-    let category = 'unknown'
-    let sourceMetadata: Record<string, unknown> | undefined
-    let normalizedData: Record<string, unknown> | undefined
+    let sourceCategory = "telemetry";
+    let sourceKind = "telemetry_entry";
+    let logLevel = "infrastructure";
+    let category = "unknown";
+    let sourceMetadata: Record<string, unknown> | undefined;
+    let normalizedData: Record<string, unknown> | undefined;
     let sourceRef: {
-      sourceTableName: string
-      sourceFieldName: string
-      sourceKeyValue: string | number
+      sourceTableName: string;
+      sourceFieldName: string;
+      sourceKeyValue: string | number;
     } = {
-      sourceTableName: 'TelemetryEntry',
-      sourceFieldName: 'id',
+      sourceTableName: "TelemetryEntry",
+      sourceFieldName: "id",
       sourceKeyValue: telemetryEntryId,
-    }
+    };
 
     if (context !== undefined) {
-      sourceCategory = context.source.sourceType
-      sourceKind = 'error_event'
-      logLevel = 'application'
-      category = 'application'
+      sourceCategory = context.source.sourceType;
+      sourceKind = "error_event";
+      logLevel = "application";
+      category = "application";
       sourceMetadata = {
         sourceType: context.source.sourceType,
         sourceId: context.source.id,
         issueId: context.issue?.id ?? null,
         issueExternalId: context.issue?.externalIssueId ?? null,
         eventId: context.event?.id ?? null,
-        eventExternalId: context.event?.externalEventId ?? context.event?.id ?? null,
-      }
+        eventExternalId:
+          context.event?.externalEventId ?? context.event?.id ?? null,
+      };
       normalizedData = {
         provider_native_issue_id: context.issue?.externalIssueId ?? null,
-        provider_native_event_id: context.event?.externalEventId ?? context.event?.id ?? null,
-      }
+        provider_native_event_id:
+          context.event?.externalEventId ?? context.event?.id ?? null,
+      };
       sourceRef = {
-        sourceTableName: 'ErrorEvent',
-        sourceFieldName: 'externalEventId',
+        sourceTableName: "ErrorEvent",
+        sourceFieldName: "externalEventId",
         sourceKeyValue:
           context.event?.externalEventId ??
           context.event?.id ??
           telemetryEntryId,
-      }
+      };
     }
 
     const mapped = mapDiagnosisSourceContext({
@@ -815,9 +883,7 @@ export class ErrorSourceSyncService {
         context?.issue?.title ??
         undefined,
       environment:
-        context?.event?.environment ??
-        context?.issue?.environment ??
-        null,
+        context?.event?.environment ?? context?.issue?.environment ?? null,
       providerNativeSeverity: context?.issue?.level ?? null,
       providerNativeId:
         context?.event?.externalEventId ??
@@ -827,23 +893,23 @@ export class ErrorSourceSyncService {
       sourceMetadata,
       normalizedData,
       sourceRef,
-    })
+    });
 
-    const createSourceMetadata = optionalJson(mapped.sourceMetadata)
-    const createNormalizedData = optionalJson(mapped.normalizedData)
-    let updateSourceMetadata: string | undefined
+    const createSourceMetadata = optionalJson(mapped.sourceMetadata);
+    const createNormalizedData = optionalJson(mapped.normalizedData);
+    let updateSourceMetadata: string | undefined;
     if (mapped.sourceMetadata !== undefined) {
-      updateSourceMetadata = JSON.stringify(mapped.sourceMetadata)
+      updateSourceMetadata = JSON.stringify(mapped.sourceMetadata);
     }
-    const updateNormalizedData = JSON.stringify(mapped.normalizedData)
+    const updateNormalizedData = JSON.stringify(mapped.normalizedData);
 
     const diagnosisRow = await this.db.diagnosisEntry.upsert({
       where: { telemetryEntryId },
       create: {
         telemetryEntryId,
-        currentState: 'pending',
-        stateHistory: '[]',
-        stateTexts: '{}',
+        currentState: "pending",
+        stateHistory: "[]",
+        stateTexts: "{}",
         sourceCategory: mapped.sourceCategory,
         sourceKind: mapped.sourceKind,
         logLevel: mapped.logLevel,
@@ -865,7 +931,7 @@ export class ErrorSourceSyncService {
         sourceMetadata: updateSourceMetadata,
         normalizedData: updateNormalizedData,
       },
-    })
+    });
 
     await this.db.diagnosisEntrySourceRef.upsert({
       where: { diagnosisEntryId: Number(diagnosisRow.id) },
@@ -880,11 +946,16 @@ export class ErrorSourceSyncService {
         sourceFieldName: mapped.sourceRef.sourceFieldName,
         sourceKeyValue: mapped.sourceRef.sourceKeyValue,
       },
-    })
+    });
   }
 
-  private async backfillMissingDiagnosisEntriesForSource(sourceId: string): Promise<void> {
-    const rows = await this.db.$queryRawUnsafe<{ id: number; entrySource: string | null }>(
+  private async backfillMissingDiagnosisEntriesForSource(
+    sourceId: string,
+  ): Promise<void> {
+    const rows = await this.db.$queryRawUnsafe<{
+      id: number;
+      entrySource: string | null;
+    }>(
       `
       SELECT te."id" as "id", te."entrySource" as "entrySource"
       FROM "TelemetryEntry" te
@@ -892,33 +963,30 @@ export class ErrorSourceSyncService {
         ON de."telemetryEntryId" = te."id"
       WHERE de."id" IS NULL
       `,
-    )
+    );
 
-    const source = await this.sourcesRepository.findById(sourceId)
+    const source = await this.sourcesRepository.findById(sourceId);
 
     for (const row of rows) {
-      const payload = parseJsonObject(row.entrySource)
-      if (payload === null) continue
-      const payloadSourceId = readOptionalString(payload.sourceId)
-      if (payloadSourceId === null || payloadSourceId !== sourceId) continue
+      const payload = parseJsonObject(row.entrySource);
+      if (payload === null) continue;
+      const payloadSourceId = readOptionalString(payload.sourceId);
+      if (payloadSourceId === null || payloadSourceId !== sourceId) continue;
       if (source === null) {
-        await this.ensureDefaultDiagnosisEntry(row.id)
-        continue
+        await this.ensureDefaultDiagnosisEntry(row.id);
+        continue;
       }
 
       if (isCompactExternalSourceTelemetryPayload(payload)) {
-        let issueLookup = Promise.resolve<ErrorIssue | null>(null)
+        let issueLookup = Promise.resolve<ErrorIssue | null>(null);
         if (payload.issueId !== null) {
-          issueLookup = this.issuesRepository.findById(payload.issueId)
+          issueLookup = this.issuesRepository.findById(payload.issueId);
         }
-        let eventLookup = Promise.resolve<ErrorEvent | null>(null)
+        let eventLookup = Promise.resolve<ErrorEvent | null>(null);
         if (payload.eventId !== null) {
-          eventLookup = this.eventsRepository.findById(payload.eventId)
+          eventLookup = this.eventsRepository.findById(payload.eventId);
         }
-        const [issue, event] = await Promise.all([
-          issueLookup,
-          eventLookup,
-        ])
+        const [issue, event] = await Promise.all([issueLookup, eventLookup]);
         await this.ensureDefaultDiagnosisEntry(row.id, {
           source,
           issue: toDiagnosisIssueContext(
@@ -927,13 +995,13 @@ export class ErrorSourceSyncService {
           event: toDiagnosisEventContext(
             event ?? buildCompactExternalSourceEventFallback(payload),
           ),
-        })
-        continue
+        });
+        continue;
       }
 
-      const issue = toDiagnosisIssueContext(readRecord(payload.issue))
-      const event = toDiagnosisEventContext(readRecord(payload.event))
-      await this.ensureDefaultDiagnosisEntry(row.id, { source, issue, event })
+      const issue = toDiagnosisIssueContext(readRecord(payload.issue));
+      const event = toDiagnosisEventContext(readRecord(payload.event));
+      await this.ensureDefaultDiagnosisEntry(row.id, { source, issue, event });
     }
   }
 
@@ -941,43 +1009,46 @@ export class ErrorSourceSyncService {
     source: ErrorSource,
     pluginId: string,
   ): CustomPluginSyncCapabilities {
-    const plugin = this.pluginRuntime.getPlugin(pluginId)
+    const plugin = this.pluginRuntime.getPlugin(pluginId);
     if (plugin?.metadata?.errorSource?.sourceType !== source.sourceType) {
       throw new Error(
         `Error source plugin "${pluginId}" does not match source type ${source.sourceType}`,
-      )
+      );
     }
 
-    const hasListIssues = hasErrorSourceProviderAction(plugin, 'listIssues')
-    const hasQueryIssues = hasErrorSourceProviderAction(plugin, 'queryIssues')
+    const hasListIssues = hasErrorSourceProviderAction(plugin, "listIssues");
+    const hasQueryIssues = hasErrorSourceProviderAction(plugin, "queryIssues");
     if (!hasListIssues && !hasQueryIssues) {
       throw new Error(
         `Error source plugin "${pluginId}" does not declare listIssues or queryIssues`,
-      )
+      );
     }
 
-    let issueAction: 'listIssues' | 'queryIssues' = 'queryIssues'
+    let issueAction: "listIssues" | "queryIssues" = "queryIssues";
     if (hasListIssues) {
-      issueAction = 'listIssues'
+      issueAction = "listIssues";
     }
 
     return {
       issueAction,
-      hasListIssueEvents: hasErrorSourceProviderAction(plugin, 'listIssueEvents'),
-    }
+      hasListIssueEvents: hasErrorSourceProviderAction(
+        plugin,
+        "listIssueEvents",
+      ),
+    };
   }
 
   private async fetchCustomPluginIssuePage(args: {
-    source: ErrorSource
-    pluginId: string
-    auth: Record<string, unknown>
-    issueAction: 'listIssues' | 'queryIssues'
-    cursor: string | undefined
-    since: string | undefined
-    until: string
-    pageCount: number
+    source: ErrorSource;
+    pluginId: string;
+    auth: Record<string, unknown>;
+    issueAction: "listIssues" | "queryIssues";
+    cursor: string | undefined;
+    since: string | undefined;
+    until: string;
+    pageCount: number;
   }) {
-    const pageStartMs = Date.now()
+    const pageStartMs = Date.now();
     const result = await this.pluginRuntime.executeAction({
       pluginId: args.pluginId,
       actionId: resolveErrorSourceProviderActionId({
@@ -989,25 +1060,25 @@ export class ErrorSourceSyncService {
       auth: args.auth,
       input: buildGenericPluginSyncInput({
         source: args.source,
-        query: '*',
+        query: "*",
         limit: MAX_GENERIC_PLUGIN_ISSUES_PER_PAGE,
         cursor: args.cursor,
         since: args.since,
         until: args.until,
       }),
-    })
+    });
 
-    const page = readPluginIssueBatch(result.data)
+    const page = readPluginIssueBatch(result.data);
     if (page === null) {
       throw new Error(
         `Plugin "${args.pluginId}" returned an invalid issue batch for source sync`,
-      )
+      );
     }
 
     log.info(
       `[sync] id=${args.source.id} pluginListIssues page=${String(args.pageCount)} returned=${String(page.issues.length)} hasMore=${String(page.hasMore && page.issues.length > 0)} elapsedMs=${formatElapsedMs(pageStartMs)}`,
-    )
-    return page
+    );
+    return page;
   }
 
   private async upsertCustomPluginIssue(
@@ -1015,30 +1086,30 @@ export class ErrorSourceSyncService {
     issueRecord: ExternalPayloadRecord,
     syncStartedAt: string,
   ): Promise<CustomPluginIssueContext | null> {
-    const externalIssueId = readPluginExternalId(issueRecord)
+    const externalIssueId = readPluginExternalId(issueRecord);
     if (externalIssueId === null) {
-      return null
+      return null;
     }
 
     const title =
       readOptionalString(issueRecord.title) ??
       readOptionalString(issueRecord.message) ??
       readOptionalString(issueRecord.name) ??
-      'Untitled issue'
-    const level = readOptionalString(issueRecord.level) ?? 'error'
+      "Untitled issue";
+    const level = readOptionalString(issueRecord.level) ?? "error";
     if (!shouldIngestByThreshold(level, source.logLevelThreshold)) {
-      return null
+      return null;
     }
 
-    const firstSeen = readPluginIssueTimestamp(issueRecord, syncStartedAt)
+    const firstSeen = readPluginIssueTimestamp(issueRecord, syncStartedAt);
     const lastSeen = toIsoOrNow(
       issueRecord.lastSeen ??
         issueRecord.last_seen ??
         issueRecord.timestamp ??
         issueRecord.updatedAt ??
         firstSeen,
-    )
-    const tags = parseIssueTags(issueRecord.tags)
+    );
+    const tags = parseIssueTags(issueRecord.tags);
     const issue = await this.issuesRepository.upsert({
       sourceId: source.id,
       externalIssueId,
@@ -1054,73 +1125,80 @@ export class ErrorSourceSyncService {
       status:
         readOptionalString(issueRecord.status) ??
         readOptionalString(issueRecord.state) ??
-        'unresolved',
+        "unresolved",
       isUnhandled: readPluginBoolean(issueRecord.isUnhandled),
       firstSeen,
       lastSeen,
-      eventCount: readPluginNumericCount(
-        issueRecord.eventCount ?? issueRecord.count,
-      ) ?? 1,
+      eventCount:
+        readPluginNumericCount(issueRecord.eventCount ?? issueRecord.count) ??
+        1,
       userCount: readPluginNumericCount(issueRecord.userCount),
       tags,
       environment:
         readOptionalString(issueRecord.environment) ??
-        extractTagValue(tags, 'environment'),
-      release: readPluginRelease(issueRecord) ?? extractTagValue(tags, 'release'),
+        extractTagValue(tags, "environment"),
+      release:
+        readPluginRelease(issueRecord) ?? extractTagValue(tags, "release"),
       platform: readOptionalString(issueRecord.platform) ?? source.sourceType,
       additionalMetadata: issueRecord,
-    })
+    });
 
-    return { issue, externalIssueId, title, tags, lastSeen }
+    return { issue, externalIssueId, title, tags, lastSeen };
   }
 
   private async upsertListedCustomPluginEvent(args: {
-    source: ErrorSource
-    issue: ErrorIssue
-    eventRecord: ExternalPayloadRecord
-    externalIssueId: string
-    title: string
-    lastSeen: string
-    syncedEvents: number
+    source: ErrorSource;
+    issue: ErrorIssue;
+    eventRecord: ExternalPayloadRecord;
+    externalIssueId: string;
+    title: string;
+    lastSeen: string;
+    syncedEvents: number;
   }): Promise<boolean> {
     const eventLevel =
-      readOptionalString(args.eventRecord.level) ?? args.issue.level
+      readOptionalString(args.eventRecord.level) ?? args.issue.level;
     if (!shouldIngestByThreshold(eventLevel, args.source.logLevelThreshold)) {
-      return false
+      return false;
     }
 
     const externalEventId =
       readPluginExternalId(args.eventRecord) ??
-      `${args.externalIssueId}:event:${String(args.syncedEvents + 1)}`
-    const parsedEventTags = parseIssueTags(args.eventRecord.tags)
-    const exception = extractException(args.eventRecord)
-    const breadcrumbs = extractBreadcrumbs(args.eventRecord)
-    const contexts = readRecord(args.eventRecord.contexts)
-    const trace = readRecord(contexts?.trace)
-    const contextsWithBreadcrumbs = mergeContextsWithBreadcrumbs(contexts, breadcrumbs)
-    const eventTimestamp = readPluginEventTimestamp(args.eventRecord, args.lastSeen)
+      `${args.externalIssueId}:event:${String(args.syncedEvents + 1)}`;
+    const parsedEventTags = parseIssueTags(args.eventRecord.tags);
+    const exception = extractException(args.eventRecord);
+    const breadcrumbs = extractBreadcrumbs(args.eventRecord);
+    const contexts = readRecord(args.eventRecord.contexts);
+    const trace = readRecord(contexts?.trace);
+    const contextsWithBreadcrumbs = mergeContextsWithBreadcrumbs(
+      contexts,
+      breadcrumbs,
+    );
+    const eventTimestamp = readPluginEventTimestamp(
+      args.eventRecord,
+      args.lastSeen,
+    );
     const message =
       readOptionalString(args.eventRecord.message) ??
       readOptionalString(args.eventRecord.title) ??
       readOptionalString(args.eventRecord.name) ??
       readOptionalString(args.eventRecord.culprit) ??
-      args.title
+      args.title;
     const environment =
       readOptionalString(args.eventRecord.environment) ??
-      extractTagValue(parsedEventTags, 'environment') ??
-      args.issue.environment
+      extractTagValue(parsedEventTags, "environment") ??
+      args.issue.environment;
     const release =
       readPluginRelease(args.eventRecord) ??
-      extractTagValue(parsedEventTags, 'release') ??
-      args.issue.release
+      extractTagValue(parsedEventTags, "release") ??
+      args.issue.release;
     const serverName =
       readOptionalString(args.eventRecord.serverName) ??
       readOptionalString(readRecord(args.eventRecord.host)?.name) ??
-      readOptionalString(args.eventRecord.hostname)
+      readOptionalString(args.eventRecord.hostname);
     const exceptionType =
-      exception.exceptionType ?? readOptionalString(args.eventRecord.type)
+      exception.exceptionType ?? readOptionalString(args.eventRecord.type);
     const exceptionValue =
-      exception.exceptionValue ?? readOptionalString(args.eventRecord.value)
+      exception.exceptionValue ?? readOptionalString(args.eventRecord.value);
 
     await this.eventsRepository.upsert({
       sourceId: args.source.id,
@@ -1132,7 +1210,8 @@ export class ErrorSourceSyncService {
       exceptionValue,
       exceptionMechanism:
         exception.mechanism ?? readRecord(args.eventRecord.mechanism),
-      stacktrace: exception.stacktrace ?? readRecord(args.eventRecord.stacktrace),
+      stacktrace:
+        exception.stacktrace ?? readRecord(args.eventRecord.stacktrace),
       inAppFrames:
         exception.inAppFrames ?? readRecordArray(args.eventRecord.inAppFrames),
       tags: parsedEventTags,
@@ -1152,7 +1231,7 @@ export class ErrorSourceSyncService {
         readOptionalString(args.eventRecord.transaction) ??
         readOptionalString(args.eventRecord.transactionName),
       additionalMetadata: args.eventRecord,
-    })
+    });
     await this.projectEventToDiagnosis(args.source, args.issue, {
       id: externalEventId,
       externalEventId,
@@ -1162,42 +1241,42 @@ export class ErrorSourceSyncService {
       exceptionValue,
       environment,
       serverName,
-    })
-    return true
+    });
+    return true;
   }
 
   private async syncListedCustomPluginIssueEvents(args: {
-    source: ErrorSource
-    pluginId: string
-    auth: Record<string, unknown>
-    issueContext: CustomPluginIssueContext
-    since: string | undefined
-    until: string
+    source: ErrorSource;
+    pluginId: string;
+    auth: Record<string, unknown>;
+    issueContext: CustomPluginIssueContext;
+    since: string | undefined;
+    until: string;
   }): Promise<number> {
-    let syncedEvents = 0
-    let eventCursor: string | undefined
-    let eventPageCount = 0
-    let eventsHasMore = true
+    let syncedEvents = 0;
+    let eventCursor: string | undefined;
+    let eventPageCount = 0;
+    let eventsHasMore = true;
 
     while (
       eventsHasMore &&
       eventPageCount < MAX_GENERIC_PLUGIN_EVENT_PAGES_PER_ISSUE
     ) {
-      eventPageCount += 1
-      const eventPageStartMs = Date.now()
+      eventPageCount += 1;
+      const eventPageStartMs = Date.now();
       const eventResult = await this.pluginRuntime.executeAction({
         pluginId: args.pluginId,
         actionId: resolveErrorSourceProviderActionId({
           runtime: this.pluginRuntime,
           pluginId: args.pluginId,
           sourceType: args.source.sourceType,
-          action: 'listIssueEvents',
+          action: "listIssueEvents",
         }),
         auth: args.auth,
         input: {
           ...buildGenericPluginSyncInput({
             source: args.source,
-            query: '*',
+            query: "*",
             limit: MAX_GENERIC_PLUGIN_ISSUES_PER_PAGE,
             since: args.since,
             until: args.until,
@@ -1205,19 +1284,19 @@ export class ErrorSourceSyncService {
           issueId: args.issueContext.externalIssueId,
           cursor: eventCursor,
         },
-      })
-      const eventPage = readPluginEventBatch(eventResult.data)
+      });
+      const eventPage = readPluginEventBatch(eventResult.data);
       if (eventPage === null) {
         throw new Error(
           `Plugin "${args.pluginId}" returned an invalid event batch for source sync`,
-        )
+        );
       }
 
-      eventsHasMore = eventPage.hasMore && eventPage.events.length > 0
-      eventCursor = eventPage.nextCursor
+      eventsHasMore = eventPage.hasMore && eventPage.events.length > 0;
+      eventCursor = eventPage.nextCursor;
       log.info(
         `[sync] id=${args.source.id} pluginListIssueEvents issue=${args.issueContext.externalIssueId} page=${String(eventPageCount)} returned=${String(eventPage.events.length)} hasMore=${String(eventsHasMore)} elapsedMs=${formatElapsedMs(eventPageStartMs)}`,
-      )
+      );
 
       for (const eventRecord of eventPage.events) {
         const didSync = await this.upsertListedCustomPluginEvent({
@@ -1228,9 +1307,9 @@ export class ErrorSourceSyncService {
           title: args.issueContext.title,
           lastSeen: args.issueContext.lastSeen,
           syncedEvents,
-        })
+        });
         if (didSync) {
-          syncedEvents += 1
+          syncedEvents += 1;
         }
       }
 
@@ -1238,11 +1317,11 @@ export class ErrorSourceSyncService {
         eventPage.nextCursor === undefined &&
         eventPage.events.length < MAX_GENERIC_PLUGIN_ISSUES_PER_PAGE
       ) {
-        eventsHasMore = false
+        eventsHasMore = false;
       }
     }
 
-    return syncedEvents
+    return syncedEvents;
   }
 
   private async upsertSyntheticCustomPluginEvent(
@@ -1253,18 +1332,18 @@ export class ErrorSourceSyncService {
     const syntheticEventId =
       readOptionalString(issueRecord.latestEventId) ??
       readOptionalString(issueRecord.eventId) ??
-      `${issueContext.externalIssueId}:latest`
+      `${issueContext.externalIssueId}:latest`;
     const syntheticMessage =
       readOptionalString(issueRecord.message) ??
       readOptionalString(issueRecord.culprit) ??
-      issueContext.title
+      issueContext.title;
     const serverName =
       readOptionalString(issueRecord.serverName) ??
       readOptionalString(readRecord(issueRecord.host)?.name) ??
-      readOptionalString(issueRecord.hostname)
+      readOptionalString(issueRecord.hostname);
     const environment =
       readOptionalString(issueRecord.environment) ??
-      extractTagValue(issueContext.tags, 'environment')
+      extractTagValue(issueContext.tags, "environment");
 
     await this.eventsRepository.upsert({
       sourceId: source.id,
@@ -1288,7 +1367,7 @@ export class ErrorSourceSyncService {
       requestId: readOptionalString(issueRecord.requestId),
       transactionName: readOptionalString(issueRecord.transactionName),
       additionalMetadata: issueRecord,
-    })
+    });
     await this.projectEventToDiagnosis(source, issueContext.issue, {
       id: syntheticEventId,
       externalEventId: syntheticEventId,
@@ -1298,26 +1377,29 @@ export class ErrorSourceSyncService {
       exceptionValue: readOptionalString(issueRecord.value),
       environment,
       serverName,
-    })
+    });
   }
 
   private async syncCustomPluginSource(
     source: ErrorSource,
   ): Promise<{ sourceId: string; syncedIssues: number; syncedEvents: number }> {
-    const pluginId = readSourcePluginId(source)
-    const capabilities = this.readCustomPluginSyncCapabilities(source, pluginId)
-    const auth = await buildPluginAuthFromSource(source, this.pluginRuntime)
-    const syncStartedAt = new Date().toISOString()
-    const since = source.lastSyncAt ?? undefined
-    const until = syncStartedAt
-    let cursor: string | undefined
-    let pageCount = 0
-    let hasMore = true
-    let syncedIssues = 0
-    let syncedEvents = 0
+    const pluginId = readSourcePluginId(source);
+    const capabilities = this.readCustomPluginSyncCapabilities(
+      source,
+      pluginId,
+    );
+    const auth = await buildPluginAuthFromSource(source, this.pluginRuntime);
+    const syncStartedAt = new Date().toISOString();
+    const since = source.lastSyncAt ?? undefined;
+    const until = syncStartedAt;
+    let cursor: string | undefined;
+    let pageCount = 0;
+    let hasMore = true;
+    let syncedIssues = 0;
+    let syncedEvents = 0;
 
     while (hasMore && pageCount < MAX_GENERIC_PLUGIN_ISSUE_PAGES) {
-      pageCount += 1
+      pageCount += 1;
       const page = await this.fetchCustomPluginIssuePage({
         source,
         pluginId,
@@ -1327,20 +1409,20 @@ export class ErrorSourceSyncService {
         since,
         until,
         pageCount,
-      })
-      hasMore = page.hasMore && page.issues.length > 0
-      cursor = page.nextCursor
+      });
+      hasMore = page.hasMore && page.issues.length > 0;
+      cursor = page.nextCursor;
 
       for (const issueRecord of page.issues) {
         const issueContext = await this.upsertCustomPluginIssue(
           source,
           issueRecord,
           syncStartedAt,
-        )
+        );
         if (issueContext === null) {
-          continue
+          continue;
         }
-        syncedIssues += 1
+        syncedIssues += 1;
 
         if (capabilities.hasListIssueEvents) {
           syncedEvents += await this.syncListedCustomPluginIssueEvents({
@@ -1350,32 +1432,39 @@ export class ErrorSourceSyncService {
             issueContext,
             since,
             until,
-          })
+          });
         } else {
-          await this.upsertSyntheticCustomPluginEvent(source, issueContext, issueRecord)
-          syncedEvents += 1
+          await this.upsertSyntheticCustomPluginEvent(
+            source,
+            issueContext,
+            issueRecord,
+          );
+          syncedEvents += 1;
         }
       }
 
-      if (page.nextCursor === undefined && page.issues.length < MAX_GENERIC_PLUGIN_ISSUES_PER_PAGE) {
-        hasMore = false
+      if (
+        page.nextCursor === undefined &&
+        page.issues.length < MAX_GENERIC_PLUGIN_ISSUES_PER_PAGE
+      ) {
+        hasMore = false;
       }
     }
 
-    await this.backfillMissingDiagnosisEntriesForSource(source.id)
+    await this.backfillMissingDiagnosisEntriesForSource(source.id);
     await this.sourcesRepository.update({
       id: source.id,
       lastSyncAt: syncStartedAt,
-      lastSyncStatus: 'success',
+      lastSyncStatus: "success",
       lastSyncError: null,
-    })
+    });
     log.info(
       `[sync] success id=${source.id} type=${source.sourceType} issues=${String(syncedIssues)} events=${String(syncedEvents)}`,
-    )
+    );
     return {
       sourceId: source.id,
       syncedIssues,
       syncedEvents,
-    }
+    };
   }
 }
