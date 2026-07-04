@@ -370,9 +370,17 @@ async function executeCustomPluginQuery(args: {
       }),
       auth,
       input,
-    }).then((result) => ({
-      output: readPluginOutput(result.data),
-    }));
+    }).then((result) => {
+      if (!result.ok) {
+        throw new Error(
+          `Plugin "${pluginId}" failed to search alerts for external source "${source.name}": ${result.summary}`,
+        )
+      }
+
+      return {
+        output: readPluginOutput(result.data),
+      };
+    });
   }
 
   throw new Error(
