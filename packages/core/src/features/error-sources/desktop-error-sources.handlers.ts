@@ -1185,6 +1185,9 @@ export function createDesktopErrorSourcesHandlers(
             auth,
             input,
           });
+          if (!result.ok) {
+            throw new Error(result.summary);
+          }
           const issueBatch = readPluginIssueBatch(result.data);
           const issueCount =
             issueBatch?.issues.length ?? readPluginIssueCount(result.data);
@@ -1210,6 +1213,9 @@ export function createDesktopErrorSourcesHandlers(
             auth,
             input,
           });
+          if (!result.ok) {
+            throw new Error(result.summary);
+          }
           const issueCount = readPluginIssueCount(result.data);
           return {
             success: true,
