@@ -700,8 +700,84 @@ function asksForNamedRunbookOutput(
   return resultRequestPattern.test(normalizedText)
 }
 
-function runbookRequiresParameterValues(runbook: RunbookRecord): boolean {
-  return runbook.actions.some((action) => (action.parameters?.length ?? 0) > 0)
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+function stripDirectParameterQuotes(value: string): string {
+  return value.replace(/^["'`]|["'`]$/g, '').trim()
+}
+
+function readDirectParameterValue(rawText: string, key: string): string | undefined {
+  const pattern = new RegExp(
+    `(?:^|[^A-Za-z0-9_-])${escapeRegExp(key)}(?=$|[^A-Za-z0-9_-])\\s*(?:=|:|is\\b|to\\b|as\\b)?\\s*("[^"]+"|'[^']+'|\`[^\`]+\`|[^\\s,;.]+)`,
+    'i',
+  )
+  const match = rawText.match(pattern)
+  const value = match?.[1]
+  if (value === undefined) {
+    return undefined
+  }
+
+  const normalized = stripDirectParameterQuotes(value)
+  if (normalized.length === 0) {
+    return undefined
+  }
+
+  return normalized
+}
+
+function listRunbookParameterDefinitions(runbook: RunbookRecord): NonNullable<RunbookAction['parameters']> {
+  return runbook.actions.flatMap((action) => action.parameters ?? [])
+}
+
+function parameterHasDefaultValue(parameter: NonNullable<RunbookAction['parameters']>[number]): boolean {
+  return parameter.defaultValue !== undefined && parameter.defaultValue.trim().length > 0
+}
+
+function resolveDirectRunbookParameterValues(
+  runbook: RunbookRecord,
+  rawText: string,
+): RunbookParameterValues | null | undefined {
+  const parameters = listRunbookParameterDefinitions(runbook)
+  if (parameters.length === 0) {
+    return undefined
+  }
+
+  const values: RunbookParameterValues = {}
+  const parameterKeys = new Set(parameters.map((parameter) => parameter.key))
+  const timeWindow = extractNamedJournalTimeWindow(rawText)
+  if (timeWindow !== null) {
+    if (parameterKeys.has('since')) {
+      values.since = timeWindow.since
+    }
+    if (parameterKeys.has('until')) {
+      values.until = timeWindow.until
+    }
+  }
+
+  for (const parameter of parameters) {
+    if (Object.prototype.hasOwnProperty.call(values, parameter.key)) {
+      continue
+    }
+
+    const value = readDirectParameterValue(rawText, parameter.key)
+    if (value !== undefined) {
+      values[parameter.key] = value
+    }
+  }
+
+  const missingRequired = parameters.some(
+    (parameter) =>
+      parameter.required !== false &&
+      !parameterHasDefaultValue(parameter) &&
+      values[parameter.key] === undefined,
+  )
+  if (missingRequired || Object.keys(values).length === 0) {
+    return null
+  }
+
+  return values
 }
 
 function findLatestUserMessageIndex(messages: ChatMessage[]): number {
@@ -2495,7 +2571,8 @@ export class AgentRuntimeService {
     }
 
     const [runbook] = matches
-    if (runbookRequiresParameterValues(runbook)) {
+    const parameterValues = resolveDirectRunbookParameterValues(runbook, userText)
+    if (parameterValues === null) {
       return null
     }
 
@@ -2512,6 +2589,7 @@ export class AgentRuntimeService {
     const result = await this.executeRunbook(session, {
       runbookId: runbook.id,
       runbookTitle: runbook.title,
+      parameterValues,
     })
     const rawOutput = result.output?.trim() ?? ''
     const modelContext = this.buildDirectRunbookExecutionConversationContent(runbook.title, rawOutput, result)
