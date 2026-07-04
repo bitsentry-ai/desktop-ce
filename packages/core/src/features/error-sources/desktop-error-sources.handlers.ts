@@ -1247,6 +1247,9 @@ export function createDesktopErrorSourcesHandlers(
             auth,
             input: {},
           });
+          if (!result.ok) {
+            throw new Error(result.summary);
+          }
           const organizations = readUnknownArray(result.data);
           return {
             success: true,

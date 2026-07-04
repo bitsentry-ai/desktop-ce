@@ -365,6 +365,32 @@ describe("desktop error source handlers", () => {
     expect(runtime.executeActionMock).not.toHaveBeenCalled();
   });
 
+  it("rejects failed organization-only plugin connection tests", async () => {
+    const runtime = new TestPluginRuntimeService([
+      {
+        ...createPostHogPluginDescriptor(),
+        actions: [createProviderAction("list_organizations")],
+      },
+    ]);
+    runtime.executeActionMock.mockResolvedValue({
+      pluginId: "posthog",
+      actionId: "list_organizations",
+      ok: false,
+      status: 401,
+      summary: "PostHog organizations unavailable.",
+      data: [],
+    });
+    const oauthBindings = createDesktopOauthManagerBindings();
+    const handlers = createDesktopErrorSourcesHandlers(createDb(), {
+      OauthManagerService: oauthBindings.OauthManagerService,
+      pluginRuntime: runtime,
+    });
+
+    await expect(
+      handlers["errorSources:testConnection"]?.({ id: "source-1" }),
+    ).rejects.toThrow("PostHog organizations unavailable.");
+  });
+
   it("probes connections through matching code plugin actions", async () => {
     const runtime = new TestPluginRuntimeService([
       createPostHogPluginDescriptor(),

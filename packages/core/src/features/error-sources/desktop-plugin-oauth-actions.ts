@@ -128,6 +128,10 @@ export async function buildPluginAuthorizeUrl(input: {
     },
   });
 
+  if (!result.ok) {
+    throw new Error(result.summary);
+  }
+
   return oauthAuthorizeUrlResponseSchema.parse(result.data).authUrl;
 }
 
@@ -157,6 +161,10 @@ export async function exchangePluginCodeForToken(input: {
       codeVerifier: input.exchange.codeVerifier,
     },
   });
+
+  if (!result.ok) {
+    throw new Error(result.summary);
+  }
 
   return oauthTokenResponseSchema.parse(result.data);
 }
@@ -190,6 +198,10 @@ export async function refreshPluginAccessToken(input: {
       refreshToken: input.refresh.refreshToken,
     },
   });
+
+  if (!result.ok) {
+    throw new Error(result.summary);
+  }
 
   return oauthTokenResponseSchema.parse(result.data);
 }
