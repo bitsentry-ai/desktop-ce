@@ -416,6 +416,51 @@ describe('AgentRuntimeService runbook outcomes', () => {
     expect(directRunbookContext).toContain('Kanye Rest said the service is healthy.')
   })
 
+  it('does not directly execute a named runbook when the user is only asking whether to run it', async () => {
+    const sentEvents: AgentRuntimeEventPayload[] = []
+    const runbookStore = {
+      list: vi.fn().mockResolvedValue([
+        makeRunbook('rb-kanye-rest', 'Kanye Rest', [
+          {
+            id: 'step-1',
+            type: 'llm',
+            title: 'Read Kanye Rest output',
+            prompt: 'Summarize Kanye Rest.',
+          },
+        ]),
+      ]),
+    }
+    const runbookExecutionService = {
+      start: vi.fn(),
+      waitForCompletion: vi.fn(),
+      get: vi.fn().mockResolvedValue(null),
+      getLatestForIncidentThread: vi.fn().mockResolvedValue(null),
+    }
+    const llmAdapter = {
+      chatWithTools: vi.fn().mockResolvedValue({
+        content: 'You may want to run Kanye Rest if you need the latest result.',
+        toolCalls: [],
+      }),
+    }
+    const service = createRuntime({
+      llmAdapter,
+      runbookStore,
+      runbookExecutionService,
+      sentEvents,
+    })
+
+    await service.start({
+      prompt: 'Should we run Kanye Rest?',
+      incidentThreadId: 'incident-kanye',
+      llm: { providerKey: 'codex', model: 'gpt-5.4-mini' },
+    })
+
+    await waitForCondition(() => llmAdapter.chatWithTools.mock.calls.length === 1)
+
+    expect(runbookExecutionService.start).not.toHaveBeenCalled()
+    expect(getLlmCallMessages(llmAdapter, 0).some((message) => message.role === 'tool')).toBe(false)
+  })
+
   it('continues from Sentry output to backend logs using the derived window', async () => {
     const sentryExecution = makeExecution()
     const logsExecution = makeExecution({

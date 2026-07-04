@@ -661,17 +661,43 @@ function normalizeRunbookMention(value: string): string {
     .replace(/\s+/g, ' ')
 }
 
-function hasExplicitRunbookExecutionIntent(rawText: string, normalizedText: string): boolean {
+function hasRunbookExecutionBlocker(rawText: string, normalizedText: string): boolean {
   const lowerText = rawText.toLowerCase()
   if (/\b(don't|dont|do not|never|not)\b/.test(lowerText)) {
-    return false
+    return true
   }
 
   if (/\b(should|would)\s+(we|i|you)\s+(run|start|execute|trigger|launch)\b/.test(normalizedText)) {
+    return true
+  }
+
+  return false
+}
+
+function hasExplicitRunbookExecutionIntent(rawText: string, normalizedText: string): boolean {
+  if (hasRunbookExecutionBlocker(rawText, normalizedText)) {
     return false
   }
 
   return /\b(run|start|execute|trigger|launch)\b/.test(normalizedText)
+}
+
+function asksForNamedRunbookOutput(
+  rawText: string,
+  normalizedText: string,
+  normalizedRunbookTitle: string,
+): boolean {
+  if (normalizedRunbookTitle.length === 0 || hasRunbookExecutionBlocker(rawText, normalizedText)) {
+    return false
+  }
+
+  if (!normalizedText.includes(normalizedRunbookTitle)) {
+    return false
+  }
+
+  const resultRequestPattern =
+    /\b(what|summarize|summary|result|results|output|said|says|showed|shows|found|finds|reported|reports|returned|returns|figure out|inspect|check)\b/
+  return resultRequestPattern.test(normalizedText)
 }
 
 function findLatestUserMessageIndex(messages: ChatMessage[]): number {
@@ -2455,10 +2481,6 @@ export class AgentRuntimeService {
     if (normalizedUserText.length === 0) {
       return null
     }
-    if (!hasExplicitRunbookExecutionIntent(userText, normalizedUserText)) {
-      return null
-    }
-
     const matches = (await this.listExecutableRunbooks()).filter((runbook) => {
       const normalizedTitle = normalizeRunbookMention(runbook.title)
       return normalizedTitle.length > 0 && normalizedUserText.includes(normalizedTitle)
@@ -2469,6 +2491,14 @@ export class AgentRuntimeService {
     }
 
     const [runbook] = matches
+    const normalizedRunbookTitle = normalizeRunbookMention(runbook.title)
+    if (
+      !hasExplicitRunbookExecutionIntent(userText, normalizedUserText) &&
+      !asksForNamedRunbookOutput(userText, normalizedUserText, normalizedRunbookTitle)
+    ) {
+      return null
+    }
+
     log.info(`[agent-runtime:${session.id}] Running explicitly mentioned runbook through the app runtime: ${runbook.title}`)
 
     const result = await this.executeRunbook(session, {
