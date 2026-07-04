@@ -434,15 +434,8 @@ describe("Sentry external source sync", () => {
       additionalMetadata: { pluginId: "posthog" },
       lastSyncAt: "2026-06-01T08:30:00.000Z",
     });
-    const descriptor = createPostHogPluginDescriptor();
     const runtime = new TestPluginRuntimeService([
-      {
-        ...descriptor,
-        actions: [
-          ...descriptor.actions,
-          createProviderAction("list_issue_events"),
-        ],
-      },
+      createPostHogPluginDescriptor(),
     ]);
     runtime.executeActionMock.mockResolvedValue({
       pluginId: "posthog",
