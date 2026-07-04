@@ -461,6 +461,52 @@ describe('AgentRuntimeService runbook outcomes', () => {
     expect(getLlmCallMessages(llmAdapter, 0).some((message) => message.role === 'tool')).toBe(false)
   })
 
+  it('does not directly execute a named runbook that requires parameters', async () => {
+    const runbookStore = {
+      list: vi.fn().mockResolvedValue([
+        makeRunbook('rb-backend-logs', 'Check Backend Logs', [
+          {
+            id: 'step-1',
+            type: 'shell',
+            title: 'Read backend logs',
+            command: 'journalctl --since {{since}} --until {{until}}',
+            parameters: [
+              { id: 'since-param', key: 'since', required: true },
+              { id: 'until-param', key: 'until', required: true },
+            ],
+          },
+        ]),
+      ]),
+    }
+    const runbookExecutionService = {
+      start: vi.fn(),
+      waitForCompletion: vi.fn(),
+      get: vi.fn().mockResolvedValue(null),
+      getLatestForIncidentThread: vi.fn().mockResolvedValue(null),
+    }
+    const llmAdapter = {
+      chatWithTools: vi.fn().mockResolvedValue({
+        content: 'I will run Check Backend Logs with the supplied window.',
+        toolCalls: [],
+      }),
+    }
+    const service = createRuntime({
+      llmAdapter,
+      runbookStore,
+      runbookExecutionService,
+    })
+
+    await service.start({
+      prompt: 'Run Check Backend Logs since 2026-05-28 09:15 UTC until 2026-05-28 09:25 UTC.',
+      incidentThreadId: 'incident-logs',
+      llm: { providerKey: 'codex', model: 'gpt-5.4-mini' },
+    })
+
+    await waitForCondition(() => llmAdapter.chatWithTools.mock.calls.length === 1)
+
+    expect(runbookExecutionService.start).not.toHaveBeenCalled()
+  })
+
   it('continues from Sentry output to backend logs using the derived window', async () => {
     const sentryExecution = makeExecution()
     const logsExecution = makeExecution({

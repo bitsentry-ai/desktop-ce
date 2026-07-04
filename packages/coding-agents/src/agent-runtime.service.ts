@@ -700,6 +700,10 @@ function asksForNamedRunbookOutput(
   return resultRequestPattern.test(normalizedText)
 }
 
+function runbookRequiresParameterValues(runbook: RunbookRecord): boolean {
+  return runbook.actions.some((action) => (action.parameters?.length ?? 0) > 0)
+}
+
 function findLatestUserMessageIndex(messages: ChatMessage[]): number {
   for (let index = messages.length - 1; index >= 0; index--) {
     if (messages[index]?.role === 'user') {
@@ -2491,6 +2495,10 @@ export class AgentRuntimeService {
     }
 
     const [runbook] = matches
+    if (runbookRequiresParameterValues(runbook)) {
+      return null
+    }
+
     const normalizedRunbookTitle = normalizeRunbookMention(runbook.title)
     if (
       !hasExplicitRunbookExecutionIntent(userText, normalizedUserText) &&
