@@ -600,6 +600,7 @@ const plugin: DesktopCodePlugin = {
         envRedirectUriName: "SENTRY_REDIRECT_URI",
         defaultRedirectUri: "http://127.0.0.1:48174/oauth/sentry/callback",
         scopes: ["org:read", "project:read", "event:read"],
+        publicClient: false,
       },
     },
   },

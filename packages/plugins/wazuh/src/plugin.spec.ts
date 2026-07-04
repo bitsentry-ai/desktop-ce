@@ -48,6 +48,12 @@ describe("Wazuh plugin package", () => {
       metadata: {
         errorSource: {
           sourceType: "wazuh",
+          setupFields: expect.arrayContaining([
+            expect.objectContaining({
+              key: "indexUrl",
+              required: true,
+            }),
+          ]),
         },
       },
     });

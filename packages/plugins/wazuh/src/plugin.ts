@@ -453,7 +453,7 @@ const plugin: DesktopCodePlugin = {
           label: "Wazuh index URL",
           placeholder: "https://wazuh.example.com:9200",
           description: "OpenSearch/Indexer base URL for Wazuh alerts.",
-          required: false,
+          required: true,
           control: "text",
         },
         {

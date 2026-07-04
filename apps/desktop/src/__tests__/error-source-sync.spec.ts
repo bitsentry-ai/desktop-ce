@@ -173,8 +173,8 @@ describe("Sentry external source sync", () => {
         $queryRawUnsafe: () => Promise.resolve([]),
         telemetryDaily: { upsert: vi.fn() },
         telemetryEntry: {
-          findUnique: vi.fn(),
-          create: vi.fn(),
+          findUnique: vi.fn().mockResolvedValue(null),
+          create: vi.fn().mockResolvedValue({ id: 1 }),
         },
         diagnosisEntry: { upsert: vi.fn() },
         diagnosisEntrySourceRef: { upsert: vi.fn() },
@@ -367,6 +367,91 @@ describe("Sentry external source sync", () => {
         lastSyncStatus: "success",
         lastSyncError: null,
         lastSyncAt: "2026-06-01T09:00:00.000Z",
+      }),
+    );
+  });
+
+  it("fails capped plugin syncs without advancing the watermark", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-06-01T09:00:00.000Z"));
+
+    const source = makeSource({
+      id: "source-posthog",
+      sourceType: "posthog",
+      name: "Production PostHog",
+      additionalMetadata: { pluginId: "posthog" },
+      lastSyncAt: "2026-06-01T08:30:00.000Z",
+    });
+    const runtime = new TestPluginRuntimeService([
+      createPostHogPluginDescriptor(),
+    ]);
+    runtime.executeActionMock.mockResolvedValue({
+      pluginId: "posthog",
+      actionId: "list_issues",
+      ok: true,
+      status: 200,
+      summary: "Listed PostHog issues.",
+      data: {
+        issues: [
+          {
+            id: "issue-1",
+            title: "Repeated issue",
+            level: "error",
+            lastSeen: "2026-06-01T08:45:00.000Z",
+          },
+        ],
+        hasMore: true,
+        nextCursor: "next-page",
+      },
+    });
+    const sourcesRepository = {
+      findById: vi.fn().mockResolvedValue(source),
+      findSyncEnabled: vi.fn().mockResolvedValue([source]),
+      updateSyncStatus: vi.fn().mockResolvedValue(undefined),
+      update: vi.fn().mockResolvedValue(source),
+    };
+    const service = new ErrorSourceSyncService(
+      {
+        $queryRawUnsafe: () => Promise.resolve([]),
+        telemetryDaily: { upsert: vi.fn().mockResolvedValue({ id: 1 }) },
+        telemetryEntry: {
+          findUnique: vi.fn().mockResolvedValue(null),
+          create: vi.fn().mockResolvedValue({ id: 1 }),
+        },
+        diagnosisEntry: { upsert: vi.fn().mockResolvedValue({ id: 1 }) },
+        diagnosisEntrySourceRef: { upsert: vi.fn() },
+      },
+      sourcesRepository,
+      {
+        upsert: vi.fn((input: UpsertErrorIssueInput) =>
+          Promise.resolve(makeIssue(input)),
+        ),
+        findById: vi.fn(),
+      },
+      {
+        upsert: vi.fn(),
+        findById: vi.fn(),
+      },
+      runtime,
+    );
+
+    await expect(service.syncSourceById(source.id)).rejects.toThrow(
+      "Plugin sync reached the 10 page limit before all issues were fetched.",
+    );
+    expect(runtime.executeActionMock).toHaveBeenCalledTimes(10);
+    expect(sourcesRepository.update).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        id: source.id,
+        lastSyncStatus: "failed",
+        lastSyncError:
+          "Plugin sync reached the 10 page limit before all issues were fetched.",
+      }),
+    );
+    expect(sourcesRepository.update).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: source.id,
+        lastSyncAt: "2026-06-01T09:00:00.000Z",
+        lastSyncStatus: "success",
       }),
     );
   });

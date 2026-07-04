@@ -32,6 +32,9 @@ describe("Sentry plugin package", () => {
       metadata: {
         errorSource: {
           sourceType: "sentry",
+          oauth: {
+            publicClient: false,
+          },
         },
       },
     });

@@ -1471,6 +1471,12 @@ export class ErrorSourceSyncService {
       }
     }
 
+    if (hasMore) {
+      throw new Error(
+        `Plugin sync reached the ${String(MAX_GENERIC_PLUGIN_ISSUE_PAGES)} page limit before all issues were fetched.`,
+      );
+    }
+
     await this.backfillMissingDiagnosisEntriesForSource(source.id);
     await this.sourcesRepository.update({
       id: source.id,
