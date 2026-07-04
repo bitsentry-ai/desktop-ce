@@ -450,6 +450,77 @@ describe("desktop error source handlers", () => {
     );
   });
 
+  it("rejects failed plugin organization probe results", async () => {
+    const runtime = new TestPluginRuntimeService([
+      createPostHogPluginDescriptor(),
+    ]);
+    runtime.executeActionMock.mockResolvedValue({
+      pluginId: "posthog",
+      actionId: "list_organizations",
+      ok: false,
+      status: 401,
+      summary: "Invalid PostHog token.",
+      data: [],
+    });
+    const oauthBindings = createDesktopOauthManagerBindings();
+    const handlers = createDesktopErrorSourcesHandlers(createDb(), {
+      OauthManagerService: oauthBindings.OauthManagerService,
+      pluginRuntime: runtime,
+    });
+
+    await expect(
+      handlers["errorSources:probeConnection"]?.({
+        pluginId: "posthog",
+        sourceType: "posthog",
+        setupValues: {
+          authToken: "phx-token",
+        },
+      }),
+    ).rejects.toThrow("Invalid PostHog token.");
+  });
+
+  it("rejects failed plugin project probe results", async () => {
+    const runtime = new TestPluginRuntimeService([
+      createPostHogPluginDescriptor(),
+    ]);
+    runtime.executeActionMock.mockImplementation((input) => {
+      if (input.actionId === "list_organizations") {
+        return Promise.resolve({
+          pluginId: input.pluginId,
+          actionId: input.actionId,
+          ok: true,
+          status: 200,
+          summary: "Listed organizations.",
+          data: [{ slug: "org-1", name: "Production" }],
+        });
+      }
+
+      return Promise.resolve({
+        pluginId: input.pluginId,
+        actionId: input.actionId,
+        ok: false,
+        status: 500,
+        summary: "PostHog projects unavailable.",
+        data: [],
+      });
+    });
+    const oauthBindings = createDesktopOauthManagerBindings();
+    const handlers = createDesktopErrorSourcesHandlers(createDb(), {
+      OauthManagerService: oauthBindings.OauthManagerService,
+      pluginRuntime: runtime,
+    });
+
+    await expect(
+      handlers["errorSources:probeConnection"]?.({
+        pluginId: "posthog",
+        sourceType: "posthog",
+        setupValues: {
+          authToken: "phx-token",
+        },
+      }),
+    ).rejects.toThrow("PostHog projects unavailable.");
+  });
+
   it("rejects connection probes without a matching code plugin", async () => {
     const runtime = new TestPluginRuntimeService([]);
     const oauthBindings = createDesktopOauthManagerBindings();
