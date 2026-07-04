@@ -1,9 +1,166 @@
-import { describe, expect, it } from 'vitest'
+import { chmod, mkdtemp, readFile, rm, writeFile } from 'fs/promises'
+import os from 'os'
+import path from 'path'
+import { afterEach, describe, expect, it } from 'vitest'
 import {
   chooseCursorPermissionResponse,
   cursorDeltasFromSessionUpdate,
+  executeCursor,
   extractCursorModelIds,
 } from '@bitsentry-ce/coding-agents/cursor-provider.service'
+
+const tmpDirs: string[] = []
+
+interface LoggedCursorMessage {
+  method?: string
+  params?: unknown
+}
+
+const DEFAULT_CURSOR_CONFIG_OPTIONS = [
+  {
+    id: 'model',
+    type: 'select',
+    category: 'model',
+    name: 'Model',
+    options: [{ value: 'composer-2.5', name: 'Composer 2.5' }],
+  },
+  {
+    id: 'reasoning',
+    type: 'select',
+    category: 'reasoning',
+    name: 'Reasoning',
+    options: [
+      { value: 'low', name: 'Low' },
+      { value: 'medium', name: 'Medium' },
+      { value: 'high', name: 'High' },
+    ],
+  },
+]
+
+function parseJsonLine(line: string): unknown {
+  return JSON.parse(line) as unknown
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object'
+}
+
+function parseLoggedCursorMessage(line: string): LoggedCursorMessage {
+  const parsed = parseJsonLine(line)
+  if (!isRecord(parsed)) {
+    throw new Error(`Expected logged cursor message object: ${line}`)
+  }
+
+  return parsed
+}
+
+function getMessageParams(message: LoggedCursorMessage): Record<string, unknown> | undefined {
+  if (isRecord(message.params)) {
+    return message.params
+  }
+
+  return undefined
+}
+
+async function readLoggedMessages(logPath: string): Promise<LoggedCursorMessage[]> {
+  const contents = await readFile(logPath, 'utf8').catch(() => '')
+  return contents
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => parseLoggedCursorMessage(line))
+}
+
+async function createMockCursorAgent(
+  configOptions: unknown[] = DEFAULT_CURSOR_CONFIG_OPTIONS,
+): Promise<{ binaryPath: string; logPath: string; cwd: string }> {
+  const cwd = await mkdtemp(path.join(os.tmpdir(), 'cursor-provider-'))
+  tmpDirs.push(cwd)
+
+  const logPath = path.join(cwd, 'messages.jsonl')
+  const configOptionsJson = JSON.stringify(configOptions)
+  const script = `
+const fs = require('fs')
+const readline = require('readline')
+
+const logPath = ${JSON.stringify(logPath)}
+const logMessage = (message) => {
+  fs.appendFileSync(logPath, JSON.stringify(message) + '\\n')
+}
+
+if (!process.argv.slice(2).includes('acp')) {
+  process.exit(64)
+}
+
+const rl = readline.createInterface({ input: process.stdin })
+rl.on('line', (line) => {
+  const message = JSON.parse(line)
+  logMessage(message)
+
+  if (message.method === 'initialize') {
+    process.stdout.write(JSON.stringify({
+      jsonrpc: '2.0',
+      id: message.id,
+      result: { protocolVersion: 1, agentCapabilities: {}, authMethods: [] },
+    }) + '\\n')
+    return
+  }
+
+  if (message.method === 'session/new') {
+    process.stdout.write(JSON.stringify({
+      jsonrpc: '2.0',
+      id: message.id,
+      result: {
+        sessionId: 'session-1',
+        configOptions: ${configOptionsJson},
+      },
+    }) + '\\n')
+    return
+  }
+
+  if (message.method === 'session/set_config_option') {
+    process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id: message.id, result: {} }) + '\\n')
+    return
+  }
+
+  if (message.method === 'session/prompt') {
+    process.stdout.write(JSON.stringify({
+      jsonrpc: '2.0',
+      method: 'session/update',
+      params: {
+        sessionId: 'session-1',
+        update: {
+          sessionUpdate: 'agent_message_chunk',
+          content: { type: 'text', text: 'done' },
+        },
+      },
+    }) + '\\n')
+    process.stdout.write(JSON.stringify({
+      jsonrpc: '2.0',
+      id: message.id,
+      result: { stopReason: 'end_turn' },
+    }) + '\\n')
+  }
+})
+`
+
+  if (process.platform === 'win32') {
+    const scriptPath = path.join(cwd, 'mock-cursor-agent.cjs')
+    await writeFile(scriptPath, script)
+    const binaryPath = path.join(cwd, 'cursor-agent.cmd')
+    await writeFile(binaryPath, `@"${process.execPath}" "${scriptPath}" %*\r\n`)
+    return { binaryPath, logPath, cwd }
+  }
+
+  const binaryPath = path.join(cwd, 'cursor-agent')
+  await writeFile(binaryPath, `#!/usr/bin/env node\n${script}`)
+  await chmod(binaryPath, 0o755)
+  return { binaryPath, logPath, cwd }
+}
+
+afterEach(async () => {
+  await Promise.all(tmpDirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })))
+})
 
 const permissionOptions = [
   { optionId: 'allow-once', name: 'Allow once', kind: 'allow_once' },
@@ -192,6 +349,78 @@ describe('Cursor provider behavior', () => {
         ],
       }),
     ).toEqual(['claude-opus-4-6', 'gpt-5', 'claude-sonnet-4-6', 'gpt-5.4'])
+  })
+
+  it('sets Cursor effort through advertised ACP config options', async () => {
+    const mock = await createMockCursorAgent()
+
+    await expect(
+      executeCursor({
+        prompt: 'Summarize the incident',
+        binaryPath: mock.binaryPath,
+        abortController: new AbortController(),
+        cwd: mock.cwd,
+        model: 'composer-2.5',
+        traitValues: { effort: 'high' },
+      }),
+    ).resolves.toMatchObject({ output: 'done' })
+
+    const messages = await readLoggedMessages(mock.logPath)
+    expect(messages).toContainEqual(expect.objectContaining({
+      method: 'session/set_config_option',
+      params: {
+        sessionId: 'session-1',
+        configId: 'model',
+        value: 'composer-2.5',
+      },
+    }))
+    expect(messages).toContainEqual(expect.objectContaining({
+      method: 'session/set_config_option',
+      params: {
+        sessionId: 'session-1',
+        configId: 'reasoning',
+        value: 'high',
+      },
+    }))
+  })
+
+  it('skips Cursor effort-looking options that cannot accept the selected value', async () => {
+    const mock = await createMockCursorAgent([
+      DEFAULT_CURSOR_CONFIG_OPTIONS[0],
+      {
+        id: 'thinking',
+        type: 'boolean',
+        category: 'reasoning',
+        name: 'Thinking',
+      },
+      DEFAULT_CURSOR_CONFIG_OPTIONS[1],
+    ])
+
+    await expect(
+      executeCursor({
+        prompt: 'Summarize the incident',
+        binaryPath: mock.binaryPath,
+        abortController: new AbortController(),
+        cwd: mock.cwd,
+        model: 'composer-2.5',
+        traitValues: { effort: 'high' },
+      }),
+    ).resolves.toMatchObject({ output: 'done' })
+
+    const messages = await readLoggedMessages(mock.logPath)
+    expect(messages.some((message) => {
+      if (message.method !== 'session/set_config_option') return false
+      const params = getMessageParams(message)
+      return params?.configId === 'thinking' && params.value === 'high'
+    })).toBe(false)
+    expect(messages).toContainEqual(expect.objectContaining({
+      method: 'session/set_config_option',
+      params: {
+        sessionId: 'session-1',
+        configId: 'reasoning',
+        value: 'high',
+      },
+    }))
   })
 
 })

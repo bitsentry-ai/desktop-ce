@@ -18,7 +18,30 @@ import { createCodingAgentsProcessEnv } from './coding-agents-process-env'
 import { createCommandInvocation, resolveOpenCodeWindowsBinary } from './cli-binary-resolution'
 
 const SETTINGS_KEY = 'local_ai_settings'
-const CURSOR_CATALOG_MODELS = ['composer-2.5']
+const CLAUDE_CODE_CATALOG_MODELS = [
+  'claude-sonnet-5',
+  'claude-fable-5',
+  'claude-opus-4-8',
+  'claude-opus-4-8-fast',
+  'claude-opus-4-7',
+  'claude-opus-4-6',
+  'claude-opus-4-5',
+  'claude-sonnet-4-6',
+  'claude-haiku-4-5',
+]
+const CURSOR_CATALOG_MODELS = [
+  'auto',
+  'composer-2.5',
+  'opus-4.8',
+  'gpt-5.5',
+  'fable-5',
+  'sonnet-5',
+  'sonnet-4.6',
+  'codex-5.3',
+  'opus-4.7',
+  'grok-build-0.1',
+]
+const OPEN_CODE_MODELS_LOCK_RETRY_DELAYS_MS = [150, 350]
 
 export interface CodingAgentsSettingsStore {
   setting: {
@@ -68,6 +91,16 @@ function effortToMaxTurns(effort: string | undefined): number | undefined {
   return EFFORT_MAX_TURNS[effort]
 }
 
+function readTraitString(value: string | boolean | undefined): string | undefined {
+  if (typeof value !== 'string') return undefined
+  const normalized = value.trim()
+  if (normalized.length > 0) {
+    return normalized
+  }
+
+  return undefined
+}
+
 function createDefaultLocalAiSettings(): LocalAiSettings {
   return structuredClone(DEFAULT_LOCAL_AI_SETTINGS)
 }
@@ -103,6 +136,9 @@ function runOpenCodeModelsCommand(binaryPath: string, args: string[] = []): Prom
         if (error instanceof Error) {
           message = error.message
         }
+        if (stderr.trim().length > 0 && !message.includes(stderr.trim())) {
+          message = `${message}\n${stderr.trim()}`
+        }
         reject(new Error(message))
         return
       }
@@ -122,9 +158,26 @@ function parseOpenCodeModelList(stdout: string, stderr: string): string[] {
   return [...models]
 }
 
+function isOpenCodeDatabaseLockedError(error: unknown): boolean {
+  if (!(error instanceof Error)) {
+    return false
+  }
+
+  return /\bdatabase is locked\b/i.test(error.message)
+}
+
+function wait(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms)
+  })
+}
+
 export class CodingAgentsProviderService {
   private settings: LocalAiSettings = createDefaultLocalAiSettings()
   private probeCache = new Map<LocalAiProviderKey, CLIProbeResult>()
+  private openCodeModelsInFlight:
+    | { key: string; promise: Promise<string[]> }
+    | undefined
 
   constructor(
     private readonly db: CodingAgentsSettingsStore,
@@ -417,7 +470,8 @@ export class CodingAgentsProviderService {
         cwd,
         model,
         accessLevel,
-        maxTurns: effortToMaxTurns(traitValues?.effort as string | undefined),
+        maxTurns: effortToMaxTurns(readTraitString(traitValues?.effort)),
+        contextWindow: readTraitString(traitValues?.contextWindow),
         onDelta,
       })
     }
@@ -465,7 +519,7 @@ export class CodingAgentsProviderService {
 
   async listModels(provider: LocalAiProviderKey): Promise<string[]> {
     if (provider === 'claude_code') {
-      return ['claude-sonnet-4-6', 'claude-opus-4-6', 'claude-haiku-4-5']
+      return [...CLAUDE_CODE_CATALOG_MODELS]
     }
 
     if (provider === 'opencode') {
@@ -483,10 +537,28 @@ export class CodingAgentsProviderService {
   }
 
   private async listOpenCodeModels(): Promise<string[]> {
+    const cacheKey = JSON.stringify({
+      binaryPath: this.settings.opencode.binaryPath,
+      args: this.settings.opencode.opencodeArgs,
+    })
+    if (this.openCodeModelsInFlight?.key === cacheKey) {
+      return this.openCodeModelsInFlight.promise
+    }
+
+    const promise = this.loadOpenCodeModels().finally(() => {
+      if (this.openCodeModelsInFlight?.key === cacheKey) {
+        this.openCodeModelsInFlight = undefined
+      }
+    })
+    this.openCodeModelsInFlight = { key: cacheKey, promise }
+    return promise
+  }
+
+  private async loadOpenCodeModels(): Promise<string[]> {
     try {
       const detected = await detectBinary('opencode', this.settings.opencode.binaryPath)
       const binaryPath = detected ?? this.settings.opencode.binaryPath
-      const result = await runOpenCodeModelsCommand(
+      const result = await this.runOpenCodeModelsCommandWithLockRetry(
         binaryPath,
         this.settings.opencode.opencodeArgs,
       )
@@ -500,6 +572,29 @@ export class CodingAgentsProviderService {
       })
       return []
     }
+  }
+
+  private async runOpenCodeModelsCommandWithLockRetry(
+    binaryPath: string,
+    args: string[] = [],
+  ): Promise<{ stdout: string; stderr: string }> {
+    let lastError: unknown
+    for (const delayMs of [0, ...OPEN_CODE_MODELS_LOCK_RETRY_DELAYS_MS]) {
+      if (delayMs > 0) {
+        await wait(delayMs)
+      }
+
+      try {
+        return await runOpenCodeModelsCommand(binaryPath, args)
+      } catch (err) {
+        lastError = err
+        if (!isOpenCodeDatabaseLockedError(err)) {
+          throw err
+        }
+      }
+    }
+
+    throw lastError
   }
 
   private async listCodexModels(): Promise<string[]> {

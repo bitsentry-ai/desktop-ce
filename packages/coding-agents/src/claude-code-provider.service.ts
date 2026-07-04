@@ -26,12 +26,14 @@ export interface ClaudeCodeExecutionOptions {
   model?: string
   accessLevel?: ClaudeCodeAccessLevel
   maxTurns?: number
+  contextWindow?: string
   allowedTools?: string[]
   onDelta?: (delta: LocalAiStreamDelta) => void
   debug?: ClaudeCodeDebugRecorder
 }
 
 type ClaudeCodePermissionMode = 'acceptEdits' | 'bypassPermissions'
+type ClaudeCodeSdkBeta = 'context-1m-2025-08-07'
 
 interface ClaudeCodeSpawnOptions {
   command: string
@@ -54,6 +56,7 @@ interface ClaudeCodeQueryOptions {
   env: NodeJS.ProcessEnv
   permissionMode?: ClaudeCodePermissionMode
   allowDangerouslySkipPermissions?: boolean
+  betas?: ClaudeCodeSdkBeta[]
   allowedTools?: string[]
   tools?: []
   spawnClaudeCodeProcess?: (
@@ -83,6 +86,7 @@ type ClaudeSdkQuery = (params: {
 }) => ClaudeSdkSession
 
 let testClaudeSdkQueryLoader: (() => Promise<ClaudeSdkQuery> | ClaudeSdkQuery) | undefined
+const CLAUDE_ONE_M_CONTEXT_BETA: ClaudeCodeSdkBeta = 'context-1m-2025-08-07'
 
 export function __setLoadClaudeSdkQueryForTests(
   loader: (() => Promise<ClaudeSdkQuery> | ClaudeSdkQuery) | undefined,
@@ -514,10 +518,24 @@ function buildClaudeCodeQueryOptions(
     env: createClaudeCodeSubscriptionEnv(process.env),
   }
   applyClaudePermissionOptions(queryOptions, permissionMode)
+  applyClaudeContextWindowOption(queryOptions, options.contextWindow)
   applyClaudeToolOptions(queryOptions, resolvedTools)
   applyClaudeSpawnerOption(queryOptions, shouldWrapWindowsCmdShim)
 
   return queryOptions
+}
+
+function applyClaudeContextWindowOption(
+  queryOptions: ClaudeCodeQueryOptions,
+  contextWindow: string | undefined,
+): void {
+  if (contextWindow?.trim().toLowerCase() !== '1m') {
+    return
+  }
+
+  queryOptions.betas = [
+    ...new Set([...(queryOptions.betas ?? []), CLAUDE_ONE_M_CONTEXT_BETA]),
+  ]
 }
 
 function applyClaudePermissionOptions(
