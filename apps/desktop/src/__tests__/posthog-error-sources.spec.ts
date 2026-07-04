@@ -114,7 +114,7 @@ function createOAuthDescriptor(input: {
     version: 'test',
     description: `${input.pluginId} OAuth test plugin`,
     metadata: {
-      errorSource: {
+      dataSource: {
         sourceType: input.sourceType,
         oauth: input.oauth,
         setupFields: [],

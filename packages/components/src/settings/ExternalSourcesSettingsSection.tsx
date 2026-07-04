@@ -1,4 +1,4 @@
-import ErrorSourcesManager from "../integrations/ErrorSourcesManager";
+import DataSourcesManager from "../integrations/DataSourcesManager";
 
 interface ExternalSourcesSettingsSectionProps {
   id?: string;
@@ -15,7 +15,7 @@ export function ExternalSourcesSettingsSection({
       data-tour="settings-external-sources"
       className={className}
     >
-      <ErrorSourcesManager showHeader={true} />
+      <DataSourcesManager showHeader={true} />
     </section>
   );
 }

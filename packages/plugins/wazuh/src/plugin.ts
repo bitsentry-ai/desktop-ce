@@ -446,7 +446,7 @@ const plugin: DesktopCodePlugin = {
   version: "0.1.0",
   description: "Queries Wazuh/OpenSearch alert indexes as a local code plugin.",
   metadata: {
-    errorSource: {
+    dataSource: {
       sourceType: "wazuh",
       setupFields: [
         {
@@ -476,7 +476,7 @@ const plugin: DesktopCodePlugin = {
       ],
     },
   },
-  errorSource: {
+  dataSource: {
     resolveSetup: resolveWazuhErrorSourceSetup,
     buildAuth: buildWazuhErrorSourceAuth,
     buildProbeAuth: buildWazuhErrorSourceProbeAuth,

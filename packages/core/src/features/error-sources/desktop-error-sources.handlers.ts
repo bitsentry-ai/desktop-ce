@@ -362,7 +362,7 @@ function readPluginDataSourceSetupFields(
   pluginId: string,
 ): DesktopPluginDataSourceSetupField[] {
   const plugin = pluginRuntime.getPlugin(pluginId);
-  return plugin?.metadata?.errorSource?.setupFields ?? [];
+  return plugin?.metadata?.dataSource?.setupFields ?? [];
 }
 
 function hasMatchingErrorSourcePlugin(
@@ -370,7 +370,7 @@ function hasMatchingErrorSourcePlugin(
   pluginId: string,
   sourceType: ErrorSourceType,
 ): boolean {
-  const errorSource = pluginRuntime.getPlugin(pluginId)?.metadata?.errorSource;
+  const errorSource = pluginRuntime.getPlugin(pluginId)?.metadata?.dataSource;
   return errorSource?.sourceType === sourceType;
 }
 
@@ -768,7 +768,7 @@ export function createDesktopErrorSourcesHandlers(
         `[error-sources] probeConnection:start type=${sourceType} org=${requestedOrgSlug ?? "<auto>"}`,
       );
 
-      if (plugin?.metadata?.errorSource?.sourceType !== sourceType) {
+      if (plugin?.metadata?.dataSource?.sourceType !== sourceType) {
         throw new Error(
           `Error source plugin "${pluginId}" does not match source type ${sourceType}`,
         );
@@ -1136,7 +1136,7 @@ export function createDesktopErrorSourcesHandlers(
       const pluginId = readSourcePluginId(source);
       const plugin = pluginRuntime.getPlugin(pluginId);
 
-      if (plugin?.metadata?.errorSource?.sourceType !== source.sourceType) {
+      if (plugin?.metadata?.dataSource?.sourceType !== source.sourceType) {
         throw new Error(
           `Error source plugin "${pluginId}" does not match source type ${source.sourceType}`,
         );

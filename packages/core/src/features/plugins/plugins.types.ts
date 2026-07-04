@@ -185,7 +185,7 @@ export type DesktopPluginType = z.infer<typeof desktopPluginTypeSchema>;
 export const DEFAULT_DESKTOP_PLUGIN_TYPE: DesktopPluginType = "data_source";
 
 export const desktopPluginDescriptorMetadataSchema = z.object({
-  errorSource: z
+  dataSource: z
     .object({
       sourceType: desktopPluginDataSourceTypeSchema,
       setupFields: z.array(desktopPluginDataSourceSetupFieldSchema).default([]),
@@ -389,7 +389,7 @@ export const desktopCodePluginSchema = desktopPluginDescriptorSchema
   })
   .extend({
     actions: z.array(desktopCodePluginActionSchema),
-    errorSource: desktopCodePluginDataSourceSchema.optional(),
+    dataSource: desktopCodePluginDataSourceSchema.optional(),
   });
 
 export type DesktopCodePlugin = z.infer<typeof desktopCodePluginSchema>;

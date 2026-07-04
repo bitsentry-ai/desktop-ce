@@ -170,7 +170,7 @@ function createPostHogPluginDescriptor(): DesktopPluginDescriptor {
     version: "1.0.0",
     description: "PostHog code plugin.",
     metadata: {
-      errorSource: {
+      dataSource: {
         sourceType: "posthog",
         oauth: posthogOauthConfig,
         setupFields: [

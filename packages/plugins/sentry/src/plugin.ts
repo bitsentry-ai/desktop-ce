@@ -570,7 +570,7 @@ const plugin: DesktopCodePlugin = {
   version: "0.1.0",
   description: "Queries Sentry organizations, projects, issues, and events.",
   metadata: {
-    errorSource: {
+    dataSource: {
       sourceType: "sentry",
       setupFields: [
         {
@@ -605,7 +605,7 @@ const plugin: DesktopCodePlugin = {
       },
     },
   },
-  errorSource: {
+  dataSource: {
     resolveSetup: resolveSentryErrorSourceSetup,
     buildAuth: buildSentryErrorSourceAuth,
     buildProbeAuth: buildSentryErrorSourceProbeAuth,

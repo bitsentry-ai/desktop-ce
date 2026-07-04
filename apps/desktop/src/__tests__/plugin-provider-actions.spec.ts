@@ -43,7 +43,7 @@ function createPluginDescriptor(
     version: '1.0.0',
     description: 'Code plugin descriptor for PostHog.',
     metadata: {
-      errorSource: {
+      dataSource: {
         sourceType: 'posthog',
         setupFields: [],
       },
@@ -109,7 +109,7 @@ describe('plugin error source provider actions', () => {
         id: 'github',
         name: 'GitHub',
         metadata: {
-          errorSource: {
+          dataSource: {
             sourceType: 'github',
             setupFields: [],
           },

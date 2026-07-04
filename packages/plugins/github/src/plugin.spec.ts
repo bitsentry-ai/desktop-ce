@@ -64,7 +64,7 @@ describe("GitHub plugin package", () => {
       id: "github",
       referenceRepositoryPath: ".repos/references/plugins/stackstorm-github",
       metadata: {
-        errorSource: {
+        dataSource: {
           sourceType: "github",
         },
       },
@@ -123,7 +123,7 @@ describe("GitHub plugin package", () => {
 
   it("keeps setup and auth mapping inside plugin code", async () => {
     expect(
-      plugin.errorSource?.resolveSetup?.({
+      plugin.dataSource?.resolveSetup?.({
         pluginId: plugin.id,
         setupValues: {
           accessToken: "gh-token",

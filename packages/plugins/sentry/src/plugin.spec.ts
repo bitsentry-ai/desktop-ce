@@ -30,7 +30,7 @@ describe("Sentry plugin package", () => {
     expect(plugin).toMatchObject({
       id: "sentry",
       metadata: {
-        errorSource: {
+        dataSource: {
           sourceType: "sentry",
           oauth: {
             publicClient: false,

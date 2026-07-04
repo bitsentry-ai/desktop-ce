@@ -12,7 +12,7 @@ import { resolveErrorSourceProviderActionId } from "./desktop-plugin-error-sourc
 
 type OAuthPluginDescriptor = {
   metadata?: {
-    errorSource?: {
+    dataSource?: {
       sourceType?: ErrorSourceType;
       oauth?: Partial<OAuthProviderConfig>;
     };
@@ -92,14 +92,14 @@ export function resolvePluginOAuthConfig(input: {
 } {
   const pluginId = resolveErrorSourcePluginId(input);
   const plugin = input.runtime.getPlugin(pluginId);
-  if (plugin?.metadata?.errorSource?.sourceType !== input.sourceType) {
+  if (plugin?.metadata?.dataSource?.sourceType !== input.sourceType) {
     return { pluginId, plugin };
   }
 
   return {
     pluginId,
     plugin,
-    oauth: plugin.metadata.errorSource.oauth,
+    oauth: plugin.metadata.dataSource.oauth,
   };
 }
 

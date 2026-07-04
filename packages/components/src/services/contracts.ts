@@ -612,7 +612,7 @@ export interface PluginDataSourceSetupField {
 }
 
 export interface PluginDescriptorMetadata {
-  errorSource?: PluginDataSourceMetadata;
+  dataSource?: PluginDataSourceMetadata;
 }
 
 export interface PluginDescriptor {

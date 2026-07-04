@@ -46,7 +46,7 @@ describe("Wazuh plugin package", () => {
     expect(plugin).toMatchObject({
       id: "wazuh",
       metadata: {
-        errorSource: {
+        dataSource: {
           sourceType: "wazuh",
           setupFields: expect.arrayContaining([
             expect.objectContaining({

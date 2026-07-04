@@ -534,7 +534,7 @@ const plugin: DesktopCodePlugin = {
   description: "Queries GitHub repositories and issues as a local code plugin.",
   referenceRepositoryPath: ".repos/references/plugins/stackstorm-github",
   metadata: {
-    errorSource: {
+    dataSource: {
       sourceType: "github",
       setupFields: [
         {
@@ -569,7 +569,7 @@ const plugin: DesktopCodePlugin = {
       ],
     },
   },
-  errorSource: {
+  dataSource: {
     resolveSetup: resolveGitHubErrorSourceSetup,
     buildAuth: buildGitHubErrorSourceAuth,
     buildProbeAuth: buildGitHubErrorSourceProbeAuth,

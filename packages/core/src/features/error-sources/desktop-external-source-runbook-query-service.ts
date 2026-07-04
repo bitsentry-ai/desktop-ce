@@ -315,7 +315,7 @@ async function executeCustomPluginQuery(args: {
     args;
   const pluginId = readSourcePluginId(source);
   const plugin = pluginRuntime.getPlugin(pluginId);
-  const metadata = plugin?.metadata?.errorSource;
+  const metadata = plugin?.metadata?.dataSource;
   if (plugin === null || metadata?.sourceType !== source.sourceType) {
     throw new Error(
       `External Source plugin "${pluginId}" does not match source type ${source.sourceType}`,

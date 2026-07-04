@@ -43,7 +43,7 @@ export function resolveErrorSourceProviderActionId(input: {
   action: ErrorSourceProviderActionKey;
 }): string {
   const plugin = input.runtime.getPlugin(input.pluginId);
-  if (plugin?.metadata?.errorSource?.sourceType === input.sourceType) {
+  if (plugin?.metadata?.dataSource?.sourceType === input.sourceType) {
     const actionId = resolveConventionalActionId(plugin, input.action);
     if (actionId !== undefined) {
       return actionId;

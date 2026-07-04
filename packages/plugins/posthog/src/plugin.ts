@@ -1162,7 +1162,7 @@ const plugin: DesktopCodePlugin = {
   version: "0.1.0",
   description: "Queries PostHog organizations, projects, exception issues, and events.",
   metadata: {
-    errorSource: {
+    dataSource: {
       sourceType: "posthog",
       setupFields: [
         {
@@ -1202,7 +1202,7 @@ const plugin: DesktopCodePlugin = {
       },
     },
   },
-  errorSource: {
+  dataSource: {
     resolveSetup: resolvePostHogErrorSourceSetup,
     buildAuth: buildPostHogErrorSourceAuth,
     buildProbeAuth: buildPostHogErrorSourceProbeAuth,

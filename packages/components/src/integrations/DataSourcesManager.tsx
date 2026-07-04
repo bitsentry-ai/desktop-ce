@@ -78,18 +78,18 @@ function toMessage(error: unknown): string {
 function formatStoredSyncErrorMessage(error: unknown, t: Translate): string {
   const message = toMessage(error);
   if (message.trim().length === 0) {
-    return t("common.errorSourcesManager.unknownSyncError");
+    return t("common.dataSourcesManager.unknownSyncError");
   }
 
   if (message === "Worker service endpoint is unavailable.") {
-    return t("common.errorSourcesManager.workerEndpointUnavailable");
+    return t("common.dataSourcesManager.workerEndpointUnavailable");
   }
 
   const match = /^(.+?) API (\d+):\s*(.*)$/i.exec(message);
   if (match === null) return message;
 
   const provider = match[1].trim();
-  const prefix = t("common.errorSourcesManager.apiErrorDetail", {
+  const prefix = t("common.dataSourcesManager.apiErrorDetail", {
     provider,
     status: match[2],
   });
@@ -115,7 +115,7 @@ function toProjectSlugs(raw: string): string[] {
 
 function formatDate(value: string | null, t: (key: string) => string): string {
   if (value === null || value.length === 0) {
-    return t("common.errorSourcesManager.never");
+    return t("common.dataSourcesManager.never");
   }
   const d = new Date(value);
   if (Number.isNaN(d.getTime())) return value;
@@ -128,11 +128,11 @@ function formatSyncStatus(
 ): string {
   switch (value) {
     case "in_progress":
-      return t("common.errorSourcesManager.syncInProgress");
+      return t("common.dataSourcesManager.syncInProgress");
     case "success":
-      return t("common.errorSourcesManager.lastSyncSucceeded");
+      return t("common.dataSourcesManager.lastSyncSucceeded");
     case "failed":
-      return t("common.errorSourcesManager.lastSyncFailed");
+      return t("common.dataSourcesManager.lastSyncFailed");
     default:
       if (value !== undefined && value !== null && value.length > 0) {
         return value.replace(/_/g, " ");
@@ -147,7 +147,7 @@ function formatSyncSummary(
   t: (key: string, options?: Record<string, unknown>) => string,
 ): string {
   const parts = [
-    t("common.errorSourcesManager.lastSyncAt", {
+    t("common.dataSourcesManager.lastSyncAt", {
       value: formatDate(source.lastSyncAt, t),
     }),
   ];
@@ -169,7 +169,7 @@ function normalizeLastUsedExternalSourceId(
 function readPluginDataSourceType(
   plugin: PluginDescriptor,
 ): ErrorSourceType | null {
-  return plugin.metadata?.errorSource?.sourceType ?? null;
+  return plugin.metadata?.dataSource?.sourceType ?? null;
 }
 
 function formatSetupFieldRequiredMessage(label: string): string {
@@ -314,7 +314,7 @@ function buildInitialEditSetupFieldValues(
   source: ErrorSourceRow,
   plugin: PluginDescriptor | null,
 ): Record<string, string> {
-  const setupFields = plugin?.metadata?.errorSource?.setupFields ?? [];
+  const setupFields = plugin?.metadata?.dataSource?.setupFields ?? [];
   return Object.fromEntries(
     setupFields.map((field) => [
       field.key,
@@ -323,7 +323,7 @@ function buildInitialEditSetupFieldValues(
   );
 }
 
-interface ErrorSourcesManagerProps {
+interface DataSourcesManagerProps {
   showHeader?: boolean;
 }
 
@@ -373,9 +373,9 @@ function SelectChevron() {
   );
 }
 
-export default function ErrorSourcesManager({
+export default function DataSourcesManager({
   showHeader = true,
-}: ErrorSourcesManagerProps) {
+}: DataSourcesManagerProps) {
   const { t } = useTranslation();
   const [status, setStatus] = useState<{
     kind: StatusKind;
@@ -501,7 +501,7 @@ export default function ErrorSourcesManager({
     [plugins, selectedProviderId, sourceType],
   );
   const selectedSetupFields = useMemo(
-    () => selectedPlugin?.metadata?.errorSource?.setupFields ?? [],
+    () => selectedPlugin?.metadata?.dataSource?.setupFields ?? [],
     [selectedPlugin],
   );
   const editDialogPlugin = useMemo(
@@ -587,7 +587,7 @@ export default function ErrorSourcesManager({
 
   function readCreateSourceValidationError(trimmedName: string): string | null {
     if (trimmedName.length === 0) {
-      return t("common.errorSourcesManager.sourceNameRequired");
+      return t("common.dataSourcesManager.sourceNameRequired");
     }
     if (selectedProviderCard === null || selectedPlugin === null) {
       return "Select an installed code plugin first.";
@@ -666,7 +666,7 @@ export default function ErrorSourcesManager({
       resetCreateDialog();
       setAddDialogOpen(false);
       toast.success(
-        t("common.errorSourcesManager.linkedSource", { name: trimmedName }),
+        t("common.dataSourcesManager.linkedSource", { name: trimmedName }),
       );
     } catch (err) {
       setDialogError(`Failed to link source: ${toMessage(err)}`);
@@ -686,7 +686,7 @@ export default function ErrorSourcesManager({
       }
 
       toast.success(
-        t("common.errorSourcesManager.removedSource", { name: source.name }),
+        t("common.dataSourcesManager.removedSource", { name: source.name }),
       );
     } catch (err) {
       setStatus({
@@ -724,10 +724,10 @@ export default function ErrorSourcesManager({
     trimmedName: string,
   ): string | null {
     if (trimmedName.length === 0) {
-      return t("common.errorSourcesManager.sourceNameRequired");
+      return t("common.dataSourcesManager.sourceNameRequired");
     }
 
-    const setupFields = plugin?.metadata?.errorSource?.setupFields ?? [];
+    const setupFields = plugin?.metadata?.dataSource?.setupFields ?? [];
     for (const field of setupFields) {
       if (!field.required) {
         continue;
@@ -767,7 +767,7 @@ export default function ErrorSourcesManager({
       return;
     }
 
-    const setupFields = plugin?.metadata?.errorSource?.setupFields ?? [];
+    const setupFields = plugin?.metadata?.dataSource?.setupFields ?? [];
     const setupValues: Record<string, unknown> = {};
     for (const field of setupFields) {
       if (field.control === "password") {
@@ -797,7 +797,7 @@ export default function ErrorSourcesManager({
       setEditSetupFieldValues({});
       setEditDialogSource(null);
       toast.success(
-        t("common.errorSourcesManager.updatedSource", { name: trimmedName }),
+        t("common.dataSourcesManager.updatedSource", { name: trimmedName }),
       );
     } catch (err) {
       setEditDialogError(`Failed to update source: ${toMessage(err)}`);
@@ -825,11 +825,11 @@ export default function ErrorSourcesManager({
           });
           void refetchSources();
           toast.success(
-            t("common.errorSourcesManager.syncCompleteForSource", {
+            t("common.dataSourcesManager.syncCompleteForSource", {
               source: source.name,
             }),
             {
-              description: t("common.errorSourcesManager.syncResultCounts", {
+              description: t("common.dataSourcesManager.syncResultCounts", {
                 issues: result.syncedIssues,
                 events: result.syncedEvents,
               }),
@@ -846,12 +846,12 @@ export default function ErrorSourcesManager({
           const message = formatStoredSyncErrorMessage(err, t);
           setStatus({
             kind: "error",
-            message: t("common.errorSourcesManager.syncFailedWithMessage", {
+            message: t("common.dataSourcesManager.syncFailedWithMessage", {
               message,
             }),
           });
           toast.error(
-            t("common.errorSourcesManager.syncFailedForSource", {
+            t("common.dataSourcesManager.syncFailedForSource", {
               source: source.name,
             }),
             {
@@ -924,9 +924,9 @@ export default function ErrorSourcesManager({
     actionLoading ||
     readCreateSourceValidationError(sourceName.trim()) !== null;
 
-  let createButtonLabel = t("common.errorSourcesManager.saveSource");
+  let createButtonLabel = t("common.dataSourcesManager.saveSource");
   if (createMutation.isPending) {
-    createButtonLabel = t("common.errorSourcesManager.connecting");
+    createButtonLabel = t("common.dataSourcesManager.connecting");
   }
 
   let editDialogErrorContent: ReactNode = null;
@@ -952,10 +952,10 @@ export default function ErrorSourcesManager({
         <div className="flex items-center justify-between">
           <div>
             <h2 className="text-sm font-semibold text-foreground">
-              {t("common.errorSourcesManager.externalSources")}
+              {t("common.dataSourcesManager.externalSources")}
             </h2>
             <p className="text-xs text-muted-foreground">
-              {t("common.errorSourcesManager.connectExternalServicesToFeed")}
+              {t("common.dataSourcesManager.connectExternalServicesToFeed")}
             </p>
           </div>
           <Button
@@ -967,7 +967,7 @@ export default function ErrorSourcesManager({
             disabled={actionLoading}
             data-tour="data-sources-add-source"
           >
-            {t("common.errorSourcesManager.addSource")}
+            {t("common.dataSourcesManager.addSource")}
           </Button>
         </div>
       )}
@@ -982,7 +982,7 @@ export default function ErrorSourcesManager({
             disabled={actionLoading}
             data-tour="data-sources-add-source"
           >
-            {t("common.errorSourcesManager.addSource_2")}
+            {t("common.dataSourcesManager.addSource_2")}
           </Button>
         </div>
       )}
@@ -991,13 +991,13 @@ export default function ErrorSourcesManager({
 
       {isLoading && (
         <p className="text-sm text-muted-foreground">
-          {t("common.errorSourcesManager.loadingExternalSources")}
+          {t("common.dataSourcesManager.loadingExternalSources")}
         </p>
       )}
       {!isLoading && sources.length === 0 && (
         <div className="rounded-lg border border-dashed border-border p-8 text-center">
           <p className="text-sm text-muted-foreground">
-            {t("common.errorSourcesManager.noExternalSourcesConnected")}
+            {t("common.dataSourcesManager.noExternalSourcesConnected")}
           </p>
           <p className="mt-1 text-xs text-muted-foreground">
             {emptySourcePrompt(availableProviderSummary)}
@@ -1020,7 +1020,7 @@ export default function ErrorSourcesManager({
               source.lastSyncStatus === "in_progress";
             let syncSummary = formatSyncSummary(source, t);
             if (sourceIsSyncing) {
-              syncSummary = t("common.errorSourcesManager.syncing");
+              syncSummary = t("common.dataSourcesManager.syncing");
             }
 
             let lastSyncErrorContent: ReactNode = null;
@@ -1056,7 +1056,7 @@ export default function ErrorSourcesManager({
                       <Badge variant="secondary">{source.sourceType}</Badge>
                       {source.syncEnabled && (
                         <Badge variant="secondary">
-                          {t("common.errorSourcesManager.autoSyncOn")}
+                          {t("common.dataSourcesManager.autoSyncOn")}
                         </Badge>
                       )}
                     </div>
@@ -1072,8 +1072,8 @@ export default function ErrorSourcesManager({
                         openEditDialog(source);
                       }}
                       disabled={actionLoading}
-                      aria-label={t("common.errorSourcesManager.editSource")}
-                      title={t("common.errorSourcesManager.editSource")}
+                      aria-label={t("common.dataSourcesManager.editSource")}
+                      title={t("common.dataSourcesManager.editSource")}
                       className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-50"
                     >
                       <Pencil size={16} aria-hidden="true" />
@@ -1088,8 +1088,8 @@ export default function ErrorSourcesManager({
                         pendingSyncIds.has(source.id) ||
                         source.lastSyncStatus === "in_progress"
                       }
-                      aria-label={t("common.errorSourcesManager.syncNow")}
-                      title={t("common.errorSourcesManager.syncNow")}
+                      aria-label={t("common.dataSourcesManager.syncNow")}
+                      title={t("common.dataSourcesManager.syncNow")}
                       className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-50"
                     >
                       <RefreshCw
@@ -1102,8 +1102,8 @@ export default function ErrorSourcesManager({
                       type="button"
                       onClick={() => void removeSource(source)}
                       disabled={actionLoading}
-                      aria-label={t("common.errorSourcesManager.removeSource")}
-                      title={t("common.errorSourcesManager.removeSource_2")}
+                      aria-label={t("common.dataSourcesManager.removeSource")}
+                      title={t("common.dataSourcesManager.removeSource_2")}
                       className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-red-600 disabled:opacity-50"
                     >
                       <Trash2 size={16} aria-hidden="true" />
@@ -1126,11 +1126,11 @@ export default function ErrorSourcesManager({
         <DialogContent className="sm:max-w-xl">
           <DialogHeader>
             <DialogTitle>
-              {t("common.errorSourcesManager.connectExternalSource")}
+              {t("common.dataSourcesManager.connectExternalSource")}
             </DialogTitle>
             <DialogDescription>
               {t(
-                "common.errorSourcesManager.connectAnErrorTrackingIntegration",
+                "common.dataSourcesManager.connectAnErrorTrackingIntegration",
               )}
             </DialogDescription>
           </DialogHeader>
@@ -1138,7 +1138,7 @@ export default function ErrorSourcesManager({
             {/* Provider picker — SVG card grid, replaces the plain <select>. */}
             <div data-tour="data-sources-provider-picker" className="space-y-2">
               <label className="text-sm text-muted-foreground">
-                {t("common.errorSourcesManager.sourceType")}
+                {t("common.dataSourcesManager.sourceType")}
               </label>
               <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
                 {providerCards.map((card) => {
@@ -1150,7 +1150,7 @@ export default function ErrorSourcesManager({
                       "border-primary bg-primary/10 ring-1 ring-primary";
                   }
                   let iconClassName = t(
-                    "common.errorSourcesManager.opacity40GrayscaleTransition",
+                    "common.dataSourcesManager.opacity40GrayscaleTransition",
                   );
                   if (selected) {
                     iconClassName = "transition";
@@ -1182,7 +1182,7 @@ export default function ErrorSourcesManager({
 
             <div className="space-y-1">
               <FieldLabel required>
-                {t("common.errorSourcesManager.labelName")}
+                {t("common.dataSourcesManager.labelName")}
               </FieldLabel>
               <Input
                 placeholder={namePlaceholder}
@@ -1209,7 +1209,7 @@ export default function ErrorSourcesManager({
                   {selectedSetupFields.length === 0 && (
                     <p className="text-sm text-muted-foreground">
                       {t(
-                        "common.errorSourcesManager.pluginDoesNotRequireConnectionFields",
+                        "common.dataSourcesManager.pluginDoesNotRequireConnectionFields",
                       )}
                     </p>
                   )}
@@ -1225,7 +1225,7 @@ export default function ErrorSourcesManager({
                   }}
                   className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
                 >
-                  <span>{t("common.errorSourcesManager.advancedOptions")}</span>
+                  <span>{t("common.dataSourcesManager.advancedOptions")}</span>
                   <svg
                     className="size-3.5"
                     viewBox="0 0 12 12"
@@ -1267,12 +1267,12 @@ export default function ErrorSourcesManager({
                     <polyline points="6,2 2,6 6,10" />
                     <line x1="2" y1="6" x2="11" y2="6" />
                   </svg>
-                  <span>{t("common.errorSourcesManager.advancedOptions")}</span>
+                  <span>{t("common.dataSourcesManager.advancedOptions")}</span>
                 </button>
 
                 <div className="flex items-center justify-between gap-3">
                   <label className="text-sm text-muted-foreground">
-                    {t("common.errorSourcesManager.logLevelThreshold")}
+                    {t("common.dataSourcesManager.logLevelThreshold")}
                   </label>
                   <div className="relative">
                     <select
@@ -1285,16 +1285,16 @@ export default function ErrorSourcesManager({
                       }}
                     >
                       <option value="error">
-                        {t("common.errorSourcesManager.error")}
+                        {t("common.dataSourcesManager.error")}
                       </option>
                       <option value="warning">
-                        {t("common.errorSourcesManager.warning")}
+                        {t("common.dataSourcesManager.warning")}
                       </option>
                       <option value="info">
-                        {t("common.errorSourcesManager.info")}
+                        {t("common.dataSourcesManager.info")}
                       </option>
                       <option value="debug">
-                        {t("common.errorSourcesManager.debug")}
+                        {t("common.dataSourcesManager.debug")}
                       </option>
                     </select>
                     <SelectChevron />
@@ -1303,7 +1303,7 @@ export default function ErrorSourcesManager({
 
                 <label className="flex cursor-pointer items-center justify-between gap-3 text-sm text-muted-foreground">
                   <span>
-                    {t("common.errorSourcesManager.enableScheduledSync")}
+                    {t("common.dataSourcesManager.enableScheduledSync")}
                   </span>
                   <input
                     type="checkbox"
@@ -1360,10 +1360,10 @@ export default function ErrorSourcesManager({
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
             <DialogTitle>
-              {t("common.errorSourcesManager.editExternalSource")}
+              {t("common.dataSourcesManager.editExternalSource")}
             </DialogTitle>
             <DialogDescription>
-              {t("common.errorSourcesManager.editDescription")}
+              {t("common.dataSourcesManager.editDescription")}
             </DialogDescription>
           </DialogHeader>
 
@@ -1371,7 +1371,7 @@ export default function ErrorSourcesManager({
             <div className="space-y-4">
               <div className="space-y-1">
                 <FieldLabel required>
-                  {t("common.errorSourcesManager.labelName")}
+                  {t("common.dataSourcesManager.labelName")}
                 </FieldLabel>
                 <Input
                   value={editName}
@@ -1393,13 +1393,13 @@ export default function ErrorSourcesManager({
                 },
                 disabled: updateMutation.isPending,
                 noConnectionFieldsText: t(
-                  "common.errorSourcesManager.installOrEnablePluginToEditConnectionFields",
+                  "common.dataSourcesManager.installOrEnablePluginToEditConnectionFields",
                 ),
               })}
 
               <div className="flex items-center justify-between gap-3">
                 <label className="text-sm text-muted-foreground">
-                  {t("common.errorSourcesManager.logLevelThreshold")}
+                  {t("common.dataSourcesManager.logLevelThreshold")}
                 </label>
                 <div className="relative">
                   <select
@@ -1411,16 +1411,16 @@ export default function ErrorSourcesManager({
                     disabled={updateMutation.isPending}
                   >
                     <option value="error">
-                      {t("common.errorSourcesManager.error_2")}
+                      {t("common.dataSourcesManager.error_2")}
                     </option>
                     <option value="warning">
-                      {t("common.errorSourcesManager.warning_2")}
+                      {t("common.dataSourcesManager.warning_2")}
                     </option>
                     <option value="info">
-                      {t("common.errorSourcesManager.info_2")}
+                      {t("common.dataSourcesManager.info_2")}
                     </option>
                     <option value="debug">
-                      {t("common.errorSourcesManager.debug_2")}
+                      {t("common.dataSourcesManager.debug_2")}
                     </option>
                   </select>
                   <SelectChevron />
@@ -1429,7 +1429,7 @@ export default function ErrorSourcesManager({
 
               <label className="flex cursor-pointer items-center justify-between gap-3 text-sm text-muted-foreground">
                 <span>
-                  {t("common.errorSourcesManager.enableScheduledSync")}
+                  {t("common.dataSourcesManager.enableScheduledSync")}
                 </span>
                 <input
                   type="checkbox"
@@ -1479,7 +1479,7 @@ function renderEditConnectionFields(input: {
   noConnectionFieldsText: string;
 }): ReactNode {
   const { plugin, values, onChange, disabled, noConnectionFieldsText } = input;
-  const setupFields = plugin?.metadata?.errorSource?.setupFields ?? [];
+  const setupFields = plugin?.metadata?.dataSource?.setupFields ?? [];
 
   if (setupFields.length === 0) {
     return (

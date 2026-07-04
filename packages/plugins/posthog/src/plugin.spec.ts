@@ -43,7 +43,7 @@ describe("PostHog plugin package", () => {
     expect(plugin).toMatchObject({
       id: "posthog",
       metadata: {
-        errorSource: {
+        dataSource: {
           sourceType: "posthog",
           setupFields: expect.arrayContaining([
             expect.objectContaining({

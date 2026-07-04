@@ -1031,7 +1031,7 @@ export class ErrorSourceSyncService {
     pluginId: string,
   ): CustomPluginSyncCapabilities {
     const plugin = this.pluginRuntime.getPlugin(pluginId);
-    if (plugin?.metadata?.errorSource?.sourceType !== source.sourceType) {
+    if (plugin?.metadata?.dataSource?.sourceType !== source.sourceType) {
       throw new Error(
         `Error source plugin "${pluginId}" does not match source type ${source.sourceType}`,
       );

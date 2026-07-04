@@ -81,7 +81,7 @@ function createWazuhDescriptor(): DesktopPluginDescriptor {
     version: '1.0.0',
     description: 'Wazuh code plugin.',
     metadata: {
-      errorSource: {
+      dataSource: {
         sourceType: 'wazuh',
         setupFields: [
           {
@@ -122,7 +122,7 @@ function createSentryDescriptor(): DesktopPluginDescriptor {
     version: '1.0.0',
     description: 'Sentry code plugin.',
     metadata: {
-      errorSource: {
+      dataSource: {
         sourceType: 'sentry',
         setupFields: [
           {

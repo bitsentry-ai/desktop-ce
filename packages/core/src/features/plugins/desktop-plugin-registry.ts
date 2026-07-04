@@ -40,7 +40,7 @@ type PluginActionRuntime = {
 type PluginRuntime = {
   descriptor: DesktopPluginDescriptor;
   actions: Map<string, PluginActionRuntime>;
-  errorSource?: DesktopCodePluginDataSource;
+  dataSource?: DesktopCodePluginDataSource;
   host: DesktopPluginCodeHostContext;
 };
 
@@ -180,7 +180,7 @@ function createPluginRuntime(
   return {
     descriptor,
     actions: new Map(actions.map((action) => [action.id, action])),
-    errorSource: plugin.errorSource,
+    dataSource: plugin.dataSource,
     host: createPluginHostContext(runtimeContext),
   };
 }
@@ -272,7 +272,7 @@ export class DesktopPluginRegistry {
   }
 
   getErrorSource(pluginId: string): DesktopCodePluginDataSource | null {
-    return this.plugins.get(pluginId)?.errorSource ?? null;
+    return this.plugins.get(pluginId)?.dataSource ?? null;
   }
 
   getPluginHost(pluginId: string): DesktopPluginCodeHostContext | null {
