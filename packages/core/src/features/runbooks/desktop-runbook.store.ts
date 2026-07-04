@@ -217,9 +217,31 @@ function buildArtifactSourceRefs(
 function buildExternalSourceFingerprint(
   sourceType: string,
   configuration: unknown,
+  pluginId?: string,
 ): string {
   const config = sanitizeExportedErrorSourceConfiguration(configuration);
-  return `${sourceType}::${stableSerialize(config)}`;
+  return `${sourceType}:${pluginId ?? ""}::${stableSerialize(config)}`;
+}
+
+function readExternalSourcePluginId(
+  additionalMetadata: Record<string, unknown> | null | undefined,
+): string | undefined {
+  const pluginId = asString(additionalMetadata?.pluginId).trim();
+  if (pluginId.length === 0) {
+    return undefined;
+  }
+
+  return pluginId;
+}
+
+function buildExternalSourceAdditionalMetadata(
+  pluginId: string | undefined,
+): Record<string, unknown> | null {
+  if (pluginId === undefined || pluginId.length === 0) {
+    return null;
+  }
+
+  return { pluginId };
 }
 
 function normalizeExportedExternalSourceCredentials(value: unknown): {
@@ -1828,7 +1850,11 @@ export class DesktopRunbookStore {
     const existingSourceFingerprintsById = new Map(
       existingSources.map((source) => [
         source.id,
-        buildExternalSourceFingerprint(source.sourceType, source.configuration),
+        buildExternalSourceFingerprint(
+          source.sourceType,
+          source.configuration,
+          readExternalSourcePluginId(source.additionalMetadata),
+        ),
       ]),
     );
     const existingRunbookByFingerprint = new Map(
@@ -2293,10 +2319,12 @@ export class DesktopRunbookStore {
           accessTokenRef !== undefined && accessTokenRef.length > 0;
         const hasRefreshTokenRef =
           refreshTokenRef !== undefined && refreshTokenRef.length > 0;
+        const pluginId = readExternalSourcePluginId(source.additionalMetadata);
         const exportedSource: NonNullable<
           DesktopRunbookExportArtifactV1["externalSources"]
         >[number] = {
           ref: sourceRefsById.get(source.id) ?? source.id,
+          pluginId,
           sourceType: source.sourceType,
           name: source.name,
           configuration: sanitizeExportedErrorSourceConfiguration(
@@ -2356,7 +2384,11 @@ export class DesktopRunbookStore {
       (await this.errorSourcesRepository.findMany());
     const existingBySignature = new Map(
       existingSources.map((source) => [
-        buildExternalSourceFingerprint(source.sourceType, source.configuration),
+        buildExternalSourceFingerprint(
+          source.sourceType,
+          source.configuration,
+          readExternalSourcePluginId(source.additionalMetadata),
+        ),
         source,
       ]),
     );
@@ -2370,6 +2402,7 @@ export class DesktopRunbookStore {
       const fingerprint = buildExternalSourceFingerprint(
         externalSource.sourceType,
         sanitizedConfiguration,
+        externalSource.pluginId,
       );
       const existing = existingBySignature.get(fingerprint);
       sourceFingerprintByRef.set(externalSource.ref, fingerprint);
@@ -2395,7 +2428,9 @@ export class DesktopRunbookStore {
           grantedScopes: credentials.grantedScopes ?? [],
           configuration: sanitizedConfiguration,
           logLevelThreshold: externalSource.logLevelThreshold ?? "error",
-          additionalMetadata: null,
+          additionalMetadata: buildExternalSourceAdditionalMetadata(
+            externalSource.pluginId,
+          ),
           syncEnabled: externalSource.syncEnabled ?? true,
           autoDiagnosisEnabled: externalSource.autoDiagnosisEnabled ?? false,
           lastSyncAt: null,
@@ -2419,6 +2454,9 @@ export class DesktopRunbookStore {
         grantedScopes: credentials.grantedScopes ?? [],
         configuration: sanitizedConfiguration,
         logLevelThreshold: externalSource.logLevelThreshold,
+        additionalMetadata: buildExternalSourceAdditionalMetadata(
+          externalSource.pluginId,
+        ),
         syncEnabled: externalSource.syncEnabled,
         autoDiagnosisEnabled: externalSource.autoDiagnosisEnabled,
       });

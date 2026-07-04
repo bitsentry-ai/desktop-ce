@@ -104,6 +104,7 @@ export const exportedExternalSourceCredentialsV1Schema = z.object({
 
 export const exportedExternalSourceV1Schema = z.object({
   ref: z.string(),
+  pluginId: z.string().optional(),
   sourceType: errorSourceTypeSchema,
   name: z.string(),
   configuration: z.record(z.string(), z.unknown()).optional(),
