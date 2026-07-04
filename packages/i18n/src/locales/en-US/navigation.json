@@ -18,7 +18,7 @@
   "navigation.navbar.deleting": "Deleting...",
   "navigation.navbar.diagnosis": "Diagnosis",
   "navigation.navbar.diagnosisNumber": "Diagnosis #{{id}}",
-  "navigation.navbar.externalSources": "External Sources",
+  "navigation.navbar.externalSources": "Plugins",
   "navigation.navbar.globalVariables": "Global Variables",
   "navigation.navbar.help": "Help",
   "navigation.navbar.incidents": "Incidents",

@@ -18,7 +18,7 @@
   "navigation.navbar.deleting": "删除中……",
   "navigation.navbar.diagnosis": "诊断",
   "navigation.navbar.diagnosisNumber": "诊断 #{{id}}",
-  "navigation.navbar.externalSources": "外部来源",
+  "navigation.navbar.externalSources": "插件",
   "navigation.navbar.globalVariables": "全局变量",
   "navigation.navbar.help": "帮助",
   "navigation.navbar.incidents": "事件",

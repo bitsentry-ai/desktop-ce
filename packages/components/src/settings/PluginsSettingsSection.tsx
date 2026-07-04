@@ -1,14 +1,14 @@
 import DataSourcesManager from "../integrations/DataSourcesManager";
 
-interface ExternalSourcesSettingsSectionProps {
+interface PluginsSettingsSectionProps {
   id?: string;
   className?: string;
 }
 
-export function ExternalSourcesSettingsSection({
+export function PluginsSettingsSection({
   id = "plugins",
   className,
-}: ExternalSourcesSettingsSectionProps) {
+}: PluginsSettingsSectionProps) {
   return (
     <section
       id={id}

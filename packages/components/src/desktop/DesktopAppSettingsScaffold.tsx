@@ -13,7 +13,7 @@ import {
   CodingAgentProvidersSection,
   type ProviderId as CodingAgentId,
 } from "../settings/CodingAgentProvidersSection";
-import { ExternalSourcesSettingsSection } from "../settings/ExternalSourcesSettingsSection";
+import { PluginsSettingsSection } from "../settings/PluginsSettingsSection";
 import { GlobalVariablesSettingsSection } from "../settings/GlobalVariablesSettingsSection";
 import { TelemetrySection } from "../settings/TelemetrySection";
 import { UpdateSettingsSection } from "../settings/UpdateSettingsSection";
@@ -211,7 +211,7 @@ export function DesktopAppSettingsScaffold({
 
         <div className="border-t border-border" />
 
-        <ExternalSourcesSettingsSection id="plugins" />
+        <PluginsSettingsSection id="plugins" />
 
         <div className="border-t border-border" />
 
