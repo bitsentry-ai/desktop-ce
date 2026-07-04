@@ -94,7 +94,11 @@ function effortToMaxTurns(effort: string | undefined): number | undefined {
 function readTraitString(value: string | boolean | undefined): string | undefined {
   if (typeof value !== 'string') return undefined
   const normalized = value.trim()
-  return normalized.length > 0 ? normalized : undefined
+  if (normalized.length > 0) {
+    return normalized
+  }
+
+  return undefined
 }
 
 function createDefaultLocalAiSettings(): LocalAiSettings {
