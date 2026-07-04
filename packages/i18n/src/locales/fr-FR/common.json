@@ -1449,20 +1449,5 @@
   "common.results.noRuntimeParameterValuesCaptured": "Aucune valeur de paramètre d’exécution n’a été capturée pour cette exécution.",
   "common.results.noInputMetadataCaptured": "Aucune métadonnée d’entrée n’a été capturée pour cette étape.",
   "common.incidentArtifactsRail.actionType.plugin": "Plugin",
-  "common.systemSettings.workosManagedAuthPoliciesNotice": "Password reset, passkeys, MFA, magic auth, and SSO are managed by WorkOS.",
-  "common.dataSourcesManager.installPlugin": "Install Plugin",
-  "common.dataSourcesManager.installTitle": "Install Plugin",
-  "common.dataSourcesManager.installSubtitle": "Add a plugin from the index, or install one from a local file.",
-  "common.dataSourcesManager.installAvailableHeading": "Available plugins",
-  "common.dataSourcesManager.installRefresh": "Refresh",
-  "common.dataSourcesManager.installButton": "Install",
-  "common.dataSourcesManager.installInstalledBadge": "Installed",
-  "common.dataSourcesManager.installBusy": "Installing",
-  "common.dataSourcesManager.installNone": "No plugins are available from the index yet.",
-  "common.dataSourcesManager.installIndexError": "Could not load the plugin index.",
-  "common.dataSourcesManager.installFromFileHeading": "Install from file",
-  "common.dataSourcesManager.installFromFileHelp": "Choose a plugin artifact built locally.",
-  "common.dataSourcesManager.installChooseFile": "Choose file",
-  "common.dataSourcesManager.installFromFileButton": "Install selected file",
-  "common.dataSourcesManager.installSuccess": "Plugin installed."
+  "common.systemSettings.workosManagedAuthPoliciesNotice": "Password reset, passkeys, MFA, magic auth, and SSO are managed by WorkOS."
 }
