@@ -796,6 +796,9 @@ export function createDesktopErrorSourcesHandlers(
           auth,
           input: {},
         });
+        if (!orgResult.ok) {
+          throw new Error(orgResult.summary);
+        }
         const visibleOrgs = filterProbeOrganizations(
           readProbeOrganizations(orgResult.data),
           requestedOrgSlug,
@@ -823,6 +826,9 @@ export function createDesktopErrorSourcesHandlers(
                 orgSlug: org.id,
               },
             });
+            if (!projectResult.ok) {
+              throw new Error(projectResult.summary);
+            }
             projects.push(
               ...readProbeProjects(
                 projectResult.data,

@@ -269,6 +269,10 @@ function normalizeGitHubIssue(owner, repo, issue) {
   };
 }
 
+function isGitHubPullRequestIssue(issue) {
+  return readRecord(readRecord(issue).pull_request).url !== undefined;
+}
+
 function normalizeRepository(value) {
   const repo = readRecord(value);
   const owner = readRecord(repo.owner);
@@ -339,10 +343,11 @@ async function listIssuesForRepo(auth, owner, repo, input) {
     `/repos/${encodePathSegment(owner)}/${encodePathSegment(repo)}/issues`,
     buildIssueParams(input, requestLimit, page),
   );
-  const records = Array.isArray(issues)
-    ? issues.map((issue) => normalizeGitHubIssue(owner, repo, issue))
-    : [];
-  const hasMore = pageHasMore(records, limit, requestLimit);
+  const rawRecords = Array.isArray(issues) ? issues : [];
+  const records = rawRecords
+    .filter((issue) => !isGitHubPullRequestIssue(issue))
+    .map((issue) => normalizeGitHubIssue(owner, repo, issue));
+  const hasMore = pageHasMore(rawRecords, limit, requestLimit);
 
   return {
     issues: records.slice(0, limit),

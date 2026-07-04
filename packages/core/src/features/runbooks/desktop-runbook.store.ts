@@ -1191,9 +1191,6 @@ function actionPayload(
       ) {
         payload.pluginActionId = action.pluginActionId;
       }
-      if (typeof action.pluginAuth === "string") {
-        payload.pluginAuth = action.pluginAuth;
-      }
       if (typeof action.pluginInput === "string") {
         payload.pluginInput = action.pluginInput;
       }
