@@ -27,7 +27,7 @@ function context(input: Record<string, unknown>): DesktopPluginCodeActionContext
     actionId: "query_issues",
     auth: {
       accessToken: "phx-token",
-      baseUrl: "https://self-hosted.posthog.internal",
+      baseUrl: "https://eu.posthog.com",
     },
     input,
     host,
@@ -128,11 +128,26 @@ describe("PostHog plugin package", () => {
     });
 
     const [url, request] = fetchMock.mock.calls[0] ?? [];
-    expect(url).toBe("https://self-hosted.posthog.internal/api/projects/177710/query/");
+    expect(url).toBe("https://eu.posthog.com/api/projects/177710/query/");
     expect(request?.headers).toMatchObject({
       Authorization: "Bearer phx-token",
       "Content-Type": "application/json",
     });
     expect(request?.redirect).toBe("error");
+  });
+
+  it("rejects unallowlisted custom PostHog origins", async () => {
+    await expect(
+      action("query_issues").execute({
+        ...context({
+          orgSlug: "org-1",
+          projectIds: ["177710"],
+        }),
+        auth: {
+          accessToken: "phx-token",
+          baseUrl: "https://self-hosted.posthog.internal",
+        },
+      }),
+    ).rejects.toThrow("PostHog base URL \"self-hosted.posthog.internal\" is not in the allowlist");
   });
 });

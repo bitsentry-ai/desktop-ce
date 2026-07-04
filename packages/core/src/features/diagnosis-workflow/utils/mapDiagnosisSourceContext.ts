@@ -125,6 +125,7 @@ function inferSourceKind(
   if (explicit !== undefined) return explicit;
   const sourceKind = SOURCE_KIND_BY_CATEGORY[sourceCategory];
   if (sourceKind !== undefined) return sourceKind;
+  if (sourceCategory !== "unknown") return "error_event";
   return "unknown";
 }
 

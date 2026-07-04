@@ -572,10 +572,10 @@ function readPluginIssueTimestamp(
   fallback: string,
 ): string {
   return toIsoOrNow(
-    record.lastSeen ??
-      record.last_seen ??
-      record.firstSeen ??
+    record.firstSeen ??
       record.first_seen ??
+      record.lastSeen ??
+      record.last_seen ??
       record.timestamp ??
       record.dateCreated ??
       record.createdAt ??
@@ -1088,6 +1088,12 @@ export class ErrorSourceSyncService {
         until: args.until,
       }),
     });
+
+    if (!result.ok) {
+      throw new Error(
+        `Plugin "${args.pluginId}" failed to list issues for source sync: ${result.summary}`,
+      );
+    }
 
     const page = readPluginIssueBatch(result.data);
     if (page === null) {

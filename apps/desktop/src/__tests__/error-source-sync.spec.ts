@@ -423,6 +423,157 @@ describe("Sentry external source sync", () => {
     );
   });
 
+  it("fails plugin issue pages with ok false without advancing the watermark", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-06-01T09:00:00.000Z"));
+
+    const source = makeSource({
+      id: "source-posthog",
+      sourceType: "posthog",
+      name: "Production PostHog",
+      additionalMetadata: { pluginId: "posthog" },
+      lastSyncAt: "2026-06-01T08:30:00.000Z",
+    });
+    const runtime = new TestPluginRuntimeService([
+      createPostHogPluginDescriptor(),
+    ]);
+    runtime.executeActionMock.mockResolvedValue({
+      pluginId: "posthog",
+      actionId: "list_issues",
+      ok: false,
+      status: 500,
+      summary: "PostHog provider returned HTTP 500.",
+      data: {
+        issues: [],
+        hasMore: false,
+      },
+    });
+    const sourcesRepository = {
+      findById: vi.fn().mockResolvedValue(source),
+      findSyncEnabled: vi.fn().mockResolvedValue([source]),
+      updateSyncStatus: vi.fn().mockResolvedValue(undefined),
+      update: vi.fn().mockResolvedValue(source),
+    };
+    const service = new ErrorSourceSyncService(
+      {
+        $queryRawUnsafe: () => Promise.resolve([]),
+        telemetryDaily: { upsert: vi.fn() },
+        telemetryEntry: {
+          findUnique: vi.fn(),
+          create: vi.fn(),
+        },
+        diagnosisEntry: { upsert: vi.fn() },
+        diagnosisEntrySourceRef: { upsert: vi.fn() },
+      },
+      sourcesRepository,
+      {
+        upsert: vi.fn(),
+        findById: vi.fn(),
+      },
+      {
+        upsert: vi.fn(),
+        findById: vi.fn(),
+      },
+      runtime,
+    );
+
+    await expect(service.syncSourceById(source.id)).rejects.toThrow(
+      "PostHog provider returned HTTP 500.",
+    );
+    expect(sourcesRepository.update).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        id: source.id,
+        lastSyncStatus: "failed",
+        lastSyncError:
+          'Plugin "posthog" failed to list issues for source sync: PostHog provider returned HTTP 500.',
+      }),
+    );
+    expect(sourcesRepository.update).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: source.id,
+        lastSyncAt: "2026-06-01T09:00:00.000Z",
+        lastSyncStatus: "success",
+      }),
+    );
+  });
+
+  it("preserves plugin issue first-seen timestamps separately from last-seen timestamps", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-06-01T09:00:00.000Z"));
+
+    const source = makeSource({
+      id: "source-posthog",
+      sourceType: "posthog",
+      name: "Production PostHog",
+      additionalMetadata: { pluginId: "posthog" },
+      lastSyncAt: "2026-06-01T08:30:00.000Z",
+    });
+    const runtime = new TestPluginRuntimeService([
+      createPostHogPluginDescriptor(),
+    ]);
+    runtime.executeActionMock.mockResolvedValue({
+      pluginId: "posthog",
+      actionId: "list_issues",
+      ok: true,
+      status: 200,
+      summary: "Listed PostHog issues.",
+      data: {
+        issues: [
+          {
+            id: "issue-1",
+            title: "Checkout failed",
+            level: "error",
+            firstSeen: "2026-05-01T08:00:00.000Z",
+            lastSeen: "2026-06-01T08:45:00.000Z",
+          },
+        ],
+        hasMore: false,
+      },
+    });
+    const sourcesRepository = {
+      findById: vi.fn().mockResolvedValue(source),
+      findSyncEnabled: vi.fn().mockResolvedValue([source]),
+      updateSyncStatus: vi.fn().mockResolvedValue(undefined),
+      update: vi.fn().mockResolvedValue(source),
+    };
+    const upsertIssue = vi.fn((input: UpsertErrorIssueInput) =>
+      Promise.resolve(makeIssue(input)),
+    );
+    const service = new ErrorSourceSyncService(
+      {
+        $queryRawUnsafe: () => Promise.resolve([]),
+        telemetryDaily: { upsert: vi.fn().mockResolvedValue({ id: 1 }) },
+        telemetryEntry: {
+          findUnique: vi.fn().mockResolvedValue(null),
+          create: vi.fn().mockResolvedValue({ id: 1 }),
+        },
+        diagnosisEntry: { upsert: vi.fn().mockResolvedValue({ id: 1 }) },
+        diagnosisEntrySourceRef: { upsert: vi.fn() },
+      },
+      sourcesRepository,
+      {
+        upsert: upsertIssue,
+        findById: vi.fn(),
+      },
+      {
+        upsert: vi.fn(),
+        findById: vi.fn(),
+      },
+      runtime,
+    );
+
+    await expect(service.syncSourceById(source.id)).resolves.toMatchObject({
+      syncedIssues: 1,
+    });
+    expect(upsertIssue).toHaveBeenCalledWith(
+      expect.objectContaining({
+        externalIssueId: "issue-1",
+        firstSeen: "2026-05-01T08:00:00.000Z",
+        lastSeen: "2026-06-01T08:45:00.000Z",
+      }),
+    );
+  });
+
   it("fails capped plugin syncs without advancing the watermark", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-06-01T09:00:00.000Z"));

@@ -1,9 +1,13 @@
 import type { DesktopCodePlugin } from "@bitsentry-ce/core/features/plugins";
 
-const POSTHOG_DEFAULT_BASE_URL = "https://us.posthog.com";
 const DEFAULT_ISSUES_LIMIT = 50;
 const DEFAULT_EVENTS_LIMIT = 50;
 const MAX_LIMIT = 100;
+const POSTHOG_DEFAULT_BASE_URL = "https://us.posthog.com";
+const POSTHOG_BUILTIN_ALLOWED_HOSTS = new Set([
+  "us.posthog.com",
+  "eu.posthog.com",
+]);
 
 function readString(value, fallback = "") {
   if (typeof value === "string") {
@@ -109,8 +113,14 @@ function boundedLimit(value, fallback) {
 function resolvePostHogBaseUrl(baseUrl) {
   const normalized = readString(baseUrl, POSTHOG_DEFAULT_BASE_URL);
   const parsed = new URL(normalized);
-  if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
-    throw new Error("PostHog base URL must use http:// or https://");
+  if (parsed.protocol !== "https:") {
+    throw new Error("PostHog base URL must use https://");
+  }
+
+  if (!POSTHOG_BUILTIN_ALLOWED_HOSTS.has(parsed.host.toLowerCase())) {
+    throw new Error(
+      `PostHog base URL "${parsed.host.toLowerCase()}" is not in the allowlist. Set POSTHOG_ALLOWED_BASE_URLS to whitelist self-hosted instances.`,
+    );
   }
 
   return parsed.origin;

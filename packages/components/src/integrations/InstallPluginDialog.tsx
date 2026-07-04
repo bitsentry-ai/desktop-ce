@@ -211,7 +211,7 @@ export default function InstallPluginDialog({
             <input
               ref={fileInputRef}
               type="file"
-              accept=".tgz,.tar.gz,.gz,application/gzip"
+              accept=".plugin.js,.js,text/javascript,application/javascript"
               className="hidden"
               onChange={(event) => {
                 setSelectedFile(event.target.files?.[0] ?? null);
