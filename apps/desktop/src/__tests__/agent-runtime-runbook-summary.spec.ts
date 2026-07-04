@@ -110,18 +110,33 @@ function getLastAgentToolCalls(service: AgentRuntimeService, sessionId: string):
   return getLastAgentMessage(service.getSnapshot(sessionId)).toolCalls
 }
 
-function getSecondCallMessages(llmAdapter: MockLlmAdapter): LlmChatRequest['messages'] {
-  const input = llmAdapter.chatWithTools.mock.calls[1]?.[0]
+function getAllAgentToolCalls(service: AgentRuntimeService, sessionId: string): ToolCallCard[] {
+  return service
+    .getSnapshot(sessionId)
+    .messages
+    .filter((message): message is Extract<ChatMessage, { kind: 'agent' }> => message.kind === 'agent')
+    .flatMap((message) => message.toolCalls)
+}
+
+function getLlmCallMessages(
+  llmAdapter: MockLlmAdapter,
+  callIndex: number,
+): LlmChatRequest['messages'] {
+  const input = llmAdapter.chatWithTools.mock.calls[callIndex]?.[0]
   if (typeof input !== 'object' || input === null || !('messages' in input)) {
-    throw new Error('Expected a second LLM call with messages')
+    throw new Error(`Expected LLM call ${String(callIndex + 1)} with messages`)
   }
 
   const messages = input.messages
   if (messages === undefined) {
-    throw new Error('Expected a second LLM call with messages')
+    throw new Error(`Expected LLM call ${String(callIndex + 1)} with messages`)
   }
 
   return messages as LlmChatRequest['messages']
+}
+
+function getSecondCallMessages(llmAdapter: MockLlmAdapter): LlmChatRequest['messages'] {
+  return getLlmCallMessages(llmAdapter, 1)
 }
 
 function getRunbookStartCalls(
@@ -137,6 +152,19 @@ function getRequiredToolContent(messages: LlmChatRequest['messages']): string {
   }
 
   return toolContent
+}
+
+function getRequiredSystemContent(messages: LlmChatRequest['messages'], text: string): string {
+  const systemContent = messages.find((message) => (
+    message.role === 'system' &&
+    typeof message.content === 'string' &&
+    message.content.includes(text)
+  ))?.content
+  if (typeof systemContent !== 'string') {
+    throw new Error(`Expected a system message containing: ${text}`)
+  }
+
+  return systemContent
 }
 
 function createRuntime(options: {
@@ -304,6 +332,90 @@ describe('summarizeRunbookExecutionForToolOutput', () => {
 })
 
 describe('AgentRuntimeService runbook outcomes', () => {
+  it('executes an exactly named runbook from an incident prompt before asking the model to summarize it', async () => {
+    const sentEvents: AgentRuntimeEventPayload[] = []
+    const kanyeExecution = makeExecution({
+      executionId: '33333333-3333-4333-8333-333333333333',
+      runbookId: 'rb-kanye-rest',
+      runbookTitle: 'Kanye Rest',
+      steps: [
+        {
+          actionId: 'step-1',
+          order: 1,
+          type: 'llm',
+          title: 'Read Kanye Rest output',
+          status: 'completed',
+          output: 'Kanye Rest said the service is healthy.',
+        },
+      ],
+    })
+    const runbookStore = {
+      list: vi.fn().mockResolvedValue([
+        makeRunbook('rb-kanye-rest', 'Kanye Rest', [
+          {
+            id: 'step-1',
+            type: 'llm',
+            title: 'Read Kanye Rest output',
+            prompt: 'Summarize Kanye Rest.',
+          },
+        ]),
+      ]),
+    }
+    const runbookExecutionService = {
+      start: vi.fn().mockResolvedValue({
+        executionId: kanyeExecution.executionId,
+        resultId: 'result-kanye-rest',
+      }),
+      waitForCompletion: vi.fn().mockResolvedValue(kanyeExecution),
+      get: vi.fn().mockResolvedValue(null),
+      getLatestForIncidentThread: vi.fn().mockResolvedValue(null),
+    }
+    const llmAdapter = {
+      chatWithTools: vi.fn().mockResolvedValue({
+        content: 'Kanye Rest said the service is healthy.',
+        toolCalls: [],
+      }),
+    }
+    const service = createRuntime({
+      llmAdapter,
+      runbookStore,
+      runbookExecutionService,
+      sentEvents,
+    })
+
+    const sessionId = await service.start({
+      prompt: 'Hey, can you please figure out what Kanye Rest said?',
+      incidentThreadId: 'incident-kanye',
+      llm: { providerKey: 'codex', model: 'gpt-5.4-mini' },
+    })
+
+    await waitForCondition(() => runbookExecutionService.start.mock.calls.length === 1)
+    await waitForCondition(() => llmAdapter.chatWithTools.mock.calls.length === 1)
+
+    expect(runbookExecutionService.start).toHaveBeenCalledWith(
+      'rb-kanye-rest',
+      expect.objectContaining({
+        incidentThreadId: 'incident-kanye',
+        source: 'agent',
+      }),
+    )
+    const toolCalls = getAllAgentToolCalls(service, sessionId)
+    expect(toolCalls.some((toolCall) => toolCall.toolName === 'execute_runbook')).toBe(false)
+    expect(
+      sentEvents.some((payload) => (
+        payload.event.type === 'tool_start' &&
+        payload.event.toolName === 'execute_runbook'
+      )),
+    ).toBe(false)
+    const llmMessages = getLlmCallMessages(llmAdapter, 0)
+    expect(llmMessages.some((message) => message.role === 'tool')).toBe(false)
+    const directRunbookContext = getRequiredSystemContent(
+      llmMessages,
+      'This was app-owned runbook runtime behavior, not an AI-requested tool call.',
+    )
+    expect(directRunbookContext).toContain('Kanye Rest said the service is healthy.')
+  })
+
   it('continues from Sentry output to backend logs using the derived window', async () => {
     const sentryExecution = makeExecution()
     const logsExecution = makeExecution({
@@ -608,7 +720,7 @@ describe('AgentRuntimeService runbook outcomes', () => {
     })
 
     const sessionId = await service.start({
-      prompt: 'Run the active incident runbook.',
+      prompt: 'Run it now.',
       incidentThreadId: 'incident-1',
       runbookContext: {
         id: 'rb-active',

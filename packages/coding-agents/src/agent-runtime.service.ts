@@ -458,10 +458,18 @@ interface AgentSession {
   snapshot: AgentThreadSnapshot
 }
 
+type ExecuteRunbookInput = z.infer<typeof executeRunbookToolSchema>
+
 type CompletedToolResult = {
   toolCall: ToolCall
   result: ToolResult
   modelContext: string
+}
+
+type DirectRunbookExecutionResult = {
+  result: ToolResult
+  modelContext: string
+  visibleResult: VisibleRunbookToolResult | null
 }
 
 type VisibleRunbookToolResult = {
@@ -632,6 +640,35 @@ function createUserMessageContent(text: string, attachments?: AgentChatAttachmen
       },
     })),
   ]
+}
+
+function readChatMessageText(content: ChatMessage['content']): string {
+  if (typeof content === 'string') {
+    return content
+  }
+
+  return content
+    .filter((part) => part.type === 'text')
+    .map((part) => part.text)
+    .join('\n')
+}
+
+function normalizeRunbookMention(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim()
+    .replace(/\s+/g, ' ')
+}
+
+function findLatestUserMessageIndex(messages: ChatMessage[]): number {
+  for (let index = messages.length - 1; index >= 0; index--) {
+    if (messages[index]?.role === 'user') {
+      return index
+    }
+  }
+
+  return -1
 }
 
 function toSnapshotAttachments(attachments?: AgentChatAttachment[]): AgentChatAttachment[] | undefined {
@@ -1802,6 +1839,24 @@ export class AgentRuntimeService {
         })
       }
 
+      const directRunbookExecution = await this.runExplicitlyMentionedRunbook(session)
+      if (directRunbookExecution !== null) {
+        lastToolResult = directRunbookExecution.result
+        session.messages.push({
+          role: 'system',
+          content: directRunbookExecution.modelContext,
+        })
+
+        if (directRunbookExecution.visibleResult !== null) {
+          this.sendEvent(sessionId, {
+            type: 'assistant_delta',
+            timestamp: new Date().toISOString(),
+            delta: directRunbookExecution.visibleResult.text,
+            kind: 'command_output',
+          })
+        }
+      }
+
       while (iterations < MAX_TOOL_ITERATIONS) {
         iterations++
         const observedIteration = {
@@ -2371,6 +2426,49 @@ export class AgentRuntimeService {
     return this.runbookExecutionService
   }
 
+  private async runExplicitlyMentionedRunbook(session: AgentSession): Promise<DirectRunbookExecutionResult | null> {
+    if (!this.hasRunbookTools()) {
+      return null
+    }
+
+    const latestUserMessageIndex = findLatestUserMessageIndex(session.messages)
+    if (latestUserMessageIndex < 0) {
+      return null
+    }
+
+    const latestUserMessage = session.messages[latestUserMessageIndex]
+    const userText = readChatMessageText(latestUserMessage.content)
+    const normalizedUserText = normalizeRunbookMention(userText)
+    if (normalizedUserText.length === 0) {
+      return null
+    }
+
+    const matches = (await this.listExecutableRunbooks()).filter((runbook) => {
+      const normalizedTitle = normalizeRunbookMention(runbook.title)
+      return normalizedTitle.length > 0 && normalizedUserText.includes(normalizedTitle)
+    })
+
+    if (matches.length !== 1) {
+      return null
+    }
+
+    const [runbook] = matches
+    log.info(`[agent-runtime:${session.id}] Running explicitly mentioned runbook through the app runtime: ${runbook.title}`)
+
+    const result = await this.executeRunbook(session, {
+      runbookId: runbook.id,
+      runbookTitle: runbook.title,
+    })
+    const rawOutput = result.output?.trim() ?? ''
+    const modelContext = this.buildDirectRunbookExecutionConversationContent(runbook.title, rawOutput, result)
+
+    return {
+      result,
+      modelContext,
+      visibleResult: this.buildVisibleRunbookExecutionResult(result),
+    }
+  }
+
   private findActiveIncidentSession(incidentThreadId: string): AgentSession | null {
     return (
       [...this.sessions.values()]
@@ -2466,7 +2564,6 @@ export class AgentRuntimeService {
 
   private async executeDynamicToolCall(session: AgentSession, toolCall: ToolCall): Promise<ToolResult | null> {
     if (!this.hasRunbookTools()) return null
-    const runbookExecutionService = this.getRunbookExecutionService()
 
     switch (toolCall.name) {
       case 'list_runbooks': {
@@ -2503,68 +2600,7 @@ export class AgentRuntimeService {
       }
       case 'execute_runbook': {
         const input = executeRunbookToolSchema.parse(normalizeToolArgs(toolCall.name, toolCall.args))
-        const runbook = await this.resolveRunbookReference(session, input)
-        const parameterValues = this.resolveRunbookParameterValues(session, runbook, input)
-        const runbookStartKey = buildRunbookStartKey(runbook.id, parameterValues)
-        const startedRunbookKeys = session.currentTurnStartedRunbookKeys ?? new Set<string>()
-        if (startedRunbookKeys.has(runbookStartKey)) {
-          return {
-            output: JSON.stringify(
-              {
-                status: 'skipped',
-                runbookId: runbook.id,
-                runbookTitle: runbook.title,
-                repeatBlocked: true,
-                reason:
-                  'This runbook was already started in this assistant turn. Use the existing execution result instead of starting it again with another small window.',
-              },
-              null,
-              2,
-            ),
-          }
-        }
-        startedRunbookKeys.add(runbookStartKey)
-        session.currentTurnStartedRunbookKeys = startedRunbookKeys
-        const execution = await runbookExecutionService.start(runbook.id, {
-          incidentThreadId: session.incidentThreadId,
-          parameterValues,
-          source: 'agent',
-          triggerContext: this.buildRunbookTriggerContext(session),
-          accessLevel: session.accessLevel,
-        })
-        session.latestRunbookExecutionId = execution.executionId
-        session.latestRunbookResultId = execution.resultId
-        session.latestRunbookTitle = runbook.title
-        session.currentTurnStartedRunbookExecutionIds?.add(execution.executionId)
-        session.currentRunbookWaitExecutionId = execution.executionId
-        const latestExecution = await runbookExecutionService.waitForCompletion(execution.executionId, {
-          signal: session.abortController.signal,
-          timeoutMs: this.runbookCompletionWaitMs(session, { allowRunbookGrace: true }),
-        }).finally(() => {
-          if (session.currentRunbookWaitExecutionId === execution.executionId) {
-            session.currentRunbookWaitExecutionId = undefined
-          }
-        })
-        if (latestExecution !== null) {
-          this.rememberJournalTimeWindowParameters(session, latestExecution)
-        }
-        const outputPayload: Record<string, unknown> = {
-          status: 'started',
-          runbookId: runbook.id,
-          runbookTitle: runbook.title,
-          executionId: execution.executionId,
-        }
-        if (latestExecution !== null) {
-          outputPayload.status = latestExecution.status
-          outputPayload.execution = summarizeRunbookExecutionForToolOutput(latestExecution)
-        }
-        return {
-          output: JSON.stringify(
-            outputPayload,
-            null,
-            2,
-          ),
-        }
+        return await this.executeRunbook(session, input)
       }
       case 'get_runbook_execution': {
         const input = getRunbookExecutionToolSchema.parse(normalizeToolArgs(toolCall.name, toolCall.args))
@@ -2599,6 +2635,73 @@ export class AgentRuntimeService {
       }
       default:
         return null
+    }
+  }
+
+  private async executeRunbook(session: AgentSession, input: ExecuteRunbookInput): Promise<ToolResult> {
+    const runbookExecutionService = this.getRunbookExecutionService()
+    const runbook = await this.resolveRunbookReference(session, input)
+    const parameterValues = this.resolveRunbookParameterValues(session, runbook, input)
+    const runbookStartKey = buildRunbookStartKey(runbook.id, parameterValues)
+    const startedRunbookKeys = session.currentTurnStartedRunbookKeys ?? new Set<string>()
+    if (startedRunbookKeys.has(runbookStartKey)) {
+      return {
+        output: JSON.stringify(
+          {
+            status: 'skipped',
+            runbookId: runbook.id,
+            runbookTitle: runbook.title,
+            repeatBlocked: true,
+            reason:
+              'This runbook was already started in this assistant turn. Use the existing execution result instead of starting it again with another small window.',
+          },
+          null,
+          2,
+        ),
+      }
+    }
+
+    startedRunbookKeys.add(runbookStartKey)
+    session.currentTurnStartedRunbookKeys = startedRunbookKeys
+    const execution = await runbookExecutionService.start(runbook.id, {
+      incidentThreadId: session.incidentThreadId,
+      parameterValues,
+      source: 'agent',
+      triggerContext: this.buildRunbookTriggerContext(session),
+      accessLevel: session.accessLevel,
+    })
+    session.latestRunbookExecutionId = execution.executionId
+    session.latestRunbookResultId = execution.resultId
+    session.latestRunbookTitle = runbook.title
+    session.currentTurnStartedRunbookExecutionIds?.add(execution.executionId)
+    session.currentRunbookWaitExecutionId = execution.executionId
+    const latestExecution = await runbookExecutionService.waitForCompletion(execution.executionId, {
+      signal: session.abortController.signal,
+      timeoutMs: this.runbookCompletionWaitMs(session, { allowRunbookGrace: true }),
+    }).finally(() => {
+      if (session.currentRunbookWaitExecutionId === execution.executionId) {
+        session.currentRunbookWaitExecutionId = undefined
+      }
+    })
+    if (latestExecution !== null) {
+      this.rememberJournalTimeWindowParameters(session, latestExecution)
+    }
+    const outputPayload: Record<string, unknown> = {
+      status: 'started',
+      runbookId: runbook.id,
+      runbookTitle: runbook.title,
+      executionId: execution.executionId,
+    }
+    if (latestExecution !== null) {
+      outputPayload.status = latestExecution.status
+      outputPayload.execution = summarizeRunbookExecutionForToolOutput(latestExecution)
+    }
+    return {
+      output: JSON.stringify(
+        outputPayload,
+        null,
+        2,
+      ),
     }
   }
 
@@ -2952,15 +3055,22 @@ export class AgentRuntimeService {
       return null
     }
 
-    if (entry.result.error !== undefined && entry.result.error.length > 0) {
+    return this.buildVisibleRunbookExecutionResult(entry.result, entry.toolCall.name)
+  }
+
+  private buildVisibleRunbookExecutionResult(
+    result: ToolResult,
+    toolName: 'execute_runbook' | 'get_runbook_execution' = 'execute_runbook',
+  ): VisibleRunbookToolResult | null {
+    if (result.error !== undefined && result.error.length > 0) {
       return null
     }
 
-    if (entry.result.output === undefined || entry.result.output.length === 0) {
+    if (result.output === undefined || result.output.length === 0) {
       return null
     }
 
-    const payload = this.safeParseObject(entry.result.output)
+    const payload = this.safeParseObject(result.output)
     if (payload === null || payload.lookupDeferred === true) {
       return null
     }
@@ -2968,7 +3078,7 @@ export class AgentRuntimeService {
       return null
     }
 
-    const executionSummary = readExecutionSummaryRecord(entry.toolCall.name, payload)
+    const executionSummary = readExecutionSummaryRecord(toolName, payload)
     const runbookTitle = readFirstStringProperty([payload, executionSummary], 'runbookTitle', 'Runbook')
     const status = readFirstStringProperty([payload, executionSummary], 'status', 'completed')
     const executionId = readFirstStringProperty([payload, executionSummary], 'executionId', '')
@@ -3025,17 +3135,17 @@ export class AgentRuntimeService {
 
     lines.push('', '')
 
-    const result: VisibleRunbookToolResult = {
+    const visibleResult: VisibleRunbookToolResult = {
       text: lines.join('\n'),
     }
     if (finalOutput !== null) {
-      result.dedupeText = finalOutput
+      visibleResult.dedupeText = finalOutput
     }
     if (executionId.length > 0) {
-      result.executionId = executionId
+      visibleResult.executionId = executionId
     }
 
-    return result
+    return visibleResult
   }
 
   private safeParseObject(value: string): Record<string, unknown> | null {
@@ -3099,6 +3209,29 @@ export class AgentRuntimeService {
     lines.push('Choose only from the exact runbook titles above. Do not invent runbook titles or IDs.')
 
     return lines.join('\n')
+  }
+
+  private buildDirectRunbookExecutionConversationContent(
+    runbookTitle: string,
+    rawOutput: string,
+    result: ToolResult,
+  ): string {
+    if (result.error !== undefined && result.error.length > 0) {
+      return [
+        `BitSentry directly tried to run the "${runbookTitle}" runbook because the user's message clearly named that exact runbook.`,
+        `The app-owned runbook runtime failed before returning a successful execution result.`,
+        `Error: ${result.error}`,
+        'Explain the failure to the user. Do not claim the model called execute_runbook.',
+      ].join('\n')
+    }
+
+    const executionContext = this.buildRunbookExecutionConversationContent('execute_runbook', rawOutput)
+    return [
+      `BitSentry directly ran the "${runbookTitle}" runbook because the user's message clearly named that exact runbook.`,
+      'This was app-owned runbook runtime behavior, not an AI-requested tool call.',
+      executionContext,
+      'Summarize the runbook result for the user in clean Markdown.',
+    ].join('\n')
   }
 
   private buildRunbookExecutionConversationContent(toolName: string, rawOutput: string): string {
