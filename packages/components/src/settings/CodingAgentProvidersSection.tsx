@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { Button } from '@bitsentry-ce/components/ui/button'
 import { Badge } from '@bitsentry-ce/components/ui/badge'
 import { useToast } from '@bitsentry-ce/components/hooks/use-toast'
@@ -227,6 +227,17 @@ function mergeModelOption(
   }
 
   return [model, ...availableModels]
+}
+
+function areStringArraysEqual(left: string[] | undefined, right: string[] | undefined): boolean {
+  if (left === right) {
+    return true
+  }
+  if (left === undefined || right === undefined || left.length !== right.length) {
+    return false
+  }
+
+  return left.every((value, index) => value === right[index])
 }
 
 function applySavedModel(setter: ProviderStateSetter, model: string): void {
@@ -687,15 +698,24 @@ function ProviderPanel({
   const [expanded, setExpanded] = useState(false)
   const [syncState, setSyncState] = useState<SyncState>('idle')
   const [syncMessage, setSyncMessage] = useState('')
+  const {
+    binaryPath,
+    codexArgs,
+    enabled,
+    opencodeArgs,
+  } = state
 
   // Debounced autosave on enabled / binaryPath / provider-specific extra args.
   // We only persist the persistable subset; probing/probe results are not part of the save.
-  const persistable = {
-    enabled: state.enabled,
-    binaryPath: state.binaryPath,
-    codexArgs: state.codexArgs,
-    opencodeArgs: state.opencodeArgs,
-  }
+  const persistable = useMemo(
+    () => ({
+      enabled,
+      binaryPath,
+      codexArgs,
+      opencodeArgs,
+    }),
+    [binaryPath, codexArgs, enabled, opencodeArgs],
+  )
   useDebouncedAutoSave(persistable, async () => {
     await onSave(state)
   }, {
@@ -731,7 +751,15 @@ function ProviderPanel({
     const parsedArgs = parseCliArgsInput(value)
     setState((prev) => {
       if (meta.id === 'codex') {
+        if (areStringArraysEqual(prev.codexArgs, parsedArgs)) {
+          return prev
+        }
+
         return { ...prev, codexArgs: parsedArgs }
+      }
+
+      if (areStringArraysEqual(prev.opencodeArgs, parsedArgs)) {
+        return prev
       }
 
       return { ...prev, opencodeArgs: parsedArgs }
@@ -745,7 +773,7 @@ function ProviderPanel({
         expanded={expanded}
         isPrimary={isPrimary}
         onToggle={() => {
-          setExpanded(!expanded)
+          setExpanded((current) => !current)
         }}
       />
 
@@ -922,7 +950,13 @@ export function CodingAgentProvidersSection({
         // Auto-enable when the binary is detected — no need to make the user
         // tick the checkbox manually.
         const setter = getProviderSetter(provider)
-        setter((prev) => ({ ...prev, binaryPath: result, enabled: true }))
+        setter((prev) => {
+          if (prev.binaryPath === result && prev.enabled) {
+            return prev
+          }
+
+          return { ...prev, binaryPath: result, enabled: true }
+        })
         captureDesktopAnalyticsEvent('desktop_coding_agent_detected', {
           provider,
           binary_path_present: true,

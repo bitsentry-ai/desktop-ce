@@ -103,9 +103,8 @@ export function useDebouncedAutoSave<T>(
       return;
     }
 
-    setErrorMessage(null);
-
     if (isEqualRef.current(value, lastSavedRef.current)) {
+      setErrorMessage(null);
       setStatus((current) => {
         if (current === "error") {
           return "saved";
@@ -115,6 +114,8 @@ export function useDebouncedAutoSave<T>(
       });
       return;
     }
+
+    setErrorMessage(null);
 
     clearPendingSave();
 

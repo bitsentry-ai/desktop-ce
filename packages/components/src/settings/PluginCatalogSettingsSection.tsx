@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { AlertCircle, CheckCircle2, Loader2, PlugZap } from "lucide-react";
 
 import type {
@@ -205,6 +205,19 @@ function mergeRawFieldValues(
   }
 
   return merged;
+}
+
+function stringRecordEquals(
+  left: Record<string, string>,
+  right: Record<string, string>,
+): boolean {
+  const leftKeys = Object.keys(left);
+  const rightKeys = Object.keys(right);
+  if (leftKeys.length !== rightKeys.length) {
+    return false;
+  }
+
+  return leftKeys.every((key) => left[key] === right[key]);
 }
 
 function serializeFieldValue(
@@ -601,6 +614,8 @@ export function PluginCatalogSettingsSection({
   const executeActionMutation = useExecutePluginAction();
   const updateStoredAuthMutation = useUpdatePluginStoredAuth();
   const clearStoredAuthMutation = useClearPluginStoredAuth();
+  const resetExecuteActionMutationRef = useRef(executeActionMutation.reset);
+  const selectedActionResetSignatureRef = useRef<string | null>(null);
 
   const plugins = pluginsQuery.data ?? EMPTY_PLUGINS;
   const storedAuthValues = storedAuthQuery.data ?? EMPTY_STORED_AUTH_VALUES;
@@ -638,6 +653,27 @@ export function PluginCatalogSettingsSection({
     executionResultVariant = "default";
     executionResultIcon = <CheckCircle2 className="h-4 w-4" />;
   }
+  let selectedPluginAuthSignature = "";
+  if (selectedPlugin !== null) {
+    selectedPluginAuthSignature = JSON.stringify({
+      pluginId: selectedPlugin.id,
+      fields: selectedPlugin.auth.fields,
+      storedAuthValues,
+    });
+  }
+
+  let selectedActionSignature = "";
+  if (selectedAction !== null) {
+    selectedActionSignature = JSON.stringify({
+      pluginId: selectedPlugin?.id ?? "",
+      actionId: selectedAction.id,
+      fields: selectedAction.fields,
+    });
+  }
+
+  useEffect(() => {
+    resetExecuteActionMutationRef.current = executeActionMutation.reset;
+  }, [executeActionMutation.reset]);
 
   useEffect(() => {
     if (plugins.length === 0) {
@@ -671,20 +707,49 @@ export function PluginCatalogSettingsSection({
     }
 
     const defaultValues = fieldDefaultValueMap(selectedPlugin.auth.fields);
-    setAuthValues(() => {
-      return mergeRawFieldValues(selectedPlugin.auth.fields, {}, {
+    setAuthValues((current) => {
+      const next = mergeRawFieldValues(selectedPlugin.auth.fields, {}, {
         ...defaultValues,
         ...storedAuthValues,
       });
+      if (stringRecordEquals(current, next)) {
+        return current;
+      }
+
+      return next;
     });
-  }, [selectedPlugin, storedAuthValues]);
+  }, [selectedPlugin, selectedPluginAuthSignature, storedAuthValues]);
 
   useEffect(() => {
-    setInputValues(() => inputValuesForAction(selectedAction));
-    setValidationError(null);
-    setStorageMessage(null);
-    executeActionMutation.reset();
-  }, [executeActionMutation, selectedAction, selectedActionId, selectedPluginId]);
+    if (selectedActionResetSignatureRef.current === selectedActionSignature) {
+      return;
+    }
+    selectedActionResetSignatureRef.current = selectedActionSignature;
+
+    const nextInputValues = inputValuesForAction(selectedAction);
+    setInputValues((current) => {
+      if (stringRecordEquals(current, nextInputValues)) {
+        return current;
+      }
+
+      return nextInputValues;
+    });
+    setValidationError((current) => {
+      if (current === null) {
+        return current;
+      }
+
+      return null;
+    });
+    setStorageMessage((current) => {
+      if (current === null) {
+        return current;
+      }
+
+      return null;
+    });
+    resetExecuteActionMutationRef.current();
+  }, [selectedAction, selectedActionId, selectedActionSignature, selectedPluginId]);
 
   async function handleSaveAuth(): Promise<void> {
     if (selectedPlugin === null) {
