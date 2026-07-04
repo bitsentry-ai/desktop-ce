@@ -278,6 +278,7 @@ interface ProviderPanelProps {
   onProbe: (state: CodingAgentProviderState) => Promise<void> | void
   onSyncModels: () => Promise<number>
   onModelChange: (model: string) => Promise<void> | void
+  autosaveBaselineKey: unknown
 }
 
 type SyncState = 'idle' | 'syncing' | 'synced' | 'error'
@@ -680,6 +681,7 @@ function ProviderPanel({
   onProbe,
   onSyncModels,
   onModelChange,
+  autosaveBaselineKey,
 }: ProviderPanelProps) {
   const { t } = useTranslation()
   const [expanded, setExpanded] = useState(false)
@@ -696,6 +698,8 @@ function ProviderPanel({
   }
   useDebouncedAutoSave(persistable, async () => {
     await onSave(state)
+  }, {
+    baselineKey: autosaveBaselineKey,
   })
 
   async function handleDetectAndProbe(): Promise<void> {
@@ -810,6 +814,7 @@ export function CodingAgentProvidersSection({
     availableModels: PROVIDER_META.cursor.defaultModels,
     probing: false,
   })
+  const [autosaveBaselineRevision, setAutosaveBaselineRevision] = useState(0)
 
   const getProviderSetter = useCallback((provider: ProviderId): ProviderStateSetter => {
     switch (provider) {
@@ -840,9 +845,15 @@ export function CodingAgentProvidersSection({
   useEffect(() => {
     const llmApi = getDesktopLlmApi()
 
-    llmApi.local
-      .getSettings()
-      .then((settings: DesktopLocalLlmSettings) => {
+    void (async () => {
+      const settingsResult = await Promise.allSettled([
+        llmApi.local.getSettings(),
+        llmApi.getProviders(),
+      ] as const)
+
+      const localSettings = settingsResult[0]
+      if (localSettings.status === 'fulfilled') {
+        const settings: DesktopLocalLlmSettings = localSettings.value
         setClaudeCode((prev) => ({
           ...prev,
           enabled: settings.claudeCode.enabled,
@@ -869,26 +880,25 @@ export function CodingAgentProvidersSection({
           binaryPath: settings.cursor.binaryPath,
           probe: settings.cursor.lastProbe as DesktopCliProbeResult | undefined,
         }))
-      })
-      .catch(() => {
-        // Settings not available yet
-      })
+      }
 
-    // Load persisted default model for each agent. saveProvider writes
-    // `llm.<id>.model`, which the IPC's getProviders surfaces as `model` for
-    // the CLI entries; mirror it back into local state so the dropdown shows
-    // the user's saved selection after a reload.
-    llmApi
-      .getProviders()
-      .then((all) => {
-        const providerSettings = all as ProviderSettingsRecord
+      const providerSettingsResult = settingsResult[1]
+      if (providerSettingsResult.status === 'fulfilled') {
+        const providerSettings = providerSettingsResult.value as ProviderSettingsRecord
         applySavedModel(setClaudeCode, providerSettings.claude_code?.model ?? '')
         applySavedModel(setCodex, providerSettings.codex?.model ?? '')
         applySavedModel(setOpenCode, providerSettings.opencode?.model ?? '')
         applySavedModel(setCursor, providerSettings.cursor?.model ?? '')
-      })
-      .catch(() => {
-        // First launch — no saved model yet
+      }
+
+      if (
+        localSettings.status === 'fulfilled' ||
+        providerSettingsResult.status === 'fulfilled'
+      ) {
+        setAutosaveBaselineRevision((current) => current + 1)
+      }
+    })().catch(() => {
+        // Settings not available yet
       })
   }, [])
 
@@ -1084,6 +1094,7 @@ export function CodingAgentProvidersSection({
           onProbe={(state) => handleProbe('codex', state)}
           onSyncModels={() => handleSyncModels('codex')}
           onModelChange={(model) => handleSaveModel('codex', model)}
+          autosaveBaselineKey={autosaveBaselineRevision}
         />
         <ProviderPanel
           meta={PROVIDER_META.cursor}
@@ -1097,6 +1108,7 @@ export function CodingAgentProvidersSection({
           onProbe={(state) => handleProbe('cursor', state)}
           onSyncModels={() => handleSyncModels('cursor')}
           onModelChange={(model) => handleSaveModel('cursor', model)}
+          autosaveBaselineKey={autosaveBaselineRevision}
         />
         <ProviderPanel
           meta={PROVIDER_META.claude_code}
@@ -1110,6 +1122,7 @@ export function CodingAgentProvidersSection({
           onProbe={(state) => handleProbe('claude_code', state)}
           onSyncModels={() => handleSyncModels('claude_code')}
           onModelChange={(model) => handleSaveModel('claude_code', model)}
+          autosaveBaselineKey={autosaveBaselineRevision}
         />
         <ProviderPanel
           meta={PROVIDER_META.opencode}
@@ -1123,6 +1136,7 @@ export function CodingAgentProvidersSection({
           onProbe={(state) => handleProbe('opencode', state)}
           onSyncModels={() => handleSyncModels('opencode')}
           onModelChange={(model) => handleSaveModel('opencode', model)}
+          autosaveBaselineKey={autosaveBaselineRevision}
         />
       </div>
     </section>
