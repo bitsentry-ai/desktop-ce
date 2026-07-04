@@ -54,6 +54,14 @@ function parseLoggedCursorMessage(line: string): LoggedCursorMessage {
   return parsed
 }
 
+function getMessageParams(message: LoggedCursorMessage): Record<string, unknown> | undefined {
+  if (isRecord(message.params)) {
+    return message.params
+  }
+
+  return undefined
+}
+
 async function readLoggedMessages(logPath: string): Promise<LoggedCursorMessage[]> {
   const contents = await readFile(logPath, 'utf8').catch(() => '')
   return contents
@@ -400,13 +408,11 @@ describe('Cursor provider behavior', () => {
     ).resolves.toMatchObject({ output: 'done' })
 
     const messages = await readLoggedMessages(mock.logPath)
-    expect(messages).not.toContainEqual(expect.objectContaining({
-      method: 'session/set_config_option',
-      params: expect.objectContaining({
-        configId: 'thinking',
-        value: 'high',
-      }),
-    }))
+    expect(messages.some((message) => {
+      if (message.method !== 'session/set_config_option') return false
+      const params = getMessageParams(message)
+      return params?.configId === 'thinking' && params.value === 'high'
+    })).toBe(false)
     expect(messages).toContainEqual(expect.objectContaining({
       method: 'session/set_config_option',
       params: {
