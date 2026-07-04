@@ -168,4 +168,81 @@ describe("Sentry plugin package", () => {
       "frontend",
     ]);
   });
+
+  it("builds OAuth authorize URLs against the configured Sentry base", async () => {
+    vi.stubEnv("SENTRY_ALLOWED_BASE_URLS", "sentry.example.com");
+
+    const context: DesktopPluginCodeActionContext = {
+      pluginId: plugin.id,
+      actionId: "build_authorize_url",
+      auth: {
+        baseUrl: "https://sentry.example.com",
+      },
+      input: {
+        clientId: "client-1",
+        redirectUri: "http://127.0.0.1:48174/oauth/sentry/callback",
+        scopes: ["org:read", "project:read"],
+        state: "state-1",
+        codeChallenge: "challenge-1",
+      },
+      host,
+    };
+
+    expect(action("build_authorize_url").execute(context)).toMatchObject({
+      data: {
+        authUrl: expect.stringContaining(
+          "https://sentry.example.com/oauth/authorize/",
+        ),
+      },
+    });
+  });
+
+  it("exchanges OAuth tokens against the configured Sentry base", async () => {
+    vi.stubEnv("SENTRY_ALLOWED_BASE_URLS", "sentry.example.com");
+    const fetchMock = vi
+      .fn<(url: string, request?: RequestInit) => Promise<Response>>()
+      .mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            access_token: "oauth-token",
+            refresh_token: "refresh-token",
+            expires_in: 3600,
+            scope: "org:read",
+          }),
+          {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          },
+        ),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const context: DesktopPluginCodeActionContext = {
+      pluginId: plugin.id,
+      actionId: "exchange_code_for_token",
+      auth: {
+        baseUrl: "https://sentry.example.com",
+      },
+      input: {
+        clientId: "client-1",
+        clientSecret: "secret-1",
+        code: "code-1",
+        redirectUri: "http://127.0.0.1:48174/oauth/sentry/callback",
+        codeVerifier: "verifier-1",
+      },
+      host,
+    };
+
+    await expect(
+      action("exchange_code_for_token").execute(context),
+    ).resolves.toMatchObject({
+      data: {
+        accessToken: "oauth-token",
+        refreshToken: "refresh-token",
+      },
+    });
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(
+      "https://sentry.example.com/oauth/token/",
+    );
+  });
 });

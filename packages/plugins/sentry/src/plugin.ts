@@ -1,8 +1,6 @@
 import type { DesktopCodePlugin } from "@bitsentry-ce/core/features/plugins";
 
 const SENTRY_API_BASE = "https://sentry.io/api/0";
-const SENTRY_AUTHORIZE_URL = "https://sentry.io/oauth/authorize/";
-const SENTRY_TOKEN_URL = "https://sentry.io/oauth/token/";
 const DEFAULT_ISSUES_LIMIT = 50;
 const DEFAULT_EVENTS_LIMIT = 50;
 const MAX_ISSUES_LIMIT = 100;
@@ -112,6 +110,21 @@ function readApiBase(auth) {
   }
 
   return `${normalized}/api/0`;
+}
+
+function readWebBase(auth) {
+  const apiBase = readApiBase(auth);
+  const parsed = new URL(apiBase);
+  parsed.pathname = "/";
+  parsed.search = "";
+  parsed.hash = "";
+
+  return parsed.origin;
+}
+
+function buildOAuthUrl(auth, pathname) {
+  const url = new URL(pathname, `${readWebBase(auth)}/`);
+  return url.toString();
 }
 
 function authHeaders(accessToken) {
@@ -396,8 +409,8 @@ function normalizeTokenResponse(payload) {
   return response;
 }
 
-function buildAuthorizeUrl({ input }) {
-  const url = new URL(SENTRY_AUTHORIZE_URL);
+function buildAuthorizeUrl({ auth, input }) {
+  const url = new URL(buildOAuthUrl(auth, "/oauth/authorize/"));
   url.searchParams.set("client_id", requireString(input.clientId, "clientId"));
   url.searchParams.set("response_type", "code");
   url.searchParams.set("redirect_uri", requireString(input.redirectUri, "redirectUri"));
@@ -418,7 +431,7 @@ function buildAuthorizeUrl({ input }) {
   };
 }
 
-async function exchangeCodeForToken({ input }) {
+async function exchangeCodeForToken({ auth, input }) {
   const payload = new URLSearchParams({
     client_id: requireString(input.clientId, "clientId"),
     client_secret: readString(input.clientSecret),
@@ -427,7 +440,7 @@ async function exchangeCodeForToken({ input }) {
     redirect_uri: requireString(input.redirectUri, "redirectUri"),
     code_verifier: requireString(input.codeVerifier, "codeVerifier"),
   });
-  const response = await requestSentry(SENTRY_TOKEN_URL, {
+  const response = await requestSentry(buildOAuthUrl(auth, "/oauth/token/"), {
     method: "POST",
     headers: {
       "Content-Type": "application/x-www-form-urlencoded",
@@ -442,14 +455,14 @@ async function exchangeCodeForToken({ input }) {
   };
 }
 
-async function refreshToken({ input }) {
+async function refreshToken({ auth, input }) {
   const payload = new URLSearchParams({
     client_id: requireString(input.clientId, "clientId"),
     client_secret: readString(input.clientSecret),
     grant_type: "refresh_token",
     refresh_token: requireString(input.refreshToken, "refreshToken"),
   });
-  const response = await requestSentry(SENTRY_TOKEN_URL, {
+  const response = await requestSentry(buildOAuthUrl(auth, "/oauth/token/"), {
     method: "POST",
     headers: {
       "Content-Type": "application/x-www-form-urlencoded",
