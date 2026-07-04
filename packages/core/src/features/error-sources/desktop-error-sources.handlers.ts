@@ -906,9 +906,9 @@ export function createDesktopErrorSourcesHandlers(
           accessTokenRef: nullableNonEmptyString(
             persistedSetup.accessTokenRef ?? "",
           ),
-          refreshTokenRef: null,
-          expiresAt: null,
-          grantedScopes: [],
+          refreshTokenRef: persistedSetup.refreshTokenRef ?? null,
+          expiresAt: persistedSetup.expiresAt ?? null,
+          grantedScopes: persistedSetup.grantedScopes ?? [],
           configuration: customPluginConfiguration,
           logLevelThreshold: toLogLevelThreshold(payload.logLevelThreshold),
           syncEnabled: payload.syncEnabled !== false,
@@ -974,15 +974,25 @@ export function createDesktopErrorSourcesHandlers(
         };
       }
       const tokenReplacement = persistedSetup.accessTokenRef !== undefined;
-      const tokenReplacementUpdate: {
+      const tokenMetadataUpdate: {
         refreshTokenRef?: string | null;
         expiresAt?: string | null;
         grantedScopes?: string[];
       } = {};
-      if (tokenReplacement) {
-        tokenReplacementUpdate.refreshTokenRef = null;
-        tokenReplacementUpdate.expiresAt = null;
-        tokenReplacementUpdate.grantedScopes = [];
+      if (persistedSetup.refreshTokenRef !== undefined) {
+        tokenMetadataUpdate.refreshTokenRef = persistedSetup.refreshTokenRef;
+      } else if (tokenReplacement) {
+        tokenMetadataUpdate.refreshTokenRef = null;
+      }
+      if (persistedSetup.expiresAt !== undefined) {
+        tokenMetadataUpdate.expiresAt = persistedSetup.expiresAt;
+      } else if (tokenReplacement) {
+        tokenMetadataUpdate.expiresAt = null;
+      }
+      if (persistedSetup.grantedScopes !== undefined) {
+        tokenMetadataUpdate.grantedScopes = persistedSetup.grantedScopes;
+      } else if (tokenReplacement) {
+        tokenMetadataUpdate.grantedScopes = [];
       }
 
       const updated = await sourcesRepository.update({
@@ -991,7 +1001,7 @@ export function createDesktopErrorSourcesHandlers(
         additionalMetadata:
           readPayloadRecord(payload.additionalMetadata) ?? undefined,
         accessTokenRef: persistedSetup.accessTokenRef,
-        ...tokenReplacementUpdate,
+        ...tokenMetadataUpdate,
         configuration: nextConfiguration,
         logLevelThreshold: payload.logLevelThreshold,
         syncEnabled: payload.syncEnabled,
