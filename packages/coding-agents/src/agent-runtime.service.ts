@@ -2886,13 +2886,19 @@ export class AgentRuntimeService {
         continue
       }
 
+      const payload = this.safeParseObject(entry.result.output)
+      const statusValue = readStringProperty(payload, 'status')
+      let status = ''
+      if (statusValue !== null) {
+        status = statusValue.toLowerCase()
+      }
+
+      if (entry.toolCall.name === 'execute_runbook' && payload?.repeatBlocked === true) {
+        const runbookTitle = readFirstStringProperty([payload], 'runbookTitle', 'The runbook')
+        return `${runbookTitle} was already started in this turn. I’m stopping here and using the existing runbook result instead of starting the same runbook again.`
+      }
+
       if (entry.toolCall.name === 'get_runbook_execution') {
-        const payload = this.safeParseObject(entry.result.output)
-        const statusValue = readStringProperty(payload, 'status')
-        let status = ''
-        if (statusValue !== null) {
-          status = statusValue.toLowerCase()
-        }
         if (
           payload?.repeatBlocked === true &&
           status !== 'completed' &&
