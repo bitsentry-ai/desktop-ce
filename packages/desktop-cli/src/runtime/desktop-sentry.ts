@@ -1,4 +1,5 @@
 import log from 'electron-log'
+import { createRequire } from 'node:module'
 import {
   createDesktopSentryBindings,
   type DesktopSentryPort,
@@ -16,7 +17,7 @@ function loadSentryMainRuntime(): Promise<DesktopSentryPort> {
     return globalThis.__BITSENTRY_TEST_LOAD_SENTRY_MAIN__()
   }
 
-  const runtimeRequire = eval('require') as (id: string) => unknown
+  const runtimeRequire = createRequire(__filename) as (id: string) => unknown
   return Promise.resolve(runtimeRequire('@sentry/electron/main') as DesktopSentryPort)
 }
 

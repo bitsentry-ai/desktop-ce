@@ -199,23 +199,39 @@ function cloneRunbook(runbook: RunbookRecord): MutableRunbook {
 }
 
 function cloneAction(action: RunbookActionRecord): RunbookActionRecord {
+  let logFilter: RunbookActionRecord["logFilter"];
+  if (action.logFilter !== undefined) {
+    logFilter = cloneStructuredValue(action.logFilter);
+  }
+
+  let telemetryConfig: RunbookActionRecord["telemetryConfig"];
+  if (action.telemetryConfig !== undefined) {
+    telemetryConfig = cloneStructuredValue(action.telemetryConfig);
+  }
+
   return {
     ...action,
     headers: action.headers?.map((header) => ({ ...header })),
     parameters: action.parameters?.map((parameter) => ({ ...parameter })),
-    logFilter:
-      action.logFilter === undefined
-        ? undefined
-        : JSON.parse(JSON.stringify(action.logFilter)),
-    telemetryConfig:
-      action.telemetryConfig === undefined
-        ? undefined
-        : JSON.parse(JSON.stringify(action.telemetryConfig)),
+    logFilter,
+    telemetryConfig,
   };
 }
 
 function normalizeString(value: string | undefined): string {
-  return typeof value === "string" ? value.trim() : "";
+  if (typeof value === "string") {
+    return value.trim();
+  }
+
+  return "";
+}
+
+function cloneStructuredValue<TValue>(value: TValue): TValue {
+  if (typeof structuredClone === "function") {
+    return structuredClone(value);
+  }
+
+  return JSON.parse(JSON.stringify(value)) as TValue;
 }
 
 function stableSerialize(value: unknown): string {
@@ -525,13 +541,21 @@ function buildSequentialOperationDiffs(
 function cloneOperation(
   operation: RunbookAuthoringOperation,
 ): RunbookAuthoringOperation {
+  let metadata: RunbookAuthoringOperation["metadata"];
+  if (operation.metadata !== undefined) {
+    metadata = { ...operation.metadata };
+  }
+
+  let action: RunbookAuthoringOperation["action"];
+  if (operation.action !== undefined) {
+    action = cloneAction(operation.action);
+  }
+
   return {
     ...operation,
     riskLabels: operation.riskLabels?.slice(),
-    metadata:
-      operation.metadata === undefined ? undefined : { ...operation.metadata },
-    action:
-      operation.action === undefined ? undefined : cloneAction(operation.action),
+    metadata,
+    action,
     actionIdsInOrder: operation.actionIdsInOrder?.slice(),
   };
 }
@@ -658,10 +682,10 @@ export function approveRunbookAuthoringProposal(
   const allOperationIds = input.proposal.operationDiffs.map(
     (diff) => diff.operationId,
   );
-  const approvedOperationIds =
-    input.approvedOperationIds === undefined
-      ? allOperationIds
-      : input.approvedOperationIds;
+  let approvedOperationIds = allOperationIds;
+  if (input.approvedOperationIds !== undefined) {
+    approvedOperationIds = input.approvedOperationIds;
+  }
   const approvedOperationIdSet = new Set(approvedOperationIds);
   const selectedOperations = input.proposal.operations.filter((operation) =>
     approvedOperationIdSet.has(operation.id),

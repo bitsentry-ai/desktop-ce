@@ -2874,10 +2874,7 @@ export class AgentRuntimeService {
           incidentThreadId: session.incidentThreadId,
           prompt: input.prompt,
           targetRunbook: runbook,
-          operations: input.operations.map((operation) => ({
-            ...operation,
-            action: operation.action as RunbookActionRecord | undefined,
-          })) as RunbookAuthoringOperation[],
+          operations: input.operations,
         })
         session.runbookAuthoringProposals.push(proposal)
         return {
@@ -2895,7 +2892,7 @@ export class AgentRuntimeService {
           prompt: input.prompt,
           draftRunbook: {
             ...input.draftRunbook,
-            actions: input.draftRunbook.actions as RunbookActionRecord[],
+            actions: input.draftRunbook.actions,
           },
         })
         session.runbookAuthoringProposals.push(proposal)
@@ -3095,6 +3092,13 @@ export class AgentRuntimeService {
   private summarizeRunbookAuthoringProposal(
     proposal: RunbookAuthoringProposal,
   ): RunbookAuthoringProposalReview {
+    let targetRunbookId: string | undefined
+    let targetRevisionNumber: number | undefined
+    if (proposal.kind === 'edit_existing_runbook') {
+      targetRunbookId = proposal.targetRunbookId
+      targetRevisionNumber = proposal.targetRevisionNumber
+    }
+
     return {
       status: proposal.status,
       approvalRequired: true,
@@ -3102,14 +3106,8 @@ export class AgentRuntimeService {
       proposalId: proposal.id,
       kind: proposal.kind,
       incidentThreadId: proposal.incidentThreadId,
-      targetRunbookId:
-        proposal.kind === 'edit_existing_runbook'
-          ? proposal.targetRunbookId
-          : undefined,
-      targetRevisionNumber:
-        proposal.kind === 'edit_existing_runbook'
-          ? proposal.targetRevisionNumber
-          : undefined,
+      targetRunbookId,
+      targetRevisionNumber,
       proposedRunbook: {
         id: proposal.proposedRunbook.id,
         title: proposal.proposedRunbook.title,

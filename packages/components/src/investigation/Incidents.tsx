@@ -1171,6 +1171,11 @@ function RunbookAuthoringProposalCards({
           }
         };
 
+        let proposalKindLabel = "Runbook edit proposal";
+        if (proposal.kind === "create_new_runbook") {
+          proposalKindLabel = "New runbook proposal";
+        }
+
         return (
           <div
             key={proposal.proposalId}
@@ -1179,11 +1184,7 @@ function RunbookAuthoringProposalCards({
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div className="min-w-0 space-y-1">
                 <div className="flex flex-wrap items-center gap-2">
-                  <span className="font-medium text-foreground">
-                    {proposal.kind === "create_new_runbook"
-                      ? "New runbook proposal"
-                      : "Runbook edit proposal"}
-                  </span>
+                  <span className="font-medium text-foreground">{proposalKindLabel}</span>
                   <span className="rounded-md border border-border bg-muted px-1.5 py-0.5 text-[11px] text-muted-foreground">
                     {proposal.status.replace(/_/g, " ")}
                   </span>
@@ -1201,7 +1202,9 @@ function RunbookAuthoringProposalCards({
                 <div className="flex shrink-0 flex-wrap gap-1.5">
                   <button
                     type="button"
-                    onClick={handleApprove}
+                    onClick={() => {
+                      void handleApprove();
+                    }}
                     disabled={isBusy || sessionId === null || !proposal.validation.valid}
                     className="inline-flex h-8 items-center gap-1.5 rounded-md border border-emerald-500/40 bg-emerald-500/10 px-2.5 text-xs font-medium text-emerald-700 transition-colors hover:bg-emerald-500/15 disabled:cursor-not-allowed disabled:opacity-50 dark:text-emerald-300"
                   >
@@ -1210,7 +1213,9 @@ function RunbookAuthoringProposalCards({
                   </button>
                   <button
                     type="button"
-                    onClick={handleReject}
+                    onClick={() => {
+                      void handleReject();
+                    }}
                     disabled={isBusy || sessionId === null}
                     className="inline-flex h-8 items-center gap-1.5 rounded-md border border-border bg-muted/60 px-2.5 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
                   >
@@ -1287,7 +1292,9 @@ function RunbookAuthoringProposalCards({
                 />
                 <button
                   type="button"
-                  onClick={handleRequestRevision}
+                  onClick={() => {
+                    void handleRequestRevision();
+                  }}
                   disabled={isBusy || sessionId === null || revisionDraft.trim().length === 0}
                   className="inline-flex h-8 shrink-0 items-center justify-center gap-1.5 rounded-md border border-border bg-muted/60 px-2.5 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
                 >
