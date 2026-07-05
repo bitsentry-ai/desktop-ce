@@ -1072,6 +1072,7 @@ function RunbookAuthoringProposalCards({
   message: ChatMessage;
   onRevisionRequested: (requestedEdit: string) => void;
 }) {
+  const { t } = useTranslation();
   const proposals = getRunbookAuthoringProposalsFromMessage(message);
   const [decisionStateByProposalId, setDecisionStateByProposalId] = useState<
     Record<string, RunbookAuthoringProposalReview>
@@ -1161,9 +1162,10 @@ function RunbookAuthoringProposalCards({
               requestedEdit,
             });
             setDecisionProposal(result.proposal);
-            onRevisionRequested(
-              `Revise runbook proposal ${proposal.proposalId}: ${requestedEdit}`,
-            );
+            onRevisionRequested(t("common.incidents.reviseRunbookProposal", {
+              proposalId: proposal.proposalId,
+              requestedEdit,
+            }));
           } catch (err: unknown) {
             setProposalError(proposal.proposalId, err);
           } finally {
@@ -1171,9 +1173,20 @@ function RunbookAuthoringProposalCards({
           }
         };
 
-        let proposalKindLabel = "Runbook edit proposal";
+        let proposalKindLabel = t("common.incidents.runbookEditProposal");
         if (proposal.kind === "create_new_runbook") {
-          proposalKindLabel = "New runbook proposal";
+          proposalKindLabel = t("common.incidents.newRunbookProposal");
+        }
+
+        let proposalStatusLabel = t("common.incidents.statusPendingApproval");
+        if (proposal.status === "approved") {
+          proposalStatusLabel = t("common.incidents.statusApproved");
+        }
+        if (proposal.status === "rejected") {
+          proposalStatusLabel = t("common.incidents.statusRejected");
+        }
+        if (proposal.status === "revision_requested") {
+          proposalStatusLabel = t("common.incidents.statusRevisionRequested");
         }
 
         return (
@@ -1186,11 +1199,11 @@ function RunbookAuthoringProposalCards({
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="font-medium text-foreground">{proposalKindLabel}</span>
                   <span className="rounded-md border border-border bg-muted px-1.5 py-0.5 text-[11px] text-muted-foreground">
-                    {proposal.status.replace(/_/g, " ")}
+                    {proposalStatusLabel}
                   </span>
                   {proposal.saved && (
                     <span className="rounded-md border border-emerald-500/30 bg-emerald-500/10 px-1.5 py-0.5 text-[11px] text-emerald-700 dark:text-emerald-300">
-                      saved
+                      {t("common.incidents.saved")}
                     </span>
                   )}
                 </div>
@@ -1209,7 +1222,7 @@ function RunbookAuthoringProposalCards({
                     className="inline-flex h-8 items-center gap-1.5 rounded-md border border-emerald-500/40 bg-emerald-500/10 px-2.5 text-xs font-medium text-emerald-700 transition-colors hover:bg-emerald-500/15 disabled:cursor-not-allowed disabled:opacity-50 dark:text-emerald-300"
                   >
                     <Check size={13} />
-                    Approve
+                    {t("common.incidents.approve")}
                   </button>
                   <button
                     type="button"
@@ -1220,7 +1233,7 @@ function RunbookAuthoringProposalCards({
                     className="inline-flex h-8 items-center gap-1.5 rounded-md border border-border bg-muted/60 px-2.5 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     <Ban size={13} />
-                    Deny
+                    {t("common.incidents.deny")}
                   </button>
                 </div>
               )}
@@ -1287,7 +1300,7 @@ function RunbookAuthoringProposalCards({
                     }));
                   }}
                   className="h-8 min-w-0 flex-1 rounded-md border border-border bg-background px-2 text-xs outline-none transition-colors placeholder:text-muted-foreground focus:border-primary/50"
-                  placeholder="Suggest a different edit"
+                  placeholder={t("common.incidents.suggestDifferentEdit")}
                   disabled={isBusy || sessionId === null}
                 />
                 <button
@@ -1299,7 +1312,7 @@ function RunbookAuthoringProposalCards({
                   className="inline-flex h-8 shrink-0 items-center justify-center gap-1.5 rounded-md border border-border bg-muted/60 px-2.5 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   <RefreshCw size={13} />
-                  Suggest
+                  {t("common.incidents.suggest")}
                 </button>
               </div>
             )}
