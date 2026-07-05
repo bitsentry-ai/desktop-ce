@@ -29,6 +29,7 @@ interface ClaudeQueryOptions {
   permissionMode?: string
   includePartialMessages?: boolean
   allowDangerouslySkipPermissions?: boolean
+  betas?: string[]
   spawnClaudeCodeProcess?: (
     input: SpawnClaudeCodeProcessInput,
   ) => SpawnedClaudeCodeProcess
@@ -216,6 +217,37 @@ describe('executeClaudeCode', () => {
       allowDangerouslySkipPermissions: true,
       includePartialMessages: true,
     })
+  })
+
+  it('enables the Claude 1M context beta when requested', async () => {
+    queryMock.mockReturnValue({
+      async *[Symbol.asyncIterator]() {
+        await Promise.resolve()
+        yield {
+          type: 'result',
+          subtype: 'success',
+          result: '',
+        }
+      },
+      getContextUsage: getContextUsageMock.mockResolvedValue({
+        totalTokens: 0,
+        maxTokens: 0,
+      }),
+      close: closeMock,
+    })
+
+    const { executeClaudeCode } = await import(
+      '@bitsentry-ce/desktop-cli/runtime/desktop-coding-agents'
+    )
+
+    await executeClaudeCode({
+      prompt: 'Use the larger context window',
+      binaryPath: 'claude',
+      abortController: new AbortController(),
+      contextWindow: '1m',
+    })
+
+    expect(getQueryOptions(0).betas).toEqual(['context-1m-2025-08-07'])
   })
 
   it('wraps Windows npm .cmd shims with the SDK spawn hook', async () => {
