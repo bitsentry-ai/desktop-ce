@@ -38,73 +38,75 @@ function isJsonSerializableValue(value: unknown): boolean {
   return false;
 }
 
-export const desktopPluginFieldDefinitionSchema = z.object({
-  key: z.string().min(1),
-  label: z.string().min(1),
-  description: z.string().optional(),
-  placeholder: z.string().min(1).optional(),
-  type: desktopPluginFieldTypeSchema,
-  required: z.boolean().default(false),
-  secret: z.boolean().optional(),
-  defaultValue: z.unknown().optional(),
-  enumValues: z.array(z.string().min(1)).min(1).optional(),
-}).superRefine((field, context) => {
-  if (field.enumValues !== undefined && field.type !== "string") {
-    context.addIssue({
-      code: "custom",
-      path: ["enumValues"],
-      message: "enumValues are only supported for string fields.",
-    });
-  }
+export const desktopPluginFieldDefinitionSchema = z
+  .object({
+    key: z.string().min(1),
+    label: z.string().min(1),
+    description: z.string().optional(),
+    placeholder: z.string().min(1).optional(),
+    type: desktopPluginFieldTypeSchema,
+    required: z.boolean().default(false),
+    secret: z.boolean().optional(),
+    defaultValue: z.unknown().optional(),
+    enumValues: z.array(z.string().min(1)).min(1).optional(),
+  })
+  .superRefine((field, context) => {
+    if (field.enumValues !== undefined && field.type !== "string") {
+      context.addIssue({
+        code: "custom",
+        path: ["enumValues"],
+        message: "enumValues are only supported for string fields.",
+      });
+    }
 
-  if (field.defaultValue === undefined) {
-    return;
-  }
+    if (field.defaultValue === undefined) {
+      return;
+    }
 
-  let defaultValueIsValid = false;
-  switch (field.type) {
-    case "string":
-      defaultValueIsValid = typeof field.defaultValue === "string";
-      break;
-    case "number":
-      defaultValueIsValid =
-        typeof field.defaultValue === "number" &&
-        Number.isFinite(field.defaultValue);
-      break;
-    case "boolean":
-      defaultValueIsValid = typeof field.defaultValue === "boolean";
-      break;
-    case "string_array":
-      defaultValueIsValid =
-        Array.isArray(field.defaultValue) &&
-        field.defaultValue.every((item) => typeof item === "string");
-      break;
-    case "json":
-      defaultValueIsValid = isJsonSerializableValue(field.defaultValue);
-      break;
-  }
+    let defaultValueIsValid = false;
+    switch (field.type) {
+      case "string":
+        defaultValueIsValid = typeof field.defaultValue === "string";
+        break;
+      case "number":
+        defaultValueIsValid =
+          typeof field.defaultValue === "number" &&
+          Number.isFinite(field.defaultValue);
+        break;
+      case "boolean":
+        defaultValueIsValid = typeof field.defaultValue === "boolean";
+        break;
+      case "string_array":
+        defaultValueIsValid =
+          Array.isArray(field.defaultValue) &&
+          field.defaultValue.every((item) => typeof item === "string");
+        break;
+      case "json":
+        defaultValueIsValid = isJsonSerializableValue(field.defaultValue);
+        break;
+    }
 
-  if (!defaultValueIsValid) {
-    context.addIssue({
-      code: "custom",
-      path: ["defaultValue"],
-      message: `defaultValue must match the "${field.type}" field type.`,
-    });
-  }
+    if (!defaultValueIsValid) {
+      context.addIssue({
+        code: "custom",
+        path: ["defaultValue"],
+        message: `defaultValue must match the "${field.type}" field type.`,
+      });
+    }
 
-  if (
-    field.type === "string" &&
-    field.enumValues !== undefined &&
-    typeof field.defaultValue === "string" &&
-    !field.enumValues.includes(field.defaultValue)
-  ) {
-    context.addIssue({
-      code: "custom",
-      path: ["defaultValue"],
-      message: "defaultValue must be one of the declared enumValues.",
-    });
-  }
-});
+    if (
+      field.type === "string" &&
+      field.enumValues !== undefined &&
+      typeof field.defaultValue === "string" &&
+      !field.enumValues.includes(field.defaultValue)
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["defaultValue"],
+        message: "defaultValue must be one of the declared enumValues.",
+      });
+    }
+  });
 
 export type DesktopPluginFieldDefinition = z.infer<
   typeof desktopPluginFieldDefinitionSchema
@@ -221,7 +223,9 @@ export const desktopPluginDescriptorSchema = z.object({
   actions: z.array(desktopPluginActionDefinitionSchema),
 });
 
-export type DesktopPluginDescriptor = z.infer<typeof desktopPluginDescriptorSchema>;
+export type DesktopPluginDescriptor = z.infer<
+  typeof desktopPluginDescriptorSchema
+>;
 
 export const desktopPluginInstallFromArtifactRequestSchema = z.object({
   artifactBase64: z.string().min(1),
@@ -239,8 +243,9 @@ export const desktopPluginInstallFromArtifactResultSchema = z.object({
   descriptor: desktopPluginDescriptorSchema,
 });
 
-export type DesktopPluginInstallFromArtifactResult =
-  z.infer<typeof desktopPluginInstallFromArtifactResultSchema>;
+export type DesktopPluginInstallFromArtifactResult = z.infer<
+  typeof desktopPluginInstallFromArtifactResultSchema
+>;
 
 export const desktopPluginExecutionRequestSchema = z.object({
   pluginId: z.string().min(1),
@@ -385,14 +390,17 @@ export type DesktopCodePluginDataSource = z.infer<
   typeof desktopCodePluginDataSourceSchema
 >;
 
-export const desktopCodePluginActionSchema = desktopPluginActionDefinitionSchema.extend({
-  execute: z.custom<DesktopPluginCodeActionHandler>(
-    (value) => typeof value === "function",
-    "execute must be a function.",
-  ),
-});
+export const desktopCodePluginActionSchema =
+  desktopPluginActionDefinitionSchema.extend({
+    execute: z.custom<DesktopPluginCodeActionHandler>(
+      (value) => typeof value === "function",
+      "execute must be a function.",
+    ),
+  });
 
-export type DesktopCodePluginAction = z.infer<typeof desktopCodePluginActionSchema>;
+export type DesktopCodePluginAction = z.infer<
+  typeof desktopCodePluginActionSchema
+>;
 
 export const desktopCodePluginSchema = desktopPluginDescriptorSchema
   .omit({
