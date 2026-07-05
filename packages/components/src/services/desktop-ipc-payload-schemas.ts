@@ -417,6 +417,28 @@ export function createDesktopIpcPayloadValidator(
     "agent:getSnapshot": z.object({
       sessionId: z.uuid(),
     }),
+    "agent:listRunbookAuthoringProposals": z.object({
+      sessionId: z.uuid().optional(),
+      incidentThreadId: z.string().min(1).optional(),
+    }),
+    "agent:approveRunbookAuthoringProposal": z.object({
+      sessionId: z.uuid().optional(),
+      incidentThreadId: z.string().min(1).optional(),
+      proposalId: z.uuid(),
+      approvedOperationIds: z.array(z.string().min(1)).optional(),
+    }),
+    "agent:rejectRunbookAuthoringProposal": z.object({
+      sessionId: z.uuid().optional(),
+      incidentThreadId: z.string().min(1).optional(),
+      proposalId: z.uuid(),
+      reason: z.string().max(4000).optional(),
+    }),
+    "agent:requestRunbookAuthoringRevision": z.object({
+      sessionId: z.uuid().optional(),
+      incidentThreadId: z.string().min(1).optional(),
+      proposalId: z.uuid(),
+      requestedEdit: z.string().min(1).max(10000),
+    }),
     "dialog:showSaveDialog": z
       .object({
         defaultPath: z.string().min(1).optional(),

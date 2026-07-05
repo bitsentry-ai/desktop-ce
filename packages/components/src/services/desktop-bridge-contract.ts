@@ -347,6 +347,28 @@ export interface DesktopBitsentryBridge<
       sessionId: string,
     ) => Promise<DesktopAgentStatus<TAgentState> | null>;
     getSnapshot: (sessionId: string) => Promise<TAgentSnapshot | null>;
+    listRunbookAuthoringProposals: (input: {
+      sessionId?: string;
+      incidentThreadId?: string;
+    }) => Promise<import("./contracts").RunbookAuthoringProposalReview[]>;
+    approveRunbookAuthoringProposal: (input: {
+      sessionId?: string;
+      incidentThreadId?: string;
+      proposalId: string;
+      approvedOperationIds?: string[];
+    }) => Promise<import("./contracts").RunbookAuthoringProposalDecisionResult>;
+    rejectRunbookAuthoringProposal: (input: {
+      sessionId?: string;
+      incidentThreadId?: string;
+      proposalId: string;
+      reason?: string;
+    }) => Promise<import("./contracts").RunbookAuthoringProposalDecisionResult>;
+    requestRunbookAuthoringRevision: (input: {
+      sessionId?: string;
+      incidentThreadId?: string;
+      proposalId: string;
+      requestedEdit: string;
+    }) => Promise<import("./contracts").RunbookAuthoringProposalDecisionResult>;
     onEvent: (
       callback: (
         event: DesktopAgentEventEnvelope<TAgentEvent, TAgentSnapshot>,

@@ -485,6 +485,298 @@ describe('AgentRuntimeService runbook outcomes', () => {
     )
   })
 
+  it('creates runbook edit proposals without executing or saving until approval', async () => {
+    const originalRunbook = makeRunbook('rb-logs', 'Check backend logs', [
+      {
+        id: 'step-1',
+        type: 'shell',
+        title: 'Check service status',
+        command: 'systemctl status bitsentry',
+      },
+    ])
+    const runbookStore = {
+      list: vi.fn().mockResolvedValue([originalRunbook]),
+      updateMeta: vi.fn().mockResolvedValue(originalRunbook),
+      updateActions: vi.fn().mockImplementation(({ actions }: { actions: RunbookRecord['actions'] }) =>
+        Promise.resolve({
+          ...originalRunbook,
+          revisionNumber: 2,
+          actions,
+        }),
+      ),
+    }
+    const runbookExecutionService = {
+      start: vi.fn(),
+      waitForCompletion: vi.fn(),
+      get: vi.fn().mockResolvedValue(null),
+      getLatestForIncidentThread: vi.fn().mockResolvedValue(null),
+    }
+    const llmAdapter = {
+      chatWithTools: vi
+        .fn()
+        .mockResolvedValueOnce({
+          content: 'I will draft a runbook edit for review.',
+          toolCalls: [
+            {
+              id: 'call-propose-edit',
+              name: 'propose_runbook_edit',
+              args: {
+                runbookId: 'rb-logs',
+                prompt: 'Add uptime collection.',
+                operations: [
+                  {
+                    id: 'op-add-uptime',
+                    type: 'add_action',
+                    rationale: 'Collect host uptime before inspecting logs.',
+                    action: {
+                      id: 'step-2',
+                      type: 'shell',
+                      title: 'Collect uptime',
+                      command: 'uptime',
+                    },
+                  },
+                ],
+              },
+            },
+          ],
+        })
+        .mockResolvedValueOnce({
+          content: 'I drafted the edit. It requires approval before saving.',
+          toolCalls: [],
+        }),
+    }
+    const service = createRuntime({
+      llmAdapter,
+      runbookStore,
+      runbookExecutionService,
+    })
+
+    const sessionId = await service.start({
+      prompt: 'Add uptime collection to the backend log runbook.',
+      incidentThreadId: 'incident-authoring-edit',
+    })
+
+    await waitForCondition(() => service.getStatus(sessionId).state === 'COMPLETED')
+
+    expect(runbookExecutionService.start).not.toHaveBeenCalled()
+    expect(runbookStore.updateMeta).not.toHaveBeenCalled()
+    expect(runbookStore.updateActions).not.toHaveBeenCalled()
+
+    const proposalCard = getLastAgentToolCalls(service, sessionId).find(
+      (toolCall) => toolCall.toolName === 'propose_runbook_edit',
+    )
+    if (proposalCard?.output === undefined) {
+      throw new Error('Expected a runbook authoring proposal tool output')
+    }
+    const proposalOutput = JSON.parse(proposalCard.output) as {
+      proposalId: string
+      approvalRequired: boolean
+      saved: boolean
+      status: string
+      operationDiffs: Array<{ operationId: string; riskLabels: string[] }>
+    }
+
+    expect(proposalOutput).toMatchObject({
+      approvalRequired: true,
+      saved: false,
+      status: 'pending_approval',
+    })
+    expect(proposalOutput.operationDiffs[0]).toMatchObject({
+      operationId: 'op-add-uptime',
+      riskLabels: ['shell'],
+    })
+    expect(service.listRunbookAuthoringProposals({ sessionId })).toHaveLength(1)
+
+    const approval = await service.approveRunbookAuthoringProposal({
+      sessionId,
+      proposalId: proposalOutput.proposalId,
+    })
+
+    expect(approval.proposal.status).toBe('approved')
+    expect(approval.savedRunbook?.actions.map((action) => action.id)).toEqual([
+      'step-1',
+      'step-2',
+    ])
+    expect(runbookStore.updateActions).toHaveBeenCalledTimes(1)
+    expect(runbookExecutionService.start).not.toHaveBeenCalled()
+  })
+
+  it('rejects and revises runbook authoring proposals without saving', async () => {
+    const originalRunbook = makeRunbook('rb-logs', 'Check backend logs', [
+      {
+        id: 'step-1',
+        type: 'shell',
+        title: 'Check service status',
+        command: 'systemctl status bitsentry',
+      },
+    ])
+    const runbookStore = {
+      list: vi.fn().mockResolvedValue([originalRunbook]),
+      updateMeta: vi.fn(),
+      updateActions: vi.fn(),
+    }
+    const runbookExecutionService = {
+      start: vi.fn(),
+      waitForCompletion: vi.fn(),
+      get: vi.fn().mockResolvedValue(null),
+      getLatestForIncidentThread: vi.fn().mockResolvedValue(null),
+    }
+    const llmAdapter = {
+      chatWithTools: vi
+        .fn()
+        .mockResolvedValueOnce({
+          content: 'I will draft a metadata edit for review.',
+          toolCalls: [
+            {
+              id: 'call-propose-edit',
+              name: 'propose_runbook_edit',
+              args: {
+                runbookTitle: 'Check backend logs',
+                prompt: 'Clarify the description.',
+                operations: [
+                  {
+                    id: 'op-description',
+                    type: 'update_metadata',
+                    rationale: 'Make the runbook intent clearer.',
+                    metadata: {
+                      description: 'Collect backend service status before log inspection.',
+                    },
+                  },
+                ],
+              },
+            },
+          ],
+        })
+        .mockResolvedValueOnce({
+          content: 'I drafted the edit. It requires approval before saving.',
+          toolCalls: [],
+        }),
+    }
+    const service = createRuntime({
+      llmAdapter,
+      runbookStore,
+      runbookExecutionService,
+    })
+
+    const sessionId = await service.start({
+      prompt: 'Improve the backend log runbook description.',
+      incidentThreadId: 'incident-authoring-revise',
+    })
+
+    await waitForCondition(() => service.getStatus(sessionId).state === 'COMPLETED')
+
+    const proposal = service.listRunbookAuthoringProposals({ sessionId })[0]
+    const revision = service.requestRunbookAuthoringRevision({
+      sessionId,
+      proposalId: proposal.proposalId,
+      requestedEdit: 'Use plainer language and keep it under one sentence.',
+    })
+
+    expect(revision.proposal.status).toBe('revision_requested')
+    expect(runbookStore.updateMeta).not.toHaveBeenCalled()
+    expect(runbookStore.updateActions).not.toHaveBeenCalled()
+
+    const rejection = service.rejectRunbookAuthoringProposal({
+      sessionId,
+      proposalId: proposal.proposalId,
+      reason: 'The requested revision is no longer needed.',
+    })
+
+    expect(rejection.proposal.status).toBe('rejected')
+    expect(runbookExecutionService.start).not.toHaveBeenCalled()
+    expect(runbookStore.updateMeta).not.toHaveBeenCalled()
+    expect(runbookStore.updateActions).not.toHaveBeenCalled()
+  })
+
+  it('creates new runbook proposals without saving until approval', async () => {
+    const savedRunbook = makeRunbook('rb-new', 'Collect kernel errors', [])
+    const runbookStore = {
+      list: vi.fn().mockResolvedValue([]),
+      create: vi.fn().mockResolvedValue(savedRunbook),
+      updateActions: vi.fn().mockImplementation(({ actions }: { actions: RunbookRecord['actions'] }) =>
+        Promise.resolve({
+          ...savedRunbook,
+          revisionNumber: 2,
+          actions,
+        }),
+      ),
+    }
+    const runbookExecutionService = {
+      start: vi.fn(),
+      waitForCompletion: vi.fn(),
+      get: vi.fn().mockResolvedValue(null),
+      getLatestForIncidentThread: vi.fn().mockResolvedValue(null),
+    }
+    const llmAdapter = {
+      chatWithTools: vi
+        .fn()
+        .mockResolvedValueOnce({
+          content: 'I will draft a new runbook for review.',
+          toolCalls: [
+            {
+              id: 'call-propose-create',
+              name: 'propose_runbook_create',
+              args: {
+                prompt: 'Create a kernel error runbook.',
+                draftRunbook: {
+                  title: 'Collect kernel errors',
+                  description: 'Collect recent kernel errors from journalctl.',
+                  actions: [
+                    {
+                      id: 'step-1',
+                      type: 'shell',
+                      title: 'Collect kernel errors',
+                      command: 'journalctl -k -p err --since "1 hour ago"',
+                    },
+                  ],
+                },
+              },
+            },
+          ],
+        })
+        .mockResolvedValueOnce({
+          content: 'I drafted the runbook. It requires approval before saving.',
+          toolCalls: [],
+        }),
+    }
+    const service = createRuntime({
+      llmAdapter,
+      runbookStore,
+      runbookExecutionService,
+    })
+
+    const sessionId = await service.start({
+      prompt: 'Create a runbook for recent kernel errors.',
+      incidentThreadId: 'incident-authoring-create',
+    })
+
+    await waitForCondition(() => service.getStatus(sessionId).state === 'COMPLETED')
+
+    expect(runbookStore.create).not.toHaveBeenCalled()
+    expect(runbookStore.updateActions).not.toHaveBeenCalled()
+    expect(runbookExecutionService.start).not.toHaveBeenCalled()
+
+    const proposal = service.listRunbookAuthoringProposals({ sessionId })[0]
+    expect(proposal).toMatchObject({
+      kind: 'create_new_runbook',
+      status: 'pending_approval',
+      approvalRequired: true,
+      saved: false,
+    })
+
+    const approval = await service.approveRunbookAuthoringProposal({
+      sessionId,
+      proposalId: proposal.proposalId,
+    })
+
+    expect(approval.proposal.status).toBe('approved')
+    expect(runbookStore.create).toHaveBeenCalledTimes(1)
+    expect(runbookStore.updateActions).toHaveBeenCalledTimes(1)
+    expect(approval.savedRunbook?.actions[0]?.command).toBe(
+      'journalctl -k -p err --since "1 hour ago"',
+    )
+  })
+
   it('keeps explicit journal windows in model context even when the output preview truncates', async () => {
     const sentryMatrix = [
       '| Issue | Last seen | journalctl --since | journalctl --until | Description |',

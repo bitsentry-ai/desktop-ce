@@ -51,9 +51,20 @@ import type {
   RunbookExecutionRecord,
   RunbookExecutionStepRecord,
   RunbookParameterValues,
+  RunbookActionRecord,
   RunbookRecord,
   RunbookTriggerContext,
 } from '@bitsentry-ce/core/features/runbooks/desktop-runbook.types'
+import {
+  approveRunbookAuthoringProposal,
+  createRunbookCreationProposal,
+  createRunbookEditProposal,
+  getRunbookAuthoringRevisionHash,
+  rejectRunbookAuthoringProposal,
+  requestRunbookAuthoringRevision,
+  type RunbookAuthoringOperation,
+  type RunbookAuthoringProposal,
+} from '@bitsentry-ce/core/features/runbooks/authoring'
 
 const CHANNEL_EVENT = 'bitsentry:agent:event'
 const NO_LLM_PROVIDER_CONFIGURED_MESSAGE =
@@ -75,6 +86,43 @@ export interface AgentRuntimeWindow {
 export type AgentRuntimeLlmAdapter = Pick<AgentLlmAdapterService, 'chatWithTools'>
 export interface AgentRuntimeRunbookStore {
   list(): Promise<RunbookRecord[]>
+  create?(payload: Record<string, unknown>): Promise<RunbookRecord>
+  updateMeta?(payload: Record<string, unknown>): Promise<RunbookRecord | null>
+  updateActions?(payload: Record<string, unknown>): Promise<RunbookRecord | null>
+}
+
+export interface RunbookAuthoringProposalReview {
+  status: RunbookAuthoringProposal['status']
+  approvalRequired: boolean
+  saved: boolean
+  proposalId: string
+  kind: RunbookAuthoringProposal['kind']
+  incidentThreadId?: string
+  targetRunbookId?: string
+  targetRevisionNumber?: number
+  proposedRunbook: {
+    id: string
+    title: string
+    description: string
+    revisionNumber: number
+    actionCount: number
+    actions: Array<{
+      id: string
+      type: string
+      title: string
+    }>
+  }
+  validation: RunbookAuthoringProposal['validation']
+  operationDiffs: RunbookAuthoringProposal['operationDiffs']
+  nextStep: string
+}
+
+export interface RunbookAuthoringProposalDecisionResult {
+  proposal: RunbookAuthoringProposalReview
+  savedRunbook?: RunbookRecord
+  approvedOperationIds?: string[]
+  reason?: string
+  requestedEdit?: string
 }
 
 export interface AgentRuntimeRunbookExecutionService {
@@ -156,6 +204,119 @@ const executeRunbookToolSchema = z
 const getRunbookExecutionToolSchema = z
   .object({
     executionId: z.uuid().optional(),
+  })
+  .strict()
+
+const runbookActionProposalSchema = z
+  .object({
+    id: z.string().min(1),
+    type: z.enum([
+      'shell',
+      'llm',
+      'http',
+      'external_source',
+      'telemetry_existing_entry',
+      'data_source_query',
+      'telemetry_ingest',
+      'diagnosis_diagnose',
+      'diagnosis_verify',
+      'diagnosis_recommend',
+    ]),
+    title: z.string().min(1),
+    command: z.string().optional(),
+    prompt: z.string().optional(),
+    llmProviderKey: z.enum([
+      'groq',
+      'kilocode',
+      'openai',
+      'anthropic',
+      'gemini',
+      'openrouter',
+      'claude_code',
+      'codex',
+      'opencode',
+      'cursor',
+    ]).optional(),
+    llmModel: z.string().optional(),
+    url: z.string().optional(),
+    method: z.enum(['GET', 'POST', 'PUT', 'PATCH', 'DELETE']).optional(),
+    headers: z
+      .array(
+        z
+          .object({
+            key: z.string().min(1),
+            value: z.string(),
+          })
+          .strict(),
+      )
+      .optional(),
+    body: z.string().optional(),
+    query: z.string().optional(),
+    sourceId: z.string().optional(),
+    parameters: z
+      .array(
+        z
+          .object({
+            id: z.string().min(1),
+            key: z.string().min(1),
+            label: z.string().optional(),
+            description: z.string().optional(),
+            defaultValue: z.string().optional(),
+            required: z.boolean().optional(),
+            secure: z.boolean().optional(),
+          })
+          .strict(),
+      )
+      .optional(),
+  })
+  .strict()
+
+const runbookAuthoringOperationSchema = z
+  .object({
+    id: z.string().min(1),
+    type: z.enum([
+      'update_metadata',
+      'add_action',
+      'update_action',
+      'delete_action',
+      'reorder_actions',
+    ]),
+    rationale: z.string().min(1),
+    metadata: z
+      .object({
+        title: z.string().optional(),
+        description: z.string().optional(),
+        idleTimeout: z.number().int().positive().optional(),
+      })
+      .strict()
+      .optional(),
+    action: runbookActionProposalSchema.optional(),
+    actionId: z.string().min(1).optional(),
+    insertAfterActionId: z.string().min(1).nullable().optional(),
+    actionIdsInOrder: z.array(z.string().min(1)).optional(),
+  })
+  .strict()
+
+const proposeRunbookEditToolSchema = z
+  .object({
+    runbookId: z.string().min(1).optional(),
+    runbookTitle: z.string().min(1).optional(),
+    prompt: z.string().min(1),
+    operations: z.array(runbookAuthoringOperationSchema).min(1),
+  })
+  .strict()
+
+const proposeRunbookCreateToolSchema = z
+  .object({
+    prompt: z.string().min(1),
+    draftRunbook: z
+      .object({
+        title: z.string().min(1),
+        description: z.string().default(''),
+        idleTimeout: z.number().int().positive().optional(),
+        actions: z.array(runbookActionProposalSchema).min(1),
+      })
+      .strict(),
   })
   .strict()
 
@@ -454,6 +615,7 @@ interface AgentSession {
   currentTurnRunbookExecutionLookups?: Set<string>
   currentTurnStartedRunbookExecutionIds?: Set<string>
   currentTurnStartedRunbookKeys?: Set<string>
+  runbookAuthoringProposals: RunbookAuthoringProposal[]
   loopActive?: boolean
   snapshot: AgentThreadSnapshot
 }
@@ -1454,6 +1616,7 @@ export class AgentRuntimeService {
       accessLevel: input.accessLevel,
       traitValues: input.traitValues,
       incidentThreadId: input.incidentThreadId,
+      runbookAuthoringProposals: [],
       messages: [
         {
           role: 'system',
@@ -1621,6 +1784,91 @@ export class AgentRuntimeService {
     return session.snapshot
   }
 
+  listRunbookAuthoringProposals(input: {
+    sessionId?: string
+    incidentThreadId?: string
+  }): RunbookAuthoringProposalReview[] {
+    const sessions = this.resolveRunbookAuthoringSessions(input)
+    return sessions.flatMap((session) =>
+      session.runbookAuthoringProposals.map((proposal) =>
+        this.summarizeRunbookAuthoringProposal(proposal),
+      ),
+    )
+  }
+
+  async approveRunbookAuthoringProposal(input: {
+    sessionId?: string
+    incidentThreadId?: string
+    proposalId: string
+    approvedOperationIds?: string[]
+  }): Promise<RunbookAuthoringProposalDecisionResult> {
+    const { session, proposal, proposalIndex } = this.resolveRunbookAuthoringProposal(input)
+
+    if (proposal.kind === 'edit_existing_runbook') {
+      const latestRunbook = await this.resolveCurrentRunbookForAuthoringApproval(proposal)
+      const latestRevisionHash = getRunbookAuthoringRevisionHash(latestRunbook)
+      if (latestRevisionHash !== proposal.targetRevisionHash) {
+        throw new Error(
+          'This runbook changed after the authoring proposal was created. Ask the agent to revise the proposal against the latest runbook before approving it.',
+        )
+      }
+    }
+
+    const approval = approveRunbookAuthoringProposal({
+      proposal,
+      approvedOperationIds: input.approvedOperationIds,
+    })
+    const savedRunbook = await this.persistApprovedRunbookAuthoringProposal(
+      approval.runbook,
+      proposal.kind,
+    )
+    session.runbookAuthoringProposals[proposalIndex] = approval.proposal
+
+    return {
+      proposal: this.summarizeRunbookAuthoringProposal(approval.proposal),
+      savedRunbook,
+      approvedOperationIds: approval.approvedOperationIds,
+    }
+  }
+
+  rejectRunbookAuthoringProposal(input: {
+    sessionId?: string
+    incidentThreadId?: string
+    proposalId: string
+    reason?: string
+  }): RunbookAuthoringProposalDecisionResult {
+    const { session, proposal, proposalIndex } = this.resolveRunbookAuthoringProposal(input)
+    const rejection = rejectRunbookAuthoringProposal({
+      proposal,
+      reason: input.reason,
+    })
+    session.runbookAuthoringProposals[proposalIndex] = rejection.proposal
+
+    return {
+      proposal: this.summarizeRunbookAuthoringProposal(rejection.proposal),
+      reason: rejection.reason,
+    }
+  }
+
+  requestRunbookAuthoringRevision(input: {
+    sessionId?: string
+    incidentThreadId?: string
+    proposalId: string
+    requestedEdit: string
+  }): RunbookAuthoringProposalDecisionResult {
+    const { session, proposal, proposalIndex } = this.resolveRunbookAuthoringProposal(input)
+    const revisionRequest = requestRunbookAuthoringRevision({
+      proposal,
+      requestedEdit: input.requestedEdit,
+    })
+    session.runbookAuthoringProposals[proposalIndex] = revisionRequest.proposal
+
+    return {
+      proposal: this.summarizeRunbookAuthoringProposal(revisionRequest.proposal),
+      requestedEdit: revisionRequest.requestedEdit,
+    }
+  }
+
   /**
    * Build the system prompt for the LLM.
    * @param runbookContext - Optional runbook context for contextualized responses
@@ -1664,6 +1912,10 @@ export class AgentRuntimeService {
         'When an incident requires a runbook, you MUST use the runbook tools to actually start it.',
         'Use list_runbooks to discover available runbooks.',
         'Use execute_runbook to start a runbook.',
+        'Use propose_runbook_edit or propose_runbook_create when the user asks to create, change, modify, improve, or refactor a runbook.',
+        'Runbook authoring is a separate trust boundary from runbook execution: edits and new runbooks are never auto-approved.',
+        'Do not claim a runbook was created, edited, updated, or saved unless a user approved a proposal and the save operation succeeded.',
+        'A runbook authoring proposal is only a pending diff for review. The user must approve, reject, or request different edits before anything is saved.',
         'For incident diagnosis requests that require multiple data sources, decide which runbooks are needed, execute each required runbook, then inspect completed results before finalizing.',
         'If the user specifies values for runbook placeholders such as time windows, host fragments, usernames, service names, or IDs, pass them in execute_runbook.parameterValues.',
         'If list_runbooks shows required parameters, do not start that runbook until you supply them.',
@@ -2433,7 +2685,13 @@ export class AgentRuntimeService {
   }
 
   private isDynamicToolName(toolName: string): boolean {
-    return toolName === 'list_runbooks' || toolName === 'execute_runbook' || toolName === 'get_runbook_execution'
+    return (
+      toolName === 'list_runbooks' ||
+      toolName === 'execute_runbook' ||
+      toolName === 'get_runbook_execution' ||
+      toolName === 'propose_runbook_edit' ||
+      toolName === 'propose_runbook_create'
+    )
   }
 
   private getDynamicToolDefinitions(): Array<{
@@ -2460,6 +2718,18 @@ export class AgentRuntimeService {
         description:
           'Get the latest snapshot for a previously started runbook execution. If executionId is omitted, use the latest known runbook execution for the current incident.',
         inputSchema: zodToJsonSchema(getRunbookExecutionToolSchema as never),
+      },
+      {
+        name: 'propose_runbook_edit',
+        description:
+          'Create a pending, non-mutating runbook edit proposal for user approval. Use this for requested changes to an existing runbook. This never saves changes.',
+        inputSchema: zodToJsonSchema(proposeRunbookEditToolSchema as never),
+      },
+      {
+        name: 'propose_runbook_create',
+        description:
+          'Create a pending, non-mutating proposal for a new runbook draft. Use this when the user asks to create a runbook. This never saves changes.',
+        inputSchema: zodToJsonSchema(proposeRunbookCreateToolSchema as never),
       },
     ]
   }
@@ -2597,6 +2867,46 @@ export class AgentRuntimeService {
           ),
         }
       }
+      case 'propose_runbook_edit': {
+        const input = proposeRunbookEditToolSchema.parse(toolCall.args)
+        const runbook = await this.resolveAnyRunbookReference(session, input)
+        const proposal = createRunbookEditProposal({
+          incidentThreadId: session.incidentThreadId,
+          prompt: input.prompt,
+          targetRunbook: runbook,
+          operations: input.operations.map((operation) => ({
+            ...operation,
+            action: operation.action as RunbookActionRecord | undefined,
+          })) as RunbookAuthoringOperation[],
+        })
+        session.runbookAuthoringProposals.push(proposal)
+        return {
+          output: JSON.stringify(
+            this.summarizeRunbookAuthoringProposal(proposal),
+            null,
+            2,
+          ),
+        }
+      }
+      case 'propose_runbook_create': {
+        const input = proposeRunbookCreateToolSchema.parse(toolCall.args)
+        const proposal = createRunbookCreationProposal({
+          incidentThreadId: session.incidentThreadId,
+          prompt: input.prompt,
+          draftRunbook: {
+            ...input.draftRunbook,
+            actions: input.draftRunbook.actions as RunbookActionRecord[],
+          },
+        })
+        session.runbookAuthoringProposals.push(proposal)
+        return {
+          output: JSON.stringify(
+            this.summarizeRunbookAuthoringProposal(proposal),
+            null,
+            2,
+          ),
+        }
+      }
       default:
         return null
     }
@@ -2605,6 +2915,225 @@ export class AgentRuntimeService {
   private async listExecutableRunbooks(): Promise<RunbookRecord[]> {
     const runbooks = await this.getRunbookStore().list()
     return runbooks.filter((runbook) => runbook.actions.length > 0)
+  }
+
+  private resolveRunbookAuthoringSessions(input: {
+    sessionId?: string
+    incidentThreadId?: string
+  }): AgentSession[] {
+    if (input.sessionId !== undefined && input.sessionId.length > 0) {
+      const session = this.sessions.get(input.sessionId)
+      if (session === undefined) {
+        throw new Error(`Session not found: ${input.sessionId}`)
+      }
+      return [session]
+    }
+
+    if (input.incidentThreadId !== undefined && input.incidentThreadId.length > 0) {
+      return [...this.sessions.values()].filter(
+        (session) => session.incidentThreadId === input.incidentThreadId,
+      )
+    }
+
+    throw new Error('Runbook authoring proposal lookup requires sessionId or incidentThreadId.')
+  }
+
+  private resolveRunbookAuthoringProposal(input: {
+    sessionId?: string
+    incidentThreadId?: string
+    proposalId: string
+  }): {
+    session: AgentSession
+    proposal: RunbookAuthoringProposal
+    proposalIndex: number
+  } {
+    const sessions = this.resolveRunbookAuthoringSessions(input)
+    const matches: Array<{
+      session: AgentSession
+      proposal: RunbookAuthoringProposal
+      proposalIndex: number
+    }> = []
+
+    for (const session of sessions) {
+      const proposalIndex = session.runbookAuthoringProposals.findIndex(
+        (proposal) => proposal.id === input.proposalId,
+      )
+      if (proposalIndex !== -1) {
+        matches.push({
+          session,
+          proposal: session.runbookAuthoringProposals[proposalIndex],
+          proposalIndex,
+        })
+      }
+    }
+
+    if (matches.length === 0) {
+      throw new Error(`Runbook authoring proposal not found: ${input.proposalId}`)
+    }
+
+    if (matches.length > 1) {
+      throw new Error(
+        `Multiple runbook authoring proposals match ${input.proposalId}. Use sessionId.`,
+      )
+    }
+
+    return matches[0]
+  }
+
+  private async resolveCurrentRunbookForAuthoringApproval(
+    proposal: Extract<RunbookAuthoringProposal, { kind: 'edit_existing_runbook' }>,
+  ): Promise<RunbookRecord> {
+    const runbooks = await this.getRunbookStore().list()
+    const runbook = runbooks.find((item) => item.id === proposal.targetRunbookId)
+    if (runbook === undefined) {
+      throw new Error(`Runbook not found for authoring approval: ${proposal.targetRunbookId}`)
+    }
+
+    return runbook
+  }
+
+  private async persistApprovedRunbookAuthoringProposal(
+    runbook: RunbookRecord,
+    kind: RunbookAuthoringProposal['kind'],
+  ): Promise<RunbookRecord> {
+    const store = this.getRunbookStore()
+
+    if (kind === 'create_new_runbook') {
+      if (store.create === undefined) {
+        throw new Error('Runbook authoring approval requires a runbook store that can create runbooks.')
+      }
+
+      let savedRunbook = await store.create({
+        id: runbook.id,
+        title: runbook.title,
+        description: runbook.description,
+        idleTimeout: runbook.idleTimeout,
+      })
+
+      if (runbook.actions.length > 0) {
+        if (store.updateActions === undefined) {
+          throw new Error('Runbook authoring approval requires a runbook store that can save runbook actions.')
+        }
+        savedRunbook = await store.updateActions({
+          runbookId: savedRunbook.id,
+          actions: runbook.actions,
+        }) ?? savedRunbook
+      }
+
+      return savedRunbook
+    }
+
+    let savedRunbook: RunbookRecord | null = null
+    if (store.updateMeta !== undefined) {
+      savedRunbook = await store.updateMeta({
+        id: runbook.id,
+        title: runbook.title,
+        description: runbook.description,
+        idleTimeout: runbook.idleTimeout,
+      })
+    }
+
+    if (store.updateActions === undefined) {
+      throw new Error('Runbook authoring approval requires a runbook store that can save runbook actions.')
+    }
+
+    savedRunbook = await store.updateActions({
+      runbookId: runbook.id,
+      actions: runbook.actions,
+    }) ?? savedRunbook
+
+    if (savedRunbook === null) {
+      throw new Error(`Runbook authoring approval did not save runbook: ${runbook.id}`)
+    }
+
+    return savedRunbook
+  }
+
+  private async resolveAnyRunbookReference(
+    session: AgentSession,
+    input: z.infer<typeof proposeRunbookEditToolSchema>,
+  ): Promise<RunbookRecord> {
+    const runbooks = await this.getRunbookStore().list()
+    const runbookId = input.runbookId?.trim()
+    const runbookTitle = input.runbookTitle?.trim()
+
+    if (runbookId !== undefined && runbookId.length > 0) {
+      const byId = runbooks.find((runbook) => runbook.id === runbookId)
+      if (byId !== undefined) {
+        return byId
+      }
+    }
+
+    if (runbookTitle !== undefined && runbookTitle.length > 0) {
+      const normalizedTitle = runbookTitle.toLowerCase()
+      const exactMatches = runbooks.filter((runbook) => runbook.title.trim().toLowerCase() === normalizedTitle)
+      if (exactMatches.length === 1) {
+        return exactMatches[0]
+      }
+
+      const partialMatches = runbooks.filter((runbook) => runbook.title.toLowerCase().includes(normalizedTitle))
+      if (partialMatches.length === 1) {
+        return partialMatches[0]
+      }
+      if (partialMatches.length > 1) {
+        throw new Error(
+          `Multiple runbooks match "${runbookTitle}". Use runbookId. Matches: ${partialMatches.map((runbook) => runbook.title).join(', ')}`,
+        )
+      }
+    }
+
+    if (session.runbookContext !== undefined && session.runbookContext.id.length > 0) {
+      const activeRunbook = runbooks.find((runbook) => runbook.id === session.runbookContext?.id)
+      if (activeRunbook !== undefined) {
+        return activeRunbook
+      }
+    }
+
+    throw new Error('propose_runbook_edit requires runbookId or runbookTitle when there is no active runbook context')
+  }
+
+  private summarizeRunbookAuthoringProposal(
+    proposal: RunbookAuthoringProposal,
+  ): RunbookAuthoringProposalReview {
+    return {
+      status: proposal.status,
+      approvalRequired: true,
+      saved: proposal.status === 'approved',
+      proposalId: proposal.id,
+      kind: proposal.kind,
+      incidentThreadId: proposal.incidentThreadId,
+      targetRunbookId:
+        proposal.kind === 'edit_existing_runbook'
+          ? proposal.targetRunbookId
+          : undefined,
+      targetRevisionNumber:
+        proposal.kind === 'edit_existing_runbook'
+          ? proposal.targetRevisionNumber
+          : undefined,
+      proposedRunbook: {
+        id: proposal.proposedRunbook.id,
+        title: proposal.proposedRunbook.title,
+        description: proposal.proposedRunbook.description,
+        revisionNumber: proposal.proposedRunbook.revisionNumber,
+        actionCount: proposal.proposedRunbook.actions.length,
+        actions: proposal.proposedRunbook.actions.map((action) => ({
+          id: action.id,
+          type: action.type,
+          title: action.title,
+        })),
+      },
+      validation: proposal.validation,
+      operationDiffs: proposal.operationDiffs.map((diff) => ({
+        operationId: diff.operationId,
+        type: diff.type,
+        rationale: diff.rationale,
+        riskLabels: diff.riskLabels,
+        before: diff.before,
+        after: diff.after,
+      })),
+      nextStep:
+        'Show this proposal to the operator. Do not claim it was saved; it requires explicit approve, deny, or revise action.',
+    }
   }
 
   private async resolveRunbookReference(

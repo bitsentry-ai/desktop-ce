@@ -15,6 +15,8 @@ import type {
   AgentRuntimeRunbookExecutionService,
   AgentRuntimeRunbookStore,
   AgentRuntimeWindow,
+  RunbookAuthoringProposalDecisionResult,
+  RunbookAuthoringProposalReview,
 } from './agent-runtime.service'
 
 export interface AgentRuntimeSessionController {
@@ -24,6 +26,28 @@ export interface AgentRuntimeSessionController {
   destroy(): void
   getStatus(sessionId: string): AgentSessionStatus
   getSnapshot(sessionId: string): AgentThreadSnapshot
+  listRunbookAuthoringProposals(input: {
+    sessionId?: string
+    incidentThreadId?: string
+  }): RunbookAuthoringProposalReview[]
+  approveRunbookAuthoringProposal(input: {
+    sessionId?: string
+    incidentThreadId?: string
+    proposalId: string
+    approvedOperationIds?: string[]
+  }): Promise<RunbookAuthoringProposalDecisionResult>
+  rejectRunbookAuthoringProposal(input: {
+    sessionId?: string
+    incidentThreadId?: string
+    proposalId: string
+    reason?: string
+  }): RunbookAuthoringProposalDecisionResult
+  requestRunbookAuthoringRevision(input: {
+    sessionId?: string
+    incidentThreadId?: string
+    proposalId: string
+    requestedEdit: string
+  }): RunbookAuthoringProposalDecisionResult
 }
 
 export interface AgentHandlerDependencies {
@@ -113,6 +137,49 @@ export function createDesktopAgentHandlers(
         }
         throw error
       }
+    },
+
+    'agent:listRunbookAuthoringProposals': (
+      payload: unknown,
+    ): Promise<RunbookAuthoringProposalReview[]> => {
+      const input = payload as { sessionId?: string; incidentThreadId?: string }
+      return Promise.resolve(agentRuntime.listRunbookAuthoringProposals(input))
+    },
+
+    'agent:approveRunbookAuthoringProposal': (
+      payload: unknown,
+    ): Promise<RunbookAuthoringProposalDecisionResult> => {
+      const input = payload as {
+        sessionId?: string
+        incidentThreadId?: string
+        proposalId: string
+        approvedOperationIds?: string[]
+      }
+      return agentRuntime.approveRunbookAuthoringProposal(input)
+    },
+
+    'agent:rejectRunbookAuthoringProposal': (
+      payload: unknown,
+    ): Promise<RunbookAuthoringProposalDecisionResult> => {
+      const input = payload as {
+        sessionId?: string
+        incidentThreadId?: string
+        proposalId: string
+        reason?: string
+      }
+      return Promise.resolve(agentRuntime.rejectRunbookAuthoringProposal(input))
+    },
+
+    'agent:requestRunbookAuthoringRevision': (
+      payload: unknown,
+    ): Promise<RunbookAuthoringProposalDecisionResult> => {
+      const input = payload as {
+        sessionId?: string
+        incidentThreadId?: string
+        proposalId: string
+        requestedEdit: string
+      }
+      return Promise.resolve(agentRuntime.requestRunbookAuthoringRevision(input))
     },
   }
 }
