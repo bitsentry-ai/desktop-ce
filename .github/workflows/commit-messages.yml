@@ -1,0 +1,46 @@
+name: Commit Messages
+
+on:
+  pull_request_target:
+    types:
+      - opened
+      - reopened
+      - synchronize
+
+permissions:
+  contents: read
+
+jobs:
+  validate-commit-messages:
+    name: Validate Commit Messages
+    runs-on: blacksmith-2vcpu-ubuntu-2404
+
+    steps:
+      - name: Checkout base repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          fetch-depth: 1
+
+      - name: Fetch pull request commits
+        run: git fetch --no-tags --depth=250 origin +refs/pull/${{ github.event.pull_request.number }}/head:pr-head
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22.12.0'
+
+      - name: Validate commit subjects
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          git log --format=%s "$BASE_SHA..pr-head" > /tmp/commit-subjects.txt
+          if [ ! -s /tmp/commit-subjects.txt ]; then
+            echo "No commit subjects to validate."
+            exit 0
+          fi
+
+          while IFS= read -r subject; do
+            echo "Validating: $subject"
+            node .maintain/git-hooks/validate-commit-message.mjs --message "$subject"
+          done < /tmp/commit-subjects.txt

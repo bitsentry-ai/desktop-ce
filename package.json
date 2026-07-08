@@ -10,6 +10,8 @@
   },
   "scripts": {
     "setup": "pnpm install && pnpm --dir packages/electron-trpc install",
+    "commitmsg:check": "node .maintain/git-hooks/validate-commit-message.mjs --message \"$npm_config_message\"",
+    "commitmsg:check:file": "node .maintain/git-hooks/validate-commit-message.mjs",
     "changelog": "git-cliff -c cliff.toml",
     "changelog:desktop": "git-cliff -c cliff.toml --tag-pattern '^desktop-v[0-9].*'",
     "changelog:desktop:unreleased": "git-cliff -c cliff.toml --tag-pattern '^desktop-v[0-9].*' --unreleased",
@@ -19,6 +21,9 @@
     "build:packages": "pnpm --filter @bitsentry-ce/core build && pnpm --filter @bitsentry-ce/i18n build && pnpm --filter @bitsentry-ce/components build && pnpm --filter @bitsentry-ce/coding-agents build && pnpm --filter @bitsentry-ce/desktop-cli build",
     "core:build": "pnpm --filter @bitsentry-ce/core build",
     "i18n:build": "pnpm --filter @bitsentry-ce/i18n build",
+    "i18n:audit:hardcoded": "node scripts/i18n/audit-hardcoded.mjs --root apps/desktop/src/renderer/src --root packages/components/src",
+    "i18n:audit:integrity": "pnpm --filter @bitsentry-ce/i18n run audit:integrity",
+    "i18n:check": "pnpm run i18n:audit:integrity && pnpm run i18n:audit:hardcoded",
     "components:build": "pnpm --filter @bitsentry-ce/components build",
     "coding-agents:build": "pnpm --filter @bitsentry-ce/coding-agents build",
     "electron-trpc:build": "pnpm --filter electron-trpc run build",
