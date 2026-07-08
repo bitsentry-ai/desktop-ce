@@ -189,6 +189,10 @@
       "types": "./dist/features/runbooks/desktop-runbook-pro.types.d.ts",
       "default": "./dist/features/runbooks/desktop-runbook-pro.types.js"
     },
+    "./features/runbooks/authoring": {
+      "types": "./dist/features/runbooks/authoring.d.ts",
+      "default": "./dist/features/runbooks/authoring.js"
+    },
     "./features/settings/settings.schemas": {
       "types": "./dist/features/settings/settings.schemas.d.ts",
       "default": "./dist/features/settings/settings.schemas.js"

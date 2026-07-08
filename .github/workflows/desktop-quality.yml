@@ -1,0 +1,97 @@
+name: Desktop Quality
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/desktop-quality.yml'
+      - 'apps/desktop/**'
+      - 'packages/**'
+      - 'scripts/**'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+      - 'pnpm-workspace.yaml'
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/desktop-quality.yml'
+      - 'apps/desktop/**'
+      - 'packages/**'
+      - 'scripts/**'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+      - 'pnpm-workspace.yaml'
+  workflow_dispatch:
+
+concurrency:
+  group: desktop-quality-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  desktop-quality:
+    name: Lint, Typecheck, Test, Build
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Initialize electron-trpc submodule
+        run: |
+          git config submodule.packages/electron-trpc.url https://github.com/bitsentry-ai/electron-trpc.git
+          git submodule update --init --depth 1 packages/electron-trpc
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22.12.0'
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.32.1
+          run_install: false
+
+      - name: Install desktop runtime dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            xvfb \
+            libgtk-3-0 \
+            libnss3 \
+            libxss1 \
+            libasound2t64 \
+            libgbm1 \
+            libatk-bridge2.0-0
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install electron-trpc dependencies
+        run: pnpm --dir packages/electron-trpc install --frozen-lockfile
+
+      - name: Ensure Electron binary is installed
+        run: pnpm --dir apps/desktop exec node node_modules/electron/install.js
+
+      - name: Install desktop native dependencies
+        run: pnpm --dir apps/desktop run prepare:native-deps
+
+      - name: Rebuild pending native dependencies
+        run: |
+          pnpm rebuild --pending
+          pnpm --dir packages/electron-trpc rebuild --pending
+
+      - name: Build shared packages
+        run: pnpm run build:packages
+
+      - name: Run workspace lint
+        run: pnpm run lint
+
+      - name: Run desktop quality suite
+        run: pnpm run desktop:quality
+
+      - name: Run desktop smoke test
+        run: pnpm run desktop:quality:smoke

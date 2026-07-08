@@ -681,6 +681,61 @@ export interface RunbookRecord {
   updatedAt: string;
 }
 
+export type RunbookAuthoringProposalStatus =
+  | "pending_approval"
+  | "approved"
+  | "rejected"
+  | "revision_requested";
+
+export type RunbookAuthoringProposalKind =
+  | "edit_existing_runbook"
+  | "create_new_runbook";
+
+export interface RunbookAuthoringProposalReview {
+  status: RunbookAuthoringProposalStatus;
+  approvalRequired: boolean;
+  saved: boolean;
+  proposalId: string;
+  kind: RunbookAuthoringProposalKind;
+  incidentThreadId?: string;
+  targetRunbookId?: string;
+  targetRevisionNumber?: number;
+  proposedRunbook: {
+    id: string;
+    title: string;
+    description: string;
+    revisionNumber: number;
+    actionCount: number;
+    actions: Array<{
+      id: string;
+      type: string;
+      title: string;
+    }>;
+  };
+  validation: {
+    valid: boolean;
+    errors: string[];
+    warnings: string[];
+  };
+  operationDiffs: Array<{
+    operationId: string;
+    type: string;
+    rationale: string;
+    riskLabels: string[];
+    before: unknown;
+    after: unknown;
+  }>;
+  nextStep: string;
+}
+
+export interface RunbookAuthoringProposalDecisionResult {
+  proposal: RunbookAuthoringProposalReview;
+  savedRunbook?: RunbookRecord;
+  approvedOperationIds?: string[];
+  reason?: string;
+  requestedEdit?: string;
+}
+
 export interface RunbookContextV1 {
   format: "bitsentry.runbook.context";
   version: 1;
@@ -1176,6 +1231,28 @@ export interface AgentServicePort {
   cancel(sessionId: string): Promise<void>;
   getStatus(sessionId: string): Promise<AgentSessionStatus | null>;
   getSnapshot(sessionId: string): Promise<AgentThreadSnapshot | null>;
+  listRunbookAuthoringProposals(input: {
+    sessionId?: string;
+    incidentThreadId?: string;
+  }): Promise<RunbookAuthoringProposalReview[]>;
+  approveRunbookAuthoringProposal(input: {
+    sessionId?: string;
+    incidentThreadId?: string;
+    proposalId: string;
+    approvedOperationIds?: string[];
+  }): Promise<RunbookAuthoringProposalDecisionResult>;
+  rejectRunbookAuthoringProposal(input: {
+    sessionId?: string;
+    incidentThreadId?: string;
+    proposalId: string;
+    reason?: string;
+  }): Promise<RunbookAuthoringProposalDecisionResult>;
+  requestRunbookAuthoringRevision(input: {
+    sessionId?: string;
+    incidentThreadId?: string;
+    proposalId: string;
+    requestedEdit: string;
+  }): Promise<RunbookAuthoringProposalDecisionResult>;
   onEvent(
     handler: (data: {
       sessionId: string;
