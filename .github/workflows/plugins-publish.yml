@@ -30,11 +30,22 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Initialize electron-trpc submodule
+      - name: Initialize package submodules
         shell: bash
         run: |
           git config submodule.packages/electron-trpc.url https://github.com/bitsentry-ai/electron-trpc.git
-          git submodule update --init --depth 1 packages/electron-trpc
+          git config submodule.packages/plugin-sdk.url https://github.com/bitsentry-ai/-bitsentry-plugin-sdk.git
+          git config submodule.packages/plugins/github.url https://github.com/bitsentry-ai/bitsentry-plugin-github.git
+          git config submodule.packages/plugins/posthog.url https://github.com/bitsentry-ai/bitsentry-plugin-posthog.git
+          git config submodule.packages/plugins/sentry.url https://github.com/bitsentry-ai/bitsentry-plugin-sentry.git
+          git config submodule.packages/plugins/wazuh.url https://github.com/bitsentry-ai/bitsentry-plugin-wazuh.git
+          git submodule update --init --depth 1 \
+            packages/electron-trpc \
+            packages/plugin-sdk \
+            packages/plugins/github \
+            packages/plugins/posthog \
+            packages/plugins/sentry \
+            packages/plugins/wazuh
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
