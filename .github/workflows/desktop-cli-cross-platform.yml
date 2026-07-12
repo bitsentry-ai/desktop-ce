@@ -38,7 +38,7 @@ jobs:
             runs_on: blacksmith-12vcpu-macos-26
             package_command: pnpm run desktop:package:mac:arm64
           - label: Linux
-            runs_on: blacksmith-4vcpu-ubuntu-2404
+            runs_on: ubuntu-latest
             package_command: pnpm run desktop:package:linux
           - label: Windows
             runs_on: blacksmith-4vcpu-windows-2025
