@@ -32,7 +32,7 @@
     "desktop-cli:test": "pnpm --filter @bitsentry-ce/desktop-cli test",
     "plugin-runtime:test": "pnpm --filter @bitsentry-ce/core test -- tests/plugin-runtime.spec.ts",
     "plugin-install:test": "pnpm --filter @bitsentry-ce/core test -- tests/plugin-artifact-install.spec.ts && pnpm --filter @bitsentry-ce/desktop-cli test -- tests/plugin-cli.spec.ts",
-    "plugin-system:test": "pnpm run plugin-runtime:test && pnpm run plugins:test && pnpm run plugin-install:test",
+    "plugin-system:test": "pnpm run plugins:build && pnpm run plugin-runtime:test && pnpm run plugins:test && pnpm run plugin-install:test",
     "coding-agents:build": "pnpm --filter @bitsentry-ce/coding-agents build",
     "electron-trpc:build": "pnpm --filter electron-trpc run build",
     "desktop:dev": "pnpm --filter @bitsentry-ce/desktop dev",

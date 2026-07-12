@@ -2,13 +2,12 @@ import fs from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
 
-import { desktopCodePluginSchema } from "./plugins.types";
-import type { DesktopCodePlugin } from "./plugins.types";
+import * as pluginSdk from "@bitsentry/plugin-sdk";
 
 const localRequire = createRequire(__filename);
 
 export type LoadedDesktopCodePlugin = {
-  plugin: DesktopCodePlugin;
+  plugin: pluginSdk.DesktopCodePlugin;
   entryPath: string;
   pluginRoot: string;
   referenceRepositoryPath: string;
@@ -104,7 +103,9 @@ function loadPluginEntry(entryPath: string): LoadedDesktopCodePlugin {
 
   Reflect.deleteProperty(localRequire.cache, localRequire.resolve(entryPath));
   const moduleExports = localRequire(entryPath) as unknown;
-  const plugin = desktopCodePluginSchema.parse(readPluginExport(moduleExports));
+  const plugin = pluginSdk.desktopCodePluginSchema.parse(
+    readPluginExport(moduleExports),
+  );
   let referenceRepositoryPath = relativePluginRoot;
   if (plugin.referenceRepositoryPath !== undefined) {
     referenceRepositoryPath = plugin.referenceRepositoryPath;

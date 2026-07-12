@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm, writeFile } from 'fs/promises'
+import { access, mkdir, mkdtemp, rm, writeFile } from 'fs/promises'
 import { tmpdir } from 'os'
 import path from 'path'
 
@@ -130,6 +130,29 @@ describe('DesktopPluginRuntimeService', () => {
       })
     } finally {
       await rm(tempRoot, { recursive: true, force: true })
+    }
+  })
+
+  it('imports every first-party plugin artifact through the local runtime loader', async () => {
+    const artifactRoot = path.resolve(__dirname, '../../../build/plugins')
+    const expectedPluginIds = ['github', 'posthog', 'sentry', 'wazuh']
+
+    await Promise.all(
+      expectedPluginIds.map((pluginId) =>
+        access(path.join(artifactRoot, `${pluginId}.plugin.js`)),
+      ),
+    )
+
+    const service = createDesktopNodePluginRuntimeService([artifactRoot])
+
+    expect(service.listPlugins().map((plugin) => plugin.id).sort()).toEqual(
+      expectedPluginIds,
+    )
+
+    for (const pluginId of expectedPluginIds) {
+      expect(service.getPlugin(pluginId)).toMatchObject({
+        id: pluginId,
+      })
     }
   })
 

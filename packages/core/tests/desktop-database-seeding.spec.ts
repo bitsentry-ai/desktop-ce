@@ -57,6 +57,8 @@ function createClient() {
 
 describe("createDesktopDatabaseSeeders", () => {
   it("migrates the CE Kanye Rest action to Codex GPT-5.4 Mini", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-07-12T00:00:00.000Z"));
     const logger = {
       info: vi.fn(),
       error: vi.fn(),
@@ -68,14 +70,19 @@ describe("createDesktopDatabaseSeeders", () => {
       logger,
     });
 
-    await seeders.seedDefaults(client);
+    try {
+      await seeders.seedDefaults(client);
 
-    expect(runbookActionUpdate).toHaveBeenCalledWith({
-      where: { id: "kanye-llm-action" },
-      data: {
-        llmProviderKey: "codex",
-        llmModel: "gpt-5.4-mini",
-      },
-    });
+      expect(runbookActionUpdate).toHaveBeenCalledWith({
+        where: { id: "kanye-llm-action" },
+        data: {
+          llmProviderKey: "codex",
+          llmModel: "gpt-5.4-mini",
+          updatedAt: "2026-07-12T00:00:00.000Z",
+        },
+      });
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
