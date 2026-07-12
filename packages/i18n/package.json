@@ -30,7 +30,7 @@
   "scripts": {
     "audit:integrity": "node ../../scripts/i18n/audit-locale-integrity.mjs",
     "build": "rm -rf dist && tsc -p tsconfig.build.json && node ../../scripts/i18n/postbuild.mjs",
-    "lint": "eslint .",
+    "lint": "node ../../scripts/eslint/ts7-unavailable.mjs",
     "lint:fix": "eslint . --fix"
   },
   "peerDependencies": {

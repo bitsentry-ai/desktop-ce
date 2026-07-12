@@ -29,7 +29,7 @@
   },
   "scripts": {
     "build": "rm -rf dist && tsc -p tsconfig.build.json",
-    "lint": "eslint .",
+    "lint": "node ../../scripts/eslint/ts7-unavailable.mjs",
     "lint:fix": "eslint . --fix",
     "test": "vitest run --config vitest.config.ts"
   },

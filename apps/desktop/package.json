@@ -31,7 +31,7 @@
     "typecheck": "tsc -b --noEmit",
     "typecheck:test": "tsc --noEmit -p tsconfig.test.json",
     "typecheck:contract": "tsc --noEmit -p tsconfig.contract.json",
-    "lint": "eslint .",
+    "lint": "node ../../scripts/eslint/ts7-unavailable.mjs",
     "lint:fix": "eslint . --fix",
     "test": "pnpm --dir ../.. run plugins:build && vitest run --config vitest.config.ts",
     "test:watch": "vitest --config vitest.config.ts",
