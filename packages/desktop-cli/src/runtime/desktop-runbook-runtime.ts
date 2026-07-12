@@ -5,11 +5,11 @@ import {
   type DesktopRunbookRuntimeDatabase,
   type DesktopRunbookRuntimeHandlers,
   type DesktopRunbookRuntimeOptions,
-} from "@bitsentry-ce/core/features/runbooks/desktop-runbook-runtime";
-import { DesktopGlobalVariablesService } from "@bitsentry-ce/core/features/runbooks";
-import { closeDatabase, initializeDatabase } from "./database-index";
-import { createDesktopYamlRunbookHandlers as createRunbookHandlers } from "@bitsentry-ce/core/features/runbooks/desktop-runbook-handler-yaml-bindings";
-import { ExternalSourceRunbookQueryService } from "@bitsentry-ce/core/features/error-sources";
+} from '@bitsentry-ce/core/features/runbooks/desktop-runbook-runtime'
+import { DesktopGlobalVariablesService } from '@bitsentry-ce/core/features/runbooks'
+import { closeDatabase, initializeDatabase } from './database-index.js'
+import { createDesktopYamlRunbookHandlers as createRunbookHandlers } from '@bitsentry-ce/core/features/runbooks/desktop-runbook-handler-yaml-bindings'
+import { ExternalSourceRunbookQueryService } from '@bitsentry-ce/core/features/error-sources'
 import {
   SqliteRunbookResultStore,
   DEFAULT_RUNBOOK_EXECUTION_HEARTBEAT_GRACE_MS,
@@ -17,11 +17,11 @@ import {
 import {
   createDesktopAgentLlmAdapter,
   type AgentLlmCredentialsStore,
-} from "@bitsentry-ce/coding-agents";
+} from '@bitsentry-ce/coding-agents'
 import path from "path";
-import { DesktopRunbookStore as RunbookStore } from "@bitsentry-ce/core/features/runbooks/desktop-runbook.store";
-import { CodingAgentsProviderService } from "./desktop-coding-agents";
-import { SqliteErrorSourcesRepositoryAdapter } from "@bitsentry-ce/core/features/error-sources/desktop-sqlite-error-sources.adapter";
+import { DesktopRunbookStore as RunbookStore } from '@bitsentry-ce/core/features/runbooks/desktop-runbook.store'
+import { CodingAgentsProviderService } from './desktop-coding-agents.js'
+import { SqliteErrorSourcesRepositoryAdapter } from '@bitsentry-ce/core/features/error-sources/desktop-sqlite-error-sources.adapter'
 import {
   approveRunbookExportPath,
   approveRunbookImportPaths,
@@ -33,8 +33,8 @@ import {
 import {
   getRuntimeUserDataPath,
   setRuntimeDefaultAppDataName,
-} from "./runtime-paths";
-import { LocalPluginCredentialsStore } from "./plugin-credentials-store";
+} from './runtime-paths.js'
+import { LocalPluginCredentialsStore } from "./plugin-credentials-store.js";
 
 type DesktopRunbookDatabase = Awaited<ReturnType<typeof initializeDatabase>> &
   DesktopRunbookRuntimeDatabase;

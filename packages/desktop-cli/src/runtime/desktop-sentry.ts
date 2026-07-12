@@ -3,7 +3,7 @@ import {
   createDesktopSentryBindings,
   type DesktopSentryPort,
 } from '@bitsentry-ce/core/features/analytics'
-import { getRuntimeAppVersion } from './electron-app'
+import { getRuntimeAppVersion } from './electron-app.js'
 
 declare global {
   var __BITSENTRY_TEST_LOAD_SENTRY_MAIN__:

@@ -1,6 +1,6 @@
 import os from 'os'
 import path from 'path'
-import { tryGetElectronApp } from './electron-app'
+import { tryGetElectronApp } from './electron-app.js'
 
 export const DESKTOP_APP_DATA_NAME = 'SuperTerminal CE'
 

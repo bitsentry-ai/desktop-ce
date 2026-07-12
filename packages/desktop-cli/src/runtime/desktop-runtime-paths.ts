@@ -2,7 +2,7 @@ import { getDesktopEditionIdentity, type DesktopEdition } from '@bitsentry-ce/co
 import {
   getRuntimeUserDataPath as getSharedRuntimeUserDataPath,
   setRuntimeUserDataPath,
-} from './runtime-paths'
+} from './runtime-paths.js'
 
 export function createDesktopEditionRuntimePaths(edition: DesktopEdition) {
   const appDataName = getDesktopEditionIdentity(edition).appDataName

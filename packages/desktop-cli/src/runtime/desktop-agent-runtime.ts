@@ -11,7 +11,7 @@ import {
   isLocalCodingAgentDeltaStreamingEnabled,
   recordCodingAgentDebugAnomaly,
   recordCodingAgentDebugEvent,
-} from './desktop-coding-agents'
+} from './desktop-coding-agents.js'
 
 export type {
   AgentRuntimeLlmAdapter,

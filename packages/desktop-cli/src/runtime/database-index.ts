@@ -6,8 +6,8 @@ import {
   createDatabaseSnapshot,
   isDatabaseBackupEnabled,
   restoreDatabaseSnapshot,
-} from './database-backups'
-import { getDatabasePath, getDatabaseUrl } from './database-paths'
+} from './database-backups.js'
+import { getDatabasePath, getDatabaseUrl } from './database-paths.js'
 
 let db: DbClient | null = null
 const DATABASE_SCHEMA_VERSION = 16
