@@ -43,4 +43,25 @@ describe('recorded coding-agent event replay', () => {
       'Recorded provider events must have strictly increasing sequence numbers',
     )
   })
+
+  it.each(['codex', 'cursor', 'claude_code', 'opencode'] as const)(
+    'replays the provider-neutral %s event contract without retaining secrets',
+    (provider) => {
+      const recording = [
+        JSON.stringify({ provider, sequence: 1, type: 'delta', text: '[secure:token]' }),
+        JSON.stringify({ provider, sequence: 2, type: 'permission', permission: 'granted' }),
+        JSON.stringify({ provider, sequence: 3, type: 'terminal', status: 'completed' }),
+      ].join('\n')
+
+      const replay = replayRecordedProviderEvents(parseRecordedProviderEvents(recording))
+
+      expect(replay).toEqual({
+        deltas: ['[secure:token]'],
+        permissions: ['granted'],
+        terminalStatus: 'completed',
+        ignoredAfterTerminal: 0,
+      })
+      expect(recording).not.toContain('raw-secret-token')
+    },
+  )
 })
