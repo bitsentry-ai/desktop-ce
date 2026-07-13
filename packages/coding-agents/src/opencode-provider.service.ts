@@ -697,6 +697,7 @@ function wireOpenCodeProcess(
 } {
   const stdoutLines = readline.createInterface({ input: child.stdout })
   stdoutLines.on('line', (line) => {
+    if (state.wasAborted) return
     handleOpenCodeStdoutLine(line, state, options, appendOutput, accessLevel)
   })
 

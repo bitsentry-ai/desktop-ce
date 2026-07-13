@@ -114,6 +114,9 @@ importers:
       '@sentry/react':
         specifier: 10.50.0
         version: 10.50.0(react@19.2.4)
+      '@tanstack/query-core':
+        specifier: ^5.90.21
+        version: 5.95.2
       '@tanstack/react-query':
         specifier: ^5.90.21
         version: 5.95.2(react@19.2.4)
@@ -135,6 +138,9 @@ importers:
       better-sqlite3:
         specifier: ^12.6.2
         version: 12.8.0
+      bindings:
+        specifier: ^1.5.0
+        version: 1.5.0
       driver.js:
         specifier: ^1.4.0
         version: 1.4.0
@@ -150,6 +156,9 @@ importers:
       electron-updater:
         specifier: ^6.8.3
         version: 6.8.3
+      file-uri-to-path:
+        specifier: ^1.0.0
+        version: 1.0.0
       jsonwebtoken:
         specifier: ^9.0.3
         version: 9.0.3

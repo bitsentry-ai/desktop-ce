@@ -666,10 +666,6 @@ export async function executeClaudeCode(
   // session sees the same context a resumed one would, without the failure
   // modes of session-id staleness, error-subtype interpretation, or transcript
   // duplication on resume + replay.
-  const session = query({
-    prompt: options.prompt,
-    options: queryOptions,
-  })
   const state: ClaudeCodeSessionState = {
     output: '',
     streamedOutput: false,
@@ -679,8 +675,13 @@ export async function executeClaudeCode(
   }
 
   options.onDelta?.({ type: 'status', status: 'started' })
+  let session: ClaudeSdkSession | undefined
 
   try {
+    session = query({
+      prompt: options.prompt,
+      options: queryOptions,
+    })
     await runClaudeCodeSession(session, options, state, effectiveAccessLevel)
     if (!options.abortController.signal.aborted) {
       await updateClaudeContextUsage(session, state)
@@ -688,7 +689,9 @@ export async function executeClaudeCode(
   } catch (err: unknown) {
     handleClaudeExecutionError(err, options)
   } finally {
-    closeClaudeSession(session)
+    if (session !== undefined) {
+      closeClaudeSession(session)
+    }
   }
 
   return {

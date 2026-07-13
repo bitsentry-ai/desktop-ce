@@ -1166,6 +1166,18 @@ export class DbClient {
     return Promise.resolve(rows)
   }
 
+  async $transaction<T>(operation: () => Promise<T>): Promise<T> {
+    this.sqlite.exec('BEGIN IMMEDIATE')
+    try {
+      const result = await operation()
+      this.sqlite.exec('COMMIT')
+      return result
+    } catch (error) {
+      this.sqlite.exec('ROLLBACK')
+      throw error
+    }
+  }
+
   private createDelegate(model: ModelName): ModelDelegate {
     return {
       findUnique: (args: FindUniqueArgs) => this.findUnique(model, args),

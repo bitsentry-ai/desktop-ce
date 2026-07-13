@@ -8,6 +8,12 @@ import { codingAgentsLogger as log } from './logger'
 const REQUEST_TIMEOUT_MS = 300_000
 const MAX_STDERR_BUFFER = 5_000
 
+function resolveRequestTimeoutMs(value: number | undefined): number {
+  return typeof value === 'number' && Number.isFinite(value) && value > 0
+    ? value
+    : REQUEST_TIMEOUT_MS
+}
+
 export type CursorJsonRpcId = string | number | null
 
 interface PendingRequest {
@@ -147,12 +153,15 @@ export class CursorAcpClient extends EventEmitter {
   private nextId = 1
   private stderrBuffer = ''
   private closed = false
+  private readonly requestTimeoutMs: number
 
   constructor(
     private readonly binaryPath: string,
     private readonly cwd: string,
+    options: { requestTimeoutMs?: number } = {},
   ) {
     super()
+    this.requestTimeoutMs = resolveRequestTimeoutMs(options.requestTimeoutMs)
   }
 
   start(_model?: string): Promise<void> {
@@ -269,9 +278,9 @@ export class CursorAcpClient extends EventEmitter {
       const timeout = setTimeout(() => {
         this.pending.delete(id)
         reject(new Error(
-          `Cursor ACP RPC ${method} timed out after ${String(REQUEST_TIMEOUT_MS / 1000)}s`,
+          `Cursor ACP RPC ${method} timed out after ${String(this.requestTimeoutMs / 1000)}s`,
         ))
-      }, REQUEST_TIMEOUT_MS)
+      }, this.requestTimeoutMs)
 
       this.pending.set(id, { method, timeout, resolve, reject })
       this.writeMessage({ jsonrpc: '2.0', id, method, params })
