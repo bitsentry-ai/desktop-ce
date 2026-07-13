@@ -351,6 +351,39 @@ describe('executeOpenCode', () => {
     })
   })
 
+  it('does not emit a late OpenCode stream event after cancellation', async () => {
+    const child = new MockChildProcess()
+    mocks.spawn.mockReturnValue(child)
+    const abortController = new AbortController()
+    const textDeltas: string[] = []
+
+    const { executeOpenCode } = await import(
+      '@bitsentry-ce/desktop-cli/runtime/desktop-coding-agents'
+    )
+    const resultPromise = executeOpenCode({
+      prompt: 'Cancel immediately',
+      binaryPath: 'opencode',
+      abortController,
+      onDelta: (delta) => {
+        if (delta.type === 'text' && delta.text !== undefined) textDeltas.push(delta.text)
+      },
+    })
+
+    abortController.abort()
+    child.stdout.write(`${JSON.stringify({
+      type: 'message.part.updated',
+      properties: {
+        part: { id: 'late-part', type: 'text', text: 'late output' },
+      },
+    })}\n`)
+    child.stdout.end()
+    child.stderr.end()
+    child.emit('close', 0)
+
+    await expect(resultPromise).resolves.toMatchObject({ output: '', exitCode: 0 })
+    expect(textDeltas).toEqual([])
+  })
+
   it('surfaces JSON error events from OpenCode failures', async () => {
     const child = new MockChildProcess()
     mocks.spawn.mockReturnValue(child)

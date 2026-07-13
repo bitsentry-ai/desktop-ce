@@ -4,14 +4,21 @@ import { resolve } from "node:path";
 const desktopDir = resolve(__dirname, "../..");
 const electronBin = require("electron") as string;
 const READY_MARKER = "[smoke] desktop-ready";
+const RUNBOOK_COMPLETE_MARKER = "[smoke] runbook-completed";
 const TIMEOUT_MS = 30_000;
 const READY_GRACE_MS = 1_000;
+const smokeScenario = process.env.BITSENTRY_DESKTOP_SMOKE_SCENARIO ?? "ready";
+let requiredMarkers = [READY_MARKER];
+if (smokeScenario === "runbook") {
+  requiredMarkers = [READY_MARKER, RUNBOOK_COMPLETE_MARKER];
+}
 
 console.log("\nLaunching desktop smoke test...");
 
 const childEnv: NodeJS.ProcessEnv = {
   ...process.env,
   BITSENTRY_DESKTOP_SMOKE_TEST: "1",
+  BITSENTRY_DESKTOP_SMOKE_SCENARIO: smokeScenario,
   ELECTRON_ENABLE_LOGGING: "1",
   START_MINIMIZED: "1",
 };
@@ -26,7 +33,7 @@ const child: ChildProcessWithoutNullStreams = spawn(electronBin, [desktopDir], {
 });
 
 let output = "";
-let sawReadyMarker = false;
+const observedMarkers = new Set<string>();
 let settled = false;
 let readyTimer: NodeJS.Timeout | null = null;
 
@@ -116,8 +123,12 @@ function handleOutputChunk(chunk: unknown): void {
   const text = String(chunk);
   output += text;
   if (maybeFailFast()) return;
-  if (text.includes(READY_MARKER) && !sawReadyMarker) {
-    sawReadyMarker = true;
+  for (const marker of requiredMarkers) {
+    if (text.includes(marker)) {
+      observedMarkers.add(marker);
+    }
+  }
+  if (observedMarkers.has(READY_MARKER) && observedMarkers.size === requiredMarkers.length) {
     scheduleSuccessCheck();
   }
 }
@@ -146,8 +157,9 @@ child.on("close", (code: number | null, signal: NodeJS.Signals | null) => {
     return;
   }
 
-  if (!sawReadyMarker) {
-    finish(1, `\nDesktop smoke test failed: ready marker was never observed.\n\nFull output:\n${output}`);
+  const missingMarkers = requiredMarkers.filter((marker) => !observedMarkers.has(marker));
+  if (missingMarkers.length > 0) {
+    finish(1, `\nDesktop smoke test failed: required marker(s) were never observed: ${missingMarkers.join(", ")}.\n\nFull output:\n${output}`);
     return;
   }
 

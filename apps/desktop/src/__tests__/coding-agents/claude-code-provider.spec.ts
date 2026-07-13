@@ -168,6 +168,48 @@ describe('executeClaudeCode', () => {
     expect(closeMock).toHaveBeenCalledTimes(1)
   })
 
+  it('does not emit a late Claude stream event after cancellation', async () => {
+    const abortController = new AbortController()
+    queryMock.mockReturnValue({
+      async *[Symbol.asyncIterator]() {
+        await Promise.resolve()
+        yield {
+          type: 'stream_event',
+          event: {
+            type: 'content_block_delta',
+            delta: { type: 'text_delta', text: 'before cancellation' },
+          },
+        }
+        abortController.abort()
+        yield {
+          type: 'stream_event',
+          event: {
+            type: 'content_block_delta',
+            delta: { type: 'text_delta', text: ' late output' },
+          },
+        }
+      },
+      getContextUsage: getContextUsageMock.mockResolvedValue({ totalTokens: 0, maxTokens: 0 }),
+      close: closeMock,
+    })
+
+    const { executeClaudeCode } = await import(
+      '@bitsentry-ce/desktop-cli/runtime/desktop-coding-agents'
+    )
+    const textDeltas: string[] = []
+    const result = await executeClaudeCode({
+      prompt: 'Cancel after the first chunk',
+      binaryPath: 'claude',
+      abortController,
+      onDelta: (delta) => {
+        if (delta.type === 'text' && delta.text !== undefined) textDeltas.push(delta.text)
+      },
+    })
+
+    expect(result.output).toBe('before cancellation')
+    expect(textDeltas.join('')).toBe('before cancellation')
+  })
+
   it('passes Claude Code native permission modes for local access levels', async () => {
     queryMock.mockReturnValue({
       async *[Symbol.asyncIterator]() {

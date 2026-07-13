@@ -1,0 +1,4 @@
+{"provider":"codex","sequence":1,"type":"delta","text":"Checking the deployment."}
+{"provider":"codex","sequence":2,"type":"permission","permission":"rejected"}
+{"provider":"codex","sequence":3,"type":"terminal","status":"cancelled"}
+{"provider":"codex","sequence":4,"type":"delta","text":"This late output must never reach the renderer."}

@@ -7,6 +7,7 @@ import { getTelemetryStatus, setTelemetryEnabled } from '@bitsentry-ce/core/feat
 import path from 'path'
 import { readFileSync } from 'fs'
 import { rm } from 'fs/promises'
+import { randomUUID } from 'crypto'
 import {
   app,
   BrowserWindow,
@@ -86,6 +87,7 @@ import {
 } from './oauth-callback'
 import { getAutoUpdaterEnablement } from '@bitsentry-ce/core/features/updater/desktop-updater-policy'
 import { startAutoUpdater } from '@bitsentry-ce/desktop-cli/runtime/desktop-updater'
+import { DesktopShutdownCoordinator } from './shutdown-coordinator'
 
 type UpdaterController = ReturnType<typeof startAutoUpdater> | null
 type LocalAiProviderService = InstanceType<typeof CodingAgentsProviderService>
@@ -104,6 +106,8 @@ const APP_DATA_NAME = desktopEditionIdentity.appDataName
 const SPLASH_TITLE = 'BitSentry'
 const isSmokeTest = process.env.BITSENTRY_DESKTOP_SMOKE_TEST === '1'
 const SMOKE_TEST_READY_MARKER = '[smoke] desktop-ready'
+const SMOKE_RUNBOOK_COMPLETE_MARKER = '[smoke] runbook-completed'
+const isRunbookSmokeScenario = process.env.BITSENTRY_DESKTOP_SMOKE_SCENARIO === 'runbook'
 log.transports.console.level = false
 if (isDebug) {
   log.transports.console.level = 'info'
@@ -336,24 +340,32 @@ app.on('window-all-closed', () => {
   }
 })
 
-const shutdownBeforeQuit = async (): Promise<void> => {
-  updaterController?.stop()
-  updaterController = null
-  agentRuntime?.destroy()
-  localAiProvider?.destroy()
-  unregisterCodingAgentsHandlers(ipcMain)
-  localAiProvider = null
-  await closeSentry()
-  await runbookExecutionService?.destroy()
-  runbookExecutionService = null
-  if (services !== null) {
-    await services.jobRuntime.stop()
-  }
-  await closeDatabase()
-}
+const shutdownCoordinator = new DesktopShutdownCoordinator({
+  stopUpdater: () => {
+    updaterController?.stop()
+    updaterController = null
+  },
+  destroyAgentRuntime: () => agentRuntime?.destroy(),
+  destroyCodingAgents: () => {
+    localAiProvider?.destroy()
+    unregisterCodingAgentsHandlers(ipcMain)
+    localAiProvider = null
+  },
+  closeSentry,
+  destroyRunbookExecution: async () => {
+    await runbookExecutionService?.destroy()
+    runbookExecutionService = null
+  },
+  stopJobRuntime: async () => {
+    await services?.jobRuntime.stop()
+  },
+  closeDatabase,
+})
 
-app.on('before-quit', () => {
-  void shutdownBeforeQuit()
+app.on('before-quit', (event) => {
+  shutdownCoordinator.handleBeforeQuit(event, () => {
+    app.quit()
+  })
 })
 
 app
@@ -596,6 +608,32 @@ app
           router: createDesktopTrpcRouter(dispatcher),
           windows: [getBrowserWindow()].filter((window): window is BrowserWindow => window !== null),
         })
+      }
+
+      if (isSmokeTest && isRunbookSmokeScenario) {
+        const runbookId = randomUUID()
+        await dispatcher.dispatch('runbooks:create', {
+          id: runbookId,
+          title: 'Smoke: no-op local runbook',
+          description: 'Packaged smoke fixture. Contains no executable actions.',
+        })
+        const started = await dispatcher.dispatch('runbooks:execute', { runbookId })
+        if (
+          started === null ||
+          typeof started !== 'object' ||
+          typeof (started as { executionId?: unknown }).executionId !== 'string'
+        ) {
+          throw new Error('Runbook smoke scenario did not return an execution id')
+        }
+        const executionId = (started as { executionId: string }).executionId
+        const execution = await runbookExecutionService.waitForCompletion(executionId, {
+          timeoutMs: 10_000,
+        })
+        if (execution?.status !== 'completed') {
+          throw new Error(`Runbook smoke scenario did not complete: ${execution?.status ?? 'missing'}`)
+        }
+        log.warn(SMOKE_RUNBOOK_COMPLETE_MARKER)
+        app.quit()
       }
 
       app.on('activate', () => {

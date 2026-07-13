@@ -44,6 +44,9 @@ interface InvestigationSessionTable {
 
 export interface DesktopRunbookResultDatabase {
   investigationSession: InvestigationSessionTable
+  auditLog?: {
+    create(args: { data: Record<string, unknown> }): Promise<unknown>
+  }
   $executeRawUnsafe(query: string): Promise<unknown>
   $queryRawUnsafe<T extends DesktopRunbookResultRow = DesktopRunbookResultRow>(
     query: string,
@@ -330,6 +333,7 @@ export class SqliteRunbookResultStore implements RunbookResultPersistence {
       }
 
       await this.markSessionInterrupted(resultId, session, completedAt)
+      await this.recordStaleRecoveryAudit(resultId, executionId, completedAt)
       if (executionId.length > 0) {
         await this.completeExecutionControl(executionId, 'stale-recovery', completedAt)
       }
@@ -410,6 +414,29 @@ export class SqliteRunbookResultStore implements RunbookResultPersistence {
         completedAt,
         executionSnapshotJson: this.interruptedSnapshotJson(session, completedAt),
         updatedAt: completedAt,
+      },
+    })
+  }
+
+  private async recordStaleRecoveryAudit(
+    resultId: string,
+    executionId: string,
+    completedAt: string,
+  ): Promise<void> {
+    if (this.db.auditLog === undefined) {
+      return
+    }
+
+    await this.db.auditLog.create({
+      data: {
+        action: 'runbook.execution.interrupted_after_restart',
+        userId: null,
+        details: JSON.stringify({
+          resultId,
+          executionId,
+          completionReason: 'app_shutdown',
+          completedAt,
+        }),
       },
     })
   }

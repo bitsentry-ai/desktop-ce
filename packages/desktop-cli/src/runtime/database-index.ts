@@ -97,6 +97,15 @@ export async function initializeDatabase(): Promise<DbClient> {
         log.error('[database] Failed to restore snapshot:', restoreError)
       }
     }
+    if (db !== null) {
+      try {
+        await db.$disconnect()
+      } catch (disconnectError) {
+        log.warn('[database] Failed to close SQLite after initialization failure:', disconnectError)
+      } finally {
+        db = null
+      }
+    }
     throw error
   }
 

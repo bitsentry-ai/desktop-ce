@@ -125,6 +125,23 @@ rl.on('line', (line) => {
     return
   }
 
+  if (message.method === 'partial') {
+    const response = JSON.stringify({ id: message.id, result: { fragmented: true } }) + '\\n'
+    process.stdout.write(response.slice(0, 12))
+    setTimeout(() => process.stdout.write(response.slice(12)), 5)
+    return
+  }
+
+  if (message.method === 'slow-first') {
+    setTimeout(() => respond(message.id, { request: 'slow-first' }), 25)
+    return
+  }
+
+  if (message.method === 'fast-second') {
+    respond(message.id, { request: 'fast-second' })
+    return
+  }
+
   if (message.method === 'exit') {
     process.exit(1)
   }
@@ -226,6 +243,36 @@ describe('CodexAppServerClient subprocess protocol', () => {
       await expect(pendingExit).rejects.toThrow(
         'Codex app-server process exited: pending exit cancelled',
       )
+    } finally {
+      client.kill()
+    }
+  })
+
+  it('times out a hung request and remains usable for later requests', async () => {
+    const mock = await createMockCodexAppServer()
+    const client = new CodexAppServerClient(mock.binaryPath, mock.cwd, [], { requestTimeoutMs: 100 })
+
+    try {
+      await client.start()
+      await expect(client.sendRequest('hang')).rejects.toThrow('Codex RPC hang timed out after 0.1s')
+      await expect(client.sendRequest('echo', { recovered: true })).resolves.toEqual({ recovered: true })
+    } finally {
+      client.kill()
+    }
+  })
+
+  it('reassembles fragmented frames and correlates overlapping replies by request id', async () => {
+    const mock = await createMockCodexAppServer()
+    const client = new CodexAppServerClient(mock.binaryPath, mock.cwd)
+
+    try {
+      await client.start()
+      await expect(client.sendRequest('partial')).resolves.toEqual({ fragmented: true })
+
+      const slow = client.sendRequest('slow-first')
+      const fast = client.sendRequest('fast-second')
+      await expect(fast).resolves.toEqual({ request: 'fast-second' })
+      await expect(slow).resolves.toEqual({ request: 'slow-first' })
     } finally {
       client.kill()
     }
