@@ -6,6 +6,7 @@ export interface DesktopShutdownActions {
   destroyRunbookExecution(): void | Promise<void>
   stopJobRuntime(): void | Promise<void>
   closeDatabase(): void | Promise<void>
+  onShutdownError?(step: string, error: unknown): void
 }
 
 export interface BeforeQuitEvent {
@@ -43,12 +44,23 @@ export class DesktopShutdownCoordinator {
   }
 
   private async runShutdown(): Promise<void> {
-    await this.actions.stopUpdater()
-    await this.actions.destroyAgentRuntime()
-    await this.actions.destroyCodingAgents()
-    await this.actions.closeSentry()
-    await this.actions.destroyRunbookExecution()
-    await this.actions.stopJobRuntime()
-    await this.actions.closeDatabase()
+    await this.release('updater', () => this.actions.stopUpdater())
+    await this.release('agent-runtime', () => this.actions.destroyAgentRuntime())
+    await this.release('coding-agents', () => this.actions.destroyCodingAgents())
+    await this.release('sentry', () => this.actions.closeSentry())
+    await this.release('runbook-execution', () => this.actions.destroyRunbookExecution())
+    await this.release('job-runtime', () => this.actions.stopJobRuntime())
+    await this.release('database', () => this.actions.closeDatabase())
+  }
+
+  private async release(
+    step: string,
+    action: () => void | Promise<void>,
+  ): Promise<void> {
+    try {
+      await action()
+    } catch (error) {
+      this.actions.onShutdownError?.(step, error)
+    }
   }
 }

@@ -73,4 +73,34 @@ describe('DesktopShutdownCoordinator', () => {
     expect(secondEvent.preventDefault).toHaveBeenCalledOnce()
     expect(actions.closeDatabase).toHaveBeenCalledOnce()
   })
+
+  it('releases later resources and quits when an earlier cleanup action fails', async () => {
+    const onShutdownError = vi.fn()
+    const actions = {
+      stopUpdater: vi.fn(),
+      destroyAgentRuntime: vi.fn(),
+      destroyCodingAgents: vi.fn(() => {
+        throw new Error('CLI subprocess cleanup failed')
+      }),
+      closeSentry: vi.fn(),
+      destroyRunbookExecution: vi.fn(),
+      stopJobRuntime: vi.fn(),
+      closeDatabase: vi.fn(),
+      onShutdownError,
+    }
+    const coordinator = new DesktopShutdownCoordinator(actions)
+    const event = { preventDefault: vi.fn() }
+    const quit = vi.fn()
+
+    coordinator.handleBeforeQuit(event, quit)
+    await vi.waitFor(() => {
+      expect(quit).toHaveBeenCalledOnce()
+    })
+
+    expect(actions.closeDatabase).toHaveBeenCalledOnce()
+    expect(onShutdownError).toHaveBeenCalledWith(
+      'coding-agents',
+      expect.objectContaining({ message: 'CLI subprocess cleanup failed' }),
+    )
+  })
 })

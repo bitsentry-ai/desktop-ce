@@ -360,6 +360,9 @@ const shutdownCoordinator = new DesktopShutdownCoordinator({
     await services?.jobRuntime.stop()
   },
   closeDatabase,
+  onShutdownError: (step, error) => {
+    log.error(`[main] Failed to release ${step} during shutdown`, error)
+  },
 })
 
 app.on('before-quit', (event) => {
