@@ -156,6 +156,9 @@ importers:
       electron-updater:
         specifier: ^6.8.3
         version: 6.8.3
+      file-uri-to-path:
+        specifier: ^1.0.0
+        version: 1.0.0
       jsonwebtoken:
         specifier: ^9.0.3
         version: 9.0.3

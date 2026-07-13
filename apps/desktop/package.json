@@ -72,6 +72,7 @@
     "electron-log": "^5.4.3",
     "electron-trpc": "workspace:*",
     "electron-updater": "^6.8.3",
+    "file-uri-to-path": "^1.0.0",
     "jsonwebtoken": "^9.0.3",
     "node-cron": "^4.2.1",
     "node-pty": "^1.1.0",
