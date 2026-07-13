@@ -43,6 +43,22 @@ describe('desktop IPC dispatch boundary', () => {
     expect(handler).not.toHaveBeenCalled()
   })
 
+  it.each([
+    ['agent:start', { prompt: 'Summarize the local logs.' }],
+    ['runbooks:exportToFile', { ids: ['runbook-1'], filePath: '/tmp/runbooks.json' }],
+    ['runbooks:importFromFile', { filePath: '/tmp/runbooks.json', options: {} }],
+  ] as const)(
+    'passes only validated %s payloads to its high-risk handler',
+    async (channel, payload) => {
+      const dispatcher = createDispatcher()
+      const handler = vi.fn((received: unknown) => Promise.resolve(received))
+      dispatcher.register(channel, handler)
+
+      await expect(dispatcher.dispatch(channel, payload)).resolves.toEqual(payload)
+      expect(handler).toHaveBeenCalledWith(payload)
+    },
+  )
+
   it('blocks renderer attempts to invoke an uncontracted path', async () => {
     const dispatcher = createDispatcher()
 
