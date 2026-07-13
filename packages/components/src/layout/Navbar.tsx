@@ -412,6 +412,7 @@ const desktopPlatform = desktopApi?.platform?.os;
 const isDesktopMac = isDesktop && desktopPlatform === "darwin";
 
 const primaryNav: NavItem[] = [
+  { icon: Search, labelKey: "navigation.navbar.diagnosis", href: "/diagnosis" },
   {
     icon: ShieldAlert,
     labelKey: "navigation.navbar.incidents",
@@ -419,7 +420,6 @@ const primaryNav: NavItem[] = [
   },
   { icon: BookOpen, labelKey: "navigation.navbar.runbooks", href: "/runbooks" },
   { icon: FileText, labelKey: "navigation.navbar.results", href: "/results" },
-  { icon: Search, labelKey: "navigation.navbar.diagnosis", href: "/diagnosis" },
   {
     icon: Ticket,
     labelKey: "navigation.navbar.ticketManagement",
