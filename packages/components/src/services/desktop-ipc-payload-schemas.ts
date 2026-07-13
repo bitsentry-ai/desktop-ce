@@ -51,9 +51,14 @@ export interface DesktopEditionIpcPayloadSchemaConfig
   edition: "ce" | "pro";
 }
 
+export interface DesktopIpcPayloadValidator {
+  (channel: DesktopRpcChannel, payload: unknown): unknown;
+  readonly schemas: ReadonlyMap<DesktopRpcChannel, z.ZodType>;
+}
+
 export function createDesktopEditionIpcPayloadValidator(
   config: DesktopEditionIpcPayloadSchemaConfig,
-): (channel: DesktopRpcChannel, payload: unknown) => unknown {
+): DesktopIpcPayloadValidator {
   const { edition, ...rest } = config;
   let llmProviderKeys: DesktopIpcEnumValues = DESKTOP_CE_LLM_PROVIDER_KEYS;
   let telemetryActionTypes: DesktopIpcEnumValues = DESKTOP_CE_TELEMETRY_ACTION_TYPES;
@@ -71,7 +76,7 @@ export function createDesktopEditionIpcPayloadValidator(
 
 export function createDesktopIpcPayloadValidator(
   config: DesktopIpcPayloadSchemaConfig,
-): (channel: DesktopRpcChannel, payload: unknown) => unknown {
+): DesktopIpcPayloadValidator {
   const looseObjectSchema = z.looseObject({});
   const optionalLooseObjectSchema = looseObjectSchema.optional().default({});
   const idSchema = z.object({ id: z.string().min(1) });
@@ -538,8 +543,13 @@ export function createDesktopIpcPayloadValidator(
     );
   }
 
-  return (channel: DesktopRpcChannel, payload: unknown): unknown => {
+  const validate = (channel: DesktopRpcChannel, payload: unknown): unknown => {
     const schema = payloadSchemaByChannel.get(channel) ?? optionalLooseObjectSchema;
     return schema.parse(payload);
   };
+  Object.defineProperty(validate, "schemas", {
+    value: payloadSchemaByChannel,
+    enumerable: true,
+  });
+  return validate as DesktopIpcPayloadValidator;
 }

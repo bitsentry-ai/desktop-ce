@@ -210,6 +210,30 @@ describe('executeClaudeCode', () => {
     expect(textDeltas.join('')).toBe('before cancellation')
   })
 
+  it('reports a Claude configuration failure before a session can start', async () => {
+    queryMock.mockImplementation(() => {
+      throw new Error('selected model is not configured')
+    })
+    const { executeClaudeCode } = await import(
+      '@bitsentry-ce/desktop-cli/runtime/desktop-coding-agents'
+    )
+    const statuses: string[] = []
+
+    await expect(executeClaudeCode({
+      prompt: 'Use the missing model',
+      binaryPath: 'claude',
+      abortController: new AbortController(),
+      onDelta: (delta) => {
+        if (delta.type === 'status' && delta.status !== undefined) {
+          statuses.push(delta.status)
+        }
+      },
+    })).rejects.toThrow('selected model is not configured')
+
+    expect(statuses).toEqual(['started', 'failed'])
+    expect(closeMock).not.toHaveBeenCalled()
+  })
+
   it('passes Claude Code native permission modes for local access levels', async () => {
     queryMock.mockReturnValue({
       async *[Symbol.asyncIterator]() {
