@@ -50,11 +50,12 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Initialize electron-trpc submodule
+      - name: Initialize workspace submodules
         shell: bash
         run: |
           git config submodule.packages/electron-trpc.url https://github.com/bitsentry-ai/electron-trpc.git
-          git submodule update --init --depth 1 packages/electron-trpc
+          git -c url.https://github.com/.insteadOf=git@github.com: \
+            submodule update --init --force --depth=1 --recursive
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
