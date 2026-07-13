@@ -1,9 +1,10 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
-import { mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import os from "node:os";
 import { resolve } from "node:path";
 
 const desktopDir = resolve(__dirname, "../..");
+const repositoryDir = resolve(desktopDir, "../..");
 const electronBin = require("electron") as string;
 const READY_MARKER = "[smoke] desktop-ready";
 const RUNBOOK_COMPLETE_MARKER = "[smoke] runbook-completed";
@@ -25,7 +26,13 @@ if (requirePackagedBinary && (packagedBinary === undefined || packagedBinary.tri
   throw new Error("BITSENTRY_DESKTOP_SMOKE_BINARY is required for a packaged smoke scenario");
 }
 if (packagedBinary !== undefined && packagedBinary.trim() !== "") {
-  command = resolve(packagedBinary);
+  const desktopRelativeBinary = resolve(desktopDir, packagedBinary);
+  const repositoryRelativeBinary = resolve(repositoryDir, packagedBinary);
+  if (existsSync(desktopRelativeBinary)) {
+    command = desktopRelativeBinary;
+  } else {
+    command = repositoryRelativeBinary;
+  }
   commandArgs = [];
 }
 if (process.env.BITSENTRY_DESKTOP_SMOKE_NO_SANDBOX === "1") {

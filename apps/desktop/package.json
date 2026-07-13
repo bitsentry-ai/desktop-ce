@@ -41,8 +41,8 @@
     "test:cli-packaged-smoke": "pnpm run build:shared-cli && pnpm run build:scripts && node scripts/dist/packaged-cli-smoke.js",
     "test:cli-packaged-stress": "pnpm run build:shared-cli && pnpm run build:scripts && node scripts/dist/packaged-cli-smoke.js --test-script scripts/dist/cli-stress-test.js",
     "test:smoke": "pnpm run build:scripts && node scripts/dist/smoke-test.js",
-    "test:smoke:runbook": "pnpm run build:scripts && BITSENTRY_DESKTOP_SMOKE_SCENARIO=runbook node scripts/dist/smoke-test.js",
-    "test:smoke:runbook:packaged": "pnpm run build:scripts && BITSENTRY_DESKTOP_SMOKE_SCENARIO=runbook BITSENTRY_DESKTOP_SMOKE_REQUIRE_PACKAGED=1 node scripts/dist/smoke-test.js",
+    "test:smoke:runbook": "pnpm run build:scripts && node scripts/dist/run-smoke-runbook.js",
+    "test:smoke:runbook:packaged": "pnpm run build:scripts && node scripts/dist/run-smoke-runbook.js --packaged",
     "test:cli-canary": "pnpm run build:scripts && node scripts/dist/real-provider-canary.js",
     "test:error-sources": "pnpm run typecheck:contract",
     "verify:mac-app": "bash scripts/verify-macos-artifact.sh"
