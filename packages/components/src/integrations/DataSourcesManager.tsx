@@ -32,7 +32,10 @@ import type {
 } from "../services/contracts";
 import { useTranslation } from "@bitsentry-ce/i18n";
 import { Download, Pencil, RefreshCw, Trash2 } from "lucide-react";
-import { PluginIcon } from "./icons";
+import {
+  ProviderIcon,
+  type ProviderIconKind,
+} from "./icons";
 import InstallPluginDialog from "./InstallPluginDialog";
 
 type StatusKind = "info" | "success" | "error";
@@ -171,6 +174,14 @@ function readPluginDataSourceType(
   plugin: PluginDescriptor,
 ): ErrorSourceType | null {
   return plugin.metadata?.dataSource?.sourceType ?? null;
+}
+
+function readProviderIconKind(pluginId: string): ProviderIconKind {
+  if (pluginId === "sentry" || pluginId === "posthog" || pluginId === "wazuh") {
+    return pluginId;
+  }
+
+  return "plugin";
 }
 
 function formatSetupFieldRequiredMessage(label: string): string {
@@ -1268,7 +1279,11 @@ export default function DataSourcesManager({
                       aria-pressed={selected}
                       className={`flex flex-col items-center gap-2 rounded-lg border p-3 text-sm transition-colors ${cardClassName}`}
                     >
-                      <PluginIcon size={32} className={iconClassName} />
+                      <ProviderIcon
+                        kind={readProviderIconKind(card.pluginId)}
+                        size={32}
+                        className={iconClassName}
+                      />
                       <span className="font-medium">{card.label}</span>
                     </button>
                   );
