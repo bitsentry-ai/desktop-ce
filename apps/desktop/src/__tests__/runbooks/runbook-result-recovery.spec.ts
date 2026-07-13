@@ -87,6 +87,14 @@ class EventJournalDatabase {
   snapshot = makeRunningSnapshot()
   readonly journal = new Set<string>()
   readonly updates: Array<Record<string, unknown>> = []
+  readonly auditEntries: Array<Record<string, unknown>> = []
+
+  readonly auditLog = {
+    create: async ({ data }: { data: Record<string, unknown> }) => {
+      this.auditEntries.push(data)
+      return {}
+    },
+  }
 
   readonly investigationSession = {
     create: () => Promise.resolve({}),
@@ -218,5 +226,11 @@ describe('runbook restart recovery', () => {
     expect(db.snapshot.status).toBe('completed')
     expect(db.snapshot.snapshotVersion).toBe(5)
     expect(db.updates).toHaveLength(1)
+    expect(db.auditEntries).toHaveLength(1)
+    expect(db.auditEntries[0]).toMatchObject({
+      action: 'runbook.execution.snapshot_applied',
+    })
+    expect(JSON.stringify(db.auditEntries)).not.toContain('journalctl')
+    expect(JSON.stringify(db.auditEntries)).not.toContain(REDACTED_TOKEN)
   })
 })

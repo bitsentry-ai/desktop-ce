@@ -242,6 +242,15 @@ export class SqliteRunbookResultStore implements RunbookResultPersistence {
       await this.saveExecutionSnapshot(resultId, input.snapshot)
       const safeResultId = resultId.replace(/'/g, "''")
       const safeAppliedAt = new Date().toISOString().replace(/'/g, "''")
+      await this.recordExecutionSnapshotAudit({
+        resultId,
+        executionId: input.snapshot.executionId,
+        eventId: input.eventId,
+        expectedSnapshotVersion: input.expectedSnapshotVersion,
+        acceptedSnapshotVersion: input.snapshot.snapshotVersion,
+        status: input.snapshot.status,
+        acceptedAt: safeAppliedAt,
+      })
       await this.db.$executeRawUnsafe(`
         INSERT INTO "RunbookExecutionEventJournal" (
           "executionId", "eventId", "resultId", "expectedSnapshotVersion",
@@ -389,11 +398,13 @@ export class SqliteRunbookResultStore implements RunbookResultPersistence {
         continue
       }
 
-      await this.markSessionInterrupted(resultId, session, completedAt)
-      await this.recordStaleRecoveryAudit(resultId, executionId, completedAt)
-      if (executionId.length > 0) {
-        await this.completeExecutionControl(executionId, 'stale-recovery', completedAt)
-      }
+      await this.inTransaction(async () => {
+        await this.markSessionInterrupted(resultId, session, completedAt)
+        await this.recordStaleRecoveryAudit(resultId, executionId, completedAt)
+        if (executionId.length > 0) {
+          await this.completeExecutionControl(executionId, 'stale-recovery', completedAt)
+        }
+      })
       updatedCount += 1
     }
 
@@ -501,6 +512,29 @@ export class SqliteRunbookResultStore implements RunbookResultPersistence {
           completionReason: 'app_shutdown',
           completedAt,
         }),
+      },
+    })
+  }
+
+  private async recordExecutionSnapshotAudit(input: {
+    resultId: string
+    executionId: string
+    eventId: string
+    expectedSnapshotVersion: number
+    acceptedSnapshotVersion: number | undefined
+    status: RunbookExecutionRecord['status']
+    acceptedAt: string
+  }): Promise<void> {
+    if (this.db.auditLog === undefined) {
+      return
+    }
+
+    await this.db.auditLog.create({
+      data: {
+        action: 'runbook.execution.snapshot_applied',
+        userId: null,
+        // Do not persist the snapshot, action input, tool output, or variables.
+        details: JSON.stringify(input),
       },
     })
   }
