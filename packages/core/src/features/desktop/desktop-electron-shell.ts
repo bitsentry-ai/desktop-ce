@@ -73,6 +73,7 @@ export interface CreateDesktopMainWindowOptions {
   desktopShell: DesktopElectronShell
   isDebug: boolean
   isSmokeTest: boolean
+  autoQuitSmokeTest?: boolean
   smokeTestReadyMarker: string
   preloadPath: string
   localRendererPath: string
@@ -268,9 +269,11 @@ export async function createDesktopMainWindow(
     options.onRendererReady()
     if (options.isSmokeTest) {
       options.logger.warn(options.smokeTestReadyMarker)
-      setTimeout(() => {
-        options.quitApp()
-      }, 500)
+      if (options.autoQuitSmokeTest !== false) {
+        setTimeout(() => {
+          options.quitApp()
+        }, 500)
+      }
     }
   })
 

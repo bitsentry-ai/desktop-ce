@@ -124,6 +124,8 @@ class DesktopBrowserWindow extends BrowserWindow {
 
 const pendingOAuthCallbacks: OAuthCallbackPayload[] = []
 let rendererReadyForEvents = false
+let rendererReadyPromise: Promise<void> | null = null
+let resolveRendererReady: (() => void) | null = null
 const desktopShell = createDesktopElectronShell({
   app,
   appName: APP_NAME,
@@ -250,12 +252,25 @@ const writeStartupDiagnosticsArtifact = (
     log.warn(String(error))
   })
 
+function waitForRendererReady(): Promise<void> {
+  if (rendererReadyForEvents) {
+    return Promise.resolve()
+  }
+  if (rendererReadyPromise === null) {
+    rendererReadyPromise = new Promise<void>((resolve) => {
+      resolveRendererReady = resolve
+    })
+  }
+  return rendererReadyPromise
+}
+
 const createWindow = async () => {
   await createDesktopMainWindow({
     browserWindow: DesktopBrowserWindow,
     desktopShell,
     isDebug,
     isSmokeTest,
+    autoQuitSmokeTest: !isRunbookSmokeScenario,
     smokeTestReadyMarker: SMOKE_TEST_READY_MARKER,
     preloadPath: path.join(__dirname, '../preload/index.js'),
     localRendererPath: path.join(__dirname, '../renderer/index.html'),
@@ -284,10 +299,14 @@ const createWindow = async () => {
     },
     onRendererReady: () => {
       rendererReadyForEvents = true
+      resolveRendererReady?.()
+      resolveRendererReady = null
       flushPendingOAuthCallbacks()
     },
     onWindowClosed: () => {
       rendererReadyForEvents = false
+      rendererReadyPromise = null
+      resolveRendererReady = null
     },
     createMenu: (window) => {
       const menuBuilder = new MenuBuilder(window as BrowserWindow)
@@ -614,6 +633,7 @@ app
       }
 
       if (isSmokeTest && isRunbookSmokeScenario) {
+        await waitForRendererReady()
         const runbookId = randomUUID()
         await dispatcher.dispatch('runbooks:create', {
           id: runbookId,

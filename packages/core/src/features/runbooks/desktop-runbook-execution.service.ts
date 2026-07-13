@@ -2346,10 +2346,18 @@ export class RunbookExecutionService {
     }
     const win = this.windowGetter()
     if (win !== null && !win.isDestroyed()) {
-      win.webContents.send(RUNBOOK_EXECUTION_EVENT_CHANNEL, payload)
+      try {
+        win.webContents.send(RUNBOOK_EXECUTION_EVENT_CHANNEL, payload)
+      } catch {
+        // Renderer teardown cannot retroactively fail an already-persisted run.
+      }
     }
     for (const listener of this.listeners) {
-      listener(payload)
+      try {
+        listener(payload)
+      } catch {
+        // Subscribers are notification-only and must not alter execution state.
+      }
     }
   }
 
