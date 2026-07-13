@@ -46,8 +46,10 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm --dir packages/electron-trpc install --frozen-lockfile
       - run: pnpm --dir apps/desktop exec node node_modules/electron/install.js
-      - run: pnpm --dir apps/desktop run prepare:native-deps
       - run: pnpm --filter @bitsentry-ce/desktop test
+      # Vitest executes under Node, whereas Electron needs a separately rebuilt
+      # native module ABI. Rebuild only after deterministic Node tests finish.
+      - run: pnpm --dir apps/desktop run prepare:native-deps
       - run: pnpm run build
       - name: Run local runbook smoke scenario
         run: xvfb-run -a pnpm run desktop:test:smoke:runbook
