@@ -155,8 +155,6 @@
   "common.contextIndicator.contextWithInputOutput": "Context: {{total}} / {{limit}} tokens ({{percentage}}%) · Input: {{input}} · Output: {{output}}",
   "common.contextIndicator.contextWithRequest": "Context: {{total}} / {{limit}} tokens ({{percentage}}%) · Request input: {{input}} · Request output: {{output}}",
   "common.contextIndicator.inputOutput": "Input: {{input}} tokens · Output: {{output}} tokens",
-  "common.dataPolicySettingsSection.codingAgentsPolicyDescription": "Privacy and terms for agents that run on your subscription.",
-  "common.dataPolicySettingsSection.codingAgentsPolicyRegistry": "Coding Agents Policy Registry",
   "common.dataPolicySettingsSection.disabled": "Disabled",
   "common.dataPolicySettingsSection.enabled": "Enabled",
   "common.dataPolicySettingsSection.loadingDataPolicy": "Loading data policy...",
@@ -1070,7 +1068,6 @@
   "common.systemSettings.organizationName": "Organization name",
   "common.systemSettings.pacificTime": "Pacific Time",
   "common.systemSettings.paris": "Paris",
-  "common.systemSettings.passwordSecurity": "Password Security",
   "common.systemSettings.rememberMeDuration": "Remember me duration",
   "common.systemSettings.requireAtLeast1Lowercase": "Require at least 1 lowercase letter in the password",
   "common.systemSettings.requireAtLeast1Numeric": "Require at least 1 numeric digit in the password",
@@ -1084,7 +1081,6 @@
   "common.systemSettings.sessionSecurity": "Session Security",
   "common.systemSettings.sessionTimeout": "Session timeout",
   "common.systemSettings.setPasswordComplexityAndExpiration": "Set password complexity and expiration rules for all user accounts.",
-  "common.systemSettings.workosManagedPasswordExpirationNotice": "WorkOS manages password complexity and MFA. BitSentry still enforces the password expiration period below for linked dashboard users.",
   "common.systemSettings.specialCharacters": "Special characters",
   "common.systemSettings.systemIsUnderMaintenancePlease": "System is under maintenance. Please check back later.",
   "common.systemSettings.timeFormat": "Time format",
@@ -1505,6 +1501,5 @@
   "common.useVulnerabilityNotifications.severity": "Severity:",
   "common.results.noResultsYetRunThisRunbook": "No results yet. Run this runbook to see results here.",
   "common.results.noRuntimeParameterValuesCaptured": "No runtime parameter values were captured for this execution.",
-  "common.results.noInputMetadataCaptured": "No input metadata was captured for this step.",
-  "common.systemSettings.workosManagedAuthPoliciesNotice": "Password reset, passkeys, MFA, magic auth, and SSO are managed by WorkOS."
+  "common.results.noInputMetadataCaptured": "No input metadata was captured for this step."
 }
