@@ -1,7 +1,7 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
-import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync } from "node:fs";
 import os from "node:os";
-import { resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 
 const desktopDir = resolve(__dirname, "../..");
 const repositoryDir = resolve(desktopDir, "../..");
@@ -30,8 +30,22 @@ if (packagedBinary !== undefined && packagedBinary.trim() !== "") {
   const repositoryRelativeBinary = resolve(repositoryDir, packagedBinary);
   if (existsSync(desktopRelativeBinary)) {
     command = desktopRelativeBinary;
-  } else {
+  } else if (existsSync(repositoryRelativeBinary)) {
     command = repositoryRelativeBinary;
+  } else {
+    const candidateDirectories = [
+      dirname(desktopRelativeBinary),
+      dirname(repositoryRelativeBinary),
+    ];
+    const discoveredBinary = candidateDirectories
+      .map((directory) => findPackagedAppBinary(directory))
+      .find((candidate) => candidate !== null);
+    if (discoveredBinary === undefined) {
+      throw new Error(
+        `Unable to locate packaged desktop binary. Checked: ${desktopRelativeBinary}, ${repositoryRelativeBinary}`,
+      );
+    }
+    command = discoveredBinary;
   }
   commandArgs = [];
 }
@@ -41,11 +55,13 @@ if (process.env.BITSENTRY_DESKTOP_SMOKE_NO_SANDBOX === "1") {
 const temporaryUserDataDir = mkdtempSync(
   resolve(os.tmpdir(), "bitsentry-desktop-smoke-"),
 );
+const smokeMarkerFile = join(temporaryUserDataDir, "markers.log");
 
 const childEnv: NodeJS.ProcessEnv = {
   ...process.env,
   BITSENTRY_DESKTOP_SMOKE_TEST: "1",
   BITSENTRY_DESKTOP_SMOKE_SCENARIO: smokeScenario,
+  BITSENTRY_DESKTOP_SMOKE_MARKER_FILE: smokeMarkerFile,
   BITSENTRY_USER_DATA_DIR: temporaryUserDataDir,
   ELECTRON_ENABLE_LOGGING: "1",
   START_MINIMIZED: "1",
@@ -64,6 +80,40 @@ let output = "";
 const observedMarkers = new Set<string>();
 let settled = false;
 let readyTimer: NodeJS.Timeout | null = null;
+let markerPollTimer: NodeJS.Timeout | null = null;
+
+function isPackagedAppExecutable(candidate: string): boolean {
+  const entryName = candidate.split(/[\\/]/).pop() ?? "";
+  if (entryName === "bitsentry" || entryName === "bitsentry.cmd") return false;
+  if (entryName === "chrome-sandbox" || entryName === "chrome_crashpad_handler") return false;
+  if (process.platform === "win32") return entryName.toLowerCase().endsWith(".exe");
+  try {
+    return (statSync(candidate).mode & 0o111) !== 0;
+  } catch {
+    return false;
+  }
+}
+
+function findPackagedAppBinary(directory: string): string | null {
+  if (!existsSync(directory)) return null;
+
+  if (process.platform === "darwin") {
+    const appBundle = readdirSync(directory, { withFileTypes: true })
+      .find((entry) => entry.isDirectory() && entry.name.endsWith(".app"));
+    if (appBundle === undefined) return null;
+    const macOsDirectory = join(directory, appBundle.name, "Contents", "MacOS");
+    if (!existsSync(macOsDirectory)) return null;
+    const executable = readdirSync(macOsDirectory, { withFileTypes: true })
+      .find((entry) => entry.isFile() && isPackagedAppExecutable(join(macOsDirectory, entry.name)));
+    if (executable === undefined) return null;
+    return join(macOsDirectory, executable.name);
+  }
+
+  const executable = readdirSync(directory, { withFileTypes: true })
+    .find((entry) => entry.isFile() && isPackagedAppExecutable(join(directory, entry.name)));
+  if (executable === undefined) return null;
+  return join(directory, executable.name);
+}
 
 const fatalPatterns = [
   "Cannot find module",
@@ -115,6 +165,9 @@ function finish(code: number, message: string): void {
   if (readyTimer !== null) {
     clearTimeout(readyTimer);
   }
+  if (markerPollTimer !== null) {
+    clearInterval(markerPollTimer);
+  }
   process.exitCode = code;
 
   if (message.length > 0 && code === 0) {
@@ -138,6 +191,7 @@ function finish(code: number, message: string): void {
 }
 
 function scheduleSuccessCheck(): void {
+  if (readyTimer !== null) return;
   readyTimer = setTimeout(() => {
     const failures = collectFailures();
     if (failures.length > 0) {
@@ -152,6 +206,10 @@ function handleOutputChunk(chunk: unknown): void {
   const text = String(chunk);
   output += text;
   if (maybeFailFast()) return;
+  observeMarkers(text);
+}
+
+function observeMarkers(text: string): void {
   for (const marker of requiredMarkers) {
     if (text.includes(marker)) {
       observedMarkers.add(marker);
@@ -162,12 +220,20 @@ function handleOutputChunk(chunk: unknown): void {
   }
 }
 
+function observeMarkerFile(): void {
+  try {
+    observeMarkers(readFileSync(smokeMarkerFile, "utf8"));
+  } catch {}
+}
+
 child.stdout.on("data", handleOutputChunk);
 child.stderr.on("data", handleOutputChunk);
 
 const timeout = setTimeout(() => {
   finish(1, `\nDesktop smoke test timed out after ${String(TIMEOUT_MS)}ms.\n\nFull output:\n${output}`);
 }, TIMEOUT_MS);
+
+markerPollTimer = setInterval(observeMarkerFile, 25);
 
 child.on("error", (error: Error) => {
   finish(1, `\nDesktop smoke test failed to launch.\n\n${String(error)}`);

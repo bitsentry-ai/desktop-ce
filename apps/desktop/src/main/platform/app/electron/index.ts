@@ -5,7 +5,7 @@ import {
 } from '@bitsentry-ce/desktop-cli/runtime/desktop-posthog'
 import { getTelemetryStatus, setTelemetryEnabled } from '@bitsentry-ce/core/features/analytics'
 import path from 'path'
-import { readFileSync } from 'fs'
+import { appendFileSync, readFileSync } from 'fs'
 import { rm } from 'fs/promises'
 import { randomUUID } from 'crypto'
 import {
@@ -108,6 +108,7 @@ const isSmokeTest = process.env.BITSENTRY_DESKTOP_SMOKE_TEST === '1'
 const SMOKE_TEST_READY_MARKER = '[smoke] desktop-ready'
 const SMOKE_RUNBOOK_COMPLETE_MARKER = '[smoke] runbook-completed'
 const isRunbookSmokeScenario = process.env.BITSENTRY_DESKTOP_SMOKE_SCENARIO === 'runbook'
+const smokeMarkerFilePath = process.env.BITSENTRY_DESKTOP_SMOKE_MARKER_FILE
 log.transports.console.level = false
 if (isDebug) {
   log.transports.console.level = 'info'
@@ -264,6 +265,16 @@ function waitForRendererReady(): Promise<void> {
   return rendererReadyPromise
 }
 
+function writeSmokeMarker(marker: string): void {
+  if (smokeMarkerFilePath === undefined || smokeMarkerFilePath.length === 0) return
+
+  try {
+    appendFileSync(smokeMarkerFilePath, `${marker}\n`, 'utf8')
+  } catch (error) {
+    log.error(`[smoke] Failed to write marker ${marker}:`, error)
+  }
+}
+
 const createWindow = async () => {
   await createDesktopMainWindow({
     browserWindow: DesktopBrowserWindow,
@@ -272,6 +283,9 @@ const createWindow = async () => {
     isSmokeTest,
     autoQuitSmokeTest: !isRunbookSmokeScenario,
     smokeTestReadyMarker: SMOKE_TEST_READY_MARKER,
+    onSmokeTestReady: () => {
+      writeSmokeMarker(SMOKE_TEST_READY_MARKER)
+    },
     preloadPath: path.join(__dirname, '../preload/index.js'),
     localRendererPath: path.join(__dirname, '../renderer/index.html'),
     installReactDevTools: async () => {
@@ -656,6 +670,7 @@ app
           throw new Error(`Runbook smoke scenario did not complete: ${execution?.status ?? 'missing'}`)
         }
         log.warn(SMOKE_RUNBOOK_COMPLETE_MARKER)
+        writeSmokeMarker(SMOKE_RUNBOOK_COMPLETE_MARKER)
         app.quit()
       }
 

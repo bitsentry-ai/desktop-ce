@@ -75,6 +75,7 @@ export interface CreateDesktopMainWindowOptions {
   isSmokeTest: boolean
   autoQuitSmokeTest?: boolean
   smokeTestReadyMarker: string
+  onSmokeTestReady?: () => void
   preloadPath: string
   localRendererPath: string
   installReactDevTools: () => Promise<void>
@@ -269,6 +270,7 @@ export async function createDesktopMainWindow(
     options.onRendererReady()
     if (options.isSmokeTest) {
       options.logger.warn(options.smokeTestReadyMarker)
+      options.onSmokeTestReady?.()
       if (options.autoQuitSmokeTest !== false) {
         setTimeout(() => {
           options.quitApp()
