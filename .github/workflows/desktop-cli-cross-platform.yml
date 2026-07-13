@@ -143,4 +143,5 @@ jobs:
         shell: bash
         env:
           BITSENTRY_DESKTOP_SMOKE_BINARY: ${{ runner.os == 'macOS' && 'release/build/mac-arm64/SuperTerminal.app/Contents/MacOS/SuperTerminal' || runner.os == 'Windows' && 'release/build/win-unpacked/SuperTerminal.exe' || 'release/build/linux-unpacked/SuperTerminal' }}
+          BITSENTRY_DESKTOP_SMOKE_NO_SANDBOX: ${{ runner.os == 'Linux' && '1' || '' }}
         run: pnpm --dir apps/desktop run test:smoke:runbook:packaged

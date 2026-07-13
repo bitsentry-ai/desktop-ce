@@ -52,4 +52,6 @@ jobs:
       - run: pnpm --dir apps/desktop run prepare:native-deps
       - run: pnpm run build
       - name: Run local runbook smoke scenario
+        env:
+          BITSENTRY_DESKTOP_SMOKE_NO_SANDBOX: '1'
         run: xvfb-run -a pnpm run desktop:test:smoke:runbook

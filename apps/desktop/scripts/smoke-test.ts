@@ -28,6 +28,9 @@ if (packagedBinary !== undefined && packagedBinary.trim() !== "") {
   command = resolve(packagedBinary);
   commandArgs = [];
 }
+if (process.env.BITSENTRY_DESKTOP_SMOKE_NO_SANDBOX === "1") {
+  commandArgs.push("--no-sandbox");
+}
 const temporaryUserDataDir = mkdtempSync(
   resolve(os.tmpdir(), "bitsentry-desktop-smoke-"),
 );
