@@ -115,6 +115,19 @@ rl.on('line', (line) => {
   if (message.method === 'session/cancel') {
     setTimeout(() => process.exit(0), 10)
   }
+
+  if (message.method === 'test/rpc-error') {
+    process.stdout.write(JSON.stringify({
+      jsonrpc: '2.0',
+      id: message.id,
+      error: { code: -32001, message: 'mock Cursor RPC failure' },
+    }) + '\\n')
+  }
+
+  if (message.method === 'test/malformed-frame') {
+    process.stdout.write('not valid json\\n')
+    process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id: message.id, result: { recovered: true } }) + '\\n')
+  }
 })
 
 setInterval(() => {}, 1000)
@@ -303,6 +316,25 @@ describe('CursorAcpClient', () => {
       await expect(client.sendRequest('initialize', { protocolVersion: 1 })).rejects.toThrow(
         /Cursor ACP client process exited: pending initialize cancelled[\s\S]*not logged in; run cursor-agent login/,
       )
+    } finally {
+      client.kill()
+    }
+  })
+
+  it('surfaces RPC failures and malformed frames without losing a later response', async () => {
+    const mock = await createMockCursorAgent()
+    const client = new CursorAcpClient(mock.binaryPath, mock.cwd)
+    const parseErrors: Array<{ error: string; raw: string }> = []
+    client.on('parseError', (error) => parseErrors.push(error as { error: string; raw: string }))
+
+    try {
+      await client.start()
+      await expect(client.sendRequest('test/rpc-error')).rejects.toThrow('mock Cursor RPC failure')
+      await expect(client.sendRequest('test/malformed-frame')).resolves.toEqual({ recovered: true })
+      await waitFor(() => {
+        expect(parseErrors).toHaveLength(1)
+        expect(parseErrors[0]?.raw).toContain('not valid json')
+      })
     } finally {
       client.kill()
     }
