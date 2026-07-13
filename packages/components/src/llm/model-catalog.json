@@ -44,6 +44,117 @@
           ]
         },
         {
+          "id": "gpt-5.6-sol",
+          "displayName": "GPT-5.6 Sol",
+          "supportsImageInput": true,
+          "supportsAudioInput": false,
+          "supportsVideoInput": false,
+          "supportsPdfInput": false,
+          "supportsThinking": true,
+          "thinkingMode": "toggle",
+          "reasoningOptions": [
+            "low",
+            "medium",
+            "high"
+          ],
+          "composerOptions": [
+            {
+              "id": "effort",
+              "label": "Reasoning",
+              "type": "select",
+              "options": [
+                {
+                  "value": "low",
+                  "label": "Low"
+                },
+                {
+                  "value": "medium",
+                  "label": "Medium",
+                  "isDefault": true
+                },
+                {
+                  "value": "high",
+                  "label": "High"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "gpt-5.6-terra",
+          "displayName": "GPT-5.6 Terra",
+          "supportsImageInput": true,
+          "supportsAudioInput": false,
+          "supportsVideoInput": false,
+          "supportsPdfInput": false,
+          "supportsThinking": true,
+          "thinkingMode": "toggle",
+          "reasoningOptions": [
+            "low",
+            "medium",
+            "high"
+          ],
+          "composerOptions": [
+            {
+              "id": "effort",
+              "label": "Reasoning",
+              "type": "select",
+              "options": [
+                {
+                  "value": "low",
+                  "label": "Low"
+                },
+                {
+                  "value": "medium",
+                  "label": "Medium",
+                  "isDefault": true
+                },
+                {
+                  "value": "high",
+                  "label": "High"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "gpt-5.6-luna",
+          "displayName": "GPT-5.6 Luna",
+          "supportsImageInput": true,
+          "supportsAudioInput": false,
+          "supportsVideoInput": false,
+          "supportsPdfInput": false,
+          "supportsThinking": true,
+          "thinkingMode": "toggle",
+          "reasoningOptions": [
+            "low",
+            "medium",
+            "high"
+          ],
+          "composerOptions": [
+            {
+              "id": "effort",
+              "label": "Reasoning",
+              "type": "select",
+              "options": [
+                {
+                  "value": "low",
+                  "label": "Low"
+                },
+                {
+                  "value": "medium",
+                  "label": "Medium",
+                  "isDefault": true
+                },
+                {
+                  "value": "high",
+                  "label": "High"
+                }
+              ]
+            }
+          ]
+        },
+        {
           "id": "gpt-5.4-mini",
           "displayName": "GPT-5.4 Mini",
           "supportsImageInput": true,
