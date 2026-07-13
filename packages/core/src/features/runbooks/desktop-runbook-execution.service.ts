@@ -2312,10 +2312,20 @@ export class RunbookExecutionService {
   private async emitSnapshot(session: RunbookExecutionSession): Promise<void> {
     bumpExecutionSnapshotVersion(session.snapshot)
     const snapshot = this.snapshotForBoundary(session)
-    await this.resultStore.saveExecutionSnapshot(
+    if (snapshot.snapshotVersion === undefined) {
+      throw new Error('Runbook execution snapshot version is required')
+    }
+    const eventOutcome = await this.resultStore.applyExecutionSnapshotEvent(
       session.resultId,
-      snapshot,
+      {
+        eventId: `snapshot:${snapshot.executionId}:${String(snapshot.snapshotVersion)}`,
+        expectedSnapshotVersion: snapshot.snapshotVersion - 1,
+        snapshot,
+      },
     )
+    if (eventOutcome !== 'accepted') {
+      return
+    }
     if (snapshot.status !== 'running') {
       this.stopExecutionHeartbeat(session)
       if (session.controlCompleted !== true) {

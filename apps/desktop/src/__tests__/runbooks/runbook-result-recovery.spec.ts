@@ -83,6 +83,50 @@ class InMemoryRunbookResultDatabase {
   }
 }
 
+class EventJournalDatabase {
+  snapshot = makeRunningSnapshot()
+  readonly journal = new Set<string>()
+  readonly updates: Array<Record<string, unknown>> = []
+
+  readonly investigationSession = {
+    create: () => Promise.resolve({}),
+    update: ({ data }: { data: Record<string, unknown> }) => {
+      this.updates.push(data)
+      const saved = JSON.parse(String(data.executionSnapshotJson)) as RunbookExecutionRecord
+      this.snapshot = saved
+      return Promise.resolve({})
+    },
+    findUnique: () => Promise.resolve({
+      id: 'result-1',
+      executionSnapshotJson: JSON.stringify(this.snapshot),
+    }),
+    findFirst: () => Promise.resolve(null),
+    findMany: () => Promise.resolve([]),
+  }
+
+  $executeRawUnsafe(query: string): Promise<unknown> {
+    const eventId = query.match(/VALUES \(\s*'[^']+',\s*'([^']+)'/)?.[1]
+    if (eventId !== undefined) {
+      this.journal.add(eventId)
+    }
+    return Promise.resolve(null)
+  }
+
+  $queryRawUnsafe<T>(query: string): Promise<T[]> {
+    const eventId = query.match(/"eventId" = '([^']+)'/)?.[1]
+    if (eventId !== undefined && this.journal.has(eventId)) {
+      // Generic raw-query fixtures need to emulate the database adapter's cast.
+      // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
+      return Promise.resolve([{ eventId } as T])
+    }
+    return Promise.resolve([])
+  }
+
+  $transaction<T>(operation: () => Promise<T>): Promise<T> {
+    return operation()
+  }
+}
+
 describe('runbook restart recovery', () => {
   it('marks an unowned running snapshot interrupted without replaying its SSH action', async () => {
     const db = new InMemoryRunbookResultDatabase()
@@ -137,5 +181,42 @@ describe('runbook restart recovery', () => {
     expect(running.steps[0]?.status).toBe('running')
     expect(interrupted.status).toBe('failed')
     expect(interrupted.snapshotVersion).toBe(5)
+  })
+
+  it('rejects duplicate, stale, and terminal-state execution events without changing the snapshot', async () => {
+    const db = new EventJournalDatabase()
+    const store = new SqliteRunbookResultStore(db)
+    const completed = {
+      ...makeRunningSnapshot(),
+      status: 'completed' as const,
+      completedAt: '2026-07-13T00:02:00.000Z',
+      completionReason: 'success' as const,
+      snapshotVersion: 5,
+    }
+
+    await expect(store.applyExecutionSnapshotEvent('result-1', {
+      eventId: 'step-1-completed',
+      expectedSnapshotVersion: 4,
+      snapshot: completed,
+    })).resolves.toBe('accepted')
+    await expect(store.applyExecutionSnapshotEvent('result-1', {
+      eventId: 'step-1-completed',
+      expectedSnapshotVersion: 4,
+      snapshot: completed,
+    })).resolves.toBe('duplicate')
+    await expect(store.applyExecutionSnapshotEvent('result-1', {
+      eventId: 'late-step-event',
+      expectedSnapshotVersion: 4,
+      snapshot: completed,
+    })).resolves.toBe('stale')
+    await expect(store.applyExecutionSnapshotEvent('result-1', {
+      eventId: 'late-terminal-mutation',
+      expectedSnapshotVersion: 5,
+      snapshot: { ...completed, status: 'failed', snapshotVersion: 6 },
+    })).resolves.toBe('stale')
+
+    expect(db.snapshot.status).toBe('completed')
+    expect(db.snapshot.snapshotVersion).toBe(5)
+    expect(db.updates).toHaveLength(1)
   })
 })

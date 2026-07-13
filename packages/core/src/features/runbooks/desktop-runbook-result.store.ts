@@ -51,6 +51,7 @@ export interface DesktopRunbookResultDatabase {
   $queryRawUnsafe<T extends DesktopRunbookResultRow = DesktopRunbookResultRow>(
     query: string,
   ): Promise<T[]>
+  $transaction?<T>(operation: () => Promise<T>): Promise<T>
 }
 
 const runbookSessionRowSchema = z.record(z.string(), z.unknown())
@@ -85,6 +86,10 @@ export interface CreateRunbookResultSessionInput {
 export interface RunbookResultPersistence {
   createRunbookResultSession(input: CreateRunbookResultSessionInput): Promise<void>
   saveExecutionSnapshot(resultId: string, snapshot: RunbookExecutionRecord): Promise<void>
+  applyExecutionSnapshotEvent(
+    resultId: string,
+    input: ApplyExecutionSnapshotEventInput,
+  ): Promise<ExecutionSnapshotEventOutcome>
   getExecutionSnapshotByExecutionId(executionId: string): Promise<RunbookExecutionRecord | null>
   getExecutionSnapshotByResultId(resultId: string): Promise<RunbookExecutionRecord | null>
   getLatestExecutionSnapshotByIncidentThreadId(
@@ -107,6 +112,14 @@ export interface RunbookResultPersistence {
   ): Promise<void>
   markStaleRunningSessionsFailed(options?: { heartbeatGraceMs?: number }): Promise<number>
 }
+
+export interface ApplyExecutionSnapshotEventInput {
+  eventId: string
+  expectedSnapshotVersion: number
+  snapshot: RunbookExecutionRecord
+}
+
+export type ExecutionSnapshotEventOutcome = 'accepted' | 'duplicate' | 'stale'
 
 type ExecutionControlRow = DesktopRunbookResultRow & {
   heartbeatAt?: string | null
@@ -196,6 +209,50 @@ export class SqliteRunbookResultStore implements RunbookResultPersistence {
         executionSnapshotJson: JSON.stringify(snapshot),
         updatedAt: new Date().toISOString(),
       },
+    })
+  }
+
+  async applyExecutionSnapshotEvent(
+    resultId: string,
+    input: ApplyExecutionSnapshotEventInput,
+  ): Promise<ExecutionSnapshotEventOutcome> {
+    return this.inTransaction(async () => {
+      const safeExecutionId = input.snapshot.executionId.replace(/'/g, "''")
+      const safeEventId = input.eventId.replace(/'/g, "''")
+      const existing = await this.db.$queryRawUnsafe<{ eventId: string }>(`
+        SELECT "eventId"
+        FROM "RunbookExecutionEventJournal"
+        WHERE "executionId" = '${safeExecutionId}'
+          AND "eventId" = '${safeEventId}'
+        LIMIT 1
+      `)
+      if (existing.length > 0) {
+        return 'duplicate'
+      }
+
+      const current = await this.getExecutionSnapshotByResultId(resultId)
+      if (
+        current === null ||
+        current.snapshotVersion !== input.expectedSnapshotVersion ||
+        (current.status !== 'running' && current.status !== input.snapshot.status)
+      ) {
+        return 'stale'
+      }
+
+      await this.saveExecutionSnapshot(resultId, input.snapshot)
+      const safeResultId = resultId.replace(/'/g, "''")
+      const safeAppliedAt = new Date().toISOString().replace(/'/g, "''")
+      await this.db.$executeRawUnsafe(`
+        INSERT INTO "RunbookExecutionEventJournal" (
+          "executionId", "eventId", "resultId", "expectedSnapshotVersion",
+          "acceptedSnapshotVersion", "acceptedAt"
+        ) VALUES (
+          '${safeExecutionId}', '${safeEventId}', '${safeResultId}',
+          ${String(input.expectedSnapshotVersion)}, ${String(input.snapshot.snapshotVersion)},
+          '${safeAppliedAt}'
+        )
+      `)
+      return 'accepted'
     })
   }
 
@@ -416,6 +473,13 @@ export class SqliteRunbookResultStore implements RunbookResultPersistence {
         updatedAt: completedAt,
       },
     })
+  }
+
+  private async inTransaction<T>(operation: () => Promise<T>): Promise<T> {
+    if (this.db.$transaction === undefined) {
+      return operation()
+    }
+    return this.db.$transaction(operation)
   }
 
   private async recordStaleRecoveryAudit(

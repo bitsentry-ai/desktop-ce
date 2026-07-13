@@ -10,7 +10,7 @@ import {
 import { getDatabasePath, getDatabaseUrl } from './database-paths'
 
 let db: DbClient | null = null
-const DATABASE_SCHEMA_VERSION = 16
+const DATABASE_SCHEMA_VERSION = 17
 
 export type DesktopDatabaseRuntimeSeeders = {
   seedDefaults(client: DbClient): Promise<void>
@@ -1810,6 +1810,24 @@ async function runMigrations(): Promise<void> {
     }
     if (!appliedVersions.has(16)) {
       await markMigrationApplied(16, 'runbook_execution_control_plane')
+    }
+    await getDb().$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS "RunbookExecutionEventJournal" (
+        "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+        "executionId" TEXT NOT NULL,
+        "eventId" TEXT NOT NULL,
+        "resultId" TEXT NOT NULL,
+        "expectedSnapshotVersion" INTEGER NOT NULL,
+        "acceptedSnapshotVersion" INTEGER NOT NULL,
+        "acceptedAt" DATETIME NOT NULL
+      )
+    `)
+    await getDb().$executeRawUnsafe(`
+      CREATE UNIQUE INDEX IF NOT EXISTS "RunbookExecutionEventJournal_execution_event_key"
+      ON "RunbookExecutionEventJournal"("executionId", "eventId")
+    `)
+    if (!appliedVersions.has(17)) {
+      await markMigrationApplied(17, 'runbook_execution_event_journal')
     }
     await getDb().$executeRawUnsafe(`PRAGMA user_version = ${String(DATABASE_SCHEMA_VERSION)}`)
 

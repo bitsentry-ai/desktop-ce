@@ -12,7 +12,7 @@ import {
 } from '@bitsentry-ce/desktop-cli/runtime/database-index'
 import { setRuntimeUserDataPath } from '@bitsentry-ce/desktop-cli/runtime/runtime-paths'
 
-const CURRENT_SCHEMA_VERSION = 16
+const CURRENT_SCHEMA_VERSION = 17
 const tempDirectories: string[] = []
 
 async function makeDatabaseDirectory(): Promise<{ directory: string; databasePath: string }> {

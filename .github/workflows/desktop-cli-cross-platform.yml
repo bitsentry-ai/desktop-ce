@@ -138,3 +138,9 @@ jobs:
       - name: Run packaged desktop CLI stress test
         shell: bash
         run: pnpm run desktop:test:cli:packaged:stress
+
+      - name: Run packaged no-op runbook smoke test
+        shell: bash
+        env:
+          BITSENTRY_DESKTOP_SMOKE_BINARY: ${{ runner.os == 'macOS' && 'release/build/mac-arm64/SuperTerminal.app/Contents/MacOS/SuperTerminal' || runner.os == 'Windows' && 'release/build/win-unpacked/SuperTerminal.exe' || 'release/build/linux-unpacked/SuperTerminal' }}
+        run: pnpm --dir apps/desktop run test:smoke:runbook:packaged

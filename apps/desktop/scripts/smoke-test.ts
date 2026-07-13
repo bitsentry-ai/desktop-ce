@@ -1,4 +1,6 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import { mkdtempSync, rmSync } from "node:fs";
+import os from "node:os";
 import { resolve } from "node:path";
 
 const desktopDir = resolve(__dirname, "../..");
@@ -8,6 +10,8 @@ const RUNBOOK_COMPLETE_MARKER = "[smoke] runbook-completed";
 const TIMEOUT_MS = 30_000;
 const READY_GRACE_MS = 1_000;
 const smokeScenario = process.env.BITSENTRY_DESKTOP_SMOKE_SCENARIO ?? "ready";
+const packagedBinary = process.env.BITSENTRY_DESKTOP_SMOKE_BINARY;
+const requirePackagedBinary = process.env.BITSENTRY_DESKTOP_SMOKE_REQUIRE_PACKAGED === "1";
 let requiredMarkers = [READY_MARKER];
 if (smokeScenario === "runbook") {
   requiredMarkers = [READY_MARKER, RUNBOOK_COMPLETE_MARKER];
@@ -15,17 +19,31 @@ if (smokeScenario === "runbook") {
 
 console.log("\nLaunching desktop smoke test...");
 
+let command = electronBin;
+let commandArgs = [desktopDir];
+if (requirePackagedBinary && (packagedBinary === undefined || packagedBinary.trim() === "")) {
+  throw new Error("BITSENTRY_DESKTOP_SMOKE_BINARY is required for a packaged smoke scenario");
+}
+if (packagedBinary !== undefined && packagedBinary.trim() !== "") {
+  command = resolve(packagedBinary);
+  commandArgs = [];
+}
+const temporaryUserDataDir = mkdtempSync(
+  resolve(os.tmpdir(), "bitsentry-desktop-smoke-"),
+);
+
 const childEnv: NodeJS.ProcessEnv = {
   ...process.env,
   BITSENTRY_DESKTOP_SMOKE_TEST: "1",
   BITSENTRY_DESKTOP_SMOKE_SCENARIO: smokeScenario,
+  BITSENTRY_USER_DATA_DIR: temporaryUserDataDir,
   ELECTRON_ENABLE_LOGGING: "1",
   START_MINIMIZED: "1",
 };
 
 delete childEnv.ELECTRON_RUN_AS_NODE;
 
-const child: ChildProcessWithoutNullStreams = spawn(electronBin, [desktopDir], {
+const child: ChildProcessWithoutNullStreams = spawn(command, commandArgs, {
   cwd: desktopDir,
   detached: process.platform !== "win32",
   stdio: ["pipe", "pipe", "pipe"],
@@ -104,6 +122,7 @@ function finish(code: number, message: string): void {
   stopChild(signal);
   setTimeout(() => {
     stopChild("SIGKILL");
+    rmSync(temporaryUserDataDir, { recursive: true, force: true });
     process.exit(code);
   }, 100);
 }
