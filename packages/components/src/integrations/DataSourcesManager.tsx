@@ -596,7 +596,7 @@ export default function DataSourcesManager({
     setShowAdvanced(false);
     setLogLevelThreshold("error");
     setSyncEnabledOnCreate(true);
-    setAutoDiagnosisEnabledOnCreate(false);
+    setAutoDiagnosisEnabledOnCreate(true);
   }
 
   function readSetupFieldTextValue(field: PluginDataSourceSetupField): string {
