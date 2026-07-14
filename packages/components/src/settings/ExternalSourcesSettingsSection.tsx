@@ -5,6 +5,7 @@ import {
   useDeleteErrorSource,
   useErrorSources,
   useSyncErrorSource,
+  useUpdateErrorSource,
 } from "../services/hooks";
 import { useTranslation } from "@bitsentry-ce/i18n";
 import { RefreshCw, Trash2 } from "lucide-react";
@@ -56,6 +57,7 @@ export function ExternalSourcesSettingsSection({
   const { data: sources = [], isLoading } = useErrorSources();
   const deleteMutation = useDeleteErrorSource();
   const syncMutation = useSyncErrorSource();
+  const updateMutation = useUpdateErrorSource();
 
   const sortedSources = useMemo(
     () =>
@@ -126,6 +128,40 @@ export function ExternalSourcesSettingsSection({
                     <p className="mt-1 text-xs text-muted-foreground">
                       {syncSummary}
                     </p>
+                    <label className="mt-2 flex cursor-pointer items-start gap-2 text-xs text-muted-foreground">
+                      <input
+                        type="checkbox"
+                        checked={source.autoDiagnosisEnabled}
+                        onChange={(event) => {
+                          updateMutation.mutate(
+                            {
+                              id: source.id,
+                              autoDiagnosisEnabled: event.target.checked,
+                            },
+                            {
+                              onError: (error) => {
+                                let message = t(
+                                  "common.dataSourcesManager.autoDiagnosisUpdateFailed",
+                                );
+                                if (error instanceof Error) {
+                                  message = error.message;
+                                }
+                                toast.error(message);
+                              },
+                            },
+                          );
+                        }}
+                        disabled={updateMutation.isPending}
+                      />
+                      <span>
+                        <span className="block">
+                          {t("common.dataSourcesManager.autoDiagnosis")}
+                        </span>
+                        <span className="block text-[11px] text-muted-foreground">
+                          {t("common.dataSourcesManager.autoDiagnosisHelp")}
+                        </span>
+                      </span>
+                    </label>
                   </div>
                   <div className="flex shrink-0 items-center gap-1">
                     <button

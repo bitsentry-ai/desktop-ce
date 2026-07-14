@@ -432,6 +432,8 @@ export default function DataSourcesManager({
   const [logLevelThreshold, setLogLevelThreshold] =
     useState<LogLevelThreshold>("error");
   const [syncEnabledOnCreate, setSyncEnabledOnCreate] = useState(true);
+  const [autoDiagnosisEnabledOnCreate, setAutoDiagnosisEnabledOnCreate] =
+    useState(false);
 
   // Errors that belong INSIDE the create-source dialog (probe failures,
   // validation, save errors). Rendering them on the page-level banner makes
@@ -454,6 +456,8 @@ export default function DataSourcesManager({
   const [editLogThreshold, setEditLogThreshold] =
     useState<LogLevelThreshold>("error");
   const [editSyncEnabled, setEditSyncEnabled] = useState(true);
+  const [editAutoDiagnosisEnabled, setEditAutoDiagnosisEnabled] =
+    useState(false);
   const [editSetupFieldValues, setEditSetupFieldValues] = useState<
     Record<string, string>
   >({});
@@ -592,6 +596,7 @@ export default function DataSourcesManager({
     setShowAdvanced(false);
     setLogLevelThreshold("error");
     setSyncEnabledOnCreate(true);
+    setAutoDiagnosisEnabledOnCreate(false);
   }
 
   function readSetupFieldTextValue(field: PluginDataSourceSetupField): string {
@@ -660,7 +665,7 @@ export default function DataSourcesManager({
       setupValues,
       logLevelThreshold,
       syncEnabled: syncEnabledOnCreate,
-      autoDiagnosisEnabled: false,
+      autoDiagnosisEnabled: autoDiagnosisEnabledOnCreate,
     };
 
     for (const field of selectedSetupFields) {
@@ -738,6 +743,7 @@ export default function DataSourcesManager({
     setEditName(source.name);
     setEditLogThreshold(source.logLevelThreshold ?? "error");
     setEditSyncEnabled(source.syncEnabled);
+    setEditAutoDiagnosisEnabled(source.autoDiagnosisEnabled);
     setEditSetupFieldValues(buildInitialEditSetupFieldValues(source, plugin));
     setEditDialogError(null);
     setEditDialogSource(source);
@@ -832,6 +838,7 @@ export default function DataSourcesManager({
         setupValues,
         logLevelThreshold: editLogThreshold,
         syncEnabled: editSyncEnabled,
+        autoDiagnosisEnabled: editAutoDiagnosisEnabled,
       });
       setEditSetupFieldValues({});
       setEditDialogSource(null);
@@ -1409,6 +1416,24 @@ export default function DataSourcesManager({
                     }}
                   />
                 </label>
+
+                <label className="flex cursor-pointer items-start justify-between gap-3 text-sm text-muted-foreground">
+                  <span>
+                    <span className="block">
+                      {t("common.dataSourcesManager.autoDiagnosis")}
+                    </span>
+                    <span className="mt-0.5 block text-xs text-muted-foreground">
+                      {t("common.dataSourcesManager.autoDiagnosisHelp")}
+                    </span>
+                  </span>
+                  <input
+                    type="checkbox"
+                    checked={autoDiagnosisEnabledOnCreate}
+                    onChange={(e) => {
+                      setAutoDiagnosisEnabledOnCreate(e.target.checked);
+                    }}
+                  />
+                </label>
               </div>
             </div>
 
@@ -1532,6 +1557,25 @@ export default function DataSourcesManager({
                   checked={editSyncEnabled}
                   onChange={(e) => {
                     setEditSyncEnabled(e.target.checked);
+                  }}
+                  disabled={updateMutation.isPending}
+                />
+              </label>
+
+              <label className="flex cursor-pointer items-start justify-between gap-3 text-sm text-muted-foreground">
+                <span>
+                  <span className="block">
+                    {t("common.dataSourcesManager.autoDiagnosis")}
+                  </span>
+                  <span className="mt-0.5 block text-xs text-muted-foreground">
+                    {t("common.dataSourcesManager.autoDiagnosisHelp")}
+                  </span>
+                </span>
+                <input
+                  type="checkbox"
+                  checked={editAutoDiagnosisEnabled}
+                  onChange={(e) => {
+                    setEditAutoDiagnosisEnabled(e.target.checked);
                   }}
                   disabled={updateMutation.isPending}
                 />
