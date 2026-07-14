@@ -336,7 +336,6 @@
   "common.dataSourcesManager.enableScheduledSync": "Enable scheduled sync",
   "common.dataSourcesManager.autoDiagnosis": "Automatic diagnosis",
   "common.dataSourcesManager.autoDiagnosisHelp": "Allow the worker to run LLM diagnosis automatically",
-  "common.dataSourcesManager.autoDiagnosisUpdateFailed": "Failed to update automatic diagnosis",
   "common.dataSourcesManager.error": "Error",
   "common.dataSourcesManager.error_2": "Error",
   "common.dataSourcesManager.externalSources": "Plugins",

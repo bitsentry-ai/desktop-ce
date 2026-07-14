@@ -126,14 +126,6 @@ export function ExternalSourcesSettingsSection({
                     <p className="mt-1 text-xs text-muted-foreground">
                       {syncSummary}
                     </p>
-                    <p className="mt-2 text-xs text-muted-foreground">
-                      <span className="block">
-                        {t("common.dataSourcesManager.autoDiagnosis")}
-                      </span>
-                      <span className="block text-[11px] text-muted-foreground">
-                        {t("common.dataSourcesManager.autoDiagnosisHelp")}
-                      </span>
-                    </p>
                   </div>
                   <div className="flex shrink-0 items-center gap-1">
                     <button

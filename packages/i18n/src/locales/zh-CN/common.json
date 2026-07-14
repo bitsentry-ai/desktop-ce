@@ -336,7 +336,6 @@
   "common.dataSourcesManager.enableScheduledSync": "启用定时同步",
   "common.dataSourcesManager.autoDiagnosis": "自动诊断",
   "common.dataSourcesManager.autoDiagnosisHelp": "允许 worker 自动运行 LLM 诊断",
-  "common.dataSourcesManager.autoDiagnosisUpdateFailed": "更新自动诊断失败",
   "common.dataSourcesManager.error": "错误",
   "common.dataSourcesManager.error_2": "错误",
   "common.dataSourcesManager.externalSources": "插件",
