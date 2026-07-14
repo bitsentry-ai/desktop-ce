@@ -60,7 +60,7 @@
   "incidents.resolutionManagement.noResolvedTicketsFound": "Aucun ticket résolu trouvé",
   "incidents.resolutionManagement.page": "Page",
   "incidents.resolutionManagement.previous": "Précédent",
-  "incidents.resolutionManagement.resolutionManagement": "Gestion des résolutions",
+  "incidents.resolutionManagement.resolutionManagement": "Résolution",
   "incidents.resolutionManagement.resolvedTicket": "ticket résolu",
   "incidents.resolutionManagement.resolvedTickets": "Tickets résolus",
   "incidents.resolutionManagement.statusSyncCompleted": "Synchronisation des statuts terminée",
