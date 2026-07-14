@@ -60,7 +60,7 @@
   "incidents.resolutionManagement.noResolvedTicketsFound": "未找到已解决的工单",
   "incidents.resolutionManagement.page": "页",
   "incidents.resolutionManagement.previous": "上一页",
-  "incidents.resolutionManagement.resolutionManagement": "解决方案管理",
+  "incidents.resolutionManagement.resolutionManagement": "解决方案",
   "incidents.resolutionManagement.resolvedTicket": "已解决工单",
   "incidents.resolutionManagement.resolvedTickets": "已解决工单",
   "incidents.resolutionManagement.statusSyncCompleted": "状态同步已完成",
