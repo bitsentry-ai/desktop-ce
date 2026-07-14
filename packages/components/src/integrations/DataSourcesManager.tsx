@@ -433,7 +433,7 @@ export default function DataSourcesManager({
     useState<LogLevelThreshold>("error");
   const [syncEnabledOnCreate, setSyncEnabledOnCreate] = useState(true);
   const [autoDiagnosisEnabledOnCreate, setAutoDiagnosisEnabledOnCreate] =
-    useState(false);
+    useState(true);
 
   // Errors that belong INSIDE the create-source dialog (probe failures,
   // validation, save errors). Rendering them on the page-level banner makes
