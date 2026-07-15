@@ -15,7 +15,7 @@ function makeValidPayloads(): Record<DesktopRpcChannel, unknown> {
 
   Object.assign(payloads, {
     'errorSources:getOne': { id: 'source-1' },
-    'errorSources:create': { sourceType: 'sentry', name: 'Production' },
+    'errorSources:create': { pluginId: 'sentry', sourceType: 'sentry', name: 'Production' },
     'errorSources:update': { id: 'source-1' },
     'errorSources:delete': { id: 'source-1' },
     'errorSources:completeOAuth': { code: 'code', state: 'state' },
