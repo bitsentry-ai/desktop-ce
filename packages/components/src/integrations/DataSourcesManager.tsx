@@ -1059,7 +1059,7 @@ export default function DataSourcesManager({
               disabled={actionLoading}
               data-tour="data-sources-add-source"
             >
-              {t("common.dataSourcesManager.addSource")}
+            {t("common.dataSourcesManager.addExternalSource")}
             </Button>
           </div>
         </div>
@@ -1088,7 +1088,7 @@ export default function DataSourcesManager({
             disabled={actionLoading}
             data-tour="data-sources-add-source"
           >
-            {t("common.dataSourcesManager.addSource_2")}
+            {t("common.dataSourcesManager.addExternalSource")}
           </Button>
         </div>
       )}

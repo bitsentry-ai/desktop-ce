@@ -318,6 +318,7 @@
   "common.dataSourcesManager.apiErrorDetail": "API {{provider}} mengembalikan {{status}}",
   "common.dataSourcesManager.addSource": "+ Instal Plugin",
   "common.dataSourcesManager.addSource_2": "+ Instal Plugin",
+  "common.dataSourcesManager.addExternalSource": "+ Tambah sumber",
   "common.dataSourcesManager.advancedOptions": "Opsi lanjutan",
   "common.dataSourcesManager.autoSyncOn": "Sinkronisasi otomatis aktif",
   "common.dataSourcesManager.cancel": "Batal",

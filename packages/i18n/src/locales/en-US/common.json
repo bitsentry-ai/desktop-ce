@@ -318,6 +318,7 @@
   "common.dataSourcesManager.apiErrorDetail": "{{provider}} API returned {{status}}",
   "common.dataSourcesManager.addSource": "+ Install Plugin",
   "common.dataSourcesManager.addSource_2": "+ Install Plugin",
+  "common.dataSourcesManager.addExternalSource": "+ Add source",
   "common.dataSourcesManager.advancedOptions": "Advanced options",
   "common.dataSourcesManager.autoSyncOn": "Auto-sync on",
   "common.dataSourcesManager.cancel": "Cancel",

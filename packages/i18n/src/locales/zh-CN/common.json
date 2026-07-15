@@ -318,6 +318,7 @@
   "common.dataSourcesManager.apiErrorDetail": "{{provider}} API 返回 {{status}}",
   "common.dataSourcesManager.addSource": "+ 安装插件",
   "common.dataSourcesManager.addSource_2": "+ 安装插件",
+  "common.dataSourcesManager.addExternalSource": "+ 添加来源",
   "common.dataSourcesManager.advancedOptions": "高级选项",
   "common.dataSourcesManager.autoSyncOn": "自动同步已开启",
   "common.dataSourcesManager.cancel": "取消",

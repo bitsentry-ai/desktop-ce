@@ -318,6 +318,7 @@
   "common.dataSourcesManager.apiErrorDetail": "L'API {{provider}} a renvoyé {{status}}",
   "common.dataSourcesManager.addSource": "+ Installer un plugin",
   "common.dataSourcesManager.addSource_2": "+ Installer un plugin",
+  "common.dataSourcesManager.addExternalSource": "+ Ajouter une source",
   "common.dataSourcesManager.advancedOptions": "Options avancées",
   "common.dataSourcesManager.autoSyncOn": "Synchronisation automatique activée",
   "common.dataSourcesManager.cancel": "Annuler",
