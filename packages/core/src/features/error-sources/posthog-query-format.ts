@@ -99,28 +99,34 @@ function formatIssueIdentifier(issue: PostHogIssueRecord): string {
 
 function deriveTitleFromMetadata(issue: PostHogIssueRecord): string | null {
   const metadata = unknownRecord(issue.metadata);
-  if (metadata === undefined) return null
+  if (metadata === undefined) return null;
 
-  const entries = normalizeExceptionListEntries(metadata.exception_list)
+  const entries = normalizeExceptionListEntries(metadata.exception_list);
   for (const entry of entries) {
-    const exceptionType = toTrimmedString(entry.type)
-    const message = toTrimmedString(entry.value) ?? toTrimmedString(entry.message)
-    const title = titleFromExceptionParts(exceptionType, message)
-    if (title !== null) return title
+    const exceptionType = toTrimmedString(entry.type);
+    const message =
+      toTrimmedString(entry.value) ?? toTrimmedString(entry.message);
+    const title = titleFromExceptionParts(exceptionType, message);
+    if (title !== null) return title;
   }
 
-  return null
+  return null;
 }
 
 function titleFromExceptionParts(
   exceptionType: string | null,
   message: string | null,
 ): string | null {
-  if (exceptionType !== null && message !== null) return `${exceptionType}: ${message}`
-  return message ?? exceptionType
+  if (exceptionType !== null && message !== null)
+    return `${exceptionType}: ${message}`;
+  return message ?? exceptionType;
 }
 
-function formatReturnedLine(issueCount: number, hasMore: boolean, limit: number): string {
+function formatReturnedLine(
+  issueCount: number,
+  hasMore: boolean,
+  limit: number,
+): string {
   let suffix = "";
   if (hasMore) {
     suffix = ` (showing first ${String(limit)}; more available)`;
@@ -160,26 +166,38 @@ function formatPostHogIssue(issue: PostHogIssueRecord, index: number): string {
     `Fingerprint: ${formatIssueIdentifier(issue)}`,
   ];
 
-  pushLine(lines, formatOptionalPair(
-    "Level / Status",
-    toTrimmedString(issue.level),
-    toTrimmedString(issue.status),
-  ));
-  pushLine(lines, formatOptionalPair(
-    "Project / Environment",
-    toTrimmedString(issue.projectIdentifier),
-    toTrimmedString(issue.environment),
-  ));
-  pushLine(lines, formatOptionalPair(
-    "Events / Users",
-    countLabel(eventCount),
-    countLabel(userCount),
-  ));
-  pushLine(lines, formatOptionalPair(
-    "First seen / Last seen",
-    formatDate(issue.firstSeen),
-    formatDate(issue.lastSeen),
-  ));
+  pushLine(
+    lines,
+    formatOptionalPair(
+      "Level / Status",
+      toTrimmedString(issue.level),
+      toTrimmedString(issue.status),
+    ),
+  );
+  pushLine(
+    lines,
+    formatOptionalPair(
+      "Project / Environment",
+      toTrimmedString(issue.projectIdentifier),
+      toTrimmedString(issue.environment),
+    ),
+  );
+  pushLine(
+    lines,
+    formatOptionalPair(
+      "Events / Users",
+      countLabel(eventCount),
+      countLabel(userCount),
+    ),
+  );
+  pushLine(
+    lines,
+    formatOptionalPair(
+      "First seen / Last seen",
+      formatDate(issue.firstSeen),
+      formatDate(issue.lastSeen),
+    ),
+  );
 
   return lines.join("\n");
 }

@@ -67,7 +67,7 @@ pnpm run lint
   - integrations with provider routing
   - reports and export flows
 - Telemetry processor parity:
-  - `wazuh:*`, `telemetry:v3:*`, `diagnosis:*`, and `cve:*` IPC namespaces
+  - `telemetry:v3:*`, `diagnosis:*`, and `cve:*` IPC namespaces
   - local telemetry/diagnosis/CVE persistence
   - scheduler catch-up and queued runtime behavior
 - Supportability:
@@ -97,7 +97,7 @@ pnpm run lint
   - running a runbook now starts a sequential main-process execution session
   - `shell`, `llm`, `http`, and `external_source` runbook actions execute today; `llm` actions can inspect prior results through read-only runbook context tools
   - diagnosis launch snapshots the exported runbook context for that execution, while the diagnosis view subscribes to live execution snapshots
-  - `http` actions support method, URL, headers, and optional request body; `external_source` actions query the selected saved source, with Sentry as the current supported provider
+  - `http` actions support method, URL, headers, and optional request body; `external_source` actions query selected saved sources through installed code plugins
   - execution snapshots are persisted to diagnosis sessions and stale running sessions are marked failed after restart; full step resumption across restart, runbook approval, and structured shell target resolution remain unfinished
 
 ## Runbook Model (Current)
@@ -117,7 +117,7 @@ pnpm run lint
   - `llm` is the canonical action type name; legacy `ai` values are normalized for compatibility
   - `llm` steps run the authored prompt as-is and can call read-only context tools: `get_previous_result`, `get_step_result`, `list_available_results`, and `get_runbook_context`
   - `http` steps execute in the main process using authored method, URL, headers, and optional request body; non-2xx responses fail the step with captured response context
-  - `external_source` steps execute saved-source queries in the main process and currently support Sentry issue search/output formatting
+  - `external_source` steps execute saved-source queries in the main process through plugin-backed provider actions
   - persisted execution snapshots are stored on `DiagnosisSession`; on the next app launch, stale running sessions are marked failed rather than resumed
 - Diagnosis launch:
   - starting a diagnosis stores `runbookRevisionNumber` and `runbookContextJson` in the diagnosis session snapshot

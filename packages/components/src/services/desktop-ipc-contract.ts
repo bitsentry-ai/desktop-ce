@@ -1,4 +1,13 @@
 export const DESKTOP_RPC_CHANNELS = [
+  'plugins:list',
+  'plugins:get',
+  'plugins:getStoredAuth',
+  'plugins:updateStoredAuth',
+  'plugins:clearStoredAuth',
+  'plugins:installFromArtifact',
+  'plugins:listAvailable',
+  'plugins:installFromIndex',
+  'plugins:execute',
   'errorSources:getAll',
   'errorSources:getOne',
   'errorSources:create',

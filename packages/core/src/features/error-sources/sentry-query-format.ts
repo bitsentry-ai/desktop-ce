@@ -69,7 +69,10 @@ function extractTagValue(
   return primitiveString(value);
 }
 
-export function extractIssueField(issue: unknown, tagKey: string): string | null {
+export function extractIssueField(
+  issue: unknown,
+  tagKey: string,
+): string | null {
   const parsedTags = parseIssueTags(unknownRecord(issue)?.tags);
   return extractTagValue(parsedTags, tagKey);
 }
@@ -115,7 +118,11 @@ function countLabel(value: number | null): string | null {
   return String(value);
 }
 
-function formatReturnedLine(issueCount: number, hasMore: boolean, limit: number): string {
+function formatReturnedLine(
+  issueCount: number,
+  hasMore: boolean,
+  limit: number,
+): string {
   let suffix = "";
   if (hasMore) {
     suffix = ` (showing first ${String(limit)}; more available)`;
@@ -133,7 +140,11 @@ function projectSlug(issue: SentryIssueRecord): string | null {
 }
 
 function issueTitle(issue: SentryIssueRecord): string {
-  return primitiveString(issue.title) ?? primitiveString(issue.culprit) ?? "Untitled issue";
+  return (
+    primitiveString(issue.title) ??
+    primitiveString(issue.culprit) ??
+    "Untitled issue"
+  );
 }
 
 function pushLine(lines: string[], line: string | null): void {
@@ -149,26 +160,38 @@ function formatSentryIssue(issue: SentryIssueRecord, index: number): string {
     `Issue: ${formatIssueIdentifier(issue)}`,
   ];
 
-  pushLine(lines, formatOptionalPair(
-    "Level / Status",
-    primitiveString(issue.level),
-    primitiveString(issue.status),
-  ));
-  pushLine(lines, formatOptionalPair(
-    "Project / Environment",
-    projectSlug(issue),
-    environment,
-  ));
-  pushLine(lines, formatOptionalPair(
-    "Events / Users",
-    countLabel(eventCount),
-    countLabel(userCount),
-  ));
-  pushLine(lines, formatOptionalPair(
-    "First seen / Last seen",
-    formatDate(issue.firstSeen),
-    formatDate(issue.lastSeen),
-  ));
+  pushLine(
+    lines,
+    formatOptionalPair(
+      "Level / Status",
+      primitiveString(issue.level),
+      primitiveString(issue.status),
+    ),
+  );
+  pushLine(
+    lines,
+    formatOptionalPair(
+      "Project / Environment",
+      projectSlug(issue),
+      environment,
+    ),
+  );
+  pushLine(
+    lines,
+    formatOptionalPair(
+      "Events / Users",
+      countLabel(eventCount),
+      countLabel(userCount),
+    ),
+  );
+  pushLine(
+    lines,
+    formatOptionalPair(
+      "First seen / Last seen",
+      formatDate(issue.firstSeen),
+      formatDate(issue.lastSeen),
+    ),
+  );
 
   return lines.join("\n");
 }

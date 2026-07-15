@@ -2,6 +2,7 @@
   "name": "@bitsentry-ce/coding-agents",
   "version": "0.1.0",
   "private": true,
+  "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
@@ -16,19 +17,19 @@
   },
   "scripts": {
     "build": "rm -rf dist && tsc -p tsconfig.build.json",
-    "lint": "eslint .",
+    "lint": "node ../../scripts/eslint/ts7-unavailable.mjs",
     "lint:fix": "eslint . --fix"
   },
   "dependencies": {
     "@alcyone-labs/zod-to-json-schema": "^4.0.10",
+    "@anthropic-ai/claude-agent-sdk": "^0.2.138",
     "@bitsentry-ce/components": "workspace:*",
     "@bitsentry-ce/core": "workspace:*",
-    "@anthropic-ai/claude-agent-sdk": "^0.2.138",
     "electron-log": "^5.4.3",
     "zod": "^4.3.6"
   },
   "devDependencies": {
     "@types/node": "^25.3.0",
-    "typescript": "^5.9.3"
+    "typescript": "^7.0.2"
   }
 }

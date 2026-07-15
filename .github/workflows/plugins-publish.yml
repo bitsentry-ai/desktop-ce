@@ -1,0 +1,85 @@
+name: Publish Plugin Artifacts
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/plugins-publish.yml"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+      - "packages/core/src/features/plugins/**"
+      - "packages/plugins/**"
+      - "scripts/plugins/**"
+  workflow_dispatch:
+
+concurrency:
+  group: plugins-publish-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  publish:
+    name: Publish first-party plugin artifacts
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Initialize package submodules
+        shell: bash
+        run: |
+          git config submodule.packages/electron-trpc.url https://github.com/bitsentry-ai/electron-trpc.git
+          git config submodule.packages/plugin-sdk.url https://github.com/bitsentry-ai/-bitsentry-plugin-sdk.git
+          git config submodule.packages/plugins/github.url https://github.com/bitsentry-ai/bitsentry-plugin-github.git
+          git config submodule.packages/plugins/posthog.url https://github.com/bitsentry-ai/bitsentry-plugin-posthog.git
+          git config submodule.packages/plugins/sentry.url https://github.com/bitsentry-ai/bitsentry-plugin-sentry.git
+          git config submodule.packages/plugins/wazuh.url https://github.com/bitsentry-ai/bitsentry-plugin-wazuh.git
+          git submodule update --init --depth 1 \
+            packages/electron-trpc \
+            packages/plugin-sdk \
+            packages/plugins/github \
+            packages/plugins/posthog \
+            packages/plugins/sentry \
+            packages/plugins/wazuh
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22.12.0"
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.32.1
+          run_install: false
+
+      - name: Install dependencies
+        shell: bash
+        run: pnpm install --frozen-lockfile
+
+      - name: Install electron-trpc dependencies
+        shell: bash
+        run: pnpm --dir packages/electron-trpc install --frozen-lockfile
+
+      - name: Lint plugin packages
+        shell: bash
+        run: pnpm run plugins:lint
+
+      - name: Test plugin packages
+        shell: bash
+        run: pnpm run plugins:test
+
+      - name: Build and publish plugin artifacts
+        shell: bash
+        env:
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
+          R2_PLUGIN_PREFIX: ${{ vars.R2_PLUGIN_PREFIX }}
+        run: pnpm run plugins:publish-artifacts

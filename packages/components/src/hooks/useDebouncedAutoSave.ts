@@ -16,6 +16,8 @@ interface Options<T> {
   validate?: (value: T) => string | null;
   /** Re-run validation when external validation inputs change. */
   validationKey?: unknown;
+  /** Treat the current value as already persisted when this key changes. */
+  baselineKey?: unknown;
 }
 
 /**
@@ -36,6 +38,7 @@ export function useDebouncedAutoSave<T>(
     isEqual = (a, b) => JSON.stringify(a) === JSON.stringify(b),
     validate,
     validationKey,
+    baselineKey,
   } = options;
 
   const [status, setStatus] = useState<AutoSaveStatus>("idle");
@@ -48,6 +51,7 @@ export function useDebouncedAutoSave<T>(
   const validateRef = useRef(validate);
   const isEqualRef = useRef(isEqual);
   const delayRef = useRef(delay);
+  const baselineKeyRef = useRef(baselineKey);
 
   useEffect(() => {
     valueRef.current = value;
@@ -82,6 +86,15 @@ export function useDebouncedAutoSave<T>(
       return;
     }
 
+    if (!Object.is(baselineKeyRef.current, baselineKey)) {
+      clearPendingSave();
+      baselineKeyRef.current = baselineKey;
+      lastSavedRef.current = value;
+      setErrorMessage(null);
+      setStatus("idle");
+      return;
+    }
+
     const validationError = validateRef.current?.(value) ?? null;
     if (validationError !== null && validationError.length > 0) {
       clearPendingSave();
@@ -90,9 +103,8 @@ export function useDebouncedAutoSave<T>(
       return;
     }
 
-    setErrorMessage(null);
-
     if (isEqualRef.current(value, lastSavedRef.current)) {
+      setErrorMessage(null);
       setStatus((current) => {
         if (current === "error") {
           return "saved";
@@ -102,6 +114,8 @@ export function useDebouncedAutoSave<T>(
       });
       return;
     }
+
+    setErrorMessage(null);
 
     clearPendingSave();
 
@@ -137,7 +151,7 @@ export function useDebouncedAutoSave<T>(
     }
 
     return clearPendingSave;
-  }, [value, enabled, validationKey]);
+  }, [value, enabled, validationKey, baselineKey]);
 
   return { status, error: errorMessage } as const;
 }

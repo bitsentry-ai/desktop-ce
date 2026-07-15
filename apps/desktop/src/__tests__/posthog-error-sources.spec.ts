@@ -1,4 +1,5 @@
 import { EventEmitter } from 'events'
+import path from 'path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 const childProcessMocks = vi.hoisted(() => ({
@@ -17,19 +18,28 @@ vi.mock('child_process', () => ({
 }))
 
 import {
-  assertAllowedPostHogBaseUrl,
   createErrorSourceSchema,
-  ErrorSourceProviderFactory,
-  getProviderForSource,
-  parsePostHogAllowedHostsEnv,
-  resolveSameOriginNextUrl,
 } from '@bitsentry-ce/core/features/error-sources'
-import { PostHogProviderAdapter } from '@bitsentry-ce/core/features/error-sources/desktop-posthog-provider.adapter'
 import {
   OauthManagerService,
-  PROVIDER_CONFIGS,
 } from '../main/features/error-sources/services/oauth-manager.service'
 import type { DbClient } from '@bitsentry-ce/core/features/desktop/desktop-database-client'
+import type { OAuthProviderConfig } from '@bitsentry-ce/core/features/error-sources/desktop-oauth-manager'
+import {
+  DesktopPluginRuntimeService,
+  type DesktopPluginExecutionRequest,
+  type DesktopPluginExecutionResult,
+  DesktopPluginDescriptor,
+} from '@bitsentry-ce/core/features/plugins'
+import { createDesktopNodePluginRuntimeService } from '@bitsentry-ce/core/features/plugins/node'
+
+function asRecord(value: unknown): Record<string, unknown> {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+    return {}
+  }
+
+  return value as Record<string, unknown>
+}
 
 function getOpenExternalInvocation(urlMatcher: unknown): { command: string; args: unknown[] } {
   if (process.platform === 'darwin') {
@@ -55,87 +65,135 @@ function requestBodyText(body: BodyInit | null | undefined): string {
   throw new Error('Expected request body to be form encoded text')
 }
 
-describe('posthog error source support', () => {
-  const originalAllowedHosts = process.env.POSTHOG_ALLOWED_BASE_URLS
+const posthogOauthConfig: OAuthProviderConfig = {
+  envClientIdName: 'POSTHOG_OAUTH_CLIENT_ID',
+  envClientSecretName: 'POSTHOG_OAUTH_CLIENT_SECRET',
+  envRedirectUriName: 'POSTHOG_OAUTH_REDIRECT_URI',
+  defaultRedirectUri: 'bitsentry-desktop-ce://oauth/callback',
+  scopes: ['organization:read', 'project:read', 'query:read'],
+  publicClient: true,
+}
 
-  afterEach(() => {
-    if (originalAllowedHosts == null) {
-      delete process.env.POSTHOG_ALLOWED_BASE_URLS
-    } else {
-      process.env.POSTHOG_ALLOWED_BASE_URLS = originalAllowedHosts
+function createPluginRuntime(
+  descriptors: DesktopPluginDescriptor[],
+  executeAction?: (
+    input: DesktopPluginExecutionRequest,
+  ) => Promise<DesktopPluginExecutionResult>,
+): DesktopPluginRuntimeService {
+  return new (class TestPluginRuntimeService extends DesktopPluginRuntimeService {
+    listPlugins() {
+      return descriptors
     }
+
+    getPlugin(pluginId: string) {
+      return descriptors.find((plugin) => plugin.id === pluginId) ?? null
+    }
+
+    executeAction(
+      input: DesktopPluginExecutionRequest,
+    ): Promise<DesktopPluginExecutionResult> {
+      if (executeAction !== undefined) {
+        return executeAction(input)
+      }
+
+      return Promise.reject(
+        new Error('executeAction is not used by these PostHog OAuth tests'),
+      )
+    }
+  })()
+}
+
+function createOAuthDescriptor(input: {
+  pluginId: string
+  sourceType: 'github' | 'posthog'
+  oauth?: OAuthProviderConfig
+}): DesktopPluginDescriptor {
+  return {
+    id: input.pluginId,
+    name: input.pluginId,
+    version: 'test',
+    description: `${input.pluginId} OAuth test plugin`,
+    type: "data_source",
+    metadata: {
+      dataSource: {
+        sourceType: input.sourceType,
+        oauth: input.oauth,
+        setupFields: [],
+      },
+    },
+    auth: {
+      fields: [],
+    },
+    actions: [
+      'build_authorize_url',
+      'exchange_code_for_token',
+      'refresh_token',
+    ].map((id) => ({
+      id,
+      title: id,
+      description: `${id} action.`,
+      riskLevel: 'read',
+      fields: [],
+    })),
+  }
+}
+
+function createRepoPluginRuntime() {
+  return createDesktopNodePluginRuntimeService([
+    path.resolve(process.cwd(), '../../packages/plugins'),
+  ])
+}
+
+describe('posthog error source support', () => {
+  afterEach(() => {
     vi.restoreAllMocks()
   })
 
-  it('validates built-in and explicitly allowed PostHog hosts', () => {
-    expect(assertAllowedPostHogBaseUrl(undefined)).toBe('https://us.posthog.com')
-    expect(assertAllowedPostHogBaseUrl('https://eu.posthog.com/path')).toBe(
-      'https://eu.posthog.com',
-    )
-
-    const extraHosts = parsePostHogAllowedHostsEnv(
-      'https://posthog.example.com, https://posthog.internal:8443',
-    )
-
-    expect(
-      assertAllowedPostHogBaseUrl('https://posthog.example.com/app', {
-        extraAllowedHosts: extraHosts,
-      }),
-    ).toBe('https://posthog.example.com')
-    expect(
-      assertAllowedPostHogBaseUrl('https://posthog.internal:8443/app', {
-        extraAllowedHosts: extraHosts,
-      }),
-    ).toBe('https://posthog.internal:8443')
-  })
-
-  it('rejects unsafe PostHog base URLs and cross-origin pagination URLs', () => {
-    expect(() => assertAllowedPostHogBaseUrl('http://us.posthog.com')).toThrow(
-      'PostHog base URL must use https://',
-    )
-    expect(() =>
-      assertAllowedPostHogBaseUrl('https://metadata.google.internal'),
-    ).toThrow('is not in the allowlist')
-    expect(() =>
-      resolveSameOriginNextUrl(
-        'https://evil.example/api/projects/1/query/?offset=100',
-        'https://us.posthog.com',
-      ),
-    ).toThrow('Refusing to follow cross-origin PostHog pagination URL')
-  })
-
-  it('accepts PostHog create inputs in the shared schema', () => {
+  it('accepts PostHog code-plugin create inputs in the shared schema', () => {
     expect(
       createErrorSourceSchema.parse({
+        pluginId: 'posthog',
         sourceType: 'posthog',
         name: 'Production PostHog',
-        authToken: 'phx-token',
-        projectIds: ['123', '456'],
-        baseUrl: 'https://eu.posthog.com',
+        setupValues: {
+          authToken: 'phx-token',
+          baseUrl: 'https://eu.posthog.com',
+          projectIds: ['123', '456'],
+        },
       }),
     ).toMatchObject({
+      pluginId: 'posthog',
       sourceType: 'posthog',
-      projectIds: ['123', '456'],
-      baseUrl: 'https://eu.posthog.com',
+      setupValues: {
+        authToken: 'phx-token',
+        baseUrl: 'https://eu.posthog.com',
+        projectIds: ['123', '456'],
+      },
     })
   })
 
-  it('registers PostHog as a desktop provider and preserves custom host binding', () => {
-    const factory = new ErrorSourceProviderFactory()
-
-    expect(factory.getProvider('posthog')).toBeInstanceOf(PostHogProviderAdapter)
+  it('accepts first-party code-plugin create inputs in the shared schema', () => {
     expect(
-      getProviderForSource(factory, {
-        sourceType: 'posthog',
-        configuration: { posthogBaseUrl: 'https://eu.posthog.com' },
+      createErrorSourceSchema.parse({
+        pluginId: 'github',
+        sourceType: 'github',
+        name: 'GitHub Issues',
+        setupValues: {
+          owner: 'bitsentry-ai',
+          repo: 'monorepo',
+        },
+        configuration: {
+          defaultQuery: 'is:issue is:open',
+        },
       }),
-    ).toBeInstanceOf(PostHogProviderAdapter)
-    expect(() =>
-      getProviderForSource(factory, {
-        sourceType: 'posthog',
-        configuration: { posthogBaseUrl: 'https://metadata.google.internal' },
-      }),
-    ).toThrow('is not in the allowlist')
+    ).toMatchObject({
+      pluginId: 'github',
+      sourceType: 'github',
+      name: 'GitHub Issues',
+      logLevelThreshold: 'error',
+      syncEnabled: true,
+      autoDiagnosisEnabled: false,
+    })
   })
 
   it('fetches PostHog project details through a project-based endpoint', async () => {
@@ -153,13 +211,20 @@ describe('posthog error source support', () => {
       ),
     )
 
-    const provider = new PostHogProviderAdapter({
-      apiBase: 'https://eu.posthog.com',
+    const runtime = createRepoPluginRuntime()
+    const result = await runtime.executeAction({
+      pluginId: 'posthog',
+      actionId: 'get_project',
+      auth: {
+        accessToken: 'phx-token',
+        baseUrl: 'https://eu.posthog.com',
+      },
+      input: {
+        projectId: '177710',
+      },
     })
 
-    await expect(
-      provider.getProject({ accessToken: 'phx-token', projectId: '177710' }),
-    ).resolves.toEqual({
+    expect(result.data).toEqual({
       id: '177710',
       slug: '177710',
       name: 'Default project',
@@ -172,31 +237,24 @@ describe('posthog error source support', () => {
     })
   })
 
-  it('keeps PostHog OAuth configured as a public-client PKCE provider', () => {
-    expect(PROVIDER_CONFIGS.posthog).toMatchObject({
-      envClientIdName: 'POSTHOG_OAUTH_CLIENT_ID',
-      envClientSecretName: 'POSTHOG_OAUTH_CLIENT_SECRET',
-      publicClient: true,
-    })
-    expect(PROVIDER_CONFIGS.posthog.scopes).toEqual(
-      expect.arrayContaining(['organization:read', 'project:read', 'query:read']),
-    )
-  })
-
   it('routes PostHog OAuth authorize and token requests through the selected base URL', async () => {
-    const provider = new PostHogProviderAdapter({
-      apiBase: 'https://eu.posthog.com',
-    })
+    const runtime = createRepoPluginRuntime()
 
-    const authorizeUrl = new URL(
-      provider.buildAuthorizeUrl({
+    const authorizeResult = await runtime.executeAction({
+      pluginId: 'posthog',
+      actionId: 'build_authorize_url',
+      auth: {
+        baseUrl: 'https://eu.posthog.com',
+      },
+      input: {
         clientId: 'client-id',
         redirectUri: 'bitsentry-desktop-ce://oauth/callback',
         scopes: ['project:read', 'query:read'],
         state: 'state-1',
         codeChallenge: 'challenge-1',
-      }),
-    )
+      },
+    })
+    const authorizeUrl = new URL(String(asRecord(authorizeResult.data).authUrl))
     expect(authorizeUrl.origin).toBe('https://eu.posthog.com')
     expect(authorizeUrl.pathname).toBe('/oauth/authorize/')
     expect(authorizeUrl.searchParams.get('client_id')).toBe('client-id')
@@ -220,16 +278,25 @@ describe('posthog error source support', () => {
       .mockResolvedValueOnce(tokenResponse())
 
     await expect(
-      provider.exchangeCodeForToken({
-        clientId: 'client-id',
-        clientSecret: '',
-        code: 'code-1',
-        redirectUri: 'bitsentry-desktop-ce://oauth/callback',
-        codeVerifier: 'verifier-1',
+      runtime.executeAction({
+        pluginId: 'posthog',
+        actionId: 'exchange_code_for_token',
+        auth: {
+          baseUrl: 'https://eu.posthog.com',
+        },
+        input: {
+          clientId: 'client-id',
+          clientSecret: '',
+          code: 'code-1',
+          redirectUri: 'bitsentry-desktop-ce://oauth/callback',
+          codeVerifier: 'verifier-1',
+        },
       }),
     ).resolves.toMatchObject({
-      accessToken: 'phx-access-token',
-      refreshToken: 'phr-refresh-token',
+      data: {
+        accessToken: 'phx-access-token',
+        refreshToken: 'phr-refresh-token',
+      },
     })
     const [authorizationCodeUrl, authorizationCodeRequestInit] = fetchMock.mock.calls[0]
     expect(authorizationCodeUrl).toBe('https://eu.posthog.com/oauth/token/')
@@ -238,15 +305,181 @@ describe('posthog error source support', () => {
       'grant_type=authorization_code',
     )
 
-    await provider.refreshToken({
-      clientId: 'client-id',
-      clientSecret: '',
-      refreshToken: 'phr-refresh-token',
+    await runtime.executeAction({
+      pluginId: 'posthog',
+      actionId: 'refresh_token',
+      auth: {
+        baseUrl: 'https://eu.posthog.com',
+      },
+      input: {
+        clientId: 'client-id',
+        clientSecret: '',
+        refreshToken: 'phr-refresh-token',
+      },
     })
     const [refreshUrl, refreshRequestInit] = fetchMock.mock.calls[1]
     expect(refreshUrl).toBe('https://eu.posthog.com/oauth/token/')
     expect(refreshRequestInit?.method).toBe('POST')
     expect(requestBodyText(refreshRequestInit?.body)).toContain('grant_type=refresh_token')
+  })
+
+  it('starts OAuth for index-installed plugin source types', async () => {
+    const upsertSetting = vi.fn<DbClient['setting']['upsert']>().mockResolvedValue({})
+    const db = {
+      setting: {
+        findMany: vi.fn().mockResolvedValue([]),
+        upsert: upsertSetting,
+        findUnique: vi.fn().mockResolvedValue(null),
+        delete: vi.fn().mockResolvedValue({}),
+      },
+    }
+    const executeAction = vi.fn(
+      (_input: DesktopPluginExecutionRequest): Promise<DesktopPluginExecutionResult> =>
+        Promise.resolve({
+          pluginId: 'github',
+          actionId: 'build_authorize_url',
+          ok: true,
+          status: 200,
+          summary: 'Built authorize URL',
+          data: {
+            authUrl: 'https://github.com/login/oauth/authorize?state=state-1',
+          },
+        }),
+    )
+    const manager = new OauthManagerService(
+      db,
+      createPluginRuntime([
+        createOAuthDescriptor({
+          pluginId: 'github',
+          sourceType: 'github',
+          oauth: {
+            envClientIdName: 'GITHUB_OAUTH_CLIENT_ID',
+            envClientSecretName: 'GITHUB_OAUTH_CLIENT_SECRET',
+            envRedirectUriName: 'GITHUB_OAUTH_REDIRECT_URI',
+            defaultRedirectUri: 'bitsentry-desktop-ce://oauth/callback',
+            scopes: ['repo'],
+            publicClient: false,
+          },
+        }),
+      ], executeAction),
+    )
+
+    const initiated = await manager.initiateOAuth('github', {
+      pluginId: 'github',
+      clientId: 'client-id',
+    })
+
+    expect(initiated.authUrl).toBe('https://github.com/login/oauth/authorize?state=state-1')
+    const githubAuthorizeRequest = executeAction.mock.calls[0]?.[0] as
+      | DesktopPluginExecutionRequest
+      | undefined
+    expect(githubAuthorizeRequest).toMatchObject({
+      pluginId: 'github',
+      actionId: 'build_authorize_url',
+      auth: {},
+    })
+    expect(githubAuthorizeRequest?.input).toMatchObject({
+      clientId: 'client-id',
+      redirectUri: 'bitsentry-desktop-ce://oauth/callback',
+      scopes: ['repo'],
+    })
+    const upsertInput = upsertSetting.mock.calls[0][0]
+    expect(JSON.parse(String(upsertInput.create.value))).toMatchObject({
+      sourceType: 'github',
+      pluginId: 'github',
+    })
+  })
+
+  it('starts OAuth for code plugins without host-owned base URL restrictions', async () => {
+    const upsertSetting = vi.fn<DbClient['setting']['upsert']>().mockResolvedValue({})
+    const db = {
+      setting: {
+        findMany: vi.fn().mockResolvedValue([]),
+        upsert: upsertSetting,
+        findUnique: vi.fn().mockResolvedValue(null),
+        delete: vi.fn().mockResolvedValue({}),
+      },
+    }
+    const executeAction = vi.fn(
+      (_input: DesktopPluginExecutionRequest): Promise<DesktopPluginExecutionResult> =>
+        Promise.resolve({
+          pluginId: 'posthog',
+          actionId: 'build_authorize_url',
+          ok: true,
+          status: 200,
+          summary: 'Built authorize URL',
+          data: {
+            authUrl: 'https://posthog.example/oauth?state=state-1',
+          },
+        }),
+    )
+    const manager = new OauthManagerService(
+      db,
+      createPluginRuntime([
+        createOAuthDescriptor({
+          pluginId: 'posthog',
+          sourceType: 'posthog',
+          oauth: posthogOauthConfig,
+        }),
+      ], executeAction),
+    )
+
+    const initiated = await manager.initiateOAuth('posthog', {
+      pluginId: 'posthog',
+      clientId: 'client-id',
+      baseUrl: 'https://self-hosted.posthog.internal',
+    })
+
+    expect(initiated.authUrl).toBe('https://posthog.example/oauth?state=state-1')
+    const posthogAuthorizeRequest = executeAction.mock.calls[0]?.[0] as
+      | DesktopPluginExecutionRequest
+      | undefined
+    expect(posthogAuthorizeRequest).toMatchObject({
+      pluginId: 'posthog',
+      actionId: 'build_authorize_url',
+      auth: {
+        baseUrl: 'https://self-hosted.posthog.internal',
+      },
+    })
+    expect(posthogAuthorizeRequest?.input).toMatchObject({
+      clientId: 'client-id',
+    })
+    const upsertInput = upsertSetting.mock.calls[0][0]
+    expect(JSON.parse(String(upsertInput.create.value))).toMatchObject({
+      sourceType: 'posthog',
+      pluginId: 'posthog',
+      providerBaseUrl: 'https://self-hosted.posthog.internal',
+    })
+  })
+
+  it('rejects code plugins without plugin OAuth metadata', async () => {
+    const db = {
+      setting: {
+        findMany: vi.fn().mockResolvedValue([]),
+        upsert: vi.fn().mockResolvedValue({}),
+        findUnique: vi.fn().mockResolvedValue(null),
+        delete: vi.fn().mockResolvedValue({}),
+      },
+    }
+    const executeAction = vi.fn()
+    const manager = new OauthManagerService(
+      db,
+      createPluginRuntime([
+        createOAuthDescriptor({
+          pluginId: 'posthog',
+          sourceType: 'posthog',
+        }),
+      ], executeAction),
+    )
+
+    await expect(
+      manager.initiateOAuth('posthog', {
+        pluginId: 'posthog',
+        clientId: 'client-id',
+        baseUrl: 'https://eu.posthog.com',
+      }),
+    ).rejects.toThrow('OAuth is not configured for source type: posthog')
+    expect(executeAction).not.toHaveBeenCalled()
   })
 
   it('preserves the selected PostHog base URL across OAuth state and token exchange', async () => {
@@ -259,6 +492,7 @@ describe('posthog error source support', () => {
           key: 'errorSources.oauth.state-1',
           value: JSON.stringify({
             sourceType: 'posthog',
+            pluginId: 'posthog',
             codeVerifier: 'verifier-1',
             createdAt: new Date().toISOString(),
             providerBaseUrl: 'https://eu.posthog.com',
@@ -269,10 +503,11 @@ describe('posthog error source support', () => {
     }
     const manager = new OauthManagerService(
       db,
-      new ErrorSourceProviderFactory(),
+      createRepoPluginRuntime(),
     )
 
     const initiated = await manager.initiateOAuth('posthog', {
+      pluginId: 'posthog',
       clientId: 'client-id',
       baseUrl: 'https://eu.posthog.com',
     })
@@ -293,6 +528,7 @@ describe('posthog error source support', () => {
     const upsertInput = upsertSetting.mock.calls[0][0]
     expect(JSON.parse(String(upsertInput.create.value))).toMatchObject({
       sourceType: 'posthog',
+      pluginId: 'posthog',
       providerBaseUrl: 'https://eu.posthog.com',
     })
 
@@ -310,6 +546,7 @@ describe('posthog error source support', () => {
     )
 
     await manager.completeOAuth('posthog', {
+      pluginId: 'posthog',
       code: 'code-1',
       state: 'state-1',
       clientId: 'client-id',

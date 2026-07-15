@@ -4,6 +4,7 @@ import log from "electron-log";
 import {
   createDesktopRunbookHandlers,
   type DesktopRunbookArtifactIo,
+  type DesktopRunbookImportEdition,
   type DesktopRunbookHandlerDependencies,
   type DesktopRunbookHandlersDatabase,
 } from "./desktop-runbook.handlers";
@@ -24,6 +25,9 @@ export function createDesktopRunbookHandlerBindings(
     createRunbookHandlers(
       db: DesktopRunbookHandlersDatabase,
       dependencies: SharedDesktopRunbookHandlerDependencies,
+      options?: {
+        edition?: DesktopRunbookImportEdition;
+      },
     ) {
       return createDesktopRunbookHandlers(db, {
         ...dependencies,
@@ -37,7 +41,7 @@ export function createDesktopRunbookHandlerBindings(
           consumeApprovedRunbookImportPath,
         },
         logger: log,
-      });
+      }, options);
     },
   };
 }

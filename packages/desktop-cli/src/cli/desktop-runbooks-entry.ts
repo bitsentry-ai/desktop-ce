@@ -4,7 +4,7 @@ import {
   runRunbooksCli,
   type RunbookCliRuntime,
   type RunbookCliRuntimeOptions,
-} from './runbooks-cli'
+} from './runbooks-cli.js'
 import { DesktopRunbookRuntime } from '@bitsentry-desktop/runbook-runtime'
 
 log.transports.console.level = 'error'

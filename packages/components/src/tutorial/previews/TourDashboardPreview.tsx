@@ -9,8 +9,8 @@ import { cn } from "../../lib/utils";
 import { useTranslation } from "@bitsentry-ce/i18n";
 
 const DEMO_SOURCES = [
-  { id: "lumendesk", name: "Lumendesk", type: "posthog" },
-  { id: "jagad", name: "Jagad", type: "sentry" },
+  { id: "github-issues", name: "GitHub Issues", type: "github" },
+  { id: "alert-index", name: "Alert Index", type: "alert_index" },
 ];
 
 const DEMO_DIAGNOSES = [
@@ -97,7 +97,7 @@ export default function TourDashboardPreview() {
                           data-tour="dashboard-source-picker"
                           className="relative flex h-9 w-full items-center rounded-md border bg-background px-3 text-sm"
                         >
-                          <span>{t("dashboard.tourDashboardPreview.lumendeskPosthog")}</span>
+                          <span>{t("dashboard.tourDashboardPreview.productionGitHubIssues")}</span>
                           <ChevronDown
                             size={14}
                             className="absolute right-2 text-muted-foreground"

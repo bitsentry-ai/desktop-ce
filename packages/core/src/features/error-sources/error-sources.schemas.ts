@@ -1,9 +1,7 @@
 import { z } from 'zod';
 
-export const errorSourceTypeSchema = z.enum(['sentry', 'wazuh', 'posthog']);
+export const errorSourceTypeSchema = z.string().trim().min(1);
 export type ErrorSourceType = z.infer<typeof errorSourceTypeSchema>;
-
-export const POSTHOG_DEFAULT_BASE_URL = 'https://us.posthog.com';
 
 export const logLevelThresholdSchema = z.enum([
   'error',
@@ -24,45 +22,19 @@ export const errorSourceRowSchema = z.object({
   lastSyncError: z.string().nullable(),
 });
 
-export const createSentryErrorSourceSchema = z.object({
-  sourceType: z.literal('sentry'),
+export const createPluginErrorSourceSchema = z.object({
+  pluginId: z.string().trim().min(1),
+  sourceType: errorSourceTypeSchema,
   name: z.string().trim().min(1),
-  authToken: z.string().trim().min(1),
-  organizationSlug: z.string().trim().min(1),
-  projectSlugs: z.array(z.string().trim().min(1)).default([]),
+  setupValues: z.record(z.string(), z.unknown()).optional(),
+  configuration: z.record(z.string(), z.unknown()).optional(),
+  additionalMetadata: z.record(z.string(), z.unknown()).optional(),
   logLevelThreshold: logLevelThresholdSchema.default('error'),
   syncEnabled: z.boolean().default(true),
   autoDiagnosisEnabled: z.boolean().default(false),
 });
 
-export const createWazuhErrorSourceSchema = z.object({
-  sourceType: z.literal('wazuh'),
-  name: z.string().trim().min(1),
-  baseUrl: z.url().optional(),
-  authToken: z.string().trim().optional(),
-  indexPatterns: z.array(z.string().trim().min(1)).default([]),
-  logLevelThreshold: logLevelThresholdSchema.default('error'),
-  syncEnabled: z.boolean().default(true),
-  autoDiagnosisEnabled: z.boolean().default(false),
-});
-
-export const createPostHogErrorSourceSchema = z.object({
-  sourceType: z.literal('posthog'),
-  name: z.string().trim().min(1),
-  authToken: z.string().trim().min(1),
-  organizationId: z.string().trim().min(1).optional(),
-  projectIds: z.array(z.string().trim().min(1)).default([]),
-  baseUrl: z.url().default(POSTHOG_DEFAULT_BASE_URL),
-  logLevelThreshold: logLevelThresholdSchema.default('error'),
-  syncEnabled: z.boolean().default(true),
-  autoDiagnosisEnabled: z.boolean().default(false),
-});
-
-export const createErrorSourceSchema = z.discriminatedUnion('sourceType', [
-  createSentryErrorSourceSchema,
-  createWazuhErrorSourceSchema,
-  createPostHogErrorSourceSchema,
-]);
+export const createErrorSourceSchema = createPluginErrorSourceSchema;
 
 export const syncErrorSourceSchema = z.object({
   id: z.string().trim().min(1),
@@ -99,7 +71,7 @@ export const errorSourceSyncResultSchema = z.object({
 
 export const testErrorSourceConnectionResultSchema = z.object({
   success: z.boolean(),
-  provider: errorSourceTypeSchema,
+  provider: z.string().trim().min(1),
   organizationCount: z.number(),
   projectCount: z.number(),
 });
@@ -109,23 +81,13 @@ export const testErrorSourceConnectionResultSchema = z.object({
  * against a provider's listOrganizations / listProjects endpoints so the UI
  * can render org/project pickers without forcing the user to type slugs.
  *
- * Wazuh is intentionally excluded: it has no org/project concept and a
- * universal probe over an unknown index pattern would behave very differently
- * from the sentry/posthog flow.
+ * The source type is owned by the installed first-party code plugin. Probing is
+ * supported when that plugin declares listOrganizations/listProjects actions.
  */
 export const probeErrorSourceSchema = z.object({
-  sourceType: z.enum(['sentry', 'posthog']),
-  authToken: z.string().trim().min(1),
-  baseUrl: z.url().optional(),
-  /**
-   * Optional org disambiguation. The PostHog create/update flows use
-   * `organizationId` as the canonical field; we accept both names here so a
-   * backend/dashboard caller can pass the same value through every step of
-   * the flow without juggling field names. The service normalizes whichever
-   * one is provided into a single slug before fanning out.
-   */
-  organizationSlug: z.string().trim().min(1).optional(),
-  organizationId: z.string().trim().min(1).optional(),
+  pluginId: z.string().trim().min(1),
+  sourceType: errorSourceTypeSchema,
+  setupValues: z.record(z.string(), z.unknown()).optional(),
 });
 
 export const probeErrorSourceResultSchema = z.object({

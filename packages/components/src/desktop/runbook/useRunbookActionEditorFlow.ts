@@ -44,6 +44,7 @@ type UseRunbookActionEditorFlowOptions = {
   summarizeRunbookActionForTelemetry: (action: RunbookActionRecord) => Record<string, unknown>;
   replaceRunbook: (updated: RunbookRecord) => void;
   validErrorSourceIds: Set<string>;
+  validPluginActionIdsByPluginId: Map<string, Set<string>>;
 };
 
 export function useRunbookActionEditorFlow({
@@ -56,6 +57,7 @@ export function useRunbookActionEditorFlow({
   summarizeRunbookActionForTelemetry,
   replaceRunbook,
   validErrorSourceIds,
+  validPluginActionIdsByPluginId,
 }: UseRunbookActionEditorFlowOptions) {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const expandedCardRef = useRef<HTMLDivElement | null>(null);
@@ -264,7 +266,13 @@ export function useRunbookActionEditorFlow({
         return;
       }
 
-      if (!canPersistRunbookAction(action, validErrorSourceIds)) {
+      if (
+        !canPersistRunbookAction(
+          action,
+          validErrorSourceIds,
+          validPluginActionIdsByPluginId,
+        )
+      ) {
         return;
       }
 
@@ -302,6 +310,7 @@ export function useRunbookActionEditorFlow({
       summarizeRunbookActionForTelemetry,
       summarizeRunbookForTelemetry,
       validErrorSourceIds,
+      validPluginActionIdsByPluginId,
     ],
   );
 

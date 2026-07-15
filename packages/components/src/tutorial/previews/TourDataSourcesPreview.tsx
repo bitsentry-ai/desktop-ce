@@ -1,5 +1,5 @@
 /**
- * Static preview of External Sources setup and runbook usage.
+ * Static preview of plugin setup and runbook usage.
  * Renders hardcoded demo data; no database, IPC, or localStorage access.
  */
 // i18n-ignore-file -- scripted demo content for product tour preview
@@ -16,7 +16,7 @@ import Navbar from "../../layout/Navbar";
 import TopBar from "../../layout/TopBar";
 import { cn } from "../../lib/utils";
 
-const providerCards = ["Sentry", "Wazuh", "PostHog"];
+const providerCards = ["GitHub Issues", "Error Events", "Alert Index"];
 const actionTypes = [
   { id: "shell", label: "Shell", icon: Terminal },
   { id: "llm", label: "AI", icon: Bot },
@@ -36,7 +36,7 @@ export default function TourDataSourcesPreview() {
               <div className="mb-4 flex items-start justify-between gap-4">
                 <div>
                   <h1 className="text-lg font-semibold text-foreground">
-                    External Sources
+                    Plugins
                   </h1>
                   <p className="text-sm text-muted-foreground">
                     Connect telemetry providers that Runbooks can query.
@@ -46,7 +46,7 @@ export default function TourDataSourcesPreview() {
                   data-tour="data-sources-add-source"
                   className="rounded-md border border-border px-3 py-1.5 text-xs font-medium"
                 >
-                  Add Source
+                  Install Plugin
                 </button>
               </div>
 
@@ -60,17 +60,21 @@ export default function TourDataSourcesPreview() {
                   </p>
                 </div>
 
-                <div data-tour="data-sources-provider-picker" className="space-y-2">
+                <div
+                  data-tour="data-sources-provider-picker"
+                  className="space-y-2"
+                >
                   <label className="text-sm text-muted-foreground">
                     Source Type
                   </label>
                   <div className="grid grid-cols-3 gap-2">
                     {providerCards.map((provider) => {
-                      const selected = provider === "Sentry";
+                      const selected = provider === "GitHub Issues";
                       let cardClassName = "border-border bg-card";
                       let iconClassName = "text-muted-foreground";
                       if (selected) {
-                        cardClassName = "border-primary bg-primary/10 ring-1 ring-primary";
+                        cardClassName =
+                          "border-primary bg-primary/10 ring-1 ring-primary";
                         iconClassName = "text-primary";
                       }
 
@@ -82,10 +86,7 @@ export default function TourDataSourcesPreview() {
                             cardClassName,
                           )}
                         >
-                          <DatabaseZap
-                            size={26}
-                            className={iconClassName}
-                          />
+                          <DatabaseZap size={26} className={iconClassName} />
                           <span className="font-medium">{provider}</span>
                         </button>
                       );
@@ -93,12 +94,15 @@ export default function TourDataSourcesPreview() {
                   </div>
                 </div>
 
-                <div data-tour="data-sources-credentials" className="mt-4 space-y-3">
+                <div
+                  data-tour="data-sources-credentials"
+                  className="mt-4 space-y-3"
+                >
                   <label className="block space-y-1">
                     <span className="text-sm text-muted-foreground">Name</span>
                     <input
                       readOnly
-                      value="Production Sentry"
+                      value="Production GitHub Issues"
                       className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
                     />
                   </label>
@@ -120,17 +124,17 @@ export default function TourDataSourcesPreview() {
                       </span>
                       <input
                         readOnly
-                        value="bitsentry"
+                        value="bitsentry-ai"
                         className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
                       />
                     </label>
                     <label className="block space-y-1">
                       <span className="text-sm text-muted-foreground">
-                        Projects
+                        Repositories
                       </span>
                       <input
                         readOnly
-                        value="api, worker"
+                        value="monorepo, runbooks"
                         className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
                       />
                     </label>
@@ -151,7 +155,8 @@ export default function TourDataSourcesPreview() {
                     Runbook Action
                   </h2>
                   <p className="text-sm text-muted-foreground">
-                    Reference the connected source from an External Source action.
+                    Reference the connected source from an External Source
+                    action.
                   </p>
                 </div>
                 <button className="flex size-8 items-center justify-center rounded-md bg-primary text-primary-foreground">
@@ -167,7 +172,8 @@ export default function TourDataSourcesPreview() {
                   {actionTypes.map(({ id, label, icon: Icon }) => {
                     let actionClassName = "border-border text-muted-foreground";
                     if (id === "external_source") {
-                      actionClassName = "border-primary bg-primary/5 text-foreground";
+                      actionClassName =
+                        "border-primary bg-primary/5 text-foreground";
                     }
 
                     return (
@@ -205,7 +211,7 @@ export default function TourDataSourcesPreview() {
                       External Source
                     </span>
                     <select className="w-full rounded-lg border border-border bg-background px-3 py-2 text-xs">
-                      <option>Production Sentry (sentry)</option>
+                      <option>Production GitHub Issues (github)</option>
                     </select>
                     <p className="text-[11px] text-muted-foreground">
                       Connected sources from Settings appear here.
@@ -221,7 +227,9 @@ export default function TourDataSourcesPreview() {
                     </span>
                     <input
                       readOnly
-                      value={"environment:${globals.environment} host:{{host}} level:error"}
+                      value={
+                        "environment:${globals.environment} host:{{host}} level:error"
+                      }
                       className="w-full rounded-lg border border-border bg-muted/30 px-3 py-2 font-mono text-xs outline-none"
                     />
                     <p className="text-[11px] text-muted-foreground">

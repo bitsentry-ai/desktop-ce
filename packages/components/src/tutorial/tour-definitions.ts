@@ -90,7 +90,7 @@ export function getTours(t: Translate): Record<TourId, TourDefinition> {
         popover: {
           title: t("common.tours.main.title.settings"),
           description: t(
-            "common.tours.main.description.connectLLMProvidersAttachExternalSourcesLikeSentry",
+            "common.tours.main.description.connectLLMProvidersAttachCodePluginSources",
           ),
           side: "right",
           align: "start",
@@ -653,7 +653,7 @@ export function getTours(t: Translate): Record<TourId, TourDefinition> {
         popover: {
           title: t("common.tours.dataSources.title.chooseProvider"),
           description: t(
-            "common.tours.dataSources.description.pickSentryWazuhOrPostHog.",
+            "common.tours.dataSources.description.pickCodePluginSource.",
           ),
           side: "bottom",
           align: "center",

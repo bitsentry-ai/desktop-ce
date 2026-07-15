@@ -4,13 +4,13 @@ import { errorSourceTypeSchema } from "./error-sources.schemas";
 
 export const DEFAULT_EXTERNAL_SOURCE_QUERY_LIMIT = 20;
 
-export const externalSourceQueryProviderSchema = errorSourceTypeSchema;
+export const externalSourceQuerySourceTypeSchema = errorSourceTypeSchema;
 
 export const externalSourceQueryRequestSchema = z.object({
   executionId: z.string().trim().min(1),
   stepId: z.string().trim().min(1),
   sourceId: z.string().trim().min(1),
-  sourceType: externalSourceQueryProviderSchema,
+  sourceType: externalSourceQuerySourceTypeSchema,
   sourceName: z.string().trim().min(1),
   organizationSlug: z.string().trim().optional(),
   projectSlugs: z.array(z.string().trim().min(1)).default([]),

@@ -224,10 +224,12 @@
   },
   "scripts": {
     "build": "rm -rf dist && tsc -p tsconfig.build.json",
-    "lint": "eslint .",
-    "lint:fix": "eslint . --fix"
+    "lint": "node ../../scripts/eslint/ts7-unavailable.mjs",
+    "lint:fix": "eslint . --fix",
+    "test": "vitest run --config vitest.config.ts"
   },
   "dependencies": {
+    "@bitsentry/plugin-sdk": "workspace:*",
     "better-sqlite3": "^12.6.2",
     "drizzle-orm": "^0.45.2",
     "electron-log": "^5.4.3",
@@ -237,6 +239,7 @@
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^25.3.0",
-    "typescript": "^5.9.3"
+    "typescript": "^7.0.2",
+    "vitest": "^4.1.5"
   }
 }

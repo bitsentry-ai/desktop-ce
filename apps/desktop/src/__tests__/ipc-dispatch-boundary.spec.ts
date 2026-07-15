@@ -46,9 +46,10 @@ describe('desktop IPC dispatch boundary', () => {
   it.each([
     ['agent:start', { prompt: 'Summarize the local logs.' }],
     ['errorSources:create', {
+      pluginId: 'sentry',
       sourceType: 'sentry',
       name: 'Production',
-      authToken: 'not-a-real-secret',
+      setupValues: { authToken: 'not-a-real-secret' },
     }],
     ['dialog:showSaveDialog', {
       defaultFileName: 'runbooks.json',

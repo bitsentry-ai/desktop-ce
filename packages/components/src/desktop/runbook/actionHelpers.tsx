@@ -4,6 +4,7 @@ import {
   AlertCircle,
   Bot,
   Globe,
+  Puzzle,
   Terminal,
   type LucideIcon,
 } from "../../icons";
@@ -17,6 +18,7 @@ import type {
   RunbookHttpHeader,
   RunbookHttpMethod,
   RunbookLlmProviderKey,
+  PluginDescriptor,
 } from "../../services";
 import type { TranslationFn } from "./types";
 
@@ -35,6 +37,7 @@ export const ACTION_TYPES = [
   "shell",
   "llm",
   "http",
+  "plugin",
   "external_source",
 ] as const satisfies readonly RunbookActionType[];
 
@@ -64,6 +67,14 @@ export const ACTION_META: Record<SupportedActionType, ActionMeta> = {
     placeholderKey: "runbooks.runbook.exampleFetchApiData",
     fieldLabelKey: "runbooks.runbook.url",
     fieldPlaceholderKey: "runbooks.runbook.apiEndpointPlaceholder",
+  },
+  plugin: {
+    labelKey: "runbooks.runbook.actionTypePlugin",
+    icon: Puzzle,
+    badgeCls: "text-rose-500 bg-rose-500/10 border-rose-500/20",
+    placeholderKey: "runbooks.runbook.exampleQueryGitHubIssues",
+    fieldLabelKey: "runbooks.runbook.pluginAction",
+    fieldPlaceholderKey: "runbooks.runbook.selectAPluginAction",
   },
   external_source: {
     labelKey: "runbooks.runbook.actionTypeExternalSource",
@@ -161,6 +172,7 @@ export function actionSummary(
   action: RunbookActionRecord,
   errorSourceLabelsById: Record<string, string>,
   providerLabelsByKey: Partial<Record<RunbookLlmProviderKey, string>>,
+  pluginDescriptors: PluginDescriptor[],
   t: (key: string, options?: Record<string, unknown>) => string,
 ): string {
   const suffix = getActionSummarySuffix(action, t);
@@ -172,6 +184,8 @@ export function actionSummary(
       return summarizeLlmAction(action, providerLabelsByKey, suffix, t);
     case "http":
       return summarizeHttpAction(action, suffix);
+    case "plugin":
+      return summarizePluginAction(action, pluginDescriptors, suffix, t);
     case "external_source":
       return summarizeExternalSourceAction(
         action,
@@ -215,12 +229,17 @@ export function createDraftAction(): RunbookActionRecord {
 export function canPersistRunbookAction(
   action: RunbookActionRecord,
   validErrorSourceIds: Set<string>,
+  validPluginActionIdsByPluginId: Map<string, Set<string>>,
 ): boolean {
   if (action.title.trim().length === 0) {
     return false;
   }
 
   if (!hasValidExternalSourceActionTarget(action, validErrorSourceIds)) {
+    return false;
+  }
+
+  if (!hasValidPluginActionTarget(action, validPluginActionIdsByPluginId)) {
     return false;
   }
 
@@ -259,6 +278,7 @@ export function getRunbookActionRenderState(input: {
   action: RunbookActionRecord;
   modelDropdownOpen: boolean;
   validErrorSourceIds: Set<string>;
+  validPluginActionIdsByPluginId: Map<string, Set<string>>;
   selectableLlmProviderCount: number;
   llmProviderLabelsByKey: Partial<Record<RunbookLlmProviderKey, string>>;
   errorSourcesLoading: boolean;
@@ -285,7 +305,11 @@ export function getRunbookActionRenderState(input: {
     logFilterErrors: validateRunbookLogFilterConfig(logFilter),
     logFilterPreview: previewRunbookLogFilter(logFilterSample, logFilter),
     logFilterSample,
-    canSaveAction: canPersistRunbookAction(action, input.validErrorSourceIds),
+    canSaveAction: canPersistRunbookAction(
+      action,
+      input.validErrorSourceIds,
+      input.validPluginActionIdsByPluginId,
+    ),
     llmProviderHint: runbookLlmProviderHint(
       action,
       input.selectableLlmProviderCount,
@@ -380,6 +404,37 @@ function summarizeHttpAction(
   return `${method} (no URL)${suffix}`;
 }
 
+function summarizePluginAction(
+  action: RunbookActionRecord,
+  pluginDescriptors: PluginDescriptor[],
+  suffix: string,
+  t: (key: string) => string,
+): string {
+  let pluginLabel = t("runbooks.runbook.noPluginSelected");
+  let selectedPlugin: PluginDescriptor | undefined;
+  if (action.pluginId !== undefined && action.pluginId.length > 0) {
+    selectedPlugin = pluginDescriptors.find((plugin) => plugin.id === action.pluginId);
+    pluginLabel =
+      selectedPlugin?.name ?? `${t("runbooks.runbook.plugin")} (${action.pluginId})`;
+  }
+
+  let actionLabel = t("runbooks.runbook.noPluginActionSelected");
+  if (selectedPlugin !== undefined) {
+    const selectedAction = selectedPlugin.actions.find(
+      (pluginAction) => pluginAction.id === action.pluginActionId,
+    );
+    if (selectedAction !== undefined) {
+      actionLabel = selectedAction.title;
+    } else if (action.pluginActionId?.trim().length) {
+      actionLabel = action.pluginActionId;
+    }
+  } else if (action.pluginActionId?.trim().length) {
+    actionLabel = action.pluginActionId;
+  }
+
+  return `${pluginLabel} - ${actionLabel}${suffix}`;
+}
+
 function summarizeExternalSourceAction(
   action: RunbookActionRecord,
   errorSourceLabelsById: Record<string, string>,
@@ -411,6 +466,23 @@ function hasValidExternalSourceActionTarget(
   const query = action.query?.trim() ?? "";
   const sourceId = action.sourceId ?? "";
   return query.length > 0 && validErrorSourceIds.has(sourceId);
+}
+
+function hasValidPluginActionTarget(
+  action: RunbookActionRecord,
+  validPluginActionIdsByPluginId: Map<string, Set<string>>,
+): boolean {
+  if (action.type !== "plugin") {
+    return true;
+  }
+
+  const pluginId = action.pluginId?.trim() ?? "";
+  const pluginActionId = action.pluginActionId?.trim() ?? "";
+  if (pluginId.length === 0 || pluginActionId.length === 0) {
+    return false;
+  }
+
+  return validPluginActionIdsByPluginId.get(pluginId)?.has(pluginActionId) === true;
 }
 
 function runbookModelBorderClass(modelDropdownOpen: boolean): string {

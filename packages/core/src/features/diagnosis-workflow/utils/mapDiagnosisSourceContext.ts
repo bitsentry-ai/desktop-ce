@@ -30,10 +30,7 @@ const LOG_LEVEL: Readonly<Record<string, DiagnosisLogLevel | undefined>> = {
 const SOURCE_KIND_BY_CATEGORY: Readonly<
   Partial<Record<string, DiagnosisSourceKind>>
 > = {
-  posthog: "error_event",
-  sentry: "error_event",
   telemetry: "telemetry_entry",
-  wazuh: "telemetry_entry",
 };
 
 export interface DiagnosisSourceContextPayload {
@@ -114,8 +111,6 @@ function inferSourceCategory(
 
   const metadataSourceType = sourceText(sourceMetadata?.sourceType)?.toLowerCase();
   if (metadataSourceType !== undefined) {
-    if (metadataSourceType === "sentry") return "sentry";
-    if (metadataSourceType === "wazuh") return "wazuh";
     return metadataSourceType;
   }
 
@@ -130,21 +125,22 @@ function inferSourceKind(
   if (explicit !== undefined) return explicit;
   const sourceKind = SOURCE_KIND_BY_CATEGORY[sourceCategory];
   if (sourceKind !== undefined) return sourceKind;
+  if (sourceCategory !== "unknown") return "error_event";
   return "unknown";
 }
 
-function defaultLogLevel(sourceCategory: DiagnosisSourceCategory): DiagnosisLogLevel {
-  if (sourceCategory === "sentry" || sourceCategory === "posthog")
+function defaultLogLevel(sourceKind: DiagnosisSourceKind): DiagnosisLogLevel {
+  if (sourceKind === "error_event" || sourceKind === "error_issue")
     return "application";
   return "infrastructure";
 }
 
 function inferSeverity(input: {
-  sourceCategory: DiagnosisSourceCategory;
+  sourceKind: DiagnosisSourceKind;
   severity?: string | number | null;
   ruleLevel?: number | null;
 }): DiagnosisSeverity {
-  if (input.sourceCategory === "telemetry" || input.sourceCategory === "wazuh") {
+  if (input.sourceKind === "telemetry_entry") {
     // For infrastructure-style telemetry sources, severity is derived only from rule level.
     return mapTelemetrySeverityByRuleLevel(parseRuleLevel(input.ruleLevel));
   }
@@ -282,9 +278,9 @@ function sourceClassification(
 ): SourceClassification {
   const sourceCategory = inferSourceCategory(input.sourceCategory, input.sourceMetadata);
   const sourceKind = inferSourceKind(input.sourceKind, sourceCategory);
-  const logLevel = normalizeLogLevel(input.logLevel) ?? defaultLogLevel(sourceCategory);
+  const logLevel = normalizeLogLevel(input.logLevel) ?? defaultLogLevel(sourceKind);
   const severity = inferSeverity({
-    sourceCategory,
+    sourceKind,
     severity: input.severity ?? input.providerNativeSeverity,
     ruleLevel: input.ruleLevel,
   });

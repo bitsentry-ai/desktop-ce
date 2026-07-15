@@ -23,8 +23,8 @@ export interface ErrorSourceConfiguration {
   projectIds?: string[];
   projectSlugs?: string[];
   projectNames?: string[];
-  sentryBaseUrl?: string;
-  posthogBaseUrl?: string;
+  baseUrl?: string;
+  indexPatterns?: string[];
   oauthClientId?: string;
   oauthClientSecret?: string;
   oauthRedirectUri?: string;

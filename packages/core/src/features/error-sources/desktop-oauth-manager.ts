@@ -1,8 +1,13 @@
 import { spawn } from "child_process";
 import { createHash, randomBytes } from "crypto";
 import type { ErrorSourceType } from "./error-sources.schemas";
-import { getProviderForSource } from "./desktop-posthog-provider-binding";
-import { assertAllowedPostHogBaseUrl } from "./posthog-base-url";
+import type { DesktopPluginRuntimeService } from "../plugins";
+import { createDesktopNodePluginRuntimeService } from "../plugins/node";
+import {
+  buildPluginAuthorizeUrl,
+  exchangePluginCodeForToken,
+  resolvePluginOAuthConfig,
+} from "./desktop-plugin-oauth-actions";
 
 export interface DesktopOAuthSettingsDatabase {
   setting: {
@@ -47,28 +52,21 @@ export interface DesktopOAuthTokenResponse {
   scope?: string;
 }
 
-export interface DesktopOAuthProvider {
-  buildAuthorizeUrl(input: DesktopOAuthAuthorizeInput): string;
-  exchangeCodeForToken(
-    input: DesktopOAuthTokenExchangeInput,
-  ): Promise<DesktopOAuthTokenResponse>;
-}
-
 export interface InitiateOAuthInput {
+  pluginId?: string;
   clientId?: string;
   redirectUri?: string;
   baseUrl?: string;
-  posthogBaseUrl?: string;
 }
 
 export interface CompleteOAuthInput {
   code: string;
   state: string;
+  pluginId?: string;
   clientId?: string;
   clientSecret?: string;
   redirectUri?: string;
   baseUrl?: string;
-  posthogBaseUrl?: string;
 }
 
 export interface OAuthProviderConfig {
@@ -82,41 +80,11 @@ export interface OAuthProviderConfig {
 
 type PendingOauthState = {
   sourceType: ErrorSourceType;
+  pluginId?: string;
   codeVerifier: string;
   createdAt: string;
   providerBaseUrl?: string;
 };
-
-export type OAuthSourceType = Extract<ErrorSourceType, "sentry" | "posthog">;
-
-export function createDesktopOAuthProviderConfigs(
-  defaultRedirectUri: string,
-): Record<OAuthSourceType, OAuthProviderConfig> {
-  return {
-    sentry: {
-      envClientIdName: "SENTRY_OAUTH_CLIENT_ID",
-      envClientSecretName: "SENTRY_OAUTH_CLIENT_SECRET",
-      envRedirectUriName: "SENTRY_OAUTH_REDIRECT_URI",
-      defaultRedirectUri,
-      scopes: ["org:read", "project:read", "event:read"],
-      publicClient: false,
-    },
-    posthog: {
-      envClientIdName: "POSTHOG_OAUTH_CLIENT_ID",
-      envClientSecretName: "POSTHOG_OAUTH_CLIENT_SECRET",
-      envRedirectUriName: "POSTHOG_OAUTH_REDIRECT_URI",
-      defaultRedirectUri,
-      scopes: [
-        "organization:read",
-        "project:read",
-        "error_tracking:read",
-        "query:read",
-        "event:read",
-      ],
-      publicClient: true,
-    },
-  };
-}
 
 const OAUTH_STATE_PREFIX = "errorSources.oauth.";
 const OAUTH_STATE_TTL_MS = 10 * 60 * 1000;
@@ -141,43 +109,73 @@ function getRequiredEnv(name: string, sourceType: string): string {
   return value;
 }
 
+function readMissingOAuthProviderConfigKeys(
+  config: Partial<OAuthProviderConfig>,
+): string[] {
+  const missing: string[] = [];
+
+  if (typeof config.envClientIdName !== "string" || config.envClientIdName.trim().length === 0) {
+    missing.push("envClientIdName");
+  }
+  if (typeof config.envClientSecretName !== "string" || config.envClientSecretName.trim().length === 0) {
+    missing.push("envClientSecretName");
+  }
+  if (typeof config.envRedirectUriName !== "string" || config.envRedirectUriName.trim().length === 0) {
+    missing.push("envRedirectUriName");
+  }
+  if (typeof config.defaultRedirectUri !== "string" || config.defaultRedirectUri.trim().length === 0) {
+    missing.push("defaultRedirectUri");
+  }
+  if (!Array.isArray(config.scopes) || config.scopes.length === 0) {
+    missing.push("scopes");
+  }
+  if (typeof config.publicClient !== "boolean") {
+    missing.push("publicClient");
+  }
+
+  return missing;
+}
+
+function mergeOAuthProviderConfig(input: {
+  sourceType: ErrorSourceType;
+  pluginConfig?: Partial<OAuthProviderConfig>;
+}): OAuthProviderConfig {
+  if (input.pluginConfig === undefined) {
+    throw new Error(
+      `OAuth is not configured for source type: ${input.sourceType}`,
+    );
+  }
+
+  const missingKeys = readMissingOAuthProviderConfigKeys(input.pluginConfig);
+  if (missingKeys.length > 0) {
+    throw new Error(
+      `OAuth config for source type "${input.sourceType}" is incomplete. Missing: ${missingKeys.join(", ")}`,
+    );
+  }
+
+  const config = input.pluginConfig as OAuthProviderConfig;
+  return {
+    envClientIdName: config.envClientIdName,
+    envClientSecretName: config.envClientSecretName,
+    envRedirectUriName: config.envRedirectUriName,
+    defaultRedirectUri: config.defaultRedirectUri,
+    scopes: config.scopes,
+    publicClient: config.publicClient,
+  };
+}
+
 function isExpired(createdAt: string): boolean {
   const createdAtMs = new Date(createdAt).getTime();
   if (!Number.isFinite(createdAtMs)) return true;
   return Date.now() - createdAtMs > OAUTH_STATE_TTL_MS;
 }
 
-function parsePostHogExtraAllowedHosts(): string[] {
-  const raw = process.env.POSTHOG_ALLOWED_BASE_URLS;
-  if (raw === undefined || raw.length === 0) return [];
-  const out: string[] = [];
-  for (const entry of raw.split(",")) {
-    const trimmed = entry.trim();
-    if (trimmed.length === 0) continue;
-    try {
-      out.push(new URL(trimmed).host.toLowerCase());
-    } catch {
-      out.push(trimmed.toLowerCase());
-    }
-  }
-  return out;
-}
-
-function readPostHogBaseUrl(input: {
-  baseUrl?: string;
-  posthogBaseUrl?: string;
-}): string | undefined {
-  const raw = input.baseUrl?.trim() ?? input.posthogBaseUrl?.trim() ?? "";
+function readBaseUrl(input: { baseUrl?: string } | undefined): string | undefined {
+  const raw = input?.baseUrl?.trim() ?? "";
   if (raw.length === 0) {
     return undefined;
   }
   return raw;
-}
-
-function validatePostHogOAuthBaseUrl(value: string | undefined): string {
-  return assertAllowedPostHogBaseUrl(value, {
-    extraAllowedHosts: parsePostHogExtraAllowedHosts(),
-  });
 }
 
 type ElectronShellLike = {
@@ -241,72 +239,65 @@ async function openExternalUrl(url: string): Promise<void> {
   });
 }
 
-export interface DesktopOauthManagerOptions {
-  providerConfigs: Record<OAuthSourceType, OAuthProviderConfig>;
-  resolveProvider(input: {
-    sourceType: ErrorSourceType;
-    providerBaseUrl?: string;
-  }): DesktopOAuthProvider;
-}
-
-export interface DesktopOauthManagerProviderFactory {
-  getProvider(sourceType: ErrorSourceType): DesktopOAuthProvider;
-}
-
 export interface DesktopOauthManagerBindings {
-  providerConfigs: Record<OAuthSourceType, OAuthProviderConfig>;
   OauthManagerService: new (
     db: DesktopOAuthSettingsDatabase,
-    providerFactory: DesktopOauthManagerProviderFactory,
+    pluginRuntime?: DesktopPluginRuntimeService,
   ) => DesktopOauthManagerService;
 }
 
 export function createDesktopOauthManagerBindings(
-  defaultRedirectUri: string,
+  defaultRedirectUri?: string,
 ): DesktopOauthManagerBindings {
-  const providerConfigs = createDesktopOAuthProviderConfigs(defaultRedirectUri);
+  class BoundDesktopOauthManagerService extends DesktopOauthManagerService {
+    constructor(
+      db: DesktopOAuthSettingsDatabase,
+      pluginRuntime?: DesktopPluginRuntimeService,
+    ) {
+      super(db, pluginRuntime, { defaultRedirectUri });
+    }
+  }
 
   return {
-    providerConfigs,
-    OauthManagerService: class OauthManagerService extends DesktopOauthManagerService {
-      constructor(
-        db: DesktopOAuthSettingsDatabase,
-        providerFactory: DesktopOauthManagerProviderFactory,
-      ) {
-        super(db, {
-          providerConfigs,
-          resolveProvider: ({ sourceType, providerBaseUrl }) =>
-            getProviderForSource(providerFactory, {
-              sourceType,
-              configuration: {
-                posthogBaseUrl: providerBaseUrl,
-              },
-            }),
-        });
-      }
-    },
+    OauthManagerService: BoundDesktopOauthManagerService,
   };
 }
+
+type DesktopOauthManagerOptions = {
+  defaultRedirectUri?: string;
+};
 
 export class DesktopOauthManagerService {
   constructor(
     private readonly db: DesktopOAuthSettingsDatabase,
-    private readonly options: DesktopOauthManagerOptions,
+    private readonly pluginRuntime: DesktopPluginRuntimeService = createDesktopNodePluginRuntimeService(),
+    private readonly options: DesktopOauthManagerOptions = {},
   ) {}
 
-  private getProviderConfig(sourceType: ErrorSourceType): OAuthProviderConfig {
-    if (sourceType === "wazuh") {
-      throw new Error(`OAuth is not configured for source type: ${sourceType}`);
+  private getProviderConfig(
+    sourceType: ErrorSourceType,
+    pluginId?: string,
+  ): { config: OAuthProviderConfig; pluginId: string } {
+    const pluginConfig = resolvePluginOAuthConfig({
+      runtime: this.pluginRuntime,
+      sourceType,
+      pluginId,
+    });
+
+    const config = mergeOAuthProviderConfig({
+      sourceType,
+      pluginConfig: pluginConfig.oauth,
+    });
+    const defaultRedirectUri = this.options.defaultRedirectUri?.trim();
+    let resolvedConfig = config;
+    if (defaultRedirectUri !== undefined && defaultRedirectUri.length > 0) {
+      resolvedConfig = { ...config, defaultRedirectUri };
     }
 
-    return this.options.providerConfigs[sourceType];
-  }
-
-  private getProviderForOAuth(
-    sourceType: ErrorSourceType,
-    providerBaseUrl?: string,
-  ): DesktopOAuthProvider {
-    return this.options.resolveProvider({ sourceType, providerBaseUrl });
+    return {
+      pluginId: pluginConfig.pluginId,
+      config: resolvedConfig,
+    };
   }
 
   async initiateOAuth(
@@ -315,7 +306,11 @@ export class DesktopOauthManagerService {
   ): Promise<{ state: string; authUrl: string; redirectUri: string }> {
     await this.pruneExpiredPendingStates();
 
-    const config = this.getProviderConfig(sourceType);
+    const pluginId = input?.pluginId?.trim() || undefined;
+    const { config, pluginId: resolvedPluginId } = this.getProviderConfig(
+      sourceType,
+      pluginId,
+    );
     let clientId = input?.clientId?.trim() ?? "";
     if (clientId.length === 0) {
       clientId = getRequiredEnv(config.envClientIdName, sourceType);
@@ -334,23 +329,24 @@ export class DesktopOauthManagerService {
       createHash("sha256").update(codeVerifier).digest(),
     );
 
-    let providerBaseUrl: string | undefined;
-    if (sourceType === "posthog") {
-      providerBaseUrl = validatePostHogOAuthBaseUrl(
-        readPostHogBaseUrl(input ?? {}),
-      );
-    }
-    const provider = this.getProviderForOAuth(sourceType, providerBaseUrl);
-    const authUrl = provider.buildAuthorizeUrl({
-      clientId,
-      redirectUri,
-      scopes: config.scopes,
-      state,
-      codeChallenge,
+    const providerBaseUrl = readBaseUrl(input);
+    const authUrl = await buildPluginAuthorizeUrl({
+      runtime: this.pluginRuntime,
+      sourceType,
+      pluginId: resolvedPluginId,
+      baseUrl: providerBaseUrl,
+      authorize: {
+        clientId,
+        redirectUri,
+        scopes: config.scopes,
+        state,
+        codeChallenge,
+      },
     });
 
     const record: PendingOauthState = {
       sourceType,
+      pluginId,
       codeVerifier,
       createdAt: nowIso(),
     };
@@ -396,9 +392,11 @@ export class DesktopOauthManagerService {
       } catch {
         throw new Error("Corrupted OAuth state payload");
       }
+      const requestedPluginId = input.pluginId?.trim() || undefined;
 
       if (
         pending.sourceType !== sourceType ||
+        (pending.pluginId !== undefined && pending.pluginId !== requestedPluginId) ||
         pending.codeVerifier.length === 0
       ) {
         throw new Error("Invalid OAuth state payload");
@@ -408,37 +406,23 @@ export class DesktopOauthManagerService {
         throw new Error("OAuth state expired. Please try again.");
       }
 
-      const config = this.getProviderConfig(sourceType);
-      let pendingBaseUrl: string | undefined;
-      if (
-        pending.sourceType === "posthog" &&
-        pending.providerBaseUrl !== undefined
-      ) {
-        pendingBaseUrl = validatePostHogOAuthBaseUrl(pending.providerBaseUrl);
-      }
-      let requestedBaseUrl: string | undefined;
-      if (sourceType === "posthog") {
-        requestedBaseUrl = readPostHogBaseUrl({
-          baseUrl: input.baseUrl,
-          posthogBaseUrl: input.posthogBaseUrl,
-        });
-      }
-      let validatedRequestedBaseUrl: string | undefined;
-      if (sourceType === "posthog" && requestedBaseUrl !== undefined) {
-        validatedRequestedBaseUrl =
-          validatePostHogOAuthBaseUrl(requestedBaseUrl);
-      }
+      const effectivePluginId = pending.pluginId ?? requestedPluginId;
+      const { config, pluginId: resolvedPluginId } = this.getProviderConfig(
+        sourceType,
+        effectivePluginId,
+      );
+      const pendingBaseUrl = pending.providerBaseUrl;
+      const requestedBaseUrl = readBaseUrl(input);
       if (
         pendingBaseUrl !== undefined &&
-        validatedRequestedBaseUrl !== undefined &&
-        pendingBaseUrl !== validatedRequestedBaseUrl
+        requestedBaseUrl !== undefined &&
+        pendingBaseUrl !== requestedBaseUrl
       ) {
         throw new Error(
-          "PostHog OAuth base URL changed between authorization and token exchange",
+          "OAuth base URL changed between authorization and token exchange",
         );
       }
-      const providerBaseUrl = pendingBaseUrl ?? validatedRequestedBaseUrl;
-      const provider = this.getProviderForOAuth(sourceType, providerBaseUrl);
+      const providerBaseUrl = pendingBaseUrl ?? requestedBaseUrl;
       let clientId = input.clientId?.trim() ?? "";
       if (clientId.length === 0) {
         clientId = getRequiredEnv(config.envClientIdName, sourceType);
@@ -459,12 +443,18 @@ export class DesktopOauthManagerService {
         redirectUri = config.defaultRedirectUri;
       }
 
-      const tokens = await provider.exchangeCodeForToken({
-        clientId,
-        clientSecret,
-        code: input.code,
-        redirectUri,
-        codeVerifier: pending.codeVerifier,
+      const tokens = await exchangePluginCodeForToken({
+        runtime: this.pluginRuntime,
+        sourceType,
+        pluginId: resolvedPluginId,
+        baseUrl: providerBaseUrl,
+        exchange: {
+          clientId,
+          clientSecret,
+          code: input.code,
+          redirectUri,
+          codeVerifier: pending.codeVerifier,
+        },
       });
 
       if (tokens.accessToken.length === 0) {
@@ -492,22 +482,6 @@ export class DesktopOauthManagerService {
     } finally {
       await this.deletePendingState(key);
     }
-  }
-
-  initiateSentryOAuth(input?: InitiateOAuthInput) {
-    return this.initiateOAuth("sentry", input);
-  }
-
-  completeSentryOAuth(input: CompleteOAuthInput) {
-    return this.completeOAuth("sentry", input);
-  }
-
-  initiatePostHogOAuth(input?: InitiateOAuthInput) {
-    return this.initiateOAuth("posthog", input);
-  }
-
-  completePostHogOAuth(input: CompleteOAuthInput) {
-    return this.completeOAuth("posthog", input);
   }
 
   private async pruneExpiredPendingStates(): Promise<void> {

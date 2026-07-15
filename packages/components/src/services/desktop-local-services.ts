@@ -1,10 +1,14 @@
 import type { AgentThreadSnapshot } from '../chat/types'
 import type {
   AuthSessionState,
+  AvailablePlugin,
   BitsentryServicePorts,
   CreateErrorSourceInput,
   ErrorSourceRow,
   ErrorSourceSyncResult,
+  PluginActionExecutionResult,
+  PluginDescriptor,
+  PluginInstallSummary,
   UpdateErrorSourceInput,
   GlobalVariable,
   GlobalVariableInput,
@@ -242,11 +246,7 @@ export function createDesktopLocalBitsentryServices({
   const errorSourcesService = {
     async getAll(): Promise<ErrorSourceRow[]> {
       const response = await ipcInvoke<{ data: ErrorSourceRow[] }>('errorSources:getAll', {})
-      if (Array.isArray(response.data)) {
-        return response.data
-      }
-
-      return []
+      return response.data
     },
     async create(input: CreateErrorSourceInput): Promise<ErrorSourceRow> {
       return ipcInvoke<ErrorSourceRow>('errorSources:create', input)
@@ -263,6 +263,75 @@ export function createDesktopLocalBitsentryServices({
     ): Promise<ErrorSourceSyncResult> {
       await ipcInvoke('errorSources:update', { id, ...options })
       return ipcInvoke<ErrorSourceSyncResult>('errorSources:triggerSync', { id })
+    },
+  }
+
+  const pluginsService = {
+    async list(): Promise<PluginDescriptor[]> {
+      const response = await ipcInvoke<{ data: PluginDescriptor[] }>('plugins:list', {})
+      return response.data
+    },
+    async get(pluginId: string): Promise<PluginDescriptor | null> {
+      return ipcInvoke<PluginDescriptor | null>('plugins:get', { pluginId })
+    },
+    async listAvailable(
+      indexUrl?: string,
+    ): Promise<{ indexUrl: string; data: AvailablePlugin[] }> {
+      const payload: { indexUrl?: string } = {}
+      if (indexUrl !== undefined) {
+        payload.indexUrl = indexUrl
+      }
+      const response = await ipcInvoke<{
+        indexUrl: string
+        data: AvailablePlugin[]
+      }>('plugins:listAvailable', payload)
+      return {
+        indexUrl: response.indexUrl,
+        data: response.data,
+      }
+    },
+    async installFromIndex(
+      name: string,
+      indexUrl?: string,
+    ): Promise<PluginInstallSummary> {
+      const payload: { name: string; indexUrl?: string } = { name }
+      if (indexUrl !== undefined) {
+        payload.indexUrl = indexUrl
+      }
+      return ipcInvoke<PluginInstallSummary>(
+        'plugins:installFromIndex',
+        payload,
+      )
+    },
+    async installFromArtifact(
+      artifactBase64: string,
+    ): Promise<PluginInstallSummary> {
+      return ipcInvoke<PluginInstallSummary>('plugins:installFromArtifact', {
+        artifactBase64,
+      })
+    },
+    async getStoredAuth(pluginId: string): Promise<Record<string, unknown>> {
+      return ipcInvoke<Record<string, unknown>>('plugins:getStoredAuth', { pluginId })
+    },
+    async updateStoredAuth(
+      pluginId: string,
+      auth: Record<string, unknown>,
+    ): Promise<Record<string, unknown>> {
+      return ipcInvoke<Record<string, unknown>>('plugins:updateStoredAuth', {
+        pluginId,
+        auth,
+      })
+    },
+    async clearStoredAuth(pluginId: string): Promise<void> {
+      await ipcInvoke('plugins:clearStoredAuth', { pluginId })
+    },
+    async execute(input: {
+      pluginId: string
+      actionId: string
+      auth?: Record<string, unknown>
+      input?: Record<string, unknown>
+    }): Promise<PluginActionExecutionResult> {
+      return ipcInvoke<PluginActionExecutionResult>('plugins:execute', input)
     },
   }
 
@@ -308,6 +377,7 @@ export function createDesktopLocalBitsentryServices({
     },
 
     errorSources: errorSourcesService,
+    plugins: pluginsService,
 
     llmProviders: {
       async listProviders(): Promise<LLMProviderDto[]> {

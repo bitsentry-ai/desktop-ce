@@ -33,11 +33,11 @@ const artifact: DesktopRunbookExportArtifactV1 = {
         },
         {
           type: "external_source",
-          title: "Search PostHog errors",
-          query: "error",
-          sourceRef: "lumendesk-posthog",
-          sourceName: "Lumendesk PostHog",
-          sourceType: "posthog",
+          title: "Search GitHub issues",
+          query: "is:issue is:open",
+          sourceRef: "github-issues",
+          sourceName: "GitHub Issues",
+          sourceType: "github",
         },
       ],
     },
@@ -51,13 +51,12 @@ const artifact: DesktopRunbookExportArtifactV1 = {
   ],
   externalSources: [
     {
-      ref: "lumendesk-posthog",
-      sourceType: "posthog",
-      name: "Lumendesk PostHog",
+      ref: "github-issues",
+      sourceType: "github",
+      name: "GitHub Issues",
       configuration: {
-        orgSlug: "lumendesk",
-        posthogBaseUrl: "https://us.posthog.com",
-        projectIds: ["123"],
+        owner: "bitsentry-ai",
+        repo: "monorepo",
       },
       credentials: {
         authToken: "",

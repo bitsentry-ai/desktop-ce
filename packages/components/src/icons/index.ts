@@ -71,3 +71,4 @@ export { FileBarChart, Smartphone } from "lucide-react";
 export { ShieldAlert, SquarePen, Bot } from "lucide-react";
 export { History, Activity } from "lucide-react";
 export { GripVertical } from "lucide-react";
+export { Puzzle } from "lucide-react";

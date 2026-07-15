@@ -6,6 +6,7 @@ import { DesktopRunbookStore as RunbookStore } from '@bitsentry-ce/core/features
 import type { ExternalSourceRunbookQueryExecutor } from './external-source-query.service'
 import type { RunbookResultPersistence } from '../stores/runbook-result.store'
 import type { RunbookExecutionWindowPort } from '@bitsentry-ce/core/features/runbooks/desktop-runbook-execution.service'
+import type { DesktopPluginRuntimeService } from '@bitsentry-ce/core/features/plugins'
 
 export class RunbookExecutionService extends SharedRunbookExecutionService {
   constructor(
@@ -17,6 +18,7 @@ export class RunbookExecutionService extends SharedRunbookExecutionService {
     windowGetter: () => RunbookExecutionWindowPort | null,
     options?: { httpTimeoutMs?: number },
     localAiProvider?: InstanceType<typeof CodingAgentsProviderService>,
+    pluginRuntime?: DesktopPluginRuntimeService,
   ) {
     super(
       store,
@@ -27,6 +29,7 @@ export class RunbookExecutionService extends SharedRunbookExecutionService {
       windowGetter,
       { ...options, edition: 'ce' },
       localAiProvider,
+      pluginRuntime,
     )
   }
 }

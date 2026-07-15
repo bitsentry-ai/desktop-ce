@@ -5,7 +5,7 @@ export const RUNBOOKS_LS_KEY = "bitsentry_runbooks";
 
 export interface RunbookAction {
   id: string;
-  type: "shell" | "llm" | "http" | "external_source";
+  type: "shell" | "llm" | "http" | "plugin" | "external_source";
   title: string;
   command?: string;
   prompt?: string;
@@ -21,6 +21,10 @@ export interface RunbookAction {
   method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
   headers?: Array<{ key: string; value: string }>;
   body?: string;
+  pluginId?: string;
+  pluginActionId?: string;
+  pluginInput?: string;
+  pluginAuth?: string;
   query?: string;
   parameters?: Array<{
     id: string;

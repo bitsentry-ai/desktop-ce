@@ -35,16 +35,16 @@ describe('runbook type normalization', () => {
       normalizeRunbookTriggerContext({
         entrypoint: 'incident_workspace',
         needId: 'need-1',
-        sourceType: 'sentry',
-        sourceName: 'Primary Sentry',
+        sourceType: 'github',
+        sourceName: 'GitHub Issues',
         incidentThreadId: 'thread-1',
         ignored: 'value',
       }),
     ).toEqual({
       entrypoint: 'incident_workspace',
       needId: 'need-1',
-      sourceType: 'sentry',
-      sourceName: 'Primary Sentry',
+      sourceType: 'github',
+      sourceName: 'GitHub Issues',
       incidentThreadId: 'thread-1',
     })
 

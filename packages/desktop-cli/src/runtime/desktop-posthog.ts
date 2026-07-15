@@ -4,7 +4,7 @@ import {
   type DesktopAnalyticsContext,
   type DesktopAnalyticsSettingsDb,
 } from '@bitsentry-ce/core/features/analytics/desktop-posthog'
-import { getRuntimeAppVersion } from './electron-app'
+import { getRuntimeAppVersion } from './electron-app.js'
 
 export {
   markDesktopFirstRunCaptured,

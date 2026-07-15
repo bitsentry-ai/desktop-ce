@@ -52,6 +52,10 @@ export const exportedRunbookActionV1Schema = z.object({
   method: runbookHttpMethodSchema.optional(),
   headers: z.array(runbookHttpHeaderSchema).optional(),
   body: z.string().optional(),
+  pluginId: z.string().optional(),
+  pluginActionId: z.string().optional(),
+  pluginInput: z.string().optional(),
+  pluginAuth: z.string().optional(),
   query: z.string().optional(),
   sourceId: z.string().optional(),
   sourceRef: z.string().optional(),
@@ -100,6 +104,7 @@ export const exportedExternalSourceCredentialsV1Schema = z.object({
 
 export const exportedExternalSourceV1Schema = z.object({
   ref: z.string(),
+  pluginId: z.string().optional(),
   sourceType: errorSourceTypeSchema,
   name: z.string(),
   configuration: z.record(z.string(), z.unknown()).optional(),

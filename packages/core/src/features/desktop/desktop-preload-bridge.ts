@@ -449,7 +449,7 @@ export function createDesktopBitsentryApi({
           needLabel?: string
           sourceId?: string
           sourceName?: string
-          sourceType?: 'sentry' | 'wazuh' | 'posthog'
+          sourceType?: string
           incidentThreadId?: string
         }
       }): Promise<{ executionId: string; resultId: string }> => {

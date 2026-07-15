@@ -172,30 +172,6 @@ function normalizeStringArray(value: unknown): string[] {
   ].sort((left, right) => left.localeCompare(right));
 }
 
-function normalizeFingerprintBaseUrl(value: unknown): string | undefined {
-  const raw = asString(value).trim();
-  if (raw.length === 0) {
-    return undefined;
-  }
-
-  try {
-    const parsed = new URL(raw);
-    const pathname = parsed.pathname.replace(/\/+$/, "");
-    return `${parsed.origin.toLowerCase()}${pathname}`;
-  } catch {
-    return raw.replace(/\/+$/, "");
-  }
-}
-
-function normalizeFingerprintSlug(value: unknown): string | undefined {
-  const raw = asString(value).trim();
-  if (raw.length === 0) {
-    return undefined;
-  }
-
-  return raw.toLowerCase();
-}
-
 function toArtifactRefSlug(value: string): string {
   return value
     .trim()
@@ -241,35 +217,31 @@ function buildArtifactSourceRefs(
 function buildExternalSourceFingerprint(
   sourceType: string,
   configuration: unknown,
+  pluginId?: string,
 ): string {
   const config = sanitizeExportedErrorSourceConfiguration(configuration);
-
-  switch (sourceType) {
-    case "sentry":
-      return `sentry::${stableSerialize({
-        orgSlug: normalizeFingerprintSlug(config.orgSlug),
-        sentryBaseUrl: normalizeFingerprintBaseUrl(config.sentryBaseUrl),
-        projectIds: normalizeStringArray(config.projectIds),
-        projectSlugs: normalizeStringArray(config.projectSlugs),
-      })}`;
-    case "posthog":
-      return `posthog::${stableSerialize({
-        orgSlug: normalizeFingerprintSlug(config.orgSlug),
-        posthogBaseUrl: normalizeFingerprintBaseUrl(config.posthogBaseUrl),
-        projectIds: normalizeStringArray(config.projectIds),
-      })}`;
-    case "wazuh":
-      return `wazuh::${stableSerialize({
-        baseUrl: normalizeFingerprintBaseUrl(config.baseUrl),
-        indexPatterns: normalizeStringArray(config.indexPatterns),
-      })}`;
-    default:
-      return `${sourceType}::${stableSerialize(config)}`;
-  }
+  return `${sourceType}:${pluginId ?? ""}::${stableSerialize(config)}`;
 }
 
-function requiresExternalSourceAuthToken(sourceType: string): boolean {
-  return sourceType === "sentry" || sourceType === "posthog";
+function readExternalSourcePluginId(
+  additionalMetadata: Record<string, unknown> | null | undefined,
+): string | undefined {
+  const pluginId = asString(additionalMetadata?.pluginId).trim();
+  if (pluginId.length === 0) {
+    return undefined;
+  }
+
+  return pluginId;
+}
+
+function buildExternalSourceAdditionalMetadata(
+  pluginId: string | undefined,
+): Record<string, unknown> | null {
+  if (pluginId === undefined || pluginId.length === 0) {
+    return null;
+  }
+
+  return { pluginId };
 }
 
 function normalizeExportedExternalSourceCredentials(value: unknown): {
@@ -375,6 +347,10 @@ function normalizeRunbookActionFingerprint(
     method?: RunbookHttpMethod;
     headers?: RunbookHttpHeader[];
     body?: string;
+    pluginId?: string;
+    pluginActionId?: string;
+    pluginInput?: string;
+    pluginAuth?: string;
     query?: string;
     sourceId?: string;
     sourceRef?: string;
@@ -436,6 +412,15 @@ function normalizeRunbookActionFingerprint(
       }
 
       return fingerprint;
+    }
+    case "plugin": {
+      return {
+        ...shared,
+        pluginId: action.pluginId ?? "",
+        pluginActionId: action.pluginActionId ?? "",
+        pluginAuth: action.pluginAuth ?? "",
+        pluginInput: action.pluginInput ?? "",
+      };
     }
     case "external_source": {
       const sourceId = action.sourceId?.trim();
@@ -833,6 +818,10 @@ function parseTelemetryConfig(
 function serializeRunbookActionBody(
   action: DesktopRunbookActionRecord,
 ): string | null {
+  if (action.type === "plugin") {
+    return action.pluginInput ?? null;
+  }
+
   if (isTelemetryActionType(action.type)) {
     if (action.telemetryConfig !== undefined) {
       return JSON.stringify(action.telemetryConfig);
@@ -844,11 +833,42 @@ function serializeRunbookActionBody(
   return action.body ?? null;
 }
 
+function serializeStoredRunbookActionUrl(
+  action: DesktopRunbookActionRecord,
+): string | null {
+  if (action.type === "plugin") {
+    return action.pluginAuth ?? null;
+  }
+
+  return action.url ?? null;
+}
+
+function serializeStoredRunbookActionQuery(
+  action: DesktopRunbookActionRecord,
+): string | null {
+  if (action.type === "plugin") {
+    return action.pluginActionId ?? null;
+  }
+
+  return action.query ?? null;
+}
+
+function serializeStoredRunbookActionSourceId(
+  action: DesktopRunbookActionRecord,
+): string | null {
+  if (action.type === "plugin") {
+    return action.pluginId ?? null;
+  }
+
+  return action.sourceId ?? null;
+}
+
 function createEmptyActionTypeCounts(): DesktopRunbookContext["summary"]["actionTypeCounts"] {
   return {
     shell: 0,
     llm: 0,
     http: 0,
+    plugin: 0,
     external_source: 0,
     telemetry_existing_entry: 0,
     data_source_query: 0,
@@ -872,6 +892,102 @@ function copySharedRunbookActionFields(
   }
 }
 
+function sanitizeShellRunbookAction(
+  target: DesktopRunbookActionRecord,
+  action: DesktopRunbookActionRecord,
+): DesktopRunbookActionRecord {
+  if (typeof action.command === "string") {
+    target.command = action.command;
+  }
+  return target;
+}
+
+function sanitizeLlmRunbookAction(
+  target: DesktopRunbookActionRecord,
+  action: DesktopRunbookActionRecord,
+): DesktopRunbookActionRecord {
+  if (typeof action.prompt === "string") {
+    target.prompt = action.prompt;
+  }
+  if (typeof action.llmProviderKey === "string") {
+    target.llmProviderKey = action.llmProviderKey;
+  }
+  if (typeof action.llmModel === "string") {
+    target.llmModel = action.llmModel;
+  }
+  return target;
+}
+
+function sanitizeHttpRunbookAction(
+  target: DesktopRunbookActionRecord,
+  action: DesktopRunbookActionRecord,
+): DesktopRunbookActionRecord {
+  if (typeof action.url === "string") {
+    target.url = action.url;
+  }
+  if (action.method !== undefined) {
+    target.method = action.method;
+  }
+  if (action.headers !== undefined && action.headers.length > 0) {
+    target.headers = action.headers;
+  }
+  if (typeof action.body === "string") {
+    target.body = action.body;
+  }
+  return target;
+}
+
+function sanitizePluginRunbookAction(
+  target: DesktopRunbookActionRecord,
+  action: DesktopRunbookActionRecord,
+): DesktopRunbookActionRecord {
+  if (typeof action.pluginId === "string") {
+    target.pluginId = action.pluginId;
+  }
+  if (typeof action.pluginActionId === "string") {
+    target.pluginActionId = action.pluginActionId;
+  }
+  if (typeof action.pluginInput === "string") {
+    target.pluginInput = action.pluginInput;
+  }
+  if (typeof action.pluginAuth === "string") {
+    target.pluginAuth = action.pluginAuth;
+  }
+  return target;
+}
+
+function sanitizeExternalSourceRunbookAction(
+  target: DesktopRunbookActionRecord,
+  action: DesktopRunbookActionRecord,
+): DesktopRunbookActionRecord {
+  if (typeof action.query === "string") {
+    target.query = action.query;
+  }
+  if (typeof action.sourceId === "string") {
+    target.sourceId = action.sourceId;
+  }
+  return target;
+}
+
+function sanitizeTelemetryRunbookAction(
+  target: DesktopRunbookActionRecord,
+  action: DesktopRunbookActionRecord,
+): DesktopRunbookActionRecord {
+  if (typeof action.body === "string") {
+    target.body = action.body;
+  }
+  if (typeof action.query === "string") {
+    target.query = action.query;
+  }
+  if (typeof action.sourceId === "string") {
+    target.sourceId = action.sourceId;
+  }
+  if (action.telemetryConfig !== undefined) {
+    target.telemetryConfig = action.telemetryConfig;
+  }
+  return target;
+}
+
 function sanitizeRunbookAction(
   action: DesktopRunbookActionRecord,
 ): DesktopRunbookActionRecord {
@@ -883,68 +999,23 @@ function sanitizeRunbookAction(
   copySharedRunbookActionFields(sanitized, action);
 
   switch (action.type) {
-    case "shell": {
-      if (typeof action.command === "string") {
-        sanitized.command = action.command;
-      }
-      return sanitized;
-    }
-    case "llm": {
-      if (typeof action.prompt === "string") {
-        sanitized.prompt = action.prompt;
-      }
-      if (typeof action.llmProviderKey === "string") {
-        sanitized.llmProviderKey = action.llmProviderKey;
-      }
-      if (typeof action.llmModel === "string") {
-        sanitized.llmModel = action.llmModel;
-      }
-      return sanitized;
-    }
-    case "http": {
-      if (typeof action.url === "string") {
-        sanitized.url = action.url;
-      }
-      if (action.method !== undefined) {
-        sanitized.method = action.method;
-      }
-      if (action.headers !== undefined && action.headers.length > 0) {
-        sanitized.headers = action.headers;
-      }
-      if (typeof action.body === "string") {
-        sanitized.body = action.body;
-      }
-      return sanitized;
-    }
-    case "external_source": {
-      if (typeof action.query === "string") {
-        sanitized.query = action.query;
-      }
-      if (typeof action.sourceId === "string") {
-        sanitized.sourceId = action.sourceId;
-      }
-      return sanitized;
-    }
+    case "shell":
+      return sanitizeShellRunbookAction(sanitized, action);
+    case "llm":
+      return sanitizeLlmRunbookAction(sanitized, action);
+    case "http":
+      return sanitizeHttpRunbookAction(sanitized, action);
+    case "plugin":
+      return sanitizePluginRunbookAction(sanitized, action);
+    case "external_source":
+      return sanitizeExternalSourceRunbookAction(sanitized, action);
     case "telemetry_existing_entry":
     case "data_source_query":
     case "telemetry_ingest":
     case "diagnosis_diagnose":
     case "diagnosis_verify":
-    case "diagnosis_recommend": {
-      if (typeof action.body === "string") {
-        sanitized.body = action.body;
-      }
-      if (typeof action.query === "string") {
-        sanitized.query = action.query;
-      }
-      if (typeof action.sourceId === "string") {
-        sanitized.sourceId = action.sourceId;
-      }
-      if (action.telemetryConfig !== undefined) {
-        sanitized.telemetryConfig = action.telemetryConfig;
-      }
-      return sanitized;
-    }
+    case "diagnosis_recommend":
+      return sanitizeTelemetryRunbookAction(sanitized, action);
     default:
       throw new Error(
         `Unsupported runbook action type: ${String(action.type)}`,
@@ -963,6 +1034,18 @@ function assertValidAction(action: DesktopRunbookActionRecord): void {
     }
     if (action.sourceId === undefined || action.sourceId.trim().length === 0) {
       throw new Error("External Source action is missing a source selection");
+    }
+  }
+
+  if (action.type === "plugin") {
+    if (action.pluginId === undefined || action.pluginId.trim().length === 0) {
+      throw new Error("Plugin action is missing a selected plugin");
+    }
+    if (
+      action.pluginActionId === undefined ||
+      action.pluginActionId.trim().length === 0
+    ) {
+      throw new Error("Plugin action is missing a selected plugin action");
     }
   }
 }
@@ -985,6 +1068,10 @@ function parseIncomingRunbookAction(
     method: parseRunbookHttpMethod(action.method),
     headers: normalizeRunbookHeaders(action.headers),
     body: asOptionalString(action.body),
+    pluginId: asOptionalString(action.pluginId),
+    pluginActionId: asOptionalString(action.pluginActionId),
+    pluginInput: asOptionalString(action.pluginInput),
+    pluginAuth: asOptionalString(action.pluginAuth),
     query: asOptionalString(action.query),
     sourceId: asOptionalString(action.sourceId),
     parameters: normalizeRunbookParameters(action.parameters),
@@ -1001,6 +1088,26 @@ function parseIncomingRunbookAction(
 
 function toRunbookAction(raw: Record<string, unknown>): DesktopRunbookActionRecord {
   const type = normalizeRunbookActionType(raw.type);
+  const isPluginAction = type === "plugin";
+  let url = asOptionalString(raw.url);
+  let body = asOptionalString(raw.body);
+  let pluginId: string | undefined;
+  let pluginActionId: string | undefined;
+  let pluginInput: string | undefined;
+  let pluginAuth: string | undefined;
+  let query = asOptionalString(raw.query);
+  let sourceId = asOptionalString(raw.sourceId);
+  if (isPluginAction) {
+    url = undefined;
+    body = undefined;
+    pluginId = asOptionalString(raw.sourceId);
+    pluginActionId = asOptionalString(raw.query);
+    pluginInput = asOptionalString(raw.body);
+    pluginAuth = asOptionalString(raw.url);
+    query = undefined;
+    sourceId = undefined;
+  }
+
   return sanitizeRunbookAction({
     id: asString(raw.id),
     type,
@@ -1009,12 +1116,16 @@ function toRunbookAction(raw: Record<string, unknown>): DesktopRunbookActionReco
     prompt: asOptionalString(raw.prompt),
     llmProviderKey: parseRunbookLlmProviderKey(raw.llmProviderKey),
     llmModel: asOptionalString(raw.llmModel),
-    url: asOptionalString(raw.url),
+    url,
     method: parseRunbookHttpMethod(raw.method),
     headers: parseRunbookHeaders(raw.headersJson ?? raw.headers),
-    body: asOptionalString(raw.body),
-    query: asOptionalString(raw.query),
-    sourceId: asOptionalString(raw.sourceId),
+    body,
+    pluginId,
+    pluginActionId,
+    pluginInput,
+    pluginAuth,
+    query,
+    sourceId,
     parameters: parseRunbookParameters(raw.parametersJson ?? raw.parameters),
     logFilter: parseRunbookLogFilter(raw.logFilterJson ?? raw.logFilter),
     telemetryConfig: parseTelemetryConfig(
@@ -1067,6 +1178,21 @@ function actionPayload(
       }
       if (typeof action.body === "string") {
         payload.body = action.body;
+      }
+      return payload;
+    }
+    case "plugin": {
+      if (action.pluginId !== undefined && action.pluginId.length > 0) {
+        payload.pluginId = action.pluginId;
+      }
+      if (
+        action.pluginActionId !== undefined &&
+        action.pluginActionId.length > 0
+      ) {
+        payload.pluginActionId = action.pluginActionId;
+      }
+      if (typeof action.pluginInput === "string") {
+        payload.pluginInput = action.pluginInput;
       }
       return payload;
     }
@@ -1356,12 +1482,12 @@ export class DesktopRunbookStore {
             prompt: action.prompt ?? null,
             llmProviderKey: action.llmProviderKey ?? null,
             llmModel: action.llmModel ?? null,
-            url: action.url ?? null,
+            url: serializeStoredRunbookActionUrl(action),
             method: action.method ?? null,
             headersJson,
             body: serializeRunbookActionBody(action),
-            query: action.query ?? null,
-            sourceId: action.sourceId ?? null,
+            query: serializeStoredRunbookActionQuery(action),
+            sourceId: serializeStoredRunbookActionSourceId(action),
             parametersJson,
             logFilterJson,
             createdAt: now,
@@ -1407,12 +1533,12 @@ export class DesktopRunbookStore {
           prompt: nextAction.prompt ?? null,
           llmProviderKey: nextAction.llmProviderKey ?? null,
           llmModel: nextAction.llmModel ?? null,
-          url: nextAction.url ?? null,
+          url: serializeStoredRunbookActionUrl(nextAction),
           method: nextAction.method ?? null,
           headersJson: serializeOptionalJson(nextAction.headers),
           body: serializeRunbookActionBody(nextAction),
-          query: nextAction.query ?? null,
-          sourceId: nextAction.sourceId ?? null,
+          query: serializeStoredRunbookActionQuery(nextAction),
+          sourceId: serializeStoredRunbookActionSourceId(nextAction),
           parametersJson: serializeOptionalJson(nextAction.parameters),
           logFilterJson: serializeOptionalJson(nextAction.logFilter),
           updatedAt: now,
@@ -1457,12 +1583,12 @@ export class DesktopRunbookStore {
         prompt: nextAction.prompt ?? null,
         llmProviderKey: nextAction.llmProviderKey ?? null,
         llmModel: nextAction.llmModel ?? null,
-        url: nextAction.url ?? null,
+        url: serializeStoredRunbookActionUrl(nextAction),
         method: nextAction.method ?? null,
         headersJson: serializeOptionalJson(nextAction.headers),
         body: serializeRunbookActionBody(nextAction),
-        query: nextAction.query ?? null,
-        sourceId: nextAction.sourceId ?? null,
+        query: serializeStoredRunbookActionQuery(nextAction),
+        sourceId: serializeStoredRunbookActionSourceId(nextAction),
         parametersJson: serializeOptionalJson(nextAction.parameters),
         logFilterJson: serializeOptionalJson(nextAction.logFilter),
         createdAt: now,
@@ -1634,6 +1760,9 @@ export class DesktopRunbookStore {
             method: action.method,
             headers: action.headers,
             body: action.body,
+            pluginId: action.pluginId,
+            pluginActionId: action.pluginActionId,
+            pluginInput: action.pluginInput,
             query: action.query,
             sourceRef,
             sourceName,
@@ -1717,7 +1846,11 @@ export class DesktopRunbookStore {
     const existingSourceFingerprintsById = new Map(
       existingSources.map((source) => [
         source.id,
-        buildExternalSourceFingerprint(source.sourceType, source.configuration),
+        buildExternalSourceFingerprint(
+          source.sourceType,
+          source.configuration,
+          readExternalSourcePluginId(source.additionalMetadata),
+        ),
       ]),
     );
     const existingRunbookByFingerprint = new Map(
@@ -1917,6 +2050,10 @@ export class DesktopRunbookStore {
           method: action.method,
           headers: action.headers,
           body: action.body,
+          pluginId: action.pluginId,
+          pluginActionId: action.pluginActionId,
+          pluginInput: action.pluginInput,
+          pluginAuth: action.pluginAuth,
           query: action.query,
           sourceId: sourceIdFromArtifactRef(
             action.sourceRef,
@@ -2015,11 +2152,18 @@ export class DesktopRunbookStore {
 
           const normalizedParameters = normalizeRunbookParameters(action.parameters);
           let body = action.body ?? null;
+          let url = action.url ?? null;
+          let query = action.query ?? null;
           if (isTelemetryActionType(action.type) && action.telemetryConfig !== undefined) {
             body = JSON.stringify(action.telemetryConfig);
           }
           let sourceId: string | null = null;
-          if (action.sourceRef !== undefined && action.sourceRef.length > 0) {
+          if (action.type === "plugin") {
+            body = action.pluginInput ?? null;
+            url = action.pluginAuth ?? null;
+            query = action.pluginActionId ?? null;
+            sourceId = action.pluginId ?? null;
+          } else if (action.sourceRef !== undefined && action.sourceRef.length > 0) {
             sourceId = importedExternalSources.sourceIdByRef.get(action.sourceRef) ?? null;
           }
 
@@ -2034,11 +2178,11 @@ export class DesktopRunbookStore {
               prompt: action.prompt ?? null,
               llmProviderKey: action.llmProviderKey ?? null,
               llmModel: action.llmModel ?? null,
-              url: action.url ?? null,
+              url,
               method: action.method ?? null,
               headersJson: serializeOptionalJson(action.headers),
               body,
-              query: action.query ?? null,
+              query,
               sourceId,
               parametersJson: serializeOptionalJson(normalizedParameters),
               logFilterJson: serializeOptionalJson(action.logFilter),
@@ -2171,10 +2315,12 @@ export class DesktopRunbookStore {
           accessTokenRef !== undefined && accessTokenRef.length > 0;
         const hasRefreshTokenRef =
           refreshTokenRef !== undefined && refreshTokenRef.length > 0;
+        const pluginId = readExternalSourcePluginId(source.additionalMetadata);
         const exportedSource: NonNullable<
           DesktopRunbookExportArtifactV1["externalSources"]
         >[number] = {
           ref: sourceRefsById.get(source.id) ?? source.id,
+          pluginId,
           sourceType: source.sourceType,
           name: source.name,
           configuration: sanitizeExportedErrorSourceConfiguration(
@@ -2187,13 +2333,16 @@ export class DesktopRunbookStore {
         };
 
         if (
-          requiresExternalSourceAuthToken(source.sourceType) ||
           hasAccessTokenRef ||
-          hasRefreshTokenRef
+          hasRefreshTokenRef ||
+          source.expiresAt !== null ||
+          source.grantedScopes.length > 0
         ) {
           const credentials: NonNullable<typeof exportedSource.credentials> = {
-            authToken: "",
           };
+          if (hasAccessTokenRef) {
+            credentials.authToken = "";
+          }
           if (hasRefreshTokenRef) {
             credentials.refreshToken = "";
           }
@@ -2231,7 +2380,11 @@ export class DesktopRunbookStore {
       (await this.errorSourcesRepository.findMany());
     const existingBySignature = new Map(
       existingSources.map((source) => [
-        buildExternalSourceFingerprint(source.sourceType, source.configuration),
+        buildExternalSourceFingerprint(
+          source.sourceType,
+          source.configuration,
+          readExternalSourcePluginId(source.additionalMetadata),
+        ),
         source,
       ]),
     );
@@ -2245,6 +2398,7 @@ export class DesktopRunbookStore {
       const fingerprint = buildExternalSourceFingerprint(
         externalSource.sourceType,
         sanitizedConfiguration,
+        externalSource.pluginId,
       );
       const existing = existingBySignature.get(fingerprint);
       sourceFingerprintByRef.set(externalSource.ref, fingerprint);
@@ -2258,15 +2412,6 @@ export class DesktopRunbookStore {
         externalSource.credentials,
       );
 
-      if (
-        requiresExternalSourceAuthToken(externalSource.sourceType) &&
-        credentials.authToken === undefined
-      ) {
-        throw new Error(
-          `External source "${externalSource.name}" does not match an existing local source and is missing authToken in the import YAML.`,
-        );
-      }
-
       if (options?.dryRun === true) {
         sourceIdByRef.set(externalSource.ref, externalSource.ref);
         existingBySignature.set(fingerprint, {
@@ -2279,7 +2424,9 @@ export class DesktopRunbookStore {
           grantedScopes: credentials.grantedScopes ?? [],
           configuration: sanitizedConfiguration,
           logLevelThreshold: externalSource.logLevelThreshold ?? "error",
-          additionalMetadata: null,
+          additionalMetadata: buildExternalSourceAdditionalMetadata(
+            externalSource.pluginId,
+          ),
           syncEnabled: externalSource.syncEnabled ?? true,
           autoDiagnosisEnabled: externalSource.autoDiagnosisEnabled ?? false,
           lastSyncAt: null,
@@ -2303,6 +2450,9 @@ export class DesktopRunbookStore {
         grantedScopes: credentials.grantedScopes ?? [],
         configuration: sanitizedConfiguration,
         logLevelThreshold: externalSource.logLevelThreshold,
+        additionalMetadata: buildExternalSourceAdditionalMetadata(
+          externalSource.pluginId,
+        ),
         syncEnabled: externalSource.syncEnabled,
         autoDiagnosisEnabled: externalSource.autoDiagnosisEnabled,
       });

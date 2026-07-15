@@ -3,31 +3,26 @@ import type {
   ErrorSourceType,
 } from "./desktop-error-sources.types";
 import type {
-  DesktopOAuthTokenResponse,
   OAuthProviderConfig,
 } from "./desktop-oauth-manager";
-import { getProviderForSource } from "./desktop-posthog-provider-binding";
+import type { DesktopPluginRuntimeService } from "../plugins";
+import { createDesktopNodePluginRuntimeService } from "../plugins/node";
+import {
+  refreshPluginAccessToken,
+  resolvePluginOAuthConfig,
+} from "./desktop-plugin-oauth-actions";
 
-type DesktopOAuthProviderConfigMap = Record<
-  Extract<ErrorSourceType, "sentry" | "posthog">,
+type RefreshOAuthProviderConfig = Pick<
+  OAuthProviderConfig,
+  "envClientIdName" | "envClientSecretName" | "publicClient"
+>;
+
+type PluginOAuthProviderConfigOverride = Partial<
   Pick<
     OAuthProviderConfig,
     "envClientIdName" | "envClientSecretName" | "publicClient"
   >
 >;
-
-const DESKTOP_OAUTH_PROVIDER_CONFIGS: DesktopOAuthProviderConfigMap = {
-  sentry: {
-    envClientIdName: "SENTRY_OAUTH_CLIENT_ID",
-    envClientSecretName: "SENTRY_OAUTH_CLIENT_SECRET",
-    publicClient: false,
-  },
-  posthog: {
-    envClientIdName: "POSTHOG_OAUTH_CLIENT_ID",
-    envClientSecretName: "POSTHOG_OAUTH_CLIENT_SECRET",
-    publicClient: true,
-  },
-};
 
 function readOptionalString(value: unknown): string | null {
   if (typeof value !== "string") return null;
@@ -46,16 +41,67 @@ function getRequiredEnv(name: string): string {
   return value;
 }
 
-function getProviderConfig(
-  sourceType: ErrorSourceType,
-):
-  | DesktopOAuthProviderConfigMap[Extract<ErrorSourceType, "sentry" | "posthog">]
-  | undefined {
-  if (sourceType === "sentry" || sourceType === "posthog") {
-    return DESKTOP_OAUTH_PROVIDER_CONFIGS[sourceType];
+function readMissingProviderConfigKeys(
+  config: Partial<RefreshOAuthProviderConfig>,
+): string[] {
+  const missing: string[] = [];
+
+  if (
+    typeof config.envClientIdName !== "string" ||
+    config.envClientIdName.trim().length === 0
+  ) {
+    missing.push("envClientIdName");
+  }
+  if (
+    typeof config.envClientSecretName !== "string" ||
+    config.envClientSecretName.trim().length === 0
+  ) {
+    missing.push("envClientSecretName");
+  }
+  if (typeof config.publicClient !== "boolean") {
+    missing.push("publicClient");
   }
 
-  return undefined;
+  return missing;
+}
+
+function mergeProviderConfig(input: {
+  sourceType: ErrorSourceType;
+  pluginOverride?: PluginOAuthProviderConfigOverride;
+}): RefreshOAuthProviderConfig {
+  if (input.pluginOverride === undefined) {
+    throw new Error(
+      `OAuth refresh is not configured for source type: ${input.sourceType}`,
+    );
+  }
+
+  const merged: Partial<RefreshOAuthProviderConfig> = {
+    ...input.pluginOverride,
+  };
+  const missingKeys = readMissingProviderConfigKeys(merged);
+  if (missingKeys.length > 0) {
+    throw new Error(
+      `OAuth refresh config for source type "${input.sourceType}" is incomplete. Missing: ${missingKeys.join(", ")}`,
+    );
+  }
+
+  return merged as RefreshOAuthProviderConfig;
+}
+
+function getPluginProviderConfigOverride(
+  source: Pick<DesktopOAuthSource, "sourceType" | "additionalMetadata">,
+  pluginRuntime: Pick<DesktopPluginRuntimeService, "getPlugin">,
+): { pluginId: string; oauth?: PluginOAuthProviderConfigOverride } {
+  const pluginConfig = resolvePluginOAuthConfig({
+    runtime: pluginRuntime,
+    sourceType: source.sourceType,
+    additionalMetadata: source.additionalMetadata,
+  });
+
+  return {
+    pluginId: pluginConfig.pluginId,
+    oauth: pluginConfig.oauth,
+  };
 }
 
 function getExpiresAtMs(expiresAt: string | null): number {
@@ -114,7 +160,7 @@ function getNextGrantedScopes(
 }
 
 function getClientSecret(
-  config: DesktopOAuthProviderConfigMap[keyof DesktopOAuthProviderConfigMap],
+  config: RefreshOAuthProviderConfig,
   sourceConfigSecret: unknown,
 ): string {
   const configuredSecret = readOptionalString(sourceConfigSecret);
@@ -159,24 +205,12 @@ export interface DesktopOAuthSourcesRepository {
   }): Promise<unknown>;
 }
 
-export interface DesktopOAuthRefreshProvider {
-  refreshToken(input: {
-    clientId: string;
-    clientSecret: string;
-    refreshToken: string;
-    signal?: AbortSignal;
-  }): Promise<DesktopOAuthTokenResponse>;
-}
-
 export interface RefreshAccessTokenInput<
   TSource extends DesktopOAuthSource = DesktopOAuthSource,
-  TProvider extends DesktopOAuthRefreshProvider = DesktopOAuthRefreshProvider,
 > {
   source: TSource;
   sourcesRepository: DesktopOAuthSourcesRepository;
-  providerFactory: {
-    getProvider(sourceType: TSource["sourceType"]): TProvider;
-  };
+  pluginRuntime?: DesktopPluginRuntimeService;
   signal?: AbortSignal;
 }
 
@@ -225,8 +259,7 @@ function resolveWithoutRefreshToken(
  */
 export async function refreshSourceAccessToken<
   TSource extends DesktopOAuthSource,
-  TProvider extends DesktopOAuthRefreshProvider,
->(input: RefreshAccessTokenInput<TSource, TProvider>): Promise<string> {
+>(input: RefreshAccessTokenInput<TSource>): Promise<string> {
   const { source } = input;
   const accessToken = readOptionalString(source.accessTokenRef) ?? "";
 
@@ -256,33 +289,41 @@ export async function refreshSourceAccessToken<
 
 async function performTokenRefresh<
   TSource extends DesktopOAuthSource,
-  TProvider extends DesktopOAuthRefreshProvider,
 >(
-  input: RefreshAccessTokenInput<TSource, TProvider>,
+  input: RefreshAccessTokenInput<TSource>,
   refreshToken: string,
 ): Promise<string> {
-  const { source, sourcesRepository, providerFactory, signal } = input;
-  const provider = getProviderForSource(providerFactory, source);
+  const { source, sourcesRepository, signal } = input;
+  const pluginRuntime =
+    input.pluginRuntime ?? createDesktopNodePluginRuntimeService();
   const config = source.configuration ?? {};
-  const providerConfig = getProviderConfig(source.sourceType);
-  if (providerConfig === undefined) {
-    throw new Error(
-      `OAuth refresh is not configured for source type: ${source.sourceType}`,
-    );
-  }
+  const pluginConfigOverride = getPluginProviderConfigOverride(
+    source,
+    pluginRuntime,
+  );
+  const effectiveProviderConfig = mergeProviderConfig({
+    sourceType: source.sourceType,
+    pluginOverride: pluginConfigOverride.oauth,
+  });
   const oauthClientId =
     readOptionalString(config.oauthClientId) ??
-    getRequiredEnv(providerConfig.envClientIdName);
+    getRequiredEnv(effectiveProviderConfig.envClientIdName);
   const oauthClientSecret = getClientSecret(
-    providerConfig,
+    effectiveProviderConfig,
     config.oauthClientSecret,
   );
 
-  const refreshed = await provider.refreshToken({
-    clientId: oauthClientId,
-    clientSecret: oauthClientSecret,
-    refreshToken,
-    signal,
+  const refreshed = await refreshPluginAccessToken({
+    runtime: pluginRuntime,
+    sourceType: source.sourceType,
+    pluginId: pluginConfigOverride.pluginId,
+    baseUrl: readOptionalString(config.baseUrl) ?? undefined,
+    refresh: {
+      clientId: oauthClientId,
+      clientSecret: oauthClientSecret,
+      refreshToken,
+      signal,
+    },
   });
   const nextAccessToken = getNextAccessToken(refreshed.accessToken);
   const updated = await sourcesRepository.update({

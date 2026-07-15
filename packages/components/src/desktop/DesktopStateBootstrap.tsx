@@ -32,6 +32,7 @@ type RunbookExecutionActionType =
   | "shell"
   | "llm"
   | "http"
+  | "plugin"
   | "external_source"
   | "telemetry_existing_entry"
   | "data_source_query"
@@ -236,6 +237,7 @@ function summarizeExecutionForAnalytics(execution: ExecutionSnapshotRecord) {
     has_shell_step: hasStepType(execution, "shell"),
     has_ai_step: hasStepType(execution, "llm"),
     has_http_step: hasStepType(execution, "http"),
+    has_plugin_step: hasStepType(execution, "plugin"),
     has_external_source_step: hasStepType(execution, "external_source"),
     runtime_parameter_count: runtimeParameterCount,
     run_duration_ms: toDurationMs(execution.startedAt, execution.completedAt),

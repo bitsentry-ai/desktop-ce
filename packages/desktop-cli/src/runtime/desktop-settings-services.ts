@@ -8,7 +8,7 @@ import {
   createDesktopSchedulerJobRuntime,
   type DesktopJobRuntime,
   type DesktopJobRuntimeDatabase,
-} from './desktop-job-runtime'
+} from './desktop-job-runtime.js'
 
 export type DesktopSettingsServiceDatabase =
   & DesktopJobRuntimeDatabase

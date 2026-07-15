@@ -316,7 +316,9 @@ export function decodePerProjectCursor(
 }
 
 /** Encode a `projectId -> offset` map back into a JSON cursor string. */
-export function encodePerProjectCursor(offsets: Record<string, number>): string {
+export function encodePerProjectCursor(
+  offsets: Record<string, number>,
+): string {
   return JSON.stringify(offsets);
 }
 
@@ -377,9 +379,10 @@ function normalizeExceptionListEntries(
   return materialize(exceptionList);
 }
 
-function extractIssueTitlePartsFromExceptionList(
-  exceptionList: unknown,
-): { exceptionType: string | null; message: string | null } {
+function extractIssueTitlePartsFromExceptionList(exceptionList: unknown): {
+  exceptionType: string | null;
+  message: string | null;
+} {
   for (const record of normalizeExceptionListEntries(exceptionList)) {
     const exceptionType = pickFirstString(record.type);
     const message = pickFirstString(record.value, record.message);
@@ -463,16 +466,27 @@ function postHogOptionalNumber(value: unknown): number | null {
   return Number(value);
 }
 
-function buildPostHogIssueTitle(exceptionType: string | null, message: string | null): string {
-  if (exceptionType !== null && message !== null) return `${exceptionType}: ${message}`;
+function buildPostHogIssueTitle(
+  exceptionType: string | null,
+  message: string | null,
+): string {
+  if (exceptionType !== null && message !== null)
+    return `${exceptionType}: ${message}`;
   return message ?? exceptionType ?? "Untitled exception";
 }
 
-function addTag(tags: Array<[string, unknown]>, name: string, value: string | null): void {
+function addTag(
+  tags: Array<[string, unknown]>,
+  name: string,
+  value: string | null,
+): void {
   if (value !== null) tags.push([name, value]);
 }
 
-function namespacedPostHogIssueId(projectId: string | null, fingerprint: string): string {
+function namespacedPostHogIssueId(
+  projectId: string | null,
+  fingerprint: string,
+): string {
   if (fingerprint === "") return "";
   if (projectId !== null) return `${projectId}:${fingerprint}`;
   return fingerprint;
@@ -483,7 +497,9 @@ function shortPostHogIssueId(fingerprint: string): string | null {
   return fingerprint.slice(0, 12);
 }
 
-function projectFromPostHogId(projectId: string | null): { slug: string } | null {
+function projectFromPostHogId(
+  projectId: string | null,
+): { slug: string } | null {
   if (projectId === null) return null;
   return { slug: projectId };
 }
@@ -495,13 +511,12 @@ function buildExceptionEntries(
 ): Array<{ type: string; data: { values: Array<Record<string, unknown>> } }> {
   const normalizedEntries = normalizeExceptionListEntries(exceptionList);
   if (normalizedEntries.length > 0) {
-    const values = normalizedEntries
-      .map((item) => ({
-        type: pickFirstString(item.type) ?? fallbackType ?? null,
-        value: pickFirstString(item.value) ?? fallbackValue ?? null,
-        stacktrace: unknownRecord(item.stacktrace) ?? null,
-        mechanism: unknownRecord(item.mechanism) ?? null,
-      }));
+    const values = normalizedEntries.map((item) => ({
+      type: pickFirstString(item.type) ?? fallbackType ?? null,
+      value: pickFirstString(item.value) ?? fallbackValue ?? null,
+      stacktrace: unknownRecord(item.stacktrace) ?? null,
+      mechanism: unknownRecord(item.mechanism) ?? null,
+    }));
     if (values.length > 0) {
       return [{ type: "exception", data: { values } }];
     }
@@ -597,12 +612,16 @@ function addNamedContext(
   if (value !== null) contexts[name] = { name: value };
 }
 
-function userFromPostHogPersonId(personId: string | null): { id: string } | null {
+function userFromPostHogPersonId(
+  personId: string | null,
+): { id: string } | null {
   if (personId === null) return null;
   return { id: personId };
 }
 
-function requestFromPostHogUrl(currentUrl: string | null): { url: string } | null {
+function requestFromPostHogUrl(
+  currentUrl: string | null,
+): { url: string } | null {
   if (currentUrl === null) return null;
   return { url: currentUrl };
 }
@@ -654,7 +673,9 @@ export function buildPostHogIssuesHogQL(input: PostHogIssueQueryInput): string {
 	    OFFSET ${String(offset)}`;
 }
 
-function buildPostHogIssueWhereFilters(searchQuery: string | undefined): string[] {
+function buildPostHogIssueWhereFilters(
+  searchQuery: string | undefined,
+): string[] {
   const whereFilters: string[] = ["event = '$exception'"];
   const trimmedQuery = normalizePostHogSearchQuery(searchQuery ?? "");
   if (trimmedQuery.length === 0) return whereFilters;
@@ -666,7 +687,7 @@ function buildPostHogIssueWhereFilters(searchQuery: string | undefined): string[
       `OR properties.$exception_type ILIKE ${escaped} ` +
       `OR properties.$exception_fingerprint ILIKE ${escaped} ` +
       `OR toString(properties.$exception_list) ILIKE ${escaped}` +
-    `)`,
+      `)`,
   );
   return whereFilters;
 }
@@ -679,7 +700,11 @@ function buildPostHogIssueHavingClause(input: PostHogIssueQueryInput): string {
   return `HAVING ${havingFilters.join(" AND ")}`;
 }
 
-function addTimestampFilter(filters: string[], prefix: string, value: string | undefined): void {
+function addTimestampFilter(
+  filters: string[],
+  prefix: string,
+  value: string | undefined,
+): void {
   if (value === undefined || value === "") return;
   filters.push(`${prefix} ${quoteHogQLUtcDateTime64(value)}`);
 }
@@ -781,7 +806,8 @@ export function mergePostHogIssuesByRecency(
   for (const result of perProjectResults) {
     const consumed = consumedByProject.get(result.projectId) ?? 0;
     const fetched = result.issues.length;
-    const startOffset = mergeState.projectStart.get(result.projectId) ?? result.startOffset;
+    const startOffset =
+      mergeState.projectStart.get(result.projectId) ?? result.startOffset;
     const hadMore = mergeState.projectHasMore.get(result.projectId) ?? false;
     // `consumed` rows were emitted on this page; the remaining `fetched -
     // consumed` rows are still in this project's offset window, so the next
@@ -813,12 +839,15 @@ function countConsumedPostHogIssuesByProject(
   return consumedByProject;
 }
 
-function createPostHogMergeState(perProjectResults: Array<PerProjectIssueResult>): {
+function createPostHogMergeState(
+  perProjectResults: Array<PerProjectIssueResult>,
+): {
   tagged: Array<{ projectId: string; issue: Record<string, unknown> }>;
   projectHasMore: Map<string, boolean>;
   projectStart: Map<string, number>;
 } {
-  const tagged: Array<{ projectId: string; issue: Record<string, unknown> }> = [];
+  const tagged: Array<{ projectId: string; issue: Record<string, unknown> }> =
+    [];
   const projectHasMore = new Map<string, boolean>();
   const projectStart = new Map<string, number>();
 

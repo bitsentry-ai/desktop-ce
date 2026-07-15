@@ -198,7 +198,7 @@ export class SqliteErrorSourcesRepositoryAdapter {
   private toDomain(row: SqliteRow): ErrorSource {
     return {
       id: sqliteText(row.id),
-      sourceType: sqliteEnum(row.sourceType, errorSourceTypeSchema, "sentry"),
+      sourceType: sqliteEnum(row.sourceType, errorSourceTypeSchema, "unknown"),
       name: sqliteText(row.name),
       accessTokenRef: sqliteNullableText(row.accessTokenRef),
       refreshTokenRef: sqliteNullableText(row.refreshTokenRef),

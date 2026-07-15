@@ -48,6 +48,10 @@ import { composeServices } from '../compose-services'
 import type { DesktopServices } from '../compose-services'
 import { validateIpcPayload } from '../ipc/schemas'
 import { createDesktopSettingsHandlers } from '@bitsentry-ce/core/features/settings'
+import {
+  createDesktopNodePluginRuntimeService,
+  createDesktopPluginHandlers,
+} from '@bitsentry-ce/core/features/plugins/node'
 import { createDesktopYamlRunbookHandlers as createRunbookHandlers } from '@bitsentry-ce/core/features/runbooks/desktop-runbook-handler-yaml-bindings'
 import { createDesktopStateHandlers } from '@bitsentry-ce/core/features/desktop-state/desktop-state.handlers'
 import {
@@ -68,7 +72,6 @@ import {
   unregisterCodingAgentsHandlers,
 } from '@bitsentry-ce/coding-agents/coding-agents.handlers'
 import type { LocalAiProviderKey } from '@bitsentry-ce/coding-agents'
-import { ErrorSourceProviderFactory } from '@bitsentry-ce/core/features/error-sources/desktop-error-source-provider.factory'
 import { ExternalSourceRunbookQueryService } from '@bitsentry-ce/core/features/error-sources'
 import { SqliteRunbookResultStore } from '@bitsentry-ce/core/features/runbooks/desktop-runbook-result.store'
 import { SqliteErrorSourcesRepositoryAdapter } from '@bitsentry-ce/core/features/error-sources/desktop-sqlite-error-sources.adapter'
@@ -87,6 +90,7 @@ import {
 } from './oauth-callback'
 import { getAutoUpdaterEnablement } from '@bitsentry-ce/core/features/updater/desktop-updater-policy'
 import { startAutoUpdater } from '@bitsentry-ce/desktop-cli/runtime/desktop-updater'
+import { LocalPluginCredentialsStore } from '@bitsentry-ce/desktop-cli/runtime/plugin-credentials-store'
 import { DesktopShutdownCoordinator } from './shutdown-coordinator'
 
 type UpdaterController = ReturnType<typeof startAutoUpdater> | null
@@ -436,10 +440,22 @@ app
 
       services = await composeServices(db)
       const desktopServices = services
+      const userDataPath = app.getPath('userData')
+      const pluginCredentialsStore = new LocalPluginCredentialsStore(userDataPath)
+      const pluginRuntime = createDesktopNodePluginRuntimeService(
+        [path.join(userDataPath, 'plugins')],
+        pluginCredentialsStore,
+      )
 
       // Register IPC handlers
       dispatcher.registerAll(
-        createDesktopErrorSourcesHandlers(db, { OauthManagerService }),
+        createDesktopErrorSourcesHandlers(db, {
+          OauthManagerService,
+          pluginRuntime,
+        }),
+      )
+      dispatcher.registerAll(
+        createDesktopPluginHandlers(pluginRuntime, pluginCredentialsStore),
       )
       dispatcher.registerAll(createDesktopSettingsHandlers(desktopServices.settingsUseCases))
       const agentLlmAdapter = createDesktopAgentLlmAdapter(db)
@@ -447,7 +463,8 @@ app
       const runbookStore = new RunbookStore(db, globalVariablesService)
       const externalSourceRunbookQueryService = new ExternalSourceRunbookQueryService(
         new SqliteErrorSourcesRepositoryAdapter(db),
-        new ErrorSourceProviderFactory(),
+        undefined,
+        pluginRuntime,
       )
       const runbookResultStore = new SqliteRunbookResultStore(db)
       await runbookResultStore.markStaleRunningSessionsFailed()
@@ -465,11 +482,12 @@ app
         () => desktopShell.mainWindow,
         undefined,
         localAiProvider,
+        pluginRuntime,
       )
       dispatcher.registerAll(createRunbookHandlers(db, {
         executionService: runbookExecutionService,
         globalVariablesService,
-      }))
+      }, { edition: 'ce' }))
       dispatcher.registerAll(createDesktopStateHandlers(db))
       dispatcher.registerAll(
         createDesktopDialogHandlers({
@@ -532,7 +550,7 @@ app
       // Renderer init gate: only true when both the user has opted in AND the
       // main process actually has a DSN configured. Without a DSN, main never
       // initializes the Sentry main client, so the renderer SDK can't reach it
-      // (manifests as "sentry-ipc://" CSP errors or "scheme not supported").
+      // (appears as "sentry-ipc://" CSP errors or "scheme not supported").
       ipcMain.handle('bitsentry:sentry:rendererShouldInit', async () => {
         if (!hasSentryDsn()) return false
         return isSentryEnabled(db)

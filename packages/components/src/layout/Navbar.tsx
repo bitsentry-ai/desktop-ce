@@ -128,7 +128,9 @@ const QuickAnchorLink = ({
     title={title}
     onClick={() => {
       if (currentPath === targetPath) {
-        window.setTimeout(() => { highlightElement(anchorId); }, 0);
+        window.setTimeout(() => {
+          highlightElement(anchorId);
+        }, 0);
       }
     }}
     className={cn(
@@ -236,25 +238,23 @@ function normalizeIncidentNavItems(items: unknown[]): IncidentNavItem[] {
       }
 
       let createdAt = new Date().toISOString();
-      if (
-        typeof record.createdAt === "string" &&
-        record.createdAt.length > 0
-      ) {
+      if (typeof record.createdAt === "string" && record.createdAt.length > 0) {
         createdAt = record.createdAt;
       }
 
       let archived: boolean | undefined;
       if (
         record.archived === true ||
-        (typeof record.archivedAt === "string" &&
-          record.archivedAt.length > 0)
+        (typeof record.archivedAt === "string" && record.archivedAt.length > 0)
       ) {
         archived = true;
       }
 
       let lastMessagePreview: string | null = null;
       if (typeof record.lastMessagePreview === "string") {
-        lastMessagePreview = normalizeIncidentPreview(record.lastMessagePreview);
+        lastMessagePreview = normalizeIncidentPreview(
+          record.lastMessagePreview,
+        );
       }
 
       return {
@@ -312,10 +312,7 @@ function normalizeResultNavItems(items: unknown[]): ResultNavItem[] {
       }
 
       let startedAt = new Date().toISOString();
-      if (
-        typeof record.startedAt === "string" &&
-        record.startedAt.length > 0
-      ) {
+      if (typeof record.startedAt === "string" && record.startedAt.length > 0) {
         startedAt = record.startedAt;
       }
 
@@ -380,10 +377,7 @@ function archiveIncidentRecord(
   if (value.id !== incidentId) return value;
 
   let nextArchivedAt = archivedAt;
-  if (
-    typeof value.archivedAt === "string" &&
-    value.archivedAt.length > 0
-  ) {
+  if (typeof value.archivedAt === "string" && value.archivedAt.length > 0) {
     nextArchivedAt = value.archivedAt;
   }
 
@@ -438,13 +432,16 @@ const bottomNav: NavItem[] = [
     href: "/settings",
     restrictedTo: [1],
   },
-  { icon: Settings, labelKey: "navigation.navbar.settings", href: "/app-settings" },
+  {
+    icon: Settings,
+    labelKey: "navigation.navbar.settings",
+    href: "/app-settings",
+  },
 ];
 
 const adminSettingsSections = [
   { labelKey: "navigation.navbar.systemSettings", hash: "system" },
   { labelKey: "navigation.navbar.userManagement", hash: "users" },
-  { labelKey: "navigation.navbar.externalSources", hash: "external-sources" },
   { labelKey: "navigation.navbar.globalVariables", hash: "global-variables" },
   { labelKey: "navigation.navbar.llmProviders", hash: "llm-providers" },
   { labelKey: "navigation.navbar.dataPolicy", hash: "data-policy" },
@@ -454,7 +451,7 @@ const adminSettingsSections = [
 
 const appSettingsSections = [
   { labelKey: "navigation.navbar.appearance", hash: "appearance" },
-  { labelKey: "navigation.navbar.externalSources", hash: "external-sources" },
+  { labelKey: "navigation.navbar.plugins", hash: "plugins" },
   { labelKey: "navigation.navbar.globalVariables", hash: "global-variables" },
   { labelKey: "navigation.navbar.codingAgents", hash: "coding-agents" },
   { labelKey: "navigation.navbar.help", hash: "help" },
@@ -486,9 +483,9 @@ function UpdateIslandButton() {
   const navigate = useNavigate();
   const [state, setState] = useState<DesktopUpdaterState | null>(null);
   const [busy, setBusy] = useState(false);
-  const [debugState, setDebugState] = useState<"available" | "downloaded" | null>(
-    () => readDebugUpdateIslandState(),
-  );
+  const [debugState, setDebugState] = useState<
+    "available" | "downloaded" | null
+  >(() => readDebugUpdateIslandState());
 
   useEffect(() => {
     const api = getDesktopApi()?.updater;
@@ -552,11 +549,13 @@ function UpdateIslandButton() {
   if (!isAvailable && !isDownloaded) return null;
 
   let label = t("common.navbar.updateAvailable");
-  let detail = effectiveState.availableVersion ?? t("common.navbar.downloadNow");
+  let detail =
+    effectiveState.availableVersion ?? t("common.navbar.downloadNow");
   let Icon = Download;
   if (isDownloaded) {
     label = t("common.navbar.restartToUpdate");
-    detail = effectiveState.downloadedVersion ?? t("common.navbar.readyToInstall");
+    detail =
+      effectiveState.downloadedVersion ?? t("common.navbar.readyToInstall");
     Icon = RefreshCw;
   }
 
@@ -598,8 +597,12 @@ function UpdateIslandButton() {
         <Icon size={12} />
       </div>
       <div className="min-w-0 flex-1">
-        <div className="bs-brand-tint-title truncate text-xs font-medium">{label}</div>
-        <div className="bs-brand-tint-subtitle truncate text-[11px]">{detail}</div>
+        <div className="bs-brand-tint-title truncate text-xs font-medium">
+          {label}
+        </div>
+        <div className="bs-brand-tint-subtitle truncate text-[11px]">
+          {detail}
+        </div>
       </div>
     </button>
   );
@@ -736,10 +739,12 @@ const Navbar = ({
 
       if (services.incidents) {
         await services.incidents.archiveThread(incidentId);
-        setInvestigationIncidents((prev) => prev.map((incident) => {
-          if (incident.id !== incidentId) return incident;
-          return { ...incident, archived: true };
-        }));
+        setInvestigationIncidents((prev) =>
+          prev.map((incident) => {
+            if (incident.id !== incidentId) return incident;
+            return { ...incident, archived: true };
+          }),
+        );
         window.dispatchEvent(
           new CustomEvent("bitsentry:incidents-updated", {
             detail: { action: "archive", incidentId, archivedAt },
@@ -868,8 +873,9 @@ const Navbar = ({
       setResultItems(readLocalResultNavItems());
     };
     window.addEventListener("bitsentry:results-updated", reload);
-    return () =>
-      { window.removeEventListener("bitsentry:results-updated", reload); };
+    return () => {
+      window.removeEventListener("bitsentry:results-updated", reload);
+    };
   }, [runbooks]);
 
   // ── Accordion helpers ─────────────────────────────────────────────────────
@@ -1192,7 +1198,7 @@ const Navbar = ({
                             )}
                           >
                             <div className="truncate">{rb.title}</div>
-                              {rb.actions.length > 0 && (
+                            {rb.actions.length > 0 && (
                               <div className="text-[10px] text-muted-foreground/60">
                                 {t("navigation.navbar.actionCount", {
                                   count: rb.actions.length,
@@ -1246,7 +1252,7 @@ const Navbar = ({
                   return (
                     <div className="ml-4 mt-1 space-y-0.5">
                       {shown.map((result) => {
-                          const dotCls = getResultDotClass(result.status);
+                        const dotCls = getResultDotClass(result.status);
 
                         return (
                           <Link
@@ -1303,18 +1309,18 @@ const Navbar = ({
                     </div>
                     {ticketQuickItems.diagnosesWithoutTickets
                       .slice(0, 4)
-                        .map((diagnosis) => {
-                          const diagnosisId = String(diagnosis.id);
-                          const currentPending = new URLSearchParams(
-                            location.search,
-                          ).get("pending");
-                          const isActive =
-                            currentPath === "/tickets" &&
-                            currentPending === diagnosisId;
-                          return (
-                            <Link
-                              key={`pending-${diagnosisId}`}
-                              to={`/tickets?pending=${diagnosisId}`}
+                      .map((diagnosis) => {
+                        const diagnosisId = String(diagnosis.id);
+                        const currentPending = new URLSearchParams(
+                          location.search,
+                        ).get("pending");
+                        const isActive =
+                          currentPath === "/tickets" &&
+                          currentPending === diagnosisId;
+                        return (
+                          <Link
+                            key={`pending-${diagnosisId}`}
+                            to={`/tickets?pending=${diagnosisId}`}
                             title={
                               diagnosis.rule_description ||
                               t("navigation.navbar.diagnosisNumber", {
@@ -1491,7 +1497,10 @@ const Navbar = ({
                 <item.icon size={16} />
                 <span className="flex-1">{t(item.labelKey)}</span>
                 {SettingsChevron !== null && (
-                  <SettingsChevron size={14} className="text-muted-foreground" />
+                  <SettingsChevron
+                    size={14}
+                    className="text-muted-foreground"
+                  />
                 )}
               </Link>
 
@@ -1519,7 +1528,12 @@ const Navbar = ({
         })}
 
         {!isDesktop && (
-          <button onClick={() => { logout(); }} className="nav-item">
+          <button
+            onClick={() => {
+              logout();
+            }}
+            className="nav-item"
+          >
             <LogOut size={16} />
             <span>{t("navigation.navbar.logOut")}</span>
           </button>
@@ -1557,7 +1571,9 @@ const Navbar = ({
               <input
                 type="text"
                 value={deleteConfirmText}
-                onChange={(event) => { setDeleteConfirmText(event.target.value); }}
+                onChange={(event) => {
+                  setDeleteConfirmText(event.target.value);
+                }}
                 placeholder={runbookToDelete.title}
                 className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-[hsl(var(--destructive)/0.5)] transition-colors"
                 autoFocus

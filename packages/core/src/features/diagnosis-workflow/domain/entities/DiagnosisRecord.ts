@@ -14,9 +14,6 @@ export type LogCategory =
 
 export type DiagnosisSourceCategory =
   | "telemetry"
-  | "sentry"
-  | "wazuh"
-  | "posthog"
   | "unknown"
   | (string & {});
 

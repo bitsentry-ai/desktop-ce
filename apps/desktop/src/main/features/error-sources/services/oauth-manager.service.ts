@@ -6,7 +6,6 @@ const oauthManagerBindings = createDesktopOauthManagerBindings(
   'bitsentry-desktop-ce://oauth/callback',
 )
 
-export const PROVIDER_CONFIGS = oauthManagerBindings.providerConfigs
 export const OauthManagerService = oauthManagerBindings.OauthManagerService
 
 export type { OAuthProviderConfig }

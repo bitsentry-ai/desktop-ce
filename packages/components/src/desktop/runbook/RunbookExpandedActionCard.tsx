@@ -3,6 +3,7 @@ import type { RefObject } from "react";
 import { Check, Trash2 } from "../../icons";
 import type {
   GlobalVariable,
+  PluginDescriptor,
   RunbookActionParameter,
   RunbookActionRecord,
   RunbookHttpHeader,
@@ -36,6 +37,9 @@ type RunbookExpandedActionCardProps = {
   onModelDropdownOpenChange: (open: boolean) => void;
   errorSourceOptions: Array<{ id: string; label: string }>;
   errorSourcesLoading: boolean;
+  pluginDescriptors: PluginDescriptor[];
+  pluginOptions: Array<{ id: string; label: string }>;
+  pluginsLoading: boolean;
   isMissingErrorSource: boolean;
   sourceHelpClass: string;
   sourceHelpText: string;
@@ -84,6 +88,9 @@ export function RunbookExpandedActionCard({
   onModelDropdownOpenChange,
   errorSourceOptions,
   errorSourcesLoading,
+  pluginDescriptors,
+  pluginOptions,
+  pluginsLoading,
   isMissingErrorSource,
   sourceHelpClass,
   sourceHelpText,
@@ -117,7 +124,7 @@ export function RunbookExpandedActionCard({
     >
       <div
         data-tour="runbooks-action-types"
-        className="grid grid-cols-4 gap-1.5"
+        className="grid grid-cols-2 gap-1.5 sm:grid-cols-3 xl:grid-cols-5"
       >
         {actionTypes.map((type) => {
           const { labelKey, icon: Icon } = actionMeta[type];
@@ -182,6 +189,9 @@ export function RunbookExpandedActionCard({
           onModelDropdownOpenChange={onModelDropdownOpenChange}
           errorSourceOptions={errorSourceOptions}
           errorSourcesLoading={errorSourcesLoading}
+          pluginDescriptors={pluginDescriptors}
+          pluginOptions={pluginOptions}
+          pluginsLoading={pluginsLoading}
           isMissingErrorSource={isMissingErrorSource}
           sourceHelpClass={sourceHelpClass}
           sourceHelpText={sourceHelpText}
@@ -195,6 +205,7 @@ export function RunbookExpandedActionCard({
         {(action.type === "shell" ||
           action.type === "llm" ||
           action.type === "http" ||
+          action.type === "plugin" ||
           action.type === "external_source") && (
           <RunbookActionAdvancedSections
             action={action}

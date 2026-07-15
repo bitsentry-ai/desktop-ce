@@ -1,3 +1,23 @@
 [submodule "packages/electron-trpc"]
 	path = packages/electron-trpc
 	url = git@github.com:bitsentry-ai/electron-trpc.git
+[submodule "packages/plugin-sdk"]
+	path = packages/plugin-sdk
+	url = git@github.com:bitsentry-ai/-bitsentry-plugin-sdk.git
+	branch = main
+[submodule "packages/plugins/github"]
+	path = packages/plugins/github
+	url = git@github.com:bitsentry-ai/bitsentry-plugin-github.git
+	branch = main
+[submodule "packages/plugins/posthog"]
+	path = packages/plugins/posthog
+	url = git@github.com:bitsentry-ai/bitsentry-plugin-posthog.git
+	branch = main
+[submodule "packages/plugins/sentry"]
+	path = packages/plugins/sentry
+	url = git@github.com:bitsentry-ai/bitsentry-plugin-sentry.git
+	branch = main
+[submodule "packages/plugins/wazuh"]
+	path = packages/plugins/wazuh
+	url = git@github.com:bitsentry-ai/bitsentry-plugin-wazuh.git
+	branch = main

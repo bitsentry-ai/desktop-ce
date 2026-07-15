@@ -1,33 +1,22 @@
 import {
   DEFAULT_EXTERNAL_SOURCE_QUERY_LIMIT,
 } from "./external-source-query.schemas";
-import {
-  formatPostHogExternalSourceQueryResults,
-} from "./posthog-query-format";
-import {
-  normalizePostHogSearchQuery,
-} from "./posthog-hogql";
-import {
-  formatSentryExternalSourceQueryResults,
-} from "./sentry-query-format";
-import {
-  getProviderForSource,
-} from "./desktop-posthog-provider-binding";
-import {
-  refreshSourceAccessToken,
-  type DesktopOAuthRefreshProvider,
-} from "./desktop-oauth-token-refresher";
 import type {
   ErrorSource,
   ErrorSourceConfiguration,
-  ErrorSourceType,
 } from "./desktop-error-sources.types";
 import {
-  readConfiguredProjectIds,
-  readConfiguredProjectSlugs,
-  resolveSentryProjectSelection,
-  type DesktopSentryProjectSummary,
-} from "./desktop-sentry-project-selection";
+  createDesktopNodePluginRuntimeService,
+} from "../plugins/desktop-plugin-runtime.node";
+import type {
+  DesktopPluginRuntimeService,
+} from "../plugins/desktop-plugin-registry";
+import type { DesktopPluginDataSourceRecord } from "../plugins/plugins.types";
+import {
+  hasErrorSourceProviderAction,
+  resolveErrorSourceProviderActionId,
+} from "./desktop-plugin-error-source-actions";
+import { refreshSourceAccessToken } from "./desktop-oauth-token-refresher";
 
 export interface ExternalSourceRunbookQueryInput {
   sourceId: string;
@@ -38,37 +27,6 @@ export interface ExternalSourceRunbookQueryInput {
 export interface ExternalSourceRunbookQueryExecutor {
   execute(input: ExternalSourceRunbookQueryInput): Promise<string>;
 }
-
-type SupportedExternalSource = ErrorSource & {
-  sourceType: "sentry" | "posthog";
-};
-
-type QueryIssuesResponse = {
-  issues: unknown[];
-  hasMore: boolean;
-};
-
-type DesktopExternalSourceProvider = DesktopOAuthRefreshProvider & {
-  listProjects(input: {
-    accessToken: string;
-    orgSlug: string;
-    signal?: AbortSignal;
-  }): Promise<DesktopSentryProjectSummary[]>;
-  queryIssues(input: {
-    accessToken: string;
-    orgSlug: string;
-    projectIds: string[];
-    query: string;
-    limit?: number;
-    signal?: AbortSignal;
-  }): Promise<QueryIssuesResponse>;
-};
-
-type DesktopExternalSourceProviderFactory = {
-  getProvider(
-    sourceType: ErrorSourceType,
-  ): DesktopExternalSourceProvider;
-};
 
 type DesktopExternalSourceSourcesRepository = {
   findById(id: string): Promise<ErrorSource | null>;
@@ -99,50 +57,335 @@ function readQueryInput(input: ExternalSourceRunbookQueryInput): {
   return { sourceId, query };
 }
 
-function isSupportedExternalSource(
-  source: ErrorSource,
-): source is SupportedExternalSource {
-  return source.sourceType === "sentry" || source.sourceType === "posthog";
-}
-
-function requireSupportedSource(source: ErrorSource): SupportedExternalSource {
-  if (isSupportedExternalSource(source)) {
-    return source;
+function readConfiguredStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return [];
   }
 
-  throw new Error(
-    `External Source provider ${source.sourceType} is not supported yet`,
-  );
+  return value
+    .filter((item): item is string => typeof item === "string")
+    .map((item) => item.trim())
+    .filter((item) => item.length > 0);
 }
 
-function readOrgSlug(source: ErrorSource): string {
+function readPluginIndexPattern(
+  configuration: ErrorSourceConfiguration,
+): string | undefined {
+  const configuredIndexPatterns = readConfiguredStringArray(
+    configuration.indexPatterns,
+  );
+  if (configuredIndexPatterns.length > 0) {
+    return configuredIndexPatterns.join(",");
+  }
+
+  return undefined;
+}
+
+function readSourcePluginId(source: ErrorSource): string {
+  const pluginId = source.additionalMetadata?.pluginId;
+  if (typeof pluginId === "string" && pluginId.trim().length > 0) {
+    return pluginId.trim();
+  }
+
+  return source.sourceType;
+}
+
+function readPluginOutput(data: unknown): string {
+  if (
+    data !== null &&
+    typeof data === "object" &&
+    !Array.isArray(data) &&
+    typeof (data as { output?: unknown }).output === "string"
+  ) {
+    return ((data as { output: string }).output).trim();
+  }
+
+  throw new Error("External Source code plugin returned no output");
+}
+
+function pluginSourceRecord(source: ErrorSource): DesktopPluginDataSourceRecord {
+  return {
+    id: source.id,
+    sourceType: source.sourceType,
+    name: source.name,
+    accessTokenRef: source.accessTokenRef,
+    refreshTokenRef: source.refreshTokenRef,
+    expiresAt: source.expiresAt,
+    grantedScopes: source.grantedScopes,
+    configuration: { ...source.configuration },
+  };
+}
+
+function buildPluginAuthFromSource(
+  source: ErrorSource,
+  pluginRuntime: DesktopPluginRuntimeService,
+): Promise<Record<string, unknown>> {
+  const pluginId = readSourcePluginId(source);
+  return pluginRuntime.buildErrorSourceAuth({
+    pluginId,
+    source: pluginSourceRecord(source),
+  });
+}
+
+function buildGenericPluginQueryInput(
+  source: ErrorSource,
+  query: string,
+  limit: number,
+): Record<string, unknown> {
+  const input: Record<string, unknown> = {
+    query,
+    limit,
+    sourceId: source.id,
+    sourceName: source.name,
+    sourceType: source.sourceType,
+  };
+
   const orgSlug = source.configuration.orgSlug?.trim();
-  if (orgSlug === undefined || orgSlug.length === 0) {
+  if (orgSlug !== undefined && orgSlug.length > 0) {
+    input.orgSlug = orgSlug;
+  }
+
+  const configuredProjectIds = readConfiguredStringArray(
+    source.configuration.projectIds,
+  );
+  if (configuredProjectIds.length > 0) {
+    input.projectIds = configuredProjectIds;
+  }
+
+  const configuredProjectSlugs = readConfiguredStringArray(
+    source.configuration.projectSlugs,
+  );
+  if (configuredProjectSlugs.length > 0) {
+    input.projectSlugs = configuredProjectSlugs;
+  }
+
+  const indexPattern = readPluginIndexPattern(source.configuration);
+  if (indexPattern !== undefined) {
+    input.indexPattern = indexPattern;
+  }
+
+  return input;
+}
+
+function readPluginIssueBatch(data: unknown): {
+  issues: unknown[];
+  hasMore: boolean;
+} | null {
+  if (data === null || typeof data !== "object" || Array.isArray(data)) {
+    return null;
+  }
+
+  const rawIssues = (data as { issues?: unknown }).issues;
+  if (!Array.isArray(rawIssues)) {
+    return null;
+  }
+
+  return {
+    issues: rawIssues,
+    hasMore: (data as { hasMore?: unknown }).hasMore === true,
+  };
+}
+
+function readTrimmedRecordString(
+  record: Record<string, unknown>,
+  key: string,
+): string | null {
+  const value = record[key];
+  if (typeof value !== "string") {
+    return null;
+  }
+
+  const normalized = value.trim();
+  if (normalized.length === 0) {
+    return null;
+  }
+
+  return normalized;
+}
+
+function readFirstTrimmedRecordString(
+  record: Record<string, unknown>,
+  keys: string[],
+): string | null {
+  for (const key of keys) {
+    const value = readTrimmedRecordString(record, key);
+    if (value !== null) {
+      return value;
+    }
+  }
+
+  return null;
+}
+
+function readGenericPluginIssueTitle(
+  record: Record<string, unknown>,
+  index: number,
+): string {
+  const title = readFirstTrimmedRecordString(record, [
+    "title",
+    "message",
+    "name",
+  ]);
+  if (title !== null) {
+    return title;
+  }
+
+  return `Item ${String(index + 1)}`;
+}
+
+function formatGenericPluginIssueLine(issue: unknown, index: number): string {
+  if (issue === null || typeof issue !== "object" || Array.isArray(issue)) {
+    return `${String(index + 1)}. ${JSON.stringify(issue)}`;
+  }
+
+  const record = issue as Record<string, unknown>;
+  const fragments = [readGenericPluginIssueTitle(record, index)];
+  const identifier = readFirstTrimmedRecordString(record, ["id", "issueId"]);
+  if (identifier !== null) {
+    fragments.push(`#${identifier}`);
+  }
+
+  const project = readFirstTrimmedRecordString(record, [
+    "projectIdentifier",
+    "projectId",
+  ]);
+  if (project !== null) {
+    fragments.push(`project=${project}`);
+  }
+
+  return `${String(index + 1)}. ${fragments.join(" - ")}`;
+}
+
+function readOptionalPluginOutput(data: unknown): string | undefined {
+  if (data === null || typeof data !== "object" || Array.isArray(data)) {
+    return undefined;
+  }
+
+  const output = (data as { output?: unknown }).output;
+  if (typeof output !== "string") {
+    return undefined;
+  }
+
+  const normalized = output.trim();
+  if (normalized.length === 0) {
+    return undefined;
+  }
+
+  return normalized;
+}
+
+function formatGenericPluginQueryResults(input: {
+  source: ErrorSource;
+  query: string;
+  issues: unknown[];
+  hasMore: boolean;
+  limit: number;
+}): string {
+  let resultCount = String(input.issues.length);
+  if (input.hasMore) {
+    resultCount = `${resultCount}+`;
+  }
+
+  const lines = [
+    `Source: ${input.source.name} (${input.source.sourceType})`,
+    `Query: ${input.query}`,
+    `Results: ${resultCount}`,
+  ];
+
+  for (const [index, issue] of input.issues.slice(0, input.limit).entries()) {
+    lines.push(formatGenericPluginIssueLine(issue, index));
+  }
+
+  return lines.join("\n");
+}
+
+async function executeCustomPluginQuery(args: {
+  source: ErrorSource;
+  query: string;
+  limit: number;
+  sourcesRepository: DesktopExternalSourceSourcesRepository;
+  pluginRuntime: DesktopPluginRuntimeService;
+  signal?: AbortSignal;
+}): Promise<{
+  output?: string;
+  issues?: unknown[];
+  hasMore?: boolean;
+}> {
+  const { source, query, limit, sourcesRepository, pluginRuntime, signal } =
+    args;
+  const pluginId = readSourcePluginId(source);
+  const plugin = pluginRuntime.getPlugin(pluginId);
+  const metadata = plugin?.metadata?.dataSource;
+  if (plugin === null || metadata?.sourceType !== source.sourceType) {
     throw new Error(
-      `External Source "${source.name}" is missing configuration.orgSlug`,
+      `External Source plugin "${pluginId}" does not match source type ${source.sourceType}`,
     );
   }
 
-  return orgSlug;
-}
+  const accessTokenRef = await refreshSourceAccessToken({
+    source,
+    sourcesRepository,
+    pluginRuntime,
+    signal,
+  });
+  const refreshedSource = { ...source, accessTokenRef };
+  const auth = await buildPluginAuthFromSource(refreshedSource, pluginRuntime);
+  const input = buildGenericPluginQueryInput(refreshedSource, query, limit);
 
-function normalizeQuery(
-  source: SupportedExternalSource,
-  query: string,
-): string {
-  if (source.sourceType === "posthog") {
-    return normalizePostHogSearchQuery(query);
+  if (hasErrorSourceProviderAction(plugin, "queryIssues")) {
+    return pluginRuntime.executeAction({
+      pluginId,
+      actionId: resolveErrorSourceProviderActionId({
+        runtime: pluginRuntime,
+        pluginId,
+        sourceType: source.sourceType,
+        action: "queryIssues",
+      }),
+      auth,
+      input,
+    }).then((result) => {
+      if (!result.ok) {
+        throw new Error(
+          `Plugin "${pluginId}" failed to query issues for external source "${source.name}": ${result.summary}`,
+        )
+      }
+
+      const page = readPluginIssueBatch(result.data);
+      return {
+        output: readOptionalPluginOutput(result.data),
+        issues: page?.issues,
+        hasMore: page?.hasMore,
+      };
+    });
   }
 
-  return query;
-}
+  if (hasErrorSourceProviderAction(plugin, "searchAlerts")) {
+    return pluginRuntime.executeAction({
+      pluginId,
+      actionId: resolveErrorSourceProviderActionId({
+        runtime: pluginRuntime,
+        pluginId,
+        sourceType: source.sourceType,
+        action: "searchAlerts",
+      }),
+      auth,
+      input,
+    }).then((result) => {
+      if (!result.ok) {
+        throw new Error(
+          `Plugin "${pluginId}" failed to search alerts for external source "${source.name}": ${result.summary}`,
+        )
+      }
 
-function normalizeIssues(issues: unknown): unknown[] {
-  if (Array.isArray(issues)) {
-    return issues;
+      return {
+        output: readPluginOutput(result.data),
+      };
+    });
   }
 
-  return [];
+  throw new Error(
+    `External Source provider ${source.sourceType} does not declare a query action yet`,
+  );
 }
 
 export class ExternalSourceRunbookQueryService
@@ -150,8 +393,8 @@ export class ExternalSourceRunbookQueryService
 {
   constructor(
     private readonly sourcesRepository: DesktopExternalSourceSourcesRepository,
-    private readonly providerFactory: DesktopExternalSourceProviderFactory,
     private readonly options?: { defaultLimit?: number },
+    private readonly pluginRuntime: DesktopPluginRuntimeService = createDesktopNodePluginRuntimeService(),
   ) {}
 
   async execute(input: ExternalSourceRunbookQueryInput): Promise<string> {
@@ -162,128 +405,26 @@ export class ExternalSourceRunbookQueryService
       throw new Error(`Selected external source ${sourceId} was not found`);
     }
 
-    const supportedSource = requireSupportedSource(source);
-    const normalizedQuery = normalizeQuery(supportedSource, query);
-    const orgSlug = readOrgSlug(supportedSource);
-
-    const token = await this.resolveAccessToken(supportedSource, input.signal);
-    const provider = getProviderForSource(this.providerFactory, supportedSource);
-    const projectIds = await this.resolveProjectIds(
-      supportedSource,
-      token,
-      orgSlug,
-      input.signal,
-    );
     const limit =
       this.options?.defaultLimit ?? DEFAULT_EXTERNAL_SOURCE_QUERY_LIMIT;
-    const page = await provider.queryIssues({
-      accessToken: token,
-      orgSlug,
-      projectIds,
-      query: normalizedQuery,
+    const customQuery = await executeCustomPluginQuery({
+      source,
+      query,
       limit,
+      sourcesRepository: this.sourcesRepository,
+      pluginRuntime: this.pluginRuntime,
       signal: input.signal,
     });
+    if (typeof customQuery.output === "string" && customQuery.output.length > 0) {
+      return customQuery.output;
+    }
 
-    return this.formatOutput({
-      source: supportedSource,
-      query: normalizedQuery,
-      issues: normalizeIssues(page.issues),
-      hasMore: page.hasMore,
+    return formatGenericPluginQueryResults({
+      source,
+      query,
+      issues: customQuery.issues ?? [],
+      hasMore: customQuery.hasMore === true,
       limit,
-    });
-  }
-
-  private async resolveAccessToken(
-    source: SupportedExternalSource,
-    signal?: AbortSignal,
-  ): Promise<string> {
-    return refreshSourceAccessToken({
-      source: source,
-      sourcesRepository: this.sourcesRepository,
-      providerFactory: this.providerFactory,
-      signal,
-    });
-  }
-
-  private async resolveProjectIds(
-    source: SupportedExternalSource,
-    accessToken: string,
-    orgSlug: string,
-    signal?: AbortSignal,
-  ): Promise<string[]> {
-    const configuredProjectIds = readConfiguredProjectIds(source.configuration);
-    if (configuredProjectIds.length > 0) {
-      return configuredProjectIds;
-    }
-
-    const configuredProjectSlugs = readConfiguredProjectSlugs(
-      source.configuration,
-    );
-    if (configuredProjectSlugs.length === 0) {
-      return [];
-    }
-
-    const provider = getProviderForSource(this.providerFactory, source);
-    const projects = await provider.listProjects({
-      accessToken,
-      orgSlug,
-      signal,
-    });
-    const resolvedProjects = resolveSentryProjectSelection(projects, {
-      projectSlugs: configuredProjectSlugs,
-    });
-
-    if (resolvedProjects.projectIds.length === 0) {
-      throw new Error(
-        `External Source "${source.name}" has Sentry project slugs that could not be resolved to numeric project IDs`,
-      );
-    }
-
-    await this.sourcesRepository.update({
-      id: source.id,
-      configuration: {
-        ...source.configuration,
-        projectIds: resolvedProjects.projectIds,
-        projectSlugs: resolvedProjects.projectSlugs,
-        projectNames: resolvedProjects.projectNames,
-      },
-    });
-
-    source.configuration = {
-      ...source.configuration,
-      projectIds: resolvedProjects.projectIds,
-      projectSlugs: resolvedProjects.projectSlugs,
-      projectNames: resolvedProjects.projectNames,
-    };
-
-    return resolvedProjects.projectIds;
-  }
-
-  private formatOutput(input: {
-    source: ErrorSource;
-    query: string;
-    issues: unknown[];
-    hasMore: boolean;
-    limit: number;
-  }): string {
-    if (input.source.sourceType === "posthog") {
-      return formatPostHogExternalSourceQueryResults({
-        sourceName: input.source.name,
-        sourceType: input.source.sourceType,
-        query: input.query,
-        issues: input.issues,
-        hasMore: input.hasMore,
-        limit: input.limit,
-      });
-    }
-    return formatSentryExternalSourceQueryResults({
-      sourceName: input.source.name,
-      sourceType: input.source.sourceType,
-      query: input.query,
-      issues: input.issues,
-      hasMore: input.hasMore,
-      limit: input.limit,
     });
   }
 }

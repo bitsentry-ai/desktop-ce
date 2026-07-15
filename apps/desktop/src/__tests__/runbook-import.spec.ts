@@ -185,6 +185,79 @@ describe("RunbookStore importRunbooks", () => {
     });
   });
 
+  it("includes plugin action fields in skip-conflict fingerprints", async () => {
+    const existingRunbookId = "runbook-existing-plugin";
+    const action = {
+      id: "action-existing-plugin",
+      runbookId: existingRunbookId,
+      sortOrder: 0,
+      type: "plugin",
+      title: "Query GitHub issues",
+      sourceId: "github",
+      query: "list_issues",
+      body: '{"owner":"bitsentry-ai","repo":"desktop"}',
+      url: '{"token":"${globals.github_token}"}',
+    };
+    const { store } = createStore({
+      runbook: {
+        findMany: vi.fn(() => [
+          {
+            id: existingRunbookId,
+            title: "Existing plugin runbook",
+            description: "",
+            revisionNumber: 1,
+            createdAt: "2026-05-31T00:00:00.000Z",
+            updatedAt: "2026-05-31T00:00:00.000Z",
+          },
+        ]),
+      },
+      runbookAction: {
+        findMany: vi.fn(({ where }: { where: { runbookId: string } }) => {
+          if (where.runbookId === existingRunbookId) {
+            return [action];
+          }
+
+          return [];
+        }),
+      },
+    });
+    const artifact: DesktopRunbookExportArtifactV1 = {
+      format: "bitsentry.runbooks.export",
+      version: 1,
+      exportedAt: "2026-05-31T00:00:00.000Z",
+      runbooks: [
+        {
+          title: "Plugin runbook",
+          actions: [
+            {
+              type: "plugin",
+              title: "Query GitHub issues",
+              pluginId: "github",
+              pluginActionId: "list_issues",
+              pluginInput: '{"owner":"bitsentry-ai","repo":"api"}',
+              pluginAuth: '{"token":"${globals.github_token}"}',
+            },
+          ],
+        },
+      ],
+    };
+
+    const summary = await store.importRunbooks({
+      artifact,
+      options: { conflictPolicy: "skip", dryRun: true },
+    });
+
+    expect(summary).toMatchObject({
+      imported: 1,
+      skipped: 0,
+      failed: 0,
+    });
+    expect(summary.results[0]).toMatchObject({
+      status: "imported",
+      title: "Plugin runbook",
+    });
+  });
+
   it("imports legacy external source actions without artifact externalSources", async () => {
     const { store, db } = createStore();
     const artifact: DesktopRunbookExportArtifactV1 = {
@@ -193,14 +266,14 @@ describe("RunbookStore importRunbooks", () => {
       exportedAt: "2026-05-31T00:00:00.000Z",
       runbooks: [
         {
-          title: "Retrieve errors",
+          title: "Retrieve issues",
           actions: [
             {
               type: "external_source",
-              title: "Query Sentry",
-              query: "is:unresolved",
+              title: "Query GitHub issues",
+              query: "is:issue is:open",
               sourceRef: "jagad",
-              sourceName: "Jagad",
+              sourceName: "Jagad GitHub",
             },
           ],
         },
@@ -218,7 +291,7 @@ describe("RunbookStore importRunbooks", () => {
       failed: 0,
     });
     expect(summary.results[0].warnings).toContain(
-      'Action "Query Sentry" references external source "Jagad" and should be reviewed in the target environment.',
+      'Action "Query GitHub issues" references external source "Jagad GitHub" and should be reviewed in the target environment.',
     );
     const [createRunbookActionCall] = db.runbookAction.create.mock.calls;
     expect(createRunbookActionCall[0]).toMatchObject({
@@ -236,12 +309,12 @@ describe("RunbookStore importRunbooks", () => {
       exportedAt: "2026-05-31T00:00:00.000Z",
       runbooks: [
         {
-          title: "Retrieve errors",
+          title: "Retrieve issues",
           actions: [
             {
               type: "external_source",
-              title: "Query Sentry",
-              query: "is:unresolved",
+              title: "Query GitHub issues",
+              query: "is:issue is:open",
               sourceRef: "jagad",
             },
           ],
@@ -250,10 +323,11 @@ describe("RunbookStore importRunbooks", () => {
       externalSources: [
         {
           ref: "other",
-          sourceType: "sentry",
+          sourceType: "github",
           name: "Other",
           configuration: {
-            orgSlug: "other",
+            owner: "other",
+            repo: "issues",
           },
         },
       ],
@@ -265,7 +339,7 @@ describe("RunbookStore importRunbooks", () => {
         options: { dryRun: true },
       }),
     ).rejects.toThrow(
-      'External Source action "Query Sentry" references sourceRef "jagad" but the import YAML does not define it under externalSources.',
+      'External Source action "Query GitHub issues" references sourceRef "jagad" but the import YAML does not define it under externalSources.',
     );
   });
 
@@ -276,16 +350,15 @@ describe("RunbookStore importRunbooks", () => {
         findMany: vi.fn(() => [
           {
             id: existingSourceId,
-            sourceType: "sentry",
-            name: "Jagad",
+            sourceType: "github",
+            name: "Jagad GitHub",
             accessTokenRef: "stored-token",
             refreshTokenRef: null,
             expiresAt: null,
             grantedScopes: "[]",
             configuration: JSON.stringify({
-              orgSlug: "jagad",
-              projectIds: ["4504367120777216"],
-              projectSlugs: ["server"],
+              owner: "jagad",
+              repo: "api",
             }),
             logLevelThreshold: "error",
             additionalMetadata: null,
@@ -307,15 +380,15 @@ describe("RunbookStore importRunbooks", () => {
       exportedAt: "2026-05-31T00:00:00.000Z",
       runbooks: [
         {
-          title: "Retrieve errors from Jagad",
+          title: "Retrieve issues from Jagad",
           actions: [
             {
               type: "external_source",
-              title: "Query Sentry",
-              query: "is:unresolved level:error",
+              title: "Query GitHub issues",
+              query: "is:issue is:open label:backend",
               sourceRef: "jagad",
-              sourceName: "Jagad",
-              sourceType: "sentry",
+              sourceName: "Jagad GitHub",
+              sourceType: "github",
             },
           ],
         },
@@ -323,12 +396,11 @@ describe("RunbookStore importRunbooks", () => {
       externalSources: [
         {
           ref: "jagad",
-          sourceType: "sentry",
-          name: "Jagad",
+          sourceType: "github",
+          name: "Jagad GitHub",
           configuration: {
-            orgSlug: "jagad",
-            projectIds: ["4504367120777216"],
-            projectSlugs: ["server"],
+            owner: "jagad",
+            repo: "api",
           },
           credentials: {
             authToken: "",
@@ -359,6 +431,65 @@ describe("RunbookStore importRunbooks", () => {
     });
   });
 
+  it("imports external sources without plugin-specific auth enforcement", async () => {
+    const { store, db } = createStore();
+    const artifact: DesktopRunbookExportArtifactV1 = {
+      format: "bitsentry.runbooks.export",
+      version: 1,
+      exportedAt: "2026-05-31T00:00:00.000Z",
+      runbooks: [
+        {
+          title: "Retrieve issues from Jagad",
+          actions: [
+            {
+              type: "external_source",
+              title: "Query GitHub issues",
+              query: "is:issue is:open label:backend",
+              sourceRef: "jagad",
+              sourceName: "Jagad GitHub",
+              sourceType: "github",
+            },
+          ],
+        },
+      ],
+      externalSources: [
+        {
+          ref: "jagad",
+          sourceType: "github",
+          name: "Jagad GitHub",
+          configuration: {
+            owner: "jagad",
+            repo: "api",
+          },
+        },
+      ],
+    };
+
+    const summary = await store.importRunbooks({
+      artifact,
+      options: { dryRun: false },
+    });
+
+    expect(summary).toMatchObject({
+      imported: 1,
+      skipped: 0,
+      failed: 0,
+    });
+    const [createSourceCall] = db.errorSource.create.mock.calls;
+    expect(createSourceCall[0].data).toMatchObject({
+      sourceType: "github",
+      name: "Jagad GitHub",
+      accessTokenRef: null,
+      refreshTokenRef: null,
+    });
+    const [createRunbookActionCall] = db.runbookAction.create.mock.calls;
+    expect(createRunbookActionCall[0]).toMatchObject({
+      data: {
+        sourceId: createSourceCall[0].data.id,
+      },
+    });
+  });
+
   it("rejects external source actions that omit sourceRef", async () => {
     const { store } = createStore();
     const artifact: DesktopRunbookExportArtifactV1 = {
@@ -367,12 +498,12 @@ describe("RunbookStore importRunbooks", () => {
       exportedAt: "2026-05-31T00:00:00.000Z",
       runbooks: [
         {
-          title: "Retrieve errors",
+          title: "Retrieve issues",
           actions: [
             {
               type: "external_source",
-              title: "Query Sentry",
-              query: "is:unresolved",
+              title: "Query GitHub issues",
+              query: "is:issue is:open",
             },
           ],
         },
@@ -380,10 +511,11 @@ describe("RunbookStore importRunbooks", () => {
       externalSources: [
         {
           ref: "jagad",
-          sourceType: "sentry",
-          name: "Jagad",
+          sourceType: "github",
+          name: "Jagad GitHub",
           configuration: {
-            orgSlug: "jagad",
+            owner: "jagad",
+            repo: "api",
           },
           credentials: {
             authToken: "",
@@ -398,7 +530,52 @@ describe("RunbookStore importRunbooks", () => {
         options: { dryRun: true },
       }),
     ).rejects.toThrow(
-      'External Source action "Query Sentry" is missing sourceRef in the import YAML.',
+      'External Source action "Query GitHub issues" is missing sourceRef in the import YAML.',
+    );
+  });
+});
+
+describe("Runbook import handlers", () => {
+  it("rejects Pro-only LLM providers in CE imports", async () => {
+    const db = createDb();
+    const executionService = {};
+    const globalVariablesService = {
+      list: vi.fn(() => []),
+    };
+    const handlers = createRunbookHandlers(
+      db as never,
+      {
+        executionService: executionService as never,
+        globalVariablesService: globalVariablesService as never,
+      },
+      { edition: "ce" },
+    );
+
+    await expect(
+      handlers["runbooks:import"]({
+        artifact: {
+          format: "bitsentry.runbooks.export",
+          version: 1,
+          exportedAt: "2026-06-15T00:00:00.000Z",
+          runbooks: [
+            {
+              title: "Kanye Rest",
+              actions: [
+                {
+                  type: "llm",
+                  title: "What did kanye say?",
+                  prompt: "Make a philosophical break down of what Kanye said.",
+                  llmProviderKey: "groq",
+                  llmModel: "openai/gpt-oss-20b",
+                },
+              ],
+            },
+          ],
+        },
+        options: { dryRun: true },
+      }),
+    ).rejects.toThrow(
+      'Runbook "Kanye Rest" action "What did kanye say?" uses unsupported LLM provider "groq". Supported providers: claude_code, codex, opencode, cursor.',
     );
   });
 });

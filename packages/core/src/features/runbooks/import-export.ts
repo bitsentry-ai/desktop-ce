@@ -38,6 +38,10 @@ type GlobalReferenceActionShape = {
   url?: string;
   body?: string;
   query?: string;
+  pluginId?: string;
+  pluginActionId?: string;
+  pluginInput?: string;
+  pluginAuth?: string;
   headers?: Array<{ key: string; value: string }>;
 };
 
@@ -50,6 +54,8 @@ function collectActionGlobalReferences(
   collectStringGlobalReferences(action.url, references);
   collectStringGlobalReferences(action.body, references);
   collectStringGlobalReferences(action.query, references);
+  collectStringGlobalReferences(action.pluginInput, references);
+  collectStringGlobalReferences(action.pluginAuth, references);
 
   for (const header of action.headers ?? []) {
     collectStringGlobalReferences(header.key, references);

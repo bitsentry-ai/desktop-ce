@@ -38,7 +38,7 @@ jobs:
             runs_on: blacksmith-12vcpu-macos-26
             package_command: pnpm run desktop:package:mac:arm64
           - label: Linux
-            runs_on: blacksmith-4vcpu-ubuntu-2404
+            runs_on: ubuntu-latest
             package_command: pnpm run desktop:package:linux
           - label: Windows
             runs_on: blacksmith-4vcpu-windows-2025
@@ -50,11 +50,22 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Initialize electron-trpc submodule
+      - name: Initialize package submodules
         shell: bash
         run: |
           git config submodule.packages/electron-trpc.url https://github.com/bitsentry-ai/electron-trpc.git
-          git submodule update --init --depth 1 packages/electron-trpc
+          git config submodule.packages/plugin-sdk.url https://github.com/bitsentry-ai/-bitsentry-plugin-sdk.git
+          git config submodule.packages/plugins/github.url https://github.com/bitsentry-ai/bitsentry-plugin-github.git
+          git config submodule.packages/plugins/posthog.url https://github.com/bitsentry-ai/bitsentry-plugin-posthog.git
+          git config submodule.packages/plugins/sentry.url https://github.com/bitsentry-ai/bitsentry-plugin-sentry.git
+          git config submodule.packages/plugins/wazuh.url https://github.com/bitsentry-ai/bitsentry-plugin-wazuh.git
+          git submodule update --init --depth 1 \
+            packages/electron-trpc \
+            packages/plugin-sdk \
+            packages/plugins/github \
+            packages/plugins/posthog \
+            packages/plugins/sentry \
+            packages/plugins/wazuh
 
       - name: Setup Node.js
         uses: actions/setup-node@v4

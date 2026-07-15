@@ -8,6 +8,7 @@ import type {
   DesktopRpcChannel,
   ErrorSourceRow,
   LLMProviderDto,
+  PluginDescriptor,
   RunbookLlmProviderKey,
 } from "../../services";
 import { getDesktopApi } from "../../services/desktop-api";
@@ -28,6 +29,8 @@ export function useRunbookResourceData({
   const [errorSources, setErrorSources] = useState<ErrorSourceRow[]>([]);
   const [errorSourcesLoading, setErrorSourcesLoading] = useState(true);
   const [llmProviders, setLlmProviders] = useState<LLMProviderDto[]>([]);
+  const [pluginDescriptors, setPluginDescriptors] = useState<PluginDescriptor[]>([]);
+  const [pluginsLoading, setPluginsLoading] = useState(true);
 
   const errorSourceNameCounts = errorSources.reduce<Record<string, number>>(
     (counts, source) => {
@@ -106,6 +109,26 @@ export function useRunbookResourceData({
     return options;
   }, [selectableLlmProviders]);
 
+  const pluginOptions = useMemo(
+    () =>
+      pluginDescriptors.map((plugin) => ({
+        id: plugin.id,
+        label: plugin.name,
+      })),
+    [pluginDescriptors],
+  );
+
+  const validPluginActionIdsByPluginId = useMemo(
+    () =>
+      new Map(
+        pluginDescriptors.map((plugin) => [
+          plugin.id,
+          new Set(plugin.actions.map((action) => action.id)),
+        ]),
+      ),
+    [pluginDescriptors],
+  );
+
   useEffect(() => {
     let cancelled = false;
 
@@ -132,6 +155,37 @@ export function useRunbookResourceData({
     };
 
     void loadErrorSources();
+    return () => {
+      cancelled = true;
+    };
+  }, [ipcInvoke]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadPlugins = async () => {
+      setPluginsLoading(true);
+      try {
+        const response = await ipcInvoke<{ data: PluginDescriptor[] }>(
+          "plugins:list",
+          {},
+        );
+        if (!cancelled) {
+          setPluginDescriptors(response.data);
+        }
+      } catch (error) {
+        console.error("Failed to load plugins:", error);
+        if (!cancelled) {
+          setPluginDescriptors([]);
+        }
+      } finally {
+        if (!cancelled) {
+          setPluginsLoading(false);
+        }
+      }
+    };
+
+    void loadPlugins();
     return () => {
       cancelled = true;
     };
@@ -238,6 +292,10 @@ export function useRunbookResourceData({
     errorSourcesLoading,
     errorSourceCount: errorSources.length,
     validErrorSourceIds,
+    pluginDescriptors,
+    pluginOptions,
+    pluginsLoading,
+    validPluginActionIdsByPluginId,
     llmProviderLabelsByKey,
     llmModelOptions,
     selectableLlmProviderCount: selectableLlmProviders.length,

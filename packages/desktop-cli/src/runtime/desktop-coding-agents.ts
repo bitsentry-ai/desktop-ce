@@ -15,7 +15,7 @@ import {
   addBreadcrumb,
   captureException as captureDesktopSentryException,
   captureMessage as captureDesktopSentryMessage,
-} from './desktop-sentry'
+} from './desktop-sentry.js'
 
 export type {
   ClaudeCodeExecutionOptions,

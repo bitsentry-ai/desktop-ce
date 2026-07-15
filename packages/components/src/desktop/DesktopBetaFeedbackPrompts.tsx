@@ -43,6 +43,7 @@ type RunbookTerminalAnalyticsDetail = {
   has_shell_step?: boolean;
   has_ai_step?: boolean;
   has_http_step?: boolean;
+  has_plugin_step?: boolean;
   has_external_source_step?: boolean;
   run_duration_ms?: number;
 };
@@ -56,6 +57,7 @@ type FeedbackPromptProperties = {
   has_shell_step?: boolean;
   has_ai_step?: boolean;
   has_http_step?: boolean;
+  has_plugin_step?: boolean;
   has_external_source_step?: boolean;
 };
 
@@ -268,6 +270,7 @@ function sharedPromptProperties(
   properties.has_shell_step = detail.has_shell_step;
   properties.has_ai_step = detail.has_ai_step;
   properties.has_http_step = detail.has_http_step;
+  properties.has_plugin_step = detail.has_plugin_step;
   properties.has_external_source_step = detail.has_external_source_step;
   return properties;
 }
@@ -284,6 +287,7 @@ function readTerminalAnalyticsDetail(event: Event): RunbookTerminalAnalyticsDeta
     has_shell_step: readBoolean(detail.has_shell_step),
     has_ai_step: readBoolean(detail.has_ai_step),
     has_http_step: readBoolean(detail.has_http_step),
+    has_plugin_step: readBoolean(detail.has_plugin_step),
     has_external_source_step: readBoolean(detail.has_external_source_step),
     run_duration_ms: readNumber(detail.run_duration_ms),
   };

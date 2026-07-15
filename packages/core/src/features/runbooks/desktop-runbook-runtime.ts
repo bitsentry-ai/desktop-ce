@@ -7,6 +7,8 @@ import type {
   RunbookImportOptions,
   RunbookImportSummary,
 } from "./export.schemas";
+import type { DesktopPluginRuntimeService } from "../plugins/desktop-plugin-registry";
+import type { ErrorSourceType } from "../error-sources/desktop-error-sources.types";
 
 export interface ExecuteRunbookInput {
   runbookId: string;
@@ -23,7 +25,7 @@ export interface ExecuteRunbookInput {
     needLabel?: string;
     sourceId?: string;
     sourceName?: string;
-    sourceType?: "sentry" | "wazuh" | "posthog";
+    sourceType?: ErrorSourceType;
     incidentThreadId?: string;
   };
 }
@@ -141,7 +143,6 @@ export interface DesktopEditionRunbookRuntimeBindings<
   TGlobalVariablesService,
   TRunbookStore,
   TErrorSourcesRepositoryAdapter,
-  TErrorSourceProviderFactory,
   TExternalSourceRunbookQueryService,
   TRunbookResultStore extends DesktopRunbookRuntimeResultStore,
   TLocalAiProvider extends DesktopRunbookRuntimeLocalAiProvider,
@@ -162,10 +163,10 @@ export interface DesktopEditionRunbookRuntimeBindings<
   ErrorSourcesRepositoryAdapter: new (
     db: TDb,
   ) => TErrorSourcesRepositoryAdapter;
-  ErrorSourceProviderFactory: new () => TErrorSourceProviderFactory;
   ExternalSourceRunbookQueryService: new (
     sourcesRepository: TErrorSourcesRepositoryAdapter,
-    providerFactory: TErrorSourceProviderFactory,
+    options?: { defaultLimit?: number },
+    pluginRuntime?: DesktopPluginRuntimeService,
   ) => TExternalSourceRunbookQueryService;
   RunbookResultStore: new (db: TDb) => TRunbookResultStore;
   LocalAiProvider: new (db: TDb) => TLocalAiProvider;
@@ -178,7 +179,9 @@ export interface DesktopEditionRunbookRuntimeBindings<
     windowGetter: () => null,
     options: undefined,
     localAiProvider: TLocalAiProvider,
+    pluginRuntime?: DesktopPluginRuntimeService,
   ) => TExecutionService;
+  createPluginRuntime?: () => DesktopPluginRuntimeService;
   createRunbookHandlers(
     db: TDb,
     args: {
@@ -238,7 +241,6 @@ export function createDesktopEditionRunbookRuntimeBindings<
   TGlobalVariablesService,
   TRunbookStore,
   TErrorSourcesRepositoryAdapter,
-  TErrorSourceProviderFactory,
   TExternalSourceRunbookQueryService,
   TRunbookResultStore extends DesktopRunbookRuntimeResultStore,
   TLocalAiProvider extends DesktopRunbookRuntimeLocalAiProvider,
@@ -251,7 +253,6 @@ export function createDesktopEditionRunbookRuntimeBindings<
     TGlobalVariablesService,
     TRunbookStore,
     TErrorSourcesRepositoryAdapter,
-    TErrorSourceProviderFactory,
     TExternalSourceRunbookQueryService,
     TRunbookResultStore,
     TLocalAiProvider,
@@ -270,6 +271,17 @@ export function createDesktopEditionRunbookRuntimeBindings<
   TExecutionService,
   TRunbookHandlers
 > {
+  let pluginRuntime: DesktopPluginRuntimeService | undefined
+
+  function getPluginRuntime(): DesktopPluginRuntimeService | undefined {
+    if (bindings.createPluginRuntime === undefined) {
+      return undefined
+    }
+
+    pluginRuntime ??= bindings.createPluginRuntime()
+    return pluginRuntime
+  }
+
   return {
     defaultStaleHeartbeatGraceMs: bindings.defaultStaleHeartbeatGraceMs,
     initializeDatabase() {
@@ -291,9 +303,11 @@ export function createDesktopEditionRunbookRuntimeBindings<
       return new bindings.RunbookStore(db, globalVariablesService);
     },
     createExternalSourceRunbookQueryService(db) {
+      const runtime = getPluginRuntime();
       return new bindings.ExternalSourceRunbookQueryService(
         new bindings.ErrorSourcesRepositoryAdapter(db),
-        new bindings.ErrorSourceProviderFactory(),
+        undefined,
+        runtime,
       );
     },
     createRunbookResultStore(db) {
@@ -319,6 +333,7 @@ export function createDesktopEditionRunbookRuntimeBindings<
         () => null,
         undefined,
         localAiProvider,
+        getPluginRuntime(),
       );
     },
     createRunbookHandlers(db, args) {

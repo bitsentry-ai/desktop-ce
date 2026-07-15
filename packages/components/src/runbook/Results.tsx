@@ -16,6 +16,7 @@ import {
   Globe,
   History,
   Loader2,
+  Puzzle,
   ScanSearch,
   ShieldCheck,
   Terminal,
@@ -235,6 +236,8 @@ function typeIcon(type: RunbookActionType) {
       return Bot;
     case "http":
       return Globe;
+    case "plugin":
+      return Puzzle;
     case "external_source":
       return AlertCircle;
     case "telemetry_existing_entry":
