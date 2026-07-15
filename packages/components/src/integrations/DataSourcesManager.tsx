@@ -359,6 +359,8 @@ function buildInitialEditSetupFieldValues(
 
 interface DataSourcesManagerProps {
   showHeader?: boolean;
+  showInstallPlugin?: boolean;
+  showSourceList?: boolean;
 }
 
 interface FieldLabelProps {
@@ -409,6 +411,8 @@ function SelectChevron() {
 
 export default function DataSourcesManager({
   showHeader = true,
+  showInstallPlugin = true,
+  showSourceList = true,
 }: DataSourcesManagerProps) {
   const { t } = useTranslation();
   const [status, setStatus] = useState<{
@@ -1033,17 +1037,19 @@ export default function DataSourcesManager({
             </p>
           </div>
           <div className="flex items-center gap-2">
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => {
-                setInstallDialogOpen(true);
-              }}
-              data-tour="data-sources-install-plugin"
-            >
-              <Download className="size-4" />
-              {t("common.dataSourcesManager.installPlugin")}
-            </Button>
+            {showInstallPlugin && (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => {
+                  setInstallDialogOpen(true);
+                }}
+                data-tour="data-sources-install-plugin"
+              >
+                <Download className="size-4" />
+                {t("common.dataSourcesManager.installPlugin")}
+              </Button>
+            )}
             <Button
               size="sm"
               variant="outline"
@@ -1060,17 +1066,19 @@ export default function DataSourcesManager({
       )}
       {!showHeader && (
         <div className="flex justify-end gap-2">
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => {
-              setInstallDialogOpen(true);
-            }}
-            data-tour="data-sources-install-plugin"
-          >
-            <Download className="size-4" />
-            {t("common.dataSourcesManager.installPlugin")}
-          </Button>
+          {showInstallPlugin && (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => {
+                setInstallDialogOpen(true);
+              }}
+              data-tour="data-sources-install-plugin"
+            >
+              <Download className="size-4" />
+              {t("common.dataSourcesManager.installPlugin")}
+            </Button>
+          )}
           <Button
             size="sm"
             variant="outline"
@@ -1087,12 +1095,12 @@ export default function DataSourcesManager({
 
       {statusContent}
 
-      {isLoading && (
+      {showSourceList && isLoading && (
         <p className="text-sm text-muted-foreground">
           {t("common.dataSourcesManager.loadingExternalSources")}
         </p>
       )}
-      {!isLoading && sources.length === 0 && (
+      {showSourceList && !isLoading && sources.length === 0 && (
         <div className="rounded-lg border border-dashed border-border p-8 text-center">
           <p className="text-sm text-muted-foreground">
             {t("common.dataSourcesManager.noExternalSourcesConnected")}
@@ -1102,7 +1110,7 @@ export default function DataSourcesManager({
           </p>
         </div>
       )}
-      {!isLoading && sources.length > 0 && (
+      {showSourceList && !isLoading && sources.length > 0 && (
         <div className="rounded-lg border border-border divide-y divide-border">
           {sources.map((source) => {
             const sourcePluginName = pluginsById.get(
