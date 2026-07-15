@@ -49,7 +49,7 @@ describe('desktop IPC dispatch boundary', () => {
       pluginId: 'sentry',
       sourceType: 'sentry',
       name: 'Production',
-      authToken: 'not-a-real-secret',
+      setupValues: { authToken: 'not-a-real-secret' },
     }],
     ['dialog:showSaveDialog', {
       defaultFileName: 'runbooks.json',
