@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { type ReactNode, useMemo, useState } from "react";
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
 import {
@@ -22,6 +22,8 @@ import { toast } from "sonner";
 interface ExternalSourcesSettingsSectionProps {
   id?: string;
   className?: string;
+  headerActions?: ReactNode;
+  showInstallPlugin?: boolean;
 }
 
 function formatDate(value: string | null, t: (key: string) => string): string {
@@ -60,6 +62,8 @@ function formatSyncStatus(
 export function ExternalSourcesSettingsSection({
   id = "external-sources",
   className,
+  headerActions,
+  showInstallPlugin = true,
 }: ExternalSourcesSettingsSectionProps) {
   const { t } = useTranslation();
   const { data: sources = [], isLoading } = useErrorSources();
@@ -108,9 +112,13 @@ export function ExternalSourcesSettingsSection({
               {t("common.dataSourcesManager.connectExternalServicesToFeed")}
             </p>
           </div>
-          <Button size="sm" variant="outline" disabled>
-            {t("common.dataSourcesManager.installPlugin")}
-          </Button>
+          {showInstallPlugin ? (
+            <Button size="sm" variant="outline" disabled>
+              {t("common.dataSourcesManager.installPlugin")}
+            </Button>
+          ) : (
+            headerActions
+          )}
         </div>
 
         {isLoading && (
