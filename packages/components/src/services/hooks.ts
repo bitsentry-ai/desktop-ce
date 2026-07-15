@@ -970,6 +970,7 @@ export function useSyncErrorSource() {
       port.sync(id, { logLevelThreshold, syncEnabled }),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: queryKeys.errorSourcesRoot });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.diagnosisRoot });
     },
   });
 }
