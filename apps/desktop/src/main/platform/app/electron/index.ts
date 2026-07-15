@@ -90,6 +90,7 @@ import {
 } from './oauth-callback'
 import { getAutoUpdaterEnablement } from '@bitsentry-ce/core/features/updater/desktop-updater-policy'
 import { startAutoUpdater } from '@bitsentry-ce/desktop-cli/runtime/desktop-updater'
+import { LocalPluginCredentialsStore } from '@bitsentry-ce/desktop-cli/runtime/plugin-credentials-store'
 import { DesktopShutdownCoordinator } from './shutdown-coordinator'
 
 type UpdaterController = ReturnType<typeof startAutoUpdater> | null
