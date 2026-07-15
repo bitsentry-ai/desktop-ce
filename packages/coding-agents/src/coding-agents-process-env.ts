@@ -3,6 +3,20 @@ import path from 'path'
 
 const PREFERRED_NODE_MAJOR = 22
 
+const SAFE_CODING_AGENT_ENVIRONMENT_KEY = /^(HOME|USER|LOGNAME|SHELL|PATH|NVM_DIR|LANG|TERM|COLORTERM|TMP|TEMP|TMPDIR|XDG_(CONFIG|CACHE|DATA)_HOME|APPDATA|LOCALAPPDATA|PROGRAMDATA|SYSTEMROOT|COMSPEC|WINDIR)$/i
+
+function createSafeCodingAgentEnvironment(
+  baseEnv: NodeJS.ProcessEnv,
+): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = {}
+  for (const [key, value] of Object.entries(baseEnv)) {
+    if (SAFE_CODING_AGENT_ENVIRONMENT_KEY.test(key)) {
+      env[key] = value
+    }
+  }
+  return env
+}
+
 function parseVersionPart(part: string): number {
   const parsed = Number.parseInt(part, 10)
   if (Number.isNaN(parsed)) {
@@ -119,7 +133,7 @@ function getPathVariableKeys(baseEnv: NodeJS.ProcessEnv): string[] {
 export function createCodingAgentsProcessEnv(
   baseEnv: NodeJS.ProcessEnv = process.env,
 ): NodeJS.ProcessEnv {
-  const env = { ...baseEnv }
+  const env = createSafeCodingAgentEnvironment(baseEnv)
   const preferredNode22BinDir = resolvePreferredNode22BinDir(baseEnv)
   if (preferredNode22BinDir === undefined || preferredNode22BinDir === '') {
     return env

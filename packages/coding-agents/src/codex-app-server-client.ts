@@ -8,6 +8,12 @@ import { createCodingAgentsProcessEnv } from './coding-agents-process-env'
 const REQUEST_TIMEOUT_MS = 300_000
 const MAX_STDERR_BUFFER = 5_000
 
+function resolveRequestTimeoutMs(value: number | undefined): number {
+  return typeof value === 'number' && Number.isFinite(value) && value > 0
+    ? value
+    : REQUEST_TIMEOUT_MS
+}
+
 /** JSON-RPC request id — Codex protocol allows string or number per the
  *  generated schema (ServerRequest__RequestId = string | number). */
 export type JsonRpcId = string | number
@@ -23,6 +29,10 @@ interface JsonRpcRequest {
   id: JsonRpcId
   method: string
   params?: unknown
+}
+
+export interface CodexAppServerClientOptions {
+  requestTimeoutMs?: number
 }
 
 interface JsonRpcNotification {
@@ -79,9 +89,13 @@ export class CodexAppServerClient extends EventEmitter {
     private readonly binaryPath: string,
     private readonly cwd: string,
     private readonly extraArgs: string[] = [],
+    options: CodexAppServerClientOptions = {},
   ) {
     super()
+    this.requestTimeoutMs = resolveRequestTimeoutMs(options.requestTimeoutMs)
   }
+
+  private readonly requestTimeoutMs: number
 
   async start(): Promise<void> {
     const args = [...this.extraArgs, 'app-server']
@@ -171,19 +185,27 @@ export class CodexAppServerClient extends EventEmitter {
       this.cleanup('process exited')
     })
 
-    await this.sendRequest('initialize', {
+    await this.sendRequestWithTimeout('initialize', {
       clientInfo: {
         name: 'bitsentry_desktop',
         title: 'BitSentry SuperTerminal',
         version: '0.1.0',
       },
       capabilities: { experimentalApi: true },
-    })
+    }, REQUEST_TIMEOUT_MS)
 
     this.writeMessage({ method: 'initialized' })
   }
 
   async sendRequest(method: string, params?: unknown): Promise<unknown> {
+    return this.sendRequestWithTimeout(method, params, this.requestTimeoutMs)
+  }
+
+  private async sendRequestWithTimeout(
+    method: string,
+    params: unknown,
+    timeoutMs: number,
+  ): Promise<unknown> {
     if (this.closed || this.child?.stdin.writable !== true) {
       throw new Error(`Cannot send ${method}: Codex app-server is not running`)
     }
@@ -192,8 +214,8 @@ export class CodexAppServerClient extends EventEmitter {
     return new Promise<unknown>((resolve, reject) => {
       const timeout = setTimeout(() => {
         this.pending.delete(id)
-        reject(new Error(`Codex RPC ${method} timed out after ${String(REQUEST_TIMEOUT_MS / 1000)}s`))
-      }, REQUEST_TIMEOUT_MS)
+        reject(new Error(`Codex RPC ${method} timed out after ${String(timeoutMs / 1000)}s`))
+      }, timeoutMs)
 
       this.pending.set(id, { method, timeout, resolve, reject })
       const request: JsonRpcRequest = { id, method, params }

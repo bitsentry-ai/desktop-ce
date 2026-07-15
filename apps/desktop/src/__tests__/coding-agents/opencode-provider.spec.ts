@@ -42,6 +42,10 @@ function finishOpenCodeProcess(child: MockChildProcess, stdoutLines: unknown[] =
   child.emit('close', 0)
 }
 
+function delay(milliseconds: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds))
+}
+
 describe('executeOpenCode', () => {
   afterEach(() => {
     mocks.spawn.mockReset()
@@ -178,6 +182,99 @@ describe('executeOpenCode', () => {
       exitCode: 0,
     })
     expect(textDeltas.join('')).toBe('Hello')
+  })
+
+  it('recovers from delayed, fragmented, and malformed process output before a valid event arrives', async () => {
+    const child = new MockChildProcess()
+    mocks.spawn.mockReturnValue(child)
+    const textDeltas: string[] = []
+    const { executeOpenCode } = await import(
+      '@bitsentry-ce/desktop-cli/runtime/desktop-coding-agents'
+    )
+    const resultPromise = executeOpenCode({
+      prompt: 'Recover from process protocol noise',
+      binaryPath: 'opencode',
+      abortController: new AbortController(),
+      onDelta: (delta) => {
+        if (delta.type === 'text' && delta.text !== undefined) textDeltas.push(delta.text)
+      },
+    })
+
+    await delay(10)
+    child.stdout.write('not-json-provider-frame\n')
+    child.stdout.write('{"type":"message.part.updated","properties":{"part":')
+    child.stdout.write('{"id":"part-1","type":"text","text":"recovered"}}}\n')
+    child.stdout.end()
+    child.stderr.end()
+    child.emit('close', 0)
+
+    await expect(resultPromise).resolves.toMatchObject({
+      output: 'not-json-provider-frame\nrecovered',
+      exitCode: 0,
+    })
+    expect(textDeltas.join('')).toBe('not-json-provider-frame\nrecovered')
+  })
+
+  it('cancels a hung OpenCode process and keeps its later output out of the turn', async () => {
+    const child = new MockChildProcess()
+    mocks.spawn.mockReturnValue(child)
+    const abortController = new AbortController()
+    const statuses: string[] = []
+    const textDeltas: string[] = []
+    const { executeOpenCode } = await import(
+      '@bitsentry-ce/desktop-cli/runtime/desktop-coding-agents'
+    )
+    const resultPromise = executeOpenCode({
+      prompt: 'Cancel a hung request',
+      binaryPath: 'opencode',
+      abortController,
+      onDelta: (delta) => {
+        if (delta.type === 'status' && delta.status !== undefined) statuses.push(delta.status)
+        if (delta.type === 'text' && delta.text !== undefined) textDeltas.push(delta.text)
+      },
+    })
+
+    await delay(10)
+    abortController.abort()
+    child.stdout.write(`${JSON.stringify({
+      type: 'message.part.updated',
+      properties: { part: { id: 'late-part', type: 'text', text: 'late output' } },
+    })}\n`)
+    child.stdout.end()
+    child.stderr.end()
+    child.emit('close', null)
+
+    await expect(resultPromise).resolves.toMatchObject({ output: '', exitCode: -1 })
+    expect(statuses).toEqual(['started', 'cancelled'])
+    expect(textDeltas).toEqual([])
+    expect(child.kill).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps overlapping OpenCode turns correlated when the second process completes first', async () => {
+    const firstChild = new MockChildProcess()
+    const secondChild = new MockChildProcess()
+    mocks.spawn.mockReturnValueOnce(firstChild).mockReturnValueOnce(secondChild)
+    const { executeOpenCode } = await import(
+      '@bitsentry-ce/desktop-cli/runtime/desktop-coding-agents'
+    )
+
+    const first = executeOpenCode({
+      prompt: 'first turn', binaryPath: 'opencode', abortController: new AbortController(),
+    })
+    const second = executeOpenCode({
+      prompt: 'second turn', binaryPath: 'opencode', abortController: new AbortController(),
+    })
+
+    finishOpenCodeProcess(secondChild, [{
+      type: 'message.part.updated',
+      properties: { part: { id: 'second', type: 'text', text: 'second output' } },
+    }])
+    await expect(second).resolves.toMatchObject({ output: 'second output' })
+    finishOpenCodeProcess(firstChild, [{
+      type: 'message.part.updated',
+      properties: { part: { id: 'first', type: 'text', text: 'first output' } },
+    }])
+    await expect(first).resolves.toMatchObject({ output: 'first output' })
   })
 
   it('filters OpenCode part deltas to visible text parts', async () => {
@@ -349,6 +446,39 @@ describe('executeOpenCode', () => {
       output: 'Hello after exit',
       exitCode: 0,
     })
+  })
+
+  it('does not emit a late OpenCode stream event after cancellation', async () => {
+    const child = new MockChildProcess()
+    mocks.spawn.mockReturnValue(child)
+    const abortController = new AbortController()
+    const textDeltas: string[] = []
+
+    const { executeOpenCode } = await import(
+      '@bitsentry-ce/desktop-cli/runtime/desktop-coding-agents'
+    )
+    const resultPromise = executeOpenCode({
+      prompt: 'Cancel immediately',
+      binaryPath: 'opencode',
+      abortController,
+      onDelta: (delta) => {
+        if (delta.type === 'text' && delta.text !== undefined) textDeltas.push(delta.text)
+      },
+    })
+
+    abortController.abort()
+    child.stdout.write(`${JSON.stringify({
+      type: 'message.part.updated',
+      properties: {
+        part: { id: 'late-part', type: 'text', text: 'late output' },
+      },
+    })}\n`)
+    child.stdout.end()
+    child.stderr.end()
+    child.emit('close', 0)
+
+    await expect(resultPromise).resolves.toMatchObject({ output: '', exitCode: 0 })
+    expect(textDeltas).toEqual([])
   })
 
   it('surfaces JSON error events from OpenCode failures', async () => {

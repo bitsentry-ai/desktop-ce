@@ -50,6 +50,8 @@
     "desktop:quality": "pnpm --dir packages/electron-trpc --filter electron-trpc build && pnpm run desktop:typecheck && pnpm run desktop:typecheck:test && pnpm run desktop:test:contracts && pnpm run plugin-system:test && pnpm run desktop:test && pnpm run desktop:build",
     "desktop:quality:smoke": "xvfb-run -a pnpm run desktop:test:smoke",
     "desktop:test:smoke": "pnpm --filter @bitsentry-ce/desktop test:smoke",
+    "desktop:test:smoke:runbook": "pnpm --filter @bitsentry-ce/desktop test:smoke:runbook",
+    "desktop:test:smoke:runbook:packaged": "pnpm --filter @bitsentry-ce/desktop test:smoke:runbook:packaged",
     "desktop:typecheck": "pnpm --filter @bitsentry-ce/desktop typecheck",
     "desktop:typecheck:test": "pnpm --filter @bitsentry-ce/desktop typecheck:test",
     "desktop:typecheck:contract": "pnpm --filter @bitsentry-ce/desktop run typecheck:contract",
