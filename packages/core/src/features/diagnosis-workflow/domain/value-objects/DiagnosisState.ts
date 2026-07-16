@@ -25,7 +25,9 @@ const STATE_TRANSITIONS: Record<DiagnosisStateValue, DiagnosisStateValue[]> = {
   verification_pending: ["verified", "failed"],
   verified: ["completed", "failed"],
   completed: [],
-  failed: [],
+  // A failed diagnosis can be explicitly replayed by the dashboard retry flow.
+  // The retry enters pending before running a fresh LLM diagnosis.
+  failed: ["pending"],
 };
 
 function isDiagnosisStateValue(value: string): value is DiagnosisStateValue {

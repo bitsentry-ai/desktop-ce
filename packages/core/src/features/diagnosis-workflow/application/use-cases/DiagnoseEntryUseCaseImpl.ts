@@ -50,7 +50,20 @@ export class DiagnoseEntryUseCaseImpl implements DiagnoseEntryUseCase {
       input.entryId,
     );
 
-    // 3. Validate current state is 'pending'
+    // 3. A failed diagnosis is retryable through the explicit replay flow.
+    // Preserve the audit trail while returning the entry to the state required
+    // by the diagnosis operation.
+    if (diagnosisRecord.currentState.value() === "failed") {
+      diagnosisRecord.transitionTo(DiagnosisState.pending(), {
+        operation: "diagnose",
+        metadata: {
+          current_action_label: "Retrying Diagnosis",
+          retry: true,
+        },
+      });
+    }
+
+    // 4. Validate current state is 'pending'
     if (!diagnosisRecord.currentState.isPending()) {
       throw new WrongStateError(
         "pending",
@@ -59,19 +72,21 @@ export class DiagnoseEntryUseCaseImpl implements DiagnoseEntryUseCase {
       );
     }
 
-    // 4. Run LLM analysis
+    // 5. Run LLM analysis
     const analysis = await this.analyzeEntry(input, entry);
     const refinedCategory = analysis.category ?? entry.category;
 
-    // 5. Set category on diagnosis record
+    // 6. Set category on diagnosis record
     // Use LLM-refined category if available, otherwise fall back to telemetry entry's category
     if (refinedCategory !== undefined) {
       diagnosisRecord.setCategory(refinedCategory, analysis.categoryConfidence);
     }
 
-    diagnosisRecord.applySourceContext(mapDiagnosisSourceContextFromEntry(entry));
+    diagnosisRecord.applySourceContext(
+      mapDiagnosisSourceContextFromEntry(entry),
+    );
 
-    // 6. Transition state to llm_assessed
+    // 7. Transition state to llm_assessed
     diagnosisRecord.transitionTo(DiagnosisState.llmAssessed(), {
       operation: "diagnose",
       text: analysis.text,
@@ -82,7 +97,7 @@ export class DiagnoseEntryUseCaseImpl implements DiagnoseEntryUseCase {
       },
     });
 
-    // 7. Save the updated record
+    // 8. Save the updated record
     await this.diagnosisRepository.save(diagnosisRecord);
 
     return {
