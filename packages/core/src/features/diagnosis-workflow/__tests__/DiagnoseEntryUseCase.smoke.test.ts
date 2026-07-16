@@ -1,7 +1,9 @@
 import { DiagnoseEntryUseCaseImpl } from "../application/use-cases/DiagnoseEntryUseCaseImpl";
+import { VerifyDiagnosisUseCaseImpl } from "../application/use-cases/VerifyDiagnosisUseCaseImpl";
 import type {
   DiagnosisRepository,
   LLMService,
+  MCPService,
   TelemetryEntryData,
   TelemetryQueryService,
 } from "../application/ports/outbound";
@@ -93,6 +95,50 @@ const run = async (): Promise<void> => {
       (entry) => entry.fromState === "failed" && entry.toState === "pending",
     ),
     "retry should record the failed-to-pending transition",
+  );
+
+  const verificationRecord = DiagnosisRecord.create(12);
+  verificationRecord.transitionTo(DiagnosisState.llmAssessed(), {
+    operation: "diagnose",
+    text: "Potential frontend issue",
+  });
+
+  const verificationRepository: DiagnosisRepository = {
+    findByEntryId: () => Promise.resolve(verificationRecord),
+    ensureForEntry: () => Promise.resolve(verificationRecord),
+    save: (record: DiagnosisRecord) => Promise.resolve(record),
+    list: () => Promise.resolve({ items: [], total: 0 }),
+    getDebugInfo: () => Promise.resolve(null),
+  };
+
+  const failingMcpService: MCPService = {
+    verify: () =>
+      Promise.resolve({
+        verificationText: "Evidence is insufficient",
+        toolsUsed: ["sentry"],
+        passed: false,
+      }),
+  };
+
+  const verificationResult = await new VerifyDiagnosisUseCaseImpl(
+    verificationRepository,
+    telemetryQueryService,
+    failingMcpService,
+  ).execute({ entryId: 12 });
+
+  assert(
+    verificationResult.newState === "failed",
+    "failed verification should transition directly to failed",
+  );
+  assert(
+    verificationRecord.currentState.value() === "failed",
+    "failed verification should not leave the record verified",
+  );
+  assert(
+    !verificationRecord.stateHistory.some(
+      (entry) => entry.toState === "verified",
+    ),
+    "failed verification should never append a verified transition",
   );
 };
 
