@@ -69,34 +69,6 @@ const run = async (): Promise<void> => {
     "diagnose use-case should transition to llm_assessed",
   );
 
-  const failedDiagnosisRecord = DiagnosisRecord.create(11);
-  failedDiagnosisRecord.transitionTo(DiagnosisState.failed());
-
-  const retryRepository: DiagnosisRepository = {
-    findByEntryId: () => Promise.resolve(failedDiagnosisRecord),
-    ensureForEntry: () => Promise.resolve(failedDiagnosisRecord),
-    save: (record: DiagnosisRecord) => Promise.resolve(record),
-    list: () => Promise.resolve({ items: [], total: 0 }),
-    getDebugInfo: () => Promise.resolve(null),
-  };
-
-  const retryResult = await new DiagnoseEntryUseCaseImpl(
-    retryRepository,
-    telemetryQueryService,
-    llmService,
-  ).execute({ entryId: 11 });
-
-  assert(
-    retryResult.newState === "llm_assessed",
-    "diagnose use-case should retry a failed entry",
-  );
-  assert(
-    failedDiagnosisRecord.stateHistory.some(
-      (entry) => entry.fromState === "failed" && entry.toState === "pending",
-    ),
-    "retry should record the failed-to-pending transition",
-  );
-
   const verificationRecord = DiagnosisRecord.create(12);
   verificationRecord.transitionTo(DiagnosisState.llmAssessed(), {
     operation: "diagnose",

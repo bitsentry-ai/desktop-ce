@@ -233,7 +233,6 @@
   "common.desktopBetaFeedbackPrompts.whatWereYouDiagnosing": "Apa yang ingin Anda diagnosis?",
   "common.desktopStateBootstrap.loadingWorkspace": "Memuat ruang kerja...",
   "common.diagnosisDetails.backToDiagnosis": "Kembali ke Diagnosis",
-  "common.diagnosisDetails.attempt": "Percobaan {{number}}",
   "common.diagnosisDetails.closeDetails": "Tutup detail",
   "common.diagnosisDetails.completed": "Selesai",
   "common.diagnosisDetails.created": "Dibuat",
