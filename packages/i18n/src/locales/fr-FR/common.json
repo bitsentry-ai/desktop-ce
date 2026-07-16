@@ -278,6 +278,7 @@
   "common.diagnosisFilters.source": "Source",
   "common.diagnosisFilters.status": "Statut",
   "common.diagnosisFilters.telemetry": "Télémétrie",
+  "common.diagnosisFilters.sentry": "Sentry",
   "common.diagnosisFilters.to": "Au",
   "common.diagnosisTable.actions": "Actions",
   "common.diagnosisTable.agent": "Agent",

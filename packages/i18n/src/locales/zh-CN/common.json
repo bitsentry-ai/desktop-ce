@@ -278,6 +278,7 @@
   "common.diagnosisFilters.source": "来源",
   "common.diagnosisFilters.status": "状态",
   "common.diagnosisFilters.telemetry": "遥测",
+  "common.diagnosisFilters.sentry": "Sentry",
   "common.diagnosisFilters.to": "至",
   "common.diagnosisTable.actions": "操作",
   "common.diagnosisTable.agent": "智能体",

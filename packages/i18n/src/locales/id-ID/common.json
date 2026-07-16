@@ -278,6 +278,7 @@
   "common.diagnosisFilters.source": "Sumber",
   "common.diagnosisFilters.status": "Keadaan",
   "common.diagnosisFilters.telemetry": "Telemetri",
+  "common.diagnosisFilters.sentry": "Sentry",
   "common.diagnosisFilters.to": "Hingga",
   "common.diagnosisTable.actions": "Tindakan",
   "common.diagnosisTable.agent": "Agen",
