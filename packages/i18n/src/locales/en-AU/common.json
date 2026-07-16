@@ -233,6 +233,7 @@
   "common.desktopBetaFeedbackPrompts.whatWereYouDiagnosing": "What were you trying to diagnose?",
   "common.desktopStateBootstrap.loadingWorkspace": "Loading workspace...",
   "common.diagnosisDetails.backToDiagnosis": "Back to Diagnosis",
+  "common.diagnosisDetails.attempt": "Attempt {{number}}",
   "common.diagnosisDetails.closeDetails": "Close details",
   "common.diagnosisDetails.completed": "Completed",
   "common.diagnosisDetails.created": "Created",

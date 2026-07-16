@@ -233,6 +233,7 @@
   "common.desktopBetaFeedbackPrompts.whatWereYouDiagnosing": "Qu’essayiez-vous de diagnostiquer ?",
   "common.desktopStateBootstrap.loadingWorkspace": "Chargement de l'espace de travail...",
   "common.diagnosisDetails.backToDiagnosis": "Retour au diagnostic",
+  "common.diagnosisDetails.attempt": "Tentative {{number}}",
   "common.diagnosisDetails.closeDetails": "Fermer les détails",
   "common.diagnosisDetails.completed": "Terminé",
   "common.diagnosisDetails.created": "Créé",

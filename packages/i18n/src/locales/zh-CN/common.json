@@ -233,6 +233,7 @@
   "common.desktopBetaFeedbackPrompts.whatWereYouDiagnosing": "你当时想诊断什么？",
   "common.desktopStateBootstrap.loadingWorkspace": "正在加载工作区...",
   "common.diagnosisDetails.backToDiagnosis": "返回诊断",
+  "common.diagnosisDetails.attempt": "尝试 {{number}}",
   "common.diagnosisDetails.closeDetails": "关闭详情",
   "common.diagnosisDetails.completed": "已完成",
   "common.diagnosisDetails.created": "创建时间",
