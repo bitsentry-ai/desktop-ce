@@ -16,11 +16,15 @@ export interface CreateDesktopSentryBindingsOptions {
 export function createDesktopSentryBindings(
   options: CreateDesktopSentryBindingsOptions,
 ): DesktopSentryApi {
-  const env = options.env ?? process.env
+  // Keep the production fallback as a direct process.env access so the
+  // Electron Vite build can replace the secret-backed value at build time.
+  // Tests and alternate runtimes may still provide an explicit environment.
+  const env = options.env
 
   return createDesktopSentry({
-    dsn: env.BITSENTRY_SENTRY_DSN ?? '',
-    releaseChannel: env.BITSENTRY_RELEASE_CHANNEL ?? 'stable',
+    dsn: env?.BITSENTRY_SENTRY_DSN ?? process.env.BITSENTRY_SENTRY_DSN ?? '',
+    releaseChannel:
+      env?.BITSENTRY_RELEASE_CHANNEL ?? process.env.BITSENTRY_RELEASE_CHANNEL ?? 'stable',
     runtime: options.runtime,
     logger: options.logger,
     loadSentryMain: () => options.loadSentryMain(),
