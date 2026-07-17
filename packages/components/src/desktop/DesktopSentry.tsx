@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react'
 import { useLocation } from 'react-router-dom'
+import { captureDesktopAnalyticsException } from './DesktopPosthogRenderer'
 
 let initialized = false
 const TRACES_SAMPLE_RATE = 0.2
@@ -256,6 +257,12 @@ export function captureRendererException(
   error: unknown,
   context?: Record<string, unknown>,
 ): void {
+  try {
+    captureDesktopAnalyticsException(error)
+  } catch (captureError: unknown) {
+    console.warn('[posthog] Failed to forward desktop exception', captureError)
+  }
+
   if (!initialized) {
     return
   }
