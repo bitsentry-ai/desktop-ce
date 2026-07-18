@@ -6,9 +6,7 @@ import {
 import { getRuntimeAppVersion } from './electron-app.js'
 
 declare global {
-  var __BITSENTRY_TEST_LOAD_SENTRY_MAIN__:
-    | (() => Promise<DesktopSentryPort>)
-    | undefined
+  var __BITSENTRY_TEST_LOAD_SENTRY_MAIN__: (() => Promise<DesktopSentryPort>) | undefined
 }
 
 function loadSentryMainRuntime(): Promise<DesktopSentryPort> {
@@ -16,8 +14,8 @@ function loadSentryMainRuntime(): Promise<DesktopSentryPort> {
     return globalThis.__BITSENTRY_TEST_LOAD_SENTRY_MAIN__()
   }
 
-  const runtimeRequire = eval('require') as (id: string) => unknown
-  return Promise.resolve(runtimeRequire('@sentry/electron/main') as DesktopSentryPort)
+  const sentryMainModule = '@sentry/electron/main'
+  return import(sentryMainModule).then((module) => module as unknown as DesktopSentryPort)
 }
 
 const desktopSentry = createDesktopSentryBindings({
@@ -36,23 +34,16 @@ export const initSentryIfEnabled = (
   ...args: Parameters<typeof desktopSentry.initSentryIfEnabled>
 ) => desktopSentry.initSentryIfEnabled(...args)
 export const closeSentry = () => desktopSentry.closeSentry()
-export const captureException = (
-  ...args: Parameters<typeof desktopSentry.captureException>
-) => {
+export const captureException = (...args: Parameters<typeof desktopSentry.captureException>) => {
   desktopSentry.captureException(...args)
 }
-export const captureMessage = (
-  ...args: Parameters<typeof desktopSentry.captureMessage>
-) => {
+export const captureMessage = (...args: Parameters<typeof desktopSentry.captureMessage>) => {
   desktopSentry.captureMessage(...args)
 }
 export const addBreadcrumb = (...args: Parameters<typeof desktopSentry.addBreadcrumb>) => {
   desktopSentry.addBreadcrumb(...args)
 }
 
-export function startTransaction(
-  name: string,
-  op: string,
-): unknown {
+export function startTransaction(name: string, op: string): unknown {
   return desktopSentry.startTransaction(name, op)
 }
