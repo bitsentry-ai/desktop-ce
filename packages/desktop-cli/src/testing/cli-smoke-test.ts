@@ -1,8 +1,8 @@
 import { mkdtemp, readFile } from 'fs/promises'
 import os from 'os'
 import path from 'path'
-import type { CliJson } from './cli-test-helpers'
-import { createCliTestContext, removeTempDirWithRetry } from './cli-test-helpers'
+import type { CliJson } from './cli-test-helpers.js'
+import { createCliTestContext, removeTempDirWithRetry } from './cli-test-helpers.js'
 
 type CliTestContext = ReturnType<typeof createCliTestContext>
 

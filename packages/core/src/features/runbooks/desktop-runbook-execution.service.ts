@@ -2730,7 +2730,20 @@ export class RunbookExecutionService {
   private async emitSnapshot(session: RunbookExecutionSession): Promise<void> {
     bumpExecutionSnapshotVersion(session.snapshot);
     const snapshot = this.snapshotForBoundary(session);
-    await this.resultStore.saveExecutionSnapshot(session.resultId, snapshot);
+    if (snapshot.snapshotVersion === undefined) {
+      throw new Error("Runbook execution snapshot version is required");
+    }
+    const eventOutcome = await this.resultStore.applyExecutionSnapshotEvent(
+      session.resultId,
+      {
+        eventId: `snapshot:${snapshot.executionId}:${String(snapshot.snapshotVersion)}`,
+        expectedSnapshotVersion: snapshot.snapshotVersion - 1,
+        snapshot,
+      },
+    );
+    if (eventOutcome !== "accepted") {
+      return;
+    }
     if (snapshot.status !== "running") {
       this.stopExecutionHeartbeat(session);
       if (session.controlCompleted !== true) {
@@ -2751,10 +2764,18 @@ export class RunbookExecutionService {
     };
     const win = this.windowGetter();
     if (win !== null && !win.isDestroyed()) {
-      win.webContents.send(RUNBOOK_EXECUTION_EVENT_CHANNEL, payload);
+      try {
+        win.webContents.send(RUNBOOK_EXECUTION_EVENT_CHANNEL, payload);
+      } catch {
+        // Renderer teardown cannot retroactively fail an already-persisted run.
+      }
     }
     for (const listener of this.listeners) {
-      listener(payload);
+      try {
+        listener(payload);
+      } catch {
+        // Subscribers are notification-only and must not alter execution state.
+      }
     }
   }
 

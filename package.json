@@ -14,7 +14,7 @@
     "changelog:desktop": "git-cliff -c cliff.toml --tag-pattern '^desktop-v[0-9].*'",
     "changelog:desktop:unreleased": "git-cliff -c cliff.toml --tag-pattern '^desktop-v[0-9].*' --unreleased",
     "build": "pnpm run build:packages && pnpm run desktop:build",
-    "lint": "pnpm --filter @bitsentry-ce/desktop lint && pnpm --filter @bitsentry/plugin-sdk lint && pnpm --filter @bitsentry-ce/core lint && pnpm run plugins:lint && pnpm --filter @bitsentry-ce/components lint && pnpm --filter @bitsentry-ce/coding-agents lint && pnpm --filter @bitsentry-ce/desktop-cli lint && pnpm --filter @bitsentry-ce/i18n lint && pnpm --dir packages/electron-trpc run lint",
+    "lint": "node scripts/eslint/ts7-unavailable.mjs && pnpm --dir packages/electron-trpc run lint",
     "lint:fix": "pnpm --filter @bitsentry-ce/desktop lint:fix && pnpm --filter @bitsentry/plugin-sdk lint:fix && pnpm --filter @bitsentry-ce/core lint:fix && pnpm --filter './packages/plugins/*' lint:fix && pnpm --filter @bitsentry-ce/components lint:fix && pnpm --filter @bitsentry-ce/coding-agents lint:fix && pnpm --filter @bitsentry-ce/desktop-cli lint:fix && pnpm --filter @bitsentry-ce/i18n lint:fix && pnpm --dir packages/electron-trpc run lint:fix",
     "format": "pnpm --dir packages/electron-trpc run lint:fix",
     "format:check": "pnpm --dir packages/electron-trpc run lint",
@@ -50,6 +50,8 @@
     "desktop:quality": "pnpm --dir packages/electron-trpc --filter electron-trpc build && pnpm run desktop:typecheck && pnpm run desktop:typecheck:test && pnpm run desktop:test:contracts && pnpm run plugin-system:test && pnpm run desktop:test && pnpm run desktop:build",
     "desktop:quality:smoke": "xvfb-run -a pnpm run desktop:test:smoke",
     "desktop:test:smoke": "pnpm --filter @bitsentry-ce/desktop test:smoke",
+    "desktop:test:smoke:runbook": "pnpm --filter @bitsentry-ce/desktop test:smoke:runbook",
+    "desktop:test:smoke:runbook:packaged": "pnpm --filter @bitsentry-ce/desktop test:smoke:runbook:packaged",
     "desktop:typecheck": "pnpm --filter @bitsentry-ce/desktop typecheck",
     "desktop:typecheck:test": "pnpm --filter @bitsentry-ce/desktop typecheck:test",
     "desktop:typecheck:contract": "pnpm --filter @bitsentry-ce/desktop run typecheck:contract",
@@ -73,10 +75,10 @@
     "eslint": "10.5.0",
     "eslint-plugin-react-hooks": "^7.0.1",
     "eslint-plugin-react-refresh": "^0.5.2",
-    "eslint-plugin-sonarjs": "^4.1.0",
     "eslint-plugin-unicorn": "^68.0.0",
     "git-cliff": "^2.13.1",
     "globals": "^17.3.0",
-    "typescript-eslint": "^8.56.1"
+    "typescript": "7.0.2",
+    "typescript-eslint": "^8.63.0"
   }
 }

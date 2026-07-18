@@ -7,7 +7,6 @@ import {
 import {
   createDesktopEditionIpcPayloadValidator,
 } from './desktop-ipc-payload-schemas'
-import type { DesktopRpcChannel } from './desktop-ipc-contract'
 
 type DesktopIpcPayloadValidatorOptions = {
   edition: 'ce' | 'pro'
@@ -27,7 +26,5 @@ export function createDesktopAppIpcPayloadValidator({
     importFromFileOptionsRequired,
   })
 
-  return (channel: DesktopRpcChannel, payload: unknown): unknown => {
-    return validatePayload(channel, payload)
-  }
+  return validatePayload
 }

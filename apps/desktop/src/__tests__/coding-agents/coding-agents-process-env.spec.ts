@@ -61,4 +61,24 @@ describe('createCodingAgentsProcessEnv', () => {
     expect(pathEntries).toContain(node20Bin)
     expect(env.PATH).toBeUndefined()
   })
+
+  it('forwards only the environment needed to locate and run the local CLI', () => {
+    const env = createCodingAgentsProcessEnv({
+      HOME: '/tmp/bitsentry-home',
+      PATH: '/usr/bin',
+      LANG: 'en_US.UTF-8',
+      OPENAI_API_KEY: 'must-not-reach-child-process',
+      GITHUB_TOKEN: 'must-not-reach-child-process',
+      DATABASE_URL: 'must-not-reach-child-process',
+    })
+
+    expect(env).toMatchObject({
+      HOME: '/tmp/bitsentry-home',
+      PATH: '/usr/bin',
+      LANG: 'en_US.UTF-8',
+    })
+    expect(env.OPENAI_API_KEY).toBeUndefined()
+    expect(env.GITHUB_TOKEN).toBeUndefined()
+    expect(env.DATABASE_URL).toBeUndefined()
+  })
 })

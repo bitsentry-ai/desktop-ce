@@ -73,7 +73,9 @@ export interface CreateDesktopMainWindowOptions {
   desktopShell: DesktopElectronShell
   isDebug: boolean
   isSmokeTest: boolean
+  autoQuitSmokeTest?: boolean
   smokeTestReadyMarker: string
+  onSmokeTestReady?: () => void
   preloadPath: string
   localRendererPath: string
   installReactDevTools: () => Promise<void>
@@ -268,9 +270,12 @@ export async function createDesktopMainWindow(
     options.onRendererReady()
     if (options.isSmokeTest) {
       options.logger.warn(options.smokeTestReadyMarker)
-      setTimeout(() => {
-        options.quitApp()
-      }, 500)
+      options.onSmokeTestReady?.()
+      if (options.autoQuitSmokeTest !== false) {
+        setTimeout(() => {
+          options.quitApp()
+        }, 500)
+      }
     }
   })
 

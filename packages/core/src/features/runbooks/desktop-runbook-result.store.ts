@@ -44,10 +44,14 @@ interface InvestigationSessionTable {
 
 export interface DesktopRunbookResultDatabase {
   investigationSession: InvestigationSessionTable
+  auditLog?: {
+    create(args: { data: Record<string, unknown> }): Promise<unknown>
+  }
   $executeRawUnsafe(query: string): Promise<unknown>
   $queryRawUnsafe<T extends DesktopRunbookResultRow = DesktopRunbookResultRow>(
     query: string,
   ): Promise<T[]>
+  $transaction?<T>(operation: () => Promise<T>): Promise<T>
 }
 
 const runbookSessionRowSchema = z.record(z.string(), z.unknown())
@@ -82,6 +86,10 @@ export interface CreateRunbookResultSessionInput {
 export interface RunbookResultPersistence {
   createRunbookResultSession(input: CreateRunbookResultSessionInput): Promise<void>
   saveExecutionSnapshot(resultId: string, snapshot: RunbookExecutionRecord): Promise<void>
+  applyExecutionSnapshotEvent(
+    resultId: string,
+    input: ApplyExecutionSnapshotEventInput,
+  ): Promise<ExecutionSnapshotEventOutcome>
   getExecutionSnapshotByExecutionId(executionId: string): Promise<RunbookExecutionRecord | null>
   getExecutionSnapshotByResultId(resultId: string): Promise<RunbookExecutionRecord | null>
   getLatestExecutionSnapshotByIncidentThreadId(
@@ -104,6 +112,14 @@ export interface RunbookResultPersistence {
   ): Promise<void>
   markStaleRunningSessionsFailed(options?: { heartbeatGraceMs?: number }): Promise<number>
 }
+
+export interface ApplyExecutionSnapshotEventInput {
+  eventId: string
+  expectedSnapshotVersion: number
+  snapshot: RunbookExecutionRecord
+}
+
+export type ExecutionSnapshotEventOutcome = 'accepted' | 'duplicate' | 'stale'
 
 type ExecutionControlRow = DesktopRunbookResultRow & {
   heartbeatAt?: string | null
@@ -193,6 +209,59 @@ export class SqliteRunbookResultStore implements RunbookResultPersistence {
         executionSnapshotJson: JSON.stringify(snapshot),
         updatedAt: new Date().toISOString(),
       },
+    })
+  }
+
+  async applyExecutionSnapshotEvent(
+    resultId: string,
+    input: ApplyExecutionSnapshotEventInput,
+  ): Promise<ExecutionSnapshotEventOutcome> {
+    return this.inTransaction(async () => {
+      const safeExecutionId = input.snapshot.executionId.replace(/'/g, "''")
+      const safeEventId = input.eventId.replace(/'/g, "''")
+      const existing = await this.db.$queryRawUnsafe<{ eventId: string }>(`
+        SELECT "eventId"
+        FROM "RunbookExecutionEventJournal"
+        WHERE "executionId" = '${safeExecutionId}'
+          AND "eventId" = '${safeEventId}'
+        LIMIT 1
+      `)
+      if (existing.length > 0) {
+        return 'duplicate'
+      }
+
+      const current = await this.getExecutionSnapshotByResultId(resultId)
+      if (
+        current === null ||
+        current.snapshotVersion !== input.expectedSnapshotVersion ||
+        (current.status !== 'running' && current.status !== input.snapshot.status)
+      ) {
+        return 'stale'
+      }
+
+      await this.saveExecutionSnapshot(resultId, input.snapshot)
+      const safeResultId = resultId.replace(/'/g, "''")
+      const safeAppliedAt = new Date().toISOString().replace(/'/g, "''")
+      await this.recordExecutionSnapshotAudit({
+        resultId,
+        executionId: input.snapshot.executionId,
+        eventId: input.eventId,
+        expectedSnapshotVersion: input.expectedSnapshotVersion,
+        acceptedSnapshotVersion: input.snapshot.snapshotVersion,
+        status: input.snapshot.status,
+        acceptedAt: safeAppliedAt,
+      })
+      await this.db.$executeRawUnsafe(`
+        INSERT INTO "RunbookExecutionEventJournal" (
+          "executionId", "eventId", "resultId", "expectedSnapshotVersion",
+          "acceptedSnapshotVersion", "acceptedAt"
+        ) VALUES (
+          '${safeExecutionId}', '${safeEventId}', '${safeResultId}',
+          ${String(input.expectedSnapshotVersion)}, ${String(input.snapshot.snapshotVersion)},
+          '${safeAppliedAt}'
+        )
+      `)
+      return 'accepted'
     })
   }
 
@@ -329,10 +398,13 @@ export class SqliteRunbookResultStore implements RunbookResultPersistence {
         continue
       }
 
-      await this.markSessionInterrupted(resultId, session, completedAt)
-      if (executionId.length > 0) {
-        await this.completeExecutionControl(executionId, 'stale-recovery', completedAt)
-      }
+      await this.inTransaction(async () => {
+        await this.markSessionInterrupted(resultId, session, completedAt)
+        await this.recordStaleRecoveryAudit(resultId, executionId, completedAt)
+        if (executionId.length > 0) {
+          await this.completeExecutionControl(executionId, 'stale-recovery', completedAt)
+        }
+      })
       updatedCount += 1
     }
 
@@ -410,6 +482,59 @@ export class SqliteRunbookResultStore implements RunbookResultPersistence {
         completedAt,
         executionSnapshotJson: this.interruptedSnapshotJson(session, completedAt),
         updatedAt: completedAt,
+      },
+    })
+  }
+
+  private async inTransaction<T>(operation: () => Promise<T>): Promise<T> {
+    if (this.db.$transaction === undefined) {
+      return operation()
+    }
+    return this.db.$transaction(operation)
+  }
+
+  private async recordStaleRecoveryAudit(
+    resultId: string,
+    executionId: string,
+    completedAt: string,
+  ): Promise<void> {
+    if (this.db.auditLog === undefined) {
+      return
+    }
+
+    await this.db.auditLog.create({
+      data: {
+        action: 'runbook.execution.interrupted_after_restart',
+        userId: null,
+        details: JSON.stringify({
+          resultId,
+          executionId,
+          completionReason: 'app_shutdown',
+          completedAt,
+        }),
+      },
+    })
+  }
+
+  private async recordExecutionSnapshotAudit(input: {
+    resultId: string
+    executionId: string
+    eventId: string
+    expectedSnapshotVersion: number
+    acceptedSnapshotVersion: number | undefined
+    status: RunbookExecutionRecord['status']
+    acceptedAt: string
+  }): Promise<void> {
+    if (this.db.auditLog === undefined) {
+      return
+    }
+
+    await this.db.auditLog.create({
+      data: {
+        action: 'runbook.execution.snapshot_applied',
+        userId: null,
+        // Do not persist the snapshot, action input, tool output, or variables.
+        details: JSON.stringify(input),
       },
     })
   }

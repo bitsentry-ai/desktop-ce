@@ -1,0 +1,45 @@
+name: Desktop CLI Canary
+
+on:
+  schedule:
+    - cron: '23 3 * * *'
+  workflow_dispatch:
+    inputs:
+      codex:
+        type: boolean
+        default: true
+      claude:
+        type: boolean
+        default: true
+      cursor:
+        type: boolean
+        default: true
+      opencode:
+        type: boolean
+        default: true
+
+jobs:
+  authenticated-provider-probes:
+    runs-on: [self-hosted, macOS, desktop-cli-canary]
+    environment: desktop-cli-canary
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    env:
+      BITSENTRY_REAL_CODEX_PROBE: ${{ github.event_name == 'schedule' || inputs.codex && '1' || '0' }}
+      BITSENTRY_REAL_CLAUDE_PROBE: ${{ github.event_name == 'schedule' || inputs.claude && '1' || '0' }}
+      BITSENTRY_REAL_CURSOR_PROBE: ${{ github.event_name == 'schedule' || inputs.cursor && '1' || '0' }}
+      BITSENTRY_REAL_OPENCODE_PROBE: ${{ github.event_name == 'schedule' || inputs.opencode && '1' || '0' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.12.0
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.32.1
+          run_install: false
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @bitsentry-ce/coding-agents build
+      - name: Probe authenticated local provider installations
+        run: pnpm --filter @bitsentry-ce/desktop test:cli-canary

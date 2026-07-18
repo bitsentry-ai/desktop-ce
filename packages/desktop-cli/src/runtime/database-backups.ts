@@ -1,7 +1,7 @@
 import path from 'path'
 import { access, copyFile, mkdir, readdir, stat, unlink } from 'fs/promises'
-import log from './cli-log'
-import { getRuntimeUserDataPath } from './runtime-paths'
+import log from './cli-log.js'
+import { getRuntimeUserDataPath } from './runtime-paths.js'
 
 const BACKUP_RETENTION_COUNT = 5
 

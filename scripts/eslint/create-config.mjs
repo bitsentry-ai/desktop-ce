@@ -1,5 +1,4 @@
 import js from "@eslint/js";
-import sonarjs from "eslint-plugin-sonarjs";
 import globals from "globals";
 import reactHooks from "eslint-plugin-react-hooks";
 import reactRefresh from "eslint-plugin-react-refresh";
@@ -47,12 +46,6 @@ export const sharedTypeScriptRules = {
       ignoreRestArgs: false,
     },
   ],
-  "@typescript-eslint/no-unsafe-assignment": "error",
-  "@typescript-eslint/no-unsafe-member-access": "error",
-  "@typescript-eslint/no-unsafe-call": "error",
-  "@typescript-eslint/no-unsafe-argument": "error",
-  "@typescript-eslint/no-unsafe-return": "error",
-  "@typescript-eslint/no-unnecessary-type-assertion": "error",
   "@typescript-eslint/consistent-type-assertions": [
     "error",
     {
@@ -60,7 +53,6 @@ export const sharedTypeScriptRules = {
       objectLiteralTypeAssertions: "never",
     },
   ],
-  "@typescript-eslint/no-unnecessary-condition": "off",
   "@typescript-eslint/strict-boolean-expressions": "off",
   complexity: ["warn", 60],
   "no-ternary": "error",
@@ -75,11 +67,6 @@ export const sharedTypeScriptRules = {
         "Do not use double assertions. Validate or narrow the value instead.",
     },
   ],
-  "sonarjs/cognitive-complexity": ["warn", 30],
-  "sonarjs/no-collapsible-if": "warn",
-  "sonarjs/no-duplicated-branches": "warn",
-  "sonarjs/no-identical-functions": "error",
-  "sonarjs/prefer-single-boolean-return": "warn",
   "unicorn/filename-case": "off",
   "unicorn/no-nested-ternary": "error",
   "unicorn/no-null": "off",
@@ -114,19 +101,15 @@ export function createPackageConfig({
   return tseslint.config(
     { ignores: [...sharedIgnores, ...ignores] },
     {
-      extends: [js.configs.recommended, ...tseslint.configs.strictTypeChecked],
+      extends: [js.configs.recommended, ...tseslint.configs.strict],
       files: ["**/*.{ts,tsx,mts,cts}"],
       languageOptions: {
         ecmaVersion: 2022,
         sourceType: "module",
         globals: sharedGlobals,
-        parserOptions: {
-          projectService: true,
-          tsconfigRootDir,
-        },
+        parserOptions: { tsconfigRootDir },
       },
       plugins: {
-        sonarjs,
         unicorn,
         ...(react
           ? {

@@ -19,11 +19,13 @@ interface NotarizeContext {
   };
 }
 
-const loadNotarize = async (): Promise<typeof import('@electron/notarize')> => {
+const loadNotarize = async (): Promise<
+  typeof import('@electron/notarize', { with: { 'resolution-mode': 'import' } })
+> => {
   // `@electron/notarize` is ESM-only. This keeps the afterSign hook compatible
   // with our CommonJS-compiled runtime.
   return import('@electron/notarize');
-}
+};
 
 export default async function notarizing(context: NotarizeContext) {
   const { electronPlatformName, appOutDir } = context;
@@ -56,7 +58,7 @@ export default async function notarizing(context: NotarizeContext) {
 
   console.log(`  • Notarizing ${appPath} ...`);
 
-  const { notarize } = await loadNotarize()
+  const { notarize } = await loadNotarize();
 
   await notarize({
     appPath,

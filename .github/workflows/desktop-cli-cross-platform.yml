@@ -35,13 +35,13 @@ jobs:
       matrix:
         include:
           - label: macOS
-            runs_on: blacksmith-12vcpu-macos-26
+            runs_on: macos-latest
             package_command: pnpm run desktop:package:mac:arm64
           - label: Linux
-            runs_on: blacksmith-4vcpu-ubuntu-2404
+            runs_on: ubuntu-latest
             package_command: pnpm run desktop:package:linux
           - label: Windows
-            runs_on: blacksmith-4vcpu-windows-2025
+            runs_on: windows-latest
             package_command: pnpm run desktop:package:win
 
     steps:
@@ -54,6 +54,11 @@ jobs:
         shell: bash
         run: |
           git config submodule.packages/electron-trpc.url https://github.com/bitsentry-ai/electron-trpc.git
+          git config submodule.packages/plugin-sdk.url https://github.com/bitsentry-ai/-bitsentry-plugin-sdk.git
+          git config submodule.packages/plugins/github.url https://github.com/bitsentry-ai/bitsentry-plugin-github.git
+          git config submodule.packages/plugins/posthog.url https://github.com/bitsentry-ai/bitsentry-plugin-posthog.git
+          git config submodule.packages/plugins/sentry.url https://github.com/bitsentry-ai/bitsentry-plugin-sentry.git
+          git config submodule.packages/plugins/wazuh.url https://github.com/bitsentry-ai/bitsentry-plugin-wazuh.git
           git -c url.https://github.com/.insteadOf=git@github.com: \
             submodule update --init --force --depth=1 --recursive
 
@@ -84,7 +89,8 @@ jobs:
             libxss1 \
             libasound2t64 \
             libgbm1 \
-            libatk-bridge2.0-0
+            libatk-bridge2.0-0 \
+            xvfb
 
       - name: Install dependencies
         shell: bash
@@ -139,3 +145,15 @@ jobs:
       - name: Run packaged desktop CLI stress test
         shell: bash
         run: pnpm run desktop:test:cli:packaged:stress
+
+      - name: Run packaged no-op runbook smoke test
+        shell: bash
+        env:
+          BITSENTRY_DESKTOP_SMOKE_BINARY: ${{ runner.os == 'macOS' && 'release/build/mac-arm64/SuperTerminal.app/Contents/MacOS/SuperTerminal' || runner.os == 'Windows' && 'release/build/win-unpacked/SuperTerminal.exe' || 'release/build/linux-unpacked/SuperTerminal' }}
+          BITSENTRY_DESKTOP_SMOKE_NO_SANDBOX: ${{ runner.os == 'Linux' && '1' || '' }}
+        run: |
+          if [ "${{ runner.os }}" = "Linux" ]; then
+            xvfb-run -a pnpm --dir apps/desktop run test:smoke:runbook:packaged
+          else
+            pnpm --dir apps/desktop run test:smoke:runbook:packaged
+          fi

@@ -5,7 +5,9 @@ const { runCliSmokeTest } = require(
     __dirname,
     '../../../../packages/desktop-cli/dist/testing/cli-smoke-test.js',
   ),
-) as typeof import('../../../packages/desktop-cli/dist/testing/cli-smoke-test.js')
+) as typeof import('../../../packages/desktop-cli/dist/testing/cli-smoke-test.js', {
+  with: { 'resolution-mode': 'import' }
+})
 
 void runCliSmokeTest(path.resolve(__dirname, '../..')).catch((error: unknown) => {
   let message = String(error)

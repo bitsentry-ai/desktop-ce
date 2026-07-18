@@ -1,5 +1,6 @@
 import { readFile, rm, writeFile } from 'fs/promises'
 import { spawn } from 'child_process'
+import { createRequire } from 'module'
 import path from 'path'
 import YAML from 'yaml'
 
@@ -68,14 +69,15 @@ function getErrorCode(error: unknown): string {
 
 export function createCliTestContext(desktopDir: string) {
   const cliEntry = path.join(desktopDir, 'out', 'cli-bundle', 'cli.js')
+  const desktopRequire = createRequire(path.join(desktopDir, 'package.json'))
   const waitPollMs = 250
 
   function resolveElectronBinary(): string {
     try {
-      const electronModulePath = require.resolve('electron', {
+      const electronModulePath = desktopRequire.resolve('electron', {
         paths: [desktopDir],
       })
-      const electronBinary: unknown = require(electronModulePath)
+      const electronBinary: unknown = desktopRequire(electronModulePath)
       if (typeof electronBinary !== 'string') {
         throw new Error(`Electron resolved to a non-string value from ${electronModulePath}`)
       }

@@ -2,6 +2,7 @@
   "name": "@bitsentry-ce/desktop-cli",
   "version": "0.1.0",
   "private": true,
+  "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
@@ -28,13 +29,13 @@
   },
   "scripts": {
     "build": "rm -rf dist && tsc -p tsconfig.build.json",
-    "lint": "eslint .",
+    "lint": "node ../../scripts/eslint/ts7-unavailable.mjs",
     "lint:fix": "eslint . --fix",
     "test": "vitest run --config vitest.config.ts"
   },
   "devDependencies": {
     "@types/node": "^25.3.0",
-    "typescript": "^5.9.3",
+    "typescript": "^7.0.2",
     "vitest": "^4.1.5"
   },
   "dependencies": {

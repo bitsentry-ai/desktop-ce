@@ -12,4 +12,4 @@ export {
 export { DesktopSettingsAdapter } from '@bitsentry-ce/core/features/auth'
 
 // Local AI providers (Claude Code / Codex CLI)
-export { CodingAgentsProviderService } from './desktop-coding-agents'
+export { CodingAgentsProviderService } from './desktop-coding-agents.js'

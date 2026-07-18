@@ -1,0 +1,51 @@
+name: Change Guardrails
+
+on:
+  pull_request:
+    types: [opened, edited, reopened, synchronize]
+
+permissions:
+  contents: read
+
+jobs:
+  conventional-commits:
+    name: Validate PR title and commit messages
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Validate Conventional Commit format
+        shell: bash
+        env:
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          set -euo pipefail
+          pattern='^(build|chore|ci|docs|feat|fix|perf|refactor|revert|style|test)(\([a-z0-9][a-z0-9._/@-]*\))?(!)?: [a-z][a-z0-9 .()/_-]*$'
+
+          validate() {
+            local label="$1"
+            local subject="$2"
+
+            if [[ ! "$subject" =~ $pattern ]]; then
+              echo "::error title=$label must use Conventional Commits::$subject"
+              echo "Expected: type(optional-scope): lowercase subject"
+              exit 1
+            fi
+          }
+
+          validate "Pull request title" "$PR_TITLE"
+          git fetch --no-tags origin "$BASE_REF" --depth=1
+
+          subjects="$(git log --format=%s "origin/$BASE_REF..HEAD")"
+          if [[ -z "$subjects" ]]; then
+            echo "::error::No commits found between the PR branch and its base branch."
+            exit 1
+          fi
+
+          while IFS= read -r subject; do
+            validate "Commit message" "$subject"
+          done <<< "$subjects"
