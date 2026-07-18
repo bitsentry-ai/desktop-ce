@@ -29,6 +29,10 @@ import {
   type TemplateSecureValueMode,
 } from "./resolver";
 import { executeShellCommandTool } from "../agent-runtime/capabilities/execute-shell-command.capability";
+import {
+  OrchestrationError,
+  runOrchestratedOperation,
+} from "../agent-runtime/shared/effect-orchestration";
 import type { ExternalSourceRunbookQueryExecutor } from "../error-sources/desktop-external-source-runbook-query-service";
 import { createDesktopNodePluginRuntimeService } from "../plugins/desktop-plugin-runtime.node";
 import type { DesktopPluginRuntimeService } from "../plugins/desktop-plugin-registry";
@@ -350,12 +354,6 @@ interface WaitForCompletionOptions {
   timeoutMs?: number;
 }
 
-interface WaitForCompletionState {
-  settled: boolean;
-  timeout: ReturnType<typeof setTimeout> | null;
-  unsubscribe: (() => void) | undefined;
-}
-
 interface RunbookExecutionStartOptions {
   incidentThreadId?: string;
   parameterValues?: RunbookParameterValues;
@@ -601,134 +599,62 @@ export class RunbookExecutionService {
     return this.waitForRunningCompletion(executionId, options);
   }
 
-  private waitForRunningCompletion(
+  private async waitForRunningCompletion(
     executionId: string,
     options: WaitForCompletionOptions | undefined,
   ): Promise<RunbookExecutionRecord | null> {
-    return new Promise<RunbookExecutionRecord | null>((resolve, reject) => {
-      const state: WaitForCompletionState = {
-        settled: false,
-        timeout: null,
-        unsubscribe: undefined,
-      };
-      const handleAbort = () => {
-        this.failWaitForCompletion(
-          state,
-          cleanup,
-          reject,
-          new Error("Runbook wait cancelled"),
-        );
-      };
-      const cleanup = () => {
-        this.cleanupWaitForCompletion(state, options?.signal, handleAbort);
-      };
-      const finish = (result: RunbookExecutionRecord | null) => {
-        this.finishWaitForCompletion(state, cleanup, resolve, result);
-      };
-      const fail = (error: Error) => {
-        this.failWaitForCompletion(state, cleanup, reject, error);
-      };
+    const callerSignal = options?.signal ?? new AbortController().signal;
+    const timeoutMs =
+      typeof options?.timeoutMs === "number" && options.timeoutMs > 0
+        ? options.timeoutMs
+        : undefined;
 
-      state.unsubscribe = this.subscribe((payload) => {
-        this.handleWaitForCompletionPayload(payload, executionId, finish);
+    try {
+      return await runOrchestratedOperation({
+        operation: "Runbook completion wait",
+        signal: callerSignal,
+        timeoutMs,
+        execute: (signal) =>
+          new Promise<RunbookExecutionRecord | null>((resolve, reject) => {
+            let unsubscribe: (() => void) | undefined;
+            const cleanup = () => {
+              signal.removeEventListener("abort", handleAbort);
+              unsubscribe?.();
+              unsubscribe = undefined;
+            };
+            const handleAbort = () => {
+              cleanup();
+              reject(new Error("Runbook wait cancelled"));
+            };
+
+            if (signal.aborted) {
+              handleAbort();
+              return;
+            }
+
+            unsubscribe = this.subscribe((payload) => {
+              if (
+                payload.executionId !== executionId ||
+                payload.execution.status === "running"
+              ) {
+                return;
+              }
+
+              cleanup();
+              resolve(cloneSharedExecutionSnapshot(payload.execution));
+            });
+            signal.addEventListener("abort", handleAbort, { once: true });
+          }),
       });
-
-      if (options?.signal?.aborted === true) {
-        handleAbort();
-        return;
+    } catch (error) {
+      if (error instanceof OrchestrationError && error.kind === "timeout") {
+        return this.get(executionId);
       }
-
-      options?.signal?.addEventListener("abort", handleAbort, { once: true });
-      state.timeout = this.scheduleWaitForCompletionTimeout(
-        executionId,
-        options?.timeoutMs,
-        finish,
-        fail,
-      );
-    });
-  }
-
-  private cleanupWaitForCompletion(
-    state: WaitForCompletionState,
-    signal: AbortSignal | undefined,
-    handleAbort: () => void,
-  ): void {
-    if (state.timeout !== null) {
-      clearTimeout(state.timeout);
-      state.timeout = null;
+      if (error instanceof OrchestrationError && error.kind === "cancelled") {
+        throw new Error("Runbook wait cancelled");
+      }
+      throw error;
     }
-    signal?.removeEventListener("abort", handleAbort);
-    state.unsubscribe?.();
-    state.unsubscribe = undefined;
-  }
-
-  private finishWaitForCompletion(
-    state: WaitForCompletionState,
-    cleanup: () => void,
-    resolve: (result: RunbookExecutionRecord | null) => void,
-    result: RunbookExecutionRecord | null,
-  ): void {
-    if (state.settled) {
-      return;
-    }
-
-    state.settled = true;
-    cleanup();
-    resolve(result);
-  }
-
-  private failWaitForCompletion(
-    state: WaitForCompletionState,
-    cleanup: () => void,
-    reject: (error: Error) => void,
-    error: Error,
-  ): void {
-    if (state.settled) {
-      return;
-    }
-
-    state.settled = true;
-    cleanup();
-    reject(error);
-  }
-
-  private handleWaitForCompletionPayload(
-    payload: RunbookExecutionEventPayload,
-    executionId: string,
-    finish: (result: RunbookExecutionRecord | null) => void,
-  ): void {
-    if (payload.executionId !== executionId) {
-      return;
-    }
-    if (payload.execution.status === "running") {
-      return;
-    }
-
-    finish(cloneSharedExecutionSnapshot(payload.execution));
-  }
-
-  private scheduleWaitForCompletionTimeout(
-    executionId: string,
-    timeoutMs: number | undefined,
-    finish: (result: RunbookExecutionRecord | null) => void,
-    fail: (error: Error) => void,
-  ): ReturnType<typeof setTimeout> | null {
-    if (typeof timeoutMs !== "number") {
-      return null;
-    }
-    if (timeoutMs <= 0) {
-      return null;
-    }
-
-    return setTimeout(() => {
-      void this.get(executionId)
-        .then((latest) => {
-          finish(latest);
-        })
-        .catch((error: unknown) => {
-          fail(new Error(getErrorMessage(error)));
-        });
-    }, timeoutMs);
   }
 
   async cancel(executionId: string): Promise<void> {
@@ -1291,39 +1217,37 @@ export class RunbookExecutionService {
     session: RunbookExecutionSession,
     request: PreparedHttpRequest,
   ): Promise<Response> {
-    const requestController = new AbortController();
-    const handleSessionAbort = () => {
-      requestController.abort();
-    };
-    const timeoutState = { timedOut: false };
-    const timeout = setTimeout(() => {
-      timeoutState.timedOut = true;
-      requestController.abort();
-    }, this.httpTimeoutMs);
-
-    session.abortController.signal.addEventListener(
-      "abort",
-      handleSessionAbort,
-      { once: true },
-    );
-
     try {
-      const response = await fetch(request.url.toString(), {
-        method: request.method,
-        headers: request.headers.requestHeaders,
-        body: this.getHttpRequestBody(request),
-        signal: requestController.signal,
+      const response = await runOrchestratedOperation({
+        operation: "HTTP request",
+        signal: session.abortController.signal,
+        timeoutMs: this.httpTimeoutMs,
+        execute: (signal) =>
+          fetch(request.url.toString(), {
+            method: request.method,
+            headers: request.headers.requestHeaders,
+            body: this.getHttpRequestBody(request),
+            signal,
+          }),
       });
       this.recordActivity(session);
       return response;
     } catch (error) {
-      this.throwHttpRequestError(session, timeoutState.timedOut, error);
-    } finally {
-      clearTimeout(timeout);
-      session.abortController.signal.removeEventListener(
-        "abort",
-        handleSessionAbort,
-      );
+      if (error instanceof OrchestrationError) {
+        if (error.kind === "timeout") {
+          throw new Error(
+            `HTTP request timed out after ${String(this.httpTimeoutMs)}ms`,
+          );
+        }
+        if (error.kind === "cancelled") {
+          throw new Error("HTTP request cancelled");
+        }
+        this.recordActivity(session);
+        throw error.cause;
+      }
+
+      this.recordActivity(session);
+      throw error;
     }
   }
 
@@ -1333,23 +1257,6 @@ export class RunbookExecutionService {
     }
 
     return request.body?.value;
-  }
-
-  private throwHttpRequestError(
-    session: RunbookExecutionSession,
-    timedOut: boolean,
-    error: unknown,
-  ): never {
-    if (timedOut) {
-      throw new Error(
-        `HTTP request timed out after ${String(this.httpTimeoutMs)}ms`,
-      );
-    }
-    if (session.abortController.signal.aborted) {
-      throw new Error("HTTP request cancelled");
-    }
-    this.recordActivity(session);
-    throw error;
   }
 
   private async buildHttpResult(
