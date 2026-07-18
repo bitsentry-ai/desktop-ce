@@ -5,6 +5,7 @@ import type {
   DesktopCodePluginAction,
   DesktopPluginExecutionRequest,
   DesktopPluginExecutionResult,
+  DesktopPluginOperationContext,
   DesktopPluginFieldDefinition,
   DesktopPluginDescriptor,
   DesktopPluginPersistedDataSourceSetup,
@@ -34,6 +35,7 @@ type PluginActionRuntime = {
   execute(input: {
     auth: Record<string, unknown>;
     input: Record<string, unknown>;
+    operation?: DesktopPluginOperationContext;
   }): Promise<DesktopPluginExecutionResult>;
 };
 
@@ -132,6 +134,7 @@ function createActionRuntime(
         auth: request.auth,
         input: validatedInput,
         host: createPluginHostContext(context),
+        operation: request.operation,
       });
 
       return desktopPluginExecutionResultSchema.parse({
@@ -375,6 +378,7 @@ export class DesktopPluginRuntimeService {
 
   async executeAction(
     input: DesktopPluginExecutionRequest,
+    operation?: DesktopPluginOperationContext,
   ): Promise<DesktopPluginExecutionResult> {
     const request = desktopPluginExecutionRequestSchema.parse(input);
     const plugin = this.registry.get(request.pluginId);
@@ -406,6 +410,7 @@ export class DesktopPluginRuntimeService {
     return action.execute({
       auth: request.auth,
       input: request.input,
+      operation,
     });
   }
 }

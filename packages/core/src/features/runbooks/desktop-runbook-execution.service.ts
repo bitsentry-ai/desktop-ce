@@ -64,6 +64,7 @@ const MAX_AI_TOOL_ITERATIONS = 8;
 const MAX_STEP_OUTPUT_LENGTH = 50_000;
 const HTTP_STEP_TIMEOUT_MS = 30_000;
 const EXTERNAL_SOURCE_STEP_TIMEOUT_MS = 60_000;
+const PLUGIN_ACTION_STEP_TIMEOUT_MS = 60_000;
 const RUNBOOK_SHELL_STEP_TIMEOUT_MS = 300_000;
 const RUNBOOK_LLM_STEP_TIMEOUT_MS = 300_000;
 const SHELL_STEP_EMIT_THROTTLE_MS = 250;
@@ -953,11 +954,22 @@ export class RunbookExecutionService {
     this.recordActivity(session);
     await this.emitSnapshot(session);
 
-    const result = await this.pluginRuntime.executeAction({
-      pluginId,
-      actionId: pluginActionId,
-      auth: auth?.value ?? {},
-      input: input?.value ?? {},
+    const deadlineAt = Date.now() + PLUGIN_ACTION_STEP_TIMEOUT_MS;
+    const result = await runOrchestratedOperation({
+      operation: "Plugin action",
+      signal: session.abortController.signal,
+      timeoutMs: PLUGIN_ACTION_STEP_TIMEOUT_MS,
+      execute: (signal) =>
+        this.pluginRuntime.executeAction({
+          pluginId,
+          actionId: pluginActionId,
+          auth: auth?.value ?? {},
+          input: input?.value ?? {},
+        }, {
+          signal,
+          deadlineAt,
+          executionId: session.snapshot.executionId,
+        }),
     });
     this.recordActivity(session);
 

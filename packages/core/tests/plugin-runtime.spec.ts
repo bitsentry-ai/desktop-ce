@@ -133,6 +133,68 @@ describe('DesktopPluginRuntimeService', () => {
     }
   })
 
+  it('passes parent operation metadata to local code plugin actions', async () => {
+    const tempRoot = await mkdtemp(path.join(tmpdir(), 'bitsentry-plugin-operation-'))
+
+    try {
+      const pluginRoot = path.join(tempRoot, 'plugins')
+      await writeCodePlugin({
+        root: pluginRoot,
+        pluginId: 'operation-aware',
+        source: `
+          module.exports = {
+            id: "operation-aware",
+            name: "Operation Aware",
+            version: "0.1.0",
+            description: "Reads host-owned operation metadata.",
+            auth: { fields: [] },
+            actions: [
+              {
+                id: "inspect_operation",
+                title: "Inspect operation",
+                description: "Returns the host execution metadata.",
+                riskLevel: "read",
+                fields: [],
+                execute(context) {
+                  return {
+                    status: 200,
+                    summary: "Operation inspected.",
+                    data: {
+                      executionId: context.operation?.executionId,
+                      deadlineAt: context.operation?.deadlineAt,
+                      aborted: context.operation?.signal?.aborted,
+                    },
+                  };
+                },
+              },
+            ],
+          };
+        `,
+      })
+
+      const controller = new AbortController()
+      const service = createDesktopNodePluginRuntimeService([pluginRoot])
+      const result = await service.executeAction({
+        pluginId: 'operation-aware',
+        actionId: 'inspect_operation',
+        auth: {},
+        input: {},
+      }, {
+        signal: controller.signal,
+        deadlineAt: 1_700_000_000_000,
+        executionId: 'execution-123',
+      })
+
+      expect(result.data).toEqual({
+        executionId: 'execution-123',
+        deadlineAt: 1_700_000_000_000,
+        aborted: false,
+      })
+    } finally {
+      await rm(tempRoot, { recursive: true, force: true })
+    }
+  })
+
   it('imports every first-party plugin artifact through the local runtime loader', async () => {
     const artifactRoot = path.resolve(__dirname, '../../../build/plugins')
     const expectedPluginIds = ['github', 'posthog', 'sentry', 'wazuh']

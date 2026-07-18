@@ -343,6 +343,8 @@ async function executeCustomPluginQuery(args: {
       }),
       auth,
       input,
+    }, {
+      signal,
     }).then((result) => {
       if (!result.ok) {
         throw new Error(
@@ -370,6 +372,8 @@ async function executeCustomPluginQuery(args: {
       }),
       auth,
       input,
+    }, {
+      signal,
     }).then((result) => {
       if (!result.ok) {
         throw new Error(
