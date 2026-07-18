@@ -1,6 +1,15 @@
 import { Effect } from "effect";
 
-export type OrchestrationFailureKind = "cancelled" | "timeout" | "operation";
+export type OrchestrationFailureKind =
+  | "cancelled"
+  | "timeout"
+  | "rate_limited"
+  | "retry_exhausted"
+  | "remote_unavailable"
+  | "process_exit"
+  | "protocol_violation"
+  | "validation_failure"
+  | "operation";
 
 export class OrchestrationError extends Error {
   readonly name = "OrchestrationError";
@@ -90,11 +99,13 @@ export async function runOrchestratedOperation<T>(
       }
     },
     catch: (cause) =>
-      new OrchestrationError(
-        options.signal.aborted ? "cancelled" : "operation",
-        options.operation,
-        cause,
-      ),
+      cause instanceof OrchestrationError
+        ? cause
+        : new OrchestrationError(
+            options.signal.aborted ? "cancelled" : "operation",
+            options.operation,
+            cause,
+          ),
   });
 
   const boundedOperation =

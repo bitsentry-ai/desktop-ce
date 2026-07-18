@@ -60,4 +60,19 @@ describe("runOrchestratedOperation", () => {
     });
     expect(wasAborted).toBe(true);
   });
+
+  it("preserves a typed downstream failure category", async () => {
+    const operation = runOrchestratedOperation({
+      operation: "test operation",
+      signal: new AbortController().signal,
+      execute: async () => {
+        throw new OrchestrationError("rate_limited", "provider request");
+      },
+    });
+
+    await expect(operation).rejects.toMatchObject<Partial<OrchestrationError>>({
+      kind: "rate_limited",
+      operation: "provider request",
+    });
+  });
 });
