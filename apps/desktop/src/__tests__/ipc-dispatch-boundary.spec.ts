@@ -1,9 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 
-import {
-  DesktopIpcDispatchError,
-  DesktopIpcDispatcher,
-} from '@bitsentry-ce/components/services'
+import { DesktopIpcDispatcher } from '@bitsentry-ce/components/services'
 import { validateIpcPayload } from '../main/platform/app/ipc/schemas'
 
 function createDispatcher(): DesktopIpcDispatcher {
@@ -25,7 +22,10 @@ describe('desktop IPC dispatch boundary', () => {
       accessLevel: 'supervised',
     })
 
-    expect(result).toEqual({ runbookId: 'runbook-1', accessLevel: 'supervised' })
+    expect(result).toEqual({
+      runbookId: 'runbook-1',
+      accessLevel: 'supervised',
+    })
     expect(handler).toHaveBeenCalledOnce()
   })
 
@@ -34,10 +34,12 @@ describe('desktop IPC dispatch boundary', () => {
     const handler = vi.fn(() => Promise.resolve({ ok: true }))
     dispatcher.register('runbooks:execute', handler)
 
-    await expect(dispatcher.dispatch('runbooks:execute', {
-      runbookId: '',
-      accessLevel: 'unrestricted',
-    })).rejects.toMatchObject<Partial<DesktopIpcDispatchError>>({
+    await expect(
+      dispatcher.dispatch('runbooks:execute', {
+        runbookId: '',
+        accessLevel: 'unrestricted',
+      }),
+    ).rejects.toMatchObject({
       code: 'validation_error',
     })
     expect(handler).not.toHaveBeenCalled()
@@ -45,16 +47,22 @@ describe('desktop IPC dispatch boundary', () => {
 
   it.each([
     ['agent:start', { prompt: 'Summarize the local logs.' }],
-    ['errorSources:create', {
-      pluginId: 'sentry',
-      sourceType: 'sentry',
-      name: 'Production',
-      setupValues: { authToken: 'not-a-real-secret' },
-    }],
-    ['dialog:showSaveDialog', {
-      defaultFileName: 'runbooks.json',
-      trustScope: 'runbooks-export',
-    }],
+    [
+      'errorSources:create',
+      {
+        pluginId: 'sentry',
+        sourceType: 'sentry',
+        name: 'Production',
+        setupValues: { authToken: 'not-a-real-secret' },
+      },
+    ],
+    [
+      'dialog:showSaveDialog',
+      {
+        defaultFileName: 'runbooks.json',
+        trustScope: 'runbooks-export',
+      },
+    ],
     ['runbooks:exportToFile', { ids: ['runbook-1'], filePath: '/tmp/runbooks.json' }],
     ['runbooks:importFromFile', { filePath: '/tmp/runbooks.json', options: {} }],
     ['runbooks:cancelExecution', { executionId: '11111111-1111-4111-8111-111111111111' }],
@@ -84,9 +92,7 @@ describe('desktop IPC dispatch boundary', () => {
       const handler = vi.fn(() => Promise.resolve({ ok: true }))
       dispatcher.register(channel, handler)
 
-      await expect(dispatcher.dispatch(channel, payload)).rejects.toMatchObject<
-        Partial<DesktopIpcDispatchError>
-      >({
+      await expect(dispatcher.dispatch(channel, payload)).rejects.toMatchObject({
         code: 'validation_error',
       })
       expect(handler).not.toHaveBeenCalled()
@@ -96,9 +102,7 @@ describe('desktop IPC dispatch boundary', () => {
   it('blocks renderer attempts to invoke an uncontracted path', async () => {
     const dispatcher = createDispatcher()
 
-    await expect(dispatcher.dispatch('shell:run', { command: 'rm -rf /' })).rejects.toMatchObject<
-      Partial<DesktopIpcDispatchError>
-    >({
+    await expect(dispatcher.dispatch('shell:run', { command: 'rm -rf /' })).rejects.toMatchObject({
       code: 'forbidden',
       message: 'Blocked RPC channel: shell:run',
     })
