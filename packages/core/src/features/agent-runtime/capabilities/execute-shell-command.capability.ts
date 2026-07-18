@@ -29,6 +29,8 @@ interface ShellExecutionState {
   timedOut: boolean
   outputLimitReached: boolean
   forcedTermination: boolean
+  childExited: boolean
+  terminationTimer: ReturnType<typeof setTimeout> | null
 }
 
 function resolveTimeoutMs(value: number | null | undefined): number | null {
@@ -70,17 +72,30 @@ function terminateChildProcess(
   child: ShellChildProcess,
   state: ShellExecutionState,
 ): void {
-  if (state.forcedTermination || child.killed) {
+  if (
+    state.forcedTermination ||
+    state.childExited ||
+    child.exitCode !== null ||
+    child.signalCode !== null
+  ) {
     return
   }
 
   state.forcedTermination = true
   child.kill('SIGTERM')
-  setTimeout(() => {
-    if (!child.killed) {
+  state.terminationTimer = setTimeout(() => {
+    if (!state.childExited && child.exitCode === null && child.signalCode === null) {
       child.kill('SIGKILL')
     }
   }, 2000)
+}
+
+function markChildExited(state: ShellExecutionState): void {
+  state.childExited = true
+  if (state.terminationTimer !== null) {
+    clearTimeout(state.terminationTimer)
+    state.terminationTimer = null
+  }
 }
 
 function appendOutputChunk(input: {
@@ -182,7 +197,10 @@ async function executeShellCommand(
     timedOut: false,
     outputLimitReached: false,
     forcedTermination: false,
+    childExited: false,
+    terminationTimer: null,
   }
+  child.once('exit', () => markChildExited(state))
 
   const terminateChild = (): void => {
     terminateChildProcess(child, state)

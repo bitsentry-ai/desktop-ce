@@ -51,6 +51,18 @@ export const sshJournalQuerySchema = z.object({
  */
 const MAX_TOOL_OUTPUT = 15000  // characters
 
+function appendBoundedOutput(
+  current: string,
+  chunk: string,
+  maxLength: number,
+): string {
+  if (current.length >= maxLength) {
+    return current
+  }
+
+  return `${current}${chunk}`.slice(0, maxLength)
+}
+
 /**
  * SSH journalctl query tool executor.
  *
@@ -84,12 +96,26 @@ async function executeSshJournalQuery(
 
   let outputBuffer = ''
   let stderrBuffer = ''
+  let outputTruncated = false
+  let sshExited = false
+  let terminationTimer: ReturnType<typeof setTimeout> | undefined
+  const markSshExited = (): void => {
+    sshExited = true
+    if (terminationTimer !== undefined) {
+      clearTimeout(terminationTimer)
+      terminationTimer = undefined
+    }
+  }
+  sshProcess.once('exit', markSshExited)
 
   // Stream stdout chunks
   const stdoutChunks: Promise<void> = new Promise((resolve) => {
     sshProcess.stdout.on('data', (data: Buffer) => {
       const chunk = data.toString('utf-8')
-      outputBuffer += chunk
+      if (outputBuffer.length + chunk.length > MAX_TOOL_OUTPUT) {
+        outputTruncated = true
+      }
+      outputBuffer = appendBoundedOutput(outputBuffer, chunk, MAX_TOOL_OUTPUT)
 
       // Stream chunk to renderer (truncated if needed)
       if (chunk.length > 1000) {
@@ -105,7 +131,8 @@ async function executeSshJournalQuery(
   // Capture stderr
   const stderrChunks: Promise<void> = new Promise((resolve) => {
     sshProcess.stderr.on('data', (data: Buffer) => {
-      stderrBuffer += data.toString('utf-8')
+      const chunk = data.toString('utf-8')
+      stderrBuffer = appendBoundedOutput(stderrBuffer, chunk, MAX_TOOL_OUTPUT)
     })
 
     sshProcess.stderr.on('end', resolve)
@@ -118,11 +145,11 @@ async function executeSshJournalQuery(
       timeoutMs: SSH_JOURNAL_QUERY_TIMEOUT_MS,
       execute: async (executionSignal) => {
         const abortHandler = () => {
-          if (!sshProcess.killed) {
+          if (!sshExited && sshProcess.exitCode === null && sshProcess.signalCode === null) {
             log.info(`[agent-runtime:${sessionId}] Killing ssh_journal_query via abort:`, { toolCallId })
             sshProcess.kill('SIGTERM')
-            setTimeout(() => {
-              if (!sshProcess.killed) {
+            terminationTimer = setTimeout(() => {
+              if (!sshExited && sshProcess.exitCode === null && sshProcess.signalCode === null) {
                 sshProcess.kill('SIGKILL')
               }
             }, 2000)
@@ -168,9 +195,9 @@ async function executeSshJournalQuery(
     let finalOutput = outputBuffer
     let artifactId: string | undefined
 
-    if (outputBuffer.length > MAX_TOOL_OUTPUT) {
+    if (outputTruncated) {
       artifactId = `ssh-journal-${sessionId}-${toolCallId}-${String(Date.now())}`
-      log.info(`[agent-runtime:${sessionId}] Output truncated (${String(outputBuffer.length)} chars), artifact:`, artifactId)
+      log.info(`[agent-runtime:${sessionId}] Output truncated (${String(MAX_TOOL_OUTPUT)} chars retained), artifact:`, artifactId)
       finalOutput = outputBuffer.slice(0, MAX_TOOL_OUTPUT) + `\n\n...[truncated, see artifact ${artifactId}]`
     }
 
@@ -188,8 +215,11 @@ async function executeSshJournalQuery(
     log.error(`[agent-runtime:${sessionId}] ssh_journal_query failed:`, message)
     return { error: message }
   } finally {
-    if (!sshProcess.killed) {
+    if (!sshExited && sshProcess.exitCode === null && sshProcess.signalCode === null) {
       sshProcess.kill()
+    }
+    if (terminationTimer !== undefined) {
+      clearTimeout(terminationTimer)
     }
   }
 }
