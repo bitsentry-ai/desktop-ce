@@ -153,6 +153,10 @@
       "types": "./dist/features/agent-runtime/shared/capability-registry.d.ts",
       "default": "./dist/features/agent-runtime/shared/capability-registry.js"
     },
+    "./features/agent-runtime/shared/effect-orchestration": {
+      "types": "./dist/features/agent-runtime/shared/effect-orchestration.d.ts",
+      "default": "./dist/features/agent-runtime/shared/effect-orchestration.js"
+    },
     "./features/agent-runtime/shared/ssh-journal-query-builder": {
       "types": "./dist/features/agent-runtime/shared/ssh-journal-query-builder.d.ts",
       "default": "./dist/features/agent-runtime/shared/ssh-journal-query-builder.js"
@@ -232,6 +236,7 @@
     "@bitsentry/plugin-sdk": "workspace:*",
     "better-sqlite3": "^12.6.2",
     "drizzle-orm": "^0.45.2",
+    "effect": "3.22.0",
     "electron-log": "^5.4.3",
     "yaml": "^2.9.0",
     "zod": "^4.3.6"
