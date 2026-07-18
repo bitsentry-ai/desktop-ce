@@ -39,6 +39,8 @@ export class DiagnoseEntryUseCaseImpl implements DiagnoseEntryUseCase {
   ) {}
 
   async execute(input: DiagnoseEntryInput): Promise<DiagnoseEntryOutput> {
+    this.assertBeforeDeadline(input);
+
     // 1. Fetch the telemetry entry
     const entry = await this.telemetryQueryService.getEntryById(input.entryId);
     if (entry === null) {
@@ -61,6 +63,7 @@ export class DiagnoseEntryUseCaseImpl implements DiagnoseEntryUseCase {
 
     // 4. Run LLM analysis
     const analysis = await this.analyzeEntry(input, entry);
+    this.assertBeforeDeadline(input);
     const refinedCategory = analysis.category ?? entry.category;
 
     // 5. Set category on diagnosis record
@@ -80,6 +83,7 @@ export class DiagnoseEntryUseCaseImpl implements DiagnoseEntryUseCase {
       metadata: {
         provider_used: analysis.providerUsed,
         model_used: analysis.modelUsed,
+        execution_id: input.executionId,
         current_action_label: "Running Diagnosis",
       },
     });
@@ -104,14 +108,21 @@ export class DiagnoseEntryUseCaseImpl implements DiagnoseEntryUseCase {
     entry: TelemetryEntryData,
   ): Promise<DiagnosisAnalysis> {
     try {
-      const result = await this.llmService.analyze({
-        ruleDescription: entry.ruleDescription ?? "",
-        entrySource: entry.entrySource,
-        ruleGroups: entry.ruleGroups,
-        initialCategory: entry.category,
-        llmProviderKey: input.llmProviderKey,
-        llmModel: input.llmModel,
-      });
+      const signal = this.deadlineSignal(input);
+      const result = await this.llmService.analyze(
+        {
+          ruleDescription: entry.ruleDescription ?? "",
+          entrySource: entry.entrySource,
+          ruleGroups: entry.ruleGroups,
+          initialCategory: entry.category,
+          llmProviderKey: input.llmProviderKey,
+          llmModel: input.llmModel,
+        },
+        {
+          signal,
+          executionId: input.executionId,
+        },
+      );
 
       if (result.diagnosisText.trim().length === 0) {
         throw new Error("Empty response from LLM");
@@ -132,5 +143,24 @@ export class DiagnoseEntryUseCaseImpl implements DiagnoseEntryUseCase {
   private llmErrorMessage(error: unknown): string {
     if (error instanceof Error) return error.message;
     return "unknown error";
+  }
+
+  private assertBeforeDeadline(input: DiagnoseEntryInput): void {
+    if (input.deadlineAt !== undefined && Date.now() >= input.deadlineAt) {
+      throw new LLMServiceError("Diagnosis operation deadline exceeded");
+    }
+  }
+
+  private deadlineSignal(input: DiagnoseEntryInput): AbortSignal | undefined {
+    if (input.deadlineAt === undefined) {
+      return undefined;
+    }
+
+    const remainingMs = input.deadlineAt - Date.now();
+    if (remainingMs <= 0) {
+      throw new LLMServiceError("Diagnosis operation deadline exceeded");
+    }
+
+    return AbortSignal.timeout(remainingMs);
   }
 }

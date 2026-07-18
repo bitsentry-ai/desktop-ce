@@ -621,7 +621,7 @@ export class CodingAgentsProviderService {
         binaryPath: this.settings.codex.binaryPath,
       })
     } finally {
-      client?.kill()
+      await client?.kill()
     }
 
     return []

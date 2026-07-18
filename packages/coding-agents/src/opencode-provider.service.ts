@@ -1,4 +1,4 @@
-import { spawn, spawnSync } from 'child_process'
+import { spawn } from 'child_process'
 import os from 'os'
 import readline from 'readline'
 import log from 'electron-log'
@@ -12,6 +12,7 @@ import {
   type AccessLevel,
   DEFAULT_ACCESS_LEVEL,
 } from './composer'
+import { terminateSubprocess } from './subprocess-lifecycle'
 
 export interface OpenCodeDebugRecorder {
   recordEvent(stage: string, data: Record<string, unknown>): void
@@ -44,6 +45,7 @@ interface OpenCodeExecutionState {
   tokenUsage?: LocalAiExecutionResult['tokenUsage']
   previousTextByPartId: Map<string, string>
   wasAborted: boolean
+  termination?: Promise<void>
 }
 
 type AppendOpenCodeOutput = (text: string) => void
@@ -56,18 +58,6 @@ const OUTPUT_TOKEN_FIELDS = ['outputTokens', 'output_tokens', 'completionTokens'
 const CONTEXT_TOKEN_FIELDS = ['contextTokens', 'context_tokens', 'totalTokens', 'total_tokens', 'total'] as const
 const CONTEXT_LIMIT_FIELDS = ['contextLimit', 'context_limit', 'modelContextWindow', 'model_context_window'] as const
 const ERROR_MESSAGE_FIELDS = ['message', 'description', 'reason'] as const
-
-function killProcessTree(child: ChildProcess): void {
-  if (process.platform === 'win32' && child.pid !== undefined) {
-    try {
-      spawnSync('taskkill', ['/pid', String(child.pid), '/T', '/F'], { stdio: 'ignore' })
-      return
-    } catch {
-      // Fall through to direct kill.
-    }
-  }
-  child.kill()
-}
 
 function asRecord(value: unknown): Record<string, unknown> | undefined {
   if (value === null || typeof value !== 'object' || Array.isArray(value)) {
@@ -612,9 +602,10 @@ function createOpenCodeAbortHandler(
   child: OpenCodeChildProcess,
 ): () => void {
   return () => {
+    if (state.wasAborted) return
     state.wasAborted = true
     options.onDelta?.({ type: 'status', status: 'cancelled' })
-    killProcessTree(child)
+    state.termination = terminateSubprocess(child).then(() => undefined)
   }
 }
 
@@ -757,6 +748,7 @@ export async function executeOpenCode(
     onAbort,
     stdoutLines,
   )
+  await state.termination
 
   return finalizeOpenCodeResult(state, exitCode, options, accessLevel)
 }

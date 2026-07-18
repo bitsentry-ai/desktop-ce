@@ -1,4 +1,4 @@
-import { execFile, spawn, spawnSync } from 'child_process'
+import { execFile, spawn } from 'child_process'
 import type { ChildProcess } from 'child_process'
 import readline from 'readline'
 import { access, constants, readdir } from 'fs/promises'
@@ -14,6 +14,7 @@ import {
   isWindowsCmdShim,
 } from './windows-cmd'
 import { codingAgentsLogger as log } from './logger'
+import { terminateSubprocess } from './subprocess-lifecycle'
 export { setCodingAgentsLoggerForTesting } from './logger'
 
 const WINDOWS_PREFERRED_PATHEXT = ['.cmd', '.exe', '.bat']
@@ -93,18 +94,6 @@ function parseJsonRecord(value: string): Record<string, unknown> | undefined {
 
 function includesAny(value: string, markers: readonly string[]): boolean {
   return markers.some((marker) => value.includes(marker))
-}
-
-function killProcessTree(child: ChildProcess): void {
-  if (process.platform === 'win32' && child.pid !== undefined) {
-    try {
-      spawnSync('taskkill', ['/pid', String(child.pid), '/T', '/F'], { stdio: 'ignore' })
-      return
-    } catch {
-      // Fall through to direct kill
-    }
-  }
-  child.kill()
 }
 
 const PROBE_TIMEOUT_MS = 5_000
@@ -1267,33 +1256,36 @@ function createProbeCleanup(
   timeout: NodeJS.Timeout,
   output: readline.Interface,
   child: ChildProcess,
-) {
+) : () => Promise<void> {
+  let cleanup: Promise<void> | undefined
   return () => {
+    if (cleanup !== undefined) return cleanup
+    cleanup = (async () => {
     clearTimeout(timeout)
     output.removeAllListeners()
     output.close()
     child.removeAllListeners()
-    if (!child.killed) {
-      killProcessTree(child)
-    }
+      await terminateSubprocess(child)
+    })()
+    return cleanup
   }
 }
 
 function createProbeSettlers<Result>(
   state: ProbeLifecycleState,
-  cleanup: () => void,
+  cleanup: () => Promise<void>,
   resolve: (value: Result) => void,
   reject: (error: Error) => void,
 ) {
   return {
-    resolveProbe: (value: Result) => {
+    resolveProbe: async (value: Result) => {
       state.completed = true
-      cleanup()
+      await cleanup()
       resolve(value)
     },
-    rejectProbe: (error: Error) => {
+    rejectProbe: async (error: Error) => {
       state.completed = true
-      cleanup()
+      await cleanup()
       reject(error)
     },
   }
@@ -1301,19 +1293,19 @@ function createProbeSettlers<Result>(
 
 function createVoidProbeSettlers(
   state: ProbeLifecycleState,
-  cleanup: () => void,
+  cleanup: () => Promise<void>,
   resolve: () => void,
   reject: (error: Error) => void,
 ) {
   return {
-    resolveProbe: () => {
+    resolveProbe: async () => {
       state.completed = true
-      cleanup()
+      await cleanup()
       resolve()
     },
-    rejectProbe: (error: Error) => {
+    rejectProbe: async (error: Error) => {
       state.completed = true
-      cleanup()
+      await cleanup()
       reject(error)
     },
   }
@@ -1332,9 +1324,7 @@ function probeCursorAcp(binaryPath: string): Promise<void> {
 
     const timeout = setTimeout(() => {
       if (!probeState.completed) {
-        probeState.completed = true
-        cleanup()
-        reject(new Error('Cursor ACP probe timed out'))
+        void rejectProbe(new Error('Cursor ACP probe timed out'))
       }
     }, CURSOR_ACP_PROBE_TIMEOUT_MS)
 
@@ -1357,24 +1347,18 @@ function probeCursorAcp(binaryPath: string): Promise<void> {
 
     child.once('error', (err) => {
       if (!probeState.completed) {
-        probeState.completed = true
-        cleanup()
-        reject(err)
+        void rejectProbe(err)
       }
     })
 
     child.once('exit', (code, signal) => {
       if (!probeState.completed) {
-        probeState.completed = true
-        cleanup()
-        reject(new Error(childExitMessage('cursor-agent acp', code, signal)))
+        void rejectProbe(new Error(childExitMessage('cursor-agent acp', code, signal)))
       }
     })
 
     if (!child.stdin.writable) {
-      probeState.completed = true
-      cleanup()
-      reject(new Error('Cursor ACP stdin closed before initialize'))
+      void rejectProbe(new Error('Cursor ACP stdin closed before initialize'))
       return
     }
 
@@ -1420,9 +1404,7 @@ function probeCodexAccount(
 
     const timeout = setTimeout(() => {
       if (!probeState.completed) {
-        probeState.completed = true
-        cleanup()
-        reject(new Error('Codex app-server probe timed out'))
+        void rejectProbe(new Error('Codex app-server probe timed out'))
       }
     }, CODEX_PROBE_TIMEOUT_MS)
 
@@ -1460,17 +1442,13 @@ function probeCodexAccount(
 
     child.once('error', (err) => {
       if (!probeState.completed) {
-        probeState.completed = true
-        cleanup()
-        reject(err)
+        void rejectProbe(err)
       }
     })
 
     child.once('exit', (code, signal) => {
       if (!probeState.completed) {
-        probeState.completed = true
-        cleanup()
-        reject(new Error(childExitMessage('codex app-server', code, signal)))
+        void rejectProbe(new Error(childExitMessage('codex app-server', code, signal)))
       }
     })
 

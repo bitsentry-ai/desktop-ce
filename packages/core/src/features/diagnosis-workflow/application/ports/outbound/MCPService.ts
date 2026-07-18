@@ -33,9 +33,18 @@ export interface MCPVerificationResult {
   modelUsed?: string;
 }
 
+/** Internal operation context; it is not serialized with verification input. */
+export interface MCPVerificationOperationOptions {
+  signal?: AbortSignal;
+  executionId?: string;
+}
+
 export interface MCPService {
   /**
    * Verifies a diagnosis using MCP tools
    */
-  verify(request: MCPVerificationRequest): Promise<MCPVerificationResult>;
+  verify(
+    request: MCPVerificationRequest,
+    options?: MCPVerificationOperationOptions,
+  ): Promise<MCPVerificationResult>;
 }

@@ -1,9 +1,10 @@
-import { spawn, spawnSync } from 'child_process'
+import { spawn } from 'child_process'
 import type { ChildProcessWithoutNullStreams } from 'child_process'
 import readline from 'readline'
 import { EventEmitter } from 'events'
 import { createCodingAgentsProcessEnv } from './coding-agents-process-env'
 import { codingAgentsLogger as log } from './logger'
+import { terminateSubprocess } from './subprocess-lifecycle'
 
 const REQUEST_TIMEOUT_MS = 300_000
 const MAX_STDERR_BUFFER = 5_000
@@ -98,18 +99,6 @@ function isNotification(message: CursorMessageMetadata): message is CursorMessag
     !message.hasError
 }
 
-function killCursorChildProcess(child: ChildProcessWithoutNullStreams): void {
-  if (process.platform === 'win32' && child.pid !== undefined) {
-    try {
-      spawnSync('taskkill', ['/pid', String(child.pid), '/T', '/F'], { stdio: 'ignore' })
-      return
-    } catch {
-      // Fall through to direct kill.
-    }
-  }
-  child.kill()
-}
-
 function appendStderrTail(message: string, stderrTail: string): string {
   const trimmedTail = stderrTail.trim()
   if (trimmedTail === '') return message
@@ -153,6 +142,7 @@ export class CursorAcpClient extends EventEmitter {
   private nextId = 1
   private stderrBuffer = ''
   private closed = false
+  private termination: Promise<void> | null = null
   private readonly requestTimeoutMs: number
 
   constructor(
@@ -310,8 +300,8 @@ export class CursorAcpClient extends EventEmitter {
     }
   }
 
-  private cleanup(reason: string): void {
-    if (this.closed) return
+  private cleanup(reason: string): Promise<void> {
+    if (this.closed) return this.termination ?? Promise.resolve()
     this.closed = true
 
     for (const [id, pending] of this.pending) {
@@ -329,20 +319,27 @@ export class CursorAcpClient extends EventEmitter {
       this.output = null
     }
 
-    if (this.child !== null && !this.child.killed) {
-      killCursorChildProcess(this.child)
-    }
+    const child = this.child
     this.child = null
 
+    this.termination = child === null
+      ? Promise.resolve()
+      : terminateSubprocess(child).then((result) => {
+        if (result.outcome === 'termination-unconfirmed') {
+          log.warn(`[cursor-acp] Unable to confirm process termination (pid=${String(result.pid)})`)
+        }
+      })
+
     this.emit('closed', reason)
+    return this.termination
   }
 
   getStderrTail(): string {
     return this.stderrBuffer
   }
 
-  kill(): void {
-    this.cleanup('killed by caller')
+  kill(): Promise<void> {
+    return this.cleanup('killed by caller')
   }
 
   get isRunning(): boolean {

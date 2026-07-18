@@ -7,6 +7,7 @@ import type {
   DesktopPluginExecutionRequest,
   DesktopPluginExecutionResult,
   DesktopPluginFieldDefinition,
+  DesktopPluginOperationContext,
   DesktopPluginInstallFromArtifactRequest,
   DesktopPluginInstallFromArtifactResult,
   DesktopPluginInstallResult,
@@ -341,6 +342,7 @@ class DesktopNodePluginRuntimeService extends DesktopPluginRuntimeService {
 
   override async executeAction(
     request: DesktopPluginExecutionRequest,
+    operation?: DesktopPluginOperationContext,
   ): Promise<DesktopPluginExecutionResult> {
     const plugin = this.getPlugin(request.pluginId);
     let auth = request.auth ?? {};
@@ -357,7 +359,7 @@ class DesktopNodePluginRuntimeService extends DesktopPluginRuntimeService {
     return super.executeAction({
       ...request,
       auth,
-    });
+    }, operation);
   }
 }
 

@@ -1,28 +1,27 @@
+import { EventEmitter } from 'events'
+import type { ChildProcess } from 'child_process'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 type ClaudeQuerySession = AsyncIterable<unknown> & {
-  getContextUsage: () => Promise<unknown>
+  getContextUsage: () => Promise<{ totalTokens: number; maxTokens: number }>
   close: () => void
 }
 
 interface SpawnClaudeCodeProcessInput {
   command: string
   args: string[]
-  cwd: string
-  env: Record<string, string>
-  signal: AbortSignal
+  cwd?: string
+  env?: NodeJS.ProcessEnv
+  signal?: AbortSignal
 }
 
-interface SpawnedClaudeCodeProcess {
+type SpawnedClaudeCodeProcess = EventEmitter & {
   stdin: object
   stdout: object
   pid: number
   killed: boolean
   exitCode: number | null
-  kill: () => boolean
-  on: ReturnType<typeof vi.fn>
-  once: ReturnType<typeof vi.fn>
-  off: ReturnType<typeof vi.fn>
+  kill: (signal?: NodeJS.Signals) => boolean
 }
 
 interface ClaudeQueryOptions {
@@ -30,13 +29,12 @@ interface ClaudeQueryOptions {
   includePartialMessages?: boolean
   allowDangerouslySkipPermissions?: boolean
   betas?: string[]
-  spawnClaudeCodeProcess?: (
-    input: SpawnClaudeCodeProcessInput,
-  ) => SpawnedClaudeCodeProcess
+  spawnClaudeCodeProcess?: (input: SpawnClaudeCodeProcessInput) => ChildProcess
 }
 
 interface ClaudeQueryInput {
-  options: ClaudeQueryOptions
+  prompt: string
+  options?: ClaudeQueryOptions
 }
 
 const closeMock = vi.fn()
@@ -80,7 +78,7 @@ function restorePlatform(): void {
 
 function getQueryOptions(callIndex: number): ClaudeQueryOptions {
   const call = queryMock.mock.calls[callIndex]
-  return call[0].options
+  return call[0].options ?? {}
 }
 
 function delay(milliseconds: number): Promise<void> {
@@ -141,9 +139,8 @@ describe('executeClaudeCode', () => {
       close: closeMock,
     })
 
-    const { executeClaudeCode } = await import(
-      '@bitsentry-ce/desktop-cli/runtime/desktop-coding-agents'
-    )
+    const { executeClaudeCode } =
+      await import('@bitsentry-ce/desktop-cli/runtime/desktop-coding-agents')
 
     const streamed: string[] = []
     const result = await executeClaudeCode({
@@ -151,11 +148,7 @@ describe('executeClaudeCode', () => {
       binaryPath: 'claude',
       abortController: new AbortController(),
       onDelta: (delta) => {
-        if (
-          delta.type === 'text' &&
-          delta.text !== undefined &&
-          delta.text.length > 0
-        ) {
+        if (delta.type === 'text' && delta.text !== undefined && delta.text.length > 0) {
           streamed.push(delta.text)
         }
       },
@@ -192,15 +185,21 @@ describe('executeClaudeCode', () => {
             delta: { type: 'text_delta', text: ' response' },
           },
         }
-        yield { type: 'result', subtype: 'success', result: 'partial response' }
+        yield {
+          type: 'result',
+          subtype: 'success',
+          result: 'partial response',
+        }
       },
-      getContextUsage: getContextUsageMock.mockResolvedValue({ totalTokens: 0, maxTokens: 0 }),
+      getContextUsage: getContextUsageMock.mockResolvedValue({
+        totalTokens: 0,
+        maxTokens: 0,
+      }),
       close: closeMock,
     })
 
-    const { executeClaudeCode } = await import(
-      '@bitsentry-ce/desktop-cli/runtime/desktop-coding-agents'
-    )
+    const { executeClaudeCode } =
+      await import('@bitsentry-ce/desktop-cli/runtime/desktop-coding-agents')
     const statuses: string[] = []
     const textDeltas: string[] = []
     const execution = executeClaudeCode({
@@ -213,7 +212,9 @@ describe('executeClaudeCode', () => {
       },
     })
 
-    await expect(execution).resolves.toMatchObject({ output: 'partial response' })
+    await expect(execution).resolves.toMatchObject({
+      output: 'partial response',
+    })
     expect(textDeltas.join('')).toBe('partial response')
     expect(statuses).toEqual(['started', 'completed'])
   })
@@ -221,12 +222,16 @@ describe('executeClaudeCode', () => {
   it('keeps concurrent Claude turns correlated when their stream completion is out of order', async () => {
     const releaseFirst = (() => {
       let release: (() => void) | undefined
-      const promise = new Promise<void>((resolve) => { release = resolve })
+      const promise = new Promise<void>((resolve) => {
+        release = resolve
+      })
       return { promise, release: () => release?.() }
     })()
     const releaseSecond = (() => {
       let release: (() => void) | undefined
-      const promise = new Promise<void>((resolve) => { release = resolve })
+      const promise = new Promise<void>((resolve) => {
+        release = resolve
+      })
       return { promise, release: () => release?.() }
     })()
 
@@ -244,21 +249,26 @@ describe('executeClaudeCode', () => {
           result,
         }
       },
-      getContextUsage: getContextUsageMock.mockResolvedValue({ totalTokens: 0, maxTokens: 0 }),
+      getContextUsage: getContextUsageMock.mockResolvedValue({
+        totalTokens: 0,
+        maxTokens: 0,
+      }),
       close: closeMock,
     }))
 
-    const {
-      __setLoadClaudeSdkQueryForTests,
-      executeClaudeCode: executeSharedClaudeCode,
-    } = await import('@bitsentry-ce/coding-agents')
+    const { __setLoadClaudeSdkQueryForTests, executeClaudeCode: executeSharedClaudeCode } =
+      await import('@bitsentry-ce/coding-agents')
     __setLoadClaudeSdkQueryForTests(() => queryMock)
 
     const first = executeSharedClaudeCode({
-      prompt: 'first turn', binaryPath: 'claude', abortController: new AbortController(),
+      prompt: 'first turn',
+      binaryPath: 'claude',
+      abortController: new AbortController(),
     })
     const second = executeSharedClaudeCode({
-      prompt: 'second turn', binaryPath: 'claude', abortController: new AbortController(),
+      prompt: 'second turn',
+      binaryPath: 'claude',
+      abortController: new AbortController(),
     })
 
     try {
@@ -295,13 +305,15 @@ describe('executeClaudeCode', () => {
           },
         }
       },
-      getContextUsage: getContextUsageMock.mockResolvedValue({ totalTokens: 0, maxTokens: 0 }),
+      getContextUsage: getContextUsageMock.mockResolvedValue({
+        totalTokens: 0,
+        maxTokens: 0,
+      }),
       close: closeMock,
     })
 
-    const { executeClaudeCode } = await import(
-      '@bitsentry-ce/desktop-cli/runtime/desktop-coding-agents'
-    )
+    const { executeClaudeCode } =
+      await import('@bitsentry-ce/desktop-cli/runtime/desktop-coding-agents')
     const textDeltas: string[] = []
     const result = await executeClaudeCode({
       prompt: 'Cancel after the first chunk',
@@ -319,7 +331,9 @@ describe('executeClaudeCode', () => {
   it('cancels a hung Claude stream without accepting the event released afterwards', async () => {
     const abortController = new AbortController()
     let releaseHungEvent: (() => void) | undefined
-    const hungEvent = new Promise<void>((resolve) => { releaseHungEvent = resolve })
+    const hungEvent = new Promise<void>((resolve) => {
+      releaseHungEvent = resolve
+    })
     queryMock.mockReturnValue({
       async *[Symbol.asyncIterator]() {
         yield {
@@ -338,12 +352,14 @@ describe('executeClaudeCode', () => {
           },
         }
       },
-      getContextUsage: getContextUsageMock.mockResolvedValue({ totalTokens: 0, maxTokens: 0 }),
+      getContextUsage: getContextUsageMock.mockResolvedValue({
+        totalTokens: 0,
+        maxTokens: 0,
+      }),
       close: closeMock,
     })
-    const { executeClaudeCode } = await import(
-      '@bitsentry-ce/desktop-cli/runtime/desktop-coding-agents'
-    )
+    const { executeClaudeCode } =
+      await import('@bitsentry-ce/desktop-cli/runtime/desktop-coding-agents')
     const textDeltas: string[] = []
     const execution = executeClaudeCode({
       prompt: 'Cancel while provider is hung',
@@ -368,21 +384,22 @@ describe('executeClaudeCode', () => {
     queryMock.mockImplementation(() => {
       throw new Error('selected model is not configured')
     })
-    const { executeClaudeCode } = await import(
-      '@bitsentry-ce/desktop-cli/runtime/desktop-coding-agents'
-    )
+    const { executeClaudeCode } =
+      await import('@bitsentry-ce/desktop-cli/runtime/desktop-coding-agents')
     const statuses: string[] = []
 
-    await expect(executeClaudeCode({
-      prompt: 'Use the missing model',
-      binaryPath: 'claude',
-      abortController: new AbortController(),
-      onDelta: (delta) => {
-        if (delta.type === 'status' && delta.status !== undefined) {
-          statuses.push(delta.status)
-        }
-      },
-    })).rejects.toThrow('selected model is not configured')
+    await expect(
+      executeClaudeCode({
+        prompt: 'Use the missing model',
+        binaryPath: 'claude',
+        abortController: new AbortController(),
+        onDelta: (delta) => {
+          if (delta.type === 'status' && delta.status !== undefined) {
+            statuses.push(delta.status)
+          }
+        },
+      }),
+    ).rejects.toThrow('selected model is not configured')
 
     expect(statuses).toEqual(['started', 'failed'])
     expect(closeMock).not.toHaveBeenCalled()
@@ -394,26 +411,33 @@ describe('executeClaudeCode', () => {
         await Promise.resolve()
         yield {
           type: 'stream_event',
-          event: { type: 'content_block_delta', delta: { type: 'text_delta', text: 'before exit' } },
+          event: {
+            type: 'content_block_delta',
+            delta: { type: 'text_delta', text: 'before exit' },
+          },
         }
         throw new Error('Claude Code child exited during active turn')
       },
-      getContextUsage: getContextUsageMock.mockResolvedValue({ totalTokens: 0, maxTokens: 0 }),
+      getContextUsage: getContextUsageMock.mockResolvedValue({
+        totalTokens: 0,
+        maxTokens: 0,
+      }),
       close: closeMock,
     })
-    const { executeClaudeCode } = await import(
-      '@bitsentry-ce/desktop-cli/runtime/desktop-coding-agents'
-    )
+    const { executeClaudeCode } =
+      await import('@bitsentry-ce/desktop-cli/runtime/desktop-coding-agents')
     const statuses: string[] = []
 
-    await expect(executeClaudeCode({
-      prompt: 'Handle a child exit',
-      binaryPath: 'claude',
-      abortController: new AbortController(),
-      onDelta: (delta) => {
-        if (delta.type === 'status' && delta.status !== undefined) statuses.push(delta.status)
-      },
-    })).rejects.toThrow('Claude Code child exited during active turn')
+    await expect(
+      executeClaudeCode({
+        prompt: 'Handle a child exit',
+        binaryPath: 'claude',
+        abortController: new AbortController(),
+        onDelta: (delta) => {
+          if (delta.type === 'status' && delta.status !== undefined) statuses.push(delta.status)
+        },
+      }),
+    ).rejects.toThrow('Claude Code child exited during active turn')
 
     expect(statuses).toEqual(['started', 'failed'])
     expect(closeMock).toHaveBeenCalledTimes(1)
@@ -436,9 +460,8 @@ describe('executeClaudeCode', () => {
       close: closeMock,
     })
 
-    const { executeClaudeCode } = await import(
-      '@bitsentry-ce/desktop-cli/runtime/desktop-coding-agents'
-    )
+    const { executeClaudeCode } =
+      await import('@bitsentry-ce/desktop-cli/runtime/desktop-coding-agents')
 
     await executeClaudeCode({
       prompt: 'Edit safely',
@@ -487,9 +510,8 @@ describe('executeClaudeCode', () => {
       close: closeMock,
     })
 
-    const { executeClaudeCode } = await import(
-      '@bitsentry-ce/desktop-cli/runtime/desktop-coding-agents'
-    )
+    const { executeClaudeCode } =
+      await import('@bitsentry-ce/desktop-cli/runtime/desktop-coding-agents')
 
     await executeClaudeCode({
       prompt: 'Use the larger context window',
@@ -516,22 +538,18 @@ describe('executeClaudeCode', () => {
       close: closeMock,
     })
 
-    const spawnedProcess: SpawnedClaudeCodeProcess = {
+    const spawnedProcess: SpawnedClaudeCodeProcess = Object.assign(new EventEmitter(), {
       stdin: {},
       stdout: {},
       pid: 1234,
       killed: false,
       exitCode: null,
       kill: vi.fn(() => true),
-      on: vi.fn(),
-      once: vi.fn(),
-      off: vi.fn(),
-    }
+    })
     spawnMock.mockReturnValue(spawnedProcess)
 
-    const { executeClaudeCode } = await import(
-      '@bitsentry-ce/desktop-cli/runtime/desktop-coding-agents'
-    )
+    const { executeClaudeCode } =
+      await import('@bitsentry-ce/desktop-cli/runtime/desktop-coding-agents')
 
     await executeClaudeCode({
       prompt: 'Run Claude',
@@ -571,9 +589,8 @@ describe('executeClaudeCode', () => {
         windowsHide: true,
       }),
     )
-    expect(spawned.kill()).toBe(true)
-    expect(spawnSyncMock).toHaveBeenCalledWith('taskkill', ['/pid', '1234', '/T', '/F'], {
-      stdio: 'ignore',
-    })
+    abortController.abort()
+    expect(spawned.kill).toHaveBeenCalledWith('SIGTERM')
+    spawnedProcess.emit('close', 0)
   })
 })

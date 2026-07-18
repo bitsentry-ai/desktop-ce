@@ -263,7 +263,9 @@ export async function executeCodex(
         // Interrupt failed, kill will handle it
       })
     }
-    setTimeout(() => { client.kill(); }, 2000)
+    // `kill` owns the bounded SIGTERM/SIGKILL escalation. Do not leave a
+    // provider-local timer behind after the parent session has finished.
+    void client.kill()
   }
 
   if (isAbortSignalAborted(options.abortController.signal)) {
@@ -291,7 +293,7 @@ export async function executeCodex(
         // If interrupt fails, kill below still stops the app-server.
       })
     }
-    setTimeout(() => { client.kill(); }, 1000)
+    void client.kill()
   }
 
   client.on('notification', (notification: { method: string; params: unknown }) => {
@@ -576,7 +578,7 @@ export async function executeCodex(
     }
   } finally {
     options.abortController.signal.removeEventListener('abort', onAbort)
-    client.kill()
+    await client.kill()
   }
 
   return {
