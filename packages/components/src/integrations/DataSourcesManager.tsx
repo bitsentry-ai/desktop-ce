@@ -359,6 +359,8 @@ function buildInitialEditSetupFieldValues(
 
 interface DataSourcesManagerProps {
   showHeader?: boolean;
+  showInstallPlugin?: boolean;
+  showSourceList?: boolean;
 }
 
 interface FieldLabelProps {
@@ -409,6 +411,8 @@ function SelectChevron() {
 
 export default function DataSourcesManager({
   showHeader = true,
+  showInstallPlugin = true,
+  showSourceList = true,
 }: DataSourcesManagerProps) {
   const { t } = useTranslation();
   const [status, setStatus] = useState<{
@@ -432,6 +436,8 @@ export default function DataSourcesManager({
   const [logLevelThreshold, setLogLevelThreshold] =
     useState<LogLevelThreshold>("error");
   const [syncEnabledOnCreate, setSyncEnabledOnCreate] = useState(true);
+  const [autoDiagnosisEnabledOnCreate, setAutoDiagnosisEnabledOnCreate] =
+    useState(true);
 
   // Errors that belong INSIDE the create-source dialog (probe failures,
   // validation, save errors). Rendering them on the page-level banner makes
@@ -454,6 +460,8 @@ export default function DataSourcesManager({
   const [editLogThreshold, setEditLogThreshold] =
     useState<LogLevelThreshold>("error");
   const [editSyncEnabled, setEditSyncEnabled] = useState(true);
+  const [editAutoDiagnosisEnabled, setEditAutoDiagnosisEnabled] =
+    useState(false);
   const [editSetupFieldValues, setEditSetupFieldValues] = useState<
     Record<string, string>
   >({});
@@ -592,6 +600,7 @@ export default function DataSourcesManager({
     setShowAdvanced(false);
     setLogLevelThreshold("error");
     setSyncEnabledOnCreate(true);
+    setAutoDiagnosisEnabledOnCreate(true);
   }
 
   function readSetupFieldTextValue(field: PluginDataSourceSetupField): string {
@@ -660,7 +669,7 @@ export default function DataSourcesManager({
       setupValues,
       logLevelThreshold,
       syncEnabled: syncEnabledOnCreate,
-      autoDiagnosisEnabled: false,
+      autoDiagnosisEnabled: autoDiagnosisEnabledOnCreate,
     };
 
     for (const field of selectedSetupFields) {
@@ -738,6 +747,7 @@ export default function DataSourcesManager({
     setEditName(source.name);
     setEditLogThreshold(source.logLevelThreshold ?? "error");
     setEditSyncEnabled(source.syncEnabled);
+    setEditAutoDiagnosisEnabled(source.autoDiagnosisEnabled);
     setEditSetupFieldValues(buildInitialEditSetupFieldValues(source, plugin));
     setEditDialogError(null);
     setEditDialogSource(source);
@@ -832,6 +842,7 @@ export default function DataSourcesManager({
         setupValues,
         logLevelThreshold: editLogThreshold,
         syncEnabled: editSyncEnabled,
+        autoDiagnosisEnabled: editAutoDiagnosisEnabled,
       });
       setEditSetupFieldValues({});
       setEditDialogSource(null);
@@ -1026,6 +1037,36 @@ export default function DataSourcesManager({
             </p>
           </div>
           <div className="flex items-center gap-2">
+            {showInstallPlugin && (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => {
+                  setInstallDialogOpen(true);
+                }}
+                data-tour="data-sources-install-plugin"
+              >
+                <Download className="size-4" />
+                {t("common.dataSourcesManager.installPlugin")}
+              </Button>
+            )}
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => {
+                setAddDialogOpen(true);
+              }}
+              disabled={actionLoading}
+              data-tour="data-sources-add-source"
+            >
+            {t("common.dataSourcesManager.addExternalSource")}
+            </Button>
+          </div>
+        </div>
+      )}
+      {!showHeader && (
+        <div className="flex justify-end gap-2">
+          {showInstallPlugin && (
             <Button
               size="sm"
               variant="outline"
@@ -1037,33 +1078,7 @@ export default function DataSourcesManager({
               <Download className="size-4" />
               {t("common.dataSourcesManager.installPlugin")}
             </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => {
-                setAddDialogOpen(true);
-              }}
-              disabled={actionLoading}
-              data-tour="data-sources-add-source"
-            >
-              {t("common.dataSourcesManager.addSource")}
-            </Button>
-          </div>
-        </div>
-      )}
-      {!showHeader && (
-        <div className="flex justify-end gap-2">
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => {
-              setInstallDialogOpen(true);
-            }}
-            data-tour="data-sources-install-plugin"
-          >
-            <Download className="size-4" />
-            {t("common.dataSourcesManager.installPlugin")}
-          </Button>
+          )}
           <Button
             size="sm"
             variant="outline"
@@ -1073,19 +1088,19 @@ export default function DataSourcesManager({
             disabled={actionLoading}
             data-tour="data-sources-add-source"
           >
-            {t("common.dataSourcesManager.addSource_2")}
+            {t("common.dataSourcesManager.addExternalSource")}
           </Button>
         </div>
       )}
 
       {statusContent}
 
-      {isLoading && (
+      {showSourceList && isLoading && (
         <p className="text-sm text-muted-foreground">
           {t("common.dataSourcesManager.loadingExternalSources")}
         </p>
       )}
-      {!isLoading && sources.length === 0 && (
+      {showSourceList && !isLoading && sources.length === 0 && (
         <div className="rounded-lg border border-dashed border-border p-8 text-center">
           <p className="text-sm text-muted-foreground">
             {t("common.dataSourcesManager.noExternalSourcesConnected")}
@@ -1095,7 +1110,7 @@ export default function DataSourcesManager({
           </p>
         </div>
       )}
-      {!isLoading && sources.length > 0 && (
+      {showSourceList && !isLoading && sources.length > 0 && (
         <div className="rounded-lg border border-border divide-y divide-border">
           {sources.map((source) => {
             const sourcePluginName = pluginsById.get(
@@ -1409,6 +1424,24 @@ export default function DataSourcesManager({
                     }}
                   />
                 </label>
+
+                <label className="flex cursor-pointer items-start justify-between gap-3 text-sm text-muted-foreground">
+                  <span>
+                    <span className="block">
+                      {t("common.dataSourcesManager.autoDiagnosis")}
+                    </span>
+                    <span className="mt-0.5 block text-xs text-muted-foreground">
+                      {t("common.dataSourcesManager.autoDiagnosisHelp")}
+                    </span>
+                  </span>
+                  <input
+                    type="checkbox"
+                    checked={autoDiagnosisEnabledOnCreate}
+                    onChange={(e) => {
+                      setAutoDiagnosisEnabledOnCreate(e.target.checked);
+                    }}
+                  />
+                </label>
               </div>
             </div>
 
@@ -1532,6 +1565,25 @@ export default function DataSourcesManager({
                   checked={editSyncEnabled}
                   onChange={(e) => {
                     setEditSyncEnabled(e.target.checked);
+                  }}
+                  disabled={updateMutation.isPending}
+                />
+              </label>
+
+              <label className="flex cursor-pointer items-start justify-between gap-3 text-sm text-muted-foreground">
+                <span>
+                  <span className="block">
+                    {t("common.dataSourcesManager.autoDiagnosis")}
+                  </span>
+                  <span className="mt-0.5 block text-xs text-muted-foreground">
+                    {t("common.dataSourcesManager.autoDiagnosisHelp")}
+                  </span>
+                </span>
+                <input
+                  type="checkbox"
+                  checked={editAutoDiagnosisEnabled}
+                  onChange={(e) => {
+                    setEditAutoDiagnosisEnabled(e.target.checked);
                   }}
                   disabled={updateMutation.isPending}
                 />

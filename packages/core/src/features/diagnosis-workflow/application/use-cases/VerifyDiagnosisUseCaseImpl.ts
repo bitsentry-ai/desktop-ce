@@ -70,8 +70,11 @@ export class VerifyDiagnosisUseCaseImpl implements VerifyDiagnosisUseCase {
       diagnosisText,
     );
 
-    // State always transitions to 'verified'; verdict stored in metadata
-    const newState: DiagnosisStateValue = "verified";
+    // A failed verdict must remain visibly failed; do not record a false
+    // verification before the failure path handles the result.
+    const newState: DiagnosisStateValue = verificationResult.passed
+      ? "verified"
+      : "failed";
 
     // 7. Transition state
     diagnosisRecord.transitionTo(DiagnosisState.create(newState), {

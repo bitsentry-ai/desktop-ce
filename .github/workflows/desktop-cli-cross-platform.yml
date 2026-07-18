@@ -50,7 +50,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Initialize package submodules
+      - name: Initialize workspace submodules
         shell: bash
         run: |
           git config submodule.packages/electron-trpc.url https://github.com/bitsentry-ai/electron-trpc.git
@@ -59,13 +59,8 @@ jobs:
           git config submodule.packages/plugins/posthog.url https://github.com/bitsentry-ai/bitsentry-plugin-posthog.git
           git config submodule.packages/plugins/sentry.url https://github.com/bitsentry-ai/bitsentry-plugin-sentry.git
           git config submodule.packages/plugins/wazuh.url https://github.com/bitsentry-ai/bitsentry-plugin-wazuh.git
-          git submodule update --init --depth 1 \
-            packages/electron-trpc \
-            packages/plugin-sdk \
-            packages/plugins/github \
-            packages/plugins/posthog \
-            packages/plugins/sentry \
-            packages/plugins/wazuh
+          git -c url.https://github.com/.insteadOf=git@github.com: \
+            submodule update --init --force --depth=1 --recursive
 
       - name: Setup Node.js
         uses: actions/setup-node@v4

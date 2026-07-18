@@ -2,7 +2,7 @@
  * Pure / framework-free helpers shared by the desktop, backend, and worker
  * PostHog adapters. These cover error-body parsing, HogQL string escaping,
  * row-to-record shaping, level normalization, the issues / events query
- * builders, the +1 over-fetch pagination cursor, and the Sentry-shaped issue
+ * builders, keyset pagination cursors, and the Sentry-shaped issue
  * and event records consumed by the sync pipeline.
  *
  * Anything here must remain Node/browser-agnostic — no fetch, no abort
@@ -89,21 +89,26 @@ export interface PostHogIssueQueryInput {
   since?: string;
   /**
    * Upper bound on each fingerprint's `max(timestamp)`. Set to the sync's
-   * captured start time so OFFSET-paginated reads see a stable snapshot
+   * captured start time so keyset-paginated reads see a stable snapshot
    * even when new events arrive mid-sync. Fingerprints whose newest event
    * lands after `until` are filtered out this run and picked up next run
    * (since `next.since = current.until`).
    */
   until?: string;
   limit: number;
-  offset?: number;
+  cursor?: PostHogIssueCursor;
+}
+
+export interface PostHogIssueCursor {
+  timestamp: string;
+  fingerprint: string;
 }
 
 export interface PostHogEventQueryInput {
   projectId: string;
   fingerprint: string;
   limit: number;
-  offset?: number;
+  cursor?: PostHogEventCursor;
   /**
    * When set, restrict the per-event scan to `timestamp >= since`. Used by
    * incremental syncs so we don't reread every historical event on a known
@@ -112,10 +117,15 @@ export interface PostHogEventQueryInput {
   since?: string;
   /**
    * Upper bound on `timestamp`. Set to the sync's captured start time so
-   * OFFSET-paginated reads see a stable snapshot of events even when new
+   * keyset-paginated reads see a stable snapshot of events even when new
    * exceptions land mid-sync; rows past `until` are picked up next run.
    */
   until?: string;
+}
+
+export interface PostHogEventCursor {
+  timestamp: string;
+  uuid: string;
 }
 
 /**
@@ -271,55 +281,70 @@ function parsePostHogJsonErrorMessage(raw: string): string | null {
   }
 }
 
-/** Decode a HogQL pagination cursor into a non-negative integer offset. */
-export function decodeOffsetCursor(cursor: string | undefined): number {
-  if (cursor === undefined || cursor === "") return 0;
-  const parsed = Number(cursor);
-  if (Number.isFinite(parsed) && parsed >= 0) return Math.trunc(parsed);
-  return 0;
-}
-
-/** Encode a HogQL offset back into a string cursor. */
-export function encodeOffsetCursor(offset: number): string {
-  return String(offset);
-}
-
-/**
- * Decode a per-project HogQL cursor into a `projectId -> offset` map. The
- * cursor is JSON-encoded `{projectId: offset}` so each project can advance
- * independently — necessary because issues from different projects only
- * appear in different pages once their `lastSeen` ordering interleaves, and
- * a single global offset would skip rows from quieter projects forever.
- *
- * Falls back to an empty record for any malformed cursor; the consumer then
- * starts every project at offset 0, which keeps the failure mode "show too
- * much" rather than "skip rows silently".
- */
-export function decodePerProjectCursor(
+function parseCursorRecord(
   cursor: string | undefined,
-): Record<string, number> {
+): Record<string, unknown> {
   if (cursor === undefined || cursor === "") return {};
   try {
-    const parsed = unknownRecord(JSON.parse(cursor));
-    if (parsed === undefined) return {};
-    const out: Record<string, number> = {};
-    for (const [key, value] of Object.entries(parsed)) {
-      const offset = Number(value);
-      if (Number.isFinite(offset) && offset >= 0) {
-        out[key] = Math.trunc(offset);
-      }
-    }
-    return out;
+    const parsed = JSON.parse(cursor);
+    return unknownRecord(parsed) ?? {};
   } catch {
     return {};
   }
 }
 
-/** Encode a `projectId -> offset` map back into a JSON cursor string. */
-export function encodePerProjectCursor(
-  offsets: Record<string, number>,
+function parseIssueCursor(value: unknown): PostHogIssueCursor | undefined {
+  const record = unknownRecord(value);
+  if (record === undefined) return undefined;
+  const timestamp = pickFirstString(record.timestamp);
+  const fingerprint = pickFirstString(record.fingerprint);
+  if (timestamp === null || fingerprint === null) return undefined;
+  return { timestamp, fingerprint };
+}
+
+function parseEventCursor(value: unknown): PostHogEventCursor | undefined {
+  const record = unknownRecord(value);
+  if (record === undefined) return undefined;
+  const timestamp = pickFirstString(record.timestamp);
+  const uuid = pickFirstString(record.uuid);
+  if (timestamp === null || uuid === null) return undefined;
+  return { timestamp, uuid };
+}
+
+export function decodePerProjectIssueCursor(
+  cursor: string | undefined,
+): Record<string, PostHogIssueCursor> {
+  const parsed = parseCursorRecord(cursor);
+  const out: Record<string, PostHogIssueCursor> = {};
+  for (const [projectId, value] of Object.entries(parsed)) {
+    const parsedCursor = parseIssueCursor(value);
+    if (parsedCursor !== undefined) out[projectId] = parsedCursor;
+  }
+  return out;
+}
+
+export function encodePerProjectIssueCursor(
+  cursors: Record<string, PostHogIssueCursor>,
 ): string {
-  return JSON.stringify(offsets);
+  return JSON.stringify(cursors);
+}
+
+export function decodePerProjectEventCursor(
+  cursor: string | undefined,
+): Record<string, PostHogEventCursor> {
+  const parsed = parseCursorRecord(cursor);
+  const out: Record<string, PostHogEventCursor> = {};
+  for (const [projectId, value] of Object.entries(parsed)) {
+    const parsedCursor = parseEventCursor(value);
+    if (parsedCursor !== undefined) out[projectId] = parsedCursor;
+  }
+  return out;
+}
+
+export function encodePerProjectEventCursor(
+  cursors: Record<string, PostHogEventCursor>,
+): string {
+  return JSON.stringify(cursors);
 }
 
 /**
@@ -641,9 +666,18 @@ function requestFromPostHogUrl(
  */
 export function buildPostHogIssuesHogQL(input: PostHogIssueQueryInput): string {
   const whereFilters = buildPostHogIssueWhereFilters(input.searchQuery);
-  const havingClause = buildPostHogIssueHavingClause(input);
-
-  const offset = input.offset ?? 0;
+  const havingFilters = buildPostHogIssueHavingFilters(input);
+  const orderTimestamp = "last_seen";
+  if (input.cursor !== undefined) {
+    const cursorTimestamp = quoteHogQLUtcDateTime64(input.cursor.timestamp);
+    havingFilters.push(
+      `(${orderTimestamp} < ${cursorTimestamp} OR ` +
+        `(${orderTimestamp} = ${cursorTimestamp} AND ` +
+        `properties.$exception_fingerprint > ${quoteHogQLString(input.cursor.fingerprint)}))`,
+    );
+  }
+  const havingClause =
+    havingFilters.length > 0 ? `HAVING ${havingFilters.join(" AND ")}` : "";
   // For each fingerprint group, prefer the level/message/type/lib/environment
   // from the most recent event (argMax over (timestamp, uuid)). Tying the
   // argMax key with `uuid` breaks ambiguity between equal-timestamp events
@@ -668,9 +702,8 @@ export function buildPostHogIssuesHogQL(input: PostHogIssueQueryInput): string {
     WHERE ${whereFilters.join(" AND ")}
     GROUP BY properties.$exception_fingerprint
     ${havingClause}
-    ORDER BY last_seen DESC, fingerprint ASC
-	    LIMIT ${String(input.limit + 1)}
-	    OFFSET ${String(offset)}`;
+    ORDER BY ${orderTimestamp} DESC, fingerprint ASC
+    LIMIT ${String(input.limit + 1)}`;
 }
 
 function buildPostHogIssueWhereFilters(
@@ -692,12 +725,13 @@ function buildPostHogIssueWhereFilters(
   return whereFilters;
 }
 
-function buildPostHogIssueHavingClause(input: PostHogIssueQueryInput): string {
+function buildPostHogIssueHavingFilters(
+  input: PostHogIssueQueryInput,
+): string[] {
   const havingFilters: string[] = [];
   addTimestampFilter(havingFilters, "max(timestamp) >=", input.since);
   addTimestampFilter(havingFilters, "max(timestamp) <=", input.until);
-  if (havingFilters.length === 0) return "";
-  return `HAVING ${havingFilters.join(" AND ")}`;
+  return havingFilters;
 }
 
 function addTimestampFilter(
@@ -717,7 +751,6 @@ function addTimestampFilter(
  * fingerprints.
  */
 export function buildPostHogEventsHogQL(input: PostHogEventQueryInput): string {
-  const offset = input.offset ?? 0;
   const filters: string[] = [
     "event = '$exception'",
     `properties.$exception_fingerprint = ${quoteHogQLString(input.fingerprint)}`,
@@ -726,10 +759,17 @@ export function buildPostHogEventsHogQL(input: PostHogEventQueryInput): string {
     filters.push(`timestamp >= ${quoteHogQLUtcDateTime64(input.since)}`);
   }
   if (input.until !== undefined && input.until !== "") {
-    // Bound the event scan above so OFFSET pagination is stable during a
+    // Bound the event scan above so keyset pagination is stable during a
     // sync. Events past `until` are visible to the next sync run via the
     // `since = previous.until` watermark.
     filters.push(`timestamp <= ${quoteHogQLUtcDateTime64(input.until)}`);
+  }
+  if (input.cursor !== undefined) {
+    const cursorTimestamp = quoteHogQLUtcDateTime64(input.cursor.timestamp);
+    filters.push(
+      `(timestamp < ${cursorTimestamp} OR ` +
+        `(timestamp = ${cursorTimestamp} AND uuid > ${quoteHogQLString(input.cursor.uuid)}))`,
+    );
   }
   return `SELECT
       uuid,
@@ -748,8 +788,7 @@ export function buildPostHogEventsHogQL(input: PostHogEventQueryInput): string {
     FROM events
     WHERE ${filters.join(" AND ")}
     ORDER BY timestamp DESC, uuid ASC
-	    LIMIT ${String(input.limit + 1)}
-	    OFFSET ${String(offset)}`;
+    LIMIT ${String(input.limit + 1)}`;
 }
 
 export interface PerProjectIssueResult {
@@ -758,9 +797,14 @@ export interface PerProjectIssueResult {
    * Issues fetched in this project, tagged with their incoming `__projectId`.
    * The tag is stripped before issues are returned to the caller.
    */
-  issues: Array<Record<string, unknown>>;
-  /** Offset this fetch started at (the value already in the cursor). */
-  startOffset: number;
+  issues: Array<{
+    issue: Record<string, unknown>;
+    cursor?: PostHogIssueCursor;
+  }>;
+  /** Keyset cursor this fetch started at (the value already in the cursor). */
+  startCursor?: PostHogIssueCursor;
+  /** Last raw row cursor, used when invalid rows were filtered out. */
+  lastRawCursor?: PostHogIssueCursor;
   /**
    * Whether the per-project query reported more rows beyond what was
    * fetched (i.e. the +1 over-fetch sentinel fired or the API said so).
@@ -771,13 +815,13 @@ export interface PerProjectIssueResult {
 /**
  * Merge per-project HogQL issue results into one page sorted by `lastSeen`
  * desc, sliced to the global `limit`, and produce next-page per-project
- * offsets so the caller can advance only the projects whose rows were
+ * keyset cursors so the caller can advance only the projects whose rows were
  * actually consumed.
  *
- * The per-project offset map is the cursor: each project advances by exactly
- * the number of merged rows that came from it, so the next call resumes
- * each project where the merge stopped reading. A single global offset would
- * either skip rows from quieter projects or replay rows from busier ones.
+ * The per-project cursor map is the cursor: each project resumes after its
+ * last consumed `(timestamp, fingerprint)` pair. A single global cursor
+ * would either skip rows from quieter projects or replay rows from busier
+ * ones.
  */
 export function mergePostHogIssuesByRecency(
   perProjectResults: Array<PerProjectIssueResult>,
@@ -785,7 +829,7 @@ export function mergePostHogIssuesByRecency(
 ): {
   issues: Array<Record<string, unknown>>;
   hasMore: boolean;
-  nextOffsets: Record<string, number>;
+  nextCursors: Record<string, PostHogIssueCursor>;
 } {
   const mergeState = createPostHogMergeState(perProjectResults);
 
@@ -801,19 +845,25 @@ export function mergePostHogIssuesByRecency(
   //   indicated more rows are reachable beyond the slice, OR
   // - its per-project fetch produced more rows than the merge ended up
   //   consuming (the unconsumed rows still need to be returned next page).
-  const candidateNextOffsets: Record<string, number> = {};
+  const candidateNextCursors: Record<string, PostHogIssueCursor> = {};
   let anyHasMore = false;
   for (const result of perProjectResults) {
     const consumed = consumedByProject.get(result.projectId) ?? 0;
     const fetched = result.issues.length;
-    const startOffset =
-      mergeState.projectStart.get(result.projectId) ?? result.startOffset;
+    const startCursor = mergeState.projectStart.get(result.projectId);
     const hadMore = mergeState.projectHasMore.get(result.projectId) ?? false;
-    // `consumed` rows were emitted on this page; the remaining `fetched -
-    // consumed` rows are still in this project's offset window, so the next
-    // request resumes at `startOffset + consumed`.
-    const nextOffset = startOffset + consumed;
-    candidateNextOffsets[result.projectId] = nextOffset;
+    const consumedItems = mergeState.tagged
+      .filter((item) => item.projectId === result.projectId)
+      .slice(0, consumed);
+    const consumedCursor = consumedItems[consumed - 1]?.cursor;
+    const nextCursor =
+      consumedCursor ??
+      (consumed === 0 && result.lastRawCursor !== undefined
+        ? result.lastRawCursor
+        : startCursor);
+    if (nextCursor !== undefined) {
+      candidateNextCursors[result.projectId] = nextCursor;
+    }
     if (consumed < fetched || hadMore) {
       anyHasMore = true;
     }
@@ -822,12 +872,16 @@ export function mergePostHogIssuesByRecency(
   return {
     issues: consumedSlice.map((item) => item.issue),
     hasMore: anyHasMore,
-    nextOffsets: nextOffsetsForMergedIssues(anyHasMore, candidateNextOffsets),
+    nextCursors: nextCursorsForMergedIssues(anyHasMore, candidateNextCursors),
   };
 }
 
 function countConsumedPostHogIssuesByProject(
-  consumedSlice: Array<{ projectId: string; issue: Record<string, unknown> }>,
+  consumedSlice: Array<{
+    projectId: string;
+    issue: Record<string, unknown>;
+    cursor?: PostHogIssueCursor;
+  }>,
 ): Map<string, number> {
   const consumedByProject = new Map<string, number>();
   for (const item of consumedSlice) {
@@ -842,20 +896,31 @@ function countConsumedPostHogIssuesByProject(
 function createPostHogMergeState(
   perProjectResults: Array<PerProjectIssueResult>,
 ): {
-  tagged: Array<{ projectId: string; issue: Record<string, unknown> }>;
+  tagged: Array<{
+    projectId: string;
+    issue: Record<string, unknown>;
+    cursor?: PostHogIssueCursor;
+  }>;
   projectHasMore: Map<string, boolean>;
-  projectStart: Map<string, number>;
+  projectStart: Map<string, PostHogIssueCursor | undefined>;
 } {
-  const tagged: Array<{ projectId: string; issue: Record<string, unknown> }> =
-    [];
+  const tagged: Array<{
+    projectId: string;
+    issue: Record<string, unknown>;
+    cursor?: PostHogIssueCursor;
+  }> = [];
   const projectHasMore = new Map<string, boolean>();
-  const projectStart = new Map<string, number>();
+  const projectStart = new Map<string, PostHogIssueCursor | undefined>();
 
   for (const result of perProjectResults) {
     projectHasMore.set(result.projectId, result.hasMore);
-    projectStart.set(result.projectId, result.startOffset);
-    for (const issue of result.issues) {
-      tagged.push({ projectId: result.projectId, issue });
+    projectStart.set(result.projectId, result.startCursor);
+    for (const item of result.issues) {
+      tagged.push({
+        projectId: result.projectId,
+        issue: item.issue,
+        cursor: item.cursor,
+      });
     }
   }
 
@@ -863,16 +928,20 @@ function createPostHogMergeState(
 }
 
 function issueLastSeenTimestamp(issue: Record<string, unknown>): number {
-  if (typeof issue.lastSeen !== "string") return 0;
-  const timestamp = Date.parse(issue.lastSeen);
+  const value =
+    typeof issue.windowLastSeen === "string"
+      ? issue.windowLastSeen
+      : issue.lastSeen;
+  if (typeof value !== "string") return 0;
+  const timestamp = Date.parse(value);
   if (Number.isFinite(timestamp)) return timestamp;
   return 0;
 }
 
-function nextOffsetsForMergedIssues(
+function nextCursorsForMergedIssues(
   hasMore: boolean,
-  candidateNextOffsets: Record<string, number>,
-): Record<string, number> {
-  if (hasMore) return candidateNextOffsets;
+  candidateNextCursors: Record<string, PostHogIssueCursor>,
+): Record<string, PostHogIssueCursor> {
+  if (hasMore) return candidateNextCursors;
   return {};
 }

@@ -1,18 +1,29 @@
-import { useMemo } from "react";
+import { type ReactNode, useMemo, useState } from "react";
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "../ui/dialog";
 import {
   useDeleteErrorSource,
   useErrorSources,
   useSyncErrorSource,
+  useUpdateErrorSource,
 } from "../services/hooks";
 import { useTranslation } from "@bitsentry-ce/i18n";
-import { RefreshCw, Trash2 } from "lucide-react";
+import { Pencil, RefreshCw, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
 interface ExternalSourcesSettingsSectionProps {
   id?: string;
   className?: string;
+  headerActions?: ReactNode;
+  showInstallPlugin?: boolean;
 }
 
 function formatDate(value: string | null, t: (key: string) => string): string {
@@ -51,17 +62,43 @@ function formatSyncStatus(
 export function ExternalSourcesSettingsSection({
   id = "external-sources",
   className,
+  headerActions,
+  showInstallPlugin = true,
 }: ExternalSourcesSettingsSectionProps) {
   const { t } = useTranslation();
   const { data: sources = [], isLoading } = useErrorSources();
   const deleteMutation = useDeleteErrorSource();
   const syncMutation = useSyncErrorSource();
+  const updateMutation = useUpdateErrorSource();
+  const [editSource, setEditSource] = useState<(typeof sources)[number] | null>(
+    null,
+  );
+  const [editSyncEnabled, setEditSyncEnabled] = useState(false);
+  const [editAutoDiagnosisEnabled, setEditAutoDiagnosisEnabled] =
+    useState(true);
 
   const sortedSources = useMemo(
     () =>
       [...sources].sort((left, right) => left.name.localeCompare(right.name)),
     [sources],
   );
+
+  const openEditDialog = (source: (typeof sources)[number]) => {
+    setEditSyncEnabled(source.syncEnabled);
+    setEditAutoDiagnosisEnabled(source.autoDiagnosisEnabled);
+    setEditSource(source);
+  };
+
+  const saveEdit = async () => {
+    if (editSource === null) return;
+
+    await updateMutation.mutateAsync({
+      id: editSource.id,
+      syncEnabled: editSyncEnabled,
+      autoDiagnosisEnabled: editAutoDiagnosisEnabled,
+    });
+    setEditSource(null);
+  };
 
   return (
     <section id={id} data-tour="settings-external-sources" className={className}>
@@ -75,9 +112,13 @@ export function ExternalSourcesSettingsSection({
               {t("common.dataSourcesManager.connectExternalServicesToFeed")}
             </p>
           </div>
-          <Button size="sm" variant="outline" disabled>
-            {t("common.dataSourcesManager.installPlugin")}
-          </Button>
+          {showInstallPlugin ? (
+            <Button size="sm" variant="outline" disabled>
+              {t("common.dataSourcesManager.installPlugin")}
+            </Button>
+          ) : (
+            headerActions
+          )}
         </div>
 
         {isLoading && (
@@ -128,6 +169,16 @@ export function ExternalSourcesSettingsSection({
                     </p>
                   </div>
                   <div className="flex shrink-0 items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => openEditDialog(source)}
+                      disabled={updateMutation.isPending}
+                      aria-label={t("common.dataSourcesManager.editSource")}
+                      title={t("common.dataSourcesManager.editSource")}
+                      className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-50"
+                    >
+                      <Pencil size={16} aria-hidden="true" />
+                    </button>
                     <button
                       type="button"
                       onClick={() => {
@@ -205,6 +256,67 @@ export function ExternalSourcesSettingsSection({
           </div>
         )}
       </div>
+
+      <Dialog open={editSource !== null} onOpenChange={(open) => {
+        if (!open && !updateMutation.isPending) setEditSource(null);
+      }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t("common.dataSourcesManager.editSource")}</DialogTitle>
+            <DialogDescription>
+              {editSource?.name ?? ""}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-2">
+            <label className="flex cursor-pointer items-center justify-between gap-3 text-sm text-muted-foreground">
+              <span>{t("common.dataSourcesManager.enableScheduledSync")}</span>
+              <input
+                type="checkbox"
+                checked={editSyncEnabled}
+                onChange={(event) => setEditSyncEnabled(event.target.checked)}
+                disabled={updateMutation.isPending}
+              />
+            </label>
+            <label className="flex cursor-pointer items-start justify-between gap-3 text-sm text-muted-foreground">
+              <span>
+                <span className="block">
+                  {t("common.dataSourcesManager.autoDiagnosis")}
+                </span>
+                <span className="mt-0.5 block text-xs text-muted-foreground">
+                  {t("common.dataSourcesManager.autoDiagnosisHelp")}
+                </span>
+              </span>
+              <input
+                type="checkbox"
+                checked={editAutoDiagnosisEnabled}
+                onChange={(event) =>
+                  setEditAutoDiagnosisEnabled(event.target.checked)
+                }
+                disabled={updateMutation.isPending}
+              />
+            </label>
+          </div>
+
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setEditSource(null)}
+              disabled={updateMutation.isPending}
+            >
+              {t("common.actions.cancel")}
+            </Button>
+            <Button
+              type="button"
+              onClick={() => void saveEdit()}
+              disabled={updateMutation.isPending}
+            >
+              {t("common.actions.saveChanges")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </section>
   );
 }

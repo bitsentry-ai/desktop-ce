@@ -52,6 +52,10 @@ export function captureDesktopAnalyticsEvent(
   getDesktopPosthogApi().captureDesktopAnalyticsEvent(event, properties)
 }
 
+export function captureDesktopAnalyticsException(error: unknown): void {
+  getDesktopPosthogApi().captureDesktopAnalyticsException(error)
+}
+
 export function captureDesktopPageview(path: string): void {
   getDesktopPosthogApi().captureDesktopPageview(path)
 }

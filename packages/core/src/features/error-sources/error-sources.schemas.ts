@@ -31,7 +31,7 @@ export const createPluginErrorSourceSchema = z.object({
   additionalMetadata: z.record(z.string(), z.unknown()).optional(),
   logLevelThreshold: logLevelThresholdSchema.default('error'),
   syncEnabled: z.boolean().default(true),
-  autoDiagnosisEnabled: z.boolean().default(false),
+  autoDiagnosisEnabled: z.boolean().default(true),
 });
 
 export const createErrorSourceSchema = createPluginErrorSourceSchema;

@@ -2,6 +2,7 @@ type DesktopPosthogClient = {
   init: (apiKey: string, options: Record<string, unknown>) => void
   identify: (distinctId: string, properties?: Record<string, unknown>) => void
   capture: (event: string, properties?: Record<string, unknown>) => void
+  captureException?: (error: unknown) => void
 }
 
 export type DesktopAnalyticsUser = {
@@ -19,6 +20,7 @@ export type DesktopPosthogApi = {
     event: string,
     properties?: Record<string, unknown>,
   ) => void
+  captureDesktopAnalyticsException: (error: unknown) => void
   captureDesktopPageview: (path: string) => void
 }
 
@@ -102,6 +104,7 @@ let initPromise: Promise<void> | null = null
 let analyticsContext: DesktopAnalyticsContext | null = null
 let telemetryEnabled: boolean | null = null
 const pendingEvents: PendingEvent[] = []
+const pendingExceptions: unknown[] = []
 let lastIdentifyFingerprint: string | null = null
 let pendingIdentifyUser: DesktopAnalyticsUser | null = null
 
@@ -138,6 +141,7 @@ export function configureDesktopPosthogRuntime({
     initDesktopAnalytics,
     syncDesktopAnalyticsUser,
     captureDesktopAnalyticsEvent,
+    captureDesktopAnalyticsException,
     captureDesktopPageview,
   }
 }
@@ -379,6 +383,7 @@ export async function initDesktopAnalytics(): Promise<void> {
 
     if (!telemetryEnabled) {
       pendingEvents.length = 0
+      pendingExceptions.length = 0
       logPostHog(
         'Desktop analytics initialization skipped because telemetry consent is disabled',
       )
@@ -387,6 +392,7 @@ export async function initDesktopAnalytics(): Promise<void> {
 
     if (context.installationId === null) {
       pendingEvents.length = 0
+      pendingExceptions.length = 0
       telemetryEnabled = false
       logPostHog(
         'Desktop analytics initialization aborted because installation id is missing',
@@ -398,6 +404,7 @@ export async function initDesktopAnalytics(): Promise<void> {
     const posthogClient = getPosthogClient()
     if (posthogClient === null) {
       pendingEvents.length = 0
+      pendingExceptions.length = 0
       telemetryEnabled = false
       warnPostHogFailure(
         'initialize desktop analytics',
@@ -443,6 +450,7 @@ export async function initDesktopAnalytics(): Promise<void> {
 
     flushPendingIdentifyUser()
     flushPendingEvents()
+    flushPendingExceptions()
   })().catch((error: unknown) => {
     initPromise = null
     initialized = false
@@ -607,6 +615,70 @@ export function captureDesktopAnalyticsEvent(
     }
   } catch (error: unknown) {
     warnPostHogFailure(`capture ${event}`, error)
+  }
+}
+
+function flushPendingExceptions(): void {
+  if (pendingExceptions.length === 0) {
+    return
+  }
+
+  const posthogClient = getPosthogClient()
+  if (posthogClient?.captureException === undefined) {
+    warnPostHogFailure(
+      'capture queued desktop exception',
+      new Error('Desktop PostHog exception capture is unavailable'),
+    )
+    pendingExceptions.length = 0
+    return
+  }
+
+  while (pendingExceptions.length > 0) {
+    const error = pendingExceptions.shift()
+    try {
+      posthogClient.captureException(error)
+      logPostHog('Captured queued desktop analytics exception')
+    } catch (captureError: unknown) {
+      warnPostHogFailure('capture queued desktop exception', captureError)
+    }
+  }
+}
+
+export function captureDesktopAnalyticsException(error: unknown): void {
+  if (!isConfigured()) {
+    return
+  }
+
+  if (telemetryEnabled === false) {
+    logPostHog(
+      'Skipped desktop analytics exception because telemetry consent is disabled',
+    )
+    return
+  }
+
+  if (!initialized || analyticsContext === null) {
+    pendingExceptions.push(error)
+    logPostHog('Queued desktop analytics exception until initialization completes', {
+      queueSize: pendingExceptions.length,
+    })
+    void initDesktopAnalytics()
+    return
+  }
+
+  const posthogClient = getPosthogClient()
+  if (posthogClient?.captureException === undefined) {
+    warnPostHogFailure(
+      'capture desktop exception',
+      new Error('Desktop PostHog exception capture is unavailable'),
+    )
+    return
+  }
+
+  try {
+    posthogClient.captureException(error)
+    logPostHog('Captured desktop analytics exception')
+  } catch (captureError: unknown) {
+    warnPostHogFailure('capture desktop exception', captureError)
   }
 }
 

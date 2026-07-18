@@ -69,7 +69,9 @@ export class DiagnoseEntryUseCaseImpl implements DiagnoseEntryUseCase {
       diagnosisRecord.setCategory(refinedCategory, analysis.categoryConfidence);
     }
 
-    diagnosisRecord.applySourceContext(mapDiagnosisSourceContextFromEntry(entry));
+    diagnosisRecord.applySourceContext(
+      mapDiagnosisSourceContextFromEntry(entry),
+    );
 
     // 6. Transition state to llm_assessed
     diagnosisRecord.transitionTo(DiagnosisState.llmAssessed(), {

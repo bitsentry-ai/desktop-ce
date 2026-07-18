@@ -38,9 +38,9 @@ jobs:
           }
 
           validate "Pull request title" "$PR_TITLE"
-          git fetch --no-tags origin "$BASE_REF" --depth=1
+          git fetch --no-tags origin "$BASE_REF"
 
-          subjects="$(git log --format=%s "origin/$BASE_REF..HEAD")"
+          subjects="$(git log --format=%s "FETCH_HEAD..HEAD")"
           if [[ -z "$subjects" ]]; then
             echo "::error::No commits found between the PR branch and its base branch."
             exit 1
