@@ -192,7 +192,7 @@ describe('posthog error source support', () => {
       name: 'GitHub Issues',
       logLevelThreshold: 'error',
       syncEnabled: true,
-      autoDiagnosisEnabled: false,
+      autoDiagnosisEnabled: true,
     })
   })
 
