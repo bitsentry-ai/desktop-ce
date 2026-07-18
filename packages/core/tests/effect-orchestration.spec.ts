@@ -75,4 +75,32 @@ describe("runOrchestratedOperation", () => {
       operation: "provider request",
     });
   });
+
+  it("emits a safe structured trace for a terminal operation outcome", async () => {
+    const traces: Array<Record<string, unknown>> = [];
+
+    await runOrchestratedOperation({
+      operation: "provider request",
+      signal: new AbortController().signal,
+      timeoutMs: 1_000,
+      executionId: "execution-42",
+      provider: "groq",
+      attempt: 2,
+      onTrace: (trace) => traces.push(trace),
+      execute: async () => "ok",
+    });
+
+    expect(traces).toHaveLength(1);
+    expect(traces[0]).toEqual(
+      expect.objectContaining({
+        operation: "provider request",
+        executionId: "execution-42",
+        provider: "groq",
+        attempt: 2,
+        timeoutMs: 1_000,
+        outcome: "succeeded",
+        elapsedMs: expect.any(Number),
+      }),
+    );
+  });
 });

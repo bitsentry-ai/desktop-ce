@@ -27,7 +27,23 @@ export interface RunOrchestratedOperationOptions<T> {
   operation: string;
   signal: AbortSignal;
   timeoutMs?: number | null;
+  executionId?: string;
+  provider?: string;
+  attempt?: number;
+  onTrace?: (event: OrchestrationTraceEvent) => void;
   execute: (signal: AbortSignal) => Promise<T>;
+}
+
+export interface OrchestrationTraceEvent {
+  operation: string;
+  executionId?: string;
+  provider?: string;
+  attempt?: number;
+  timeoutMs?: number;
+  elapsedMs: number;
+  outcome: "succeeded" | "failed";
+  failureKind?: OrchestrationFailureKind;
+  cancellationSource?: "caller" | "deadline";
 }
 
 interface LinkedAbortSignal {
@@ -81,6 +97,22 @@ function linkAbortSignals(signals: readonly AbortSignal[]): LinkedAbortSignal {
   };
 }
 
+function emitTrace(
+  onTrace: RunOrchestratedOperationOptions<unknown>["onTrace"],
+  event: OrchestrationTraceEvent,
+): void {
+  if (onTrace === undefined) {
+    console.info("[orchestration]", event);
+    return;
+  }
+
+  try {
+    onTrace(event);
+  } catch {
+    // Observability must not alter the operation result or its cleanup path.
+  }
+}
+
 /**
  * Runs a side-effecting Promise through Effect while keeping the caller's
  * Promise-based API intact. The operation receives a signal that is aborted
@@ -89,6 +121,7 @@ function linkAbortSignals(signals: readonly AbortSignal[]): LinkedAbortSignal {
 export async function runOrchestratedOperation<T>(
   options: RunOrchestratedOperationOptions<T>,
 ): Promise<T> {
+  const startedAt = Date.now();
   const operation = Effect.tryPromise({
     try: async (effectSignal) => {
       const linkedSignal = linkAbortSignals([options.signal, effectSignal]);
@@ -121,8 +154,34 @@ export async function runOrchestratedOperation<T>(
 
   const outcome = await Effect.runPromise(Effect.either(boundedOperation));
   if (outcome._tag === "Left") {
-    throw outcome.left;
+    const error = outcome.left;
+    emitTrace(options.onTrace, {
+      operation: options.operation,
+      executionId: options.executionId,
+      provider: options.provider,
+      attempt: options.attempt,
+      timeoutMs: options.timeoutMs ?? undefined,
+      elapsedMs: Date.now() - startedAt,
+      outcome: "failed",
+      failureKind: error.kind,
+      cancellationSource:
+        error.kind === "cancelled"
+          ? "caller"
+          : error.kind === "timeout"
+            ? "deadline"
+            : undefined,
+    });
+    throw error;
   }
 
+  emitTrace(options.onTrace, {
+    operation: options.operation,
+    executionId: options.executionId,
+    provider: options.provider,
+    attempt: options.attempt,
+    timeoutMs: options.timeoutMs ?? undefined,
+    elapsedMs: Date.now() - startedAt,
+    outcome: "succeeded",
+  });
   return outcome.right;
 }
