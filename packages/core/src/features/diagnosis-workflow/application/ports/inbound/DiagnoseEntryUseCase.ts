@@ -11,6 +11,10 @@ export interface DiagnoseEntryInput {
   entryId: number;
   llmProviderKey?: DiagnosisLlmProviderKey;
   llmModel?: string;
+  /** Correlates a worker-owned diagnosis operation across service boundaries. */
+  executionId?: string;
+  /** Absolute epoch deadline; late diagnosis results must not transition state. */
+  deadlineAt?: number;
 }
 
 export interface DiagnoseEntryOutput {

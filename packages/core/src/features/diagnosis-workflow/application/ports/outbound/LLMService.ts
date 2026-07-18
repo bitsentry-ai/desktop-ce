@@ -23,6 +23,12 @@ export interface LLMAnalysisResult {
   modelUsed?: string;
 }
 
+/** Internal operation context; it is not serialized into LLM prompts. */
+export interface LLMOperationOptions {
+  signal?: AbortSignal;
+  executionId?: string;
+}
+
 export interface LLMRecommendationRequest {
   assessment: string;
   verificationText?: string;
@@ -41,12 +47,16 @@ export interface LLMService {
   /**
    * Analyzes a telemetry entry and returns a diagnosis
    */
-  analyze(request: LLMAnalysisRequest): Promise<LLMAnalysisResult>;
+  analyze(
+    request: LLMAnalysisRequest,
+    options?: LLMOperationOptions,
+  ): Promise<LLMAnalysisResult>;
 
   /**
    * Generates a concise remediation recommendation for an administrator
    */
   recommend(
     request: LLMRecommendationRequest,
+    options?: LLMOperationOptions,
   ): Promise<LLMRecommendationResult>;
 }
