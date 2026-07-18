@@ -1,3 +1,4 @@
+import { EventEmitter } from 'events'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 type ClaudeQuerySession = AsyncIterable<unknown> & {
@@ -19,10 +20,7 @@ interface SpawnedClaudeCodeProcess {
   pid: number
   killed: boolean
   exitCode: number | null
-  kill: () => boolean
-  on: ReturnType<typeof vi.fn>
-  once: ReturnType<typeof vi.fn>
-  off: ReturnType<typeof vi.fn>
+  kill: (signal?: NodeJS.Signals) => boolean
 }
 
 interface ClaudeQueryOptions {
@@ -516,17 +514,14 @@ describe('executeClaudeCode', () => {
       close: closeMock,
     })
 
-    const spawnedProcess: SpawnedClaudeCodeProcess = {
+    const spawnedProcess: SpawnedClaudeCodeProcess = Object.assign(new EventEmitter(), {
       stdin: {},
       stdout: {},
       pid: 1234,
       killed: false,
       exitCode: null,
       kill: vi.fn(() => true),
-      on: vi.fn(),
-      once: vi.fn(),
-      off: vi.fn(),
-    }
+    })
     spawnMock.mockReturnValue(spawnedProcess)
 
     const { executeClaudeCode } = await import(
@@ -571,9 +566,8 @@ describe('executeClaudeCode', () => {
         windowsHide: true,
       }),
     )
-    expect(spawned.kill()).toBe(true)
-    expect(spawnSyncMock).toHaveBeenCalledWith('taskkill', ['/pid', '1234', '/T', '/F'], {
-      stdio: 'ignore',
-    })
+    abortController.abort()
+    expect(spawned.kill).toHaveBeenCalledWith('SIGTERM')
+    spawnedProcess.emit('close', 0)
   })
 })

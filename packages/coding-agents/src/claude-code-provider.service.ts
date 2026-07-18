@@ -1,4 +1,4 @@
-import { spawn, spawnSync } from 'child_process'
+import { spawn } from 'child_process'
 import type { ChildProcess } from 'child_process'
 import { createClaudeCodeSubscriptionEnv } from './claude-code-env'
 import { codingAgentsLogger as log } from './logger'
@@ -8,6 +8,7 @@ import {
   getWindowsCmdExecutable,
   isWindowsCmdShim,
 } from './windows-cmd'
+import { linkSubprocessAbort } from './subprocess-lifecycle'
 
 export type ClaudeCodeAccessLevel = 'supervised' | 'auto-accept-edits' | 'full-access'
 
@@ -106,39 +107,9 @@ async function loadClaudeSdkQuery(): Promise<ClaudeSdkQuery> {
   })
 }
 
-function attachWindowsProcessTreeKill(child: ChildProcess, signal: AbortSignal | undefined): void {
-  const directKill = child.kill.bind(child)
-  const killProcessTree = ((killSignal?: NodeJS.Signals | number): boolean => {
-    if (process.platform === 'win32' && child.pid !== undefined) {
-      try {
-        spawnSync('taskkill', ['/pid', String(child.pid), '/T', '/F'], { stdio: 'ignore' })
-        return true
-      } catch {
-        // Fall through to direct kill.
-      }
-    }
-    return directKill(killSignal)
-  }) as typeof child.kill
-
-  child.kill = killProcessTree
-
-  if (signal === undefined) {
-    return
-  }
-
-  const abortProcessTree = (): void => {
-    killProcessTree()
-  }
-
-  if (signal.aborted) {
-    abortProcessTree()
-    return
-  }
-
-  signal.addEventListener('abort', abortProcessTree, { once: true })
-  child.once('exit', () => {
-    signal.removeEventListener('abort', abortProcessTree)
-  })
+function attachSubprocessTermination(child: ChildProcess, signal: AbortSignal | undefined): void {
+  const disposeAbort = linkSubprocessAbort(child, signal)
+  child.once('close', disposeAbort)
 }
 
 function resolveClaudePermissionMode(
@@ -164,7 +135,7 @@ function createWindowsCmdShimSpawner(): (
         windowsHide: true,
       },
     )
-    attachWindowsProcessTreeKill(child, options.signal)
+    attachSubprocessTermination(child, options.signal)
 
     return child
   }

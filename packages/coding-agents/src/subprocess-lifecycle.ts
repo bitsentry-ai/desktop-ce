@@ -28,7 +28,8 @@ function resolvePositiveTimeout(value: number | undefined, fallback: number): nu
 }
 
 function hasExited(child: ChildProcess): boolean {
-  return child.exitCode !== null || child.signalCode !== null
+  return (child.exitCode !== null && child.exitCode !== undefined) ||
+    (child.signalCode !== null && child.signalCode !== undefined)
 }
 
 function waitForProcessExit(child: ChildProcess): { promise: Promise<void>; dispose: () => void } {
