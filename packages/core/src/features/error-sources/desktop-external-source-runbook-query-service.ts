@@ -333,7 +333,7 @@ async function executeCustomPluginQuery(args: {
   const input = buildGenericPluginQueryInput(refreshedSource, query, limit);
 
   if (hasErrorSourceProviderAction(plugin, "queryIssues")) {
-    return pluginRuntime.executeAction({
+    const request = {
       pluginId,
       actionId: resolveErrorSourceProviderActionId({
         runtime: pluginRuntime,
@@ -343,9 +343,12 @@ async function executeCustomPluginQuery(args: {
       }),
       auth,
       input,
-    }, {
-      signal,
-    }).then((result) => {
+    };
+    const execution = signal === undefined
+      ? pluginRuntime.executeAction(request)
+      : pluginRuntime.executeAction(request, { signal });
+
+    return execution.then((result) => {
       if (!result.ok) {
         throw new Error(
           `Plugin "${pluginId}" failed to query issues for external source "${source.name}": ${result.summary}`,
@@ -362,7 +365,7 @@ async function executeCustomPluginQuery(args: {
   }
 
   if (hasErrorSourceProviderAction(plugin, "searchAlerts")) {
-    return pluginRuntime.executeAction({
+    const request = {
       pluginId,
       actionId: resolveErrorSourceProviderActionId({
         runtime: pluginRuntime,
@@ -372,9 +375,12 @@ async function executeCustomPluginQuery(args: {
       }),
       auth,
       input,
-    }, {
-      signal,
-    }).then((result) => {
+    };
+    const execution = signal === undefined
+      ? pluginRuntime.executeAction(request)
+      : pluginRuntime.executeAction(request, { signal });
+
+    return execution.then((result) => {
       if (!result.ok) {
         throw new Error(
           `Plugin "${pluginId}" failed to search alerts for external source "${source.name}": ${result.summary}`,
