@@ -719,7 +719,7 @@ export async function listCursorModels(binaryPath: string): Promise<string[]> {
     )
     return extractCursorModelIds(sessionResult)
   } finally {
-    client.kill()
+    await client.kill()
   }
 }
 
@@ -731,7 +731,9 @@ function createCursorAbortHandler(
   return () => {
     options.onDelta?.({ type: 'status', status: 'cancelled' })
     cancelCursorSession(client, state)
-    setTimeout(() => { client.kill(); }, 2000)
+    // `kill` owns the bounded SIGTERM/SIGKILL escalation. Do not leave a
+    // provider-local timer behind after the parent session has finished.
+    void client.kill()
   }
 }
 
@@ -872,6 +874,6 @@ export async function executeCursor(
     throw new Error(appendCursorStderrTail(getErrorMessage(err), client.getStderrTail()))
   } finally {
     options.abortController.signal.removeEventListener('abort', onAbort)
-    client.kill()
+    await client.kill()
   }
 }
