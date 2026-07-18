@@ -63,6 +63,9 @@ const RUNBOOK_EXECUTION_EVENT_CHANNEL = "bitsentry:runbooks:execution";
 const MAX_AI_TOOL_ITERATIONS = 8;
 const MAX_STEP_OUTPUT_LENGTH = 50_000;
 const HTTP_STEP_TIMEOUT_MS = 30_000;
+const EXTERNAL_SOURCE_STEP_TIMEOUT_MS = 60_000;
+const RUNBOOK_SHELL_STEP_TIMEOUT_MS = 300_000;
+const RUNBOOK_LLM_STEP_TIMEOUT_MS = 300_000;
 const SHELL_STEP_EMIT_THROTTLE_MS = 250;
 const MILLISECONDS_PER_MINUTE = 60_000;
 const EXECUTION_CONTROL_HEARTBEAT_INTERVAL_MS = 2_000;
@@ -1003,10 +1006,16 @@ export class RunbookExecutionService {
     await this.emitSnapshot(session);
 
     try {
-      const output = await this.externalSourceQueryExecutor.execute({
-        sourceId,
-        query,
+      const output = await runOrchestratedOperation({
+        operation: "External source query",
         signal: session.abortController.signal,
+        timeoutMs: EXTERNAL_SOURCE_STEP_TIMEOUT_MS,
+        execute: (signal) =>
+          this.externalSourceQueryExecutor.execute({
+            sourceId,
+            query,
+            signal,
+          }),
       });
       this.recordActivity(session);
       return { output };
@@ -1073,7 +1082,7 @@ export class RunbookExecutionService {
     const result = await executeShellCommandTool.execute(
       {
         command,
-        timeoutMs: null,
+        timeoutMs: RUNBOOK_SHELL_STEP_TIMEOUT_MS,
         maxOutputBytes: MAX_STEP_OUTPUT_LENGTH,
         treatTimeoutAsSuccess: false,
         treatMaxOutputAsSuccess: true,
@@ -1689,14 +1698,20 @@ export class RunbookExecutionService {
       }
 
       this.recordActivity(session);
-      const response = await this.llmAdapter.chatWithTools({
-        messages,
-        tools,
+      const response = await runOrchestratedOperation({
+        operation: "Runbook LLM response",
         signal: session.abortController.signal,
-        onDelta: () => {
-          this.recordActivity(session);
-        },
-        llm: llmSelection,
+        timeoutMs: RUNBOOK_LLM_STEP_TIMEOUT_MS,
+        execute: (signal) =>
+          this.llmAdapter.chatWithTools({
+            messages,
+            tools,
+            signal,
+            onDelta: () => {
+              this.recordActivity(session);
+            },
+            llm: llmSelection,
+          }),
       });
       this.recordActivity(session);
 
@@ -1750,7 +1765,8 @@ export class RunbookExecutionService {
     prompt: string,
     model?: string,
   ): Promise<ExecutedStepResult> {
-    if (this.localAiProvider === undefined) {
+    const localAiProvider = this.localAiProvider;
+    if (localAiProvider === undefined) {
       let message = "Local AI provider is not available";
       if (this.edition === "ce") {
         message = "Local AI provider is not available in SuperTerminal CE.";
@@ -1782,24 +1798,43 @@ export class RunbookExecutionService {
       snapshotState,
     );
 
-    const result = await this.localAiProvider.execute(
-      providerKey,
-      fullPrompt,
-      session.abortController,
-      (delta) => {
-        this.recordActivity(session);
-        output = this.appendLocalAiDeltaOutput({
-          delta,
-          output,
-          redactor,
-          step,
-          onSnapshotReady: throttledEmitSnapshot,
-        });
+    const result = await runOrchestratedOperation({
+      operation: "Local runbook LLM response",
+      signal: session.abortController.signal,
+      timeoutMs: RUNBOOK_LLM_STEP_TIMEOUT_MS,
+      execute: async (signal) => {
+        const localAiAbortController = new AbortController();
+        const abortLocalAi = () => localAiAbortController.abort();
+        if (signal.aborted) {
+          abortLocalAi();
+        } else {
+          signal.addEventListener("abort", abortLocalAi, { once: true });
+        }
+
+        try {
+          return await localAiProvider.execute(
+            providerKey,
+            fullPrompt,
+            localAiAbortController,
+            (delta) => {
+              this.recordActivity(session);
+              output = this.appendLocalAiDeltaOutput({
+                delta,
+                output,
+                redactor,
+                step,
+                onSnapshotReady: throttledEmitSnapshot,
+              });
+            },
+            undefined,
+            model,
+            accessLevel,
+          );
+        } finally {
+          signal.removeEventListener("abort", abortLocalAi);
+        }
       },
-      undefined,
-      model,
-      accessLevel,
-    );
+    });
 
     await this.flushLocalAiSnapshotEmitter(session, snapshotState);
     step.metadata = this.createLocalAiMetadata(
