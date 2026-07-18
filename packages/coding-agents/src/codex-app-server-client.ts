@@ -1,9 +1,10 @@
-import { spawn, spawnSync } from 'child_process'
+import { spawn } from 'child_process'
 import type { ChildProcessWithoutNullStreams } from 'child_process'
 import readline from 'readline'
 import { EventEmitter } from 'events'
 import log from 'electron-log'
 import { createCodingAgentsProcessEnv } from './coding-agents-process-env'
+import { terminateSubprocess } from './subprocess-lifecycle'
 
 const REQUEST_TIMEOUT_MS = 300_000
 const MAX_STDERR_BUFFER = 5_000
@@ -65,18 +66,6 @@ function readStringField(
   return undefined
 }
 
-function killCodexChildProcess(child: ChildProcessWithoutNullStreams): void {
-  if (process.platform === 'win32' && child.pid !== undefined) {
-    try {
-      spawnSync('taskkill', ['/pid', String(child.pid), '/T', '/F'], { stdio: 'ignore' })
-      return
-    } catch {
-      // Fall through to direct kill
-    }
-  }
-  child.kill()
-}
-
 export class CodexAppServerClient extends EventEmitter {
   private child: ChildProcessWithoutNullStreams | null = null
   private output: readline.Interface | null = null
@@ -84,6 +73,7 @@ export class CodexAppServerClient extends EventEmitter {
   private nextId = 1
   private stderrBuffer = ''
   private closed = false
+  private termination: Promise<void> | null = null
 
   constructor(
     private readonly binaryPath: string,
@@ -237,8 +227,8 @@ export class CodexAppServerClient extends EventEmitter {
     }
   }
 
-  private cleanup(reason: string): void {
-    if (this.closed) return
+  private cleanup(reason: string): Promise<void> {
+    if (this.closed) return this.termination ?? Promise.resolve()
     this.closed = true
 
     for (const [id, pending] of this.pending) {
@@ -253,20 +243,27 @@ export class CodexAppServerClient extends EventEmitter {
       this.output = null
     }
 
-    if (this.child !== null && !this.child.killed) {
-      killCodexChildProcess(this.child)
-    }
+    const child = this.child
     this.child = null
 
+    this.termination = child === null
+      ? Promise.resolve()
+      : terminateSubprocess(child).then((result) => {
+        if (result.outcome === 'termination-unconfirmed') {
+          log.warn(`[codex-app-server] Unable to confirm process termination (pid=${String(result.pid)})`)
+        }
+      })
+
     this.emit('closed', reason)
+    return this.termination
   }
 
   getStderrTail(): string {
     return this.stderrBuffer
   }
 
-  kill(): void {
-    this.cleanup('killed by caller')
+  kill(): Promise<void> {
+    return this.cleanup('killed by caller')
   }
 
   get isRunning(): boolean {

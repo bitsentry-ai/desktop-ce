@@ -304,7 +304,7 @@ describe('CursorAcpClient', () => {
         params: { sessionId: 'session-1' },
       })
     } finally {
-      client.kill()
+      await client.kill()
     }
   })
 
@@ -321,7 +321,7 @@ describe('CursorAcpClient', () => {
         expect(messages[0]).toEqual({ argv: ['acp'] })
       })
     } finally {
-      client.kill()
+      await client.kill()
     }
   })
 
@@ -335,7 +335,7 @@ describe('CursorAcpClient', () => {
         /Cursor ACP client process exited: pending initialize cancelled[\s\S]*not logged in; run cursor-agent login/,
       )
     } finally {
-      client.kill()
+      await client.kill()
     }
   })
 
@@ -354,7 +354,7 @@ describe('CursorAcpClient', () => {
         expect(parseErrors[0]?.raw).toContain('not valid json')
       })
     } finally {
-      client.kill()
+      await client.kill()
     }
   })
 
@@ -373,7 +373,7 @@ describe('CursorAcpClient', () => {
       )
       await expect(client.sendRequest('test/fast-second')).resolves.toEqual({ request: 'fast-second' })
     } finally {
-      client.kill()
+      await client.kill()
     }
   })
 
@@ -390,7 +390,7 @@ describe('CursorAcpClient', () => {
       await expect(fast).resolves.toEqual({ request: 'fast-second' })
       await expect(slow).resolves.toEqual({ request: 'slow-first' })
     } finally {
-      client.kill()
+      await client.kill()
     }
   })
 })

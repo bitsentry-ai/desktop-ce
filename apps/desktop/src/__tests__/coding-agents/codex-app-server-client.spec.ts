@@ -205,7 +205,7 @@ describe('CodexAppServerClient subprocess protocol', () => {
         })
       })
     } finally {
-      client.kill()
+      await client.kill()
     }
   })
 
@@ -227,7 +227,7 @@ describe('CodexAppServerClient subprocess protocol', () => {
       expect(client.getStderrTail()).toContain('provider diagnostic')
       await expect(client.sendRequest('echo', { healthy: true })).resolves.toEqual({ healthy: true })
     } finally {
-      client.kill()
+      await client.kill()
     }
   })
 
@@ -244,7 +244,7 @@ describe('CodexAppServerClient subprocess protocol', () => {
         'Codex app-server process exited: pending exit cancelled',
       )
     } finally {
-      client.kill()
+      await client.kill()
     }
   })
 
@@ -257,7 +257,7 @@ describe('CodexAppServerClient subprocess protocol', () => {
       await expect(client.sendRequest('hang')).rejects.toThrow('Codex RPC hang timed out after 0.1s')
       await expect(client.sendRequest('echo', { recovered: true })).resolves.toEqual({ recovered: true })
     } finally {
-      client.kill()
+      await client.kill()
     }
   })
 
@@ -274,7 +274,7 @@ describe('CodexAppServerClient subprocess protocol', () => {
       await expect(fast).resolves.toEqual({ request: 'fast-second' })
       await expect(slow).resolves.toEqual({ request: 'slow-first' })
     } finally {
-      client.kill()
+      await client.kill()
     }
   })
 })
