@@ -54,4 +54,10 @@ describe('parseCursorAuthOutput', () => {
       status: 'authenticated',
     })
   })
+
+  it('treats Cursor about output with no account as unauthenticated', () => {
+    expect(parseCursorAuthOutput('User Email          Not logged in', '')).toEqual({
+      status: 'unauthenticated',
+    })
+  })
 })

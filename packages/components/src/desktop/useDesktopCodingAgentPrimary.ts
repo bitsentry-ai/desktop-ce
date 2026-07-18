@@ -9,9 +9,9 @@ import { useToast } from "../hooks/use-toast";
 import type { ProviderId as CodingAgentId } from "../settings/CodingAgentProvidersSection";
 
 const PRIMARY_AGENT_PRIORITY: CodingAgentId[] = [
+  "codex",
   "cursor",
   "opencode",
-  "codex",
   "claude_code",
 ];
 

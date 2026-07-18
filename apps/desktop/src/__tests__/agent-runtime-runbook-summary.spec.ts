@@ -1538,10 +1538,9 @@ describe('AgentRuntimeService runbook outcomes', () => {
     await waitForCondition(() => service.getStatus(sessionId).state === 'COMPLETED')
 
     const agentMessage = getLastAgentMessage(service.getSnapshot(sessionId))
-    expect(agentMessage).toMatchObject({
-      kind: 'agent',
-      finalText: 'I used the first log execution and did not restart it.',
-    })
+    expect(agentMessage.kind).toBe('agent')
+    expect(agentMessage.finalText).toContain('was already started in this turn')
+    expect(agentMessage.finalText).toContain('using the existing runbook result')
     const toolCalls = agentMessage.toolCalls
     const executionCards = toolCalls.filter((toolCall) => toolCall.toolName === 'execute_runbook')
     expect(executionCards).toHaveLength(2)
@@ -1558,6 +1557,90 @@ describe('AgentRuntimeService runbook outcomes', () => {
           toolCall.output.includes('This runbook was already started in this assistant turn'),
       ),
     ).toBe(true)
+  })
+
+  it('finalizes instead of giving the model another turn after a repeated runbook start is blocked', async () => {
+    const logsExecution = makeExecution({
+      executionId: '22222222-2222-4222-8222-222222222222',
+      runbookId: 'rb-logs',
+      runbookTitle: 'Check Logs in the Jagad backend server',
+      steps: [
+        {
+          actionId: 'step-1',
+          order: 1,
+          type: 'shell',
+          title: 'Check journalctl logs',
+          status: 'completed',
+          output: 'Backend logs loaded for the combined Sentry window.',
+        },
+      ],
+    })
+    const runbookStore = {
+      list: vi.fn().mockResolvedValue([
+        makeRunbook('rb-logs', 'Check Logs in the Jagad backend server', [
+          {
+            id: 'step-1',
+            type: 'shell',
+            title: 'Check journalctl logs',
+          },
+        ]),
+      ]),
+    }
+    const runbookExecutionService = {
+      start: vi.fn().mockResolvedValue({
+        executionId: logsExecution.executionId,
+        resultId: 'result-logs',
+      }),
+      waitForCompletion: vi.fn().mockResolvedValue(logsExecution),
+      get: vi.fn().mockResolvedValue(null),
+      getLatestForIncidentThread: vi.fn().mockResolvedValue(null),
+    }
+    const llmAdapter = {
+      chatWithTools: vi
+        .fn()
+        .mockResolvedValueOnce({
+          content: 'I will run the logs runbook.',
+          toolCalls: [
+            {
+              id: 'call-logs-1',
+              name: 'execute_runbook',
+              args: { runbookTitle: 'Check Logs in the Jagad backend server' },
+            },
+          ],
+        })
+        .mockResolvedValueOnce({
+          content: 'I will run it again.',
+          toolCalls: [
+            {
+              id: 'call-logs-2',
+              name: 'execute_runbook',
+              args: { runbookTitle: 'Check Logs in the Jagad backend server' },
+            },
+          ],
+        })
+        .mockResolvedValueOnce({
+          content: 'This should not be called.',
+          toolCalls: [],
+        }),
+    }
+    const service = createRuntime({
+      llmAdapter,
+      runbookStore,
+      runbookExecutionService,
+    })
+
+    const sessionId = await service.start({
+      prompt: 'Run the Jagad backend log runbook.',
+      incidentThreadId: 'incident-1',
+    })
+
+    await waitForCondition(() => service.getStatus(sessionId).state === 'COMPLETED')
+
+    expect(runbookExecutionService.start).toHaveBeenCalledTimes(1)
+    expect(llmAdapter.chatWithTools).toHaveBeenCalledTimes(2)
+    const agentMessage = getLastAgentMessage(service.getSnapshot(sessionId))
+    expect(agentMessage.finalText).toContain('was already started in this turn')
+    expect(agentMessage.finalText).toContain('using the existing runbook result')
   })
 
   it('allows the same runbook to start with different parameters in one assistant turn', async () => {

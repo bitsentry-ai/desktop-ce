@@ -659,8 +659,8 @@ function listConfiguredProviderKeys(
   savedProviders: Record<string, SavedProviderConfig>,
 ): ModelCatalogProviderKey[] {
   const orderedKeys: ModelCatalogProviderKey[] = [
-    "claude_code",
     "codex",
+    "claude_code",
     "opencode",
     "cursor",
     "openai",

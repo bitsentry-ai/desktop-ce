@@ -987,6 +987,15 @@ export function parseCursorAuthOutput(stdout: string, stderr: string): CLIProbeR
   return { status: 'unknown' }
 }
 
+function mergeCursorAuthSignals(
+  primary: CLIProbeResult['auth'],
+  secondary: CLIProbeResult['auth'],
+): CLIProbeResult['auth'] {
+  if (secondary.status === 'unauthenticated') return secondary
+  if (primary.status !== 'unknown') return primary
+  return secondary
+}
+
 function hasUsableOpenCodeFreeModels(stdout: string, stderr: string): boolean {
   return parseOpenCodeModelIds(stdout, stderr).some((model) =>
     /^opencode\/.+(?:free|pickle)/i.test(model),
@@ -1030,6 +1039,20 @@ export async function probeCursor(binaryPath: string): Promise<CLIProbeResult> {
   } catch (err: unknown) {
     const error = toProbeError(err, 'not_executable')
     auth = parseCursorAuthOutput(error.stdout, error.stderr)
+  }
+
+  try {
+    const aboutResult = await runCommand(resolvedBinaryPath, ['about'], PROBE_TIMEOUT_MS)
+    auth = mergeCursorAuthSignals(
+      auth,
+      parseCursorAuthOutput(aboutResult.stdout, aboutResult.stderr),
+    )
+  } catch (err: unknown) {
+    const error = toProbeError(err, 'not_executable')
+    auth = mergeCursorAuthSignals(
+      auth,
+      parseCursorAuthOutput(error.stdout, error.stderr),
+    )
   }
 
   if (auth.status === 'unauthenticated') {
