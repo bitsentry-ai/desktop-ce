@@ -3,6 +3,10 @@ import type { ChildProcessByStdio } from 'child_process'
 import type { Readable } from 'stream'
 import { z } from 'zod'
 import type { ToolContext, ToolDefinition, ToolResult } from '../types'
+import {
+  OrchestrationError,
+  runOrchestratedOperation,
+} from '../shared/effect-orchestration'
 
 const CLI_WRAPPER_NODE_PATH_ENV = 'BITSENTRY_CLI_WRAPPER_NODE_PATH'
 const log = console
@@ -134,33 +138,6 @@ function createOutputListener(input: {
   })
 }
 
-function createTimeout(input: {
-  timeoutMs: number | null
-  state: ShellExecutionState
-  sessionId: string
-  toolCallId: string
-  terminateChild: () => void
-}): NodeJS.Timeout | null {
-  if (input.timeoutMs === null) {
-    return null
-  }
-
-  return setTimeout(() => {
-    input.state.timedOut = true
-    log.warn(`[agent-runtime:${input.sessionId}] Shell command timed out`, {
-      toolCallId: input.toolCallId,
-      timeoutMs: input.timeoutMs,
-    })
-    input.terminateChild()
-  }, input.timeoutMs)
-}
-
-function clearOptionalTimeout(timeoutHandle: NodeJS.Timeout | null): void {
-  if (timeoutHandle !== null) {
-    clearTimeout(timeoutHandle)
-  }
-}
-
 function errorOutputForExit(stderrBuffer: string, code: number | null): string {
   const trimmed = stderrBuffer.trim()
   if (trimmed.length > 0) {
@@ -211,21 +188,6 @@ async function executeShellCommand(
     terminateChildProcess(child, state)
   }
 
-  const abortHandler = () => {
-    log.info(`[agent-runtime:${sessionId}] Killing shell command via abort`, {
-      toolCallId,
-    })
-    terminateChild()
-  }
-
-  signal.addEventListener('abort', abortHandler)
-  const timeoutHandle = createTimeout({
-    timeoutMs,
-    state,
-    sessionId,
-    toolCallId,
-    terminateChild,
-  })
   const stdoutDone = createOutputListener({
     child,
     stream: 'stdout',
@@ -250,51 +212,55 @@ async function executeShellCommand(
   })
 
   try {
-    await Promise.all([
-      new Promise<void>((resolve, reject) => {
-        child.on('exit', (code) => {
-          clearOptionalTimeout(timeoutHandle)
-          signal.removeEventListener('abort', abortHandler)
-          if (signal.aborted) {
-            reject(new Error('Tool execution cancelled'))
-            return
-          }
-          if (state.timedOut) {
-            if (input.treatTimeoutAsSuccess === true) {
-              resolve()
-              return
-            }
-            reject(new Error(`Command timed out after ${String(timeoutMs)}ms`))
-            return
-          }
-          if (state.outputLimitReached) {
-            if (!terminateOnMaxOutput || input.treatMaxOutputAsSuccess === true) {
-              resolve()
-              return
-            }
-            reject(new Error(`Command output exceeded ${String(maxOutputBytes)} bytes`))
-            return
-          }
-          if (code === 0) {
-            resolve()
-            return
-          }
-          reject(
-            new Error(
-              errorOutputForExit(state.stderrBuffer, code),
-            ),
-          )
-        })
+    await runOrchestratedOperation({
+      operation: 'Shell command',
+      signal,
+      timeoutMs,
+      execute: async (executionSignal) => {
+        const abortHandler = () => {
+          log.info(`[agent-runtime:${sessionId}] Killing shell command via abort`, {
+            toolCallId,
+          })
+          terminateChild()
+        }
 
-        child.on('error', (error) => {
-          clearOptionalTimeout(timeoutHandle)
-          signal.removeEventListener('abort', abortHandler)
-          reject(new Error(`Failed to spawn command: ${error.message}`))
-        })
-      }),
-      stdoutDone,
-      stderrDone,
-    ])
+        if (executionSignal.aborted) {
+          abortHandler()
+          throw new Error('Tool execution cancelled')
+        }
+
+        executionSignal.addEventListener('abort', abortHandler, { once: true })
+        try {
+          await Promise.all([
+            new Promise<void>((resolve, reject) => {
+              child.on('exit', (code) => {
+                if (state.outputLimitReached) {
+                  if (!terminateOnMaxOutput || input.treatMaxOutputAsSuccess === true) {
+                    resolve()
+                    return
+                  }
+                  reject(new Error(`Command output exceeded ${String(maxOutputBytes)} bytes`))
+                  return
+                }
+                if (code === 0) {
+                  resolve()
+                  return
+                }
+                reject(new Error(errorOutputForExit(state.stderrBuffer, code)))
+              })
+
+              child.on('error', (error) => {
+                reject(new Error(`Failed to spawn command: ${error.message}`))
+              })
+            }),
+            stdoutDone,
+            stderrDone,
+          ])
+        } finally {
+          executionSignal.removeEventListener('abort', abortHandler)
+        }
+      },
+    })
 
     const output = thisCommandOutput(
       state.outputBuffer,
@@ -311,6 +277,26 @@ async function executeShellCommand(
 
     return { output: 'Command completed with no output.' }
   } catch (error) {
+    if (error instanceof OrchestrationError && error.kind === 'timeout') {
+      state.timedOut = true
+      log.warn(`[agent-runtime:${sessionId}] Shell command timed out`, {
+        toolCallId,
+        timeoutMs,
+      })
+      if (input.treatTimeoutAsSuccess === true) {
+        const output = thisCommandOutput(
+          state.outputBuffer,
+          state.stderrBuffer,
+          state.timedOut,
+          state.outputLimitReached,
+          timeoutMs,
+          maxOutputBytes,
+          terminateOnMaxOutput,
+        )
+        return { output: optionalOutput(output) ?? 'Command timed out with no output.' }
+      }
+    }
+
     const output = thisCommandOutput(
       state.outputBuffer,
       state.stderrBuffer,
@@ -330,8 +316,6 @@ async function executeShellCommand(
       output: optionalOutput(output),
     }
   } finally {
-    clearOptionalTimeout(timeoutHandle)
-    signal.removeEventListener('abort', abortHandler)
     terminateChild()
   }
 }

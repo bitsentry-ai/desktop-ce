@@ -27,6 +27,10 @@ import {
   getTool,
   getAllToolDefinitions,
 } from '@bitsentry-ce/core/features/agent-runtime/shared/capability-registry'
+import {
+  OrchestrationError,
+  runOrchestratedOperation,
+} from '@bitsentry-ce/core/features/agent-runtime/shared/effect-orchestration'
 import type {
   AgentChatAttachment,
   AgentErrorCode,
@@ -2031,19 +2035,24 @@ export class AgentRuntimeService {
         const shouldEmitAssistantDeltas =
           !isLocalCodingAgentProvider ||
           this.debugHooks.isLocalCodingAgentDeltaStreamingEnabled()
-        let postToolSignal: ReturnType<AgentRuntimeService['createPostToolResponseSignal']> | null = null
-        if (isLocalCodingAgentProvider && hasVisiblePostToolResult) {
-          postToolSignal = this.createPostToolResponseSignal(abortController.signal)
-        }
+        const postToolResponseDeadline = isLocalCodingAgentProvider && hasVisiblePostToolResult
+        const remainingSessionTimeoutMs = Math.max(1, session.expiresAt - Date.now())
         let response: Awaited<ReturnType<AgentLlmAdapterService['chatWithTools']>>
         try {
-          response = await llmAdapter.chatWithTools({
-            messages: session.messages,
-            tools: toolDefinitions,
-            signal: postToolSignal?.signal ?? abortController.signal,
-            llm: session.llmSelection,
-            accessLevel: session.accessLevel,
-            traitValues: session.traitValues,
+          response = await runOrchestratedOperation({
+            operation: 'LLM response',
+            signal: abortController.signal,
+            timeoutMs: postToolResponseDeadline
+              ? LOCAL_PROVIDER_POST_TOOL_RESPONSE_TIMEOUT_MS
+              : remainingSessionTimeoutMs,
+            execute: (signal) =>
+              llmAdapter.chatWithTools({
+                messages: session.messages,
+                tools: toolDefinitions,
+                signal,
+                llm: session.llmSelection,
+                accessLevel: session.accessLevel,
+                traitValues: session.traitValues,
 
             onDelta: (delta) => {
               // Stream assistant deltas to renderer
@@ -2074,12 +2083,14 @@ export class AgentRuntimeService {
                   tokenUsage: delta.tokenUsage,
                 })
               }
-            },
+                },
+              }),
           })
         } catch (error) {
           if (
-            postToolSignal !== null &&
-            postToolSignal.didTimeout() &&
+            postToolResponseDeadline &&
+            error instanceof OrchestrationError &&
+            error.kind === 'timeout' &&
             !isAbortSignalAborted(abortController.signal) &&
             hasVisiblePostToolResult
           ) {
@@ -2093,24 +2104,6 @@ export class AgentRuntimeService {
             return
           }
           throw error
-        } finally {
-          postToolSignal?.dispose()
-        }
-
-        if (
-          postToolSignal !== null &&
-          postToolSignal.didTimeout() &&
-          !isAbortSignalAborted(abortController.signal) &&
-          hasVisiblePostToolResult
-        ) {
-          log.warn(
-            `[agent-runtime:${sessionId}] Local provider finalization timed out after visible runbook tools; completing turn`,
-          )
-          if (shouldEmitThinkingStart) {
-            endThinking()
-          }
-          emitFinal('')
-          return
         }
 
         const toolResponseFallbackText = this.buildVisibleRunbookFallbackResponse(
@@ -2482,35 +2475,6 @@ export class AgentRuntimeService {
 
     log.info(`[agent-runtime:${sessionId}] Session timed out`)
     this.cancel(sessionId)
-  }
-
-  private createPostToolResponseSignal(parentSignal: AbortSignal): {
-    signal: AbortSignal
-    didTimeout: () => boolean
-    dispose: () => void
-  } {
-    const controller = new AbortController()
-    let timedOut = false
-    const handleParentAbort = () => { controller.abort(); }
-    const timeoutHandle = setTimeout(() => {
-      timedOut = true
-      controller.abort()
-    }, LOCAL_PROVIDER_POST_TOOL_RESPONSE_TIMEOUT_MS)
-
-    if (parentSignal.aborted) {
-      controller.abort()
-    } else {
-      parentSignal.addEventListener('abort', handleParentAbort, { once: true })
-    }
-
-    return {
-      signal: controller.signal,
-      didTimeout: () => timedOut,
-      dispose: () => {
-        clearTimeout(timeoutHandle)
-        parentSignal.removeEventListener('abort', handleParentAbort)
-      },
-    }
   }
 
   /**

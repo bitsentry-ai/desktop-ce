@@ -7,6 +7,10 @@
 
 import { z } from 'zod'
 import type { ToolContext, ToolDefinition, ToolResult } from '../types'
+import {
+  OrchestrationError,
+  runOrchestratedOperation,
+} from '../shared/effect-orchestration'
 
 const HTTP_TIMEOUT_MS = 30_000
 const MAX_RESPONSE_LENGTH = 50_000
@@ -82,12 +86,12 @@ function buildOutput(response: Response, responseBody: string): string {
   return lines.join('\n')
 }
 
-function getHttpRequestError(error: unknown, signal: AbortSignal): string {
-  if (signal.aborted) {
+function getHttpRequestError(error: unknown): string {
+  if (error instanceof OrchestrationError && error.kind === 'cancelled') {
     return 'HTTP request cancelled'
   }
 
-  if (error instanceof Error && error.name === 'AbortError') {
+  if (error instanceof OrchestrationError && error.kind === 'timeout') {
     return `HTTP request timed out after ${String(HTTP_TIMEOUT_MS)}ms`
   }
 
@@ -102,35 +106,27 @@ async function executeHttpRequest(
   input: ExecuteHttpRequestInput,
   context: ToolContext,
 ): Promise<ToolResult> {
-  const { signal } = context
-
   context.onChunk(`Sending ${input.method} request to ${input.url}...`)
 
-  const abortController = new AbortController()
-  const timeout = setTimeout(() => {
-    abortController.abort()
-  }, HTTP_TIMEOUT_MS)
-
-  const handleAbort = () => {
-    abortController.abort()
-  }
-  signal.addEventListener('abort', handleAbort, { once: true })
-
   try {
-    const response = await fetch(input.url, {
-      method: input.method,
-      headers: input.headers,
-      body: getRequestBody(input),
-      signal: abortController.signal,
-    })
+    return await runOrchestratedOperation({
+      operation: 'HTTP request',
+      signal: context.signal,
+      timeoutMs: HTTP_TIMEOUT_MS,
+      execute: async (signal) => {
+        const response = await fetch(input.url, {
+          method: input.method,
+          headers: input.headers,
+          body: getRequestBody(input),
+          signal,
+        })
 
-    const responseBody = await response.text()
-    return { output: buildOutput(response, responseBody) }
+        const responseBody = await response.text()
+        return { output: buildOutput(response, responseBody) }
+      },
+    })
   } catch (error) {
-    return { error: getHttpRequestError(error, signal) }
-  } finally {
-    clearTimeout(timeout)
-    signal.removeEventListener('abort', handleAbort)
+    return { error: getHttpRequestError(error) }
   }
 }
 

@@ -22,8 +22,10 @@ import {
   buildSshJournalctlCommand,
   classifySshError,
 } from '../shared/ssh-journal-query-builder'
+import { runOrchestratedOperation } from '../shared/effect-orchestration'
 
 const log = console
+const SSH_JOURNAL_QUERY_TIMEOUT_MS = 60_000
 
 /**
  * Zod schema for ssh_journal_query tool input.
@@ -83,21 +85,6 @@ async function executeSshJournalQuery(
   let outputBuffer = ''
   let stderrBuffer = ''
 
-  // Handle abort signal
-  const abortHandler = () => {
-    if (!sshProcess.killed) {
-      log.info(`[agent-runtime:${sessionId}] Killing ssh_journal_query via abort:`, { toolCallId })
-      sshProcess.kill('SIGTERM')
-      // Force kill after 2s if still running
-      setTimeout(() => {
-        if (!sshProcess.killed) {
-          sshProcess.kill('SIGKILL')
-        }
-      }, 2000)
-    }
-  }
-  signal.addEventListener('abort', abortHandler)
-
   // Stream stdout chunks
   const stdoutChunks: Promise<void> = new Promise((resolve) => {
     sshProcess.stdout.on('data', (data: Buffer) => {
@@ -125,34 +112,58 @@ async function executeSshJournalQuery(
   })
 
   try {
-    await Promise.all([
-      new Promise<void>((resolve, reject) => {
-        sshProcess.on('exit', (code, _exitSignal) => {
-          signal.removeEventListener('abort', abortHandler)
-
-          if (signal.aborted) {
-            reject(new Error('Tool execution cancelled'))
-          } else if (code === 0) {
-            resolve()
-          } else {
-            const classification = classifySshError(stderrBuffer)
-            if (classification.level === 'warning') {
-              log.warn(`[agent-runtime:${sessionId}] Non-fatal warning:`, classification.message)
-              resolve()
-            } else {
-              reject(new Error(classification.message))
-            }
+    await runOrchestratedOperation({
+      operation: 'SSH journal query',
+      signal,
+      timeoutMs: SSH_JOURNAL_QUERY_TIMEOUT_MS,
+      execute: async (executionSignal) => {
+        const abortHandler = () => {
+          if (!sshProcess.killed) {
+            log.info(`[agent-runtime:${sessionId}] Killing ssh_journal_query via abort:`, { toolCallId })
+            sshProcess.kill('SIGTERM')
+            setTimeout(() => {
+              if (!sshProcess.killed) {
+                sshProcess.kill('SIGKILL')
+              }
+            }, 2000)
           }
-        })
+        }
 
-        sshProcess.on('error', (err) => {
-          signal.removeEventListener('abort', abortHandler)
-          reject(new Error(`Failed to spawn SSH: ${err.message}`))
-        })
-      }),
-      stdoutChunks,
-      stderrChunks,
-    ])
+        if (executionSignal.aborted) {
+          abortHandler()
+          throw new Error('Tool execution cancelled')
+        }
+
+        executionSignal.addEventListener('abort', abortHandler, { once: true })
+        try {
+          await Promise.all([
+            new Promise<void>((resolve, reject) => {
+              sshProcess.on('exit', (code, _exitSignal) => {
+                if (code === 0) {
+                  resolve()
+                } else {
+                  const classification = classifySshError(stderrBuffer)
+                  if (classification.level === 'warning') {
+                    log.warn(`[agent-runtime:${sessionId}] Non-fatal warning:`, classification.message)
+                    resolve()
+                  } else {
+                    reject(new Error(classification.message))
+                  }
+                }
+              })
+
+              sshProcess.on('error', (err) => {
+                reject(new Error(`Failed to spawn SSH: ${err.message}`))
+              })
+            }),
+            stdoutChunks,
+            stderrChunks,
+          ])
+        } finally {
+          executionSignal.removeEventListener('abort', abortHandler)
+        }
+      },
+    })
 
     let finalOutput = outputBuffer
     let artifactId: string | undefined
@@ -177,7 +188,6 @@ async function executeSshJournalQuery(
     log.error(`[agent-runtime:${sessionId}] ssh_journal_query failed:`, message)
     return { error: message }
   } finally {
-    signal.removeEventListener('abort', abortHandler)
     if (!sshProcess.killed) {
       sshProcess.kill()
     }
