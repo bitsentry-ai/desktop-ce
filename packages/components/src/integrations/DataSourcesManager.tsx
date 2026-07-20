@@ -32,7 +32,7 @@ import type {
 } from "../services/contracts";
 import { useTranslation } from "@bitsentry-ce/i18n";
 import { Download, Pencil, RefreshCw, Trash2 } from "lucide-react";
-import { PluginIcon } from "./icons";
+import { ProviderIcon, type ProviderIconKind } from "./icons";
 import InstallPluginDialog from "./InstallPluginDialog";
 
 type StatusKind = "info" | "success" | "error";
@@ -173,6 +173,14 @@ function readPluginDataSourceType(
   return plugin.metadata?.dataSource?.sourceType ?? null;
 }
 
+function readProviderIconKind(pluginId: string): ProviderIconKind {
+  if (pluginId === "sentry" || pluginId === "posthog" || pluginId === "wazuh") {
+    return pluginId;
+  }
+
+  return "plugin";
+}
+
 function formatSetupFieldRequiredMessage(label: string): string {
   return `${label} is required.`;
 }
@@ -229,16 +237,44 @@ function setupFieldInputType(field: PluginDataSourceSetupField): string {
   return "text";
 }
 
-function setupFieldDescription(field: PluginDataSourceSetupField): string {
+function localizeSetupFieldLabel(
+  sourceType: string,
+  field: PluginDataSourceSetupField,
+  t: Translate,
+): string {
+  return t(`common.dataSourceFields.${sourceType}.${field.key}.label`, {
+    defaultValue: field.label,
+  });
+}
+
+function localizeSetupFieldDescription(
+  sourceType: string,
+  field: PluginDataSourceSetupField,
+  t: Translate,
+): string {
   if (field.description !== undefined) {
-    return field.description;
+    return t(`common.dataSourceFields.${sourceType}.${field.key}.description`, {
+      defaultValue: field.description,
+    });
   }
 
   if (field.control === "multiline_list") {
-    return "Separate multiple values with commas or new lines.";
+    return t("common.dataSourcesManager.separateMultipleValues");
   }
 
   return "";
+}
+
+function localizeSetupFieldOptionLabel(
+  sourceType: string,
+  fieldKey: string,
+  option: { label: string; value: string },
+  t: Translate,
+): string {
+  return t(
+    `common.dataSourceFields.${sourceType}.${fieldKey}.option.${option.value}`,
+    { defaultValue: option.label },
+  );
 }
 
 function editSetupFieldPlaceholder(field: PluginDataSourceSetupField): string {
@@ -915,9 +951,12 @@ export default function DataSourcesManager({
 
   // ---- Render helpers ----
 
-  let namePlaceholder = "Source name";
+  let namePlaceholder = t("common.dataSourcesManager.sourceNamePlaceholder");
   if (selectedProviderCard !== null) {
-    namePlaceholder = `My organization's ${selectedProviderCard.label}`;
+    namePlaceholder = t(
+      "common.dataSourcesManager.sourceNameProviderPlaceholder",
+      { provider: selectedProviderCard.label },
+    );
   }
 
   let statusContent: ReactNode = null;
@@ -954,7 +993,7 @@ export default function DataSourcesManager({
   function renderCreateSetupField(
     field: PluginDataSourceSetupField,
   ): ReactNode {
-    const description = setupFieldDescription(field);
+    const description = localizeSetupFieldDescription(sourceType, field, t);
     const value = readSetupFieldInputValue(field);
     let fieldControl = (
       <Input
@@ -978,7 +1017,12 @@ export default function DataSourcesManager({
           >
             {field.options.map((option) => (
               <option key={option.value} value={option.value}>
-                {option.label}
+                {localizeSetupFieldOptionLabel(
+                  sourceType,
+                  field.key,
+                  option,
+                  t,
+                )}
               </option>
             ))}
           </select>
@@ -989,7 +1033,9 @@ export default function DataSourcesManager({
 
     return (
       <div key={field.key} className="space-y-1">
-        <FieldLabel required={field.required}>{field.label}</FieldLabel>
+        <FieldLabel required={field.required}>
+          {localizeSetupFieldLabel(sourceType, field, t)}
+        </FieldLabel>
         {fieldControl}
         {description.length > 0 && (
           <p className="text-xs text-muted-foreground">{description}</p>
@@ -1283,7 +1329,11 @@ export default function DataSourcesManager({
                       aria-pressed={selected}
                       className={`flex flex-col items-center gap-2 rounded-lg border p-3 text-sm transition-colors ${cardClassName}`}
                     >
-                      <PluginIcon size={32} className={iconClassName} />
+                      <ProviderIcon
+                        kind={readProviderIconKind(card.pluginId)}
+                        size={32}
+                        className={iconClassName}
+                      />
                       <span className="font-medium">{card.label}</span>
                     </button>
                   );
@@ -1524,6 +1574,7 @@ export default function DataSourcesManager({
                 noConnectionFieldsText: t(
                   "common.dataSourcesManager.installOrEnablePluginToEditConnectionFields",
                 ),
+                t,
               })}
 
               <div className="flex items-center justify-between gap-3">
@@ -1625,9 +1676,12 @@ function renderEditConnectionFields(input: {
   onChange: (fieldKey: string, nextValue: string) => void;
   disabled: boolean;
   noConnectionFieldsText: string;
+  t: Translate;
 }): ReactNode {
-  const { plugin, values, onChange, disabled, noConnectionFieldsText } = input;
+  const { plugin, values, onChange, disabled, noConnectionFieldsText, t } =
+    input;
   const setupFields = plugin?.metadata?.dataSource?.setupFields ?? [];
+  const sourceType = plugin ? (readPluginDataSourceType(plugin) ?? "") : "";
 
   if (setupFields.length === 0) {
     return (
@@ -1642,7 +1696,7 @@ function renderEditConnectionFields(input: {
       {setupFields.map((field) => {
         const value = values[field.key] ?? setupFieldDefaultValue(field);
         const placeholder = editSetupFieldPlaceholder(field);
-        const description = setupFieldDescription(field);
+        const description = localizeSetupFieldDescription(sourceType, field, t);
         let fieldControl = (
           <Input
             value={value}
@@ -1667,7 +1721,12 @@ function renderEditConnectionFields(input: {
               >
                 {field.options.map((option) => (
                   <option key={option.value} value={option.value}>
-                    {option.label}
+                    {localizeSetupFieldOptionLabel(
+                      sourceType,
+                      field.key,
+                      option,
+                      t,
+                    )}
                   </option>
                 ))}
               </select>
@@ -1678,7 +1737,9 @@ function renderEditConnectionFields(input: {
 
         return (
           <div key={field.key} className="space-y-1">
-            <FieldLabel required={field.required}>{field.label}</FieldLabel>
+            <FieldLabel required={field.required}>
+              {localizeSetupFieldLabel(sourceType, field, t)}
+            </FieldLabel>
             {fieldControl}
             {description.length > 0 && (
               <p className="text-xs text-muted-foreground">{description}</p>

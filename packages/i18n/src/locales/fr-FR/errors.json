@@ -15,8 +15,6 @@
   "errors.lessonsLearned.failedToUpdate": "Échec de la mise à jour",
   "errors.lockScreen.invalidCode": "Code invalide",
   "errors.magicLinkLogin.missingEmail": "Veuillez saisir votre adresse e-mail",
-  "errors.metrics.failedToLoadResolution": "Impossible de charger les métriques",
-  "errors.metrics.failedToLoadTicket": "Impossible de charger les métriques",
   "errors.notFound.oopsPageNotFound": "Oups ! Page introuvable",
   "errors.notFound.returnToHome": "Retour à l'accueil",
   "errors.offlineSync.failedToSync": "Échec de la synchronisation des données",

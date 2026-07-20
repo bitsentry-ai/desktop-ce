@@ -15,8 +15,6 @@
   "errors.lessonsLearned.failedToUpdate": "更新失败",
   "errors.lockScreen.invalidCode": "验证码无效",
   "errors.magicLinkLogin.missingEmail": "请输入您的电子邮件地址",
-  "errors.metrics.failedToLoadResolution": "指标加载失败",
-  "errors.metrics.failedToLoadTicket": "指标加载失败",
   "errors.notFound.oopsPageNotFound": "哎呀！页面未找到",
   "errors.notFound.returnToHome": "返回首页",
   "errors.offlineSync.failedToSync": "数据同步失败",

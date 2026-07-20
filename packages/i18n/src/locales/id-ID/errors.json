@@ -15,8 +15,6 @@
   "errors.lessonsLearned.failedToUpdate": "Gagal memperbarui",
   "errors.lockScreen.invalidCode": "Kode tidak valid",
   "errors.magicLinkLogin.missingEmail": "Silakan masukkan alamat email Anda",
-  "errors.metrics.failedToLoadResolution": "Gagal memuat metrik",
-  "errors.metrics.failedToLoadTicket": "Gagal memuat metrik",
   "errors.notFound.oopsPageNotFound": "Ups! Halaman tidak ditemukan",
   "errors.notFound.returnToHome": "Kembali ke Beranda",
   "errors.offlineSync.failedToSync": "Gagal menyinkronkan data",
