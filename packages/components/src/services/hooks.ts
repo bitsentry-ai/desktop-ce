@@ -5,12 +5,7 @@ import type {
   ActivityTimelineQuery,
   AuditLogQuery,
   CreateErrorSourceInput,
-  CreateTicketFromDiagnosisInput,
   DiagnosisResultsResponse,
-  DiagnosisTicket,
-  PaginatedResolvedTickets,
-  ResolvedTicketDetails,
-  ResolvedTicketsSummary,
   UpdateErrorSourceInput,
   DiagnosisQuery,
   EmailOtpRequest,
@@ -20,10 +15,7 @@ import type {
   MagicLinkVerifyRequest,
   PluginActionExecutionResult,
   PluginDescriptor,
-  ResolvedTicketsQuery,
   RunbooksServicePort,
-  SyncResolutionStatusesInput,
-  UpdateResolutionMetadataInput,
   UpdateUserInput,
   UsersQuery,
 } from './contracts';
@@ -46,16 +38,6 @@ const queryKeys = {
   diagnosisRoot: ['bitsentry', 'diagnosis'] as const,
   diagnosisResults: (params: DiagnosisQuery = {}) =>
     [...queryKeys.diagnosisRoot, 'results', params] as const,
-  diagnosisTickets: (diagnosisIds?: number[]) =>
-    [...queryKeys.diagnosisRoot, 'tickets', diagnosisIds ?? []] as const,
-
-  ticketsRoot: ['bitsentry', 'tickets'] as const,
-  resolvedTicket: (id: string) =>
-    [...queryKeys.ticketsRoot, 'resolved-ticket', id] as const,
-  resolvedTickets: (filters: ResolvedTicketsQuery = {}) =>
-    [...queryKeys.ticketsRoot, 'resolved', filters] as const,
-  resolvedSummary: () => [...queryKeys.ticketsRoot, 'resolved-summary'] as const,
-
   analyticsRoot: ['bitsentry', 'analytics'] as const,
   activityTimeline: (params: ActivityTimelineQuery = {}) =>
     [...queryKeys.analyticsRoot, 'activity-timeline', params] as const,
@@ -117,138 +99,6 @@ export function useDiagnosisResults(params: DiagnosisQuery = {}) {
     gcTime: 1000 * 60 * 5,
     retry: 3,
     refetchOnWindowFocus: false,
-  });
-}
-
-export function useDiagnosisTickets(diagnosisIds?: number[]) {
-  const { diagnosis } = useBitsentryServices();
-
-  return useQuery({
-    queryKey: queryKeys.diagnosisTickets(diagnosisIds),
-    queryFn: () =>
-      diagnosis?.getDiagnosisTickets(diagnosisIds) ??
-      Promise.resolve<DiagnosisTicket[]>([]),
-    enabled: Boolean(diagnosis),
-    staleTime: 1000 * 60 * 2,
-    gcTime: 1000 * 60 * 5,
-  });
-}
-
-export function useCreateDiagnosisTicket() {
-  const { diagnosis } = useBitsentryServices();
-  const port = requirePort(diagnosis, 'diagnosis');
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: (input: CreateTicketFromDiagnosisInput) =>
-      port.createDiagnosisTicket(input),
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: queryKeys.diagnosisRoot });
-      void queryClient.invalidateQueries({ queryKey: queryKeys.ticketsRoot });
-    },
-  });
-}
-
-export function useResolvedTickets(filters: ResolvedTicketsQuery = {}) {
-  const { tickets } = useBitsentryServices();
-
-  return useQuery({
-    queryKey: queryKeys.resolvedTickets(filters),
-    queryFn: () =>
-      tickets?.getResolvedTickets(filters) ??
-      Promise.resolve<PaginatedResolvedTickets>({
-        data: [],
-        meta: {
-          page: filters.page ?? 1,
-          limit: filters.limit ?? 20,
-          total: 0,
-          totalPages: 1,
-        },
-      }),
-    enabled: Boolean(tickets),
-    staleTime: 1000 * 60 * 2,
-    gcTime: 1000 * 60 * 10,
-  });
-}
-
-export function useResolvedTicket(id?: string, enabled = true) {
-  const { tickets } = useBitsentryServices();
-
-  return useQuery({
-    queryKey: queryKeys.resolvedTicket(id ?? ''),
-    queryFn: () => {
-      if (tickets === undefined || id === undefined || id.length === 0) {
-        return Promise.resolve<ResolvedTicketDetails | null>(null);
-      }
-
-      return tickets.getResolvedTicket(id);
-    },
-    enabled: Boolean(tickets) && enabled && typeof id === 'string' && id.length > 0,
-    staleTime: 1000 * 60 * 2,
-    gcTime: 1000 * 60 * 10,
-  });
-}
-
-export function useResolvedSummary() {
-  const { tickets } = useBitsentryServices();
-
-  return useQuery({
-    queryKey: queryKeys.resolvedSummary(),
-    queryFn: () =>
-      tickets?.getResolvedSummary() ??
-      Promise.resolve<ResolvedTicketsSummary>({
-        total: 0,
-        byResolutionType: {},
-        avgResolutionTimeHours: 0,
-        withLessonsLearned: 0,
-      }),
-    enabled: Boolean(tickets),
-    staleTime: 1000 * 60 * 5,
-    gcTime: 1000 * 60 * 15,
-  });
-}
-
-export function useUpdateResolutionMetadata() {
-  const { tickets } = useBitsentryServices();
-  const port = requirePort(tickets, 'tickets');
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: (input: UpdateResolutionMetadataInput) =>
-      port.updateResolutionMetadata(input),
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: queryKeys.ticketsRoot });
-      void queryClient.invalidateQueries({ queryKey: queryKeys.diagnosisRoot });
-    },
-  });
-}
-
-export function useSyncResolutionStatuses() {
-  const { tickets } = useBitsentryServices();
-  const port = requirePort(tickets, 'tickets');
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: (input?: SyncResolutionStatusesInput) =>
-      port.syncResolutionStatuses(input),
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: queryKeys.ticketsRoot });
-      void queryClient.invalidateQueries({ queryKey: queryKeys.diagnosisRoot });
-    },
-  });
-}
-
-export function useSyncTicketStatus() {
-  const { tickets } = useBitsentryServices();
-  const port = requirePort(tickets, 'tickets');
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: (id: string) => port.syncTicketStatus(id),
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: queryKeys.ticketsRoot });
-      void queryClient.invalidateQueries({ queryKey: queryKeys.diagnosisRoot });
-    },
   });
 }
 

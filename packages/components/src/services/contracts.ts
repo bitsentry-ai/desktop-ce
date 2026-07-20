@@ -90,125 +90,6 @@ export interface DiagnosisFilterOptions {
   sort_order: "asc" | "desc";
 }
 
-export type TicketPriority = "LOW" | "MEDIUM" | "HIGH" | "URGENT" | "CRITICAL";
-export type TicketStatus =
-  | "NEW"
-  | "OPEN"
-  | "PENDING"
-  | "IN_PROGRESS"
-  | "RESOLVED"
-  | "CLOSED"
-  | "CANCELLED";
-export type ResolutionType = "FULLY_CLOSED" | "WORKAROUND" | "PARTIALLY_CLOSED";
-
-export interface DiagnosisTicket {
-  id: string;
-  diagnosisId: number;
-  telemetryEntryId: number;
-  externalTicketId: string;
-  externalTicketNumber: string;
-  ticketProvider: string;
-  ticketUrl: string | null;
-  ticketStatus: TicketStatus;
-  ticketPriority: TicketPriority;
-  ticketCreatedAt: Date | string;
-  ticketUpdatedAt: Date | string;
-  ticketResolvedAt: Date | string | null;
-  ruleDescription: string | null;
-  ruleLevel: number | null;
-  agentName: string | null;
-  agentIp: string | null;
-  stateTexts: string | null;
-  diagnosisState: string | null;
-  createdAt: Date | string;
-  updatedAt: Date | string;
-}
-
-export interface CreateTicketFromDiagnosisInput {
-  diagnosisId: number;
-  telemetryEntryId: number;
-  priority?: TicketPriority;
-  additionalNotes?: string;
-  async?: boolean;
-}
-
-export interface ResolvedTicketsQuery {
-  resolutionType?: ResolutionType[];
-  priority?: TicketPriority[];
-  provider?: string;
-  hasLessonsLearned?: boolean;
-  page?: number;
-  limit?: number;
-  sortBy?:
-    | "ticketCreatedAt"
-    | "ticketUpdatedAt"
-    | "ticketResolvedAt"
-    | "ticketPriority";
-  sortOrder?: "asc" | "desc";
-}
-
-export interface ResolvedTicketDetails {
-  id: string;
-  diagnosisId: number;
-  telemetryEntryId: number | null;
-  externalTicketId: string;
-  externalTicketNumber: string;
-  ticketProvider: string;
-  ticketUrl: string | null;
-  ticketStatus: string;
-  ticketPriority: TicketPriority;
-  ticketCreatedAt: Date | string;
-  ticketUpdatedAt: Date | string | null;
-  ticketResolvedAt: Date | string | null;
-  lastSyncedAt: Date | string | null;
-  lastSyncError: string | null;
-  resolutionType: ResolutionType | null;
-  lessonsLearned: string | null;
-  resolutionNotes: string | null;
-  ruleDescription: string | null;
-  agentName: string | null;
-}
-
-export interface PaginatedResolvedTickets {
-  data: ResolvedTicketDetails[];
-  meta: {
-    page: number;
-    limit: number;
-    total: number;
-    totalPages: number;
-  };
-}
-
-export interface ResolvedTicketsSummary {
-  total: number;
-  byResolutionType: Record<string, number>;
-  avgResolutionTimeHours: number;
-  withLessonsLearned: number;
-}
-
-export interface UpdateResolutionMetadataData {
-  resolutionType?: ResolutionType;
-  lessonsLearned?: string;
-  resolutionNotes?: string;
-}
-
-export interface UpdateResolutionMetadataInput {
-  id: string;
-  data: UpdateResolutionMetadataData;
-}
-
-export interface SyncResolutionStatusesInput {
-  provider?: "trello" | "jira" | "clickup";
-  batchSize?: number;
-}
-
-export interface SyncResult {
-  synced: number;
-  failed: number;
-  errors: Array<{ externalId: string; error: string }>;
-  duration: number;
-}
-
 export interface ActivityTimelineQuery {
   limit?: number;
   type?: string;
@@ -405,25 +286,6 @@ export interface DiagnosisServicePort {
   getDiagnosisResults(
     params?: DiagnosisQuery,
   ): Promise<DiagnosisResultsResponse>;
-  getDiagnosisTickets(diagnosisIds?: number[]): Promise<DiagnosisTicket[]>;
-  createDiagnosisTicket(
-    input: CreateTicketFromDiagnosisInput,
-  ): Promise<unknown>;
-}
-
-export interface TicketsServicePort {
-  getResolvedTicket(id: string): Promise<ResolvedTicketDetails | null>;
-  getResolvedTickets(
-    filters?: ResolvedTicketsQuery,
-  ): Promise<PaginatedResolvedTickets>;
-  getResolvedSummary(): Promise<ResolvedTicketsSummary>;
-  updateResolutionMetadata(
-    input: UpdateResolutionMetadataInput,
-  ): Promise<ResolvedTicketDetails>;
-  syncResolutionStatuses(
-    input?: SyncResolutionStatusesInput,
-  ): Promise<SyncResult>;
-  syncTicketStatus(id: string): Promise<ResolvedTicketDetails>;
 }
 
 export interface AnalyticsServicePort {
@@ -1561,7 +1423,6 @@ export interface IncidentsServicePort {
 
 export interface BitsentryServicePorts {
   diagnosis?: DiagnosisServicePort;
-  tickets?: TicketsServicePort;
   analytics?: AnalyticsServicePort;
   vulnerabilities?: VulnerabilitiesServicePort;
   settings?: SettingsServicePort;

@@ -15,8 +15,6 @@
   "errors.lessonsLearned.failedToUpdate": "Failed to update",
   "errors.lockScreen.invalidCode": "Invalid code",
   "errors.magicLinkLogin.missingEmail": "Please enter your email address",
-  "errors.metrics.failedToLoadResolution": "Failed to load metrics",
-  "errors.metrics.failedToLoadTicket": "Failed to load metrics",
   "errors.notFound.oopsPageNotFound": "Oops! Page not found",
   "errors.notFound.returnToHome": "Return to Home",
   "errors.offlineSync.failedToSync": "Failed to sync data",

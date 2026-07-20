@@ -5,8 +5,6 @@ import {
   useAppLogout,
   useAuthSession,
   useDiagnosisResults,
-  useDiagnosisTickets,
-  useResolvedTickets,
   useRunbooksService,
 } from "../services/hooks";
 import { useBitsentryServices } from "../services/context";
@@ -17,8 +15,6 @@ import {
 } from "../services/desktop-api";
 import type {
   DiagnosisRecord,
-  DiagnosisTicket,
-  ResolvedTicketDetails,
 } from "../services";
 import {
   Settings,
@@ -31,7 +27,6 @@ import {
   BookOpen,
   Ticket,
   CheckCircle2,
-  AlertTriangle,
   Archive,
   FileText,
   Trash2,
@@ -49,24 +44,11 @@ import {
   AlertDialogTitle,
 } from "../ui/alert-dialog";
 import { useFormatters, useTranslation } from "@bitsentry-ce/i18n";
+import { useNavbarSubNavigation } from "./navigation-context";
 
 function getLatestDiagnosisState(record: DiagnosisRecord): string {
   if (record.state_history.length === 0) return "pending";
   return record.state_history[record.state_history.length - 1].toState;
-}
-
-function formatResolutionType(
-  value: ResolvedTicketDetails["resolutionType"],
-): string {
-  if (value === undefined || value === null || value.length === 0) {
-    return "Resolved";
-  }
-
-  return value
-    .toLowerCase()
-    .split("_")
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(" ");
 }
 
 function getDiagnosisDotClass(latestState: string): string {
@@ -91,8 +73,6 @@ const ACCORDION_PAGES = [
   "/incidents",
   "/runbooks",
   "/results",
-  "/tickets",
-  "/resolution",
 ];
 
 function highlightElement(targetId: string) {
@@ -420,6 +400,9 @@ const primaryNav: NavItem[] = [
   },
   { icon: BookOpen, labelKey: "navigation.navbar.runbooks", href: "/runbooks" },
   { icon: FileText, labelKey: "navigation.navbar.results", href: "/results" },
+  // Ticket/Resolution are Dashboard-only surfaces. They remain in primaryNav so
+  // the web Dashboard renders them, and are listed in desktopHiddenHrefs below so
+  // the desktop CE app hides them.
   {
     icon: Ticket,
     labelKey: "navigation.navbar.ticketManagement",
@@ -482,9 +465,9 @@ const webHiddenHrefs = new Set(["/app-settings"]);
 const desktopHiddenHrefs = new Set([
   "/profile",
   "/settings",
+  "/diagnosis",
   "/tickets",
   "/resolution",
-  "/diagnosis",
 ]);
 
 function UpdateIslandButton() {
@@ -636,6 +619,7 @@ const Navbar = ({
   const logout = useAppLogout();
   const runbooks = useRunbooksService();
   const services = useBitsentryServices();
+  const subNavigation = useNavbarSubNavigation();
   const userRoleId = user?.role?.id;
 
   const [openAccordions, setOpenAccordions] = useState<Set<string>>(new Set());
@@ -822,12 +806,6 @@ const Navbar = ({
   const [resultItems, setResultItems] = React.useState<ResultNavItem[]>([]);
 
   const { data: diagnosisData } = useDiagnosisResults({ limit: 100 });
-  const { data: ticketsData } = useDiagnosisTickets();
-  const { data: resolvedData } = useResolvedTickets({
-    limit: 8,
-    sortBy: "ticketResolvedAt",
-    sortOrder: "desc",
-  });
 
   React.useEffect(() => {
     if (!openAccordions.has("/results")) return;
@@ -901,56 +879,17 @@ const Navbar = ({
   };
 
   React.useEffect(() => {
-    if (ACCORDION_PAGES.includes(currentPath)) {
+    if (
+      ACCORDION_PAGES.includes(currentPath) ||
+      subNavigation[currentPath] !== undefined
+    ) {
       setOpenAccordions((prev) => new Set([...prev, currentPath]));
     }
-  }, [currentPath]);
+  }, [currentPath, subNavigation]);
 
   const diagnosisQuickItems = useMemo(() => {
     return (diagnosisData?.records ?? []).slice(0, 7);
   }, [diagnosisData]);
-
-  const ticketQuickItems = useMemo(() => {
-    const eligibleStates = [
-      "llm_assessed",
-      "verification_pending",
-      "verified",
-      "completed",
-    ];
-    const diagnosesWithoutTickets: DiagnosisRecord[] = [];
-    const diagnosesWithTickets: DiagnosisTicket[] = [];
-
-    if (!diagnosisData?.records || !ticketsData) {
-      return {
-        diagnosesWithoutTickets,
-        diagnosesWithTickets,
-      };
-    }
-
-    const ticketMap = new Map<number, DiagnosisTicket>();
-    ticketsData.forEach((ticket) => {
-      ticketMap.set(ticket.diagnosisId, ticket);
-    });
-
-    diagnosisData.records.forEach((diagnosis) => {
-      const ticket = ticketMap.get(diagnosis.id);
-
-      if (ticket) {
-        diagnosesWithTickets.push(ticket);
-        return;
-      }
-
-      const latestState = getLatestDiagnosisState(diagnosis);
-      if (eligibleStates.includes(latestState)) {
-        diagnosesWithoutTickets.push(diagnosis);
-      }
-    });
-
-    return {
-      diagnosesWithoutTickets,
-      diagnosesWithTickets,
-    };
-  }, [diagnosisData, ticketsData]);
 
   let hiddenHrefs = webHiddenHrefs;
   if (isDesktop) {
@@ -989,14 +928,13 @@ const Navbar = ({
           const isIncidents = item.href === "/incidents";
           const isRunbooks = item.href === "/runbooks";
           const isResultsNav = item.href === "/results";
-          const isTicketManagement = item.href === "/tickets";
-          const isResolutionManagement = item.href === "/resolution";
+          const itemSubNavigation = subNavigation[item.href];
           const hasSubNav =
             (!isDesktop && isDiagnosis) ||
             isIncidents ||
             isRunbooks ||
             isResultsNav ||
-            (!isDesktop && (isTicketManagement || isResolutionManagement));
+            (!isDesktop && itemSubNavigation !== undefined);
           const accordionKey = item.href;
           const isOpen = openAccordions.has(accordionKey);
           const canShowSubNav = hasSubNav && isOpen;
@@ -1307,153 +1245,8 @@ const Navbar = ({
                   );
                 })()}
 
-              {/* Ticket Management Sub-Navigation */}
-              {canShowSubNav && isTicketManagement && (
-                <div className="ml-4 mt-1 space-y-2">
-                  <div>
-                    <div className="flex items-center gap-2 px-2 py-1 text-xs text-muted-foreground">
-                      <AlertTriangle size={10} />
-                      {t("navigation.navbar.pendingCount")}
-                      {ticketQuickItems.diagnosesWithoutTickets.length})
-                    </div>
-                    {ticketQuickItems.diagnosesWithoutTickets
-                      .slice(0, 4)
-                      .map((diagnosis) => {
-                        const diagnosisId = String(diagnosis.id);
-                        const currentPending = new URLSearchParams(
-                          location.search,
-                        ).get("pending");
-                        const isActive =
-                          currentPath === "/tickets" &&
-                          currentPending === diagnosisId;
-                        return (
-                          <Link
-                            key={`pending-${diagnosisId}`}
-                            to={`/tickets?pending=${diagnosisId}`}
-                            title={
-                              diagnosis.rule_description ||
-                              t("navigation.navbar.diagnosisNumber", {
-                                id: diagnosis.id,
-                              })
-                            }
-                            className={cn(
-                              "block w-full rounded-md px-3 py-1.5 text-left text-xs text-muted-foreground transition-colors hover:bg-neutral-100/50 hover:text-foreground dark:hover:bg-white/10",
-                              isActive &&
-                                "bg-neutral-100/50 text-foreground font-medium dark:bg-white/10",
-                            )}
-                          >
-                            <div className="truncate">
-                              {diagnosis.rule_description ||
-                                t("navigation.navbar.diagnosisNumber", {
-                                  id: diagnosis.id,
-                                })}
-                            </div>
-                          </Link>
-                        );
-                      })}
-                    {ticketQuickItems.diagnosesWithoutTickets.length === 0 && (
-                      <p className="px-3 py-1 text-xs text-muted-foreground/60">
-                        {t("navigation.navbar.noPendingTickets")}
-                      </p>
-                    )}
-                  </div>
+              {canShowSubNav && itemSubNavigation}
 
-                  <div>
-                    <div className="flex items-center gap-2 px-2 py-1 text-xs text-muted-foreground">
-                      <Ticket size={10} />
-                      {t("navigation.navbar.createdCount")}
-                      {ticketQuickItems.diagnosesWithTickets.length})
-                    </div>
-                    {ticketQuickItems.diagnosesWithTickets
-                      .slice(0, 4)
-                      .map((ticket) => {
-                        const currentTicket = new URLSearchParams(
-                          location.search,
-                        ).get("ticket");
-                        const isActive =
-                          currentPath === "/tickets" &&
-                          currentTicket === ticket.id;
-                        let ticketLabel = ticket.externalTicketNumber;
-                        if (
-                          typeof ticket.ruleDescription === "string" &&
-                          ticket.ruleDescription.length > 0
-                        ) {
-                          ticketLabel = `${ticketLabel} • ${ticket.ruleDescription}`;
-                        }
-                        return (
-                          <Link
-                            key={`ticket-${ticket.id}`}
-                            to={`/tickets?ticket=${ticket.id}`}
-                            title={
-                              ticket.ruleDescription ||
-                              ticket.externalTicketNumber
-                            }
-                            className={cn(
-                              "block w-full rounded-md px-3 py-1.5 text-left text-xs text-muted-foreground transition-colors hover:bg-neutral-100/50 hover:text-foreground dark:hover:bg-white/10",
-                              isActive &&
-                                "bg-neutral-100/50 text-foreground font-medium dark:bg-white/10",
-                            )}
-                          >
-                            <div className="truncate">{ticketLabel}</div>
-                          </Link>
-                        );
-                      })}
-                    {ticketQuickItems.diagnosesWithTickets.length === 0 && (
-                      <p className="px-3 py-1 text-xs text-muted-foreground/60">
-                        {t("navigation.navbar.noCreatedTickets")}
-                      </p>
-                    )}
-                  </div>
-                </div>
-              )}
-
-              {/* Resolution Management Sub-Navigation */}
-              {canShowSubNav && isResolutionManagement && (
-                <div className="ml-4 mt-1 space-y-0.5">
-                  {(resolvedData?.data ?? []).slice(0, 6).map((ticket) => {
-                    const currentResolved = new URLSearchParams(
-                      location.search,
-                    ).get("resolved");
-                    const isActive =
-                      currentPath === "/resolution" &&
-                      currentResolved === ticket.id;
-                    return (
-                      <Link
-                        key={`resolved-${ticket.id}`}
-                        to={`/resolution?resolved=${ticket.id}`}
-                        title={
-                          ticket.ruleDescription || ticket.externalTicketNumber
-                        }
-                        className={cn(
-                          "block w-full rounded-md px-3 py-1.5 text-left text-xs text-muted-foreground transition-colors hover:bg-neutral-100/50 hover:text-foreground dark:hover:bg-white/10",
-                          isActive &&
-                            "bg-neutral-100/50 text-foreground font-medium dark:bg-white/10",
-                        )}
-                      >
-                        <div className="truncate">
-                          {formatResolutionType(ticket.resolutionType)} •{" "}
-                          {ticket.ruleDescription ||
-                            ticket.externalTicketNumber}
-                        </div>
-                      </Link>
-                    );
-                  })}
-                  {(resolvedData?.data ?? []).length === 0 && (
-                    <p className="px-3 py-1 text-xs text-muted-foreground/60">
-                      {t("navigation.navbar.noResolutionsYet")}
-                    </p>
-                  )}
-                  {(resolvedData?.meta.total ?? 0) > 6 && (
-                    <Link
-                      to="/resolution"
-                      className="block px-3 py-1 text-xs text-primary/80 transition-colors hover:text-primary"
-                    >
-                      {(resolvedData?.meta.total ?? 0) - 6}{" "}
-                      {t("navigation.navbar.more")}
-                    </Link>
-                  )}
-                </div>
-              )}
             </React.Fragment>
           );
         })}

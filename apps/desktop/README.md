@@ -63,7 +63,6 @@ pnpm run lint
   - session lock/unlock with idle/sleep policy support
 - Security operations:
   - agents, vulnerabilities, threats, analytics
-  - tickets/resolution management
   - integrations with provider routing
   - reports and export flows
 - Telemetry processor parity:
