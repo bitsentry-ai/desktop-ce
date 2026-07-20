@@ -1449,7 +1449,6 @@
   "common.results.noRuntimeParameterValuesCaptured": "Aucune valeur de paramètre d’exécution n’a été capturée pour cette exécution.",
   "common.results.noInputMetadataCaptured": "Aucune métadonnée d’entrée n’a été capturée pour cette étape.",
   "common.incidentArtifactsRail.actionType.plugin": "Plugin",
-  "common.systemSettings.workosManagedAuthPoliciesNotice": "Password reset, passkeys, MFA, magic auth, and SSO are managed by WorkOS.",
   "common.dataSourcesManager.installPlugin": "Install Plugin",
   "common.dataSourcesManager.installTitle": "Install Plugin",
   "common.dataSourcesManager.installSubtitle": "Add a plugin from the index, or install one from a local file.",

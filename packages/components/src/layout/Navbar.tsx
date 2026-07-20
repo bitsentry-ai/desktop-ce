@@ -412,6 +412,7 @@ const desktopPlatform = desktopApi?.platform?.os;
 const isDesktopMac = isDesktop && desktopPlatform === "darwin";
 
 const primaryNav: NavItem[] = [
+  { icon: Search, labelKey: "navigation.navbar.diagnosis", href: "/diagnosis" },
   {
     icon: ShieldAlert,
     labelKey: "navigation.navbar.incidents",
@@ -419,7 +420,6 @@ const primaryNav: NavItem[] = [
   },
   { icon: BookOpen, labelKey: "navigation.navbar.runbooks", href: "/runbooks" },
   { icon: FileText, labelKey: "navigation.navbar.results", href: "/results" },
-  { icon: Search, labelKey: "navigation.navbar.diagnosis", href: "/diagnosis" },
   {
     icon: Ticket,
     labelKey: "navigation.navbar.ticketManagement",
@@ -449,11 +449,11 @@ const bottomNav: NavItem[] = [
 
 const adminSettingsSections = [
   { labelKey: "navigation.navbar.systemSettings", hash: "system" },
-  { labelKey: "navigation.navbar.passwordSecurity", hash: "password-security" },
-  { labelKey: "navigation.navbar.sessionSecurity", hash: "session-security" },
   { labelKey: "navigation.navbar.userManagement", hash: "users" },
+  { labelKey: "navigation.navbar.externalSources", hash: "external-sources" },
   { labelKey: "navigation.navbar.globalVariables", hash: "global-variables" },
   { labelKey: "navigation.navbar.llmProviders", hash: "llm-providers" },
+  { labelKey: "navigation.navbar.dataPolicy", hash: "data-policy" },
   { labelKey: "navigation.navbar.help", hash: "help" },
   { labelKey: "navigation.navbar.about", hash: "about" },
 ] as const;
