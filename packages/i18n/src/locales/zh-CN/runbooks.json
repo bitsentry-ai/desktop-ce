@@ -37,6 +37,7 @@
   "runbooks.results.started_2": "已启动",
   "runbooks.results.status": "状态",
   "runbooks.results.steps": "步骤",
+  "runbooks.results.stepsProgress": "{{completed}}/{{total}} 步骤",
   "runbooks.results.summary": "摘要",
   "runbooks.results.thisStepIsStillProducing": "此步骤仍在生成输出。",
   "runbooks.results.total": "总计",

@@ -37,6 +37,7 @@
   "runbooks.results.started_2": "Dimulai",
   "runbooks.results.status": "Status",
   "runbooks.results.steps": "Langkah",
+  "runbooks.results.stepsProgress": "{{completed}}/{{total}} langkah",
   "runbooks.results.summary": "Ringkasan",
   "runbooks.results.thisStepIsStillProducing": "Langkah ini masih menghasilkan output.",
   "runbooks.results.total": "Total",

@@ -37,6 +37,7 @@
   "runbooks.results.started_2": "Démarré",
   "runbooks.results.status": "Statut",
   "runbooks.results.steps": "Étapes",
+  "runbooks.results.stepsProgress": "{{completed}}/{{total}} étapes",
   "runbooks.results.summary": "Résumé",
   "runbooks.results.thisStepIsStillProducing": "Cette étape produit encore de la sortie.",
   "runbooks.results.total": "Total",
