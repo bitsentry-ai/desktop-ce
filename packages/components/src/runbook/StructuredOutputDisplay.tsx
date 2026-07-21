@@ -7,7 +7,7 @@ function formatStructuredValue(value: unknown): string {
   }
 
   try {
-    return JSON.stringify(value);
+    return JSON.stringify(value, null, 2);
   } catch {
     return String(value);
   }
@@ -119,14 +119,14 @@ export function StructuredOutputDisplay({
   } else {
     valuesContent = (
       <div className="overflow-hidden rounded-lg border border-border">
-        <table className="min-w-full divide-y divide-border text-xs">
+        <table className="w-full table-fixed divide-y divide-border text-xs">
           <tbody className="divide-y divide-border">
             {structuredEntries.map(([key, value]) => (
               <tr key={key}>
-                <td className="w-40 bg-muted/20 px-3 py-2 font-mono text-[11px] text-muted-foreground">
+                <td className="w-40 break-words bg-muted/20 px-3 py-2 align-top font-mono text-[11px] text-muted-foreground">
                   {key}
                 </td>
-                <td className="px-3 py-2 font-mono text-[11px] text-foreground">
+                <td className="whitespace-pre-wrap px-3 py-2 align-top font-mono text-[11px] text-foreground [overflow-wrap:anywhere]">
                   {formatStructuredValue(value)}
                 </td>
               </tr>
