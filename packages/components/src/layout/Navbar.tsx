@@ -60,20 +60,6 @@ function getDiagnosisDotClass(latestState: string): string {
   return "bg-muted-foreground/30";
 }
 
-function formatResolutionType(
-  value: ResolvedTicketDetails["resolutionType"],
-): string {
-  if (value === undefined || value === null || value.length === 0) {
-    return "Resolved";
-  }
-
-  return value
-    .toLowerCase()
-    .split("_")
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(" ");
-}
-
 function getResultDotClass(status: string): string {
   if (status === "running") return "bg-amber-400";
   if (status === "completed") return "bg-emerald-400";
@@ -468,7 +454,7 @@ const appSettingsSections = [
 
 const profileSections = [
   { labelKey: "common.profile.overview", hash: "overview" },
-  { labelKey: "common.profile.security", hash: "security" },
+  { labelKey: "common.systemSettings.sessionSecurity", hash: "sessions" },
 ] as const;
 
 export type SettingsSectionLink = {
@@ -912,48 +898,6 @@ const Navbar = ({
   const diagnosisQuickItems = useMemo(() => {
     return (diagnosisData?.records ?? []).slice(0, 7);
   }, [diagnosisData]);
-
-  const ticketQuickItems = useMemo(() => {
-    const eligibleStates = [
-      "llm_assessed",
-      "verification_pending",
-      "verified",
-      "completed",
-    ];
-    const diagnosesWithoutTickets: DiagnosisRecord[] = [];
-    const diagnosesWithTickets: DiagnosisTicket[] = [];
-
-    if (!diagnosisData?.records || !ticketsData) {
-      return {
-        diagnosesWithoutTickets,
-        diagnosesWithTickets,
-      };
-    }
-
-    const ticketMap = new Map<number, DiagnosisTicket>();
-    ticketsData.forEach((ticket) => {
-      ticketMap.set(ticket.diagnosisId, ticket);
-    });
-
-    diagnosisData.records.forEach((diagnosis) => {
-      const ticket = ticketMap.get(diagnosis.id);
-
-      if (ticket) {
-        diagnosesWithTickets.push(ticket);
-        return;
-      }
-
-      const latestState = getLatestDiagnosisState(diagnosis);
-      if (eligibleStates.includes(latestState)) {
-        diagnosesWithoutTickets.push(diagnosis);
-      }
-    });
-
-    return {
-      diagnosesWithoutTickets,
-      diagnosesWithTickets,
-    };
-  }, [diagnosisData, ticketsData]);
 
   let hiddenHrefs = webHiddenHrefs;
   if (isDesktop) {
