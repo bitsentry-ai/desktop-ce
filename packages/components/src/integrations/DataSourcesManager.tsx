@@ -508,7 +508,11 @@ export default function DataSourcesManager({
     isLoading,
     refetch: refetchSources,
   } = useErrorSources();
-  const { data: plugins = [] } = usePlugins();
+  const {
+    data: plugins = [],
+    isError: pluginsError,
+    isLoading: pluginsLoading,
+  } = usePlugins();
   const { data: systemSettings } = useSystemSettings();
   const createMutation = useCreateErrorSource();
   const deleteMutation = useDeleteErrorSource();
@@ -1297,48 +1301,70 @@ export default function DataSourcesManager({
               <label className="text-sm text-muted-foreground">
                 {t("common.dataSourcesManager.sourceType")}
               </label>
-              <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-                {providerCards.map((card) => {
-                  const selected = selectedProviderId === card.pluginId;
-                  let cardClassName =
-                    "border-border bg-card hover:border-primary/50";
-                  if (selected) {
-                    cardClassName =
-                      "border-primary bg-primary/10 ring-1 ring-primary";
-                  }
-                  let iconClassName = t(
-                    "common.dataSourcesManager.opacity40GrayscaleTransition",
-                  );
-                  if (selected) {
-                    iconClassName = "transition";
-                  }
+              {pluginsLoading && (
+                <p className="text-sm text-muted-foreground">
+                  {t("common.dataSourcesManager.loadingExternalSources")}
+                </p>
+              )}
+              {!pluginsLoading && pluginsError && (
+                <p
+                  role="alert"
+                  className="text-sm text-red-600 dark:text-red-400"
+                >
+                  {t("common.dataSourcesManager.installIndexError")}
+                </p>
+              )}
+              {!pluginsLoading &&
+                !pluginsError &&
+                providerCards.length === 0 && (
+                  <p className="text-sm text-muted-foreground">
+                    {t("common.dataSourcesManager.installNone")}
+                  </p>
+                )}
+              {!pluginsLoading && !pluginsError && providerCards.length > 0 && (
+                <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                  {providerCards.map((card) => {
+                    const selected = selectedProviderId === card.pluginId;
+                    let cardClassName =
+                      "border-border bg-card hover:border-primary/50";
+                    if (selected) {
+                      cardClassName =
+                        "border-primary bg-primary/10 ring-1 ring-primary";
+                    }
+                    let iconClassName = t(
+                      "common.dataSourcesManager.opacity40GrayscaleTransition",
+                    );
+                    if (selected) {
+                      iconClassName = "transition";
+                    }
 
-                  return (
-                    <button
-                      key={card.pluginId}
-                      type="button"
-                      onClick={() => {
-                        setSelectedProviderId(card.pluginId);
-                        setSourceType(card.sourceType);
-                        // Each code plugin owns its setup shape, so clear
-                        // field values when switching providers.
-                        setSourceName("");
-                        setCustomSetupFieldValues({});
-                        setDialogError(null);
-                      }}
-                      aria-pressed={selected}
-                      className={`flex flex-col items-center gap-2 rounded-lg border p-3 text-sm transition-colors ${cardClassName}`}
-                    >
-                      <ProviderIcon
-                        kind={readProviderIconKind(card.pluginId)}
-                        size={32}
-                        className={iconClassName}
-                      />
-                      <span className="font-medium">{card.label}</span>
-                    </button>
-                  );
-                })}
-              </div>
+                    return (
+                      <button
+                        key={card.pluginId}
+                        type="button"
+                        onClick={() => {
+                          setSelectedProviderId(card.pluginId);
+                          setSourceType(card.sourceType);
+                          // Each code plugin owns its setup shape, so clear
+                          // field values when switching providers.
+                          setSourceName("");
+                          setCustomSetupFieldValues({});
+                          setDialogError(null);
+                        }}
+                        aria-pressed={selected}
+                        className={`flex flex-col items-center gap-2 rounded-lg border p-3 text-sm transition-colors ${cardClassName}`}
+                      >
+                        <ProviderIcon
+                          kind={readProviderIconKind(card.pluginId)}
+                          size={32}
+                          className={iconClassName}
+                        />
+                        <span className="font-medium">{card.label}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
             </div>
 
             <div className="space-y-1">
@@ -1367,13 +1393,14 @@ export default function DataSourcesManager({
                 aria-hidden={showAdvanced}
               >
                 <div className="space-y-3">
-                  {selectedSetupFields.length === 0 && (
-                    <p className="text-sm text-muted-foreground">
-                      {t(
-                        "common.dataSourcesManager.pluginDoesNotRequireConnectionFields",
-                      )}
-                    </p>
-                  )}
+                  {selectedPlugin !== null &&
+                    selectedSetupFields.length === 0 && (
+                      <p className="text-sm text-muted-foreground">
+                        {t(
+                          "common.dataSourcesManager.pluginDoesNotRequireConnectionFields",
+                        )}
+                      </p>
+                    )}
                   {selectedSetupFields.map((field) =>
                     renderCreateSetupField(field),
                   )}
