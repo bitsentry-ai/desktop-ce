@@ -944,6 +944,7 @@
   "common.systemSettings.couldNotUpdateGeneralSettings": "无法更新常规设置。",
   "common.systemSettings.couldNotUpdateSecuritySettings": "无法更新安全设置。",
   "common.systemSettings.dateFormat": "日期格式",
+  "common.systemSettings.dateFormatSubtitle": "仪表盘中日期的显示方式。",
   "common.systemSettings.daysBefore2faEnforcementBegins": "2FA 强制启用前的宽限天数（0 = 立即生效）",
   "common.systemSettings.daysUntilPasswordsExpire": "密码过期天数",
   "common.systemSettings.deadline": "截止日期：",
@@ -972,6 +973,7 @@
   "common.systemSettings.minutesUntilAutoUnlock": "自动解锁前的分钟数",
   "common.systemSettings.numbers": "数字",
   "common.systemSettings.organizationName": "组织名称",
+  "common.systemSettings.organizationNameSubtitle": "显示在仪表盘和通知中。",
   "common.systemSettings.pacificTime": "太平洋时间",
   "common.systemSettings.paris": "巴黎",
   "common.systemSettings.rememberMeDuration": "\"记住我\"持续时间",
@@ -990,7 +992,9 @@
   "common.systemSettings.specialCharacters": "特殊字符",
   "common.systemSettings.systemIsUnderMaintenancePlease": "系统正在维护中，请稍后再试。",
   "common.systemSettings.timeFormat": "时间格式",
+  "common.systemSettings.timeFormatSubtitle": "12 小时制或 24 小时制。",
   "common.systemSettings.timeZone": "时区",
+  "common.systemSettings.timeZoneSubtitle": "日期和计划使用的默认时区。",
   "common.systemSettings.tokyo": "东京",
   "common.systemSettings.twoFactorAuthentication": "双因素认证",
   "common.systemSettings.uppercaseLetters": "大写字母",
@@ -1407,5 +1411,6 @@
   "common.dataSourcesManager.installFromFileButton": "Install selected file",
   "common.dataSourcesManager.installSuccess": "Plugin installed.",
   "common.dataSourcesManager.installLoading": "Loading",
-  "common.dataSourcesManager.installNoFileChosen": "No file chosen"
+  "common.dataSourcesManager.installNoFileChosen": "No file chosen",
+  "common.systemSettings.appearanceSubtitle": "主题、语言和显示选项。"
 }

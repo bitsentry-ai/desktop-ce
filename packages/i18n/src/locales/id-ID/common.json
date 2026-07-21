@@ -944,6 +944,7 @@
   "common.systemSettings.couldNotUpdateGeneralSettings": "Tidak dapat memperbarui pengaturan umum.",
   "common.systemSettings.couldNotUpdateSecuritySettings": "Tidak dapat memperbarui pengaturan keamanan.",
   "common.systemSettings.dateFormat": "Format tanggal",
+  "common.systemSettings.dateFormatSubtitle": "Cara tanggal ditampilkan di seluruh dasbor.",
   "common.systemSettings.daysBefore2faEnforcementBegins": "Hari sebelum penerapan 2FA dimulai (0 = segera)",
   "common.systemSettings.daysUntilPasswordsExpire": "Hari hingga kata sandi kedaluwarsa",
   "common.systemSettings.deadline": "Batas waktu:",
@@ -972,6 +973,7 @@
   "common.systemSettings.minutesUntilAutoUnlock": "Menit hingga pembukaan kunci otomatis",
   "common.systemSettings.numbers": "Angka",
   "common.systemSettings.organizationName": "Nama organisasi",
+  "common.systemSettings.organizationNameSubtitle": "Ditampilkan di seluruh dasbor dan notifikasi.",
   "common.systemSettings.pacificTime": "Waktu Pasifik",
   "common.systemSettings.paris": "Paris",
   "common.systemSettings.rememberMeDuration": "Durasi ingat saya",
@@ -990,7 +992,9 @@
   "common.systemSettings.specialCharacters": "Karakter khusus",
   "common.systemSettings.systemIsUnderMaintenancePlease": "Sistem sedang dalam pemeliharaan. Silakan coba lagi nanti.",
   "common.systemSettings.timeFormat": "Format waktu",
+  "common.systemSettings.timeFormatSubtitle": "Format 12 jam atau 24 jam.",
   "common.systemSettings.timeZone": "Zona waktu",
+  "common.systemSettings.timeZoneSubtitle": "Zona waktu bawaan untuk tanggal dan jadwal.",
   "common.systemSettings.tokyo": "Tokyo",
   "common.systemSettings.twoFactorAuthentication": "Autentikasi dua faktor",
   "common.systemSettings.uppercaseLetters": "Huruf besar",
@@ -1407,5 +1411,6 @@
   "common.dataSourcesManager.installFromFileButton": "Install selected file",
   "common.dataSourcesManager.installSuccess": "Plugin installed.",
   "common.dataSourcesManager.installLoading": "Loading",
-  "common.dataSourcesManager.installNoFileChosen": "No file chosen"
+  "common.dataSourcesManager.installNoFileChosen": "No file chosen",
+  "common.systemSettings.appearanceSubtitle": "Tema, bahasa, dan opsi tampilan."
 }

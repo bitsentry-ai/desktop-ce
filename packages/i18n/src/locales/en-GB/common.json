@@ -943,6 +943,7 @@
   "common.systemSettings.couldNotUpdateGeneralSettings": "Could not update general settings.",
   "common.systemSettings.couldNotUpdateSecuritySettings": "Could not update security settings.",
   "common.systemSettings.dateFormat": "Date format",
+  "common.systemSettings.dateFormatSubtitle": "How dates are displayed across the dashboard.",
   "common.systemSettings.daysBefore2faEnforcementBegins": "Days before 2FA enforcement begins (0 = immediate)",
   "common.systemSettings.daysUntilPasswordsExpire": "Days until passwords expire",
   "common.systemSettings.deadline": "Deadline:",
@@ -971,6 +972,7 @@
   "common.systemSettings.minutesUntilAutoUnlock": "Minutes until auto-unlock",
   "common.systemSettings.numbers": "Numbers",
   "common.systemSettings.organizationName": "Organisation name",
+  "common.systemSettings.organizationNameSubtitle": "Shown across the dashboard and in notifications.",
   "common.systemSettings.pacificTime": "Pacific Time",
   "common.systemSettings.paris": "Paris",
   "common.systemSettings.rememberMeDuration": "Remember me duration",
@@ -989,7 +991,9 @@
   "common.systemSettings.specialCharacters": "Special characters",
   "common.systemSettings.systemIsUnderMaintenancePlease": "System is under maintenance. Please check back later.",
   "common.systemSettings.timeFormat": "Time format",
+  "common.systemSettings.timeFormatSubtitle": "12-hour or 24-hour clock.",
   "common.systemSettings.timeZone": "Time zone",
+  "common.systemSettings.timeZoneSubtitle": "Default time zone for dates and schedules.",
   "common.systemSettings.tokyo": "Tokyo",
   "common.systemSettings.twoFactorAuthentication": "Two-factor authentication",
   "common.systemSettings.uppercaseLetters": "Uppercase letters",
@@ -1406,5 +1410,6 @@
   "common.dataSourcesManager.installFromFileButton": "Install selected file",
   "common.dataSourcesManager.installSuccess": "Plugin installed.",
   "common.dataSourcesManager.installLoading": "Loading",
-  "common.dataSourcesManager.installNoFileChosen": "No file chosen"
+  "common.dataSourcesManager.installNoFileChosen": "No file chosen",
+  "common.systemSettings.appearanceSubtitle": "Theme, language, and display options."
 }
