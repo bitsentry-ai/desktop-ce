@@ -469,7 +469,6 @@ const appSettingsSections = [
 const profileSections = [
   { labelKey: "common.profile.overview", hash: "overview" },
   { labelKey: "common.profile.security", hash: "security" },
-  { labelKey: "common.profile.help", hash: "help" },
 ] as const;
 
 export type SettingsSectionLink = {
