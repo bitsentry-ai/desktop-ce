@@ -1,3 +1,5 @@
+import type { ReactNode } from "react";
+
 import {
   AlertTriangle,
   Check,
@@ -43,6 +45,7 @@ type RunbookEditorHeaderProps = {
   onRun: () => void;
   onDelete: () => void;
   onCreateRunbook: () => void;
+  extraActions?: ReactNode;
   t: TranslationFn;
 };
 
@@ -62,6 +65,7 @@ export function RunbookEditorHeader({
   onRun,
   onDelete,
   onCreateRunbook,
+  extraActions,
   t,
 }: RunbookEditorHeaderProps) {
   const hasMetaIssue =
@@ -223,6 +227,7 @@ export function RunbookEditorHeader({
           {t("runbooks.runbook.deleteRunbook")}
         </TooltipContent>
       </Tooltip>
+      {extraActions}
       <Tooltip>
         <TooltipTrigger asChild>
           <button

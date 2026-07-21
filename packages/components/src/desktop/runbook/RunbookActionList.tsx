@@ -23,6 +23,7 @@ type SortableActionWrapperProps = {
   id: string;
   index: number;
   disabled: boolean;
+  showConnector: boolean;
   useSortableRuntime: UseSortableRuntime;
   children: (api: {
     isDragging: boolean;
@@ -35,6 +36,7 @@ function SortableActionWrapper({
   id,
   index,
   disabled,
+  showConnector,
   useSortableRuntime,
   children,
 }: SortableActionWrapperProps) {
@@ -48,6 +50,9 @@ function SortableActionWrapper({
   });
   const showDropGap = isDropTarget && !isDragSource;
 
+  // The connector arrow lives inside the sortable element so it moves with
+  // its card while dnd-kit reorders the DOM; a sibling connector would be
+  // left behind mid-drag and cards would pile up between stale arrows.
   return (
     <div
       ref={ref}
@@ -57,6 +62,17 @@ function SortableActionWrapper({
       )}
     >
       {children({ isDragging, isDragSource, isDropTarget })}
+      {showConnector && (
+        <div
+          aria-hidden="true"
+          className={cn(
+            "pointer-events-none flex h-7 items-center justify-center text-muted-foreground/35",
+            (isDragSource || isDragging) && "opacity-0",
+          )}
+        >
+          <ArrowDown size={15} strokeWidth={1.8} />
+        </div>
+      )}
     </div>
   );
 }
@@ -79,6 +95,7 @@ type RunbookActionListProps = {
     },
   ) => ReactNode;
   onAddActionAt: (index: number) => void;
+  className?: string;
   t: TranslationFn;
 };
 
@@ -89,10 +106,14 @@ export function RunbookActionList({
   renderExpandedCard,
   renderCollapsedCard,
   onAddActionAt,
+  className,
   t,
 }: RunbookActionListProps) {
   return (
-    <div data-tour="runbooks-actions-list" className="max-w-2xl">
+    <div
+      data-tour="runbooks-actions-list"
+      className={cn("max-w-2xl", className)}
+    >
       {actions.map((action, index) => {
         const expanded = isExpanded(action);
         const showConnector = !expanded && index < actions.length - 1;
@@ -103,6 +124,7 @@ export function RunbookActionList({
               id={action.id}
               index={index}
               disabled={expanded}
+              showConnector={showConnector}
               useSortableRuntime={useSortableRuntime}
             >
               {(sortableApi) => {
@@ -113,14 +135,6 @@ export function RunbookActionList({
                 return renderCollapsedCard(action, index, sortableApi);
               }}
             </SortableActionWrapper>
-            {showConnector && (
-              <div
-                aria-hidden="true"
-                className="pointer-events-none flex h-7 items-center justify-center text-muted-foreground/35"
-              >
-                <ArrowDown size={15} strokeWidth={1.8} />
-              </div>
-            )}
             {expanded && (
               <div className="flex justify-center py-2">
                 <button
