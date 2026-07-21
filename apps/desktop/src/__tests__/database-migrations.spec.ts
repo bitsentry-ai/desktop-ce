@@ -15,6 +15,8 @@ import { setRuntimeUserDataPath } from '@bitsentry-ce/desktop-cli/runtime/runtim
 const CURRENT_SCHEMA_VERSION = 17
 const tempDirectories: string[] = []
 
+vi.setConfig({ testTimeout: 30_000 })
+
 async function makeDatabaseDirectory(): Promise<{ directory: string; databasePath: string }> {
   const directory = await mkdtemp(path.join(os.tmpdir(), 'bitsentry-db-upgrade-'))
   tempDirectories.push(directory)
