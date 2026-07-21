@@ -60,6 +60,20 @@ function getDiagnosisDotClass(latestState: string): string {
   return "bg-muted-foreground/30";
 }
 
+function formatResolutionType(
+  value: ResolvedTicketDetails["resolutionType"],
+): string {
+  if (value === undefined || value === null || value.length === 0) {
+    return "Resolved";
+  }
+
+  return value
+    .toLowerCase()
+    .split("_")
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
 function getResultDotClass(status: string): string {
   if (status === "running") return "bg-amber-400";
   if (status === "completed") return "bg-emerald-400";
@@ -73,6 +87,9 @@ const ACCORDION_PAGES = [
   "/incidents",
   "/runbooks",
   "/results",
+  "/tickets",
+  "/resolution",
+  "/profile",
 ];
 
 function highlightElement(targetId: string) {
@@ -447,6 +464,12 @@ const appSettingsSections = [
   { labelKey: "navigation.navbar.globalVariables", hash: "global-variables" },
   { labelKey: "navigation.navbar.codingAgents", hash: "coding-agents" },
   { labelKey: "navigation.navbar.help", hash: "help" },
+] as const;
+
+const profileSections = [
+  { labelKey: "common.profile.overview", hash: "overview" },
+  { labelKey: "common.profile.security", hash: "security" },
+  { labelKey: "common.profile.help", hash: "help" },
 ] as const;
 
 export type SettingsSectionLink = {
@@ -891,6 +914,48 @@ const Navbar = ({
     return (diagnosisData?.records ?? []).slice(0, 7);
   }, [diagnosisData]);
 
+  const ticketQuickItems = useMemo(() => {
+    const eligibleStates = [
+      "llm_assessed",
+      "verification_pending",
+      "verified",
+      "completed",
+    ];
+    const diagnosesWithoutTickets: DiagnosisRecord[] = [];
+    const diagnosesWithTickets: DiagnosisTicket[] = [];
+
+    if (!diagnosisData?.records || !ticketsData) {
+      return {
+        diagnosesWithoutTickets,
+        diagnosesWithTickets,
+      };
+    }
+
+    const ticketMap = new Map<number, DiagnosisTicket>();
+    ticketsData.forEach((ticket) => {
+      ticketMap.set(ticket.diagnosisId, ticket);
+    });
+
+    diagnosisData.records.forEach((diagnosis) => {
+      const ticket = ticketMap.get(diagnosis.id);
+
+      if (ticket) {
+        diagnosesWithTickets.push(ticket);
+        return;
+      }
+
+      const latestState = getLatestDiagnosisState(diagnosis);
+      if (eligibleStates.includes(latestState)) {
+        diagnosesWithoutTickets.push(diagnosis);
+      }
+    });
+
+    return {
+      diagnosesWithoutTickets,
+      diagnosesWithTickets,
+    };
+  }, [diagnosisData, ticketsData]);
+
   let hiddenHrefs = webHiddenHrefs;
   if (isDesktop) {
     hiddenHrefs = desktopHiddenHrefs;
@@ -902,7 +967,7 @@ const Navbar = ({
     (item) => !hiddenHrefs.has(item.href),
   );
 
-  let navHeaderClass = "px-4 py-5";
+  let navHeaderClass = "px-4 pt-4 pb-2.5";
   if (isDesktop) {
     let desktopPaddingClass = "pl-4";
     if (isDesktopMac) {
@@ -917,7 +982,24 @@ const Navbar = ({
   return (
     <nav className="nav-rail h-screen w-60 flex flex-col">
       <div className={navHeaderClass}>
-        <Link to="/" className="text-sm font-semibold text-foreground">
+        <Link
+          to="/"
+          className="flex items-center gap-2 text-sm font-semibold text-foreground"
+        >
+          {!isDesktop && (
+            <>
+              <img
+                src="/logo.png"
+                alt=""
+                className="h-5 w-5 object-contain dark:hidden"
+              />
+              <img
+                src="/logo-light.png"
+                alt=""
+                className="hidden h-5 w-5 object-contain dark:block"
+              />
+            </>
+          )}
           {t("navigation.navbar.bitsentry")}
         </Link>
       </div>
@@ -974,82 +1056,41 @@ const Navbar = ({
               </Link>
 
               {/* Diagnosis Sub-Navigation */}
-              {canShowSubNav && isDiagnosis && (
-                <div className="ml-4 mt-1 space-y-0.5">
-                  {diagnosisQuickItems.map((diagnosis) => {
-                    const currentId = new URLSearchParams(location.search).get(
-                      "id",
-                    );
-                    const latestState = getLatestDiagnosisState(diagnosis);
-                    const isActive =
-                      currentPath === "/diagnosis" &&
-                      currentId === String(diagnosis.id);
-                    const dotCls = getDiagnosisDotClass(latestState);
-                    const diagnosisId = String(diagnosis.id);
-
-                    return (
-                      <Link
-                        key={`diagnosis-nav-${diagnosisId}`}
-                        to={`/diagnosis?id=${diagnosisId}`}
-                        title={
-                          diagnosis.rule_description ||
-                          diagnosis.description ||
-                          t("navigation.navbar.diagnosisNumber", {
-                            id: diagnosis.id,
-                          })
-                        }
-                        onClick={() => {
-                          if (currentPath === "/diagnosis") {
-                            window.setTimeout(() => {
-                              highlightElement(`diagnosis-${diagnosisId}`);
-                            }, 0);
-                          }
-                        }}
-                        className={cn(
-                          "flex items-start gap-2 rounded-md px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-neutral-100/50 hover:text-foreground dark:hover:bg-white/10",
-                          isActive &&
-                            "bg-neutral-100/50 text-foreground font-medium dark:bg-white/10",
-                        )}
-                      >
-                        <span
+              {canShowSubNav &&
+                isDiagnosis &&
+                (() => {
+                  const currentTab =
+                    new URLSearchParams(location.search).get("tab") ??
+                    "records";
+                  const subItems = [
+                    {
+                      tab: "records",
+                      label: t("dashboard.index.records"),
+                    },
+                    {
+                      tab: "activity",
+                      label: t("dashboard.index.activity"),
+                    },
+                  ];
+                  return (
+                    <div className="ml-4 mt-1 space-y-0.5">
+                      {subItems.map((sub) => (
+                        <Link
+                          key={`diagnosis-sub-${sub.tab}`}
+                          to={`/diagnosis?tab=${sub.tab}`}
                           className={cn(
-                            "mt-1 size-1.5 shrink-0 rounded-full",
-                            dotCls,
+                            "block rounded-md px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-neutral-100/50 hover:text-foreground dark:hover:bg-white/10",
+                            currentPath === "/diagnosis" &&
+                              currentTab === sub.tab &&
+                              "bg-neutral-100/50 text-foreground font-medium dark:bg-white/10",
                           )}
-                        />
-                        <div className="min-w-0">
-                          <div className="truncate">
-                            {diagnosis.rule_description ||
-                              diagnosis.description ||
-                              t("navigation.navbar.diagnosisNumber", {
-                                id: diagnosis.id,
-                              })}
-                          </div>
-                          <div className="text-[10px] text-muted-foreground/60">
-                            {formatters.relativeTime(diagnosis.created_at)}
-                          </div>
-                        </div>
-                      </Link>
-                    );
-                  })}
-                  {(diagnosisData?.records.length ?? 0) >
-                    diagnosisQuickItems.length && (
-                    <Link
-                      to="/diagnosis"
-                      className="block px-3 py-1 text-xs text-primary/80 transition-colors hover:text-primary"
-                    >
-                      {(diagnosisData?.records.length ?? 0) -
-                        diagnosisQuickItems.length}{" "}
-                      {t("navigation.navbar.more")}
-                    </Link>
-                  )}
-                  {diagnosisQuickItems.length === 0 && (
-                    <p className="px-3 py-1 text-xs text-muted-foreground/60">
-                      {t("navigation.navbar.noDiagnosesYet")}
-                    </p>
-                  )}
-                </div>
-              )}
+                        >
+                          {sub.label}
+                        </Link>
+                      ))}
+                    </div>
+                  );
+                })()}
 
               {/* Incidents Sub-Navigation */}
               {canShowSubNav &&
@@ -1256,7 +1297,9 @@ const Navbar = ({
         {visibleBottom.map((item) => {
           const isAdminSettingsItem = item.href === "/settings";
           const isAppSettingsItem = item.href === "/app-settings";
-          const isSettingsItem = isAdminSettingsItem || isAppSettingsItem;
+          const isProfileItem = item.href === "/profile";
+          const isSettingsItem =
+            isAdminSettingsItem || isAppSettingsItem || isProfileItem;
           const isActive = currentPath === item.href;
           const accordionKey = item.href;
           const isOpen = openAccordions.has(accordionKey);
@@ -1271,6 +1314,8 @@ const Navbar = ({
               ...appSettingsSections,
               ...appSettingsExtraSections,
             ];
+          } else if (isProfileItem) {
+            settingsSections = profileSections;
           }
           let SettingsChevron: React.ElementType | null = null;
           if (isSettingsItem) {
