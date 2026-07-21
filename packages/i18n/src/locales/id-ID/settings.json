@@ -232,5 +232,9 @@
   "settings.updateSettingsSection.updates": "Pembaruan",
   "settings.updateSettingsSection.versionAvailableToDownload": "SuperTerminal {{version}} tersedia untuk diunduh.",
   "settings.updateSettingsSection.versionReadyToInstall": "SuperTerminal {{version}} siap dipasang.",
+  "settings.plugins.active": "Aktif",
+  "settings.plugins.installedPlugins": "Plugin terpasang",
+  "settings.plugins.installedPluginsDescription": "Plugin yang dikelola oleh worker Dashboard tercantum di sini sebagai referensi.",
+  "settings.plugins.noInstalledPlugins": "Belum ada plugin yang terpasang.",
   "settings.dataPolicy.policyManagedDescription": "Kontrol penanganan dan redaksi data dikelola oleh kebijakan platform dan tidak dapat diubah dari pengaturan."
 }

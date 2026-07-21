@@ -232,5 +232,9 @@
   "settings.updateSettingsSection.updates": "Updates",
   "settings.updateSettingsSection.versionAvailableToDownload": "SuperTerminal {{version}} is available to download.",
   "settings.updateSettingsSection.versionReadyToInstall": "SuperTerminal {{version}} is ready to install.",
+  "settings.plugins.active": "Active",
+  "settings.plugins.installedPlugins": "Installed plugins",
+  "settings.plugins.installedPluginsDescription": "Plugins managed by the Dashboard worker are listed here for reference.",
+  "settings.plugins.noInstalledPlugins": "No plugins are currently installed.",
   "settings.dataPolicy.policyManagedDescription": "Data handling and redaction controls are managed by platform policy and cannot be changed from settings."
 }
