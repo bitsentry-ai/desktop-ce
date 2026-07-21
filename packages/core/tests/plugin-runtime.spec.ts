@@ -1,6 +1,8 @@
+import { spawnSync } from 'child_process'
 import { access, mkdir, mkdtemp, rm, writeFile } from 'fs/promises'
 import { tmpdir } from 'os'
 import path from 'path'
+import { pathToFileURL } from 'url'
 
 import {
   DesktopPluginRuntimeService,
@@ -30,6 +32,29 @@ describe('DesktopPluginRuntimeService', () => {
     vi.restoreAllMocks()
     vi.unstubAllEnvs()
     process.chdir(originalCwd)
+  })
+
+  it('loads the local plugin loader from an ESM entrypoint', () => {
+    const runtimeEntryPath = path.resolve(
+      __dirname,
+      '../src/features/plugins/desktop-local-plugin-loader.ts',
+    )
+    const result = spawnSync(
+      process.execPath,
+      [
+        '--experimental-strip-types',
+        '--input-type=module',
+        '-e',
+        `const loader = await import(${JSON.stringify(pathToFileURL(runtimeEntryPath).href)}); loader.loadDesktopLocalPlugins([]);`,
+      ],
+      {
+        cwd: originalCwd,
+        encoding: 'utf8',
+      },
+    )
+
+    expect(result.status).toBe(0)
+    expect(result.stderr).not.toContain('__filename is not defined')
   })
 
   it('does not register built-in provider plugins without code plugin entrypoints', () => {

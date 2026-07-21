@@ -4,7 +4,11 @@ import path from "node:path";
 
 import * as pluginSdk from "@bitsentry/plugin-sdk";
 
-const localRequire = createRequire(__filename);
+const localRequire = createRequire(
+  typeof __filename === "string"
+    ? __filename
+    : path.join(process.cwd(), "package.json"),
+);
 
 export type LoadedDesktopCodePlugin = {
   plugin: pluginSdk.DesktopCodePlugin;
