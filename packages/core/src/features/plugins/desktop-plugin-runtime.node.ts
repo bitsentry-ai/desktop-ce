@@ -28,7 +28,11 @@ import {
   DesktopPluginRuntimeService,
 } from "./desktop-plugin-registry";
 
-const localRequire = createRequire(__filename);
+const localRequire = createRequire(
+  typeof __filename === "string"
+    ? __filename
+    : path.join(process.cwd(), "package.json"),
+);
 
 function readTrimmedString(value: unknown): string | undefined {
   if (typeof value !== "string") {
