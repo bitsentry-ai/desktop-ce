@@ -1,15 +1,32 @@
 import { useTranslation } from "@bitsentry-ce/i18n";
 import type { ReactNode } from "react";
 
+const COMPACT_VALUE_MAX_LENGTH = 40;
+
 function formatStructuredValue(value: unknown): string {
   if (typeof value === "string") {
     return value;
   }
 
+  if (value === null || typeof value !== "object") {
+    return String(value);
+  }
+
+  let compact: string;
+  try {
+    compact = JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
+
+  if (compact.length <= COMPACT_VALUE_MAX_LENGTH) {
+    return compact;
+  }
+
   try {
     return JSON.stringify(value, null, 2);
   } catch {
-    return String(value);
+    return compact;
   }
 }
 
