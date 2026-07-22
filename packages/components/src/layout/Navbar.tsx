@@ -1093,7 +1093,7 @@ const Navbar = ({
                       {overflow > 0 && (
                         <Link
                           to="/incidents?view=history"
-                          className="block px-3 py-1 text-xs text-primary/80 hover:text-primary transition-colors"
+                          className="block px-3 py-1 text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground transition-colors"
                         >
                           {overflow} {t("navigation.navbar.more")}
                         </Link>
@@ -1156,7 +1156,7 @@ const Navbar = ({
                       {overflow > 0 && (
                         <Link
                           to="/runbooks"
-                          className="block px-3 py-1 text-xs text-primary/80 hover:text-primary transition-colors"
+                          className="block px-3 py-1 text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground transition-colors"
                         >
                           {overflow} {t("navigation.navbar.more")}
                         </Link>
@@ -1215,7 +1215,7 @@ const Navbar = ({
                       {overflow > 0 && (
                         <Link
                           to="/results?view=history"
-                          className="block px-3 py-1 text-xs text-primary/80 transition-colors hover:text-primary"
+                          className="block px-3 py-1 text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground transition-colors"
                         >
                           {overflow} {t("navigation.navbar.more")}
                         </Link>
