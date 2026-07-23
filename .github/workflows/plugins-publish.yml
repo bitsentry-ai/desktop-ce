@@ -24,11 +24,16 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
-      contents: read
+      contents: write
+    env:
+      PLUGIN_RELEASE_TAG: plugin-catalog-${{ github.sha }}-${{ github.run_id }}
+      PLUGIN_ARTIFACT_BASE_URL: https://github.com/${{ github.repository }}/releases/download/plugin-catalog-${{ github.sha }}-${{ github.run_id }}
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Initialize package submodules
         shell: bash
@@ -74,7 +79,25 @@ jobs:
         shell: bash
         run: pnpm run plugins:test
 
-      - name: Build and publish plugin artifacts
+      - name: Build plugin artifacts
+        shell: bash
+        run: pnpm run plugins:build
+
+      - name: Publish plugin artifacts to GitHub Release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh release create "$PLUGIN_RELEASE_TAG" build/plugins/*.plugin.js \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --title "First-party plugin artifacts" \
+            --notes "Public plugin artifacts built from ${GITHUB_SHA}." \
+            --prerelease \
+            --latest=false
+
+      - name: Publish plugin index to R2
         shell: bash
         env:
           R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}

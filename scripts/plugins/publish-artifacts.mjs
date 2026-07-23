@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { readFile, readdir, stat } from "node:fs/promises";
+import { readFile, stat } from "node:fs/promises";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -13,6 +13,7 @@ const desktopRequire = createRequire(
   path.join(workspaceRoot, "apps", "desktop", "package.json"),
 );
 const { PutObjectCommand, S3Client } = desktopRequire("@aws-sdk/client-s3");
+const { parse: parseYaml } = desktopRequire("yaml");
 const artifactRoot = path.join(workspaceRoot, "build", "plugins");
 const dryRun = process.argv.includes("--dry-run");
 const requiredEnvNames = [
@@ -76,34 +77,74 @@ function contentTypeFor(fileName) {
   return "application/octet-stream";
 }
 
-async function listPublishableArtifacts() {
-  const entries = await readdir(artifactRoot, { withFileTypes: true });
-  const files = [];
+function assertReleaseArtifactBaseUrl() {
+  const value = process.env.PLUGIN_ARTIFACT_BASE_URL?.trim();
+  if (value === undefined || value.length === 0) {
+    throw new Error(
+      "PLUGIN_ARTIFACT_BASE_URL is required when publishing the plugin index.",
+    );
+  }
+}
 
-  for (const entry of entries) {
-    if (!entry.isFile()) {
-      continue;
-    }
-
-    if (entry.name === "index.yaml" || entry.name.endsWith(".plugin.js")) {
-      const filePath = path.join(artifactRoot, entry.name);
-      const fileStat = await stat(filePath);
-      if (fileStat.size === 0) {
-        throw new Error(`Refusing to publish empty plugin artifact: ${entry.name}`);
-      }
-      files.push(entry.name);
-    }
+async function assertReleaseArtifactIndex() {
+  const indexSource = await readFile(
+    path.join(artifactRoot, "index.yaml"),
+    "utf8",
+  );
+  let index;
+  try {
+    index = parseYaml(indexSource);
+  } catch {
+    throw new Error("Plugin artifact index must contain valid YAML.");
   }
 
-  if (!files.includes("index.yaml")) {
+  const plugins = index?.plugins;
+  if (
+    plugins === null ||
+    typeof plugins !== "object" ||
+    Array.isArray(plugins) ||
+    Object.keys(plugins).length === 0
+  ) {
+    throw new Error("Plugin artifact index must contain at least one plugin.");
+  }
+
+  for (const [pluginId, entry] of Object.entries(plugins)) {
+    const artifactUrl = entry?.artifactUrl;
+    let parsedUrl;
+    try {
+      parsedUrl = new URL(artifactUrl);
+    } catch {
+      throw new Error(
+        `Plugin ${pluginId} must use an approved GitHub release artifact URL.`,
+      );
+    }
+
+    if (
+      parsedUrl.origin !== "https://github.com" ||
+      parsedUrl.search !== "" ||
+      parsedUrl.hash !== "" ||
+      !/^\/bitsentry-ai\/desktop-ce\/releases\/download\/[^/]+\/[^/]+\.plugin\.js$/.test(
+        parsedUrl.pathname,
+      )
+    ) {
+      throw new Error(
+        `Plugin ${pluginId} must use an approved GitHub release artifact URL.`,
+      );
+    }
+  }
+}
+
+async function listPublishableArtifacts() {
+  const indexPath = path.join(artifactRoot, "index.yaml");
+  const indexStat = await stat(indexPath).catch(() => null);
+  if (indexStat === null || !indexStat.isFile()) {
     throw new Error("Plugin artifact index build/plugins/index.yaml is missing.");
   }
+  if (indexStat.size === 0) {
+    throw new Error("Refusing to publish an empty plugin index.");
+  }
 
-  const pluginArtifacts = files
-    .filter((fileName) => fileName !== "index.yaml")
-    .sort((left, right) => left.localeCompare(right));
-
-  return [...pluginArtifacts, "index.yaml"];
+  return ["index.yaml"];
 }
 
 function createR2Client(r2Environment) {
@@ -135,6 +176,11 @@ async function uploadArtifact(client, r2Environment, fileName) {
 }
 
 async function main() {
+  if (!dryRun) {
+    assertReleaseArtifactBaseUrl();
+    await assertReleaseArtifactIndex();
+  }
+
   const files = await listPublishableArtifacts();
   if (dryRun) {
     process.stdout.write(
@@ -153,7 +199,7 @@ async function main() {
   }
 
   process.stdout.write(
-    `Published ${String(files.length)} plugin artifacts to ${r2Environment.bucket}\n`,
+    `Published plugin index to ${r2Environment.bucket}\n`,
   );
 }
 
