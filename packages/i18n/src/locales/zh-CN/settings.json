@@ -235,9 +235,5 @@
   "settings.updateSettingsSection.updates": "更新",
   "settings.updateSettingsSection.versionAvailableToDownload": "SuperTerminal {{version}} 可供下载。",
   "settings.updateSettingsSection.versionReadyToInstall": "SuperTerminal {{version}} 已准备好安装。",
-  "settings.plugins.active": "已启用",
-  "settings.plugins.installedPlugins": "已安装的插件",
-  "settings.plugins.installedPluginsDescription": "由 Dashboard Worker 管理的插件会列在这里供参考。",
-  "settings.plugins.noInstalledPlugins": "当前没有已安装的插件。",
   "settings.dataPolicy.policyManagedDescription": "数据处理和脱敏控制由平台策略管理，无法从设置中更改。"
 }

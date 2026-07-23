@@ -235,9 +235,5 @@
   "settings.updateSettingsSection.updates": "Mises à jour",
   "settings.updateSettingsSection.versionAvailableToDownload": "SuperTerminal {{version}} est disponible au téléchargement.",
   "settings.updateSettingsSection.versionReadyToInstall": "SuperTerminal {{version}} est prêt à être installé.",
-  "settings.plugins.active": "Actif",
-  "settings.plugins.installedPlugins": "Plugins installés",
-  "settings.plugins.installedPluginsDescription": "Les plugins gérés par le worker du Dashboard sont listés ici à titre indicatif.",
-  "settings.plugins.noInstalledPlugins": "Aucun plugin n’est actuellement installé.",
   "settings.dataPolicy.policyManagedDescription": "Les contrôles de traitement et de masquage des données sont gérés par la politique de la plateforme et ne peuvent pas être modifiés depuis les paramètres."
 }
