@@ -32,6 +32,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Initialize package submodules
         shell: bash
@@ -88,6 +90,9 @@ jobs:
         run: |
           set -euo pipefail
           if gh release view "$PLUGIN_RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release edit "$PLUGIN_RELEASE_TAG" \
+              --repo "$GITHUB_REPOSITORY" \
+              --prerelease
             gh release upload "$PLUGIN_RELEASE_TAG" build/plugins/*.plugin.js \
               --repo "$GITHUB_REPOSITORY" \
               --clobber
@@ -97,6 +102,7 @@ jobs:
               --target "$GITHUB_SHA" \
               --title "First-party plugin artifacts" \
               --notes "Public plugin artifacts built from ${GITHUB_SHA}." \
+              --prerelease \
               --latest=false
           fi
 

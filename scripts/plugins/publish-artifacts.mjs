@@ -13,6 +13,7 @@ const desktopRequire = createRequire(
   path.join(workspaceRoot, "apps", "desktop", "package.json"),
 );
 const { PutObjectCommand, S3Client } = desktopRequire("@aws-sdk/client-s3");
+const { parse: parseYaml } = desktopRequire("yaml");
 const artifactRoot = path.join(workspaceRoot, "build", "plugins");
 const dryRun = process.argv.includes("--dry-run");
 const requiredEnvNames = [
@@ -85,6 +86,54 @@ function assertReleaseArtifactBaseUrl() {
   }
 }
 
+async function assertReleaseArtifactIndex() {
+  const indexSource = await readFile(
+    path.join(artifactRoot, "index.yaml"),
+    "utf8",
+  );
+  let index;
+  try {
+    index = parseYaml(indexSource);
+  } catch {
+    throw new Error("Plugin artifact index must contain valid YAML.");
+  }
+
+  const plugins = index?.plugins;
+  if (
+    plugins === null ||
+    typeof plugins !== "object" ||
+    Array.isArray(plugins) ||
+    Object.keys(plugins).length === 0
+  ) {
+    throw new Error("Plugin artifact index must contain at least one plugin.");
+  }
+
+  for (const [pluginId, entry] of Object.entries(plugins)) {
+    const artifactUrl = entry?.artifactUrl;
+    let parsedUrl;
+    try {
+      parsedUrl = new URL(artifactUrl);
+    } catch {
+      throw new Error(
+        `Plugin ${pluginId} must use an approved GitHub release artifact URL.`,
+      );
+    }
+
+    if (
+      parsedUrl.origin !== "https://github.com" ||
+      parsedUrl.search !== "" ||
+      parsedUrl.hash !== "" ||
+      !/^\/bitsentry-ai\/desktop-ce\/releases\/download\/[^/]+\/[^/]+\.plugin\.js$/.test(
+        parsedUrl.pathname,
+      )
+    ) {
+      throw new Error(
+        `Plugin ${pluginId} must use an approved GitHub release artifact URL.`,
+      );
+    }
+  }
+}
+
 async function listPublishableArtifacts() {
   const indexPath = path.join(artifactRoot, "index.yaml");
   const indexStat = await stat(indexPath).catch(() => null);
@@ -129,6 +178,7 @@ async function uploadArtifact(client, r2Environment, fileName) {
 async function main() {
   if (!dryRun) {
     assertReleaseArtifactBaseUrl();
+    await assertReleaseArtifactIndex();
   }
 
   const files = await listPublishableArtifacts();
