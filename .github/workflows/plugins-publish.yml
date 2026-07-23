@@ -26,8 +26,8 @@ jobs:
     permissions:
       contents: write
     env:
-      PLUGIN_RELEASE_TAG: plugin-catalog
-      PLUGIN_ARTIFACT_BASE_URL: https://github.com/${{ github.repository }}/releases/download/plugin-catalog
+      PLUGIN_RELEASE_TAG: plugin-catalog-${{ github.sha }}-${{ github.run_attempt }}
+      PLUGIN_ARTIFACT_BASE_URL: https://github.com/${{ github.repository }}/releases/download/plugin-catalog-${{ github.sha }}-${{ github.run_attempt }}
 
     steps:
       - name: Checkout repository
@@ -89,22 +89,13 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          if gh release view "$PLUGIN_RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            gh release edit "$PLUGIN_RELEASE_TAG" \
-              --repo "$GITHUB_REPOSITORY" \
-              --prerelease
-            gh release upload "$PLUGIN_RELEASE_TAG" build/plugins/*.plugin.js \
-              --repo "$GITHUB_REPOSITORY" \
-              --clobber
-          else
-            gh release create "$PLUGIN_RELEASE_TAG" build/plugins/*.plugin.js \
-              --repo "$GITHUB_REPOSITORY" \
-              --target "$GITHUB_SHA" \
-              --title "First-party plugin artifacts" \
-              --notes "Public plugin artifacts built from ${GITHUB_SHA}." \
-              --prerelease \
-              --latest=false
-          fi
+          gh release create "$PLUGIN_RELEASE_TAG" build/plugins/*.plugin.js \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --title "First-party plugin artifacts" \
+            --notes "Public plugin artifacts built from ${GITHUB_SHA}." \
+            --prerelease \
+            --latest=false
 
       - name: Publish plugin index to R2
         shell: bash
