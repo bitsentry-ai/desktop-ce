@@ -321,7 +321,7 @@ exports.plugin = {
         path.join(tempRoot, 'plugins'),
         '--json',
       ]),
-    ).rejects.toThrow('first-party origin https://plugins.bitsentry.ai')
+    ).rejects.toThrow('first-party R2 origin https://plugins.bitsentry.ai')
   })
 
   it('rejects remote plugin artifacts outside the first-party origin', async () => {
@@ -359,6 +359,64 @@ exports.plugin = {
         '--json',
       ]),
     ).rejects.toThrow('Remote plugin artifacts')
+  })
+
+  it('accepts artifacts from the approved Desktop CE GitHub release path', async () => {
+    const tempRoot = await mkdtemp(path.join(tmpdir(), 'bitsentry-plugin-cli-'))
+    tempRoots.push(tempRoot)
+
+    const artifactPath = await writePluginArtifact({
+      tempRoot,
+      pluginId: 'github-release-plugin-test',
+    })
+    const artifact = await readFile(artifactPath)
+    const indexUrl = 'https://plugins.bitsentry.ai/index.yaml'
+    const artifactUrl =
+      'https://github.com/bitsentry-ai/desktop-ce/releases/download/plugin-catalog/github-release-plugin-test.plugin.js'
+    const fetchMock = vi.fn((input: string | URL | Request) => {
+      const url =
+        typeof input === 'string'
+          ? input
+          : input instanceof URL
+            ? input.toString()
+            : input.url
+      if (url === indexUrl) {
+        return new Response(
+          [
+            'plugins:',
+            '  github-release-plugin-test:',
+            '    description: Test plugin from a GitHub release.',
+            `    artifactUrl: ${artifactUrl}`,
+            '',
+          ].join('\n'),
+          { status: 200 },
+        )
+      }
+
+      if (url === artifactUrl) {
+        return new Response(artifact, { status: 200 })
+      }
+
+      return new Response('not found', { status: 404, statusText: 'Not Found' })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const installOutput = await runPluginCli([
+      'plugin',
+      'install',
+      'github-release-plugin-test',
+      '--index-url',
+      indexUrl,
+      '--plugin-dir',
+      path.join(tempRoot, 'plugins'),
+      '--json',
+    ])
+
+    expect(parseJson(installOutput)).toMatchObject({
+      pluginId: 'github-release-plugin-test',
+      artifactUrl,
+    })
+    expect(fetchMock).toHaveBeenCalledTimes(2)
   })
 
   it('installs one plugin from an HTTPS first-party index without bundling implementations', async () => {

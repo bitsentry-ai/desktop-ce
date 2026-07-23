@@ -49,7 +49,17 @@ function yamlString(value) {
 }
 
 function artifactUrlFor(artifactName) {
-  return `./${artifactName}`;
+  const baseUrl = process.env.PLUGIN_ARTIFACT_BASE_URL?.trim();
+  if (baseUrl === undefined || baseUrl.length === 0) {
+    return `./${artifactName}`;
+  }
+
+  const parsedBaseUrl = new URL(baseUrl);
+  if (parsedBaseUrl.protocol !== "https:") {
+    throw new Error("PLUGIN_ARTIFACT_BASE_URL must use HTTPS.");
+  }
+
+  return `${baseUrl.replace(/\/+$/, "")}/${artifactName}`;
 }
 
 async function listPluginPackageDirectories() {
