@@ -10,6 +10,10 @@ import {
   createDesktopNodePluginRuntimeService,
   resolveDesktopPluginDirectories,
 } from '@bitsentry-ce/core/features/plugins/node'
+import {
+  assertFirstPartyRemoteUrl,
+  DEFAULT_PLUGIN_INDEX_URL,
+} from '@bitsentry-ce/core/features/plugins/desktop-plugin-index'
 import type { ErrorSourceType } from '@bitsentry-ce/core/features/error-sources'
 import type {
   DesktopPluginDescriptor,
@@ -94,9 +98,6 @@ type PluginIndexEntry = {
   artifactUrl: string
   description?: string
 }
-
-const DEFAULT_PLUGIN_INDEX_URL = 'https://plugins.bitsentry.ai/index.yaml'
-const DEFAULT_PLUGIN_INDEX_ORIGIN = new URL(DEFAULT_PLUGIN_INDEX_URL).origin
 
 const DETACHED_EXECUTION_START_TIMEOUT_MS = 15_000
 const DETACHED_EXECUTION_START_POLL_MS = 50
@@ -813,19 +814,6 @@ function resolvePluginIndexUrl(args: ParsedArgs): string {
 
 function isRemoteUrl(source: string): boolean {
   return source.startsWith('http://') || source.startsWith('https://')
-}
-
-function assertFirstPartyRemoteUrl(source: string, label: string): void {
-  if (!isRemoteUrl(source)) {
-    return
-  }
-
-  const parsed = new URL(source)
-  if (parsed.origin !== DEFAULT_PLUGIN_INDEX_ORIGIN) {
-    throw new Error(
-      `Remote plugin ${label} must use the first-party origin ${DEFAULT_PLUGIN_INDEX_ORIGIN}`,
-    )
-  }
 }
 
 function readPluginName(args: ParsedArgs): string {

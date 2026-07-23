@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { readFile, readdir, stat } from "node:fs/promises";
+import { readFile, stat } from "node:fs/promises";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -77,33 +77,16 @@ function contentTypeFor(fileName) {
 }
 
 async function listPublishableArtifacts() {
-  const entries = await readdir(artifactRoot, { withFileTypes: true });
-  const files = [];
-
-  for (const entry of entries) {
-    if (!entry.isFile()) {
-      continue;
-    }
-
-    if (entry.name === "index.yaml" || entry.name.endsWith(".plugin.js")) {
-      const filePath = path.join(artifactRoot, entry.name);
-      const fileStat = await stat(filePath);
-      if (fileStat.size === 0) {
-        throw new Error(`Refusing to publish empty plugin artifact: ${entry.name}`);
-      }
-      files.push(entry.name);
-    }
-  }
-
-  if (!files.includes("index.yaml")) {
+  const indexPath = path.join(artifactRoot, "index.yaml");
+  const indexStat = await stat(indexPath).catch(() => null);
+  if (indexStat === null || !indexStat.isFile()) {
     throw new Error("Plugin artifact index build/plugins/index.yaml is missing.");
   }
+  if (indexStat.size === 0) {
+    throw new Error("Refusing to publish an empty plugin index.");
+  }
 
-  const pluginArtifacts = files
-    .filter((fileName) => fileName !== "index.yaml")
-    .sort((left, right) => left.localeCompare(right));
-
-  return [...pluginArtifacts, "index.yaml"];
+  return ["index.yaml"];
 }
 
 function createR2Client(r2Environment) {
@@ -153,7 +136,7 @@ async function main() {
   }
 
   process.stdout.write(
-    `Published ${String(files.length)} plugin artifacts to ${r2Environment.bucket}\n`,
+    `Published plugin index to ${r2Environment.bucket}\n`,
   );
 }
 

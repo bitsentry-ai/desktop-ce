@@ -5,14 +5,16 @@ import { parse as parseYaml } from "yaml";
 
 // The first-party plugin index. v1 has no versioning: install fetches the
 // latest, and only the latest exists. The index is a YAML file in Cloudflare
-// R2; the origin is enforced so a plugin artifact can only be fetched from the
-// first-party host. Override the URL with BITSENTRY_PLUGIN_INDEX_URL (must stay
-// on the first-party origin). This URL is a placeholder until the real R2
-// domain is wired.
+// R2, while public plugin artifacts are served from the approved Desktop CE
+// GitHub Release. Override the index URL with BITSENTRY_PLUGIN_INDEX_URL (it
+// must stay on the first-party R2 origin).
 export const DEFAULT_PLUGIN_INDEX_URL = "https://plugins.bitsentry.ai/index.yaml";
 export const DEFAULT_PLUGIN_INDEX_ORIGIN = new URL(
   DEFAULT_PLUGIN_INDEX_URL,
 ).origin;
+export const FIRST_PARTY_PLUGIN_RELEASE_ORIGIN = "https://github.com";
+export const FIRST_PARTY_PLUGIN_RELEASE_PATH =
+  /^\/bitsentry-ai\/desktop-ce\/releases\/download\/[^/]+\/[^/]+\.plugin\.js$/;
 
 export type PluginIndexEntry = {
   name: string;
@@ -37,9 +39,16 @@ export function assertFirstPartyRemoteUrl(source: string, label: string): void {
   }
 
   const parsed = new URL(source);
-  if (parsed.origin !== DEFAULT_PLUGIN_INDEX_ORIGIN) {
+  const isFirstPartyIndex = parsed.origin === DEFAULT_PLUGIN_INDEX_ORIGIN;
+  const isApprovedReleaseArtifact =
+    label === "artifacts" &&
+    parsed.origin === FIRST_PARTY_PLUGIN_RELEASE_ORIGIN &&
+    parsed.search === "" &&
+    parsed.hash === "" &&
+    FIRST_PARTY_PLUGIN_RELEASE_PATH.test(parsed.pathname);
+  if (!isFirstPartyIndex && !isApprovedReleaseArtifact) {
     throw new Error(
-      `Remote plugin ${label} must use the first-party origin ${DEFAULT_PLUGIN_INDEX_ORIGIN}`,
+      `Remote plugin ${label} must use the first-party R2 origin ${DEFAULT_PLUGIN_INDEX_ORIGIN} or the approved Desktop CE GitHub release path`,
     );
   }
 }
