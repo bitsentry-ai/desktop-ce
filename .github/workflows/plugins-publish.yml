@@ -26,8 +26,8 @@ jobs:
     permissions:
       contents: write
     env:
-      PLUGIN_RELEASE_TAG: plugin-catalog-${{ github.sha }}-${{ github.run_id }}
-      PLUGIN_ARTIFACT_BASE_URL: https://github.com/${{ github.repository }}/releases/download/plugin-catalog-${{ github.sha }}-${{ github.run_id }}
+      PLUGIN_RELEASE_TAG: plugin-catalog-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+      PLUGIN_ARTIFACT_BASE_URL: https://github.com/${{ github.repository }}/releases/download/plugin-catalog-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
 
     steps:
       - name: Checkout repository

@@ -21,6 +21,15 @@ describe('first-party plugin URL policy', () => {
     ).toThrow('Remote plugin artifacts')
   })
 
+  it('rejects R2 URLs for plugin artifacts', () => {
+    expect(() =>
+      assertFirstPartyRemoteUrl(
+        'https://plugins.bitsentry.ai/sentry.plugin.js',
+        'artifacts',
+      ),
+    ).toThrow('Remote plugin artifacts')
+  })
+
   it('keeps plugin indexes restricted to the R2 origin', () => {
     expect(() =>
       assertFirstPartyRemoteUrl(

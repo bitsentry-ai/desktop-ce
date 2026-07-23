@@ -429,7 +429,8 @@ exports.plugin = {
     })
     const artifact = await readFile(artifactPath)
     const indexUrl = 'https://plugins.bitsentry.ai/index.yaml'
-    const artifactUrl = 'https://plugins.bitsentry.ai/remote-index-plugin-test.plugin.js'
+    const artifactUrl =
+      'https://github.com/bitsentry-ai/desktop-ce/releases/download/plugin-catalog/remote-index-plugin-test.plugin.js'
     const fetchMock = vi.fn((input: string | URL | Request) => {
       let url: string
       if (typeof input === 'string') {
@@ -445,7 +446,7 @@ exports.plugin = {
             'plugins:',
             '  remote-index-plugin-test:',
             '    description: Test plugin from the remote first-party index.',
-            '    artifactUrl: ./remote-index-plugin-test.plugin.js',
+            `    artifactUrl: ${artifactUrl}`,
             '',
           ].join('\n'),
           { status: 200 },

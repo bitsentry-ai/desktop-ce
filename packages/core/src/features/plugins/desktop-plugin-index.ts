@@ -39,7 +39,8 @@ export function assertFirstPartyRemoteUrl(source: string, label: string): void {
   }
 
   const parsed = new URL(source);
-  const isFirstPartyIndex = parsed.origin === DEFAULT_PLUGIN_INDEX_ORIGIN;
+  const isFirstPartyIndex =
+    label === "indexes" && parsed.origin === DEFAULT_PLUGIN_INDEX_ORIGIN;
   const isApprovedReleaseArtifact =
     label === "artifacts" &&
     parsed.origin === FIRST_PARTY_PLUGIN_RELEASE_ORIGIN &&
