@@ -76,6 +76,15 @@ function contentTypeFor(fileName) {
   return "application/octet-stream";
 }
 
+function assertReleaseArtifactBaseUrl() {
+  const value = process.env.PLUGIN_ARTIFACT_BASE_URL?.trim();
+  if (value === undefined || value.length === 0) {
+    throw new Error(
+      "PLUGIN_ARTIFACT_BASE_URL is required when publishing the plugin index.",
+    );
+  }
+}
+
 async function listPublishableArtifacts() {
   const indexPath = path.join(artifactRoot, "index.yaml");
   const indexStat = await stat(indexPath).catch(() => null);
@@ -118,6 +127,10 @@ async function uploadArtifact(client, r2Environment, fileName) {
 }
 
 async function main() {
+  if (!dryRun) {
+    assertReleaseArtifactBaseUrl();
+  }
+
   const files = await listPublishableArtifacts();
   if (dryRun) {
     process.stdout.write(
