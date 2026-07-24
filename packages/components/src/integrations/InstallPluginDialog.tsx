@@ -171,7 +171,7 @@ export default function InstallPluginDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-xl">
+      <DialogContent className="max-h-[88vh] grid-rows-[auto_minmax(0,1fr)_auto] sm:max-w-xl">
         <DialogHeader>
           <DialogTitle>
             {t("common.dataSourcesManager.installTitle")}
@@ -181,7 +181,7 @@ export default function InstallPluginDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-6">
+        <div className="space-y-6 overflow-y-auto">
           <section className="space-y-2">
             <div className="flex items-center justify-between">
               <h3 className="text-sm font-semibold">

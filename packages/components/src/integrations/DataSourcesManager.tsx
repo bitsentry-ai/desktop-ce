@@ -1289,7 +1289,7 @@ export default function DataSourcesManager({
           if (!open) resetCreateDialog();
         }}
       >
-        <DialogContent className="sm:max-w-xl">
+        <DialogContent className="max-h-[88vh] grid-rows-[auto_minmax(0,1fr)_auto] sm:max-w-xl">
           <DialogHeader>
             <DialogTitle>
               {t("common.dataSourcesManager.connectExternalSource")}
@@ -1300,7 +1300,7 @@ export default function DataSourcesManager({
               )}
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4">
+          <div className="space-y-4 overflow-y-auto">
             {/* Provider picker — SVG card grid, replaces the plain <select>. */}
             <div data-tour="data-sources-provider-picker" className="space-y-2">
               <label className="text-sm text-muted-foreground">
@@ -1568,7 +1568,7 @@ export default function DataSourcesManager({
           }
         }}
       >
-        <DialogContent className="sm:max-w-lg">
+        <DialogContent className="max-h-[88vh] grid-rows-[auto_minmax(0,1fr)_auto] sm:max-w-lg">
           <DialogHeader>
             <DialogTitle>
               {t("common.dataSourcesManager.editExternalSource")}
@@ -1579,7 +1579,7 @@ export default function DataSourcesManager({
           </DialogHeader>
 
           {editDialogSource !== null && (
-            <div className="space-y-4">
+            <div className="space-y-4 overflow-y-auto">
               <div className="space-y-1">
                 <FieldLabel required>
                   {t("common.dataSourcesManager.labelName")}
