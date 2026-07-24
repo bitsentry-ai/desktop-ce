@@ -14,6 +14,9 @@ export const errorSourceRowSchema = z.object({
   id: z.string(),
   sourceType: errorSourceTypeSchema,
   name: z.string(),
+  // Provider configuration is safe-to-display metadata used to repopulate
+  // edit forms. Secrets such as access tokens must never be returned here.
+  configuration: z.record(z.string(), z.unknown()).optional(),
   syncEnabled: z.boolean(),
   autoDiagnosisEnabled: z.boolean(),
   logLevelThreshold: logLevelThresholdSchema,
@@ -46,13 +49,21 @@ export const updateErrorSourceSchema = z
   .object({
     id: z.string().trim().min(1),
     name: z.string().trim().min(1).optional(),
+    setupValues: z.record(z.string(), z.unknown()).optional(),
     logLevelThreshold: logLevelThresholdSchema.optional(),
     syncEnabled: z.boolean().optional(),
     autoDiagnosisEnabled: z.boolean().optional(),
   })
   .refine(
-    ({ name, logLevelThreshold, syncEnabled, autoDiagnosisEnabled }) =>
+    ({
+      name,
+      setupValues,
+      logLevelThreshold,
+      syncEnabled,
+      autoDiagnosisEnabled,
+    }) =>
       name !== undefined ||
+      setupValues !== undefined ||
       logLevelThreshold !== undefined ||
       syncEnabled !== undefined ||
       autoDiagnosisEnabled !== undefined,

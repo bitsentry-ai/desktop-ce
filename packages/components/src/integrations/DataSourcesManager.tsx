@@ -174,7 +174,12 @@ function readPluginDataSourceType(
 }
 
 function readProviderIconKind(pluginId: string): ProviderIconKind {
-  if (pluginId === "sentry" || pluginId === "posthog" || pluginId === "wazuh") {
+  if (
+    pluginId === "sentry" ||
+    pluginId === "posthog" ||
+    pluginId === "wazuh" ||
+    pluginId === "github"
+  ) {
     return pluginId;
   }
 

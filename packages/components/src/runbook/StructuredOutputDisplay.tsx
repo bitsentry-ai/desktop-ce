@@ -3,15 +3,7 @@ import type { ReactNode } from "react";
 
 const COMPACT_VALUE_MAX_LENGTH = 40;
 
-function formatStructuredValue(value: unknown): string {
-  if (typeof value === "string") {
-    return value;
-  }
-
-  if (value === null || typeof value !== "object") {
-    return String(value);
-  }
-
+function formatJsonValue(value: object): string {
   let compact: string;
   try {
     compact = JSON.stringify(value);
@@ -28,6 +20,29 @@ function formatStructuredValue(value: unknown): string {
   } catch {
     return compact;
   }
+}
+
+function formatStructuredValue(value: unknown): string {
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (trimmed.startsWith("[") || trimmed.startsWith("{")) {
+      try {
+        const parsed: unknown = JSON.parse(trimmed);
+        if (parsed !== null && typeof parsed === "object") {
+          return formatJsonValue(parsed);
+        }
+      } catch {
+        return value;
+      }
+    }
+    return value;
+  }
+
+  if (value === null || typeof value !== "object") {
+    return String(value);
+  }
+
+  return formatJsonValue(value);
 }
 
 function getLogFilterMetadata(metadata: Record<string, unknown> | undefined): {
