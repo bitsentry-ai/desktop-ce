@@ -1,6 +1,6 @@
-import type { RefObject } from "react";
+import type { ReactNode, RefObject } from "react";
 
-import { Check, Trash2 } from "../../icons";
+import { Check, GripVertical, Trash2 } from "../../icons";
 import type {
   GlobalVariable,
   PluginDescriptor,
@@ -67,6 +67,105 @@ type RunbookExpandedActionCardProps = {
   t: TranslationFn;
 };
 
+export type RunbookExpandedActionCardShellProps = {
+  action: RunbookActionRecord;
+  index: number;
+  expandedCardRef: RefObject<HTMLDivElement | null>;
+  canSaveAction: boolean;
+  typeBadge: ReactNode;
+  children: ReactNode;
+  collapse: () => void;
+  onActionChange: (action: RunbookActionRecord) => void;
+  onDeleteAction: (actionId: string) => void;
+  onSaveAction: (actionId: string) => void;
+  t: (key: string) => string;
+};
+
+/**
+ * Shared expanded-card frame for runbook consumers outside the CE editor.
+ * The CE editor below remains the canonical full action renderer.
+ */
+export function RunbookExpandedActionCardShell({
+  action,
+  index,
+  expandedCardRef,
+  canSaveAction,
+  typeBadge,
+  children,
+  collapse,
+  onActionChange,
+  onDeleteAction,
+  onSaveAction,
+  t,
+}: RunbookExpandedActionCardShellProps) {
+  return (
+    <div
+      ref={expandedCardRef}
+      data-tour="runbooks-action-card"
+      onKeyDown={(event) => {
+        if (event.key === "Escape") {
+          collapse();
+        }
+      }}
+      className="mb-0 rounded-xl border border-primary/40 bg-card shadow-lg"
+    >
+      <div className="flex items-center gap-3 border-b border-border px-4 py-3">
+        <GripVertical
+          size={14}
+          className="shrink-0 cursor-grab text-muted-foreground/40 active:cursor-grabbing"
+        />
+        <span className="w-4 shrink-0 text-center text-[10px] font-mono text-muted-foreground/40 tabular-nums">
+          {index + 1}
+        </span>
+        <div className="flex-1">
+          <input
+            type="text"
+            value={action.title}
+            onChange={(event) => {
+              onActionChange({
+                ...action,
+                title: event.target.value,
+              });
+            }}
+            className="w-full bg-transparent text-sm font-medium outline-none placeholder:text-muted-foreground/50"
+            placeholder={t("runbooks.runbooks.untitledAction")}
+          />
+        </div>
+        {typeBadge}
+      </div>
+
+      <div className="space-y-4 p-4">{children}</div>
+
+      <div className="flex items-center justify-between border-t border-border px-4 py-3">
+        <button
+          onClick={() => {
+            onDeleteAction(action.id);
+          }}
+          className="flex items-center gap-1.5 rounded-lg border border-destructive/20 px-3 py-1.5 text-xs font-medium text-destructive hover:bg-destructive/10 transition-colors"
+        >
+          <Trash2 size={11} />
+          {t("runbooks.runbooks.deleteAction")}
+        </button>
+        <div className="flex items-center gap-3">
+          <span className="text-[10px] text-muted-foreground/40">
+            {t("runbooks.runbooks.escapeToClose")}
+          </span>
+          <button
+            onClick={() => {
+              onSaveAction(action.id);
+            }}
+            disabled={!canSaveAction}
+            className="flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-40 transition-colors"
+          >
+            <Check size={11} />
+            {t("common.actions.done")}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function RunbookExpandedActionCard({
   action,
   expandedCardRef,
@@ -131,7 +230,8 @@ export function RunbookExpandedActionCard({
           let actionTypeButtonClass =
             "border-border text-muted-foreground hover:bg-muted/50";
           if (action.type === type) {
-            actionTypeButtonClass = "border-primary bg-primary/5 text-foreground";
+            actionTypeButtonClass =
+              "border-primary bg-primary/5 text-foreground";
           }
 
           return (
