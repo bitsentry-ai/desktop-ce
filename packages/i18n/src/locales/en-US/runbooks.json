@@ -273,6 +273,7 @@
   "runbooks.runbooks.actionType.external_source": "External Source",
   "runbooks.runbooks.actionType.http": "HTTP",
   "runbooks.runbooks.actionType.llm": "AI",
+  "runbooks.runbooks.actionType.plugin": "Plugin",
   "runbooks.runbooks.actionType.shell": "Shell",
   "runbooks.runbooks.actionType.telemetry_existing_entry": "Existing Entry",
   "runbooks.runbooks.actionType.telemetry_ingest": "Ingest",
