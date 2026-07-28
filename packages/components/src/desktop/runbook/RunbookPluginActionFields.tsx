@@ -264,12 +264,39 @@ function updateStructuredFieldRecord(input: {
   }
 }
 
-function readStructuredFieldDescription(
+function localizeStructuredFieldLabel(
+  pluginId: string,
   field: PluginFieldDefinition,
-  rawJsonOnlyText: string,
+  t: RunbookPluginActionFieldsProps["t"],
 ): string {
+  if (pluginId.length === 0) {
+    return field.label;
+  }
+
+  return t(`common.dataSourceFields.${pluginId}.${field.key}.label`, {
+    defaultValue: field.label,
+  });
+}
+
+function readStructuredFieldDescription({
+  field,
+  pluginId,
+  rawJsonOnlyText,
+  t,
+}: {
+  field: PluginFieldDefinition;
+  pluginId: string;
+  rawJsonOnlyText: string;
+  t: RunbookPluginActionFieldsProps["t"];
+}): string {
   if (field.description !== undefined) {
-    return field.description;
+    if (pluginId.length === 0) {
+      return field.description;
+    }
+
+    return t(`common.dataSourceFields.${pluginId}.${field.key}.description`, {
+      defaultValue: field.description,
+    });
   }
 
   if (field.type === "json") {
@@ -277,7 +304,7 @@ function readStructuredFieldDescription(
   }
 
   if (field.type === "string_array") {
-    return "Separate multiple values with commas or new lines.";
+    return t("common.dataSourcesManager.separateMultipleValues");
   }
 
   return "";
@@ -436,6 +463,7 @@ type PluginStructuredFieldsEditorProps = {
   fields: PluginFieldDefinition[];
   jsonValue: string | undefined;
   label: string;
+  pluginId: string;
   helpText: string;
   invalidJsonText: string;
   rawJsonOnlyText: string;
@@ -447,6 +475,7 @@ function PluginStructuredFieldsEditor({
   fields,
   jsonValue,
   label,
+  pluginId,
   helpText,
   invalidJsonText,
   rawJsonOnlyText,
@@ -480,10 +509,12 @@ function PluginStructuredFieldsEditor({
           fieldValue = readStructuredFieldStringValue(parsed.value, field);
         }
         const inputId = `plugin-structured-${label}-${field.key}`;
-        const fieldDescription = readStructuredFieldDescription(
+        const fieldDescription = readStructuredFieldDescription({
           field,
+          pluginId,
           rawJsonOnlyText,
-        );
+          t,
+        });
 
         return (
           <div key={field.key} className="space-y-1.5">
@@ -491,7 +522,7 @@ function PluginStructuredFieldsEditor({
               htmlFor={inputId}
               className="block text-[10px] font-medium uppercase tracking-wide text-muted-foreground/60"
             >
-              {field.label}
+              {localizeStructuredFieldLabel(pluginId, field, t)}
               {field.required && " *"}
             </label>
 
@@ -743,6 +774,7 @@ export function RunbookPluginActionFields({
           fields={selectedPlugin?.auth.fields ?? []}
           jsonValue={action.pluginAuth}
           label={t("runbooks.runbook.pluginAuthFields")}
+          pluginId={selectedPlugin?.id ?? ""}
           helpText={t("runbooks.runbook.pluginStructuredFieldsHelp")}
           invalidJsonText={t(
             "runbooks.runbook.pluginStructuredFieldsInvalidJson",
@@ -812,6 +844,7 @@ export function RunbookPluginActionFields({
           fields={selectedAction?.fields ?? []}
           jsonValue={action.pluginInput}
           label={t("runbooks.runbook.pluginInputFields")}
+          pluginId={selectedPlugin?.id ?? ""}
           helpText={t("runbooks.runbook.pluginStructuredFieldsHelp")}
           invalidJsonText={t(
             "runbooks.runbook.pluginStructuredFieldsInvalidJson",

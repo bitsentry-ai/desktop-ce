@@ -282,9 +282,12 @@ function localizeSetupFieldOptionLabel(
   );
 }
 
-function editSetupFieldPlaceholder(field: PluginDataSourceSetupField): string {
+function editSetupFieldPlaceholder(
+  field: PluginDataSourceSetupField,
+  t: Translate,
+): string {
   if (field.control === "password") {
-    return "Leave blank to keep the current token.";
+    return t("common.dataSourcesManager.leaveBlankToKeepToken");
   }
 
   return field.placeholder ?? "";
@@ -1727,7 +1730,7 @@ function renderEditConnectionFields(input: {
     <>
       {setupFields.map((field) => {
         const value = values[field.key] ?? setupFieldDefaultValue(field);
-        const placeholder = editSetupFieldPlaceholder(field);
+        const placeholder = editSetupFieldPlaceholder(field, t);
         const description = localizeSetupFieldDescription(sourceType, field, t);
         let fieldControl = (
           <Input
