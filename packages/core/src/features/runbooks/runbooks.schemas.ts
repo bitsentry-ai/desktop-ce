@@ -280,6 +280,33 @@ export const runbookResolvedGlobalsSchema = z.object({
 });
 
 // Context export schema
+const runbookContextActionPayloadSchema = z.object({
+  command: z.string().optional(),
+  prompt: z.string().optional(),
+  llmProviderKey: runbookLlmProviderKeySchema.optional(),
+  llmModel: z.string().optional(),
+  url: z.string().optional(),
+  method: runbookHttpMethodSchema.optional(),
+  headers: z.array(runbookHttpHeaderSchema).optional(),
+  body: z.string().optional(),
+  pluginId: z.string().optional(),
+  pluginActionId: z.string().optional(),
+  pluginInput: z.string().optional(),
+  query: z.string().optional(),
+  sourceId: z.string().optional(),
+  parameters: z.array(runbookActionParameterSchema).optional(),
+  logFilter: logFilterConfigSchema.optional(),
+  telemetryConfig: telemetryActionConfigSchema.optional(),
+});
+
+const runbookContextActionSchema = z.object({
+  id: z.string(),
+  order: z.number(),
+  type: runbookActionTypeSchema,
+  title: z.string(),
+  payload: runbookContextActionPayloadSchema,
+});
+
 export const runbookContextSchema = z.object({
   format: z.literal("bitsentry.runbook.context"),
   version: z.literal(1),
@@ -299,29 +326,17 @@ export const runbookContextSchema = z.object({
   }),
   globalReferences: z.array(runbookGlobalReferenceSchema).optional(),
   executionContext: runbookTriggerContextSchema.optional(),
-  actions: z.array(
-    z.object({
-      id: z.string(),
-      order: z.number(),
-      type: runbookActionTypeSchema,
-      title: z.string(),
-      payload: z.object({
-        command: z.string().optional(),
-        prompt: z.string().optional(),
-        llmProviderKey: runbookLlmProviderKeySchema.optional(),
-        llmModel: z.string().optional(),
-        url: z.string().optional(),
-        method: runbookHttpMethodSchema.optional(),
-        headers: z.array(runbookHttpHeaderSchema).optional(),
-        body: z.string().optional(),
-        query: z.string().optional(),
-        sourceId: z.string().optional(),
-        parameters: z.array(runbookActionParameterSchema).optional(),
-        logFilter: logFilterConfigSchema.optional(),
-        telemetryConfig: telemetryActionConfigSchema.optional(),
-      }),
-    }),
-  ),
+  actions: z.array(runbookContextActionSchema),
+});
+
+const runbookWorkerContextActionSchema = runbookContextActionSchema.extend({
+  payload: runbookContextActionPayloadSchema.extend({
+    pluginAuth: z.string().optional(),
+  }),
+});
+
+export const runbookWorkerContextSchema = runbookContextSchema.extend({
+  actions: z.array(runbookWorkerContextActionSchema),
 });
 
 // Input/Output schemas for API operations
@@ -606,7 +621,7 @@ export const runbookWorkerExecutionContextResponseSchema = z.object({
   claimToken: z.string().trim().min(1),
   parameterValues: z.record(z.string(), z.string()).optional(),
   snapshot: executionDetailSchema,
-  context: runbookContextSchema,
+  context: runbookWorkerContextSchema,
   resolvedGlobals: runbookResolvedGlobalsSchema,
 });
 
@@ -617,6 +632,7 @@ export const runbookWorkerSnapshotUpdateRequestSchema = z.object({
 });
 
 export type RunbookContextV1 = z.infer<typeof runbookContextSchema>;
+export type RunbookWorkerContextV1 = z.infer<typeof runbookWorkerContextSchema>;
 export type RunbookGlobalReference = z.infer<
   typeof runbookGlobalReferenceSchema
 >;
