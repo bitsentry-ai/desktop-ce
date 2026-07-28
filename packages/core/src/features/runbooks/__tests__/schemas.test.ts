@@ -3,13 +3,13 @@ import {
   collectRunbookGlobalReferences,
   createImportedRunbookTitle,
   exportRunbooksInputSchema,
+  exportRunbookContextOutputSchema,
   exportedGlobalVariableV1Schema,
   findDuplicateRunbookActionId,
   importRunbooksInputSchema,
   logFilterConfigSchema,
   normalizeRunbookImportOptions,
   previewRunbookLogFilter,
-  runbookContextSchema,
   runbookActionParameterSchema,
   runbookExportArtifactV1Schema,
   runbookResolvedGlobalsSchema,
@@ -238,75 +238,86 @@ assert(
   "runbook export artifact schema should include secure metadata, log filters, and external source definitions",
 );
 
+const exportedContextResult = exportRunbookContextOutputSchema.safeParse({
+  format: "bitsentry.runbook.context",
+  version: 1,
+  runbook: {
+    id: "runbook-1",
+    title: "Context export",
+    description: "Checks global references",
+    revisionNumber: 3,
+    updatedAt: "2026-04-15T00:00:00.000Z",
+    actionCount: 2,
+  },
+  summary: {
+    purposeText: "Checks global references",
+    actionTypeCounts: {
+      shell: 1,
+      llm: 0,
+      http: 0,
+      plugin: 1,
+      external_source: 0,
+      telemetry_existing_entry: 0,
+      data_source_query: 0,
+      telemetry_ingest: 0,
+      diagnosis_diagnose: 0,
+      diagnosis_verify: 0,
+      diagnosis_recommend: 0,
+    },
+    orderedActionTitles: ["Echo env", "List GitHub issues"],
+  },
+  globalReferences: [
+    {
+      key: "environment",
+      description: "Deployment target",
+    },
+    {
+      key: "incident_api_token",
+      secure: true,
+    },
+    {
+      key: "github_token",
+      secure: true,
+    },
+  ],
+  actions: [
+    {
+      id: "action-1",
+      order: 1,
+      type: "shell",
+      title: "Echo env",
+      payload: {
+        command: "echo ${globals.environment}",
+      },
+    },
+    {
+      id: "action-2",
+      order: 2,
+      type: "plugin",
+      title: "List GitHub issues",
+      payload: {
+        pluginId: "github",
+        pluginActionId: "list_issues",
+        pluginInput:
+          "{\"owner\":\"bitsentry-ai\",\"repo\":\"monorepo\",\"limit\":5}",
+        pluginAuth: "{\"token\":\"${globals.github_token}\"}",
+      },
+    },
+  ],
+});
+
 assert(
-  runbookContextSchema.safeParse({
-    format: "bitsentry.runbook.context",
-    version: 1,
-    runbook: {
-      id: "runbook-1",
-      title: "Context export",
-      description: "Checks global references",
-      revisionNumber: 3,
-      updatedAt: "2026-04-15T00:00:00.000Z",
-      actionCount: 2,
-    },
-    summary: {
-      purposeText: "Checks global references",
-      actionTypeCounts: {
-        shell: 1,
-        llm: 0,
-        http: 0,
-        plugin: 1,
-        external_source: 0,
-        telemetry_existing_entry: 0,
-        data_source_query: 0,
-        telemetry_ingest: 0,
-        diagnosis_diagnose: 0,
-        diagnosis_verify: 0,
-        diagnosis_recommend: 0,
-      },
-      orderedActionTitles: ["Echo env", "List GitHub issues"],
-    },
-    globalReferences: [
-      {
-        key: "environment",
-        description: "Deployment target",
-      },
-      {
-        key: "incident_api_token",
-        secure: true,
-      },
-      {
-        key: "github_token",
-        secure: true,
-      },
-    ],
-    actions: [
-      {
-        id: "action-1",
-        order: 1,
-        type: "shell",
-        title: "Echo env",
-          payload: {
-            command: "echo ${globals.environment}",
-          },
-        },
-        {
-          id: "action-2",
-          order: 2,
-          type: "plugin",
-          title: "List GitHub issues",
-          payload: {
-            pluginId: "github",
-            pluginActionId: "list_issues",
-            pluginInput:
-              "{\"owner\":\"bitsentry-ai\",\"repo\":\"monorepo\",\"limit\":5}",
-            pluginAuth: "{\"token\":\"${globals.github_token}\"}",
-          },
-        },
-      ],
-  }).success,
-  "runbook context schema should accept metadata-only global references",
+  exportedContextResult.success,
+  "runbook context export schema should accept plugin metadata",
+);
+assert(
+  exportedContextResult.success &&
+    exportedContextResult.data !== null &&
+    !Object.prototype.hasOwnProperty.call(
+      exportedContextResult.data.actions[1].payload,
+      "pluginAuth",
+    ),
+  "runbook context export schema should drop plugin auth",
 );
 
 assert(
@@ -323,12 +334,22 @@ assert(
   "resolved globals schema should accept transient execution payloads",
 );
 
-assert(
+const workerContextResult =
   runbookWorkerExecutionContextResponseSchema.safeParse({
     executionId: "execution-1",
     userId: 1,
     runbookId: "runbook-1",
     runbookTitle: "Runbook",
+    claimToken: "claim-token",
+    snapshot: {
+      executionId: "execution-1",
+      runbookId: "runbook-1",
+      runbookTitle: "Runbook",
+      status: "queued",
+      startedAt: "2026-04-15T00:00:00.000Z",
+      source: "manual",
+      steps: [],
+    },
     context: {
       format: "bitsentry.runbook.context",
       version: 1,
@@ -392,8 +413,22 @@ assert(
         { key: "github_token", secure: true },
       ],
     },
-  }).success,
+  });
+
+assert(
+  workerContextResult.success,
   "worker execution context schema should require resolved globals",
+);
+assert(
+  workerContextResult.success &&
+    workerContextResult.data.context.actions[1].payload.pluginId === "github" &&
+    workerContextResult.data.context.actions[1].payload.pluginActionId ===
+      "list_issues" &&
+    workerContextResult.data.context.actions[1].payload.pluginInput !==
+      undefined &&
+    workerContextResult.data.context.actions[1].payload.pluginAuth !==
+      undefined,
+  "worker execution context schema should retain all plugin fields",
 );
 
 assert(
