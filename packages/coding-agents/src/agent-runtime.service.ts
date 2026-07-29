@@ -1983,6 +1983,7 @@ export class AgentRuntimeService {
 
       const directRunbookExecution = await this.runExplicitlyMentionedRunbook(session)
       if (directRunbookExecution !== null) {
+        hasExecutedToolCallInCurrentTurn = true
         lastToolResult = directRunbookExecution.result
         session.messages.push({
           role: 'system',
@@ -2119,7 +2120,7 @@ export class AgentRuntimeService {
             if (shouldEmitThinkingStart) {
               endThinking()
             }
-            emitFinal('')
+            emitFinal(this.buildVisibleRunbookFallbackResponse(fallbackResultsForThisLlmCall, ''))
             return
           }
           throw error
