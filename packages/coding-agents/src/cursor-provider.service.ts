@@ -666,15 +666,19 @@ async function setCursorModel(
     log.warn('[cursor-provider] Failed to set model via session/set_model:', err)
   }
 
-  await withTimeout(
-    client.sendRequest('session/set_config_option', {
-      sessionId,
-      configId: 'model',
-      value: model,
-    }),
-    CURSOR_SETUP_TIMEOUT_MS,
-    'Cursor ACP session/set_config_option',
-  )
+  try {
+    await withTimeout(
+      client.sendRequest('session/set_config_option', {
+        sessionId,
+        configId: 'model',
+        value: model,
+      }),
+      CURSOR_SETUP_TIMEOUT_MS,
+      'Cursor ACP session/set_config_option',
+    )
+  } catch (err) {
+    log.warn('[cursor-provider] Failed to set model via fallback config option:', err)
+  }
 }
 
 async function setCursorEffort(
