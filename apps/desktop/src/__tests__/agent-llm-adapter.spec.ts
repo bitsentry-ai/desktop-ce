@@ -154,6 +154,40 @@ describe('AgentLlmAdapterService', () => {
     ])
   })
 
+  it('parses valid host tool calls with attributes on the opening tag', async () => {
+    const adapter = createAdapter()
+    const output = [
+      'Listing runbooks...',
+      '<bitsentry_tool_call id="call-attribute">',
+      '{"name":"list_runbooks","id":"call-attribute","args":{}}',
+      '</bitsentry_tool_call>',
+    ].join('\n')
+
+    adapter.setLocalAiProvider(createLocalAiProvider({
+      execute: () => Promise.resolve({ output }),
+    }))
+
+    const response = await adapter.chatWithTools({
+      messages: [{ role: 'user', content: 'List runbooks' }],
+      tools: [{
+        name: 'list_runbooks',
+        description: 'List available runbooks.',
+        inputSchema: { type: 'object', properties: {} },
+      }],
+      signal: new AbortController().signal,
+      llm: { providerKey: 'codex', model: 'gpt-5.4' },
+      accessLevel: 'auto-accept-edits',
+    })
+
+    expect(response.toolCalls).toEqual([
+      {
+        id: 'call-attribute',
+        name: 'list_runbooks',
+        args: {},
+      },
+    ])
+  })
+
   it('formats local CLI tool-result transcript as internal context without host wrapper tags', async () => {
     const adapter = createAdapter()
 

@@ -514,9 +514,9 @@ function joinNonEmptyBlocks(...blocks: string[]): string {
 }
 
 const LOCAL_PROVIDER_TOOL_PROMISE_PATTERNS = [
-  /\b(?:i(?:['’]ll| will| am going to)|i have|i['’]ve)\s+(?:retrieve|fetch|list|check|show|run|execute|inspect|get|request|call|use)\b[\s\S]{0,120}\b(?:runbooks?|runbook|tool|results?|response|list_runbooks|execute_runbook|get_runbook_execution)\b/i,
-  /\b(?:i\s+)?(?:requested|called|invoked)\b[\s\S]{0,120}\b(?:runbooks?|runbook|tool|results?|response)\b/i,
-  /\bwaiting for\b[\s\S]{0,80}\b(?:result|response|return)\b/i,
+  /\b(?:i(?:['’]ll| will| am going to)|i have|i['’]ve)\s+(?:retrieve|fetch|list|check|show|run|execute|inspect|get|request|call|use)\b[\s\S]{0,120}\b(?:runbooks?|list_runbooks|execute_runbook|get_runbook_execution)\b/i,
+  /\b(?:i\s+)?(?:requested|called|invoked)\b[\s\S]{0,120}\b(?:runbooks?|list_runbooks|execute_runbook|get_runbook_execution)\b/i,
+  /\bwaiting for\b[\s\S]{0,80}\b(?:runbook|tool|execution|list_runbooks|execute_runbook|get_runbook_execution)\b/i,
 ] as const
 
 const LOCAL_PROVIDER_TOOL_RETRY_PROMPT = [
@@ -2191,13 +2191,20 @@ export class AgentRuntimeService {
         // If no tool calls, we're done with this turn but keep session RUNNING for follow-ups
         if (toolCalls.length === 0) {
           if (isLocalCodingAgentProvider && !hasExecutedToolCallInCurrentTurn) {
-            if (localProviderToolCallRetryCount > 0) {
-              throw new Error(
-                'Local provider promised a host tool call but emitted no tool-call block after the protocol retry.',
-              )
-            }
-
             if (hasUnfulfilledHostToolPromise(responseContent)) {
+              if (localProviderToolCallRetryCount > 0) {
+                if (responseContent.length > 0 && !shouldEmitAssistantDeltas) {
+                  this.sendEvent(sessionId, {
+                    type: 'assistant_delta',
+                    timestamp: new Date().toISOString(),
+                    delta: responseContent,
+                  })
+                }
+                throw new Error(
+                  'Local provider promised a host tool call but emitted no tool-call block after the protocol retry.',
+                )
+              }
+
               localProviderToolCallRetryCount = 1
               session.messages.push({
                 role: 'system',

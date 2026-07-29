@@ -450,6 +450,34 @@ describe('AgentRuntimeService runbook outcomes', () => {
     )
   })
 
+  it('fails clearly after a local provider repeats a prose-only tool promise', async () => {
+    const sentEvents: AgentRuntimeEventPayload[] = []
+    const llmAdapter = {
+      chatWithTools: vi.fn().mockResolvedValue({
+        content: 'I will list the available runbooks.',
+        toolCalls: [],
+      }),
+    }
+    const service = createRuntime({ llmAdapter, sentEvents })
+
+    const sessionId = await service.start({
+      prompt: 'Find the available runbooks.',
+      incidentThreadId: 'incident-runbook-prose-failure',
+      llm: { providerKey: 'codex', model: 'gpt-5.4-mini' },
+    })
+
+    await waitForCondition(() => service.getStatus(sessionId).state === 'FAILED')
+
+    expect(llmAdapter.chatWithTools.mock.calls).toHaveLength(2)
+    expect(sentEvents.some((payload) => (
+      payload.event.type === 'error' &&
+      payload.event.message.includes('after the protocol retry')
+    ))).toBe(true)
+    expect(getLastAgentMessage(service.getSnapshot(sessionId)).iterations.at(-1)?.text).toContain(
+      'I will list the available runbooks.',
+    )
+  })
+
   it('executes an exactly named runbook from an incident prompt before asking the model to summarize it', async () => {
     const sentEvents: AgentRuntimeEventPayload[] = []
     const kanyeExecution = makeExecution({
