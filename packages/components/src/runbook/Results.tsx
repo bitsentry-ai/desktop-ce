@@ -27,6 +27,7 @@ import TopBar from "../layout/TopBar";
 import { MarkdownContent } from "../markdown";
 import { cn } from "../lib/utils";
 import { stripInternalHostBlocks } from "../lib/hostProtocol";
+import { formatJsonBlockForDisplay } from "../lib/jsonDisplay";
 import { StructuredOutputDisplay } from "./StructuredOutputDisplay";
 import { StreamDeltaInspector } from "../chat/StreamDeltaInspector";
 import type {
@@ -328,12 +329,7 @@ function RenderedOutput({
 }
 
 function formatJsonBlock(value: unknown): string {
-  if (value === null || value === undefined) return "";
-  try {
-    return JSON.stringify(value, null, 2);
-  } catch {
-    return "";
-  }
+  return formatJsonBlockForDisplay(value);
 }
 
 function executionParameterSummary(

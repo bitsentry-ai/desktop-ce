@@ -18,6 +18,7 @@ import {
 import { MarkdownContent } from "../markdown";
 import { cn } from "../lib/utils";
 import { stripInternalHostBlocks } from "../lib/hostProtocol";
+import { formatJsonBlockForDisplay } from "../lib/jsonDisplay";
 import type {
   RunbookActionType,
   RunbookExecutionRecord,
@@ -348,12 +349,7 @@ function OutputContent({
 }
 
 function formatJsonBlock(value: unknown): string {
-  if (value === null || value === undefined) return "";
-  try {
-    return JSON.stringify(value, null, 2);
-  } catch {
-    return "";
-  }
+  return formatJsonBlockForDisplay(value);
 }
 
 function normalizeStoredRunResult(value: unknown): StoredRunResult | null {
