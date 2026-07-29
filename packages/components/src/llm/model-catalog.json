@@ -2359,7 +2359,7 @@
       "supportsPlanMode": false,
       "models": [
         {
-          "id": "auto",
+          "id": "default",
           "displayName": "Auto",
           "supportsImageInput": false,
           "supportsAudioInput": false,

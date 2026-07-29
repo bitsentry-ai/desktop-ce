@@ -233,6 +233,7 @@ export async function executeCodex(
   let promptOnlyViolation: Error | undefined
   let tokenUsage: LocalAiExecutionResult['tokenUsage']
   let pendingAssistantMessageBreak = false
+  const streamedAgentMessageIds = new Set<string>()
   let resolveTokenUsageSeen: (() => void) | undefined
   const tokenUsageSeen = new Promise<void>((resolve) => {
     resolveTokenUsageSeen = resolve
@@ -330,6 +331,10 @@ export async function executeCodex(
       }
 
       case 'item/agentMessage/delta': {
+        const itemId = readStringField(params, 'itemId')
+        if (itemId !== undefined) {
+          streamedAgentMessageIds.add(itemId)
+        }
         const deltas = codexStreamDeltasFromNotification(notification.method, params)
         const textDelta = deltas.find(
           (delta): delta is LocalAiTextStreamDelta => delta.type === 'text',
@@ -359,17 +364,24 @@ export async function executeCodex(
       case 'item/completed': {
         const item = asRecord(params?.item)
         const finalText = getCompletedAgentMessageText(item)
-        if (finalText !== undefined && output.length === 0) {
-          output = appendAssistantText(finalText).slice(0, MAX_OUTPUT_LENGTH)
+        const itemId =
+          readStringField(item, 'id') ??
+          readStringField(params, 'itemId')
+        const streamed = itemId !== undefined && streamedAgentMessageIds.has(itemId)
+        const shouldAppendCompletedText =
+          finalText !== undefined &&
+          (itemId !== undefined ? !streamed : output.length === 0)
+        if (shouldAppendCompletedText && finalText !== undefined) {
+          const emittedText = appendAssistantText(finalText)
           debug?.recordAnomaly('codex.completed_without_stream_deltas', {
             provider: 'codex',
             accessLevel: effectiveAccessLevel,
             threadId: threadId ?? null,
             turnId: activeTurnId ?? null,
-            finalTextLength: output.length,
+            finalTextLength: emittedText.length,
           })
-          if (output.length > 0) {
-            options.onDelta?.({ type: 'text', text: output })
+          if (emittedText.length > 0) {
+            options.onDelta?.({ type: 'text', text: emittedText })
           }
         }
         break

@@ -480,6 +480,7 @@ type VisibleRunbookToolResult = {
   text: string
   executionId?: string
   dedupeText?: string
+  dedupeTokens?: string[]
 }
 
 type TurnTokenUsage = {
@@ -510,6 +511,22 @@ function joinNonEmptyBlocks(...blocks: string[]): string {
     .map((block) => block.trim())
     .filter((block) => block.length > 0)
     .join('\n\n')
+}
+
+const LOCAL_PROVIDER_TOOL_PROMISE_PATTERNS = [
+  /\b(?:i(?:['’]ll| will| am going to)|i have|i['’]ve)\s+(?:retrieve|fetch|list|check|show|run|execute|inspect|get|request|call|use)\b[\s\S]{0,120}\b(?:runbooks?|list_runbooks|execute_runbook|get_runbook_execution)\b/i,
+  /\b(?:i\s+)?(?:requested|called|invoked)\b[\s\S]{0,120}\b(?:runbooks?|list_runbooks|execute_runbook|get_runbook_execution)\b/i,
+  /\bwaiting for\b[\s\S]{0,80}\b(?:runbook|tool|execution|list_runbooks|execute_runbook|get_runbook_execution)\b/i,
+] as const
+
+const LOCAL_PROVIDER_TOOL_RETRY_PROMPT = [
+  'Your previous response promised or described a host tool call, but it emitted no <bitsentry_tool_call> block.',
+  'Do not finalize the response. Emit exactly one valid <bitsentry_tool_call> block for the required operation now, then stop.',
+  'If no tool is needed, explicitly say so instead of claiming that a tool was requested or executed.',
+].join(' ')
+
+function hasUnfulfilledHostToolPromise(content: string): boolean {
+  return LOCAL_PROVIDER_TOOL_PROMISE_PATTERNS.some((pattern) => pattern.test(content))
 }
 
 function mergeTurnTokenUsage(current: TurnTokenUsage | undefined, usage: TurnTokenUsage): TurnTokenUsage {
@@ -1941,6 +1958,8 @@ export class AgentRuntimeService {
       let lastToolResult: ToolResult | undefined
       let turnTokenUsage: TurnTokenUsage | undefined
       let postToolFallbackResults: CompletedToolResult[] | null = null
+      let localProviderToolCallRetryCount = 0
+      let hasExecutedToolCallInCurrentTurn = false
       const visibleRunbookExecutionIds = new Set<string>()
       const accumulateTurnTokenUsage = (usage: TurnTokenUsage): void => {
         turnTokenUsage = mergeTurnTokenUsage(turnTokenUsage, usage)
@@ -1964,6 +1983,7 @@ export class AgentRuntimeService {
 
       const directRunbookExecution = await this.runExplicitlyMentionedRunbook(session)
       if (directRunbookExecution !== null) {
+        hasExecutedToolCallInCurrentTurn = true
         lastToolResult = directRunbookExecution.result
         session.messages.push({
           role: 'system',
@@ -2100,7 +2120,7 @@ export class AgentRuntimeService {
             if (shouldEmitThinkingStart) {
               endThinking()
             }
-            emitFinal('')
+            emitFinal(this.buildVisibleRunbookFallbackResponse(fallbackResultsForThisLlmCall, ''))
             return
           }
           throw error
@@ -2171,9 +2191,36 @@ export class AgentRuntimeService {
 
         // If no tool calls, we're done with this turn but keep session RUNNING for follow-ups
         if (toolCalls.length === 0) {
+          if (isLocalCodingAgentProvider && !hasExecutedToolCallInCurrentTurn) {
+            if (hasUnfulfilledHostToolPromise(responseContent)) {
+              if (localProviderToolCallRetryCount > 0) {
+                if (responseContent.length > 0 && !shouldEmitAssistantDeltas) {
+                  this.sendEvent(sessionId, {
+                    type: 'assistant_delta',
+                    timestamp: new Date().toISOString(),
+                    delta: responseContent,
+                  })
+                }
+                throw new Error(
+                  'Local provider promised a host tool call but emitted no tool-call block after the protocol retry.',
+                )
+              }
+
+              localProviderToolCallRetryCount = 1
+              session.messages.push({
+                role: 'system',
+                content: LOCAL_PROVIDER_TOOL_RETRY_PROMPT,
+              })
+              continue
+            }
+          }
+
           emitFinal(responseContent)
           return
         }
+
+        localProviderToolCallRetryCount = 0
+        hasExecutedToolCallInCurrentTurn = true
 
         const hasRunbookStartInBatch = toolCalls.some((toolCall) => toolCall.name === 'execute_runbook')
         let runbookStartCompletedInBatch = false
@@ -2240,7 +2287,10 @@ export class AgentRuntimeService {
               shouldEmitVisibleRunbookResult = !visibleRunbookExecutionIds.has(visibleRunbookResult.executionId)
             }
 
-            if (shouldEmitVisibleRunbookResult) {
+            // list_runbooks is already summarized by the assistant response. Keep the
+            // tool card/model context visible, but do not also stream the raw list into
+            // the same assistant iteration where the summary is rendered.
+            if (shouldEmitVisibleRunbookResult && toolCall.name !== 'list_runbooks') {
               if (visibleRunbookResult.executionId !== undefined) {
                 visibleRunbookExecutionIds.add(visibleRunbookResult.executionId)
               }
@@ -3121,7 +3171,7 @@ export class AgentRuntimeService {
   ): string {
     const visibleResults =
       executedToolResults
-        ?.filter((entry) => entry.toolCall.name === 'execute_runbook')
+        ?.filter((entry) => entry.toolCall.name === 'list_runbooks' || entry.toolCall.name === 'execute_runbook')
         ?.map((entry) => this.buildVisibleRunbookToolResult(entry))
         .filter((entry): entry is VisibleRunbookToolResult => entry !== null) ?? []
     if (visibleResults.length === 0) {
@@ -3129,6 +3179,7 @@ export class AgentRuntimeService {
     }
 
     const existingNormalized = existingContent.trim()
+    const existingLowercase = existingNormalized.toLocaleLowerCase()
     const blocks = visibleResults
       .map((entry) => entry.text.trim())
       .filter((text, index) => {
@@ -3137,7 +3188,19 @@ export class AgentRuntimeService {
         }
 
         const dedupeText = visibleResults[index]?.dedupeText
-        return dedupeText === undefined || dedupeText.length === 0 || !existingNormalized.includes(dedupeText)
+        if (dedupeText !== undefined && dedupeText.length > 0 && existingNormalized.includes(dedupeText)) {
+          return false
+        }
+
+        const dedupeTokens = visibleResults[index]?.dedupeTokens ?? []
+        if (
+          dedupeTokens.length > 0 &&
+          dedupeTokens.every((token) => existingLowercase.includes(token.toLocaleLowerCase()))
+        ) {
+          return false
+        }
+
+        return true
       })
     if (blocks.length === 0) {
       return ''
@@ -3147,11 +3210,55 @@ export class AgentRuntimeService {
   }
 
   private buildVisibleRunbookToolResult(entry: CompletedToolResult): VisibleRunbookToolResult | null {
+    if (entry.toolCall.name === 'list_runbooks') {
+      return this.buildVisibleRunbookListResult(entry.result)
+    }
+
     if (entry.toolCall.name !== 'execute_runbook' && entry.toolCall.name !== 'get_runbook_execution') {
       return null
     }
 
     return this.buildVisibleRunbookExecutionResult(entry.result, entry.toolCall.name)
+  }
+
+  private buildVisibleRunbookListResult(result: ToolResult): VisibleRunbookToolResult | null {
+    if (result.error !== undefined && result.error.length > 0) {
+      return null
+    }
+
+    if (result.output === undefined || result.output.length === 0) {
+      return null
+    }
+
+    const payload = this.safeParseObject(result.output)
+    if (payload === null) {
+      return null
+    }
+
+    const runbooks = readRecordArrayProperty(payload, 'runbooks')
+    if (runbooks.length === 0) {
+      return { text: 'No runnable runbooks are currently available.' }
+    }
+
+    const lines = ['Available runbooks:']
+    const dedupeTokens: string[] = []
+    for (const runbook of runbooks) {
+      const title = readFirstStringProperty([runbook], 'title', 'Untitled runbook')
+      dedupeTokens.push(title)
+      const actionCount = readNumberProperty(runbook, 'actionCount')
+      let actionSummary = ''
+      if (actionCount !== null) {
+        actionSummary = ` (${String(actionCount)} ${actionCount === 1 ? 'action' : 'actions'})`
+      }
+      lines.push(`- ${title}${actionSummary}`)
+
+      const description = readNonEmptyTrimmedStringProperty(runbook, 'description')
+      if (description !== null) {
+        lines.push(`  ${description}`)
+      }
+    }
+
+    return { text: lines.join('\n'), dedupeTokens }
   }
 
   private buildVisibleRunbookExecutionResult(
@@ -3303,6 +3410,7 @@ export class AgentRuntimeService {
       }
     }
     lines.push('Choose only from the exact runbook titles above. Do not invent runbook titles or IDs.')
+    lines.push('Summarize the available runbooks for the user in clean Markdown.')
 
     return lines.join('\n')
   }

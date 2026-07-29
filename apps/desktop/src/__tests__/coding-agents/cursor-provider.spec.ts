@@ -73,12 +73,14 @@ async function readLoggedMessages(logPath: string): Promise<LoggedCursorMessage[
 
 async function createMockCursorAgent(
   configOptions: unknown[] = DEFAULT_CURSOR_CONFIG_OPTIONS,
+  options: { rejectModelSelection?: boolean } = {},
 ): Promise<{ binaryPath: string; logPath: string; cwd: string }> {
   const cwd = await mkdtemp(path.join(os.tmpdir(), 'cursor-provider-'))
   tmpDirs.push(cwd)
 
   const logPath = path.join(cwd, 'messages.jsonl')
   const configOptionsJson = JSON.stringify(configOptions)
+  const rejectModelSelection = options.rejectModelSelection === true
   const script = `
 const fs = require('fs')
 const readline = require('readline')
@@ -119,6 +121,27 @@ rl.on('line', (line) => {
   }
 
   if (message.method === 'session/set_config_option') {
+    if (${JSON.stringify(rejectModelSelection)} && message.params?.configId === 'model') {
+      process.stdout.write(JSON.stringify({
+        jsonrpc: '2.0',
+        id: message.id,
+        error: { code: -32602, message: 'Invalid model value' },
+      }) + '\\n')
+      return
+    }
+    process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id: message.id, result: {} }) + '\\n')
+    return
+  }
+
+  if (message.method === 'session/set_model') {
+    if (${JSON.stringify(rejectModelSelection)}) {
+      process.stdout.write(JSON.stringify({
+        jsonrpc: '2.0',
+        id: message.id,
+        error: { code: -32602, message: 'Invalid model value' },
+      }) + '\\n')
+      return
+    }
     process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id: message.id, result: {} }) + '\\n')
     return
   }
@@ -382,6 +405,29 @@ describe('Cursor provider behavior', () => {
         value: 'high',
       },
     }))
+  })
+
+  it('continues with Cursor current model when explicit model selection fails', async () => {
+    const mock = await createMockCursorAgent(DEFAULT_CURSOR_CONFIG_OPTIONS, {
+      rejectModelSelection: true,
+    })
+
+    await expect(
+      executeCursor({
+        prompt: 'Summarize the incident',
+        binaryPath: mock.binaryPath,
+        abortController: new AbortController(),
+        cwd: mock.cwd,
+        model: 'auto',
+      }),
+    ).resolves.toMatchObject({ output: 'done' })
+
+    const messages = await readLoggedMessages(mock.logPath)
+    expect(messages.filter((message) => message.method === 'session/set_model')).toHaveLength(1)
+    expect(messages.filter((message) => {
+      if (message.method !== 'session/set_config_option') return false
+      return getMessageParams(message)?.configId === 'model'
+    })).toHaveLength(2)
   })
 
   it('skips Cursor effort-looking options that cannot accept the selected value', async () => {

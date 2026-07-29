@@ -661,7 +661,7 @@ function flattenMessageText(m: ChatMessage): string {
 }
 
 function parseToolCallsFromText(text: string): { content: string; toolCalls: ToolCall[] } {
-  const pattern = new RegExp(`<${TOOL_CALL_TAG}>\\s*([\\s\\S]*?)\\s*<\\/${TOOL_CALL_TAG}>`, 'g')
+  const pattern = new RegExp(`<${TOOL_CALL_TAG}(?:\\s[^>]*)?>\\s*([\\s\\S]*?)\\s*<\\/${TOOL_CALL_TAG}>`, 'g')
   const toolCalls: ToolCall[] = []
   let content = text
   let match: RegExpExecArray | null
@@ -682,7 +682,7 @@ function parseToolCallsFromText(text: string): { content: string; toolCalls: Too
         content = content.replace(match[0], '').trim()
       }
     } catch {
-      // malformed JSON — skip
+      log.warn('[agent-llm] Ignoring malformed host tool-call JSON')
     }
   }
 
