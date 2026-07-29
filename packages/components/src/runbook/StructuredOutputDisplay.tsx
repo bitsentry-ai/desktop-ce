@@ -1,48 +1,24 @@
 import { useTranslation } from "@bitsentry-ce/i18n";
 import type { ReactNode } from "react";
 
-const COMPACT_VALUE_MAX_LENGTH = 40;
+import { formatStructuredValue } from "../lib/jsonDisplay";
 
-function formatJsonValue(value: object): string {
-  let compact: string;
-  try {
-    compact = JSON.stringify(value);
-  } catch {
-    return String(value);
+// Past this many lines a value stops being a glanceable cell and starts pushing
+// the rest of the table off screen, so it scrolls within a fixed height instead.
+const SCROLLABLE_VALUE_LINE_THRESHOLD = 12;
+
+function StructuredValueCell({ value }: { value: unknown }) {
+  const formatted = formatStructuredValue(value);
+
+  if (formatted.split("\n").length <= SCROLLABLE_VALUE_LINE_THRESHOLD) {
+    return <span className="whitespace-pre-wrap">{formatted}</span>;
   }
 
-  if (compact.length <= COMPACT_VALUE_MAX_LENGTH) {
-    return compact;
-  }
-
-  try {
-    return JSON.stringify(value, null, 2);
-  } catch {
-    return compact;
-  }
-}
-
-function formatStructuredValue(value: unknown): string {
-  if (typeof value === "string") {
-    const trimmed = value.trim();
-    if (trimmed.startsWith("[") || trimmed.startsWith("{")) {
-      try {
-        const parsed: unknown = JSON.parse(trimmed);
-        if (parsed !== null && typeof parsed === "object") {
-          return formatJsonValue(parsed);
-        }
-      } catch {
-        return value;
-      }
-    }
-    return value;
-  }
-
-  if (value === null || typeof value !== "object") {
-    return String(value);
-  }
-
-  return formatJsonValue(value);
+  return (
+    <div className="max-h-64 overflow-y-auto whitespace-pre-wrap">
+      {formatted}
+    </div>
+  );
 }
 
 function getLogFilterMetadata(metadata: Record<string, unknown> | undefined): {
@@ -158,8 +134,8 @@ export function StructuredOutputDisplay({
                 <td className="w-40 break-words bg-muted/20 px-3 py-2 align-top font-mono text-[11px] text-muted-foreground">
                   {key}
                 </td>
-                <td className="whitespace-pre-wrap px-3 py-2 align-top font-mono text-[11px] text-foreground [overflow-wrap:anywhere]">
-                  {formatStructuredValue(value)}
+                <td className="px-3 py-2 align-top font-mono text-[11px] text-foreground [overflow-wrap:anywhere]">
+                  <StructuredValueCell value={value} />
                 </td>
               </tr>
             ))}
