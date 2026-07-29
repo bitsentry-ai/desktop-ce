@@ -332,6 +332,124 @@ describe('summarizeRunbookExecutionForToolOutput', () => {
 })
 
 describe('AgentRuntimeService runbook outcomes', () => {
+  it('makes list_runbooks results visible to local provider responses', async () => {
+    const runbookStore = {
+      list: vi.fn().mockResolvedValue([
+        makeRunbook('rb-sentry', 'Investigate Sentry', [
+          { id: 'step-1', type: 'external_source', title: 'Fetch Sentry issues' },
+          { id: 'step-2', type: 'llm', title: 'Summarize findings' },
+        ]),
+      ]),
+    }
+    const runbookExecutionService = {
+      start: vi.fn(),
+      waitForCompletion: vi.fn(),
+      get: vi.fn().mockResolvedValue(null),
+      getLatestForIncidentThread: vi.fn().mockResolvedValue(null),
+    }
+    const llmAdapter = {
+      chatWithTools: vi
+        .fn()
+        .mockResolvedValueOnce({
+          content: 'I will list the available runbooks.',
+          toolCalls: [
+            {
+              id: 'call-list-runbooks',
+              name: 'list_runbooks',
+              args: {},
+            },
+          ],
+        })
+        .mockResolvedValueOnce({
+          content: 'Available runbooks:\n\n- Investigate Sentry — 2 actions',
+          toolCalls: [],
+        }),
+    }
+    const service = createRuntime({ llmAdapter, runbookStore, runbookExecutionService })
+
+    const sessionId = await service.start({
+      prompt: 'What runbooks can I use?',
+      incidentThreadId: 'incident-runbook-list',
+      llm: { providerKey: 'codex', model: 'gpt-5.4-mini' },
+    })
+
+    await waitForCondition(() => service.getStatus(sessionId).state === 'COMPLETED')
+
+    const agentMessage = getLastAgentMessage(service.getSnapshot(sessionId))
+    expect(agentMessage.finalText).toContain('Available runbooks:')
+    expect(agentMessage.finalText).toContain('Investigate Sentry')
+    expect(agentMessage.finalText?.match(/Available runbooks/gi) ?? []).toHaveLength(1)
+    expect(agentMessage.finalText).not.toContain('Completed runbook output:')
+    expect(getAllAgentToolCalls(service, sessionId)).toEqual([
+      expect.objectContaining({ toolName: 'list_runbooks', state: 'done' }),
+    ])
+    expect(getRequiredToolContent(getSecondCallMessages(llmAdapter))).toContain(
+      'Internal runbook list:',
+    )
+    expect(getRequiredToolContent(getSecondCallMessages(llmAdapter))).toContain(
+      'Summarize the available runbooks for the user in clean Markdown.',
+    )
+  })
+
+  it('retries a local prose-only tool promise until a tool call is emitted', async () => {
+    const runbookStore = {
+      list: vi.fn().mockResolvedValue([
+        makeRunbook('rb-sentry', 'Investigate Sentry', [
+          { id: 'step-1', type: 'external_source', title: 'Fetch Sentry issues' },
+        ]),
+      ]),
+    }
+    const runbookExecutionService = {
+      start: vi.fn(),
+      waitForCompletion: vi.fn(),
+      get: vi.fn().mockResolvedValue(null),
+      getLatestForIncidentThread: vi.fn().mockResolvedValue(null),
+    }
+    const llmAdapter = {
+      chatWithTools: vi
+        .fn()
+        .mockResolvedValueOnce({
+          content: 'I’ll retrieve the available runbooks now.',
+          toolCalls: [],
+        })
+        .mockResolvedValueOnce({
+          content: '',
+          toolCalls: [
+            {
+              id: 'call-list-runbooks-after-retry',
+              name: 'list_runbooks',
+              args: {},
+            },
+          ],
+        })
+        .mockResolvedValueOnce({
+          content: 'I found the available runbooks.',
+          toolCalls: [],
+        }),
+    }
+    const service = createRuntime({ llmAdapter, runbookStore, runbookExecutionService })
+
+    const sessionId = await service.start({
+      prompt: 'Find the available runbooks.',
+      incidentThreadId: 'incident-runbook-retry',
+      llm: { providerKey: 'codex', model: 'gpt-5.4-mini' },
+    })
+
+    await waitForCondition(() => service.getStatus(sessionId).state === 'COMPLETED')
+
+    expect(llmAdapter.chatWithTools.mock.calls).toHaveLength(3)
+    expect(getRequiredSystemContent(
+      getSecondCallMessages(llmAdapter),
+      'Your previous response promised or described a host tool call',
+    )).toContain('Emit exactly one valid <bitsentry_tool_call> block')
+    expect(getAllAgentToolCalls(service, sessionId)).toEqual([
+      expect.objectContaining({ toolName: 'list_runbooks', state: 'done' }),
+    ])
+    expect(getLastAgentMessage(service.getSnapshot(sessionId)).finalText).toContain(
+      'Available runbooks:',
+    )
+  })
+
   it('executes an exactly named runbook from an incident prompt before asking the model to summarize it', async () => {
     const sentEvents: AgentRuntimeEventPayload[] = []
     const kanyeExecution = makeExecution({

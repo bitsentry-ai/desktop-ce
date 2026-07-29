@@ -47,14 +47,26 @@ export function shouldRenderIterationText(
   return !(msg.status === "done" && finalResponse.length > 0);
 }
 
-function getCopyableMarkdown(msg: AgentMessage): string {
-  const finalResponse = stripInternalHostBlocks(msg.finalText ?? "").trim();
-  if (finalResponse.length > 0) return finalResponse;
+export function getCopyableMarkdown(msg: AgentMessage): string {
+  const renderedIterations = msg.iterations
+    .map((iter, index, iterations) => {
+      const isLastIteration = index === iterations.length - 1;
+      if (!shouldRenderIterationText(msg, isLastIteration)) {
+        return "";
+      }
 
-  return msg.iterations
-    .map((iter) => stripInternalHostBlocks(iter.text).trim())
+      return stripInternalHostBlocks(
+        getVisibleIterationText(msg, iter, isLastIteration),
+      ).trim();
+    })
     .filter((text) => text.length > 0)
     .join("\n\n");
+
+  if (renderedIterations.length > 0) {
+    return renderedIterations;
+  }
+
+  return stripInternalHostBlocks(msg.finalText ?? "").trim();
 }
 
 function CopyMarkdownResponseButton({ content }: { content: string }) {

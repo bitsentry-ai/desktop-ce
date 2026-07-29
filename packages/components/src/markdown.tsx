@@ -134,7 +134,23 @@ function MarkdownCodeBlock({
   );
 }
 
-function getCodeText(children: ReactNode): string {
+function getNestedText(node: ReactNode): string {
+  if (typeof node === "string" || typeof node === "number") {
+    return String(node);
+  }
+
+  if (Array.isArray(node)) {
+    return node.map((child) => getNestedText(child)).join("");
+  }
+
+  if (isValidElement<{ children?: ReactNode }>(node)) {
+    return getNestedText(node.props.children);
+  }
+
+  return "";
+}
+
+export function getCodeText(children: ReactNode): string {
   const childArray = Children.toArray(children);
   let codeElement: ReactNode = children;
   if (childArray.length > 0) {
@@ -145,28 +161,7 @@ function getCodeText(children: ReactNode): string {
     return "";
   }
 
-  const codeChildren = codeElement.props.children;
-  if (codeChildren === undefined || codeChildren === null) {
-    return "";
-  }
-
-  if (typeof codeChildren === "string" || typeof codeChildren === "number") {
-    return String(codeChildren);
-  }
-
-  if (Array.isArray(codeChildren)) {
-    return codeChildren
-      .map((part) => {
-        if (typeof part === "string" || typeof part === "number") {
-          return String(part);
-        }
-
-        return "";
-      })
-      .join("");
-  }
-
-  return "";
+  return getNestedText(codeElement.props.children);
 }
 
 export const MarkdownContent = memo(function MarkdownContent({

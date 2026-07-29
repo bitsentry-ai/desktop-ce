@@ -88,6 +88,20 @@ export interface CreateDesktopMainWindowOptions {
   quitApp: () => void
 }
 
+const CLIPBOARD_SANITIZED_WRITE_PERMISSION = 'clipboard-sanitized-write'
+
+export function createDesktopPermissionRequestHandler(): (...args: unknown[]) => void {
+  return (...args: unknown[]): void => {
+    const callback = args[2]
+    if (typeof callback !== 'function') return
+
+    const permission = args[1]
+    ;(callback as (allowed: boolean) => void)(
+      permission === CLIPBOARD_SANITIZED_WRITE_PERMISSION,
+    )
+  }
+}
+
 export function formatDesktopStartupError(error: unknown): string {
   if (error instanceof Error) {
     return `${error.name}: ${error.message}`
@@ -187,12 +201,7 @@ export async function createDesktopMainWindow(
     mainWindowOptions,
   ) as DesktopShellWindowPort
 
-  options.setPermissionRequestHandler((...args: unknown[]) => {
-    const callback = args[2]
-    if (typeof callback === 'function') {
-      ;(callback as (allowed: boolean) => void)(false)
-    }
-  })
+  options.setPermissionRequestHandler(createDesktopPermissionRequestHandler())
 
   let attemptedRendererFileFallback = false
   const fallbackRendererToLocalBuild = () => {
