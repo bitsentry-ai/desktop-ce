@@ -484,6 +484,7 @@ describe('AgentRuntimeService runbook outcomes', () => {
         .mockResolvedValueOnce({
           content: 'I’ll retrieve the available runbooks now.',
           toolCalls: [],
+          toolProtocol: 'legacy_text',
         })
         .mockResolvedValueOnce({
           content: '',
@@ -494,10 +495,12 @@ describe('AgentRuntimeService runbook outcomes', () => {
               args: {},
             },
           ],
+          toolProtocol: 'legacy_text',
         })
         .mockResolvedValueOnce({
           content: 'I found the available runbooks.',
           toolCalls: [],
+          toolProtocol: 'legacy_text',
         }),
     }
     const service = createRuntime({ llmAdapter, runbookStore, runbookExecutionService })
@@ -529,6 +532,7 @@ describe('AgentRuntimeService runbook outcomes', () => {
       chatWithTools: vi.fn().mockResolvedValue({
         content: 'I will list the available runbooks.',
         toolCalls: [],
+        toolProtocol: 'legacy_text',
       }),
     }
     const service = createRuntime({ llmAdapter, sentEvents })
@@ -548,6 +552,30 @@ describe('AgentRuntimeService runbook outcomes', () => {
     ))).toBe(true)
     expect(getLastAgentMessage(service.getSnapshot(sessionId)).iterations.at(-1)?.text).toContain(
       'I will list the available runbooks.',
+    )
+  })
+
+  it('does not inject a legacy retry prompt for a structured CLI provider', async () => {
+    const llmAdapter = {
+      chatWithTools: vi.fn().mockResolvedValue({
+        content: 'I will list the available runbooks once the CLI host supplies the call.',
+        toolCalls: [],
+        toolProtocol: 'structured_cli',
+      }),
+    }
+    const service = createRuntime({ llmAdapter })
+
+    const sessionId = await service.start({
+      prompt: 'Find the available runbooks.',
+      incidentThreadId: 'incident-runbook-structured-cli',
+      llm: { providerKey: 'codex', model: 'gpt-5.4-mini' },
+    })
+
+    await waitForCondition(() => service.getStatus(sessionId).state === 'COMPLETED')
+
+    expect(llmAdapter.chatWithTools.mock.calls).toHaveLength(1)
+    expect(getLastAgentMessage(service.getSnapshot(sessionId)).finalText).toContain(
+      'once the CLI host supplies the call',
     )
   })
 

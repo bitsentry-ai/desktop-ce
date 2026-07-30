@@ -2159,7 +2159,11 @@ export class AgentRuntimeService {
 
         // If no tool calls, we're done with this turn but keep session RUNNING for follow-ups
         if (toolCalls.length === 0) {
-          if (isLocalCodingAgentProvider && !hasExecutedToolCallInCurrentTurn) {
+          if (
+            isLocalCodingAgentProvider &&
+            response.toolProtocol === 'legacy_text' &&
+            !hasExecutedToolCallInCurrentTurn
+          ) {
             if (hasUnfulfilledHostToolPromise(responseContent)) {
               if (localProviderToolCallRetryCount > 0) {
                 if (responseContent.length > 0 && !shouldEmitAssistantDeltas) {
