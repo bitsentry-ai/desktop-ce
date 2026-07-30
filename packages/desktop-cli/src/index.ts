@@ -1,6 +1,7 @@
 export * from './cli/runbooks-cli.js'
 export * from './packaging/after-pack.js'
 export * from './runtime/electron-app.js'
+export * from './runtime/local-runbook-execution-host.js'
 export * from './runtime/runtime-paths.js'
 export { default as cliLog } from './runtime/cli-log.js'
 export * from './testing/cli-smoke-test.js'

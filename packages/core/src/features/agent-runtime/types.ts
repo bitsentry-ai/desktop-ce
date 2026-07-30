@@ -10,6 +10,9 @@
  */
 export type AgentSessionState = 'IDLE' | 'RUNNING' | 'COMPLETED' | 'FAILED' | 'CANCELLED'
 
+/** The visible activity currently owning the incident-chat turn. */
+export type AgentActivityPhase = 'asking_model' | 'running_runbook' | 'waiting_for_summary'
+
 /**
  * Tool execution lifecycle state.
  */
@@ -24,6 +27,7 @@ export type AgentEventType =
   | 'thinking_start'   // AI started reasoning (before LLM call)
   | 'thinking_delta'   // Streaming thinking content
   | 'thinking_end'     // AI finished reasoning
+  | 'activity'         // Visible incident-chat activity changed
   | 'tool_start'       // Tool execution started
   | 'tool_update'      // Tool output update (streaming)
   | 'tool_end'         // Tool execution ended (success or failure)
@@ -80,6 +84,11 @@ export interface ThinkingDeltaEvent extends AgentEvent {
  */
 export interface ThinkingEndEvent extends AgentEvent {
   type: 'thinking_end'
+}
+
+export interface AgentActivityEvent extends AgentEvent {
+  type: 'activity'
+  phase: AgentActivityPhase | null
 }
 
 export interface AgentChatAttachment {
@@ -145,6 +154,7 @@ export type ChatMessage =
       toolCalls: ToolCallCard[]
       finalText: string | null
       status: 'thinking' | 'streaming' | 'done' | 'error' | 'cancelled'
+      activity?: AgentActivityPhase
       errorMsg?: string
       errorCode?: AgentErrorCode
     }
@@ -233,6 +243,7 @@ export type AgentEventData =
   | ThinkingStartEvent
   | ThinkingDeltaEvent
   | ThinkingEndEvent
+  | AgentActivityEvent
   | ToolStartEvent
   | ToolUpdateEvent
   | ToolEndEvent
@@ -251,6 +262,8 @@ export interface AgentStartInput {
   accessLevel?: 'supervised' | 'auto-accept-edits' | 'full-access'
   traitValues?: Record<string, string | boolean>
   runbookContext?: RunbookContext  // Optional: Active runbook for contextualized responses
+  runbookId?: string // Resolved by the desktop gateway before the agent starts
+  runbookRevisionNumber?: number
   incidentThreadId?: string
 }
 
@@ -265,6 +278,8 @@ export interface AgentSendInput {
   accessLevel?: 'supervised' | 'auto-accept-edits' | 'full-access'
   traitValues?: Record<string, string | boolean>
   runbookContext?: RunbookContext  // Optional: runbook for session recovery
+  runbookId?: string // Resolved by the desktop gateway before the agent continues
+  runbookRevisionNumber?: number
   incidentThreadId?: string
 }
 
@@ -317,7 +332,9 @@ export type RunbookActionType =
   | 'shell'
   | 'llm'
   | 'http'
+  | 'plugin'
   | 'external_source'
+  | 'telemetry_existing_entry'
   | 'data_source_query'
   | 'telemetry_ingest'
   | 'diagnosis_diagnose'
@@ -339,6 +356,10 @@ export interface RunbookAction {
   method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'
   query?: string
   body?: string
+  pluginId?: string
+  pluginActionId?: string
+  pluginInput?: string
+  sourceId?: string
   parameters?: Array<{
     id: string
     key: string

@@ -10,6 +10,11 @@ export type AgentSessionState =
   | "FAILED"
   | "CANCELLED";
 
+export type AgentActivityPhase =
+  | "asking_model"
+  | "running_runbook"
+  | "waiting_for_summary";
+
 export type DesktopIpcError = {
   code?: string;
   message?: string;
@@ -83,6 +88,7 @@ export type ChatMessage =
       toolCalls: ToolCallCard[];
       finalText: string | null;
       status: "thinking" | "streaming" | "done" | "error" | "cancelled";
+      activity?: AgentActivityPhase;
       errorMsg?: string;
       errorCode?: AgentErrorCode;
     };

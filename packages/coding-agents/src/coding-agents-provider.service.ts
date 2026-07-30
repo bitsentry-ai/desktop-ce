@@ -517,6 +517,14 @@ export class CodingAgentsProviderService {
     })
   }
 
+  /**
+   * Coding CLIs expose text subprocess boundaries, so the adapter uses the
+   * versioned structured JSON compatibility response defined by core.
+   */
+  getHostToolProtocol(_provider: LocalAiProviderKey): 'structured_cli' {
+    return 'structured_cli'
+  }
+
   async listModels(provider: LocalAiProviderKey): Promise<string[]> {
     if (provider === 'claude_code') {
       return [...CLAUDE_CODE_CATALOG_MODELS]

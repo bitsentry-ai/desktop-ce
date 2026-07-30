@@ -9,6 +9,7 @@ import {
 } from '@bitsentry-ce/desktop-cli/runtime/desktop-coding-agents'
 
 const tempDirs: string[] = []
+const toolCall = '{"version":1,"type":"tool_calls","toolCalls":[{"name":"list_runbooks","id":"call-list-runbooks","args":{}}]}'
 
 async function createMultiItemCodexAppServer(): Promise<{
   binaryPath: string
@@ -23,7 +24,7 @@ const readline = require('readline')
 
 const respond = (id, result) => process.stdout.write(JSON.stringify({ id, result }) + '\\n')
 const notify = (method, params) => process.stdout.write(JSON.stringify({ method, params }) + '\\n')
-const toolCall = '<bitsentry_tool_call>{"name":"list_runbooks","id":"call-list-runbooks","args":{}}</bitsentry_tool_call>'
+const toolCall = ${JSON.stringify(toolCall)}
 
 if (!process.argv.slice(2).includes('app-server')) process.exit(64)
 
@@ -69,7 +70,7 @@ afterEach(async () => {
 })
 
 describe('Codex provider behavior', () => {
-  it('keeps completed-only agent messages so runtime tool-call blocks survive', async () => {
+  it('keeps completed-only agent messages so structured host calls survive', async () => {
     const mock = await createMultiItemCodexAppServer()
     const result = await executeCodex({
       prompt: 'List available runbooks.',
@@ -80,9 +81,7 @@ describe('Codex provider behavior', () => {
     })
 
     expect(result.output).toContain('I will list runbooks.')
-    expect(result.output).toContain(
-      '<bitsentry_tool_call>{"name":"list_runbooks","id":"call-list-runbooks","args":{}}</bitsentry_tool_call>',
-    )
+    expect(result.output).toContain(toolCall)
   })
 
   it('keeps Codex assistant, reasoning, and command streams separate', () => {
