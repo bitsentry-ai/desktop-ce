@@ -1220,6 +1220,14 @@ export class AgentLlmAdapterService {
    * @returns Chat response with content and optional tool calls
    */
 
+  /**
+   * The provider used when a caller does not name one. Runbook actions read
+   * this so a provider-less action runs on the same provider as everything else.
+   */
+  async getDefaultProviderKey(): Promise<LlmProviderKey | null> {
+    return this.getProvider()
+  }
+
   async chatWithTools(input: ChatWithToolsInput): Promise<ChatResponse> {
     const providerKey = await this.getProvider(input.llm?.providerKey)
 

@@ -176,6 +176,8 @@ export interface RunbookExecutionLlmAdapter {
     accessLevel?: "supervised" | "auto-accept-edits" | "full-access";
     traitValues?: Record<string, string | boolean>;
   }): Promise<ChatResponse>;
+  // The provider an action falls back to when it does not name one itself.
+  getDefaultProviderKey?(): Promise<string | null | undefined>;
 }
 
 export interface RunbookExecutionLocalAiProvider {
@@ -351,6 +353,7 @@ interface RunbookExecutionSession {
   shuttingDown?: boolean;
   heartbeatTimer?: ReturnType<typeof setInterval>;
   controlCompleted?: boolean;
+  emitQueue?: Promise<void>;
 }
 
 interface WaitForCompletionOptions {
@@ -1618,7 +1621,13 @@ export class RunbookExecutionService {
     );
     await this.emitSnapshot(session);
 
-    if (this.shouldUseDedicatedLocalAiExecution(action)) {
+    // An action without its own provider inherits the configured default.
+    // Without this it falls through to the tool-calling remote path, which a
+    // local CLI provider cannot serve, and the step "succeeds" with no output.
+    const providerKey =
+      action.llmProviderKey ?? (await this.resolveDefaultProviderKey());
+
+    if (this.shouldUseDedicatedLocalAiExecution(providerKey)) {
       return this.executeLocalAiStep(
         session,
         runbook,
@@ -1626,10 +1635,11 @@ export class RunbookExecutionService {
         actionIndex,
         input.prompt,
         input.model,
+        providerKey,
       );
     }
 
-    this.assertRemoteProviderAvailable(action.llmProviderKey);
+    this.assertRemoteProviderAvailable(providerKey);
     return this.executeRemoteAiStep(
       session,
       runbook,
@@ -1679,10 +1689,31 @@ export class RunbookExecutionService {
     };
   }
 
+  private async resolveDefaultProviderKey(): Promise<
+    RunbookActionRecord["llmProviderKey"]
+  > {
+    const getDefaultProviderKey = this.llmAdapter.getDefaultProviderKey;
+    if (getDefaultProviderKey === undefined) {
+      return undefined;
+    }
+
+    try {
+      const providerKey = await getDefaultProviderKey.call(this.llmAdapter);
+      if (typeof providerKey !== "string" || providerKey.length === 0) {
+        return undefined;
+      }
+
+      return providerKey as RunbookActionRecord["llmProviderKey"];
+    } catch {
+      // A missing default is not fatal; the remote path still applies.
+      return undefined;
+    }
+  }
+
   private shouldUseDedicatedLocalAiExecution(
-    action: RunbookActionRecord,
+    providerKey: RunbookActionRecord["llmProviderKey"],
   ): boolean {
-    if (!isLocalLlmProviderKey(action.llmProviderKey)) {
+    if (!isLocalLlmProviderKey(providerKey)) {
       return false;
     }
 
@@ -1810,6 +1841,7 @@ export class RunbookExecutionService {
     actionIndex: number,
     prompt: string,
     model?: string,
+    resolvedProviderKey?: RunbookActionRecord["llmProviderKey"],
   ): Promise<ExecutedStepResult> {
     const localAiProvider = this.localAiProvider;
     if (localAiProvider === undefined) {
@@ -1820,7 +1852,9 @@ export class RunbookExecutionService {
       throw new Error(message);
     }
 
-    const providerKey = this.resolveLocalAiProviderKey(action.llmProviderKey);
+    const providerKey = this.resolveLocalAiProviderKey(
+      resolvedProviderKey ?? action.llmProviderKey,
+    );
     const accessLevel = resolveRunbookLocalAiAccessLevel(
       providerKey,
       session.accessLevel,
@@ -1889,12 +1923,48 @@ export class RunbookExecutionService {
       result,
     );
 
+    const finalOutput = this.finalizeLocalAiOutput(output, result, redactor);
+    this.assertLocalAiStepSucceeded(providerKey, result, finalOutput);
+
     return {
-      output: this.formatLlmOutput(
-        this.finalizeLocalAiOutput(output, result, redactor),
-      ),
+      output: this.formatLlmOutput(finalOutput),
       metadata: step.metadata,
     };
+  }
+
+  /**
+   * A CLI that fails, or answers with nothing, is not a successful LLM step.
+   * Reporting it as completed hides the provider's real error behind an empty
+   * result, so surface whatever the provider reported instead.
+   */
+  private assertLocalAiStepSucceeded(
+    providerKey: LocalAiProviderKey,
+    result: LocalAiExecutionResult,
+    output: string,
+  ): void {
+    const providerError = result.error?.trim() ?? "";
+    const exitCode = result.exitCode;
+    const failedExitCode = typeof exitCode === "number" && exitCode !== 0;
+    const hasOutput = output.trim().length > 0;
+
+    if (!failedExitCode && providerError.length === 0 && hasOutput) {
+      return;
+    }
+
+    const details: string[] = [];
+    if (providerError.length > 0) {
+      details.push(providerError);
+    }
+    if (failedExitCode) {
+      details.push(`exit code ${String(exitCode)}`);
+    }
+    if (!hasOutput) {
+      details.push("the provider returned no output");
+    }
+
+    throw new Error(
+      `Local AI provider "${providerKey}" did not produce a result: ${details.join("; ")}`,
+    );
   }
 
   private buildLocalAiPrompt(
