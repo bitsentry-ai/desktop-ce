@@ -177,6 +177,34 @@ describe('local runbook execution host', () => {
     expect(headlessRuntime.destroyed).toBe(true)
   })
 
+  it('retries an execution when the peer disappears before its request is sent', async () => {
+    const userDataPath = await createUserDataDirectory()
+    const desktopHost = new LocalRunbookExecutionHost({
+      userDataPath,
+      runtime: createRuntime('desktop'),
+    })
+    const headlessRuntime = createRuntime('headless')
+    await desktopHost.start()
+
+    const cliRuntime = await createLocalRunbookExecutionClient({
+      userDataPath,
+      createHeadlessRuntime: async () => headlessRuntime,
+    })
+
+    try {
+      await desktopHost.close()
+
+      await expect(cliRuntime.executeRunbook({ runbookId: 'rb-reacquired' })).resolves.toEqual({
+        executionId: 'headless-rb-reacquired-execution',
+        resultId: 'headless-rb-reacquired-result',
+      })
+    } finally {
+      await cliRuntime.destroy()
+    }
+
+    expect(headlessRuntime.destroyed).toBe(true)
+  })
+
   it('converges concurrent CLI clients on one headless execution owner', async () => {
     const userDataPath = await createUserDataDirectory()
     const headlessRuntime = createRuntime('shared-headless')

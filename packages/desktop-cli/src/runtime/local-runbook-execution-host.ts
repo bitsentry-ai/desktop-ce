@@ -41,6 +41,10 @@ type HostResponse = {
   error?: string
 }
 
+type HostConnectionError = Error & {
+  readonly requestWasSent?: boolean
+}
+
 type HostMetadata = {
   version: number
   endpoint: string
@@ -443,9 +447,17 @@ async function requestHost(
   return await new Promise<unknown>((resolve, reject) => {
     const socket = net.createConnection(metadata.endpoint)
     let buffer = ''
+    let requestWasSent = false
     const fail = (error: unknown): void => {
       socket.destroy()
-      reject(error)
+      if (error instanceof Error) {
+        Object.assign(error as HostConnectionError, { requestWasSent })
+        reject(error)
+        return
+      }
+      const wrappedError = new Error(String(error)) as HostConnectionError
+      Object.assign(wrappedError, { requestWasSent })
+      reject(wrappedError)
     }
     socket.setEncoding('utf-8')
     socket.setTimeout(CONNECTION_TIMEOUT_MS, () => fail(new Error('Timed out connecting to the local runbook host.')))
@@ -469,6 +481,7 @@ async function requestHost(
       }
     })
     socket.once('connect', () => {
+      requestWasSent = true
       socket.write(`${JSON.stringify({
         version: LOCAL_RUNBOOK_EXECUTION_HOST_VERSION,
         token: metadata.token,
@@ -489,6 +502,10 @@ function isUnavailableConnectionError(error: unknown): boolean {
       (error as NodeJS.ErrnoException).code === 'ECONNRESET'
     )
   )
+}
+
+function requestWasNotSent(error: unknown): boolean {
+  return error instanceof Error && (error as HostConnectionError).requestWasSent === false
 }
 
 class LocalRunbookExecutionHostClient implements RunbookCliRuntime {
@@ -573,16 +590,21 @@ class RetryingLocalRunbookExecutionClient implements RunbookCliRuntime {
 
   private async request<T>(
     operation: (client: RunbookCliRuntime) => Promise<T>,
-    retryOnUnavailable = false,
+    replayAfterSend = false,
   ): Promise<T> {
     const attemptedClient = this.client
     try {
       return await operation(attemptedClient)
     } catch (error) {
-      if (!retryOnUnavailable || !isUnavailableConnectionError(error) || this.destroyed) throw error
+      if (
+        !isUnavailableConnectionError(error) ||
+        this.destroyed ||
+        (!replayAfterSend && !requestWasNotSent(error))
+      ) throw error
 
-      // Do not retry writes: the peer may have received a mutating request just
-      // before the transport failed. Read-only operations are safe to replay.
+      // A request which never reached the socket is safe to retry. Requests
+      // which may have reached the host are retried only for read operations;
+      // replaying a write could run a production command twice.
       if (this.client === attemptedClient) {
         this.client = await this.acquireClient()
       }
