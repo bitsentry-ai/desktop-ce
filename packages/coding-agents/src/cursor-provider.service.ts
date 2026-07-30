@@ -1,6 +1,7 @@
 import os from 'os'
 import path from 'path'
 import { CursorAcpClient, type CursorJsonRpcId } from './cursor-acp-client.js'
+import type { HostMcpEndpoint } from './host-mcp-server.service.js'
 import type { LocalAiExecutionResult, LocalAiStreamDelta } from './types.js'
 import { codingAgentsLogger as log } from './logger.js'
 import {
@@ -22,6 +23,7 @@ export interface CursorExecutionOptions {
   model?: string
   accessLevel?: AccessLevel
   traitValues?: Record<string, string | boolean>
+  mcpEndpoint?: HostMcpEndpoint
   onDelta?: (delta: LocalAiStreamDelta) => void
   debug?: CodingAgentDebugRecorder
 }
@@ -763,11 +765,25 @@ function registerCursorServerRequestHandler(
   })
 }
 
-async function createCursorSession(client: CursorAcpClient, cwd: string): Promise<unknown> {
+function toCursorMcpServers(endpoint: HostMcpEndpoint | undefined): unknown[] {
+  if (endpoint === undefined) return []
+  return [{
+    name: 'bitsentry',
+    command: endpoint.command,
+    args: endpoint.args,
+    env: endpoint.env,
+  }]
+}
+
+async function createCursorSession(
+  client: CursorAcpClient,
+  cwd: string,
+  mcpEndpoint?: HostMcpEndpoint,
+): Promise<unknown> {
   return withTimeout(
     client.sendRequest('session/new', {
       cwd,
-      mcpServers: [],
+      mcpServers: toCursorMcpServers(mcpEndpoint),
     }),
     CURSOR_SETUP_TIMEOUT_MS,
     'Cursor ACP session/new',
@@ -835,7 +851,7 @@ async function runCursorSession(
   await client.start()
   await initializeCursorClient(client)
 
-  const sessionResult = await createCursorSession(client, cwd)
+    const sessionResult = await createCursorSession(client, cwd, options.mcpEndpoint)
   state.sessionId = requireCursorSessionId(sessionResult)
 
   await setCursorModel(client, sessionResult, state.sessionId, options.model)

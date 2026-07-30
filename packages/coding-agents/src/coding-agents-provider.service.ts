@@ -16,6 +16,7 @@ import type { OpenCodeExecutionOptions } from './opencode-provider.service.js'
 import { executeCursor } from './cursor-provider.service.js'
 import { createCodingAgentsProcessEnv } from './coding-agents-process-env.js'
 import { createCommandInvocation, resolveOpenCodeWindowsBinary } from './cli-binary-resolution.js'
+import { HostMcpServerService, type HostMcpEndpoint } from './host-mcp-server.service.js'
 import type { HostToolContext } from '@bitsentry-ce/core/features/agent-runtime'
 
 const SETTINGS_KEY = 'local_ai_settings'
@@ -176,6 +177,7 @@ function wait(ms: number): Promise<void> {
 export class CodingAgentsProviderService {
   private settings: LocalAiSettings = createDefaultLocalAiSettings()
   private probeCache = new Map<LocalAiProviderKey, CLIProbeResult>()
+  private readonly hostMcpServer = new HostMcpServerService()
   private openCodeModelsInFlight:
     | { key: string; promise: Promise<string[]> }
     | undefined
@@ -463,7 +465,11 @@ export class CodingAgentsProviderService {
     if (!settings.enabled) {
       throw new Error(`Local AI provider "${provider}" is disabled. Enable it in Settings.`)
     }
-    const { binaryPath } = await this.prepareProviderForExecution(provider)
+    const useMcp = this.getHostToolProtocol(provider) === 'mcp'
+    const { binaryPath, probe } = await this.prepareProviderForExecution(provider)
+    const mcpEndpoint = useMcp
+      ? await this.createHostMcpEndpoint(provider, probe, accessLevel, hostToolContext)
+      : undefined
 
     if (provider === 'claude_code') {
       return executeClaudeCode({
@@ -491,6 +497,7 @@ export class CodingAgentsProviderService {
         accessLevel,
         traitValues,
         opencodeArgs: this.settings.opencode.opencodeArgs,
+        mcpEndpoint,
         onDelta,
       })
     }
@@ -504,6 +511,7 @@ export class CodingAgentsProviderService {
         model,
         accessLevel,
         traitValues,
+        mcpEndpoint,
         onDelta,
         debug: this.dependencies.debugRecorder,
       })
@@ -518,12 +526,26 @@ export class CodingAgentsProviderService {
       accessLevel,
       traitValues,
       codexArgs: this.settings.codex.codexArgs,
+      mcpEndpoint,
       onDelta,
     })
   }
 
   getHostToolProtocol(provider: LocalAiProviderKey): 'mcp' | 'structured_cli' {
-    return provider === 'claude_code' ? 'mcp' : 'structured_cli'
+    if (provider === 'claude_code') return 'mcp'
+    const probe = this.probeCache.get(provider)
+    return probe?.status === 'ready' && probe.version !== null ? 'mcp' : 'structured_cli'
+  }
+
+  private async createHostMcpEndpoint(
+    provider: LocalAiProviderKey,
+    probe: CLIProbeResult,
+    accessLevel: 'supervised' | 'auto-accept-edits' | 'full-access' | undefined,
+    context: HostToolContext | undefined,
+  ): Promise<HostMcpEndpoint | undefined> {
+    if (provider === 'claude_code' || accessLevel === 'supervised' || context === undefined) return undefined
+    if (probe.status !== 'ready' || probe.version === null) return undefined
+    return await this.hostMcpServer.createSession(context)
   }
 
   async listModels(provider: LocalAiProviderKey): Promise<string[]> {

@@ -1,6 +1,7 @@
 import os from 'os'
 import log from 'electron-log'
 import { CodexAppServerClient, type JsonRpcId } from './codex-app-server-client.js'
+import type { HostMcpEndpoint } from './host-mcp-server.service.js'
 import type { LocalAiStreamDelta, LocalAiExecutionResult } from './types.js'
 import {
   getCodexPolicies,
@@ -26,6 +27,7 @@ export interface CodexExecutionOptions {
   accessLevel?: AccessLevel
   traitValues?: Record<string, string | boolean>
   codexArgs?: string[]
+  mcpEndpoint?: HostMcpEndpoint
   onDelta?: (delta: LocalAiStreamDelta) => void
   debug?: CodexDebugRecorder
 }
@@ -476,7 +478,7 @@ export async function executeCodex(
       // Codex interprets result.permissions as the granted SUBSET of the requested
       // permissions. Echoing back arbitrary requested fileSystem roots would let
       // a model widen itself beyond the active sandboxPolicy (e.g. to ~/.ssh).
-      // BitSentry uses Codex as a chat/runbook assistant, not a code editor — the
+      // BitSentry uses Codex as a chat/runbook assistant, not a code editor, so the
       // chat path doesn't pass cwd and doesn't need to edit arbitrary local files.
       // Therefore only full-access grants permission expansions; supervised and
       // auto-accept-edits stay within their sandboxPolicy boundary.
@@ -515,7 +517,21 @@ export async function executeCodex(
 
     await client.start()
 
-    const threadResult = asRecord(await client.sendRequest('thread/start', { cwd }))
+    const threadConfig = options.mcpEndpoint === undefined
+      ? undefined
+      : {
+          mcp_servers: {
+            bitsentry: {
+              command: options.mcpEndpoint.command,
+              args: options.mcpEndpoint.args,
+              env: options.mcpEndpoint.env,
+            },
+          },
+        }
+    const threadResult = asRecord(await client.sendRequest('thread/start', {
+      cwd,
+      ...(threadConfig === undefined ? {} : { config: threadConfig }),
+    }))
     const thread = asRecord(threadResult?.thread)
     threadId =
       readStringField(thread, 'id') ??

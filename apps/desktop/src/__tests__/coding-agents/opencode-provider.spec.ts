@@ -1,4 +1,5 @@
 import { EventEmitter } from 'events'
+import { readFile } from 'fs/promises'
 import { PassThrough } from 'stream'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
@@ -129,6 +130,48 @@ describe('executeOpenCode', () => {
       external_directory: 'deny',
       question: 'allow',
     })
+  })
+
+  it('writes a scoped MCP config for the OpenCode subprocess', async () => {
+    const child = new MockChildProcess()
+    mocks.spawn.mockReturnValue(child)
+    const { executeOpenCode } = await import(
+      '@bitsentry-ce/desktop-cli/runtime/desktop-coding-agents'
+    )
+
+    const resultPromise = executeOpenCode({
+      prompt: 'List runbooks',
+      binaryPath: 'opencode',
+      abortController: new AbortController(),
+      mcpEndpoint: {
+        url: 'http://127.0.0.1:40123/mcp',
+        token: 'token',
+        expiresAt: Date.now() + 60_000,
+        command: process.execPath,
+        args: ['/tmp/host-mcp-shim.cjs'],
+        env: { BITSENTRY_MCP_URL: 'http://127.0.0.1:40123/mcp', BITSENTRY_MCP_TOKEN: 'token' },
+      },
+    })
+
+    await delay(50)
+    const [, , spawnOptions] = mocks.spawn.mock.calls[0] as [
+      string,
+      string[],
+      { env: Record<string, string | undefined> },
+    ]
+    const configPath = spawnOptions.env.OPENCODE_CONFIG
+    expect(configPath).toBeDefined()
+    expect(JSON.parse(await readFile(configPath!, 'utf8'))).toMatchObject({
+      mcp: {
+        bitsentry: {
+          type: 'local',
+          command: [process.execPath, '/tmp/host-mcp-shim.cjs'],
+        },
+      },
+    })
+
+    finishOpenCodeProcess(child)
+    await expect(resultPromise).resolves.toMatchObject({ exitCode: 0 })
   })
 
   it('appends only new text from cumulative OpenCode part updates', async () => {
