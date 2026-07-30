@@ -263,6 +263,42 @@ describe('local runbook execution host', () => {
     }
   })
 
+  it('serializes concurrent execution starts without serializing execution lifetime', async () => {
+    const userDataPath = await createUserDataDirectory()
+    const headlessRuntime = createRuntime('shared-headless')
+    let activeStarts = 0
+    headlessRuntime.executeRunbook = async (input) => {
+      activeStarts += 1
+      if (activeStarts > 1) throw new Error('concurrent transaction start')
+      await new Promise((resolve) => setTimeout(resolve, 10))
+      activeStarts -= 1
+      const executionId = `shared-headless-${input.runbookId}-execution`
+      const resultId = `shared-headless-${input.runbookId}-result`
+      headlessRuntime.executions.set(executionId, { executionId, resultId, status: 'running' })
+      return { executionId, resultId }
+    }
+
+    const ownerClient = await createLocalRunbookExecutionClient({
+      userDataPath,
+      createHeadlessRuntime: async () => headlessRuntime,
+    })
+    const peerClients = await Promise.all([
+      createLocalRunbookExecutionClient({ userDataPath, createHeadlessRuntime: async () => createRuntime('unused') }),
+      createLocalRunbookExecutionClient({ userDataPath, createHeadlessRuntime: async () => createRuntime('unused') }),
+    ])
+
+    try {
+      await expect(Promise.all([
+        ownerClient.executeRunbook({ runbookId: 'one' }),
+        peerClients[0].executeRunbook({ runbookId: 'two' }),
+        peerClients[1].executeRunbook({ runbookId: 'three' }),
+      ])).resolves.toHaveLength(3)
+    } finally {
+      await ownerClient.destroy()
+      await Promise.all(peerClients.map(async (client) => await client.destroy()))
+    }
+  })
+
   it('keeps the headless host alive until executions accepted for other CLI clients finish', async () => {
     const userDataPath = await createUserDataDirectory()
     const headlessRuntime = createRuntime('shared-headless')

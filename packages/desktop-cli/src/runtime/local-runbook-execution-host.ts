@@ -284,6 +284,7 @@ export class LocalRunbookExecutionHost {
   private runtime: LocalRunbookExecutionHostRuntime | null
   private runtimePromise: Promise<LocalRunbookExecutionHostRuntime> | null = null
   private readonly activeExecutionWaits = new Set<Promise<void>>()
+  private executionStartQueue: Promise<void> = Promise.resolve()
 
   constructor(private readonly options: LocalRunbookExecutionHostOptions) {
     this.endpoint = endpointForUserDataPath(options.userDataPath)
@@ -403,9 +404,12 @@ export class LocalRunbookExecutionHost {
       case 'exportRunbooksToFile': return runtime.exportRunbooksToFile(String(args[0] ?? ''), args[1] as string[], Boolean(args[2]))
       case 'importRunbooksFromFile': return runtime.importRunbooksFromFile(String(args[0] ?? ''), args[1])
       case 'executeRunbook': {
-        const execution = await runtime.executeRunbook(
+        // SQLite-backed runtimes start an execution inside a transaction. The
+        // individual executions can run in parallel, but their transaction
+        // setup must not overlap when several CLI processes arrive together.
+        const execution = await this.queueExecutionStart(async () => await runtime.executeRunbook(
           args[0] as Parameters<RunbookCliRuntime['executeRunbook']>[0],
-        )
+        ))
         this.trackExecution(runtime, execution.executionId)
         return execution
       }
@@ -438,6 +442,20 @@ export class LocalRunbookExecutionHost {
       .then(() => {}, () => {})
       .finally(() => this.activeExecutionWaits.delete(completion))
     this.activeExecutionWaits.add(completion)
+  }
+
+  private async queueExecutionStart<T>(start: () => Promise<T>): Promise<T> {
+    const previous = this.executionStartQueue
+    let release: (() => void) | undefined
+    this.executionStartQueue = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    await previous
+    try {
+      return await start()
+    } finally {
+      release?.()
+    }
   }
 }
 
