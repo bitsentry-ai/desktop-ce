@@ -136,6 +136,8 @@ type ExecutionControlRow = DesktopRunbookResultRow & {
 }
 
 export class SqliteRunbookResultStore implements RunbookResultPersistence {
+  private transactionQueue: Promise<void> = Promise.resolve()
+
   constructor(private readonly db: DesktopRunbookResultDatabase) {}
 
   private async createExecutionControlRow(
@@ -177,31 +179,33 @@ export class SqliteRunbookResultStore implements RunbookResultPersistence {
   async createRunbookResultSession(
     input: CreateRunbookResultSessionInput,
   ): Promise<void> {
-    const now = new Date().toISOString()
-    await this.createExecutionControlRow(
-      input.executionId,
-      input.ownerId,
-      input.snapshot.startedAt,
-    )
-    await this.db.investigationSession.create({
-      data: {
-        id: input.resultId,
-        runbookId: input.runbook.id,
-        runbookVersionId: null,
-        runbookTitle: input.runbook.title,
-        runbookRequestKey: input.requestKey ?? null,
-        runbookRevisionNumber: input.context.runbook.revisionNumber,
-        runbookContextJson: JSON.stringify(input.context),
-        executionId: input.executionId,
-        incidentThreadId: input.incidentThreadId ?? null,
-        executionSnapshotJson: JSON.stringify(input.snapshot),
-        status: input.snapshot.status,
-        startedAt: input.snapshot.startedAt,
-        completedAt: input.snapshot.completedAt ?? null,
-        prompt: '',
-        createdAt: input.snapshot.startedAt,
-        updatedAt: now,
-      },
+    return this.inTransaction(async () => {
+      const now = new Date().toISOString()
+      await this.createExecutionControlRow(
+        input.executionId,
+        input.ownerId,
+        input.snapshot.startedAt,
+      )
+      await this.db.investigationSession.create({
+        data: {
+          id: input.resultId,
+          runbookId: input.runbook.id,
+          runbookVersionId: null,
+          runbookTitle: input.runbook.title,
+          runbookRequestKey: input.requestKey ?? null,
+          runbookRevisionNumber: input.context.runbook.revisionNumber,
+          runbookContextJson: JSON.stringify(input.context),
+          executionId: input.executionId,
+          incidentThreadId: input.incidentThreadId ?? null,
+          executionSnapshotJson: JSON.stringify(input.snapshot),
+          status: input.snapshot.status,
+          startedAt: input.snapshot.startedAt,
+          completedAt: input.snapshot.completedAt ?? null,
+          prompt: '',
+          createdAt: input.snapshot.startedAt,
+          updatedAt: now,
+        },
+      })
     })
   }
 
@@ -536,10 +540,25 @@ export class SqliteRunbookResultStore implements RunbookResultPersistence {
   }
 
   private async inTransaction<T>(operation: () => Promise<T>): Promise<T> {
-    if (this.db.$transaction === undefined) {
-      return operation()
+    // better-sqlite3 has one transaction per connection. Runbook executions
+    // intentionally continue in parallel, so their snapshot events can reach
+    // this store concurrently. Serialize just the transaction boundary rather
+    // than the executions themselves.
+    const previous = this.transactionQueue
+    let release: (() => void) | undefined
+    this.transactionQueue = new Promise<void>((resolve) => {
+      release = resolve
+    })
+
+    await previous
+    try {
+      if (this.db.$transaction === undefined) {
+        return await operation()
+      }
+      return await this.db.$transaction(operation)
+    } finally {
+      release?.()
     }
-    return this.db.$transaction(operation)
   }
 
   private async recordStaleRecoveryAudit(
