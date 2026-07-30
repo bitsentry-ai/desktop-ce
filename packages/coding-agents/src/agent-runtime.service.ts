@@ -2780,6 +2780,13 @@ export class AgentRuntimeService {
 
   private async executeDynamicToolCall(session: AgentSession, toolCall: ToolCall): Promise<ToolResult | null> {
     if (!this.hasRunbookTools()) return null
+    if (toolCall.name === 'execute_runbook') {
+      this.sendEvent(session.id, {
+        type: 'activity',
+        timestamp: new Date().toISOString(),
+        phase: 'running_runbook',
+      })
+    }
     return await executeHostTool(
       this.createHostToolContext(session),
       toolCall.name,

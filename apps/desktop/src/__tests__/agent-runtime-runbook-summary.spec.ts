@@ -1214,10 +1214,12 @@ describe('AgentRuntimeService runbook outcomes', () => {
           toolCalls: [],
         }),
     }
+    const sentEvents: AgentRuntimeEventPayload[] = []
     const service = createRuntime({
       llmAdapter,
       runbookStore,
       runbookExecutionService,
+      sentEvents,
     })
 
     const sessionId = await service.start({
@@ -1232,6 +1234,9 @@ describe('AgentRuntimeService runbook outcomes', () => {
     expect(toolContext).toContain('Status: running')
     expect(toolContext).not.toContain('SERVER-292')
     expect(toolContext).not.toContain('SERVER-293')
+    expect(sentEvents.some((payload) => (
+      payload.event.type === 'activity' && payload.event.phase === 'running_runbook'
+    ))).toBe(true)
   })
 
   it('gives the model the top ten PostHog issue titles from a large plugin result', async () => {
