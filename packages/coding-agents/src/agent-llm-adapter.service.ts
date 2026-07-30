@@ -19,7 +19,7 @@ import type {
   LocalAiExecutionResult,
   LocalAiProviderKey,
   LocalAiStreamDelta,
-} from './types'
+} from './types.js'
 import {
   agentToolCallSchema,
   structuredCliToolResponseSchema,

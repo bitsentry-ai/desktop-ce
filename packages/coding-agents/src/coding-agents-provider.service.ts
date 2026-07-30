@@ -6,16 +6,16 @@ import type {
   LocalAiStreamDelta,
   LocalAiExecutionResult,
   CLIProbeResult,
-} from './types'
-import { DEFAULT_LOCAL_AI_SETTINGS } from './types'
-import { probeClaudeCode, probeCodex, probeOpenCode, probeCursor, detectBinary, doctor, type DoctorResult } from './cli-probe.service'
-import { executeClaudeCode } from './claude-code-provider.service'
-import { CodexAppServerClient } from './codex-app-server-client'
-import { executeCodex } from './codex-provider.service'
-import type { OpenCodeExecutionOptions } from './opencode-provider.service'
-import { executeCursor } from './cursor-provider.service'
-import { createCodingAgentsProcessEnv } from './coding-agents-process-env'
-import { createCommandInvocation, resolveOpenCodeWindowsBinary } from './cli-binary-resolution'
+} from './types.js'
+import { DEFAULT_LOCAL_AI_SETTINGS } from './types.js'
+import { probeClaudeCode, probeCodex, probeOpenCode, probeCursor, detectBinary, doctor, type DoctorResult } from './cli-probe.service.js'
+import { executeClaudeCode } from './claude-code-provider.service.js'
+import { CodexAppServerClient } from './codex-app-server-client.js'
+import { executeCodex } from './codex-provider.service.js'
+import type { OpenCodeExecutionOptions } from './opencode-provider.service.js'
+import { executeCursor } from './cursor-provider.service.js'
+import { createCodingAgentsProcessEnv } from './coding-agents-process-env.js'
+import { createCommandInvocation, resolveOpenCodeWindowsBinary } from './cli-binary-resolution.js'
 
 const SETTINGS_KEY = 'local_ai_settings'
 const CLAUDE_CODE_CATALOG_MODELS = [

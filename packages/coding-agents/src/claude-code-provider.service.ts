@@ -1,14 +1,14 @@
 import { spawn } from 'child_process'
 import type { ChildProcess } from 'child_process'
-import { createClaudeCodeSubscriptionEnv } from './claude-code-env'
-import { codingAgentsLogger as log } from './logger'
-import type { LocalAiExecutionResult, LocalAiStreamDelta } from './types'
+import { createClaudeCodeSubscriptionEnv } from './claude-code-env.js'
+import { codingAgentsLogger as log } from './logger.js'
+import type { LocalAiExecutionResult, LocalAiStreamDelta } from './types.js'
 import {
   buildWindowsCmdCommandLine,
   getWindowsCmdExecutable,
   isWindowsCmdShim,
-} from './windows-cmd'
-import { linkSubprocessAbort } from './subprocess-lifecycle'
+} from './windows-cmd.js'
+import { linkSubprocessAbort } from './subprocess-lifecycle.js'
 
 export type ClaudeCodeAccessLevel = 'supervised' | 'auto-accept-edits' | 'full-access'
 

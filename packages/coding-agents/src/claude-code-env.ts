@@ -1,4 +1,4 @@
-import { createCodingAgentsProcessEnv } from './coding-agents-process-env'
+import { createCodingAgentsProcessEnv } from './coding-agents-process-env.js'
 
 const CLAUDE_CODE_SUBSCRIPTION_ENV_KEYS = [
   'ANTHROPIC_API_KEY',

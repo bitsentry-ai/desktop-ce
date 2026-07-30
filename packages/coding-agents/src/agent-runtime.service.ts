@@ -49,7 +49,7 @@ import type {
   AgentLlmAdapterService,
   ChatMessage,
   ToolCall,
-} from './agent-llm-adapter.service'
+} from './agent-llm-adapter.service.js'
 import type {
   RunbookExecutionRecord,
   RunbookExecutionStepRecord,

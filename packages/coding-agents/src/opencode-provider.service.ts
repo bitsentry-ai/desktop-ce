@@ -5,15 +5,15 @@ import readline from 'readline'
 import log from 'electron-log'
 import type { ChildProcess } from 'child_process'
 import type { Readable } from 'stream'
-import type { LocalAiExecutionResult, LocalAiStreamDelta } from './types'
-import { createCodingAgentsProcessEnv } from './coding-agents-process-env'
-import { createCommandInvocation, resolveOpenCodeWindowsBinary } from './cli-binary-resolution'
+import type { LocalAiExecutionResult, LocalAiStreamDelta } from './types.js'
+import { createCodingAgentsProcessEnv } from './coding-agents-process-env.js'
+import { createCommandInvocation, resolveOpenCodeWindowsBinary } from './cli-binary-resolution.js'
 import {
   normalizeAccessLevel,
   type AccessLevel,
   DEFAULT_ACCESS_LEVEL,
-} from './composer'
-import { terminateSubprocess } from './subprocess-lifecycle'
+} from './composer.js'
+import { terminateSubprocess } from './subprocess-lifecycle.js'
 
 export interface OpenCodeDebugRecorder {
   recordEvent(stage: string, data: Record<string, unknown>): void
