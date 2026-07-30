@@ -2605,10 +2605,19 @@ describe('AgentRuntimeService runbook outcomes', () => {
     service.cancel(sessionId)
   })
 
-  it('queues a follow-up for the existing incident session while it is active', async () => {
-    const pendingResponse = new Promise<never>(() => {})
+  it('delivers a follow-up queued while an incident turn is active', async () => {
+    let resolveFirstResponse: ((response: { content: string; toolCalls: [] }) => void) | undefined
+    const firstResponse = new Promise<{ content: string; toolCalls: [] }>((resolve) => {
+      resolveFirstResponse = resolve
+    })
     const llmAdapter = {
-      chatWithTools: vi.fn().mockReturnValue(pendingResponse),
+      chatWithTools: vi
+        .fn()
+        .mockReturnValueOnce(firstResponse)
+        .mockResolvedValueOnce({
+          content: 'The queued follow-up was delivered.',
+          toolCalls: [],
+        }),
     }
     const service = createRuntime({
       llmAdapter,
@@ -2627,7 +2636,23 @@ describe('AgentRuntimeService runbook outcomes', () => {
     ).resolves.toBe(sessionId)
 
     expect(service.getSnapshot(sessionId).messages).toHaveLength(2)
-    service.cancel(sessionId)
+    resolveFirstResponse?.({ content: 'The first incident response is ready.', toolCalls: [] })
+
+    await waitForCondition(() => {
+      const messages = service.getSnapshot(sessionId).messages
+      const lastMessage = messages.at(-1)
+      return (
+        lastMessage?.kind === 'agent' &&
+        lastMessage.finalText === 'The queued follow-up was delivered.'
+      )
+    })
+
+    expect(service.getSnapshot(sessionId).messages).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ kind: 'user', text: 'What was the result?' }),
+        expect.objectContaining({ kind: 'agent', finalText: 'The first incident response is ready.' }),
+      ]),
+    )
   })
 
   it('executes duplicate tool call ids only once per assistant response', async () => {
