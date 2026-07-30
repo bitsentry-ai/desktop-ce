@@ -1529,6 +1529,7 @@ async function runMigrations(): Promise<void> {
         "runbookTitle" TEXT NOT NULL,
         "runbookRevisionNumber" INTEGER,
         "runbookContextJson" TEXT,
+        "runbookRequestKey" TEXT,
         "executionId" TEXT,
         "incidentThreadId" TEXT,
         "executionSnapshotJson" TEXT,
@@ -1559,6 +1560,20 @@ async function runMigrations(): Promise<void> {
         if (!isDuplicateColumnError(error)) throw error
       }
     }
+    if (!investigationSessionColumns.has('runbookRequestKey')) {
+      try {
+        await getDb().$executeRawUnsafe(`
+          ALTER TABLE "InvestigationSession" ADD COLUMN "runbookRequestKey" TEXT
+        `)
+      } catch (error) {
+        log.warn('[database] Failed to add InvestigationSession.runbookRequestKey:', error)
+      }
+    }
+    await getDb().$executeRawUnsafe(`
+      CREATE UNIQUE INDEX IF NOT EXISTS "InvestigationSession_runbook_request_key"
+      ON "InvestigationSession"("runbookId", "runbookRequestKey")
+      WHERE "runbookRequestKey" IS NOT NULL
+    `)
     if (!investigationSessionColumns.has('executionId')) {
       try {
         await getDb().$executeRawUnsafe(`

@@ -20,6 +20,13 @@ import type {
   LocalAiProviderKey,
   LocalAiStreamDelta,
 } from './types'
+import {
+  agentToolCallSchema,
+  structuredCliToolResponseSchema,
+  type AgentToolCall,
+  type AgentToolProtocol,
+  type AgentToolResultEnvelope,
+} from '@bitsentry-ce/core/features/agent-runtime'
 import log from 'electron-log'
 
 export type LlmProviderKey = 'groq' | 'kilocode' | 'openai' | 'anthropic' | 'gemini' | 'openrouter' | 'claude_code' | 'codex' | 'opencode' | 'cursor'
@@ -81,6 +88,12 @@ const NOOP_LLM_CREDENTIALS_STORE: AgentLlmCredentialsStore = {
 export interface LocalAiProviderPort {
   isReady(provider: LocalAiProviderKey): boolean
   listModels(provider: LocalAiProviderKey): Promise<string[]>
+  /**
+   * An opt-in capability boundary. A CLI may return native structured calls in
+   * LocalAiExecutionResult.toolCalls; otherwise its complete JSON compatibility
+   * envelope is validated before the runtime sees a host operation.
+   */
+  getHostToolProtocol?(provider: LocalAiProviderKey): 'structured_cli'
   execute(
     provider: LocalAiProviderKey,
     prompt: string,
@@ -136,16 +149,13 @@ export interface ChatMessage {
   content: string | ChatContentPart[]
   toolCallId?: string
   toolCalls?: ToolCall[]
+  toolResult?: AgentToolResultEnvelope
 }
 
 /**
  * Tool call from LLM response.
  */
-export interface ToolCall {
-  id: string
-  name: string
-  args: Record<string, unknown>
-}
+export type ToolCall = AgentToolCall
 
 /**
  * Tool definition for LLM consumption.
@@ -187,6 +197,7 @@ export interface ChatWithToolsInput {
 export interface ChatResponse {
   content: string
   toolCalls?: ToolCall[]
+  toolProtocol: AgentToolProtocol
   hasForeignToolCallMarkup?: boolean
   tokenUsage?: {
     inputTokens: number
@@ -400,7 +411,6 @@ function toGeminiParts(content: string | ChatContentPart[]): Array<Record<string
   })
 }
 
-const TOOL_CALL_TAG = 'bitsentry_tool_call'
 const CLI_TRANSCRIPT_BLOCK_START_PREFIXES = [
   'Internal tool result for ',
   'Internal tool result:',
@@ -417,10 +427,6 @@ const CLI_TRANSCRIPT_STANDALONE_LINES = new Set([
   ...CLI_TRANSCRIPT_BLOCK_END_LINES,
 ])
 const HIDDEN_HOST_BLOCKS = [
-  {
-    openPrefix: '<bitsentry_tool_call',
-    closeTag: '</bitsentry_tool_call>',
-  },
   {
     openPrefix: '<bitsentry_tool_result',
     closeTag: '</bitsentry_tool_result>',
@@ -630,7 +636,7 @@ function formatAssistantToolCallTranscript(m: ChatMessage): string {
   return `[${m.role}]: ${body}${separator}${toolRequests}`.trim()
 }
 
-function buildToolsPrompt(tools: LlmToolDefinition[]): string {
+function buildStructuredCliToolsPrompt(tools: LlmToolDefinition[]): string {
   if (tools.length === 0) return ''
 
   const toolDocs = tools.map((tool) => {
@@ -642,15 +648,13 @@ function buildToolsPrompt(tools: LlmToolDefinition[]): string {
 You are running inside BitSentry SuperTerminal, an incident-response desktop application.
 You do NOT have these operations available as native tools. Instead, request them through the host.
 
-When you want to call an operation, you may write one brief planning sentence, then output the command block and stop:
+When you want to call an operation, respond with exactly one JSON document and nothing else:
 
-<${TOOL_CALL_TAG}>
-{"name": "<operation_name>", "id": "<any_unique_string>", "args": {<args per schema>}}
-</${TOOL_CALL_TAG}>
+{"version":1,"type":"tool_calls","toolCalls":[{"id":"<unique_string>","name":"<operation_name>","args":{<args per schema>}}]}
 
 The host will execute the operation and append the result as a later tool message in the conversation.
 Treat tool messages as INTERNAL context. Summarize the useful findings for the user.
-Do NOT echo raw JSON, transcript labels, or internal wrapper syntax unless the user explicitly asks for raw output.
+Do NOT wrap the JSON in Markdown or XML. Do not add prose before or after it.
 Never simulate or invent tool results. Never invent runbook titles, runbook IDs, execution IDs, logs, or server output.
 If you need real data, call the operation and wait for the returned tool result message.
 After receiving the result, you may call another operation or give your final answer.
@@ -679,36 +683,87 @@ function flattenMessageText(m: ChatMessage): string {
   return `[${m.role}]: `
 }
 
-function parseToolCallsFromText(text: string): { content: string; toolCalls: ToolCall[] } {
-  const pattern = new RegExp(`<${TOOL_CALL_TAG}(?:\\s[^>]*)?>\\s*([\\s\\S]*?)\\s*<\\/${TOOL_CALL_TAG}>`, 'g')
-  const toolCalls: ToolCall[] = []
-  let content = text
-  let match: RegExpExecArray | null
-
-  while ((match = pattern.exec(text)) !== null) {
-    try {
-      const parsed = JSON.parse(match[1]) as { name?: string; id?: string; args?: Record<string, unknown> }
-      if (typeof parsed.name === 'string') {
-        let id = `cli_${String(Date.now())}_${String(toolCalls.length)}`
-        if (typeof parsed.id === 'string' && parsed.id.length > 0) {
-          id = parsed.id
-        }
-        toolCalls.push({
-          id,
-          name: parsed.name,
-          args: parsed.args ?? {},
-        })
-        content = content.replace(match[0], '').trim()
-      }
-    } catch {
-      log.warn('[agent-llm] Ignoring malformed host tool-call JSON')
+function parseStructuredCliToolResponse(text: string): { content: string; toolCalls: ToolCall[] } {
+  try {
+    const parsed = structuredCliToolResponseSchema.safeParse(JSON.parse(text.trim()) as unknown)
+    if (parsed.success) {
+      return { content: parsed.data.content ?? '', toolCalls: parsed.data.toolCalls }
     }
+  } catch {
+    // Natural-language output is a final response, not a host call.
   }
-
-  return { content, toolCalls }
+  return { content: text, toolCalls: [] }
 }
 
-function createToolCallStreamSanitizer(): {
+function parseStructuredToolCalls(toolCalls: ToolCall[] | undefined): ToolCall[] {
+  if (toolCalls === undefined) return []
+
+  return toolCalls.flatMap((toolCall) => {
+    const parsed = agentToolCallSchema.safeParse(toolCall)
+    if (parsed.success) return [parsed.data]
+    log.warn('[agent-llm] Ignoring invalid structured CLI host tool call')
+    return []
+  })
+}
+
+function createNativeToolCall(value: unknown, providerLabel: string): ToolCall | null {
+  const parsed = agentToolCallSchema.safeParse(value)
+  if (parsed.success) return parsed.data
+  log.warn(`[agent-llm] Ignoring invalid ${providerLabel} native tool call`)
+  return null
+}
+
+function createStructuredCliResponseStreamSanitizer(): TextSanitizer {
+  let buffered = ''
+  let mode: 'undecided' | 'structured_response' | 'text' = 'undecided'
+  const hostMarkupSanitizer = createHiddenHostMarkupStreamSanitizer()
+  const structuredPrefix = '{"version":'
+
+  return {
+    push(chunk: string): string {
+      if (mode === 'structured_response') {
+        buffered += chunk
+        return ''
+      }
+
+      if (mode === 'text') {
+        return hostMarkupSanitizer.push(chunk)
+      }
+
+      buffered += chunk
+      const trimmed = buffered.trimStart()
+      if (structuredPrefix.startsWith(trimmed)) {
+        return ''
+      }
+
+      if (trimmed.startsWith(structuredPrefix)) {
+        mode = 'structured_response'
+        return ''
+      }
+
+      mode = 'text'
+      const visible = hostMarkupSanitizer.push(buffered)
+      buffered = ''
+      return visible
+    },
+    flush(): string {
+      if (mode === 'structured_response') {
+        const parsed = parseStructuredCliToolResponse(buffered)
+        if (parsed.toolCalls.length > 0) {
+          return ''
+        }
+        return hostMarkupSanitizer.push(buffered) + hostMarkupSanitizer.flush()
+      }
+
+      if (mode === 'undecided' && buffered.length > 0) {
+        hostMarkupSanitizer.push(buffered)
+      }
+      return hostMarkupSanitizer.flush()
+    },
+  }
+}
+
+function createHiddenHostMarkupStreamSanitizer(): {
   push(chunk: string): string
   flush(): string
 } {
@@ -1243,10 +1298,15 @@ export class AgentLlmAdapterService {
 
     const accessLevel = resolveAgentLocalAiAccessLevel(providerKey, input.accessLevel)
 
-    // CLI tool access uses prompt injection. In supervised mode, omit the tool
-    // prompt so model-emitted wrapper tags cannot bypass access-level checks.
+    // In supervised mode, omit the host-operation contract altogether so a CLI
+    // response cannot request an operation outside the selected access level.
     const isSupervised = accessLevel === 'supervised' || accessLevel === undefined
-    const streamSanitizer = createToolCallStreamSanitizer()
+    const toolProtocol = isSupervised
+      ? 'none'
+      : this.localAiProvider.getHostToolProtocol?.(providerKey) ?? 'structured_cli'
+    const streamSanitizer = toolProtocol === 'structured_cli'
+      ? createStructuredCliResponseStreamSanitizer()
+      : createHiddenHostMarkupStreamSanitizer()
     let cliTranscriptSanitizer: TextSanitizer | null = null
     if (providerKey === 'claude_code') {
       cliTranscriptSanitizer = createCliTranscriptBoilerplateSanitizer()
@@ -1266,20 +1326,23 @@ export class AgentLlmAdapterService {
 
       this.flushLocalAiStream(input.onDelta, streamSanitizer, cliTranscriptSanitizer)
       this.emitLocalAiTokenUsage(input.onDelta, result)
-      return this.toLocalAiChatResponse(providerKey, result, isSupervised)
+      return this.toLocalAiChatResponse(providerKey, result, toolProtocol)
     } finally {
       input.signal.removeEventListener('abort', onAbort)
     }
   }
 
-  private buildLocalAiPrompt(input: ChatWithToolsInput, isSupervised: boolean): string {
+  private buildLocalAiPrompt(
+    input: ChatWithToolsInput,
+    isSupervised: boolean,
+  ): string {
     // Each turn runs as a fresh CLI subprocess. The full BitSentry transcript is
     // replayed explicitly so CLI-native session state cannot leak across runs.
     const conversationText = input.messages.map(flattenMessageText).join('\n')
     if (isSupervised) {
       return conversationText
     }
-    return conversationText + buildToolsPrompt(input.tools ?? [])
+    return conversationText + buildStructuredCliToolsPrompt(input.tools ?? [])
   }
 
   private flushLocalAiStream(
@@ -1319,25 +1382,33 @@ export class AgentLlmAdapterService {
   private toLocalAiChatResponse(
     providerKey: LocalAiProviderKey,
     result: LocalAiExecutionResult,
-    isSupervised: boolean,
+    toolProtocol: AgentToolProtocol,
   ): ChatResponse {
     const foreignToolCallMarkup = hasForeignToolCallMarkup(result.output)
-    if (isSupervised) {
+    if (toolProtocol === 'none') {
       return {
         content: sanitizeLocalProviderOutput(providerKey, result.output),
         toolCalls: [],
+        toolProtocol,
         hasForeignToolCallMarkup: foreignToolCallMarkup,
         tokenUsage: result.tokenUsage,
       }
     }
 
-    const { content, toolCalls } = parseToolCallsFromText(result.output)
-    return {
-      content: sanitizeLocalProviderOutput(providerKey, content),
-      toolCalls,
-      hasForeignToolCallMarkup: foreignToolCallMarkup,
-      tokenUsage: result.tokenUsage,
+    if (toolProtocol === 'structured_cli') {
+      const structuredResponse = result.toolCalls === undefined
+        ? parseStructuredCliToolResponse(result.output)
+        : null
+      return {
+        content: sanitizeLocalProviderOutput(providerKey, structuredResponse?.content ?? result.output),
+        toolCalls: structuredResponse?.toolCalls ?? parseStructuredToolCalls(result.toolCalls),
+        toolProtocol,
+        hasForeignToolCallMarkup: foreignToolCallMarkup,
+        tokenUsage: result.tokenUsage,
+      }
     }
+
+    throw new Error(`Unsupported local tool protocol: ${toolProtocol}`)
   }
 
   /**
@@ -1481,17 +1552,18 @@ export class AgentLlmAdapterService {
             return null
           }
 
-          return {
+          return createNativeToolCall({
             id: toolCall.id ?? `openai_${String(Date.now())}_${String(index)}`,
             name: toolCall.name,
             args: parseJsonObject(toolCall.argumentsText, `OpenAI tool arguments for ${toolCall.name}`),
-          }
+          }, 'OpenAI')
         })
         .filter((toolCall): toolCall is ToolCall => toolCall != null)
 
       return {
         content,
         toolCalls,
+        toolProtocol: 'native_function_calling',
         tokenUsage,
       }
     }
@@ -1517,16 +1589,22 @@ export class AgentLlmAdapterService {
       throw new Error('LLM returned empty response')
     }
 
-    const toolCalls = message.tool_calls?.map(tc => ({
-      id: tc.id,
-      name: tc.function.name,
-      args: JSON.parse(tc.function.arguments) as Record<string, unknown>,
-    }))
+    const toolCalls = message.tool_calls
+      ?.map((toolCall) => createNativeToolCall({
+        id: toolCall.id,
+        name: toolCall.function.name,
+        args: parseJsonObject(
+          toolCall.function.arguments,
+          `OpenAI tool arguments for ${toolCall.function.name}`,
+        ),
+      }, 'OpenAI'))
+      .filter((toolCall): toolCall is ToolCall => toolCall !== null)
 
     const usage = data.usage
     return {
       content: message.content ?? '',
       toolCalls,
+      toolProtocol: 'native_function_calling',
       tokenUsage: toTokenUsage(usage?.prompt_tokens, usage?.completion_tokens),
     }
   }
@@ -1637,11 +1715,12 @@ export class AgentLlmAdapterService {
       }
 
       if (block.id !== undefined && block.name !== undefined) {
-        toolCalls.push({
+        const toolCall = createNativeToolCall({
           id: block.id,
           name: block.name,
           args: block.input ?? {},
-        })
+        }, 'Anthropic')
+        if (toolCall !== null) toolCalls.push(toolCall)
       }
     }
 
@@ -1649,6 +1728,7 @@ export class AgentLlmAdapterService {
     return {
       content,
       toolCalls,
+      toolProtocol: 'native_function_calling',
       tokenUsage: toTokenUsage(usage?.input_tokens, usage?.output_tokens),
     }
   }
@@ -1751,11 +1831,12 @@ export class AgentLlmAdapterService {
         content += part.text
       }
       if (part.functionCall !== undefined) {
-        toolCalls.push({
+        const toolCall = createNativeToolCall({
           id: `gemini_${String(Date.now())}_${String(toolCalls.length)}`,
           name: part.functionCall.name,
           args: part.functionCall.args,
-        })
+        }, 'Gemini')
+        if (toolCall !== null) toolCalls.push(toolCall)
       }
     }
 
@@ -1763,6 +1844,7 @@ export class AgentLlmAdapterService {
     return {
       content,
       toolCalls,
+      toolProtocol: 'native_function_calling',
       tokenUsage: toTokenUsage(meta?.promptTokenCount, meta?.candidatesTokenCount),
     }
   }

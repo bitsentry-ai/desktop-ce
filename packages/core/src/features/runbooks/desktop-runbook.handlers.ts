@@ -10,6 +10,7 @@ import {
   type RunbookExecutionRecord,
   type RunbookTriggerContext,
 } from "./desktop-runbook.types";
+import type { RunbookGateway } from './runbook.gateway'
 import { runbookExportArtifactV1Schema } from "./export.schemas";
 import type { z } from "zod";
 
@@ -91,6 +92,8 @@ export interface DesktopRunbookHandlersDatabase
 
 export interface DesktopRunbookHandlerDependencies {
   executionService: DesktopRunbookHandlerExecutionService;
+  /** Transitional fallback for runtimes that have not yet adopted the gateway. */
+  runbookGateway?: RunbookGateway;
   globalVariablesService: DesktopRunbookHandlerGlobalVariablesService;
   artifactIo: DesktopRunbookArtifactIo;
   fileSystem: DesktopRunbookHandlerFileSystem;
@@ -367,6 +370,7 @@ export function createDesktopRunbookHandlers(
 ) {
   const {
     executionService,
+    runbookGateway,
     globalVariablesService,
     artifactIo,
     fileSystem,
@@ -524,12 +528,25 @@ export function createDesktopRunbookHandlers(
       ) {
         incidentThreadId = triggerContext.incidentThreadId;
       }
-      const result = await executionService.start(runbookId, {
-        incidentThreadId,
-        parameterValues: asStringRecord(input.parameterValues),
-        triggerContext,
-        accessLevel: asAccessLevel(input.accessLevel),
-      });
+      const result = runbookGateway === undefined
+        ? await executionService.start(runbookId, {
+            incidentThreadId,
+            parameterValues: asStringRecord(input.parameterValues),
+            triggerContext,
+            accessLevel: asAccessLevel(input.accessLevel),
+          })
+        : await runbookGateway.start({
+            runbookId,
+            requestKey: asString(
+              input.requestKey,
+              `gui:${Date.now().toString(36)}:${Math.random().toString(36).slice(2)}`,
+            ),
+            incidentId: incidentThreadId,
+            parameterValues: asStringRecord(input.parameterValues),
+            source: "manual",
+            triggerContext,
+            accessLevel: asAccessLevel(input.accessLevel),
+          });
       await logRunbookAccess("runbook.access.execute", {
         runbookId,
         executionId: result.executionId,
@@ -539,7 +556,7 @@ export function createDesktopRunbookHandlers(
     },
     "runbooks:getExecution": async (payload: unknown) => {
       const executionId = asString(asObject(payload).executionId);
-      const execution = await executionService.get(executionId);
+      const execution = await (runbookGateway ?? executionService).get(executionId);
       if (execution !== null) {
         await logRunbookAccess("runbook.access.execution", {
           runbookId: execution.runbookId,
@@ -549,7 +566,7 @@ export function createDesktopRunbookHandlers(
       return execution;
     },
     "runbooks:cancelExecution": async (payload: unknown) => {
-      await executionService.cancel(asString(asObject(payload).executionId));
+      await (runbookGateway ?? executionService).cancel(asString(asObject(payload).executionId));
       return;
     },
   };

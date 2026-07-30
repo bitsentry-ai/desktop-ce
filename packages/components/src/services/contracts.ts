@@ -866,6 +866,7 @@ export interface RunbookImportResult {
   title: string;
   status: "imported" | "skipped" | "failed";
   runbookId?: string;
+  runbookRevisionNumber?: number;
   reason?: string;
   warnings?: string[];
 }
@@ -1133,6 +1134,7 @@ export interface AgentStartRequest {
   attachments?: AgentChatAttachment[];
   llm?: AgentLlmSelection;
   runbookId?: string;
+  runbookRevisionNumber?: number;
   incidentThreadId?: string;
   accessLevel?: AccessLevel;
   interactionMode?: InteractionMode;
@@ -1145,6 +1147,7 @@ export interface AgentSendRequest {
   attachments?: AgentChatAttachment[];
   llm?: AgentLlmSelection;
   runbookId?: string;
+  runbookRevisionNumber?: number;
   incidentThreadId?: string;
   accessLevel?: AccessLevel;
   interactionMode?: InteractionMode;

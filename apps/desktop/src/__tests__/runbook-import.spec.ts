@@ -536,6 +536,49 @@ describe("RunbookStore importRunbooks", () => {
 });
 
 describe("Runbook import handlers", () => {
+  it("starts GUI executions through the runbook gateway", async () => {
+    const db = createDb({
+      auditLog: { create: vi.fn(() => undefined) },
+    });
+    const executionService = {
+      start: vi.fn(),
+      get: vi.fn(),
+      cancel: vi.fn(),
+    };
+    const runbookGateway = {
+      start: vi.fn(async (request: { source: string; runbookId: string }) => {
+        if (request.source !== "manual" || request.runbookId !== "rb-gui") {
+          throw new Error("Unexpected GUI execution request");
+        }
+        return {
+          executionId: "10000000-0000-4000-8000-000000000001",
+          resultId: "result-gui",
+        };
+      }),
+      get: vi.fn(),
+      cancel: vi.fn(),
+    };
+    const handlers = createRunbookHandlers(
+      db as never,
+      {
+        executionService: executionService as never,
+        globalVariablesService: { list: vi.fn(() => []) } as never,
+      },
+      { edition: "ce", runbookGateway: runbookGateway as never },
+    );
+
+    await expect(
+      handlers["runbooks:execute"]({
+        runbookId: "rb-gui",
+        incidentThreadId: "incident-gui",
+        requestKey: "renderer-action-1",
+      }),
+    ).resolves.toMatchObject({
+      executionId: "10000000-0000-4000-8000-000000000001",
+      resultId: "result-gui",
+    });
+  });
+
   it("rejects Pro-only LLM providers in CE imports", async () => {
     const db = createDb();
     const executionService = {};

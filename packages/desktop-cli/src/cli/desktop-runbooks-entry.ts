@@ -2,14 +2,16 @@
 import log from 'electron-log'
 import {
   runRunbooksCli,
-  type RunbookCliRuntime,
-  type RunbookCliRuntimeOptions,
 } from './runbooks-cli.js'
+import { createLocalRunbookExecutionClient } from '../runtime/local-runbook-execution-host.js'
 import { DesktopRunbookRuntime } from '@bitsentry-desktop/runbook-runtime'
 
 log.transports.console.level = 'error'
 
-void runRunbooksCli((options) => DesktopRunbookRuntime.create(options)).catch((error: unknown) => {
+void runRunbooksCli((options) => createLocalRunbookExecutionClient({
+  userDataPath: options?.userDataPath,
+  createHeadlessRuntime: () => DesktopRunbookRuntime.create(options),
+})).catch((error: unknown) => {
   let message = String(error)
   if (error instanceof Error) {
     message = error.message

@@ -48,6 +48,7 @@ import { useTranslation } from "@bitsentry-ce/i18n";
 import { getProviderModelOptions } from "../chat/utils";
 import type {
   AccessLevel,
+  AgentActivityPhase,
   AgentSessionState,
   AgentThreadSnapshot,
   AgentThreadTokenUsage,
@@ -443,6 +444,17 @@ function normalizeAgentStatus(value: unknown): Extract<ChatMessage, { kind: "age
   return "done";
 }
 
+function normalizeAgentActivity(value: unknown): AgentActivityPhase | undefined {
+  if (
+    value === "asking_model" ||
+    value === "running_runbook" ||
+    value === "waiting_for_summary"
+  ) {
+    return value;
+  }
+  return undefined;
+}
+
 function normalizeIterationStatus(value: unknown): "thinking" | "streaming" | "done" | "error" {
   if (
     value === "thinking" ||
@@ -525,6 +537,7 @@ function migrateMessage(msg: unknown): ChatMessage {
       activeIterationId: null,
       finalText: getString(record, "finalText") ?? null,
       status: normalizeAgentStatus(record.status),
+      activity: normalizeAgentActivity(record.activity),
       errorMsg: getString(record, "errorMsg"),
     };
   }
@@ -536,6 +549,7 @@ function migrateMessage(msg: unknown): ChatMessage {
       activeIterationId: getString(record, "activeIterationId") ?? null,
       finalText: getString(record, "finalText") ?? null,
       status: normalizeAgentStatus(record.status),
+      activity: normalizeAgentActivity(record.activity),
       errorMsg: getString(record, "errorMsg"),
     };
   }
@@ -796,9 +810,12 @@ function relativeTime(iso: string): string {
 /**
  * Get the active runbook id for the incident agent.
  */
-function getRunbookId(): string | undefined {
+function getSelectedRunbookReference(): { id: string } | undefined {
   try {
-    return loadRunbooks().find((rb) => rb.actions.length > 0)?.id;
+    const runbook = loadRunbooks().find((item) => item.actions.length > 0);
+    return runbook === undefined
+      ? undefined
+      : { id: runbook.id };
   } catch {
     return undefined;
   }
@@ -2095,7 +2112,7 @@ export default function IncidentsPage() {
     );
 
     try {
-      const runbookId = getRunbookId();
+      const selectedRunbook = getSelectedRunbookReference();
       const llm: {
         providerKey: ModelCatalogProviderKey;
         model: string;
@@ -2115,7 +2132,7 @@ export default function IncidentsPage() {
           sessionId: activeSessionId ?? undefined,
           attachments: outgoingImages,
           llm,
-          runbookId,
+          runbookId: selectedRunbook?.id,
           incidentThreadId: activeId,
           accessLevel: options?.accessLevel ?? selectedAccessLevel,
           interactionMode: options?.interactionMode,
@@ -2126,7 +2143,7 @@ export default function IncidentsPage() {
           prompt: text,
           attachments: outgoingImages,
           llm,
-          runbookId,
+          runbookId: selectedRunbook?.id,
           incidentThreadId: activeId,
           accessLevel: options?.accessLevel ?? selectedAccessLevel,
           interactionMode: options?.interactionMode,
@@ -2191,7 +2208,7 @@ export default function IncidentsPage() {
         modelId: selectedModelId,
         accessLevel: options?.accessLevel ?? selectedAccessLevel,
         interactionMode: options?.interactionMode ?? null,
-        hasRunbookId: Boolean(getRunbookId()),
+        hasRunbookId: getSelectedRunbookReference() !== undefined,
         promptLength: text.length,
         attachmentCount: outgoingImages.length,
       });
