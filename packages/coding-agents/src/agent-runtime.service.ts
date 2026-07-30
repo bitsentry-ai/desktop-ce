@@ -2259,6 +2259,14 @@ export class AgentRuntimeService {
           })
         }
 
+        if (response.toolProtocol === 'mcp') {
+          if (toolCalls.length > 0) {
+            throw new Error('MCP providers must execute host tools through the MCP server, not return tool calls')
+          }
+          emitFinal(responseContent)
+          return
+        }
+
         // If no tool calls, we're done with this turn but keep session RUNNING for follow-ups
         if (toolCalls.length === 0) {
           if (

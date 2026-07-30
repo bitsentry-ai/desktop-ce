@@ -515,6 +515,7 @@ describe('AgentRuntimeService runbook outcomes', () => {
     expect(sentEvents.some((payload) => (
       payload.event.type === 'activity' && payload.event.phase === 'running_runbook'
     ))).toBe(true)
+    expect(llmAdapter.chatWithTools).toHaveBeenCalledTimes(1)
 
     await service.send({ sessionId, message: 'What is its status?' })
     await waitForCondition(() => service.getStatus(sessionId).state === 'COMPLETED')
