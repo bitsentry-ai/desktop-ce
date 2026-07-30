@@ -432,6 +432,7 @@ interface AgentSession {
   latestJournalTimeWindowParameters?: RunbookParameterValues
   currentTurnRunbookExecutionLookups?: Set<string>
   currentTurnStartedRunbookExecutionIds?: Set<string>
+  queuedFollowUps: AgentSendInput[]
   loopActive?: boolean
   snapshot: AgentThreadSnapshot
 }
@@ -1606,6 +1607,7 @@ export class AgentRuntimeService {
       abortController: new AbortController(),
       timeoutHandle: null,
       currentToolCallId: null,
+      queuedFollowUps: [],
       windowGetter: this.windowGetter,
       llmAdapter: this.llmAdapter,
       runbookContext: input.runbookContext,
@@ -1678,11 +1680,10 @@ export class AgentRuntimeService {
     }
 
     if (session.state === 'RUNNING' && session.loopActive === true) {
-      return Promise.reject(
-        new Error(
-          'The agent is still responding. Wait for it to finish or cancel the current run before sending another message.',
-        ),
-      )
+      // Preserve user intent while the current model turn or runbook summary
+      // owns the loop. The queued message is appended after that turn finishes.
+      session.queuedFollowUps.push(input)
+      return Promise.resolve(sessionId)
     }
 
     if (session.state !== 'RUNNING') {
@@ -2368,6 +2369,12 @@ export class AgentRuntimeService {
       session.currentTurnStartedRunbookExecutionIds = undefined
       session.currentTurnId = undefined
       session.currentRunbookWaitExecutionId = undefined
+      const queuedFollowUp = session.queuedFollowUps.shift()
+      if (queuedFollowUp !== undefined && session.state !== 'CANCELLED') {
+        void this.send({ ...queuedFollowUp, sessionId: session.id }).catch((error: unknown) => {
+          log.error(`[agent-runtime:${session.id}] Queued follow-up failed:`, error)
+        })
+      }
     }
   }
 

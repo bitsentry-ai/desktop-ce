@@ -2637,7 +2637,7 @@ describe('AgentRuntimeService runbook outcomes', () => {
     service.cancel(sessionId)
   })
 
-  it('reuses the existing incident session when send is called without a session id', async () => {
+  it('queues a follow-up for the existing incident session while it is active', async () => {
     const pendingResponse = new Promise<never>(() => {})
     const llmAdapter = {
       chatWithTools: vi.fn().mockReturnValue(pendingResponse),
@@ -2656,9 +2656,7 @@ describe('AgentRuntimeService runbook outcomes', () => {
         message: 'What was the result?',
         incidentThreadId: 'incident-reuse',
       }),
-    ).rejects.toThrow(
-      'The agent is still responding. Wait for it to finish or cancel the current run before sending another message.',
-    )
+    ).resolves.toBe(sessionId)
 
     expect(service.getSnapshot(sessionId).messages).toHaveLength(2)
     service.cancel(sessionId)
