@@ -74,14 +74,12 @@ export {
   agentToolCallSchema,
   agentToolResultSchema,
   agentToolResultEnvelopeSchema,
-  structuredCliToolResponseSchema,
   agentToolProtocolSchema,
   createAgentToolResultEnvelope,
   type AgentToolCall,
   type AgentToolResult,
   type AgentToolResultEnvelope,
   type AgentToolProtocol,
-  type StructuredCliToolResponse,
 } from './tool-protocol'
 export {
   executeHostTool,

@@ -465,11 +465,13 @@ export class CodingAgentsProviderService {
     if (!settings.enabled) {
       throw new Error(`Local AI provider "${provider}" is disabled. Enable it in Settings.`)
     }
-    const useMcp = this.getHostToolProtocol(provider) === 'mcp'
     const { binaryPath, probe } = await this.prepareProviderForExecution(provider)
-    const mcpEndpoint = useMcp
-      ? await this.createHostMcpEndpoint(provider, probe, accessLevel, hostToolContext)
-      : undefined
+    const mcpEndpoint = await this.createHostMcpEndpoint(
+      provider,
+      probe,
+      accessLevel,
+      hostToolContext,
+    )
 
     if (provider === 'claude_code') {
       return executeClaudeCode({
@@ -531,12 +533,6 @@ export class CodingAgentsProviderService {
     })
   }
 
-  getHostToolProtocol(provider: LocalAiProviderKey): 'mcp' | 'structured_cli' {
-    if (provider === 'claude_code') return 'mcp'
-    const probe = this.probeCache.get(provider)
-    return probe?.status === 'ready' && probe.version !== null ? 'mcp' : 'structured_cli'
-  }
-
   private async createHostMcpEndpoint(
     provider: LocalAiProviderKey,
     probe: CLIProbeResult,
@@ -544,7 +540,11 @@ export class CodingAgentsProviderService {
     context: HostToolContext | undefined,
   ): Promise<HostMcpEndpoint | undefined> {
     if (provider === 'claude_code' || accessLevel === 'supervised' || context === undefined) return undefined
-    if (probe.status !== 'ready' || probe.version === null) return undefined
+    if (probe.status !== 'ready' || probe.version === null) {
+      throw new Error(
+        `Local AI provider "${provider}" must support MCP host tools. Update the CLI and run its doctor check again.`,
+      )
+    }
     return await this.hostMcpServer.createSession(context)
   }
 

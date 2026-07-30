@@ -26,7 +26,6 @@ import Navbar from "../layout/Navbar";
 import TopBar from "../layout/TopBar";
 import { MarkdownContent } from "../markdown";
 import { cn } from "../lib/utils";
-import { stripInternalHostBlocks } from "../lib/hostProtocol";
 import { formatJsonBlockForDisplay } from "../lib/jsonDisplay";
 import { StructuredOutputDisplay } from "./StructuredOutputDisplay";
 import { StreamDeltaInspector } from "../chat/StreamDeltaInspector";
@@ -341,7 +340,7 @@ function RenderedOutput({
   value: string;
   emptyMessage: string;
 }) {
-  const text = stripInternalHostBlocks(value);
+  const text = value;
 
   if (text.length === 0) {
     return (

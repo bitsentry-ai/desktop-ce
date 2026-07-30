@@ -9,8 +9,6 @@ import {
 } from '@bitsentry-ce/desktop-cli/runtime/desktop-coding-agents'
 
 const tempDirs: string[] = []
-const toolCall = '{"version":1,"type":"tool_calls","toolCalls":[{"name":"list_runbooks","id":"call-list-runbooks","args":{}}]}'
-
 async function createMultiItemCodexAppServer(): Promise<{
   binaryPath: string
   cwd: string
@@ -24,8 +22,6 @@ const readline = require('readline')
 
 const respond = (id, result) => process.stdout.write(JSON.stringify({ id, result }) + '\\n')
 const notify = (method, params) => process.stdout.write(JSON.stringify({ method, params }) + '\\n')
-const toolCall = ${JSON.stringify(toolCall)}
-
 if (!process.argv.slice(2).includes('app-server')) process.exit(64)
 
 const rl = readline.createInterface({ input: process.stdin })
@@ -49,9 +45,9 @@ rl.on('line', (line) => {
     notify('item/completed', {
       item: { id: 'item-streamed', type: 'agentMessage', text: 'I will list runbooks.' },
     })
-    notify('item/started', { item: { id: 'item-tool-call', type: 'agentMessage' } })
+    notify('item/started', { item: { id: 'item-tool-call', type: 'mcpToolCall' } })
     notify('item/completed', {
-      item: { id: 'item-tool-call', type: 'agentMessage', text: toolCall },
+      item: { id: 'item-tool-call', type: 'mcpToolCall' },
     })
     notify('turn/completed', { turn: { id: 'turn-multi-item' } })
   }
@@ -70,7 +66,7 @@ afterEach(async () => {
 })
 
 describe('Codex provider behavior', () => {
-  it('keeps completed-only agent messages so structured host calls survive', async () => {
+  it('keeps completed assistant messages separate from MCP tool activity', async () => {
     const mock = await createMultiItemCodexAppServer()
     const result = await executeCodex({
       prompt: 'List available runbooks.',
@@ -81,7 +77,7 @@ describe('Codex provider behavior', () => {
     })
 
     expect(result.output).toContain('I will list runbooks.')
-    expect(result.output).toContain(toolCall)
+    expect(result.output).not.toContain('mcpToolCall')
   })
 
   it('keeps Codex assistant, reasoning, and command streams separate', () => {
