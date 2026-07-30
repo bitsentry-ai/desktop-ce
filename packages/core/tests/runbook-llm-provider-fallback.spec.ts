@@ -6,20 +6,24 @@ import type { RunbookActionRecord } from "../src/features/runbooks/desktop-runbo
 type Dispatch = {
   local: string[];
   remote: number;
+  requestedModels: Array<string | undefined>;
 };
 
 function createService(defaultProviderKey: string | null): {
   service: RunbookExecutionService;
   dispatch: Dispatch;
 } {
-  const dispatch: Dispatch = { local: [], remote: 0 };
+  const dispatch: Dispatch = { local: [], remote: 0, requestedModels: [] };
 
   const llmAdapter = {
     chatWithTools: async () => {
       dispatch.remote += 1;
       return { content: "" } as never;
     },
-    getDefaultProviderKey: async () => defaultProviderKey,
+    getDefaultProviderKey: async (model?: string) => {
+      dispatch.requestedModels.push(model);
+      return defaultProviderKey;
+    },
   };
 
   const localAiProvider = {
@@ -46,14 +50,15 @@ function createService(defaultProviderKey: string | null): {
 
 function resolveProvider(
   service: RunbookExecutionService,
+  model?: string,
 ): Promise<RunbookActionRecord["llmProviderKey"]> {
   return (
     service as unknown as {
-      resolveDefaultProviderKey(): Promise<
+      resolveDefaultProviderKey(model?: string): Promise<
         RunbookActionRecord["llmProviderKey"]
       >;
     }
-  ).resolveDefaultProviderKey();
+  ).resolveDefaultProviderKey(model);
 }
 
 function usesLocalPath(
@@ -77,6 +82,14 @@ describe("runbook LLM action provider fallback", () => {
 
     expect(providerKey).toBe("codex");
     expect(usesLocalPath(service, providerKey)).toBe(true);
+  });
+
+  it("passes the action model to the provider resolver", async () => {
+    const { service, dispatch } = createService("claude_code");
+
+    await resolveProvider(service, "claude-sonnet-4-6");
+
+    expect(dispatch.requestedModels).toEqual(["claude-sonnet-4-6"]);
   });
 
   it("routes a provider-less action to the local path instead of the tool-calling path", async () => {

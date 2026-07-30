@@ -31,6 +31,21 @@ describe('AgentLlmAdapterService', () => {
     vi.unstubAllGlobals()
   })
 
+  it('routes a provider-less CLI action by its selected model', async () => {
+    const settingsStore: AgentLlmSettingsStore = {
+      setting: {
+        findUnique: vi.fn().mockResolvedValue({ value: 'codex' }),
+      },
+    }
+    const adapter = new AgentLlmAdapterService(settingsStore)
+
+    // The configured default is Codex, but this model belongs to Claude Code.
+    // Selecting it prevents the CLI from receiving a model it cannot serve.
+    await expect(adapter.getDefaultProviderKey('claude-sonnet-4-6')).resolves.toBe('claude_code')
+    await expect(adapter.getDefaultProviderKey('gpt-5.4')).resolves.toBe('codex')
+    await expect(adapter.getDefaultProviderKey('unknown-model')).resolves.toBe('codex')
+  })
+
   it('forwards live text deltas from local CLI providers', async () => {
     const adapter = createAdapter()
 

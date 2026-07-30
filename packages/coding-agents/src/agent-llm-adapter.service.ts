@@ -28,8 +28,39 @@ import {
   type AgentToolResultEnvelope,
 } from '@bitsentry-ce/core/features/agent-runtime'
 import log from 'electron-log'
+import { getCatalogModelIds } from '@bitsentry-ce/components/llm/modelCatalog'
 
 export type LlmProviderKey = 'groq' | 'kilocode' | 'openai' | 'anthropic' | 'gemini' | 'openrouter' | 'claude_code' | 'codex' | 'opencode' | 'cursor'
+
+// Insertion order decides the winner for the rare model id that appears in
+// more than one CLI catalog and is not served by the default provider.
+const CLI_PROVIDER_RESOLUTION_ORDER: readonly LlmProviderKey[] = [
+  'claude_code',
+  'codex',
+  'opencode',
+  'cursor',
+]
+
+// model id -> CLI providers that serve it. A model can belong to several
+// providers, so the value is a list, in resolution order. Keys use the model
+// catalog's normalization (trim + lowercase). Built once on first use.
+let cliProvidersByModelId: Map<string, LlmProviderKey[]> | undefined
+
+function getCliProvidersByModelId(): Map<string, LlmProviderKey[]> {
+  if (cliProvidersByModelId === undefined) {
+    cliProvidersByModelId = new Map()
+    for (const providerKey of CLI_PROVIDER_RESOLUTION_ORDER) {
+      for (const modelId of getCatalogModelIds(providerKey)) {
+        const key = modelId.trim().toLowerCase()
+        const providers = cliProvidersByModelId.get(key) ?? []
+        providers.push(providerKey)
+        cliProvidersByModelId.set(key, providers)
+      }
+    }
+  }
+
+  return cliProvidersByModelId
+}
 
 export type AgentLlmSettingsStore = {
   setting: {
@@ -1223,9 +1254,28 @@ export class AgentLlmAdapterService {
   /**
    * The provider used when a caller does not name one. Runbook actions read
    * this so a provider-less action runs on the same provider as everything else.
+   *
+   * When the caller has a model, the model identifies the provider first:
+   * sending another provider's model to the default (for example
+   * claude-sonnet-5 to codex) is always a hard 400 from the CLI.
    */
-  async getDefaultProviderKey(): Promise<LlmProviderKey | null> {
-    return this.getProvider()
+  async getDefaultProviderKey(model?: string): Promise<LlmProviderKey | null> {
+    const defaultProvider = await this.getProvider()
+
+    const normalizedModel = model?.trim().toLowerCase() ?? ''
+    if (normalizedModel.length === 0) {
+      return defaultProvider
+    }
+
+    const matches = getCliProvidersByModelId().get(normalizedModel)
+    if (matches === undefined) {
+      return defaultProvider
+    }
+    if (defaultProvider !== null && matches.includes(defaultProvider)) {
+      return defaultProvider
+    }
+
+    return matches[0]
   }
 
   async chatWithTools(input: ChatWithToolsInput): Promise<ChatResponse> {

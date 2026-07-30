@@ -177,7 +177,9 @@ export interface RunbookExecutionLlmAdapter {
     traitValues?: Record<string, string | boolean>;
   }): Promise<ChatResponse>;
   // The provider an action falls back to when it does not name one itself.
-  getDefaultProviderKey?(): Promise<string | null | undefined>;
+  // The model (when known) lets the adapter route by what the model belongs
+  // to instead of blindly using the configured default.
+  getDefaultProviderKey?(model?: string): Promise<string | null | undefined>;
 }
 
 export interface RunbookExecutionLocalAiProvider {
@@ -1625,7 +1627,8 @@ export class RunbookExecutionService {
     // Without this it falls through to the tool-calling remote path, which a
     // local CLI provider cannot serve, and the step "succeeds" with no output.
     const providerKey =
-      action.llmProviderKey ?? (await this.resolveDefaultProviderKey());
+      action.llmProviderKey ??
+      (await this.resolveDefaultProviderKey(input.model));
 
     if (this.shouldUseDedicatedLocalAiExecution(providerKey)) {
       return this.executeLocalAiStep(
@@ -1689,16 +1692,19 @@ export class RunbookExecutionService {
     };
   }
 
-  private async resolveDefaultProviderKey(): Promise<
-    RunbookActionRecord["llmProviderKey"]
-  > {
+  private async resolveDefaultProviderKey(
+    model?: string,
+  ): Promise<RunbookActionRecord["llmProviderKey"]> {
     const getDefaultProviderKey = this.llmAdapter.getDefaultProviderKey;
     if (getDefaultProviderKey === undefined) {
       return undefined;
     }
 
     try {
-      const providerKey = await getDefaultProviderKey.call(this.llmAdapter);
+      const providerKey = await getDefaultProviderKey.call(
+        this.llmAdapter,
+        model,
+      );
       if (typeof providerKey !== "string" || providerKey.length === 0) {
         return undefined;
       }
