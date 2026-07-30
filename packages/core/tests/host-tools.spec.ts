@@ -3,6 +3,36 @@ import {
   executeHostTool,
   type HostToolContext,
 } from '../src/features/agent-runtime'
+import type {
+  RunbookExecutionRecord,
+  RunbookRecord,
+} from '../src/features/runbooks/desktop-runbook.types'
+
+function makeRunbook(overrides: Partial<RunbookRecord> = {}): RunbookRecord {
+  return {
+    id: 'rb-sentry',
+    title: 'Investigate Sentry',
+    description: 'Investigate recent Sentry alerts.',
+    revisionNumber: 3,
+    createdAt: '2026-07-31T00:00:00.000Z',
+    updatedAt: '2026-07-31T00:00:00.000Z',
+    actions: [],
+    ...overrides,
+  }
+}
+
+function makeExecution(overrides: Partial<RunbookExecutionRecord> = {}): RunbookExecutionRecord {
+  return {
+    executionId: '11111111-1111-4111-8111-111111111111',
+    runbookId: 'rb-sentry',
+    runbookTitle: 'Investigate Sentry',
+    status: 'running',
+    startedAt: '2026-07-31T00:00:00.000Z',
+    source: 'agent',
+    steps: [],
+    ...overrides,
+  }
+}
 
 function createContext(): HostToolContext {
   return {
@@ -63,5 +93,48 @@ describe('host tools', () => {
       result: { output: expect.stringContaining('runbooks') },
     })
     expect(events[1]?.toolName).toBe(events[0]?.toolName)
+  })
+
+  it('executes a resolved runbook by title and by id', async () => {
+    const runbook = makeRunbook()
+    const execution = makeExecution()
+    const start = vi.fn().mockResolvedValue({
+      executionId: execution.executionId,
+      resultId: 'result-1',
+      execution,
+      deduplicated: false,
+    })
+    const context = createContext()
+    context.gateway.listExecutable = vi.fn().mockResolvedValue([runbook])
+    context.gateway.start = start
+
+    const byTitle = await executeHostTool(context, 'execute_runbook', {
+      runbookTitle: 'Investigate Sentry',
+    })
+    const byId = await executeHostTool(context, 'execute_runbook', {
+      runbookId: 'rb-sentry',
+    })
+
+    expect(start).toHaveBeenCalledTimes(2)
+    expect(start).toHaveBeenNthCalledWith(1, expect.objectContaining({ runbookId: 'rb-sentry' }))
+    expect(start).toHaveBeenNthCalledWith(2, expect.objectContaining({ runbookId: 'rb-sentry' }))
+    expect(JSON.parse(byTitle?.output ?? '')).toMatchObject({ executionId: execution.executionId })
+    expect(JSON.parse(byId?.output ?? '')).toMatchObject({ executionId: execution.executionId })
+  })
+
+  it('rejects repeated execution lookups in the same turn', async () => {
+    const execution = makeExecution()
+    const context = createContext()
+    context.session.latestRunbookExecutionId = execution.executionId
+    context.gateway.get = vi.fn().mockResolvedValue(execution)
+
+    const first = await executeHostTool(context, 'get_runbook_execution', {})
+    const repeated = await executeHostTool(context, 'get_runbook_execution', {})
+
+    expect(first?.output).toContain(execution.executionId)
+    expect(JSON.parse(repeated?.error ?? '')).toMatchObject({
+      code: 'REPEATED_RUNBOOK_EXECUTION_LOOKUP',
+      executionId: execution.executionId,
+    })
   })
 })
