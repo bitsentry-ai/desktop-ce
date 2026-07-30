@@ -2,7 +2,7 @@ import { chmod, mkdtemp, rm, writeFile } from 'fs/promises'
 import os from 'os'
 import path from 'path'
 import { afterEach, describe, expect, it } from 'vitest'
-import { executeCodex } from '@bitsentry-ce/coding-agents/codex-provider.service'
+import { executeCodex, withCodexModelArgs } from '@bitsentry-ce/coding-agents/codex-provider.service'
 import {
   codexStreamDeltasFromNotification,
   normalizeCodexExecutionError,
@@ -114,6 +114,88 @@ describe('Codex provider behavior', () => {
     expect(
       codexStreamDeltasFromNotification('item/mcpToolCall/progress', { delta: 'working' }),
     ).toEqual([])
+  })
+})
+
+async function createFailedTurnCodexAppServer(): Promise<{
+  binaryPath: string
+  cwd: string
+}> {
+  const cwd = await mkdtemp(path.join(os.tmpdir(), 'codex-provider-failed-turn-'))
+  tempDirs.push(cwd)
+
+  const scriptPath = path.join(cwd, 'mock-codex-app-server-failed.cjs')
+  const script = `
+const readline = require('readline')
+
+const respond = (id, result) => process.stdout.write(JSON.stringify({ id, result }) + '\\n')
+const notify = (method, params) => process.stdout.write(JSON.stringify({ method, params }) + '\\n')
+
+if (!process.argv.slice(2).includes('app-server')) process.exit(64)
+
+const rl = readline.createInterface({ input: process.stdin })
+rl.on('line', (line) => {
+  const message = JSON.parse(line)
+
+  if (message.method === 'initialize') {
+    respond(message.id, { userAgent: 'mock-codex-app-server' })
+    return
+  }
+
+  if (message.method === 'thread/start') {
+    respond(message.id, { thread: { id: 'thread-failed-turn' } })
+    return
+  }
+
+  if (message.method === 'turn/start') {
+    respond(message.id, { turn: { id: 'turn-failed' } })
+    notify('turn/completed', {
+      turn: {
+        id: 'turn-failed',
+        status: 'failed',
+        error: { message: "The 'gpt-5.6-terra' model requires a newer version of Codex." },
+      },
+    })
+  }
+})
+`
+  await writeFile(scriptPath, script)
+
+  const binaryPath = path.join(cwd, 'codex')
+  await writeFile(binaryPath, `#!/usr/bin/env node\nrequire(${JSON.stringify(scriptPath)})\n`)
+  await chmod(binaryPath, 0o755)
+  return { binaryPath, cwd }
+}
+
+describe('Codex model argument handling', () => {
+  it('passes the model as a -c config override because app-server ignores --model', () => {
+    expect(withCodexModelArgs([], 'gpt-5.4-mini')).toEqual(['-c', 'model="gpt-5.4-mini"'])
+  })
+
+  it('keeps user-supplied model overrides untouched', () => {
+    expect(withCodexModelArgs(['--model', 'x'], 'gpt-5.4-mini')).toEqual(['--model', 'x'])
+    expect(withCodexModelArgs(['-c', 'model="x"'], 'gpt-5.4-mini')).toEqual(['-c', 'model="x"'])
+  })
+
+  it('passes no override when the action has no model', () => {
+    expect(withCodexModelArgs([], undefined)).toEqual([])
+    expect(withCodexModelArgs([], '')).toEqual([])
+  })
+})
+
+describe('Codex failed turn handling', () => {
+  it('rejects when the turn completes in a failed state instead of returning empty output', async () => {
+    const mock = await createFailedTurnCodexAppServer()
+
+    await expect(
+      executeCodex({
+        prompt: 'Say hi.',
+        binaryPath: mock.binaryPath,
+        cwd: mock.cwd,
+        abortController: new AbortController(),
+        accessLevel: 'auto-accept-edits',
+      }),
+    ).rejects.toThrow(/gpt-5\.6-terra.*newer version of Codex/)
   })
 })
 

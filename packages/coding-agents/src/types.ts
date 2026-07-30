@@ -99,6 +99,11 @@ export interface LocalAiExecutionResult {
   resumeCursor?: unknown
   exitCode?: number
   tokenUsage?: LocalAiTokenUsage
+  /**
+   * Why the provider produced no usable output, when it reported one.
+   * Callers use this to fail loudly instead of returning an empty result.
+   */
+  error?: string
 }
 
 export interface LocalAiTokenUsageDelta {

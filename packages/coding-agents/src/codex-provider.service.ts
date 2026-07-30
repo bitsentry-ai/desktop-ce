@@ -207,19 +207,40 @@ export function normalizeCodexExecutionError(err: unknown): Error {
   return new Error(`Codex configuration error: ${message}\n${hint}`)
 }
 
+/**
+ * `codex app-server` ignores the global `--model` flag; threads silently fall
+ * back to the model in ~/.codex/config.toml. The only override the app-server
+ * honors is the `-c model="..."` config form, so the requested model must be
+ * passed that way or the user's config default runs instead.
+ */
+export function withCodexModelArgs(
+  codexArgs: string[],
+  model: string | undefined,
+): string[] {
+  const args = [...codexArgs]
+  if (model === undefined || model.length === 0) {
+    return args
+  }
+
+  const hasModelOverride = args.some(
+    (arg, index) =>
+      arg === '--model' ||
+      arg.startsWith('--model=') ||
+      arg.startsWith('model=') && args[index - 1] === '-c',
+  )
+  if (!hasModelOverride) {
+    args.push('-c', `model="${model.replace(/"/g, '')}"`)
+  }
+
+  return args
+}
+
 export async function executeCodex(
   options: CodexExecutionOptions,
 ): Promise<LocalAiExecutionResult> {
   const debug = options.debug
   const cwd = options.cwd ?? os.tmpdir()
-  const codexArgs = [...(options.codexArgs ?? [])]
-  if (
-    options.model !== undefined &&
-    options.model.length > 0 &&
-    !codexArgs.some((arg) => arg === '--model' || arg.startsWith('--model='))
-  ) {
-    codexArgs.push('--model', options.model)
-  }
+  const codexArgs = withCodexModelArgs(options.codexArgs ?? [], options.model)
   let effectiveCodexArgs: string[] | undefined
   if (codexArgs.length > 0) {
     effectiveCodexArgs = codexArgs
@@ -519,6 +540,18 @@ export async function executeCodex(
         ) {
           client.removeListener('notification', onNotification)
           client.removeListener('closed', onClosed)
+          // A turn can "complete" in a failed state (for example a 400 from
+          // the model endpoint). Treating that as success silently drops the
+          // provider's error and yields an empty result.
+          const turn = asRecord(asRecord(notification.params)?.turn)
+          const turnStatus = readStringField(turn, 'status')
+          if (turnStatus === 'failed') {
+            const turnError = asRecord(turn?.error)
+            const message =
+              readStringField(turnError, 'message') ?? 'Codex turn failed'
+            reject(new Error(message))
+            return
+          }
           resolve()
         } else if (
           notification.method === 'turn/error' ||
@@ -593,9 +626,21 @@ export async function executeCodex(
     await client.kill()
   }
 
+  let error: string | undefined
+  if (output.trim().length === 0) {
+    // Codex reports startup and config failures on stderr and then exits
+    // without ever sending an assistant message. Without this the caller only
+    // sees an empty string and cannot tell a refusal from a silent model.
+    const stderrTail = client.getStderrTail().trim()
+    if (stderrTail.length > 0) {
+      error = stderrTail
+    }
+  }
+
   return {
     output,
     threadId,
     tokenUsage,
+    error,
   }
 }
