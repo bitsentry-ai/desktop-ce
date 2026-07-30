@@ -142,6 +142,7 @@ const MAX_RUNBOOK_COMPLETION_WAIT_MS = 4 * 60 * 1000
 const RUNBOOK_COMPLETION_WAIT_BUFFER_MS = 5_000
 export const LOCAL_PROVIDER_POST_TOOL_RESPONSE_TIMEOUT_MS = 30_000
 const MAX_ACTIONABLE_JOURNAL_TIME_WINDOWS = 5
+const MAX_STRUCTURED_RUNBOOK_ISSUES = 10
 const MAX_DERIVED_JOURNAL_TIME_WINDOW_SPAN_MS = 24 * 60 * 60 * 1000
 const INCIDENT_TIMESTAMP_PATTERN =
   /\b\d{4}-\d{2}-\d{2}[Tt ][0-2]\d:[0-5]\d(?::[0-5]\d(?:\.\d{1,9})?)?(?:Z| UTC|[+-]\d{2}:?\d{2})?\b/g
@@ -861,6 +862,89 @@ function summarizeRunbookStepMarkdownDetails(
   }
 }
 
+function parseRunbookStepStructuredOutput(step: RunbookExecutionStepRecord): Record<string, unknown> | null {
+  const structuredOutput = readUnknownRecord(step.structuredOutput)
+  if (structuredOutput !== null) {
+    return structuredOutput
+  }
+
+  if (step.type !== 'plugin' || typeof step.output !== 'string') {
+    return null
+  }
+
+  const jsonStart = step.output.indexOf('{')
+  if (jsonStart === -1) {
+    return null
+  }
+
+  try {
+    return readUnknownRecord(JSON.parse(step.output.slice(jsonStart)) as unknown)
+  } catch {
+    return null
+  }
+}
+
+function summarizeRunbookStepStructuredOutput(
+  step: RunbookExecutionStepRecord,
+): Record<string, unknown> | undefined {
+  const structuredOutput = parseRunbookStepStructuredOutput(step)
+  const issues = structuredOutput?.issues
+  if (!Array.isArray(issues)) {
+    return undefined
+  }
+
+  const issueSummaries = issues.flatMap((issue) => {
+    const record = readUnknownRecord(issue)
+    if (record === null) {
+      return []
+    }
+
+    const summary: Record<string, string | number> = {}
+    for (const key of [
+      'id',
+      'shortId',
+      'title',
+      'status',
+      'count',
+      'userCount',
+      'firstSeen',
+      'lastSeen',
+      'level',
+    ]) {
+      const value = record[key]
+      if (typeof value === 'string' || typeof value === 'number') {
+        summary[key] = value
+      }
+    }
+
+    return Object.keys(summary).length > 0 ? [summary] : []
+  })
+
+  if (issueSummaries.length === 0) {
+    return undefined
+  }
+
+  return {
+    issues: issueSummaries.slice(0, MAX_STRUCTURED_RUNBOOK_ISSUES),
+    issueCount: issueSummaries.length,
+    issuesTruncated: issueSummaries.length > MAX_STRUCTURED_RUNBOOK_ISSUES,
+  }
+}
+
+function formatStructuredIssuePreview(issues: Array<Record<string, unknown>>): string[] {
+  return issues.map((issue, index) => {
+    const title = readFirstStringProperty([issue], 'title', `Issue ${String(index + 1)}`)
+    const details = [
+      readStringProperty(issue, 'status'),
+      readNumberProperty(issue, 'count'),
+      readNumberProperty(issue, 'userCount'),
+      readStringProperty(issue, 'level'),
+      readStringProperty(issue, 'lastSeen'),
+    ].flatMap((value) => (value === null ? [] : [String(value)]))
+    return `- ${title}${details.length > 0 ? ` (${details.join(', ')})` : ''}`
+  })
+}
+
 function readRunbookTimeWindow(value: unknown): { since: string; until: string } | null {
   const record = readUnknownRecord(value)
   if (record === null) {
@@ -1303,6 +1387,7 @@ export function summarizeRunbookExecutionForToolOutput(execution: RunbookExecuti
   const summarizeStep = (step: RunbookExecutionStepRecord): Record<string, unknown> => {
     const output = summarizeRunbookStepTextDetails(step.output)
     const error = summarizeRunbookStepTextDetails(step.error)
+    const structuredOutput = summarizeRunbookStepStructuredOutput(step)
     const summary: Record<string, unknown> = {
       order: step.order,
       title: step.title,
@@ -1322,11 +1407,22 @@ export function summarizeRunbookExecutionForToolOutput(execution: RunbookExecuti
       summary.errorTruncated = error.truncated
     }
 
+    if (structuredOutput !== undefined) {
+      summary.structuredOutput = structuredOutput
+    }
+
     return summary
   }
 
-  const finalOutput = summarizeRunbookStepTextDetails(latestCompletedOutput?.output, 320)
-  const finalOutputMarkdown = summarizeRunbookStepMarkdownDetails(latestCompletedOutput?.output)
+  const finalStructuredOutput = latestCompletedOutput === undefined
+    ? undefined
+    : summarizeRunbookStepStructuredOutput(latestCompletedOutput)
+  const finalOutput = finalStructuredOutput === undefined
+    ? summarizeRunbookStepTextDetails(latestCompletedOutput?.output, 320)
+    : undefined
+  const finalOutputMarkdown = finalStructuredOutput === undefined
+    ? summarizeRunbookStepMarkdownDetails(latestCompletedOutput?.output)
+    : undefined
 
   const summary: Record<string, unknown> = {
     executionId: execution.executionId,
@@ -1381,6 +1477,12 @@ export function summarizeRunbookExecutionForToolOutput(execution: RunbookExecuti
     summary.finalOutputMarkdownExcerpt = finalOutputMarkdown.excerpt
     summary.finalOutputMarkdownLength = finalOutputMarkdown.length
     summary.finalOutputMarkdownTruncated = finalOutputMarkdown.truncated
+  }
+
+  if (finalStructuredOutput !== undefined) {
+    summary.finalStructuredOutput = finalStructuredOutput
+    summary.finalOutputLength = latestCompletedOutput?.output?.trim().length ?? 0
+    summary.finalOutputTruncated = true
   }
 
   return summary
@@ -3291,7 +3393,11 @@ export class AgentRuntimeService {
     }
 
     const latestStep = readRecordProperty(executionSummary, 'latestStep')
-    let finalOutput = readNonEmptyTrimmedStringProperty(executionSummary, 'finalOutputMarkdownExcerpt')
+    const finalStructuredOutput = readRecordProperty(executionSummary, 'finalStructuredOutput')
+    const structuredIssues = readRecordArrayProperty(finalStructuredOutput, 'issues')
+    let finalOutput = structuredIssues.length > 0
+      ? [`Top ${String(structuredIssues.length)} issues:`, ...formatStructuredIssuePreview(structuredIssues)].join('\n')
+      : readNonEmptyTrimmedStringProperty(executionSummary, 'finalOutputMarkdownExcerpt')
     if (finalOutput === null) {
       finalOutput = readNonEmptyTrimmedStringProperty(executionSummary, 'finalOutputExcerpt')
     }
@@ -3513,8 +3619,19 @@ export class AgentRuntimeService {
   }
 
   private appendRunbookExecutionOutputLines(lines: string[], executionSummary: Record<string, unknown> | null): void {
+    const finalStructuredOutput = readRecordProperty(executionSummary, 'finalStructuredOutput')
+    const structuredIssues = readRecordArrayProperty(finalStructuredOutput, 'issues')
+    if (structuredIssues.length > 0) {
+      lines.push(`- Structured issue preview (top ${String(structuredIssues.length)}):`)
+      lines.push(...formatStructuredIssuePreview(structuredIssues).map((issue) => `  ${issue}`))
+      const issueCount = readNumberProperty(finalStructuredOutput, 'issueCount')
+      if (finalStructuredOutput?.issuesTruncated === true && issueCount !== null) {
+        lines.push(`- ${String(issueCount - structuredIssues.length)} more issues remain in Runbook Results.`)
+      }
+    }
+
     const finalOutputExcerpt = readStringProperty(executionSummary, 'finalOutputExcerpt')
-    if (finalOutputExcerpt !== null) {
+    if (finalOutputExcerpt !== null && structuredIssues.length === 0) {
       lines.push(`- Final output excerpt: ${finalOutputExcerpt}`)
     }
 
