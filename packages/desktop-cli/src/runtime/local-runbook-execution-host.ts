@@ -537,37 +537,44 @@ export async function createLocalRunbookExecutionClient(
   options: LocalRunbookExecutionClientOptions,
 ): Promise<RunbookCliRuntime> {
   const userDataPath = path.resolve(options.userDataPath ?? getRuntimeUserDataPath())
-  const desktopClient = await connectToDesktopHost(userDataPath)
-  if (desktopClient !== null) return desktopClient
+  for (let attempt = 0; attempt < HOST_METADATA_RETRY_COUNT; attempt += 1) {
+    const desktopClient = await connectToDesktopHost(userDataPath)
+    if (desktopClient !== null) return desktopClient
 
-  let headlessRuntime: RunbookCliRuntime | null = null
-  const destroyHeadlessRuntime = async (): Promise<void> => {
-    const runtime = headlessRuntime
-    if (runtime !== null) await runtime.destroy()
-  }
-  const host = new LocalRunbookExecutionHost({
-    userDataPath,
-    async createRuntime() {
-      headlessRuntime ??= await options.createHeadlessRuntime()
-      return headlessRuntime
-    },
-  })
-  try {
-    await host.start()
-    const metadata = await readMetadata(userDataPath)
-    if (metadata === null) throw new Error('Headless runbook host did not publish its capability metadata.')
-    return new LocalRunbookExecutionHostClient(metadata, async () => {
-      await host.waitForActiveExecutions()
-      await host.close()
-      await destroyHeadlessRuntime()
-    })
-  } catch (error) {
-    await host.close().catch(() => {})
-    await destroyHeadlessRuntime().catch(() => {})
-    if (error instanceof LocalRunbookExecutionHostAlreadyRunningError) {
-      const desktopClientAfterRace = await waitForDesktopHost(userDataPath)
-      if (desktopClientAfterRace !== null) return desktopClientAfterRace
+    let headlessRuntime: RunbookCliRuntime | null = null
+    const destroyHeadlessRuntime = async (): Promise<void> => {
+      const runtime = headlessRuntime
+      if (runtime !== null) await runtime.destroy()
     }
-    throw error
+    const host = new LocalRunbookExecutionHost({
+      userDataPath,
+      async createRuntime() {
+        headlessRuntime ??= await options.createHeadlessRuntime()
+        return headlessRuntime
+      },
+    })
+    try {
+      await host.start()
+      const metadata = await readMetadata(userDataPath)
+      if (metadata === null) throw new Error('Headless runbook host did not publish its capability metadata.')
+      return new LocalRunbookExecutionHostClient(metadata, async () => {
+        await host.waitForActiveExecutions()
+        await host.close()
+        await destroyHeadlessRuntime()
+      })
+    } catch (error) {
+      await host.close().catch(() => {})
+      await destroyHeadlessRuntime().catch(() => {})
+      if (error instanceof LocalRunbookExecutionHostAlreadyRunningError) {
+        const desktopClientAfterRace = await waitForDesktopHost(userDataPath)
+        if (desktopClientAfterRace !== null) return desktopClientAfterRace
+        if (attempt + 1 < HOST_METADATA_RETRY_COUNT) continue
+      }
+      throw error
+    }
   }
+
+  throw new LocalRunbookExecutionHostAlreadyRunningError(
+    'A local runbook execution host did not become available after waiting for its owner to exit.',
+  )
 }
