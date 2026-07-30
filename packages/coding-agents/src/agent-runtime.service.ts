@@ -58,7 +58,16 @@ import type {
   RunbookTriggerContext,
 } from '@bitsentry-ce/core/features/runbooks/desktop-runbook.types'
 import type { RunbookGateway } from '@bitsentry-ce/core/features/runbooks'
-import { createAgentToolResultEnvelope } from '@bitsentry-ce/core/features/agent-runtime'
+import {
+  createAgentToolResultEnvelope,
+  executeHostTool,
+  getHostTools,
+  isHostToolName,
+  type AgentSessionRef,
+  type ExecuteRunbookHostToolInput,
+  type GetRunbookExecutionHostToolInput,
+  type HostToolContext,
+} from '@bitsentry-ce/core/features/agent-runtime'
 
 const CHANNEL_EVENT = 'bitsentry:agent:event'
 const NO_LLM_PROVIDER_CONFIGURED_MESSAGE =
@@ -117,23 +126,6 @@ const MAX_STRUCTURED_RUNBOOK_ISSUES = 10
 const MAX_DERIVED_JOURNAL_TIME_WINDOW_SPAN_MS = 24 * 60 * 60 * 1000
 const INCIDENT_TIMESTAMP_PATTERN =
   /\b\d{4}-\d{2}-\d{2}[Tt ][0-2]\d:[0-5]\d(?::[0-5]\d(?:\.\d{1,9})?)?(?:Z| UTC|[+-]\d{2}:?\d{2})?\b/g
-
-const listRunbooksToolSchema = z.object({}).strict()
-
-const executeRunbookToolSchema = z
-  .object({
-    runbookId: z.string().min(1).optional(),
-    runbookTitle: z.string().min(1).optional(),
-    parameterValues: z.record(z.string(), z.string()).optional(),
-    parameters: z.record(z.string(), z.string()).optional(),
-  })
-  .strict()
-
-const getRunbookExecutionToolSchema = z
-  .object({
-    executionId: z.uuid().optional(),
-  })
-  .strict()
 
 const unknownRecordSchema = z.record(z.string(), z.unknown())
 
@@ -434,7 +426,7 @@ interface AgentSession {
   snapshot: AgentThreadSnapshot
 }
 
-type ExecuteRunbookInput = z.infer<typeof executeRunbookToolSchema>
+type ExecuteRunbookInput = ExecuteRunbookHostToolInput
 
 type CompletedToolResult = {
   toolCall: ToolCall
@@ -1493,7 +1485,7 @@ function formatRunbookParameterSummary(
         line += ` default=${parameter.defaultValue}`
       }
       if (parameter.description !== undefined && parameter.description.length > 0) {
-        line += ` — ${parameter.description}`
+        line += ` - ${parameter.description}`
       }
       lines.push(line)
     }
@@ -2163,6 +2155,9 @@ export class AgentRuntimeService {
                 llm: session.llmSelection,
                 accessLevel: session.accessLevel,
                 traitValues: session.traitValues,
+                hostToolContext: this.hasRunbookTools()
+                  ? this.createHostToolContext(session)
+                  : undefined,
 
             onDelta: (delta) => {
               // Stream assistant deltas to renderer
@@ -2741,7 +2736,7 @@ export class AgentRuntimeService {
   }
 
   private isDynamicToolName(toolName: string): boolean {
-    return toolName === 'list_runbooks' || toolName === 'execute_runbook' || toolName === 'get_runbook_execution'
+    return isHostToolName(toolName)
   }
 
   private getDynamicToolDefinitions(): Array<{
@@ -2751,100 +2746,20 @@ export class AgentRuntimeService {
   }> {
     if (!this.hasRunbookTools()) return []
 
-    return [
-      {
-        name: 'list_runbooks',
-        description: 'List available runbooks that can be executed for the incident.',
-        inputSchema: zodToJsonSchema(listRunbooksToolSchema as never),
-      },
-      {
-        name: 'execute_runbook',
-        description:
-          'Start a real runbook execution by runbookId or runbookTitle. If the user specifies placeholder values, pass them in parameterValues. Saved defaults are fallback values only.',
-        inputSchema: zodToJsonSchema(executeRunbookToolSchema as never),
-      },
-      {
-        name: 'get_runbook_execution',
-        description:
-          'Get the latest snapshot for a previously started runbook execution. If executionId is omitted, use the latest known runbook execution for the current incident.',
-        inputSchema: zodToJsonSchema(getRunbookExecutionToolSchema as never),
-      },
-    ]
+    return getHostTools().map((tool) => ({
+      name: tool.name,
+      description: tool.description,
+      inputSchema: zodToJsonSchema(tool.argsSchema as never),
+    }))
   }
 
   private async executeDynamicToolCall(session: AgentSession, toolCall: ToolCall): Promise<ToolResult | null> {
     if (!this.hasRunbookTools()) return null
-
-    switch (toolCall.name) {
-      case 'list_runbooks': {
-        listRunbooksToolSchema.parse(toolCall.args)
-        const runbooks = await this.listExecutableRunbooks()
-        return {
-          output: JSON.stringify(
-            {
-              runbooks: runbooks.map((runbook) => ({
-                id: runbook.id,
-                title: runbook.title,
-                description: runbook.description,
-                revisionNumber: runbook.revisionNumber,
-                actionCount: runbook.actions.length,
-                actionTypes: runbook.actions.map((action) => action.type),
-                actionParameters: runbook.actions
-                  .filter((action) => action.parameters !== undefined && action.parameters.length > 0)
-                  .map((action) => ({
-                    actionId: action.id,
-                    actionTitle: action.title,
-                    parameters: action.parameters?.map((parameter) => ({
-                      key: parameter.key,
-                      description: parameter.description,
-                      defaultValue: parameter.defaultValue,
-                      required: parameter.required !== false,
-                    })) ?? [],
-                  })),
-              })),
-            },
-            null,
-            2,
-          ),
-        }
-      }
-      case 'execute_runbook': {
-        const input = executeRunbookToolSchema.parse(normalizeToolArgs(toolCall.name, toolCall.args))
-        return await this.executeRunbook(session, input)
-      }
-      case 'get_runbook_execution': {
-        const input = getRunbookExecutionToolSchema.parse(normalizeToolArgs(toolCall.name, toolCall.args))
-        const execution = await this.resolveRunbookExecutionReference(session, input)
-        if (execution === null) {
-          let message = 'No runbook execution was found for this incident yet'
-          if (input.executionId !== undefined && input.executionId.length > 0) {
-            message = `Runbook execution not found: ${input.executionId}`
-          }
-          throw new Error(message)
-        }
-        const executionForOutput = execution
-        session.latestRunbookExecutionId = execution.executionId
-        session.latestRunbookTitle = execution.runbookTitle
-        this.rememberJournalTimeWindowParameters(session, executionForOutput)
-        const currentTurnLookups = session.currentTurnRunbookExecutionLookups ?? new Set<string>()
-        const alreadyCheckedThisTurn = currentTurnLookups.has(execution.executionId)
-        currentTurnLookups.add(execution.executionId)
-        session.currentTurnRunbookExecutionLookups = currentTurnLookups
-        const outputPayload = summarizeRunbookExecutionForToolOutput(executionForOutput)
-        if (alreadyCheckedThisTurn) {
-          outputPayload.repeatBlocked = true
-        }
-        return {
-          output: JSON.stringify(
-            outputPayload,
-            null,
-            2,
-          ),
-        }
-      }
-      default:
-        return null
-    }
+    return await executeHostTool(
+      this.createHostToolContext(session),
+      toolCall.name,
+      toolCall.args,
+    )
   }
 
   private async executeRunbook(session: AgentSession, input: ExecuteRunbookInput): Promise<ToolResult> {
@@ -2853,38 +2768,24 @@ export class AgentRuntimeService {
       timestamp: new Date().toISOString(),
       phase: 'running_runbook',
     })
-    const runbookGateway = this.getRunbookGateway()
-    const runbook = await this.resolveRunbookReference(session, input)
-    const parameterValues = this.resolveRunbookParameterValues(session, runbook, input)
-    const execution = await runbookGateway.start({
-      runbookId: runbook.id,
-      expectedRevisionNumber: runbook.revisionNumber,
-      requestKey: buildGatewayRunbookRequestKey(session, runbook, parameterValues),
-      incidentId: session.incidentThreadId,
-      parameterValues,
-      source: 'agent',
-      triggerContext: this.buildRunbookTriggerContext(session),
-      accessLevel: session.accessLevel,
-    })
-    session.latestRunbookExecutionId = execution.executionId
-    session.latestRunbookResultId = execution.resultId
-    session.latestRunbookTitle = runbook.title
-    session.currentTurnStartedRunbookExecutionIds?.add(execution.executionId)
-    const outputPayload: Record<string, unknown> = {
-      status: execution.execution.status,
-      runbookId: runbook.id,
-      runbookTitle: runbook.title,
-      executionId: execution.executionId,
-      resultId: execution.resultId,
-      deduplicated: execution.deduplicated,
-      execution: summarizeRunbookExecutionForToolOutput(execution.execution),
+    const result = await executeHostTool(this.createHostToolContext(session), 'execute_runbook', input)
+    if (result === null) {
+      return { error: 'The execute_runbook host tool is not registered' }
     }
+    return result
+  }
+
+  private createHostToolContext(session: AgentSession): HostToolContext {
     return {
-      output: JSON.stringify(
-        outputPayload,
-        null,
-        2,
-      ),
+      gateway: this.getRunbookGateway(),
+      session: session as AgentSessionRef,
+      buildRequestKey: (sessionRef, runbook, parameterValues) =>
+        buildGatewayRunbookRequestKey(sessionRef as AgentSession, runbook, parameterValues),
+      resolveParameterValues: (sessionRef, runbook, input) =>
+        this.resolveRunbookParameterValues(sessionRef as AgentSession, runbook, input),
+      summarizeExecution: summarizeRunbookExecutionForToolOutput,
+      rememberExecution: (sessionRef, execution) =>
+        this.rememberJournalTimeWindowParameters(sessionRef as AgentSession, execution),
     }
   }
 
@@ -2894,7 +2795,7 @@ export class AgentRuntimeService {
 
   private async resolveRunbookReference(
     session: AgentSession,
-    input: z.infer<typeof executeRunbookToolSchema>,
+    input: ExecuteRunbookHostToolInput,
   ): Promise<RunbookRecord> {
     const runbooks = await this.listExecutableRunbooks()
     const runbookId = input.runbookId?.trim()
@@ -2995,7 +2896,7 @@ export class AgentRuntimeService {
 
   private async resolveRunbookExecutionReference(
     session: AgentSession,
-    input: z.infer<typeof getRunbookExecutionToolSchema>,
+    input: GetRunbookExecutionHostToolInput,
   ) {
     const runbookGateway = this.getRunbookGateway()
     const executionId = input.executionId?.trim()
@@ -3658,7 +3559,7 @@ export class AgentRuntimeService {
   private resolveRunbookParameterValues(
     session: AgentSession,
     runbook: RunbookRecord,
-    input: z.infer<typeof executeRunbookToolSchema>,
+    input: ExecuteRunbookHostToolInput,
   ): Record<string, string> | undefined {
     const explicitValues = this.normalizeRunbookParameterValues(input)
     if (
@@ -3687,7 +3588,7 @@ export class AgentRuntimeService {
   }
 
   private normalizeRunbookParameterValues(
-    input: z.infer<typeof executeRunbookToolSchema>,
+    input: ExecuteRunbookHostToolInput,
   ): Record<string, string> | undefined {
     const source = input.parameterValues ?? input.parameters
     if (source === undefined) {

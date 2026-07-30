@@ -26,6 +26,7 @@ import {
   type AgentToolCall,
   type AgentToolProtocol,
   type AgentToolResultEnvelope,
+  type HostToolContext,
 } from '@bitsentry-ce/core/features/agent-runtime'
 import log from 'electron-log'
 import { getCatalogModelIds } from '@bitsentry-ce/components/llm/modelCatalog'
@@ -124,7 +125,7 @@ export interface LocalAiProviderPort {
    * LocalAiExecutionResult.toolCalls; otherwise its complete JSON compatibility
    * envelope is validated before the runtime sees a host operation.
    */
-  getHostToolProtocol?(provider: LocalAiProviderKey): 'structured_cli'
+  getHostToolProtocol?(provider: LocalAiProviderKey): 'mcp' | 'structured_cli'
   execute(
     provider: LocalAiProviderKey,
     prompt: string,
@@ -134,6 +135,8 @@ export interface LocalAiProviderPort {
     model?: string,
     accessLevel?: 'supervised' | 'auto-accept-edits' | 'full-access',
     traitValues?: Record<string, string | boolean>,
+    hostToolContext?: HostToolContext,
+    systemPrompt?: string,
   ): Promise<LocalAiExecutionResult>
 }
 
@@ -220,6 +223,7 @@ export interface ChatWithToolsInput {
   llm?: LlmSelection
   accessLevel?: 'supervised' | 'auto-accept-edits' | 'full-access'
   traitValues?: Record<string, string | boolean>
+  hostToolContext?: HostToolContext
 }
 
 /**
@@ -689,7 +693,7 @@ Do NOT wrap the JSON in Markdown or XML. Do not add prose before or after it.
 Never simulate or invent tool results. Never invent runbook titles, runbook IDs, execution IDs, logs, or server output.
 If you need real data, call the operation and wait for the returned tool result message.
 After receiving the result, you may call another operation or give your final answer.
-Call one operation at a time. Do not guess — if you need runbook data, request it first.
+Call one operation at a time. Do not guess. If you need runbook data, request it first.
 
 AVAILABLE OPERATIONS:
 
@@ -1373,13 +1377,15 @@ export class AgentLlmAdapterService {
     try {
       const result = await this.localAiProvider.execute(
         providerKey,
-        this.buildLocalAiPrompt(input, isSupervised),
+        this.buildLocalAiPrompt(input, toolProtocol),
         abortController,
         createLocalAiDeltaHandler(input.onDelta, streamSanitizer, cliTranscriptSanitizer),
         undefined,
         model,
         accessLevel,
         input.traitValues,
+        input.hostToolContext,
+        toolProtocol === 'mcp' ? this.buildLocalAiSystemPrompt(input) : undefined,
       )
 
       this.flushLocalAiStream(input.onDelta, streamSanitizer, cliTranscriptSanitizer)
@@ -1392,15 +1398,27 @@ export class AgentLlmAdapterService {
 
   private buildLocalAiPrompt(
     input: ChatWithToolsInput,
-    isSupervised: boolean,
+    toolProtocol: AgentToolProtocol,
   ): string {
     // Each turn runs as a fresh CLI subprocess. The full BitSentry transcript is
     // replayed explicitly so CLI-native session state cannot leak across runs.
-    const conversationText = input.messages.map(flattenMessageText).join('\n')
-    if (isSupervised) {
+    const messages = toolProtocol === 'mcp'
+      ? input.messages.filter((message) => message.role !== 'system')
+      : input.messages
+    const conversationText = messages.map(flattenMessageText).join('\n')
+    if (toolProtocol !== 'structured_cli') {
       return conversationText
     }
     return conversationText + buildStructuredCliToolsPrompt(input.tools ?? [])
+  }
+
+  private buildLocalAiSystemPrompt(input: ChatWithToolsInput): string | undefined {
+    const systemPrompt = input.messages
+      .filter((message) => message.role === 'system')
+      .map((message) => normalizeTextContent(message.content).trim())
+      .filter((message) => message.length > 0)
+      .join('\n\n')
+    return systemPrompt.length > 0 ? systemPrompt : undefined
   }
 
   private flushLocalAiStream(
@@ -1460,6 +1478,16 @@ export class AgentLlmAdapterService {
       return {
         content: sanitizeLocalProviderOutput(providerKey, structuredResponse?.content ?? result.output),
         toolCalls: structuredResponse?.toolCalls ?? parseStructuredToolCalls(result.toolCalls),
+        toolProtocol,
+        hasForeignToolCallMarkup: foreignToolCallMarkup,
+        tokenUsage: result.tokenUsage,
+      }
+    }
+
+    if (toolProtocol === 'mcp') {
+      return {
+        content: sanitizeLocalProviderOutput(providerKey, result.output),
+        toolCalls: [],
         toolProtocol,
         hasForeignToolCallMarkup: foreignToolCallMarkup,
         tokenUsage: result.tokenUsage,

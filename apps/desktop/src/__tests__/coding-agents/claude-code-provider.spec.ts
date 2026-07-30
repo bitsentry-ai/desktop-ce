@@ -1,5 +1,6 @@
 import { EventEmitter } from 'events'
 import type { ChildProcess } from 'child_process'
+import { existsSync } from 'fs'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 type ClaudeQuerySession = AsyncIterable<unknown> & {
@@ -30,6 +31,11 @@ interface ClaudeQueryOptions {
   allowDangerouslySkipPermissions?: boolean
   betas?: string[]
   spawnClaudeCodeProcess?: (input: SpawnClaudeCodeProcessInput) => ChildProcess
+  allowedTools?: string[]
+  cwd?: string
+  settingSources?: string[]
+  mcpServers?: Record<string, unknown>
+  systemPrompt?: { type: string; preset: string; append?: string }
 }
 
 interface ClaudeQueryInput {
@@ -42,6 +48,8 @@ const getContextUsageMock = vi.fn()
 const queryMock = vi.fn<(input: ClaudeQueryInput) => ClaudeQuerySession>()
 const spawnMock = vi.hoisted(() => vi.fn())
 const spawnSyncMock = vi.hoisted(() => vi.fn())
+const createSdkMcpServerMock = vi.hoisted(() => vi.fn())
+const toolMock = vi.hoisted(() => vi.fn())
 const logMock = {
   warn: vi.fn(),
   error: vi.fn(),
@@ -54,6 +62,8 @@ vi.mock('electron-log', () => ({
 
 vi.mock('@anthropic-ai/claude-agent-sdk', () => ({
   query: queryMock,
+  createSdkMcpServer: createSdkMcpServerMock,
+  tool: toolMock,
 }))
 
 vi.mock('child_process', () => ({
@@ -92,6 +102,8 @@ describe('executeClaudeCode', () => {
     queryMock.mockReset()
     spawnMock.mockReset()
     spawnSyncMock.mockReset()
+    createSdkMcpServerMock.mockReset()
+    toolMock.mockReset()
     logMock.warn.mockReset()
     logMock.error.mockReset()
     logMock.info.mockReset()
@@ -491,6 +503,86 @@ describe('executeClaudeCode', () => {
       allowDangerouslySkipPermissions: true,
       includePartialMessages: true,
     })
+  })
+
+  it('registers the in-process host MCP server only outside supervised mode', async () => {
+    queryMock.mockReturnValue({
+      async *[Symbol.asyncIterator]() {
+        yield { type: 'result', subtype: 'success', result: 'Runbook list is ready.' }
+      },
+      getContextUsage: getContextUsageMock.mockResolvedValue({ totalTokens: 0, maxTokens: 0 }),
+      close: closeMock,
+    })
+    toolMock.mockImplementation((name, _description, _schema, handler) => ({ name, handler }))
+    createSdkMcpServerMock.mockReturnValue({ transport: 'in-process' })
+
+    const { executeClaudeCode } =
+      await import('@bitsentry-ce/desktop-cli/runtime/desktop-coding-agents')
+    await executeClaudeCode({
+      prompt: 'List incident runbooks.',
+      binaryPath: 'claude',
+      abortController: new AbortController(),
+      accessLevel: 'auto-accept-edits',
+      systemPrompt: 'You are an incident-response assistant.',
+      hostToolContext: {
+        gateway: {} as never,
+        session: { id: 'session-1' },
+      },
+    })
+
+    const options = getQueryOptions(0)
+    expect(createSdkMcpServerMock).toHaveBeenCalledWith(expect.objectContaining({
+      name: 'bitsentry',
+      alwaysLoad: true,
+    }))
+    expect(options.mcpServers).toEqual({ bitsentry: { transport: 'in-process' } })
+    expect(options.allowedTools).toEqual(expect.arrayContaining([
+      'mcp__bitsentry__list_runbooks',
+      'mcp__bitsentry__execute_runbook',
+      'mcp__bitsentry__get_runbook_execution',
+    ]))
+    expect(options.settingSources).toEqual([])
+    expect(options.systemPrompt).toEqual({
+      type: 'preset',
+      preset: 'claude_code',
+      append: 'You are an incident-response assistant.',
+    })
+    expect(options.cwd).not.toBe(process.cwd())
+    expect(existsSync(options.cwd ?? '')).toBe(false)
+
+    const executeTool = toolMock.mock.results
+      .map((result) => result.value as { name: string; handler: (args: Record<string, unknown>) => Promise<unknown> })
+      .find((toolDefinition) => toolDefinition.name === 'execute_runbook')
+    await expect(executeTool?.handler({ runbookTitle: 42 })).resolves.toMatchObject({
+      isError: true,
+      content: [{ type: 'text' }],
+    })
+  })
+
+  it('omits the host MCP server in supervised mode', async () => {
+    queryMock.mockReturnValue({
+      async *[Symbol.asyncIterator]() {
+        yield { type: 'result', subtype: 'success', result: 'I can explain the incident.' }
+      },
+      getContextUsage: getContextUsageMock.mockResolvedValue({ totalTokens: 0, maxTokens: 0 }),
+      close: closeMock,
+    })
+
+    const { executeClaudeCode } =
+      await import('@bitsentry-ce/desktop-cli/runtime/desktop-coding-agents')
+    await executeClaudeCode({
+      prompt: 'Explain the incident.',
+      binaryPath: 'claude',
+      abortController: new AbortController(),
+      accessLevel: 'supervised',
+      hostToolContext: {
+        gateway: {} as never,
+        session: { id: 'session-1' },
+      },
+    })
+
+    expect(createSdkMcpServerMock).not.toHaveBeenCalled()
+    expect(getQueryOptions(0).mcpServers).toBeUndefined()
   })
 
   it('enables the Claude 1M context beta when requested', async () => {

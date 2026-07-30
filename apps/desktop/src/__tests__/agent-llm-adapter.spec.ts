@@ -214,6 +214,46 @@ describe('AgentLlmAdapterService', () => {
     expect(capturedPrompt).toContain('"type":"tool_calls"')
   })
 
+  it('keeps Claude MCP prompts free of the legacy protocol text', async () => {
+    const adapter = createAdapter()
+    let capturedPrompt = ''
+    let capturedSystemPrompt: string | undefined
+
+    adapter.setLocalAiProvider(createLocalAiProvider({
+      getHostToolProtocol: () => 'mcp',
+      execute: (_provider, prompt, _abortController, _onDelta, _cwd, _model, _accessLevel, _traits, _context, systemPrompt) => {
+        capturedPrompt = prompt
+        capturedSystemPrompt = systemPrompt
+        return Promise.resolve({ output: 'I found two runbooks.' })
+      },
+    }))
+
+    const response = await adapter.chatWithTools({
+      messages: [
+        { role: 'system', content: 'You are an incident-response assistant.' },
+        { role: 'user', content: 'List runbooks' },
+      ],
+      tools: [{
+        name: 'list_runbooks',
+        description: 'List available runbooks.',
+        inputSchema: { type: 'object', properties: {} },
+      }],
+      signal: new AbortController().signal,
+      llm: { providerKey: 'claude_code', model: 'claude-sonnet-4-6' },
+      accessLevel: 'auto-accept-edits',
+    })
+
+    expect(capturedPrompt).toBe('[user]: List runbooks')
+    expect(capturedPrompt).not.toContain('BitSentry host tool protocol:')
+    expect(capturedPrompt).not.toContain('"type":"tool_calls"')
+    expect(capturedSystemPrompt).toBe('You are an incident-response assistant.')
+    expect(response).toMatchObject({
+      content: 'I found two runbooks.',
+      toolProtocol: 'mcp',
+      toolCalls: [],
+    })
+  })
+
   it('hides foreign function-call markup and preserves the retry signal', async () => {
     const adapter = createAdapter()
     const output = [

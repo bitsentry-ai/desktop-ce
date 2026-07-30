@@ -83,3 +83,19 @@ export {
   type AgentToolProtocol,
   type StructuredCliToolResponse,
 } from './tool-protocol'
+export {
+  executeHostTool,
+  getHostTool,
+  getHostTools,
+  hostTools,
+  isHostToolName,
+  listRunbooksHostToolSchema,
+  executeRunbookHostToolSchema,
+  getRunbookExecutionHostToolSchema,
+  type AgentSessionRef,
+  type ExecuteRunbookHostToolInput,
+  type GetRunbookExecutionHostToolInput,
+  type HostToolContext,
+  type HostToolName,
+  type HostToolSpec,
+} from './host-tools'

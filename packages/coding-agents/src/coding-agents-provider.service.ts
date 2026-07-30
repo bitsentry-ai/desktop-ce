@@ -16,6 +16,7 @@ import type { OpenCodeExecutionOptions } from './opencode-provider.service.js'
 import { executeCursor } from './cursor-provider.service.js'
 import { createCodingAgentsProcessEnv } from './coding-agents-process-env.js'
 import { createCommandInvocation, resolveOpenCodeWindowsBinary } from './cli-binary-resolution.js'
+import type { HostToolContext } from '@bitsentry-ce/core/features/agent-runtime'
 
 const SETTINGS_KEY = 'local_ai_settings'
 const CLAUDE_CODE_CATALOG_MODELS = [
@@ -455,6 +456,8 @@ export class CodingAgentsProviderService {
     model?: string,
     accessLevel?: 'supervised' | 'auto-accept-edits' | 'full-access',
     traitValues?: Record<string, string | boolean>,
+    hostToolContext?: HostToolContext,
+    systemPrompt?: string,
   ): Promise<LocalAiExecutionResult> {
     const settings = getProviderSettings(this.settings, provider)
     if (!settings.enabled) {
@@ -472,6 +475,8 @@ export class CodingAgentsProviderService {
         accessLevel,
         maxTurns: effortToMaxTurns(readTraitString(traitValues?.effort)),
         contextWindow: readTraitString(traitValues?.contextWindow),
+        hostToolContext,
+        systemPrompt,
         onDelta,
       })
     }
@@ -517,12 +522,8 @@ export class CodingAgentsProviderService {
     })
   }
 
-  /**
-   * Coding CLIs expose text subprocess boundaries, so the adapter uses the
-   * versioned structured JSON compatibility response defined by core.
-   */
-  getHostToolProtocol(_provider: LocalAiProviderKey): 'structured_cli' {
-    return 'structured_cli'
+  getHostToolProtocol(provider: LocalAiProviderKey): 'mcp' | 'structured_cli' {
+    return provider === 'claude_code' ? 'mcp' : 'structured_cli'
   }
 
   async listModels(provider: LocalAiProviderKey): Promise<string[]> {
