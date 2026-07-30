@@ -420,6 +420,9 @@ export function createDesktopIpcPayloadValidator(
       timeoutMs: z.number().int().positive().max(300000).optional(),
       attachments: z.array(attachmentSchema).max(4).optional(),
       llm: llmSchema,
+      runbookId: z.string().trim().min(1).optional(),
+      runbookRevisionNumber: z.number().int().positive().optional(),
+      incidentThreadId: z.string().trim().min(1).optional(),
       accessLevel: z
         .enum(["supervised", "auto-accept-edits", "full-access"])
         .optional(),
@@ -429,6 +432,9 @@ export function createDesktopIpcPayloadValidator(
       sessionId: z.uuid().optional(),
       attachments: z.array(attachmentSchema).max(4).optional(),
       llm: llmSchema,
+      runbookId: z.string().trim().min(1).optional(),
+      runbookRevisionNumber: z.number().int().positive().optional(),
+      incidentThreadId: z.string().trim().min(1).optional(),
       accessLevel: z
         .enum(["supervised", "auto-accept-edits", "full-access"])
         .optional(),

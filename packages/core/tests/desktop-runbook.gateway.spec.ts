@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { createDesktopRunbookGateway } from "../src/features/runbooks/desktop-runbook.gateway";
 import type {
+  RunbookContextV1,
   RunbookExecutionRecord,
   RunbookRecord,
 } from "../src/features/runbooks/desktop-runbook.types";
@@ -22,6 +23,51 @@ function runbook(
       id: `${id}-${String(index)}`,
       type: "shell",
       title: "Check service",
+    })),
+  };
+}
+
+function contextFor(runbook: RunbookRecord): RunbookContextV1 {
+  return {
+    format: "bitsentry.runbook.context",
+    version: 1,
+    runbook: {
+      id: runbook.id,
+      title: runbook.title,
+      description: runbook.description,
+      revisionNumber: runbook.revisionNumber,
+      updatedAt: runbook.updatedAt,
+      actionCount: runbook.actions.length,
+    },
+    summary: {
+      purposeText: runbook.title,
+      actionTypeCounts: {
+        shell: runbook.actions.filter((action) => action.type === "shell").length,
+        llm: 0,
+        http: 0,
+        plugin: 0,
+        external_source: 0,
+        telemetry_existing_entry: 0,
+        data_source_query: 0,
+        telemetry_ingest: 0,
+        diagnosis_diagnose: 0,
+        diagnosis_verify: 0,
+        diagnosis_recommend: 0,
+      },
+      orderedActionTitles: runbook.actions.map((action) => action.title),
+    },
+    actions: runbook.actions.map((action, index) => ({
+      id: action.id,
+      order: index + 1,
+      type: action.type,
+      title: action.title,
+      payload: {
+        command: action.command,
+        prompt: action.prompt,
+        url: action.url,
+        method: action.method,
+        parameters: action.parameters,
+      },
     })),
   };
 }
@@ -140,6 +186,7 @@ describe("DesktopRunbookGateway", () => {
     const gateway = createDesktopRunbookGateway({
       store: {
         list: async () => runbooks,
+        exportContext: async ({ id }) => contextFor(runbooks.find((item) => item.id === id)!),
         getRunbookOrThrow: async (id) => {
           const selected = runbooks.find((item) => item.id === id);
           if (selected === undefined) throw new Error("Runbook not found");
@@ -152,6 +199,10 @@ describe("DesktopRunbookGateway", () => {
     await expect(gateway.listExecutable()).resolves.toEqual([
       expect.objectContaining({ id: "check-api" }),
     ]);
+    await expect(gateway.getRunbookContext("check-api")).resolves.toMatchObject({
+      runbook: { id: "check-api", revisionNumber: 4 },
+      actions: [expect.objectContaining({ title: "Check service" })],
+    });
 
     const accepted = await gateway.start({
       runbookId: "check-api",
@@ -185,6 +236,9 @@ describe("DesktopRunbookGateway", () => {
     const gateway = createDesktopRunbookGateway({
       store: {
         list: async () => runbooks,
+        exportContext: async () => {
+          throw new Error("not needed by this journey");
+        },
         getRunbookOrThrow: async () => runbooks[0]!,
       },
       executionService,
@@ -218,6 +272,9 @@ describe("DesktopRunbookGateway", () => {
     const gateway = createDesktopRunbookGateway({
       store: {
         list: async () => [current],
+        exportContext: async () => {
+          throw new Error("not needed by this journey");
+        },
         getRunbookOrThrow: async () => current,
       },
       executionService: new InMemoryExecutionService(),

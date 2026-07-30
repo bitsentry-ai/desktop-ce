@@ -215,6 +215,9 @@ function createRuntime(options: {
             const runbooks = await options.runbookStore!.list()
             return runbooks.filter((runbook) => runbook.actions.length > 0)
           },
+          getRunbookContext: async () => {
+            throw new Error('Runbook context resolution belongs to the IPC handler')
+          },
           start: async (request: Parameters<AgentRuntimeRunbookGateway['start']>[0]) => {
             const existing = acceptedRequests.get(request.requestKey)
             const accepted = existing ?? (async () => {

@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type {
   RunbookExecutionRecord,
+  RunbookContextV1,
   RunbookParameterValues,
   RunbookRecord,
 } from "./desktop-runbook.types";
@@ -43,6 +44,7 @@ type ExecutionServiceEvent = {
  */
 export interface DesktopRunbookGateway {
   listExecutable(): Promise<RunbookRecord[]>;
+  getRunbookContext(runbookId: string): Promise<RunbookContextV1>;
   start(request: RunbookExecutionRequest): Promise<RunbookExecutionResult>;
   get(executionId: string): Promise<RunbookExecutionRecord | null>;
   getLatestForIncidentThread(
@@ -67,6 +69,7 @@ export interface DesktopRunbookGatewayDependencies {
   store: {
     list(): Promise<RunbookRecord[]>;
     getRunbookOrThrow(id: string): Promise<RunbookRecord>;
+    exportContext(payload: Record<string, unknown>): Promise<RunbookContextV1>;
   };
   executionService: {
     start(
@@ -214,6 +217,9 @@ export function createDesktopRunbookGateway(
     async listExecutable() {
       const runbooks = await store.list();
       return runbooks.filter((runbook) => runbook.actions.length > 0);
+    },
+    getRunbookContext(runbookId) {
+      return store.exportContext({ id: executionReferenceSchema.parse(runbookId) });
     },
     start,
     get(executionId) {

@@ -251,6 +251,8 @@ export interface AgentStartInput {
   accessLevel?: 'supervised' | 'auto-accept-edits' | 'full-access'
   traitValues?: Record<string, string | boolean>
   runbookContext?: RunbookContext  // Optional: Active runbook for contextualized responses
+  runbookId?: string // Resolved by the desktop gateway before the agent starts
+  runbookRevisionNumber?: number
   incidentThreadId?: string
 }
 
@@ -265,6 +267,8 @@ export interface AgentSendInput {
   accessLevel?: 'supervised' | 'auto-accept-edits' | 'full-access'
   traitValues?: Record<string, string | boolean>
   runbookContext?: RunbookContext  // Optional: runbook for session recovery
+  runbookId?: string // Resolved by the desktop gateway before the agent continues
+  runbookRevisionNumber?: number
   incidentThreadId?: string
 }
 
@@ -317,7 +321,9 @@ export type RunbookActionType =
   | 'shell'
   | 'llm'
   | 'http'
+  | 'plugin'
   | 'external_source'
+  | 'telemetry_existing_entry'
   | 'data_source_query'
   | 'telemetry_ingest'
   | 'diagnosis_diagnose'
@@ -339,6 +345,10 @@ export interface RunbookAction {
   method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'
   query?: string
   body?: string
+  pluginId?: string
+  pluginActionId?: string
+  pluginInput?: string
+  sourceId?: string
   parameters?: Array<{
     id: string
     key: string

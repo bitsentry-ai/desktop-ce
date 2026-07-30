@@ -501,18 +501,19 @@ app
       )
 
       // Create agent runtime with LLM adapter
+      const runbookGateway = createDesktopRunbookGateway({
+        store: runbookStore,
+        executionService: runbookExecutionService,
+      })
       agentRuntime = createDesktopAgentService(
         {
           llmAdapter: agentLlmAdapter,
-          runbookGateway: createDesktopRunbookGateway({
-            store: runbookStore,
-            executionService: runbookExecutionService,
-          }),
+          runbookGateway,
           windowGetter: () => desktopShell.mainWindow,
         },
         { AgentRuntimeService },
       )
-      dispatcher.registerAll(createAgentHandlers({ agentRuntime }))
+      dispatcher.registerAll(createAgentHandlers({ agentRuntime, runbookGateway }))
 
       // Register direct IPC handlers for preload bridge compatibility.
       // These forward to the dispatcher-registered handlers.
