@@ -16,15 +16,17 @@
     }
   },
   "scripts": {
-    "build": "rm -rf dist && tsc -p tsconfig.build.json",
+    "build": "rm -rf dist && tsc -p tsconfig.build.json && node ../../scripts/build-host-mcp-shim.mjs",
     "lint": "node ../../scripts/eslint/ts7-unavailable.mjs",
     "lint:fix": "eslint . --fix"
   },
   "dependencies": {
     "@alcyone-labs/zod-to-json-schema": "^4.0.10",
     "@anthropic-ai/claude-agent-sdk": "^0.2.138",
+    "@modelcontextprotocol/sdk": "^1.29.0",
     "@bitsentry-ce/components": "workspace:*",
     "@bitsentry-ce/core": "workspace:*",
+    "@modelcontextprotocol/sdk": "^1.29.0",
     "electron-log": "^5.4.3",
     "zod": "^4.3.6"
   },
