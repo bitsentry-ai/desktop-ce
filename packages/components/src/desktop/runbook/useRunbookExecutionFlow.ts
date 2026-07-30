@@ -74,6 +74,11 @@ export function useRunbookExecutionFlow({
         const execution = await ipcInvoke<{
           executionId: string;
           resultId: string;
+          execution?: {
+            status?: string;
+            startedAt?: string;
+            completedAt?: string;
+          };
         }>("runbooks:execute", {
           runbookId: editingRunbook.id,
           parameterValues,
@@ -87,6 +92,7 @@ export function useRunbookExecutionFlow({
           resultId: execution.resultId,
           runbook: editingRunbook,
           context,
+          execution: execution.execution,
         });
 
         navigateToResult(execution.resultId);

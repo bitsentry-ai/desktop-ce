@@ -130,6 +130,42 @@ function saveResultTraces(traceMap: Record<string, ResultTraceMemory>) {
   } catch {}
 }
 
+const RUN_RESULT_STATUSES = new Set<string>([
+  "queued",
+  "pending",
+  "running",
+  "claim_expired",
+  "completed",
+  "failed",
+  "cancelled",
+]);
+
+// The stored result is only a mirror of what this window has seen. Whenever an
+// execution snapshot is available it is the authoritative record of the run,
+// so a stale mirror can never show a finished run as still going.
+function effectiveStatus(
+  result: { status: RunResultStatus },
+  execution: RunbookExecutionRecord | null | undefined,
+): RunResultStatus {
+  const status = execution?.status;
+  if (typeof status === "string" && RUN_RESULT_STATUSES.has(status)) {
+    return status as RunResultStatus;
+  }
+
+  return result.status;
+}
+
+function effectiveCompletedAt(
+  result: { completedAt?: string },
+  execution: RunbookExecutionRecord | null | undefined,
+): string | undefined {
+  if (execution != null) {
+    return execution.completedAt;
+  }
+
+  return result.completedAt;
+}
+
 function statusLabel(status: RunResultStatus): string {
   switch (status) {
     case "queued":
@@ -380,12 +416,14 @@ function SummaryPanel({
     );
   }
 
+  const resolvedStatus = effectiveStatus(result, execution);
+  const resolvedCompletedAt = effectiveCompletedAt(result, execution);
   let completedAtContent: ReactNode = null;
-  if (result.completedAt !== undefined) {
+  if (resolvedCompletedAt !== undefined) {
     completedAtContent = (
       <div className="text-xs text-muted-foreground">
         {t("common.results.completed")}{" "}
-        {new Date(result.completedAt).toLocaleString()}
+        {new Date(resolvedCompletedAt).toLocaleString()}
       </div>
     );
   }
@@ -431,7 +469,7 @@ function SummaryPanel({
   let finalOutputEmptyMessage = t(
     "common.results.noCompletedStepOutputAvailable",
   );
-  if (result.status === "running") {
+  if (resolvedStatus === "running") {
     finalOutputEmptyMessage = t("common.results.executionIsStillRunning");
   }
 
@@ -460,7 +498,7 @@ function SummaryPanel({
             <div className="text-[10px] uppercase tracking-wide text-muted-foreground/60">
               {t("common.results.status")}
             </div>
-            <div className="mt-1 font-medium">{statusLabel(result.status)}</div>
+            <div className="mt-1 font-medium">{statusLabel(resolvedStatus)}</div>
           </div>
           <div className="rounded-lg border border-border bg-muted/20 p-3">
             <div className="text-[10px] uppercase tracking-wide text-muted-foreground/60">
@@ -691,14 +729,16 @@ function ResultsList({
       {results.map((result) => {
         const execution = traceMap?.[result.id]?.execution ?? null;
         const parameterSummary = executionParameterSummary(execution);
+        const rowStatus = effectiveStatus(result, execution);
+        const rowCompletedAt = effectiveCompletedAt(result, execution);
         let completedAtContent: ReactNode = null;
-        if (result.completedAt !== undefined) {
+        if (rowCompletedAt !== undefined) {
           completedAtContent = (
             <>
               <span className="text-muted-foreground/30">•</span>
               <span>
                 {t("common.results.completed_3")}{" "}
-                {new Date(result.completedAt).toLocaleString()}
+                {new Date(rowCompletedAt).toLocaleString()}
               </span>
             </>
           );
@@ -747,10 +787,10 @@ function ResultsList({
             <span
               className={cn(
                 "rounded-full px-2 py-0.5 text-xs font-medium",
-                statusClass(result.status),
+                statusClass(rowStatus),
               )}
             >
-              {statusLabel(result.status)}
+              {statusLabel(rowStatus)}
             </span>
           </button>
         );
@@ -787,7 +827,7 @@ export default function ResultsPage() {
       filteredResults.reduce<Record<RunResultStatus | "total", number>>(
         (counts, result) => {
           counts.total += 1;
-          counts[result.status] += 1;
+          counts[effectiveStatus(result, traceMap[result.id]?.execution)] += 1;
           return counts;
         },
         {
@@ -801,7 +841,7 @@ export default function ResultsPage() {
           cancelled: 0,
         },
       ),
-    [filteredResults],
+    [filteredResults, traceMap],
   );
   const showAllHistory =
     activeId === null &&
@@ -1139,10 +1179,10 @@ export default function ResultsPage() {
                 <span
                   className={cn(
                     "rounded-full px-2 py-0.5 text-xs font-medium",
-                    statusClass(activeResult.status),
+                    statusClass(effectiveStatus(activeResult, activeExecution)),
                   )}
                 >
-                  {statusLabel(activeResult.status)}
+                  {statusLabel(effectiveStatus(activeResult, activeExecution))}
                 </span>
                 <div className="flex-1" />
                 <button

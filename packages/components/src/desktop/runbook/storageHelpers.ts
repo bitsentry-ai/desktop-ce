@@ -141,11 +141,29 @@ export function summarizeImportResult(summary: RunbookImportSummary): string {
   return `${String(summary.imported)} imported, ${String(summary.skipped)} skipped, ${String(summary.failed)} failed`;
 }
 
+function toStoredRunStatus(value: string | undefined): StoredRunResult["status"] {
+  if (
+    value === "completed" ||
+    value === "failed" ||
+    value === "cancelled" ||
+    value === "running"
+  ) {
+    return value;
+  }
+
+  return "running";
+}
+
 export function persistRunningRunResult(input: {
   executionId: string;
   resultId: string;
   runbook: Pick<RunbookRecord, "id" | "title">;
   context: RunbookContextV1;
+  execution?: {
+    status?: string;
+    startedAt?: string;
+    completedAt?: string;
+  };
 }): void {
   const rawResults =
     localStorage.getItem(RESULTS_KEY) ??
@@ -155,6 +173,10 @@ export function persistRunningRunResult(input: {
     results = storedRunResultsSchema.parse(JSON.parse(rawResults));
   }
 
+  // Mirror what the execution actually reports. Assuming "running" turns a
+  // deduplicated or already-finished execution into a run that never ends.
+  const status = toStoredRunStatus(input.execution?.status);
+  const completedAt = input.execution?.completedAt;
   const nextResult: StoredRunResult = {
     id: input.resultId,
     runbookId: input.runbook.id,
@@ -162,8 +184,9 @@ export function persistRunningRunResult(input: {
     runbookRevisionNumber: input.context.runbook.revisionNumber,
     runbookContextJson: JSON.stringify(input.context),
     executionId: input.executionId,
-    status: "running",
-    startedAt: new Date().toISOString(),
+    status,
+    startedAt: input.execution?.startedAt ?? new Date().toISOString(),
+    completedAt,
   };
 
   const existingIndex = results.findIndex((item) => item.id === input.resultId);
@@ -171,6 +194,9 @@ export function persistRunningRunResult(input: {
     results[existingIndex] = {
       ...results[existingIndex],
       ...nextResult,
+      // Spreading keeps a stale completedAt when the new run has none, which
+      // is how finished timestamps leaked onto fresh runs.
+      completedAt,
     };
   } else {
     results.unshift(nextResult);
