@@ -58,6 +58,7 @@ import type {
   RunbookRecord,
   RunbookTriggerContext,
 } from '@bitsentry-ce/core/features/runbooks/desktop-runbook.types'
+import type { DesktopRunbookGateway } from '@bitsentry-ce/core/features/runbooks'
 
 const CHANNEL_EVENT = 'bitsentry:agent:event'
 const NO_LLM_PROVIDER_CONFIGURED_MESSAGE =
@@ -77,34 +78,7 @@ export interface AgentRuntimeWindow {
 }
 
 export type AgentRuntimeLlmAdapter = Pick<AgentLlmAdapterService, 'chatWithTools'>
-export interface AgentRuntimeRunbookStore {
-  list(): Promise<RunbookRecord[]>
-}
-
-export interface AgentRuntimeRunbookExecutionService {
-  get(executionId: string): Promise<RunbookExecutionRecord | null>
-  getLatestForIncidentThread(
-    incidentThreadId: string,
-  ): Promise<RunbookExecutionRecord | null>
-  start(
-    runbookId: string,
-    options?: {
-      parameterValues?: RunbookParameterValues
-      source?: 'manual' | 'agent'
-      triggerContext?: RunbookTriggerContext
-      incidentThreadId?: string
-      accessLevel?: 'supervised' | 'auto-accept-edits' | 'full-access'
-    },
-  ): Promise<{ executionId: string; resultId: string }>
-  waitForCompletion(
-    executionId: string,
-    options?: {
-      signal?: AbortSignal
-      pollIntervalMs?: number
-      timeoutMs?: number
-    },
-  ): Promise<RunbookExecutionRecord | null>
-}
+export type AgentRuntimeRunbookGateway = DesktopRunbookGateway
 
 export interface AgentRuntimeDebugHooks {
   isLocalCodingAgentDeltaStreamingEnabled(): boolean
@@ -1584,8 +1558,7 @@ export class AgentRuntimeService {
   constructor(
     private windowGetter: () => AgentRuntimeWindow | null,
     private llmAdapter: AgentRuntimeLlmAdapter,
-    private readonly runbookStore?: AgentRuntimeRunbookStore,
-    private readonly runbookExecutionService?: AgentRuntimeRunbookExecutionService,
+    private readonly runbookGateway?: AgentRuntimeRunbookGateway,
     private readonly debugHooks: AgentRuntimeDebugHooks = DEFAULT_AGENT_RUNTIME_DEBUG_HOOKS,
   ) {}
 
@@ -2540,23 +2513,15 @@ export class AgentRuntimeService {
   }
 
   private hasRunbookTools(): boolean {
-    return this.runbookStore !== undefined && this.runbookExecutionService !== undefined
+    return this.runbookGateway !== undefined
   }
 
-  private getRunbookStore(): AgentRuntimeRunbookStore {
-    if (this.runbookStore === undefined) {
-      throw new Error('Runbook store is not configured')
+  private getRunbookGateway(): AgentRuntimeRunbookGateway {
+    if (this.runbookGateway === undefined) {
+      throw new Error('Runbook gateway is not configured')
     }
 
-    return this.runbookStore
-  }
-
-  private getRunbookExecutionService(): AgentRuntimeRunbookExecutionService {
-    if (this.runbookExecutionService === undefined) {
-      throw new Error('Runbook execution service is not configured')
-    }
-
-    return this.runbookExecutionService
+    return this.runbookGateway
   }
 
   private async runExplicitlyMentionedRunbook(session: AgentSession): Promise<DirectRunbookExecutionResult | null> {
@@ -2785,7 +2750,7 @@ export class AgentRuntimeService {
   }
 
   private async executeRunbook(session: AgentSession, input: ExecuteRunbookInput): Promise<ToolResult> {
-    const runbookExecutionService = this.getRunbookExecutionService()
+    const runbookGateway = this.getRunbookGateway()
     const runbook = await this.resolveRunbookReference(session, input)
     const parameterValues = this.resolveRunbookParameterValues(session, runbook, input)
     const runbookStartKey = buildRunbookStartKey(runbook.id, parameterValues)
@@ -2809,7 +2774,7 @@ export class AgentRuntimeService {
 
     startedRunbookKeys.add(runbookStartKey)
     session.currentTurnStartedRunbookKeys = startedRunbookKeys
-    const execution = await runbookExecutionService.start(runbook.id, {
+    const execution = await runbookGateway.start(runbook.id, {
       incidentThreadId: session.incidentThreadId,
       parameterValues,
       source: 'agent',
@@ -2821,7 +2786,7 @@ export class AgentRuntimeService {
     session.latestRunbookTitle = runbook.title
     session.currentTurnStartedRunbookExecutionIds?.add(execution.executionId)
     session.currentRunbookWaitExecutionId = execution.executionId
-    const latestExecution = await runbookExecutionService.waitForCompletion(execution.executionId, {
+    const latestExecution = await runbookGateway.waitForCompletion(execution.executionId, {
       signal: session.abortController.signal,
       timeoutMs: this.runbookCompletionWaitMs(session, { allowRunbookGrace: true }),
     }).finally(() => {
@@ -2852,8 +2817,7 @@ export class AgentRuntimeService {
   }
 
   private async listExecutableRunbooks(): Promise<RunbookRecord[]> {
-    const runbooks = await this.getRunbookStore().list()
-    return runbooks.filter((runbook) => runbook.actions.length > 0)
+    return this.getRunbookGateway().listExecutable()
   }
 
   private async resolveRunbookReference(
@@ -2961,10 +2925,10 @@ export class AgentRuntimeService {
     session: AgentSession,
     input: z.infer<typeof getRunbookExecutionToolSchema>,
   ) {
-    const runbookExecutionService = this.getRunbookExecutionService()
+    const runbookGateway = this.getRunbookGateway()
     const executionId = input.executionId?.trim()
     if (executionId !== undefined && executionId.length > 0) {
-      const requestedExecution = await runbookExecutionService.get(executionId)
+      const requestedExecution = await runbookGateway.get(executionId)
       if (requestedExecution !== null) {
         return requestedExecution
       }
@@ -2978,14 +2942,14 @@ export class AgentRuntimeService {
     }
 
     if (session.latestRunbookExecutionId !== undefined && session.latestRunbookExecutionId.length > 0) {
-      const latestSessionExecution = await runbookExecutionService.get(session.latestRunbookExecutionId)
+      const latestSessionExecution = await runbookGateway.get(session.latestRunbookExecutionId)
       if (latestSessionExecution !== null) {
         return latestSessionExecution
       }
     }
 
     if (session.incidentThreadId !== undefined && session.incidentThreadId.length > 0) {
-      return runbookExecutionService.getLatestForIncidentThread(session.incidentThreadId)
+      return runbookGateway.getLatestForIncidentThread(session.incidentThreadId)
     }
 
     return null
@@ -3005,7 +2969,7 @@ export class AgentRuntimeService {
       return null
     }
 
-    const latestSessionExecution = await this.getRunbookExecutionService().get(latestExecutionId)
+    const latestSessionExecution = await this.getRunbookGateway().get(latestExecutionId)
     if (latestSessionExecution === null) {
       return null
     }
@@ -3096,7 +3060,7 @@ export class AgentRuntimeService {
     }
 
     session.currentRunbookWaitExecutionId = execution.executionId
-    const latestExecution = await this.getRunbookExecutionService().waitForCompletion(execution.executionId, {
+    const latestExecution = await this.getRunbookGateway().waitForCompletion(execution.executionId, {
       signal: session.abortController.signal,
       timeoutMs,
     }).finally(() => {

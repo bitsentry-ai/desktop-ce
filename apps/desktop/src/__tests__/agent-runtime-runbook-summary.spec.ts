@@ -7,8 +7,7 @@ import {
 import type {
   AgentRuntimeEventPayload,
   AgentRuntimeLlmAdapter,
-  AgentRuntimeRunbookExecutionService,
-  AgentRuntimeRunbookStore,
+  AgentRuntimeRunbookGateway,
 } from '../main/features/agent-runtime/services/agent-runtime.service'
 import { createAgentThreadSnapshot, reduceAgentThreadSnapshot } from '@bitsentry-ce/components/chat/runtimeProjection'
 import type {
@@ -31,6 +30,10 @@ type MockLlmAdapter = {
     }
   }
 }
+type TestRunbookExecutionService = Pick<
+  AgentRuntimeRunbookGateway,
+  'get' | 'getLatestForIncidentThread' | 'start' | 'waitForCompletion'
+>
 type RunbookStartOptions = {
   incidentThreadId?: string
   parameterValues?: RunbookParameterValues
@@ -169,8 +172,8 @@ function getRequiredSystemContent(messages: LlmChatRequest['messages'], text: st
 
 function createRuntime(options: {
   llmAdapter: AgentRuntimeLlmAdapter
-  runbookStore?: AgentRuntimeRunbookStore
-  runbookExecutionService?: AgentRuntimeRunbookExecutionService
+  runbookStore?: { list(): Promise<RunbookRecord[]> }
+  runbookExecutionService?: TestRunbookExecutionService
   sentEvents?: AgentRuntimeEventPayload[]
 }): AgentRuntimeService {
   const windowGetter = () => {
@@ -188,11 +191,22 @@ function createRuntime(options: {
     }
   }
 
+  const runbookGateway =
+    options.runbookStore === undefined || options.runbookExecutionService === undefined
+      ? undefined
+      : {
+          listExecutable: async () => {
+            const runbooks = await options.runbookStore?.list()
+            return (runbooks ?? []).filter((runbook) => runbook.actions.length > 0)
+          },
+          cancel: async () => undefined,
+          ...options.runbookExecutionService,
+        }
+
   return new AgentRuntimeService(
     windowGetter,
     options.llmAdapter,
-    options.runbookStore,
-    options.runbookExecutionService,
+    runbookGateway,
   )
 }
 

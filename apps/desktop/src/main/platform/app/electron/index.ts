@@ -38,6 +38,7 @@ import {
   saveDesktopProviderSettings,
 } from '@bitsentry-ce/core/features/desktop/desktop-llm-provider-settings'
 import { DesktopGlobalVariablesService } from '@bitsentry-ce/core/features/runbooks'
+import { createDesktopRunbookGateway } from '@bitsentry-ce/core/features/runbooks'
 import '../../storage/database/seeding'
 import {
   initializeDatabase,
@@ -503,8 +504,10 @@ app
       agentRuntime = createDesktopAgentService(
         {
           llmAdapter: agentLlmAdapter,
-          runbookStore: runbookStore,
-          runbookExecutionService: runbookExecutionService,
+          runbookGateway: createDesktopRunbookGateway({
+            store: runbookStore,
+            executionService: runbookExecutionService,
+          }),
           windowGetter: () => desktopShell.mainWindow,
         },
         { AgentRuntimeService },
