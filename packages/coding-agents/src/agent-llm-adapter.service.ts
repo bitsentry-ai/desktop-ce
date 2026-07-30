@@ -20,6 +20,12 @@ import type {
   LocalAiProviderKey,
   LocalAiStreamDelta,
 } from './types'
+import {
+  agentToolCallSchema,
+  type AgentToolCall,
+  type AgentToolProtocol,
+  type AgentToolResultEnvelope,
+} from '@bitsentry-ce/core/features/agent-runtime'
 import log from 'electron-log'
 
 export type LlmProviderKey = 'groq' | 'kilocode' | 'openai' | 'anthropic' | 'gemini' | 'openrouter' | 'claude_code' | 'codex' | 'opencode' | 'cursor'
@@ -81,6 +87,12 @@ const NOOP_LLM_CREDENTIALS_STORE: AgentLlmCredentialsStore = {
 export interface LocalAiProviderPort {
   isReady(provider: LocalAiProviderKey): boolean
   listModels(provider: LocalAiProviderKey): Promise<string[]>
+  /**
+   * An opt-in capability boundary. A CLI that advertises structured calls must
+   * return them in LocalAiExecutionResult.toolCalls; it never falls through to
+   * parsing generated text.
+   */
+  getHostToolProtocol?(provider: LocalAiProviderKey): 'structured_cli' | 'legacy_text'
   execute(
     provider: LocalAiProviderKey,
     prompt: string,
@@ -136,16 +148,13 @@ export interface ChatMessage {
   content: string | ChatContentPart[]
   toolCallId?: string
   toolCalls?: ToolCall[]
+  toolResult?: AgentToolResultEnvelope
 }
 
 /**
  * Tool call from LLM response.
  */
-export interface ToolCall {
-  id: string
-  name: string
-  args: Record<string, unknown>
-}
+export type ToolCall = AgentToolCall
 
 /**
  * Tool definition for LLM consumption.
@@ -187,6 +196,7 @@ export interface ChatWithToolsInput {
 export interface ChatResponse {
   content: string
   toolCalls?: ToolCall[]
+  toolProtocol: AgentToolProtocol
   tokenUsage?: {
     inputTokens: number
     outputTokens: number
@@ -674,11 +684,16 @@ function parseToolCallsFromText(text: string): { content: string; toolCalls: Too
         if (typeof parsed.id === 'string' && parsed.id.length > 0) {
           id = parsed.id
         }
-        toolCalls.push({
+        const toolCall = agentToolCallSchema.safeParse({
           id,
           name: parsed.name,
           args: parsed.args ?? {},
         })
+        if (!toolCall.success) {
+          log.warn('[agent-llm] Ignoring invalid legacy host tool call')
+          continue
+        }
+        toolCalls.push(toolCall.data)
         content = content.replace(match[0], '').trim()
       }
     } catch {
@@ -687,6 +702,24 @@ function parseToolCallsFromText(text: string): { content: string; toolCalls: Too
   }
 
   return { content, toolCalls }
+}
+
+function parseStructuredToolCalls(toolCalls: ToolCall[] | undefined): ToolCall[] {
+  if (toolCalls === undefined) return []
+
+  return toolCalls.flatMap((toolCall) => {
+    const parsed = agentToolCallSchema.safeParse(toolCall)
+    if (parsed.success) return [parsed.data]
+    log.warn('[agent-llm] Ignoring invalid structured CLI host tool call')
+    return []
+  })
+}
+
+function createNativeToolCall(value: unknown, providerLabel: string): ToolCall | null {
+  const parsed = agentToolCallSchema.safeParse(value)
+  if (parsed.success) return parsed.data
+  log.warn(`[agent-llm] Ignoring invalid ${providerLabel} native tool call`)
+  return null
 }
 
 function createToolCallStreamSanitizer(): {
@@ -1223,6 +1256,9 @@ export class AgentLlmAdapterService {
     // CLI tool access uses prompt injection. In supervised mode, omit the tool
     // prompt so model-emitted wrapper tags cannot bypass access-level checks.
     const isSupervised = accessLevel === 'supervised' || accessLevel === undefined
+    const toolProtocol = isSupervised
+      ? 'none'
+      : this.localAiProvider.getHostToolProtocol?.(providerKey) ?? 'legacy_text'
     const streamSanitizer = createToolCallStreamSanitizer()
     let cliTranscriptSanitizer: TextSanitizer | null = null
     if (providerKey === 'claude_code') {
@@ -1232,7 +1268,7 @@ export class AgentLlmAdapterService {
     try {
       const result = await this.localAiProvider.execute(
         providerKey,
-        this.buildLocalAiPrompt(input, isSupervised),
+        this.buildLocalAiPrompt(input, isSupervised, toolProtocol),
         abortController,
         createLocalAiDeltaHandler(input.onDelta, streamSanitizer, cliTranscriptSanitizer),
         undefined,
@@ -1243,17 +1279,21 @@ export class AgentLlmAdapterService {
 
       this.flushLocalAiStream(input.onDelta, streamSanitizer, cliTranscriptSanitizer)
       this.emitLocalAiTokenUsage(input.onDelta, result)
-      return this.toLocalAiChatResponse(providerKey, result, isSupervised)
+      return this.toLocalAiChatResponse(providerKey, result, toolProtocol)
     } finally {
       input.signal.removeEventListener('abort', onAbort)
     }
   }
 
-  private buildLocalAiPrompt(input: ChatWithToolsInput, isSupervised: boolean): string {
+  private buildLocalAiPrompt(
+    input: ChatWithToolsInput,
+    isSupervised: boolean,
+    toolProtocol: AgentToolProtocol,
+  ): string {
     // Each turn runs as a fresh CLI subprocess. The full BitSentry transcript is
     // replayed explicitly so CLI-native session state cannot leak across runs.
     const conversationText = input.messages.map(flattenMessageText).join('\n')
-    if (isSupervised) {
+    if (isSupervised || toolProtocol === 'structured_cli') {
       return conversationText
     }
     return conversationText + buildToolsPrompt(input.tools ?? [])
@@ -1296,12 +1336,22 @@ export class AgentLlmAdapterService {
   private toLocalAiChatResponse(
     providerKey: LocalAiProviderKey,
     result: LocalAiExecutionResult,
-    isSupervised: boolean,
+    toolProtocol: AgentToolProtocol,
   ): ChatResponse {
-    if (isSupervised) {
+    if (toolProtocol === 'none') {
       return {
         content: sanitizeLocalProviderOutput(providerKey, result.output),
         toolCalls: [],
+        toolProtocol,
+        tokenUsage: result.tokenUsage,
+      }
+    }
+
+    if (toolProtocol === 'structured_cli') {
+      return {
+        content: sanitizeLocalProviderOutput(providerKey, result.output),
+        toolCalls: parseStructuredToolCalls(result.toolCalls),
+        toolProtocol,
         tokenUsage: result.tokenUsage,
       }
     }
@@ -1310,6 +1360,7 @@ export class AgentLlmAdapterService {
     return {
       content: sanitizeLocalProviderOutput(providerKey, content),
       toolCalls,
+      toolProtocol,
       tokenUsage: result.tokenUsage,
     }
   }
@@ -1455,17 +1506,18 @@ export class AgentLlmAdapterService {
             return null
           }
 
-          return {
+          return createNativeToolCall({
             id: toolCall.id ?? `openai_${String(Date.now())}_${String(index)}`,
             name: toolCall.name,
             args: parseJsonObject(toolCall.argumentsText, `OpenAI tool arguments for ${toolCall.name}`),
-          }
+          }, 'OpenAI')
         })
         .filter((toolCall): toolCall is ToolCall => toolCall != null)
 
       return {
         content,
         toolCalls,
+        toolProtocol: 'native_function_calling',
         tokenUsage,
       }
     }
@@ -1491,16 +1543,22 @@ export class AgentLlmAdapterService {
       throw new Error('LLM returned empty response')
     }
 
-    const toolCalls = message.tool_calls?.map(tc => ({
-      id: tc.id,
-      name: tc.function.name,
-      args: JSON.parse(tc.function.arguments) as Record<string, unknown>,
-    }))
+    const toolCalls = message.tool_calls
+      ?.map((toolCall) => createNativeToolCall({
+        id: toolCall.id,
+        name: toolCall.function.name,
+        args: parseJsonObject(
+          toolCall.function.arguments,
+          `OpenAI tool arguments for ${toolCall.function.name}`,
+        ),
+      }, 'OpenAI'))
+      .filter((toolCall): toolCall is ToolCall => toolCall !== null)
 
     const usage = data.usage
     return {
       content: message.content ?? '',
       toolCalls,
+      toolProtocol: 'native_function_calling',
       tokenUsage: toTokenUsage(usage?.prompt_tokens, usage?.completion_tokens),
     }
   }
@@ -1611,11 +1669,12 @@ export class AgentLlmAdapterService {
       }
 
       if (block.id !== undefined && block.name !== undefined) {
-        toolCalls.push({
+        const toolCall = createNativeToolCall({
           id: block.id,
           name: block.name,
           args: block.input ?? {},
-        })
+        }, 'Anthropic')
+        if (toolCall !== null) toolCalls.push(toolCall)
       }
     }
 
@@ -1623,6 +1682,7 @@ export class AgentLlmAdapterService {
     return {
       content,
       toolCalls,
+      toolProtocol: 'native_function_calling',
       tokenUsage: toTokenUsage(usage?.input_tokens, usage?.output_tokens),
     }
   }
@@ -1725,11 +1785,12 @@ export class AgentLlmAdapterService {
         content += part.text
       }
       if (part.functionCall !== undefined) {
-        toolCalls.push({
+        const toolCall = createNativeToolCall({
           id: `gemini_${String(Date.now())}_${String(toolCalls.length)}`,
           name: part.functionCall.name,
           args: part.functionCall.args,
-        })
+        }, 'Gemini')
+        if (toolCall !== null) toolCalls.push(toolCall)
       }
     }
 
@@ -1737,6 +1798,7 @@ export class AgentLlmAdapterService {
     return {
       content,
       toolCalls,
+      toolProtocol: 'native_function_calling',
       tokenUsage: toTokenUsage(meta?.promptTokenCount, meta?.candidatesTokenCount),
     }
   }

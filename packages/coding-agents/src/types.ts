@@ -89,6 +89,11 @@ export interface LocalAiTokenUsage {
 
 export interface LocalAiExecutionResult {
   output: string
+  /**
+   * Structured host calls returned by a CLI protocol. Providers that do not
+   * support this leave it undefined and use the explicit legacy adapter.
+   */
+  toolCalls?: import('@bitsentry-ce/core/features/agent-runtime').AgentToolCall[]
   sessionId?: string
   threadId?: string
   resumeCursor?: unknown

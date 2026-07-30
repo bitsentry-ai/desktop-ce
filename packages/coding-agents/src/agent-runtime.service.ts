@@ -58,6 +58,7 @@ import type {
   RunbookTriggerContext,
 } from '@bitsentry-ce/core/features/runbooks/desktop-runbook.types'
 import type { DesktopRunbookGateway } from '@bitsentry-ce/core/features/runbooks'
+import { createAgentToolResultEnvelope } from '@bitsentry-ce/core/features/agent-runtime'
 
 const CHANNEL_EVENT = 'bitsentry:agent:event'
 const NO_LLM_PROVIDER_CONFIGURED_MESSAGE =
@@ -2293,11 +2294,12 @@ export class AgentRuntimeService {
         )
         lastToolResult = completedToolResults[completedToolResults.length - 1]?.result
 
-        for (const { toolCall, modelContext } of completedToolResults) {
+        for (const { toolCall, result, modelContext } of completedToolResults) {
           session.messages.push({
             role: 'tool',
             content: modelContext,
             toolCallId: toolCall.id,
+            toolResult: createAgentToolResultEnvelope(toolCall, result),
           })
         }
 

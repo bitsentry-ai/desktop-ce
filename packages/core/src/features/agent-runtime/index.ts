@@ -69,3 +69,15 @@ export type {
   ErrorClassification,
   AgentThreadSnapshot,
 } from "./types";
+export {
+  AGENT_TOOL_PROTOCOL_VERSION,
+  agentToolCallSchema,
+  agentToolResultSchema,
+  agentToolResultEnvelopeSchema,
+  agentToolProtocolSchema,
+  createAgentToolResultEnvelope,
+  type AgentToolCall,
+  type AgentToolResult,
+  type AgentToolResultEnvelope,
+  type AgentToolProtocol,
+} from './tool-protocol'

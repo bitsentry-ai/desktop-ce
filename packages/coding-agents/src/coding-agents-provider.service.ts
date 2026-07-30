@@ -517,6 +517,15 @@ export class CodingAgentsProviderService {
     })
   }
 
+  /**
+   * None of the currently supported CLI integrations accepts BitSentry host
+   * tools as a native request field. Keep their compatibility adapter explicit
+   * until a provider returns LocalAiExecutionResult.toolCalls instead.
+   */
+  getHostToolProtocol(_provider: LocalAiProviderKey): 'legacy_text' {
+    return 'legacy_text'
+  }
+
   async listModels(provider: LocalAiProviderKey): Promise<string[]> {
     if (provider === 'claude_code') {
       return [...CLAUDE_CODE_CATALOG_MODELS]

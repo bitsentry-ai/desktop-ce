@@ -2,18 +2,19 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import {
   AgentLlmAdapterService,
+  type AgentLlmCredentialsStore,
   type AgentLlmSettingsStore,
   type LocalAiProviderPort,
 } from '@bitsentry-ce/coding-agents/agent-llm-adapter.service'
 
-function createAdapter(): AgentLlmAdapterService {
+function createAdapter(credentials?: AgentLlmCredentialsStore): AgentLlmAdapterService {
   const settingsStore: AgentLlmSettingsStore = {
     setting: {
       findUnique: vi.fn().mockResolvedValue(null),
     },
   }
 
-  return new AgentLlmAdapterService(settingsStore)
+  return new AgentLlmAdapterService(settingsStore, credentials)
 }
 
 function createLocalAiProvider(overrides: Partial<LocalAiProviderPort>): LocalAiProviderPort {
@@ -152,6 +153,90 @@ describe('AgentLlmAdapterService', () => {
         args: {},
       },
     ])
+    expect(response.toolProtocol).toBe('legacy_text')
+  })
+
+  it('uses structured CLI calls without injecting or parsing the legacy text protocol', async () => {
+    const adapter = createAdapter()
+    let capturedPrompt = ''
+
+    adapter.setLocalAiProvider(createLocalAiProvider({
+      getHostToolProtocol: () => 'structured_cli',
+      execute: (_provider, prompt) => {
+        capturedPrompt = prompt
+        return Promise.resolve({
+          output: 'Listing runbooks.',
+          toolCalls: [{
+            id: 'structured-call-1',
+            name: 'list_runbooks',
+            args: {},
+          }],
+        })
+      },
+    }))
+
+    const response = await adapter.chatWithTools({
+      messages: [{ role: 'user', content: 'List runbooks' }],
+      tools: [{
+        name: 'list_runbooks',
+        description: 'List available runbooks.',
+        inputSchema: { type: 'object', properties: {} },
+      }],
+      signal: new AbortController().signal,
+      llm: { providerKey: 'codex', model: 'gpt-5.4' },
+      accessLevel: 'auto-accept-edits',
+    })
+
+    expect(response).toMatchObject({
+      content: 'Listing runbooks.',
+      toolProtocol: 'structured_cli',
+      toolCalls: [{
+        id: 'structured-call-1',
+        name: 'list_runbooks',
+        args: {},
+      }],
+    })
+    expect(capturedPrompt).not.toContain('bitsentry_tool_call')
+  })
+
+  it('normalizes cloud-native function calls into the shared envelope', async () => {
+    const adapter = createAdapter({
+      getApiKey: () => Promise.resolve('test-key'),
+    })
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      choices: [{
+        message: {
+          content: null,
+          tool_calls: [{
+            id: 'native-call-1',
+            function: {
+              name: 'list_runbooks',
+              arguments: '{}',
+            },
+          }],
+        },
+      }],
+    }))))
+
+    const response = await adapter.chatWithTools({
+      messages: [{ role: 'user', content: 'List runbooks' }],
+      tools: [{
+        name: 'list_runbooks',
+        description: 'List available runbooks.',
+        inputSchema: { type: 'object', properties: {} },
+      }],
+      signal: new AbortController().signal,
+      llm: { providerKey: 'openai', model: 'gpt-4.1-mini' },
+    })
+
+    expect(response).toMatchObject({
+      toolProtocol: 'native_function_calling',
+      toolCalls: [{
+        id: 'native-call-1',
+        name: 'list_runbooks',
+        args: {},
+      }],
+    })
   })
 
   it('parses valid host tool calls with attributes on the opening tag', async () => {
