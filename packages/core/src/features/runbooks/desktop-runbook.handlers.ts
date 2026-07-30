@@ -10,7 +10,7 @@ import {
   type RunbookExecutionRecord,
   type RunbookTriggerContext,
 } from "./desktop-runbook.types";
-import type { DesktopRunbookGateway } from "./desktop-runbook.gateway";
+import type { RunbookGateway } from './runbook.gateway'
 import { runbookExportArtifactV1Schema } from "./export.schemas";
 import type { z } from "zod";
 
@@ -93,7 +93,7 @@ export interface DesktopRunbookHandlersDatabase
 export interface DesktopRunbookHandlerDependencies {
   executionService: DesktopRunbookHandlerExecutionService;
   /** Transitional fallback for runtimes that have not yet adopted the gateway. */
-  runbookGateway?: DesktopRunbookGateway;
+  runbookGateway?: RunbookGateway;
   globalVariablesService: DesktopRunbookHandlerGlobalVariablesService;
   artifactIo: DesktopRunbookArtifactIo;
   fileSystem: DesktopRunbookHandlerFileSystem;

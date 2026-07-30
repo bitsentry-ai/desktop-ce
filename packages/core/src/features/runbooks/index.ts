@@ -8,5 +8,6 @@ export * from './globals.schemas';
 export * from './desktop-global-variables-service';
 export * from './desktop-runbook.gateway';
 export * from './desktop-runbook.gateway.schemas';
+export * from './runbook.gateway';
 export * from './export.schemas';
 export * from './import-export';

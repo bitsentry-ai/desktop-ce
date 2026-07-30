@@ -57,7 +57,7 @@ import type {
   RunbookRecord,
   RunbookTriggerContext,
 } from '@bitsentry-ce/core/features/runbooks/desktop-runbook.types'
-import type { DesktopRunbookGateway } from '@bitsentry-ce/core/features/runbooks'
+import type { RunbookGateway } from '@bitsentry-ce/core/features/runbooks'
 import { createAgentToolResultEnvelope } from '@bitsentry-ce/core/features/agent-runtime'
 
 const CHANNEL_EVENT = 'bitsentry:agent:event'
@@ -78,7 +78,7 @@ export interface AgentRuntimeWindow {
 }
 
 export type AgentRuntimeLlmAdapter = Pick<AgentLlmAdapterService, 'chatWithTools'>
-export type AgentRuntimeRunbookGateway = DesktopRunbookGateway
+export type AgentRuntimeRunbookGateway = RunbookGateway
 
 export interface AgentRuntimeDebugHooks {
   isLocalCodingAgentDeltaStreamingEnabled(): boolean

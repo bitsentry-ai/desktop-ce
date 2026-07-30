@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { createDesktopRunbookGateway } from "../src/features/runbooks/desktop-runbook.gateway";
+import { describeRunbookGatewayContract } from './runbook-gateway.contract'
 import type {
   RunbookContextV1,
   RunbookExecutionRecord,
@@ -340,4 +341,34 @@ describe("DesktopRunbookGateway", () => {
       }),
     ).rejects.toThrow();
   });
+});
+
+describeRunbookGatewayContract('Desktop', () => {
+  const runbooks = [runbook('contract-runbook', 1, 7)];
+  const executionService = new InMemoryExecutionService({ 'contract-runbook': 7 });
+  const dependencies = {
+    store: {
+      list: async () => runbooks,
+      exportContext: async ({ id }: { id: string }) =>
+        contextFor(runbooks.find((item) => item.id === id)!),
+      getRunbookOrThrow: async () => runbooks[0]!,
+    },
+    executionService,
+  };
+
+  return {
+    gateway: createDesktopRunbookGateway(dependencies),
+    recreateGateway: () => createDesktopRunbookGateway(dependencies),
+    request: {
+      runbookId: 'contract-runbook',
+      requestKey: 'incident-contract:contract-runbook',
+      incidentId: 'incident-contract',
+      source: 'agent',
+    },
+    expectedRunbook: {
+      id: 'contract-runbook',
+      title: 'contract-runbook',
+      revisionNumber: 7,
+    },
+  };
 });

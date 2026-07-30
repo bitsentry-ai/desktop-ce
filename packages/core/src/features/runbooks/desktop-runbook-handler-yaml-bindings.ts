@@ -9,7 +9,7 @@ import type {
   DesktopRunbookHandlersDatabase,
   DesktopRunbookImportEdition,
 } from "./desktop-runbook.handlers";
-import type { DesktopRunbookGateway } from "./desktop-runbook.gateway";
+import type { RunbookGateway } from './runbook.gateway'
 import type { DesktopGlobalVariablesService } from "./desktop-global-variables-service";
 import type { RunbookExecutionService } from "./desktop-runbook-execution.service";
 
@@ -26,7 +26,7 @@ export function createDesktopYamlRunbookHandlers(
   },
   options?: {
     edition?: DesktopRunbookImportEdition;
-    runbookGateway?: DesktopRunbookGateway;
+    runbookGateway?: RunbookGateway;
   },
 ) {
   return runbookHandlerBindings.createRunbookHandlers(

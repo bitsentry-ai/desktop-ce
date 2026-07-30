@@ -14,6 +14,7 @@ import {
   type RunbookExecutionResult,
   type RunbookReference,
 } from "./desktop-runbook.gateway.schemas";
+import type { RunbookGateway } from './runbook.gateway'
 
 const executionReferenceSchema = z.string().trim().min(1);
 const incidentIdSchema = z.string().trim().min(1);
@@ -33,37 +34,6 @@ type ExecutionServiceEvent = {
   incidentThreadId?: string | null;
   execution: RunbookExecutionRecord;
 };
-
-/**
- * The app-facing seam for discovering and executing desktop runbooks.
- *
- * Adapters such as Electron IPC, the incident agent, and the standalone CLI
- * use this interface instead of independently composing a store and an
- * executor. The executor runs steps; this gateway owns request validation,
- * revision selection, idempotency, and durable execution notifications.
- */
-export interface DesktopRunbookGateway {
-  listExecutable(): Promise<RunbookRecord[]>;
-  getRunbookContext(runbookId: string): Promise<RunbookContextV1>;
-  start(request: RunbookExecutionRequest): Promise<RunbookExecutionResult>;
-  get(executionId: string): Promise<RunbookExecutionRecord | null>;
-  getLatestForIncidentThread(
-    incidentThreadId: string,
-  ): Promise<RunbookExecutionRecord | null>;
-  waitForCompletion(
-    executionId: string,
-    options?: {
-      signal?: AbortSignal;
-      pollIntervalMs?: number;
-      timeoutMs?: number;
-    },
-  ): Promise<RunbookExecutionRecord | null>;
-  subscribe(
-    incidentId: string,
-    listener: (event: RunbookExecutionEvent) => void,
-  ): () => void;
-  cancel(executionId: string): Promise<void>;
-}
 
 export interface DesktopRunbookGatewayDependencies {
   store: {
@@ -139,7 +109,7 @@ function toExecutionResult(input: {
 
 export function createDesktopRunbookGateway(
   dependencies: DesktopRunbookGatewayDependencies,
-): DesktopRunbookGateway {
+): RunbookGateway {
   const { store, executionService } = dependencies;
   const pendingStarts = new Map<string, Promise<RunbookExecutionResult>>();
 
