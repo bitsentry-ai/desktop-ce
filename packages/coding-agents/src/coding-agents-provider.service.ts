@@ -518,12 +518,11 @@ export class CodingAgentsProviderService {
   }
 
   /**
-   * None of the currently supported CLI integrations accepts BitSentry host
-   * tools as a native request field. Keep their compatibility adapter explicit
-   * until a provider returns LocalAiExecutionResult.toolCalls instead.
+   * Coding CLIs expose text subprocess boundaries, so the adapter uses the
+   * versioned structured JSON compatibility response defined by core.
    */
-  getHostToolProtocol(_provider: LocalAiProviderKey): 'legacy_text' {
-    return 'legacy_text'
+  getHostToolProtocol(_provider: LocalAiProviderKey): 'structured_cli' {
+    return 'structured_cli'
   }
 
   async listModels(provider: LocalAiProviderKey): Promise<string[]> {

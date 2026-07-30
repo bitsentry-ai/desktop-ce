@@ -22,6 +22,7 @@ import type {
 } from './types'
 import {
   agentToolCallSchema,
+  structuredCliToolResponseSchema,
   type AgentToolCall,
   type AgentToolProtocol,
   type AgentToolResultEnvelope,
@@ -88,11 +89,11 @@ export interface LocalAiProviderPort {
   isReady(provider: LocalAiProviderKey): boolean
   listModels(provider: LocalAiProviderKey): Promise<string[]>
   /**
-   * An opt-in capability boundary. A CLI that advertises structured calls must
-   * return them in LocalAiExecutionResult.toolCalls; it never falls through to
-   * parsing generated text.
+   * An opt-in capability boundary. A CLI may return native structured calls in
+   * LocalAiExecutionResult.toolCalls; otherwise its complete JSON compatibility
+   * envelope is validated before the runtime sees a host operation.
    */
-  getHostToolProtocol?(provider: LocalAiProviderKey): 'structured_cli' | 'legacy_text'
+  getHostToolProtocol?(provider: LocalAiProviderKey): 'structured_cli'
   execute(
     provider: LocalAiProviderKey,
     prompt: string,
@@ -409,7 +410,6 @@ function toGeminiParts(content: string | ChatContentPart[]): Array<Record<string
   })
 }
 
-const TOOL_CALL_TAG = 'bitsentry_tool_call'
 const CLI_TRANSCRIPT_BLOCK_START_PREFIXES = [
   'Internal tool result for ',
   'Internal tool result:',
@@ -426,10 +426,6 @@ const CLI_TRANSCRIPT_STANDALONE_LINES = new Set([
   ...CLI_TRANSCRIPT_BLOCK_END_LINES,
 ])
 const HIDDEN_HOST_BLOCKS = [
-  {
-    openPrefix: '<bitsentry_tool_call',
-    closeTag: '</bitsentry_tool_call>',
-  },
   {
     openPrefix: '<bitsentry_tool_result',
     closeTag: '</bitsentry_tool_result>',
@@ -621,7 +617,7 @@ function formatAssistantToolCallTranscript(m: ChatMessage): string {
   return `[${m.role}]: ${body}${separator}${toolRequests}`.trim()
 }
 
-function buildToolsPrompt(tools: LlmToolDefinition[]): string {
+function buildStructuredCliToolsPrompt(tools: LlmToolDefinition[]): string {
   if (tools.length === 0) return ''
 
   const toolDocs = tools.map((tool) => {
@@ -633,15 +629,13 @@ function buildToolsPrompt(tools: LlmToolDefinition[]): string {
 You are running inside BitSentry SuperTerminal, an incident-response desktop application.
 You do NOT have these operations available as native tools. Instead, request them through the host.
 
-When you want to call an operation, you may write one brief planning sentence, then output the command block and stop:
+When you want to call an operation, respond with exactly one JSON document and nothing else:
 
-<${TOOL_CALL_TAG}>
-{"name": "<operation_name>", "id": "<any_unique_string>", "args": {<args per schema>}}
-</${TOOL_CALL_TAG}>
+{"version":1,"type":"tool_calls","toolCalls":[{"id":"<unique_string>","name":"<operation_name>","args":{<args per schema>}}]}
 
 The host will execute the operation and append the result as a later tool message in the conversation.
 Treat tool messages as INTERNAL context. Summarize the useful findings for the user.
-Do NOT echo raw JSON, transcript labels, or internal wrapper syntax unless the user explicitly asks for raw output.
+Do NOT wrap the JSON in Markdown or XML. Do not add prose before or after it.
 Never simulate or invent tool results. Never invent runbook titles, runbook IDs, execution IDs, logs, or server output.
 If you need real data, call the operation and wait for the returned tool result message.
 After receiving the result, you may call another operation or give your final answer.
@@ -670,38 +664,16 @@ function flattenMessageText(m: ChatMessage): string {
   return `[${m.role}]: `
 }
 
-function parseToolCallsFromText(text: string): { content: string; toolCalls: ToolCall[] } {
-  const pattern = new RegExp(`<${TOOL_CALL_TAG}(?:\\s[^>]*)?>\\s*([\\s\\S]*?)\\s*<\\/${TOOL_CALL_TAG}>`, 'g')
-  const toolCalls: ToolCall[] = []
-  let content = text
-  let match: RegExpExecArray | null
-
-  while ((match = pattern.exec(text)) !== null) {
-    try {
-      const parsed = JSON.parse(match[1]) as { name?: string; id?: string; args?: Record<string, unknown> }
-      if (typeof parsed.name === 'string') {
-        let id = `cli_${String(Date.now())}_${String(toolCalls.length)}`
-        if (typeof parsed.id === 'string' && parsed.id.length > 0) {
-          id = parsed.id
-        }
-        const toolCall = agentToolCallSchema.safeParse({
-          id,
-          name: parsed.name,
-          args: parsed.args ?? {},
-        })
-        if (!toolCall.success) {
-          log.warn('[agent-llm] Ignoring invalid legacy host tool call')
-          continue
-        }
-        toolCalls.push(toolCall.data)
-        content = content.replace(match[0], '').trim()
-      }
-    } catch {
-      log.warn('[agent-llm] Ignoring malformed host tool-call JSON')
+function parseStructuredCliToolResponse(text: string): { content: string; toolCalls: ToolCall[] } {
+  try {
+    const parsed = structuredCliToolResponseSchema.safeParse(JSON.parse(text.trim()) as unknown)
+    if (parsed.success) {
+      return { content: parsed.data.content ?? '', toolCalls: parsed.data.toolCalls }
     }
+  } catch {
+    // Natural-language output is a final response, not a host call.
   }
-
-  return { content, toolCalls }
+  return { content: text, toolCalls: [] }
 }
 
 function parseStructuredToolCalls(toolCalls: ToolCall[] | undefined): ToolCall[] {
@@ -722,7 +694,57 @@ function createNativeToolCall(value: unknown, providerLabel: string): ToolCall |
   return null
 }
 
-function createToolCallStreamSanitizer(): {
+function createStructuredCliResponseStreamSanitizer(): TextSanitizer {
+  let buffered = ''
+  let mode: 'undecided' | 'structured_response' | 'text' = 'undecided'
+  const hostMarkupSanitizer = createHiddenHostMarkupStreamSanitizer()
+  const structuredPrefix = '{"version":'
+
+  return {
+    push(chunk: string): string {
+      if (mode === 'structured_response') {
+        buffered += chunk
+        return ''
+      }
+
+      if (mode === 'text') {
+        return hostMarkupSanitizer.push(chunk)
+      }
+
+      buffered += chunk
+      const trimmed = buffered.trimStart()
+      if (structuredPrefix.startsWith(trimmed)) {
+        return ''
+      }
+
+      if (trimmed.startsWith(structuredPrefix)) {
+        mode = 'structured_response'
+        return ''
+      }
+
+      mode = 'text'
+      const visible = hostMarkupSanitizer.push(buffered)
+      buffered = ''
+      return visible
+    },
+    flush(): string {
+      if (mode === 'structured_response') {
+        const parsed = parseStructuredCliToolResponse(buffered)
+        if (parsed.toolCalls.length > 0) {
+          return ''
+        }
+        return hostMarkupSanitizer.push(buffered) + hostMarkupSanitizer.flush()
+      }
+
+      if (mode === 'undecided' && buffered.length > 0) {
+        hostMarkupSanitizer.push(buffered)
+      }
+      return hostMarkupSanitizer.flush()
+    },
+  }
+}
+
+function createHiddenHostMarkupStreamSanitizer(): {
   push(chunk: string): string
   flush(): string
 } {
@@ -1253,13 +1275,15 @@ export class AgentLlmAdapterService {
 
     const accessLevel = resolveAgentLocalAiAccessLevel(providerKey, input.accessLevel)
 
-    // CLI tool access uses prompt injection. In supervised mode, omit the tool
-    // prompt so model-emitted wrapper tags cannot bypass access-level checks.
+    // In supervised mode, omit the host-operation contract altogether so a CLI
+    // response cannot request an operation outside the selected access level.
     const isSupervised = accessLevel === 'supervised' || accessLevel === undefined
     const toolProtocol = isSupervised
       ? 'none'
-      : this.localAiProvider.getHostToolProtocol?.(providerKey) ?? 'legacy_text'
-    const streamSanitizer = createToolCallStreamSanitizer()
+      : this.localAiProvider.getHostToolProtocol?.(providerKey) ?? 'structured_cli'
+    const streamSanitizer = toolProtocol === 'structured_cli'
+      ? createStructuredCliResponseStreamSanitizer()
+      : createHiddenHostMarkupStreamSanitizer()
     let cliTranscriptSanitizer: TextSanitizer | null = null
     if (providerKey === 'claude_code') {
       cliTranscriptSanitizer = createCliTranscriptBoilerplateSanitizer()
@@ -1268,7 +1292,7 @@ export class AgentLlmAdapterService {
     try {
       const result = await this.localAiProvider.execute(
         providerKey,
-        this.buildLocalAiPrompt(input, isSupervised, toolProtocol),
+        this.buildLocalAiPrompt(input, isSupervised),
         abortController,
         createLocalAiDeltaHandler(input.onDelta, streamSanitizer, cliTranscriptSanitizer),
         undefined,
@@ -1288,15 +1312,14 @@ export class AgentLlmAdapterService {
   private buildLocalAiPrompt(
     input: ChatWithToolsInput,
     isSupervised: boolean,
-    toolProtocol: AgentToolProtocol,
   ): string {
     // Each turn runs as a fresh CLI subprocess. The full BitSentry transcript is
     // replayed explicitly so CLI-native session state cannot leak across runs.
     const conversationText = input.messages.map(flattenMessageText).join('\n')
-    if (isSupervised || toolProtocol === 'structured_cli') {
+    if (isSupervised) {
       return conversationText
     }
-    return conversationText + buildToolsPrompt(input.tools ?? [])
+    return conversationText + buildStructuredCliToolsPrompt(input.tools ?? [])
   }
 
   private flushLocalAiStream(
@@ -1348,21 +1371,18 @@ export class AgentLlmAdapterService {
     }
 
     if (toolProtocol === 'structured_cli') {
+      const structuredResponse = result.toolCalls === undefined
+        ? parseStructuredCliToolResponse(result.output)
+        : null
       return {
-        content: sanitizeLocalProviderOutput(providerKey, result.output),
-        toolCalls: parseStructuredToolCalls(result.toolCalls),
+        content: sanitizeLocalProviderOutput(providerKey, structuredResponse?.content ?? result.output),
+        toolCalls: structuredResponse?.toolCalls ?? parseStructuredToolCalls(result.toolCalls),
         toolProtocol,
         tokenUsage: result.tokenUsage,
       }
     }
 
-    const { content, toolCalls } = parseToolCallsFromText(result.output)
-    return {
-      content: sanitizeLocalProviderOutput(providerKey, content),
-      toolCalls,
-      toolProtocol,
-      tokenUsage: result.tokenUsage,
-    }
+    throw new Error(`Unsupported local tool protocol: ${toolProtocol}`)
   }
 
   /**

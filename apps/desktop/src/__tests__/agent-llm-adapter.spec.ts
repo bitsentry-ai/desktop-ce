@@ -108,17 +108,17 @@ describe('AgentLlmAdapterService', () => {
     expect(response.content).toBe('Hello')
   })
 
-  it('hides streamed host tool-call markup from local CLI provider output', async () => {
+  it('accepts a typed JSON envelope from local CLI output without streaming it to the user', async () => {
     const adapter = createAdapter()
 
     adapter.setLocalAiProvider(createLocalAiProvider({
       isReady: () => true,
       execute: (_provider, _prompt, _abortController, onDelta) => {
-        onDelta?.({ type: 'text', text: 'Listing runbooks...\n<bitsentry_tool_' })
-        onDelta?.({ type: 'text', text: 'call>\n{"name":"list_runbooks","id":"call-1","args":{}}\n</bitsentry_tool_call>\nDone.' })
+        onDelta?.({ type: 'text', text: '{"version":1,"type":"tool_calls",' })
+        onDelta?.({ type: 'text', text: '"toolCalls":[{"id":"call-1","name":"list_runbooks","args":{}}]}' })
 
         return Promise.resolve({
-          output: 'Listing runbooks...\n<bitsentry_tool_call>\n{"name":"list_runbooks","id":"call-1","args":{}}\n</bitsentry_tool_call>\nDone.',
+          output: '{"version":1,"type":"tool_calls","toolCalls":[{"id":"call-1","name":"list_runbooks","args":{}}]}',
         })
       },
     }))
@@ -144,8 +144,8 @@ describe('AgentLlmAdapterService', () => {
       },
     })
 
-    expect(streamed.join('')).toBe('Listing runbooks...\n\nDone.')
-    expect(response.content).toBe('Listing runbooks...\n\nDone.')
+    expect(streamed.join('')).toBe('')
+    expect(response.content).toBe('')
     expect(response.toolCalls).toEqual([
       {
         id: 'call-1',
@@ -153,7 +153,7 @@ describe('AgentLlmAdapterService', () => {
         args: {},
       },
     ])
-    expect(response.toolProtocol).toBe('legacy_text')
+    expect(response.toolProtocol).toBe('structured_cli')
   })
 
   it('uses structured CLI calls without injecting or parsing the legacy text protocol', async () => {
@@ -196,7 +196,7 @@ describe('AgentLlmAdapterService', () => {
         args: {},
       }],
     })
-    expect(capturedPrompt).not.toContain('bitsentry_tool_call')
+    expect(capturedPrompt).toContain('"type":"tool_calls"')
   })
 
   it('normalizes cloud-native function calls into the shared envelope', async () => {
@@ -239,13 +239,10 @@ describe('AgentLlmAdapterService', () => {
     })
   })
 
-  it('parses valid host tool calls with attributes on the opening tag', async () => {
+  it('rejects malformed structured CLI envelopes as ordinary model output', async () => {
     const adapter = createAdapter()
     const output = [
-      'Listing runbooks...',
-      '<bitsentry_tool_call id="call-attribute">',
-      '{"name":"list_runbooks","id":"call-attribute","args":{}}',
-      '</bitsentry_tool_call>',
+      '{"version":1,"type":"tool_calls","toolCalls":[]}',
     ].join('\n')
 
     adapter.setLocalAiProvider(createLocalAiProvider({
@@ -264,13 +261,8 @@ describe('AgentLlmAdapterService', () => {
       accessLevel: 'auto-accept-edits',
     })
 
-    expect(response.toolCalls).toEqual([
-      {
-        id: 'call-attribute',
-        name: 'list_runbooks',
-        args: {},
-      },
-    ])
+    expect(response.toolCalls).toEqual([])
+    expect(response.content).toBe(output)
   })
 
   it('formats local CLI tool-result transcript as internal context without host wrapper tags', async () => {
@@ -330,7 +322,7 @@ describe('AgentLlmAdapterService', () => {
     expect(capturedPrompt).toContain('BitSentry host tool protocol:')
     expect(capturedPrompt).toContain('The host will execute the operation and append the result as a later tool message in the conversation.')
     expect(capturedPrompt).not.toContain('<bitsentry_tool_result')
-    expect(capturedPrompt.split('BitSentry host tool protocol:')[0]).not.toContain('<bitsentry_tool_call')
+    expect(capturedPrompt).toContain('respond with exactly one JSON document')
     expect(capturedPrompt).not.toContain('<bitsentry_host_protocol>')
     expect(capturedPrompt).not.toContain('<bitsentry_host_instruction>')
     expect(capturedPrompt).not.toContain('[tool]:')

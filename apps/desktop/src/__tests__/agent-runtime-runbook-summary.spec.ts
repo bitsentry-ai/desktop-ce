@@ -464,101 +464,10 @@ describe('AgentRuntimeService runbook outcomes', () => {
     )
   })
 
-  it('retries a local prose-only tool promise until a tool call is emitted', async () => {
-    const runbookStore = {
-      list: vi.fn().mockResolvedValue([
-        makeRunbook('rb-sentry', 'Investigate Sentry', [
-          { id: 'step-1', type: 'external_source', title: 'Fetch Sentry issues' },
-        ]),
-      ]),
-    }
-    const runbookExecutionService = {
-      start: vi.fn(),
-      waitForCompletion: vi.fn(),
-      get: vi.fn().mockResolvedValue(null),
-      getLatestForIncidentThread: vi.fn().mockResolvedValue(null),
-    }
-    const llmAdapter = {
-      chatWithTools: vi
-        .fn()
-        .mockResolvedValueOnce({
-          content: 'I’ll retrieve the available runbooks now.',
-          toolCalls: [],
-          toolProtocol: 'legacy_text',
-        })
-        .mockResolvedValueOnce({
-          content: '',
-          toolCalls: [
-            {
-              id: 'call-list-runbooks-after-retry',
-              name: 'list_runbooks',
-              args: {},
-            },
-          ],
-          toolProtocol: 'legacy_text',
-        })
-        .mockResolvedValueOnce({
-          content: 'I found the available runbooks.',
-          toolCalls: [],
-          toolProtocol: 'legacy_text',
-        }),
-    }
-    const service = createRuntime({ llmAdapter, runbookStore, runbookExecutionService })
-
-    const sessionId = await service.start({
-      prompt: 'Find the available runbooks.',
-      incidentThreadId: 'incident-runbook-retry',
-      llm: { providerKey: 'codex', model: 'gpt-5.4-mini' },
-    })
-
-    await waitForCondition(() => service.getStatus(sessionId).state === 'COMPLETED')
-
-    expect(llmAdapter.chatWithTools.mock.calls).toHaveLength(3)
-    expect(getRequiredSystemContent(
-      getSecondCallMessages(llmAdapter),
-      'Your previous response promised or described a host tool call',
-    )).toContain('Emit exactly one valid <bitsentry_tool_call> block')
-    expect(getAllAgentToolCalls(service, sessionId)).toEqual([
-      expect.objectContaining({ toolName: 'list_runbooks', state: 'done' }),
-    ])
-    expect(getLastAgentMessage(service.getSnapshot(sessionId)).finalText).toContain(
-      'Available runbooks:',
-    )
-  })
-
-  it('fails clearly after a local provider repeats a prose-only tool promise', async () => {
-    const sentEvents: AgentRuntimeEventPayload[] = []
+  it('completes with a natural response when a structured CLI emits no host operation', async () => {
     const llmAdapter = {
       chatWithTools: vi.fn().mockResolvedValue({
         content: 'I will list the available runbooks.',
-        toolCalls: [],
-        toolProtocol: 'legacy_text',
-      }),
-    }
-    const service = createRuntime({ llmAdapter, sentEvents })
-
-    const sessionId = await service.start({
-      prompt: 'Find the available runbooks.',
-      incidentThreadId: 'incident-runbook-prose-failure',
-      llm: { providerKey: 'codex', model: 'gpt-5.4-mini' },
-    })
-
-    await waitForCondition(() => service.getStatus(sessionId).state === 'FAILED')
-
-    expect(llmAdapter.chatWithTools.mock.calls).toHaveLength(2)
-    expect(sentEvents.some((payload) => (
-      payload.event.type === 'error' &&
-      payload.event.message.includes('after the protocol retry')
-    ))).toBe(true)
-    expect(getLastAgentMessage(service.getSnapshot(sessionId)).iterations.at(-1)?.text).toContain(
-      'I will list the available runbooks.',
-    )
-  })
-
-  it('does not inject a legacy retry prompt for a structured CLI provider', async () => {
-    const llmAdapter = {
-      chatWithTools: vi.fn().mockResolvedValue({
-        content: 'I will list the available runbooks once the CLI host supplies the call.',
         toolCalls: [],
         toolProtocol: 'structured_cli',
       }),
@@ -567,15 +476,15 @@ describe('AgentRuntimeService runbook outcomes', () => {
 
     const sessionId = await service.start({
       prompt: 'Find the available runbooks.',
-      incidentThreadId: 'incident-runbook-structured-cli',
+      incidentThreadId: 'incident-runbook-structured-natural-response',
       llm: { providerKey: 'codex', model: 'gpt-5.4-mini' },
     })
 
     await waitForCondition(() => service.getStatus(sessionId).state === 'COMPLETED')
 
-    expect(llmAdapter.chatWithTools.mock.calls).toHaveLength(1)
+    expect(getAllAgentToolCalls(service, sessionId)).toEqual([])
     expect(getLastAgentMessage(service.getSnapshot(sessionId)).finalText).toContain(
-      'once the CLI host supplies the call',
+      'I will list the available runbooks.',
     )
   })
 
