@@ -1,5 +1,6 @@
 import { spawn } from 'child_process'
 import os from 'os'
+import path from 'path'
 import readline from 'readline'
 import log from 'electron-log'
 import type { ChildProcess } from 'child_process'
@@ -379,7 +380,11 @@ function extractOpenCodeErrorDetail(value: unknown): string | undefined {
 
   const data = asRecord(record.data)
   const dataMessage = firstStringField(data, ERROR_MESSAGE_FIELDS)
-  if (dataMessage !== undefined) return dataMessage
+  const dataRef = asNonEmptyString(data?.ref)
+  if (dataMessage !== undefined) {
+    return dataRef === undefined ? dataMessage : `${dataMessage} (ref: ${dataRef})`
+  }
+  if (dataRef !== undefined) return `OpenCode error ref: ${dataRef}`
 
   const nestedError = extractOpenCodeErrorDetail(record.error)
   if (nestedError !== undefined) return nestedError
@@ -634,16 +639,24 @@ function buildAbortedOpenCodeResult(
 }
 
 function getOpenCodeFailureDetail(state: OpenCodeExecutionState): string {
+  const dataHome = process.env.XDG_DATA_HOME ?? (
+    process.platform === 'win32'
+      ? process.env.APPDATA ?? path.join(os.homedir(), 'AppData', 'Roaming')
+      : path.join(os.homedir(), '.local', 'share')
+  )
+  const logDirectory = path.join(dataHome, 'opencode', 'log')
+  const logHint = `OpenCode logs: ${logDirectory}`
+
   if (state.jsonErrorMessage !== undefined) {
-    return state.jsonErrorMessage
+    return `${state.jsonErrorMessage}\n${logHint}`
   }
 
   const stderrDetail = state.stderr.trim()
   if (stderrDetail.length > 0) {
-    return stderrDetail
+    return `${stderrDetail}\n${logHint}`
   }
 
-  return 'unknown error'
+  return `unknown error\n${logHint}`
 }
 
 function recordOpenCodeCompletionAnomaly(
