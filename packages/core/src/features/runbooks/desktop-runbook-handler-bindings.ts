@@ -8,6 +8,7 @@ import {
   type DesktopRunbookHandlerDependencies,
   type DesktopRunbookHandlersDatabase,
 } from "./desktop-runbook.handlers";
+import type { DesktopRunbookGateway } from "./desktop-runbook.gateway";
 import {
   consumeApprovedRunbookExportPath,
   consumeApprovedRunbookImportPath,
@@ -28,9 +29,11 @@ export function createDesktopRunbookHandlerBindings(
       options?: {
         edition?: DesktopRunbookImportEdition;
       },
+      runbookGateway?: DesktopRunbookGateway,
     ) {
       return createDesktopRunbookHandlers(db, {
         ...dependencies,
+        runbookGateway,
         artifactIo,
         fileSystem: {
           readFile,

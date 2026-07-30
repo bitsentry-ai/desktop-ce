@@ -485,10 +485,14 @@ app
         localAiProvider,
         pluginRuntime,
       )
+      const runbookGateway = createDesktopRunbookGateway({
+        store: runbookStore,
+        executionService: runbookExecutionService,
+      })
       dispatcher.registerAll(createRunbookHandlers(db, {
         executionService: runbookExecutionService,
         globalVariablesService,
-      }, { edition: 'ce' }))
+      }, { edition: 'ce', runbookGateway }))
       dispatcher.registerAll(createDesktopStateHandlers(db))
       dispatcher.registerAll(
         createDesktopDialogHandlers({
@@ -501,10 +505,6 @@ app
       )
 
       // Create agent runtime with LLM adapter
-      const runbookGateway = createDesktopRunbookGateway({
-        store: runbookStore,
-        executionService: runbookExecutionService,
-      })
       agentRuntime = createDesktopAgentService(
         {
           llmAdapter: agentLlmAdapter,
