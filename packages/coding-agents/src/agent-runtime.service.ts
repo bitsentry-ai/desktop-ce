@@ -11,7 +11,7 @@
  */
 
 import log from 'electron-log'
-import { randomUUID } from 'crypto'
+import { createHash, randomUUID } from 'crypto'
 import { zodToJsonSchema } from '@alcyone-labs/zod-to-json-schema'
 import { z } from 'zod'
 import { getErrorMessage } from '@bitsentry-ce/core'
@@ -416,6 +416,7 @@ interface AgentSession {
   abortController: AbortController
   timeoutHandle: ReturnType<typeof setTimeout> | null
   currentToolCallId: string | null
+  currentTurnId?: string
   currentRunbookWaitExecutionId?: string
   windowGetter: () => AgentRuntimeWindow | null
   llmAdapter: AgentRuntimeLlmAdapter
@@ -431,7 +432,6 @@ interface AgentSession {
   latestJournalTimeWindowParameters?: RunbookParameterValues
   currentTurnRunbookExecutionLookups?: Set<string>
   currentTurnStartedRunbookExecutionIds?: Set<string>
-  currentTurnStartedRunbookKeys?: Set<string>
   loopActive?: boolean
   snapshot: AgentThreadSnapshot
 }
@@ -848,14 +848,23 @@ function readRunbookTimeWindow(value: unknown): { since: string; until: string }
   return { since: record.since, until: record.until }
 }
 
-function buildRunbookStartKey(runbookId: string, parameterValues: RunbookParameterValues | undefined): string {
-  const sortedParameterValues = Object.fromEntries(
+function buildGatewayRunbookRequestKey(
+  session: AgentSession,
+  runbook: RunbookRecord,
+  parameterValues: RunbookParameterValues | undefined,
+): string {
+  const normalizedParameterValues = Object.fromEntries(
     Object.entries(parameterValues ?? {}).sort(([left], [right]) => left.localeCompare(right)),
   )
-  return JSON.stringify({
-    runbookId,
-    parameterValues: sortedParameterValues,
-  })
+  const digest = createHash('sha256')
+    .update(JSON.stringify({
+      runbookId: runbook.id,
+      revisionNumber: runbook.revisionNumber,
+      parameterValues: normalizedParameterValues,
+    }))
+    .digest('hex')
+
+  return `${session.id}:${session.currentTurnId ?? 'unknown-turn'}:${digest}`
 }
 
 function padUtcComponent(value: number): string {
@@ -1926,7 +1935,7 @@ export class AgentRuntimeService {
     try {
       session.currentTurnRunbookExecutionLookups = new Set()
       session.currentTurnStartedRunbookExecutionIds = new Set()
-      session.currentTurnStartedRunbookKeys = new Set()
+      session.currentTurnId = randomUUID()
       let iterations = 0
       let lastToolResult: ToolResult | undefined
       let turnTokenUsage: TurnTokenUsage | undefined
@@ -2357,7 +2366,7 @@ export class AgentRuntimeService {
       session.loopActive = false
       session.currentTurnRunbookExecutionLookups = undefined
       session.currentTurnStartedRunbookExecutionIds = undefined
-      session.currentTurnStartedRunbookKeys = undefined
+      session.currentTurnId = undefined
       session.currentRunbookWaitExecutionId = undefined
     }
   }
@@ -2753,29 +2762,11 @@ export class AgentRuntimeService {
     const runbookGateway = this.getRunbookGateway()
     const runbook = await this.resolveRunbookReference(session, input)
     const parameterValues = this.resolveRunbookParameterValues(session, runbook, input)
-    const runbookStartKey = buildRunbookStartKey(runbook.id, parameterValues)
-    const startedRunbookKeys = session.currentTurnStartedRunbookKeys ?? new Set<string>()
-    if (startedRunbookKeys.has(runbookStartKey)) {
-      return {
-        output: JSON.stringify(
-          {
-            status: 'skipped',
-            runbookId: runbook.id,
-            runbookTitle: runbook.title,
-            repeatBlocked: true,
-            reason:
-              'This runbook was already started in this assistant turn. Use the existing execution result instead of starting it again with another small window.',
-          },
-          null,
-          2,
-        ),
-      }
-    }
-
-    startedRunbookKeys.add(runbookStartKey)
-    session.currentTurnStartedRunbookKeys = startedRunbookKeys
-    const execution = await runbookGateway.start(runbook.id, {
-      incidentThreadId: session.incidentThreadId,
+    const execution = await runbookGateway.start({
+      runbookId: runbook.id,
+      expectedRevisionNumber: runbook.revisionNumber,
+      requestKey: buildGatewayRunbookRequestKey(session, runbook, parameterValues),
+      incidentId: session.incidentThreadId,
       parameterValues,
       source: 'agent',
       triggerContext: this.buildRunbookTriggerContext(session),
@@ -2802,6 +2793,7 @@ export class AgentRuntimeService {
       runbookId: runbook.id,
       runbookTitle: runbook.title,
       executionId: execution.executionId,
+      deduplicated: execution.deduplicated,
     }
     if (latestExecution !== null) {
       outputPayload.status = latestExecution.status

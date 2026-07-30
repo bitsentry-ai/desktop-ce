@@ -486,6 +486,10 @@ export const executionSummarySchema = z.object({
 export const executionDetailSchema = z.object({
   executionId: z.string(),
   runbookId: z.string(),
+  // Older persisted snapshots do not have this field. New executions always
+  // write it so an in-flight or recovered execution remains attributable to
+  // the authored revision that was started.
+  runbookRevisionNumber: z.number().int().positive().optional(),
   incidentThreadId: z.string().optional(),
   runbookTitle: z.string(),
   status: executionStatusSchema,

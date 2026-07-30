@@ -30,14 +30,20 @@ type MockLlmAdapter = {
     }
   }
 }
-type TestRunbookExecutionService = Pick<
-  AgentRuntimeRunbookGateway,
-  'get' | 'getLatestForIncidentThread' | 'start' | 'waitForCompletion'
->
 type RunbookStartOptions = {
   incidentThreadId?: string
   parameterValues?: RunbookParameterValues
+  source?: 'manual' | 'agent'
   accessLevel?: 'supervised' | 'auto-accept-edits' | 'full-access'
+}
+type TestRunbookExecutionService = {
+  get: AgentRuntimeRunbookGateway['get']
+  getLatestForIncidentThread: AgentRuntimeRunbookGateway['getLatestForIncidentThread']
+  waitForCompletion: AgentRuntimeRunbookGateway['waitForCompletion']
+  start: (runbookId: string, options?: RunbookStartOptions) => Promise<{
+    executionId: string
+    resultId: string
+  }>
 }
 
 async function waitForCondition(
@@ -191,16 +197,58 @@ function createRuntime(options: {
     }
   }
 
+  const acceptedRequests = new Map<
+    string,
+    Promise<{
+      executionId: string
+      resultId: string
+      runbook: { id: string; title: string; revisionNumber: number }
+      execution: RunbookExecutionRecord
+    }>
+  >()
   const runbookGateway =
     options.runbookStore === undefined || options.runbookExecutionService === undefined
       ? undefined
       : {
-          listExecutable: async () => {
-            const runbooks = await options.runbookStore?.list()
-            return (runbooks ?? []).filter((runbook) => runbook.actions.length > 0)
-          },
-          cancel: async () => undefined,
           ...options.runbookExecutionService,
+          listExecutable: async () => {
+            const runbooks = await options.runbookStore!.list()
+            return runbooks.filter((runbook) => runbook.actions.length > 0)
+          },
+          start: async (request: Parameters<AgentRuntimeRunbookGateway['start']>[0]) => {
+            const existing = acceptedRequests.get(request.requestKey)
+            const accepted = existing ?? (async () => {
+              const started = await options.runbookExecutionService!.start(request.runbookId, {
+                incidentThreadId: request.incidentId,
+                parameterValues: request.parameterValues,
+                source: request.source,
+                accessLevel: request.accessLevel,
+              })
+              const runbook = (await options.runbookStore!.list()).find(
+                (item) => item.id === request.runbookId,
+              )
+              const execution = await options.runbookExecutionService!.get(started.executionId)
+
+              return {
+                ...started,
+                runbook: {
+                  id: request.runbookId,
+                  title: runbook?.title ?? request.runbookId,
+                  revisionNumber: runbook?.revisionNumber ?? 1,
+                },
+                execution: execution ?? makeExecution({ executionId: started.executionId }),
+              }
+            })()
+            acceptedRequests.set(request.requestKey, accepted)
+            const result = await accepted
+
+            return {
+              ...result,
+              deduplicated: existing !== undefined,
+            }
+          },
+          subscribe: () => () => undefined,
+          cancel: async () => undefined,
         }
 
   return new AgentRuntimeService(
@@ -1615,7 +1663,7 @@ describe('AgentRuntimeService runbook outcomes', () => {
     ).toBe(true)
   })
 
-  it('blocks repeated starts of the same runbook with the same parameters in one assistant turn', async () => {
+  it('reports one accepted execution when the model repeats the same runbook request', async () => {
     const logsExecution = makeExecution({
       executionId: '22222222-2222-4222-8222-222222222222',
       runbookId: 'rb-logs',
@@ -1708,18 +1756,16 @@ describe('AgentRuntimeService runbook outcomes', () => {
     const executionCards = toolCalls.filter((toolCall) => toolCall.toolName === 'execute_runbook')
     expect(executionCards).toHaveLength(2)
     expect(
-      executionCards.some(
-        (toolCall) =>
-          toolCall.output !== undefined &&
-          toolCall.output.includes('"repeatBlocked": true'),
-      ),
-    ).toBe(true)
-    expect(
       executionCards.some((toolCall) =>
         toolCall.output !== undefined &&
-          toolCall.output.includes('This runbook was already started in this assistant turn'),
+          toolCall.output.includes('"deduplicated": true'),
       ),
     ).toBe(true)
+    const executionIds = executionCards.map((toolCall) => {
+      const output = JSON.parse(toolCall.output ?? '{}') as { executionId?: string }
+      return output.executionId
+    })
+    expect(new Set(executionIds).size).toBe(1)
   })
 
   it('allows the same runbook to start with different parameters in one assistant turn', async () => {

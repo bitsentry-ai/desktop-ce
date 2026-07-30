@@ -77,6 +77,7 @@ export interface CreateRunbookResultSessionInput {
   resultId: string
   executionId: string
   ownerId: string
+  requestKey?: string
   incidentThreadId?: string
   runbook: RunbookResultRunbook
   context: RunbookResultContext
@@ -92,9 +93,16 @@ export interface RunbookResultPersistence {
   ): Promise<ExecutionSnapshotEventOutcome>
   getExecutionSnapshotByExecutionId(executionId: string): Promise<RunbookExecutionRecord | null>
   getExecutionSnapshotByResultId(resultId: string): Promise<RunbookExecutionRecord | null>
+  getExecutionByRequestKey(
+    runbookId: string,
+    requestKey: string,
+  ): Promise<{ resultId: string; execution: RunbookExecutionRecord } | null>
   getLatestExecutionSnapshotByIncidentThreadId(
     incidentThreadId: string,
   ): Promise<RunbookExecutionRecord | null>
+  getLatestExecutionByIncidentThreadId(
+    incidentThreadId: string,
+  ): Promise<{ resultId: string; execution: RunbookExecutionRecord } | null>
   touchExecutionHeartbeat(
     executionId: string,
     ownerId: string,
@@ -181,6 +189,7 @@ export class SqliteRunbookResultStore implements RunbookResultPersistence {
         runbookId: input.runbook.id,
         runbookVersionId: null,
         runbookTitle: input.runbook.title,
+        runbookRequestKey: input.requestKey ?? null,
         runbookRevisionNumber: input.context.runbook.revisionNumber,
         runbookContextJson: JSON.stringify(input.context),
         executionId: input.executionId,
@@ -283,14 +292,54 @@ export class SqliteRunbookResultStore implements RunbookResultPersistence {
     return parseRowExecutionSnapshot(row)
   }
 
+  async getExecutionByRequestKey(
+    runbookId: string,
+    requestKey: string,
+  ): Promise<{ resultId: string; execution: RunbookExecutionRecord } | null> {
+    const row = await this.db.investigationSession.findFirst({
+      where: { runbookId, runbookRequestKey: requestKey },
+      orderBy: { createdAt: 'asc' },
+    })
+    const execution = parseRowExecutionSnapshot(row)
+    if (execution === null || row === null) {
+      return null
+    }
+
+    const resultId = asString(row.id)
+    if (resultId.length === 0) {
+      return null
+    }
+
+    return { resultId, execution }
+  }
+
   async getLatestExecutionSnapshotByIncidentThreadId(
     incidentThreadId: string,
   ): Promise<RunbookExecutionRecord | null> {
+    const latest = await this.getLatestExecutionByIncidentThreadId(
+      incidentThreadId,
+    )
+    return latest?.execution ?? null
+  }
+
+  async getLatestExecutionByIncidentThreadId(
+    incidentThreadId: string,
+  ): Promise<{ resultId: string; execution: RunbookExecutionRecord } | null> {
     const row = await this.db.investigationSession.findFirst({
       where: { incidentThreadId },
       orderBy: { startedAt: 'desc', updatedAt: 'desc' },
     })
-    return parseRowExecutionSnapshot(row)
+    const execution = parseRowExecutionSnapshot(row)
+    if (execution === null || row === null) {
+      return null
+    }
+
+    const resultId = asString(row.id)
+    if (resultId.length === 0) {
+      return null
+    }
+
+    return { resultId, execution }
   }
 
   async touchExecutionHeartbeat(

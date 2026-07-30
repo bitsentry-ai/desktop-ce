@@ -23,6 +23,7 @@ export interface ExecutionGlobalDefinitionLike extends SecureValueDefinitionLike
 export interface CreateExecutionSessionStateInput {
   executionId: string;
   runbookId: string;
+  runbookRevisionNumber: number;
   incidentThreadId?: string | null;
   runbookTitle: string;
   status: RunbookExecutionRecord["status"];
@@ -154,6 +155,7 @@ export function buildInitialExecutionSteps(
 export function createInitialExecutionSnapshot(input: {
   executionId: string;
   runbookId: string;
+  runbookRevisionNumber: number;
   incidentThreadId?: string | null;
   runbookTitle: string;
   status: RunbookExecutionRecord["status"];
@@ -167,6 +169,7 @@ export function createInitialExecutionSnapshot(input: {
   const snapshot: RunbookExecutionRecord = {
     executionId: input.executionId,
     runbookId: input.runbookId,
+    runbookRevisionNumber: input.runbookRevisionNumber,
     runbookTitle: input.runbookTitle,
     status: input.status,
     snapshotVersion: 1,
@@ -225,6 +228,7 @@ export function createExecutionSessionState(
   const snapshot = createInitialExecutionSnapshot({
     executionId: input.executionId,
     runbookId: input.runbookId,
+    runbookRevisionNumber: input.runbookRevisionNumber,
     incidentThreadId: input.incidentThreadId,
     runbookTitle: input.runbookTitle,
     status: input.status,
