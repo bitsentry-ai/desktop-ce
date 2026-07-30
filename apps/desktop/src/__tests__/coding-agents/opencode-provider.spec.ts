@@ -503,6 +503,7 @@ describe('executeOpenCode', () => {
           name: 'ProviderError',
           data: {
             message: 'model opencode/missing-model is not available',
+            ref: 'err_model_missing',
           },
         },
       })}\n`)
@@ -513,7 +514,7 @@ describe('executeOpenCode', () => {
     })
 
     await expect(resultPromise).rejects.toThrow(
-      'OpenCode exited with code 1: model opencode/missing-model is not available',
+      'OpenCode exited with code 1: model opencode/missing-model is not available (ref: err_model_missing)\nOpenCode logs:',
     )
   })
 })
