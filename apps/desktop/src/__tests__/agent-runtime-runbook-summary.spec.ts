@@ -329,6 +329,49 @@ describe('summarizeRunbookExecutionForToolOutput', () => {
     expect(summary.finalOutputMarkdownExcerpt).toContain('\n| Issue ID | Project | Root Cause Analysis |')
     expect(summary.finalOutputMarkdownExcerpt).toContain('\n| --- | --- | --- |')
   })
+
+  it('projects the top PostHog issues instead of a raw output prefix', () => {
+    const issues = Array.from({ length: 27 }, (_, index) => ({
+      id: `issue-${String(index + 1)}`,
+      title: `PostHog issue ${String(index + 1)}`,
+      status: 'unresolved',
+      count: index + 1,
+      userCount: 1,
+      firstSeen: '2026-07-30T00:00:00.000Z',
+      lastSeen: '2026-07-30T01:00:00.000Z',
+      level: 'error',
+      metadata: { stack: 'x'.repeat(2_700) },
+    }))
+    const output = `Fetched 27 PostHog issues.\n\n${JSON.stringify({ issues })}`
+    expect(output.length).toBeGreaterThan(72_000)
+
+    const summary = summarizeRunbookExecutionForToolOutput(
+      makeExecution({
+        steps: [
+          {
+            actionId: 'step-1',
+            order: 1,
+            type: 'plugin',
+            title: 'List PostHog exception issues',
+            status: 'completed',
+            output,
+          },
+        ],
+      }),
+    )
+
+    const finalStructuredOutput = summary.finalStructuredOutput as {
+      issueCount: number
+      issuesTruncated: boolean
+      issues: Array<{ title?: string }>
+    }
+    expect(finalStructuredOutput.issueCount).toBe(27)
+    expect(finalStructuredOutput.issuesTruncated).toBe(true)
+    expect(finalStructuredOutput.issues).toHaveLength(10)
+    expect(finalStructuredOutput.issues[0]).toMatchObject({ title: 'PostHog issue 1' })
+    expect(finalStructuredOutput.issues[9]).toMatchObject({ title: 'PostHog issue 10' })
+    expect(summary).not.toHaveProperty('finalOutputMarkdownExcerpt')
+  })
 })
 
 describe('AgentRuntimeService runbook outcomes', () => {
@@ -986,6 +1029,86 @@ describe('AgentRuntimeService runbook outcomes', () => {
     expect(toolContext).not.toContain('Derived journalctl time window')
     expect(toolContext).toContain('Combined window for one backend log runbook call')
     expect(toolContext).toContain('execute the backend log runbook once')
+  })
+
+  it('gives the model the top ten PostHog issue titles from a large plugin result', async () => {
+    const issues = Array.from({ length: 27 }, (_, index) => ({
+      id: `issue-${String(index + 1)}`,
+      title: `PostHog issue ${String(index + 1)}`,
+      status: 'unresolved',
+      count: index + 1,
+      userCount: 1,
+      firstSeen: '2026-07-30T00:00:00.000Z',
+      lastSeen: '2026-07-30T01:00:00.000Z',
+      level: 'error',
+      metadata: { stack: 'x'.repeat(2_700) },
+    }))
+    const postHogExecution = makeExecution({
+      runbookId: 'rb-posthog',
+      runbookTitle: 'PostHog Sandbox API Error Check',
+      steps: [
+        {
+          actionId: 'step-1',
+          order: 1,
+          type: 'plugin',
+          title: 'List PostHog exception issues',
+          status: 'completed',
+          output: `Fetched 27 PostHog issues.\n\n${JSON.stringify({ issues })}`,
+        },
+      ],
+    })
+    const runbookStore = {
+      list: vi.fn().mockResolvedValue([
+        makeRunbook('rb-posthog', 'PostHog Sandbox API Error Check', [
+          { id: 'step-1', type: 'plugin', title: 'List PostHog exception issues' },
+        ]),
+      ]),
+    }
+    const runbookExecutionService = {
+      start: vi.fn().mockResolvedValue({
+        executionId: postHogExecution.executionId,
+        resultId: 'result-posthog',
+      }),
+      waitForCompletion: vi.fn().mockResolvedValue(postHogExecution),
+      get: vi.fn().mockResolvedValue(null),
+      getLatestForIncidentThread: vi.fn().mockResolvedValue(null),
+    }
+    const llmAdapter = {
+      chatWithTools: vi
+        .fn()
+        .mockResolvedValueOnce({
+          content: 'I will inspect the PostHog errors.',
+          toolCalls: [
+            {
+              id: 'call-posthog',
+              name: 'execute_runbook',
+              args: { runbookTitle: 'PostHog Sandbox API Error Check' },
+            },
+          ],
+        })
+        .mockResolvedValueOnce({
+          content: 'The top PostHog issues are summarized.',
+          toolCalls: [],
+        }),
+    }
+    const service = createRuntime({
+      llmAdapter,
+      runbookStore,
+      runbookExecutionService,
+    })
+
+    const sessionId = await service.start({
+      prompt: 'Find the recent exception issues.',
+      incidentThreadId: 'incident-posthog',
+    })
+
+    await waitForCondition(() => service.getStatus(sessionId).state === 'COMPLETED')
+
+    const toolContext = getRequiredToolContent(getSecondCallMessages(llmAdapter))
+    expect(toolContext).toContain('PostHog issue 1')
+    expect(toolContext).toContain('PostHog issue 10')
+    expect(toolContext).not.toContain('PostHog issue 11')
+    expect(toolContext).not.toContain('xxxxxxxxxx')
   })
 
   it('rejects malformed runbook identifiers instead of executing the active runbook', async () => {

@@ -18,6 +18,18 @@ import type {
   RunbookExecutionRecord,
 } from "@bitsentry-ce/components/services/contracts";
 
+const storage = new Map<string, string>();
+
+Object.defineProperty(globalThis, "localStorage", {
+  configurable: true,
+  value: {
+    clear: () => storage.clear(),
+    getItem: (key: string) => storage.get(key) ?? null,
+    removeItem: (key: string) => storage.delete(key),
+    setItem: (key: string, value: string) => storage.set(key, value),
+  },
+});
+
 function getPluralTranslationKey(key: string, count: unknown): string {
   if (typeof count !== "number") {
     return key;
@@ -172,12 +184,12 @@ function renderRail() {
 }
 
 beforeEach(() => {
-  localStorage.clear();
+  globalThis.localStorage?.clear?.();
 });
 
 afterEach(() => {
   cleanup();
-  localStorage.clear();
+  globalThis.localStorage?.clear?.();
 });
 
 describe("IncidentArtifactsRail step selection", () => {
@@ -284,6 +296,55 @@ describe("IncidentArtifactsRail step selection", () => {
       expect(screen.getAllByText("Completed").length).toBeGreaterThan(0);
       expect(screen.getByText("2/2 steps complete")).toBeTruthy();
       expect(screen.getByText("LLM • Completed")).toBeTruthy();
+    });
+  });
+
+  it("hydrates completed execution output when a tool result only contains a summary", async () => {
+    const summarizedExecution = {
+      executionId: execution.executionId,
+      runbookId: execution.runbookId,
+      runbookTitle: execution.runbookTitle,
+      status: execution.status,
+      startedAt: execution.startedAt,
+      steps: execution.steps.map((step) => ({
+        order: step.order,
+        title: step.title,
+        type: step.type,
+        status: step.status,
+        outputExcerpt: "Summary only",
+      })),
+    };
+    const getExecution = vi.fn().mockResolvedValue(execution);
+
+    render(
+      <BitsentryServicesProvider services={createRailServices(getExecution)}>
+        <IncidentArtifactsRail
+          isOpen
+          onClose={() => {}}
+          messages={[
+            {
+              kind: "agent",
+              toolCalls: [
+                {
+                  toolCallId: "call-summary-only",
+                  toolName: "get_runbook_execution",
+                  state: "done",
+                  output: JSON.stringify(summarizedExecution),
+                },
+              ],
+            },
+          ]}
+        />
+      </BitsentryServicesProvider>,
+    );
+
+    await waitFor(() => {
+      expect(getExecution).toHaveBeenCalledWith(execution.executionId);
+      expect(
+        screen.getAllByText(
+          "Use 2026-05-26 00:55:00 UTC for backend log checks.",
+        ).length,
+      ).toBeGreaterThan(0);
     });
   });
 

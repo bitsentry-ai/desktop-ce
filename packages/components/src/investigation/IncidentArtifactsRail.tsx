@@ -165,7 +165,10 @@ function isRunbookExecutionRecord(
     typeof record.runbookTitle === "string" &&
     isExecutionStatus(record.status) &&
     typeof record.startedAt === "string" &&
-    Array.isArray(record.steps)
+    Array.isArray(record.steps) &&
+    record.steps.every(
+      (step) => typeof asRecord(step)?.actionId === "string",
+    )
   );
 }
 
@@ -1333,9 +1336,7 @@ export default function IncidentArtifactsRail({
     if (!runbooks || trackedExecutionIds.length === 0) return;
 
     let cancelled = false;
-    const executionIdsToFetch = trackedExecutionIds.filter(
-      (executionId) => isUuid(executionId) && !executionMap[executionId],
-    );
+    const executionIdsToFetch = trackedExecutionIds.filter(isUuid);
 
     if (executionIdsToFetch.length === 0) return;
 
@@ -1362,7 +1363,7 @@ export default function IncidentArtifactsRail({
     return () => {
       cancelled = true;
     };
-  }, [executionMap, runbooks, trackedExecutionIds]);
+  }, [runbooks, trackedExecutionIds]);
 
   useEffect(() => {
     if (!runbooks || trackedExecutionIds.length === 0) return;
