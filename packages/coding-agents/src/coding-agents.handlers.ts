@@ -1,4 +1,4 @@
-import type { LocalAiProviderKey, LocalAiSettings } from './types'
+import type { LocalAiProviderKey, LocalAiSettings } from './types.js'
 
 export type CodingAgentsHandlerProvider = {
   getSettings(): LocalAiSettings

@@ -4,7 +4,7 @@ import {
   type AgentRuntimeLlmAdapter,
   type AgentRuntimeRunbookGateway,
   type AgentRuntimeWindow,
-} from './agent-runtime.service'
+} from './agent-runtime.service.js'
 
 export function createDesktopAgentRuntimeBindings(
   debugHooks: AgentRuntimeDebugHooks,

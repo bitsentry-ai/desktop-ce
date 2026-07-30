@@ -2,9 +2,9 @@ import { spawn } from 'child_process'
 import type { ChildProcessWithoutNullStreams } from 'child_process'
 import readline from 'readline'
 import { EventEmitter } from 'events'
-import { createCodingAgentsProcessEnv } from './coding-agents-process-env'
-import { codingAgentsLogger as log } from './logger'
-import { terminateSubprocess } from './subprocess-lifecycle'
+import { createCodingAgentsProcessEnv } from './coding-agents-process-env.js'
+import { codingAgentsLogger as log } from './logger.js'
+import { terminateSubprocess } from './subprocess-lifecycle.js'
 
 const REQUEST_TIMEOUT_MS = 300_000
 const MAX_STDERR_BUFFER = 5_000

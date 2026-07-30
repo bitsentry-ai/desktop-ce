@@ -17,7 +17,7 @@ import type {
   AgentRuntimeLlmAdapter,
   AgentRuntimeRunbookGateway,
   AgentRuntimeWindow,
-} from './agent-runtime.service'
+} from './agent-runtime.service.js'
 
 export interface AgentRuntimeSessionController {
   start(input: AgentStartInput): Promise<string>

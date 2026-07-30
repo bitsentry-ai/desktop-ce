@@ -1,13 +1,13 @@
 import os from 'os'
 import log from 'electron-log'
-import { CodexAppServerClient, type JsonRpcId } from './codex-app-server-client'
-import type { LocalAiStreamDelta, LocalAiExecutionResult } from './types'
+import { CodexAppServerClient, type JsonRpcId } from './codex-app-server-client.js'
+import type { LocalAiStreamDelta, LocalAiExecutionResult } from './types.js'
 import {
   getCodexPolicies,
   normalizeAccessLevel,
   type AccessLevel,
   DEFAULT_ACCESS_LEVEL,
-} from './composer'
+} from './composer.js'
 import { getErrorMessage } from '@bitsentry-ce/core'
 
 type LocalAiTextStreamDelta = LocalAiStreamDelta & { type: 'text'; text?: string }

@@ -1,29 +1,29 @@
 import {
   executeClaudeCode as executeSharedClaudeCode,
   type ClaudeCodeExecutionOptions,
-} from './claude-code-provider.service'
+} from './claude-code-provider.service.js'
 import {
   registerCodingAgentsHandlers,
   unregisterCodingAgentsHandlers,
   type CodingAgentsHandlerProvider,
   type CodingAgentsIpcMain,
-} from './coding-agents.handlers'
+} from './coding-agents.handlers.js'
 import {
   CodingAgentsProviderService as SharedCodingAgentsProviderService,
   type CodingAgentsDebugRecorder,
   type CodingAgentsErrorContext,
   type CodingAgentsSettingsStore,
-} from './coding-agents-provider.service'
+} from './coding-agents-provider.service.js'
 import {
   executeCodex as executeSharedCodex,
   type CodexDebugRecorder,
   type CodexExecutionOptions,
-} from './codex-provider.service'
+} from './codex-provider.service.js'
 import {
   executeOpenCode as executeSharedOpenCode,
   type OpenCodeDebugRecorder,
   type OpenCodeExecutionOptions,
-} from './opencode-provider.service'
+} from './opencode-provider.service.js'
 
 type DesktopLogger = {
   info(...args: unknown[]): void

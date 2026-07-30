@@ -3,19 +3,19 @@ import type { ChildProcess } from 'child_process'
 import readline from 'readline'
 import { access, constants, readdir } from 'fs/promises'
 import path from 'path'
-import type { CLIProbeResult, CLIProbeErrorKind } from './types'
-import { createClaudeCodeSubscriptionEnv } from './claude-code-env'
-import { createCodingAgentsProcessEnv } from './coding-agents-process-env'
-import { resolveOpenCodeWindowsBinary } from './cli-binary-resolution'
+import type { CLIProbeResult, CLIProbeErrorKind } from './types.js'
+import { createClaudeCodeSubscriptionEnv } from './claude-code-env.js'
+import { createCodingAgentsProcessEnv } from './coding-agents-process-env.js'
+import { resolveOpenCodeWindowsBinary } from './cli-binary-resolution.js'
 import {
   buildWindowsCmdCommandLine,
   getEnvValue,
   getWindowsCmdExecutable,
   isWindowsCmdShim,
-} from './windows-cmd'
-import { codingAgentsLogger as log } from './logger'
-import { terminateSubprocess } from './subprocess-lifecycle'
-export { setCodingAgentsLoggerForTesting } from './logger'
+} from './windows-cmd.js'
+import { codingAgentsLogger as log } from './logger.js'
+import { terminateSubprocess } from './subprocess-lifecycle.js'
+export { setCodingAgentsLoggerForTesting } from './logger.js'
 
 const WINDOWS_PREFERRED_PATHEXT = ['.cmd', '.exe', '.bat']
 

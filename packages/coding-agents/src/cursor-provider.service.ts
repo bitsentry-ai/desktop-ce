@@ -1,13 +1,13 @@
 import os from 'os'
 import path from 'path'
-import { CursorAcpClient, type CursorJsonRpcId } from './cursor-acp-client'
-import type { LocalAiExecutionResult, LocalAiStreamDelta } from './types'
-import { codingAgentsLogger as log } from './logger'
+import { CursorAcpClient, type CursorJsonRpcId } from './cursor-acp-client.js'
+import type { LocalAiExecutionResult, LocalAiStreamDelta } from './types.js'
+import { codingAgentsLogger as log } from './logger.js'
 import {
   DEFAULT_ACCESS_LEVEL,
   normalizeAccessLevel,
   type AccessLevel,
-} from './composer'
+} from './composer.js'
 
 export interface CodingAgentDebugRecorder {
   recordEvent(stage: string, data: Record<string, unknown>): void
