@@ -163,6 +163,17 @@ function getRequiredToolContent(messages: LlmChatRequest['messages']): string {
   return toolContent
 }
 
+function getLastToolContent(messages: LlmChatRequest['messages']): string {
+  const toolContent = [...messages]
+    .reverse()
+    .find((message) => message.role === 'tool')?.content
+  if (typeof toolContent !== 'string') {
+    throw new Error('Expected a tool message with string content')
+  }
+
+  return toolContent
+}
+
 function getRequiredSystemContent(messages: LlmChatRequest['messages'], text: string): string {
   const systemContent = messages.find((message) => (
     message.role === 'system' &&
@@ -1140,7 +1151,18 @@ describe('AgentRuntimeService runbook outcomes', () => {
         resultId: 'result-posthog',
       }),
       waitForCompletion: vi.fn().mockResolvedValue(postHogExecution),
-      get: vi.fn().mockResolvedValue(null),
+      get: vi
+        .fn()
+        .mockResolvedValueOnce(makeExecution({
+          executionId: postHogExecution.executionId,
+          runbookId: 'rb-posthog',
+          runbookTitle: 'PostHog Sandbox API Error Check',
+          status: 'running',
+          completedAt: undefined,
+          completionReason: undefined,
+          steps: [],
+        }))
+        .mockResolvedValue(postHogExecution),
       getLatestForIncidentThread: vi.fn().mockResolvedValue(null),
     }
     const llmAdapter = {
@@ -1153,6 +1175,16 @@ describe('AgentRuntimeService runbook outcomes', () => {
               id: 'call-posthog',
               name: 'execute_runbook',
               args: { runbookTitle: 'PostHog Sandbox API Error Check' },
+            },
+          ],
+        })
+        .mockResolvedValueOnce({
+          content: 'I will inspect the completed PostHog execution before summarizing it.',
+          toolCalls: [
+            {
+              id: 'call-posthog-result',
+              name: 'get_runbook_execution',
+              args: { executionId: postHogExecution.executionId },
             },
           ],
         })
@@ -1174,7 +1206,7 @@ describe('AgentRuntimeService runbook outcomes', () => {
 
     await waitForCondition(() => service.getStatus(sessionId).state === 'COMPLETED')
 
-    const toolContext = getRequiredToolContent(getSecondCallMessages(llmAdapter))
+    const toolContext = getLastToolContent(getLlmCallMessages(llmAdapter, 2))
     expect(toolContext).toContain('PostHog issue 1')
     expect(toolContext).toContain('PostHog issue 10')
     expect(toolContext).not.toContain('PostHog issue 11')
