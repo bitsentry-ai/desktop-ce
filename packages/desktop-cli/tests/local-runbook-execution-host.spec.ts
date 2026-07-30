@@ -100,6 +100,36 @@ describe('local runbook execution host', () => {
     }
   })
 
+  it('uses a runtime-free probe when discovering a running desktop host', async () => {
+    const userDataPath = await createUserDataDirectory()
+    const desktopRuntime = createRuntime('desktop')
+    let runtimeCreations = 0
+    const desktopHost = new LocalRunbookExecutionHost({
+      userDataPath,
+      async createRuntime() {
+        runtimeCreations += 1
+        return desktopRuntime
+      },
+    })
+    await desktopHost.start()
+
+    try {
+      const cliRuntime = await createLocalRunbookExecutionClient({
+        userDataPath,
+        createHeadlessRuntime: async () => createRuntime('headless'),
+      })
+
+      expect(runtimeCreations).toBe(0)
+      await expect(cliRuntime.listRunbooks()).resolves.toEqual([
+        { id: 'desktop', title: 'desktop runbook' },
+      ])
+      expect(runtimeCreations).toBe(1)
+      await cliRuntime.destroy()
+    } finally {
+      await desktopHost.close()
+    }
+  })
+
   it('accepts a local host response that takes longer than the connection handshake', async () => {
     const userDataPath = await createUserDataDirectory()
     const desktopRuntime = createRuntime('slow-desktop')

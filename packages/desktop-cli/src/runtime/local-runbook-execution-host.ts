@@ -17,6 +17,7 @@ const HOST_METADATA_RETRY_DELAY_MS = 50
 const HOST_METADATA_RETRY_COUNT = 8
 
 type HostMethod =
+  | 'ping'
   | 'listRunbooks'
   | 'deleteRunbook'
   | 'exportRunbooks'
@@ -92,7 +93,8 @@ function createToken(): string {
 }
 
 function isHostMethod(value: unknown): value is HostMethod {
-  return value === 'listRunbooks' ||
+  return value === 'ping' ||
+    value === 'listRunbooks' ||
     value === 'deleteRunbook' ||
     value === 'exportRunbooks' ||
     value === 'exportRunbooksToFile' ||
@@ -392,6 +394,7 @@ export class LocalRunbookExecutionHost {
   }
 
   private async invoke(method: HostMethod, args: unknown[]): Promise<unknown> {
+    if (method === 'ping') return null
     const runtime = await this.getRuntime()
     switch (method) {
       case 'listRunbooks': return runtime.listRunbooks()
@@ -481,6 +484,9 @@ async function requestHost(
       }
     })
     socket.once('connect', () => {
+      // Only bound the handshake. A cold local runtime can legitimately take
+      // longer than five seconds to initialise its first request.
+      socket.setTimeout(0)
       requestWasSent = true
       socket.write(`${JSON.stringify({
         version: LOCAL_RUNBOOK_EXECUTION_HOST_VERSION,
@@ -620,7 +626,7 @@ async function connectToDesktopHost(userDataPath: string): Promise<LocalRunbookE
     throw new LocalRunbookExecutionHostVersionError('The running desktop app uses an incompatible local runbook host protocol.')
   }
   try {
-    await requestHost(metadata, 'listRunbooks', [])
+    await requestHost(metadata, 'ping', [])
     return new LocalRunbookExecutionHostClient(metadata, async () => {})
   } catch (error) {
     if (!isUnavailableConnectionError(error)) throw error
