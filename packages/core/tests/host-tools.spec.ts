@@ -46,4 +46,22 @@ describe('host tools', () => {
     expect(context.gateway.listExecutable).toHaveBeenCalledOnce()
     expect(JSON.parse(result?.output ?? '')).toEqual({ runbooks: [] })
   })
+
+  it('reports the host execution lifecycle to the caller', async () => {
+    const context = createContext()
+    context.gateway.listExecutable = vi.fn().mockResolvedValue([])
+    const events: Array<{ type: string; toolName: string; result?: unknown }> = []
+    context.onToolEvent = (event) => events.push(event)
+
+    await executeHostTool(context, 'list_runbooks', {})
+
+    expect(events).toHaveLength(2)
+    expect(events[0]).toMatchObject({ type: 'started', toolName: 'list_runbooks', args: {} })
+    expect(events[1]).toMatchObject({
+      type: 'completed',
+      toolName: 'list_runbooks',
+      result: { output: expect.stringContaining('runbooks') },
+    })
+    expect(events[1]?.toolName).toBe(events[0]?.toolName)
+  })
 })

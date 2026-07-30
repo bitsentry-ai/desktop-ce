@@ -67,6 +67,7 @@ import {
   type ExecuteRunbookHostToolInput,
   type GetRunbookExecutionHostToolInput,
   type HostToolContext,
+  type HostToolEvent,
 } from '@bitsentry-ce/core/features/agent-runtime'
 
 const CHANNEL_EVENT = 'bitsentry:agent:event'
@@ -421,6 +422,8 @@ interface AgentSession {
   latestJournalTimeWindowParameters?: RunbookParameterValues
   currentTurnRunbookExecutionLookups?: Set<string>
   currentTurnStartedRunbookExecutionIds?: Set<string>
+  currentTurnHostToolCalls?: Map<string, ObservedHostToolCall>
+  currentTurnVisibleRunbookExecutionIds?: Set<string>
   queuedFollowUps: AgentSendInput[]
   loopActive?: boolean
   snapshot: AgentThreadSnapshot
@@ -432,6 +435,12 @@ type CompletedToolResult = {
   toolCall: ToolCall
   result: ToolResult
   modelContext: string
+}
+
+type ObservedHostToolCall = {
+  toolCall: ToolCall
+  result?: ToolResult
+  modelContext?: string
 }
 
 type DirectRunbookExecutionResult = {
@@ -2029,6 +2038,8 @@ export class AgentRuntimeService {
     try {
       session.currentTurnRunbookExecutionLookups = new Set()
       session.currentTurnStartedRunbookExecutionIds = new Set()
+      session.currentTurnHostToolCalls = new Map()
+      session.currentTurnVisibleRunbookExecutionIds = new Set()
       session.currentTurnId = randomUUID()
       let iterations = 0
       let lastToolResult: ToolResult | undefined
@@ -2156,7 +2167,7 @@ export class AgentRuntimeService {
                 accessLevel: session.accessLevel,
                 traitValues: session.traitValues,
                 hostToolContext: this.hasRunbookTools()
-                  ? this.createHostToolContext(session)
+                  ? this.createHostToolContext(session, { observeEvents: true })
                   : undefined,
 
             onDelta: (delta) => {
@@ -2252,11 +2263,23 @@ export class AgentRuntimeService {
           toolCalls = this.dedupeToolCalls(session, response.toolCalls)
         }
 
+        const observedHostToolCalls = this.takeCompletedHostToolCalls(session)
         if (toolCalls.length > 0) {
           assistantMessage.toolCalls = toolCalls
+        } else if (observedHostToolCalls.length > 0) {
+          assistantMessage.toolCalls = observedHostToolCalls.map(({ toolCall }) => toolCall)
         }
 
         session.messages.push(assistantMessage)
+
+        for (const { toolCall, result, modelContext } of observedHostToolCalls) {
+          session.messages.push({
+            role: 'tool',
+            content: modelContext,
+            toolCallId: toolCall.id,
+            toolResult: createAgentToolResultEnvelope(toolCall, result),
+          })
+        }
 
         // If no tool calls, we're done with this turn but keep session RUNNING for follow-ups
         if (toolCalls.length === 0) {
@@ -2458,6 +2481,8 @@ export class AgentRuntimeService {
       session.loopActive = false
       session.currentTurnRunbookExecutionLookups = undefined
       session.currentTurnStartedRunbookExecutionIds = undefined
+      session.currentTurnHostToolCalls = undefined
+      session.currentTurnVisibleRunbookExecutionIds = undefined
       session.currentTurnId = undefined
       const queuedFollowUp = session.queuedFollowUps.shift()
       if (queuedFollowUp !== undefined && session.state !== 'CANCELLED') {
@@ -2775,7 +2800,10 @@ export class AgentRuntimeService {
     return result
   }
 
-  private createHostToolContext(session: AgentSession): HostToolContext {
+  private createHostToolContext(
+    session: AgentSession,
+    options: { observeEvents?: boolean } = {},
+  ): HostToolContext {
     return {
       gateway: this.getRunbookGateway(),
       session: session as AgentSessionRef,
@@ -2786,7 +2814,99 @@ export class AgentRuntimeService {
       summarizeExecution: summarizeRunbookExecutionForToolOutput,
       rememberExecution: (sessionRef, execution) =>
         this.rememberJournalTimeWindowParameters(sessionRef as AgentSession, execution),
+      ...(options.observeEvents
+        ? { onToolEvent: (event: HostToolEvent) => this.observeHostToolEvent(session, event) }
+        : {}),
     }
+  }
+
+  private observeHostToolEvent(session: AgentSession, event: HostToolEvent): void {
+    const observedCalls = session.currentTurnHostToolCalls ?? new Map<string, ObservedHostToolCall>()
+    session.currentTurnHostToolCalls = observedCalls
+    const toolCall: ToolCall = {
+      id: event.toolCallId,
+      name: event.toolName,
+      args: event.args,
+    }
+
+    if (event.type === 'started') {
+      observedCalls.set(event.toolCallId, { toolCall })
+      session.currentToolCallId = event.toolCallId
+      if (event.toolName === 'execute_runbook') {
+        this.sendEvent(session.id, {
+          type: 'activity',
+          timestamp: event.timestamp,
+          phase: 'running_runbook',
+        })
+      }
+      this.sendEvent(session.id, {
+        type: 'tool_start',
+        timestamp: event.timestamp,
+        toolName: event.toolName,
+        toolCallId: event.toolCallId,
+        input: event.args,
+      })
+      return
+    }
+
+    const observedCall = observedCalls.get(event.toolCallId) ?? { toolCall }
+    const modelContext = this.buildToolConversationContent(observedCall.toolCall, event.result)
+    observedCalls.set(event.toolCallId, {
+      ...observedCall,
+      result: event.result,
+      modelContext,
+    })
+    if (session.currentToolCallId === event.toolCallId) {
+      session.currentToolCallId = null
+    }
+    this.sendEvent(session.id, {
+      type: 'tool_end',
+      timestamp: event.timestamp,
+      toolCallId: event.toolCallId,
+      state: getToolEndState(event.result),
+      output: event.result.output,
+      error: event.result.error,
+      modelContext,
+    })
+
+    const visibleResult = this.buildVisibleRunbookToolResult({
+      toolCall: observedCall.toolCall,
+      result: event.result,
+      modelContext,
+    })
+    if (visibleResult === null || event.toolName === 'list_runbooks') {
+      return
+    }
+    const visibleExecutionIds = session.currentTurnVisibleRunbookExecutionIds ?? new Set<string>()
+    session.currentTurnVisibleRunbookExecutionIds = visibleExecutionIds
+    if (visibleResult.executionId !== undefined && visibleExecutionIds.has(visibleResult.executionId)) {
+      return
+    }
+    if (visibleResult.executionId !== undefined) {
+      visibleExecutionIds.add(visibleResult.executionId)
+    }
+    this.sendEvent(session.id, {
+      type: 'assistant_delta',
+      timestamp: event.timestamp,
+      delta: visibleResult.text,
+      kind: 'command_output',
+    })
+  }
+
+  private takeCompletedHostToolCalls(session: AgentSession): CompletedToolResult[] {
+    const observedCalls = session.currentTurnHostToolCalls
+    if (observedCalls === undefined) return []
+
+    const completedCalls = [...observedCalls.values()].flatMap((entry) => {
+      if (entry.result === undefined || entry.modelContext === undefined) return []
+      return [{
+        toolCall: entry.toolCall,
+        result: entry.result,
+        modelContext: entry.modelContext,
+      }]
+    })
+    session.currentTurnHostToolCalls = new Map()
+    return completedCalls
   }
 
   private async listExecutableRunbooks(): Promise<RunbookRecord[]> {

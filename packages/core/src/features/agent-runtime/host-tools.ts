@@ -40,6 +40,17 @@ export interface AgentSessionRef {
   currentTurnStartedRunbookExecutionIds?: Set<string>
 }
 
+export type HostToolEvent = {
+  toolCallId: string
+  toolName: HostToolName
+  args: Record<string, unknown>
+  timestamp: string
+} & (
+  | { type: 'started' }
+  | { type: 'completed'; result: ToolResult }
+  | { type: 'failed'; result: ToolResult }
+)
+
 export interface HostToolContext {
   gateway: RunbookGateway
   session: AgentSessionRef
@@ -55,6 +66,7 @@ export interface HostToolContext {
   ) => RunbookParameterValues | undefined
   summarizeExecution?: (execution: RunbookExecutionRecord) => Record<string, unknown>
   rememberExecution?: (session: AgentSessionRef, execution: RunbookExecutionRecord) => void
+  onToolEvent?: (event: HostToolEvent) => void
 }
 
 export interface HostToolSpec<Args> {
@@ -71,6 +83,20 @@ type HostToolValidationError = {
   code: 'INVALID_TOOL_ARGUMENTS'
   toolName: HostToolName
   issues: Array<{ path: string; message: string }>
+}
+
+let nextHostToolCallSequence = 0
+
+function createHostToolCallId(toolName: HostToolName): string {
+  nextHostToolCallSequence += 1
+  return `host-${toolName}-${nextHostToolCallSequence}`
+}
+
+function emitHostToolEvent(
+  context: HostToolContext,
+  event: HostToolEvent,
+): void {
+  context.onToolEvent?.(event)
 }
 
 function structuredToolError(
@@ -375,13 +401,52 @@ export async function executeHostTool(
   const tool = getHostTool(name)
   if (tool === undefined) return null
 
+  const toolCallId = createHostToolCallId(tool.name)
+  const startedAt = new Date().toISOString()
+  emitHostToolEvent(context, {
+    type: 'started',
+    toolCallId,
+    toolName: tool.name,
+    args: rawArgs,
+    timestamp: startedAt,
+  })
+
   const parsed = tool.argsSchema.safeParse(rawArgs)
-  if (!parsed.success) return createValidationError(tool.name, parsed.error)
+  if (!parsed.success) {
+    const result = createValidationError(tool.name, parsed.error)
+    emitHostToolEvent(context, {
+      type: 'failed',
+      toolCallId,
+      toolName: tool.name,
+      args: rawArgs,
+      result,
+      timestamp: new Date().toISOString(),
+    })
+    return result
+  }
 
   try {
-    return await tool.handler(context, parsed.data as never)
+    const result = await tool.handler(context, parsed.data as never)
+    emitHostToolEvent(context, {
+      type: result.error === undefined ? 'completed' : 'failed',
+      toolCallId,
+      toolName: tool.name,
+      args: parsed.data,
+      result,
+      timestamp: new Date().toISOString(),
+    })
+    return result
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
-    return structuredToolError('HOST_TOOL_EXECUTION_FAILED', message, { toolName: tool.name })
+    const result = structuredToolError('HOST_TOOL_EXECUTION_FAILED', message, { toolName: tool.name })
+    emitHostToolEvent(context, {
+      type: 'failed',
+      toolCallId,
+      toolName: tool.name,
+      args: parsed.data,
+      result,
+      timestamp: new Date().toISOString(),
+    })
+    return result
   }
 }

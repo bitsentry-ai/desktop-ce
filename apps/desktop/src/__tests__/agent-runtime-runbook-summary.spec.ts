@@ -21,6 +21,7 @@ import type {
   RunbookParameterValues,
   RunbookRecord,
 } from '@bitsentry-ce/core/features/runbooks/desktop-runbook-ce.types'
+import { executeHostTool } from '@bitsentry-ce/core/features/agent-runtime'
 
 type LlmChatRequest = Parameters<AgentRuntimeLlmAdapter['chatWithTools']>[0]
 type MockLlmAdapter = {
@@ -459,6 +460,69 @@ describe('summarizeRunbookExecutionForToolOutput', () => {
 })
 
 describe('AgentRuntimeService runbook outcomes', () => {
+  it('records Claude MCP host tools in the thread snapshot and replay transcript', async () => {
+    const runbookStore = {
+      list: vi.fn().mockResolvedValue([
+        makeRunbook('rb-sentry', 'Investigate Sentry', [
+          { id: 'step-1', type: 'external_source', title: 'Fetch Sentry issues' },
+        ]),
+      ]),
+    }
+    const runbookExecutionService = {
+      start: vi.fn().mockResolvedValue({
+        executionId: '11111111-1111-4111-8111-111111111111',
+        resultId: 'result-1',
+      }),
+      waitForCompletion: vi.fn(),
+      get: vi.fn().mockResolvedValue(makeExecution({ status: 'running', completedAt: undefined })),
+      getLatestForIncidentThread: vi.fn().mockResolvedValue(null),
+    }
+    const llmAdapter = {
+      chatWithTools: vi
+        .fn()
+        .mockImplementationOnce(async (input: LlmChatRequest) => {
+          await executeHostTool(input.hostToolContext!, 'execute_runbook', {
+            runbookTitle: 'Investigate Sentry',
+          })
+          return {
+            content: 'I started the Investigate Sentry runbook.',
+            toolCalls: [],
+            toolProtocol: 'mcp' as const,
+          }
+        })
+        .mockResolvedValueOnce({ content: 'The runbook is still running.', toolCalls: [] }),
+    }
+    const sentEvents: AgentRuntimeEventPayload[] = []
+    const service = createRuntime({
+      llmAdapter,
+      runbookStore,
+      runbookExecutionService,
+      sentEvents,
+    })
+
+    const sessionId = await service.start({
+      prompt: 'Run Investigate Sentry.',
+      incidentThreadId: 'incident-mcp-ledger',
+      llm: { providerKey: 'claude_code', model: 'claude-sonnet-4-6' },
+    })
+    await waitForCondition(() => service.getStatus(sessionId).state === 'COMPLETED')
+
+    expect(getAllAgentToolCalls(service, sessionId)).toEqual([
+      expect.objectContaining({ toolName: 'execute_runbook', state: 'done' }),
+    ])
+    expect(sentEvents.some((payload) => payload.event.type === 'tool_start')).toBe(true)
+    expect(sentEvents.some((payload) => payload.event.type === 'tool_end')).toBe(true)
+    expect(sentEvents.some((payload) => (
+      payload.event.type === 'activity' && payload.event.phase === 'running_runbook'
+    ))).toBe(true)
+
+    await service.send({ sessionId, message: 'What is its status?' })
+    await waitForCondition(() => service.getStatus(sessionId).state === 'COMPLETED')
+    expect(getSecondCallMessages(llmAdapter)).toEqual(expect.arrayContaining([
+      expect.objectContaining({ role: 'tool', toolCallId: expect.stringContaining('execute_runbook') }),
+    ]))
+  })
+
   it('makes list_runbooks results visible to local provider responses', async () => {
     const runbookStore = {
       list: vi.fn().mockResolvedValue([

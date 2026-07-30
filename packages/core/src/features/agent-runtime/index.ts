@@ -96,6 +96,7 @@ export {
   type ExecuteRunbookHostToolInput,
   type GetRunbookExecutionHostToolInput,
   type HostToolContext,
+  type HostToolEvent,
   type HostToolName,
   type HostToolSpec,
 } from './host-tools'
