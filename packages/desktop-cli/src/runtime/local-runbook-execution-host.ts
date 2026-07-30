@@ -482,7 +482,12 @@ async function requestHost(
 
 function isUnavailableConnectionError(error: unknown): boolean {
   return error instanceof Error && (
-    'code' in error && ((error as NodeJS.ErrnoException).code === 'ECONNREFUSED' || (error as NodeJS.ErrnoException).code === 'ENOENT')
+    'code' in error && (
+      (error as NodeJS.ErrnoException).code === 'ECONNREFUSED' ||
+      (error as NodeJS.ErrnoException).code === 'ENOENT' ||
+      (error as NodeJS.ErrnoException).code === 'EPIPE' ||
+      (error as NodeJS.ErrnoException).code === 'ECONNRESET'
+    )
   )
 }
 
@@ -505,6 +510,84 @@ class LocalRunbookExecutionHostClient implements RunbookCliRuntime {
     const args: unknown[] = [executionId]
     if (options !== undefined) args.push(options)
     return await requestHost(this.metadata, 'waitForExecution', args) as Awaited<ReturnType<RunbookCliRuntime['waitForExecution']>>
+  }
+}
+
+/**
+ * A CLI invocation first probes a host, then makes its real request. A host
+ * owned by another short-lived CLI invocation can disappear in that gap. Keep
+ * the recovery at this boundary so every runbook operation gets the same
+ * behaviour on Unix sockets and Windows named pipes.
+ */
+class RetryingLocalRunbookExecutionClient implements RunbookCliRuntime {
+  private destroyed = false
+
+  constructor(
+    private client: RunbookCliRuntime,
+    private readonly acquireClient: () => Promise<RunbookCliRuntime>,
+  ) {}
+
+  async destroy(): Promise<void> {
+    this.destroyed = true
+    await this.client.destroy()
+  }
+
+  async listRunbooks() {
+    return await this.request((client) => client.listRunbooks(), true)
+  }
+
+  async deleteRunbook(runbookId: string) {
+    return await this.request((client) => client.deleteRunbook(runbookId))
+  }
+
+  async exportRunbooks(runbookIds: string[], includeGlobals?: boolean) {
+    return await this.request((client) => client.exportRunbooks(runbookIds, includeGlobals), true)
+  }
+
+  async exportRunbooksToFile(filePath: string, runbookIds: string[], includeGlobals?: boolean) {
+    return await this.request((client) => client.exportRunbooksToFile(filePath, runbookIds, includeGlobals))
+  }
+
+  async importRunbooksFromFile(filePath: string, options?: unknown) {
+    return await this.request((client) => client.importRunbooksFromFile(filePath, options))
+  }
+
+  async executeRunbook(input: Parameters<RunbookCliRuntime['executeRunbook']>[0]) {
+    return await this.request((client) => client.executeRunbook(input))
+  }
+
+  async getExecution(executionId: string) {
+    return await this.request((client) => client.getExecution(executionId), true)
+  }
+
+  async cancelExecution(executionId: string) {
+    await this.request((client) => client.cancelExecution(executionId))
+  }
+
+  async waitForExecution(
+    executionId: string,
+    options?: Parameters<RunbookCliRuntime['waitForExecution']>[1],
+  ) {
+    return await this.request((client) => client.waitForExecution(executionId, options), true)
+  }
+
+  private async request<T>(
+    operation: (client: RunbookCliRuntime) => Promise<T>,
+    retryOnUnavailable = false,
+  ): Promise<T> {
+    const attemptedClient = this.client
+    try {
+      return await operation(attemptedClient)
+    } catch (error) {
+      if (!retryOnUnavailable || !isUnavailableConnectionError(error) || this.destroyed) throw error
+
+      // Do not retry writes: the peer may have received a mutating request just
+      // before the transport failed. Read-only operations are safe to replay.
+      if (this.client === attemptedClient) {
+        this.client = await this.acquireClient()
+      }
+      return await operation(this.client)
+    }
   }
 }
 
@@ -533,7 +616,7 @@ async function waitForDesktopHost(userDataPath: string): Promise<LocalRunbookExe
   return null
 }
 
-export async function createLocalRunbookExecutionClient(
+async function createLocalRunbookExecutionClientOnce(
   options: LocalRunbookExecutionClientOptions,
 ): Promise<RunbookCliRuntime> {
   const userDataPath = path.resolve(options.userDataPath ?? getRuntimeUserDataPath())
@@ -576,5 +659,15 @@ export async function createLocalRunbookExecutionClient(
 
   throw new LocalRunbookExecutionHostAlreadyRunningError(
     'A local runbook execution host did not become available after waiting for its owner to exit.',
+  )
+}
+
+export async function createLocalRunbookExecutionClient(
+  options: LocalRunbookExecutionClientOptions,
+): Promise<RunbookCliRuntime> {
+  const initialClient = await createLocalRunbookExecutionClientOnce(options)
+  return new RetryingLocalRunbookExecutionClient(
+    initialClient,
+    async () => await createLocalRunbookExecutionClientOnce(options),
   )
 }
