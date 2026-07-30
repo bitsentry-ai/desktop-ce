@@ -48,6 +48,7 @@ import { useTranslation } from "@bitsentry-ce/i18n";
 import { getProviderModelOptions } from "../chat/utils";
 import type {
   AccessLevel,
+  AgentActivityPhase,
   AgentSessionState,
   AgentThreadSnapshot,
   AgentThreadTokenUsage,
@@ -443,6 +444,17 @@ function normalizeAgentStatus(value: unknown): Extract<ChatMessage, { kind: "age
   return "done";
 }
 
+function normalizeAgentActivity(value: unknown): AgentActivityPhase | undefined {
+  if (
+    value === "asking_model" ||
+    value === "running_runbook" ||
+    value === "waiting_for_summary"
+  ) {
+    return value;
+  }
+  return undefined;
+}
+
 function normalizeIterationStatus(value: unknown): "thinking" | "streaming" | "done" | "error" {
   if (
     value === "thinking" ||
@@ -525,6 +537,7 @@ function migrateMessage(msg: unknown): ChatMessage {
       activeIterationId: null,
       finalText: getString(record, "finalText") ?? null,
       status: normalizeAgentStatus(record.status),
+      activity: normalizeAgentActivity(record.activity),
       errorMsg: getString(record, "errorMsg"),
     };
   }
@@ -536,6 +549,7 @@ function migrateMessage(msg: unknown): ChatMessage {
       activeIterationId: getString(record, "activeIterationId") ?? null,
       finalText: getString(record, "finalText") ?? null,
       status: normalizeAgentStatus(record.status),
+      activity: normalizeAgentActivity(record.activity),
       errorMsg: getString(record, "errorMsg"),
     };
   }

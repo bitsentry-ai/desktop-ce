@@ -34,6 +34,7 @@ export {
 
 export type {
   AgentSessionState,
+  AgentActivityPhase,
   ToolExecutionState,
   AgentEventType,
   AgentErrorCode,
@@ -43,6 +44,7 @@ export type {
   ThinkingStartEvent,
   ThinkingDeltaEvent,
   ThinkingEndEvent,
+  AgentActivityEvent,
   AgentChatAttachment,
   AgentProviderKey,
   AgentLlmSelection,

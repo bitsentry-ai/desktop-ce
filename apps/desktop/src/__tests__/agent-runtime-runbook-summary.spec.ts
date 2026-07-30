@@ -2730,6 +2730,43 @@ describe('AgentRuntimeService runbook outcomes', () => {
 })
 
 describe('runtime projection outcomes', () => {
+  it('projects explicit incident-chat activity through runbook start and summary handoff', () => {
+    let snapshot = createAgentThreadSnapshot({
+      sessionId: 'session-activity',
+      startedAt: '2026-05-26T00:00:00.000Z',
+      runtimeState: 'RUNNING',
+      prompt: 'Check Jagad logs.',
+    })
+
+    snapshot = reduceAgentThreadSnapshot(snapshot, {
+      type: 'activity',
+      timestamp: '2026-05-26T00:00:01.000Z',
+      phase: 'asking_model',
+    })
+    expect(getLastAgentMessage(snapshot).activity).toBe('asking_model')
+
+    snapshot = reduceAgentThreadSnapshot(snapshot, {
+      type: 'activity',
+      timestamp: '2026-05-26T00:00:02.000Z',
+      phase: 'running_runbook',
+    })
+    expect(getLastAgentMessage(snapshot).activity).toBe('running_runbook')
+
+    snapshot = reduceAgentThreadSnapshot(snapshot, {
+      type: 'activity',
+      timestamp: '2026-05-26T00:00:03.000Z',
+      phase: 'waiting_for_summary',
+    })
+    expect(getLastAgentMessage(snapshot).activity).toBe('waiting_for_summary')
+
+    snapshot = reduceAgentThreadSnapshot(snapshot, {
+      type: 'final',
+      timestamp: '2026-05-26T00:00:04.000Z',
+      response: 'The runbook is running; its timeline will update here.',
+    })
+    expect(getLastAgentMessage(snapshot).activity).toBeUndefined()
+  })
+
   it('projects the final response over earlier planning text in the last iteration', () => {
     let snapshot = createAgentThreadSnapshot({
       sessionId: 'session-1',

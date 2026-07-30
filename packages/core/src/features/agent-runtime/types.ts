@@ -10,6 +10,9 @@
  */
 export type AgentSessionState = 'IDLE' | 'RUNNING' | 'COMPLETED' | 'FAILED' | 'CANCELLED'
 
+/** The visible activity currently owning the incident-chat turn. */
+export type AgentActivityPhase = 'asking_model' | 'running_runbook' | 'waiting_for_summary'
+
 /**
  * Tool execution lifecycle state.
  */
@@ -24,6 +27,7 @@ export type AgentEventType =
   | 'thinking_start'   // AI started reasoning (before LLM call)
   | 'thinking_delta'   // Streaming thinking content
   | 'thinking_end'     // AI finished reasoning
+  | 'activity'         // Visible incident-chat activity changed
   | 'tool_start'       // Tool execution started
   | 'tool_update'      // Tool output update (streaming)
   | 'tool_end'         // Tool execution ended (success or failure)
@@ -80,6 +84,11 @@ export interface ThinkingDeltaEvent extends AgentEvent {
  */
 export interface ThinkingEndEvent extends AgentEvent {
   type: 'thinking_end'
+}
+
+export interface AgentActivityEvent extends AgentEvent {
+  type: 'activity'
+  phase: AgentActivityPhase | null
 }
 
 export interface AgentChatAttachment {
@@ -145,6 +154,7 @@ export type ChatMessage =
       toolCalls: ToolCallCard[]
       finalText: string | null
       status: 'thinking' | 'streaming' | 'done' | 'error' | 'cancelled'
+      activity?: AgentActivityPhase
       errorMsg?: string
       errorCode?: AgentErrorCode
     }
@@ -233,6 +243,7 @@ export type AgentEventData =
   | ThinkingStartEvent
   | ThinkingDeltaEvent
   | ThinkingEndEvent
+  | AgentActivityEvent
   | ToolStartEvent
   | ToolUpdateEvent
   | ToolEndEvent

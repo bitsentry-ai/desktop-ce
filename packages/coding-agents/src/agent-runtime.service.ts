@@ -1938,6 +1938,7 @@ export class AgentRuntimeService {
       let postToolFallbackResults: CompletedToolResult[] | null = null
       let localProviderToolCallRetryCount = 0
       let hasExecutedToolCallInCurrentTurn = false
+      let awaitingRunbookSummary = false
       const visibleRunbookExecutionIds = new Set<string>()
       const accumulateTurnTokenUsage = (usage: TurnTokenUsage): void => {
         turnTokenUsage = mergeTurnTokenUsage(turnTokenUsage, usage)
@@ -1962,6 +1963,7 @@ export class AgentRuntimeService {
       const directRunbookExecution = await this.runExplicitlyMentionedRunbook(session)
       if (directRunbookExecution !== null) {
         hasExecutedToolCallInCurrentTurn = true
+        awaitingRunbookSummary = true
         lastToolResult = directRunbookExecution.result
         session.messages.push({
           role: 'system',
@@ -1991,6 +1993,12 @@ export class AgentRuntimeService {
           session.state = 'CANCELLED'
           return
         }
+
+        this.sendEvent(sessionId, {
+          type: 'activity',
+          timestamp: new Date().toISOString(),
+          phase: awaitingRunbookSummary ? 'waiting_for_summary' : 'asking_model',
+        })
 
         // Determine which tools should be available based on runbook actions
         const hasShellAction = session.runbookContext?.actions.some((a) => a.type === 'shell') ?? false
@@ -2269,6 +2277,7 @@ export class AgentRuntimeService {
 
           if (toolCall.name === 'execute_runbook' && result.error === undefined) {
             runbookStartCompletedInBatch = true
+            awaitingRunbookSummary = true
           }
 
           executedToolResults.push({ toolCall, result, modelContext })
@@ -2728,6 +2737,11 @@ export class AgentRuntimeService {
   }
 
   private async executeRunbook(session: AgentSession, input: ExecuteRunbookInput): Promise<ToolResult> {
+    this.sendEvent(session.id, {
+      type: 'activity',
+      timestamp: new Date().toISOString(),
+      phase: 'running_runbook',
+    })
     const runbookGateway = this.getRunbookGateway()
     const runbook = await this.resolveRunbookReference(session, input)
     const parameterValues = this.resolveRunbookParameterValues(session, runbook, input)
