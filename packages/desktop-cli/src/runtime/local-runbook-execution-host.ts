@@ -1,5 +1,5 @@
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto'
-import { chmod, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { chmod, mkdir, open, readFile, rm, writeFile } from 'node:fs/promises'
 import net from 'node:net'
 import os from 'node:os'
 import path from 'node:path'
@@ -10,8 +10,9 @@ import { getRuntimeUserDataPath } from './runtime-paths.js'
 export const LOCAL_RUNBOOK_EXECUTION_HOST_VERSION = 1 as const
 
 const MAX_PROTOCOL_LINE_BYTES = 1_000_000
-const CONNECTION_TIMEOUT_MS = 750
+const CONNECTION_TIMEOUT_MS = 5_000
 const METADATA_FILE_NAME = 'runbook-execution-host.json'
+const OWNERSHIP_LOCK_FILE_NAME = 'runbook-execution-host.lock'
 const HOST_METADATA_RETRY_DELAY_MS = 50
 const HOST_METADATA_RETRY_COUNT = 8
 
@@ -65,6 +66,10 @@ export class LocalRunbookExecutionHostAlreadyRunningError extends Error {}
 
 function metadataPath(userDataPath: string): string {
   return path.join(userDataPath, METADATA_FILE_NAME)
+}
+
+function ownershipLockPath(userDataPath: string): string {
+  return path.join(userDataPath, OWNERSHIP_LOCK_FILE_NAME)
 }
 
 function endpointForUserDataPath(userDataPath: string): string {
@@ -189,6 +194,77 @@ async function removeMetadataIfOwned(userDataPath: string, token: string): Promi
   }
 }
 
+function isMissingProcess(error: unknown): boolean {
+  return typeof error === 'object' && error !== null && 'code' in error &&
+    (error as NodeJS.ErrnoException).code === 'ESRCH'
+}
+
+function isProcessAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0)
+    return true
+  } catch (error) {
+    return !isMissingProcess(error)
+  }
+}
+
+function parseOwnershipLock(raw: string): { pid: number } | null {
+  try {
+    const value: unknown = JSON.parse(raw)
+    if (value === null || typeof value !== 'object' || Array.isArray(value)) return null
+    const { pid } = value as { pid?: unknown }
+    return typeof pid === 'number' && Number.isInteger(pid) && pid > 0 ? { pid } : null
+  } catch {
+    return null
+  }
+}
+
+async function acquireOwnershipLock(userDataPath: string, token: string): Promise<string> {
+  const lockPath = ownershipLockPath(userDataPath)
+  await mkdir(userDataPath, { recursive: true, mode: 0o700 })
+
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      const handle = await open(lockPath, 'wx', 0o600)
+      try {
+        await handle.writeFile(JSON.stringify({ pid: process.pid, token }), 'utf-8')
+      } finally {
+        await handle.close()
+      }
+      await chmod(lockPath, 0o600)
+      return lockPath
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error
+
+      const current = parseOwnershipLock(await readFile(lockPath, 'utf-8').catch(() => ''))
+      if (current === null || isProcessAlive(current.pid)) {
+        throw new LocalRunbookExecutionHostAlreadyRunningError(
+          'A local runbook execution host is already starting or listening for this user data directory.',
+        )
+      }
+
+      await rm(lockPath, { force: true })
+    }
+  }
+
+  throw new LocalRunbookExecutionHostAlreadyRunningError(
+    'A local runbook execution host is already starting or listening for this user data directory.',
+  )
+}
+
+async function removeOwnershipLock(lockPath: string | null, token: string): Promise<void> {
+  if (lockPath === null) return
+  try {
+    const value: unknown = JSON.parse(await readFile(lockPath, 'utf-8'))
+    if (value !== null && typeof value === 'object' && !Array.isArray(value) &&
+      (value as { token?: unknown }).token === token) {
+      await rm(lockPath, { force: true })
+    }
+  } catch {
+    // A missing or malformed lock is not owned by this host.
+  }
+}
+
 function toErrorMessage(error: unknown): string {
   if (error instanceof Error && error.message !== '') return error.message
   return 'Local runbook execution host request failed.'
@@ -198,8 +274,10 @@ export class LocalRunbookExecutionHost {
   private readonly endpoint: string
   private readonly token = createToken()
   private server: net.Server | null = null
+  private ownershipLock: string | null = null
   private runtime: LocalRunbookExecutionHostRuntime | null
   private runtimePromise: Promise<LocalRunbookExecutionHostRuntime> | null = null
+  private readonly activeExecutionWaits = new Set<Promise<void>>()
 
   constructor(private readonly options: LocalRunbookExecutionHostOptions) {
     this.endpoint = endpointForUserDataPath(options.userDataPath)
@@ -208,7 +286,14 @@ export class LocalRunbookExecutionHost {
 
   async start(): Promise<void> {
     if (this.server !== null) return
-    await removeStaleUnixSocket(this.endpoint)
+    this.ownershipLock = await acquireOwnershipLock(this.options.userDataPath, this.token)
+    try {
+      await removeStaleUnixSocket(this.endpoint)
+    } catch (error) {
+      await removeOwnershipLock(this.ownershipLock, this.token)
+      this.ownershipLock = null
+      throw error
+    }
 
     const server = net.createServer((socket) => this.handleConnection(socket))
     try {
@@ -221,10 +306,14 @@ export class LocalRunbookExecutionHost {
       })
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === 'EADDRINUSE') {
+        await removeOwnershipLock(this.ownershipLock, this.token)
+        this.ownershipLock = null
         throw new LocalRunbookExecutionHostAlreadyRunningError(
           'A local runbook execution host is already listening for this user data directory.',
         )
       }
+      await removeOwnershipLock(this.ownershipLock, this.token)
+      this.ownershipLock = null
       throw error
     }
 
@@ -238,6 +327,8 @@ export class LocalRunbookExecutionHost {
     } catch (error) {
       await new Promise<void>((resolve) => server.close(() => resolve()))
       if (process.platform !== 'win32') await rm(this.endpoint, { force: true })
+      await removeOwnershipLock(this.ownershipLock, this.token)
+      this.ownershipLock = null
       throw error
     }
   }
@@ -249,6 +340,14 @@ export class LocalRunbookExecutionHost {
     await new Promise<void>((resolve, reject) => server.close((error) => error === undefined ? resolve() : reject(error)))
     if (process.platform !== 'win32') await rm(this.endpoint, { force: true })
     await removeMetadataIfOwned(this.options.userDataPath, this.token)
+    await removeOwnershipLock(this.ownershipLock, this.token)
+    this.ownershipLock = null
+  }
+
+  async waitForActiveExecutions(): Promise<void> {
+    while (this.activeExecutionWaits.size > 0) {
+      await Promise.all(this.activeExecutionWaits)
+    }
   }
 
   private handleConnection(socket: net.Socket): void {
@@ -296,10 +395,24 @@ export class LocalRunbookExecutionHost {
       case 'exportRunbooks': return runtime.exportRunbooks(args[0] as string[], Boolean(args[1]))
       case 'exportRunbooksToFile': return runtime.exportRunbooksToFile(String(args[0] ?? ''), args[1] as string[], Boolean(args[2]))
       case 'importRunbooksFromFile': return runtime.importRunbooksFromFile(String(args[0] ?? ''), args[1])
-      case 'executeRunbook': return runtime.executeRunbook(args[0] as Parameters<RunbookCliRuntime['executeRunbook']>[0])
+      case 'executeRunbook': {
+        const execution = await runtime.executeRunbook(
+          args[0] as Parameters<RunbookCliRuntime['executeRunbook']>[0],
+        )
+        this.trackExecution(runtime, execution.executionId)
+        return execution
+      }
       case 'getExecution': return runtime.getExecution(String(args[0] ?? ''))
       case 'cancelExecution': return runtime.cancelExecution(String(args[0] ?? ''))
-      case 'waitForExecution': return runtime.waitForExecution(String(args[0] ?? ''), args[1] as Parameters<RunbookCliRuntime['waitForExecution']>[1])
+      case 'waitForExecution': {
+        const options = args[1]
+        return runtime.waitForExecution(
+          String(args[0] ?? ''),
+          options === null
+            ? undefined
+            : options as Parameters<RunbookCliRuntime['waitForExecution']>[1],
+        )
+      }
     }
   }
 
@@ -308,6 +421,16 @@ export class LocalRunbookExecutionHost {
     this.runtimePromise ??= this.options.createRuntime!()
     this.runtime = await this.runtimePromise
     return this.runtime
+  }
+
+  private trackExecution(
+    runtime: LocalRunbookExecutionHostRuntime,
+    executionId: string,
+  ): void {
+    const completion = runtime.waitForExecution(executionId)
+      .then(() => {}, () => {})
+      .finally(() => this.activeExecutionWaits.delete(completion))
+    this.activeExecutionWaits.add(completion)
   }
 }
 
@@ -378,7 +501,11 @@ class LocalRunbookExecutionHostClient implements RunbookCliRuntime {
   async executeRunbook(input: Parameters<RunbookCliRuntime['executeRunbook']>[0]) { return await requestHost(this.metadata, 'executeRunbook', [input]) as Awaited<ReturnType<RunbookCliRuntime['executeRunbook']>> }
   async getExecution(executionId: string) { return await requestHost(this.metadata, 'getExecution', [executionId]) as Awaited<ReturnType<RunbookCliRuntime['getExecution']>> }
   async cancelExecution(executionId: string) { await requestHost(this.metadata, 'cancelExecution', [executionId]) }
-  async waitForExecution(executionId: string, options?: Parameters<RunbookCliRuntime['waitForExecution']>[1]) { return await requestHost(this.metadata, 'waitForExecution', [executionId, options]) as Awaited<ReturnType<RunbookCliRuntime['waitForExecution']>> }
+  async waitForExecution(executionId: string, options?: Parameters<RunbookCliRuntime['waitForExecution']>[1]) {
+    const args: unknown[] = [executionId]
+    if (options !== undefined) args.push(options)
+    return await requestHost(this.metadata, 'waitForExecution', args) as Awaited<ReturnType<RunbookCliRuntime['waitForExecution']>>
+  }
 }
 
 async function connectToDesktopHost(userDataPath: string): Promise<LocalRunbookExecutionHostClient | null> {
@@ -430,6 +557,7 @@ export async function createLocalRunbookExecutionClient(
     const metadata = await readMetadata(userDataPath)
     if (metadata === null) throw new Error('Headless runbook host did not publish its capability metadata.')
     return new LocalRunbookExecutionHostClient(metadata, async () => {
+      await host.waitForActiveExecutions()
       await host.close()
       await destroyHeadlessRuntime()
     })

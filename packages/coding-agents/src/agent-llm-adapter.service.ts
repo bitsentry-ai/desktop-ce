@@ -198,6 +198,7 @@ export interface ChatResponse {
   content: string
   toolCalls?: ToolCall[]
   toolProtocol: AgentToolProtocol
+  hasForeignToolCallMarkup?: boolean
   tokenUsage?: {
     inputTokens: number
     outputTokens: number
@@ -438,7 +439,21 @@ const HIDDEN_HOST_BLOCKS = [
     openPrefix: '<bitsentry_host_protocol',
     closeTag: '</bitsentry_host_protocol>',
   },
+  {
+    openPrefix: '<function_calls',
+    closeTag: '</function_calls>',
+  },
+  {
+    openPrefix: '<invoke',
+    closeTag: '</invoke>',
+  },
+  {
+    openPrefix: '<tool_use',
+    closeTag: '</tool_use>',
+  },
 ] as const
+
+const FOREIGN_TOOL_CALL_MARKUP = /<\s*(?:function_calls|invoke|tool_use)\b/i
 
 function stripInternalHostMarkup(value: string): string {
   let sanitized = value
@@ -447,6 +462,10 @@ function stripInternalHostMarkup(value: string): string {
     const escapedCloseTag = block.closeTag.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
     sanitized = sanitized.replace(
       new RegExp(`${escapedOpenPrefix}[^>]*>[\\s\\S]*?${escapedCloseTag}\\s*`, 'gi'),
+      '\n\n',
+    )
+    sanitized = sanitized.replace(
+      new RegExp(`${escapedOpenPrefix}\\b[\\s\\S]*$`, 'gi'),
       '\n\n',
     )
   }
@@ -980,6 +999,10 @@ function sanitizeLocalProviderOutput(providerKey: LocalAiProviderKey, text: stri
   return withoutHostMarkup
 }
 
+function hasForeignToolCallMarkup(text: string): boolean {
+  return FOREIGN_TOOL_CALL_MARKUP.test(text)
+}
+
 function createLocalAiDeltaHandler(
   onDelta: OnDelta | undefined,
   streamSanitizer: TextSanitizer,
@@ -1361,11 +1384,13 @@ export class AgentLlmAdapterService {
     result: LocalAiExecutionResult,
     toolProtocol: AgentToolProtocol,
   ): ChatResponse {
+    const foreignToolCallMarkup = hasForeignToolCallMarkup(result.output)
     if (toolProtocol === 'none') {
       return {
         content: sanitizeLocalProviderOutput(providerKey, result.output),
         toolCalls: [],
         toolProtocol,
+        hasForeignToolCallMarkup: foreignToolCallMarkup,
         tokenUsage: result.tokenUsage,
       }
     }
@@ -1378,6 +1403,7 @@ export class AgentLlmAdapterService {
         content: sanitizeLocalProviderOutput(providerKey, structuredResponse?.content ?? result.output),
         toolCalls: structuredResponse?.toolCalls ?? parseStructuredToolCalls(result.toolCalls),
         toolProtocol,
+        hasForeignToolCallMarkup: foreignToolCallMarkup,
         tokenUsage: result.tokenUsage,
       }
     }

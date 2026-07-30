@@ -521,7 +521,7 @@ describe('AgentRuntimeService runbook outcomes', () => {
   it('completes with a natural response when a structured CLI emits no host operation', async () => {
     const llmAdapter = {
       chatWithTools: vi.fn().mockResolvedValue({
-        content: 'I will list the available runbooks.',
+        content: 'Tell me which system you want to investigate and I can help interpret its current state.',
         toolCalls: [],
         toolProtocol: 'structured_cli',
       }),
@@ -538,11 +538,69 @@ describe('AgentRuntimeService runbook outcomes', () => {
 
     expect(getAllAgentToolCalls(service, sessionId)).toEqual([])
     expect(getLastAgentMessage(service.getSnapshot(sessionId)).finalText).toContain(
-      'I will list the available runbooks.',
+      'Tell me which system you want to investigate',
     )
   })
 
-  it('acknowledges an exactly named runbook start without waiting for its result', async () => {
+  it('retries then fails clearly when Haiku emits foreign function-call markup', async () => {
+    const sentEvents: AgentRuntimeEventPayload[] = []
+    const haikuFinalText = [
+      "I'll discover the available runbooks for this incident.",
+      '<function_calls>',
+      '[{"tool_name": "list_runbooks", "arguments": {}}]',
+      '</function_calls>',
+      '<function_calls>',
+      '',
+      'Here are the available runbooks for this incident:',
+      '',
+      '1. **CPU Spike Diagnosis** – Analyzes high CPU usage by examining process metrics, system load, and thread activity to identify the root cause.',
+      '',
+      '2. **Memory Leak Detection** – Investigates memory consumption patterns to detect potential memory leaks or unbounded growth in process memory usage.',
+      '',
+      '3. **Disk Space Analysis** – Examines disk usage across filesystems to identify space-consuming files, directories, and processes contributing to low disk space conditions.',
+      '',
+      '4. **Network Connectivity Troubleshooting** – Diagnoses network issues by checking connectivity, DNS resolution, routing, and active network connections.',
+      '',
+      '5. **Service Restart & Recovery** – Provides diagnostics and controlled restart procedures for failed or degraded services with health verification.',
+      '',
+      '6. **Log Aggregation & Analysis** – Retrieves and analyzes system and application logs within specified time windows to identify error patterns and anomalies.',
+      '',
+      '7. **Database Performance Check** – Analyzes database query performance, connection pools, and resource utilization to diagnose database-related issues.',
+      '',
+      '8. **Security & Access Audit** – Examines authentication logs, permission changes, and suspicious access patterns for security-related incidents.',
+      '',
+      'Which runbook would you like to execute, or would you like me to help diagnose a specific issue?',
+    ].join('\n')
+    const llmAdapter = {
+      chatWithTools: vi.fn().mockResolvedValue({
+        content: haikuFinalText,
+        toolCalls: [],
+        toolProtocol: 'structured_cli',
+        hasForeignToolCallMarkup: true,
+      }),
+    }
+    const service = createRuntime({ llmAdapter, sentEvents })
+
+    const sessionId = await service.start({
+      prompt: 'Find the available runbooks.',
+      incidentThreadId: 'incident-runbook-haiku-foreign-markup',
+      llm: { providerKey: 'claude_code', model: 'claude-haiku-4-5' },
+    })
+
+    await waitForCondition(() => service.getStatus(sessionId).state === 'FAILED')
+
+    expect(llmAdapter.chatWithTools.mock.calls).toHaveLength(2)
+    expect(getRequiredSystemContent(
+      getSecondCallMessages(llmAdapter),
+      'Your previous response promised or described a host tool call',
+    )).toContain('Emit exactly one JSON document')
+    expect(sentEvents.some((payload) => (
+      payload.event.type === 'error' &&
+      payload.event.message.includes('after the protocol retry')
+    ))).toBe(true)
+  })
+
+  it('executes an exactly named runbook from an incident prompt before asking the model to summarize it', async () => {
     const sentEvents: AgentRuntimeEventPayload[] = []
     const kanyeExecution = makeExecution({
       executionId: '33333333-3333-4333-8333-333333333333',

@@ -719,8 +719,18 @@ app
         const runbookId = randomUUID()
         await dispatcher.dispatch('runbooks:create', {
           id: runbookId,
-          title: 'Smoke: no-op local runbook',
-          description: 'Packaged smoke fixture. Contains no executable actions.',
+          title: 'Smoke: executable local runbook',
+          description: 'Packaged smoke fixture with one portable shell action.',
+        })
+        await dispatcher.dispatch('runbooks:saveAction', {
+          runbookId,
+          action: {
+            id: randomUUID(),
+            type: 'shell',
+            title: 'Complete smoke runbook',
+            command: 'node -e "process.exit(0)"',
+            sortOrder: 0,
+          },
         })
         const started = await dispatcher.dispatch('runbooks:execute', { runbookId })
         if (

@@ -199,6 +199,37 @@ describe('AgentLlmAdapterService', () => {
     expect(capturedPrompt).toContain('"type":"tool_calls"')
   })
 
+  it('hides foreign function-call markup and preserves the retry signal', async () => {
+    const adapter = createAdapter()
+    const output = [
+      "I'll discover the available runbooks for this incident.",
+      '<function_calls>',
+      '[{"tool_name": "list_runbooks", "arguments": {}}]',
+      '</function_calls>',
+    ].join('\n')
+
+    adapter.setLocalAiProvider(createLocalAiProvider({
+      getHostToolProtocol: () => 'structured_cli',
+      execute: () => Promise.resolve({ output }),
+    }))
+
+    const response = await adapter.chatWithTools({
+      messages: [{ role: 'user', content: 'List runbooks' }],
+      tools: [{
+        name: 'list_runbooks',
+        description: 'List available runbooks.',
+        inputSchema: { type: 'object', properties: {} },
+      }],
+      signal: new AbortController().signal,
+      llm: { providerKey: 'claude_code', model: 'claude-haiku-4-5' },
+      accessLevel: 'auto-accept-edits',
+    })
+
+    expect(response.content).toBe("I'll discover the available runbooks for this incident.")
+    expect(response.content).not.toContain('<function_calls>')
+    expect(response.hasForeignToolCallMarkup).toBe(true)
+  })
+
   it('normalizes cloud-native function calls into the shared envelope', async () => {
     const adapter = createAdapter({
       getApiKey: () => Promise.resolve('test-key'),
@@ -239,11 +270,9 @@ describe('AgentLlmAdapterService', () => {
     })
   })
 
-  it('rejects malformed structured CLI envelopes as ordinary model output', async () => {
+  it('keeps malformed structured CLI envelopes as ordinary model output', async () => {
     const adapter = createAdapter()
-    const output = [
-      '{"version":1,"type":"tool_calls","toolCalls":[]}',
-    ].join('\n')
+    const output = '{"version":1,"type":"tool_calls","toolCalls":[not-json]}'
 
     adapter.setLocalAiProvider(createLocalAiProvider({
       execute: () => Promise.resolve({ output }),

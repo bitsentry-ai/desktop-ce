@@ -12,11 +12,13 @@ import { afterEach, describe, expect, it } from 'vitest'
 function createRuntime(label: string): LocalRunbookExecutionHostRuntime & {
   readonly executions: Map<string, Record<string, unknown>>
   destroyed: boolean
+  lastWaitOptions: unknown
 } {
   const executions = new Map<string, Record<string, unknown>>()
   const runtime: LocalRunbookExecutionHostRuntime & {
     readonly executions: Map<string, Record<string, unknown>>
     destroyed: boolean
+    lastWaitOptions: unknown
   } = {
     listRunbooks: () => Promise.resolve([{ id: label, title: `${label} runbook` }]),
     deleteRunbook: () => Promise.resolve({ ok: true as const }),
@@ -37,9 +39,13 @@ function createRuntime(label: string): LocalRunbookExecutionHostRuntime & {
     },
     getExecution: (executionId) => Promise.resolve(executions.get(executionId) ?? null),
     cancelExecution: () => Promise.resolve(),
-    waitForExecution: (executionId) => Promise.resolve(executions.get(executionId) ?? null),
+    waitForExecution: (executionId, options) => {
+      runtime.lastWaitOptions = options
+      return Promise.resolve(executions.get(executionId) ?? null)
+    },
     executions,
     destroyed: false,
+    lastWaitOptions: undefined,
     async destroy() {
       runtime.destroyed = true
     },
@@ -94,6 +100,31 @@ describe('local runbook execution host', () => {
     }
   })
 
+  it('accepts a local host response that takes longer than the connection handshake', async () => {
+    const userDataPath = await createUserDataDirectory()
+    const desktopRuntime = createRuntime('slow-desktop')
+    desktopRuntime.listRunbooks = async () => {
+      await new Promise((resolve) => setTimeout(resolve, 800))
+      return [{ id: 'slow-desktop', title: 'slow-desktop runbook' }]
+    }
+    const desktopHost = new LocalRunbookExecutionHost({ userDataPath, runtime: desktopRuntime })
+    await desktopHost.start()
+
+    try {
+      const cliRuntime = await createLocalRunbookExecutionClient({
+        userDataPath,
+        createHeadlessRuntime: async () => createRuntime('headless'),
+      })
+
+      await expect(cliRuntime.listRunbooks()).resolves.toEqual([
+        { id: 'slow-desktop', title: 'slow-desktop runbook' },
+      ])
+      await cliRuntime.destroy()
+    } finally {
+      await desktopHost.close()
+    }
+  })
+
   it('owns a temporary headless host only when no desktop host is available', async () => {
     const userDataPath = await createUserDataDirectory()
     const headlessRuntime = createRuntime('headless')
@@ -113,6 +144,7 @@ describe('local runbook execution host', () => {
       runbookId: 'rb-headless',
       status: 'running',
     })
+    expect(headlessRuntime.lastWaitOptions).toBeUndefined()
     await cliRuntime.destroy()
 
     expect(headlessRuntime.destroyed).toBe(true)
@@ -143,6 +175,46 @@ describe('local runbook execution host', () => {
     } finally {
       await firstClient.destroy()
       await secondClient.destroy()
+    }
+  })
+
+  it('keeps the headless host alive until executions accepted for other CLI clients finish', async () => {
+    const userDataPath = await createUserDataDirectory()
+    const headlessRuntime = createRuntime('shared-headless')
+    let finishExecution: (() => void) | undefined
+    const executionFinished = new Promise<void>((resolve) => {
+      finishExecution = resolve
+    })
+    headlessRuntime.waitForExecution = async (executionId) => {
+      await executionFinished
+      return headlessRuntime.executions.get(executionId) ?? null
+    }
+
+    const ownerClient = await createLocalRunbookExecutionClient({
+      userDataPath,
+      createHeadlessRuntime: async () => headlessRuntime,
+    })
+    const peerClient = await createLocalRunbookExecutionClient({
+      userDataPath,
+      createHeadlessRuntime: async () => createRuntime('unexpected-second-owner'),
+    })
+
+    try {
+      const accepted = await peerClient.executeRunbook({ runbookId: 'rb-shared' })
+      const ownerDestroy = ownerClient.destroy()
+
+      await Promise.resolve()
+      expect(headlessRuntime.destroyed).toBe(false)
+      await expect(peerClient.getExecution(accepted.executionId)).resolves.toMatchObject({
+        executionId: accepted.executionId,
+        runbookId: 'rb-shared',
+      })
+
+      finishExecution?.()
+      await ownerDestroy
+      expect(headlessRuntime.destroyed).toBe(true)
+    } finally {
+      await peerClient.destroy()
     }
   })
 })
