@@ -2785,23 +2785,72 @@ export class RunbookExecutionService {
     await this.emitSnapshot(session);
   }
 
-  private async emitSnapshot(session: RunbookExecutionSession): Promise<void> {
-    bumpExecutionSnapshotVersion(session.snapshot);
-    const snapshot = this.snapshotForBoundary(session);
-    if (snapshot.snapshotVersion === undefined) {
-      throw new Error("Runbook execution snapshot version is required");
-    }
-    const eventOutcome = await this.resultStore.applyExecutionSnapshotEvent(
-      session.resultId,
-      {
-        eventId: `snapshot:${snapshot.executionId}:${String(snapshot.snapshotVersion)}`,
-        expectedSnapshotVersion: snapshot.snapshotVersion - 1,
-        snapshot,
-      },
+  private emitSnapshot(session: RunbookExecutionSession): Promise<void> {
+    // Serialize emits per session. Concurrent emits (throttled streaming
+    // snapshots racing the terminal snapshot) can reach the store out of
+    // order, and the optimistic version check then rejects the completion
+    // write, leaving the persisted execution "running" forever.
+    const queued = (session.emitQueue ?? Promise.resolve()).then(() =>
+      this.emitSnapshotNow(session),
     );
-    if (eventOutcome !== "accepted") {
-      return;
+    session.emitQueue = queued.catch(() => undefined);
+    return queued;
+  }
+
+  private async emitSnapshotNow(
+    session: RunbookExecutionSession,
+  ): Promise<void> {
+    const maxAttempts = 3;
+    for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+      bumpExecutionSnapshotVersion(session.snapshot);
+      const snapshot = this.snapshotForBoundary(session);
+      if (snapshot.snapshotVersion === undefined) {
+        throw new Error("Runbook execution snapshot version is required");
+      }
+      const eventOutcome = await this.resultStore.applyExecutionSnapshotEvent(
+        session.resultId,
+        {
+          eventId: `snapshot:${snapshot.executionId}:${String(snapshot.snapshotVersion)}`,
+          expectedSnapshotVersion: snapshot.snapshotVersion - 1,
+          snapshot,
+        },
+      );
+      if (eventOutcome === "accepted") {
+        await this.publishAcceptedSnapshot(session, snapshot);
+        return;
+      }
+      if (eventOutcome !== "stale") {
+        return;
+      }
+
+      // Stale: the persisted version diverged from the in-memory one.
+      // Resync so subsequent emits line up again; without this a single
+      // rejected write leaves the in-memory version permanently ahead and
+      // every later write is rejected too.
+      const persisted = await this.resultStore.getExecutionSnapshotByResultId(
+        session.resultId,
+      );
+      if (persisted === null || persisted.status !== "running") {
+        // The store already holds a terminal state (another owner or the
+        // stale-recovery sweep finalized it). It wins; stop heartbeating.
+        if (snapshot.status !== "running") {
+          this.stopExecutionHeartbeat(session);
+        }
+        return;
+      }
+      session.snapshot.snapshotVersion = persisted.snapshotVersion ?? 0;
+      if (snapshot.status === "running") {
+        // Streaming snapshots may drop; the next emit carries the
+        // resynced version. Terminal snapshots retry in this loop.
+        return;
+      }
     }
+  }
+
+  private async publishAcceptedSnapshot(
+    session: RunbookExecutionSession,
+    snapshot: RunbookExecutionRecord,
+  ): Promise<void> {
     if (snapshot.status !== "running") {
       this.stopExecutionHeartbeat(session);
       if (session.controlCompleted !== true) {

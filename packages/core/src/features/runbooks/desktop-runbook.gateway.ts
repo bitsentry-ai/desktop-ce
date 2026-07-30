@@ -107,6 +107,36 @@ function toExecutionResult(input: {
   });
 }
 
+// A request key dedupes retries of the same logical start, not every start
+// that ever used the key. Reusing a terminal execution forever resurrects
+// finished runs as new ones, so terminal matches only dedupe inside this
+// window; older ones start a fresh execution.
+const TERMINAL_DEDUPLICATION_WINDOW_MS = 15 * 60 * 1000;
+
+function isTerminalExecutionStatus(
+  status: RunbookExecutionRecord["status"],
+): boolean {
+  return status !== "running";
+}
+
+function isReusableExecution(
+  execution: RunbookExecutionRecord,
+  nowMs: number,
+): boolean {
+  if (!isTerminalExecutionStatus(execution.status)) {
+    return true;
+  }
+
+  const finishedAt = Date.parse(
+    execution.completedAt ?? execution.lastActivityAt ?? execution.startedAt,
+  );
+  if (Number.isNaN(finishedAt)) {
+    return false;
+  }
+
+  return nowMs - finishedAt <= TERMINAL_DEDUPLICATION_WINDOW_MS;
+}
+
 export function createDesktopRunbookGateway(
   dependencies: DesktopRunbookGatewayDependencies,
 ): RunbookGateway {
@@ -128,7 +158,7 @@ export function createDesktopRunbookGateway(
         request.runbookId,
         request.requestKey,
       );
-      if (previous !== null) {
+      if (previous !== null && isReusableExecution(previous.execution, Date.now())) {
         return toExecutionResult({
           resultId: previous.resultId,
           execution: previous.execution,

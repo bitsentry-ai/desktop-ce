@@ -1230,18 +1230,47 @@ class DesktopStateStore {
     results: StoredRunResult[],
     resultTraces: Record<string, ResultTraceMemory>,
   ): Promise<void> {
-    await this.db.investigationToolRun.deleteMany({})
-    await this.db.investigationTraceEntry.deleteMany({})
-    await this.db.investigationReport.deleteMany({})
-    await this.db.investigationSession.deleteMany({})
+    // The renderer mirror is a cache of what the UI has seen, never the
+    // source of truth for a run. Execution-backed rows are owned by the
+    // execution service, so this sync must not delete them or overwrite the
+    // columns it maintains (status, completedAt, executionSnapshotJson).
+    const existingRows = await this.db.investigationSession.findMany({})
+    const ownedByExecution = new Set<string>()
+    for (const row of existingRows) {
+      const id = asString(row.id)
+      if (id.length > 0 && asString(row.executionId).length > 0) {
+        ownedByExecution.add(id)
+      }
+    }
 
     for (const result of results) {
       const trace = resultTraces[result.id] ?? emptyTrace()
-      await this.replaceResult(result, trace)
+      await this.replaceResult(result, trace, ownedByExecution.has(result.id))
     }
   }
 
-  private async replaceResult(result: StoredRunResult, trace: ResultTraceMemory): Promise<void> {
+  private async replaceResult(
+    result: StoredRunResult,
+    trace: ResultTraceMemory,
+    executionOwned: boolean,
+  ): Promise<void> {
+    if (executionOwned) {
+      // Row already exists and belongs to a real execution. Leave it and its
+      // children untouched; the execution service keeps them current.
+      return
+    }
+
+    await this.db.investigationSession.deleteMany({ where: { id: result.id } })
+    await this.db.investigationToolRun.deleteMany({
+      where: { investigationSessionId: result.id },
+    })
+    await this.db.investigationTraceEntry.deleteMany({
+      where: { investigationSessionId: result.id },
+    })
+    await this.db.investigationReport.deleteMany({
+      where: { investigationSessionId: result.id },
+    })
+
     await this.db.investigationSession.create({
       data: {
         id: result.id,
