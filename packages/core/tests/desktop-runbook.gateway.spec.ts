@@ -267,6 +267,50 @@ describe("DesktopRunbookGateway", () => {
     expect(events).toContain(first.executionId);
   });
 
+  it("recovers a persisted execution and its idempotency key after the gateway restarts", async () => {
+    const runbooks = [runbook("check-api", 1, 3)];
+    const executionService = new InMemoryExecutionService({ "check-api": 3 });
+    const dependencies = {
+      store: {
+        list: async () => runbooks,
+        exportContext: async ({ id }: { id: string }) =>
+          contextFor(runbooks.find((item) => item.id === id)!),
+        getRunbookOrThrow: async () => runbooks[0]!,
+      },
+      executionService,
+    };
+    const request = {
+      runbookId: "check-api",
+      requestKey: "incident-restart:check-api",
+      incidentId: "incident-restart",
+      source: "agent" as const,
+    };
+    const beforeRestart = createDesktopRunbookGateway(dependencies);
+    const accepted = await beforeRestart.start(request);
+
+    const afterRestart = createDesktopRunbookGateway(dependencies);
+    const events: Array<{ executionId: string; status: string }> = [];
+    const unsubscribe = afterRestart.subscribe("incident-restart", (event) => {
+      events.push({ executionId: event.executionId, status: event.execution.status });
+    });
+    await Promise.resolve();
+    const replay = await afterRestart.start(request);
+    const recovered = await afterRestart.get(accepted.executionId);
+    unsubscribe();
+
+    expect(recovered).toMatchObject({
+      executionId: accepted.executionId,
+      runbookRevisionNumber: 3,
+      status: "running",
+    });
+    expect(replay).toMatchObject({
+      executionId: accepted.executionId,
+      resultId: accepted.resultId,
+      deduplicated: true,
+    });
+    expect(events).toContainEqual({ executionId: accepted.executionId, status: "running" });
+  });
+
   it("rejects stale selections and malformed execution requests before a run starts", async () => {
     const current = runbook("check-api", 1, 2);
     const gateway = createDesktopRunbookGateway({

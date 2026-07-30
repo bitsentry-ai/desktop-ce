@@ -574,6 +574,72 @@ describe('AgentRuntimeService runbook outcomes', () => {
     expect(service.getStatus(sessionId).state).toBe('COMPLETED')
   })
 
+  it('leaves a started runbook inspectable when the provider fails during the follow-up turn', async () => {
+    const executionId = '55555555-5555-4555-8555-555555555555'
+    let persistedExecution = makeExecution({
+      executionId,
+      runbookId: 'rb-durable',
+      runbookTitle: 'Durable runbook',
+      status: 'running',
+      completedAt: undefined,
+      completionReason: undefined,
+      steps: [],
+    })
+    const runbookStore = {
+      list: vi.fn().mockResolvedValue([
+        makeRunbook('rb-durable', 'Durable runbook', [
+          { id: 'step-1', type: 'shell', title: 'Check durable state' },
+        ]),
+      ]),
+    }
+    const runbookExecutionService = {
+      start: vi.fn().mockResolvedValue({ executionId, resultId: 'result-durable' }),
+      get: vi.fn().mockImplementation(() => Promise.resolve(persistedExecution)),
+      waitForCompletion: vi.fn(),
+      getLatestForIncidentThread: vi.fn().mockResolvedValue(null),
+    }
+    const llmAdapter = {
+      chatWithTools: vi
+        .fn()
+        .mockResolvedValueOnce({
+          content: 'Starting the durable runbook.',
+          toolCalls: [{
+            id: 'call-durable',
+            name: 'execute_runbook',
+            args: { runbookTitle: 'Durable runbook' },
+          }],
+        })
+        .mockRejectedValueOnce(new Error('Provider connection closed during summary')),
+    }
+    const service = createRuntime({ llmAdapter, runbookStore, runbookExecutionService })
+
+    const sessionId = await service.start({
+      prompt: 'Run Durable runbook.',
+      incidentThreadId: 'incident-durable',
+    })
+
+    await waitForCondition(() => service.getStatus(sessionId).state === 'FAILED')
+    expect(getAllAgentToolCalls(service, sessionId)).toEqual([
+      expect.objectContaining({ toolName: 'execute_runbook', state: 'done' }),
+    ])
+    expect(await runbookExecutionService.get(executionId)).toMatchObject({ status: 'running' })
+
+    persistedExecution = makeExecution({
+      executionId,
+      runbookId: 'rb-durable',
+      runbookTitle: 'Durable runbook',
+      status: 'completed',
+      completionReason: 'success',
+      completedAt: '2026-05-26T01:00:20.000Z',
+    })
+
+    await expect(runbookExecutionService.get(executionId)).resolves.toMatchObject({
+      executionId,
+      status: 'completed',
+      completionReason: 'success',
+    })
+  })
+
   it('does not directly execute a named runbook when the user is only asking whether to run it', async () => {
     const sentEvents: AgentRuntimeEventPayload[] = []
     const runbookStore = {
