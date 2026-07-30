@@ -154,6 +154,41 @@ describe('AgentLlmAdapterService', () => {
     ])
   })
 
+  it('hides foreign function-call markup while retaining an unfulfilled-tool signal', async () => {
+    const adapter = createAdapter()
+    const output = [
+      "I'll discover the available runbooks for this incident.",
+      '<function_calls>',
+      '[{"tool_name": "list_runbooks", "arguments": {}}]',
+      '</function_calls>',
+      '<function_calls>',
+      '',
+      'Here are the available runbooks for this incident:',
+      '',
+      '1. **CPU Spike Diagnosis** – Analyzes high CPU usage by examining process metrics.',
+    ].join('\n')
+
+    adapter.setLocalAiProvider(createLocalAiProvider({
+      execute: () => Promise.resolve({ output }),
+    }))
+
+    const response = await adapter.chatWithTools({
+      messages: [{ role: 'user', content: 'List runbooks' }],
+      tools: [{
+        name: 'list_runbooks',
+        description: 'List available runbooks.',
+        inputSchema: { type: 'object', properties: {} },
+      }],
+      signal: new AbortController().signal,
+      llm: { providerKey: 'claude_code', model: 'claude-haiku-4-5' },
+      accessLevel: 'auto-accept-edits',
+    })
+
+    expect(response.content).toBe("I'll discover the available runbooks for this incident.")
+    expect(response.content).not.toContain('<function_calls>')
+    expect(response.hasForeignToolCallMarkup).toBe(true)
+  })
+
   it('parses valid host tool calls with attributes on the opening tag', async () => {
     const adapter = createAdapter()
     const output = [

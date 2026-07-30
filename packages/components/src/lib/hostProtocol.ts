@@ -15,6 +15,18 @@ const HIDDEN_HOST_BLOCKS = [
     openPrefix: "<bitsentry_host_protocol",
     closeTag: "</bitsentry_host_protocol>",
   },
+  {
+    openPrefix: "<function_calls",
+    closeTag: "</function_calls>",
+  },
+  {
+    openPrefix: "<invoke",
+    closeTag: "</invoke>",
+  },
+  {
+    openPrefix: "<tool_use",
+    closeTag: "</tool_use>",
+  },
 ] as const;
 
 const STANDALONE_HOST_TAG_LINE =
@@ -37,6 +49,10 @@ export function stripInternalHostBlocks(value: string): string {
         `${escapedOpenPrefix}[^>]*>[\\s\\S]*?${escapedCloseTag}\\s*`,
         "gi",
       ),
+      "\n\n",
+    );
+    sanitized = sanitized.replace(
+      new RegExp(`${escapedOpenPrefix}\\b[\\s\\S]*$`, "gi"),
       "\n\n",
     );
   }
