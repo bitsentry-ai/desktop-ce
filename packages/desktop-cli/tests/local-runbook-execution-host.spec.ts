@@ -338,4 +338,61 @@ describe('local runbook execution host', () => {
       await peerClient.destroy()
     }
   })
+
+  it('keeps accepted queued starts alive while the owning CLI client exits', async () => {
+    const userDataPath = await createUserDataDirectory()
+    const headlessRuntime = createRuntime('shared-headless')
+    const originalExecuteRunbook = headlessRuntime.executeRunbook
+    let releaseStart: (() => void) | undefined
+    const startReleased = new Promise<void>((resolve) => {
+      releaseStart = resolve
+    })
+    let markStartQueued: (() => void) | undefined
+    const startQueued = new Promise<void>((resolve) => {
+      markStartQueued = resolve
+    })
+    let finishExecution: (() => void) | undefined
+    const executionFinished = new Promise<void>((resolve) => {
+      finishExecution = resolve
+    })
+    headlessRuntime.executeRunbook = async (input) => {
+      markStartQueued?.()
+      await startReleased
+      return await originalExecuteRunbook(input)
+    }
+    headlessRuntime.waitForExecution = async (executionId) => {
+      await executionFinished
+      return headlessRuntime.executions.get(executionId) ?? null
+    }
+
+    const ownerClient = await createLocalRunbookExecutionClient({
+      userDataPath,
+      createHeadlessRuntime: async () => headlessRuntime,
+    })
+    const peerClient = await createLocalRunbookExecutionClient({
+      userDataPath,
+      createHeadlessRuntime: async () => createRuntime('unexpected-second-owner'),
+    })
+
+    try {
+      const accepted = peerClient.executeRunbook({ runbookId: 'rb-queued' })
+      await startQueued
+      const ownerDestroy = ownerClient.destroy()
+
+      releaseStart?.()
+      const execution = await accepted
+      await Promise.resolve()
+      expect(headlessRuntime.destroyed).toBe(false)
+      await expect(peerClient.getExecution(execution.executionId)).resolves.toMatchObject({
+        executionId: execution.executionId,
+        runbookId: 'rb-queued',
+      })
+
+      finishExecution?.()
+      await ownerDestroy
+      expect(headlessRuntime.destroyed).toBe(true)
+    } finally {
+      await peerClient.destroy()
+    }
+  })
 })
