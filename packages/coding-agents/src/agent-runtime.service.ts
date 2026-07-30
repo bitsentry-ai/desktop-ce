@@ -11,7 +11,7 @@
  */
 
 import log from 'electron-log'
-import { createHash, randomUUID } from 'crypto'
+import { randomUUID } from 'crypto'
 import { zodToJsonSchema } from '@alcyone-labs/zod-to-json-schema'
 import { z } from 'zod'
 import { getErrorMessage } from '@bitsentry-ce/core'
@@ -28,6 +28,7 @@ import {
   getAllToolDefinitions,
 } from '@bitsentry-ce/core/features/agent-runtime/shared/capability-registry'
 import {
+  OrchestrationError,
   runOrchestratedOperation,
 } from '@bitsentry-ce/core/features/agent-runtime/shared/effect-orchestration'
 import type {
@@ -57,8 +58,6 @@ import type {
   RunbookRecord,
   RunbookTriggerContext,
 } from '@bitsentry-ce/core/features/runbooks/desktop-runbook.types'
-import type { RunbookGateway } from '@bitsentry-ce/core/features/runbooks'
-import { createAgentToolResultEnvelope } from '@bitsentry-ce/core/features/agent-runtime'
 
 const CHANNEL_EVENT = 'bitsentry:agent:event'
 const NO_LLM_PROVIDER_CONFIGURED_MESSAGE =
@@ -78,7 +77,34 @@ export interface AgentRuntimeWindow {
 }
 
 export type AgentRuntimeLlmAdapter = Pick<AgentLlmAdapterService, 'chatWithTools'>
-export type AgentRuntimeRunbookGateway = RunbookGateway
+export interface AgentRuntimeRunbookStore {
+  list(): Promise<RunbookRecord[]>
+}
+
+export interface AgentRuntimeRunbookExecutionService {
+  get(executionId: string): Promise<RunbookExecutionRecord | null>
+  getLatestForIncidentThread(
+    incidentThreadId: string,
+  ): Promise<RunbookExecutionRecord | null>
+  start(
+    runbookId: string,
+    options?: {
+      parameterValues?: RunbookParameterValues
+      source?: 'manual' | 'agent'
+      triggerContext?: RunbookTriggerContext
+      incidentThreadId?: string
+      accessLevel?: 'supervised' | 'auto-accept-edits' | 'full-access'
+    },
+  ): Promise<{ executionId: string; resultId: string }>
+  waitForCompletion(
+    executionId: string,
+    options?: {
+      signal?: AbortSignal
+      pollIntervalMs?: number
+      timeoutMs?: number
+    },
+  ): Promise<RunbookExecutionRecord | null>
+}
 
 export interface AgentRuntimeDebugHooks {
   isLocalCodingAgentDeltaStreamingEnabled(): boolean
@@ -112,6 +138,9 @@ const DEFAULT_AGENT_SESSION_TIMEOUT_MS = 300_000
 const MAX_TOOL_ITERATIONS = 10 // Prevent infinite loops
 const MAX_MESSAGE_HISTORY = 50 // Limit conversation history
 const JOURNAL_TIME_WINDOW_PADDING_MS = 5 * 60 * 1000
+const MAX_RUNBOOK_COMPLETION_WAIT_MS = 4 * 60 * 1000
+const RUNBOOK_COMPLETION_WAIT_BUFFER_MS = 5_000
+export const LOCAL_PROVIDER_POST_TOOL_RESPONSE_TIMEOUT_MS = 30_000
 const MAX_ACTIONABLE_JOURNAL_TIME_WINDOWS = 5
 const MAX_STRUCTURED_RUNBOOK_ISSUES = 10
 const MAX_DERIVED_JOURNAL_TIME_WINDOW_SPAN_MS = 24 * 60 * 60 * 1000
@@ -414,7 +443,7 @@ interface AgentSession {
   abortController: AbortController
   timeoutHandle: ReturnType<typeof setTimeout> | null
   currentToolCallId: string | null
-  currentTurnId?: string
+  currentRunbookWaitExecutionId?: string
   windowGetter: () => AgentRuntimeWindow | null
   llmAdapter: AgentRuntimeLlmAdapter
   messages: ChatMessage[] // Conversation history
@@ -429,7 +458,7 @@ interface AgentSession {
   latestJournalTimeWindowParameters?: RunbookParameterValues
   currentTurnRunbookExecutionLookups?: Set<string>
   currentTurnStartedRunbookExecutionIds?: Set<string>
-  queuedFollowUps: AgentSendInput[]
+  currentTurnStartedRunbookKeys?: Set<string>
   loopActive?: boolean
   snapshot: AgentThreadSnapshot
 }
@@ -492,8 +521,8 @@ const LOCAL_PROVIDER_TOOL_PROMISE_PATTERNS = [
 ] as const
 
 const LOCAL_PROVIDER_TOOL_RETRY_PROMPT = [
-  'Your previous response promised or described a host tool call, but it emitted no valid structured CLI tool envelope.',
-  'Do not finalize the response. Emit exactly one JSON document with version 1, type "tool_calls", and the required toolCalls now, then stop.',
+  'Your previous response promised or described a host tool call, but it emitted no <bitsentry_tool_call> block.',
+  'Do not finalize the response. Emit exactly one valid <bitsentry_tool_call> block for the required operation now, then stop.',
   'If no tool is needed, explicitly say so instead of claiming that a tool was requested or executed.',
 ].join(' ')
 
@@ -932,23 +961,14 @@ function readRunbookTimeWindow(value: unknown): { since: string; until: string }
   return { since: record.since, until: record.until }
 }
 
-function buildGatewayRunbookRequestKey(
-  session: AgentSession,
-  runbook: RunbookRecord,
-  parameterValues: RunbookParameterValues | undefined,
-): string {
-  const normalizedParameterValues = Object.fromEntries(
+function buildRunbookStartKey(runbookId: string, parameterValues: RunbookParameterValues | undefined): string {
+  const sortedParameterValues = Object.fromEntries(
     Object.entries(parameterValues ?? {}).sort(([left], [right]) => left.localeCompare(right)),
   )
-  const digest = createHash('sha256')
-    .update(JSON.stringify({
-      runbookId: runbook.id,
-      revisionNumber: runbook.revisionNumber,
-      parameterValues: normalizedParameterValues,
-    }))
-    .digest('hex')
-
-  return `${session.id}:${session.currentTurnId ?? 'unknown-turn'}:${digest}`
+  return JSON.stringify({
+    runbookId,
+    parameterValues: sortedParameterValues,
+  })
 }
 
 function padUtcComponent(value: number): string {
@@ -1669,7 +1689,8 @@ export class AgentRuntimeService {
   constructor(
     private windowGetter: () => AgentRuntimeWindow | null,
     private llmAdapter: AgentRuntimeLlmAdapter,
-    private readonly runbookGateway?: AgentRuntimeRunbookGateway,
+    private readonly runbookStore?: AgentRuntimeRunbookStore,
+    private readonly runbookExecutionService?: AgentRuntimeRunbookExecutionService,
     private readonly debugHooks: AgentRuntimeDebugHooks = DEFAULT_AGENT_RUNTIME_DEBUG_HOOKS,
   ) {}
 
@@ -1708,7 +1729,6 @@ export class AgentRuntimeService {
       abortController: new AbortController(),
       timeoutHandle: null,
       currentToolCallId: null,
-      queuedFollowUps: [],
       windowGetter: this.windowGetter,
       llmAdapter: this.llmAdapter,
       runbookContext: input.runbookContext,
@@ -1781,10 +1801,11 @@ export class AgentRuntimeService {
     }
 
     if (session.state === 'RUNNING' && session.loopActive === true) {
-      // Preserve user intent while the current model turn or runbook summary
-      // owns the loop. The queued message is appended after that turn finishes.
-      session.queuedFollowUps.push(input)
-      return Promise.resolve(sessionId)
+      return Promise.reject(
+        new Error(
+          'The agent is still responding. Wait for it to finish or cancel the current run before sending another message.',
+        ),
+      )
     }
 
     if (session.state !== 'RUNNING') {
@@ -2037,14 +2058,13 @@ export class AgentRuntimeService {
     try {
       session.currentTurnRunbookExecutionLookups = new Set()
       session.currentTurnStartedRunbookExecutionIds = new Set()
-      session.currentTurnId = randomUUID()
+      session.currentTurnStartedRunbookKeys = new Set()
       let iterations = 0
       let lastToolResult: ToolResult | undefined
       let turnTokenUsage: TurnTokenUsage | undefined
       let postToolFallbackResults: CompletedToolResult[] | null = null
       let localProviderToolCallRetryCount = 0
       let hasExecutedToolCallInCurrentTurn = false
-      let awaitingRunbookSummary = false
       const visibleRunbookExecutionIds = new Set<string>()
       const accumulateTurnTokenUsage = (usage: TurnTokenUsage): void => {
         turnTokenUsage = mergeTurnTokenUsage(turnTokenUsage, usage)
@@ -2068,9 +2088,7 @@ export class AgentRuntimeService {
 
       const directRunbookExecution = await this.runExplicitlyMentionedRunbook(session)
       if (directRunbookExecution !== null) {
-        localProviderToolCallRetryCount = 0
         hasExecutedToolCallInCurrentTurn = true
-        awaitingRunbookSummary = true
         lastToolResult = directRunbookExecution.result
         session.messages.push({
           role: 'system',
@@ -2100,12 +2118,6 @@ export class AgentRuntimeService {
           session.state = 'CANCELLED'
           return
         }
-
-        this.sendEvent(sessionId, {
-          type: 'activity',
-          timestamp: new Date().toISOString(),
-          phase: awaitingRunbookSummary ? 'waiting_for_summary' : 'asking_model',
-        })
 
         // Determine which tools should be available based on runbook actions
         const hasShellAction = session.runbookContext?.actions.some((a) => a.type === 'shell') ?? false
@@ -2148,13 +2160,16 @@ export class AgentRuntimeService {
         const shouldEmitAssistantDeltas =
           !isLocalCodingAgentProvider ||
           this.debugHooks.isLocalCodingAgentDeltaStreamingEnabled()
+        const postToolResponseDeadline = isLocalCodingAgentProvider && hasVisiblePostToolResult
         const remainingSessionTimeoutMs = Math.max(1, session.expiresAt - Date.now())
         let response: Awaited<ReturnType<AgentLlmAdapterService['chatWithTools']>>
         try {
           response = await runOrchestratedOperation({
             operation: 'LLM response',
             signal: abortController.signal,
-            timeoutMs: remainingSessionTimeoutMs,
+            timeoutMs: postToolResponseDeadline
+              ? LOCAL_PROVIDER_POST_TOOL_RESPONSE_TIMEOUT_MS
+              : remainingSessionTimeoutMs,
             execute: (signal) =>
               llmAdapter.chatWithTools({
                 messages: session.messages,
@@ -2197,6 +2212,22 @@ export class AgentRuntimeService {
               }),
           })
         } catch (error) {
+          if (
+            postToolResponseDeadline &&
+            error instanceof OrchestrationError &&
+            error.kind === 'timeout' &&
+            !isAbortSignalAborted(abortController.signal) &&
+            hasVisiblePostToolResult
+          ) {
+            log.warn(
+              `[agent-runtime:${sessionId}] Local provider finalization timed out after visible runbook tools; completing turn`,
+            )
+            if (shouldEmitThinkingStart) {
+              endThinking()
+            }
+            emitFinal(this.buildVisibleRunbookFallbackResponse(fallbackResultsForThisLlmCall, ''))
+            return
+          }
           throw error
         }
 
@@ -2265,11 +2296,7 @@ export class AgentRuntimeService {
 
         // If no tool calls, we're done with this turn but keep session RUNNING for follow-ups
         if (toolCalls.length === 0) {
-          if (
-            isLocalCodingAgentProvider &&
-            response.toolProtocol === 'structured_cli' &&
-            !hasExecutedToolCallInCurrentTurn
-          ) {
+          if (isLocalCodingAgentProvider && !hasExecutedToolCallInCurrentTurn) {
             if (hasUnfulfilledHostToolPromise(responseContent, response.hasForeignToolCallMarkup === true)) {
               if (localProviderToolCallRetryCount > 0) {
                 if (responseContent.length > 0 && !shouldEmitAssistantDeltas) {
@@ -2297,6 +2324,7 @@ export class AgentRuntimeService {
           return
         }
 
+        localProviderToolCallRetryCount = 0
         hasExecutedToolCallInCurrentTurn = true
 
         const hasRunbookStartInBatch = toolCalls.some((toolCall) => toolCall.name === 'execute_runbook')
@@ -2387,7 +2415,6 @@ export class AgentRuntimeService {
 
           if (toolCall.name === 'execute_runbook' && result.error === undefined) {
             runbookStartCompletedInBatch = true
-            awaitingRunbookSummary = true
           }
 
           executedToolResults.push({ toolCall, result, modelContext })
@@ -2403,12 +2430,11 @@ export class AgentRuntimeService {
         )
         lastToolResult = completedToolResults[completedToolResults.length - 1]?.result
 
-        for (const { toolCall, result, modelContext } of completedToolResults) {
+        for (const { toolCall, modelContext } of completedToolResults) {
           session.messages.push({
             role: 'tool',
             content: modelContext,
             toolCallId: toolCall.id,
-            toolResult: createAgentToolResultEnvelope(toolCall, result),
           })
         }
 
@@ -2463,13 +2489,8 @@ export class AgentRuntimeService {
       session.loopActive = false
       session.currentTurnRunbookExecutionLookups = undefined
       session.currentTurnStartedRunbookExecutionIds = undefined
-      session.currentTurnId = undefined
-      const queuedFollowUp = session.queuedFollowUps.shift()
-      if (queuedFollowUp !== undefined && session.state !== 'CANCELLED') {
-        void this.send({ ...queuedFollowUp, sessionId: session.id }).catch((error: unknown) => {
-          log.error(`[agent-runtime:${session.id}] Queued follow-up failed:`, error)
-        })
-      }
+      session.currentTurnStartedRunbookKeys = undefined
+      session.currentRunbookWaitExecutionId = undefined
     }
   }
 
@@ -2596,6 +2617,17 @@ export class AgentRuntimeService {
       return
     }
 
+    if (
+      session.currentRunbookWaitExecutionId !== undefined &&
+      session.currentRunbookWaitExecutionId.length > 0
+    ) {
+      log.info(
+        `[agent-runtime:${sessionId}] Session timeout reached while waiting for runbook execution ${session.currentRunbookWaitExecutionId}; extending timeout`,
+      )
+      this.armSessionTimeout(session, DEFAULT_AGENT_SESSION_TIMEOUT_MS)
+      return
+    }
+
     log.info(`[agent-runtime:${sessionId}] Session timed out`)
     this.cancel(sessionId)
   }
@@ -2613,15 +2645,23 @@ export class AgentRuntimeService {
   }
 
   private hasRunbookTools(): boolean {
-    return this.runbookGateway !== undefined
+    return this.runbookStore !== undefined && this.runbookExecutionService !== undefined
   }
 
-  private getRunbookGateway(): AgentRuntimeRunbookGateway {
-    if (this.runbookGateway === undefined) {
-      throw new Error('Runbook gateway is not configured')
+  private getRunbookStore(): AgentRuntimeRunbookStore {
+    if (this.runbookStore === undefined) {
+      throw new Error('Runbook store is not configured')
     }
 
-    return this.runbookGateway
+    return this.runbookStore
+  }
+
+  private getRunbookExecutionService(): AgentRuntimeRunbookExecutionService {
+    if (this.runbookExecutionService === undefined) {
+      throw new Error('Runbook execution service is not configured')
+    }
+
+    return this.runbookExecutionService
   }
 
   private async runExplicitlyMentionedRunbook(session: AgentSession): Promise<DirectRunbookExecutionResult | null> {
@@ -2732,6 +2772,7 @@ export class AgentRuntimeService {
 
     session.state = 'RUNNING'
     session.currentToolCallId = null
+    session.currentRunbookWaitExecutionId = undefined
     session.expiresAt = Date.now() + DEFAULT_AGENT_SESSION_TIMEOUT_MS
     if (session.abortController.signal.aborted) {
       session.abortController = new AbortController()
@@ -2822,7 +2863,8 @@ export class AgentRuntimeService {
           }
           throw new Error(message)
         }
-        const executionForOutput = execution
+        const completedExecution = await this.waitForRunbookTerminalState(session, execution)
+        const executionForOutput = completedExecution ?? execution
         session.latestRunbookExecutionId = execution.executionId
         session.latestRunbookTitle = execution.runbookTitle
         this.rememberJournalTimeWindowParameters(session, executionForOutput)
@@ -2848,19 +2890,32 @@ export class AgentRuntimeService {
   }
 
   private async executeRunbook(session: AgentSession, input: ExecuteRunbookInput): Promise<ToolResult> {
-    this.sendEvent(session.id, {
-      type: 'activity',
-      timestamp: new Date().toISOString(),
-      phase: 'running_runbook',
-    })
-    const runbookGateway = this.getRunbookGateway()
+    const runbookExecutionService = this.getRunbookExecutionService()
     const runbook = await this.resolveRunbookReference(session, input)
     const parameterValues = this.resolveRunbookParameterValues(session, runbook, input)
-    const execution = await runbookGateway.start({
-      runbookId: runbook.id,
-      expectedRevisionNumber: runbook.revisionNumber,
-      requestKey: buildGatewayRunbookRequestKey(session, runbook, parameterValues),
-      incidentId: session.incidentThreadId,
+    const runbookStartKey = buildRunbookStartKey(runbook.id, parameterValues)
+    const startedRunbookKeys = session.currentTurnStartedRunbookKeys ?? new Set<string>()
+    if (startedRunbookKeys.has(runbookStartKey)) {
+      return {
+        output: JSON.stringify(
+          {
+            status: 'skipped',
+            runbookId: runbook.id,
+            runbookTitle: runbook.title,
+            repeatBlocked: true,
+            reason:
+              'This runbook was already started in this assistant turn. Use the existing execution result instead of starting it again with another small window.',
+          },
+          null,
+          2,
+        ),
+      }
+    }
+
+    startedRunbookKeys.add(runbookStartKey)
+    session.currentTurnStartedRunbookKeys = startedRunbookKeys
+    const execution = await runbookExecutionService.start(runbook.id, {
+      incidentThreadId: session.incidentThreadId,
       parameterValues,
       source: 'agent',
       triggerContext: this.buildRunbookTriggerContext(session),
@@ -2870,14 +2925,27 @@ export class AgentRuntimeService {
     session.latestRunbookResultId = execution.resultId
     session.latestRunbookTitle = runbook.title
     session.currentTurnStartedRunbookExecutionIds?.add(execution.executionId)
+    session.currentRunbookWaitExecutionId = execution.executionId
+    const latestExecution = await runbookExecutionService.waitForCompletion(execution.executionId, {
+      signal: session.abortController.signal,
+      timeoutMs: this.runbookCompletionWaitMs(session, { allowRunbookGrace: true }),
+    }).finally(() => {
+      if (session.currentRunbookWaitExecutionId === execution.executionId) {
+        session.currentRunbookWaitExecutionId = undefined
+      }
+    })
+    if (latestExecution !== null) {
+      this.rememberJournalTimeWindowParameters(session, latestExecution)
+    }
     const outputPayload: Record<string, unknown> = {
-      status: execution.execution.status,
+      status: 'started',
       runbookId: runbook.id,
       runbookTitle: runbook.title,
       executionId: execution.executionId,
-      resultId: execution.resultId,
-      deduplicated: execution.deduplicated,
-      execution: summarizeRunbookExecutionForToolOutput(execution.execution),
+    }
+    if (latestExecution !== null) {
+      outputPayload.status = latestExecution.status
+      outputPayload.execution = summarizeRunbookExecutionForToolOutput(latestExecution)
     }
     return {
       output: JSON.stringify(
@@ -2889,7 +2957,8 @@ export class AgentRuntimeService {
   }
 
   private async listExecutableRunbooks(): Promise<RunbookRecord[]> {
-    return this.getRunbookGateway().listExecutable()
+    const runbooks = await this.getRunbookStore().list()
+    return runbooks.filter((runbook) => runbook.actions.length > 0)
   }
 
   private async resolveRunbookReference(
@@ -2997,10 +3066,10 @@ export class AgentRuntimeService {
     session: AgentSession,
     input: z.infer<typeof getRunbookExecutionToolSchema>,
   ) {
-    const runbookGateway = this.getRunbookGateway()
+    const runbookExecutionService = this.getRunbookExecutionService()
     const executionId = input.executionId?.trim()
     if (executionId !== undefined && executionId.length > 0) {
-      const requestedExecution = await runbookGateway.get(executionId)
+      const requestedExecution = await runbookExecutionService.get(executionId)
       if (requestedExecution !== null) {
         return requestedExecution
       }
@@ -3014,14 +3083,14 @@ export class AgentRuntimeService {
     }
 
     if (session.latestRunbookExecutionId !== undefined && session.latestRunbookExecutionId.length > 0) {
-      const latestSessionExecution = await runbookGateway.get(session.latestRunbookExecutionId)
+      const latestSessionExecution = await runbookExecutionService.get(session.latestRunbookExecutionId)
       if (latestSessionExecution !== null) {
         return latestSessionExecution
       }
     }
 
     if (session.incidentThreadId !== undefined && session.incidentThreadId.length > 0) {
-      return runbookGateway.getLatestForIncidentThread(session.incidentThreadId)
+      return runbookExecutionService.getLatestForIncidentThread(session.incidentThreadId)
     }
 
     return null
@@ -3041,7 +3110,7 @@ export class AgentRuntimeService {
       return null
     }
 
-    const latestSessionExecution = await this.getRunbookGateway().get(latestExecutionId)
+    const latestSessionExecution = await this.getRunbookExecutionService().get(latestExecutionId)
     if (latestSessionExecution === null) {
       return null
     }
@@ -3100,6 +3169,52 @@ export class AgentRuntimeService {
         2,
       ),
     }
+  }
+
+  private runbookCompletionWaitMs(
+    session: AgentSession,
+    options?: { allowRunbookGrace?: boolean },
+  ): number {
+    const remainingMs = session.expiresAt - Date.now() - RUNBOOK_COMPLETION_WAIT_BUFFER_MS
+    if (remainingMs <= 0) {
+      if (options?.allowRunbookGrace === true) {
+        return MAX_RUNBOOK_COMPLETION_WAIT_MS
+      }
+
+      return 0
+    }
+
+    return Math.min(MAX_RUNBOOK_COMPLETION_WAIT_MS, remainingMs)
+  }
+
+  private async waitForRunbookTerminalState(
+    session: AgentSession,
+    execution: RunbookExecutionRecord,
+  ): Promise<RunbookExecutionRecord | null> {
+    if (execution.status !== 'running') {
+      return execution
+    }
+
+    const timeoutMs = this.runbookCompletionWaitMs(session, { allowRunbookGrace: true })
+    if (timeoutMs <= 0) {
+      return null
+    }
+
+    session.currentRunbookWaitExecutionId = execution.executionId
+    const latestExecution = await this.getRunbookExecutionService().waitForCompletion(execution.executionId, {
+      signal: session.abortController.signal,
+      timeoutMs,
+    }).finally(() => {
+      if (session.currentRunbookWaitExecutionId === execution.executionId) {
+        session.currentRunbookWaitExecutionId = undefined
+      }
+    })
+
+    if (latestExecution !== null && latestExecution.status !== 'running') {
+      return latestExecution
+    }
+
+    return null
   }
 
   private buildRunbookTriggerContext(session: AgentSession): RunbookTriggerContext | undefined {

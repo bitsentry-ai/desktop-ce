@@ -121,13 +121,6 @@ export interface RunbookExecutionToolCall {
   args: Record<string, unknown>;
 }
 
-export interface RunbookExecutionServiceEvent {
-  resultId: string;
-  executionId: string;
-  incidentThreadId?: string | null;
-  execution: RunbookExecutionRecord;
-}
-
 export interface ChatMessage {
   role: "system" | "user" | "assistant" | "tool";
   content: string;
@@ -353,6 +346,13 @@ interface RunbookExecutionSession {
   controlCompleted?: boolean;
 }
 
+interface RunbookExecutionEventPayload {
+  resultId: string;
+  executionId: string;
+  incidentThreadId?: string | null;
+  execution: RunbookExecutionRecord;
+}
+
 interface WaitForCompletionOptions {
   signal?: AbortSignal;
   timeoutMs?: number;
@@ -361,7 +361,6 @@ interface WaitForCompletionOptions {
 interface RunbookExecutionStartOptions {
   incidentThreadId?: string;
   parameterValues?: RunbookParameterValues;
-  requestKey?: string;
   source?: RunbookExecutionSource;
   triggerContext?: RunbookTriggerContext;
   accessLevel?: "supervised" | "auto-accept-edits" | "full-access";
@@ -447,7 +446,7 @@ interface ExecutedStepResult {
 export class RunbookExecutionService {
   private readonly sessions = new Map<string, RunbookExecutionSession>();
   private readonly listeners = new Set<
-    (payload: RunbookExecutionServiceEvent) => void
+    (payload: RunbookExecutionEventPayload) => void
   >();
   private readonly httpTimeoutMs: number;
   private readonly runtimeOwnerId = `${String(process.pid)}:${randomUUID()}`;
@@ -488,7 +487,6 @@ export class RunbookExecutionService {
     const sharedSessionState = createSharedExecutionSessionState({
       executionId,
       runbookId: runbook.id,
-      runbookRevisionNumber: runbook.revisionNumber,
       incidentThreadId,
       runbookTitle: runbook.title,
       status: "running",
@@ -525,7 +523,6 @@ export class RunbookExecutionService {
       resultId,
       executionId,
       ownerId: this.runtimeOwnerId,
-      requestKey: options?.requestKey,
       incidentThreadId,
       runbook,
       context,
@@ -585,39 +582,8 @@ export class RunbookExecutionService {
     );
   }
 
-  async getLatestWithResultForIncidentThread(
-    incidentThreadId: string,
-  ): Promise<{ resultId: string; execution: RunbookExecutionRecord } | null> {
-    const inMemoryMatches = [...this.sessions.values()]
-      .filter((session) => session.incidentThreadId === incidentThreadId)
-      .sort(
-        (left, right) =>
-          Date.parse(right.snapshot.startedAt) -
-          Date.parse(left.snapshot.startedAt),
-      );
-
-    if (inMemoryMatches.length > 0) {
-      const latest = inMemoryMatches[0]!;
-      return {
-        resultId: latest.resultId,
-        execution: this.snapshotForBoundary(latest),
-      };
-    }
-
-    return this.resultStore.getLatestExecutionByIncidentThreadId(
-      incidentThreadId,
-    );
-  }
-
-  async getByRequestKey(
-    runbookId: string,
-    requestKey: string,
-  ): Promise<{ resultId: string; execution: RunbookExecutionRecord } | null> {
-    return this.resultStore.getExecutionByRequestKey(runbookId, requestKey);
-  }
-
   subscribe(
-    listener: (payload: RunbookExecutionServiceEvent) => void,
+    listener: (payload: RunbookExecutionEventPayload) => void,
   ): () => void {
     this.listeners.add(listener);
     return () => {
@@ -2744,7 +2710,7 @@ export class RunbookExecutionService {
       }
     }
 
-    const payload: RunbookExecutionServiceEvent = {
+    const payload: RunbookExecutionEventPayload = {
       resultId: session.resultId,
       executionId: snapshot.executionId,
       incidentThreadId: session.incidentThreadId ?? null,

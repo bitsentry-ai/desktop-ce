@@ -89,11 +89,6 @@ export interface LocalAiTokenUsage {
 
 export interface LocalAiExecutionResult {
   output: string
-  /**
-   * Structured host calls returned by a CLI-native protocol. Text-only CLIs
-   * leave this undefined and the adapter validates their JSON response envelope.
-   */
-  toolCalls?: import('@bitsentry-ce/core/features/agent-runtime').AgentToolCall[]
   sessionId?: string
   threadId?: string
   resumeCursor?: unknown

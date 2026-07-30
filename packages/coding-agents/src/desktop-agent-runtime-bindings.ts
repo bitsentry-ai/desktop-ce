@@ -2,7 +2,8 @@ import {
   AgentRuntimeService as SharedAgentRuntimeService,
   type AgentRuntimeDebugHooks,
   type AgentRuntimeLlmAdapter,
-  type AgentRuntimeRunbookGateway,
+  type AgentRuntimeRunbookExecutionService,
+  type AgentRuntimeRunbookStore,
   type AgentRuntimeWindow,
 } from './agent-runtime.service'
 
@@ -12,7 +13,8 @@ export function createDesktopAgentRuntimeBindings(
   AgentRuntimeService: new (
     windowGetter: () => AgentRuntimeWindow | null,
     llmAdapter: AgentRuntimeLlmAdapter,
-    runbookGateway?: AgentRuntimeRunbookGateway,
+    runbookStore?: AgentRuntimeRunbookStore,
+    runbookExecutionService?: AgentRuntimeRunbookExecutionService,
   ) => SharedAgentRuntimeService
 } {
   return {
@@ -20,12 +22,14 @@ export function createDesktopAgentRuntimeBindings(
       constructor(
         windowGetter: () => AgentRuntimeWindow | null,
         llmAdapter: AgentRuntimeLlmAdapter,
-        runbookGateway?: AgentRuntimeRunbookGateway,
+        runbookStore?: AgentRuntimeRunbookStore,
+        runbookExecutionService?: AgentRuntimeRunbookExecutionService,
       ) {
         super(
           windowGetter,
           llmAdapter,
-          runbookGateway,
+          runbookStore,
+          runbookExecutionService,
           debugHooks,
         )
       }

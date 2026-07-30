@@ -1,7 +1,6 @@
 import type {
   AgentIteration,
   AgentErrorCode,
-  AgentActivityPhase,
   AgentSessionState,
   AgentThreadSnapshot,
   AgentThreadTokenUsage,
@@ -24,7 +23,6 @@ export type RuntimeProjectionEvent =
   | { type: "thinking_start"; timestamp: string }
   | { type: "thinking_delta"; timestamp: string; delta: string }
   | { type: "thinking_end"; timestamp: string }
-  | { type: "activity"; timestamp: string; phase: AgentActivityPhase | null }
   | {
       type: "tool_start";
       timestamp: string;
@@ -286,15 +284,6 @@ export function reduceAgentThreadSnapshot(
         })),
       };
 
-    case "activity":
-      return {
-        ...snapshot,
-        messages: mapLastAgentMessage(snapshot.messages, (message) => ({
-          ...message,
-          activity: event.phase ?? undefined,
-        })),
-      };
-
     case "tool_start":
       return {
         ...snapshot,
@@ -430,7 +419,6 @@ export function reduceAgentThreadSnapshot(
             ...message,
             finalText,
             status: "done",
-            activity: undefined,
             activeIterationId: null,
             iterations: message.iterations.map((iteration, index, all) => {
               if (index !== all.length - 1) {
@@ -455,7 +443,6 @@ export function reduceAgentThreadSnapshot(
         messages: mapLastAgentMessage(snapshot.messages, (message) => ({
           ...message,
           status: "cancelled",
-          activity: undefined,
           activeIterationId: null,
           errorMsg: event.message,
           iterations: message.iterations.map((iteration) => {
@@ -486,7 +473,6 @@ export function reduceAgentThreadSnapshot(
         messages: mapLastAgentMessage(snapshot.messages, (message) => ({
           ...message,
           status: "error",
-          activity: undefined,
           errorMsg: event.message,
           errorCode: event.code,
           activeIterationId: null,

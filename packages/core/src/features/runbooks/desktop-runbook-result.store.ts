@@ -77,7 +77,6 @@ export interface CreateRunbookResultSessionInput {
   resultId: string
   executionId: string
   ownerId: string
-  requestKey?: string
   incidentThreadId?: string
   runbook: RunbookResultRunbook
   context: RunbookResultContext
@@ -93,16 +92,9 @@ export interface RunbookResultPersistence {
   ): Promise<ExecutionSnapshotEventOutcome>
   getExecutionSnapshotByExecutionId(executionId: string): Promise<RunbookExecutionRecord | null>
   getExecutionSnapshotByResultId(resultId: string): Promise<RunbookExecutionRecord | null>
-  getExecutionByRequestKey(
-    runbookId: string,
-    requestKey: string,
-  ): Promise<{ resultId: string; execution: RunbookExecutionRecord } | null>
   getLatestExecutionSnapshotByIncidentThreadId(
     incidentThreadId: string,
   ): Promise<RunbookExecutionRecord | null>
-  getLatestExecutionByIncidentThreadId(
-    incidentThreadId: string,
-  ): Promise<{ resultId: string; execution: RunbookExecutionRecord } | null>
   touchExecutionHeartbeat(
     executionId: string,
     ownerId: string,
@@ -136,8 +128,6 @@ type ExecutionControlRow = DesktopRunbookResultRow & {
 }
 
 export class SqliteRunbookResultStore implements RunbookResultPersistence {
-  private transactionQueue: Promise<void> = Promise.resolve()
-
   constructor(private readonly db: DesktopRunbookResultDatabase) {}
 
   private async createExecutionControlRow(
@@ -179,33 +169,30 @@ export class SqliteRunbookResultStore implements RunbookResultPersistence {
   async createRunbookResultSession(
     input: CreateRunbookResultSessionInput,
   ): Promise<void> {
-    return this.inTransaction(async () => {
-      const now = new Date().toISOString()
-      await this.createExecutionControlRow(
-        input.executionId,
-        input.ownerId,
-        input.snapshot.startedAt,
-      )
-      await this.db.investigationSession.create({
-        data: {
-          id: input.resultId,
-          runbookId: input.runbook.id,
-          runbookVersionId: null,
-          runbookTitle: input.runbook.title,
-          runbookRequestKey: input.requestKey ?? null,
-          runbookRevisionNumber: input.context.runbook.revisionNumber,
-          runbookContextJson: JSON.stringify(input.context),
-          executionId: input.executionId,
-          incidentThreadId: input.incidentThreadId ?? null,
-          executionSnapshotJson: JSON.stringify(input.snapshot),
-          status: input.snapshot.status,
-          startedAt: input.snapshot.startedAt,
-          completedAt: input.snapshot.completedAt ?? null,
-          prompt: '',
-          createdAt: input.snapshot.startedAt,
-          updatedAt: now,
-        },
-      })
+    const now = new Date().toISOString()
+    await this.createExecutionControlRow(
+      input.executionId,
+      input.ownerId,
+      input.snapshot.startedAt,
+    )
+    await this.db.investigationSession.create({
+      data: {
+        id: input.resultId,
+        runbookId: input.runbook.id,
+        runbookVersionId: null,
+        runbookTitle: input.runbook.title,
+        runbookRevisionNumber: input.context.runbook.revisionNumber,
+        runbookContextJson: JSON.stringify(input.context),
+        executionId: input.executionId,
+        incidentThreadId: input.incidentThreadId ?? null,
+        executionSnapshotJson: JSON.stringify(input.snapshot),
+        status: input.snapshot.status,
+        startedAt: input.snapshot.startedAt,
+        completedAt: input.snapshot.completedAt ?? null,
+        prompt: '',
+        createdAt: input.snapshot.startedAt,
+        updatedAt: now,
+      },
     })
   }
 
@@ -296,54 +283,14 @@ export class SqliteRunbookResultStore implements RunbookResultPersistence {
     return parseRowExecutionSnapshot(row)
   }
 
-  async getExecutionByRequestKey(
-    runbookId: string,
-    requestKey: string,
-  ): Promise<{ resultId: string; execution: RunbookExecutionRecord } | null> {
-    const row = await this.db.investigationSession.findFirst({
-      where: { runbookId, runbookRequestKey: requestKey },
-      orderBy: { createdAt: 'asc' },
-    })
-    const execution = parseRowExecutionSnapshot(row)
-    if (execution === null || row === null) {
-      return null
-    }
-
-    const resultId = asString(row.id)
-    if (resultId.length === 0) {
-      return null
-    }
-
-    return { resultId, execution }
-  }
-
   async getLatestExecutionSnapshotByIncidentThreadId(
     incidentThreadId: string,
   ): Promise<RunbookExecutionRecord | null> {
-    const latest = await this.getLatestExecutionByIncidentThreadId(
-      incidentThreadId,
-    )
-    return latest?.execution ?? null
-  }
-
-  async getLatestExecutionByIncidentThreadId(
-    incidentThreadId: string,
-  ): Promise<{ resultId: string; execution: RunbookExecutionRecord } | null> {
     const row = await this.db.investigationSession.findFirst({
       where: { incidentThreadId },
       orderBy: { startedAt: 'desc', updatedAt: 'desc' },
     })
-    const execution = parseRowExecutionSnapshot(row)
-    if (execution === null || row === null) {
-      return null
-    }
-
-    const resultId = asString(row.id)
-    if (resultId.length === 0) {
-      return null
-    }
-
-    return { resultId, execution }
+    return parseRowExecutionSnapshot(row)
   }
 
   async touchExecutionHeartbeat(
@@ -540,25 +487,10 @@ export class SqliteRunbookResultStore implements RunbookResultPersistence {
   }
 
   private async inTransaction<T>(operation: () => Promise<T>): Promise<T> {
-    // better-sqlite3 has one transaction per connection. Runbook executions
-    // intentionally continue in parallel, so their snapshot events can reach
-    // this store concurrently. Serialize just the transaction boundary rather
-    // than the executions themselves.
-    const previous = this.transactionQueue
-    let release: (() => void) | undefined
-    this.transactionQueue = new Promise<void>((resolve) => {
-      release = resolve
-    })
-
-    await previous
-    try {
-      if (this.db.$transaction === undefined) {
-        return await operation()
-      }
-      return await this.db.$transaction(operation)
-    } finally {
-      release?.()
+    if (this.db.$transaction === undefined) {
+      return operation()
     }
+    return this.db.$transaction(operation)
   }
 
   private async recordStaleRecoveryAudit(

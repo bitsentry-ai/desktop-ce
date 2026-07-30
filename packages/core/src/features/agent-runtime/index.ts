@@ -34,7 +34,6 @@ export {
 
 export type {
   AgentSessionState,
-  AgentActivityPhase,
   ToolExecutionState,
   AgentEventType,
   AgentErrorCode,
@@ -44,7 +43,6 @@ export type {
   ThinkingStartEvent,
   ThinkingDeltaEvent,
   ThinkingEndEvent,
-  AgentActivityEvent,
   AgentChatAttachment,
   AgentProviderKey,
   AgentLlmSelection,
@@ -69,17 +67,3 @@ export type {
   ErrorClassification,
   AgentThreadSnapshot,
 } from "./types";
-export {
-  AGENT_TOOL_PROTOCOL_VERSION,
-  agentToolCallSchema,
-  agentToolResultSchema,
-  agentToolResultEnvelopeSchema,
-  structuredCliToolResponseSchema,
-  agentToolProtocolSchema,
-  createAgentToolResultEnvelope,
-  type AgentToolCall,
-  type AgentToolResult,
-  type AgentToolResultEnvelope,
-  type AgentToolProtocol,
-  type StructuredCliToolResponse,
-} from './tool-protocol'

@@ -5,17 +5,15 @@
  */
 
 import type { AgentThreadSnapshot } from '@bitsentry-ce/components/chat/types'
-import { z } from 'zod'
 import type {
   AgentStartInput,
   AgentSendInput,
   AgentSessionStatus,
-  RunbookContext,
 } from '@bitsentry-ce/core/features/agent-runtime/types'
-import type { RunbookContextV1 } from '@bitsentry-ce/core/features/runbooks/desktop-runbook.types'
 import type {
   AgentRuntimeLlmAdapter,
-  AgentRuntimeRunbookGateway,
+  AgentRuntimeRunbookExecutionService,
+  AgentRuntimeRunbookStore,
   AgentRuntimeWindow,
 } from './agent-runtime.service'
 
@@ -30,74 +28,49 @@ export interface AgentRuntimeSessionController {
 
 export interface AgentHandlerDependencies {
   agentRuntime: AgentRuntimeSessionController
-  runbookGateway?: AgentRuntimeRunbookGateway
 }
 
 export interface AgentServiceDependencies {
   llmAdapter: AgentRuntimeLlmAdapter
-  runbookGateway?: AgentRuntimeRunbookGateway
+  runbookStore?: AgentRuntimeRunbookStore
+  runbookExecutionService?: AgentRuntimeRunbookExecutionService
   windowGetter: () => AgentRuntimeWindow | null
 }
 
 export type AgentRuntimeServiceClass = new (
   windowGetter: () => AgentRuntimeWindow | null,
   llmAdapter: AgentRuntimeLlmAdapter,
-  runbookGateway?: AgentRuntimeRunbookGateway,
+  runbookStore?: AgentRuntimeRunbookStore,
+  runbookExecutionService?: AgentRuntimeRunbookExecutionService,
 ) => AgentRuntimeSessionController
 
 export function createDesktopAgentService(
   dependencies: AgentServiceDependencies,
   services: { AgentRuntimeService: AgentRuntimeServiceClass },
 ): AgentRuntimeSessionController {
-  const { llmAdapter, runbookGateway, windowGetter } = dependencies
+  const { llmAdapter, runbookStore, runbookExecutionService, windowGetter } = dependencies
   return new services.AgentRuntimeService(
     windowGetter,
     llmAdapter,
-    runbookGateway,
+    runbookStore,
+    runbookExecutionService,
   )
 }
 
 export function createDesktopAgentHandlers(
   dependencies: AgentHandlerDependencies,
 ): Record<string, (payload: unknown) => Promise<unknown>> {
-  const { agentRuntime, runbookGateway } = dependencies
-
-  const resolveRunbookContext = async <T extends AgentStartInput | AgentSendInput>(
-    input: T,
-  ): Promise<T> => {
-    if (input.runbookId === undefined) {
-      return input
-    }
-    if (runbookGateway === undefined) {
-      throw new Error('Runbook gateway is not configured')
-    }
-
-    const context = await runbookGateway.getRunbookContext(input.runbookId)
-    if (
-      input.runbookRevisionNumber !== undefined &&
-      input.runbookRevisionNumber !== context.runbook.revisionNumber
-    ) {
-      throw new Error(
-        `Runbook '${input.runbookId}' changed before this message could be sent`,
-      )
-    }
-
-    return {
-      ...input,
-      runbookRevisionNumber: context.runbook.revisionNumber,
-      runbookContext: toAgentRunbookContext(context),
-    }
-  }
+  const { agentRuntime } = dependencies
 
   return {
     'agent:start': async (payload: unknown): Promise<{ sessionId: string }> => {
-      const input = await resolveRunbookContext(agentStartInputSchema.parse(payload))
+      const input = payload as AgentStartInput
       const sessionId = await agentRuntime.start(input)
       return { sessionId }
     },
 
     'agent:send': async (payload: unknown): Promise<{ sessionId: string }> => {
-      const input = await resolveRunbookContext(agentSendInputSchema.parse(payload))
+      const input = payload as AgentSendInput
       const sessionId = await agentRuntime.send(input)
       return { sessionId }
     },
@@ -141,37 +114,5 @@ export function createDesktopAgentHandlers(
         throw error
       }
     },
-  }
-}
-
-const agentStartInputSchema = z.custom<AgentStartInput>(
-  (value) =>
-    typeof value === 'object' &&
-    value !== null &&
-    typeof (value as { prompt?: unknown }).prompt === 'string' &&
-    (value as { prompt: string }).prompt.trim().length > 0,
-  { message: 'Invalid agent:start input' },
-)
-
-const agentSendInputSchema = z.custom<AgentSendInput>(
-  (value) =>
-    typeof value === 'object' &&
-    value !== null &&
-    typeof (value as { message?: unknown }).message === 'string' &&
-    (value as { message: string }).message.trim().length > 0,
-  { message: 'Invalid agent:send input' },
-)
-
-function toAgentRunbookContext(context: RunbookContextV1): RunbookContext {
-  return {
-    id: context.runbook.id,
-    title: context.runbook.title,
-    description: context.runbook.description,
-    actions: context.actions.map((action) => ({
-      id: action.id,
-      type: action.type,
-      title: action.title,
-      ...action.payload,
-    })),
   }
 }

@@ -1,7 +1,7 @@
 import process from 'process'
 import os from 'os'
 import path from 'path'
-import { access, mkdtemp, open, readFile, rm, writeFile } from 'fs/promises'
+import { access, mkdtemp, readFile, rm, writeFile } from 'fs/promises'
 import { spawn } from 'child_process'
 import { fileURLToPath } from 'url'
 import { parse as parseYaml } from 'yaml'
@@ -320,38 +320,31 @@ async function startDetachedExecution(
 
   const handshakeDir = await mkdtemp(path.join(os.tmpdir(), 'bitsentry-cli-exec.'))
   const startupFile = path.join(handshakeDir, 'startup.json')
-  const workerErrorFile = path.join(handshakeDir, 'worker.stderr')
-  const workerErrorHandle = await open(workerErrorFile, 'w')
   const detached = true
-  let child: ReturnType<typeof spawn>
-  try {
-    child = spawn(
-      process.execPath,
-      [
-        cliScriptPath,
-        'runbooks',
-        'execute-worker',
-        ...buildForwardedArgs(args),
-        '--startup-file',
-        startupFile,
-      ],
-      {
-        detached,
-        stdio: ['ignore', 'ignore', workerErrorHandle.fd],
-        windowsHide: process.platform === 'win32',
-        env: {
-          ...process.env,
-        },
+  const child = spawn(
+    process.execPath,
+    [
+      cliScriptPath,
+      'runbooks',
+      'execute-worker',
+      ...buildForwardedArgs(args),
+      '--startup-file',
+      startupFile,
+    ],
+    {
+      detached,
+      stdio: 'ignore',
+      windowsHide: process.platform === 'win32',
+      env: {
+        ...process.env,
       },
-    )
-  } finally {
-    await workerErrorHandle.close()
-  }
+    },
+  )
 
   child.unref()
 
   try {
-    const started = await waitForDetachedExecutionStart(child, startupFile, workerErrorFile)
+    const started = await waitForDetachedExecutionStart(child, startupFile)
     return {
       ...started,
       detached,
@@ -365,18 +358,13 @@ async function startDetachedExecution(
 async function waitForDetachedExecutionStart(
   child: ReturnType<typeof spawn>,
   startupFile: string,
-  workerErrorFile: string,
 ): Promise<{ executionId: string; resultId: string }> {
   const deadline = Date.now() + DETACHED_EXECUTION_START_TIMEOUT_MS
 
   while (Date.now() < deadline) {
     if (child.exitCode !== null) {
-      const workerError = await readFile(workerErrorFile, 'utf-8').catch(() => '')
-      const detail = workerError.trim()
       throw new Error(
-        `Detached execution worker exited before startup (code=${String(child.exitCode)})${
-          detail === '' ? '' : `: ${detail}`
-        }`,
+        `Detached execution worker exited before startup (code=${String(child.exitCode)})`,
       )
     }
 

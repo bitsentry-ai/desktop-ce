@@ -205,7 +205,6 @@ export interface RunbookExecutionStepRecord {
 export interface RunbookExecutionRecord {
   executionId: string;
   runbookId: string;
-  runbookRevisionNumber?: number;
   incidentThreadId?: string;
   runbookTitle: string;
   status: RunbookExecutionStatus;

@@ -38,7 +38,6 @@ import {
   saveDesktopProviderSettings,
 } from '@bitsentry-ce/core/features/desktop/desktop-llm-provider-settings'
 import { DesktopGlobalVariablesService } from '@bitsentry-ce/core/features/runbooks'
-import { createDesktopRunbookGateway } from '@bitsentry-ce/core/features/runbooks'
 import '../../storage/database/seeding'
 import {
   initializeDatabase,
@@ -92,7 +91,6 @@ import {
 import { getAutoUpdaterEnablement } from '@bitsentry-ce/core/features/updater/desktop-updater-policy'
 import { startAutoUpdater } from '@bitsentry-ce/desktop-cli/runtime/desktop-updater'
 import { LocalPluginCredentialsStore } from '@bitsentry-ce/desktop-cli/runtime/plugin-credentials-store'
-import { LocalRunbookExecutionHost } from '@bitsentry-ce/desktop-cli/runtime/local-runbook-execution-host'
 import { DesktopShutdownCoordinator } from './shutdown-coordinator'
 
 type UpdaterController = ReturnType<typeof startAutoUpdater> | null
@@ -101,7 +99,6 @@ type LocalAiProviderService = InstanceType<typeof CodingAgentsProviderService>
 let services: DesktopServices | null = null
 let agentRuntime: ReturnType<typeof createDesktopAgentService> | null = null
 let runbookExecutionService: RunbookExecutionService | null = null
-let localRunbookExecutionHost: LocalRunbookExecutionHost | null = null
 let localAiProvider: LocalAiProviderService | null = null
 let updaterController: UpdaterController = null
 
@@ -358,8 +355,6 @@ const createWindow = async () => {
         log.info('[updater] tearing down runtime before install...')
         try {
           agentRuntime?.destroy()
-          await localRunbookExecutionHost?.close()
-          localRunbookExecutionHost = null
           await runbookExecutionService?.destroy()
           runbookExecutionService = null
           localAiProvider?.destroy()
@@ -395,8 +390,6 @@ const shutdownCoordinator = new DesktopShutdownCoordinator({
   },
   closeSentry,
   destroyRunbookExecution: async () => {
-    await localRunbookExecutionHost?.close()
-    localRunbookExecutionHost = null
     await runbookExecutionService?.destroy()
     runbookExecutionService = null
   },
@@ -491,54 +484,10 @@ app
         localAiProvider,
         pluginRuntime,
       )
-      const runbookGateway = createDesktopRunbookGateway({
-        store: runbookStore,
-        executionService: runbookExecutionService,
-      })
-      const runbookHandlers = createRunbookHandlers(db, {
+      dispatcher.registerAll(createRunbookHandlers(db, {
         executionService: runbookExecutionService,
         globalVariablesService,
-      }, { edition: 'ce', runbookGateway })
-      dispatcher.registerAll(runbookHandlers)
-      localRunbookExecutionHost = new LocalRunbookExecutionHost({
-        userDataPath: app.getPath('userData'),
-        runtime: {
-          listRunbooks: () => runbookHandlers['runbooks:list'](),
-          deleteRunbook: (runbookId) => runbookHandlers['runbooks:delete']({ id: runbookId }),
-          exportRunbooks: (runbookIds, includeGlobals) =>
-            runbookHandlers['runbooks:export']({ ids: runbookIds, includeGlobals }),
-          exportRunbooksToFile: async (filePath, runbookIds, includeGlobals) => {
-            approveRunbookExportPath(filePath)
-            return runbookHandlers['runbooks:exportToFile']({
-              filePath,
-              ids: runbookIds,
-              includeGlobals,
-            })
-          },
-          importRunbooksFromFile: async (filePath, options) => {
-            approveRunbookImportPaths([filePath])
-            return runbookHandlers['runbooks:importFromFile']({ filePath, options })
-          },
-          executeRunbook: (input) => runbookHandlers['runbooks:execute'](input),
-          getExecution: (executionId) => runbookHandlers['runbooks:getExecution']({ executionId }),
-          cancelExecution: async (executionId) => {
-            await runbookHandlers['runbooks:cancelExecution']({ executionId })
-          },
-          async waitForExecution(executionId, options) {
-            const deadline = options?.timeoutMs === undefined || options.timeoutMs <= 0
-              ? null
-              : Date.now() + options.timeoutMs
-            const pollIntervalMs = Math.max(250, options?.pollIntervalMs ?? 1_000)
-            for (;;) {
-              const execution = await runbookHandlers['runbooks:getExecution']({ executionId })
-              if (execution === null || execution.status !== 'running') return execution
-              if (deadline !== null && Date.now() >= deadline) return execution
-              await new Promise((resolve) => setTimeout(resolve, pollIntervalMs))
-            }
-          },
-        },
-      })
-      await localRunbookExecutionHost.start()
+      }, { edition: 'ce' }))
       dispatcher.registerAll(createDesktopStateHandlers(db))
       dispatcher.registerAll(
         createDesktopDialogHandlers({
@@ -554,12 +503,13 @@ app
       agentRuntime = createDesktopAgentService(
         {
           llmAdapter: agentLlmAdapter,
-          runbookGateway,
+          runbookStore: runbookStore,
+          runbookExecutionService: runbookExecutionService,
           windowGetter: () => desktopShell.mainWindow,
         },
         { AgentRuntimeService },
       )
-      dispatcher.registerAll(createAgentHandlers({ agentRuntime, runbookGateway }))
+      dispatcher.registerAll(createAgentHandlers({ agentRuntime }))
 
       // Register direct IPC handlers for preload bridge compatibility.
       // These forward to the dispatcher-registered handlers.
@@ -719,18 +669,8 @@ app
         const runbookId = randomUUID()
         await dispatcher.dispatch('runbooks:create', {
           id: runbookId,
-          title: 'Smoke: executable local runbook',
-          description: 'Packaged smoke fixture with one portable shell action.',
-        })
-        await dispatcher.dispatch('runbooks:saveAction', {
-          runbookId,
-          action: {
-            id: randomUUID(),
-            type: 'shell',
-            title: 'Complete smoke runbook',
-            command: 'node -e "process.exit(0)"',
-            sortOrder: 0,
-          },
+          title: 'Smoke: no-op local runbook',
+          description: 'Packaged smoke fixture. Contains no executable actions.',
         })
         const started = await dispatcher.dispatch('runbooks:execute', { runbookId })
         if (

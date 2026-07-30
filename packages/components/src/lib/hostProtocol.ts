@@ -1,5 +1,9 @@
 const HIDDEN_HOST_BLOCKS = [
   {
+    openPrefix: "<bitsentry_tool_call",
+    closeTag: "</bitsentry_tool_call>",
+  },
+  {
     openPrefix: "<bitsentry_tool_result",
     closeTag: "</bitsentry_tool_result>",
   },
@@ -26,7 +30,7 @@ const HIDDEN_HOST_BLOCKS = [
 ] as const;
 
 const STANDALONE_HOST_TAG_LINE =
-  /^\s*<\/?bitsentry_(?:tool_result|host_instruction|host_protocol)\b[^>]*>\s*$/gim;
+  /^\s*<\/?bitsentry_(?:tool_call|tool_result|host_instruction|host_protocol)\b[^>]*>\s*$/gim;
 
 export function stripInternalHostBlocks(value: string): string {
   let sanitized = value;

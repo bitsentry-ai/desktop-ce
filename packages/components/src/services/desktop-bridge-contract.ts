@@ -87,9 +87,6 @@ export interface DesktopAgentStartInput {
   attachments?: DesktopAgentAttachment[];
   llm?: DesktopAgentLlmSelection;
   runbookContext?: DesktopRunbookContext;
-  runbookId?: string;
-  runbookRevisionNumber?: number;
-  incidentThreadId?: string;
 }
 
 export interface DesktopAgentSendInput {
@@ -98,9 +95,6 @@ export interface DesktopAgentSendInput {
   attachments?: DesktopAgentAttachment[];
   llm?: DesktopAgentLlmSelection;
   runbookContext?: DesktopRunbookContext;
-  runbookId?: string;
-  runbookRevisionNumber?: number;
-  incidentThreadId?: string;
 }
 
 export interface DesktopAgentStatus<TState extends string = string> {

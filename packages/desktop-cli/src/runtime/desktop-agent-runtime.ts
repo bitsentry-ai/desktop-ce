@@ -1,7 +1,9 @@
 import {
   type AgentRuntimeLlmAdapter,
-  type AgentRuntimeRunbookGateway,
+  type AgentRuntimeRunbookExecutionService,
+  type AgentRuntimeRunbookStore,
   type AgentRuntimeWindow,
+  LOCAL_PROVIDER_POST_TOOL_RESPONSE_TIMEOUT_MS,
   type AgentRuntimeEventPayload,
   createDesktopAgentRuntimeBindings,
 } from '@bitsentry-ce/coding-agents'
@@ -13,7 +15,8 @@ import {
 
 export type {
   AgentRuntimeLlmAdapter,
-  AgentRuntimeRunbookGateway,
+  AgentRuntimeRunbookExecutionService,
+  AgentRuntimeRunbookStore,
   AgentRuntimeWindow,
 }
 
@@ -23,5 +26,6 @@ const agentRuntimeBindings = createDesktopAgentRuntimeBindings({
   recordCodingAgentDebugAnomaly,
 })
 
+export { LOCAL_PROVIDER_POST_TOOL_RESPONSE_TIMEOUT_MS }
 export type { AgentRuntimeEventPayload }
 export const AgentRuntimeService = agentRuntimeBindings.AgentRuntimeService
