@@ -28,7 +28,6 @@ import {
   getAllToolDefinitions,
 } from '@bitsentry-ce/core/features/agent-runtime/shared/capability-registry'
 import {
-  OrchestrationError,
   runOrchestratedOperation,
 } from '@bitsentry-ce/core/features/agent-runtime/shared/effect-orchestration'
 import type {
@@ -112,9 +111,6 @@ const DEFAULT_AGENT_SESSION_TIMEOUT_MS = 300_000
 const MAX_TOOL_ITERATIONS = 10 // Prevent infinite loops
 const MAX_MESSAGE_HISTORY = 50 // Limit conversation history
 const JOURNAL_TIME_WINDOW_PADDING_MS = 5 * 60 * 1000
-const MAX_RUNBOOK_COMPLETION_WAIT_MS = 4 * 60 * 1000
-const RUNBOOK_COMPLETION_WAIT_BUFFER_MS = 5_000
-export const LOCAL_PROVIDER_POST_TOOL_RESPONSE_TIMEOUT_MS = 30_000
 const MAX_ACTIONABLE_JOURNAL_TIME_WINDOWS = 5
 const MAX_DERIVED_JOURNAL_TIME_WINDOW_SPAN_MS = 24 * 60 * 60 * 1000
 const INCIDENT_TIMESTAMP_PATTERN =
@@ -417,7 +413,6 @@ interface AgentSession {
   timeoutHandle: ReturnType<typeof setTimeout> | null
   currentToolCallId: string | null
   currentTurnId?: string
-  currentRunbookWaitExecutionId?: string
   windowGetter: () => AgentRuntimeWindow | null
   llmAdapter: AgentRuntimeLlmAdapter
   messages: ChatMessage[] // Conversation history
@@ -2038,16 +2033,13 @@ export class AgentRuntimeService {
         const shouldEmitAssistantDeltas =
           !isLocalCodingAgentProvider ||
           this.debugHooks.isLocalCodingAgentDeltaStreamingEnabled()
-        const postToolResponseDeadline = isLocalCodingAgentProvider && hasVisiblePostToolResult
         const remainingSessionTimeoutMs = Math.max(1, session.expiresAt - Date.now())
         let response: Awaited<ReturnType<AgentLlmAdapterService['chatWithTools']>>
         try {
           response = await runOrchestratedOperation({
             operation: 'LLM response',
             signal: abortController.signal,
-            timeoutMs: postToolResponseDeadline
-              ? LOCAL_PROVIDER_POST_TOOL_RESPONSE_TIMEOUT_MS
-              : remainingSessionTimeoutMs,
+            timeoutMs: remainingSessionTimeoutMs,
             execute: (signal) =>
               llmAdapter.chatWithTools({
                 messages: session.messages,
@@ -2090,22 +2082,6 @@ export class AgentRuntimeService {
               }),
           })
         } catch (error) {
-          if (
-            postToolResponseDeadline &&
-            error instanceof OrchestrationError &&
-            error.kind === 'timeout' &&
-            !isAbortSignalAborted(abortController.signal) &&
-            hasVisiblePostToolResult
-          ) {
-            log.warn(
-              `[agent-runtime:${sessionId}] Local provider finalization timed out after visible runbook tools; completing turn`,
-            )
-            if (shouldEmitThinkingStart) {
-              endThinking()
-            }
-            emitFinal(this.buildVisibleRunbookFallbackResponse(fallbackResultsForThisLlmCall, ''))
-            return
-          }
           throw error
         }
 
@@ -2368,7 +2344,6 @@ export class AgentRuntimeService {
       session.currentTurnRunbookExecutionLookups = undefined
       session.currentTurnStartedRunbookExecutionIds = undefined
       session.currentTurnId = undefined
-      session.currentRunbookWaitExecutionId = undefined
       const queuedFollowUp = session.queuedFollowUps.shift()
       if (queuedFollowUp !== undefined && session.state !== 'CANCELLED') {
         void this.send({ ...queuedFollowUp, sessionId: session.id }).catch((error: unknown) => {
@@ -2498,17 +2473,6 @@ export class AgentRuntimeService {
   private handleSessionTimeout(sessionId: string): void {
     const session = this.sessions.get(sessionId)
     if (session === undefined || session.state !== 'RUNNING') {
-      return
-    }
-
-    if (
-      session.currentRunbookWaitExecutionId !== undefined &&
-      session.currentRunbookWaitExecutionId.length > 0
-    ) {
-      log.info(
-        `[agent-runtime:${sessionId}] Session timeout reached while waiting for runbook execution ${session.currentRunbookWaitExecutionId}; extending timeout`,
-      )
-      this.armSessionTimeout(session, DEFAULT_AGENT_SESSION_TIMEOUT_MS)
       return
     }
 
@@ -2648,7 +2612,6 @@ export class AgentRuntimeService {
 
     session.state = 'RUNNING'
     session.currentToolCallId = null
-    session.currentRunbookWaitExecutionId = undefined
     session.expiresAt = Date.now() + DEFAULT_AGENT_SESSION_TIMEOUT_MS
     if (session.abortController.signal.aborted) {
       session.abortController = new AbortController()
@@ -2739,8 +2702,7 @@ export class AgentRuntimeService {
           }
           throw new Error(message)
         }
-        const completedExecution = await this.waitForRunbookTerminalState(session, execution)
-        const executionForOutput = completedExecution ?? execution
+        const executionForOutput = execution
         session.latestRunbookExecutionId = execution.executionId
         session.latestRunbookTitle = execution.runbookTitle
         this.rememberJournalTimeWindowParameters(session, executionForOutput)
@@ -2783,28 +2745,14 @@ export class AgentRuntimeService {
     session.latestRunbookResultId = execution.resultId
     session.latestRunbookTitle = runbook.title
     session.currentTurnStartedRunbookExecutionIds?.add(execution.executionId)
-    session.currentRunbookWaitExecutionId = execution.executionId
-    const latestExecution = await runbookGateway.waitForCompletion(execution.executionId, {
-      signal: session.abortController.signal,
-      timeoutMs: this.runbookCompletionWaitMs(session, { allowRunbookGrace: true }),
-    }).finally(() => {
-      if (session.currentRunbookWaitExecutionId === execution.executionId) {
-        session.currentRunbookWaitExecutionId = undefined
-      }
-    })
-    if (latestExecution !== null) {
-      this.rememberJournalTimeWindowParameters(session, latestExecution)
-    }
     const outputPayload: Record<string, unknown> = {
-      status: 'started',
+      status: execution.execution.status,
       runbookId: runbook.id,
       runbookTitle: runbook.title,
       executionId: execution.executionId,
+      resultId: execution.resultId,
       deduplicated: execution.deduplicated,
-    }
-    if (latestExecution !== null) {
-      outputPayload.status = latestExecution.status
-      outputPayload.execution = summarizeRunbookExecutionForToolOutput(latestExecution)
+      execution: summarizeRunbookExecutionForToolOutput(execution.execution),
     }
     return {
       output: JSON.stringify(
@@ -3027,52 +2975,6 @@ export class AgentRuntimeService {
         2,
       ),
     }
-  }
-
-  private runbookCompletionWaitMs(
-    session: AgentSession,
-    options?: { allowRunbookGrace?: boolean },
-  ): number {
-    const remainingMs = session.expiresAt - Date.now() - RUNBOOK_COMPLETION_WAIT_BUFFER_MS
-    if (remainingMs <= 0) {
-      if (options?.allowRunbookGrace === true) {
-        return MAX_RUNBOOK_COMPLETION_WAIT_MS
-      }
-
-      return 0
-    }
-
-    return Math.min(MAX_RUNBOOK_COMPLETION_WAIT_MS, remainingMs)
-  }
-
-  private async waitForRunbookTerminalState(
-    session: AgentSession,
-    execution: RunbookExecutionRecord,
-  ): Promise<RunbookExecutionRecord | null> {
-    if (execution.status !== 'running') {
-      return execution
-    }
-
-    const timeoutMs = this.runbookCompletionWaitMs(session, { allowRunbookGrace: true })
-    if (timeoutMs <= 0) {
-      return null
-    }
-
-    session.currentRunbookWaitExecutionId = execution.executionId
-    const latestExecution = await this.getRunbookGateway().waitForCompletion(execution.executionId, {
-      signal: session.abortController.signal,
-      timeoutMs,
-    }).finally(() => {
-      if (session.currentRunbookWaitExecutionId === execution.executionId) {
-        session.currentRunbookWaitExecutionId = undefined
-      }
-    })
-
-    if (latestExecution !== null && latestExecution.status !== 'running') {
-      return latestExecution
-    }
-
-    return null
   }
 
   private buildRunbookTriggerContext(session: AgentSession): RunbookTriggerContext | undefined {

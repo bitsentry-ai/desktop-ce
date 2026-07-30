@@ -239,7 +239,15 @@ function createRuntime(options: {
                   title: runbook?.title ?? request.runbookId,
                   revisionNumber: runbook?.revisionNumber ?? 1,
                 },
-                execution: execution ?? makeExecution({ executionId: started.executionId }),
+                execution: execution ?? makeExecution({
+                  executionId: started.executionId,
+                  runbookId: request.runbookId,
+                  runbookTitle: runbook?.title ?? request.runbookId,
+                  status: 'running',
+                  completedAt: undefined,
+                  completionReason: undefined,
+                  steps: [],
+                }),
               }
             })()
             acceptedRequests.set(request.requestKey, accepted)
@@ -543,7 +551,7 @@ describe('AgentRuntimeService runbook outcomes', () => {
     )
   })
 
-  it('executes an exactly named runbook from an incident prompt before asking the model to summarize it', async () => {
+  it('acknowledges an exactly named runbook start without waiting for its result', async () => {
     const sentEvents: AgentRuntimeEventPayload[] = []
     const kanyeExecution = makeExecution({
       executionId: '33333333-3333-4333-8333-333333333333',
@@ -624,7 +632,7 @@ describe('AgentRuntimeService runbook outcomes', () => {
       llmMessages,
       'This was app-owned runbook runtime behavior, not an AI-requested tool call.',
     )
-    expect(directRunbookContext).toContain('Kanye Rest said the service is healthy.')
+    expect(directRunbookContext).toContain('- Status: running')
     expect(llmAdapter.chatWithTools.mock.calls).toHaveLength(1)
     expect(service.getStatus(sessionId).state).toBe('COMPLETED')
   })
@@ -792,7 +800,7 @@ describe('AgentRuntimeService runbook outcomes', () => {
     )
   })
 
-  it('continues from Sentry output to backend logs using the derived window', async () => {
+  it('does not invent parameters from a runbook that has not finished', async () => {
     const sentryExecution = makeExecution()
     const logsExecution = makeExecution({
       executionId: '22222222-2222-4222-8222-222222222222',
@@ -909,10 +917,7 @@ describe('AgentRuntimeService runbook outcomes', () => {
     if (backendRun === undefined) {
       throw new Error('Expected backend log runbook to start')
     }
-    expect(backendRun[1].parameterValues).toMatchObject({
-      since: '2026-05-26 00:54:00 UTC',
-      until: '2026-05-26 01:04:00 UTC',
-    })
+    expect(backendRun[1].parameterValues).toBeUndefined()
     expect(service.getStatus(sessionId).state).toBe('COMPLETED')
   })
 
@@ -973,7 +978,7 @@ describe('AgentRuntimeService runbook outcomes', () => {
     )
   })
 
-  it('keeps explicit journal windows in model context even when the output preview truncates', async () => {
+  it('keeps a pending runbook result out of the model context', async () => {
     const sentryMatrix = [
       '| Issue | Last seen | journalctl --since | journalctl --until | Description |',
       '| --- | --- | --- | --- | --- |',
@@ -1045,12 +1050,9 @@ describe('AgentRuntimeService runbook outcomes', () => {
 
     const secondCallMessages = getSecondCallMessages(llmAdapter)
     const toolContext = getRequiredToolContent(secondCallMessages)
-    expect(toolContext).toContain('SERVER-292')
-    expect(toolContext).toContain('SERVER-293')
-    expect(toolContext).toContain('2026-05-26 01:15:00 UTC')
-    expect(toolContext).not.toContain('Derived journalctl time window')
-    expect(toolContext).toContain('Combined window for one backend log runbook call')
-    expect(toolContext).toContain('execute the backend log runbook once')
+    expect(toolContext).toContain('Status: running')
+    expect(toolContext).not.toContain('SERVER-292')
+    expect(toolContext).not.toContain('SERVER-293')
   })
 
   it('rejects malformed runbook identifiers instead of executing the active runbook', async () => {
@@ -1889,11 +1891,12 @@ describe('AgentRuntimeService runbook outcomes', () => {
       .filter((toolCall) => toolCall.toolName === 'execute_runbook')
       .map((toolCall) => toolCall.output ?? '')
     expect(executionOutputs).toHaveLength(2)
-    expect(executionOutputs.join('\n')).toContain('Backend logs loaded for the 00:00-00:10 UTC window.')
-    expect(executionOutputs.join('\n')).toContain('Backend logs loaded for the 00:10-00:20 UTC window.')
+    expect(executionOutputs.join('\n')).toContain('33333333-3333-4333-8333-333333333331')
+    expect(executionOutputs.join('\n')).toContain('33333333-3333-4333-8333-333333333332')
+    expect(executionOutputs.join('\n')).toContain('"status": "running"')
   })
 
-  it('waits for a running runbook inspection and then lets the model finish', async () => {
+  it('returns the current runbook snapshot without waiting for its terminal state', async () => {
     const runningExecution = makeExecution({
       runbookId: 'rb-logs',
       runbookTitle: 'Check Logs in the Jagad backend server',
@@ -1943,7 +1946,7 @@ describe('AgentRuntimeService runbook outcomes', () => {
           ],
         })
         .mockResolvedValueOnce({
-          content: 'Backend logs loaded for the Sentry window.',
+          content: 'The runbook is still running; its timeline will update independently.',
           toolCalls: [],
         }),
     }
@@ -1960,11 +1963,11 @@ describe('AgentRuntimeService runbook outcomes', () => {
 
     await waitForCondition(() => {
       const lastMessage = service.getSnapshot(sessionId).messages.at(-1)
-      return lastMessage?.kind === 'agent' && lastMessage.finalText === 'Backend logs loaded for the Sentry window.'
+      return lastMessage?.kind === 'agent' && lastMessage.finalText?.includes('is still running') === true
     })
   })
 
-  it('keeps the agent response alive when the session timeout hits during a runbook wait', async () => {
+  it('finishes the conversation without extending its timeout for a runbook', async () => {
     const completedExecution = makeExecution({
       executionId: '99999999-9999-4999-8999-999999999999',
       runbookId: 'rb-logs',
@@ -1991,18 +1994,12 @@ describe('AgentRuntimeService runbook outcomes', () => {
         ]),
       ]),
     }
-    let finishWait: ((execution: RunbookExecutionRecord | null) => void) | undefined
     const runbookExecutionService = {
       start: vi.fn().mockResolvedValue({
         executionId: completedExecution.executionId,
         resultId: 'result-logs',
       }),
-      waitForCompletion: vi.fn().mockImplementation(
-        () =>
-          new Promise<RunbookExecutionRecord | null>((resolve) => {
-            finishWait = resolve
-          }),
-      ),
+      waitForCompletion: vi.fn(),
       get: vi.fn().mockResolvedValue(null),
       getLatestForIncidentThread: vi.fn().mockResolvedValue(null),
     }
@@ -2038,13 +2035,6 @@ describe('AgentRuntimeService runbook outcomes', () => {
       timeoutMs: 100,
     })
 
-    await waitForCondition(() => runbookExecutionService.waitForCompletion.mock.calls.length === 1)
-    await new Promise((resolve) => setTimeout(resolve, 150))
-
-    expect(service.getStatus(sessionId).state).toBe('RUNNING')
-    expect(sentEvents.some(({ event }) => event.type === 'cancelled')).toBe(false)
-
-    finishWait?.(completedExecution)
     await waitForCondition(() => service.getStatus(sessionId).state === 'COMPLETED')
 
     const agentMessage = getLastAgentMessage(service.getSnapshot(sessionId))
@@ -2056,11 +2046,11 @@ describe('AgentRuntimeService runbook outcomes', () => {
     const runbookCard = toolCalls.find((toolCall) => toolCall.toolName === 'execute_runbook')
     expect(runbookCard).toMatchObject({ state: 'done' })
     expect(runbookCard?.error).toBeUndefined()
-    expect(runbookCard?.output).toContain('Backend logs were summarized after the timeout boundary.')
+    expect(runbookCard?.output).toContain('"status": "running"')
     expect(sentEvents.some(({ event }) => event.type === 'cancelled')).toBe(false)
   })
 
-  it('surfaces completed runbook results when a local provider stalls after tool completion', async () => {
+  it('does not synthesize a runbook completion when a local provider stalls', async () => {
     vi.useFakeTimers()
     try {
       const completedExecution = makeExecution({
@@ -2148,20 +2138,19 @@ describe('AgentRuntimeService runbook outcomes', () => {
       await vi.advanceTimersByTimeAsync(60_000)
       await flushPromises()
 
-      expect(service.getStatus(sessionId).state).toBe('COMPLETED')
+      expect(service.getStatus(sessionId).state).toBe('RUNNING')
       const agentMessage = getLastAgentMessage(service.getSnapshot(sessionId))
       expect(agentMessage).toMatchObject({ kind: 'agent' })
       const visibleText = agentMessage.iterations.at(-1)?.text ?? agentMessage.finalText ?? ''
-      expect(agentMessage.status).toBe('done')
-      expect(visibleText).toContain('Runbook result: Check Logs in the Jagad backend server')
-      expect(visibleText).toContain('Backend logs were summarized without waiting on Sonnet.')
+      expect(agentMessage.status).not.toBe('done')
+      expect(visibleText).not.toContain('Backend logs were summarized without waiting on Sonnet.')
       expect(sentEvents.some(({ event }) => event.type === 'cancelled')).toBe(false)
     } finally {
       vi.useRealTimers()
     }
   })
 
-  it('preserves list results when a local provider stalls after listing runbooks', async () => {
+  it('does not claim a completed response when a local provider stalls after listing runbooks', async () => {
     vi.useFakeTimers()
     try {
       const runbookStore = {
@@ -2218,18 +2207,18 @@ describe('AgentRuntimeService runbook outcomes', () => {
       await vi.advanceTimersByTimeAsync(60_000)
       await flushPromises()
 
-      expect(service.getStatus(sessionId).state).toBe('COMPLETED')
+      expect(service.getStatus(sessionId).state).toBe('RUNNING')
       const agentMessage = getLastAgentMessage(service.getSnapshot(sessionId))
       const visibleText = agentMessage.iterations.at(-1)?.text ?? agentMessage.finalText ?? ''
-      expect(visibleText).toContain('Completed runbook output:')
-      expect(visibleText).toContain('Investigate Sentry')
+      expect(agentMessage.status).not.toBe('done')
+      expect(visibleText).not.toContain('Completed runbook output:')
       expect(sentEvents.some(({ event }) => event.type === 'cancelled')).toBe(false)
     } finally {
       vi.useRealTimers()
     }
   })
 
-  it('appends completed runbook output when Cursor stops without inspecting the result', async () => {
+  it('does not append an execution result when Cursor stops after a start acknowledgement', async () => {
     const completedExecution = makeExecution({
       executionId: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
       runbookId: 'rb-logs',
@@ -2300,9 +2289,8 @@ describe('AgentRuntimeService runbook outcomes', () => {
     const agentMessage = getLastAgentMessage(service.getSnapshot(sessionId))
     const visibleText = agentMessage.finalText ?? agentMessage.iterations.at(-1)?.text ?? ''
     expect(visibleText).toContain("Both runbooks completed; I'll fetch")
-    expect(visibleText).toContain('Completed runbook output:')
-    expect(visibleText).toContain('Runbook result: Check Logs in the Jagad backend server')
-    expect(visibleText).toContain('| LOG-001 | Missing bot startup artifact. |')
+    expect(visibleText).not.toContain('Completed runbook output:')
+    expect(visibleText).not.toContain('| LOG-001 | Missing bot startup artifact. |')
   })
 
   it('shows a completed local runbook result once when the model inspects the same execution again', async () => {
@@ -2452,7 +2440,7 @@ describe('AgentRuntimeService runbook outcomes', () => {
     }
   })
 
-  it('keeps concurrent incident sessions isolated while one runbook is still running', async () => {
+  it('keeps concurrent incident runbook starts isolated', async () => {
     const slowRunning = makeExecution({
       executionId: '11111111-1111-4111-8111-111111111111',
       runbookId: 'rb-slow',
@@ -2467,19 +2455,6 @@ describe('AgentRuntimeService runbook outcomes', () => {
           type: 'shell',
           title: 'Slow check',
           status: 'running',
-        },
-      ],
-    })
-    const slowCompleted = makeExecution({
-      ...slowRunning,
-      status: 'completed',
-      completedAt: '2026-05-26T01:04:00.000Z',
-      completionReason: 'success',
-      steps: [
-        {
-          ...(slowRunning.steps[0]),
-          status: 'completed',
-          output: 'Slow incident finished.',
         },
       ],
     })
@@ -2498,7 +2473,6 @@ describe('AgentRuntimeService runbook outcomes', () => {
         },
       ],
     })
-    let finishSlow: ((execution: RunbookExecutionRecord) => void) | undefined
     const runbookStore = {
       list: vi
         .fn()
@@ -2523,35 +2497,31 @@ describe('AgentRuntimeService runbook outcomes', () => {
           resultId: 'result-fast',
         }
       }),
-      waitForCompletion: vi.fn().mockImplementation((executionId: string) => {
-        if (executionId === slowRunning.executionId) {
-          return new Promise<RunbookExecutionRecord>((resolve) => {
-            finishSlow = resolve
-          })
-        }
-        return Promise.resolve(fastCompleted)
-      }),
+      waitForCompletion: vi.fn(),
       get: vi.fn().mockResolvedValue(null),
       getLatestForIncidentThread: vi.fn().mockResolvedValue(null),
     }
+    let slowRunbookStarted = false
+    let fastRunbookStarted = false
     const llmAdapter = {
       chatWithTools: vi
         .fn()
         .mockImplementation(({ messages }: { messages: Array<{ role?: string; content: unknown }> }) => {
           const text = messages.map((message) => String(message.content)).join('\n')
-          if (text.includes('Slow incident finished.')) {
+          if (text.includes('slow') && slowRunbookStarted) {
             return Promise.resolve({
-              content: 'Slow incident finished.',
+              content: 'Slow incident runbook is running independently.',
               toolCalls: [],
             })
           }
-          if (text.includes('Fast incident finished.')) {
+          if (!text.includes('slow') && fastRunbookStarted) {
             return Promise.resolve({
-              content: 'Fast incident finished.',
+              content: 'Fast incident runbook is running independently.',
               toolCalls: [],
             })
           }
           if (text.includes('slow')) {
+            slowRunbookStarted = true
             return Promise.resolve({
               content: 'I will start the slow runbook.',
               toolCalls: [
@@ -2563,6 +2533,7 @@ describe('AgentRuntimeService runbook outcomes', () => {
               ],
             })
           }
+          fastRunbookStarted = true
           return Promise.resolve({
             content: 'I will start the fast runbook.',
             toolCalls: [
@@ -2585,8 +2556,7 @@ describe('AgentRuntimeService runbook outcomes', () => {
       prompt: 'Start the slow incident.',
       incidentThreadId: 'incident-slow',
     })
-    await waitForCondition(() => finishSlow != null)
-    expect(service.getStatus(slowSessionId).state).toBe('RUNNING')
+    await waitForCondition(() => service.getStatus(slowSessionId).state === 'COMPLETED')
 
     const fastSessionId = await service.start({
       prompt: 'Start the fast incident.',
@@ -2595,14 +2565,12 @@ describe('AgentRuntimeService runbook outcomes', () => {
     await waitForCondition(() => service.getStatus(fastSessionId).state === 'COMPLETED')
     expect(service.getSnapshot(fastSessionId).messages.at(-1)).toMatchObject({
       kind: 'agent',
-      finalText: 'Fast incident finished.',
+      finalText: 'Fast incident runbook is running independently.',
     })
 
-    finishSlow?.(slowCompleted)
-    await waitForCondition(() => service.getStatus(slowSessionId).state === 'COMPLETED')
     expect(service.getSnapshot(slowSessionId).messages.at(-1)).toMatchObject({
       kind: 'agent',
-      finalText: 'Slow incident finished.',
+      finalText: 'Slow incident runbook is running independently.',
     })
     expect(getRunbookStartCalls(runbookExecutionService.start).map(([, options]) => options.incidentThreadId)).toEqual([
       'incident-slow',
