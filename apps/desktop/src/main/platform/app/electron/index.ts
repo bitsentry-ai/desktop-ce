@@ -92,6 +92,7 @@ import {
 import { getAutoUpdaterEnablement } from '@bitsentry-ce/core/features/updater/desktop-updater-policy'
 import { startAutoUpdater } from '@bitsentry-ce/desktop-cli/runtime/desktop-updater'
 import { LocalPluginCredentialsStore } from '@bitsentry-ce/desktop-cli/runtime/plugin-credentials-store'
+import { LocalRunbookExecutionHost } from '@bitsentry-ce/desktop-cli/runtime/local-runbook-execution-host'
 import { DesktopShutdownCoordinator } from './shutdown-coordinator'
 
 type UpdaterController = ReturnType<typeof startAutoUpdater> | null
@@ -100,6 +101,7 @@ type LocalAiProviderService = InstanceType<typeof CodingAgentsProviderService>
 let services: DesktopServices | null = null
 let agentRuntime: ReturnType<typeof createDesktopAgentService> | null = null
 let runbookExecutionService: RunbookExecutionService | null = null
+let localRunbookExecutionHost: LocalRunbookExecutionHost | null = null
 let localAiProvider: LocalAiProviderService | null = null
 let updaterController: UpdaterController = null
 
@@ -356,6 +358,8 @@ const createWindow = async () => {
         log.info('[updater] tearing down runtime before install...')
         try {
           agentRuntime?.destroy()
+          await localRunbookExecutionHost?.close()
+          localRunbookExecutionHost = null
           await runbookExecutionService?.destroy()
           runbookExecutionService = null
           localAiProvider?.destroy()
@@ -391,6 +395,8 @@ const shutdownCoordinator = new DesktopShutdownCoordinator({
   },
   closeSentry,
   destroyRunbookExecution: async () => {
+    await localRunbookExecutionHost?.close()
+    localRunbookExecutionHost = null
     await runbookExecutionService?.destroy()
     runbookExecutionService = null
   },
@@ -489,10 +495,50 @@ app
         store: runbookStore,
         executionService: runbookExecutionService,
       })
-      dispatcher.registerAll(createRunbookHandlers(db, {
+      const runbookHandlers = createRunbookHandlers(db, {
         executionService: runbookExecutionService,
         globalVariablesService,
-      }, { edition: 'ce', runbookGateway }))
+      }, { edition: 'ce', runbookGateway })
+      dispatcher.registerAll(runbookHandlers)
+      localRunbookExecutionHost = new LocalRunbookExecutionHost({
+        userDataPath: app.getPath('userData'),
+        runtime: {
+          listRunbooks: () => runbookHandlers['runbooks:list'](),
+          deleteRunbook: (runbookId) => runbookHandlers['runbooks:delete']({ id: runbookId }),
+          exportRunbooks: (runbookIds, includeGlobals) =>
+            runbookHandlers['runbooks:export']({ ids: runbookIds, includeGlobals }),
+          exportRunbooksToFile: async (filePath, runbookIds, includeGlobals) => {
+            approveRunbookExportPath(filePath)
+            return runbookHandlers['runbooks:exportToFile']({
+              filePath,
+              ids: runbookIds,
+              includeGlobals,
+            })
+          },
+          importRunbooksFromFile: async (filePath, options) => {
+            approveRunbookImportPaths([filePath])
+            return runbookHandlers['runbooks:importFromFile']({ filePath, options })
+          },
+          executeRunbook: (input) => runbookHandlers['runbooks:execute'](input),
+          getExecution: (executionId) => runbookHandlers['runbooks:getExecution']({ executionId }),
+          cancelExecution: async (executionId) => {
+            await runbookHandlers['runbooks:cancelExecution']({ executionId })
+          },
+          async waitForExecution(executionId, options) {
+            const deadline = options?.timeoutMs === undefined || options.timeoutMs <= 0
+              ? null
+              : Date.now() + options.timeoutMs
+            const pollIntervalMs = Math.max(250, options?.pollIntervalMs ?? 1_000)
+            for (;;) {
+              const execution = await runbookHandlers['runbooks:getExecution']({ executionId })
+              if (execution === null || execution.status !== 'running') return execution
+              if (deadline !== null && Date.now() >= deadline) return execution
+              await new Promise((resolve) => setTimeout(resolve, pollIntervalMs))
+            }
+          },
+        },
+      })
+      await localRunbookExecutionHost.start()
       dispatcher.registerAll(createDesktopStateHandlers(db))
       dispatcher.registerAll(
         createDesktopDialogHandlers({
