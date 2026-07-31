@@ -1,5 +1,5 @@
 import os from 'os'
-import log from 'electron-log'
+import { codingAgentsLogger as log } from './logger.js'
 import { CodexAppServerClient, type JsonRpcId } from './codex-app-server-client.js'
 import type { HostMcpEndpoint } from './host-mcp-server.service.js'
 import type { LocalAiStreamDelta, LocalAiExecutionResult } from './types.js'
@@ -639,6 +639,13 @@ export async function executeCodex(
     }
   } finally {
     options.abortController.signal.removeEventListener('abort', onAbort)
+    const stderrTail = client.getStderrTail().trim()
+    if (stderrTail.length > 0) {
+      log.warn('[codex-provider] subprocess stderr tail', {
+        agentSessionId: options.mcpEndpoint?.agentSessionId ?? 'unknown',
+        stderrTail,
+      })
+    }
     await client.kill()
   }
 

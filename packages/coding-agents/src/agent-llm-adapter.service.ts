@@ -27,7 +27,7 @@ import {
   type AgentToolResultEnvelope,
   type HostToolContext,
 } from '@bitsentry-ce/core/features/agent-runtime'
-import log from 'electron-log'
+import { codingAgentsLogger as log } from './logger.js'
 import { getCatalogModelIds } from '@bitsentry-ce/components/llm/modelCatalog'
 
 export type LlmProviderKey = 'groq' | 'kilocode' | 'openai' | 'anthropic' | 'gemini' | 'openrouter' | 'claude_code' | 'codex' | 'opencode' | 'cursor'

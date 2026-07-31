@@ -895,6 +895,13 @@ export async function executeCursor(
     throw new Error(appendCursorStderrTail(getErrorMessage(err), client.getStderrTail()))
   } finally {
     options.abortController.signal.removeEventListener('abort', onAbort)
+    const stderrTail = client.getStderrTail().trim()
+    if (stderrTail.length > 0) {
+      log.warn('[cursor-provider] subprocess stderr tail', {
+        agentSessionId: options.mcpEndpoint?.agentSessionId ?? 'unknown',
+        stderrTail,
+      })
+    }
     await client.kill()
   }
 }

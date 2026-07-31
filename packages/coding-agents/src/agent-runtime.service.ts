@@ -10,7 +10,7 @@
  * - System SSH identity only
  */
 
-import log from 'electron-log'
+import { codingAgentsLogger as log } from './logger.js'
 import { createHash, randomUUID } from 'crypto'
 import { zodToJsonSchema } from '@alcyone-labs/zod-to-json-schema'
 import { z } from 'zod'

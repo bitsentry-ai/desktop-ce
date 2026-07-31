@@ -3,7 +3,7 @@ import os from 'os'
 import path from 'path'
 import readline from 'readline'
 import { mkdtemp, rm, writeFile } from 'fs/promises'
-import log from 'electron-log'
+import { codingAgentsLogger as log } from './logger.js'
 import type { ChildProcess } from 'child_process'
 import type { Readable } from 'stream'
 import type { LocalAiExecutionResult, LocalAiStreamDelta } from './types.js'
@@ -37,6 +37,7 @@ export interface OpenCodeExecutionOptions {
 }
 
 const MAX_OUTPUT_LENGTH = 50_000
+const MAX_STDERR_LENGTH = 5_000
 type OpenCodeAssistantDelta = { type: 'text' | 'reasoning'; text: string }
 interface OpenCodeExecutionState {
   output: string
@@ -730,7 +731,7 @@ function wireOpenCodeProcess(
   })
 
   child.stderr.on('data', (chunk: Buffer) => {
-    state.stderr += chunk.toString('utf8')
+    state.stderr = (state.stderr + chunk.toString('utf8')).slice(-MAX_STDERR_LENGTH)
   })
 
   const onAbort = createOpenCodeAbortHandler(state, options, child)
@@ -793,6 +794,13 @@ export async function executeOpenCode(
 
     return finalizeOpenCodeResult(state, exitCode, options, accessLevel)
   } finally {
+    const stderrTail = state.stderr.trim()
+    if (stderrTail.length > 0) {
+      log.warn('[opencode-provider] subprocess stderr tail', {
+        agentSessionId: options.mcpEndpoint?.agentSessionId ?? 'unknown',
+        stderrTail,
+      })
+    }
     if (config !== undefined) await rm(config.directory, { recursive: true, force: true })
   }
 }

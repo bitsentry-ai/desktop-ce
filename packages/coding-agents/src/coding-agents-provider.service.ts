@@ -1,4 +1,4 @@
-import log from 'electron-log'
+import { codingAgentsLogger as log } from './logger.js'
 import { execFile } from 'child_process'
 import type {
   LocalAiProviderKey,

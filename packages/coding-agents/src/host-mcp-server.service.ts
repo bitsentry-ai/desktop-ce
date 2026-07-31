@@ -4,6 +4,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { HOST_MCP_SHIM_FILE_NAME, HOST_MCP_SHIM_SOURCE } from './host-mcp-shim-source.js'
+import { codingAgentsLogger as log } from './logger.js'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js'
 import {
@@ -23,6 +24,7 @@ export interface HostMcpEndpoint {
   command: string
   args: string[]
   env: Record<string, string>
+  agentSessionId: string
 }
 
 type HostMcpSession = {
@@ -145,6 +147,7 @@ export class HostMcpServerService {
         // that never speaks MCP on stdio, and the CLI stalls on startup.
         ELECTRON_RUN_AS_NODE: '1',
       },
+      agentSessionId: context.session.id,
     }
   }
 
@@ -158,11 +161,27 @@ export class HostMcpServerService {
   }
 
   private async handleRequest(request: IncomingMessage, response: ServerResponse): Promise<void> {
-    if (request.url?.split('?')[0] !== HOST_MCP_PATH) return sendJson(response, 404, { error: 'Not found' })
+    if (request.url?.split('?')[0] !== HOST_MCP_PATH) {
+      log.warn('[host-mcp] request rejected', {
+        agentSessionId: 'unknown',
+        reason: 'path_not_found',
+        method: request.method,
+        path: request.url,
+      })
+      return sendJson(response, 404, { error: 'Not found' })
+    }
     this.pruneExpiredSessions()
     const receivedToken = readBearerToken(request)
     const session = [...this.sessions.entries()].find(([token]) => hasMatchingToken(receivedToken, token))?.[1]
-    if (session === undefined) return sendJson(response, 401, { error: 'Unauthorized' })
+    if (session === undefined) {
+      log.warn('[host-mcp] request rejected', {
+        agentSessionId: 'unknown',
+        reason: receivedToken === undefined ? 'missing_bearer_token' : 'invalid_or_expired_token',
+        method: request.method,
+        path: request.url,
+      })
+      return sendJson(response, 401, { error: 'Unauthorized' })
+    }
     const server = createSessionServer(session)
     const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined })
     try {
@@ -173,4 +192,3 @@ export class HostMcpServerService {
     }
   }
 }
-
