@@ -942,7 +942,6 @@ export class AgentLlmAdapterService {
   /**
    * OpenAI-compatible chat (OpenRouter, Groq, OpenAI).
    */
-  // eslint-disable-next-line sonarjs/cognitive-complexity -- OpenAI streaming combines text, usage, and incremental tool-call assembly.
   private async chatOpenAiCompatible(input: ChatWithToolsInput & {
     providerKey: LlmProviderKey
     apiKey: string
