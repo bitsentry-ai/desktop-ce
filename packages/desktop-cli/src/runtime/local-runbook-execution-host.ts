@@ -16,6 +16,7 @@ const OWNERSHIP_LOCK_FILE_NAME = 'runbook-execution-host.lock'
 const HOST_METADATA_RETRY_DELAY_MS = 50
 const HOST_HANDOFF_RETRY_WINDOW_MS = 1_000
 const HOST_ACQUISITION_TIMEOUT_MS = 30_000
+const HOST_STARTUP_STALE_MS = 5_000
 const EXECUTION_HANDOFF_GRACE_MS = 1_000
 
 type HostMethod =
@@ -216,12 +217,16 @@ function isProcessAlive(pid: number): boolean {
   }
 }
 
-function parseOwnershipLock(raw: string): { pid: number } | null {
+function parseOwnershipLock(raw: string): { pid: number; startedAt: number | null } | null {
   try {
     const value: unknown = JSON.parse(raw)
     if (value === null || typeof value !== 'object' || Array.isArray(value)) return null
-    const { pid } = value as { pid?: unknown }
-    return typeof pid === 'number' && Number.isInteger(pid) && pid > 0 ? { pid } : null
+    const { pid, startedAt } = value as { pid?: unknown; startedAt?: unknown }
+    if (typeof pid !== 'number' || !Number.isInteger(pid) || pid <= 0) return null
+    return {
+      pid,
+      startedAt: typeof startedAt === 'number' && Number.isFinite(startedAt) ? startedAt : null,
+    }
   } catch {
     return null
   }
@@ -235,7 +240,7 @@ async function acquireOwnershipLock(userDataPath: string, token: string): Promis
     try {
       const handle = await open(lockPath, 'wx', 0o600)
       try {
-        await handle.writeFile(JSON.stringify({ pid: process.pid, token }), 'utf-8')
+        await handle.writeFile(JSON.stringify({ pid: process.pid, token, startedAt: Date.now() }), 'utf-8')
       } finally {
         await handle.close()
       }
@@ -245,7 +250,11 @@ async function acquireOwnershipLock(userDataPath: string, token: string): Promis
       if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error
 
       const current = parseOwnershipLock(await readFile(lockPath, 'utf-8').catch(() => ''))
-      if (current === null || isProcessAlive(current.pid)) {
+      if (
+        current !== null &&
+        isProcessAlive(current.pid) &&
+        (current.startedAt === null || Date.now() - current.startedAt < HOST_STARTUP_STALE_MS)
+      ) {
         throw new LocalRunbookExecutionHostAlreadyRunningError(
           'A local runbook execution host is already starting or listening for this user data directory.',
         )
