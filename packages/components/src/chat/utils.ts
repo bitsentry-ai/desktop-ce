@@ -25,10 +25,12 @@ export function getProviderModelOptions(
     discoveredModels = saved.availableModels;
   }
 
-  // A non-empty Codex discovery result is an account capability snapshot. Do
+  // A non-empty CLI discovery result is an account capability snapshot. Do
   // not merge stale static/saved selections back into that authoritative list.
-  const hasCodexCapabilitySnapshot = providerKey === "codex" && discoveredModels.length > 0;
-  const merged = hasCodexCapabilitySnapshot
+  const hasCapabilitySnapshot =
+    (providerKey === "codex" || providerKey === "claude_code") &&
+    discoveredModels.length > 0;
+  const merged = hasCapabilitySnapshot
     ? discoveredModels
     : [
       ...discoveredModels,

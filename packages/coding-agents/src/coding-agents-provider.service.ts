@@ -10,6 +10,7 @@ import type {
 import { DEFAULT_LOCAL_AI_SETTINGS } from './types.js'
 import { probeClaudeCode, probeCodex, probeOpenCode, probeCursor, detectBinary, doctor, type DoctorResult } from './cli-probe.service.js'
 import { executeClaudeCode } from './claude-code-provider.service.js'
+import { getCatalogModelIds } from '@bitsentry-ce/components/llm/modelCatalog'
 import { CodexAppServerClient } from './codex-app-server-client.js'
 import { executeCodex } from './codex-provider.service.js'
 import type { OpenCodeExecutionOptions } from './opencode-provider.service.js'
@@ -20,17 +21,7 @@ import { HostMcpServerService, type HostMcpEndpoint } from './host-mcp-server.se
 import type { HostToolContext } from '@bitsentry-ce/core/features/agent-runtime'
 
 const SETTINGS_KEY = 'local_ai_settings'
-const CLAUDE_CODE_CATALOG_MODELS = [
-  'claude-sonnet-5',
-  'claude-fable-5',
-  'claude-opus-4-8',
-  'claude-opus-4-8-fast',
-  'claude-opus-4-7',
-  'claude-opus-4-6',
-  'claude-opus-4-5',
-  'claude-sonnet-4-6',
-  'claude-haiku-4-5',
-]
+const CLAUDE_CODE_CATALOG_MODELS = getCatalogModelIds('claude_code')
 const CURSOR_CATALOG_MODELS = [
   'auto',
   'composer-2.5',

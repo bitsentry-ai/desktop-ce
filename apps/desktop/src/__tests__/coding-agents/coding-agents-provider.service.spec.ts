@@ -73,6 +73,11 @@ import {
 import { executeClaudeCode } from '@bitsentry-ce/coding-agents/claude-code-provider.service'
 import { executeCodex } from '@bitsentry-ce/coding-agents/codex-provider.service'
 import { executeOpenCode } from '@bitsentry-ce/coding-agents/opencode-provider.service'
+import {
+  getCatalogModel,
+  getEffectiveComposerOptions,
+  resolveCatalogModelRuntimeSelection,
+} from '@bitsentry-ce/components/llm/modelCatalog'
 
 function createDbMock(): CodingAgentsSettingsStore {
   return {
@@ -133,6 +138,33 @@ describe('CodingAgentsProviderService', () => {
         '[user]: List runbooks',
       ].join('\n\n'),
     }))
+  })
+
+  it('exposes Opus 5 with separate effort and context options', () => {
+    const catalogModel = getCatalogModel('claude_code', 'claude-opus-5')
+    expect(catalogModel).toMatchObject({
+      id: 'claude-opus-5',
+      displayName: 'Claude Opus 5',
+    })
+    expect(getEffectiveComposerOptions(catalogModel!)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: 'effort' }),
+        expect.objectContaining({ id: 'contextWindow' }),
+      ]),
+    )
+    expect(getEffectiveComposerOptions(catalogModel!)).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: 'fastMode' }),
+      ]),
+    )
+    expect(resolveCatalogModelRuntimeSelection(
+      'claude_code',
+      'claude-opus-5',
+      { effort: 'high', contextWindow: '1m' },
+    )).toEqual({
+      modelId: 'claude-opus-5',
+      traitValues: { effort: 'high', contextWindow: '1m' },
+    })
   })
 
   it('silently detects and uses the resolved codex binary without changing the saved path', async () => {
