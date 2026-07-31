@@ -101,6 +101,30 @@ function readTraitString(value: string | boolean | undefined): string | undefine
   return undefined
 }
 
+function normalizeClaudeModelId(value: string): string {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/\[[^\]]+\]$/, '')
+    .replace(/-\d{8}$/, '')
+}
+
+function getClaudeModelMatchKeys(value: string, allowFamilyAlias: boolean): string[] {
+  const normalized = normalizeClaudeModelId(value)
+  const keys = new Set([normalized])
+  if (allowFamilyAlias) {
+    const aliasMatch = normalized.match(/^(?:claude-)?(opus|sonnet|haiku|fable)$/)
+    if (aliasMatch !== null) {
+      const latestCatalogModel = CLAUDE_CODE_CATALOG_MODELS.find((modelId) =>
+        modelId.startsWith(`claude-${aliasMatch[1]}-`))
+      if (latestCatalogModel !== undefined) {
+        keys.add(normalizeClaudeModelId(latestCatalogModel))
+      }
+    }
+  }
+  return [...keys]
+}
+
 function claudeModelIsSupported(
   modelId: string,
   supportedModels: ReadonlyMap<string, ClaudeSupportedModel>,
@@ -111,7 +135,7 @@ function claudeModelIsSupported(
     return false
   }
 
-  const supportedModel = supportedModels.get(runtimeModelId)
+  const supportedModel = supportedModels.get(normalizeClaudeModelId(runtimeModelId))
   if (supportedModel === undefined) {
     return false
   }
@@ -124,9 +148,13 @@ function filterClaudeCatalogModels(
 ): string[] {
   const supportedById = new Map<string, ClaudeSupportedModel>()
   for (const model of supportedModels) {
-    supportedById.set(model.value, model)
+    for (const key of getClaudeModelMatchKeys(model.value, model.resolvedModel === undefined)) {
+      supportedById.set(key, model)
+    }
     if (model.resolvedModel !== undefined) {
-      supportedById.set(model.resolvedModel, model)
+      for (const key of getClaudeModelMatchKeys(model.resolvedModel, false)) {
+        supportedById.set(key, model)
+      }
     }
   }
   return CLAUDE_CODE_CATALOG_MODELS.filter((modelId) =>

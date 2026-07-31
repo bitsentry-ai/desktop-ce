@@ -131,6 +131,33 @@ describe('CodingAgentsProviderService', () => {
     })
   })
 
+  it('exposes Opus 5 with separate effort and context options', () => {
+    const catalogModel = getCatalogModel('claude_code', 'claude-opus-5')
+    expect(catalogModel).toMatchObject({
+      id: 'claude-opus-5',
+      displayName: 'Claude Opus 5',
+    })
+    expect(getEffectiveComposerOptions(catalogModel!)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: 'effort' }),
+        expect.objectContaining({ id: 'contextWindow' }),
+      ]),
+    )
+    expect(getEffectiveComposerOptions(catalogModel!)).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: 'fastMode' }),
+      ]),
+    )
+    expect(resolveCatalogModelRuntimeSelection(
+      'claude_code',
+      'claude-opus-5',
+      { effort: 'high', contextWindow: '1m' },
+    )).toEqual({
+      modelId: 'claude-opus-5',
+      traitValues: { effort: 'high', contextWindow: '1m' },
+    })
+  })
+
   it('silently detects and uses the resolved codex binary without changing the saved path', async () => {
     vi.mocked(detectBinary).mockResolvedValue('/opt/homebrew/bin/codex')
     vi.mocked(probeCodex).mockResolvedValue({
@@ -392,21 +419,23 @@ describe('CodingAgentsProviderService', () => {
     }))
   })
 
-  it('filters Claude catalog variants by SDK model and fast-mode support', async () => {
+  it('normalizes Claude alias, dated, and bracket model IDs', async () => {
     vi.mocked(detectBinary).mockResolvedValue('/opt/homebrew/bin/claude')
     vi.mocked(listSupportedClaudeModels).mockResolvedValue([
       { value: 'sonnet', resolvedModel: 'claude-sonnet-5' },
       {
         value: 'opus[1m]',
-        resolvedModel: 'claude-opus-4-8',
-        supportsFastMode: true,
+      },
+      {
+        value: 'claude-haiku-4-5-20251001[1m]',
       },
     ])
 
     const service = new CodingAgentsProviderService(createDbMock())
     await expect(service.listModels('claude_code')).resolves.toEqual([
+      'claude-opus-5',
       'claude-sonnet-5',
-      'claude-opus-4-8',
+      'claude-haiku-4-5',
     ])
   })
 

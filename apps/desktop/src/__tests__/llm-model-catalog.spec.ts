@@ -146,8 +146,14 @@ describe('local model catalog selection', () => {
 
   it('keeps Claude and Cursor catalog options independent of Codex filtering', () => {
     expect(getProviderModelOptions('claude_code', {
-      claude_code: providerConfig('', []),
-    })).toContain('claude-sonnet-5')
+      claude_code: providerConfig('claude-sonnet-5', [
+        'claude-sonnet-5',
+        'claude-opus-5',
+      ]),
+    })).toEqual(['claude-sonnet-5', 'claude-opus-5'])
+    expect(getProviderModelOptions('claude_code', {
+      claude_code: providerConfig('claude-opus-4-8', ['claude-sonnet-5']),
+    })).not.toContain('claude-opus-4-8')
     expect(getProviderModelOptions('cursor', {
       cursor: providerConfig('', []),
     })).toContain('composer-2.5')
