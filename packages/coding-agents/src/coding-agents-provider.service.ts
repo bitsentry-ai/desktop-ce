@@ -5,11 +5,20 @@ import type {
   LocalAiSettings,
   LocalAiStreamDelta,
   LocalAiExecutionResult,
+  LocalAiHostToolTransport,
   CLIProbeResult,
 } from './types.js'
 import { DEFAULT_LOCAL_AI_SETTINGS } from './types.js'
 import { probeClaudeCode, probeCodex, probeOpenCode, probeCursor, detectBinary, doctor, type DoctorResult } from './cli-probe.service.js'
-import { executeClaudeCode } from './claude-code-provider.service.js'
+import {
+  executeClaudeCode,
+  listSupportedClaudeModels,
+  type ClaudeSupportedModel,
+} from './claude-code-provider.service.js'
+import {
+  getCatalogModelIds,
+  resolveCatalogModelRuntimeSelection,
+} from '@bitsentry-ce/components/llm/modelCatalog'
 import { CodexAppServerClient } from './codex-app-server-client.js'
 import { executeCodex } from './codex-provider.service.js'
 import type { OpenCodeExecutionOptions } from './opencode-provider.service.js'
@@ -18,17 +27,7 @@ import { createCodingAgentsProcessEnv } from './coding-agents-process-env.js'
 import { createCommandInvocation, resolveOpenCodeWindowsBinary } from './cli-binary-resolution.js'
 
 const SETTINGS_KEY = 'local_ai_settings'
-const CLAUDE_CODE_CATALOG_MODELS = [
-  'claude-sonnet-5',
-  'claude-fable-5',
-  'claude-opus-4-8',
-  'claude-opus-4-8-fast',
-  'claude-opus-4-7',
-  'claude-opus-4-6',
-  'claude-opus-4-5',
-  'claude-sonnet-4-6',
-  'claude-haiku-4-5',
-]
+const CLAUDE_CODE_CATALOG_MODELS = getCatalogModelIds('claude_code')
 const CURSOR_CATALOG_MODELS = [
   'auto',
   'composer-2.5',
@@ -99,6 +98,51 @@ function readTraitString(value: string | boolean | undefined): string | undefine
   }
 
   return undefined
+}
+
+function claudeModelIsSupported(
+  modelId: string,
+  supportedModels: ReadonlyMap<string, ClaudeSupportedModel>,
+): boolean {
+  const runtimeSelection = resolveCatalogModelRuntimeSelection('claude_code', modelId)
+  const runtimeModelId = runtimeSelection.modelId
+  if (runtimeModelId === undefined) {
+    return false
+  }
+
+  const supportedModel = supportedModels.get(runtimeModelId)
+  if (supportedModel === undefined) {
+    return false
+  }
+
+  return runtimeSelection.traitValues.fastMode !== true || supportedModel.supportsFastMode === true
+}
+
+function filterClaudeCatalogModels(
+  supportedModels: ClaudeSupportedModel[],
+): string[] {
+  const supportedById = new Map<string, ClaudeSupportedModel>()
+  for (const model of supportedModels) {
+    supportedById.set(model.value, model)
+    if (model.resolvedModel !== undefined) {
+      supportedById.set(model.resolvedModel, model)
+    }
+  }
+  return CLAUDE_CODE_CATALOG_MODELS.filter((modelId) =>
+    claudeModelIsSupported(modelId, supportedById))
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error)
+}
+
+function formatClaudeModelDiscoveryError(error: unknown): Error {
+  const message = errorMessage(error)
+  const normalized = message.toLowerCase()
+  if (/(unauthori[sz]ed|forbidden|access denied|not authenticated|permission|entitlement)/.test(normalized)) {
+    return new Error(`Claude model access unauthorized: ${message}`)
+  }
+  return new Error(`Claude model availability unavailable: ${message}`)
 }
 
 function createDefaultLocalAiSettings(): LocalAiSettings {
@@ -455,6 +499,8 @@ export class CodingAgentsProviderService {
     model?: string,
     accessLevel?: 'supervised' | 'auto-accept-edits' | 'full-access',
     traitValues?: Record<string, string | boolean>,
+    hostToolTransport?: LocalAiHostToolTransport,
+    systemPrompt?: string,
   ): Promise<LocalAiExecutionResult> {
     const settings = getProviderSettings(this.settings, provider)
     if (!settings.enabled) {
@@ -463,15 +509,25 @@ export class CodingAgentsProviderService {
     const { binaryPath } = await this.prepareProviderForExecution(provider)
 
     if (provider === 'claude_code') {
+      const runtimeSelection = resolveCatalogModelRuntimeSelection(
+        'claude_code',
+        model,
+        traitValues,
+      )
       return executeClaudeCode({
         prompt,
         binaryPath,
         abortController,
         cwd,
-        model,
+        model: runtimeSelection.modelId,
+        fastMode: typeof runtimeSelection.traitValues.fastMode === 'boolean'
+          ? runtimeSelection.traitValues.fastMode
+          : undefined,
         accessLevel,
-        maxTurns: effortToMaxTurns(readTraitString(traitValues?.effort)),
-        contextWindow: readTraitString(traitValues?.contextWindow),
+        maxTurns: effortToMaxTurns(readTraitString(runtimeSelection.traitValues.effort)),
+        contextWindow: readTraitString(runtimeSelection.traitValues.contextWindow),
+        hostToolTransport,
+        systemPrompt,
         onDelta,
       })
     }
@@ -521,13 +577,31 @@ export class CodingAgentsProviderService {
    * Coding CLIs expose text subprocess boundaries, so the adapter uses the
    * versioned structured JSON compatibility response defined by core.
    */
-  getHostToolProtocol(_provider: LocalAiProviderKey): 'structured_cli' {
-    return 'structured_cli'
+  getHostToolProtocol(provider: LocalAiProviderKey): 'mcp' | 'structured_cli' {
+    return provider === 'claude_code' ? 'mcp' : 'structured_cli'
   }
 
   async listModels(provider: LocalAiProviderKey): Promise<string[]> {
     if (provider === 'claude_code') {
-      return [...CLAUDE_CODE_CATALOG_MODELS]
+      const settings = getProviderSettings(this.settings, provider)
+      const binaryPath = await detectBinary(provider, settings.binaryPath) ?? settings.binaryPath
+      try {
+        const supportedModels = await listSupportedClaudeModels(binaryPath)
+        const models = filterClaudeCatalogModels(supportedModels)
+        if (models.length === 0) {
+          throw new Error('Claude Code SDK reported no supported catalog models for this account.')
+        }
+        return models
+      } catch (error) {
+        const formattedError = formatClaudeModelDiscoveryError(error)
+        log.warn('[local-ai] Failed to list Claude models:', formattedError)
+        this.dependencies.reportError(formattedError, {
+          provider: 'claude_code',
+          operation: 'listModels',
+          binaryPath: settings.binaryPath,
+        })
+        throw formattedError
+      }
     }
 
     if (provider === 'opencode') {

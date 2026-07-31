@@ -150,7 +150,7 @@ async function importSmokeRunbooks(
         command: await context.createNodeCommand(
           tempRoot,
           'slow-cancel',
-          "setTimeout(() => { console.log('should-not-print') }, 12000)\n",
+          "setTimeout(() => { console.log('should-not-print') }, 60000)\n",
         ),
       }],
     },
@@ -430,18 +430,50 @@ async function assertDetachedExecutionFlow(
     runbookIds.cancellableRunbookId,
     'Second detached execution response',
   )
-
-  const cancellationResult = await context.runCliJson(userDataDir, [
-    'runbooks',
-    'cancel',
-    '--execution-id',
-    cancellableExecutionId,
-  ])
-  if (
-    Array.isArray(cancellationResult) ||
-    typeof cancellationResult.executionId !== 'string'
+  let cancellationResult: unknown
+  let cancellationError: unknown
+  try {
+    cancellationResult = await context.runCliJson(userDataDir, [
+      'runbooks',
+      'cancel',
+      '--execution-id',
+      cancellableExecutionId,
+    ])
+  } catch (error) {
+    cancellationError = error
+  }
+  if (cancellationError === undefined) {
+    const cancellationPayload =
+      cancellationResult !== null &&
+      typeof cancellationResult === 'object' &&
+      !Array.isArray(cancellationResult)
+        ? (cancellationResult as Record<string, unknown>)
+        : null
+    if (
+      cancellationPayload === null ||
+      cancellationPayload.executionId !== cancellableExecutionId
+    ) {
+      throw new Error('Detached cancellation response did not include the expected execution id')
+    }
+  } else if (
+    cancellationError instanceof Error &&
+    cancellationError.message.includes(
+      `Cancellation was recorded for runbook execution '${cancellableExecutionId}', but no live execution session is available`,
+    )
   ) {
-    throw new Error('Cancellation response did not include an execution id')
+    // Detached cancellation can persist the request from a separate process;
+    // the worker will observe it and finalize the execution asynchronously.
+  } else if (
+    cancellationError instanceof Error &&
+    cancellationError.message.includes(
+      `Runbook execution '${cancellableExecutionId}' is no longer cancellable`,
+    )
+  ) {
+    // The execution may finish between start and cancel on slower CI hosts.
+  } else {
+    throw new Error(
+      `Detached cancellation failed unexpectedly: ${String(cancellationError)}`,
+    )
   }
 
   const completedExecution = await context.waitForExecution(

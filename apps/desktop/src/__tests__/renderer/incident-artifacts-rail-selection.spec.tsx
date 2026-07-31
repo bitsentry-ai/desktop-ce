@@ -296,6 +296,7 @@ describe("IncidentArtifactsRail step selection", () => {
       expect(screen.getAllByText("Completed").length).toBeGreaterThan(0);
       expect(screen.getByText("2/2 steps complete")).toBeTruthy();
       expect(screen.getByText("LLM • Completed")).toBeTruthy();
+      expect(screen.queryByText("Running")).toBeNull();
     });
   });
 
@@ -345,6 +346,90 @@ describe("IncidentArtifactsRail step selection", () => {
           "Use 2026-05-26 00:55:00 UTC for backend log checks.",
         ).length,
       ).toBeGreaterThan(0);
+    });
+  });
+
+  it("keeps started and failed executions visible as Results rail artifacts", async () => {
+    const startedExecution: RunbookExecutionRecord = {
+      ...execution,
+      executionId: "22222222-2222-4222-8222-222222222222",
+      runbookId: "runbook-started",
+      runbookTitle: "Started PostHog Check",
+      status: "running",
+      completedAt: undefined,
+      completionReason: undefined,
+      steps: [],
+    };
+    const failedExecution: RunbookExecutionRecord = {
+      ...execution,
+      executionId: "33333333-3333-4333-8333-333333333333",
+      runbookId: "runbook-failed",
+      runbookTitle: "Failed PostHog Check",
+      status: "failed",
+      completionReason: "failed",
+      steps: [
+        {
+          actionId: "failed-step",
+          order: 1,
+          type: "external_source",
+          title: "PostHog Sandbox API Error Check",
+          status: "failed",
+          error: "PostHog API returned 403.",
+        },
+      ],
+    };
+    const getExecution = vi.fn().mockImplementation((executionId: string) => {
+      if (executionId === startedExecution.executionId) {
+        return Promise.resolve(startedExecution);
+      }
+
+      return Promise.resolve(failedExecution);
+    });
+    const messages = [
+      {
+        kind: "agent" as const,
+        toolCalls: [
+          {
+            toolCallId: "call-started",
+            toolName: "execute_runbook",
+            state: "done" as const,
+            input: { runbookId: startedExecution.runbookId },
+            output: JSON.stringify({
+              executionId: startedExecution.executionId,
+              runbookId: startedExecution.runbookId,
+              runbookTitle: startedExecution.runbookTitle,
+              status: startedExecution.status,
+            }),
+          },
+          {
+            toolCallId: "call-failed",
+            toolName: "execute_runbook",
+            state: "done" as const,
+            input: { runbookId: failedExecution.runbookId },
+            output: JSON.stringify({
+              executionId: failedExecution.executionId,
+              runbookId: failedExecution.runbookId,
+              runbookTitle: failedExecution.runbookTitle,
+              status: failedExecution.status,
+              error: "PostHog API returned 403.",
+            }),
+          },
+        ],
+      },
+    ];
+
+    expect(countIncidentArtifacts(messages)).toBe(2);
+
+    render(
+      <BitsentryServicesProvider services={createRailServices(getExecution)}>
+        <IncidentArtifactsRail isOpen onClose={() => {}} messages={messages} />
+      </BitsentryServicesProvider>,
+    );
+
+    await waitFor(() => {
+      expect(getExecution).toHaveBeenCalledWith(startedExecution.executionId);
+      expect(getExecution).toHaveBeenCalledWith(failedExecution.executionId);
+      expect(screen.getAllByText("PostHog API returned 403.").length).toBeGreaterThan(0);
     });
   });
 

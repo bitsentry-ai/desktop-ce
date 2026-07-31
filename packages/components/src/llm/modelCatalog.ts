@@ -44,6 +44,10 @@ export type ComposerOptionDescriptor = ComposerSelectOption | ComposerBooleanOpt
 export interface ModelCatalogEntry {
   id: string
   displayName: string
+  /** Runtime model identifier used by the provider for named variants. */
+  runtimeModelId?: string
+  /** Provider traits implied by this catalog entry at execution time. */
+  runtimeTraitValues?: Record<string, string | boolean>
   supportsImageInput: boolean
   supportsAudioInput: boolean
   supportsVideoInput: boolean
@@ -139,6 +143,49 @@ export function getCatalogModelIds(
   providerKey: ModelCatalogProviderKey,
 ): string[] {
   return getProviderCatalogModels(providerKey).map((model) => model.id)
+}
+
+export interface CatalogModelRuntimeSelection {
+  modelId: string | undefined
+  traitValues: Record<string, string | boolean>
+}
+
+const LEGACY_RUNTIME_SELECTIONS: Partial<Record<
+  ModelCatalogProviderKey,
+  Record<string, CatalogModelRuntimeSelection>
+>> = {
+  claude_code: {
+    // Keep existing saved sessions runnable without exposing the old variant
+    // as a selectable catalog model.
+    'claude-opus-4-8-fast': {
+      modelId: 'claude-opus-4-8',
+      traitValues: { fastMode: true },
+    },
+  },
+}
+
+/**
+ * Resolve a UI catalog selection into the provider-facing model and traits.
+ * Explicit runtime traits override catalog defaults so user controls remain
+ * authoritative without changing the saved model selection.
+ */
+export function resolveCatalogModelRuntimeSelection(
+  providerKey: ModelCatalogProviderKey,
+  modelId: string | undefined,
+  traitValues: Record<string, string | boolean> = {},
+): CatalogModelRuntimeSelection {
+  const model = getCatalogModel(providerKey, modelId)
+  const legacySelection = modelId === undefined
+    ? undefined
+    : LEGACY_RUNTIME_SELECTIONS[providerKey]?.[modelId]
+  return {
+    modelId: model?.runtimeModelId ?? legacySelection?.modelId ?? modelId,
+    traitValues: {
+      ...(model?.runtimeTraitValues ?? {}),
+      ...(legacySelection?.traitValues ?? {}),
+      ...traitValues,
+    },
+  }
 }
 
 export function filterChatModelIds(

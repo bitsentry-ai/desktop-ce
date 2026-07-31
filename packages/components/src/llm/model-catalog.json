@@ -1250,51 +1250,13 @@
                   "label": "1M"
                 }
               ]
-            }
-          ]
-        },
-        {
-          "id": "claude-opus-4-8-fast",
-          "displayName": "Claude Opus 4.8 Fast",
-          "supportsImageInput": false,
-          "supportsAudioInput": false,
-          "supportsVideoInput": false,
-          "supportsPdfInput": false,
-          "supportsThinking": true,
-          "thinkingMode": "toggle",
-          "reasoningOptions": [],
-          "composerOptions": [
-            {
-              "id": "effort",
-              "label": "Reasoning",
-              "type": "select",
-              "options": [
-                {
-                  "value": "low",
-                  "label": "Low"
-                },
-                {
-                  "value": "medium",
-                  "label": "Medium"
-                },
-                {
-                  "value": "high",
-                  "label": "High",
-                  "isDefault": true
-                }
-              ]
             },
             {
-              "id": "contextWindow",
-              "label": "Context",
-              "type": "select",
-              "options": [
-                {
-                  "value": "300k",
-                  "label": "300k",
-                  "isDefault": true
-                }
-              ]
+              "id": "fastMode",
+              "label": "Fast mode",
+              "type": "boolean",
+              "defaultValue": false,
+              "shortLabel": "Fast"
             }
           ]
         },

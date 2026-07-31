@@ -587,6 +587,7 @@ const investigationSessionTable = sqliteTable('InvestigationSession', {
   runbookId: text('runbookId').notNull(),
   runbookVersionId: text('runbookVersionId'),
   runbookTitle: text('runbookTitle').notNull(),
+  runbookRequestKey: text('runbookRequestKey'),
   runbookRevisionNumber: integer('runbookRevisionNumber'),
   runbookContextJson: text('runbookContextJson'),
   executionId: text('executionId'),

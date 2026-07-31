@@ -26,20 +26,56 @@ describe('SqliteRunbookResultStore', () => {
       ['result-a', snapshot('execution-a', 0)],
       ['result-b', snapshot('execution-b', 0)],
     ])
+    const rows = new Map<string, Record<string, unknown>>(
+      [...snapshots.entries()].map(([id, execution]) => [
+        id,
+        {
+          id,
+          status: execution.status,
+          startedAt: execution.startedAt,
+          completedAt: null,
+          updatedAt: execution.startedAt,
+          executionSnapshotJson: JSON.stringify(execution),
+        },
+      ]),
+    )
     let transactionActive = false
     const database: DesktopRunbookResultDatabase = {
       investigationSession: {
         create: async () => ({}),
         update: async ({ where, data }) => {
-          const execution = JSON.parse(String(data.executionSnapshotJson)) as RunbookExecutionRecord
-          snapshots.set(where.id, execution)
+          const row = rows.get(where.id)
+          if (row !== undefined) {
+            Object.assign(row, data)
+          }
           return {}
         },
+        updateMany: async ({ where, data }) => {
+          const id = String(where?.id)
+          const row = rows.get(id)
+          if (row === undefined) return { count: 0 }
+
+          const directStatus = where?.status
+          const allowedStatuses = Array.isArray(where?.OR)
+            ? where.OR
+              .filter((condition): condition is Record<string, unknown> =>
+                typeof condition === 'object' && condition !== null,
+              )
+              .map((condition) => condition.status)
+            : []
+          const statusMatches =
+            directStatus === undefined
+              ? allowedStatuses.length === 0 || allowedStatuses.includes(row.status)
+              : row.status === directStatus
+          if (!statusMatches) return { count: 0 }
+
+          Object.assign(row, data)
+          const execution = JSON.parse(String(row.executionSnapshotJson)) as RunbookExecutionRecord
+          snapshots.set(id, execution)
+          return { count: 1 }
+        },
         findUnique: async ({ where }) => {
-          const execution = snapshots.get(String(where.id))
-          return execution === undefined
-            ? null
-            : { executionSnapshotJson: JSON.stringify(execution) }
+          return rows.get(String(where.id)) ?? null
         },
         findFirst: async () => null,
         findMany: async () => [],
