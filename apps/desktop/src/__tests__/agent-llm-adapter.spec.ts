@@ -6,6 +6,23 @@ import {
   type AgentLlmSettingsStore,
   type LocalAiProviderPort,
 } from '@bitsentry-ce/coding-agents/agent-llm-adapter.service'
+import type { HostToolContext } from '@bitsentry-ce/core/features/agent-runtime'
+
+function createHostToolContext(): HostToolContext {
+  return {
+    gateway: {
+      listExecutable: vi.fn().mockResolvedValue([]),
+      getRunbookContext: vi.fn(),
+      start: vi.fn(),
+      get: vi.fn(),
+      getLatestForIncidentThread: vi.fn(),
+      waitForCompletion: vi.fn(),
+      subscribe: vi.fn(),
+      cancel: vi.fn(),
+    },
+    session: { id: 'session-under-test' },
+  }
+}
 
 function createAdapter(credentials?: AgentLlmCredentialsStore): AgentLlmAdapterService {
   const settingsStore: AgentLlmSettingsStore = {
@@ -153,6 +170,7 @@ describe('AgentLlmAdapterService', () => {
       signal: new AbortController().signal,
       llm: { providerKey: 'codex', model: 'gpt-5.4' },
       accessLevel: 'auto-accept-edits',
+      hostToolContext: createHostToolContext(),
       onDelta: (delta) => {
         if (delta.type === 'text' && delta.text !== undefined && delta.text !== '') {
           streamed.push(delta.text)
@@ -190,6 +208,7 @@ describe('AgentLlmAdapterService', () => {
       signal: new AbortController().signal,
       llm: { providerKey: 'codex', model: 'gpt-5.4' },
       accessLevel: 'auto-accept-edits',
+      hostToolContext: createHostToolContext(),
     })
 
     expect(response).toMatchObject({
@@ -228,6 +247,7 @@ describe('AgentLlmAdapterService', () => {
       signal: new AbortController().signal,
       llm: { providerKey: 'claude_code', model: 'claude-sonnet-4-6' },
       accessLevel: 'auto-accept-edits',
+      hostToolContext: createHostToolContext(),
     })
 
     expect(capturedPrompt).toBe('[user]: List runbooks')
@@ -299,6 +319,7 @@ describe('AgentLlmAdapterService', () => {
       signal: new AbortController().signal,
       llm: { providerKey: 'codex', model: 'gpt-5.4' },
       accessLevel: 'auto-accept-edits',
+      hostToolContext: createHostToolContext(),
     })
 
     expect(response).toMatchObject({ toolCalls: [], toolProtocol: 'mcp' })
@@ -352,6 +373,7 @@ describe('AgentLlmAdapterService', () => {
       signal: new AbortController().signal,
       llm: { providerKey: 'claude_code', model: 'claude-sonnet-4-6' },
       accessLevel: 'auto-accept-edits',
+      hostToolContext: createHostToolContext(),
     })
 
     expect(capturedPrompt).toBe('[user]: Check the last runbook\n[assistant]: I will inspect the runbook execution.')
