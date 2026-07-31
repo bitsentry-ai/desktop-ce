@@ -8,8 +8,6 @@
   "common.accessSelector.allowsAnalysisToolsBlocksShell": "Allows analysis tools, blocks shell commands",
   "common.accessSelector.allowsCommandExecutionAndAll": "Allows command execution and all tool calls",
   "common.accessSelector.allTools": "All Tools",
-  "common.accessSelector.askFirst": "Ask First",
-  "common.accessSelector.promptsBeforeEveryToolExecution": "Prompts before every tool execution",
   "common.accessSelector.safeTools": "Safe Tools",
   "common.actions.back": "Back",
   "common.actions.cancel": "Cancel",

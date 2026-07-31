@@ -32,11 +32,6 @@ export function getCodexPolicies(accessLevel: AccessLevel): {
   sandboxPolicy: { type: 'readOnly' | 'workspaceWrite' | 'dangerFullAccess' }
 } {
   switch (accessLevel) {
-    case 'supervised':
-      return {
-        approvalPolicy: 'untrusted',
-        sandboxPolicy: { type: 'readOnly' },
-      }
     case 'auto-accept-edits':
       return {
         approvalPolicy: 'on-request',
@@ -52,7 +47,6 @@ export function getCodexPolicies(accessLevel: AccessLevel): {
 
 export function normalizeAccessLevel(value: unknown): AccessLevel {
   switch (value) {
-    case 'supervised':
     case 'auto-accept-edits':
     case 'full-access':
       return value
@@ -62,7 +56,6 @@ export function normalizeAccessLevel(value: unknown): AccessLevel {
 }
 
 export const CLAUDE_CODE_TOOL_POLICY: Record<AccessLevel, 'none' | 'read-write' | 'all'> = {
-  supervised: 'none',
   'auto-accept-edits': 'read-write',
   'full-access': 'all',
 }
@@ -70,7 +63,6 @@ export const CLAUDE_CODE_TOOL_POLICY: Record<AccessLevel, 'none' | 'read-write' 
 export type CloudToolApprovalMode = 'prompt' | 'auto-read' | 'auto-approve'
 
 export const CLOUD_TOOL_APPROVAL: Record<AccessLevel, CloudToolApprovalMode> = {
-  supervised: 'prompt',
   'auto-accept-edits': 'auto-read',
   'full-access': 'auto-approve',
 }

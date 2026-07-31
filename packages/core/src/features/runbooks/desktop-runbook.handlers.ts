@@ -49,7 +49,7 @@ export interface DesktopRunbookHandlerExecutionService {
       incidentThreadId?: string;
       parameterValues?: Record<string, string>;
       triggerContext?: RunbookTriggerContext;
-      accessLevel?: "supervised" | "auto-accept-edits" | "full-access";
+      accessLevel?: "auto-accept-edits" | "full-access";
     },
   ): Promise<{ executionId: string; resultId: string }>;
   get(executionId: string): Promise<RunbookExecutionRecord | null>;
@@ -119,9 +119,8 @@ function asString(value: unknown, fallback = ""): string {
 
 function asAccessLevel(
   value: unknown,
-): "supervised" | "auto-accept-edits" | "full-access" | undefined {
+): "auto-accept-edits" | "full-access" | undefined {
   if (
-    value === "supervised" ||
     value === "auto-accept-edits" ||
     value === "full-access"
   ) {

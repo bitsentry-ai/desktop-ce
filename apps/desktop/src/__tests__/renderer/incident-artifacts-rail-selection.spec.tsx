@@ -366,7 +366,7 @@ describe("IncidentArtifactsRail step selection", () => {
       runbookId: "runbook-failed",
       runbookTitle: "Failed PostHog Check",
       status: "failed",
-      completionReason: "failed",
+      completionReason: "step_failed",
       steps: [
         {
           actionId: "failed-step",

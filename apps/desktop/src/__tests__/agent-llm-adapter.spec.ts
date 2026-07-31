@@ -6,6 +6,23 @@ import {
   type AgentLlmSettingsStore,
   type LocalAiProviderPort,
 } from '@bitsentry-ce/coding-agents/agent-llm-adapter.service'
+import type { HostToolContext } from '@bitsentry-ce/core/features/agent-runtime'
+
+function createHostToolContext(): HostToolContext {
+  return {
+    gateway: {
+      listExecutable: vi.fn().mockResolvedValue([]),
+      getRunbookContext: vi.fn(),
+      start: vi.fn(),
+      get: vi.fn(),
+      getLatestForIncidentThread: vi.fn(),
+      waitForCompletion: vi.fn(),
+      subscribe: vi.fn(),
+      cancel: vi.fn(),
+    },
+    session: { id: 'session-under-test' },
+  }
+}
 
 function createAdapter(credentials?: AgentLlmCredentialsStore): AgentLlmAdapterService {
   const settingsStore: AgentLlmSettingsStore = {
@@ -123,17 +140,18 @@ describe('AgentLlmAdapterService', () => {
     expect(response.content).toBe('Hello')
   })
 
-  it('accepts a typed JSON envelope from local CLI output without streaming it to the user', async () => {
+  it('does not interpret local execution results as MCP tool activity', async () => {
     const adapter = createAdapter()
 
     adapter.setLocalAiProvider(createLocalAiProvider({
       isReady: () => true,
       execute: (_provider, _prompt, _abortController, onDelta) => {
-        onDelta?.({ type: 'text', text: '{"version":1,"type":"tool_calls",' })
-        onDelta?.({ type: 'text', text: '"toolCalls":[{"id":"call-1","name":"list_runbooks","args":{}}]}' })
+        onDelta?.({ type: 'text', text: 'I found ' })
+        onDelta?.({ type: 'text', text: 'two runbooks.' })
 
         return Promise.resolve({
-          output: '{"version":1,"type":"tool_calls","toolCalls":[{"id":"call-1","name":"list_runbooks","args":{}}]}',
+          output: 'I found two runbooks.',
+          toolCalls: [{ id: 'call-1', name: 'list_runbooks', args: {} }],
         })
       },
     }))
@@ -152,6 +170,7 @@ describe('AgentLlmAdapterService', () => {
       signal: new AbortController().signal,
       llm: { providerKey: 'codex', model: 'gpt-5.4' },
       accessLevel: 'auto-accept-edits',
+      hostToolContext: createHostToolContext(),
       onDelta: (delta) => {
         if (delta.type === 'text' && delta.text !== undefined && delta.text !== '') {
           streamed.push(delta.text)
@@ -159,33 +178,22 @@ describe('AgentLlmAdapterService', () => {
       },
     })
 
-    expect(streamed.join('')).toBe('')
-    expect(response.content).toBe('')
-    expect(response.toolCalls).toEqual([
-      {
-        id: 'call-1',
-        name: 'list_runbooks',
-        args: {},
-      },
-    ])
-    expect(response.toolProtocol).toBe('structured_cli')
+    expect(streamed.join('')).toBe('I found two runbooks.')
+    expect(response.content).toBe('I found two runbooks.')
+    expect(response.toolCalls).toEqual([])
+    expect(response.toolProtocol).toBe('mcp')
   })
 
-  it('uses structured CLI calls without injecting or parsing the legacy text protocol', async () => {
+  it('uses MCP without injecting host tool definitions into the prompt', async () => {
     const adapter = createAdapter()
     let capturedPrompt = ''
 
     adapter.setLocalAiProvider(createLocalAiProvider({
-      getHostToolProtocol: () => 'structured_cli',
       execute: (_provider, prompt) => {
         capturedPrompt = prompt
         return Promise.resolve({
           output: 'Listing runbooks.',
-          toolCalls: [{
-            id: 'structured-call-1',
-            name: 'list_runbooks',
-            args: {},
-          }],
+          toolCalls: [{ id: 'ignored-call', name: 'list_runbooks', args: {} }],
         })
       },
     }))
@@ -200,110 +208,86 @@ describe('AgentLlmAdapterService', () => {
       signal: new AbortController().signal,
       llm: { providerKey: 'codex', model: 'gpt-5.4' },
       accessLevel: 'auto-accept-edits',
+      hostToolContext: createHostToolContext(),
     })
 
     expect(response).toMatchObject({
       content: 'Listing runbooks.',
-      toolProtocol: 'structured_cli',
-      toolCalls: [{
-        id: 'structured-call-1',
-        name: 'list_runbooks',
-        args: {},
-      }],
+      toolProtocol: 'mcp',
+      toolCalls: [],
     })
-    expect(capturedPrompt).toContain('"type":"tool_calls"')
+    expect(capturedPrompt).toBe('[user]: List runbooks')
+    expect(capturedPrompt).not.toContain('BitSentry host tool protocol:')
+    expect(capturedPrompt).not.toContain('"type":"tool_calls"')
   })
 
-  it('uses Claude MCP tools without embedding the structured CLI protocol in the user prompt', async () => {
+  it('keeps Claude MCP prompts free of the legacy protocol text', async () => {
     const adapter = createAdapter()
     let capturedPrompt = ''
     let capturedSystemPrompt: string | undefined
-    let capturedHostToolTransport: Parameters<LocalAiProviderPort['execute']>[8]
-    const hostToolTransport = {
-      tools: [],
-      execute: vi.fn(),
-    }
 
     adapter.setLocalAiProvider(createLocalAiProvider({
-      getHostToolProtocol: (provider) => (
-        provider === 'claude_code' ? 'mcp' : 'structured_cli'
-      ),
-      execute: (
-        _provider,
-        prompt,
-        _abortController,
-        _onDelta,
-        _cwd,
-        _model,
-        _accessLevel,
-        _traitValues,
-        transport,
-        systemPrompt,
-      ) => {
+      execute: (_provider, prompt, _abortController, _onDelta, _cwd, _model, _accessLevel, _traits, _context, systemPrompt) => {
         capturedPrompt = prompt
-        capturedHostToolTransport = transport
         capturedSystemPrompt = systemPrompt
-        return Promise.resolve({ output: 'Here are the available runbooks.' })
+        return Promise.resolve({ output: 'I found two runbooks.' })
       },
     }))
 
     const response = await adapter.chatWithTools({
       messages: [
-        { role: 'system', content: 'Use real host tools and never invent results.' },
-        { role: 'user', content: 'List the runbooks.' },
+        { role: 'system', content: 'You are an incident-response assistant.' },
+        { role: 'user', content: 'List runbooks' },
       ],
       tools: [{
         name: 'list_runbooks',
         description: 'List available runbooks.',
         inputSchema: { type: 'object', properties: {} },
       }],
-      hostToolTransport,
       signal: new AbortController().signal,
-      llm: { providerKey: 'claude_code', model: 'claude-sonnet-5' },
+      llm: { providerKey: 'claude_code', model: 'claude-sonnet-4-6' },
       accessLevel: 'auto-accept-edits',
+      hostToolContext: createHostToolContext(),
     })
 
-    expect(capturedPrompt).toBe('[user]: List the runbooks.')
-    expect(capturedPrompt).not.toContain('BitSentry host tool protocol')
+    expect(capturedPrompt).toBe('[user]: List runbooks')
+    expect(capturedPrompt).not.toContain('BitSentry host tool protocol:')
     expect(capturedPrompt).not.toContain('"type":"tool_calls"')
-    expect(capturedSystemPrompt).toBe('Use real host tools and never invent results.')
-    expect(capturedHostToolTransport).toBe(hostToolTransport)
+    expect(capturedSystemPrompt).toBe('You are an incident-response assistant.')
     expect(response).toMatchObject({
-      content: 'Here are the available runbooks.',
-      toolCalls: [],
+      content: 'I found two runbooks.',
       toolProtocol: 'mcp',
+      toolCalls: [],
     })
   })
 
-  it('hides foreign function-call markup and preserves the retry signal', async () => {
+  it('extracts system messages for CLI turns without MCP instead of flattening a system role', async () => {
     const adapter = createAdapter()
-    const output = [
-      "I'll discover the available runbooks for this incident.",
-      '<function_calls>',
-      '[{"tool_name": "list_runbooks", "arguments": {}}]',
-      '</function_calls>',
-    ].join('\n')
+    let capturedPrompt = ''
+    let capturedSystemPrompt: string | undefined
 
     adapter.setLocalAiProvider(createLocalAiProvider({
-      getHostToolProtocol: () => 'structured_cli',
-      execute: () => Promise.resolve({ output }),
+      execute: (_provider, prompt, _abortController, _onDelta, _cwd, _model, _accessLevel, _traits, _context, systemPrompt) => {
+        capturedPrompt = prompt
+        capturedSystemPrompt = systemPrompt
+        return Promise.resolve({ output: 'I can help with that.' })
+      },
     }))
 
     const response = await adapter.chatWithTools({
-      messages: [{ role: 'user', content: 'List runbooks' }],
-      tools: [{
-        name: 'list_runbooks',
-        description: 'List available runbooks.',
-        inputSchema: { type: 'object', properties: {} },
-      }],
+      messages: [
+        { role: 'system', content: 'Use concise incident language.' },
+        { role: 'user', content: 'Summarize the alert.' },
+      ],
       signal: new AbortController().signal,
-      llm: { providerKey: 'claude_code', model: 'claude-haiku-4-5' },
+      llm: { providerKey: 'codex', model: 'gpt-5.4' },
       accessLevel: 'auto-accept-edits',
     })
 
-    expect(response.content).toBe("I'll discover the available runbooks for this incident.")
-    expect(response.content).not.toContain('<function_calls>')
-    expect(response.hasForeignToolCallMarkup).toBe(true)
+    expect(capturedPrompt).toBe('[user]: Summarize the alert.')
+    expect(capturedPrompt).not.toContain('[system]:')
+    expect(capturedSystemPrompt).toBe('Use concise incident language.')
+    expect(response.toolProtocol).toBe('none')
   })
 
   it('normalizes cloud-native function calls into the shared envelope', async () => {
@@ -346,9 +330,9 @@ describe('AgentLlmAdapterService', () => {
     })
   })
 
-  it('keeps malformed structured CLI envelopes as ordinary model output', async () => {
+  it('keeps a natural MCP CLI response independent of the supplied tool list', async () => {
     const adapter = createAdapter()
-    const output = '{"version":1,"type":"tool_calls","toolCalls":[not-json]}'
+    const output = 'I can inspect a runbook after you choose one.'
 
     adapter.setLocalAiProvider(createLocalAiProvider({
       execute: () => Promise.resolve({ output }),
@@ -364,13 +348,14 @@ describe('AgentLlmAdapterService', () => {
       signal: new AbortController().signal,
       llm: { providerKey: 'codex', model: 'gpt-5.4' },
       accessLevel: 'auto-accept-edits',
+      hostToolContext: createHostToolContext(),
     })
 
-    expect(response.toolCalls).toEqual([])
+    expect(response).toMatchObject({ toolCalls: [], toolProtocol: 'mcp' })
     expect(response.content).toBe(output)
   })
 
-  it('formats local CLI tool-result transcript as internal context without host wrapper tags', async () => {
+  it('replays only user and assistant chat text to a fresh MCP CLI subprocess', async () => {
     const adapter = createAdapter()
 
     let capturedPrompt = ''
@@ -417,135 +402,14 @@ describe('AgentLlmAdapterService', () => {
       signal: new AbortController().signal,
       llm: { providerKey: 'claude_code', model: 'claude-sonnet-4-6' },
       accessLevel: 'auto-accept-edits',
+      hostToolContext: createHostToolContext(),
     })
 
-    expect(capturedPrompt).toContain('Internal tool result for call-1:')
-    expect(capturedPrompt).toContain('Assistant requested host tool get_runbook_execution (call-1) with args: {"executionId":"abc"}')
-    expect(capturedPrompt).toContain(
-      'Do not repeat raw JSON, wrapper tags, or transcript labels unless the user explicitly asks for raw output.',
-    )
-    expect(capturedPrompt).toContain('BitSentry host tool protocol:')
-    expect(capturedPrompt).toContain('The host will execute the operation and append the result as a later tool message in the conversation.')
-    expect(capturedPrompt).not.toContain('<bitsentry_tool_result')
-    expect(capturedPrompt).toContain('respond with exactly one JSON document')
-    expect(capturedPrompt).not.toContain('<bitsentry_host_protocol>')
-    expect(capturedPrompt).not.toContain('<bitsentry_host_instruction>')
+    expect(capturedPrompt).toBe('[user]: Check the last runbook\n[assistant]: I will inspect the runbook execution.')
+    expect(capturedPrompt).not.toContain('Internal tool result')
+    expect(capturedPrompt).not.toContain('Assistant requested host tool')
+    expect(capturedPrompt).not.toContain('BitSentry host tool protocol:')
     expect(capturedPrompt).not.toContain('[tool]:')
-  })
-
-  it('strips leaked internal host blocks from streamed local CLI output', async () => {
-    const adapter = createAdapter()
-
-    adapter.setLocalAiProvider(createLocalAiProvider({
-      isReady: () => true,
-      execute: (_provider, _prompt, _abortController, onDelta) => {
-        onDelta?.({
-          type: 'text',
-          text: 'I found the runbook and I am starting it.\n<bitsentry_tool_result tool_call_id="exec-1">\nRunbook execution started.\n</bitsentry_tool_result>\n',
-        })
-        onDelta?.({
-          type: 'text',
-          text: [
-            '<bitsentry_host_instruction>',
-            'Do not repeat raw JSON.',
-            '</bitsentry_host_instruction>',
-            'Internal tool result for exec-sentry:',
-            'Internal execution result:',
-            '{',
-            '"executionId": "e1b2c3d4-0001-0001-0001-000000000001"',
-            '}',
-            'Use this result as internal context.',
-            'Summarize the important findings for the user in clean Markdown.',
-            'Do not repeat raw JSON, wrapper tags, or transcript labels unless the user explicitly asks for raw output.',
-            'Next I will check the result.',
-          ].join('\n'),
-        })
-
-        return Promise.resolve({
-          output: [
-            'I found the runbook and I am starting it.',
-            '<bitsentry_tool_result tool_call_id="exec-1">',
-            'Runbook execution started.',
-            '</bitsentry_tool_result>',
-            '<bitsentry_host_instruction>',
-            'Do not repeat raw JSON.',
-            '</bitsentry_host_instruction>',
-            'Internal tool result for exec-sentry:',
-            'Internal execution result:',
-            '{',
-            '"executionId": "e1b2c3d4-0001-0001-0001-000000000001"',
-            '}',
-            'Use this result as internal context.',
-            'Summarize the important findings for the user in clean Markdown.',
-            'Do not repeat raw JSON, wrapper tags, or transcript labels unless the user explicitly asks for raw output.',
-            'Next I will check the result.',
-          ].join('\n'),
-        })
-      },
-    }))
-
-    const streamed: string[] = []
-    const response = await adapter.chatWithTools({
-      messages: [{ role: 'user', content: 'Start the runbook' }],
-      signal: new AbortController().signal,
-      llm: { providerKey: 'claude_code', model: 'claude-sonnet-4-6' },
-      accessLevel: 'auto-accept-edits',
-      onDelta: (delta) => {
-        if (delta.type === 'text' && delta.text !== undefined && delta.text !== '') {
-          streamed.push(delta.text)
-        }
-      },
-    })
-
-    expect(streamed.join('')).toContain('I found the runbook and I am starting it.')
-    expect(streamed.join('')).toContain('Next I will check the result.')
-    expect(streamed.join('')).not.toContain('<bitsentry_tool_result')
-    expect(streamed.join('')).not.toContain('<bitsentry_host_instruction')
-    expect(streamed.join('')).not.toContain('Internal tool result for exec-sentry:')
-    expect(streamed.join('')).not.toContain('"executionId": "e1b2c3d4-0001-0001-0001-000000000001"')
-    expect(response.content).not.toContain('<bitsentry_tool_result')
-    expect(response.content).not.toContain('Internal tool result for exec-sentry:')
-    expect(response.content).not.toContain('"executionId": "e1b2c3d4-0001-0001-0001-000000000001"')
-  })
-
-  it('strips leaked internal host blocks from replayed local CLI conversation text', async () => {
-    const adapter = createAdapter()
-
-    let capturedPrompt = ''
-    adapter.setLocalAiProvider(createLocalAiProvider({
-      isReady: () => true,
-      execute: (_provider, prompt) => {
-        capturedPrompt = prompt
-        return Promise.resolve({
-          output: 'Done',
-        })
-      },
-    }))
-
-    await adapter.chatWithTools({
-      messages: [
-        {
-          role: 'assistant',
-          content: [
-            'I found two runbooks.',
-            '<bitsentry_tool_result tool_call_id="exec-1">',
-            'Runbook execution started.',
-            '</bitsentry_tool_result>',
-            '<bitsentry_host_protocol>',
-            'internal stuff',
-            '</bitsentry_host_protocol>',
-          ].join('\n'),
-        },
-        { role: 'user', content: 'What next?' },
-      ],
-      signal: new AbortController().signal,
-      llm: { providerKey: 'claude_code', model: 'claude-sonnet-4-6' },
-      accessLevel: 'auto-accept-edits',
-    })
-
-    expect(capturedPrompt).toContain('[assistant]: I found two runbooks.')
-    expect(capturedPrompt).not.toContain('<bitsentry_tool_result')
-    expect(capturedPrompt).not.toContain('<bitsentry_host_protocol>')
   })
 
 })

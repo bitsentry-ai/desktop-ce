@@ -1,16 +1,11 @@
 import { EventEmitter } from 'events'
 import type { ChildProcess } from 'child_process'
+import { existsSync } from 'fs'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { z } from 'zod'
 
 type ClaudeQuerySession = AsyncIterable<unknown> & {
   getContextUsage: () => Promise<{ totalTokens: number; maxTokens: number }>
   close: () => void
-  supportedModels?: () => Promise<Array<{
-    value: string
-    resolvedModel?: string
-    supportsFastMode?: boolean
-  }>>
 }
 
 interface SpawnClaudeCodeProcessInput {
@@ -31,24 +26,16 @@ type SpawnedClaudeCodeProcess = EventEmitter & {
 }
 
 interface ClaudeQueryOptions {
-  model?: string
-  settings?: {
-    fastMode?: boolean
-  }
   permissionMode?: string
   includePartialMessages?: boolean
   allowDangerouslySkipPermissions?: boolean
   betas?: string[]
-  allowedTools?: string[]
-  settingSources?: string[]
-  cwd?: string
-  mcpServers?: Record<string, unknown>
-  systemPrompt?: {
-    type: string
-    preset: string
-    append?: string
-  }
   spawnClaudeCodeProcess?: (input: SpawnClaudeCodeProcessInput) => ChildProcess
+  allowedTools?: string[]
+  cwd?: string
+  settingSources?: string[]
+  mcpServers?: Record<string, unknown>
+  systemPrompt?: { type: string; preset: string; append?: string }
 }
 
 interface ClaudeQueryInput {
@@ -61,8 +48,8 @@ const getContextUsageMock = vi.fn()
 const queryMock = vi.fn<(input: ClaudeQueryInput) => ClaudeQuerySession>()
 const spawnMock = vi.hoisted(() => vi.fn())
 const spawnSyncMock = vi.hoisted(() => vi.fn())
-const sdkToolMock = vi.hoisted(() => vi.fn())
 const createSdkMcpServerMock = vi.hoisted(() => vi.fn())
+const toolMock = vi.hoisted(() => vi.fn())
 const logMock = {
   warn: vi.fn(),
   error: vi.fn(),
@@ -75,8 +62,8 @@ vi.mock('electron-log', () => ({
 
 vi.mock('@anthropic-ai/claude-agent-sdk', () => ({
   query: queryMock,
-  tool: sdkToolMock,
   createSdkMcpServer: createSdkMcpServerMock,
+  tool: toolMock,
 }))
 
 vi.mock('child_process', () => ({
@@ -115,8 +102,8 @@ describe('executeClaudeCode', () => {
     queryMock.mockReset()
     spawnMock.mockReset()
     spawnSyncMock.mockReset()
-    sdkToolMock.mockReset()
     createSdkMcpServerMock.mockReset()
+    toolMock.mockReset()
     logMock.warn.mockReset()
     logMock.error.mockReset()
     logMock.info.mockReset()
@@ -518,144 +505,58 @@ describe('executeClaudeCode', () => {
     })
   })
 
-  it('registers BitSentry list, run, and inspect tools through the Claude SDK MCP server', async () => {
+  it('registers the in-process host MCP server for incident chat', async () => {
     queryMock.mockReturnValue({
       async *[Symbol.asyncIterator]() {
-        await Promise.resolve()
-        yield {
-          type: 'result',
-          subtype: 'success',
-          result: 'Inspected the completed execution.',
-        }
+        yield { type: 'result', subtype: 'success', result: 'Runbook list is ready.' }
       },
-      getContextUsage: getContextUsageMock.mockResolvedValue({
-        totalTokens: 0,
-        maxTokens: 0,
-      }),
+      getContextUsage: getContextUsageMock.mockResolvedValue({ totalTokens: 0, maxTokens: 0 }),
       close: closeMock,
     })
-    sdkToolMock.mockImplementation((name, description, inputShape, handler) => ({
-      name,
-      description,
-      inputShape,
-      handler,
-    }))
-    createSdkMcpServerMock.mockImplementation((options) => options)
-
-    const executeHostTool = vi.fn().mockImplementation((toolCall) => Promise.resolve({
-      output: `${toolCall.name} completed`,
-    }))
-    const hostToolTransport = {
-      tools: [
-        {
-          name: 'list_runbooks',
-          description: 'List runbooks.',
-          inputShape: z.object({}).shape,
-        },
-        {
-          name: 'execute_runbook',
-          description: 'Run a runbook.',
-          inputShape: z.object({ runbookTitle: z.string() }).shape,
-        },
-        {
-          name: 'get_runbook_execution',
-          description: 'Inspect a runbook execution.',
-          inputShape: z.object({ executionId: z.string().optional() }).shape,
-        },
-      ],
-      execute: executeHostTool,
-    }
+    toolMock.mockImplementation((name, _description, _schema, handler) => ({ name, handler }))
+    createSdkMcpServerMock.mockReturnValue({ transport: 'in-process' })
 
     const { executeClaudeCode } =
       await import('@bitsentry-ce/desktop-cli/runtime/desktop-coding-agents')
-
     await executeClaudeCode({
-      prompt: '[user]: List, run, and inspect the Sentry runbook.',
+      prompt: 'List incident runbooks.',
       binaryPath: 'claude',
       abortController: new AbortController(),
-      model: 'claude-opus-4-8',
-      fastMode: true,
       accessLevel: 'auto-accept-edits',
-      hostToolTransport,
-      systemPrompt: 'You are the BitSentry incident agent.',
-      cwd: '/workspace/that-must-not-be-loaded',
+      systemPrompt: 'You are an incident-response assistant.',
+      hostToolContext: {
+        gateway: {} as never,
+        session: { id: 'session-1' },
+      },
     })
 
-    const queryOptions = getQueryOptions(0)
-    expect(queryOptions.allowedTools).toEqual([
+    const options = getQueryOptions(0)
+    expect(createSdkMcpServerMock).toHaveBeenCalledWith(expect.objectContaining({
+      name: 'bitsentry',
+      alwaysLoad: true,
+    }))
+    expect(options.mcpServers).toEqual({ bitsentry: { transport: 'in-process' } })
+    expect(options.allowedTools).toEqual(expect.arrayContaining([
       'mcp__bitsentry__list_runbooks',
       'mcp__bitsentry__execute_runbook',
       'mcp__bitsentry__get_runbook_execution',
-    ])
-    expect(queryOptions.settingSources).toEqual([])
-    expect(queryOptions.model).toBe('claude-opus-4-8')
-    expect(queryOptions.settings).toEqual({ fastMode: true })
-    expect(queryOptions.cwd).toMatch(/bitsentry-claude-/)
-    expect(queryOptions.cwd).not.toBe('/workspace/that-must-not-be-loaded')
-    expect(queryOptions.systemPrompt).toEqual({
+    ]))
+    expect(options.settingSources).toEqual([])
+    expect(options.systemPrompt).toEqual({
       type: 'preset',
       preset: 'claude_code',
-      append: 'You are the BitSentry incident agent.',
+      append: 'You are an incident-response assistant.\n\nThis is an incident-chat session with runbook tools only. The only available tools are list_runbooks, execute_runbook, and get_runbook_execution. After execute_runbook, call get_runbook_execution once with waitForCompletion: true. Do not poll it. General file access, shell commands, and web research are out of scope for this session. If the user asks for out-of-scope work, explain that limitation instead of attempting a built-in tool.',
     })
+    expect(options.cwd).not.toBe(process.cwd())
+    expect(existsSync(options.cwd ?? '')).toBe(false)
 
-    const mcpServer = queryOptions.mcpServers?.bitsentry as {
-      name: string
-      alwaysLoad: boolean
-      tools: Array<{
-        name: string
-        handler(args: Record<string, unknown>): Promise<unknown>
-      }>
-    }
-    expect(mcpServer).toMatchObject({
-      name: 'bitsentry',
-      alwaysLoad: true,
+    const executeTool = toolMock.mock.results
+      .map((result) => result.value as { name: string; handler: (args: Record<string, unknown>) => Promise<unknown> })
+      .find((toolDefinition) => toolDefinition.name === 'execute_runbook')
+    await expect(executeTool?.handler({ runbookTitle: 42 })).resolves.toMatchObject({
+      isError: true,
+      content: [{ type: 'text' }],
     })
-
-    await mcpServer.tools[0].handler({})
-    await mcpServer.tools[1].handler({ runbookTitle: 'Sentry Desktop Error Check' })
-    await mcpServer.tools[2].handler({ executionId: 'execution-1' })
-    expect(executeHostTool.mock.calls.map(([toolCall]) => ({
-      name: toolCall.name,
-      args: toolCall.args,
-    }))).toEqual([
-      { name: 'list_runbooks', args: {} },
-      {
-        name: 'execute_runbook',
-        args: { runbookTitle: 'Sentry Desktop Error Check' },
-      },
-      {
-        name: 'get_runbook_execution',
-        args: { executionId: 'execution-1' },
-      },
-    ])
-  })
-
-  it('reads supported Claude models through the SDK without MCP settings', async () => {
-    const supportedModelsMock = vi.fn().mockResolvedValue([
-      { value: 'claude-opus-4-8', supportsFastMode: true },
-    ])
-    queryMock.mockReturnValue({
-      async *[Symbol.asyncIterator]() {
-        await Promise.resolve()
-      },
-      getContextUsage: getContextUsageMock.mockResolvedValue({
-        totalTokens: 0,
-        maxTokens: 0,
-      }),
-      close: closeMock,
-      supportedModels: supportedModelsMock,
-    })
-
-    const { listSupportedClaudeModels } =
-      await import('@bitsentry-ce/coding-agents/claude-code-provider.service')
-    await expect(listSupportedClaudeModels('claude')).resolves.toEqual([
-      { value: 'claude-opus-4-8', supportsFastMode: true },
-    ])
-
-    expect(supportedModelsMock).toHaveBeenCalledOnce()
-    expect(getQueryOptions(0).settingSources).toEqual(['user', 'project', 'local'])
-    expect(getQueryOptions(0).mcpServers).toBeUndefined()
-    expect(closeMock).toHaveBeenCalledOnce()
   })
 
   it('enables the Claude 1M context beta when requested', async () => {

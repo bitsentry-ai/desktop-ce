@@ -1,31 +1,24 @@
-import log from 'electron-log'
+import { codingAgentsLogger as log } from './logger.js'
 import { execFile } from 'child_process'
 import type {
   LocalAiProviderKey,
   LocalAiSettings,
   LocalAiStreamDelta,
   LocalAiExecutionResult,
-  LocalAiHostToolTransport,
   CLIProbeResult,
 } from './types.js'
 import { DEFAULT_LOCAL_AI_SETTINGS } from './types.js'
 import { probeClaudeCode, probeCodex, probeOpenCode, probeCursor, detectBinary, doctor, type DoctorResult } from './cli-probe.service.js'
-import {
-  executeClaudeCode,
-  listSupportedClaudeModels,
-  type ClaudeSupportedModel,
-} from './claude-code-provider.service.js'
-import {
-  filterSelectableModelIds,
-  getCatalogModelIds,
-  resolveCatalogModelRuntimeSelection,
-} from '@bitsentry-ce/components/llm/modelCatalog'
+import { executeClaudeCode } from './claude-code-provider.service.js'
+import { getCatalogModelIds } from '@bitsentry-ce/components/llm/modelCatalog'
 import { CodexAppServerClient } from './codex-app-server-client.js'
-import { executeCodex, normalizeCodexExecutionError } from './codex-provider.service.js'
+import { executeCodex } from './codex-provider.service.js'
 import type { OpenCodeExecutionOptions } from './opencode-provider.service.js'
 import { executeCursor } from './cursor-provider.service.js'
 import { createCodingAgentsProcessEnv } from './coding-agents-process-env.js'
 import { createCommandInvocation, resolveOpenCodeWindowsBinary } from './cli-binary-resolution.js'
+import { HostMcpServerService, type HostMcpEndpoint } from './host-mcp-server.service.js'
+import type { HostToolContext } from '@bitsentry-ce/core/features/agent-runtime'
 
 const SETTINGS_KEY = 'local_ai_settings'
 const CLAUDE_CODE_CATALOG_MODELS = getCatalogModelIds('claude_code')
@@ -42,6 +35,24 @@ const CURSOR_CATALOG_MODELS = [
   'grok-build-0.1',
 ]
 const OPEN_CODE_MODELS_LOCK_RETRY_DELAYS_MS = [150, 350]
+
+export function prependHostSystemInstructions(
+  prompt: string,
+  systemPrompt: string | undefined,
+): string {
+  const instructions = systemPrompt?.trim()
+  if (instructions === undefined || instructions === '') return prompt
+
+  // Cursor ACP, Codex app-server, and OpenCode do not expose a supported
+  // system-message field. Keep host instructions structurally distinct from
+  // replayed chat text instead of impersonating a conversation role.
+  return [
+    '## BitSentry host instructions',
+    instructions,
+    '## Conversation',
+    prompt,
+  ].join('\n\n')
+}
 
 export interface CodingAgentsSettingsStore {
   setting: {
@@ -99,79 +110,6 @@ function readTraitString(value: string | boolean | undefined): string | undefine
   }
 
   return undefined
-}
-
-function normalizeClaudeModelId(value: string): string {
-  return value
-    .trim()
-    .toLowerCase()
-    .replace(/\[[^\]]+\]$/, '')
-    .replace(/-\d{8}$/, '')
-}
-
-function getClaudeModelMatchKeys(value: string, allowFamilyAlias: boolean): string[] {
-  const normalized = normalizeClaudeModelId(value)
-  const keys = new Set([normalized])
-  if (allowFamilyAlias) {
-    const aliasMatch = normalized.match(/^(?:claude-)?(opus|sonnet|haiku|fable)$/)
-    if (aliasMatch !== null) {
-      const latestCatalogModel = CLAUDE_CODE_CATALOG_MODELS.find((modelId) =>
-        modelId.startsWith(`claude-${aliasMatch[1]}-`))
-      if (latestCatalogModel !== undefined) {
-        keys.add(normalizeClaudeModelId(latestCatalogModel))
-      }
-    }
-  }
-  return [...keys]
-}
-
-function claudeModelIsSupported(
-  modelId: string,
-  supportedModels: ReadonlyMap<string, ClaudeSupportedModel>,
-): boolean {
-  const runtimeSelection = resolveCatalogModelRuntimeSelection('claude_code', modelId)
-  const runtimeModelId = runtimeSelection.modelId
-  if (runtimeModelId === undefined) {
-    return false
-  }
-
-  const supportedModel = supportedModels.get(normalizeClaudeModelId(runtimeModelId))
-  if (supportedModel === undefined) {
-    return false
-  }
-
-  return runtimeSelection.traitValues.fastMode !== true || supportedModel.supportsFastMode === true
-}
-
-function filterClaudeCatalogModels(
-  supportedModels: ClaudeSupportedModel[],
-): string[] {
-  const supportedById = new Map<string, ClaudeSupportedModel>()
-  for (const model of supportedModels) {
-    for (const key of getClaudeModelMatchKeys(model.value, model.resolvedModel === undefined)) {
-      supportedById.set(key, model)
-    }
-    if (model.resolvedModel !== undefined) {
-      for (const key of getClaudeModelMatchKeys(model.resolvedModel, false)) {
-        supportedById.set(key, model)
-      }
-    }
-  }
-  return CLAUDE_CODE_CATALOG_MODELS.filter((modelId) =>
-    claudeModelIsSupported(modelId, supportedById))
-}
-
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error)
-}
-
-function formatClaudeModelDiscoveryError(error: unknown): Error {
-  const message = errorMessage(error)
-  const normalized = message.toLowerCase()
-  if (/(unauthori[sz]ed|forbidden|access denied|not authenticated|permission|entitlement)/.test(normalized)) {
-    return new Error(`Claude model access unauthorized: ${message}`)
-  }
-  return new Error(`Claude model availability unavailable: ${message}`)
 }
 
 function createDefaultLocalAiSettings(): LocalAiSettings {
@@ -248,6 +186,7 @@ function wait(ms: number): Promise<void> {
 export class CodingAgentsProviderService {
   private settings: LocalAiSettings = createDefaultLocalAiSettings()
   private probeCache = new Map<LocalAiProviderKey, CLIProbeResult>()
+  private readonly hostMcpServer = new HostMcpServerService()
   private openCodeModelsInFlight:
     | { key: string; promise: Promise<string[]> }
     | undefined
@@ -526,36 +465,35 @@ export class CodingAgentsProviderService {
     onDelta?: (delta: LocalAiStreamDelta) => void,
     cwd?: string,
     model?: string,
-    accessLevel?: 'supervised' | 'auto-accept-edits' | 'full-access',
+    accessLevel?: 'auto-accept-edits' | 'full-access',
     traitValues?: Record<string, string | boolean>,
-    hostToolTransport?: LocalAiHostToolTransport,
+    hostToolContext?: HostToolContext,
     systemPrompt?: string,
   ): Promise<LocalAiExecutionResult> {
     const settings = getProviderSettings(this.settings, provider)
     if (!settings.enabled) {
       throw new Error(`Local AI provider "${provider}" is disabled. Enable it in Settings.`)
     }
-    const { binaryPath } = await this.prepareProviderForExecution(provider)
+    const { binaryPath, probe } = await this.prepareProviderForExecution(provider)
+    const mcpEndpoint = await this.createHostMcpEndpoint(
+      provider,
+      probe,
+      accessLevel,
+      hostToolContext,
+    )
+    const promptWithHostInstructions = prependHostSystemInstructions(prompt, systemPrompt)
 
     if (provider === 'claude_code') {
-      const runtimeSelection = resolveCatalogModelRuntimeSelection(
-        'claude_code',
-        model,
-        traitValues,
-      )
       return executeClaudeCode({
         prompt,
         binaryPath,
         abortController,
         cwd,
-        model: runtimeSelection.modelId,
-        fastMode: typeof runtimeSelection.traitValues.fastMode === 'boolean'
-          ? runtimeSelection.traitValues.fastMode
-          : undefined,
+        model,
         accessLevel,
-        maxTurns: effortToMaxTurns(readTraitString(runtimeSelection.traitValues.effort)),
-        contextWindow: readTraitString(runtimeSelection.traitValues.contextWindow),
-        hostToolTransport,
+        maxTurns: effortToMaxTurns(readTraitString(traitValues?.effort)),
+        contextWindow: readTraitString(traitValues?.contextWindow),
+        hostToolContext,
         systemPrompt,
         onDelta,
       })
@@ -563,7 +501,7 @@ export class CodingAgentsProviderService {
 
     if (provider === 'opencode') {
       return this.dependencies.executeOpenCode({
-        prompt,
+        prompt: promptWithHostInstructions,
         binaryPath,
         abortController,
         cwd,
@@ -571,26 +509,28 @@ export class CodingAgentsProviderService {
         accessLevel,
         traitValues,
         opencodeArgs: this.settings.opencode.opencodeArgs,
+        mcpEndpoint,
         onDelta,
       })
     }
 
     if (provider === 'cursor') {
       return executeCursor({
-        prompt,
+        prompt: promptWithHostInstructions,
         binaryPath,
         abortController,
         cwd,
         model,
         accessLevel,
         traitValues,
+        mcpEndpoint,
         onDelta,
         debug: this.dependencies.debugRecorder,
       })
     }
 
     return executeCodex({
-      prompt,
+      prompt: promptWithHostInstructions,
       binaryPath,
       abortController,
       cwd,
@@ -598,39 +538,29 @@ export class CodingAgentsProviderService {
       accessLevel,
       traitValues,
       codexArgs: this.settings.codex.codexArgs,
+      mcpEndpoint,
       onDelta,
     })
   }
 
-  /**
-   * Coding CLIs expose text subprocess boundaries, so the adapter uses the
-   * versioned structured JSON compatibility response defined by core.
-   */
-  getHostToolProtocol(provider: LocalAiProviderKey): 'mcp' | 'structured_cli' {
-    return provider === 'claude_code' ? 'mcp' : 'structured_cli'
+  private async createHostMcpEndpoint(
+    provider: LocalAiProviderKey,
+    probe: CLIProbeResult,
+    accessLevel: 'auto-accept-edits' | 'full-access' | undefined,
+    context: HostToolContext | undefined,
+  ): Promise<HostMcpEndpoint | undefined> {
+    if (provider === 'claude_code' || context === undefined) return undefined
+    if (probe.status !== 'ready' || probe.version === null) {
+      throw new Error(
+        `Local AI provider "${provider}" must support MCP host tools. Update the CLI and run its doctor check again.`,
+      )
+    }
+    return await this.hostMcpServer.createSession(context)
   }
 
   async listModels(provider: LocalAiProviderKey): Promise<string[]> {
     if (provider === 'claude_code') {
-      const settings = getProviderSettings(this.settings, provider)
-      const binaryPath = await detectBinary(provider, settings.binaryPath) ?? settings.binaryPath
-      try {
-        const supportedModels = await listSupportedClaudeModels(binaryPath)
-        const models = filterClaudeCatalogModels(supportedModels)
-        if (models.length === 0) {
-          throw new Error('Claude Code SDK reported no supported catalog models for this account.')
-        }
-        return models
-      } catch (error) {
-        const formattedError = formatClaudeModelDiscoveryError(error)
-        log.warn('[local-ai] Failed to list Claude models:', formattedError)
-        this.dependencies.reportError(formattedError, {
-          provider: 'claude_code',
-          operation: 'listModels',
-          binaryPath: settings.binaryPath,
-        })
-        throw formattedError
-      }
+      return [...CLAUDE_CODE_CATALOG_MODELS]
     }
 
     if (provider === 'opencode') {
@@ -722,20 +652,15 @@ export class CodingAgentsProviderService {
       const result = toRecord(await client.sendRequest('model/list', {}))
       const models = getModelRecords(result)
       if (models !== undefined) {
-        return filterSelectableModelIds(
-          'codex',
-          models.map(readModelId).filter((id): id is string => id !== null),
-        )
+        return models.map(readModelId).filter((id): id is string => id !== null)
       }
     } catch (err) {
-      const normalizedError = normalizeCodexExecutionError(err)
-      log.warn('[local-ai] Failed to list Codex models:', normalizedError)
-      this.dependencies.reportError(normalizedError, {
+      log.warn('[local-ai] Failed to list Codex models:', err)
+      this.dependencies.reportError(err, {
         provider: 'codex',
         operation: 'listModels',
         binaryPath: this.settings.codex.binaryPath,
       })
-      throw normalizedError
     } finally {
       await client?.kill()
     }

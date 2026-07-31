@@ -25,21 +25,9 @@ export const agentToolResultEnvelopeSchema = z.object({
   result: agentToolResultSchema,
 }).strict()
 
-/**
- * Compatibility response for coding CLIs that only expose a text subprocess
- * boundary. It is a complete JSON document, never embedded in a text tag.
- */
-export const structuredCliToolResponseSchema = z.object({
-  version: z.literal(AGENT_TOOL_PROTOCOL_VERSION),
-  type: z.literal('tool_calls'),
-  toolCalls: z.array(agentToolCallSchema).min(1),
-  content: z.string().optional(),
-}).strict()
-
 export const agentToolProtocolSchema = z.enum([
   'native_function_calling',
   'mcp',
-  'structured_cli',
   'none',
 ])
 
@@ -47,7 +35,6 @@ export type AgentToolCall = z.infer<typeof agentToolCallSchema>
 export type AgentToolResult = z.infer<typeof agentToolResultSchema>
 export type AgentToolResultEnvelope = z.infer<typeof agentToolResultEnvelopeSchema>
 export type AgentToolProtocol = z.infer<typeof agentToolProtocolSchema>
-export type StructuredCliToolResponse = z.infer<typeof structuredCliToolResponseSchema>
 
 export function createAgentToolResultEnvelope(
   toolCall: AgentToolCall,

@@ -1,6 +1,9 @@
 import os from 'os'
-import log from 'electron-log'
+import { mkdtemp, rm } from 'fs/promises'
+import path from 'path'
+import { codingAgentsLogger as log } from './logger.js'
 import { CodexAppServerClient, type JsonRpcId } from './codex-app-server-client.js'
+import type { HostMcpEndpoint } from './host-mcp-server.service.js'
 import type { LocalAiStreamDelta, LocalAiExecutionResult } from './types.js'
 import {
   getCodexPolicies,
@@ -26,18 +29,10 @@ export interface CodexExecutionOptions {
   accessLevel?: AccessLevel
   traitValues?: Record<string, string | boolean>
   codexArgs?: string[]
+  mcpEndpoint?: HostMcpEndpoint
   onDelta?: (delta: LocalAiStreamDelta) => void
   debug?: CodexDebugRecorder
 }
-
-const PROMPT_ONLY_ALLOWED_ITEM_TYPES = new Set([
-  'agentMessage',
-  'userMessage',
-  'reasoning',
-  'agent_reasoning',
-  'plan',
-  'Plan',
-])
 
 function asRecord(value: unknown): Record<string, unknown> | undefined {
   if (value === null || typeof value !== 'object' || Array.isArray(value)) {
@@ -250,7 +245,16 @@ export async function executeCodex(
   options: CodexExecutionOptions,
 ): Promise<LocalAiExecutionResult> {
   const debug = options.debug
-  const cwd = options.cwd ?? os.tmpdir()
+  const effectiveAccessLevel = normalizeAccessLevel(
+    options.accessLevel ?? DEFAULT_ACCESS_LEVEL,
+  )
+  // Codex treats its thread cwd as the workspace sandbox root. Safe Tools
+  // must never inherit the broad system temp directory, where unrelated app
+  // data (including the live SQLite database) can be readable.
+  const scratchDirectory = options.cwd === undefined && effectiveAccessLevel !== 'full-access'
+    ? await mkdtemp(path.join(os.tmpdir(), 'bitsentry-codex-'))
+    : undefined
+  const cwd = options.cwd ?? scratchDirectory ?? os.tmpdir()
   const codexArgs = withCodexModelArgs(options.codexArgs ?? [], options.model)
   let effectiveCodexArgs: string[] | undefined
   if (codexArgs.length > 0) {
@@ -262,7 +266,6 @@ export async function executeCodex(
   let output = ''
   let threadId: string | undefined
   let activeTurnId: string | undefined
-  let promptOnlyViolation: Error | undefined
   let tokenUsage: LocalAiExecutionResult['tokenUsage']
   let pendingAssistantMessageBreak = false
   const streamedAgentMessageIds = new Set<string>()
@@ -302,32 +305,14 @@ export async function executeCodex(
   }
 
   if (isAbortSignalAborted(options.abortController.signal)) {
+    if (scratchDirectory !== undefined) await rm(scratchDirectory, { recursive: true, force: true })
     return { output: '', exitCode: -1 }
   }
 
   options.abortController.signal.addEventListener('abort', onAbort, { once: true })
 
-  const effectiveAccessLevel = normalizeAccessLevel(
-    options.accessLevel ?? DEFAULT_ACCESS_LEVEL,
-  )
-  const isPromptOnly = effectiveAccessLevel === 'supervised'
   const isAutoAcceptEdits = effectiveAccessLevel === 'auto-accept-edits'
   const isFullAccess = effectiveAccessLevel === 'full-access'
-
-  const failForPromptOnlyViolation = (method: string): void => {
-    if (!isPromptOnly || promptOnlyViolation !== undefined) return
-
-    promptOnlyViolation = new Error(`Codex attempted ${method} during prompt-only mode`)
-    log.warn('[codex-provider] Prompt-only violation:', method)
-    options.onDelta?.({ type: 'status', status: 'failed' })
-
-    if (threadId !== undefined && activeTurnId !== undefined) {
-      client.sendRequest('turn/interrupt', { threadId, turnId: activeTurnId }).catch(() => {
-        // If interrupt fails, kill below still stops the app-server.
-      })
-    }
-    void client.kill()
-  }
 
   client.on('notification', (notification: { method: string; params: unknown }) => {
     const params = asRecord(notification.params)
@@ -425,12 +410,6 @@ export async function executeCodex(
         if (itemType === 'agentMessage' && output.trim().length > 0) {
           pendingAssistantMessageBreak = true
         }
-        if (
-          itemType !== undefined &&
-          !PROMPT_ONLY_ALLOWED_ITEM_TYPES.has(itemType)
-        ) {
-          failForPromptOnlyViolation(`item/started:${itemType}`)
-        }
         break
       }
 
@@ -445,11 +424,8 @@ export async function executeCodex(
       case 'item/commandExecution/outputDelta':
       case 'item/commandExecution/terminalInteraction':
       case 'item/fileChange/outputDelta': {
-        failForPromptOnlyViolation(notification.method)
-        if (!isPromptOnly) {
-          for (const delta of codexStreamDeltasFromNotification(notification.method, params)) {
-            options.onDelta?.(delta)
-          }
+        for (const delta of codexStreamDeltasFromNotification(notification.method, params)) {
+          options.onDelta?.(delta)
         }
         break
       }
@@ -479,18 +455,13 @@ export async function executeCodex(
 
   client.on('serverRequest', (request: { id: JsonRpcId; method: string; params: unknown }) => {
     if (request.method === 'item/permissions/requestApproval') {
-      if (isPromptOnly) {
-        failForPromptOnlyViolation(request.method)
-        client.respondToServerRequest(request.id, { permissions: {}, scope: 'turn' })
-        return
-      }
       // Codex interprets result.permissions as the granted SUBSET of the requested
       // permissions. Echoing back arbitrary requested fileSystem roots would let
       // a model widen itself beyond the active sandboxPolicy (e.g. to ~/.ssh).
-      // BitSentry uses Codex as a chat/runbook assistant, not a code editor — the
+      // BitSentry uses Codex as a chat/runbook assistant, not a code editor, so the
       // chat path doesn't pass cwd and doesn't need to edit arbitrary local files.
-      // Therefore only full-access grants permission expansions; supervised and
-      // auto-accept-edits stay within their sandboxPolicy boundary.
+      // Therefore only full-access grants permission expansions; Safe Tools
+      // stays within its sandboxPolicy boundary.
       const params = asRecord(request.params)
       const requestedPermissions = asRecord(params?.permissions) ?? {}
       if (isFullAccess) {
@@ -499,11 +470,6 @@ export async function executeCodex(
         client.respondToServerRequest(request.id, { permissions: {}, scope: 'turn' })
       }
     } else if (request.method.endsWith('requestApproval')) {
-      if (isPromptOnly) {
-        failForPromptOnlyViolation(request.method)
-        client.respondToServerRequest(request.id, { decision: 'decline' })
-        return
-      }
       if (isFullAccess) {
         client.respondToServerRequest(request.id, { decision: 'acceptForSession' })
       } else if (isAutoAcceptEdits) {
@@ -526,7 +492,21 @@ export async function executeCodex(
 
     await client.start()
 
-    const threadResult = asRecord(await client.sendRequest('thread/start', { cwd }))
+    const threadConfig = options.mcpEndpoint === undefined
+      ? undefined
+      : {
+          mcp_servers: {
+            bitsentry: {
+              command: options.mcpEndpoint.command,
+              args: options.mcpEndpoint.args,
+              env: options.mcpEndpoint.env,
+            },
+          },
+        }
+    const threadResult = asRecord(await client.sendRequest('thread/start', {
+      cwd,
+      ...(threadConfig === undefined ? {} : { config: threadConfig }),
+    }))
     const thread = asRecord(threadResult?.thread)
     threadId =
       readStringField(thread, 'id') ??
@@ -538,13 +518,6 @@ export async function executeCodex(
     // Suppress unhandled rejection if turn/start fails before we await this.
     const turnCompletion = new Promise<void>((resolve, reject) => {
       const onNotification = (notification: { method: string; params: unknown }) => {
-        if (promptOnlyViolation !== undefined) {
-          client.removeListener('notification', onNotification)
-          client.removeListener('closed', onClosed)
-          reject(promptOnlyViolation)
-          return
-        }
-
         if (
           notification.method === 'turn/completed' ||
           notification.method === 'thread/completed'
@@ -581,10 +554,6 @@ export async function executeCodex(
 
       const onClosed = (reason: string) => {
         client.removeListener('notification', onNotification)
-        if (promptOnlyViolation !== undefined) {
-          reject(promptOnlyViolation)
-          return
-        }
         if (options.abortController.signal.aborted) {
           resolve()
         } else {
@@ -634,7 +603,15 @@ export async function executeCodex(
     }
   } finally {
     options.abortController.signal.removeEventListener('abort', onAbort)
+    const stderrTail = client.getStderrTail().trim()
+    if (stderrTail.length > 0) {
+      log.warn('[codex-provider] subprocess stderr tail', {
+        agentSessionId: options.mcpEndpoint?.agentSessionId ?? 'unknown',
+        stderrTail,
+      })
+    }
     await client.kill()
+    if (scratchDirectory !== undefined) await rm(scratchDirectory, { recursive: true, force: true })
   }
 
   let error: string | undefined

@@ -21,6 +21,7 @@ import type {
   RunbookParameterValues,
   RunbookRecord,
 } from '@bitsentry-ce/core/features/runbooks/desktop-runbook-ce.types'
+import { executeHostTool } from '@bitsentry-ce/core/features/agent-runtime'
 
 type LlmChatRequest = Parameters<AgentRuntimeLlmAdapter['chatWithTools']>[0]
 type MockLlmAdapter = {
@@ -34,7 +35,7 @@ type RunbookStartOptions = {
   incidentThreadId?: string
   parameterValues?: RunbookParameterValues
   source?: 'manual' | 'agent'
-  accessLevel?: 'supervised' | 'auto-accept-edits' | 'full-access'
+  accessLevel?: 'auto-accept-edits' | 'full-access'
 }
 type TestRunbookExecutionService = {
   get: AgentRuntimeRunbookGateway['get']
@@ -459,6 +460,70 @@ describe('summarizeRunbookExecutionForToolOutput', () => {
 })
 
 describe('AgentRuntimeService runbook outcomes', () => {
+  it('records Claude MCP host tools in the thread snapshot and replay transcript', async () => {
+    const runbookStore = {
+      list: vi.fn().mockResolvedValue([
+        makeRunbook('rb-sentry', 'Investigate Sentry', [
+          { id: 'step-1', type: 'external_source', title: 'Fetch Sentry issues' },
+        ]),
+      ]),
+    }
+    const runbookExecutionService = {
+      start: vi.fn().mockResolvedValue({
+        executionId: '11111111-1111-4111-8111-111111111111',
+        resultId: 'result-1',
+      }),
+      waitForCompletion: vi.fn(),
+      get: vi.fn().mockResolvedValue(makeExecution({ status: 'running', completedAt: undefined })),
+      getLatestForIncidentThread: vi.fn().mockResolvedValue(null),
+    }
+    const llmAdapter = {
+      chatWithTools: vi
+        .fn()
+        .mockImplementationOnce(async (input: LlmChatRequest) => {
+          await executeHostTool(input.hostToolContext!, 'execute_runbook', {
+            runbookTitle: 'Investigate Sentry',
+          })
+          return {
+            content: 'I started the Investigate Sentry runbook.',
+            toolCalls: [],
+            toolProtocol: 'mcp' as const,
+          }
+        })
+        .mockResolvedValueOnce({ content: 'The runbook is still running.', toolCalls: [] }),
+    }
+    const sentEvents: AgentRuntimeEventPayload[] = []
+    const service = createRuntime({
+      llmAdapter,
+      runbookStore,
+      runbookExecutionService,
+      sentEvents,
+    })
+
+    const sessionId = await service.start({
+      prompt: 'Use the available host tools to investigate the active incident.',
+      incidentThreadId: 'incident-mcp-ledger',
+      llm: { providerKey: 'claude_code', model: 'claude-sonnet-4-6' },
+    })
+    await waitForCondition(() => service.getStatus(sessionId).state === 'COMPLETED')
+
+    expect(getAllAgentToolCalls(service, sessionId)).toEqual([
+      expect.objectContaining({ toolName: 'execute_runbook', state: 'done' }),
+    ])
+    expect(sentEvents.some((payload) => payload.event.type === 'tool_start')).toBe(true)
+    expect(sentEvents.some((payload) => payload.event.type === 'tool_end')).toBe(true)
+    expect(sentEvents.some((payload) => (
+      payload.event.type === 'activity' && payload.event.phase === 'running_runbook'
+    ))).toBe(true)
+    expect(llmAdapter.chatWithTools).toHaveBeenCalledTimes(1)
+
+    await service.send({ sessionId, message: 'What is its status?' })
+    await waitForCondition(() => service.getStatus(sessionId).state === 'COMPLETED')
+    expect(getSecondCallMessages(llmAdapter)).toEqual(expect.arrayContaining([
+      expect.objectContaining({ role: 'tool', toolCallId: expect.stringContaining('execute_runbook') }),
+    ]))
+  })
+
   it('makes list_runbooks results visible to local provider responses', async () => {
     const runbookStore = {
       list: vi.fn().mockResolvedValue([
@@ -516,88 +581,6 @@ describe('AgentRuntimeService runbook outcomes', () => {
     expect(getRequiredToolContent(getSecondCallMessages(llmAdapter))).toContain(
       'Summarize the available runbooks for the user in clean Markdown.',
     )
-  })
-
-  it('completes with a natural response when a structured CLI emits no host operation', async () => {
-    const llmAdapter = {
-      chatWithTools: vi.fn().mockResolvedValue({
-        content: 'Tell me which system you want to investigate and I can help interpret its current state.',
-        toolCalls: [],
-        toolProtocol: 'structured_cli',
-      }),
-    }
-    const service = createRuntime({ llmAdapter })
-
-    const sessionId = await service.start({
-      prompt: 'Find the available runbooks.',
-      incidentThreadId: 'incident-runbook-structured-natural-response',
-      llm: { providerKey: 'codex', model: 'gpt-5.4-mini' },
-    })
-
-    await waitForCondition(() => service.getStatus(sessionId).state === 'COMPLETED')
-
-    expect(getAllAgentToolCalls(service, sessionId)).toEqual([])
-    expect(getLastAgentMessage(service.getSnapshot(sessionId)).finalText).toContain(
-      'Tell me which system you want to investigate',
-    )
-  })
-
-  it('retries then fails clearly when Haiku emits foreign function-call markup', async () => {
-    const sentEvents: AgentRuntimeEventPayload[] = []
-    const haikuFinalText = [
-      "I'll discover the available runbooks for this incident.",
-      '<function_calls>',
-      '[{"tool_name": "list_runbooks", "arguments": {}}]',
-      '</function_calls>',
-      '<function_calls>',
-      '',
-      'Here are the available runbooks for this incident:',
-      '',
-      '1. **CPU Spike Diagnosis** – Analyzes high CPU usage by examining process metrics, system load, and thread activity to identify the root cause.',
-      '',
-      '2. **Memory Leak Detection** – Investigates memory consumption patterns to detect potential memory leaks or unbounded growth in process memory usage.',
-      '',
-      '3. **Disk Space Analysis** – Examines disk usage across filesystems to identify space-consuming files, directories, and processes contributing to low disk space conditions.',
-      '',
-      '4. **Network Connectivity Troubleshooting** – Diagnoses network issues by checking connectivity, DNS resolution, routing, and active network connections.',
-      '',
-      '5. **Service Restart & Recovery** – Provides diagnostics and controlled restart procedures for failed or degraded services with health verification.',
-      '',
-      '6. **Log Aggregation & Analysis** – Retrieves and analyzes system and application logs within specified time windows to identify error patterns and anomalies.',
-      '',
-      '7. **Database Performance Check** – Analyzes database query performance, connection pools, and resource utilization to diagnose database-related issues.',
-      '',
-      '8. **Security & Access Audit** – Examines authentication logs, permission changes, and suspicious access patterns for security-related incidents.',
-      '',
-      'Which runbook would you like to execute, or would you like me to help diagnose a specific issue?',
-    ].join('\n')
-    const llmAdapter = {
-      chatWithTools: vi.fn().mockResolvedValue({
-        content: haikuFinalText,
-        toolCalls: [],
-        toolProtocol: 'structured_cli',
-        hasForeignToolCallMarkup: true,
-      }),
-    }
-    const service = createRuntime({ llmAdapter, sentEvents })
-
-    const sessionId = await service.start({
-      prompt: 'Find the available runbooks.',
-      incidentThreadId: 'incident-runbook-haiku-foreign-markup',
-      llm: { providerKey: 'claude_code', model: 'claude-haiku-4-5' },
-    })
-
-    await waitForCondition(() => service.getStatus(sessionId).state === 'FAILED')
-
-    expect(llmAdapter.chatWithTools.mock.calls).toHaveLength(2)
-    expect(getRequiredSystemContent(
-      getSecondCallMessages(llmAdapter),
-      'Your previous response promised or described a host tool call',
-    )).toContain('Emit exactly one JSON document')
-    expect(sentEvents.some((payload) => (
-      payload.event.type === 'error' &&
-      payload.event.message.includes('after the protocol retry')
-    ))).toBe(true)
   })
 
   it('executes an exactly named runbook from an incident prompt before asking the model to summarize it', async () => {
@@ -720,7 +703,7 @@ describe('AgentRuntimeService runbook outcomes', () => {
         '(List recent Sentry issues step running), so I’ll pull the current results before summarizing.',
       ].join(' '),
     ],
-  ])('rejects %s without inspecting the started execution', async (_name, qaFailureText) => {
+  ])('does not parse %s into a host-tool retry', async (_name, qaFailureText) => {
     const executionId = '66666666-6666-4666-8666-666666666666'
     const sentEvents: AgentRuntimeEventPayload[] = []
     const runbookStore = {
@@ -752,23 +735,16 @@ describe('AgentRuntimeService runbook outcomes', () => {
       llm: { providerKey: 'claude_code', model: 'claude-sonnet-5' },
     })
 
-    await waitForCondition(() => service.getStatus(sessionId).state === 'FAILED')
+    await waitForCondition(() => service.getStatus(sessionId).state === 'COMPLETED')
 
-    expect(llmAdapter.chatWithTools.mock.calls).toHaveLength(2)
-    expect(getRequiredSystemContent(
-      getSecondCallMessages(llmAdapter),
-      'claimed a runbook execution outcome before inspecting the persisted execution',
-    )).toContain(`get_runbook_execution for executionId ${executionId}`)
+    expect(llmAdapter.chatWithTools.mock.calls).toHaveLength(1)
     expect(getAllAgentToolCalls(service, sessionId)).toEqual([
       expect.objectContaining({
         toolName: 'execute_runbook',
         output: expect.stringContaining(executionId),
       }),
     ])
-    expect(sentEvents.some((payload) => (
-      payload.event.type === 'error' &&
-      payload.event.message.includes('RUNBOOK_EXECUTION_INSPECTION_REQUIRED')
-    ))).toBe(true)
+    expect(sentEvents.some((payload) => payload.event.type === 'error')).toBe(false)
   })
 
   it('accepts an execution outcome claim only after inspecting that persisted execution', async () => {
@@ -778,7 +754,7 @@ describe('AgentRuntimeService runbook outcomes', () => {
       runbookId: 'rb-posthog',
       runbookTitle: 'Posthog Error Check',
       status: 'failed',
-      completionReason: 'failed',
+      completionReason: 'step_failed',
       steps: [
         {
           actionId: 'step-1',
@@ -1308,10 +1284,12 @@ describe('AgentRuntimeService runbook outcomes', () => {
           toolCalls: [],
         }),
     }
+    const sentEvents: AgentRuntimeEventPayload[] = []
     const service = createRuntime({
       llmAdapter,
       runbookStore,
       runbookExecutionService,
+      sentEvents,
     })
 
     const sessionId = await service.start({
@@ -1326,6 +1304,9 @@ describe('AgentRuntimeService runbook outcomes', () => {
     expect(toolContext).toContain('Status: running')
     expect(toolContext).not.toContain('SERVER-292')
     expect(toolContext).not.toContain('SERVER-293')
+    expect(sentEvents.some((payload) => (
+      payload.event.type === 'activity' && payload.event.phase === 'running_runbook'
+    ))).toBe(true)
   })
 
   it('gives the model the top ten PostHog issue titles from a large plugin result', async () => {
@@ -3410,28 +3391,21 @@ describe('runtime projection outcomes', () => {
     }
     const llmAdapter = {
       chatWithTools: vi.fn().mockImplementation(async (input: LlmChatRequest) => {
-        const transport = input.hostToolTransport
-        if (transport === undefined) {
-          throw new Error('Expected Claude MCP host-tool transport')
+        const context = input.hostToolContext
+        if (context === undefined) {
+          throw new Error('Expected Claude MCP host-tool context')
         }
 
-        await transport.execute({
-          id: 'mcp-list',
-          name: 'list_runbooks',
-          args: {},
+        await executeHostTool(context, 'list_runbooks', {})
+        const runResult = await executeHostTool(context, 'execute_runbook', {
+          runbookTitle: 'Sentry Desktop Error Check',
         })
-        const runResult = await transport.execute({
-          id: 'mcp-run',
-          name: 'execute_runbook',
-          args: { runbookTitle: 'Sentry Desktop Error Check' },
+        expect(runResult?.output).toContain(execution.executionId)
+        const inspectResult = await executeHostTool(context, 'get_runbook_execution', {
+          executionId: execution.executionId,
+          waitForCompletion: true,
         })
-        expect(runResult.output).toContain(execution.executionId)
-        const inspectResult = await transport.execute({
-          id: 'mcp-inspect',
-          name: 'get_runbook_execution',
-          args: { executionId: execution.executionId },
-        })
-        expect(inspectResult.output).toContain('Fetched 5 Sentry issues.')
+        expect(inspectResult?.output).toContain('Fetched 5 Sentry issues.')
 
         return {
           content: 'Sentry Desktop Error Check completed successfully after fetching 5 issues.',
@@ -3457,6 +3431,9 @@ describe('runtime projection outcomes', () => {
     await waitForCondition(() => service.getStatus(sessionId).state === 'COMPLETED')
 
     expect(llmAdapter.chatWithTools).toHaveBeenCalledTimes(1)
+    expect(runbookExecutionService.waitForCompletion).toHaveBeenCalledWith(execution.executionId, {
+      timeoutMs: 30_000,
+    })
     const finalText = getLastAgentMessage(service.getSnapshot(sessionId)).finalText
     expect(finalText).toContain('Runbook result: Sentry Desktop Error Check')
     expect(finalText).toContain(

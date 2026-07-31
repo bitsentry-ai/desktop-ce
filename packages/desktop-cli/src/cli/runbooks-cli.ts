@@ -59,12 +59,12 @@ export interface RunbookCliRuntime {
   executeRunbook(
     input: RunbookCliExecuteInput,
   ): Promise<{ executionId: string; resultId: string }>
-  getExecution(executionId: string): Promise<Record<string, unknown> | null>
+  getExecution(executionId: string): Promise<object | null>
   cancelExecution(executionId: string): Promise<void>
   waitForExecution(
     executionId: string,
     options?: { pollIntervalMs?: number; timeoutMs?: number },
-  ): Promise<Record<string, unknown> | null>
+  ): Promise<object | null>
 }
 
 export interface RunbookCliRuntimeOptions {

@@ -8,8 +8,6 @@
   "common.accessSelector.allowsAnalysisToolsBlocksShell": "Mengizinkan alat analisis, memblokir perintah shell",
   "common.accessSelector.allowsCommandExecutionAndAll": "Mengizinkan eksekusi perintah dan semua panggilan alat",
   "common.accessSelector.allTools": "Semua Alat",
-  "common.accessSelector.askFirst": "Tanya Dahulu",
-  "common.accessSelector.promptsBeforeEveryToolExecution": "Meminta konfirmasi sebelum setiap eksekusi alat",
   "common.accessSelector.safeTools": "Alat Aman",
   "common.actions.back": "Kembali",
   "common.actions.cancel": "Batal",

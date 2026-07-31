@@ -116,6 +116,12 @@ const SMOKE_TEST_READY_MARKER = '[smoke] desktop-ready'
 const SMOKE_RUNBOOK_COMPLETE_MARKER = '[smoke] runbook-completed'
 const isRunbookSmokeScenario = process.env.BITSENTRY_DESKTOP_SMOKE_SCENARIO === 'runbook'
 const smokeMarkerFilePath = process.env.BITSENTRY_DESKTOP_SMOKE_MARKER_FILE
+// electron-log resolves its file path from Electron's mutable app name. Pin
+// the dev destination before the first agent/provider log line is emitted.
+if (isDebug) {
+  log.transports.file.setAppName('@bitsentry-ce/desktop')
+  log.transports.file.level = 'info'
+}
 log.transports.console.level = false
 if (isDebug) {
   log.transports.console.level = 'info'

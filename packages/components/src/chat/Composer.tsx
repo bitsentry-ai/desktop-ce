@@ -29,7 +29,6 @@ import {
   getModelContextWindowLimit,
   providerSupportsPlanMode,
   isCliProvider,
-  requiresToolCapableAccess,
 } from "../llm/modelCatalog";
 import { useTranslation } from "@bitsentry-ce/i18n";
 import {
@@ -276,17 +275,11 @@ export function Composer({
 
   let accessSelector: ReactNode = null;
   if (selectedProviderKey !== null && isCliProvider(selectedProviderKey)) {
-    let levels: AccessLevel[] | undefined;
-    if (requiresToolCapableAccess(selectedProviderKey)) {
-      levels = ["auto-accept-edits", "full-access"];
-    }
-
     accessSelector = (
       <AccessSelector
         value={accessLevel}
         onChange={setAccessLevel}
         disabled={isProcessing}
-        levels={levels}
       />
     );
   }

@@ -176,7 +176,7 @@ export interface RunbookExecutionLlmAdapter {
     signal: AbortSignal;
     onDelta?: RunbookExecutionOnDelta;
     llm?: LlmSelection;
-    accessLevel?: "supervised" | "auto-accept-edits" | "full-access";
+    accessLevel?: "auto-accept-edits" | "full-access";
     traitValues?: Record<string, string | boolean>;
   }): Promise<ChatResponse>;
   // The provider an action falls back to when it does not name one itself.
@@ -193,7 +193,7 @@ export interface RunbookExecutionLocalAiProvider {
     onDelta?: (delta: LocalAiStreamDelta) => void,
     cwd?: string,
     model?: string,
-    accessLevel?: "supervised" | "auto-accept-edits" | "full-access",
+    accessLevel?: "auto-accept-edits" | "full-access",
     traitValues?: Record<string, string | boolean>,
   ): Promise<LocalAiExecutionResult>;
 }
@@ -337,7 +337,7 @@ function resolveStartContext(
 interface RunbookExecutionSession {
   resultId: string;
   incidentThreadId?: string;
-  accessLevel?: "supervised" | "auto-accept-edits" | "full-access";
+  accessLevel?: "auto-accept-edits" | "full-access";
   parameterValues: RunbookParameterValues;
   redactedParameterValues: RunbookParameterValues;
   secureParameterKeys: Set<string>;
@@ -384,7 +384,7 @@ interface RunbookExecutionStartOptions {
   requestKey?: string;
   source?: RunbookExecutionSource;
   triggerContext?: RunbookTriggerContext;
-  accessLevel?: "supervised" | "auto-accept-edits" | "full-access";
+  accessLevel?: "auto-accept-edits" | "full-access";
 }
 
 interface ResolvedRunbookExecutionStartContext {
@@ -401,16 +401,8 @@ export function resolveRunbookLocalAiAccessLevel(
   providerKey: LocalAiProviderKey,
   accessLevel: RunbookExecutionSession["accessLevel"],
 ): RunbookLocalAiAccessLevel | undefined {
-  if (
-    (providerKey === "codex" ||
-      providerKey === "opencode" ||
-      providerKey === "cursor") &&
-    (accessLevel === undefined || accessLevel === "supervised")
-  ) {
-    return "auto-accept-edits";
-  }
-
-  return accessLevel;
+  void providerKey;
+  return accessLevel ?? "auto-accept-edits";
 }
 
 interface ResolvedTemplate {

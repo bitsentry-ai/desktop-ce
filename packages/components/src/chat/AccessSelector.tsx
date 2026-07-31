@@ -1,11 +1,11 @@
 /**
  * AccessSelector — dropdown for tool execution autonomy.
- * Always visible in the toolbar. Resets to Supervised on new session.
+ * Always visible in the toolbar. Defaults to Safe Tools on new sessions.
  */
 
 import { useState, useRef, useEffect } from "react";
 import { cn } from "../lib/utils";
-import { ChevronDown, Lock, Shield, Unlock } from "lucide-react";
+import { ChevronDown, Shield, Unlock } from "lucide-react";
 import {
   type AccessLevel,
   ACCESS_LEVEL_LABELS,
@@ -13,14 +13,12 @@ import {
 } from "./types";
 import { useTranslation } from "@bitsentry-ce/i18n";
 
-const ACCESS_ICONS: Record<AccessLevel, typeof Lock> = {
-  supervised: Lock,
+const ACCESS_ICONS: Record<AccessLevel, typeof Shield> = {
   "auto-accept-edits": Shield,
   "full-access": Unlock,
 };
 
 const ACCESS_LEVELS: AccessLevel[] = [
-  "supervised",
   "auto-accept-edits",
   "full-access",
 ];
@@ -29,7 +27,7 @@ interface AccessSelectorProps {
   value: AccessLevel;
   onChange: (level: AccessLevel) => void;
   disabled?: boolean;
-  /** Subset of levels to show. Defaults to all three. */
+  /** Subset of levels to show. Defaults to both levels. */
   levels?: AccessLevel[];
 }
 

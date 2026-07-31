@@ -123,27 +123,24 @@ export interface ComposerImageAttachment {
 }
 
 // ---------------------------------------------------------------------------
-// Access Level (ADR-0001: default is 'supervised')
+// Access Level
 // ---------------------------------------------------------------------------
 
 /**
  * Controls how much autonomy the agent has when executing tool calls.
  *
- * - supervised:         Prompt before every tool execution.
  * - auto-accept-edits:  Allow bounded analysis/file tools, block shell execution.
  * - full-access:        Allow unrestricted tool execution including shell and HTTP.
  */
-export type AccessLevel = 'supervised' | 'auto-accept-edits' | 'full-access'
-export const DEFAULT_ACCESS_LEVEL: AccessLevel = 'supervised'
+export type AccessLevel = 'auto-accept-edits' | 'full-access'
+export const DEFAULT_ACCESS_LEVEL: AccessLevel = 'auto-accept-edits'
 
 export const ACCESS_LEVEL_LABELS: Record<AccessLevel, string> = {
-  supervised: 'common.accessSelector.askFirst',
   'auto-accept-edits': 'common.accessSelector.safeTools',
   'full-access': 'common.accessSelector.allTools',
 }
 
 export const ACCESS_LEVEL_DESCRIPTIONS: Record<AccessLevel, string> = {
-  supervised: 'common.accessSelector.promptsBeforeEveryToolExecution',
   'auto-accept-edits': 'common.accessSelector.allowsAnalysisToolsBlocksShell',
   'full-access': 'common.accessSelector.allowsCommandExecutionAndAll',
 }

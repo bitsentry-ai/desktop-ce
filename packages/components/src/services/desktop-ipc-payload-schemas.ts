@@ -424,7 +424,7 @@ export function createDesktopIpcPayloadValidator(
       runbookRevisionNumber: z.number().int().positive().optional(),
       incidentThreadId: z.string().trim().min(1).optional(),
       accessLevel: z
-        .enum(["supervised", "auto-accept-edits", "full-access"])
+        .enum(["auto-accept-edits", "full-access"])
         .optional(),
     }),
     "agent:send": z.looseObject({
@@ -436,7 +436,7 @@ export function createDesktopIpcPayloadValidator(
       runbookRevisionNumber: z.number().int().positive().optional(),
       incidentThreadId: z.string().trim().min(1).optional(),
       accessLevel: z
-        .enum(["supervised", "auto-accept-edits", "full-access"])
+        .enum(["auto-accept-edits", "full-access"])
         .optional(),
     }),
     "agent:cancel": z.object({
@@ -512,7 +512,7 @@ export function createDesktopIpcPayloadValidator(
       parameterValues: z.record(z.string(), z.string()).optional(),
       incidentThreadId: z.string().optional(),
       accessLevel: z
-        .enum(["supervised", "auto-accept-edits", "full-access"])
+        .enum(["auto-accept-edits", "full-access"])
         .optional(),
       triggerContext: runbookTriggerContextSchema.optional(),
     }),
