@@ -156,6 +156,22 @@ function readSettingString(setting: unknown): string {
   return ''
 }
 
+function readSettingStringArray(setting: unknown): string[] {
+  const raw = readSettingString(setting)
+  if (raw.length === 0) return []
+
+  try {
+    const parsed: unknown = JSON.parse(raw)
+    if (!Array.isArray(parsed)) return []
+    return parsed.filter(
+      (value): value is string =>
+        typeof value === 'string' && value.trim().length > 0,
+    )
+  } catch {
+    return []
+  }
+}
+
 function readReleaseChannel(): 'stable' | 'beta' | 'preview' {
   const value = process.env.BITSENTRY_RELEASE_CHANNEL
   if (value === 'beta' || value === 'preview') {
@@ -682,6 +698,12 @@ app
               where: { key: `llm.${providerKey}.model` },
             })
             return readSettingString(setting)
+          },
+          readAvailableModels: async (providerKey) => {
+            const setting = await db.setting.findUnique({
+              where: { key: `llm.${providerKey}.availableModels` },
+            })
+            return readSettingStringArray(setting)
           },
           resolveAvailableModels: (providerKey, isReady, provider) =>
             listReadyModels(

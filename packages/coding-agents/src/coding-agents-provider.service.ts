@@ -16,11 +16,12 @@ import {
   type ClaudeSupportedModel,
 } from './claude-code-provider.service.js'
 import {
+  filterSelectableModelIds,
   getCatalogModelIds,
   resolveCatalogModelRuntimeSelection,
 } from '@bitsentry-ce/components/llm/modelCatalog'
 import { CodexAppServerClient } from './codex-app-server-client.js'
-import { executeCodex } from './codex-provider.service.js'
+import { executeCodex, normalizeCodexExecutionError } from './codex-provider.service.js'
 import type { OpenCodeExecutionOptions } from './opencode-provider.service.js'
 import { executeCursor } from './cursor-provider.service.js'
 import { createCodingAgentsProcessEnv } from './coding-agents-process-env.js'
@@ -693,15 +694,20 @@ export class CodingAgentsProviderService {
       const result = toRecord(await client.sendRequest('model/list', {}))
       const models = getModelRecords(result)
       if (models !== undefined) {
-        return models.map(readModelId).filter((id): id is string => id !== null)
+        return filterSelectableModelIds(
+          'codex',
+          models.map(readModelId).filter((id): id is string => id !== null),
+        )
       }
     } catch (err) {
-      log.warn('[local-ai] Failed to list Codex models:', err)
-      this.dependencies.reportError(err, {
+      const normalizedError = normalizeCodexExecutionError(err)
+      log.warn('[local-ai] Failed to list Codex models:', normalizedError)
+      this.dependencies.reportError(normalizedError, {
         provider: 'codex',
         operation: 'listModels',
         binaryPath: this.settings.codex.binaryPath,
       })
+      throw normalizedError
     } finally {
       await client?.kill()
     }

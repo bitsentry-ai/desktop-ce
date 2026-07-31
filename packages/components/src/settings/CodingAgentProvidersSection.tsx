@@ -3,7 +3,11 @@ import { Button } from '@bitsentry-ce/components/ui/button'
 import { Badge } from '@bitsentry-ce/components/ui/badge'
 import { useToast } from '@bitsentry-ce/components/hooks/use-toast'
 import { useDebouncedAutoSave } from '@bitsentry-ce/components/hooks/useDebouncedAutoSave'
-import { getCatalogModelIds, getModelDisplayName } from '@bitsentry-ce/components/llm/modelCatalog'
+import {
+  filterSelectableModelIds,
+  getCatalogModelIds,
+  getModelDisplayName,
+} from '@bitsentry-ce/components/llm/modelCatalog'
 import { useTranslation } from '@bitsentry-ce/i18n'
 import {
   getDesktopApi,
@@ -240,15 +244,20 @@ function areStringArraysEqual(left: string[] | undefined, right: string[] | unde
   return left.every((value, index) => value === right[index])
 }
 
-function applySavedModel(setter: ProviderStateSetter, model: string): void {
-  if (model.length === 0) {
+function applySavedModel(
+  setter: ProviderStateSetter,
+  provider: ProviderId,
+  model: string,
+): void {
+  const selectableModel = filterSelectableModelIds(provider, [model])[0]
+  if (selectableModel === undefined) {
     return
   }
 
   setter((prev) => ({
     ...prev,
-    model,
-    availableModels: mergeModelOption(prev.availableModels, model),
+    model: selectableModel,
+    availableModels: mergeModelOption(prev.availableModels, selectableModel),
   }))
 }
 
@@ -484,6 +493,7 @@ function ProviderBinarySettings({
 }
 
 interface ProviderModelSettingsProps {
+  provider: ProviderId
   state: CodingAgentProviderState
   syncState: SyncState
   syncMessage: string
@@ -493,6 +503,7 @@ interface ProviderModelSettingsProps {
 }
 
 function ProviderModelSettings({
+  provider,
   state,
   syncState,
   syncMessage,
@@ -535,7 +546,7 @@ function ProviderModelSettings({
         </option>
         {state.availableModels.map((model) => (
           <option key={model} value={model}>
-            {model}
+            {getModelDisplayName(provider, model)}
           </option>
         ))}
       </select>
@@ -655,6 +666,7 @@ function ProviderPanelBody({
         />
 
         <ProviderModelSettings
+          provider={meta.id}
           state={state}
           syncState={syncState}
           syncMessage={syncMessage}
@@ -913,10 +925,10 @@ export function CodingAgentProvidersSection({
       const providerSettingsResult = settingsResult[1]
       if (providerSettingsResult.status === 'fulfilled') {
         const providerSettings = providerSettingsResult.value as ProviderSettingsRecord
-        applySavedModel(setClaudeCode, providerSettings.claude_code?.model ?? '')
-        applySavedModel(setCodex, providerSettings.codex?.model ?? '')
-        applySavedModel(setOpenCode, providerSettings.opencode?.model ?? '')
-        applySavedModel(setCursor, providerSettings.cursor?.model ?? '')
+        applySavedModel(setClaudeCode, 'claude_code', providerSettings.claude_code?.model ?? '')
+        applySavedModel(setCodex, 'codex', providerSettings.codex?.model ?? '')
+        applySavedModel(setOpenCode, 'opencode', providerSettings.opencode?.model ?? '')
+        applySavedModel(setCursor, 'cursor', providerSettings.cursor?.model ?? '')
       }
 
       if (
@@ -1080,12 +1092,12 @@ export function CodingAgentProvidersSection({
       if (detectedModels.length > 0) {
         baseModels = detectedModels
       }
-      const models = Array.from(
-        new Set([
-          ...baseModels,
-          currentModel,
-        ]),
-      ).filter((modelId) => modelId.trim().length > 0)
+      const models = filterSelectableModelIds(
+        provider,
+        detectedModels.length > 0
+          ? detectedModels
+          : [...baseModels, currentModel],
+      )
       setter((prev) => ({
         ...prev,
         availableModels: models,
