@@ -30,7 +30,7 @@ export interface AgentSessionRef {
   id: string
   currentTurnId?: string
   incidentThreadId?: string
-  accessLevel?: 'supervised' | 'auto-accept-edits' | 'full-access'
+  accessLevel?: 'auto-accept-edits' | 'full-access'
   runbookContext?: RunbookContext
   latestRunbookExecutionId?: string
   latestRunbookResultId?: string

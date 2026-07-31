@@ -211,10 +211,6 @@ function stringifyToolSearchValue(value: unknown): string {
 }
 
 function canAllowTool(accessLevel: AccessLevel, toolKind: CursorToolKind): boolean {
-  if (accessLevel === 'supervised') {
-    return false
-  }
-
   if (accessLevel === 'full-access') {
     return true
   }

@@ -310,7 +310,7 @@ export async function executeCodex(
 
   options.abortController.signal.addEventListener('abort', onAbort, { once: true })
 
-  const isPromptOnly = effectiveAccessLevel === 'supervised'
+  const isPromptOnly = false
   const isAutoAcceptEdits = effectiveAccessLevel === 'auto-accept-edits'
   const isFullAccess = effectiveAccessLevel === 'full-access'
 
@@ -489,8 +489,8 @@ export async function executeCodex(
       // a model widen itself beyond the active sandboxPolicy (e.g. to ~/.ssh).
       // BitSentry uses Codex as a chat/runbook assistant, not a code editor, so the
       // chat path doesn't pass cwd and doesn't need to edit arbitrary local files.
-      // Therefore only full-access grants permission expansions; supervised and
-      // auto-accept-edits stay within their sandboxPolicy boundary.
+      // Therefore only full-access grants permission expansions; Safe Tools
+      // stays within its sandboxPolicy boundary.
       const params = asRecord(request.params)
       const requestedPermissions = asRecord(params?.permissions) ?? {}
       if (isFullAccess) {

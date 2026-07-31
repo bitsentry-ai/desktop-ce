@@ -126,7 +126,7 @@ export interface LocalAiProviderPort {
     onDelta?: (delta: LocalAiStreamDelta) => void,
     cwd?: string,
     model?: string,
-    accessLevel?: 'supervised' | 'auto-accept-edits' | 'full-access',
+    accessLevel?: 'auto-accept-edits' | 'full-access',
     traitValues?: Record<string, string | boolean>,
     hostToolContext?: HostToolContext,
     systemPrompt?: string,
@@ -139,16 +139,8 @@ function resolveAgentLocalAiAccessLevel(
   providerKey: LocalAiProviderKey,
   accessLevel: LocalAiAccessLevel,
 ): LocalAiAccessLevel {
-  if (
-    (providerKey === 'codex' ||
-      providerKey === 'opencode' ||
-      providerKey === 'cursor') &&
-    (accessLevel === undefined || accessLevel === 'supervised')
-  ) {
-    return 'auto-accept-edits'
-  }
-
-  return accessLevel
+  void providerKey
+  return accessLevel ?? 'auto-accept-edits'
 }
 
 export interface ChatImageAttachment {
@@ -214,7 +206,7 @@ export interface ChatWithToolsInput {
   signal: AbortSignal
   onDelta?: OnDelta
   llm?: LlmSelection
-  accessLevel?: 'supervised' | 'auto-accept-edits' | 'full-access'
+  accessLevel?: 'auto-accept-edits' | 'full-access'
   traitValues?: Record<string, string | boolean>
   hostToolContext?: HostToolContext
 }
@@ -875,10 +867,7 @@ export class AgentLlmAdapterService {
 
     const accessLevel = resolveAgentLocalAiAccessLevel(providerKey, input.accessLevel)
 
-    // In supervised mode, omit the host-operation contract altogether so a CLI
-    // response cannot request an operation outside the selected access level.
-    const isSupervised = accessLevel === 'supervised' || accessLevel === undefined
-    const toolProtocol = isSupervised ? 'none' : 'mcp'
+    const toolProtocol = input.hostToolContext === undefined ? 'none' : 'mcp'
 
     try {
       const result = await this.localAiProvider.execute(

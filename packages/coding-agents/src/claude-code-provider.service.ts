@@ -18,9 +18,9 @@ import {
 } from './windows-cmd.js'
 import { linkSubprocessAbort } from './subprocess-lifecycle.js'
 
-export type ClaudeCodeAccessLevel = 'supervised' | 'auto-accept-edits' | 'full-access'
+export type ClaudeCodeAccessLevel = 'auto-accept-edits' | 'full-access'
 
-export const DEFAULT_CLAUDE_CODE_ACCESS_LEVEL: ClaudeCodeAccessLevel = 'supervised'
+export const DEFAULT_CLAUDE_CODE_ACCESS_LEVEL: ClaudeCodeAccessLevel = 'auto-accept-edits'
 
 export interface ClaudeCodeDebugRecorder {
   recordEvent(stage: string, data: Record<string, unknown>): void
@@ -215,8 +215,6 @@ function createWindowsCmdShimSpawner(): (
 
 function resolveAllowedTools(accessLevel: ClaudeCodeAccessLevel): string[] | undefined {
   switch (accessLevel) {
-    case 'supervised':
-      return []
     case 'auto-accept-edits':
       // Read + write tools, but no shell/command execution.
       return ['Read', 'Glob', 'Grep', 'LS', 'Edit', 'Write']
@@ -533,10 +531,6 @@ function resolveClaudeMaxTurns(
   accessLevel: ClaudeCodeAccessLevel,
   requestedMaxTurns: number | undefined,
 ): number {
-  if (accessLevel === 'supervised') {
-    return 1
-  }
-
   return requestedMaxTurns ?? 8
 }
 
@@ -729,7 +723,7 @@ export async function executeClaudeCode(
     options.accessLevel ?? DEFAULT_CLAUDE_CODE_ACCESS_LEVEL
   const query = await loadClaudeSdkQuery()
   const scratchDirectory = await createNeutralClaudeScratchDirectory()
-  const mcpServer = effectiveAccessLevel === 'supervised' || options.hostToolContext === undefined
+  const mcpServer = options.hostToolContext === undefined
     ? undefined
     : await createClaudeHostMcpServer(options.hostToolContext)
   const queryOptions = buildClaudeCodeQueryOptions(

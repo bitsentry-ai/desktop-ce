@@ -14,7 +14,7 @@ export interface ExecuteRunbookInput {
   runbookId: string;
   parameterValues?: Record<string, string>;
   incidentThreadId?: string;
-  accessLevel?: "supervised" | "auto-accept-edits" | "full-access";
+  accessLevel?: "auto-accept-edits" | "full-access";
   triggerContext?: {
     entrypoint:
       | "runbooks"

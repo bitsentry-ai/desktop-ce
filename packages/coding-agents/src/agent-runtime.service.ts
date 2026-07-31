@@ -413,7 +413,7 @@ interface AgentSession {
   messages: ChatMessage[] // Conversation history
   runbookContext?: RunbookContext
   llmSelection?: AgentLlmSelection
-  accessLevel?: 'supervised' | 'auto-accept-edits' | 'full-access'
+  accessLevel?: 'auto-accept-edits' | 'full-access'
   traitValues?: Record<string, string | boolean>
   incidentThreadId?: string
   latestRunbookExecutionId?: string

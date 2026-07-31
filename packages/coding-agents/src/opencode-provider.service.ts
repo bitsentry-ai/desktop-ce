@@ -131,28 +131,6 @@ function createOpenCodePermissionEnv(accessLevel: AccessLevel): Record<string, s
   const deny = 'deny'
   const allow = 'allow'
 
-  if (accessLevel === 'supervised') {
-    return {
-      OPENCODE_PERMISSION: JSON.stringify({
-        '*': deny,
-        read: deny,
-        glob: deny,
-        grep: deny,
-        bash: deny,
-        edit: deny,
-        webfetch: deny,
-        websearch: deny,
-        codesearch: deny,
-        external_directory: deny,
-        task: deny,
-        todowrite: deny,
-        lsp: deny,
-        skill: deny,
-        question: allow,
-      }),
-    }
-  }
-
   return {
     OPENCODE_PERMISSION: JSON.stringify({
       read: allow,
@@ -175,19 +153,11 @@ function buildOpenCodePrompt(prompt: string, accessLevel: AccessLevel): string {
     return prompt
   }
 
-  let guardrails = [
+  const guardrails = [
     'You are executing inside BitSentry auto-accept-edits mode.',
     'Do not run shell commands, browse the web, or access external directories.',
     'Use only safe local read/edit style capabilities if the provider permits them.',
   ]
-  if (accessLevel === 'supervised') {
-    guardrails = [
-      'You are executing inside BitSentry prompt-only mode.',
-      'Do not run shell commands, edit files, browse the web, or call external tools.',
-      'Respond only with text based on the prompt and supplied context.',
-    ]
-  }
-
   return [...guardrails, '', prompt].join('\n')
 }
 

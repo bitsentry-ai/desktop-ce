@@ -456,7 +456,7 @@ export class CodingAgentsProviderService {
     onDelta?: (delta: LocalAiStreamDelta) => void,
     cwd?: string,
     model?: string,
-    accessLevel?: 'supervised' | 'auto-accept-edits' | 'full-access',
+    accessLevel?: 'auto-accept-edits' | 'full-access',
     traitValues?: Record<string, string | boolean>,
     hostToolContext?: HostToolContext,
     systemPrompt?: string,
@@ -536,10 +536,10 @@ export class CodingAgentsProviderService {
   private async createHostMcpEndpoint(
     provider: LocalAiProviderKey,
     probe: CLIProbeResult,
-    accessLevel: 'supervised' | 'auto-accept-edits' | 'full-access' | undefined,
+    accessLevel: 'auto-accept-edits' | 'full-access' | undefined,
     context: HostToolContext | undefined,
   ): Promise<HostMcpEndpoint | undefined> {
-    if (provider === 'claude_code' || accessLevel === 'supervised' || context === undefined) return undefined
+    if (provider === 'claude_code' || context === undefined) return undefined
     if (probe.status !== 'ready' || probe.version === null) {
       throw new Error(
         `Local AI provider "${provider}" must support MCP host tools. Update the CLI and run its doctor check again.`,

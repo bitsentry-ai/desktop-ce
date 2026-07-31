@@ -8,8 +8,6 @@
   "common.accessSelector.allowsAnalysisToolsBlocksShell": "Autorise les outils d'analyse, bloque les commandes shell",
   "common.accessSelector.allowsCommandExecutionAndAll": "Autorise l'exécution de commandes et tous les appels d'outils",
   "common.accessSelector.allTools": "Tous les outils",
-  "common.accessSelector.askFirst": "Demander d'abord",
-  "common.accessSelector.promptsBeforeEveryToolExecution": "Demande avant chaque exécution d'outil",
   "common.accessSelector.safeTools": "Outils sûrs",
   "common.actions.back": "Retour",
   "common.actions.cancel": "Annuler",

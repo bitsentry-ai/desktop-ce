@@ -8,8 +8,6 @@
   "common.accessSelector.allowsAnalysisToolsBlocksShell": "允许分析工具，阻止 shell 命令",
   "common.accessSelector.allowsCommandExecutionAndAll": "允许命令执行及所有工具调用",
   "common.accessSelector.allTools": "所有工具",
-  "common.accessSelector.askFirst": "先询问",
-  "common.accessSelector.promptsBeforeEveryToolExecution": "每次工具执行前进行提示",
   "common.accessSelector.safeTools": "安全工具",
   "common.actions.back": "返回",
   "common.actions.cancel": "取消",

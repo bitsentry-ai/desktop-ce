@@ -42,7 +42,6 @@ import {
   type ModelCatalogProviderKey,
   getCapabilityBadges,
   getCatalogModel,
-  requiresToolCapableAccess,
 } from "../llm/modelCatalog";
 import { useTranslation } from "@bitsentry-ce/i18n";
 import { getProviderModelOptions } from "../chat/utils";
@@ -131,7 +130,6 @@ function getTrimmedString(record: UnknownRecord, key: string): string | undefine
 
 function isAccessLevel(value: unknown): value is AccessLevel {
   return (
-    value === "supervised" ||
     value === "auto-accept-edits" ||
     value === "full-access"
   );
@@ -1070,7 +1068,7 @@ export default function IncidentsPage() {
   const [selectedModelId, setSelectedModelId] = useState("");
   // Access level is per-incident state, persisted in the provider lock.
   // Managed here (not in Composer) so it can be saved/restored per chat.
-  const [selectedAccessLevel, setSelectedAccessLevel] = useState<AccessLevel>("supervised");
+  const [selectedAccessLevel, setSelectedAccessLevel] = useState<AccessLevel>("auto-accept-edits");
   const [thinkingEnabled, setThinkingEnabled] = useState(false);
   const [composerImages, setComposerImages] = useState<
     ComposerImageAttachment[]
@@ -1627,18 +1625,6 @@ export default function IncidentsPage() {
     }
   }, [activeId]);
 
-  // Enforce minimum access for CLI providers whose incident tool bridge needs it.
-  useEffect(() => {
-    if (
-      selectedProviderKey !== null &&
-      requiresToolCapableAccess(selectedProviderKey) &&
-      selectedAccessLevel === "supervised"
-    ) {
-      setSelectedAccessLevel("auto-accept-edits");
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedProviderKey]);
-
   // Access level is saved to the provider lock on handleSend and handleNewIncident.
   // No intermediate saves — changes before a send are in-memory only.
   useEffect(() => {
@@ -1655,7 +1641,7 @@ export default function IncidentsPage() {
     if (activeId === null) return;
 
     // Default access level for the new chat
-    const defaultLevel: AccessLevel = "supervised";
+    const defaultLevel: AccessLevel = "auto-accept-edits";
 
     if (configuredProviderKeys.length === 0) {
       setSelectedAccessLevel(defaultLevel);
@@ -1694,16 +1680,9 @@ export default function IncidentsPage() {
       setSelectedModelId("");
     }
 
-    // Restore persisted access level; enforce CLI tool-capable minimum.
+    // Restore persisted access level. Legacy Ask First values normalize to Safe Tools.
     const savedLevel = lock.accessLevel ?? defaultLevel;
-    let effectiveLevel: AccessLevel = savedLevel;
-    if (
-      requiresToolCapableAccess(lock.providerKey) &&
-      savedLevel === "supervised"
-    ) {
-      effectiveLevel = "auto-accept-edits";
-    }
-    setSelectedAccessLevel(effectiveLevel);
+    setSelectedAccessLevel(savedLevel);
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeId, configuredProviderKeys.length, Object.keys(providerConfigs).length]);
