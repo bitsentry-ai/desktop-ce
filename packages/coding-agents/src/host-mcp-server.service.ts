@@ -50,6 +50,30 @@ function hasMatchingToken(receivedToken: string | undefined, expectedToken: stri
   return received.length === expected.length && timingSafeEqual(received, expected)
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
+}
+
+function normalizeMcpRequestArguments(payload: unknown): unknown {
+  const normalizeMessage = (message: unknown): unknown => {
+    if (!isRecord(message) || message.method !== 'tools/call' || !isRecord(message.params)) {
+      return message
+    }
+    if (message.params.arguments !== null && message.params.arguments !== undefined) {
+      return message
+    }
+    return { ...message, params: { ...message.params, arguments: {} } }
+  }
+  return Array.isArray(payload) ? payload.map(normalizeMessage) : normalizeMessage(payload)
+}
+
+async function readMcpRequestBody(request: IncomingMessage): Promise<unknown> {
+  if (request.method !== 'POST') return undefined
+  let body = ''
+  for await (const chunk of request) body += chunk.toString()
+  return body.length === 0 ? undefined : normalizeMcpRequestArguments(JSON.parse(body))
+}
+
 function createSessionServer(session: HostMcpSession): McpServer {
   const server = new McpServer({ name: 'bitsentry-host-tools', version: '1.0.0' })
   for (const hostTool of getHostTools()) {
@@ -186,7 +210,8 @@ export class HostMcpServerService {
     const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined })
     try {
       await server.connect(transport)
-      await transport.handleRequest(request, response)
+      const body = await readMcpRequestBody(request)
+      await transport.handleRequest(request, response, body)
     } finally {
       await server.close()
     }

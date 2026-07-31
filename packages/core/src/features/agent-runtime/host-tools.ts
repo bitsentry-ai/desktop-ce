@@ -393,13 +393,30 @@ export function isHostToolName(name: string): name is HostToolName {
   return getHostTool(name) !== undefined
 }
 
+function normalizeHostToolArgs(rawArgs: unknown): unknown {
+  // Some MCP clients serialize a zero-argument call as null or omit arguments
+  // altogether. Both forms mean the same thing as an empty object; passing
+  // either directly to a strict object schema turns a valid call into a
+  // spurious validation rejection.
+  return rawArgs === null || rawArgs === undefined ? {} : rawArgs
+}
+
+function eventArgs(rawArgs: unknown): Record<string, unknown> {
+  if (rawArgs !== null && typeof rawArgs === 'object' && !Array.isArray(rawArgs)) {
+    return rawArgs as Record<string, unknown>
+  }
+  return {}
+}
+
 export async function executeHostTool(
   context: HostToolContext,
   name: string,
-  rawArgs: Record<string, unknown>,
+  rawArgs: unknown,
 ): Promise<ToolResult | null> {
   const tool = getHostTool(name)
   if (tool === undefined) return null
+  const normalizedArgs = normalizeHostToolArgs(rawArgs)
+  const diagnosticArgs = eventArgs(normalizedArgs)
 
   const toolCallId = createHostToolCallId(tool.name)
   const startedAt = new Date().toISOString()
@@ -407,18 +424,18 @@ export async function executeHostTool(
     type: 'started',
     toolCallId,
     toolName: tool.name,
-    args: rawArgs,
+    args: diagnosticArgs,
     timestamp: startedAt,
   })
 
-  const parsed = tool.argsSchema.safeParse(rawArgs)
+  const parsed = tool.argsSchema.safeParse(normalizedArgs)
   if (!parsed.success) {
     const result = createValidationError(tool.name, parsed.error)
     emitHostToolEvent(context, {
       type: 'failed',
       toolCallId,
       toolName: tool.name,
-      args: rawArgs,
+      args: diagnosticArgs,
       result,
       timestamp: new Date().toISOString(),
     })

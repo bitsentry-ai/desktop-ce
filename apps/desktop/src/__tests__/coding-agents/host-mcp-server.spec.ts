@@ -128,4 +128,48 @@ describe('HostMcpServerService', () => {
       result: { tools: expect.arrayContaining([expect.objectContaining({ name: 'execute_runbook' })]) },
     })
   })
+
+  it('accepts null or omitted arguments for zero-argument MCP tools', async () => {
+    const server = new HostMcpServerService()
+    servers.push(server)
+    const context = createContext()
+    const endpoint = await server.createSession(context)
+
+    const responses = await Promise.all([
+      request(endpoint, {
+        jsonrpc: '2.0', id: 4, method: 'tools/call',
+        params: { name: 'list_runbooks', arguments: null },
+      }),
+      request(endpoint, {
+        jsonrpc: '2.0', id: 5, method: 'tools/call',
+        params: { name: 'list_runbooks' },
+      }),
+    ])
+
+    await expect(Promise.all(responses.map(readMcpResponse))).resolves.toEqual([
+      expect.objectContaining({ id: 4, result: expect.anything() }),
+      expect.objectContaining({ id: 5, result: expect.anything() }),
+    ])
+    expect(context.gateway.listExecutable).toHaveBeenCalledTimes(2)
+  })
+
+  it('keeps concurrent token-scoped requests independent', async () => {
+    const server = new HostMcpServerService()
+    servers.push(server)
+    const context = createContext()
+    const endpoint = await server.createSession(context)
+
+    const responses = await Promise.all(Array.from({ length: 8 }, async (_, index) => {
+      const response = await request(endpoint, {
+        jsonrpc: '2.0',
+        id: index + 10,
+        method: 'tools/list',
+      })
+      return await readMcpResponse(response)
+    }))
+
+    expect(responses).toEqual(Array.from({ length: 8 }, (_, index) =>
+      expect.objectContaining({ id: index + 10, result: expect.objectContaining({ tools: expect.any(Array) }) }),
+    ))
+  })
 })
