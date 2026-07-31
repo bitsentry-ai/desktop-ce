@@ -383,7 +383,7 @@ async function backfillRunbookActionsFromLegacyVersions(): Promise<void> {
   }
 }
 
-// eslint-disable-next-line complexity, sonarjs/cognitive-complexity -- Idempotent schema sync intentionally lists independent migration steps.
+// eslint-disable-next-line complexity -- Idempotent schema sync intentionally lists independent migration steps.
 async function runMigrations(): Promise<void> {
   await ensureMigrationLedger()
   const appliedVersions = await getAppliedMigrationVersions()

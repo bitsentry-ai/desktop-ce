@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/require-await */
 import { describe, expect, it } from 'vitest'
 
 import {
@@ -186,7 +185,6 @@ class EventJournalDatabase {
     const eventId = query.match(/"eventId" = '([^']+)'/)?.[1]
     if (eventId !== undefined && this.journal.has(eventId)) {
       // Generic raw-query fixtures need to emulate the database adapter's cast.
-      // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
       return Promise.resolve([{ eventId } as T])
     }
     return Promise.resolve([])
