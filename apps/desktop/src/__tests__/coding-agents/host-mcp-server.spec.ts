@@ -5,6 +5,7 @@ import {
 } from '@bitsentry-ce/coding-agents/host-mcp-server.service'
 import type { HostMcpEndpoint } from '@bitsentry-ce/coding-agents/host-mcp-server.service'
 import type { HostToolContext } from '@bitsentry-ce/core/features/agent-runtime'
+import type { RunbookExecutionRecord } from '@bitsentry-ce/core/features/runbooks/desktop-runbook.types'
 
 const servers: HostMcpServerService[] = []
 
@@ -21,6 +22,19 @@ function createContext(): HostToolContext {
       cancel: vi.fn(),
     },
     session: { id: 'session-1' },
+  }
+}
+
+function makeExecution(overrides: Partial<RunbookExecutionRecord> = {}): RunbookExecutionRecord {
+  return {
+    executionId: '11111111-1111-4111-8111-111111111111',
+    runbookId: 'rb-kanye-rest',
+    runbookTitle: 'Kanye Rest',
+    status: 'running',
+    startedAt: '2026-07-31T00:00:00.000Z',
+    source: 'agent',
+    steps: [],
+    ...overrides,
   }
 }
 
@@ -171,5 +185,51 @@ describe('HostMcpServerService', () => {
     expect(responses).toEqual(Array.from({ length: 8 }, (_, index) =>
       expect.objectContaining({ id: index + 10, result: expect.objectContaining({ tools: expect.any(Array) }) }),
     ))
+  })
+
+  it('keeps a streamable get_runbook_execution request open until the gateway completes', async () => {
+    const server = new HostMcpServerService()
+    servers.push(server)
+    const context = createContext()
+    const runningExecution = makeExecution()
+    const completedExecution = makeExecution({
+      status: 'completed',
+      completedAt: '2026-07-31T00:00:01.000Z',
+    })
+    let completeExecution: ((execution: RunbookExecutionRecord) => void) | undefined
+    const completion = new Promise<RunbookExecutionRecord>((resolve) => {
+      completeExecution = resolve
+    })
+    context.session.latestRunbookExecutionId = runningExecution.executionId
+    context.gateway.get = vi.fn().mockResolvedValue(runningExecution)
+    context.gateway.waitForCompletion = vi.fn().mockReturnValue(completion)
+    const endpoint = await server.createSession(context)
+
+    const responsePromise = request(endpoint, {
+      jsonrpc: '2.0',
+      id: 20,
+      method: 'tools/call',
+      params: {
+        name: 'get_runbook_execution',
+        arguments: { waitForCompletion: true },
+      },
+    })
+
+    await vi.waitFor(() => {
+      expect(context.gateway.waitForCompletion).toHaveBeenCalledWith(runningExecution.executionId, {
+        timeoutMs: 30_000,
+      })
+    })
+    expect(completeExecution).toBeDefined()
+    completeExecution?.(completedExecution)
+
+    const response = await responsePromise
+    const payload = await readMcpResponse(response) as {
+      result: { content: Array<{ text: string }> }
+    }
+    expect(JSON.parse(payload.result.content[0]?.text ?? '')).toMatchObject({
+      executionId: runningExecution.executionId,
+      status: 'completed',
+    })
   })
 })

@@ -253,11 +253,14 @@ function normalizeGetRunbookExecutionArgs(args: Record<string, unknown>): Record
   }
   delete mergedArgs.input
 
-  if (!('executionId' in mergedArgs)) {
-    return {}
+  const normalized: Record<string, unknown> = {}
+  if ('executionId' in mergedArgs) {
+    normalized.executionId = mergedArgs.executionId
   }
-
-  return { executionId: mergedArgs.executionId }
+  if ('waitForCompletion' in mergedArgs) {
+    normalized.waitForCompletion = mergedArgs.waitForCompletion
+  }
+  return normalized
 }
 
 const sshJournalStringFields = new Set<string>(['host', 'username', 'since', 'until', 'cursor', 'sourceId'])
@@ -1892,11 +1895,11 @@ export class AgentRuntimeService {
         'Runbook parameter defaults are fallback values only when the user did not specify a value.',
         'When prior runbook results provide a combined journalctl window, run the backend log runbook once with that combined since/until instead of starting one runbook per issue row.',
         'When prior runbook results list only individual actionable journalctl windows, use those exact since/until values in execute_runbook.parameterValues for the backend log runbook; do not ask the user to paste timestamps you already received.',
-        'Use get_runbook_execution to inspect the status or results of a started runbook. You may omit executionId to use the latest runbook execution for this incident.',
+        'After starting a runbook, call get_runbook_execution exactly once with waitForCompletion: true to obtain its terminal result or its latest snapshot after 30 seconds. You may omit executionId to use the latest runbook execution for this incident.',
         'If you inspect a runbook in the same assistant response that starts it, omit executionId so the runtime can use the execution that actually started.',
         'Do not final-answer from a runbook start acknowledgement alone when the user asked for cross-validation, matrices, or RCA.',
         'If a later runbook fails, prefer the successful runbook results already present in this incident instead of restarting the entire investigation.',
-        'Do not repeatedly poll get_runbook_execution in the same turn for a running runbook. Start it once, then stop and let the user ask again later.',
+        'Do not poll get_runbook_execution. A single waitForCompletion: true lookup is the only follow-up lookup needed in this response.',
         'Do not claim a runbook was executed unless execute_runbook succeeded.',
         '',
       )
@@ -2893,6 +2896,9 @@ export class AgentRuntimeService {
     }
 
     const normalizedArgs = normalizeToolArgs(toolCall.name, toolCall.args)
+    if (normalizedArgs.waitForCompletion === true) {
+      return false
+    }
     let executionId = ''
     if (typeof normalizedArgs.executionId === 'string') {
       executionId = normalizedArgs.executionId.trim()
@@ -2971,7 +2977,7 @@ export class AgentRuntimeService {
         }
         if (status === 'running' || status === 'pending') {
           const runbookTitle = readFirstStringProperty([payload], 'runbookTitle', 'The runbook')
-          return `${runbookTitle} is still running. I’m stopping here so I don’t repeatedly poll the local executor and spam the LLM provider. Ask me again whenever you want a fresh status check.`
+          return `${runbookTitle} is still running after the completion-aware lookup. I’m reporting its latest state without making another lookup in this response.`
         }
       }
     }
@@ -3433,7 +3439,7 @@ export class AgentRuntimeService {
     if (input.lookupDeferred) {
       lines.push(
         '- This lookup was deferred because this same assistant response also started runbooks.',
-        '- Use the execute_runbook results from this iteration, then call get_runbook_execution in the next response with no executionId or with a real executionId returned by execute_runbook.',
+        '- Call get_runbook_execution once with waitForCompletion: true after the execute_runbook result is available.',
       )
     }
 
@@ -3446,13 +3452,13 @@ export class AgentRuntimeService {
       if (input.status === 'completed') {
         lines.push('- Use the completed output already in context to continue the investigation instead of polling it again.')
       } else {
-        lines.push('Stop polling it again now; no new data will appear until a new execution runs or the user asks again later.')
+        lines.push('Do not make another non-wait lookup in this response. Use get_runbook_execution with waitForCompletion: true when a completion-aware result is needed.')
       }
     }
 
     if (input.shouldInspectStartedRunbook) {
       lines.push(
-        '- If the user needs the runbook results, call get_runbook_execution once next instead of finalizing from this start acknowledgement alone.',
+        '- Call get_runbook_execution once with waitForCompletion: true instead of finalizing from this start acknowledgement alone.',
       )
     }
   }

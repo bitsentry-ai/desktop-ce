@@ -545,7 +545,7 @@ describe('executeClaudeCode', () => {
     expect(options.systemPrompt).toEqual({
       type: 'preset',
       preset: 'claude_code',
-      append: 'You are an incident-response assistant.\n\nThis is an incident-chat session with runbook tools only. The only available tools are list_runbooks, execute_runbook, and get_runbook_execution. General file access, shell commands, and web research are out of scope for this session. If the user asks for out-of-scope work, explain that limitation instead of attempting a built-in tool.',
+      append: 'You are an incident-response assistant.\n\nThis is an incident-chat session with runbook tools only. The only available tools are list_runbooks, execute_runbook, and get_runbook_execution. After execute_runbook, call get_runbook_execution once with waitForCompletion: true. Do not poll it. General file access, shell commands, and web research are out of scope for this session. If the user asks for out-of-scope work, explain that limitation instead of attempting a built-in tool.',
     })
     expect(options.cwd).not.toBe(process.cwd())
     expect(existsSync(options.cwd ?? '')).toBe(false)

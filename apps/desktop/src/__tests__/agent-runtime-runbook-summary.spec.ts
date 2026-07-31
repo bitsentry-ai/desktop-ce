@@ -3403,6 +3403,7 @@ describe('runtime projection outcomes', () => {
         expect(runResult?.output).toContain(execution.executionId)
         const inspectResult = await executeHostTool(context, 'get_runbook_execution', {
           executionId: execution.executionId,
+          waitForCompletion: true,
         })
         expect(inspectResult?.output).toContain('Fetched 5 Sentry issues.')
 
@@ -3430,6 +3431,9 @@ describe('runtime projection outcomes', () => {
     await waitForCondition(() => service.getStatus(sessionId).state === 'COMPLETED')
 
     expect(llmAdapter.chatWithTools).toHaveBeenCalledTimes(1)
+    expect(runbookExecutionService.waitForCompletion).toHaveBeenCalledWith(execution.executionId, {
+      timeoutMs: 30_000,
+    })
     const finalText = getLastAgentMessage(service.getSnapshot(sessionId)).finalText
     expect(finalText).toContain('Runbook result: Sentry Desktop Error Check')
     expect(finalText).toContain(

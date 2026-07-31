@@ -108,6 +108,7 @@ const BITSENTRY_MCP_SERVER_NAME = 'bitsentry'
 const CLAUDE_RUNBOOK_ONLY_SCOPE = [
   'This is an incident-chat session with runbook tools only.',
   'The only available tools are list_runbooks, execute_runbook, and get_runbook_execution.',
+  'After execute_runbook, call get_runbook_execution once with waitForCompletion: true. Do not poll it.',
   'General file access, shell commands, and web research are out of scope for this session.',
   'If the user asks for out-of-scope work, explain that limitation instead of attempting a built-in tool.',
 ].join(' ')
