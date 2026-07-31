@@ -38,6 +38,7 @@ export const structuredCliToolResponseSchema = z.object({
 
 export const agentToolProtocolSchema = z.enum([
   'native_function_calling',
+  'mcp',
   'structured_cli',
   'none',
 ])

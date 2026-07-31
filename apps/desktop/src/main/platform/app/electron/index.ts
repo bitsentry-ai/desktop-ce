@@ -474,7 +474,20 @@ app
         pluginRuntime,
       )
       const runbookResultStore = new SqliteRunbookResultStore(db)
-      await runbookResultStore.markStaleRunningSessionsFailed()
+      // Best-effort startup maintenance: never let recovery of a stale runbook
+      // row prevent the app from launching.
+      try {
+        await runbookResultStore.markStaleRunningSessionsFailed({
+          onRowError: (error, context) => {
+            log.error(
+              `[runbooks] Stale-session recovery skipped result ${context.resultId} (execution ${context.executionId}):`,
+              error,
+            )
+          },
+        })
+      } catch (error) {
+        log.error('[runbooks] Stale-session recovery failed:', error)
+      }
       localAiProvider = new CodingAgentsProviderService(db)
       await localAiProvider.loadSettings()
       registerCodingAgentsHandlers(ipcMain, localAiProvider)

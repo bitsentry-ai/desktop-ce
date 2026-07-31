@@ -214,6 +214,67 @@ describe('AgentLlmAdapterService', () => {
     expect(capturedPrompt).toContain('"type":"tool_calls"')
   })
 
+  it('uses Claude MCP tools without embedding the structured CLI protocol in the user prompt', async () => {
+    const adapter = createAdapter()
+    let capturedPrompt = ''
+    let capturedSystemPrompt: string | undefined
+    let capturedHostToolTransport: Parameters<LocalAiProviderPort['execute']>[8]
+    const hostToolTransport = {
+      tools: [],
+      execute: vi.fn(),
+    }
+
+    adapter.setLocalAiProvider(createLocalAiProvider({
+      getHostToolProtocol: (provider) => (
+        provider === 'claude_code' ? 'mcp' : 'structured_cli'
+      ),
+      execute: (
+        _provider,
+        prompt,
+        _abortController,
+        _onDelta,
+        _cwd,
+        _model,
+        _accessLevel,
+        _traitValues,
+        transport,
+        systemPrompt,
+      ) => {
+        capturedPrompt = prompt
+        capturedHostToolTransport = transport
+        capturedSystemPrompt = systemPrompt
+        return Promise.resolve({ output: 'Here are the available runbooks.' })
+      },
+    }))
+
+    const response = await adapter.chatWithTools({
+      messages: [
+        { role: 'system', content: 'Use real host tools and never invent results.' },
+        { role: 'user', content: 'List the runbooks.' },
+      ],
+      tools: [{
+        name: 'list_runbooks',
+        description: 'List available runbooks.',
+        inputSchema: { type: 'object', properties: {} },
+      }],
+      hostToolTransport,
+      signal: new AbortController().signal,
+      llm: { providerKey: 'claude_code', model: 'claude-sonnet-5' },
+      accessLevel: 'auto-accept-edits',
+    })
+
+    expect(capturedPrompt).toBe('[user]: List the runbooks.')
+    expect(capturedPrompt).not.toContain('BitSentry host tool protocol')
+    expect(capturedPrompt).not.toContain('"type":"tool_calls"')
+    expect(capturedSystemPrompt).toBe('Use real host tools and never invent results.')
+    expect(capturedHostToolTransport).toBe(hostToolTransport)
+    expect(response).toMatchObject({
+      content: 'Here are the available runbooks.',
+      toolCalls: [],
+      toolProtocol: 'mcp',
+    })
+  })
+
   it('hides foreign function-call markup and preserves the retry signal', async () => {
     const adapter = createAdapter()
     const output = [

@@ -35,6 +35,10 @@ interface InvestigationSessionTable {
     where: { id: string }
     data: Record<string, unknown>
   }): Promise<DesktopRunbookResultRow>
+  updateMany(args: {
+    where?: Record<string, unknown>
+    data: Record<string, unknown>
+  }): Promise<{ count: number }>
   findUnique(args: {
     where: Record<string, unknown>
   }): Promise<DesktopRunbookResultRow | null>
@@ -56,12 +60,35 @@ export interface DesktopRunbookResultDatabase {
 
 const runbookSessionRowSchema = z.record(z.string(), z.unknown())
 
+function isTerminalExecutionStatus(
+  status: RunbookExecutionRecord['status'],
+): boolean {
+  return status === 'completed' || status === 'failed' || status === 'cancelled'
+}
+
 function asString(value: unknown, fallback = ''): string {
   if (typeof value === 'string') {
     return value
   }
 
   return fallback
+}
+
+function asIsoTimestamp(value: unknown): string | null {
+  if (value === null || value === undefined) {
+    return null
+  }
+
+  if (value instanceof Date) {
+    return Number.isNaN(value.getTime()) ? null : value.toISOString()
+  }
+
+  if (typeof value !== 'string') {
+    return null
+  }
+
+  const timestamp = new Date(value)
+  return Number.isNaN(timestamp.getTime()) ? value : timestamp.toISOString()
 }
 
 function parseRowExecutionSnapshot(row: unknown): RunbookExecutionRecord | null {
@@ -118,7 +145,13 @@ export interface RunbookResultPersistence {
     ownerId: string,
     completedAt?: string,
   ): Promise<void>
-  markStaleRunningSessionsFailed(options?: { heartbeatGraceMs?: number }): Promise<number>
+  markStaleRunningSessionsFailed(options?: {
+    heartbeatGraceMs?: number
+    onRowError?: (
+      error: unknown,
+      context: { resultId: string; executionId: string },
+    ) => void
+  }): Promise<number>
 }
 
 export interface ApplyExecutionSnapshotEventInput {
@@ -213,23 +246,47 @@ export class SqliteRunbookResultStore implements RunbookResultPersistence {
     resultId: string,
     snapshot: RunbookExecutionRecord,
   ): Promise<void> {
-    await this.db.investigationSession.update({
-      where: { id: resultId },
+    await this.persistExecutionSnapshot(resultId, snapshot)
+    await this.assertSessionRowMatchesSnapshot(resultId, snapshot)
+  }
+
+  private async persistExecutionSnapshot(
+    resultId: string,
+    snapshot: RunbookExecutionRecord,
+  ): Promise<void> {
+    if (isTerminalExecutionStatus(snapshot.status) && snapshot.completedAt === undefined) {
+      throw new Error(
+        `Runbook execution '${snapshot.executionId}' terminal snapshot is missing completedAt`,
+      )
+    }
+
+    const updatedAt = new Date().toISOString()
+    const updateResult = await this.db.investigationSession.updateMany({
+      where: isTerminalExecutionStatus(snapshot.status)
+        ? {
+            id: resultId,
+            OR: [{ status: 'running' }, { status: snapshot.status }],
+          }
+        : { id: resultId, status: snapshot.status },
       data: {
         status: snapshot.status,
-        startedAt: snapshot.startedAt,
         completedAt: snapshot.completedAt ?? null,
         executionSnapshotJson: JSON.stringify(snapshot),
-        updatedAt: new Date().toISOString(),
+        updatedAt,
       },
     })
+    if (updateResult.count !== 1) {
+      throw new Error(
+        `Runbook execution '${snapshot.executionId}' snapshot could not update its session row monotonically`,
+      )
+    }
   }
 
   async applyExecutionSnapshotEvent(
     resultId: string,
     input: ApplyExecutionSnapshotEventInput,
   ): Promise<ExecutionSnapshotEventOutcome> {
-    return this.inTransaction(async () => {
+    const outcome = await this.inTransaction(async () => {
       const safeExecutionId = input.snapshot.executionId.replace(/'/g, "''")
       const safeEventId = input.eventId.replace(/'/g, "''")
       const existing = await this.db.$queryRawUnsafe<{ eventId: string }>(`
@@ -252,7 +309,7 @@ export class SqliteRunbookResultStore implements RunbookResultPersistence {
         return 'stale'
       }
 
-      await this.saveExecutionSnapshot(resultId, input.snapshot)
+      await this.persistExecutionSnapshot(resultId, input.snapshot)
       const safeResultId = resultId.replace(/'/g, "''")
       const safeAppliedAt = new Date().toISOString().replace(/'/g, "''")
       await this.recordExecutionSnapshotAudit({
@@ -276,6 +333,14 @@ export class SqliteRunbookResultStore implements RunbookResultPersistence {
       `)
       return 'accepted'
     })
+
+    if (outcome === 'accepted') {
+      // Verification is deliberately post-commit. A diagnostic mismatch must
+      // never roll back a valid terminal row and its accepted event journal.
+      await this.assertSessionRowMatchesSnapshot(resultId, input.snapshot)
+    }
+
+    return outcome
   }
 
   async getExecutionSnapshotByExecutionId(
@@ -429,7 +494,13 @@ export class SqliteRunbookResultStore implements RunbookResultPersistence {
   }
 
   async markStaleRunningSessionsFailed(
-    options?: { heartbeatGraceMs?: number },
+    options?: {
+      heartbeatGraceMs?: number
+      onRowError?: (
+        error: unknown,
+        context: { resultId: string; executionId: string },
+      ) => void
+    },
   ): Promise<number> {
     const rows = await this.db.investigationSession.findMany({
       where: { status: 'running' },
@@ -445,20 +516,45 @@ export class SqliteRunbookResultStore implements RunbookResultPersistence {
       const session = runbookSessionRowSchema.parse(row)
       const resultId = asString(session.id)
       if (resultId.length === 0) continue
-
       const executionId = asString(session.executionId)
-      if (await this.hasActiveExecutionControl(executionId, staleHeartbeatBefore)) {
-        continue
-      }
 
-      await this.inTransaction(async () => {
-        await this.markSessionInterrupted(resultId, session, completedAt)
-        await this.recordStaleRecoveryAudit(resultId, executionId, completedAt)
-        if (executionId.length > 0) {
-          await this.completeExecutionControl(executionId, 'stale-recovery', completedAt)
+      // Startup recovery must never be fatal: a row this sweep cannot reconcile
+      // is exactly the kind of row it exists to clean up, so report it and keep
+      // going instead of aborting the sweep (and, at startup, the whole app).
+      try {
+        const persistedSnapshot = parseRowExecutionSnapshot(session)
+        if (
+          persistedSnapshot !== null &&
+          isTerminalExecutionStatus(persistedSnapshot.status)
+        ) {
+          await this.inTransaction(async () => {
+            await this.reconcileTerminalSessionRow(
+              resultId,
+              persistedSnapshot,
+            )
+          })
+          await this.assertSessionRowMatchesSnapshot(
+            resultId,
+            persistedSnapshot,
+          )
+          continue
         }
-      })
-      updatedCount += 1
+
+        if (await this.hasActiveExecutionControl(executionId, staleHeartbeatBefore)) {
+          continue
+        }
+
+        await this.inTransaction(async () => {
+          await this.markSessionInterrupted(resultId, session, completedAt)
+          await this.recordStaleRecoveryAudit(resultId, executionId, completedAt)
+          if (executionId.length > 0) {
+            await this.completeExecutionControl(executionId, 'stale-recovery', completedAt)
+          }
+        })
+        updatedCount += 1
+      } catch (error) {
+        options?.onRowError?.(error, { resultId, executionId })
+      }
     }
 
     return updatedCount
@@ -532,11 +628,73 @@ export class SqliteRunbookResultStore implements RunbookResultPersistence {
       where: { id: resultId },
       data: {
         status: 'failed',
+        ...(asString(session.startedAt).length > 0
+          ? { startedAt: asString(session.startedAt) }
+          : {}),
         completedAt,
         executionSnapshotJson: this.interruptedSnapshotJson(session, completedAt),
         updatedAt: completedAt,
       },
     })
+  }
+
+  private async reconcileTerminalSessionRow(
+    resultId: string,
+    snapshot: RunbookExecutionRecord,
+  ): Promise<void> {
+    if (snapshot.completedAt === undefined) {
+      throw new Error(
+        `Runbook execution '${snapshot.executionId}' terminal snapshot is missing completedAt`,
+      )
+    }
+
+    // `status: 'running'` doubles as an optimistic-concurrency guard, so a
+    // count of 0 means another writer already reconciled this row. The caller
+    // validates the committed end state after this transaction finishes.
+    const updateResult = await this.db.investigationSession.updateMany({
+      where: { id: resultId, status: 'running' },
+      data: {
+        status: snapshot.status,
+        completedAt: snapshot.completedAt,
+        executionSnapshotJson: JSON.stringify(snapshot),
+        updatedAt: new Date().toISOString(),
+      },
+    })
+    if (updateResult.count > 1) {
+      throw new Error(
+        `Runbook execution '${snapshot.executionId}' reconciled more than one session row`,
+      )
+    }
+  }
+
+  private async assertSessionRowMatchesSnapshot(
+    resultId: string,
+    snapshot: RunbookExecutionRecord,
+  ): Promise<void> {
+    const row = await this.db.investigationSession.findUnique({
+      where: { id: resultId },
+    })
+    const persistedSnapshot = parseRowExecutionSnapshot(row)
+    const rowStatus = asString(row?.status)
+    const rowCompletedAt = asIsoTimestamp(row?.completedAt)
+    const expectedCompletedAt = asIsoTimestamp(snapshot.completedAt)
+
+    if (
+      rowStatus !== snapshot.status ||
+      persistedSnapshot?.status !== snapshot.status ||
+      persistedSnapshot?.snapshotVersion !== snapshot.snapshotVersion ||
+      rowCompletedAt !== expectedCompletedAt
+    ) {
+      // Name the mismatching fields: an opaque message here previously made a
+      // startup failure impossible to diagnose without a debugger.
+      throw new Error(
+        `Runbook execution '${snapshot.executionId}' session row is inconsistent with its persisted snapshot ` +
+          `(row.status=${JSON.stringify(rowStatus)} expected ${JSON.stringify(snapshot.status)}; ` +
+          `snapshot.status=${JSON.stringify(persistedSnapshot?.status)}; ` +
+          `snapshot.version=${JSON.stringify(persistedSnapshot?.snapshotVersion)} expected ${JSON.stringify(snapshot.snapshotVersion)}; ` +
+          `row.completedAt=${JSON.stringify(rowCompletedAt)} expected ${JSON.stringify(expectedCompletedAt)})`,
+      )
+    }
   }
 
   private async inTransaction<T>(operation: () => Promise<T>): Promise<T> {
@@ -579,6 +737,7 @@ export class SqliteRunbookResultStore implements RunbookResultPersistence {
           executionId,
           completionReason: 'app_shutdown',
           completedAt,
+          recoveredAt: completedAt,
         }),
       },
     })

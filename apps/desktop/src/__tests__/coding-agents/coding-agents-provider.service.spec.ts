@@ -87,6 +87,14 @@ describe('CodingAgentsProviderService', () => {
     vi.clearAllMocks()
   })
 
+  it('uses MCP only for Claude and preserves structured CLI for Codex and Cursor', () => {
+    const service = new CodingAgentsProviderService(createDbMock())
+
+    expect(service.getHostToolProtocol('claude_code')).toBe('mcp')
+    expect(service.getHostToolProtocol('codex')).toBe('structured_cli')
+    expect(service.getHostToolProtocol('cursor')).toBe('structured_cli')
+  })
+
   it('silently detects and uses the resolved codex binary without changing the saved path', async () => {
     vi.mocked(detectBinary).mockResolvedValue('/opt/homebrew/bin/codex')
     vi.mocked(probeCodex).mockResolvedValue({

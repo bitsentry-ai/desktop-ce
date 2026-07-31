@@ -19,11 +19,23 @@ function createNoopTable() {
 function createDesktopStateDatabase(): {
   db: DesktopStateDatabase;
   runbookActionCreate: ReturnType<typeof vi.fn>;
+  investigationSessionCreate: ReturnType<typeof vi.fn>;
+  investigationSessionDeleteMany: ReturnType<typeof vi.fn>;
+  investigationSessionFindUnique: ReturnType<typeof vi.fn>;
 } {
   const runbookActionCreate = vi.fn().mockResolvedValue({});
+  const investigationSessionCreate = vi.fn().mockResolvedValue({});
+  const investigationSessionDeleteMany = vi.fn().mockResolvedValue({});
+  const investigationSessionFindUnique = vi.fn().mockResolvedValue(null);
   const runbookAction = {
     ...createNoopTable(),
     create: runbookActionCreate,
+  };
+  const investigationSession = {
+    ...createNoopTable(),
+    create: investigationSessionCreate,
+    deleteMany: investigationSessionDeleteMany,
+    findUnique: investigationSessionFindUnique,
   };
   const db = {
     legacyImportLedger: createNoopTable(),
@@ -32,7 +44,7 @@ function createDesktopStateDatabase(): {
     runbook: createNoopTable(),
     runbookAction,
     runbookVersion: createNoopTable(),
-    investigationSession: createNoopTable(),
+    investigationSession,
     investigationTraceEntry: createNoopTable(),
     investigationToolRun: createNoopTable(),
     investigationReport: createNoopTable(),
@@ -41,7 +53,13 @@ function createDesktopStateDatabase(): {
   };
 
   const dbHandle: unknown = db;
-  return { db: dbHandle as DesktopStateDatabase, runbookActionCreate };
+  return {
+    db: dbHandle as DesktopStateDatabase,
+    runbookActionCreate,
+    investigationSessionCreate,
+    investigationSessionDeleteMany,
+    investigationSessionFindUnique,
+  };
 }
 
 describe("desktop state handlers", () => {
@@ -84,4 +102,56 @@ describe("desktop state handlers", () => {
     });
     expect(runbookActionCreate).toHaveBeenCalledWith({ data: dataMatch });
   });
+
+  it.each(["running", "completed"] as const)(
+    "does not replace a main-process-owned %s execution with renderer cache",
+    async (status) => {
+      const {
+        db,
+        investigationSessionCreate,
+        investigationSessionDeleteMany,
+        investigationSessionFindUnique,
+      } = createDesktopStateDatabase();
+      investigationSessionFindUnique.mockResolvedValue({
+        id: "result-1",
+        executionId: "execution-1",
+        status,
+        executionSnapshotJson: JSON.stringify({
+          executionId: "execution-1",
+          status,
+        }),
+      });
+      const handlers = createDesktopStateHandlers(db);
+
+      await expect(
+        handlers["desktopState:syncResults"]({
+          results: [
+            {
+              id: "result-1",
+              executionId: "execution-1",
+              runbookId: "runbook-1",
+              runbookTitle: "Sentry Desktop Error Check",
+              status: "running",
+              startedAt: "2026-07-31T00:22:26.394Z",
+              prompt: "",
+            },
+          ],
+          resultTraces: {
+            "result-1": {
+              execution: {
+                executionId: "execution-1",
+                status: "running",
+              },
+            },
+          },
+        }),
+      ).resolves.toEqual({ ok: true, count: 1 });
+
+      expect(investigationSessionFindUnique).toHaveBeenCalledWith({
+        where: { id: "result-1" },
+      });
+      expect(investigationSessionDeleteMany).not.toHaveBeenCalled();
+      expect(investigationSessionCreate).not.toHaveBeenCalled();
+    },
+  );
 });

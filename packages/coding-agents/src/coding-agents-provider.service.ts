@@ -5,6 +5,7 @@ import type {
   LocalAiSettings,
   LocalAiStreamDelta,
   LocalAiExecutionResult,
+  LocalAiHostToolTransport,
   CLIProbeResult,
 } from './types.js'
 import { DEFAULT_LOCAL_AI_SETTINGS } from './types.js'
@@ -455,6 +456,8 @@ export class CodingAgentsProviderService {
     model?: string,
     accessLevel?: 'supervised' | 'auto-accept-edits' | 'full-access',
     traitValues?: Record<string, string | boolean>,
+    hostToolTransport?: LocalAiHostToolTransport,
+    systemPrompt?: string,
   ): Promise<LocalAiExecutionResult> {
     const settings = getProviderSettings(this.settings, provider)
     if (!settings.enabled) {
@@ -472,6 +475,8 @@ export class CodingAgentsProviderService {
         accessLevel,
         maxTurns: effortToMaxTurns(readTraitString(traitValues?.effort)),
         contextWindow: readTraitString(traitValues?.contextWindow),
+        hostToolTransport,
+        systemPrompt,
         onDelta,
       })
     }
@@ -521,8 +526,8 @@ export class CodingAgentsProviderService {
    * Coding CLIs expose text subprocess boundaries, so the adapter uses the
    * versioned structured JSON compatibility response defined by core.
    */
-  getHostToolProtocol(_provider: LocalAiProviderKey): 'structured_cli' {
-    return 'structured_cli'
+  getHostToolProtocol(provider: LocalAiProviderKey): 'mcp' | 'structured_cli' {
+    return provider === 'claude_code' ? 'mcp' : 'structured_cli'
   }
 
   async listModels(provider: LocalAiProviderKey): Promise<string[]> {

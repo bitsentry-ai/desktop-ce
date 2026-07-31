@@ -1,8 +1,16 @@
 import { spawn } from 'child_process'
 import type { ChildProcess } from 'child_process'
+import { randomUUID } from 'crypto'
+import { mkdtemp, rm } from 'fs/promises'
+import { tmpdir } from 'os'
+import { join } from 'path'
 import { createClaudeCodeSubscriptionEnv } from './claude-code-env.js'
 import { codingAgentsLogger as log } from './logger.js'
-import type { LocalAiExecutionResult, LocalAiStreamDelta } from './types.js'
+import type {
+  LocalAiExecutionResult,
+  LocalAiHostToolTransport,
+  LocalAiStreamDelta,
+} from './types.js'
 import {
   buildWindowsCmdCommandLine,
   getWindowsCmdExecutable,
@@ -29,6 +37,8 @@ export interface ClaudeCodeExecutionOptions {
   maxTurns?: number
   contextWindow?: string
   allowedTools?: string[]
+  hostToolTransport?: LocalAiHostToolTransport
+  systemPrompt?: string
   onDelta?: (delta: LocalAiStreamDelta) => void
   debug?: ClaudeCodeDebugRecorder
 }
@@ -60,6 +70,12 @@ interface ClaudeCodeQueryOptions {
   betas?: ClaudeCodeSdkBeta[]
   allowedTools?: string[]
   tools?: []
+  mcpServers?: Record<string, unknown>
+  systemPrompt?: {
+    type: 'preset'
+    preset: 'claude_code'
+    append?: string
+  }
   spawnClaudeCodeProcess?: (
     options: ClaudeCodeSpawnOptions,
   ) => ClaudeCodeSpawnedProcess
@@ -88,6 +104,25 @@ type ClaudeSdkQuery = (params: {
 
 let testClaudeSdkQueryLoader: (() => Promise<ClaudeSdkQuery> | ClaudeSdkQuery) | undefined
 const CLAUDE_ONE_M_CONTEXT_BETA: ClaudeCodeSdkBeta = 'context-1m-2025-08-07'
+const BITSENTRY_MCP_SERVER_NAME = 'bitsentry'
+
+type ClaudeSdkMcpServerFactory = {
+  createSdkMcpServer(options: {
+    name: string
+    version?: string
+    tools?: unknown[]
+    alwaysLoad?: boolean
+  }): unknown
+  tool(
+    name: string,
+    description: string,
+    inputSchema: LocalAiHostToolTransport['tools'][number]['inputShape'],
+    handler: (args: Record<string, unknown>) => Promise<{
+      content: Array<{ type: 'text'; text: string }>
+      isError?: boolean
+    }>,
+  ): unknown
+}
 
 export function __setLoadClaudeSdkQueryForTests(
   loader: (() => Promise<ClaudeSdkQuery> | ClaudeSdkQuery) | undefined,
@@ -105,6 +140,40 @@ async function loadClaudeSdkQuery(): Promise<ClaudeSdkQuery> {
     prompt: params.prompt,
     options: params.options as never,
   })
+}
+
+async function createClaudeHostMcpServer(
+  transport: LocalAiHostToolTransport,
+): Promise<unknown> {
+  const sdk = await import('@anthropic-ai/claude-agent-sdk') as unknown as ClaudeSdkMcpServerFactory
+  const tools = transport.tools.map((toolDefinition) => sdk.tool(
+    toolDefinition.name,
+    toolDefinition.description,
+    toolDefinition.inputShape,
+    async (args) => {
+      const result = await transport.execute({
+        id: `mcp-${toolDefinition.name}-${randomUUID()}`,
+        name: toolDefinition.name,
+        args,
+      })
+      const text = result.error ?? result.output ?? 'Host tool completed without output.'
+      return {
+        content: [{ type: 'text', text }],
+        ...(result.error === undefined ? {} : { isError: true }),
+      }
+    },
+  ))
+
+  return sdk.createSdkMcpServer({
+    name: BITSENTRY_MCP_SERVER_NAME,
+    version: '1.0.0',
+    tools,
+    alwaysLoad: true,
+  })
+}
+
+async function createNeutralClaudeScratchDirectory(): Promise<string> {
+  return await mkdtemp(join(tmpdir(), 'bitsentry-claude-'))
 }
 
 function attachSubprocessTermination(child: ChildProcess, signal: AbortSignal | undefined): void {
@@ -471,18 +540,24 @@ function resolveClaudeMaxTurns(
 function buildClaudeCodeQueryOptions(
   options: ClaudeCodeExecutionOptions,
   effectiveAccessLevel: ClaudeCodeAccessLevel,
+  cwd: string | undefined,
+  mcpServer: unknown | undefined,
 ): ClaudeCodeQueryOptions {
-  const resolvedTools = options.allowedTools ?? resolveAllowedTools(effectiveAccessLevel)
+  const resolvedTools = mcpServer === undefined
+    ? options.allowedTools ?? resolveAllowedTools(effectiveAccessLevel)
+    : options.hostToolTransport?.tools.map(
+      (toolDefinition) => `mcp__${BITSENTRY_MCP_SERVER_NAME}__${toolDefinition.name}`,
+    )
   const permissionMode = resolveClaudePermissionMode(effectiveAccessLevel)
   const shouldWrapWindowsCmdShim =
     process.platform === 'win32' && isWindowsCmdShim(options.binaryPath)
   const queryOptions: ClaudeCodeQueryOptions = {
     abortController: options.abortController,
-    cwd: options.cwd,
+    cwd,
     model: options.model,
     maxTurns: resolveClaudeMaxTurns(effectiveAccessLevel, options.maxTurns),
     pathToClaudeCodeExecutable: options.binaryPath,
-    settingSources: ['user', 'project', 'local'] as ('user' | 'project' | 'local')[],
+    settingSources: mcpServer === undefined ? ['user', 'project', 'local'] : [],
     includePartialMessages: true,
     // Force the normal logged-in Claude Code path instead of inheriting
     // shell-level Anthropic/API routing env that can silently burn API credits.
@@ -492,6 +567,16 @@ function buildClaudeCodeQueryOptions(
   applyClaudeContextWindowOption(queryOptions, options.contextWindow)
   applyClaudeToolOptions(queryOptions, resolvedTools)
   applyClaudeSpawnerOption(queryOptions, shouldWrapWindowsCmdShim)
+  if (mcpServer !== undefined) {
+    queryOptions.mcpServers = { [BITSENTRY_MCP_SERVER_NAME]: mcpServer }
+  }
+  if (mcpServer !== undefined && options.systemPrompt !== undefined) {
+    queryOptions.systemPrompt = {
+      type: 'preset',
+      preset: 'claude_code',
+      append: options.systemPrompt,
+    }
+  }
 
   return queryOptions
 }
@@ -625,11 +710,14 @@ function handleClaudeExecutionError(
 export async function executeClaudeCode(
   options: ClaudeCodeExecutionOptions,
 ): Promise<LocalAiExecutionResult> {
-  const query = await loadClaudeSdkQuery()
-
   const effectiveAccessLevel =
     options.accessLevel ?? DEFAULT_CLAUDE_CODE_ACCESS_LEVEL
-  const queryOptions = buildClaudeCodeQueryOptions(options, effectiveAccessLevel)
+  const hostMcpEnabled =
+    effectiveAccessLevel !== 'supervised' && options.hostToolTransport !== undefined
+  const query = await loadClaudeSdkQuery()
+  const scratchDirectory = hostMcpEnabled
+    ? await createNeutralClaudeScratchDirectory()
+    : undefined
 
   // Each turn runs a fresh Claude Code session. The agent-runtime tracks the
   // full conversation (including tool calls + their results) in session.messages,
@@ -649,6 +737,15 @@ export async function executeClaudeCode(
   let session: ClaudeSdkSession | undefined
 
   try {
+    const mcpServer = hostMcpEnabled && options.hostToolTransport !== undefined
+      ? await createClaudeHostMcpServer(options.hostToolTransport)
+      : undefined
+    const queryOptions = buildClaudeCodeQueryOptions(
+      options,
+      effectiveAccessLevel,
+      scratchDirectory ?? options.cwd,
+      mcpServer,
+    )
     session = query({
       prompt: options.prompt,
       options: queryOptions,
@@ -662,6 +759,9 @@ export async function executeClaudeCode(
   } finally {
     if (session !== undefined) {
       closeClaudeSession(session)
+    }
+    if (scratchDirectory !== undefined) {
+      await rm(scratchDirectory, { recursive: true, force: true })
     }
   }
 

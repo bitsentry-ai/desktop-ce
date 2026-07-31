@@ -1,6 +1,7 @@
 import { EventEmitter } from 'events'
 import type { ChildProcess } from 'child_process'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { z } from 'zod'
 
 type ClaudeQuerySession = AsyncIterable<unknown> & {
   getContextUsage: () => Promise<{ totalTokens: number; maxTokens: number }>
@@ -29,6 +30,15 @@ interface ClaudeQueryOptions {
   includePartialMessages?: boolean
   allowDangerouslySkipPermissions?: boolean
   betas?: string[]
+  allowedTools?: string[]
+  settingSources?: string[]
+  cwd?: string
+  mcpServers?: Record<string, unknown>
+  systemPrompt?: {
+    type: string
+    preset: string
+    append?: string
+  }
   spawnClaudeCodeProcess?: (input: SpawnClaudeCodeProcessInput) => ChildProcess
 }
 
@@ -42,6 +52,8 @@ const getContextUsageMock = vi.fn()
 const queryMock = vi.fn<(input: ClaudeQueryInput) => ClaudeQuerySession>()
 const spawnMock = vi.hoisted(() => vi.fn())
 const spawnSyncMock = vi.hoisted(() => vi.fn())
+const sdkToolMock = vi.hoisted(() => vi.fn())
+const createSdkMcpServerMock = vi.hoisted(() => vi.fn())
 const logMock = {
   warn: vi.fn(),
   error: vi.fn(),
@@ -54,6 +66,8 @@ vi.mock('electron-log', () => ({
 
 vi.mock('@anthropic-ai/claude-agent-sdk', () => ({
   query: queryMock,
+  tool: sdkToolMock,
+  createSdkMcpServer: createSdkMcpServerMock,
 }))
 
 vi.mock('child_process', () => ({
@@ -92,6 +106,8 @@ describe('executeClaudeCode', () => {
     queryMock.mockReset()
     spawnMock.mockReset()
     spawnSyncMock.mockReset()
+    sdkToolMock.mockReset()
+    createSdkMcpServerMock.mockReset()
     logMock.warn.mockReset()
     logMock.error.mockReset()
     logMock.info.mockReset()
@@ -491,6 +507,114 @@ describe('executeClaudeCode', () => {
       allowDangerouslySkipPermissions: true,
       includePartialMessages: true,
     })
+  })
+
+  it('registers BitSentry list, run, and inspect tools through the Claude SDK MCP server', async () => {
+    queryMock.mockReturnValue({
+      async *[Symbol.asyncIterator]() {
+        await Promise.resolve()
+        yield {
+          type: 'result',
+          subtype: 'success',
+          result: 'Inspected the completed execution.',
+        }
+      },
+      getContextUsage: getContextUsageMock.mockResolvedValue({
+        totalTokens: 0,
+        maxTokens: 0,
+      }),
+      close: closeMock,
+    })
+    sdkToolMock.mockImplementation((name, description, inputShape, handler) => ({
+      name,
+      description,
+      inputShape,
+      handler,
+    }))
+    createSdkMcpServerMock.mockImplementation((options) => options)
+
+    const executeHostTool = vi.fn().mockImplementation((toolCall) => Promise.resolve({
+      output: `${toolCall.name} completed`,
+    }))
+    const hostToolTransport = {
+      tools: [
+        {
+          name: 'list_runbooks',
+          description: 'List runbooks.',
+          inputShape: z.object({}).shape,
+        },
+        {
+          name: 'execute_runbook',
+          description: 'Run a runbook.',
+          inputShape: z.object({ runbookTitle: z.string() }).shape,
+        },
+        {
+          name: 'get_runbook_execution',
+          description: 'Inspect a runbook execution.',
+          inputShape: z.object({ executionId: z.string().optional() }).shape,
+        },
+      ],
+      execute: executeHostTool,
+    }
+
+    const { executeClaudeCode } =
+      await import('@bitsentry-ce/desktop-cli/runtime/desktop-coding-agents')
+
+    await executeClaudeCode({
+      prompt: '[user]: List, run, and inspect the Sentry runbook.',
+      binaryPath: 'claude',
+      abortController: new AbortController(),
+      accessLevel: 'auto-accept-edits',
+      hostToolTransport,
+      systemPrompt: 'You are the BitSentry incident agent.',
+      cwd: '/workspace/that-must-not-be-loaded',
+    })
+
+    const queryOptions = getQueryOptions(0)
+    expect(queryOptions.allowedTools).toEqual([
+      'mcp__bitsentry__list_runbooks',
+      'mcp__bitsentry__execute_runbook',
+      'mcp__bitsentry__get_runbook_execution',
+    ])
+    expect(queryOptions.settingSources).toEqual([])
+    expect(queryOptions.cwd).toMatch(/bitsentry-claude-/)
+    expect(queryOptions.cwd).not.toBe('/workspace/that-must-not-be-loaded')
+    expect(queryOptions.systemPrompt).toEqual({
+      type: 'preset',
+      preset: 'claude_code',
+      append: 'You are the BitSentry incident agent.',
+    })
+
+    const mcpServer = queryOptions.mcpServers?.bitsentry as {
+      name: string
+      alwaysLoad: boolean
+      tools: Array<{
+        name: string
+        handler(args: Record<string, unknown>): Promise<unknown>
+      }>
+    }
+    expect(mcpServer).toMatchObject({
+      name: 'bitsentry',
+      alwaysLoad: true,
+    })
+
+    await mcpServer.tools[0].handler({})
+    await mcpServer.tools[1].handler({ runbookTitle: 'Sentry Desktop Error Check' })
+    await mcpServer.tools[2].handler({ executionId: 'execution-1' })
+    expect(executeHostTool.mock.calls.map(([toolCall]) => ({
+      name: toolCall.name,
+      args: toolCall.args,
+    }))).toEqual([
+      { name: 'list_runbooks', args: {} },
+      {
+        name: 'execute_runbook',
+        args: { runbookTitle: 'Sentry Desktop Error Check' },
+      },
+      {
+        name: 'get_runbook_execution',
+        args: { executionId: 'execution-1' },
+      },
+    ])
   })
 
   it('enables the Claude 1M context beta when requested', async () => {
