@@ -7,6 +7,7 @@ import {
 import { getProviderModelOptions } from '@bitsentry-ce/components/chat/utils'
 import { resolveIncidentModelSelection } from '@bitsentry-ce/components/investigation/provider-selection'
 import { buildDesktopLocalProviderRecords } from '@bitsentry-ce/core/features/desktop/desktop-llm-provider-settings'
+import { resolveSyncedDefaultModel } from '@bitsentry-ce/components/settings/model-selection'
 
 function providerConfig(
   model: string,
@@ -98,6 +99,49 @@ describe('local model catalog selection', () => {
     })
 
     expect(records.codex?.availableModels).toEqual(availableModels)
+  })
+
+  it('uses the persisted snapshot when live provider discovery fails', async () => {
+    const records = await buildDesktopLocalProviderRecords({
+      localAiProvider: {
+        getSettings: () => ({
+          claudeCode: { enabled: true },
+          codex: { enabled: true },
+          opencode: { enabled: false },
+          cursor: { enabled: false },
+        }),
+        isReady: () => true,
+        listModels: async () => [],
+      },
+      primaryProviderKey: 'codex',
+      readModelSetting: async () => 'gpt-5.6-terra',
+      readAvailableModels: async () => ['gpt-5.6-sol', 'gpt-5.6-terra'],
+      resolveAvailableModels: async (providerKey) => {
+        if (providerKey === 'codex') {
+          throw new Error('Codex app-server unavailable')
+        }
+
+        return ['claude-sonnet']
+      },
+    })
+
+    expect(records.codex?.availableModels).toEqual([
+      'gpt-5.6-sol',
+      'gpt-5.6-terra',
+    ])
+    expect(records.claude_code?.availableModels).toEqual(['claude-sonnet'])
+  })
+
+  it('replaces a removed saved model during sync', () => {
+    expect(resolveSyncedDefaultModel('gpt-5.2-codex', [
+      'gpt-5.6-sol',
+      'gpt-5.6-terra',
+    ])).toBe('gpt-5.6-sol')
+    expect(resolveSyncedDefaultModel('', ['gpt-5.6-sol'])).toBe('')
+    expect(resolveSyncedDefaultModel('gpt-5.6-terra', [
+      'gpt-5.6-sol',
+      'gpt-5.6-terra',
+    ])).toBe('gpt-5.6-terra')
   })
 
   it('keeps Claude and Cursor catalog options independent of Codex filtering', () => {

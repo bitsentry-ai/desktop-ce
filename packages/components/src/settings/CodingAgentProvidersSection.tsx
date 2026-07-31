@@ -9,6 +9,7 @@ import {
   getModelDisplayName,
 } from '@bitsentry-ce/components/llm/modelCatalog'
 import { useTranslation } from '@bitsentry-ce/i18n'
+import { resolveSyncedDefaultModel } from './model-selection'
 import {
   getDesktopApi,
   type DesktopBitsentryApi,
@@ -1098,11 +1099,16 @@ export function CodingAgentProvidersSection({
           ? detectedModels
           : [...baseModels, currentModel],
       )
+      const nextModel = resolveSyncedDefaultModel(currentModel, models)
       setter((prev) => ({
         ...prev,
+        model: nextModel,
         availableModels: models,
       }))
-      await llmApi.saveProvider(provider, { availableModels: models })
+      await llmApi.saveProvider(provider, {
+        availableModels: models,
+        ...(nextModel !== currentModel ? { model: nextModel } : {}),
+      })
       notifyLlmProvidersUpdated()
       captureDesktopAnalyticsEvent('desktop_coding_agent_models_synced', {
         provider,

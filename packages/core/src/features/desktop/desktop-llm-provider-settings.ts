@@ -132,11 +132,18 @@ export async function buildDesktopLocalProviderRecords(
     if (!providerMeta.isEnabled(settings)) continue
 
     const isReady = localAiProvider.isReady(providerMeta.key)
-    let models = await options.resolveAvailableModels(
-      providerMeta.key,
-      isReady,
-      localAiProvider,
-    )
+    let models: string[]
+    try {
+      models = await options.resolveAvailableModels(
+        providerMeta.key,
+        isReady,
+        localAiProvider,
+      )
+    } catch {
+      // Provider discovery is best-effort for the provider summary. Explicit
+      // model-sync calls still use listModels directly and surface failures.
+      models = []
+    }
     if (isReady && models.length === 0) {
       models = await options.readAvailableModels(providerMeta.key)
     }
