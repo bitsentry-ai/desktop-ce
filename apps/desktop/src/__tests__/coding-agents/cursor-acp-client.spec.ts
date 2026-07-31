@@ -318,7 +318,7 @@ describe('CursorAcpClient', () => {
 
       await waitFor(async () => {
         const messages = await readLoggedMessages(mock.logPath)
-        expect(messages[0]).toEqual({ argv: ['acp'] })
+        expect(messages[0]).toEqual({ argv: ['--approve-mcps', 'acp'] })
       })
     } finally {
       await client.kill()
@@ -366,7 +366,7 @@ describe('CursorAcpClient', () => {
       await client.start()
       await waitFor(async () => {
         const messages = await readLoggedMessages(mock.logPath)
-        expect(messages).toContainEqual({ argv: ['acp'] })
+        expect(messages).toContainEqual({ argv: ['--approve-mcps', 'acp'] })
       })
       await expect(client.sendRequest('test/hang')).rejects.toThrow(
         'Cursor ACP RPC test/hang timed out after 0.1s',
