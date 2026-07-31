@@ -771,7 +771,8 @@ function toCursorMcpServers(endpoint: HostMcpEndpoint | undefined): unknown[] {
     name: 'bitsentry',
     command: endpoint.command,
     args: endpoint.args,
-    env: endpoint.env,
+    // ACP McpServer.env is a list of {name, value} pairs, not a record.
+    env: Object.entries(endpoint.env).map(([name, value]) => ({ name, value })),
   }]
 }
 

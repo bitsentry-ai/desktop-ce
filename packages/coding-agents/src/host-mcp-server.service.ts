@@ -1,6 +1,9 @@
 import { randomBytes, timingSafeEqual } from 'node:crypto'
+import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
-import { fileURLToPath } from 'node:url'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { HOST_MCP_SHIM_FILE_NAME, HOST_MCP_SHIM_SOURCE } from './host-mcp-shim-source.js'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js'
 import {
@@ -73,8 +76,11 @@ export class HostMcpServerService {
   private readonly sessions = new Map<string, HostMcpSession>()
   private httpServer: Server | undefined
   private baseUrl: string | undefined
+  private shimDirectory: string | undefined
+  private shimPath: string | undefined
 
   async start(): Promise<void> {
+    await this.ensureShimFile()
     if (this.httpServer !== undefined) return
     this.httpServer = createServer((request, response) => { void this.handleRequest(request, response) })
     await new Promise<void>((resolve, reject) => {
@@ -94,8 +100,27 @@ export class HostMcpServerService {
     const server = this.httpServer
     this.httpServer = undefined
     this.baseUrl = undefined
+    const shimDirectory = this.shimDirectory
+    this.shimDirectory = undefined
+    this.shimPath = undefined
+    if (shimDirectory !== undefined) {
+      await rm(shimDirectory, { recursive: true, force: true })
+    }
     if (server === undefined) return
     await new Promise<void>((resolve, reject) => server.close((error) => error === undefined ? resolve() : reject(error)))
+  }
+
+  // CLIs spawn the shim themselves, so it must exist as a plain file outside
+  // the app bundle (electron-vite folds this package into out/main; packaged
+  // apps serve code from asar, which external processes cannot execute from).
+  private async ensureShimFile(): Promise<string> {
+    if (this.shimPath !== undefined) return this.shimPath
+    const directory = await mkdtemp(join(tmpdir(), 'bitsentry-host-mcp-'))
+    const shimPath = join(directory, HOST_MCP_SHIM_FILE_NAME)
+    await writeFile(shimPath, HOST_MCP_SHIM_SOURCE, { mode: 0o600 })
+    this.shimDirectory = directory
+    this.shimPath = shimPath
+    return shimPath
   }
 
   async createSession(context: HostToolContext, ttlMs = DEFAULT_SESSION_TTL_MS): Promise<HostMcpEndpoint> {
@@ -105,13 +130,21 @@ export class HostMcpServerService {
     const expiresAt = Date.now() + ttlMs
     this.sessions.set(token, { context, expiresAt, ledger: [] })
     if (this.baseUrl === undefined) throw new Error('Host MCP endpoint is not running')
+    const shimPath = await this.ensureShimFile()
     return {
       url: this.baseUrl,
       token,
       expiresAt,
       command: process.execPath,
-      args: [getHostMcpShimPath()],
-      env: { BITSENTRY_MCP_URL: this.baseUrl, BITSENTRY_MCP_TOKEN: token },
+      args: [shimPath],
+      env: {
+        BITSENTRY_MCP_URL: this.baseUrl,
+        BITSENTRY_MCP_TOKEN: token,
+        // Inside Electron, process.execPath is the app binary, not node.
+        // Without this flag a spawned shim boots a full Electron instance
+        // that never speaks MCP on stdio, and the CLI stalls on startup.
+        ELECTRON_RUN_AS_NODE: '1',
+      },
     }
   }
 
@@ -141,6 +174,3 @@ export class HostMcpServerService {
   }
 }
 
-export function getHostMcpShimPath(): string {
-  return fileURLToPath(new URL('./host-mcp-shim.cjs', import.meta.url))
-}

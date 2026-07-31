@@ -16,7 +16,7 @@
     }
   },
   "scripts": {
-    "build": "rm -rf dist && tsc -p tsconfig.build.json && node ../../scripts/build-host-mcp-shim.mjs",
+    "build": "rm -rf dist && tsc -p tsconfig.build.json",
     "lint": "node ../../scripts/eslint/ts7-unavailable.mjs",
     "lint:fix": "eslint . --fix"
   },
