@@ -36,6 +36,10 @@ export interface BuildDesktopLocalProviderRecordsOptions {
   localAiProvider: DesktopLocalAiProviderPort | null
   primaryProviderKey: string
   readModelSetting: (providerKey: DesktopLocalAiProviderKey) => Promise<string>
+  /** Last successful discovery snapshot, used only when live discovery is empty. */
+  readAvailableModels: (
+    providerKey: DesktopLocalAiProviderKey,
+  ) => Promise<string[]>
   resolveAvailableModels: (
     providerKey: DesktopLocalAiProviderKey,
     isReady: boolean,
@@ -128,11 +132,21 @@ export async function buildDesktopLocalProviderRecords(
     if (!providerMeta.isEnabled(settings)) continue
 
     const isReady = localAiProvider.isReady(providerMeta.key)
-    const models = await options.resolveAvailableModels(
-      providerMeta.key,
-      isReady,
-      localAiProvider,
-    )
+    let models: string[]
+    try {
+      models = await options.resolveAvailableModels(
+        providerMeta.key,
+        isReady,
+        localAiProvider,
+      )
+    } catch {
+      // Provider discovery is best-effort for the provider summary. Explicit
+      // model-sync calls still use listModels directly and surface failures.
+      models = []
+    }
+    if (isReady && models.length === 0) {
+      models = await options.readAvailableModels(providerMeta.key)
+    }
 
     result[providerMeta.key] = {
       hasApiKey: isReady,

@@ -91,18 +91,47 @@ const providerCatalogByKey = new Map(
 )
 
 const normalizeValue = (value: string): string => value.trim().toLowerCase()
+const HIDDEN_MODEL_IDS_BY_PROVIDER: Partial<Record<
+  ModelCatalogProviderKey,
+  ReadonlySet<string>
+>> = {
+  // These IDs are rejected by Codex when authenticated with a ChatGPT account.
+  // Keep the raw catalog data for migration/display compatibility, but never
+  // offer them as selectable models.
+  codex: new Set(['gpt-5.2-codex', 'gpt-5.1-codex-mini']),
+}
 const CONTEXT_WINDOW_OPTION_ID = 'contextWindow'
 const MODEL_CONTEXT_WINDOW_LIMIT_FALLBACKS: Readonly<Record<string, number>> = {
   // Official OpenAI model docs show 1M for gpt-5.4 and 400K for gpt-5.4-mini.
-  // GPT-5.2 and GPT-5.2-Codex docs also show 400K, so we apply that same
-  // fallback to the older Codex-tuned variants when the app-server omits the
-  // live `modelContextWindow` field.
+  // GPT-5.2 docs also show 400K, so use that fallback when the app-server
+  // omits the live `modelContextWindow` field.
   'gpt-5.4': 1_000_000,
   'gpt-5.4-mini': 400_000,
   'gpt-5.3-codex': 400_000,
   'gpt-5.3-codex-spark': 400_000,
-  'gpt-5.2-codex': 400_000,
   'gpt-5.2': 400_000,
+}
+
+export function filterSelectableModelIds(
+  providerKey: ModelCatalogProviderKey,
+  modelIds: string[],
+): string[] {
+  const hiddenModelIds = HIDDEN_MODEL_IDS_BY_PROVIDER[providerKey]
+  const seen = new Set<string>()
+
+  return modelIds.filter((modelId) => {
+    const normalizedModelId = normalizeValue(modelId)
+    if (
+      normalizedModelId.length === 0 ||
+      hiddenModelIds?.has(normalizedModelId) === true ||
+      seen.has(normalizedModelId)
+    ) {
+      return false
+    }
+
+    seen.add(normalizedModelId)
+    return true
+  })
 }
 
 export function getModelCatalogProviders(): ProviderModelCatalogEntry[] {
@@ -142,7 +171,10 @@ export function resolveCatalogModelId(
 export function getCatalogModelIds(
   providerKey: ModelCatalogProviderKey,
 ): string[] {
-  return getProviderCatalogModels(providerKey).map((model) => model.id)
+  return filterSelectableModelIds(
+    providerKey,
+    getProviderCatalogModels(providerKey).map((model) => model.id),
+  )
 }
 
 export interface CatalogModelRuntimeSelection {
