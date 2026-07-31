@@ -14,8 +14,8 @@ const CONNECTION_TIMEOUT_MS = 5_000
 const METADATA_FILE_NAME = 'runbook-execution-host.json'
 const OWNERSHIP_LOCK_FILE_NAME = 'runbook-execution-host.lock'
 const HOST_METADATA_RETRY_DELAY_MS = 50
-const HOST_METADATA_RETRY_COUNT = 12
 const HOST_HANDOFF_RETRY_WINDOW_MS = 1_000
+const HOST_ACQUISITION_TIMEOUT_MS = 30_000
 const EXECUTION_HANDOFF_GRACE_MS = 1_000
 
 type HostMethod =
@@ -715,7 +715,8 @@ async function createLocalRunbookExecutionClientOnce(
   options: LocalRunbookExecutionClientOptions,
 ): Promise<RunbookCliRuntime> {
   const userDataPath = path.resolve(options.userDataPath ?? getRuntimeUserDataPath())
-  for (let attempt = 0; attempt < HOST_METADATA_RETRY_COUNT; attempt += 1) {
+  const deadline = Date.now() + HOST_ACQUISITION_TIMEOUT_MS
+  while (Date.now() < deadline) {
     const desktopClient = await connectToDesktopHost(userDataPath)
     if (desktopClient !== null) return desktopClient
 
@@ -746,7 +747,7 @@ async function createLocalRunbookExecutionClientOnce(
       if (error instanceof LocalRunbookExecutionHostAlreadyRunningError) {
         const desktopClientAfterRace = await waitForDesktopHost(userDataPath)
         if (desktopClientAfterRace !== null) return desktopClientAfterRace
-        if (attempt + 1 < HOST_METADATA_RETRY_COUNT) continue
+        continue
       }
       throw error
     }
