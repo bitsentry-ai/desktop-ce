@@ -1907,7 +1907,7 @@ export class AgentRuntimeService {
       if (hasHttpAction) executionCapabilities.push('execute_http_request')
       if (hasShellAction) executionCapabilities.push('execute_shell_command')
       if (hasLlmAction) executionCapabilities.push('perform LLM analysis directly')
-      if (this.hasRunbookTools()) executionCapabilities.push(`execute_runbook (runbookId: ${runbookContext.id})`)
+      if (this.hasRunbookTools()) executionCapabilities.push('execute_runbook (runbookId)')
 
       if (executionCapabilities.length > 0) {
         baseInstructions.push(
