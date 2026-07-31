@@ -772,6 +772,54 @@ function toCursorMcpServers(endpoint: HostMcpEndpoint | undefined): unknown[] {
   }]
 }
 
+function collectReportedCursorMcpServerNames(
+  value: unknown,
+  names: Set<string>,
+  depth = 0,
+): void {
+  if (depth > 5 || value === null || typeof value !== 'object') return
+
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      collectReportedCursorMcpServerNames(item, names, depth + 1)
+    }
+    return
+  }
+
+  const record = value as Record<string, unknown>
+  for (const key of ['mcpServers', 'mcp_servers']) {
+    const servers = record[key]
+    if (Array.isArray(servers)) {
+      for (const server of servers) {
+        const serverRecord = asRecord(server)
+        const name = asString(serverRecord?.name) ?? asString(serverRecord?.id)
+        if (name !== undefined) names.add(name)
+      }
+    } else if (servers !== null && typeof servers === 'object') {
+      for (const name of Object.keys(servers as Record<string, unknown>)) {
+        if (name !== '') names.add(name)
+      }
+    }
+  }
+
+  for (const nested of Object.values(record)) {
+    collectReportedCursorMcpServerNames(nested, names, depth + 1)
+  }
+}
+
+function logAdditionalCursorMcpServers(sessionResult: unknown, sessionId: string): void {
+  const names = new Set<string>()
+  collectReportedCursorMcpServerNames(sessionResult, names)
+  names.delete('bitsentry')
+
+  if (names.size > 0) {
+    log.warn('[cursor-provider] Cursor reported additional MCP servers at session start', {
+      sessionId,
+      mcpServers: [...names].sort(),
+    })
+  }
+}
+
 async function createCursorSession(
   client: CursorAcpClient,
   cwd: string,
@@ -850,6 +898,7 @@ async function runCursorSession(
 
     const sessionResult = await createCursorSession(client, cwd, options.mcpEndpoint)
   state.sessionId = requireCursorSessionId(sessionResult)
+  logAdditionalCursorMcpServers(sessionResult, state.sessionId)
 
   await setCursorModel(client, sessionResult, state.sessionId, options.model)
   await setCursorEffort(client, sessionResult, state.sessionId, options.traitValues?.effort)

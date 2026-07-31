@@ -160,9 +160,11 @@ export class CursorAcpClient extends EventEmitter {
     }
 
     this.closed = false
-    // Cursor's ACP protocol has no approval field on session/new. Its
-    // documented CLI-level --approve-mcps flag is the sanctioned headless
-    // mechanism for the ephemeral MCP server supplied by this host.
+    // Cursor's ACP protocol has no approval field on session/new. The
+    // documented CLI-level --approve-mcps flag is global, rather than scoped
+    // to the ephemeral host server supplied by this process. The provider
+    // records any additional MCP server names Cursor reports after session
+    // creation so this residual exposure is visible in the application log.
     const spawnArgs = ['--approve-mcps', 'acp']
 
     this.child = spawn(this.binaryPath, spawnArgs, {
