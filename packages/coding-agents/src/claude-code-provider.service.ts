@@ -105,6 +105,12 @@ type ClaudeSdkQuery = (params: {
 let testClaudeSdkQueryLoader: (() => Promise<ClaudeSdkQuery> | ClaudeSdkQuery) | undefined
 const CLAUDE_ONE_M_CONTEXT_BETA: ClaudeCodeSdkBeta = 'context-1m-2025-08-07'
 const BITSENTRY_MCP_SERVER_NAME = 'bitsentry'
+const CLAUDE_RUNBOOK_ONLY_SCOPE = [
+  'This is an incident-chat session with runbook tools only.',
+  'The only available tools are list_runbooks, execute_runbook, and get_runbook_execution.',
+  'General file access, shell commands, and web research are out of scope for this session.',
+  'If the user asks for out-of-scope work, explain that limitation instead of attempting a built-in tool.',
+].join(' ')
 
 export const CLAUDE_HOST_MCP_ALLOWED_TOOLS = getHostTools().map(
   (toolDefinition) => `mcp__${BITSENTRY_MCP_SERVER_NAME}__${toolDefinition.name}`,
@@ -565,11 +571,15 @@ function buildClaudeCodeQueryOptions(
   if (mcpServer !== undefined) {
     queryOptions.mcpServers = { [BITSENTRY_MCP_SERVER_NAME]: mcpServer }
   }
-  if (options.systemPrompt !== undefined) {
+  const systemPrompt = [
+    options.systemPrompt,
+    mcpServer === undefined ? undefined : CLAUDE_RUNBOOK_ONLY_SCOPE,
+  ].filter((prompt): prompt is string => prompt !== undefined && prompt.trim().length > 0).join('\n\n')
+  if (systemPrompt.length > 0) {
     queryOptions.systemPrompt = {
       type: 'preset',
       preset: 'claude_code',
-      append: options.systemPrompt,
+      append: systemPrompt,
     }
   }
 
@@ -695,6 +705,16 @@ function handleClaudeExecutionError(
   if (options.abortController.signal.aborted) {
     options.onDelta?.({ type: 'status', status: 'cancelled' })
     return
+  }
+
+  const message = errorMessage(error)
+  if (options.hostToolContext !== undefined && /permission|not allowed|denied/i.test(message)) {
+    log.warn('[claude-code-provider] denied non-runbook tool attempt', {
+      agentSessionId: options.hostToolContext.session.id,
+      error: message,
+    })
+    options.onDelta?.({ type: 'status', status: 'failed' })
+    throw new Error('This incident chat can only use BitSentry runbook tools. General file, shell, and web work is out of scope.')
   }
 
   log.error('[claude-code-provider] Stream error:', error)
