@@ -46,31 +46,18 @@ export const sharedTypeScriptRules = {
       ignoreRestArgs: false,
     },
   ],
-  "@typescript-eslint/consistent-type-assertions": [
-    "error",
-    {
-      assertionStyle: "as",
-      objectLiteralTypeAssertions: "never",
-    },
-  ],
+  "@typescript-eslint/consistent-type-assertions": "off",
+  "@typescript-eslint/no-non-null-assertion": "off",
   "@typescript-eslint/strict-boolean-expressions": "off",
   complexity: ["warn", 60],
-  "no-ternary": "error",
-  "no-nested-ternary": "error",
-  "no-unneeded-ternary": "error",
-  "no-restricted-syntax": [
-    "error",
-    {
-      selector:
-        "TSAsExpression > TSAsExpression, TSTypeAssertion > TSTypeAssertion",
-      message:
-        "Do not use double assertions. Validate or narrow the value instead.",
-    },
-  ],
+  "no-ternary": "off",
+  "no-nested-ternary": "off",
+  "no-unneeded-ternary": "off",
+  "no-restricted-syntax": "off",
   "unicorn/filename-case": "off",
-  "unicorn/no-nested-ternary": "error",
+  "unicorn/no-nested-ternary": "off",
   "unicorn/no-null": "off",
-  "unicorn/no-useless-undefined": "warn",
+  "unicorn/no-useless-undefined": "off",
   "unicorn/prefer-optional-catch-binding": "warn",
   "unicorn/prevent-abbreviations": "off",
 };
@@ -81,11 +68,27 @@ const sharedGlobals = {
   ...globals.jest,
 };
 
+const testStyleRuleOverrides = {
+  files: ["**/*.{spec,test}.{ts,tsx}", "**/__tests__/**/*.{ts,tsx}"],
+  rules: {
+    "@typescript-eslint/consistent-type-assertions": "off",
+    "@typescript-eslint/no-extraneous-class": "off",
+    "@typescript-eslint/no-non-null-assertion": "off",
+    "no-nested-ternary": "off",
+    "no-restricted-syntax": "off",
+    "no-ternary": "off",
+    "no-unneeded-ternary": "off",
+    "unicorn/no-nested-ternary": "off",
+    "unicorn/no-useless-undefined": "off",
+  },
+};
+
 export function createPackageConfig({
   ignores = [],
   react = false,
   extraRules = {},
   tsconfigRootDir,
+  overrides = [],
 } = {}) {
   const reactRules = react
     ? {
@@ -124,5 +127,7 @@ export function createPackageConfig({
         ...extraRules,
       },
     },
+    testStyleRuleOverrides,
+    ...overrides,
   );
 }

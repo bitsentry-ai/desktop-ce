@@ -99,7 +99,9 @@ type PluginIndexEntry = {
   description?: string
 }
 
-const DETACHED_EXECUTION_START_TIMEOUT_MS = 15_000
+// A detached worker may need to wait for a concurrent CLI process to release
+// the shared local execution host before it can publish startup metadata.
+const DETACHED_EXECUTION_START_TIMEOUT_MS = 45_000
 const DETACHED_EXECUTION_START_POLL_MS = 50
 
 function parseFlagToken(token: string): { key: string; inlineValue?: string } | null {

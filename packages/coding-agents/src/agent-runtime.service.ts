@@ -1993,7 +1993,7 @@ export class AgentRuntimeService {
    *
    * @param session - Active session
    */
-  // eslint-disable-next-line complexity, sonarjs/cognitive-complexity -- Main loop orchestrates LLM streaming, tool execution, runbook visibility, cancellation, and finalization.
+  // eslint-disable-next-line complexity -- Main loop orchestrates LLM streaming, tool execution, runbook visibility, cancellation, and finalization.
   private async runAgentLoop(session: AgentSession): Promise<void> {
     const { id: sessionId, abortController, llmAdapter } = session
     session.loopActive = true

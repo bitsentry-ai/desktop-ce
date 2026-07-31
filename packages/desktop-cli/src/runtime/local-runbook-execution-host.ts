@@ -14,7 +14,9 @@ const CONNECTION_TIMEOUT_MS = 5_000
 const METADATA_FILE_NAME = 'runbook-execution-host.json'
 const OWNERSHIP_LOCK_FILE_NAME = 'runbook-execution-host.lock'
 const HOST_METADATA_RETRY_DELAY_MS = 50
-const HOST_METADATA_RETRY_COUNT = 8
+const HOST_HANDOFF_RETRY_WINDOW_MS = 1_000
+const HOST_ACQUISITION_TIMEOUT_MS = 30_000
+const EXECUTION_HANDOFF_GRACE_MS = 1_000
 
 type HostMethod =
   | 'ping'
@@ -283,7 +285,9 @@ export class LocalRunbookExecutionHost {
   private ownershipLock: string | null = null
   private runtime: LocalRunbookExecutionHostRuntime | null
   private runtimePromise: Promise<LocalRunbookExecutionHostRuntime> | null = null
+  private readonly activeExecutionStarts = new Set<Promise<void>>()
   private readonly activeExecutionWaits = new Set<Promise<void>>()
+  private lastExecutionActivityAt: number | null = null
   private executionStartQueue: Promise<void> = Promise.resolve()
 
   constructor(private readonly options: LocalRunbookExecutionHostOptions) {
@@ -341,10 +345,18 @@ export class LocalRunbookExecutionHost {
   }
 
   async close(): Promise<void> {
+    await this.stopAcceptingConnections()
+    await this.removeHostFiles()
+  }
+
+  private async stopAcceptingConnections(): Promise<void> {
     const server = this.server
     this.server = null
     if (server === null) return
     await new Promise<void>((resolve, reject) => server.close((error) => error === undefined ? resolve() : reject(error)))
+  }
+
+  private async removeHostFiles(): Promise<void> {
     if (process.platform !== 'win32') await rm(this.endpoint, { force: true })
     await removeMetadataIfOwned(this.options.userDataPath, this.token)
     await removeOwnershipLock(this.ownershipLock, this.token)
@@ -352,8 +364,24 @@ export class LocalRunbookExecutionHost {
   }
 
   async waitForActiveExecutions(): Promise<void> {
-    while (this.activeExecutionWaits.size > 0) {
-      await Promise.all(this.activeExecutionWaits)
+    for (;;) {
+      const activeWork = [
+        ...this.activeExecutionStarts,
+        ...this.activeExecutionWaits,
+      ]
+      if (activeWork.length > 0) {
+        await Promise.all(activeWork)
+        continue
+      }
+
+      if (this.lastExecutionActivityAt === null) return
+
+      // Detached workers are spawned independently. Keep the shared host
+      // available for a short quiet period so a worker which lost the initial
+      // ownership race can attach after the first execution completes.
+      const quietForMs = Date.now() - this.lastExecutionActivityAt
+      if (quietForMs >= EXECUTION_HANDOFF_GRACE_MS) return
+      await new Promise((resolve) => setTimeout(resolve, EXECUTION_HANDOFF_GRACE_MS - quietForMs))
     }
   }
 
@@ -407,11 +435,13 @@ export class LocalRunbookExecutionHost {
         // SQLite-backed runtimes start an execution inside a transaction. The
         // individual executions can run in parallel, but their transaction
         // setup must not overlap when several CLI processes arrive together.
-        const execution = await this.queueExecutionStart(async () => await runtime.executeRunbook(
-          args[0] as Parameters<RunbookCliRuntime['executeRunbook']>[0],
-        ))
-        this.trackExecution(runtime, execution.executionId)
-        return execution
+        return await this.trackExecutionStart(async () => {
+          const execution = await this.queueExecutionStart(async () => await runtime.executeRunbook(
+            args[0] as Parameters<RunbookCliRuntime['executeRunbook']>[0],
+          ))
+          this.trackExecution(runtime, execution.executionId)
+          return execution
+        })
       }
       case 'getExecution': return runtime.getExecution(String(args[0] ?? ''))
       case 'cancelExecution': return runtime.cancelExecution(String(args[0] ?? ''))
@@ -438,10 +468,28 @@ export class LocalRunbookExecutionHost {
     runtime: LocalRunbookExecutionHostRuntime,
     executionId: string,
   ): void {
+    this.lastExecutionActivityAt = Date.now()
     const completion = runtime.waitForExecution(executionId)
       .then(() => {}, () => {})
-      .finally(() => this.activeExecutionWaits.delete(completion))
+      .finally(() => {
+        this.activeExecutionWaits.delete(completion)
+        this.lastExecutionActivityAt = Date.now()
+      })
     this.activeExecutionWaits.add(completion)
+  }
+
+  private async trackExecutionStart<T>(start: () => Promise<T>): Promise<T> {
+    this.lastExecutionActivityAt = Date.now()
+    const operation = start()
+    let tracked: Promise<void>
+    tracked = operation
+      .then(() => {}, () => {})
+      .finally(() => {
+        this.activeExecutionStarts.delete(tracked)
+        this.lastExecutionActivityAt = Date.now()
+      })
+    this.activeExecutionStarts.add(tracked)
+    return await operation
   }
 
   private async queueExecutionStart<T>(start: () => Promise<T>): Promise<T> {
@@ -654,7 +702,8 @@ async function connectToDesktopHost(userDataPath: string): Promise<LocalRunbookE
 }
 
 async function waitForDesktopHost(userDataPath: string): Promise<LocalRunbookExecutionHostClient | null> {
-  for (let attempt = 0; attempt < HOST_METADATA_RETRY_COUNT; attempt += 1) {
+  const deadline = Date.now() + HOST_HANDOFF_RETRY_WINDOW_MS
+  while (Date.now() < deadline) {
     const client = await connectToDesktopHost(userDataPath)
     if (client !== null) return client
     await new Promise((resolve) => setTimeout(resolve, HOST_METADATA_RETRY_DELAY_MS))
@@ -666,7 +715,8 @@ async function createLocalRunbookExecutionClientOnce(
   options: LocalRunbookExecutionClientOptions,
 ): Promise<RunbookCliRuntime> {
   const userDataPath = path.resolve(options.userDataPath ?? getRuntimeUserDataPath())
-  for (let attempt = 0; attempt < HOST_METADATA_RETRY_COUNT; attempt += 1) {
+  const deadline = Date.now() + HOST_ACQUISITION_TIMEOUT_MS
+  while (Date.now() < deadline) {
     const desktopClient = await connectToDesktopHost(userDataPath)
     if (desktopClient !== null) return desktopClient
 
@@ -697,7 +747,7 @@ async function createLocalRunbookExecutionClientOnce(
       if (error instanceof LocalRunbookExecutionHostAlreadyRunningError) {
         const desktopClientAfterRace = await waitForDesktopHost(userDataPath)
         if (desktopClientAfterRace !== null) return desktopClientAfterRace
-        if (attempt + 1 < HOST_METADATA_RETRY_COUNT) continue
+        continue
       }
       throw error
     }

@@ -1135,7 +1135,6 @@ function toRunbookAction(raw: Record<string, unknown>): DesktopRunbookActionReco
   });
 }
 
-// eslint-disable-next-line sonarjs/cognitive-complexity -- Context payload projection preserves each action type's public fields.
 function actionPayload(
   action: DesktopRunbookActionRecord,
 ): DesktopRunbookContext["actions"][number]["payload"] {
@@ -1818,7 +1817,7 @@ export class DesktopRunbookStore {
     return artifact;
   }
 
-  // eslint-disable-next-line complexity, sonarjs/cognitive-complexity -- Import coordinates conflict handling, dependencies, and dry-run summaries.
+  // eslint-disable-next-line complexity -- Import coordinates conflict handling, dependencies, and dry-run summaries.
   async importRunbooks(
     payload: Record<string, unknown>,
   ): Promise<RunbookImportSummary> {
