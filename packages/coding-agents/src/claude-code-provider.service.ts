@@ -33,6 +33,7 @@ export interface ClaudeCodeExecutionOptions {
   abortController: AbortController
   cwd?: string
   model?: string
+  fastMode?: boolean
   accessLevel?: ClaudeCodeAccessLevel
   maxTurns?: number
   contextWindow?: string
@@ -60,6 +61,9 @@ interface ClaudeCodeQueryOptions {
   abortController: AbortController
   cwd?: string
   model?: string
+  settings?: {
+    fastMode?: boolean
+  }
   maxTurns: number
   pathToClaudeCodeExecutable: string
   settingSources: Array<'user' | 'project' | 'local'>
@@ -89,12 +93,19 @@ interface ClaudeCodeSessionState {
   tokenUsage: LocalAiExecutionResult['tokenUsage']
 }
 
+export interface ClaudeSupportedModel {
+  value: string
+  resolvedModel?: string
+  supportsFastMode?: boolean
+}
+
 interface ClaudeSdkSession extends AsyncIterable<unknown> {
   getContextUsage(): Promise<{
     totalTokens: number
     maxTokens: number
   }>
   close(): void
+  supportedModels?: () => Promise<ClaudeSupportedModel[]>
 }
 
 type ClaudeSdkQuery = (params: {
@@ -444,6 +455,7 @@ function applyTokenUsage(
 function handleResultMessage(
   msg: Record<string, unknown>,
   state: ClaudeCodeSessionState,
+  model: string | undefined,
   onDelta: ClaudeCodeExecutionOptions['onDelta'],
 ): void {
   const subtype = asString(msg.subtype)
@@ -453,7 +465,7 @@ function handleResultMessage(
   }
 
   if (subtype !== undefined && subtype.startsWith('error')) {
-    handleErrorResultMessage(subtype, msg, onDelta)
+    handleErrorResultMessage(subtype, msg, model, onDelta)
   }
 }
 
@@ -473,12 +485,13 @@ function handleSuccessResultMessage(
 function handleErrorResultMessage(
   subtype: string,
   msg: Record<string, unknown>,
+  model: string | undefined,
   onDelta: ClaudeCodeExecutionOptions['onDelta'],
 ): void {
   const errorMsg = asString(msg.error)
   log.warn('[claude-code-provider] Query error:', subtype, errorMsg)
   onDelta?.({ type: 'status', status: 'failed' })
-  throw new Error(`Claude Code error (${subtype}): ${errorMsg ?? 'unknown error'}`)
+  throw new Error(formatClaudeModelError(model, subtype, errorMsg))
 }
 
 function handleSystemMessage(
@@ -498,6 +511,7 @@ function handleSystemMessage(
 function handleClaudeSessionMessage(
   message: unknown,
   state: ClaudeCodeSessionState,
+  model: string | undefined,
   accessLevel: ClaudeCodeAccessLevel,
   debug: ClaudeCodeDebugRecorder | undefined,
   onDelta: ClaudeCodeExecutionOptions['onDelta'],
@@ -516,7 +530,7 @@ function handleClaudeSessionMessage(
       handleStreamEventMessage(msg, state, accessLevel, debug, onDelta)
       break
     case 'result':
-      handleResultMessage(msg, state, onDelta)
+      handleResultMessage(msg, state, model, onDelta)
       break
     case 'system':
       handleSystemMessage(msg, onDelta)
@@ -565,6 +579,7 @@ function buildClaudeCodeQueryOptions(
   }
   applyClaudePermissionOptions(queryOptions, permissionMode)
   applyClaudeContextWindowOption(queryOptions, options.contextWindow)
+  applyClaudeFastModeOption(queryOptions, options.fastMode)
   applyClaudeToolOptions(queryOptions, resolvedTools)
   applyClaudeSpawnerOption(queryOptions, shouldWrapWindowsCmdShim)
   if (mcpServer !== undefined) {
@@ -579,6 +594,20 @@ function buildClaudeCodeQueryOptions(
   }
 
   return queryOptions
+}
+
+function applyClaudeFastModeOption(
+  queryOptions: ClaudeCodeQueryOptions,
+  fastMode: boolean | undefined,
+): void {
+  if (fastMode === undefined) {
+    return
+  }
+
+  queryOptions.settings = {
+    ...(queryOptions.settings ?? {}),
+    fastMode,
+  }
 }
 
 function applyClaudeContextWindowOption(
@@ -639,6 +668,7 @@ async function runClaudeCodeSession(
     handleClaudeSessionMessage(
       message,
       state,
+      options.model,
       effectiveAccessLevel,
       options.debug,
       options.onDelta,
@@ -652,6 +682,62 @@ function errorMessage(error: unknown): string {
   }
 
   return String(error)
+}
+
+type ClaudeModelAccessErrorKind = 'unavailable' | 'unauthorized'
+
+function classifyClaudeModelAccessError(
+  message: string,
+): ClaudeModelAccessErrorKind | undefined {
+  const normalized = message.toLowerCase()
+  if (/(unauthori[sz]ed|forbidden|access denied|not authenticated|permission|entitlement)/.test(normalized)) {
+    return 'unauthorized'
+  }
+  if (/(does not exist|not found|unknown model|invalid model|unavailable)/.test(normalized)) {
+    return 'unavailable'
+  }
+  return undefined
+}
+
+export function formatClaudeModelError(
+  model: string | undefined,
+  subtype: string,
+  message: string | undefined,
+): string {
+  const detail = message ?? 'unknown error'
+  const kind = classifyClaudeModelAccessError(detail)
+  if (kind !== undefined) {
+    return `Claude model ${kind} (${model ?? 'selected model'}): ${detail}`
+  }
+  return `Claude Code error (${subtype}): ${detail}`
+}
+
+export async function listSupportedClaudeModels(
+  binaryPath: string,
+): Promise<ClaudeSupportedModel[]> {
+  const query = await loadClaudeSdkQuery()
+  const abortController = new AbortController()
+  const session = query({
+    prompt: '',
+    options: {
+      abortController,
+      pathToClaudeCodeExecutable: binaryPath,
+      maxTurns: 1,
+      settingSources: ['user', 'project', 'local'],
+      includePartialMessages: false,
+      env: createClaudeCodeSubscriptionEnv(process.env),
+    },
+  })
+
+  try {
+    if (typeof session.supportedModels !== 'function') {
+      throw new Error('Claude Code SDK does not expose supportedModels().')
+    }
+    return await session.supportedModels()
+  } finally {
+    abortController.abort()
+    closeClaudeSession(session)
+  }
 }
 
 function applyContextUsage(

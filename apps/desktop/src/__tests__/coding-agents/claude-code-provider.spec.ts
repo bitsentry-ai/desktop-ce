@@ -6,6 +6,11 @@ import { z } from 'zod'
 type ClaudeQuerySession = AsyncIterable<unknown> & {
   getContextUsage: () => Promise<{ totalTokens: number; maxTokens: number }>
   close: () => void
+  supportedModels?: () => Promise<Array<{
+    value: string
+    resolvedModel?: string
+    supportsFastMode?: boolean
+  }>>
 }
 
 interface SpawnClaudeCodeProcessInput {
@@ -26,6 +31,10 @@ type SpawnedClaudeCodeProcess = EventEmitter & {
 }
 
 interface ClaudeQueryOptions {
+  model?: string
+  settings?: {
+    fastMode?: boolean
+  }
   permissionMode?: string
   includePartialMessages?: boolean
   allowDangerouslySkipPermissions?: boolean
@@ -564,6 +573,8 @@ describe('executeClaudeCode', () => {
       prompt: '[user]: List, run, and inspect the Sentry runbook.',
       binaryPath: 'claude',
       abortController: new AbortController(),
+      model: 'claude-opus-4-8',
+      fastMode: true,
       accessLevel: 'auto-accept-edits',
       hostToolTransport,
       systemPrompt: 'You are the BitSentry incident agent.',
@@ -577,6 +588,8 @@ describe('executeClaudeCode', () => {
       'mcp__bitsentry__get_runbook_execution',
     ])
     expect(queryOptions.settingSources).toEqual([])
+    expect(queryOptions.model).toBe('claude-opus-4-8')
+    expect(queryOptions.settings).toEqual({ fastMode: true })
     expect(queryOptions.cwd).toMatch(/bitsentry-claude-/)
     expect(queryOptions.cwd).not.toBe('/workspace/that-must-not-be-loaded')
     expect(queryOptions.systemPrompt).toEqual({
@@ -615,6 +628,34 @@ describe('executeClaudeCode', () => {
         args: { executionId: 'execution-1' },
       },
     ])
+  })
+
+  it('reads supported Claude models through the SDK without MCP settings', async () => {
+    const supportedModelsMock = vi.fn().mockResolvedValue([
+      { value: 'claude-opus-4-8', supportsFastMode: true },
+    ])
+    queryMock.mockReturnValue({
+      async *[Symbol.asyncIterator]() {
+        await Promise.resolve()
+      },
+      getContextUsage: getContextUsageMock.mockResolvedValue({
+        totalTokens: 0,
+        maxTokens: 0,
+      }),
+      close: closeMock,
+      supportedModels: supportedModelsMock,
+    })
+
+    const { listSupportedClaudeModels } =
+      await import('@bitsentry-ce/coding-agents/claude-code-provider.service')
+    await expect(listSupportedClaudeModels('claude')).resolves.toEqual([
+      { value: 'claude-opus-4-8', supportsFastMode: true },
+    ])
+
+    expect(supportedModelsMock).toHaveBeenCalledOnce()
+    expect(getQueryOptions(0).settingSources).toEqual(['user', 'project', 'local'])
+    expect(getQueryOptions(0).mcpServers).toBeUndefined()
+    expect(closeMock).toHaveBeenCalledOnce()
   })
 
   it('enables the Claude 1M context beta when requested', async () => {
