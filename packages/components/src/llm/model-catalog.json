@@ -1083,6 +1083,69 @@
       "supportsPlanMode": false,
       "models": [
         {
+          "id": "claude-opus-5",
+          "displayName": "Claude Opus 5",
+          "supportsImageInput": false,
+          "supportsAudioInput": false,
+          "supportsVideoInput": false,
+          "supportsPdfInput": false,
+          "supportsThinking": true,
+          "thinkingMode": "toggle",
+          "reasoningOptions": [],
+          "composerOptions": [
+            {
+              "id": "effort",
+              "label": "Reasoning",
+              "type": "select",
+              "options": [
+                {
+                  "value": "low",
+                  "label": "Low"
+                },
+                {
+                  "value": "medium",
+                  "label": "Medium"
+                },
+                {
+                  "value": "high",
+                  "label": "High",
+                  "isDefault": true
+                },
+                {
+                  "value": "xhigh",
+                  "label": "Extra High",
+                  "shortLabel": "xHigh"
+                },
+                {
+                  "value": "max",
+                  "label": "Max"
+                },
+                {
+                  "value": "ultrathink",
+                  "label": "Ultrathink",
+                  "shortLabel": "Ultra"
+                }
+              ]
+            },
+            {
+              "id": "contextWindow",
+              "label": "Context",
+              "type": "select",
+              "options": [
+                {
+                  "value": "300k",
+                  "label": "300k",
+                  "isDefault": true
+                },
+                {
+                  "value": "1m",
+                  "label": "1M"
+                }
+              ]
+            }
+          ]
+        },
+        {
           "id": "claude-sonnet-5",
           "displayName": "Claude Sonnet 5",
           "supportsImageInput": false,
