@@ -19,7 +19,11 @@ export const executeRunbookHostToolSchema = z.object({
 
 export const getRunbookExecutionHostToolSchema = z.object({
   executionId: z.uuid().optional(),
+  waitForCompletion: z.boolean().optional(),
 }).strict()
+
+export const RUNBOOK_COMPLETION_WAIT_TIMEOUT_MS = 30_000
+export const RUNBOOK_COMPLETION_WAIT_SECONDS = RUNBOOK_COMPLETION_WAIT_TIMEOUT_MS / 1_000
 
 export type HostToolName =
   | 'list_runbooks'
@@ -246,6 +250,36 @@ function summarizeExecution(execution: RunbookExecutionRecord): Record<string, u
   }
 }
 
+function isTerminalExecution(execution: RunbookExecutionRecord): boolean {
+  return (
+    execution.status === 'completed' ||
+    execution.status === 'failed' ||
+    execution.status === 'cancelled' ||
+    execution.status === 'claim_expired'
+  )
+}
+
+async function waitForExecutionCompletion(
+  context: HostToolContext,
+  execution: RunbookExecutionRecord,
+): Promise<RunbookExecutionRecord> {
+  const completedExecution = await context.gateway.waitForCompletion(execution.executionId, {
+    timeoutMs: RUNBOOK_COMPLETION_WAIT_TIMEOUT_MS,
+  })
+  if (completedExecution !== null) return completedExecution
+
+  return await context.gateway.get(execution.executionId) ?? execution
+}
+
+function completionWaitMetadata(execution: RunbookExecutionRecord): Record<string, unknown> {
+  return isTerminalExecution(execution)
+    ? {}
+    : {
+        stillRunning: true,
+        waitedSeconds: RUNBOOK_COMPLETION_WAIT_SECONDS,
+      }
+}
+
 function buildTriggerContext(session: AgentSessionRef): RunbookTriggerContext | undefined {
   if (session.incidentThreadId === undefined || session.incidentThreadId.length === 0) {
     return undefined
@@ -344,15 +378,30 @@ async function getRunbookExecution(
       : `Runbook execution not found: ${requestedExecutionId}`)
   }
 
+  if (input.waitForCompletion === true) {
+    execution = await waitForExecutionCompletion(context, execution)
+    context.session.latestRunbookExecutionId = execution.executionId
+    context.session.latestRunbookTitle = execution.runbookTitle
+    context.rememberExecution?.(context.session, execution)
+    return {
+      output: JSON.stringify({
+        ...(context.summarizeExecution ?? summarizeExecution)(execution),
+        ...completionWaitMetadata(execution),
+      }, null, 2),
+    }
+  }
+
   const lookups = context.session.currentTurnRunbookExecutionLookups ?? new Set<string>()
-  if (lookups.has(execution.executionId)) {
+  if (isTerminalExecution(execution) && lookups.has(execution.executionId)) {
     return structuredToolError(
       'REPEATED_RUNBOOK_EXECUTION_LOOKUP',
-      'This runbook execution was already inspected in this turn. Wait for a new execution or user request before checking again.',
+      'This terminal runbook execution was already inspected in this turn. Call get_runbook_execution with waitForCompletion: true when you need a completion-aware result.',
       { executionId: execution.executionId },
     )
   }
-  lookups.add(execution.executionId)
+  if (isTerminalExecution(execution)) {
+    lookups.add(execution.executionId)
+  }
   context.session.currentTurnRunbookExecutionLookups = lookups
   context.session.latestRunbookExecutionId = execution.executionId
   context.session.latestRunbookTitle = execution.runbookTitle
@@ -375,7 +424,7 @@ export const hostTools = [
   },
   {
     name: 'get_runbook_execution',
-    description: 'Get the latest snapshot for a previously started runbook execution. If executionId is omitted, use the latest known runbook execution for the current incident.',
+    description: 'Get a previously started runbook execution. Set waitForCompletion to true to wait up to 30 seconds for a terminal result, then return the latest snapshot; otherwise return the latest snapshot immediately. If executionId is omitted, use the latest known runbook execution for the current incident.',
     argsSchema: getRunbookExecutionHostToolSchema,
     handler: async (context: HostToolContext, args: GetRunbookExecutionHostToolInput) => await getRunbookExecution(context, args),
   },

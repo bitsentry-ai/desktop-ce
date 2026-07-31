@@ -122,8 +122,55 @@ describe('host tools', () => {
     expect(JSON.parse(byId?.output ?? '')).toMatchObject({ executionId: execution.executionId })
   })
 
-  it('rejects repeated execution lookups in the same turn', async () => {
+  it('returns a terminal result after the bounded completion wait', async () => {
     const execution = makeExecution()
+    const completedExecution = makeExecution({
+      status: 'completed',
+      completedAt: '2026-07-31T00:00:30.000Z',
+    })
+    const context = createContext()
+    context.session.latestRunbookExecutionId = execution.executionId
+    context.gateway.get = vi.fn().mockResolvedValue(execution)
+    context.gateway.waitForCompletion = vi.fn().mockResolvedValue(completedExecution)
+
+    const result = await executeHostTool(context, 'get_runbook_execution', {
+      waitForCompletion: true,
+    })
+
+    expect(context.gateway.waitForCompletion).toHaveBeenCalledWith(execution.executionId, {
+      timeoutMs: 30_000,
+    })
+    expect(JSON.parse(result?.output ?? '')).toMatchObject({
+      executionId: execution.executionId,
+      status: 'completed',
+    })
+    expect(result?.output).not.toContain('stillRunning')
+  })
+
+  it('returns the latest running snapshot when the completion wait times out', async () => {
+    const execution = makeExecution()
+    const context = createContext()
+    context.session.latestRunbookExecutionId = execution.executionId
+    context.gateway.get = vi.fn().mockResolvedValue(execution)
+    context.gateway.waitForCompletion = vi.fn().mockResolvedValue(execution)
+
+    const result = await executeHostTool(context, 'get_runbook_execution', {
+      waitForCompletion: true,
+    })
+
+    expect(JSON.parse(result?.output ?? '')).toMatchObject({
+      executionId: execution.executionId,
+      status: 'running',
+      stillRunning: true,
+      waitedSeconds: 30,
+    })
+  })
+
+  it('blocks only repeated non-wait lookups of a terminal execution', async () => {
+    const execution = makeExecution({
+      status: 'completed',
+      completedAt: '2026-07-31T00:00:30.000Z',
+    })
     const context = createContext()
     context.session.latestRunbookExecutionId = execution.executionId
     context.gateway.get = vi.fn().mockResolvedValue(execution)
@@ -136,5 +183,19 @@ describe('host tools', () => {
       code: 'REPEATED_RUNBOOK_EXECUTION_LOOKUP',
       executionId: execution.executionId,
     })
+    expect(repeated?.error).toContain('waitForCompletion: true')
+
+    const runningExecution = makeExecution()
+    const runningContext = createContext()
+    runningContext.session.latestRunbookExecutionId = runningExecution.executionId
+    runningContext.gateway.get = vi.fn().mockResolvedValue(runningExecution)
+    runningContext.gateway.waitForCompletion = vi.fn().mockResolvedValue(runningExecution)
+
+    await executeHostTool(runningContext, 'get_runbook_execution', { waitForCompletion: true })
+    const firstLookupAfterTimeout = await executeHostTool(runningContext, 'get_runbook_execution', {})
+    const secondWait = await executeHostTool(runningContext, 'get_runbook_execution', { waitForCompletion: true })
+
+    expect(firstLookupAfterTimeout?.error).toBeUndefined()
+    expect(secondWait?.error).toBeUndefined()
   })
 })
