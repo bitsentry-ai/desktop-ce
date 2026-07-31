@@ -17,7 +17,6 @@ import {
 
 import { MarkdownContent } from "../markdown";
 import { cn } from "../lib/utils";
-import { stripInternalHostBlocks } from "../lib/hostProtocol";
 import { formatJsonBlockForDisplay } from "../lib/jsonDisplay";
 import type {
   RunbookActionType,
@@ -328,7 +327,7 @@ function OutputContent({
   value: string;
   emptyMessage: string;
 }) {
-  const text = stripInternalHostBlocks(value);
+  const text = value;
 
   if (!text) {
     return (
@@ -1189,7 +1188,7 @@ function ArtifactDetails({
                     (step.error === undefined || step.error.length === 0) &&
                     visibleOutput.length > 0 && (
                     <div className="mt-2 line-clamp-4 text-xs text-muted-foreground">
-                      {stripInternalHostBlocks(visibleOutput)}
+                      {visibleOutput}
                     </div>
                   )}
                 </button>

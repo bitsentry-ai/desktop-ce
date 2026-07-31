@@ -8,6 +8,7 @@ import {
   executeCursor,
   extractCursorModelIds,
 } from '@bitsentry-ce/coding-agents/cursor-provider.service'
+import { setCodingAgentsLoggerForTesting } from '@bitsentry-ce/coding-agents/logger'
 
 const tmpDirs: string[] = []
 
@@ -73,7 +74,7 @@ async function readLoggedMessages(logPath: string): Promise<LoggedCursorMessage[
 
 async function createMockCursorAgent(
   configOptions: unknown[] = DEFAULT_CURSOR_CONFIG_OPTIONS,
-  options: { rejectModelSelection?: boolean } = {},
+  options: { rejectModelSelection?: boolean; reportedMcpServers?: unknown } = {},
 ): Promise<{ binaryPath: string; logPath: string; cwd: string }> {
   const cwd = await mkdtemp(path.join(os.tmpdir(), 'cursor-provider-'))
   tmpDirs.push(cwd)
@@ -81,6 +82,7 @@ async function createMockCursorAgent(
   const logPath = path.join(cwd, 'messages.jsonl')
   const configOptionsJson = JSON.stringify(configOptions)
   const rejectModelSelection = options.rejectModelSelection === true
+  const reportedMcpServersJson = JSON.stringify(options.reportedMcpServers)
   const script = `
 const fs = require('fs')
 const readline = require('readline')
@@ -115,6 +117,7 @@ rl.on('line', (line) => {
       result: {
         sessionId: 'session-1',
         configOptions: ${configOptionsJson},
+        ...((${reportedMcpServersJson}) === undefined ? {} : { mcpServers: (${reportedMcpServersJson}) }),
       },
     }) + '\\n')
     return
@@ -183,6 +186,7 @@ rl.on('line', (line) => {
 
 afterEach(async () => {
   await Promise.all(tmpDirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })))
+  setCodingAgentsLoggerForTesting({ info: () => {}, warn: () => {}, error: () => {} })
 })
 
 const permissionOptions = [
@@ -194,26 +198,6 @@ const permissionOptions = [
 
 describe('Cursor provider behavior', () => {
   it('chooses ACP permission options from access level and tool kind', () => {
-    expect(
-      chooseCursorPermissionResponse(
-        {
-          toolCall: { toolCallId: 'read-1', kind: 'read', title: 'Read file' },
-          options: permissionOptions,
-        },
-        'supervised',
-      ),
-    ).toEqual({ outcome: { outcome: 'selected', optionId: 'reject-once' } })
-
-    expect(
-      chooseCursorPermissionResponse(
-        {
-          toolCall: { toolCallId: 'edit-1', kind: 'edit', title: 'Edit file' },
-          options: permissionOptions,
-        },
-        'supervised',
-      ),
-    ).toEqual({ outcome: { outcome: 'selected', optionId: 'reject-once' } })
-
     expect(
       chooseCursorPermissionResponse(
         {
@@ -372,6 +356,30 @@ describe('Cursor provider behavior', () => {
         ],
       }),
     ).toEqual(['claude-opus-4-6', 'gpt-5', 'claude-sonnet-4-6', 'gpt-5.4'])
+  })
+
+  it('logs MCP servers reported in addition to the injected host server', async () => {
+    const warnings: unknown[][] = []
+    setCodingAgentsLoggerForTesting({
+      info: () => {},
+      warn: (...args) => { warnings.push(args) },
+      error: () => {},
+    })
+    const mock = await createMockCursorAgent(DEFAULT_CURSOR_CONFIG_OPTIONS, {
+      reportedMcpServers: { bitsentry: {}, github: {}, pagerduty: {} },
+    })
+
+    await expect(executeCursor({
+      prompt: 'List runbooks',
+      binaryPath: mock.binaryPath,
+      abortController: new AbortController(),
+      cwd: mock.cwd,
+    })).resolves.toMatchObject({ output: 'done' })
+
+    expect(warnings).toContainEqual([
+      '[cursor-provider] Cursor reported additional MCP servers at session start',
+      { sessionId: 'session-1', mcpServers: ['github', 'pagerduty'] },
+    ])
   })
 
   it('sets Cursor effort through advertised ACP config options', async () => {

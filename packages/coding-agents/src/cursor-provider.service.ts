@@ -1,6 +1,7 @@
 import os from 'os'
 import path from 'path'
 import { CursorAcpClient, type CursorJsonRpcId } from './cursor-acp-client.js'
+import type { HostMcpEndpoint } from './host-mcp-server.service.js'
 import type { LocalAiExecutionResult, LocalAiStreamDelta } from './types.js'
 import { codingAgentsLogger as log } from './logger.js'
 import {
@@ -22,6 +23,7 @@ export interface CursorExecutionOptions {
   model?: string
   accessLevel?: AccessLevel
   traitValues?: Record<string, string | boolean>
+  mcpEndpoint?: HostMcpEndpoint
   onDelta?: (delta: LocalAiStreamDelta) => void
   debug?: CodingAgentDebugRecorder
 }
@@ -209,10 +211,6 @@ function stringifyToolSearchValue(value: unknown): string {
 }
 
 function canAllowTool(accessLevel: AccessLevel, toolKind: CursorToolKind): boolean {
-  if (accessLevel === 'supervised') {
-    return false
-  }
-
   if (accessLevel === 'full-access') {
     return true
   }
@@ -763,11 +761,74 @@ function registerCursorServerRequestHandler(
   })
 }
 
-async function createCursorSession(client: CursorAcpClient, cwd: string): Promise<unknown> {
+function toCursorMcpServers(endpoint: HostMcpEndpoint | undefined): unknown[] {
+  if (endpoint === undefined) return []
+  return [{
+    name: 'bitsentry',
+    command: endpoint.command,
+    args: endpoint.args,
+    // ACP McpServer.env is a list of {name, value} pairs, not a record.
+    env: Object.entries(endpoint.env).map(([name, value]) => ({ name, value })),
+  }]
+}
+
+function collectReportedCursorMcpServerNames(
+  value: unknown,
+  names: Set<string>,
+  depth = 0,
+): void {
+  if (depth > 5 || value === null || typeof value !== 'object') return
+
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      collectReportedCursorMcpServerNames(item, names, depth + 1)
+    }
+    return
+  }
+
+  const record = value as Record<string, unknown>
+  for (const key of ['mcpServers', 'mcp_servers']) {
+    const servers = record[key]
+    if (Array.isArray(servers)) {
+      for (const server of servers) {
+        const serverRecord = asRecord(server)
+        const name = asString(serverRecord?.name) ?? asString(serverRecord?.id)
+        if (name !== undefined) names.add(name)
+      }
+    } else if (servers !== null && typeof servers === 'object') {
+      for (const name of Object.keys(servers as Record<string, unknown>)) {
+        if (name !== '') names.add(name)
+      }
+    }
+  }
+
+  for (const nested of Object.values(record)) {
+    collectReportedCursorMcpServerNames(nested, names, depth + 1)
+  }
+}
+
+function logAdditionalCursorMcpServers(sessionResult: unknown, sessionId: string): void {
+  const names = new Set<string>()
+  collectReportedCursorMcpServerNames(sessionResult, names)
+  names.delete('bitsentry')
+
+  if (names.size > 0) {
+    log.warn('[cursor-provider] Cursor reported additional MCP servers at session start', {
+      sessionId,
+      mcpServers: [...names].sort(),
+    })
+  }
+}
+
+async function createCursorSession(
+  client: CursorAcpClient,
+  cwd: string,
+  mcpEndpoint?: HostMcpEndpoint,
+): Promise<unknown> {
   return withTimeout(
     client.sendRequest('session/new', {
       cwd,
-      mcpServers: [],
+      mcpServers: toCursorMcpServers(mcpEndpoint),
     }),
     CURSOR_SETUP_TIMEOUT_MS,
     'Cursor ACP session/new',
@@ -835,8 +896,9 @@ async function runCursorSession(
   await client.start()
   await initializeCursorClient(client)
 
-  const sessionResult = await createCursorSession(client, cwd)
+    const sessionResult = await createCursorSession(client, cwd, options.mcpEndpoint)
   state.sessionId = requireCursorSessionId(sessionResult)
+  logAdditionalCursorMcpServers(sessionResult, state.sessionId)
 
   await setCursorModel(client, sessionResult, state.sessionId, options.model)
   await setCursorEffort(client, sessionResult, state.sessionId, options.traitValues?.effort)
@@ -878,6 +940,13 @@ export async function executeCursor(
     throw new Error(appendCursorStderrTail(getErrorMessage(err), client.getStderrTail()))
   } finally {
     options.abortController.signal.removeEventListener('abort', onAbort)
+    const stderrTail = client.getStderrTail().trim()
+    if (stderrTail.length > 0) {
+      log.warn('[cursor-provider] subprocess stderr tail', {
+        agentSessionId: options.mcpEndpoint?.agentSessionId ?? 'unknown',
+        stderrTail,
+      })
+    }
     await client.kill()
   }
 }

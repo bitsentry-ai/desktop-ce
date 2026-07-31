@@ -10,7 +10,7 @@
  * - System SSH identity only
  */
 
-import log from 'electron-log'
+import { codingAgentsLogger as log } from './logger.js'
 import { createHash, randomUUID } from 'crypto'
 import { zodToJsonSchema } from '@alcyone-labs/zod-to-json-schema'
 import { z } from 'zod'
@@ -50,7 +50,6 @@ import type {
   ChatMessage,
   ToolCall,
 } from './agent-llm-adapter.service.js'
-import type { LocalAiHostToolTransport } from './types.js'
 import type {
   RunbookExecutionRecord,
   RunbookExecutionStepRecord,
@@ -59,7 +58,17 @@ import type {
   RunbookTriggerContext,
 } from '@bitsentry-ce/core/features/runbooks/desktop-runbook.types'
 import type { RunbookGateway } from '@bitsentry-ce/core/features/runbooks'
-import { createAgentToolResultEnvelope } from '@bitsentry-ce/core/features/agent-runtime'
+import {
+  createAgentToolResultEnvelope,
+  executeHostTool,
+  getHostTools,
+  isHostToolName,
+  type AgentSessionRef,
+  type ExecuteRunbookHostToolInput,
+  type GetRunbookExecutionHostToolInput,
+  type HostToolContext,
+  type HostToolEvent,
+} from '@bitsentry-ce/core/features/agent-runtime'
 
 const CHANNEL_EVENT = 'bitsentry:agent:event'
 const NO_LLM_PROVIDER_CONFIGURED_MESSAGE =
@@ -118,23 +127,6 @@ const MAX_STRUCTURED_RUNBOOK_ISSUES = 10
 const MAX_DERIVED_JOURNAL_TIME_WINDOW_SPAN_MS = 24 * 60 * 60 * 1000
 const INCIDENT_TIMESTAMP_PATTERN =
   /\b\d{4}-\d{2}-\d{2}[Tt ][0-2]\d:[0-5]\d(?::[0-5]\d(?:\.\d{1,9})?)?(?:Z| UTC|[+-]\d{2}:?\d{2})?\b/g
-
-const listRunbooksToolSchema = z.object({}).strict()
-
-const executeRunbookToolSchema = z
-  .object({
-    runbookId: z.string().min(1).optional(),
-    runbookTitle: z.string().min(1).optional(),
-    parameterValues: z.record(z.string(), z.string()).optional(),
-    parameters: z.record(z.string(), z.string()).optional(),
-  })
-  .strict()
-
-const getRunbookExecutionToolSchema = z
-  .object({
-    executionId: z.uuid().optional(),
-  })
-  .strict()
 
 const unknownRecordSchema = z.record(z.string(), z.unknown())
 
@@ -261,11 +253,14 @@ function normalizeGetRunbookExecutionArgs(args: Record<string, unknown>): Record
   }
   delete mergedArgs.input
 
-  if (!('executionId' in mergedArgs)) {
-    return {}
+  const normalized: Record<string, unknown> = {}
+  if ('executionId' in mergedArgs) {
+    normalized.executionId = mergedArgs.executionId
   }
-
-  return { executionId: mergedArgs.executionId }
+  if ('waitForCompletion' in mergedArgs) {
+    normalized.waitForCompletion = mergedArgs.waitForCompletion
+  }
+  return normalized
 }
 
 const sshJournalStringFields = new Set<string>(['host', 'username', 'since', 'until', 'cursor', 'sourceId'])
@@ -421,7 +416,7 @@ interface AgentSession {
   messages: ChatMessage[] // Conversation history
   runbookContext?: RunbookContext
   llmSelection?: AgentLlmSelection
-  accessLevel?: 'supervised' | 'auto-accept-edits' | 'full-access'
+  accessLevel?: 'auto-accept-edits' | 'full-access'
   traitValues?: Record<string, string | boolean>
   incidentThreadId?: string
   latestRunbookExecutionId?: string
@@ -430,19 +425,25 @@ interface AgentSession {
   latestJournalTimeWindowParameters?: RunbookParameterValues
   currentTurnRunbookExecutionLookups?: Set<string>
   currentTurnStartedRunbookExecutionIds?: Set<string>
-  currentTurnMcpToolResults?: CompletedToolResult[]
+  currentTurnHostToolCalls?: Map<string, ObservedHostToolCall>
   currentTurnVisibleRunbookExecutionIds?: Set<string>
   queuedFollowUps: AgentSendInput[]
   loopActive?: boolean
   snapshot: AgentThreadSnapshot
 }
 
-type ExecuteRunbookInput = z.infer<typeof executeRunbookToolSchema>
+type ExecuteRunbookInput = ExecuteRunbookHostToolInput
 
 type CompletedToolResult = {
   toolCall: ToolCall
   result: ToolResult
   modelContext: string
+}
+
+type ObservedHostToolCall = {
+  toolCall: ToolCall
+  result?: ToolResult
+  modelContext?: string
 }
 
 type DirectRunbookExecutionResult = {
@@ -487,40 +488,6 @@ function joinNonEmptyBlocks(...blocks: string[]): string {
     .map((block) => block.trim())
     .filter((block) => block.length > 0)
     .join('\n\n')
-}
-
-const LOCAL_PROVIDER_TOOL_PROMISE_PATTERNS = [
-  /\b(?:i(?:['’]ll| will| am going to)|i have|i['’]ve)\s+(?:retrieve|fetch|list|check|show|run|execute|inspect|get|request|call|use|discover|identify|enumerate|find|look up|determine)\b[\s\S]{0,120}\b(?:runbooks?|list_runbooks|execute_runbook|get_runbook_execution)\b/i,
-  /\b(?:i\s+)?(?:requested|called|invoked)\b[\s\S]{0,120}\b(?:runbooks?|list_runbooks|execute_runbook|get_runbook_execution)\b/i,
-  /\bwaiting for\b[\s\S]{0,80}\b(?:runbook|tool|execution|list_runbooks|execute_runbook|get_runbook_execution)\b/i,
-] as const
-
-const LOCAL_PROVIDER_TOOL_RETRY_PROMPT = [
-  'Your previous response promised or described a host tool call, but it emitted no valid structured CLI tool envelope.',
-  'Do not finalize the response. Emit exactly one JSON document with version 1, type "tool_calls", and the required toolCalls now, then stop.',
-  'If no tool is needed, explicitly say so instead of claiming that a tool was requested or executed.',
-].join(' ')
-
-const RUNBOOK_EXECUTION_INSPECTION_ERROR_REFERENCE = 'RUNBOOK_EXECUTION_INSPECTION_REQUIRED'
-
-const RUNBOOK_OUTCOME_CLAIM_PATTERNS = [
-  /\bstep\s+\d+\b/i,
-  /[✅❌⏸]/u,
-  /\bfailed\s+at\b/i,
-  /\bnever\s+ran\b/i,
-  /\b(?:runbook|execution|step)\b[\s\S]{0,120}\b(?:failed|completed|succeeded|blocked|never ran|did not run)\b/i,
-  /\b(?:runbook|execution|step)\b[\s\S]{0,120}\b(?:running|pending|in progress|mid-execution|started)\b/i,
-] as const
-
-function hasUnfulfilledHostToolPromise(
-  content: string,
-  hasForeignToolCallMarkup: boolean,
-): boolean {
-  return hasForeignToolCallMarkup || LOCAL_PROVIDER_TOOL_PROMISE_PATTERNS.some((pattern) => pattern.test(content))
-}
-
-function hasRunbookOutcomeClaim(content: string): boolean {
-  return RUNBOOK_OUTCOME_CLAIM_PATTERNS.some((pattern) => pattern.test(content))
 }
 
 function mergeTurnTokenUsage(current: TurnTokenUsage | undefined, usage: TurnTokenUsage): TurnTokenUsage {
@@ -1512,7 +1479,7 @@ function formatRunbookParameterSummary(
         line += ` default=${parameter.defaultValue}`
       }
       if (parameter.description !== undefined && parameter.description.length > 0) {
-        line += ` — ${parameter.description}`
+        line += ` - ${parameter.description}`
       }
       lines.push(line)
     }
@@ -1652,28 +1619,6 @@ function appendOptionalLine(lines: string[], line: string | null): void {
   }
 
   lines.push(line)
-}
-
-function normalizeLookupTokens(value: string): string[] {
-  const ignoredTokens = new Set(['a', 'an', 'and', 'for', 'from', 'id', 'in', 'of', 'rb', 'runbook', 'the', 'to'])
-
-  return value
-    .toLowerCase()
-    .split(/[^a-z0-9]+/)
-    .map((token) => token.trim())
-    .filter((token) => token.length > 1 && !ignoredTokens.has(token))
-    .map((token) => {
-      if (token.endsWith('s') && token.length > 3) {
-        return token.slice(0, -1)
-      }
-
-      return token
-    })
-}
-
-function tokenOverlapScore(needleTokens: string[], haystackTokens: string[]): number {
-  const haystack = new Set(haystackTokens)
-  return needleTokens.filter((token) => haystack.has(token)).length
 }
 
 /**
@@ -1950,11 +1895,11 @@ export class AgentRuntimeService {
         'Runbook parameter defaults are fallback values only when the user did not specify a value.',
         'When prior runbook results provide a combined journalctl window, run the backend log runbook once with that combined since/until instead of starting one runbook per issue row.',
         'When prior runbook results list only individual actionable journalctl windows, use those exact since/until values in execute_runbook.parameterValues for the backend log runbook; do not ask the user to paste timestamps you already received.',
-        'Use get_runbook_execution to inspect the status or results of a started runbook. You may omit executionId to use the latest runbook execution for this incident.',
+        'After starting a runbook, call get_runbook_execution exactly once with waitForCompletion: true to obtain its terminal result or its latest snapshot after 30 seconds. You may omit executionId to use the latest runbook execution for this incident.',
         'If you inspect a runbook in the same assistant response that starts it, omit executionId so the runtime can use the execution that actually started.',
         'Do not final-answer from a runbook start acknowledgement alone when the user asked for cross-validation, matrices, or RCA.',
         'If a later runbook fails, prefer the successful runbook results already present in this incident instead of restarting the entire investigation.',
-        'Do not repeatedly poll get_runbook_execution in the same turn for a running runbook. Start it once, then stop and let the user ask again later.',
+        'Do not poll get_runbook_execution. A single waitForCompletion: true lookup is the only follow-up lookup needed in this response.',
         'Do not claim a runbook was executed unless execute_runbook succeeded.',
         '',
       )
@@ -1966,7 +1911,7 @@ export class AgentRuntimeService {
       if (hasHttpAction) executionCapabilities.push('execute_http_request')
       if (hasShellAction) executionCapabilities.push('execute_shell_command')
       if (hasLlmAction) executionCapabilities.push('perform LLM analysis directly')
-      if (this.hasRunbookTools()) executionCapabilities.push(`execute_runbook (runbookId: ${runbookContext.id})`)
+      if (this.hasRunbookTools()) executionCapabilities.push('execute_runbook (runbookId)')
 
       if (executionCapabilities.length > 0) {
         baseInstructions.push(
@@ -2056,14 +2001,13 @@ export class AgentRuntimeService {
     try {
       session.currentTurnRunbookExecutionLookups = new Set()
       session.currentTurnStartedRunbookExecutionIds = new Set()
-      session.currentTurnMcpToolResults = []
+      session.currentTurnHostToolCalls = new Map()
       session.currentTurnVisibleRunbookExecutionIds = new Set()
       session.currentTurnId = randomUUID()
       let iterations = 0
       let lastToolResult: ToolResult | undefined
       let turnTokenUsage: TurnTokenUsage | undefined
       let postToolFallbackResults: CompletedToolResult[] | null = null
-      let localProviderToolCallRetryCount = 0
       let hasExecutedToolCallInCurrentTurn = false
       let awaitingRunbookSummary = false
       const visibleRunbookExecutionIds = new Set<string>()
@@ -2089,7 +2033,6 @@ export class AgentRuntimeService {
 
       const directRunbookExecution = await this.runExplicitlyMentionedRunbook(session)
       if (directRunbookExecution !== null) {
-        localProviderToolCallRetryCount = 0
         hasExecutedToolCallInCurrentTurn = true
         awaitingRunbookSummary = true
         lastToolResult = directRunbookExecution.result
@@ -2183,13 +2126,11 @@ export class AgentRuntimeService {
 
         // Call LLM
         const shouldEmitAssistantDeltas =
-          (!isLocalCodingAgentProvider ||
-            this.debugHooks.isLocalCodingAgentDeltaStreamingEnabled()) &&
-          !awaitingRunbookSummary
+          !isLocalCodingAgentProvider ||
+          this.debugHooks.isLocalCodingAgentDeltaStreamingEnabled()
         const remainingSessionTimeoutMs = Math.max(1, session.expiresAt - Date.now())
         let response: Awaited<ReturnType<AgentLlmAdapterService['chatWithTools']>>
         try {
-          session.currentTurnMcpToolResults = []
           response = await runOrchestratedOperation({
             operation: 'LLM response',
             signal: abortController.signal,
@@ -2202,8 +2143,8 @@ export class AgentRuntimeService {
                 llm: session.llmSelection,
                 accessLevel: session.accessLevel,
                 traitValues: session.traitValues,
-                hostToolTransport: this.hasRunbookTools()
-                  ? this.createLocalAiHostToolTransport(session)
+                hostToolContext: this.hasRunbookTools()
+                  ? this.createHostToolContext(session, { observeEvents: true })
                   : undefined,
 
             onDelta: (delta) => {
@@ -2242,24 +2183,6 @@ export class AgentRuntimeService {
           throw error
         }
 
-        const mcpToolResults = this.takeCurrentTurnMcpToolResults(session)
-        if (mcpToolResults.length > 0) {
-          hasExecutedToolCallInCurrentTurn = true
-          session.messages.push({
-            role: 'assistant',
-            content: '',
-            toolCalls: mcpToolResults.map(({ toolCall }) => toolCall),
-          })
-          for (const { toolCall, result, modelContext } of mcpToolResults) {
-            session.messages.push({
-              role: 'tool',
-              content: modelContext,
-              toolCallId: toolCall.id,
-              toolResult: createAgentToolResultEnvelope(toolCall, result),
-            })
-          }
-        }
-
         const toolResponseFallbackText = this.buildVisibleRunbookFallbackResponse(
           fallbackResultsForThisLlmCall,
           response.content,
@@ -2276,15 +2199,8 @@ export class AgentRuntimeService {
             toolResponseFallbackText,
           )
         }
-        const uninspectedExecutionIds = this.getUninspectedStartedRunbookExecutionIds(session)
-        const hasUninspectedRunbookOutcomeClaim =
-          uninspectedExecutionIds.length > 0 && hasRunbookOutcomeClaim(responseContent)
 
-        if (
-          responseContent.length > 0 &&
-          !observedIteration.textDelta &&
-          !hasUninspectedRunbookOutcomeClaim
-        ) {
+        if (responseContent.length > 0 && !observedIteration.textDelta) {
           if (localCodingAgentProviderKey !== null) {
             this.debugHooks.recordCodingAgentDebugAnomaly('agent_runtime.fallback_final_text', {
               provider: localCodingAgentProviderKey,
@@ -2324,57 +2240,34 @@ export class AgentRuntimeService {
           toolCalls = this.dedupeToolCalls(session, response.toolCalls)
         }
 
+        const observedHostToolCalls = this.takeCompletedHostToolCalls(session)
         if (toolCalls.length > 0) {
           assistantMessage.toolCalls = toolCalls
+        } else if (observedHostToolCalls.length > 0) {
+          assistantMessage.toolCalls = observedHostToolCalls.map(({ toolCall }) => toolCall)
         }
 
         session.messages.push(assistantMessage)
 
+        for (const { toolCall, result, modelContext } of observedHostToolCalls) {
+          session.messages.push({
+            role: 'tool',
+            content: modelContext,
+            toolCallId: toolCall.id,
+            toolResult: createAgentToolResultEnvelope(toolCall, result),
+          })
+        }
+
+        if (response.toolProtocol === 'mcp') {
+          if (toolCalls.length > 0) {
+            throw new Error('MCP providers must execute host tools through the MCP server, not return tool calls')
+          }
+          emitFinal(responseContent)
+          return
+        }
+
         // If no tool calls, we're done with this turn but keep session RUNNING for follow-ups
         if (toolCalls.length === 0) {
-          if (hasUninspectedRunbookOutcomeClaim) {
-            if (localProviderToolCallRetryCount > 0) {
-              throw new Error(
-                `${RUNBOOK_EXECUTION_INSPECTION_ERROR_REFERENCE}: runbook outcome claimed without get_runbook_execution for ${uninspectedExecutionIds.join(', ')} after the protocol retry.`,
-              )
-            }
-
-            localProviderToolCallRetryCount = 1
-            session.messages.push({
-              role: 'system',
-              content: this.buildRunbookExecutionInspectionRetryPrompt(uninspectedExecutionIds),
-            })
-            continue
-          }
-
-          if (
-            isLocalCodingAgentProvider &&
-            response.toolProtocol === 'structured_cli' &&
-            !hasExecutedToolCallInCurrentTurn
-          ) {
-            if (hasUnfulfilledHostToolPromise(responseContent, response.hasForeignToolCallMarkup === true)) {
-              if (localProviderToolCallRetryCount > 0) {
-                if (responseContent.length > 0 && !shouldEmitAssistantDeltas) {
-                  this.sendEvent(sessionId, {
-                    type: 'assistant_delta',
-                    timestamp: new Date().toISOString(),
-                    delta: responseContent,
-                  })
-                }
-                throw new Error(
-                  'Local provider promised a host tool call but emitted no tool-call block after the protocol retry.',
-                )
-              }
-
-              localProviderToolCallRetryCount = 1
-              session.messages.push({
-                role: 'system',
-                content: LOCAL_PROVIDER_TOOL_RETRY_PROMPT,
-              })
-              continue
-            }
-          }
-
           emitFinal(responseContent)
           return
         }
@@ -2545,7 +2438,7 @@ export class AgentRuntimeService {
       session.loopActive = false
       session.currentTurnRunbookExecutionLookups = undefined
       session.currentTurnStartedRunbookExecutionIds = undefined
-      session.currentTurnMcpToolResults = undefined
+      session.currentTurnHostToolCalls = undefined
       session.currentTurnVisibleRunbookExecutionIds = undefined
       session.currentTurnId = undefined
       const queuedFollowUp = session.queuedFollowUps.shift()
@@ -2772,24 +2665,6 @@ export class AgentRuntimeService {
     }
   }
 
-  private getUninspectedStartedRunbookExecutionIds(session: AgentSession): string[] {
-    const startedExecutionIds = session.currentTurnStartedRunbookExecutionIds
-    if (startedExecutionIds === undefined || startedExecutionIds.size === 0) {
-      return []
-    }
-
-    const inspectedExecutionIds = session.currentTurnRunbookExecutionLookups ?? new Set<string>()
-    return [...startedExecutionIds].filter((executionId) => !inspectedExecutionIds.has(executionId))
-  }
-
-  private buildRunbookExecutionInspectionRetryPrompt(executionIds: string[]): string {
-    return [
-      'Your previous response claimed a runbook execution outcome before inspecting the persisted execution.',
-      `Do not finalize an outcome claim yet. Call get_runbook_execution for executionId ${executionIds.join(', ')} and use only its returned status, steps, output, and error.`,
-      `If inspection cannot be completed, state that clearly and include error reference ${RUNBOOK_EXECUTION_INSPECTION_ERROR_REFERENCE}.`,
-    ].join(' ')
-  }
-
   private findActiveIncidentSession(incidentThreadId: string): AgentSession | null {
     return (
       [...this.sessions.values()]
@@ -2851,100 +2726,7 @@ export class AgentRuntimeService {
   }
 
   private isDynamicToolName(toolName: string): boolean {
-    return toolName === 'list_runbooks' || toolName === 'execute_runbook' || toolName === 'get_runbook_execution'
-  }
-
-  private createLocalAiHostToolTransport(session: AgentSession): LocalAiHostToolTransport {
-    return {
-      tools: [
-        {
-          name: 'list_runbooks',
-          description: 'List available runbooks that can be executed for the incident.',
-          inputShape: listRunbooksToolSchema.shape,
-        },
-        {
-          name: 'execute_runbook',
-          description:
-            'Start a real runbook execution by runbookId or runbookTitle. If the user specifies placeholder values, pass them in parameterValues. Saved defaults are fallback values only.',
-          inputShape: executeRunbookToolSchema.shape,
-        },
-        {
-          name: 'get_runbook_execution',
-          description:
-            'Get the latest persisted snapshot for a runbook execution. Inspect the executionId returned by execute_runbook before reporting its status or outcome.',
-          inputShape: getRunbookExecutionToolSchema.shape,
-        },
-      ],
-      execute: async (toolCall) => await this.executeLocalAiHostTool(session, toolCall),
-    }
-  }
-
-  private async executeLocalAiHostTool(
-    session: AgentSession,
-    toolCall: ToolCall,
-  ): Promise<ToolResult> {
-    session.currentToolCallId = toolCall.id
-    const result = await this.executeToolCall(session, toolCall)
-    if (session.currentToolCallId === toolCall.id) {
-      session.currentToolCallId = null
-    }
-
-    const modelContext = this.buildToolConversationContent(toolCall, result)
-    this.sendEvent(session.id, {
-      type: 'tool_end',
-      timestamp: new Date().toISOString(),
-      toolCallId: toolCall.id,
-      state: getToolEndState(result),
-      output: result.output,
-      error: result.error,
-      modelContext,
-    })
-
-    const visibleResult = this.buildVisibleRunbookToolResult({
-      toolCall,
-      result,
-      modelContext,
-    })
-    if (
-      visibleResult !== null &&
-      toolCall.name !== 'list_runbooks' &&
-      this.shouldEmitMcpRunbookResult(session, visibleResult)
-    ) {
-      this.sendEvent(session.id, {
-        type: 'assistant_delta',
-        timestamp: new Date().toISOString(),
-        delta: visibleResult.text,
-        kind: 'command_output',
-      })
-    }
-
-    session.currentTurnMcpToolResults?.push({ toolCall, result, modelContext })
-    return result
-  }
-
-  private shouldEmitMcpRunbookResult(
-    session: AgentSession,
-    visibleResult: VisibleRunbookToolResult,
-  ): boolean {
-    if (visibleResult.executionId === undefined) {
-      return true
-    }
-
-    const visibleExecutionIds =
-      session.currentTurnVisibleRunbookExecutionIds ?? new Set<string>()
-    session.currentTurnVisibleRunbookExecutionIds = visibleExecutionIds
-    if (visibleExecutionIds.has(visibleResult.executionId)) {
-      return false
-    }
-
-    visibleExecutionIds.add(visibleResult.executionId)
-    return true
-  }
-
-  private takeCurrentTurnMcpToolResults(session: AgentSession): CompletedToolResult[] {
-    const results = session.currentTurnMcpToolResults ?? []
-    session.currentTurnMcpToolResults = []
-    return results
+    return isHostToolName(toolName)
   }
 
   private getDynamicToolDefinitions(): Array<{
@@ -2954,100 +2736,27 @@ export class AgentRuntimeService {
   }> {
     if (!this.hasRunbookTools()) return []
 
-    return [
-      {
-        name: 'list_runbooks',
-        description: 'List available runbooks that can be executed for the incident.',
-        inputSchema: zodToJsonSchema(listRunbooksToolSchema as never),
-      },
-      {
-        name: 'execute_runbook',
-        description:
-          'Start a real runbook execution by runbookId or runbookTitle. If the user specifies placeholder values, pass them in parameterValues. Saved defaults are fallback values only.',
-        inputSchema: zodToJsonSchema(executeRunbookToolSchema as never),
-      },
-      {
-        name: 'get_runbook_execution',
-        description:
-          'Get the latest snapshot for a previously started runbook execution. If executionId is omitted, use the latest known runbook execution for the current incident.',
-        inputSchema: zodToJsonSchema(getRunbookExecutionToolSchema as never),
-      },
-    ]
+    return getHostTools().map((tool) => ({
+      name: tool.name,
+      description: tool.description,
+      inputSchema: zodToJsonSchema(tool.argsSchema as never),
+    }))
   }
 
   private async executeDynamicToolCall(session: AgentSession, toolCall: ToolCall): Promise<ToolResult | null> {
     if (!this.hasRunbookTools()) return null
-
-    switch (toolCall.name) {
-      case 'list_runbooks': {
-        listRunbooksToolSchema.parse(toolCall.args)
-        const runbooks = await this.listExecutableRunbooks()
-        return {
-          output: JSON.stringify(
-            {
-              runbooks: runbooks.map((runbook) => ({
-                id: runbook.id,
-                title: runbook.title,
-                description: runbook.description,
-                revisionNumber: runbook.revisionNumber,
-                actionCount: runbook.actions.length,
-                actionTypes: runbook.actions.map((action) => action.type),
-                actionParameters: runbook.actions
-                  .filter((action) => action.parameters !== undefined && action.parameters.length > 0)
-                  .map((action) => ({
-                    actionId: action.id,
-                    actionTitle: action.title,
-                    parameters: action.parameters?.map((parameter) => ({
-                      key: parameter.key,
-                      description: parameter.description,
-                      defaultValue: parameter.defaultValue,
-                      required: parameter.required !== false,
-                    })) ?? [],
-                  })),
-              })),
-            },
-            null,
-            2,
-          ),
-        }
-      }
-      case 'execute_runbook': {
-        const input = executeRunbookToolSchema.parse(normalizeToolArgs(toolCall.name, toolCall.args))
-        return await this.executeRunbook(session, input)
-      }
-      case 'get_runbook_execution': {
-        const input = getRunbookExecutionToolSchema.parse(normalizeToolArgs(toolCall.name, toolCall.args))
-        const execution = await this.resolveRunbookExecutionReference(session, input)
-        if (execution === null) {
-          let message = 'No runbook execution was found for this incident yet'
-          if (input.executionId !== undefined && input.executionId.length > 0) {
-            message = `Runbook execution not found: ${input.executionId}`
-          }
-          throw new Error(message)
-        }
-        const executionForOutput = execution
-        session.latestRunbookExecutionId = execution.executionId
-        session.latestRunbookTitle = execution.runbookTitle
-        this.rememberJournalTimeWindowParameters(session, executionForOutput)
-        const currentTurnLookups = session.currentTurnRunbookExecutionLookups ?? new Set<string>()
-        const alreadyCheckedThisTurn = currentTurnLookups.has(execution.executionId)
-        currentTurnLookups.add(execution.executionId)
-        session.currentTurnRunbookExecutionLookups = currentTurnLookups
-        const outputPayload = summarizeRunbookExecutionForToolOutput(executionForOutput)
-        if (alreadyCheckedThisTurn) {
-          outputPayload.repeatBlocked = true
-        }
-        return {
-          output: JSON.stringify(
-            outputPayload,
-            null,
-            2,
-          ),
-        }
-      }
-      default:
-        return null
+    if (toolCall.name === 'execute_runbook') {
+      this.sendEvent(session.id, {
+        type: 'activity',
+        timestamp: new Date().toISOString(),
+        phase: 'running_runbook',
+      })
     }
+    return await executeHostTool(
+      this.createHostToolContext(session),
+      toolCall.name,
+      toolCall.args,
+    )
   }
 
   private async executeRunbook(session: AgentSession, input: ExecuteRunbookInput): Promise<ToolResult> {
@@ -3056,205 +2765,124 @@ export class AgentRuntimeService {
       timestamp: new Date().toISOString(),
       phase: 'running_runbook',
     })
-    const runbookGateway = this.getRunbookGateway()
-    const runbook = await this.resolveRunbookReference(session, input)
-    const parameterValues = this.resolveRunbookParameterValues(session, runbook, input)
-    const execution = await runbookGateway.start({
-      runbookId: runbook.id,
-      expectedRevisionNumber: runbook.revisionNumber,
-      requestKey: buildGatewayRunbookRequestKey(session, runbook, parameterValues),
-      incidentId: session.incidentThreadId,
-      parameterValues,
-      source: 'agent',
-      triggerContext: this.buildRunbookTriggerContext(session),
-      accessLevel: session.accessLevel,
-    })
-    session.latestRunbookExecutionId = execution.executionId
-    session.latestRunbookResultId = execution.resultId
-    session.latestRunbookTitle = runbook.title
-    session.currentTurnStartedRunbookExecutionIds?.add(execution.executionId)
-    const outputPayload: Record<string, unknown> = {
-      status: execution.execution.status,
-      runbookId: runbook.id,
-      runbookTitle: runbook.title,
-      executionId: execution.executionId,
-      resultId: execution.resultId,
-      deduplicated: execution.deduplicated,
-      execution: summarizeRunbookExecutionForToolOutput(execution.execution),
+    const result = await executeHostTool(this.createHostToolContext(session), 'execute_runbook', input)
+    if (result === null) {
+      return { error: 'The execute_runbook host tool is not registered' }
     }
+    return result
+  }
+
+  private createHostToolContext(
+    session: AgentSession,
+    options: { observeEvents?: boolean } = {},
+  ): HostToolContext {
     return {
-      output: JSON.stringify(
-        outputPayload,
-        null,
-        2,
-      ),
+      gateway: this.getRunbookGateway(),
+      session: session as AgentSessionRef,
+      buildRequestKey: (sessionRef, runbook, parameterValues) =>
+        buildGatewayRunbookRequestKey(sessionRef as AgentSession, runbook, parameterValues),
+      resolveParameterValues: (sessionRef, runbook, input) =>
+        this.resolveRunbookParameterValues(sessionRef as AgentSession, runbook, input),
+      summarizeExecution: summarizeRunbookExecutionForToolOutput,
+      rememberExecution: (sessionRef, execution) =>
+        this.rememberJournalTimeWindowParameters(sessionRef as AgentSession, execution),
+      ...(options.observeEvents
+        ? { onToolEvent: (event: HostToolEvent) => this.observeHostToolEvent(session, event) }
+        : {}),
     }
+  }
+
+  private observeHostToolEvent(session: AgentSession, event: HostToolEvent): void {
+    const observedCalls = session.currentTurnHostToolCalls ?? new Map<string, ObservedHostToolCall>()
+    session.currentTurnHostToolCalls = observedCalls
+    const toolCall: ToolCall = {
+      id: event.toolCallId,
+      name: event.toolName,
+      args: event.args,
+    }
+
+    if (event.type === 'started') {
+      observedCalls.set(event.toolCallId, { toolCall })
+      session.currentToolCallId = event.toolCallId
+      if (event.toolName === 'execute_runbook') {
+        this.sendEvent(session.id, {
+          type: 'activity',
+          timestamp: event.timestamp,
+          phase: 'running_runbook',
+        })
+      }
+      this.sendEvent(session.id, {
+        type: 'tool_start',
+        timestamp: event.timestamp,
+        toolName: event.toolName,
+        toolCallId: event.toolCallId,
+        input: event.args,
+      })
+      return
+    }
+
+    const observedCall = observedCalls.get(event.toolCallId) ?? { toolCall }
+    const modelContext = this.buildToolConversationContent(observedCall.toolCall, event.result)
+    observedCalls.set(event.toolCallId, {
+      ...observedCall,
+      result: event.result,
+      modelContext,
+    })
+    if (session.currentToolCallId === event.toolCallId) {
+      session.currentToolCallId = null
+    }
+    this.sendEvent(session.id, {
+      type: 'tool_end',
+      timestamp: event.timestamp,
+      toolCallId: event.toolCallId,
+      state: getToolEndState(event.result),
+      output: event.result.output,
+      error: event.result.error,
+      modelContext,
+    })
+
+    const visibleResult = this.buildVisibleRunbookToolResult({
+      toolCall: observedCall.toolCall,
+      result: event.result,
+      modelContext,
+    })
+    if (visibleResult === null || event.toolName === 'list_runbooks') {
+      return
+    }
+    const visibleExecutionIds = session.currentTurnVisibleRunbookExecutionIds ?? new Set<string>()
+    session.currentTurnVisibleRunbookExecutionIds = visibleExecutionIds
+    if (visibleResult.executionId !== undefined && visibleExecutionIds.has(visibleResult.executionId)) {
+      return
+    }
+    if (visibleResult.executionId !== undefined) {
+      visibleExecutionIds.add(visibleResult.executionId)
+    }
+    this.sendEvent(session.id, {
+      type: 'assistant_delta',
+      timestamp: event.timestamp,
+      delta: visibleResult.text,
+      kind: 'command_output',
+    })
+  }
+
+  private takeCompletedHostToolCalls(session: AgentSession): CompletedToolResult[] {
+    const observedCalls = session.currentTurnHostToolCalls
+    if (observedCalls === undefined) return []
+
+    const completedCalls = [...observedCalls.values()].flatMap((entry) => {
+      if (entry.result === undefined || entry.modelContext === undefined) return []
+      return [{
+        toolCall: entry.toolCall,
+        result: entry.result,
+        modelContext: entry.modelContext,
+      }]
+    })
+    session.currentTurnHostToolCalls = new Map()
+    return completedCalls
   }
 
   private async listExecutableRunbooks(): Promise<RunbookRecord[]> {
     return this.getRunbookGateway().listExecutable()
-  }
-
-  private async resolveRunbookReference(
-    session: AgentSession,
-    input: z.infer<typeof executeRunbookToolSchema>,
-  ): Promise<RunbookRecord> {
-    const runbooks = await this.listExecutableRunbooks()
-    const runbookId = input.runbookId?.trim()
-    const runbookTitle = input.runbookTitle?.trim()
-
-    if (runbookId !== undefined && runbookId.length > 0) {
-      const byId = runbooks.find((runbook) => runbook.id === runbookId)
-      if (byId === undefined) {
-        let exactTitleMatch: RunbookRecord | null = null
-        if (runbookTitle !== undefined && runbookTitle.length > 0) {
-          exactTitleMatch = this.resolveExactRunbookTitle(runbooks, runbookTitle)
-        }
-        if (exactTitleMatch !== null) {
-          return exactTitleMatch
-        }
-
-        const syntheticMatch = this.resolveSyntheticRunbookId(runbooks, runbookId)
-        if (syntheticMatch !== null) {
-          log.warn(`[agent-runtime:${session.id}] Resolved synthetic runbook id "${runbookId}" to "${syntheticMatch.title}"`)
-          return syntheticMatch
-        }
-
-        if (runbookTitle === undefined || runbookTitle.length === 0) {
-          throw new Error(`Runbook not found for id: ${runbookId}`)
-        }
-      } else {
-        return byId
-      }
-    }
-
-    if (runbookTitle !== undefined && runbookTitle.length > 0) {
-      const normalizedTitle = runbookTitle.toLowerCase()
-      const exactMatches = runbooks.filter((runbook) => runbook.title.trim().toLowerCase() === normalizedTitle)
-      if (exactMatches.length === 1) {
-        return exactMatches[0]
-      }
-
-      const partialMatches = runbooks.filter((runbook) => runbook.title.toLowerCase().includes(normalizedTitle))
-      if (partialMatches.length === 1) {
-        return partialMatches[0]
-      }
-      if (partialMatches.length > 1) {
-        throw new Error(
-          `Multiple runbooks match "${runbookTitle}". Use runbookId. Matches: ${partialMatches.map((runbook) => runbook.title).join(', ')}`,
-        )
-      }
-
-      throw new Error(`Runbook not found for title: ${runbookTitle}`)
-    }
-
-    if (session.runbookContext !== undefined && session.runbookContext.id.length > 0) {
-      const activeRunbookId = session.runbookContext.id
-      const activeRunbook = runbooks.find((runbook) => runbook.id === activeRunbookId)
-      if (activeRunbook !== undefined) {
-        return activeRunbook
-      }
-    }
-
-    throw new Error('execute_runbook requires runbookId or runbookTitle when there is no active runbook context')
-  }
-
-  private resolveExactRunbookTitle(runbooks: RunbookRecord[], runbookTitle: string): RunbookRecord | null {
-    const normalizedTitle = runbookTitle.trim().toLowerCase()
-    const exactMatches = runbooks.filter((runbook) => runbook.title.trim().toLowerCase() === normalizedTitle)
-
-    if (exactMatches.length !== 1) {
-      return null
-    }
-
-    return exactMatches[0]
-  }
-
-  private resolveSyntheticRunbookId(runbooks: RunbookRecord[], runbookId: string): RunbookRecord | null {
-    const lookupTokens = normalizeLookupTokens(runbookId)
-    if (lookupTokens.length < 2) {
-      return null
-    }
-
-    const matches = runbooks
-      .map((runbook) => ({
-        runbook,
-        score: tokenOverlapScore(lookupTokens, normalizeLookupTokens(`${runbook.title} ${runbook.description}`)),
-      }))
-      .filter(({ score }) => score >= Math.min(lookupTokens.length, 2))
-      .sort((left, right) => right.score - left.score)
-
-    if (matches.length === 0) {
-      return null
-    }
-
-    const [best] = matches
-    if (matches.length > 1 && matches[1].score === best.score) {
-      return null
-    }
-
-    return best.runbook
-  }
-
-  private async resolveRunbookExecutionReference(
-    session: AgentSession,
-    input: z.infer<typeof getRunbookExecutionToolSchema>,
-  ) {
-    const runbookGateway = this.getRunbookGateway()
-    const executionId = input.executionId?.trim()
-    if (executionId !== undefined && executionId.length > 0) {
-      const requestedExecution = await runbookGateway.get(executionId)
-      if (requestedExecution !== null) {
-        return requestedExecution
-      }
-
-      const sameTurnExecution = await this.resolveCurrentTurnStartedRunbookExecution(session, executionId)
-      if (sameTurnExecution !== null) {
-        return sameTurnExecution
-      }
-
-      return null
-    }
-
-    if (session.latestRunbookExecutionId !== undefined && session.latestRunbookExecutionId.length > 0) {
-      const latestSessionExecution = await runbookGateway.get(session.latestRunbookExecutionId)
-      if (latestSessionExecution !== null) {
-        return latestSessionExecution
-      }
-    }
-
-    if (session.incidentThreadId !== undefined && session.incidentThreadId.length > 0) {
-      return runbookGateway.getLatestForIncidentThread(session.incidentThreadId)
-    }
-
-    return null
-  }
-
-  private async resolveCurrentTurnStartedRunbookExecution(
-    session: AgentSession,
-    missedExecutionId: string,
-  ): Promise<RunbookExecutionRecord | null> {
-    const latestExecutionId = session.latestRunbookExecutionId
-    if (
-      latestExecutionId === undefined ||
-      latestExecutionId.length === 0 ||
-      latestExecutionId === missedExecutionId ||
-      session.currentTurnStartedRunbookExecutionIds?.has(latestExecutionId) !== true
-    ) {
-      return null
-    }
-
-    const latestSessionExecution = await this.getRunbookGateway().get(latestExecutionId)
-    if (latestSessionExecution === null) {
-      return null
-    }
-
-    log.warn(
-      `[agent-runtime:${session.id}] Falling back to same-turn runbook execution ${latestSessionExecution.executionId} after lookup miss for ${missedExecutionId}`,
-    )
-    session.latestRunbookExecutionId = latestSessionExecution.executionId
-    session.latestRunbookTitle = latestSessionExecution.runbookTitle
-    return latestSessionExecution
   }
 
   private shouldDeferRunbookLookupInBatch(
@@ -3268,6 +2896,9 @@ export class AgentRuntimeService {
     }
 
     const normalizedArgs = normalizeToolArgs(toolCall.name, toolCall.args)
+    if (normalizedArgs.waitForCompletion === true) {
+      return false
+    }
     let executionId = ''
     if (typeof normalizedArgs.executionId === 'string') {
       executionId = normalizedArgs.executionId.trim()
@@ -3346,7 +2977,7 @@ export class AgentRuntimeService {
         }
         if (status === 'running' || status === 'pending') {
           const runbookTitle = readFirstStringProperty([payload], 'runbookTitle', 'The runbook')
-          return `${runbookTitle} is still running. I’m stopping here so I don’t repeatedly poll the local executor and spam the LLM provider. Ask me again whenever you want a fresh status check.`
+          return `${runbookTitle} is still running after the completion-aware lookup. I’m reporting its latest state without making another lookup in this response.`
         }
       }
     }
@@ -3808,7 +3439,7 @@ export class AgentRuntimeService {
     if (input.lookupDeferred) {
       lines.push(
         '- This lookup was deferred because this same assistant response also started runbooks.',
-        '- Use the execute_runbook results from this iteration, then call get_runbook_execution in the next response with no executionId or with a real executionId returned by execute_runbook.',
+        '- Call get_runbook_execution once with waitForCompletion: true after the execute_runbook result is available.',
       )
     }
 
@@ -3821,13 +3452,13 @@ export class AgentRuntimeService {
       if (input.status === 'completed') {
         lines.push('- Use the completed output already in context to continue the investigation instead of polling it again.')
       } else {
-        lines.push('Stop polling it again now; no new data will appear until a new execution runs or the user asks again later.')
+        lines.push('Do not make another non-wait lookup in this response. Use get_runbook_execution with waitForCompletion: true when a completion-aware result is needed.')
       }
     }
 
     if (input.shouldInspectStartedRunbook) {
       lines.push(
-        '- If the user needs the runbook results, call get_runbook_execution once next instead of finalizing from this start acknowledgement alone.',
+        '- Call get_runbook_execution once with waitForCompletion: true instead of finalizing from this start acknowledgement alone.',
       )
     }
   }
@@ -3861,7 +3492,7 @@ export class AgentRuntimeService {
   private resolveRunbookParameterValues(
     session: AgentSession,
     runbook: RunbookRecord,
-    input: z.infer<typeof executeRunbookToolSchema>,
+    input: ExecuteRunbookHostToolInput,
   ): Record<string, string> | undefined {
     const explicitValues = this.normalizeRunbookParameterValues(input)
     if (
@@ -3890,7 +3521,7 @@ export class AgentRuntimeService {
   }
 
   private normalizeRunbookParameterValues(
-    input: z.infer<typeof executeRunbookToolSchema>,
+    input: ExecuteRunbookHostToolInput,
   ): Record<string, string> | undefined {
     const source = input.parameterValues ?? input.parameters
     if (source === undefined) {

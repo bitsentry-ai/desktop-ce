@@ -17,18 +17,17 @@
 
 import type {
   LocalAiExecutionResult,
-  LocalAiHostToolTransport,
   LocalAiProviderKey,
   LocalAiStreamDelta,
 } from './types.js'
 import {
   agentToolCallSchema,
-  structuredCliToolResponseSchema,
   type AgentToolCall,
   type AgentToolProtocol,
   type AgentToolResultEnvelope,
+  type HostToolContext,
 } from '@bitsentry-ce/core/features/agent-runtime'
-import log from 'electron-log'
+import { codingAgentsLogger as log } from './logger.js'
 import { getCatalogModelIds } from '@bitsentry-ce/components/llm/modelCatalog'
 
 export type LlmProviderKey = 'groq' | 'kilocode' | 'openai' | 'anthropic' | 'gemini' | 'openrouter' | 'claude_code' | 'codex' | 'opencode' | 'cursor'
@@ -120,12 +119,6 @@ const NOOP_LLM_CREDENTIALS_STORE: AgentLlmCredentialsStore = {
 export interface LocalAiProviderPort {
   isReady(provider: LocalAiProviderKey): boolean
   listModels(provider: LocalAiProviderKey): Promise<string[]>
-  /**
-   * An opt-in capability boundary. A CLI may return native structured calls in
-   * LocalAiExecutionResult.toolCalls; otherwise its complete JSON compatibility
-   * envelope is validated before the runtime sees a host operation.
-   */
-  getHostToolProtocol?(provider: LocalAiProviderKey): 'mcp' | 'structured_cli'
   execute(
     provider: LocalAiProviderKey,
     prompt: string,
@@ -133,9 +126,9 @@ export interface LocalAiProviderPort {
     onDelta?: (delta: LocalAiStreamDelta) => void,
     cwd?: string,
     model?: string,
-    accessLevel?: 'supervised' | 'auto-accept-edits' | 'full-access',
+    accessLevel?: 'auto-accept-edits' | 'full-access',
     traitValues?: Record<string, string | boolean>,
-    hostToolTransport?: LocalAiHostToolTransport,
+    hostToolContext?: HostToolContext,
     systemPrompt?: string,
   ): Promise<LocalAiExecutionResult>
 }
@@ -146,16 +139,8 @@ function resolveAgentLocalAiAccessLevel(
   providerKey: LocalAiProviderKey,
   accessLevel: LocalAiAccessLevel,
 ): LocalAiAccessLevel {
-  if (
-    (providerKey === 'codex' ||
-      providerKey === 'opencode' ||
-      providerKey === 'cursor') &&
-    (accessLevel === undefined || accessLevel === 'supervised')
-  ) {
-    return 'auto-accept-edits'
-  }
-
-  return accessLevel
+  void providerKey
+  return accessLevel ?? 'auto-accept-edits'
 }
 
 export interface ChatImageAttachment {
@@ -221,9 +206,9 @@ export interface ChatWithToolsInput {
   signal: AbortSignal
   onDelta?: OnDelta
   llm?: LlmSelection
-  accessLevel?: 'supervised' | 'auto-accept-edits' | 'full-access'
+  accessLevel?: 'auto-accept-edits' | 'full-access'
   traitValues?: Record<string, string | boolean>
-  hostToolTransport?: LocalAiHostToolTransport
+  hostToolContext?: HostToolContext
 }
 
 /**
@@ -233,7 +218,6 @@ export interface ChatResponse {
   content: string
   toolCalls?: ToolCall[]
   toolProtocol: AgentToolProtocol
-  hasForeignToolCallMarkup?: boolean
   tokenUsage?: {
     inputTokens: number
     outputTokens: number
@@ -446,299 +430,16 @@ function toGeminiParts(content: string | ChatContentPart[]): Array<Record<string
   })
 }
 
-const CLI_TRANSCRIPT_BLOCK_START_PREFIXES = [
-  'Internal tool result for ',
-  'Internal tool result:',
-] as const
-const CLI_TRANSCRIPT_BLOCK_END_LINES = new Set([
-  'Do not repeat raw JSON, wrapper tags, or transcript labels unless the user explicitly asks for raw output.',
-  'Do not echo raw JSON, transcript labels, or internal wrapper syntax unless the user explicitly asks for raw output.',
-])
-const CLI_TRANSCRIPT_STANDALONE_LINES = new Set([
-  'Internal execution result:',
-  'Use this result as internal context.',
-  'Summarize the useful findings for the user in clean Markdown.',
-  'Summarize the important findings for the user in clean Markdown.',
-  ...CLI_TRANSCRIPT_BLOCK_END_LINES,
-])
-const HIDDEN_HOST_BLOCKS = [
-  {
-    openPrefix: '<bitsentry_tool_result',
-    closeTag: '</bitsentry_tool_result>',
-  },
-  {
-    openPrefix: '<bitsentry_host_instruction',
-    closeTag: '</bitsentry_host_instruction>',
-  },
-  {
-    openPrefix: '<bitsentry_host_protocol',
-    closeTag: '</bitsentry_host_protocol>',
-  },
-  {
-    openPrefix: '<function_calls',
-    closeTag: '</function_calls>',
-  },
-  {
-    openPrefix: '<invoke',
-    closeTag: '</invoke>',
-  },
-  {
-    openPrefix: '<tool_use',
-    closeTag: '</tool_use>',
-  },
-] as const
-
-const FOREIGN_TOOL_CALL_MARKUP = /<\s*(?:function_calls|invoke|tool_use)\b/i
-
-function stripInternalHostMarkup(value: string): string {
-  let sanitized = value
-  for (const block of HIDDEN_HOST_BLOCKS) {
-    const escapedOpenPrefix = block.openPrefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-    const escapedCloseTag = block.closeTag.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-    sanitized = sanitized.replace(
-      new RegExp(`${escapedOpenPrefix}[^>]*>[\\s\\S]*?${escapedCloseTag}\\s*`, 'gi'),
-      '\n\n',
-    )
-    sanitized = sanitized.replace(
-      new RegExp(`${escapedOpenPrefix}\\b[\\s\\S]*$`, 'gi'),
-      '\n\n',
-    )
-  }
-  return sanitized
-    .replace(/[ \t]*\n[ \t]*/g, '\n')
-    .replace(/\n{3,}/g, '\n\n')
-    .trim()
-}
-
-function shouldStartCliTranscriptBlock(line: string): boolean {
-  return CLI_TRANSCRIPT_BLOCK_START_PREFIXES.some((prefix) => line.startsWith(prefix))
-}
-
-function shouldStripCliTranscriptStandaloneLine(line: string): boolean {
-  return CLI_TRANSCRIPT_STANDALONE_LINES.has(line)
-}
-
-function normalizeVisibleCliText(value: string): string {
-  return value
-    .replace(/[ \t]*\n[ \t]*/g, '\n')
-    .replace(/\n{3,}/g, '\n\n')
-}
-
-function createCliTranscriptBoilerplateSanitizer(): {
-  push(chunk: string): string
-  flush(): string
-} {
-  let buffer = ''
-  let skippingTranscriptBlock = false
-  let pendingLineBreak = false
-
-  const processLine = (line: string): string | null => {
-    if (skippingTranscriptBlock) {
-      if (CLI_TRANSCRIPT_BLOCK_END_LINES.has(line)) {
-        skippingTranscriptBlock = false
-      }
-      return null
-    }
-
-    if (shouldStartCliTranscriptBlock(line)) {
-      skippingTranscriptBlock = true
-      return null
-    }
-
-    if (shouldStripCliTranscriptStandaloneLine(line)) {
-      return null
-    }
-
-    return line
-  }
-
-  const couldBeCliTranscriptPartialLine = (line: string): boolean => {
-    if (line.length === 0) return false
-    if (shouldStartCliTranscriptBlock(line)) return true
-
-    for (const prefix of CLI_TRANSCRIPT_BLOCK_START_PREFIXES) {
-      if (prefix.startsWith(line)) return true
-    }
-
-    for (const transcriptLine of CLI_TRANSCRIPT_STANDALONE_LINES) {
-      if (transcriptLine.startsWith(line) || line.startsWith(transcriptLine)) {
-        return true
-      }
-    }
-
-    return false
-  }
-
-  const appendVisibleSegment = (current: string, segment: string): string => {
-    if (pendingLineBreak) {
-      current += '\n'
-      pendingLineBreak = false
-    }
-
-    if (segment.length === 0) {
-      return current
-    }
-
-    return current + segment
-  }
-
-  const drain = (flush: boolean): string => {
-    let visible = ''
-
-    for (;;) {
-      const newlineIndex = buffer.indexOf('\n')
-      if (newlineIndex === -1) break
-
-      const line = buffer.slice(0, newlineIndex)
-      buffer = buffer.slice(newlineIndex + 1)
-
-      const nextLine = processLine(line)
-      if (nextLine !== null) {
-        visible = appendVisibleSegment(visible, nextLine)
-        pendingLineBreak = true
-      }
-    }
-
-    if (flush) {
-      if (buffer.length > 0) {
-        const finalLine = processLine(buffer)
-        if (finalLine !== null) {
-          visible = appendVisibleSegment(visible, finalLine)
-        }
-      }
-      buffer = ''
-      return normalizeVisibleCliText(visible).trim()
-    }
-
-    if (!skippingTranscriptBlock && buffer.length > 0 && !couldBeCliTranscriptPartialLine(buffer)) {
-      visible = appendVisibleSegment(visible, buffer)
-      buffer = ''
-    }
-
-    return normalizeVisibleCliText(visible)
-  }
-
-  return {
-    push(chunk: string): string {
-      buffer += chunk
-      return drain(false)
-    },
-    flush(): string {
-      return drain(true)
-    },
-  }
-}
-
-function stripCliTranscriptBoilerplate(value: string): string {
-  const sanitizer = createCliTranscriptBoilerplateSanitizer()
-  const visible = sanitizer.push(value) + sanitizer.flush()
-  return normalizeVisibleCliText(visible).trim()
-}
-function formatToolResultTranscript(m: ChatMessage): string {
-  let content = stripInternalHostMarkup(normalizeTextContent(m.content))
-  if (content.length === 0) {
-    content = normalizeTextContent(m.content).trim()
-  }
-  if (content.length === 0) {
-    content = 'Tool execution completed'
-  }
-
-  let toolLabel = 'Internal tool result:'
-  if (m.toolCallId !== undefined && m.toolCallId.length > 0) {
-    toolLabel = `Internal tool result for ${m.toolCallId}:`
-  }
-  return [
-    toolLabel,
-    content,
-    'Use this result as internal context.',
-    'Summarize the important findings for the user in clean Markdown.',
-    'Do not repeat raw JSON, wrapper tags, or transcript labels unless the user explicitly asks for raw output.',
-  ].join('\n')
-}
-
-function formatAssistantToolCallTranscript(m: ChatMessage): string {
-  let body = ''
-  if (typeof m.content === 'string') {
-    body = stripInternalHostMarkup(m.content)
-  }
-  const toolRequests = (m.toolCalls ?? [])
-    .map((tc) => `Assistant requested host tool ${tc.name} (${tc.id}) with args: ${JSON.stringify(tc.args)}`)
-    .join('\n')
-  let separator = ''
-  if (body.length > 0 && toolRequests.length > 0) {
-    separator = '\n'
-  }
-  return `[${m.role}]: ${body}${separator}${toolRequests}`.trim()
-}
-
-function buildStructuredCliToolsPrompt(tools: LlmToolDefinition[]): string {
-  if (tools.length === 0) return ''
-
-  const toolDocs = tools.map((tool) => {
-    const schemaJson = JSON.stringify(tool.inputSchema, null, 2)
-    return `### ${tool.name}\n${tool.description}\nInput schema:\n\`\`\`json\n${schemaJson}\n\`\`\``
-  }).join('\n\n')
-
-  return `\n\nBitSentry host tool protocol:
-You are running inside BitSentry SuperTerminal, an incident-response desktop application.
-You do NOT have these operations available as native tools. Instead, request them through the host.
-
-When you want to call an operation, respond with exactly one JSON document and nothing else:
-
-{"version":1,"type":"tool_calls","toolCalls":[{"id":"<unique_string>","name":"<operation_name>","args":{<args per schema>}}]}
-
-The host will execute the operation and append the result as a later tool message in the conversation.
-Treat tool messages as INTERNAL context. Summarize the useful findings for the user.
-Do NOT wrap the JSON in Markdown or XML. Do not add prose before or after it.
-Never simulate or invent tool results. Never invent runbook titles, runbook IDs, execution IDs, logs, or server output.
-If you need real data, call the operation and wait for the returned tool result message.
-After receiving the result, you may call another operation or give your final answer.
-Call one operation at a time. Do not guess — if you need runbook data, request it first.
-
-AVAILABLE OPERATIONS:
-
-${toolDocs}`
-}
-
 function flattenMessageText(m: ChatMessage): string {
-  if (m.role === 'tool') {
-    return formatToolResultTranscript(m)
-  }
-  if (m.toolCalls !== undefined && m.toolCalls.length > 0) {
-    return formatAssistantToolCallTranscript(m)
-  }
-  if (typeof m.content === 'string') return `[${m.role}]: ${stripInternalHostMarkup(m.content)}`
+  if (typeof m.content === 'string') return `[${m.role}]: ${m.content}`
   if (Array.isArray(m.content)) {
     const text = m.content
       .filter((part): part is Extract<ChatContentPart, { type: 'text' }> => part.type === 'text')
       .map((part) => part.text)
       .join('\n')
-    return `[${m.role}]: ${stripInternalHostMarkup(text)}`
+    return `[${m.role}]: ${text}`
   }
   return `[${m.role}]: `
-}
-
-function parseStructuredCliToolResponse(text: string): { content: string; toolCalls: ToolCall[] } {
-  try {
-    const parsed = structuredCliToolResponseSchema.safeParse(JSON.parse(text.trim()) as unknown)
-    if (parsed.success) {
-      return { content: parsed.data.content ?? '', toolCalls: parsed.data.toolCalls }
-    }
-  } catch {
-    // Natural-language output is a final response, not a host call.
-  }
-  return { content: text, toolCalls: [] }
-}
-
-function parseStructuredToolCalls(toolCalls: ToolCall[] | undefined): ToolCall[] {
-  if (toolCalls === undefined) return []
-
-  return toolCalls.flatMap((toolCall) => {
-    const parsed = agentToolCallSchema.safeParse(toolCall)
-    if (parsed.success) return [parsed.data]
-    log.warn('[agent-llm] Ignoring invalid structured CLI host tool call')
-    return []
-  })
 }
 
 function createNativeToolCall(value: unknown, providerLabel: string): ToolCall | null {
@@ -746,172 +447,6 @@ function createNativeToolCall(value: unknown, providerLabel: string): ToolCall |
   if (parsed.success) return parsed.data
   log.warn(`[agent-llm] Ignoring invalid ${providerLabel} native tool call`)
   return null
-}
-
-function createStructuredCliResponseStreamSanitizer(): TextSanitizer {
-  let buffered = ''
-  let mode: 'undecided' | 'structured_response' | 'text' = 'undecided'
-  const hostMarkupSanitizer = createHiddenHostMarkupStreamSanitizer()
-  const structuredPrefix = '{"version":'
-
-  return {
-    push(chunk: string): string {
-      if (mode === 'structured_response') {
-        buffered += chunk
-        return ''
-      }
-
-      if (mode === 'text') {
-        return hostMarkupSanitizer.push(chunk)
-      }
-
-      buffered += chunk
-      const trimmed = buffered.trimStart()
-      if (structuredPrefix.startsWith(trimmed)) {
-        return ''
-      }
-
-      if (trimmed.startsWith(structuredPrefix)) {
-        mode = 'structured_response'
-        return ''
-      }
-
-      mode = 'text'
-      const visible = hostMarkupSanitizer.push(buffered)
-      buffered = ''
-      return visible
-    },
-    flush(): string {
-      if (mode === 'structured_response') {
-        const parsed = parseStructuredCliToolResponse(buffered)
-        if (parsed.toolCalls.length > 0) {
-          return ''
-        }
-        return hostMarkupSanitizer.push(buffered) + hostMarkupSanitizer.flush()
-      }
-
-      if (mode === 'undecided' && buffered.length > 0) {
-        hostMarkupSanitizer.push(buffered)
-      }
-      return hostMarkupSanitizer.flush()
-    },
-  }
-}
-
-function createHiddenHostMarkupStreamSanitizer(): {
-  push(chunk: string): string
-  flush(): string
-} {
-  let buffer = ''
-  let activeHiddenBlock: (typeof HIDDEN_HOST_BLOCKS)[number] | null = null
-  let pendingVisibleBreak = false
-
-  const findPartialTagSuffixStart = (value: string, candidates: string[]): number => {
-    let bestStart = value.length
-    for (const tag of candidates) {
-      const maxLength = Math.min(value.length, tag.length - 1)
-      for (let length = maxLength; length > 0; length -= 1) {
-        if (tag.startsWith(value.slice(-length))) {
-          bestStart = Math.min(bestStart, value.length - length)
-          break
-        }
-      }
-    }
-    return bestStart
-  }
-
-  // eslint-disable-next-line sonarjs/cognitive-complexity -- Host-tool tag stripping needs stateful partial-tag handling.
-  const drain = (flush: boolean): string => {
-    let visible = ''
-
-    while (buffer.length > 0) {
-      if (activeHiddenBlock !== null) {
-        const closeIndex = buffer.indexOf(activeHiddenBlock.closeTag)
-        if (closeIndex === -1) {
-          if (flush) {
-            buffer = ''
-          } else {
-            buffer = buffer.slice(
-              findPartialTagSuffixStart(buffer, [activeHiddenBlock.closeTag]),
-            )
-          }
-          break
-        }
-
-        buffer = buffer.slice(closeIndex + activeHiddenBlock.closeTag.length)
-        activeHiddenBlock = null
-        pendingVisibleBreak = true
-        continue
-      }
-
-      let nextBlock: (typeof HIDDEN_HOST_BLOCKS)[number] | null = null
-      let openIndex = -1
-      for (const block of HIDDEN_HOST_BLOCKS) {
-        const index = buffer.indexOf(block.openPrefix)
-        if (index !== -1 && (openIndex === -1 || index < openIndex)) {
-          openIndex = index
-          nextBlock = block
-        }
-      }
-
-      if (openIndex === -1 || nextBlock === null) {
-        let visiblePrefix = ''
-        if (pendingVisibleBreak && buffer.length > 0 && !buffer.startsWith('\n')) {
-          visiblePrefix = '\n\n'
-        }
-        if (flush) {
-          visible += visiblePrefix + buffer
-          pendingVisibleBreak = false
-          buffer = ''
-        } else {
-          const partialSuffixStart = findPartialTagSuffixStart(
-            buffer,
-            HIDDEN_HOST_BLOCKS.map(block => block.openPrefix),
-          )
-          const nextVisibleChunk = buffer.slice(0, partialSuffixStart)
-          if (nextVisibleChunk.length > 0) {
-            visible += visiblePrefix + nextVisibleChunk
-            pendingVisibleBreak = false
-          }
-          buffer = buffer.slice(partialSuffixStart)
-        }
-        break
-      }
-
-      const nextVisibleChunk = buffer.slice(0, openIndex)
-      if (nextVisibleChunk.length > 0) {
-        let visiblePrefix = ''
-        if (pendingVisibleBreak && !nextVisibleChunk.startsWith('\n')) {
-          visiblePrefix = '\n\n'
-        }
-        visible += visiblePrefix + nextVisibleChunk
-        pendingVisibleBreak = false
-      }
-      const tagEndIndex = buffer.indexOf('>', openIndex)
-      if (tagEndIndex === -1) {
-        if (flush) {
-          buffer = ''
-        } else {
-          buffer = buffer.slice(openIndex)
-        }
-        break
-      }
-      buffer = buffer.slice(tagEndIndex + 1)
-      activeHiddenBlock = nextBlock
-    }
-
-    return visible
-  }
-
-  return {
-    push(chunk: string): string {
-      buffer += chunk
-      return drain(false)
-    },
-    flush(): string {
-      return drain(true)
-    },
-  }
 }
 
 interface SseEvent {
@@ -1010,11 +545,6 @@ function parseJsonObject(value: string, context: string): Record<string, unknown
   return {}
 }
 
-interface TextSanitizer {
-  push(chunk: string): string
-  flush(): string
-}
-
 function emitTextDelta(onDelta: OnDelta | undefined, text: string): void {
   if (text.length === 0) {
     return
@@ -1026,22 +556,8 @@ function emitTextDelta(onDelta: OnDelta | undefined, text: string): void {
   })
 }
 
-function sanitizeLocalProviderOutput(providerKey: LocalAiProviderKey, text: string): string {
-  const withoutHostMarkup = stripInternalHostMarkup(text)
-  if (providerKey === 'claude_code') {
-    return stripCliTranscriptBoilerplate(withoutHostMarkup)
-  }
-  return withoutHostMarkup
-}
-
-function hasForeignToolCallMarkup(text: string): boolean {
-  return FOREIGN_TOOL_CALL_MARKUP.test(text)
-}
-
 function createLocalAiDeltaHandler(
   onDelta: OnDelta | undefined,
-  streamSanitizer: TextSanitizer,
-  cliTranscriptSanitizer: TextSanitizer | null,
 ): (delta: LocalAiStreamDelta) => void {
   return (delta) => {
     if (delta.type === 'token_usage') {
@@ -1056,16 +572,7 @@ function createLocalAiDeltaHandler(
       return
     }
 
-    const visibleText = streamSanitizer.push(delta.text)
-    if (visibleText.length === 0) {
-      return
-    }
-
-    let cleanedText = visibleText
-    if (cliTranscriptSanitizer !== null) {
-      cleanedText = cliTranscriptSanitizer.push(visibleText)
-    }
-    emitTextDelta(onDelta, cleanedText)
+    emitTextDelta(onDelta, delta.text)
   }
 }
 
@@ -1360,41 +867,24 @@ export class AgentLlmAdapterService {
 
     const accessLevel = resolveAgentLocalAiAccessLevel(providerKey, input.accessLevel)
 
-    // In supervised mode, omit the host-operation contract altogether so a CLI
-    // response cannot request an operation outside the selected access level.
-    const isSupervised = accessLevel === 'supervised' || accessLevel === undefined
-    const requestedToolProtocol = isSupervised
-      ? 'none'
-      : this.localAiProvider.getHostToolProtocol?.(providerKey) ?? 'structured_cli'
-    const toolProtocol =
-      requestedToolProtocol === 'mcp' && input.hostToolTransport === undefined
-        ? 'none'
-        : requestedToolProtocol
-    const streamSanitizer = toolProtocol === 'structured_cli'
-      ? createStructuredCliResponseStreamSanitizer()
-      : createHiddenHostMarkupStreamSanitizer()
-    let cliTranscriptSanitizer: TextSanitizer | null = null
-    if (providerKey === 'claude_code') {
-      cliTranscriptSanitizer = createCliTranscriptBoilerplateSanitizer()
-    }
+    const toolProtocol = input.hostToolContext === undefined ? 'none' : 'mcp'
 
     try {
       const result = await this.localAiProvider.execute(
         providerKey,
-        this.buildLocalAiPrompt(input, toolProtocol),
+        this.buildLocalAiPrompt(input),
         abortController,
-        createLocalAiDeltaHandler(input.onDelta, streamSanitizer, cliTranscriptSanitizer),
+        createLocalAiDeltaHandler(input.onDelta),
         undefined,
         model,
         accessLevel,
         input.traitValues,
-        input.hostToolTransport,
-        toolProtocol === 'mcp' ? this.buildLocalAiSystemPrompt(input) : undefined,
+        input.hostToolContext,
+        this.buildLocalAiSystemPrompt(input),
       )
 
-      this.flushLocalAiStream(input.onDelta, streamSanitizer, cliTranscriptSanitizer)
       this.emitLocalAiTokenUsage(input.onDelta, result)
-      return this.toLocalAiChatResponse(providerKey, result, toolProtocol)
+      return this.toLocalAiChatResponse(result, toolProtocol)
     } finally {
       input.signal.removeEventListener('abort', onAbort)
     }
@@ -1402,18 +892,16 @@ export class AgentLlmAdapterService {
 
   private buildLocalAiPrompt(
     input: ChatWithToolsInput,
-    toolProtocol: AgentToolProtocol,
   ): string {
     // Each turn runs as a fresh CLI subprocess. The full BitSentry transcript is
     // replayed explicitly so CLI-native session state cannot leak across runs.
-    const messages = toolProtocol === 'mcp'
-      ? input.messages.filter((message) => message.role !== 'system')
-      : input.messages
-    const conversationText = messages.map(flattenMessageText).join('\n')
-    if (toolProtocol !== 'structured_cli') {
-      return conversationText
-    }
-    return conversationText + buildStructuredCliToolsPrompt(input.tools ?? [])
+    // MCP executes host tools inside the current subprocess, so historical tool
+    // transcripts are deliberately excluded from this text-only replay.
+    return input.messages
+      .filter((message) => message.role === 'user' || message.role === 'assistant')
+      .map((message) => ({ ...message, toolCalls: undefined }))
+      .map(flattenMessageText)
+      .join('\n')
   }
 
   private buildLocalAiSystemPrompt(input: ChatWithToolsInput): string | undefined {
@@ -1423,26 +911,6 @@ export class AgentLlmAdapterService {
       .filter((message) => message.length > 0)
       .join('\n\n')
     return systemPrompt.length > 0 ? systemPrompt : undefined
-  }
-
-  private flushLocalAiStream(
-    onDelta: OnDelta | undefined,
-    streamSanitizer: TextSanitizer,
-    cliTranscriptSanitizer: TextSanitizer | null,
-  ): void {
-    const trailingVisibleText = streamSanitizer.flush()
-    if (trailingVisibleText.length > 0) {
-      let cleanedTrailingText = trailingVisibleText
-      if (cliTranscriptSanitizer !== null) {
-        cleanedTrailingText = cliTranscriptSanitizer.push(trailingVisibleText)
-      }
-      emitTextDelta(onDelta, cleanedTrailingText)
-    }
-
-    const trailingCleanedTranscriptText = cliTranscriptSanitizer?.flush()
-    if (trailingCleanedTranscriptText !== undefined) {
-      emitTextDelta(onDelta, trailingCleanedTranscriptText)
-    }
   }
 
   private emitLocalAiTokenUsage(
@@ -1460,45 +928,15 @@ export class AgentLlmAdapterService {
   }
 
   private toLocalAiChatResponse(
-    providerKey: LocalAiProviderKey,
     result: LocalAiExecutionResult,
     toolProtocol: AgentToolProtocol,
   ): ChatResponse {
-    const foreignToolCallMarkup = hasForeignToolCallMarkup(result.output)
-    if (toolProtocol === 'none') {
-      return {
-        content: sanitizeLocalProviderOutput(providerKey, result.output),
-        toolCalls: [],
-        toolProtocol,
-        hasForeignToolCallMarkup: foreignToolCallMarkup,
-        tokenUsage: result.tokenUsage,
-      }
+    return {
+      content: result.output,
+      toolCalls: [],
+      toolProtocol,
+      tokenUsage: result.tokenUsage,
     }
-
-    if (toolProtocol === 'structured_cli') {
-      const structuredResponse = result.toolCalls === undefined
-        ? parseStructuredCliToolResponse(result.output)
-        : null
-      return {
-        content: sanitizeLocalProviderOutput(providerKey, structuredResponse?.content ?? result.output),
-        toolCalls: structuredResponse?.toolCalls ?? parseStructuredToolCalls(result.toolCalls),
-        toolProtocol,
-        hasForeignToolCallMarkup: foreignToolCallMarkup,
-        tokenUsage: result.tokenUsage,
-      }
-    }
-
-    if (toolProtocol === 'mcp') {
-      return {
-        content: sanitizeLocalProviderOutput(providerKey, result.output),
-        toolCalls: [],
-        toolProtocol,
-        hasForeignToolCallMarkup: foreignToolCallMarkup,
-        tokenUsage: result.tokenUsage,
-      }
-    }
-
-    throw new Error(`Unsupported local tool protocol: ${toolProtocol}`)
   }
 
   /**

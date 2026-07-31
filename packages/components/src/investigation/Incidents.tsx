@@ -29,7 +29,6 @@ import {
   Upload,
 } from "lucide-react";
 import { cn } from "../lib/utils";
-import { useToast } from "../hooks/use-toast";
 import {
   Tooltip,
   TooltipContent,
@@ -43,12 +42,9 @@ import {
   type ModelCatalogProviderKey,
   getCapabilityBadges,
   getCatalogModel,
-  getModelDisplayName,
-  requiresToolCapableAccess,
 } from "../llm/modelCatalog";
 import { useTranslation } from "@bitsentry-ce/i18n";
 import { getProviderModelOptions } from "../chat/utils";
-import { resolveIncidentModelSelection } from "./provider-selection";
 import type {
   AccessLevel,
   AgentActivityPhase,
@@ -134,7 +130,6 @@ function getTrimmedString(record: UnknownRecord, key: string): string | undefine
 
 function isAccessLevel(value: unknown): value is AccessLevel {
   return (
-    value === "supervised" ||
     value === "auto-accept-edits" ||
     value === "full-access"
   );
@@ -1035,7 +1030,6 @@ function PageShell({ children }: { children: React.ReactNode }) {
 
 export default function IncidentsPage() {
   const { t } = useTranslation();
-  const { toast } = useToast();
   const agent = useAgentService();
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
@@ -1074,7 +1068,7 @@ export default function IncidentsPage() {
   const [selectedModelId, setSelectedModelId] = useState("");
   // Access level is per-incident state, persisted in the provider lock.
   // Managed here (not in Composer) so it can be saved/restored per chat.
-  const [selectedAccessLevel, setSelectedAccessLevel] = useState<AccessLevel>("supervised");
+  const [selectedAccessLevel, setSelectedAccessLevel] = useState<AccessLevel>("auto-accept-edits");
   const [thinkingEnabled, setThinkingEnabled] = useState(false);
   const [composerImages, setComposerImages] = useState<
     ComposerImageAttachment[]
@@ -1110,7 +1104,6 @@ export default function IncidentsPage() {
   const incidentsRef = useRef<IncidentThread[]>([]);
   const reconciledSessionIdsRef = useRef<Set<string>>(new Set());
   const checkingSessionIdsRef = useRef<Set<string>>(new Set());
-  const droppedIncidentModelNoticeRef = useRef<Set<string>>(new Set());
 
   const [prompt, setPrompt] = useState("");
   const [showScrollIndicator, setShowScrollIndicator] = useState(false);
@@ -1131,16 +1124,6 @@ export default function IncidentsPage() {
   const configuredProviderKeys = useMemo(
     () => listConfiguredProviderKeys(providerConfigs),
     [providerConfigs],
-  );
-  const providerOptionsSignature = useMemo(
-    () =>
-      configuredProviderKeys
-        .map((providerKey) => {
-          const options = getProviderModelOptions(providerKey, providerConfigs);
-          return `${providerKey}:${options.join("\u0000")}`;
-        })
-        .join("\u0001"),
-    [configuredProviderKeys, providerConfigs],
   );
   const selectedModelCapability = useMemo<ModelCatalogEntry | undefined>(
     () => {
@@ -1642,18 +1625,6 @@ export default function IncidentsPage() {
     }
   }, [activeId]);
 
-  // Enforce minimum access for CLI providers whose incident tool bridge needs it.
-  useEffect(() => {
-    if (
-      selectedProviderKey !== null &&
-      requiresToolCapableAccess(selectedProviderKey) &&
-      selectedAccessLevel === "supervised"
-    ) {
-      setSelectedAccessLevel("auto-accept-edits");
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedProviderKey]);
-
   // Access level is saved to the provider lock on handleSend and handleNewIncident.
   // No intermediate saves — changes before a send are in-memory only.
   useEffect(() => {
@@ -1670,7 +1641,7 @@ export default function IncidentsPage() {
     if (activeId === null) return;
 
     // Default access level for the new chat
-    const defaultLevel: AccessLevel = "supervised";
+    const defaultLevel: AccessLevel = "auto-accept-edits";
 
     if (configuredProviderKeys.length === 0) {
       setSelectedAccessLevel(defaultLevel);
@@ -1699,52 +1670,22 @@ export default function IncidentsPage() {
     }
 
     setSelectedProviderKey(lock.providerKey);
-    const modelSelection = resolveIncidentModelSelection(
-      lock.providerKey,
-      providerConfigs,
-      lock.modelId,
-    );
-    if (modelSelection.droppedModelId !== undefined) {
-      const noticeKey = `${activeId}:${lock.providerKey}:${modelSelection.droppedModelId}`;
-      if (!droppedIncidentModelNoticeRef.current.has(noticeKey)) {
-        droppedIncidentModelNoticeRef.current.add(noticeKey);
-        const fallbackLabel = modelSelection.modelId.length > 0
-          ? getModelDisplayName(lock.providerKey, modelSelection.modelId)
-          : "the provider default";
-        toast({
-          title: "Incident model updated",
-          description: `${getModelDisplayName(lock.providerKey, modelSelection.droppedModelId)} is no longer available. Using ${fallbackLabel}.`,
-        });
-      }
-      if (modelSelection.modelId.length > 0) {
-        saveProviderLock(
-          activeId,
-          lock.providerKey,
-          modelSelection.modelId,
-          lock.accessLevel,
-        );
-      }
+    const opts = getProviderModelOptions(lock.providerKey, providerConfigs);
+    if (opts.includes(lock.modelId)) {
+      setSelectedModelId(lock.modelId);
+    } else {
+      // Saved model no longer available for this provider — clear the model so
+      // the global selection effect picks a valid default for the new provider,
+      // preventing the previous thread's model from leaking into this thread.
+      setSelectedModelId("");
     }
-    setSelectedModelId(modelSelection.modelId);
 
-    // Restore persisted access level; enforce CLI tool-capable minimum.
+    // Restore the supported persisted access level, defaulting to Safe Tools.
     const savedLevel = lock.accessLevel ?? defaultLevel;
-    let effectiveLevel: AccessLevel = savedLevel;
-    if (
-      requiresToolCapableAccess(lock.providerKey) &&
-      savedLevel === "supervised"
-    ) {
-      effectiveLevel = "auto-accept-edits";
-    }
-    setSelectedAccessLevel(effectiveLevel);
+    setSelectedAccessLevel(savedLevel);
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [
-    activeId,
-    configuredProviderKeys.length,
-    providerOptionsSignature,
-    toast,
-  ]);
+  }, [activeId, configuredProviderKeys.length, Object.keys(providerConfigs).length]);
 
   // Pre-populate prompt from ?prompt= URL param (e.g. launched from Runbook page)
   useEffect(() => {

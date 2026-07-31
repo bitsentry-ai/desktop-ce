@@ -352,14 +352,6 @@ export function isCliProvider(providerKey: ModelCatalogProviderKey): boolean {
 }
 
 /**
- * CLI providers whose incident-chat tool bridge does not work in supervised
- * prompt-only mode.
- */
-export function requiresToolCapableAccess(providerKey: ModelCatalogProviderKey): boolean {
-  return providerKey === 'codex' || providerKey === 'opencode' || providerKey === 'cursor'
-}
-
-/**
  * Get provider type from the catalog entry, defaulting to 'api'.
  */
 export function getProviderType(providerKey: ModelCatalogProviderKey): ProviderType {

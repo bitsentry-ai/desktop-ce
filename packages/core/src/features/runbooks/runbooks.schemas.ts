@@ -49,7 +49,6 @@ export const runbookLlmProviderKeyWithCliSchema = z.enum([
 ]);
 
 export const runbookExecutionAccessLevelSchema = z.enum([
-  "supervised",
   "auto-accept-edits",
   "full-access",
 ]);

@@ -13,7 +13,6 @@ import { useTranslation } from "@bitsentry-ce/i18n";
 import { MarkdownContent } from "../markdown";
 import { CheckIcon, CopyIcon, ShieldAlert, Loader2 } from "lucide-react";
 import { getProviderLogo } from "./ProviderLogos";
-import { stripInternalHostBlocks } from "../lib/hostProtocol";
 import { Tooltip, TooltipContent, TooltipTrigger } from "../ui/tooltip";
 import { cn } from "../lib/utils";
 
@@ -43,7 +42,7 @@ export function shouldRenderIterationText(
 ): boolean {
   if (isLastIteration) return true;
 
-  const finalResponse = stripInternalHostBlocks(msg.finalText ?? "").trim();
+  const finalResponse = (msg.finalText ?? "").trim();
   return !(msg.status === "done" && finalResponse.length > 0);
 }
 
@@ -55,9 +54,7 @@ export function getCopyableMarkdown(msg: AgentMessage): string {
         return "";
       }
 
-      return stripInternalHostBlocks(
-        getVisibleIterationText(msg, iter, isLastIteration),
-      ).trim();
+      return getVisibleIterationText(msg, iter, isLastIteration).trim();
     })
     .filter((text) => text.length > 0)
     .join("\n\n");
@@ -66,7 +63,7 @@ export function getCopyableMarkdown(msg: AgentMessage): string {
     return renderedIterations;
   }
 
-  return stripInternalHostBlocks(msg.finalText ?? "").trim();
+  return (msg.finalText ?? "").trim();
 }
 
 function CopyMarkdownResponseButton({ content }: { content: string }) {
@@ -314,7 +311,7 @@ export const ChatBubble = memo(function ChatBubble({
               visibleText = getVisibleIterationText(msg, iter, isLastIteration);
             }
             const hasVisibleText =
-              stripInternalHostBlocks(visibleText).trim().length > 0;
+              visibleText.trim().length > 0;
             const shouldShowWaitingIndicator =
               isActive &&
               (iter.status === "thinking" || msg.status === "thinking") &&
@@ -356,7 +353,7 @@ export const ChatBubble = memo(function ChatBubble({
                 {hasVisibleText && (
                   <div className="text-sm leading-relaxed text-foreground">
                     <MarkdownContent
-                      content={stripInternalHostBlocks(visibleText)}
+                      content={visibleText}
                       paragraphizeSoftBreaks
                     />
                   </div>
@@ -386,7 +383,7 @@ export const ChatBubble = memo(function ChatBubble({
           {msg.iterations.length === 0 && msg.finalText && (
             <div className="text-sm leading-relaxed text-foreground">
               <MarkdownContent
-                content={stripInternalHostBlocks(msg.finalText)}
+                content={msg.finalText}
                 paragraphizeSoftBreaks
               />
             </div>

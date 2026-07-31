@@ -24,7 +24,6 @@ vi.mock('@bitsentry-ce/coding-agents/claude-code-provider.service', async () => 
   return {
     ...actual,
     executeClaudeCode: vi.fn(),
-    listSupportedClaudeModels: vi.fn(),
   }
 })
 
@@ -64,6 +63,7 @@ import {
   CodingAgentsProviderService,
   type CodingAgentsSettingsStore,
 } from '@bitsentry-ce/desktop-cli/runtime/desktop-coding-agents'
+import { prependHostSystemInstructions } from '@bitsentry-ce/coding-agents/coding-agents-provider.service'
 import {
   detectBinary,
   probeClaudeCode,
@@ -71,7 +71,6 @@ import {
   probeOpenCode,
 } from '@bitsentry-ce/coding-agents/cli-probe.service'
 import { executeClaudeCode } from '@bitsentry-ce/coding-agents/claude-code-provider.service'
-import { listSupportedClaudeModels } from '@bitsentry-ce/coding-agents/claude-code-provider.service'
 import { executeCodex } from '@bitsentry-ce/coding-agents/codex-provider.service'
 import { executeOpenCode } from '@bitsentry-ce/coding-agents/opencode-provider.service'
 import {
@@ -94,41 +93,51 @@ describe('CodingAgentsProviderService', () => {
     vi.clearAllMocks()
   })
 
-  it('uses MCP only for Claude and preserves structured CLI for Codex and Cursor', () => {
-    const service = new CodingAgentsProviderService(createDbMock())
-
-    expect(service.getHostToolProtocol('claude_code')).toBe('mcp')
-    expect(service.getHostToolProtocol('codex')).toBe('structured_cli')
-    expect(service.getHostToolProtocol('cursor')).toBe('structured_cli')
+  it('keeps host system instructions outside replayed conversation roles', () => {
+    expect(prependHostSystemInstructions(
+      '[user]: List runbooks',
+      'You are an incident-response assistant.',
+    )).toBe([
+      '## BitSentry host instructions',
+      'You are an incident-response assistant.',
+      '## Conversation',
+      '[user]: List runbooks',
+    ].join('\n\n'))
   })
 
-  it('exposes Claude fast mode as an opt-in trait on the base model', () => {
-    const catalogModel = getCatalogModel('claude_code', 'claude-opus-4-8')
-    expect(catalogModel).toMatchObject({
-      id: 'claude-opus-4-8',
-      displayName: 'Claude Opus 4.8',
+  it('prepends host instructions when dispatching a provider without a system channel', async () => {
+    vi.mocked(detectBinary).mockResolvedValue('/opt/homebrew/bin/codex')
+    vi.mocked(probeCodex).mockResolvedValue({
+      installed: true,
+      version: '0.42.0',
+      auth: { status: 'authenticated' },
+      status: 'ready',
     })
-    expect(getEffectiveComposerOptions(catalogModel!)).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ id: 'fastMode', defaultValue: false }),
-      ]),
+    vi.mocked(executeCodex).mockResolvedValue({ output: 'Done.' })
+
+    const service = new CodingAgentsProviderService(createDbMock())
+    await service.saveSettings({ codex: { enabled: true, binaryPath: 'codex' } })
+    await service.execute(
+      'codex',
+      '[user]: List runbooks',
+      new AbortController(),
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      'Use concise incident language.',
     )
-    expect(getCatalogModel('claude_code', 'claude-opus-4-8-fast')).toBeUndefined()
-    expect(resolveCatalogModelRuntimeSelection(
-      'claude_code',
-      'claude-opus-4-8',
-      { fastMode: true },
-    )).toEqual({
-      modelId: 'claude-opus-4-8',
-      traitValues: { fastMode: true },
-    })
-    expect(resolveCatalogModelRuntimeSelection(
-      'claude_code',
-      'claude-opus-4-8-fast',
-    )).toEqual({
-      modelId: 'claude-opus-4-8',
-      traitValues: { fastMode: true },
-    })
+
+    expect(executeCodex).toHaveBeenCalledWith(expect.objectContaining({
+      prompt: [
+        '## BitSentry host instructions',
+        'Use concise incident language.',
+        '## Conversation',
+        '[user]: List runbooks',
+      ].join('\n\n'),
+    }))
   })
 
   it('exposes Opus 5 with separate effort and context options', () => {
@@ -374,7 +383,7 @@ describe('CodingAgentsProviderService', () => {
       undefined,
       undefined,
       'claude-sonnet-5',
-      'supervised',
+      'auto-accept-edits',
       { effort: 'high', contextWindow: '1m' },
     )
 
@@ -384,78 +393,6 @@ describe('CodingAgentsProviderService', () => {
       maxTurns: 16,
       contextWindow: '1m',
     }))
-  })
-
-  it('passes the Claude fast catalog selection as a base model plus fast mode', async () => {
-    vi.mocked(detectBinary).mockResolvedValue('/opt/homebrew/bin/claude')
-    vi.mocked(probeClaudeCode).mockResolvedValue({
-      installed: true,
-      version: '2.0.0',
-      auth: { status: 'authenticated' },
-      status: 'ready',
-    })
-    vi.mocked(executeClaudeCode).mockResolvedValue({ output: 'done' })
-
-    const service = new CodingAgentsProviderService(createDbMock())
-    await service.saveSettings({
-      claudeCode: { enabled: true, binaryPath: 'claude' },
-    })
-
-    await service.execute(
-      'claude_code',
-      'list runbooks',
-      new AbortController(),
-      undefined,
-      undefined,
-      'claude-opus-4-8',
-      'auto-accept-edits',
-      { effort: 'high', fastMode: true },
-    )
-
-    expect(executeClaudeCode).toHaveBeenCalledWith(expect.objectContaining({
-      model: 'claude-opus-4-8',
-      fastMode: true,
-      maxTurns: 16,
-    }))
-  })
-
-  it('normalizes Claude alias, dated, and bracket model IDs', async () => {
-    vi.mocked(detectBinary).mockResolvedValue('/opt/homebrew/bin/claude')
-    vi.mocked(listSupportedClaudeModels).mockResolvedValue([
-      { value: 'sonnet', resolvedModel: 'claude-sonnet-5' },
-      {
-        value: 'opus[1m]',
-      },
-      {
-        value: 'claude-haiku-4-5-20251001[1m]',
-      },
-    ])
-
-    const service = new CodingAgentsProviderService(createDbMock())
-    await expect(service.listModels('claude_code')).resolves.toEqual([
-      'claude-opus-5',
-      'claude-sonnet-5',
-      'claude-haiku-4-5',
-    ])
-  })
-
-  it('surfaces unavailable and unauthorized Claude model discovery errors', async () => {
-    vi.mocked(detectBinary).mockResolvedValue('/opt/homebrew/bin/claude')
-    const service = new CodingAgentsProviderService(createDbMock())
-
-    vi.mocked(listSupportedClaudeModels).mockRejectedValueOnce(
-      new Error('Model claude-opus-4-8 does not exist'),
-    )
-    await expect(service.listModels('claude_code')).rejects.toThrow(
-      'Claude model availability unavailable',
-    )
-
-    vi.mocked(listSupportedClaudeModels).mockRejectedValueOnce(
-      new Error('Claude account is not authenticated'),
-    )
-    await expect(service.listModels('claude_code')).rejects.toThrow(
-      'Claude model access unauthorized',
-    )
   })
 
   it('silently detects and uses the resolved opencode binary without changing the saved path', async () => {

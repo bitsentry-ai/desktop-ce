@@ -2,7 +2,8 @@ import { spawn } from 'child_process'
 import os from 'os'
 import path from 'path'
 import readline from 'readline'
-import log from 'electron-log'
+import { mkdtemp, rm, writeFile } from 'fs/promises'
+import { codingAgentsLogger as log } from './logger.js'
 import type { ChildProcess } from 'child_process'
 import type { Readable } from 'stream'
 import type { LocalAiExecutionResult, LocalAiStreamDelta } from './types.js'
@@ -14,6 +15,7 @@ import {
   DEFAULT_ACCESS_LEVEL,
 } from './composer.js'
 import { terminateSubprocess } from './subprocess-lifecycle.js'
+import type { HostMcpEndpoint } from './host-mcp-server.service.js'
 
 export interface OpenCodeDebugRecorder {
   recordEvent(stage: string, data: Record<string, unknown>): void
@@ -29,11 +31,13 @@ export interface OpenCodeExecutionOptions {
   accessLevel?: AccessLevel
   traitValues?: Record<string, string | boolean>
   opencodeArgs?: string[]
+  mcpEndpoint?: HostMcpEndpoint
   onDelta?: (delta: LocalAiStreamDelta) => void
   debug?: OpenCodeDebugRecorder
 }
 
 const MAX_OUTPUT_LENGTH = 50_000
+const MAX_STDERR_LENGTH = 5_000
 type OpenCodeAssistantDelta = { type: 'text' | 'reasoning'; text: string }
 interface OpenCodeExecutionState {
   output: string
@@ -127,28 +131,6 @@ function createOpenCodePermissionEnv(accessLevel: AccessLevel): Record<string, s
   const deny = 'deny'
   const allow = 'allow'
 
-  if (accessLevel === 'supervised') {
-    return {
-      OPENCODE_PERMISSION: JSON.stringify({
-        '*': deny,
-        read: deny,
-        glob: deny,
-        grep: deny,
-        bash: deny,
-        edit: deny,
-        webfetch: deny,
-        websearch: deny,
-        codesearch: deny,
-        external_directory: deny,
-        task: deny,
-        todowrite: deny,
-        lsp: deny,
-        skill: deny,
-        question: allow,
-      }),
-    }
-  }
-
   return {
     OPENCODE_PERMISSION: JSON.stringify({
       read: allow,
@@ -171,19 +153,11 @@ function buildOpenCodePrompt(prompt: string, accessLevel: AccessLevel): string {
     return prompt
   }
 
-  let guardrails = [
+  const guardrails = [
     'You are executing inside BitSentry auto-accept-edits mode.',
     'Do not run shell commands, browse the web, or access external directories.',
     'Use only safe local read/edit style capabilities if the provider permits them.',
   ]
-  if (accessLevel === 'supervised') {
-    guardrails = [
-      'You are executing inside BitSentry prompt-only mode.',
-      'Do not run shell commands, edit files, browse the web, or call external tools.',
-      'Respond only with text based on the prompt and supplied context.',
-    ]
-  }
-
   return [...guardrails, '', prompt].join('\n')
 }
 
@@ -567,6 +541,7 @@ function createOpenCodeProcess(
   options: OpenCodeExecutionOptions,
   cwd: string,
   accessLevel: AccessLevel,
+  configPath: string | undefined,
 ): OpenCodeChildProcess {
   const binaryPath = resolveOpenCodeWindowsBinary(options.binaryPath)
   const invocation = createCommandInvocation(
@@ -580,10 +555,30 @@ function createOpenCodeProcess(
     env: {
       ...createCodingAgentsProcessEnv(process.env),
       ...createOpenCodePermissionEnv(accessLevel),
+      ...(configPath === undefined ? {} : { OPENCODE_CONFIG: configPath }),
     },
   })
 
   return child
+}
+
+async function createOpenCodeMcpConfig(endpoint: HostMcpEndpoint | undefined): Promise<{
+  directory: string
+  path: string
+} | undefined> {
+  if (endpoint === undefined) return undefined
+  const directory = await mkdtemp(path.join(os.tmpdir(), 'bitsentry-opencode-mcp-'))
+  const configPath = path.join(directory, 'opencode.json')
+  await writeFile(configPath, JSON.stringify({
+    mcp: {
+      bitsentry: {
+        type: 'local',
+        command: [endpoint.command, ...endpoint.args],
+        environment: endpoint.env,
+      },
+    },
+  }), 'utf8')
+  return { directory, path: configPath }
 }
 
 async function waitForOpenCodeExit(
@@ -706,7 +701,7 @@ function wireOpenCodeProcess(
   })
 
   child.stderr.on('data', (chunk: Buffer) => {
-    state.stderr += chunk.toString('utf8')
+    state.stderr = (state.stderr + chunk.toString('utf8')).slice(-MAX_STDERR_LENGTH)
   })
 
   const onAbort = createOpenCodeAbortHandler(state, options, child)
@@ -743,7 +738,10 @@ export async function executeOpenCode(
 
   const cwd = options.cwd ?? os.tmpdir()
   const accessLevel = normalizeAccessLevel(options.accessLevel ?? DEFAULT_ACCESS_LEVEL)
-  const child = createOpenCodeProcess(options, cwd, accessLevel)
+  const config = options.mcpEndpoint === undefined
+    ? undefined
+    : await createOpenCodeMcpConfig(options.mcpEndpoint)
+  const child = createOpenCodeProcess(options, cwd, accessLevel, config?.path)
   const state = createOpenCodeExecutionState()
   const appendOutput = createAppendOpenCodeOutput(state, options)
   const { stdoutLines, onAbort } = wireOpenCodeProcess(
@@ -755,13 +753,24 @@ export async function executeOpenCode(
   )
   options.onDelta?.({ type: 'status', status: 'started' })
 
-  const exitCode = await waitForOpenCodeExit(
-    child,
-    options.abortController.signal,
-    onAbort,
-    stdoutLines,
-  )
-  await state.termination
+  try {
+    const exitCode = await waitForOpenCodeExit(
+      child,
+      options.abortController.signal,
+      onAbort,
+      stdoutLines,
+    )
+    await state.termination
 
-  return finalizeOpenCodeResult(state, exitCode, options, accessLevel)
+    return finalizeOpenCodeResult(state, exitCode, options, accessLevel)
+  } finally {
+    const stderrTail = state.stderr.trim()
+    if (stderrTail.length > 0) {
+      log.warn('[opencode-provider] subprocess stderr tail', {
+        agentSessionId: options.mcpEndpoint?.agentSessionId ?? 'unknown',
+        stderrTail,
+      })
+    }
+    if (config !== undefined) await rm(config.directory, { recursive: true, force: true })
+  }
 }

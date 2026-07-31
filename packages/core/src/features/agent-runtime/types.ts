@@ -259,7 +259,7 @@ export interface AgentStartInput {
   timeoutMs?: number  // Default: 300000 (5 minutes) for thinking models
   attachments?: AgentChatAttachment[]
   llm?: AgentLlmSelection
-  accessLevel?: 'supervised' | 'auto-accept-edits' | 'full-access'
+  accessLevel?: 'auto-accept-edits' | 'full-access'
   traitValues?: Record<string, string | boolean>
   runbookContext?: RunbookContext  // Optional: Active runbook for contextualized responses
   runbookId?: string // Resolved by the desktop gateway before the agent starts
@@ -275,7 +275,7 @@ export interface AgentSendInput {
   sessionId?: string  // Optional: continue existing session
   attachments?: AgentChatAttachment[]
   llm?: AgentLlmSelection
-  accessLevel?: 'supervised' | 'auto-accept-edits' | 'full-access'
+  accessLevel?: 'auto-accept-edits' | 'full-access'
   traitValues?: Record<string, string | boolean>
   runbookContext?: RunbookContext  // Optional: runbook for session recovery
   runbookId?: string // Resolved by the desktop gateway before the agent continues
