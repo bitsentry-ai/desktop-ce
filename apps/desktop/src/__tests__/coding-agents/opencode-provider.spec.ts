@@ -85,53 +85,6 @@ describe('executeOpenCode', () => {
     expect(args.indexOf('--variant')).toBeGreaterThan(args.indexOf('run'))
   })
 
-  it('sets OpenCode permissions as a keyed config object for supervised runs', async () => {
-    const child = new MockChildProcess()
-    mocks.spawn.mockReturnValue(child)
-
-    const { executeOpenCode } = await import(
-      '@bitsentry-ce/desktop-cli/runtime/desktop-coding-agents'
-    )
-
-    const resultPromise = executeOpenCode({
-      prompt: 'Summarize the incident',
-      binaryPath: 'opencode',
-      abortController: new AbortController(),
-      accessLevel: 'supervised',
-    })
-
-    queueMicrotask(() => { finishOpenCodeProcess(child); })
-
-    await expect(resultPromise).resolves.toMatchObject({ exitCode: 0 })
-
-    expect(mocks.spawn).toHaveBeenCalledTimes(1)
-    const [, , options] = mocks.spawn.mock.calls[0] as [
-      string,
-      string[],
-      { env: Record<string, string | undefined> },
-    ]
-    const permissionJson = options.env.OPENCODE_PERMISSION
-    expect(permissionJson).toBeDefined()
-    if (permissionJson === undefined) {
-      throw new Error('OpenCode permission JSON was not set')
-    }
-
-    const permission = parseJson(permissionJson)
-    expect(Array.isArray(permission)).toBe(false)
-    expect(permission).toMatchObject({
-      '*': 'deny',
-      read: 'deny',
-      glob: 'deny',
-      grep: 'deny',
-      bash: 'deny',
-      edit: 'deny',
-      webfetch: 'deny',
-      websearch: 'deny',
-      external_directory: 'deny',
-      question: 'allow',
-    })
-  })
-
   it('writes a scoped MCP config for the OpenCode subprocess', async () => {
     const child = new MockChildProcess()
     mocks.spawn.mockReturnValue(child)

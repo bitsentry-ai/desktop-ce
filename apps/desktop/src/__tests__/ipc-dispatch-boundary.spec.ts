@@ -19,12 +19,12 @@ describe('desktop IPC dispatch boundary', () => {
 
     const result = await dispatcher.dispatch('runbooks:execute', {
       runbookId: 'runbook-1',
-      accessLevel: 'supervised',
+      accessLevel: 'auto-accept-edits',
     })
 
     expect(result).toEqual({
       runbookId: 'runbook-1',
-      accessLevel: 'supervised',
+      accessLevel: 'auto-accept-edits',
     })
     expect(handler).toHaveBeenCalledOnce()
   })

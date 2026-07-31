@@ -1680,7 +1680,7 @@ export default function IncidentsPage() {
       setSelectedModelId("");
     }
 
-    // Restore persisted access level. Legacy Ask First values normalize to Safe Tools.
+    // Restore the supported persisted access level, defaulting to Safe Tools.
     const savedLevel = lock.accessLevel ?? defaultLevel;
     setSelectedAccessLevel(savedLevel);
 

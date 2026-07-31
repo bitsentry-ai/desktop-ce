@@ -35,7 +35,7 @@ type RunbookStartOptions = {
   incidentThreadId?: string
   parameterValues?: RunbookParameterValues
   source?: 'manual' | 'agent'
-  accessLevel?: 'supervised' | 'auto-accept-edits' | 'full-access'
+  accessLevel?: 'auto-accept-edits' | 'full-access'
 }
 type TestRunbookExecutionService = {
   get: AgentRuntimeRunbookGateway['get']

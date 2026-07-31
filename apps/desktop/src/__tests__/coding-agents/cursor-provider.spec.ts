@@ -197,26 +197,6 @@ describe('Cursor provider behavior', () => {
     expect(
       chooseCursorPermissionResponse(
         {
-          toolCall: { toolCallId: 'read-1', kind: 'read', title: 'Read file' },
-          options: permissionOptions,
-        },
-        'supervised',
-      ),
-    ).toEqual({ outcome: { outcome: 'selected', optionId: 'reject-once' } })
-
-    expect(
-      chooseCursorPermissionResponse(
-        {
-          toolCall: { toolCallId: 'edit-1', kind: 'edit', title: 'Edit file' },
-          options: permissionOptions,
-        },
-        'supervised',
-      ),
-    ).toEqual({ outcome: { outcome: 'selected', optionId: 'reject-once' } })
-
-    expect(
-      chooseCursorPermissionResponse(
-        {
           toolCall: { toolCallId: 'edit-1', kind: 'edit', title: 'Edit file' },
           options: permissionOptions,
         },

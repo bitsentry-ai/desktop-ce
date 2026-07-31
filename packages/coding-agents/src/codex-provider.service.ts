@@ -34,15 +34,6 @@ export interface CodexExecutionOptions {
   debug?: CodexDebugRecorder
 }
 
-const PROMPT_ONLY_ALLOWED_ITEM_TYPES = new Set([
-  'agentMessage',
-  'userMessage',
-  'reasoning',
-  'agent_reasoning',
-  'plan',
-  'Plan',
-])
-
 function asRecord(value: unknown): Record<string, unknown> | undefined {
   if (value === null || typeof value !== 'object' || Array.isArray(value)) {
     return undefined
@@ -264,7 +255,6 @@ export async function executeCodex(
   let output = ''
   let threadId: string | undefined
   let activeTurnId: string | undefined
-  let promptOnlyViolation: Error | undefined
   let tokenUsage: LocalAiExecutionResult['tokenUsage']
   let pendingAssistantMessageBreak = false
   const streamedAgentMessageIds = new Set<string>()
@@ -310,24 +300,8 @@ export async function executeCodex(
 
   options.abortController.signal.addEventListener('abort', onAbort, { once: true })
 
-  const isPromptOnly = false
   const isAutoAcceptEdits = effectiveAccessLevel === 'auto-accept-edits'
   const isFullAccess = effectiveAccessLevel === 'full-access'
-
-  const failForPromptOnlyViolation = (method: string): void => {
-    if (!isPromptOnly || promptOnlyViolation !== undefined) return
-
-    promptOnlyViolation = new Error(`Codex attempted ${method} during prompt-only mode`)
-    log.warn('[codex-provider] Prompt-only violation:', method)
-    options.onDelta?.({ type: 'status', status: 'failed' })
-
-    if (threadId !== undefined && activeTurnId !== undefined) {
-      client.sendRequest('turn/interrupt', { threadId, turnId: activeTurnId }).catch(() => {
-        // If interrupt fails, kill below still stops the app-server.
-      })
-    }
-    void client.kill()
-  }
 
   client.on('notification', (notification: { method: string; params: unknown }) => {
     const params = asRecord(notification.params)
@@ -425,12 +399,6 @@ export async function executeCodex(
         if (itemType === 'agentMessage' && output.trim().length > 0) {
           pendingAssistantMessageBreak = true
         }
-        if (
-          itemType !== undefined &&
-          !PROMPT_ONLY_ALLOWED_ITEM_TYPES.has(itemType)
-        ) {
-          failForPromptOnlyViolation(`item/started:${itemType}`)
-        }
         break
       }
 
@@ -445,11 +413,8 @@ export async function executeCodex(
       case 'item/commandExecution/outputDelta':
       case 'item/commandExecution/terminalInteraction':
       case 'item/fileChange/outputDelta': {
-        failForPromptOnlyViolation(notification.method)
-        if (!isPromptOnly) {
-          for (const delta of codexStreamDeltasFromNotification(notification.method, params)) {
-            options.onDelta?.(delta)
-          }
+        for (const delta of codexStreamDeltasFromNotification(notification.method, params)) {
+          options.onDelta?.(delta)
         }
         break
       }
@@ -479,11 +444,6 @@ export async function executeCodex(
 
   client.on('serverRequest', (request: { id: JsonRpcId; method: string; params: unknown }) => {
     if (request.method === 'item/permissions/requestApproval') {
-      if (isPromptOnly) {
-        failForPromptOnlyViolation(request.method)
-        client.respondToServerRequest(request.id, { permissions: {}, scope: 'turn' })
-        return
-      }
       // Codex interprets result.permissions as the granted SUBSET of the requested
       // permissions. Echoing back arbitrary requested fileSystem roots would let
       // a model widen itself beyond the active sandboxPolicy (e.g. to ~/.ssh).
@@ -499,11 +459,6 @@ export async function executeCodex(
         client.respondToServerRequest(request.id, { permissions: {}, scope: 'turn' })
       }
     } else if (request.method.endsWith('requestApproval')) {
-      if (isPromptOnly) {
-        failForPromptOnlyViolation(request.method)
-        client.respondToServerRequest(request.id, { decision: 'decline' })
-        return
-      }
       if (isFullAccess) {
         client.respondToServerRequest(request.id, { decision: 'acceptForSession' })
       } else if (isAutoAcceptEdits) {
@@ -552,13 +507,6 @@ export async function executeCodex(
     // Suppress unhandled rejection if turn/start fails before we await this.
     const turnCompletion = new Promise<void>((resolve, reject) => {
       const onNotification = (notification: { method: string; params: unknown }) => {
-        if (promptOnlyViolation !== undefined) {
-          client.removeListener('notification', onNotification)
-          client.removeListener('closed', onClosed)
-          reject(promptOnlyViolation)
-          return
-        }
-
         if (
           notification.method === 'turn/completed' ||
           notification.method === 'thread/completed'
@@ -595,10 +543,6 @@ export async function executeCodex(
 
       const onClosed = (reason: string) => {
         client.removeListener('notification', onNotification)
-        if (promptOnlyViolation !== undefined) {
-          reject(promptOnlyViolation)
-          return
-        }
         if (options.abortController.signal.aborted) {
           resolve()
         } else {

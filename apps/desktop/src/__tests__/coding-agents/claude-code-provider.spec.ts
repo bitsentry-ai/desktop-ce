@@ -505,7 +505,7 @@ describe('executeClaudeCode', () => {
     })
   })
 
-  it('registers the in-process host MCP server only outside supervised mode', async () => {
+  it('registers the in-process host MCP server for incident chat', async () => {
     queryMock.mockReturnValue({
       async *[Symbol.asyncIterator]() {
         yield { type: 'result', subtype: 'success', result: 'Runbook list is ready.' }
@@ -557,32 +557,6 @@ describe('executeClaudeCode', () => {
       isError: true,
       content: [{ type: 'text' }],
     })
-  })
-
-  it('omits the host MCP server in supervised mode', async () => {
-    queryMock.mockReturnValue({
-      async *[Symbol.asyncIterator]() {
-        yield { type: 'result', subtype: 'success', result: 'I can explain the incident.' }
-      },
-      getContextUsage: getContextUsageMock.mockResolvedValue({ totalTokens: 0, maxTokens: 0 }),
-      close: closeMock,
-    })
-
-    const { executeClaudeCode } =
-      await import('@bitsentry-ce/desktop-cli/runtime/desktop-coding-agents')
-    await executeClaudeCode({
-      prompt: 'Explain the incident.',
-      binaryPath: 'claude',
-      abortController: new AbortController(),
-      accessLevel: 'supervised',
-      hostToolContext: {
-        gateway: {} as never,
-        session: { id: 'session-1' },
-      },
-    })
-
-    expect(createSdkMcpServerMock).not.toHaveBeenCalled()
-    expect(getQueryOptions(0).mcpServers).toBeUndefined()
   })
 
   it('enables the Claude 1M context beta when requested', async () => {

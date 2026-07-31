@@ -303,7 +303,7 @@ describe('CodingAgentsProviderService', () => {
       undefined,
       undefined,
       'claude-sonnet-5',
-      'supervised',
+      'auto-accept-edits',
       { effort: 'high', contextWindow: '1m' },
     )
 
