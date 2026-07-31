@@ -185,11 +185,22 @@ export function codexStreamDeltasFromNotification(
 
 export function normalizeCodexExecutionError(err: unknown): Error {
   const message = getErrorMessage(err)
+  const normalizedMessage = message.toLowerCase()
   const isConfigLoadError =
     message.includes('failed to load configuration:') &&
     message.includes('config.toml')
 
   if (!isConfigLoadError) {
+    if (
+      /not supported when using codex with a chatgpt account|unsupported model|model .* (?:does not exist|not found|is not supported|unknown)/.test(normalizedMessage)
+    ) {
+      return new Error(`Codex model unavailable: ${message}`)
+    }
+    if (
+      /unauthori[sz]ed|forbidden|access denied|not authenticated|permission|entitlement/.test(normalizedMessage)
+    ) {
+      return new Error(`Codex account access unauthorized: ${message}`)
+    }
     if (err instanceof Error) return err
     return new Error(message)
   }

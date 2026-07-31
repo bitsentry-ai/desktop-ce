@@ -11,7 +11,7 @@ import {
 } from '@bitsentry-ce/desktop-cli/runtime/database-index'
 import { setRuntimeUserDataPath } from '@bitsentry-ce/desktop-cli/runtime/runtime-paths'
 
-type BetterSqlite3Constructor = typeof import('better-sqlite3').default
+type BetterSqlite3Constructor = typeof import('better-sqlite3')
 
 const CURRENT_SCHEMA_VERSION = 17
 const tempDirectories: string[] = []
@@ -19,7 +19,9 @@ let Database: BetterSqlite3Constructor | undefined
 let nativeModuleWarning: string | undefined
 
 try {
-  ({ default: Database } = await import('better-sqlite3'))
+  ({ default: Database } = await import('better-sqlite3') as unknown as {
+    default: BetterSqlite3Constructor
+  })
   const probe = new Database(':memory:')
   probe.close()
 } catch (error) {

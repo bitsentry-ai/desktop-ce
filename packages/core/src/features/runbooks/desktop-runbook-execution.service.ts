@@ -37,7 +37,10 @@ import type { ExternalSourceRunbookQueryExecutor } from "../error-sources/deskto
 import { createDesktopNodePluginRuntimeService } from "../plugins/desktop-plugin-runtime.node";
 import type { DesktopPluginRuntimeService } from "../plugins/desktop-plugin-registry";
 import type { DesktopGlobalVariablesService } from "./desktop-global-variables-service";
-import type { RunbookResultPersistence } from "./desktop-runbook-result.store";
+import type {
+  ExecutionSnapshotEventOutcome,
+  RunbookResultPersistence,
+} from "./desktop-runbook-result.store";
 import type { DesktopRunbookStore as RunbookStore } from "./desktop-runbook.store";
 import { collectRunbookGlobalReferences } from "./import-export";
 import type { LogFilterConfig } from "./runbooks.schemas";
@@ -356,6 +359,18 @@ interface RunbookExecutionSession {
   heartbeatTimer?: ReturnType<typeof setInterval>;
   controlCompleted?: boolean;
   emitQueue?: Promise<void>;
+}
+
+class RunbookExecutionSnapshotRejectedError extends Error {
+  constructor(
+    readonly outcome: Exclude<ExecutionSnapshotEventOutcome, "accepted">,
+    executionId: string,
+  ) {
+    super(
+      `Runbook execution snapshot '${executionId}' was rejected as ${outcome}`,
+    );
+    this.name = "RunbookExecutionSnapshotRejectedError";
+  }
 }
 
 interface WaitForCompletionOptions {
@@ -693,11 +708,20 @@ export class RunbookExecutionService {
   }
 
   async cancel(executionId: string): Promise<void> {
-    await this.resultStore.requestExecutionCancellation(executionId);
+    const cancellationRequested =
+      await this.resultStore.requestExecutionCancellation(executionId);
 
     const session = this.sessions.get(executionId);
+    if (!cancellationRequested) {
+      throw new Error(
+        `Runbook execution '${executionId}' is no longer cancellable`,
+      );
+    }
+
     if (session === undefined || session.snapshot.status !== "running") {
-      return;
+      throw new Error(
+        `Cancellation was recorded for runbook execution '${executionId}', but no live execution session is available`,
+      );
     }
 
     await this.cancelExecutionSession(session, "user_cancelled");
@@ -740,6 +764,10 @@ export class RunbookExecutionService {
 
       await this.completeRunbookExecution(session);
     } catch (error) {
+      if (session.snapshot.status === "completed") {
+        await this.persistTerminalSnapshotFailure(session, error);
+        return;
+      }
       await this.interruptRunbookExecution(session, error);
     }
   }
@@ -833,9 +861,75 @@ export class RunbookExecutionService {
   private async completeRunbookExecution(
     session: RunbookExecutionSession,
   ): Promise<void> {
-    markSharedExecutionCompleted(session.snapshot, new Date().toISOString());
+    const completedAt = new Date().toISOString();
+    markSharedExecutionCompleted(session.snapshot, completedAt);
     this.stopIdleWatchdog(session);
-    await this.emitSnapshot(session);
+    try {
+      await this.emitSnapshot(session, { failOnReject: true });
+      return;
+    } catch (error) {
+      if (!(error instanceof RunbookExecutionSnapshotRejectedError)) {
+        throw error;
+      }
+    }
+
+    const persisted = await this.resultStore.getExecutionSnapshotByResultId(
+      session.resultId,
+    );
+    if (persisted?.status === "completed") {
+      session.snapshot = cloneSharedExecutionSnapshot(persisted);
+      this.stopExecutionHeartbeat(session);
+      return;
+    }
+
+    if (
+      persisted === null ||
+      persisted.status !== "running" ||
+      persisted.steps.some((step) => step.status !== "completed")
+    ) {
+      throw new Error(
+        `Runbook execution '${session.snapshot.executionId}' could not persist terminal completion after a rejected snapshot`,
+      );
+    }
+
+    session.snapshot = cloneSharedExecutionSnapshot(persisted);
+    markSharedExecutionCompleted(session.snapshot, completedAt);
+    await this.emitSnapshot(session, { failOnReject: true });
+  }
+
+  private async persistTerminalSnapshotFailure(
+    session: RunbookExecutionSession,
+    error: unknown,
+  ): Promise<void> {
+    const persisted = await this.resultStore.getExecutionSnapshotByResultId(
+      session.resultId,
+    );
+    if (persisted?.status === "completed") {
+      session.snapshot = cloneSharedExecutionSnapshot(persisted);
+      this.stopExecutionHeartbeat(session);
+      return;
+    }
+    if (persisted === null || persisted.status !== "running") {
+      throw error;
+    }
+
+    const failed = cloneSharedExecutionSnapshot(persisted);
+    const completedAt = new Date().toISOString();
+    const failedStep = failed.steps[failed.steps.length - 1];
+    if (failedStep !== undefined) {
+      failedStep.error = redactSharedExecutionString(
+        session.redactor,
+        getErrorMessage(error),
+      );
+      failedStep.completedAt = failedStep.completedAt ?? completedAt;
+    }
+    failed.status = "failed";
+    failed.completedAt = completedAt;
+    failed.completionReason = "step_failed";
+    failed.lastActivityAt = completedAt;
+    session.snapshot = failed;
+    this.stopIdleWatchdog(session);
+    await this.emitSnapshot(session, { failOnReject: true });
   }
 
   private async interruptRunbookExecution(
@@ -2783,13 +2877,16 @@ export class RunbookExecutionService {
     await this.emitSnapshot(session);
   }
 
-  private emitSnapshot(session: RunbookExecutionSession): Promise<void> {
+  private emitSnapshot(
+    session: RunbookExecutionSession,
+    options?: { failOnReject?: boolean },
+  ): Promise<void> {
     // Serialize emits per session. Concurrent emits (throttled streaming
     // snapshots racing the terminal snapshot) can reach the store out of
     // order, and the optimistic version check then rejects the completion
     // write, leaving the persisted execution "running" forever.
     const queued = (session.emitQueue ?? Promise.resolve()).then(() =>
-      this.emitSnapshotNow(session),
+      this.emitSnapshotNow(session, options),
     );
     session.emitQueue = queued.catch(() => undefined);
     return queued;
@@ -2797,6 +2894,7 @@ export class RunbookExecutionService {
 
   private async emitSnapshotNow(
     session: RunbookExecutionSession,
+    options?: { failOnReject?: boolean },
   ): Promise<void> {
     const maxAttempts = 3;
     for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
@@ -2818,6 +2916,12 @@ export class RunbookExecutionService {
         return;
       }
       if (eventOutcome !== "stale") {
+        if (options?.failOnReject === true) {
+          throw new RunbookExecutionSnapshotRejectedError(
+            eventOutcome,
+            snapshot.executionId,
+          );
+        }
         return;
       }
 
@@ -2842,6 +2946,12 @@ export class RunbookExecutionService {
         // resynced version. Terminal snapshots retry in this loop.
         return;
       }
+    }
+    if (options?.failOnReject === true) {
+      throw new RunbookExecutionSnapshotRejectedError(
+        "stale",
+        session.snapshot.executionId,
+      );
     }
   }
 

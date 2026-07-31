@@ -13,6 +13,10 @@ function table(rows: Row[]) {
   return {
     count: async () => rows.length,
     findMany: async () => rows.map((row) => ({ ...row })),
+    findUnique: async (args: { where?: Record<string, unknown> }) => {
+      const row = rows.find((candidate) => matches(candidate, args.where));
+      return row === undefined ? null : { ...row };
+    },
     deleteMany: async (args: Record<string, unknown>) => {
       const where = args.where as Record<string, unknown> | undefined;
       for (let index = rows.length - 1; index >= 0; index -= 1) {

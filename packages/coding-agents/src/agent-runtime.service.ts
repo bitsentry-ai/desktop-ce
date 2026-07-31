@@ -444,6 +444,7 @@ type ObservedHostToolCall = {
 }
 
 type DirectRunbookExecutionResult = {
+  toolCall: ToolCall
   result: ToolResult
   modelContext: string
   visibleResult: VisibleRunbookToolResult | null
@@ -2032,6 +2033,22 @@ export class AgentRuntimeService {
         hasExecutedToolCallInCurrentTurn = true
         awaitingRunbookSummary = true
         lastToolResult = directRunbookExecution.result
+        this.sendEvent(sessionId, {
+          type: 'tool_start',
+          timestamp: new Date().toISOString(),
+          toolName: directRunbookExecution.toolCall.name,
+          toolCallId: directRunbookExecution.toolCall.id,
+          input: directRunbookExecution.toolCall.args,
+        })
+        this.sendEvent(sessionId, {
+          type: 'tool_end',
+          timestamp: new Date().toISOString(),
+          toolCallId: directRunbookExecution.toolCall.id,
+          state: getToolEndState(directRunbookExecution.result),
+          output: directRunbookExecution.result.output,
+          error: directRunbookExecution.result.error,
+          modelContext: directRunbookExecution.modelContext,
+        })
         session.messages.push({
           role: 'system',
           content: directRunbookExecution.modelContext,
@@ -2631,6 +2648,14 @@ export class AgentRuntimeService {
     const modelContext = this.buildDirectRunbookExecutionConversationContent(runbook.title, rawOutput, result)
 
     return {
+      toolCall: {
+        id: `direct-execute-runbook-${randomUUID()}`,
+        name: 'execute_runbook',
+        args: {
+          runbookId: runbook.id,
+          runbookTitle: runbook.title,
+        },
+      },
       result,
       modelContext,
       visibleResult: this.buildVisibleRunbookExecutionResult(result),

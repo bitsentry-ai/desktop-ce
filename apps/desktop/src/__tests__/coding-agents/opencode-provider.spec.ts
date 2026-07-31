@@ -103,6 +103,7 @@ describe('executeOpenCode', () => {
         command: process.execPath,
         args: ['/tmp/host-mcp-shim.cjs'],
         env: { BITSENTRY_MCP_URL: 'http://127.0.0.1:40123/mcp', BITSENTRY_MCP_TOKEN: 'token' },
+        agentSessionId: 'agent-session-opencode',
       },
     })
 

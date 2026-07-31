@@ -1,5 +1,6 @@
 import {
   type ModelCatalogProviderKey,
+  filterSelectableModelIds,
   getCatalogModelIds,
 } from "../llm/modelCatalog";
 import type { SavedProviderConfig } from "./types";
@@ -20,20 +21,20 @@ export function getProviderModelOptions(
 ): string[] {
   const saved = savedProviders[providerKey];
   let discoveredModels: string[] = [];
-  if (Array.isArray(saved.availableModels)) {
+  if (Array.isArray(saved?.availableModels)) {
     discoveredModels = saved.availableModels;
   }
-  const merged = [
-    ...discoveredModels,
-    ...getCatalogModelIds(providerKey),
-    saved.model,
-  ];
 
-  return Array.from(
-    new Set(
-      merged
-        .map((modelId) => modelId.trim())
-        .filter((modelId) => modelId.length > 0),
-    ),
-  );
+  // A non-empty Codex discovery result is an account capability snapshot. Do
+  // not merge stale static/saved selections back into that authoritative list.
+  const hasCodexCapabilitySnapshot = providerKey === "codex" && discoveredModels.length > 0;
+  const merged = hasCodexCapabilitySnapshot
+    ? discoveredModels
+    : [
+      ...discoveredModels,
+      ...getCatalogModelIds(providerKey),
+      ...(saved?.model === undefined ? [] : [saved.model]),
+    ];
+
+  return filterSelectableModelIds(providerKey, merged);
 }

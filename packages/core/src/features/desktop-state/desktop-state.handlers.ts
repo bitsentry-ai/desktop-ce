@@ -56,6 +56,7 @@ export interface DesktopStateDatabase {
     & DesktopStateCountTable
     & DesktopStateDeleteManyTable
     & DesktopStateCreateTable
+    & DesktopStateFindUniqueTable
     & DesktopStateFindManyTable
   investigationTraceEntry: DesktopStateDeleteManyTable & DesktopStateCreateTable & DesktopStateFindManyTable
   investigationToolRun: DesktopStateDeleteManyTable & DesktopStateCreateTable & DesktopStateFindManyTable
@@ -1094,8 +1095,25 @@ class DesktopStateStore {
   async syncResults(payload: DesktopStatePayload): Promise<{ ok: true; count: number }> {
     const results = normalizeResultsList(payloadResults(payload))
     const resultTraces = normalizeResultTraces(payloadResultTraces(payload))
-    await this.replaceResults(results, resultTraces)
+    await this.importMissingResults(results, resultTraces)
     return { ok: true, count: results.length }
+  }
+
+  private async importMissingResults(
+    results: StoredRunResult[],
+    resultTraces: Record<string, ResultTraceMemory>,
+  ): Promise<void> {
+    for (const result of results) {
+      const existingResult = await this.db.investigationSession.findUnique({
+        where: { id: result.id },
+      })
+      if (existingResult !== null) {
+        continue
+      }
+
+      const trace = resultTraces[result.id] ?? emptyTrace()
+      await this.replaceResult(result, trace, false)
+    }
   }
 
   private async replaceIncidents(

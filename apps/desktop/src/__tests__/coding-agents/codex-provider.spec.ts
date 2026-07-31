@@ -196,6 +196,23 @@ describe('Codex failed turn handling', () => {
 })
 
 describe('normalizeCodexExecutionError', () => {
+  it('labels a model rejected for the current ChatGPT account as unavailable', () => {
+    const error = normalizeCodexExecutionError(new Error(
+      "The 'gpt-5.2-codex' model is not supported when using Codex with a ChatGPT account.",
+    ))
+
+    expect(error.message).toContain('Codex model unavailable:')
+    expect(error.message).toContain('gpt-5.2-codex')
+  })
+
+  it('labels account authentication failures as unauthorized', () => {
+    const error = normalizeCodexExecutionError(new Error(
+      'Codex account is not authenticated or is not authorized for this model.',
+    ))
+
+    expect(error.message).toContain('Codex account access unauthorized:')
+  })
+
   it('adds a service_tier hint for Codex config load errors', () => {
     const error = new Error(
       'failed to load configuration: /Users/wirapratama/.codex/config.toml:5:16: unknown variant `default`, expected `fast` or `flex`',

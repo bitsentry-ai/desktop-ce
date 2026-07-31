@@ -106,6 +106,19 @@ export interface LocalAiExecutionResult {
   error?: string
 }
 
+export interface LocalAiHostToolDefinition {
+  name: string
+  description: string
+  inputShape: import('zod').ZodRawShape
+}
+
+export interface LocalAiHostToolTransport {
+  tools: readonly LocalAiHostToolDefinition[]
+  execute(
+    toolCall: import('@bitsentry-ce/core/features/agent-runtime').AgentToolCall,
+  ): Promise<import('@bitsentry-ce/core/features/agent-runtime').AgentToolResult>
+}
+
 export interface LocalAiTokenUsageDelta {
   type: 'token_usage'
   tokenUsage: LocalAiTokenUsage

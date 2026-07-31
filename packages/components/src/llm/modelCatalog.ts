@@ -44,6 +44,10 @@ export type ComposerOptionDescriptor = ComposerSelectOption | ComposerBooleanOpt
 export interface ModelCatalogEntry {
   id: string
   displayName: string
+  /** Runtime model identifier used by the provider for named variants. */
+  runtimeModelId?: string
+  /** Provider traits implied by this catalog entry at execution time. */
+  runtimeTraitValues?: Record<string, string | boolean>
   supportsImageInput: boolean
   supportsAudioInput: boolean
   supportsVideoInput: boolean
@@ -87,18 +91,47 @@ const providerCatalogByKey = new Map(
 )
 
 const normalizeValue = (value: string): string => value.trim().toLowerCase()
+const HIDDEN_MODEL_IDS_BY_PROVIDER: Partial<Record<
+  ModelCatalogProviderKey,
+  ReadonlySet<string>
+>> = {
+  // These IDs are rejected by Codex when authenticated with a ChatGPT account.
+  // Keep the raw catalog data for migration/display compatibility, but never
+  // offer them as selectable models.
+  codex: new Set(['gpt-5.2-codex', 'gpt-5.1-codex-mini']),
+}
 const CONTEXT_WINDOW_OPTION_ID = 'contextWindow'
 const MODEL_CONTEXT_WINDOW_LIMIT_FALLBACKS: Readonly<Record<string, number>> = {
   // Official OpenAI model docs show 1M for gpt-5.4 and 400K for gpt-5.4-mini.
-  // GPT-5.2 and GPT-5.2-Codex docs also show 400K, so we apply that same
-  // fallback to the older Codex-tuned variants when the app-server omits the
-  // live `modelContextWindow` field.
+  // GPT-5.2 docs also show 400K, so use that fallback when the app-server
+  // omits the live `modelContextWindow` field.
   'gpt-5.4': 1_000_000,
   'gpt-5.4-mini': 400_000,
   'gpt-5.3-codex': 400_000,
   'gpt-5.3-codex-spark': 400_000,
-  'gpt-5.2-codex': 400_000,
   'gpt-5.2': 400_000,
+}
+
+export function filterSelectableModelIds(
+  providerKey: ModelCatalogProviderKey,
+  modelIds: string[],
+): string[] {
+  const hiddenModelIds = HIDDEN_MODEL_IDS_BY_PROVIDER[providerKey]
+  const seen = new Set<string>()
+
+  return modelIds.filter((modelId) => {
+    const normalizedModelId = normalizeValue(modelId)
+    if (
+      normalizedModelId.length === 0 ||
+      hiddenModelIds?.has(normalizedModelId) === true ||
+      seen.has(normalizedModelId)
+    ) {
+      return false
+    }
+
+    seen.add(normalizedModelId)
+    return true
+  })
 }
 
 export function getModelCatalogProviders(): ProviderModelCatalogEntry[] {
@@ -138,7 +171,53 @@ export function resolveCatalogModelId(
 export function getCatalogModelIds(
   providerKey: ModelCatalogProviderKey,
 ): string[] {
-  return getProviderCatalogModels(providerKey).map((model) => model.id)
+  return filterSelectableModelIds(
+    providerKey,
+    getProviderCatalogModels(providerKey).map((model) => model.id),
+  )
+}
+
+export interface CatalogModelRuntimeSelection {
+  modelId: string | undefined
+  traitValues: Record<string, string | boolean>
+}
+
+const LEGACY_RUNTIME_SELECTIONS: Partial<Record<
+  ModelCatalogProviderKey,
+  Record<string, CatalogModelRuntimeSelection>
+>> = {
+  claude_code: {
+    // Keep existing saved sessions runnable without exposing the old variant
+    // as a selectable catalog model.
+    'claude-opus-4-8-fast': {
+      modelId: 'claude-opus-4-8',
+      traitValues: { fastMode: true },
+    },
+  },
+}
+
+/**
+ * Resolve a UI catalog selection into the provider-facing model and traits.
+ * Explicit runtime traits override catalog defaults so user controls remain
+ * authoritative without changing the saved model selection.
+ */
+export function resolveCatalogModelRuntimeSelection(
+  providerKey: ModelCatalogProviderKey,
+  modelId: string | undefined,
+  traitValues: Record<string, string | boolean> = {},
+): CatalogModelRuntimeSelection {
+  const model = getCatalogModel(providerKey, modelId)
+  const legacySelection = modelId === undefined
+    ? undefined
+    : LEGACY_RUNTIME_SELECTIONS[providerKey]?.[modelId]
+  return {
+    modelId: model?.runtimeModelId ?? legacySelection?.modelId ?? modelId,
+    traitValues: {
+      ...(model?.runtimeTraitValues ?? {}),
+      ...(legacySelection?.traitValues ?? {}),
+      ...traitValues,
+    },
+  }
 }
 
 export function filterChatModelIds(

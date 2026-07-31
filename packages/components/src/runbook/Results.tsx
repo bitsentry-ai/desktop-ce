@@ -812,6 +812,7 @@ export default function ResultsPage() {
     useState<Record<string, ResultTraceMemory>>(loadResultTraces);
   const [selectedStepKey, setSelectedStepKey] = useState<string | null>(null);
   const [cancelPending, setCancelPending] = useState(false);
+  const [cancelError, setCancelError] = useState<string | null>(null);
 
   const sortedResults = useMemo(() => sortResults(results), [results]);
   const filteredResults = useMemo(() => {
@@ -1007,10 +1008,22 @@ export default function ResultsPage() {
   );
 
   const handleCancel = useCallback(async () => {
-    if (!isUuid(activeResult?.executionId) || cancelPending) return;
+    if (cancelPending) return;
+    if (!isUuid(activeResult?.executionId)) {
+      setCancelError("This execution cannot be cancelled because its execution ID is unavailable.");
+      return;
+    }
+
+    setCancelError(null);
     setCancelPending(true);
     try {
       await runbooks.cancelExecution(activeResult.executionId);
+    } catch (error) {
+      setCancelError(
+        error instanceof Error
+          ? error.message
+          : "Unable to cancel this runbook execution.",
+      );
     } finally {
       setCancelPending(false);
     }
@@ -1204,6 +1217,16 @@ export default function ResultsPage() {
                   </button>
                 )}
               </div>
+
+              {cancelError !== null && (
+                <div
+                  className="flex items-center gap-2 border-b border-destructive/30 bg-destructive/10 px-4 py-2 text-xs text-destructive"
+                  role="alert"
+                >
+                  <AlertCircle size={13} />
+                  <span>{cancelError}</span>
+                </div>
+              )}
 
               <div className="flex flex-1 divide-x divide-border overflow-hidden">
                 <div className="min-w-0 flex-1 overflow-hidden">

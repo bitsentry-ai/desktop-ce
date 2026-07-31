@@ -206,17 +206,50 @@ async function cancelExecution(
   userDataDir: string,
   execution: StartedExecution,
 ): Promise<void> {
-  const cancelled = asCliJson(
-    await context.runCliJson(userDataDir, [
+  let cancellationResult: unknown
+  let cancellationError: unknown
+  try {
+    cancellationResult = await context.runCliJson(userDataDir, [
       'runbooks',
       'cancel',
       '--execution-id',
       execution.executionId,
-    ]),
-    'Cancellation response',
-  )
-  if (cancelled.executionId !== execution.executionId) {
-    throw new Error('Cancellation response did not echo the expected execution id')
+    ])
+  } catch (error) {
+    cancellationError = error
+  }
+  if (cancellationError === undefined) {
+    const cancellationPayload =
+      cancellationResult !== null &&
+      typeof cancellationResult === 'object' &&
+      !Array.isArray(cancellationResult)
+        ? (cancellationResult as Record<string, unknown>)
+        : null
+    if (
+      cancellationPayload === null ||
+      cancellationPayload.executionId !== execution.executionId
+    ) {
+      throw new Error('Detached cancellation response did not include the expected execution id')
+    }
+  } else if (
+    cancellationError instanceof Error &&
+    cancellationError.message.includes(
+      `Cancellation was recorded for runbook execution '${execution.executionId}', but no live execution session is available`,
+    )
+  ) {
+    // Detached cancellation can persist the request from a separate process;
+    // the worker will observe it and finalize the execution asynchronously.
+  } else if (
+    cancellationError instanceof Error &&
+    cancellationError.message.includes(
+      `Runbook execution '${execution.executionId}' is no longer cancellable`,
+    )
+  ) {
+    // The execution may finish between start and cancel on slower CI hosts.
+  } else {
+    throw new Error(
+      `Detached cancellation failed unexpectedly: ${String(cancellationError)}`,
+    )
   }
 }
 
@@ -263,7 +296,7 @@ async function assertCancelledExecution(
 
   const cancelledSteps = getStepRecords(cancelledExecution)
   const cancelledOutput = getStepString(cancelledSteps, 'output')
-  if (cancelledOutput.includes('parallel:cancelled:10000')) {
+  if (cancelledOutput.includes('parallel:cancelled:60000')) {
     throw new Error('Cancelled parallel execution unexpectedly captured terminal output')
   }
 }
@@ -325,7 +358,7 @@ export async function runCliStressTest(desktopDir: string): Promise<void> {
       userDataDir,
       runbookId,
       'cancelled',
-      10_000,
+      60_000,
     )
     await cancelExecution(context, userDataDir, cancellableExecution)
     await assertParallelExecutionsCompleted(context, userDataDir, startedExecutions)

@@ -162,6 +162,22 @@ function readSettingString(setting: unknown): string {
   return ''
 }
 
+function readSettingStringArray(setting: unknown): string[] {
+  const raw = readSettingString(setting)
+  if (raw.length === 0) return []
+
+  try {
+    const parsed: unknown = JSON.parse(raw)
+    if (!Array.isArray(parsed)) return []
+    return parsed.filter(
+      (value): value is string =>
+        typeof value === 'string' && value.trim().length > 0,
+    )
+  } catch {
+    return []
+  }
+}
+
 function readReleaseChannel(): 'stable' | 'beta' | 'preview' {
   const value = process.env.BITSENTRY_RELEASE_CHANNEL
   if (value === 'beta' || value === 'preview') {
@@ -480,7 +496,20 @@ app
         pluginRuntime,
       )
       const runbookResultStore = new SqliteRunbookResultStore(db)
-      await runbookResultStore.markStaleRunningSessionsFailed()
+      // Best-effort startup maintenance: never let recovery of a stale runbook
+      // row prevent the app from launching.
+      try {
+        await runbookResultStore.markStaleRunningSessionsFailed({
+          onRowError: (error, context) => {
+            log.error(
+              `[runbooks] Stale-session recovery skipped result ${context.resultId} (execution ${context.executionId}):`,
+              error,
+            )
+          },
+        })
+      } catch (error) {
+        log.error('[runbooks] Stale-session recovery failed:', error)
+      }
       localAiProvider = new CodingAgentsProviderService(db)
       await localAiProvider.loadSettings()
       registerCodingAgentsHandlers(ipcMain, localAiProvider)
@@ -675,6 +704,12 @@ app
               where: { key: `llm.${providerKey}.model` },
             })
             return readSettingString(setting)
+          },
+          readAvailableModels: async (providerKey) => {
+            const setting = await db.setting.findUnique({
+              where: { key: `llm.${providerKey}.availableModels` },
+            })
+            return readSettingStringArray(setting)
           },
           resolveAvailableModels: (providerKey, isReady, provider) =>
             listReadyModels(
