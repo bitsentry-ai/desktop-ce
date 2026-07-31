@@ -45,6 +45,24 @@ const CURSOR_CATALOG_MODELS = [
 ]
 const OPEN_CODE_MODELS_LOCK_RETRY_DELAYS_MS = [150, 350]
 
+export function prependHostSystemInstructions(
+  prompt: string,
+  systemPrompt: string | undefined,
+): string {
+  const instructions = systemPrompt?.trim()
+  if (instructions === undefined || instructions === '') return prompt
+
+  // Cursor ACP, Codex app-server, and OpenCode do not expose a supported
+  // system-message field. Keep host instructions structurally distinct from
+  // replayed chat text instead of impersonating a conversation role.
+  return [
+    '## BitSentry host instructions',
+    instructions,
+    '## Conversation',
+    prompt,
+  ].join('\n\n')
+}
+
 export interface CodingAgentsSettingsStore {
   setting: {
     findUnique(args: { where: { key: string } }): Promise<{ value?: unknown } | null>
@@ -472,6 +490,7 @@ export class CodingAgentsProviderService {
       accessLevel,
       hostToolContext,
     )
+    const promptWithHostInstructions = prependHostSystemInstructions(prompt, systemPrompt)
 
     if (provider === 'claude_code') {
       return executeClaudeCode({
@@ -491,7 +510,7 @@ export class CodingAgentsProviderService {
 
     if (provider === 'opencode') {
       return this.dependencies.executeOpenCode({
-        prompt,
+        prompt: promptWithHostInstructions,
         binaryPath,
         abortController,
         cwd,
@@ -506,7 +525,7 @@ export class CodingAgentsProviderService {
 
     if (provider === 'cursor') {
       return executeCursor({
-        prompt,
+        prompt: promptWithHostInstructions,
         binaryPath,
         abortController,
         cwd,
@@ -520,7 +539,7 @@ export class CodingAgentsProviderService {
     }
 
     return executeCodex({
-      prompt,
+      prompt: promptWithHostInstructions,
       binaryPath,
       abortController,
       cwd,

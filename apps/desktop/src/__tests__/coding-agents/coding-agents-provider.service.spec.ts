@@ -63,6 +63,7 @@ import {
   CodingAgentsProviderService,
   type CodingAgentsSettingsStore,
 } from '@bitsentry-ce/desktop-cli/runtime/desktop-coding-agents'
+import { prependHostSystemInstructions } from '@bitsentry-ce/coding-agents/coding-agents-provider.service'
 import {
   detectBinary,
   probeClaudeCode,
@@ -85,6 +86,53 @@ function createDbMock(): CodingAgentsSettingsStore {
 describe('CodingAgentsProviderService', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+  })
+
+  it('keeps host system instructions outside replayed conversation roles', () => {
+    expect(prependHostSystemInstructions(
+      '[user]: List runbooks',
+      'You are an incident-response assistant.',
+    )).toBe([
+      '## BitSentry host instructions',
+      'You are an incident-response assistant.',
+      '## Conversation',
+      '[user]: List runbooks',
+    ].join('\n\n'))
+  })
+
+  it('prepends host instructions when dispatching a provider without a system channel', async () => {
+    vi.mocked(detectBinary).mockResolvedValue('/opt/homebrew/bin/codex')
+    vi.mocked(probeCodex).mockResolvedValue({
+      installed: true,
+      version: '0.42.0',
+      auth: { status: 'authenticated' },
+      status: 'ready',
+    })
+    vi.mocked(executeCodex).mockResolvedValue({ output: 'Done.' })
+
+    const service = new CodingAgentsProviderService(createDbMock())
+    await service.saveSettings({ codex: { enabled: true, binaryPath: 'codex' } })
+    await service.execute(
+      'codex',
+      '[user]: List runbooks',
+      new AbortController(),
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      'Use concise incident language.',
+    )
+
+    expect(executeCodex).toHaveBeenCalledWith(expect.objectContaining({
+      prompt: [
+        '## BitSentry host instructions',
+        'Use concise incident language.',
+        '## Conversation',
+        '[user]: List runbooks',
+      ].join('\n\n'),
+    }))
   })
 
   it('silently detects and uses the resolved codex binary without changing the saved path', async () => {

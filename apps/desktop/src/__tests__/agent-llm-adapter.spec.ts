@@ -261,6 +261,35 @@ describe('AgentLlmAdapterService', () => {
     })
   })
 
+  it('extracts system messages for CLI turns without MCP instead of flattening a system role', async () => {
+    const adapter = createAdapter()
+    let capturedPrompt = ''
+    let capturedSystemPrompt: string | undefined
+
+    adapter.setLocalAiProvider(createLocalAiProvider({
+      execute: (_provider, prompt, _abortController, _onDelta, _cwd, _model, _accessLevel, _traits, _context, systemPrompt) => {
+        capturedPrompt = prompt
+        capturedSystemPrompt = systemPrompt
+        return Promise.resolve({ output: 'I can help with that.' })
+      },
+    }))
+
+    const response = await adapter.chatWithTools({
+      messages: [
+        { role: 'system', content: 'Use concise incident language.' },
+        { role: 'user', content: 'Summarize the alert.' },
+      ],
+      signal: new AbortController().signal,
+      llm: { providerKey: 'codex', model: 'gpt-5.4' },
+      accessLevel: 'auto-accept-edits',
+    })
+
+    expect(capturedPrompt).toBe('[user]: Summarize the alert.')
+    expect(capturedPrompt).not.toContain('[system]:')
+    expect(capturedSystemPrompt).toBe('Use concise incident language.')
+    expect(response.toolProtocol).toBe('none')
+  })
+
   it('normalizes cloud-native function calls into the shared envelope', async () => {
     const adapter = createAdapter({
       getApiKey: () => Promise.resolve('test-key'),
