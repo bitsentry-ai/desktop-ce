@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 
@@ -261,6 +261,34 @@ describe('local runbook execution host', () => {
       await firstClient.destroy()
       await secondClient.destroy()
     }
+  })
+
+  it('reclaims an expired live startup lock with no host metadata', async () => {
+    const userDataPath = await createUserDataDirectory()
+    await writeFile(
+      path.join(userDataPath, 'runbook-execution-host.lock'),
+      JSON.stringify({
+        pid: process.pid,
+        token: 'expired-owner',
+        startedAt: Date.now() - 60_000,
+      }),
+    )
+    const headlessRuntime = createRuntime('reclaimed-owner')
+
+    const cliRuntime = await createLocalRunbookExecutionClient({
+      userDataPath,
+      createHeadlessRuntime: async () => headlessRuntime,
+    })
+
+    try {
+      await expect(cliRuntime.listRunbooks()).resolves.toEqual([
+        { id: 'reclaimed-owner', title: 'reclaimed-owner runbook' },
+      ])
+    } finally {
+      await cliRuntime.destroy()
+    }
+
+    expect(headlessRuntime.destroyed).toBe(true)
   })
 
   it('serializes concurrent execution starts without serializing execution lifetime', async () => {
