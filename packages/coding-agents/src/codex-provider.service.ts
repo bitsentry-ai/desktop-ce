@@ -1,4 +1,6 @@
 import os from 'os'
+import { mkdtemp, rm } from 'fs/promises'
+import path from 'path'
 import { codingAgentsLogger as log } from './logger.js'
 import { CodexAppServerClient, type JsonRpcId } from './codex-app-server-client.js'
 import type { HostMcpEndpoint } from './host-mcp-server.service.js'
@@ -241,7 +243,16 @@ export async function executeCodex(
   options: CodexExecutionOptions,
 ): Promise<LocalAiExecutionResult> {
   const debug = options.debug
-  const cwd = options.cwd ?? os.tmpdir()
+  const effectiveAccessLevel = normalizeAccessLevel(
+    options.accessLevel ?? DEFAULT_ACCESS_LEVEL,
+  )
+  // Codex treats its thread cwd as the workspace sandbox root. Safe Tools
+  // must never inherit the broad system temp directory, where unrelated app
+  // data (including the live SQLite database) can be readable.
+  const scratchDirectory = options.cwd === undefined && effectiveAccessLevel !== 'full-access'
+    ? await mkdtemp(path.join(os.tmpdir(), 'bitsentry-codex-'))
+    : undefined
+  const cwd = options.cwd ?? scratchDirectory ?? os.tmpdir()
   const codexArgs = withCodexModelArgs(options.codexArgs ?? [], options.model)
   let effectiveCodexArgs: string[] | undefined
   if (codexArgs.length > 0) {
@@ -293,14 +304,12 @@ export async function executeCodex(
   }
 
   if (isAbortSignalAborted(options.abortController.signal)) {
+    if (scratchDirectory !== undefined) await rm(scratchDirectory, { recursive: true, force: true })
     return { output: '', exitCode: -1 }
   }
 
   options.abortController.signal.addEventListener('abort', onAbort, { once: true })
 
-  const effectiveAccessLevel = normalizeAccessLevel(
-    options.accessLevel ?? DEFAULT_ACCESS_LEVEL,
-  )
   const isPromptOnly = effectiveAccessLevel === 'supervised'
   const isAutoAcceptEdits = effectiveAccessLevel === 'auto-accept-edits'
   const isFullAccess = effectiveAccessLevel === 'full-access'
@@ -647,6 +656,7 @@ export async function executeCodex(
       })
     }
     await client.kill()
+    if (scratchDirectory !== undefined) await rm(scratchDirectory, { recursive: true, force: true })
   }
 
   let error: string | undefined
