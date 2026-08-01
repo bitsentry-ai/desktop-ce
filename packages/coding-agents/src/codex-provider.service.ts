@@ -15,6 +15,10 @@ import { getErrorMessage } from '@bitsentry-ce/core'
 
 type LocalAiTextStreamDelta = LocalAiStreamDelta & { type: 'text'; text?: string }
 
+const CODEX_MODELS_WITHOUT_REASONING_SUMMARIES = new Set([
+  'gpt-5.3-codex-spark',
+])
+
 export interface CodexDebugRecorder {
   recordEvent(stage: string, data: Record<string, unknown>): void
   recordAnomaly(stage: string, data: Record<string, unknown>): void
@@ -236,6 +240,15 @@ export function withCodexModelArgs(
   )
   if (!hasModelOverride) {
     args.push('-c', `model="${model.replace(/"/g, '')}"`)
+  }
+
+  const reasoningSummariesUnsupported = CODEX_MODELS_WITHOUT_REASONING_SUMMARIES.has(model)
+  const hasReasoningSummaryOverride = args.some(
+    (arg, index) =>
+      arg.startsWith('model_reasoning_summary=') && args[index - 1] === '-c',
+  )
+  if (reasoningSummariesUnsupported && !hasReasoningSummaryOverride) {
+    args.push('-c', 'model_reasoning_summary="none"')
   }
 
   return args

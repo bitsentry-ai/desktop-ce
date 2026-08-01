@@ -173,6 +173,33 @@ describe('Codex model argument handling', () => {
     expect(withCodexModelArgs(['-c', 'model="x"'], 'gpt-5.4-mini')).toEqual(['-c', 'model="x"'])
   })
 
+  it('disables reasoning summaries for Codex Spark only', () => {
+    expect(withCodexModelArgs([], 'gpt-5.3-codex-spark')).toEqual([
+      '-c',
+      'model="gpt-5.3-codex-spark"',
+      '-c',
+      'model_reasoning_summary="none"',
+    ])
+    expect(withCodexModelArgs([], 'gpt-5.6-terra')).toEqual([
+      '-c',
+      'model="gpt-5.6-terra"',
+    ])
+  })
+
+  it('keeps a user-supplied Spark reasoning summary override', () => {
+    expect(
+      withCodexModelArgs(
+        ['-c', 'model_reasoning_summary="concise"'],
+        'gpt-5.3-codex-spark',
+      ),
+    ).toEqual([
+      '-c',
+      'model_reasoning_summary="concise"',
+      '-c',
+      'model="gpt-5.3-codex-spark"',
+    ])
+  })
+
   it('passes no override when the action has no model', () => {
     expect(withCodexModelArgs([], undefined)).toEqual([])
     expect(withCodexModelArgs([], '')).toEqual([])
