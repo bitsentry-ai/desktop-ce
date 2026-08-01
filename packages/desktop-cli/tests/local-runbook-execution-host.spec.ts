@@ -291,7 +291,7 @@ describe('local runbook execution host', () => {
     expect(headlessRuntime.destroyed).toBe(true)
   })
 
-  it('does not reclaim a fresh malformed startup lock while its owner may still be writing it', async () => {
+  it('reclaims a malformed legacy ownership lock immediately', async () => {
     const userDataPath = await createUserDataDirectory()
     const lockPath = path.join(userDataPath, 'runbook-execution-host.lock')
     await writeFile(lockPath, '{', 'utf-8')
@@ -300,8 +300,61 @@ describe('local runbook execution host', () => {
       runtime: createRuntime('competing-owner'),
     })
 
-    await expect(host.start()).rejects.toThrow('already starting or listening')
-    await expect(readFile(lockPath, 'utf-8')).resolves.toBe('{')
+    try {
+      await host.start()
+      await expect(readFile(lockPath, 'utf-8')).resolves.toContain(`"pid":${process.pid}`)
+    } finally {
+      await host.close()
+    }
+  })
+
+  it('allows one concurrent owner to reclaim a stale lock without deleting its replacement', async () => {
+    const userDataPath = await createUserDataDirectory()
+    const lockPath = path.join(userDataPath, 'runbook-execution-host.lock')
+    await writeFile(lockPath, JSON.stringify({
+      pid: process.pid,
+      token: 'expired-owner',
+      startedAt: Date.now() - 60_000,
+    }))
+    const firstHost = new LocalRunbookExecutionHost({
+      userDataPath,
+      runtime: createRuntime('first-contender'),
+    })
+    const secondHost = new LocalRunbookExecutionHost({
+      userDataPath,
+      runtime: createRuntime('second-contender'),
+    })
+
+    const results = await Promise.allSettled([firstHost.start(), secondHost.start()])
+    const successfulStarts = results.filter((result) => result.status === 'fulfilled')
+
+    try {
+      expect(successfulStarts).toHaveLength(1)
+      await expect(readFile(lockPath, 'utf-8')).resolves.toContain(`"pid":${process.pid}`)
+    } finally {
+      await firstHost.close()
+      await secondHost.close()
+    }
+  })
+
+  it('does not remove a foreign ownership lock while closing', async () => {
+    const userDataPath = await createUserDataDirectory()
+    const lockPath = path.join(userDataPath, 'runbook-execution-host.lock')
+    const host = new LocalRunbookExecutionHost({
+      userDataPath,
+      runtime: createRuntime('original-owner'),
+    })
+    const foreignLock = JSON.stringify({
+      pid: process.pid,
+      token: 'foreign-owner',
+      startedAt: Date.now(),
+    })
+
+    await host.start()
+    await writeFile(lockPath, foreignLock)
+    await host.close()
+
+    await expect(readFile(lockPath, 'utf-8')).resolves.toBe(foreignLock)
   })
 
   it('serializes concurrent execution starts without serializing execution lifetime', async () => {

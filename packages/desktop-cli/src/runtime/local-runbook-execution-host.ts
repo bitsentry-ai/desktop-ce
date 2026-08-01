@@ -1,5 +1,5 @@
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto'
-import { chmod, mkdir, open, readFile, rm, stat, writeFile } from 'node:fs/promises'
+import { chmod, link, mkdir, open, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import net from 'node:net'
 import os from 'node:os'
 import path from 'node:path'
@@ -18,6 +18,8 @@ const HOST_HANDOFF_RETRY_WINDOW_MS = 1_000
 const HOST_ACQUISITION_TIMEOUT_MS = 30_000
 const HOST_STARTUP_STALE_MS = 5_000
 const EXECUTION_HANDOFF_GRACE_MS = 1_000
+const OWNERSHIP_LOCK_ACQUISITION_ATTEMPTS = 5
+const OWNERSHIP_LOCK_RETRY_DELAY_MS = 10
 
 type HostMethod =
   | 'ping'
@@ -217,14 +219,21 @@ function isProcessAlive(pid: number): boolean {
   }
 }
 
-function parseOwnershipLock(raw: string): { pid: number; startedAt: number | null } | null {
+type OwnershipLock = {
+  pid: number
+  token: string | null
+  startedAt: number | null
+}
+
+function parseOwnershipLock(raw: string): OwnershipLock | null {
   try {
     const value: unknown = JSON.parse(raw)
     if (value === null || typeof value !== 'object' || Array.isArray(value)) return null
-    const { pid, startedAt } = value as { pid?: unknown; startedAt?: unknown }
+    const { pid, token, startedAt } = value as { pid?: unknown; token?: unknown; startedAt?: unknown }
     if (typeof pid !== 'number' || !Number.isInteger(pid) || pid <= 0) return null
     return {
       pid,
+      token: typeof token === 'string' ? token : null,
       startedAt: typeof startedAt === 'number' && Number.isFinite(startedAt) ? startedAt : null,
     }
   } catch {
@@ -232,49 +241,103 @@ function parseOwnershipLock(raw: string): { pid: number; startedAt: number | nul
   }
 }
 
+function ownershipLockSiblingPath(lockPath: string, purpose: 'publish' | 'reclaim' | 'release'): string {
+  return `${lockPath}.${process.pid}.${randomBytes(12).toString('hex')}.${purpose}`
+}
+
+function isOwnershipLockLive(lock: OwnershipLock): boolean {
+  return isProcessAlive(lock.pid) &&
+    (lock.startedAt === null || Date.now() - lock.startedAt < HOST_STARTUP_STALE_MS)
+}
+
+function isAlreadyExists(error: unknown): boolean {
+  return typeof error === 'object' && error !== null && 'code' in error &&
+    (error as NodeJS.ErrnoException).code === 'EEXIST'
+}
+
+function isMissingFile(error: unknown): boolean {
+  return typeof error === 'object' && error !== null && 'code' in error &&
+    (error as NodeJS.ErrnoException).code === 'ENOENT'
+}
+
+async function publishOwnershipLock(lockPath: string, token: string): Promise<void> {
+  const scratchPath = ownershipLockSiblingPath(lockPath, 'publish')
+  try {
+    const handle = await open(scratchPath, 'wx', 0o600)
+    try {
+      await handle.writeFile(JSON.stringify({ pid: process.pid, token, startedAt: Date.now() }), 'utf-8')
+    } finally {
+      await handle.close()
+    }
+    await link(scratchPath, lockPath)
+  } finally {
+    await rm(scratchPath, { force: true })
+  }
+}
+
+async function restoreOwnershipLock(quarantinePath: string, lockPath: string): Promise<void> {
+  try {
+    await link(quarantinePath, lockPath)
+  } catch (error) {
+    // A contender may have published its own lock while this one was
+    // quarantined. That lock must be left untouched.
+    if (!isAlreadyExists(error)) throw error
+  }
+  await rm(quarantinePath, { force: true })
+}
+
+async function waitBeforeOwnershipLockRetry(attempt: number): Promise<void> {
+  if (attempt === OWNERSHIP_LOCK_ACQUISITION_ATTEMPTS - 1) return
+  const jitterMs = randomBytes(1)[0] % OWNERSHIP_LOCK_RETRY_DELAY_MS
+  await new Promise((resolve) => setTimeout(resolve, OWNERSHIP_LOCK_RETRY_DELAY_MS + jitterMs))
+}
+
 async function acquireOwnershipLock(userDataPath: string, token: string): Promise<string> {
   const lockPath = ownershipLockPath(userDataPath)
   await mkdir(userDataPath, { recursive: true, mode: 0o700 })
 
-  for (let attempt = 0; attempt < 2; attempt += 1) {
+  for (let attempt = 0; attempt < OWNERSHIP_LOCK_ACQUISITION_ATTEMPTS; attempt += 1) {
     try {
-      const handle = await open(lockPath, 'wx', 0o600)
-      try {
-        await handle.writeFile(JSON.stringify({ pid: process.pid, token, startedAt: Date.now() }), 'utf-8')
-      } finally {
-        await handle.close()
-      }
+      await publishOwnershipLock(lockPath, token)
       return lockPath
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error
+      if (!isAlreadyExists(error)) throw error
 
       const rawLock = await readFile(lockPath, 'utf-8').catch(() => null)
-      if (rawLock === null) continue
-
-      const current = parseOwnershipLock(rawLock)
-      if (current === null) {
-        const lockAgeMs = await stat(lockPath)
-          .then((lock) => Date.now() - lock.mtimeMs)
-          .catch(() => null)
-        if (lockAgeMs === null) continue
-        if (lockAgeMs < HOST_STARTUP_STALE_MS) {
-          throw new LocalRunbookExecutionHostAlreadyRunningError(
-            'A local runbook execution host is already starting or listening for this user data directory.',
-          )
-        }
+      if (rawLock === null) {
+        await waitBeforeOwnershipLockRetry(attempt)
+        continue
       }
 
-      if (
-        current !== null &&
-        isProcessAlive(current.pid) &&
-        (current.startedAt === null || Date.now() - current.startedAt < HOST_STARTUP_STALE_MS)
-      ) {
+      const current = parseOwnershipLock(rawLock)
+      if (current !== null && isOwnershipLockLive(current)) {
         throw new LocalRunbookExecutionHostAlreadyRunningError(
           'A local runbook execution host is already starting or listening for this user data directory.',
         )
       }
 
-      await rm(lockPath, { force: true })
+      const quarantinePath = ownershipLockSiblingPath(lockPath, 'reclaim')
+      try {
+        await rename(lockPath, quarantinePath)
+      } catch (renameError) {
+        if (isMissingFile(renameError)) {
+          await waitBeforeOwnershipLockRetry(attempt)
+          continue
+        }
+        throw renameError
+      }
+
+      const quarantinedLock = await readFile(quarantinePath, 'utf-8').catch(() => null)
+      const quarantinedOwner = quarantinedLock === null ? null : parseOwnershipLock(quarantinedLock)
+      if (quarantinedOwner !== null && isOwnershipLockLive(quarantinedOwner)) {
+        await restoreOwnershipLock(quarantinePath, lockPath)
+        throw new LocalRunbookExecutionHostAlreadyRunningError(
+          'A local runbook execution host is already starting or listening for this user data directory.',
+        )
+      }
+
+      await rm(quarantinePath, { force: true })
+      await waitBeforeOwnershipLockRetry(attempt)
     }
   }
 
@@ -285,14 +348,28 @@ async function acquireOwnershipLock(userDataPath: string, token: string): Promis
 
 async function removeOwnershipLock(lockPath: string | null, token: string): Promise<void> {
   if (lockPath === null) return
+  const quarantinePath = ownershipLockSiblingPath(lockPath, 'release')
   try {
-    const value: unknown = JSON.parse(await readFile(lockPath, 'utf-8'))
-    if (value !== null && typeof value === 'object' && !Array.isArray(value) &&
-      (value as { token?: unknown }).token === token) {
-      await rm(lockPath, { force: true })
+    await rename(lockPath, quarantinePath)
+  } catch (error) {
+    if (isMissingFile(error)) return
+    throw error
+  }
+
+  try {
+    const lock = parseOwnershipLock(await readFile(quarantinePath, 'utf-8'))
+    if (lock !== null && lock.token !== null && tokensMatch(lock.token, token)) {
+      await rm(quarantinePath, { force: true })
+      return
     }
-  } catch {
-    // A missing or malformed lock is not owned by this host.
+    await restoreOwnershipLock(quarantinePath, lockPath)
+  } catch (error) {
+    try {
+      await restoreOwnershipLock(quarantinePath, lockPath)
+    } catch {
+      // Preserve the quarantined file rather than risk deleting another host's lock.
+    }
+    throw error
   }
 }
 
@@ -380,6 +457,9 @@ export class LocalRunbookExecutionHost {
   }
 
   private async removeHostFiles(): Promise<void> {
+    // A contender which lost the ownership race has no authority to remove
+    // another host's endpoint, metadata, or lock.
+    if (this.ownershipLock === null) return
     if (process.platform !== 'win32') await rm(this.endpoint, { force: true })
     await removeMetadataIfOwned(this.options.userDataPath, this.token)
     await removeOwnershipLock(this.ownershipLock, this.token)
