@@ -60,6 +60,7 @@ jobs:
         run: pnpm run lint:ts6
       - run: pnpm --dir apps/desktop exec node node_modules/electron/install.js
       - run: pnpm --filter @bitsentry-ce/desktop test
+      - run: pnpm --filter @bitsentry-ce/core test
       # Vitest executes under Node, whereas Electron needs a separately rebuilt
       # native module ABI. Rebuild only after deterministic Node tests finish.
       - run: pnpm --dir apps/desktop run prepare:native-deps
