@@ -1,5 +1,5 @@
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto'
-import { chmod, mkdir, open, readFile, rm, writeFile } from 'node:fs/promises'
+import { chmod, mkdir, open, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import net from 'node:net'
 import os from 'node:os'
 import path from 'node:path'
@@ -244,12 +244,26 @@ async function acquireOwnershipLock(userDataPath: string, token: string): Promis
       } finally {
         await handle.close()
       }
-      await chmod(lockPath, 0o600)
       return lockPath
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error
 
-      const current = parseOwnershipLock(await readFile(lockPath, 'utf-8').catch(() => ''))
+      const rawLock = await readFile(lockPath, 'utf-8').catch(() => null)
+      if (rawLock === null) continue
+
+      const current = parseOwnershipLock(rawLock)
+      if (current === null) {
+        const lockAgeMs = await stat(lockPath)
+          .then((lock) => Date.now() - lock.mtimeMs)
+          .catch(() => null)
+        if (lockAgeMs === null) continue
+        if (lockAgeMs < HOST_STARTUP_STALE_MS) {
+          throw new LocalRunbookExecutionHostAlreadyRunningError(
+            'A local runbook execution host is already starting or listening for this user data directory.',
+          )
+        }
+      }
+
       if (
         current !== null &&
         isProcessAlive(current.pid) &&

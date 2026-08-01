@@ -1,4 +1,4 @@
-import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 
@@ -289,6 +289,19 @@ describe('local runbook execution host', () => {
     }
 
     expect(headlessRuntime.destroyed).toBe(true)
+  })
+
+  it('does not reclaim a fresh malformed startup lock while its owner may still be writing it', async () => {
+    const userDataPath = await createUserDataDirectory()
+    const lockPath = path.join(userDataPath, 'runbook-execution-host.lock')
+    await writeFile(lockPath, '{', 'utf-8')
+    const host = new LocalRunbookExecutionHost({
+      userDataPath,
+      runtime: createRuntime('competing-owner'),
+    })
+
+    await expect(host.start()).rejects.toThrow('already starting or listening')
+    await expect(readFile(lockPath, 'utf-8')).resolves.toBe('{')
   })
 
   it('serializes concurrent execution starts without serializing execution lifetime', async () => {
