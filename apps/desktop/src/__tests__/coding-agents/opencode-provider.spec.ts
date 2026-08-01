@@ -115,6 +115,8 @@ describe('executeOpenCode', () => {
     ]
     const configPath = spawnOptions.env.OPENCODE_CONFIG
     expect(configPath).toBeDefined()
+    const [, args] = mocks.spawn.mock.calls[0] as [string, string[]]
+    expect(args.at(-1)).toContain('This direct-tool restriction does not prevent you from proposing operator-reviewed runbooks that contain shell or local-software actions.')
     expect(JSON.parse(await readFile(configPath!, 'utf8'))).toMatchObject({
       mcp: {
         bitsentry: {

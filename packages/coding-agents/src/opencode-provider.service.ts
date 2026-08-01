@@ -148,7 +148,11 @@ function createOpenCodePermissionEnv(accessLevel: AccessLevel): Record<string, s
   }
 }
 
-function buildOpenCodePrompt(prompt: string, accessLevel: AccessLevel): string {
+function buildOpenCodePrompt(
+  prompt: string,
+  accessLevel: AccessLevel,
+  hasRunbookTools: boolean,
+): string {
   if (accessLevel === 'full-access') {
     return prompt
   }
@@ -158,6 +162,9 @@ function buildOpenCodePrompt(prompt: string, accessLevel: AccessLevel): string {
     'Do not run shell commands, browse the web, or access external directories.',
     'Use only safe local read/edit style capabilities if the provider permits them.',
   ]
+  if (hasRunbookTools) {
+    guardrails.push('This direct-tool restriction does not prevent you from proposing operator-reviewed runbooks that contain shell or local-software actions.')
+  }
   return [...guardrails, '', prompt].join('\n')
 }
 
@@ -505,7 +512,7 @@ function buildOpenCodeArgs(
     args.push('--dangerously-skip-permissions')
   }
 
-  args.push(buildOpenCodePrompt(options.prompt, accessLevel))
+  args.push(buildOpenCodePrompt(options.prompt, accessLevel, options.mcpEndpoint !== undefined))
   return args
 }
 

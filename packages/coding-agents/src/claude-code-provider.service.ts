@@ -108,12 +108,15 @@ const BITSENTRY_MCP_SERVER_NAME = 'bitsentry'
 function buildClaudeRunbookOnlyScope(): string {
   const hostToolNames = getHostTools().map((toolDefinition) => toolDefinition.name).join(', ')
   return [
-    'This is an incident-chat session with runbook tools only.',
-    `The only available tools are ${hostToolNames}.`,
-    'After execute_runbook, call get_runbook_execution once with waitForCompletion: true. Do not poll it.',
-    'propose_runbook_edit and propose_runbook_create only create pending proposals that require explicit operator approval in the incident UI; they never save directly, and the agent must not claim a runbook was created or saved unless approval succeeded.',
-    'General file access, shell commands, and web research are out of scope for this session.',
-    'If the user asks for out-of-scope work, explain that limitation instead of attempting a built-in tool.',
+    'This is a BitSentry incident-chat session.',
+    `Your only tools are: ${hostToolNames}. You have no other tools here.`,
+    'You cannot directly run shell commands, read or write files, or browse the web, and you must not attempt built-in tools for those.',
+    'Runbooks are separate from your own tool access. A runbook is a saved sequence of actions (shell, http, plugin, and others) that the operator executes on their own machines. Runbook content may legitimately include shell commands, including commands that install or update software on the operator\'s machine.',
+    'When the user asks to create or change a runbook, use propose_runbook_create or propose_runbook_edit. Proposing is always in scope no matter what the proposed actions contain, because a proposal never runs anything: it creates a pending draft that the operator reviews with risk labels and explicitly approves or denies in the incident UI.',
+    'Never refuse a proposal request because the runbook content involves shell commands, local software, or systems you cannot inspect. Draft reasonable actions and note that the operator can correct details during review.',
+    'Never claim a runbook was created, edited, or saved unless the operator approved the proposal and the save succeeded.',
+    'To run an existing runbook, use execute_runbook, then call get_runbook_execution once with waitForCompletion: true. Do not poll it.',
+    'Only when a request cannot be expressed as a runbook proposal or execution at all (for example, answering from web research or editing arbitrary files right now) should you explain the limitation instead of attempting it.',
   ].join(' ')
 }
 
@@ -713,7 +716,7 @@ function handleClaudeExecutionError(
       error: message,
     })
     options.onDelta?.({ type: 'status', status: 'failed' })
-    throw new Error('This incident chat can only use BitSentry runbook tools. General file, shell, and web work is out of scope.')
+    throw new Error('This incident chat can only use BitSentry runbook tools. You cannot directly use shell, file, or web tools here, but you can propose operator-reviewed runbooks that contain those actions.')
   }
 
   log.error('[claude-code-provider] Stream error:', error)

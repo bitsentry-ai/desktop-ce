@@ -587,13 +587,10 @@ describe('executeClaudeCode', () => {
     for (const hostTool of getHostTools()) {
       expect(scope).toContain(hostTool.name)
     }
-    expect(scope).toContain('propose_runbook_edit and propose_runbook_create only create pending proposals')
-    expect(scope).toContain('explicit operator approval in the incident UI')
-    expect(scope).toContain('they never save directly')
-    expect(scope).toContain('must not claim a runbook was created or saved unless approval succeeded')
-    expect(scope).toContain('After execute_runbook, call get_runbook_execution once with waitForCompletion: true. Do not poll it.')
-    expect(scope).toContain('General file access, shell commands, and web research are out of scope for this session.')
-    expect(scope).toContain('If the user asks for out-of-scope work, explain that limitation instead of attempting a built-in tool.')
+    expect(scope).toContain('Proposing is always in scope no matter what the proposed actions contain')
+    expect(scope).toContain('Never refuse a proposal request because the runbook content involves shell commands')
+    expect(scope).toContain('Never claim a runbook was created, edited, or saved unless the operator approved the proposal and the save succeeded.')
+    expect(scope).toContain('To run an existing runbook, use execute_runbook, then call get_runbook_execution once with waitForCompletion: true. Do not poll it.')
   })
 
   it('enables the Claude 1M context beta when requested', async () => {
