@@ -60,6 +60,7 @@ import type {
   ThreadStatus,
 } from "../chat/types";
 import { Composer } from "../chat/Composer";
+import { CODING_AGENT_PRIORITY } from "../desktop/codingAgentPriority";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -667,14 +668,11 @@ function getRecoveredIncidentState(
   return state;
 }
 
-function listConfiguredProviderKeys(
+export function listConfiguredProviderKeys(
   savedProviders: Record<string, SavedProviderConfig>,
 ): ModelCatalogProviderKey[] {
   const orderedKeys: ModelCatalogProviderKey[] = [
-    "claude_code",
-    "codex",
-    "opencode",
-    "cursor",
+    ...CODING_AGENT_PRIORITY,
     "openai",
     "anthropic",
     "gemini",
