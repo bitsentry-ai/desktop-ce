@@ -16,7 +16,10 @@ import type { RunbookContextV1 } from '@bitsentry-ce/core/features/runbooks/desk
 import type {
   AgentRuntimeLlmAdapter,
   AgentRuntimeRunbookGateway,
+  AgentRuntimeRunbookStore,
   AgentRuntimeWindow,
+  RunbookAuthoringProposalDecisionResult,
+  RunbookAuthoringProposalReview,
 } from './agent-runtime.service.js'
 
 export interface AgentRuntimeSessionController {
@@ -26,6 +29,10 @@ export interface AgentRuntimeSessionController {
   destroy(): void
   getStatus(sessionId: string): AgentSessionStatus
   getSnapshot(sessionId: string): AgentThreadSnapshot
+  listRunbookAuthoringProposals(input: { sessionId?: string; incidentThreadId?: string }): RunbookAuthoringProposalReview[]
+  approveRunbookAuthoringProposal(input: { sessionId?: string; incidentThreadId?: string; proposalId: string; approvedOperationIds?: string[] }): Promise<RunbookAuthoringProposalDecisionResult>
+  rejectRunbookAuthoringProposal(input: { sessionId?: string; incidentThreadId?: string; proposalId: string; reason?: string }): RunbookAuthoringProposalDecisionResult
+  requestRunbookAuthoringRevision(input: { sessionId?: string; incidentThreadId?: string; proposalId: string; requestedEdit: string }): RunbookAuthoringProposalDecisionResult
 }
 
 export interface AgentHandlerDependencies {
@@ -36,6 +43,7 @@ export interface AgentHandlerDependencies {
 export interface AgentServiceDependencies {
   llmAdapter: AgentRuntimeLlmAdapter
   runbookGateway?: AgentRuntimeRunbookGateway
+  runbookStore?: AgentRuntimeRunbookStore
   windowGetter: () => AgentRuntimeWindow | null
 }
 
@@ -43,17 +51,19 @@ export type AgentRuntimeServiceClass = new (
   windowGetter: () => AgentRuntimeWindow | null,
   llmAdapter: AgentRuntimeLlmAdapter,
   runbookGateway?: AgentRuntimeRunbookGateway,
+  runbookStore?: AgentRuntimeRunbookStore,
 ) => AgentRuntimeSessionController
 
 export function createDesktopAgentService(
   dependencies: AgentServiceDependencies,
   services: { AgentRuntimeService: AgentRuntimeServiceClass },
 ): AgentRuntimeSessionController {
-  const { llmAdapter, runbookGateway, windowGetter } = dependencies
+  const { llmAdapter, runbookGateway, runbookStore, windowGetter } = dependencies
   return new services.AgentRuntimeService(
     windowGetter,
     llmAdapter,
     runbookGateway,
+    runbookStore,
   )
 }
 
@@ -141,6 +151,10 @@ export function createDesktopAgentHandlers(
         throw error
       }
     },
+    'agent:listRunbookAuthoringProposals': (payload: unknown): Promise<RunbookAuthoringProposalReview[]> => Promise.resolve(agentRuntime.listRunbookAuthoringProposals(payload as { sessionId?: string; incidentThreadId?: string })),
+    'agent:approveRunbookAuthoringProposal': (payload: unknown): Promise<RunbookAuthoringProposalDecisionResult> => agentRuntime.approveRunbookAuthoringProposal(payload as { sessionId?: string; incidentThreadId?: string; proposalId: string; approvedOperationIds?: string[] }),
+    'agent:rejectRunbookAuthoringProposal': (payload: unknown): Promise<RunbookAuthoringProposalDecisionResult> => Promise.resolve(agentRuntime.rejectRunbookAuthoringProposal(payload as { sessionId?: string; incidentThreadId?: string; proposalId: string; reason?: string })),
+    'agent:requestRunbookAuthoringRevision': (payload: unknown): Promise<RunbookAuthoringProposalDecisionResult> => Promise.resolve(agentRuntime.requestRunbookAuthoringRevision(payload as { sessionId?: string; incidentThreadId?: string; proposalId: string; requestedEdit: string })),
   }
 }
 

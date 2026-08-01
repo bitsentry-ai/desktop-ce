@@ -590,6 +590,7 @@ app
         {
           llmAdapter: agentLlmAdapter,
           runbookGateway,
+          runbookStore,
           windowGetter: () => desktopShell.mainWindow,
         },
         { AgentRuntimeService },
@@ -604,6 +605,10 @@ app
         'agent:cancel',
         'agent:getStatus',
         'agent:getSnapshot',
+        'agent:listRunbookAuthoringProposals',
+        'agent:approveRunbookAuthoringProposal',
+        'agent:rejectRunbookAuthoringProposal',
+        'agent:requestRunbookAuthoringRevision',
         'runbooks:execute',
         'runbooks:getExecution',
         'runbooks:cancelExecution',

@@ -77,6 +77,18 @@ describe('host tools', () => {
     expect(JSON.parse(result?.output ?? '')).toEqual({ runbooks: [] })
   })
 
+  it('creates a session-only runbook edit proposal through the host-tool registry', async () => {
+    const runbook = makeRunbook({ actions: [{ id: 'step-1', type: 'shell', title: 'Check service status', command: 'systemctl status bitsentry' }] })
+    const context = createContext()
+    context.listAuthorableRunbooks = vi.fn().mockResolvedValue([runbook])
+    const result = await executeHostTool(context, 'propose_runbook_edit', {
+      runbookId: runbook.id, prompt: 'Add an uptime check.', operations: [{ id: 'op-add-uptime', type: 'add_action', rationale: 'Collect uptime before inspecting logs.', action: { id: 'step-2', type: 'shell', title: 'Collect uptime', command: 'uptime' } }],
+    })
+    expect(JSON.parse(result?.output ?? '')).toMatchObject({ approvalRequired: true, saved: false, status: 'pending_approval', targetRunbookId: runbook.id })
+    expect(context.session.runbookAuthoringProposals).toHaveLength(1)
+    expect(context.gateway.start).not.toHaveBeenCalled()
+  })
+
   it('reports the host execution lifecycle to the caller', async () => {
     const context = createContext()
     context.gateway.listExecutable = vi.fn().mockResolvedValue([])

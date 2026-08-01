@@ -11,3 +11,4 @@ export * from './desktop-runbook.gateway.schemas';
 export * from './runbook.gateway';
 export * from './export.schemas';
 export * from './import-export';
+export * from './authoring';

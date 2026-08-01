@@ -8,6 +8,7 @@ import type {
   AgentRuntimeEventPayload,
   AgentRuntimeLlmAdapter,
   AgentRuntimeRunbookGateway,
+  AgentRuntimeRunbookStore,
 } from '../main/features/agent-runtime/services/agent-runtime.service'
 import { createAgentThreadSnapshot, reduceAgentThreadSnapshot } from '@bitsentry-ce/components/chat/runtimeProjection'
 import type {
@@ -278,6 +279,8 @@ function createRuntime(options: {
     windowGetter,
     options.llmAdapter,
     runbookGateway,
+    undefined,
+    options.runbookStore as AgentRuntimeRunbookStore | undefined,
   )
 }
 
@@ -460,6 +463,24 @@ describe('summarizeRunbookExecutionForToolOutput', () => {
 })
 
 describe('AgentRuntimeService runbook outcomes', () => {
+  it('creates an MCP authoring proposal without persisting and rejects stale approval', async () => {
+    const originalRunbook = makeRunbook('rb-logs', 'Check backend logs', [{ id: 'step-1', type: 'shell', title: 'Check service status', command: 'systemctl status bitsentry' }])
+    const changedRunbook = { ...originalRunbook, revisionNumber: 2, description: 'Updated outside the proposal.' }
+    const runbookStore = { list: vi.fn().mockResolvedValue([originalRunbook]), create: vi.fn(), updateMeta: vi.fn(), updateActions: vi.fn() }
+    const runbookExecutionService = { start: vi.fn(), waitForCompletion: vi.fn(), get: vi.fn().mockResolvedValue(null), getLatestForIncidentThread: vi.fn().mockResolvedValue(null) }
+    const llmAdapter = { chatWithTools: vi.fn().mockResolvedValueOnce({ content: 'I will draft an edit for review.', toolCalls: [{ id: 'call-propose-edit', name: 'propose_runbook_edit', args: { runbookId: 'rb-logs', prompt: 'Add an uptime check.', operations: [{ id: 'op-add-uptime', type: 'add_action', rationale: 'Collect uptime before log inspection.', action: { id: 'step-2', type: 'shell', title: 'Collect uptime', command: 'uptime' } }] } }] }).mockResolvedValueOnce({ content: 'The proposal requires approval.', toolCalls: [] }) }
+    const service = createRuntime({ llmAdapter, runbookStore, runbookExecutionService })
+    const sessionId = await service.start({ prompt: 'Add an uptime check to the backend runbook.', incidentThreadId: 'incident-authoring' })
+    await waitForCondition(() => service.getStatus(sessionId).state === 'COMPLETED')
+    expect(runbookStore.updateMeta).not.toHaveBeenCalled()
+    expect(runbookStore.updateActions).not.toHaveBeenCalled()
+    const proposal = service.listRunbookAuthoringProposals({ sessionId })[0]
+    expect(proposal).toMatchObject({ approvalRequired: true, saved: false, status: 'pending_approval', targetRunbookId: 'rb-logs' })
+    runbookStore.list.mockResolvedValue([changedRunbook])
+    await expect(service.approveRunbookAuthoringProposal({ sessionId, proposalId: proposal.proposalId })).rejects.toThrow('changed after the authoring proposal was created')
+    expect(runbookStore.updateMeta).not.toHaveBeenCalled()
+    expect(runbookStore.updateActions).not.toHaveBeenCalled()
+  })
   it('records Claude MCP host tools in the thread snapshot and replay transcript', async () => {
     const runbookStore = {
       list: vi.fn().mockResolvedValue([

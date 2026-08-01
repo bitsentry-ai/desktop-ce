@@ -1,12 +1,19 @@
 import { z } from 'zod'
 import type { RunbookContext, ToolResult } from './types'
 import type {
+  RunbookActionRecord,
   RunbookExecutionRecord,
   RunbookParameterValues,
   RunbookRecord,
   RunbookTriggerContext,
 } from '../runbooks/desktop-runbook.types'
 import type { RunbookGateway } from '../runbooks/runbook.gateway'
+import {
+  createRunbookCreationProposal,
+  createRunbookEditProposal,
+  type RunbookAuthoringOperation,
+  type RunbookAuthoringProposal,
+} from '../runbooks/authoring'
 
 export const listRunbooksHostToolSchema = z.object({}).strict()
 
@@ -22,6 +29,25 @@ export const getRunbookExecutionHostToolSchema = z.object({
   waitForCompletion: z.boolean().optional(),
 }).strict()
 
+const runbookActionProposalSchema = z.object({
+  id: z.string().min(1),
+  type: z.enum(['shell', 'llm', 'http', 'plugin', 'external_source', 'telemetry_existing_entry', 'data_source_query', 'telemetry_ingest', 'diagnosis_diagnose', 'diagnosis_verify', 'diagnosis_recommend']),
+  title: z.string().min(1), command: z.string().optional(), prompt: z.string().optional(),
+  llmProviderKey: z.enum(['groq', 'kilocode', 'openai', 'anthropic', 'gemini', 'openrouter', 'claude_code', 'codex', 'opencode', 'cursor']).optional(),
+  llmModel: z.string().optional(), url: z.string().optional(), method: z.enum(['GET', 'POST', 'PUT', 'PATCH', 'DELETE']).optional(),
+  headers: z.array(z.object({ key: z.string().min(1), value: z.string() }).strict()).optional(), body: z.string().optional(),
+  pluginId: z.string().optional(), pluginActionId: z.string().optional(), pluginInput: z.string().optional(), pluginAuth: z.string().optional(),
+  query: z.string().optional(), sourceId: z.string().optional(),
+  parameters: z.array(z.object({ id: z.string().min(1), key: z.string().min(1), label: z.string().optional(), description: z.string().optional(), defaultValue: z.string().optional(), required: z.boolean().optional(), secure: z.boolean().optional() }).strict()).optional(),
+}).strict()
+const runbookAuthoringOperationSchema = z.object({
+  id: z.string().min(1), type: z.enum(['update_metadata', 'add_action', 'update_action', 'delete_action', 'reorder_actions']), rationale: z.string().min(1),
+  metadata: z.object({ title: z.string().optional(), description: z.string().optional(), idleTimeout: z.number().int().positive().optional() }).strict().optional(),
+  action: runbookActionProposalSchema.optional(), actionId: z.string().min(1).optional(), insertAfterActionId: z.string().min(1).nullable().optional(), actionIdsInOrder: z.array(z.string().min(1)).optional(),
+}).strict()
+export const proposeRunbookEditHostToolSchema = z.object({ runbookId: z.string().min(1).optional(), runbookTitle: z.string().min(1).optional(), prompt: z.string().min(1), operations: z.array(runbookAuthoringOperationSchema).min(1) }).strict()
+export const proposeRunbookCreateHostToolSchema = z.object({ prompt: z.string().min(1), draftRunbook: z.object({ title: z.string().min(1), description: z.string().default(''), idleTimeout: z.number().int().positive().optional(), actions: z.array(runbookActionProposalSchema).min(1) }).strict() }).strict()
+
 export const RUNBOOK_COMPLETION_WAIT_TIMEOUT_MS = 30_000
 export const RUNBOOK_COMPLETION_WAIT_SECONDS = RUNBOOK_COMPLETION_WAIT_TIMEOUT_MS / 1_000
 
@@ -29,6 +55,8 @@ export type HostToolName =
   | 'list_runbooks'
   | 'execute_runbook'
   | 'get_runbook_execution'
+  | 'propose_runbook_edit'
+  | 'propose_runbook_create'
 
 export interface AgentSessionRef {
   id: string
@@ -42,6 +70,7 @@ export interface AgentSessionRef {
   latestJournalTimeWindowParameters?: RunbookParameterValues
   currentTurnRunbookExecutionLookups?: Set<string>
   currentTurnStartedRunbookExecutionIds?: Set<string>
+  runbookAuthoringProposals?: RunbookAuthoringProposal[]
 }
 
 export type HostToolEvent = {
@@ -70,6 +99,7 @@ export interface HostToolContext {
   ) => RunbookParameterValues | undefined
   summarizeExecution?: (execution: RunbookExecutionRecord) => Record<string, unknown>
   rememberExecution?: (session: AgentSessionRef, execution: RunbookExecutionRecord) => void
+  listAuthorableRunbooks?: () => Promise<RunbookRecord[]>
   onToolEvent?: (event: HostToolEvent) => void
 }
 
@@ -82,6 +112,8 @@ export interface HostToolSpec<Args> {
 
 export type ExecuteRunbookHostToolInput = z.infer<typeof executeRunbookHostToolSchema>
 export type GetRunbookExecutionHostToolInput = z.infer<typeof getRunbookExecutionHostToolSchema>
+export type ProposeRunbookEditHostToolInput = z.infer<typeof proposeRunbookEditHostToolSchema>
+export type ProposeRunbookCreateHostToolInput = z.infer<typeof proposeRunbookCreateHostToolSchema>
 
 type HostToolValidationError = {
   code: 'INVALID_TOOL_ARGUMENTS'
@@ -409,6 +441,55 @@ async function getRunbookExecution(
   return { output: JSON.stringify((context.summarizeExecution ?? summarizeExecution)(execution), null, 2) }
 }
 
+async function resolveAuthorableRunbookReference(context: HostToolContext, input: ProposeRunbookEditHostToolInput): Promise<RunbookRecord> {
+  const runbooks = await (context.listAuthorableRunbooks?.() ?? context.gateway.listExecutable())
+  const runbookId = input.runbookId?.trim()
+  const runbookTitle = input.runbookTitle?.trim()
+  if (runbookId !== undefined && runbookId.length > 0) {
+    const byId = runbooks.find((runbook) => runbook.id === runbookId)
+    if (byId !== undefined) return byId
+  }
+  if (runbookTitle !== undefined && runbookTitle.length > 0) {
+    const exactMatches = runbooks.filter((runbook) => runbook.title.trim().toLowerCase() === runbookTitle.toLowerCase())
+    if (exactMatches.length === 1) return exactMatches[0]
+    const partialMatches = runbooks.filter((runbook) => runbook.title.toLowerCase().includes(runbookTitle.toLowerCase()))
+    if (partialMatches.length === 1) return partialMatches[0]
+    if (partialMatches.length > 1) throw new Error(`Multiple runbooks match "${runbookTitle}". Use runbookId. Matches: ${partialMatches.map((runbook) => runbook.title).join(', ')}`)
+  }
+  const activeRunbookId = context.session.runbookContext?.id
+  if (activeRunbookId !== undefined && activeRunbookId.length > 0) {
+    const active = runbooks.find((runbook) => runbook.id === activeRunbookId)
+    if (active !== undefined) return active
+  }
+  throw new Error('propose_runbook_edit requires runbookId or runbookTitle when there is no active runbook context')
+}
+
+function summarizeAuthoringProposal(proposal: RunbookAuthoringProposal): Record<string, unknown> {
+  return {
+    status: proposal.status, approvalRequired: true, saved: false, proposalId: proposal.id, kind: proposal.kind,
+    incidentThreadId: proposal.incidentThreadId,
+    targetRunbookId: proposal.kind === 'edit_existing_runbook' ? proposal.targetRunbookId : undefined,
+    targetRevisionNumber: proposal.kind === 'edit_existing_runbook' ? proposal.targetRevisionNumber : undefined,
+    proposedRunbook: { id: proposal.proposedRunbook.id, title: proposal.proposedRunbook.title, description: proposal.proposedRunbook.description, revisionNumber: proposal.proposedRunbook.revisionNumber, actionCount: proposal.proposedRunbook.actions.length, actions: proposal.proposedRunbook.actions.map((action) => ({ id: action.id, type: action.type, title: action.title })) },
+    validation: proposal.validation, operationDiffs: proposal.operationDiffs,
+    nextStep: 'Show this proposal to the operator. Do not claim it was saved; it requires explicit approve, deny, or revise action.',
+  }
+}
+
+async function proposeRunbookEdit(context: HostToolContext, input: ProposeRunbookEditHostToolInput): Promise<ToolResult> {
+  const proposal = createRunbookEditProposal({ incidentThreadId: context.session.incidentThreadId, prompt: input.prompt, targetRunbook: await resolveAuthorableRunbookReference(context, input), operations: input.operations.map((operation) => ({ ...operation, action: operation.action as RunbookActionRecord | undefined })) as RunbookAuthoringOperation[] })
+  context.session.runbookAuthoringProposals ??= []
+  context.session.runbookAuthoringProposals.push(proposal)
+  return { output: JSON.stringify(summarizeAuthoringProposal(proposal), null, 2) }
+}
+
+async function proposeRunbookCreate(context: HostToolContext, input: ProposeRunbookCreateHostToolInput): Promise<ToolResult> {
+  const proposal = createRunbookCreationProposal({ incidentThreadId: context.session.incidentThreadId, prompt: input.prompt, draftRunbook: { ...input.draftRunbook, actions: input.draftRunbook.actions as RunbookActionRecord[] } })
+  context.session.runbookAuthoringProposals ??= []
+  context.session.runbookAuthoringProposals.push(proposal)
+  return { output: JSON.stringify(summarizeAuthoringProposal(proposal), null, 2) }
+}
+
 export const hostTools = [
   {
     name: 'list_runbooks',
@@ -427,6 +508,18 @@ export const hostTools = [
     description: 'Get a previously started runbook execution. Set waitForCompletion to true to wait up to 30 seconds for a terminal result, then return the latest snapshot; otherwise return the latest snapshot immediately. If executionId is omitted, use the latest known runbook execution for the current incident.',
     argsSchema: getRunbookExecutionHostToolSchema,
     handler: async (context: HostToolContext, args: GetRunbookExecutionHostToolInput) => await getRunbookExecution(context, args),
+  },
+  {
+    name: 'propose_runbook_edit',
+    description: 'Create a pending, non-mutating runbook edit proposal for user approval. This never saves changes.',
+    argsSchema: proposeRunbookEditHostToolSchema,
+    handler: async (context: HostToolContext, args: ProposeRunbookEditHostToolInput) => await proposeRunbookEdit(context, args),
+  },
+  {
+    name: 'propose_runbook_create',
+    description: 'Create a pending, non-mutating proposal for a new runbook draft. This never saves changes.',
+    argsSchema: proposeRunbookCreateHostToolSchema,
+    handler: async (context: HostToolContext, args: ProposeRunbookCreateHostToolInput) => await proposeRunbookCreate(context, args),
   },
 ] as const satisfies readonly HostToolSpec<unknown>[]
 

@@ -328,6 +328,36 @@ function createAgentBridge(
     getSnapshot: async (sessionId: string): Promise<AgentSnapshot> => {
       return bridge.invoke('agent:getSnapshot', { sessionId }) as Promise<AgentSnapshot>
     },
+    listRunbookAuthoringProposals: async (input: {
+      sessionId?: string
+      incidentThreadId?: string
+    }): Promise<unknown> => {
+      return bridge.invoke('agent:listRunbookAuthoringProposals', input)
+    },
+    approveRunbookAuthoringProposal: async (input: {
+      sessionId?: string
+      incidentThreadId?: string
+      proposalId: string
+      approvedOperationIds?: string[]
+    }): Promise<unknown> => {
+      return bridge.invoke('agent:approveRunbookAuthoringProposal', input)
+    },
+    rejectRunbookAuthoringProposal: async (input: {
+      sessionId?: string
+      incidentThreadId?: string
+      proposalId: string
+      reason?: string
+    }): Promise<unknown> => {
+      return bridge.invoke('agent:rejectRunbookAuthoringProposal', input)
+    },
+    requestRunbookAuthoringRevision: async (input: {
+      sessionId?: string
+      incidentThreadId?: string
+      proposalId: string
+      requestedEdit: string
+    }): Promise<unknown> => {
+      return bridge.invoke('agent:requestRunbookAuthoringRevision', input)
+    },
     onEvent: (
       callback: (event: {
         sessionId: string
