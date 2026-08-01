@@ -2,6 +2,7 @@ import { EventEmitter } from 'events'
 import type { ChildProcess } from 'child_process'
 import { existsSync } from 'fs'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { getHostTools } from '@bitsentry-ce/core/features/agent-runtime'
 
 type ClaudeQuerySession = AsyncIterable<unknown> & {
   getContextUsage: () => Promise<{ totalTokens: number; maxTokens: number }>
@@ -542,11 +543,11 @@ describe('executeClaudeCode', () => {
       'mcp__bitsentry__get_runbook_execution',
     ]))
     expect(options.settingSources).toEqual([])
-    expect(options.systemPrompt).toEqual({
+    expect(options.systemPrompt).toMatchObject({
       type: 'preset',
       preset: 'claude_code',
-      append: 'You are an incident-response assistant.\n\nThis is an incident-chat session with runbook tools only. The only available tools are list_runbooks, execute_runbook, and get_runbook_execution. After execute_runbook, call get_runbook_execution once with waitForCompletion: true. Do not poll it. General file access, shell commands, and web research are out of scope for this session. If the user asks for out-of-scope work, explain that limitation instead of attempting a built-in tool.',
     })
+    expect(options.systemPrompt?.append).toContain('You are an incident-response assistant.')
     expect(options.cwd).not.toBe(process.cwd())
     expect(existsSync(options.cwd ?? '')).toBe(false)
 
@@ -557,6 +558,42 @@ describe('executeClaudeCode', () => {
       isError: true,
       content: [{ type: 'text' }],
     })
+  })
+
+  it('keeps the Claude incident scope synchronized with every registered host tool', async () => {
+    queryMock.mockReturnValue({
+      async *[Symbol.asyncIterator]() {
+        yield { type: 'result', subtype: 'success', result: 'Proposal drafted.' }
+      },
+      getContextUsage: getContextUsageMock.mockResolvedValue({ totalTokens: 0, maxTokens: 0 }),
+      close: closeMock,
+    })
+    toolMock.mockImplementation((name, _description, _schema, handler) => ({ name, handler }))
+    createSdkMcpServerMock.mockReturnValue({ transport: 'in-process' })
+
+    const { executeClaudeCode } =
+      await import('@bitsentry-ce/desktop-cli/runtime/desktop-coding-agents')
+    await executeClaudeCode({
+      prompt: 'Create a runbook proposal.',
+      binaryPath: 'claude',
+      abortController: new AbortController(),
+      hostToolContext: {
+        gateway: {} as never,
+        session: { id: 'session-1' },
+      },
+    })
+
+    const scope = getQueryOptions(0).systemPrompt?.append ?? ''
+    for (const hostTool of getHostTools()) {
+      expect(scope).toContain(hostTool.name)
+    }
+    expect(scope).toContain('propose_runbook_edit and propose_runbook_create only create pending proposals')
+    expect(scope).toContain('explicit operator approval in the incident UI')
+    expect(scope).toContain('they never save directly')
+    expect(scope).toContain('must not claim a runbook was created or saved unless approval succeeded')
+    expect(scope).toContain('After execute_runbook, call get_runbook_execution once with waitForCompletion: true. Do not poll it.')
+    expect(scope).toContain('General file access, shell commands, and web research are out of scope for this session.')
+    expect(scope).toContain('If the user asks for out-of-scope work, explain that limitation instead of attempting a built-in tool.')
   })
 
   it('enables the Claude 1M context beta when requested', async () => {

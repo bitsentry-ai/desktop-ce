@@ -105,13 +105,17 @@ type ClaudeSdkQuery = (params: {
 let testClaudeSdkQueryLoader: (() => Promise<ClaudeSdkQuery> | ClaudeSdkQuery) | undefined
 const CLAUDE_ONE_M_CONTEXT_BETA: ClaudeCodeSdkBeta = 'context-1m-2025-08-07'
 const BITSENTRY_MCP_SERVER_NAME = 'bitsentry'
-const CLAUDE_RUNBOOK_ONLY_SCOPE = [
-  'This is an incident-chat session with runbook tools only.',
-  'The only available tools are list_runbooks, execute_runbook, and get_runbook_execution.',
-  'After execute_runbook, call get_runbook_execution once with waitForCompletion: true. Do not poll it.',
-  'General file access, shell commands, and web research are out of scope for this session.',
-  'If the user asks for out-of-scope work, explain that limitation instead of attempting a built-in tool.',
-].join(' ')
+function buildClaudeRunbookOnlyScope(): string {
+  const hostToolNames = getHostTools().map((toolDefinition) => toolDefinition.name).join(', ')
+  return [
+    'This is an incident-chat session with runbook tools only.',
+    `The only available tools are ${hostToolNames}.`,
+    'After execute_runbook, call get_runbook_execution once with waitForCompletion: true. Do not poll it.',
+    'propose_runbook_edit and propose_runbook_create only create pending proposals that require explicit operator approval in the incident UI; they never save directly, and the agent must not claim a runbook was created or saved unless approval succeeded.',
+    'General file access, shell commands, and web research are out of scope for this session.',
+    'If the user asks for out-of-scope work, explain that limitation instead of attempting a built-in tool.',
+  ].join(' ')
+}
 
 export const CLAUDE_HOST_MCP_ALLOWED_TOOLS = getHostTools().map(
   (toolDefinition) => `mcp__${BITSENTRY_MCP_SERVER_NAME}__${toolDefinition.name}`,
@@ -568,7 +572,7 @@ function buildClaudeCodeQueryOptions(
   }
   const systemPrompt = [
     options.systemPrompt,
-    mcpServer === undefined ? undefined : CLAUDE_RUNBOOK_ONLY_SCOPE,
+    mcpServer === undefined ? undefined : buildClaudeRunbookOnlyScope(),
   ].filter((prompt): prompt is string => prompt !== undefined && prompt.trim().length > 0).join('\n\n')
   if (systemPrompt.length > 0) {
     queryOptions.systemPrompt = {
