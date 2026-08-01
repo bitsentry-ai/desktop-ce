@@ -516,6 +516,38 @@ describe('cli-probe service', () => {
     expect(mocks.spawn).not.toHaveBeenCalled()
   })
 
+  it('does not invoke Cursor about after status reports unauthenticated', async () => {
+    // Arrange
+    stubPlatform('linux')
+    mockExecFile((command, args) => {
+      if (command === 'which' && args[0] === 'cursor-agent') {
+        return { stdout: '/usr/local/bin/cursor-agent\n' }
+      }
+
+      if (command === '/usr/local/bin/cursor-agent' && args[0] === '--version') {
+        return { stdout: '2026.07.01\n' }
+      }
+
+      if (command === '/usr/local/bin/cursor-agent' && args[0] === 'status') {
+        return { stdout: 'Not logged in\n' }
+      }
+
+      throw new Error(`Unexpected execFile call: ${command} ${JSON.stringify(args)}`)
+    })
+
+    const { probeCursor } = await import('@bitsentry-ce/coding-agents/cli-probe.service')
+
+    // Act
+    const result = await probeCursor('cursor-agent')
+
+    // Assert
+    expect(result.auth).toEqual({ status: 'unauthenticated' })
+    expect(result.status).toBe('error')
+    expect(result.errorKind).toBe('unauthenticated')
+    expect(mocks.execFile.mock.calls.some(([, args]) => args[0] === 'about')).toBe(false)
+    expect(mocks.spawn).not.toHaveBeenCalled()
+  })
+
   it('does not rewrite Windows Codex .exe detection into a command shim', async () => {
     // Arrange
     stubPlatform('win32')

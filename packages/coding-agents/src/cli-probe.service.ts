@@ -1030,18 +1030,20 @@ export async function probeCursor(binaryPath: string): Promise<CLIProbeResult> {
     auth = parseCursorAuthOutput(error.stdout, error.stderr)
   }
 
-  try {
-    const aboutResult = await runCommand(resolvedBinaryPath, ['about'], PROBE_TIMEOUT_MS)
-    auth = mergeCursorAuthSignals(
-      auth,
-      parseCursorAuthOutput(aboutResult.stdout, aboutResult.stderr),
-    )
-  } catch (err: unknown) {
-    const error = toProbeError(err, 'not_executable')
-    auth = mergeCursorAuthSignals(
-      auth,
-      parseCursorAuthOutput(error.stdout, error.stderr),
-    )
+  if (auth.status !== 'unauthenticated') {
+    try {
+      const aboutResult = await runCommand(resolvedBinaryPath, ['about'], PROBE_TIMEOUT_MS)
+      auth = mergeCursorAuthSignals(
+        auth,
+        parseCursorAuthOutput(aboutResult.stdout, aboutResult.stderr),
+      )
+    } catch (err: unknown) {
+      const error = toProbeError(err, 'not_executable')
+      auth = mergeCursorAuthSignals(
+        auth,
+        parseCursorAuthOutput(error.stdout, error.stderr),
+      )
+    }
   }
 
   if (auth.status === 'unauthenticated') {
