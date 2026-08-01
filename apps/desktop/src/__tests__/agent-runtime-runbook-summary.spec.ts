@@ -579,6 +579,37 @@ describe('AgentRuntimeService runbook outcomes', () => {
     await expect(service.approveRunbookAuthoringProposal({ sessionId, proposalId: proposal.proposalId })).rejects.toThrow('action persistence failed')
     expect(runbookStore.remove).toHaveBeenCalledWith({ id: createdShell.id })
   })
+
+  it('persists a store-valid creation proposal with an idle timeout in minutes', async () => {
+    const createdRunbook = { ...makeRunbook('rb-new', 'New runbook', []), idleTimeout: 30 }
+    const savedRunbook = {
+      ...createdRunbook,
+      actions: [{ id: 'step-1', type: 'shell' as const, title: 'Collect status', command: 'systemctl status bitsentry' }],
+    }
+    const runbookStore = {
+      list: vi.fn().mockResolvedValue([]),
+      create: vi.fn().mockResolvedValue(createdRunbook),
+      updateMeta: vi.fn(),
+      updateActions: vi.fn().mockResolvedValue(savedRunbook),
+      remove: vi.fn(),
+    }
+    const runbookExecutionService = { start: vi.fn(), waitForCompletion: vi.fn(), get: vi.fn().mockResolvedValue(null), getLatestForIncidentThread: vi.fn().mockResolvedValue(null) }
+    const llmAdapter = {
+      chatWithTools: vi
+        .fn()
+        .mockResolvedValueOnce({ content: 'I will draft a runbook for review.', toolCalls: [{ id: 'call-propose-create', name: 'propose_runbook_create', args: { prompt: 'Create a status runbook.', draftRunbook: { title: 'New runbook', description: 'Collect status.', idleTimeout: 30, actions: [{ id: 'step-1', type: 'shell', title: 'Collect status', command: 'systemctl status bitsentry' }] } } }] })
+        .mockResolvedValueOnce({ content: 'The proposal requires approval.', toolCalls: [] }),
+    }
+    const service = createRuntime({ llmAdapter, runbookStore, runbookExecutionService })
+    const sessionId = await service.start({ prompt: 'Create a status runbook.', incidentThreadId: 'incident-authoring' })
+    await waitForCondition(() => service.getStatus(sessionId).state === 'COMPLETED')
+    const proposal = service.listRunbookAuthoringProposals({ sessionId })[0]
+
+    await expect(service.approveRunbookAuthoringProposal({ sessionId, proposalId: proposal.proposalId })).resolves.toMatchObject({
+      savedRunbook: { id: 'rb-new', idleTimeout: 30 },
+    })
+    expect(runbookStore.create).toHaveBeenCalledWith(expect.objectContaining({ idleTimeout: 30 }))
+  })
   it('records Claude MCP host tools in the thread snapshot and replay transcript', async () => {
     const runbookStore = {
       list: vi.fn().mockResolvedValue([

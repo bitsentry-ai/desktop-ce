@@ -1072,7 +1072,7 @@ function getRunbookAuthoringProposalsFromMessage(
     .filter((proposal): proposal is RunbookAuthoringProposalReview => proposal !== null);
 }
 
-function RunbookAuthoringProposalCards({
+export function RunbookAuthoringProposalCards({
   agent,
   incidentId,
   sessionId,
@@ -1093,7 +1093,32 @@ function RunbookAuthoringProposalCards({
   const [pendingProposalId, setPendingProposalId] = useState<string | null>(null);
   const [revisionDraftByProposalId, setRevisionDraftByProposalId] = useState<Record<string, string>>({});
   const [errorByProposalId, setErrorByProposalId] = useState<Record<string, string>>({});
+  const [savedTitleByProposalId, setSavedTitleByProposalId] = useState<Record<string, string>>({});
   const [selectedOperationIdsByProposalId, setSelectedOperationIdsByProposalId] = useState<Record<string, string[]>>({});
+
+  const refreshLiveProposals = useCallback(async () => {
+    if (sessionId === null) return undefined;
+
+    try {
+      const liveProposals = await agent.listRunbookAuthoringProposals({
+        sessionId,
+        incidentThreadId: incidentId,
+      });
+      setDecisionStateByProposalId((previous) => ({
+        ...previous,
+        ...Object.fromEntries(
+          liveProposals.map((proposal) => [proposal.proposalId, proposal]),
+        ),
+      }));
+      return liveProposals;
+    } catch {
+      return undefined;
+    }
+  }, [agent, incidentId, sessionId]);
+
+  useEffect(() => {
+    void refreshLiveProposals();
+  }, [refreshLiveProposals]);
 
   if (proposals.length === 0) return null;
 
@@ -1109,6 +1134,25 @@ function RunbookAuthoringProposalCards({
       ...prev,
       [proposalId]: errorMessage(error),
     }));
+  };
+
+  const recoverDecidedProposal = async (
+    proposalId: string,
+    error: unknown,
+  ) => {
+    const liveProposals = await refreshLiveProposals();
+    const liveProposal = liveProposals?.find(
+      (proposal) => proposal.proposalId === proposalId,
+    );
+    if (
+      liveProposal !== undefined &&
+      liveProposal.status !== "pending_approval"
+    ) {
+      setDecisionProposal(liveProposal);
+      setErrorByProposalId((previous) => ({ ...previous, [proposalId]: "" }));
+      return;
+    }
+    setProposalError(proposalId, error);
   };
 
   return (
@@ -1140,8 +1184,20 @@ function RunbookAuthoringProposalCards({
               approvedOperationIds: proposal.kind === "edit_existing_runbook" ? selectedOperationIds : undefined,
             });
             setDecisionProposal(result.proposal);
+            if (result.savedRunbook !== undefined) {
+              setSavedTitleByProposalId((previous) => ({
+                ...previous,
+                [proposal.proposalId]: result.savedRunbook!.title,
+              }));
+              window.dispatchEvent(
+                new CustomEvent("bitsentry:runbooks-updated", {
+                  detail: { runbook: result.savedRunbook },
+                }),
+              );
+            }
+            await refreshLiveProposals();
           } catch (err: unknown) {
-            setProposalError(proposal.proposalId, err);
+            await recoverDecidedProposal(proposal.proposalId, err);
           } finally {
             setPendingProposalId(null);
           }
@@ -1159,8 +1215,9 @@ function RunbookAuthoringProposalCards({
               reason: "Rejected from incident runbook authoring review.",
             });
             setDecisionProposal(result.proposal);
+            await refreshLiveProposals();
           } catch (err: unknown) {
-            setProposalError(proposal.proposalId, err);
+            await recoverDecidedProposal(proposal.proposalId, err);
           } finally {
             setPendingProposalId(null);
           }
@@ -1180,10 +1237,20 @@ function RunbookAuthoringProposalCards({
             });
             setDecisionProposal(result.proposal);
             onRevisionRequested(
-              t("common.incidents.reviseRunbookProposal", { proposalId: proposal.proposalId, requestedEdit }),
+              t(
+                proposal.kind === "create_new_runbook"
+                  ? "common.incidents.reviseNewRunbookProposal"
+                  : "common.incidents.reviseExistingRunbookProposal",
+                {
+                  proposalId: proposal.proposalId,
+                  requestedEdit,
+                  targetRunbookId: proposal.targetRunbookId ?? "",
+                },
+              ),
             );
+            await refreshLiveProposals();
           } catch (err: unknown) {
-            setProposalError(proposal.proposalId, err);
+            await recoverDecidedProposal(proposal.proposalId, err);
           } finally {
             setPendingProposalId(null);
           }
@@ -1207,7 +1274,11 @@ function RunbookAuthoringProposalCards({
                   </span>
                   {proposal.saved && (
                     <span className="rounded-md border border-emerald-500/30 bg-emerald-500/10 px-1.5 py-0.5 text-[11px] text-emerald-700 dark:text-emerald-300">
-                      {t("common.incidents.saved")}
+                      {t("common.incidents.savedAs", {
+                        title:
+                          savedTitleByProposalId[proposal.proposalId] ??
+                          proposal.proposedRunbook.title,
+                      })}
                     </span>
                   )}
                 </div>

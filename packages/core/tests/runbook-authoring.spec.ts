@@ -6,6 +6,7 @@ import {
   rejectRunbookAuthoringProposal,
   requestRunbookAuthoringRevision,
 } from "../src/features/runbooks";
+import { validateRunbook } from "../src/features/runbooks/authoring";
 import type { RunbookRecord } from "../src/features/runbooks/desktop-runbook.types";
 
 function makeBaseRunbook(): RunbookRecord {
@@ -186,5 +187,28 @@ describe("runbook authoring", () => {
 
     expect(unsafeCreationProposal.validation.valid).toBe(false);
     expect(() => approveRunbookAuthoringProposal({ proposal: unsafeCreationProposal })).toThrow();
+  });
+
+  it("lists available action ids when an edit targets a missing action", () => {
+    expect(() => createRunbookEditProposal({
+      prompt: "Update the log step.",
+      targetRunbook: makeBaseRunbook(),
+      operations: [{
+        id: "op-1",
+        type: "update_action",
+        rationale: "Use the existing log step.",
+        actionId: "invented-action",
+        action: { id: "invented-action", type: "shell", title: "Updated status", command: "systemctl is-active bitsentry" },
+      }],
+    })).toThrow("Available actions: action-logs (external_source: Search error logs).");
+  });
+
+  it("flags an out-of-range idle timeout before approval", () => {
+    const validation = validateRunbook({ ...makeBaseRunbook(), idleTimeout: 3600 });
+
+    expect(validation.valid).toBe(false)
+    expect(validation.errors).toContain(
+      "Runbook idle timeout must be an integer from 0 to 1440 minutes.",
+    );
   });
 });

@@ -7,6 +7,7 @@ import type {
   RunbookRecord,
   RunbookTriggerContext,
 } from '../runbooks/desktop-runbook.types'
+import { MAX_RUNBOOK_IDLE_TIMEOUT_MINUTES } from '../runbooks/desktop-runbook.types'
 import type { RunbookGateway } from '../runbooks/runbook.gateway'
 import {
   createRunbookCreationProposal,
@@ -16,6 +17,13 @@ import {
 } from '../runbooks/authoring'
 
 export const listRunbooksHostToolSchema = z.object({}).strict()
+
+const idleTimeoutDescription = `Idle timeout in minutes, 0 to ${String(MAX_RUNBOOK_IDLE_TIMEOUT_MINUTES)}.`
+const idleTimeoutSchema = z.number()
+  .int({ message: idleTimeoutDescription })
+  .min(0, { message: idleTimeoutDescription })
+  .max(MAX_RUNBOOK_IDLE_TIMEOUT_MINUTES, { message: idleTimeoutDescription })
+  .describe(idleTimeoutDescription)
 
 export const executeRunbookHostToolSchema = z.object({
   runbookId: z.string().min(1).optional(),
@@ -39,14 +47,26 @@ const runbookActionProposalSchema = z.object({
   pluginId: z.string().optional(), pluginActionId: z.string().optional(), pluginInput: z.string().optional(), pluginAuth: z.string().optional(),
   query: z.string().optional(), sourceId: z.string().optional(),
   parameters: z.array(z.object({ id: z.string().min(1), key: z.string().min(1), label: z.string().optional(), description: z.string().optional(), defaultValue: z.string().optional(), required: z.boolean().optional(), secure: z.boolean().optional() }).strict()).optional(),
-}).strict()
+}).strict().superRefine((action, context) => {
+  if (action.type === 'external_source' && (action.sourceId === undefined || action.sourceId.trim().length === 0)) {
+    context.addIssue({ code: 'custom', path: ['sourceId'], message: 'External Source action requires a sourceId.' })
+  }
+  if (action.type === 'plugin') {
+    if (action.pluginId === undefined || action.pluginId.trim().length === 0) {
+      context.addIssue({ code: 'custom', path: ['pluginId'], message: 'Plugin action requires a pluginId.' })
+    }
+    if (action.pluginActionId === undefined || action.pluginActionId.trim().length === 0) {
+      context.addIssue({ code: 'custom', path: ['pluginActionId'], message: 'Plugin action requires a pluginActionId.' })
+    }
+  }
+})
 const runbookAuthoringOperationSchema = z.object({
   id: z.string().min(1), type: z.enum(['update_metadata', 'add_action', 'update_action', 'delete_action', 'reorder_actions']), rationale: z.string().min(1),
-  metadata: z.object({ title: z.string().optional(), description: z.string().optional(), idleTimeout: z.number().int().positive().optional() }).strict().optional(),
+  metadata: z.object({ title: z.string().optional(), description: z.string().optional(), idleTimeout: idleTimeoutSchema.optional() }).strict().optional(),
   action: runbookActionProposalSchema.optional(), actionId: z.string().min(1).optional(), insertAfterActionId: z.string().min(1).nullable().optional(), actionIdsInOrder: z.array(z.string().min(1)).optional(),
 }).strict()
 export const proposeRunbookEditHostToolSchema = z.object({ runbookId: z.string().min(1).optional(), runbookTitle: z.string().min(1).optional(), prompt: z.string().min(1), operations: z.array(runbookAuthoringOperationSchema).min(1) }).strict()
-export const proposeRunbookCreateHostToolSchema = z.object({ prompt: z.string().min(1), draftRunbook: z.object({ title: z.string().min(1), description: z.string().default(''), idleTimeout: z.number().int().positive().optional(), actions: z.array(runbookActionProposalSchema).min(1) }).strict() }).strict()
+export const proposeRunbookCreateHostToolSchema = z.object({ prompt: z.string().min(1), draftRunbook: z.object({ title: z.string().min(1), description: z.string().default(''), idleTimeout: idleTimeoutSchema.optional(), actions: z.array(runbookActionProposalSchema).min(1) }).strict() }).strict()
 
 export const RUNBOOK_COMPLETION_WAIT_TIMEOUT_MS = 30_000
 export const RUNBOOK_COMPLETION_WAIT_SECONDS = RUNBOOK_COMPLETION_WAIT_TIMEOUT_MS / 1_000
@@ -247,11 +267,14 @@ async function resolveRunbookReference(
     const normalizedTitle = runbookTitle.toLowerCase()
     const exactMatches = runbooks.filter((runbook) => runbook.title.trim().toLowerCase() === normalizedTitle)
     if (exactMatches.length === 1) return exactMatches[0]
+    if (exactMatches.length > 1) {
+      throw new Error(`Multiple runbooks exactly match "${runbookTitle}". Use runbookId. Matches: ${describeRunbookCandidates(exactMatches)}`)
+    }
 
     const partialMatches = runbooks.filter((runbook) => runbook.title.toLowerCase().includes(normalizedTitle))
     if (partialMatches.length === 1) return partialMatches[0]
     if (partialMatches.length > 1) {
-      throw new Error(`Multiple runbooks match "${runbookTitle}". Use runbookId. Matches: ${partialMatches.map((runbook) => runbook.title).join(', ')}`)
+      throw new Error(`Multiple runbooks match "${runbookTitle}". Use runbookId. Matches: ${describeRunbookCandidates(partialMatches)}`)
     }
     throw new Error(`Runbook not found for title: ${runbookTitle}`)
   }
@@ -330,6 +353,11 @@ async function listRunbooks(context: HostToolContext): Promise<ToolResult> {
         revisionNumber: runbook.revisionNumber,
         actionCount: runbook.actions.length,
         actionTypes: runbook.actions.map((action) => action.type),
+        actions: runbook.actions.map((action) => ({
+          id: action.id,
+          type: action.type,
+          title: action.title,
+        })),
         actionParameters: runbook.actions
           .filter((action) => action.parameters !== undefined && action.parameters.length > 0)
           .map((action) => ({
@@ -452,9 +480,10 @@ async function resolveAuthorableRunbookReference(context: HostToolContext, input
   if (runbookTitle !== undefined && runbookTitle.length > 0) {
     const exactMatches = runbooks.filter((runbook) => runbook.title.trim().toLowerCase() === runbookTitle.toLowerCase())
     if (exactMatches.length === 1) return exactMatches[0]
+    if (exactMatches.length > 1) throw new Error(`Multiple runbooks exactly match "${runbookTitle}". Use runbookId. Matches: ${describeRunbookCandidates(exactMatches)}`)
     const partialMatches = runbooks.filter((runbook) => runbook.title.toLowerCase().includes(runbookTitle.toLowerCase()))
     if (partialMatches.length === 1) return partialMatches[0]
-    if (partialMatches.length > 1) throw new Error(`Multiple runbooks match "${runbookTitle}". Use runbookId. Matches: ${partialMatches.map((runbook) => runbook.title).join(', ')}`)
+    if (partialMatches.length > 1) throw new Error(`Multiple runbooks match "${runbookTitle}". Use runbookId. Matches: ${describeRunbookCandidates(partialMatches)}`)
   }
   const activeRunbookId = context.session.runbookContext?.id
   if (activeRunbookId !== undefined && activeRunbookId.length > 0) {
@@ -462,6 +491,10 @@ async function resolveAuthorableRunbookReference(context: HostToolContext, input
     if (active !== undefined) return active
   }
   throw new Error('propose_runbook_edit requires runbookId or runbookTitle when there is no active runbook context')
+}
+
+function describeRunbookCandidates(runbooks: RunbookRecord[]): string {
+  return runbooks.map((runbook) => `${runbook.id} (${runbook.title})`).join(', ')
 }
 
 function summarizeAuthoringProposal(proposal: RunbookAuthoringProposal): Record<string, unknown> {

@@ -590,6 +590,7 @@ describe('executeClaudeCode', () => {
     expect(scope).toContain('Proposing is always in scope no matter what the proposed actions contain')
     expect(scope).toContain('Never refuse a proposal request because the runbook content involves shell commands')
     expect(scope).toContain('Never claim a runbook was created, edited, or saved unless the operator approved the proposal and the save succeeded.')
+    expect(scope).toContain('When revising a create-kind proposal, use propose_runbook_create because the draft was never saved')
     expect(scope).toContain('To run an existing runbook, use execute_runbook, then call get_runbook_execution once with waitForCompletion: true. Do not poll it.')
   })
 

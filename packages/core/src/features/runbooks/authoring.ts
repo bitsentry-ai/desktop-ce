@@ -3,6 +3,7 @@ import type {
   RunbookActionType,
   RunbookRecord,
 } from "./desktop-runbook.types";
+import { MAX_RUNBOOK_IDLE_TIMEOUT_MINUTES } from "./desktop-runbook.types";
 
 export type RunbookAuthoringProposalKind =
   | "edit_existing_runbook"
@@ -320,13 +321,24 @@ function getOperationRiskLabels(
   return [...labels].sort();
 }
 
-function validateRunbook(runbook: RunbookRecord): RunbookAuthoringValidationResult {
+export function validateRunbook(runbook: RunbookRecord): RunbookAuthoringValidationResult {
   const errors: string[] = [];
   const warnings: string[] = [];
   const title = normalizeString(runbook.title);
 
   if (title.length === 0) {
     errors.push("Runbook title is required.");
+  }
+
+  if (
+    runbook.idleTimeout !== undefined &&
+    (!Number.isInteger(runbook.idleTimeout) ||
+      runbook.idleTimeout < 0 ||
+      runbook.idleTimeout > MAX_RUNBOOK_IDLE_TIMEOUT_MINUTES)
+  ) {
+    errors.push(
+      `Runbook idle timeout must be an integer from 0 to ${String(MAX_RUNBOOK_IDLE_TIMEOUT_MINUTES)} minutes.`,
+    );
   }
 
   if (runbook.actions.length === 0) {
@@ -364,6 +376,27 @@ function validateRunbook(runbook: RunbookRecord): RunbookAuthoringValidationResu
       normalizeString(action.query).length === 0
     ) {
       errors.push(`Data-source action "${action.title}" is missing a query.`);
+    }
+
+    if (
+      action.type === "external_source" &&
+      normalizeString(action.sourceId).length === 0
+    ) {
+      errors.push(`External Source action "${action.title}" is missing a source selection.`);
+    }
+
+    if (
+      action.type === "plugin" &&
+      normalizeString(action.pluginId).length === 0
+    ) {
+      errors.push(`Plugin action "${action.title}" is missing a selected plugin.`);
+    }
+
+    if (
+      action.type === "plugin" &&
+      normalizeString(action.pluginActionId).length === 0
+    ) {
+      errors.push(`Plugin action "${action.title}" is missing a selected plugin action.`);
     }
 
     if (
@@ -451,7 +484,9 @@ function applyOperation(
       const actionId = operation.actionId ?? operation.action.id;
       const index = runbook.actions.findIndex((action) => action.id === actionId);
       if (index === -1) {
-        throw new Error(`Operation "${operation.id}" targets a missing action.`);
+        throw new Error(
+          `Operation "${operation.id}" targets a missing action. ${describeAvailableActions(runbook)}`,
+        );
       }
       runbook.actions[index] = cloneAction(operation.action);
       return;
@@ -464,7 +499,9 @@ function applyOperation(
         (action) => action.id !== operation.actionId,
       );
       if (nextActions.length === runbook.actions.length) {
-        throw new Error(`Operation "${operation.id}" targets a missing action.`);
+        throw new Error(
+          `Operation "${operation.id}" targets a missing action. ${describeAvailableActions(runbook)}`,
+        );
       }
       runbook.actions = nextActions;
       return;
@@ -497,6 +534,16 @@ function applyOperation(
     default:
       throw new Error(`Unsupported runbook authoring operation.`);
   }
+}
+
+function describeAvailableActions(runbook: MutableRunbook): string {
+  if (runbook.actions.length === 0) {
+    return "Available actions: none."
+  }
+
+  return `Available actions: ${runbook.actions
+    .map((action) => `${action.id} (${action.type}: ${action.title})`)
+    .join(", ")}.`
 }
 
 function buildSequentialOperationDiffs(

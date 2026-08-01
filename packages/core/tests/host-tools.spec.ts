@@ -69,12 +69,47 @@ describe('host tools', () => {
 
   it('uses the runbook gateway for list requests', async () => {
     const context = createContext()
-    context.gateway.listExecutable = vi.fn().mockResolvedValue([])
+    context.gateway.listExecutable = vi.fn().mockResolvedValue([
+      makeRunbook({
+        actions: [
+          { id: 'step-1', type: 'shell', title: 'Check service status', command: 'systemctl status bitsentry' },
+          { id: 'step-2', type: 'http', title: 'Check health endpoint', url: 'https://example.test/health', method: 'GET' },
+        ],
+      }),
+    ])
 
     const result = await executeHostTool(context, 'list_runbooks', {})
 
     expect(context.gateway.listExecutable).toHaveBeenCalledOnce()
-    expect(JSON.parse(result?.output ?? '')).toEqual({ runbooks: [] })
+    expect(JSON.parse(result?.output ?? '')).toMatchObject({
+      runbooks: [{
+        id: 'rb-sentry',
+        actions: [
+          { id: 'step-1', type: 'shell', title: 'Check service status' },
+          { id: 'step-2', type: 'http', title: 'Check health endpoint' },
+        ],
+      }],
+    })
+  })
+
+  it('rejects an out-of-range proposal idle timeout with the documented unit', async () => {
+    const context = createContext()
+
+    const result = await executeHostTool(context, 'propose_runbook_create', {
+      prompt: 'Create a status runbook.',
+      draftRunbook: {
+        title: 'Status check',
+        description: '',
+        idleTimeout: 3600,
+        actions: [{ id: 'step-1', type: 'shell', title: 'Check status', command: 'systemctl status bitsentry' }],
+      },
+    })
+
+    expect(JSON.parse(result?.error ?? '')).toMatchObject({
+      code: 'INVALID_TOOL_ARGUMENTS',
+      toolName: 'propose_runbook_create',
+    })
+    expect(result?.error).toContain('minutes')
   })
 
   it('creates a session-only runbook edit proposal through the host-tool registry', async () => {
@@ -87,6 +122,28 @@ describe('host tools', () => {
     expect(JSON.parse(result?.output ?? '')).toMatchObject({ approvalRequired: true, saved: false, status: 'pending_approval', targetRunbookId: runbook.id })
     expect(context.session.runbookAuthoringProposals).toHaveLength(1)
     expect(context.gateway.start).not.toHaveBeenCalled()
+  })
+
+  it('lists candidate ids when an authoring title is ambiguous', async () => {
+    const context = createContext()
+    context.listAuthorableRunbooks = vi.fn().mockResolvedValue([
+      makeRunbook({ id: 'rb-claude', title: 'Update Claude Code & Codex CLIs' }),
+      makeRunbook({ id: 'rb-codex', title: 'Update Claude Code & Codex CLIs' }),
+    ])
+
+    const result = await executeHostTool(context, 'propose_runbook_edit', {
+      runbookTitle: 'Update Claude Code & Codex CLIs',
+      prompt: 'Add a verification step.',
+      operations: [{
+        id: 'op-1',
+        type: 'update_metadata',
+        rationale: 'Clarify the title.',
+        metadata: { description: 'Update both CLIs and verify the versions.' },
+      }],
+    })
+
+    expect(result?.error).toContain('rb-claude (Update Claude Code & Codex CLIs)')
+    expect(result?.error).toContain('rb-codex (Update Claude Code & Codex CLIs)')
   })
 
   it('reports the host execution lifecycle to the caller', async () => {
