@@ -90,7 +90,7 @@ export interface AgentRuntimeWindow {
 
 export type AgentRuntimeLlmAdapter = Pick<AgentLlmAdapterService, 'chatWithTools'>
 export type AgentRuntimeRunbookGateway = RunbookGateway
-export interface AgentRuntimeRunbookStore { list(): Promise<RunbookRecord[]>; create(payload: Record<string, unknown>): Promise<RunbookRecord>; updateMeta(payload: Record<string, unknown>): Promise<RunbookRecord | null>; updateActions(payload: Record<string, unknown>): Promise<RunbookRecord | null> }
+export interface AgentRuntimeRunbookStore { list(): Promise<RunbookRecord[]>; create(payload: Record<string, unknown>): Promise<RunbookRecord>; updateMeta(payload: Record<string, unknown>): Promise<RunbookRecord | null>; updateActions(payload: Record<string, unknown>): Promise<RunbookRecord | null>; remove(payload: Record<string, unknown>): Promise<unknown> }
 export interface RunbookAuthoringProposalReview { status: RunbookAuthoringProposal['status']; approvalRequired: true; saved: boolean; proposalId: string; kind: RunbookAuthoringProposal['kind']; incidentThreadId?: string; targetRunbookId?: string; targetRevisionNumber?: number; proposedRunbook: { id: string; title: string; description: string; revisionNumber: number; actionCount: number; actions: Array<{ id: string; type: string; title: string }> }; validation: RunbookAuthoringProposal['validation']; operationDiffs: RunbookAuthoringProposal['operationDiffs']; nextStep: string }
 export interface RunbookAuthoringProposalDecisionResult { proposal: RunbookAuthoringProposalReview; savedRunbook?: RunbookRecord; approvedOperationIds?: string[]; reason?: string; requestedEdit?: string }
 
@@ -1864,7 +1864,7 @@ export class AgentRuntimeService {
       if (getRunbookAuthoringRevisionHash(latest) !== proposal.targetRevisionHash) throw new Error('This runbook changed after the authoring proposal was created. Ask the agent to revise the proposal against the latest runbook before approving it.')
     }
     const approval = approveRunbookAuthoringProposal({ proposal, approvedOperationIds: input.approvedOperationIds })
-    const savedRunbook = await this.persistApprovedRunbookAuthoringProposal(approval.runbook, proposal.kind)
+    const savedRunbook = await this.persistApprovedRunbookAuthoringProposal(approval.runbook, proposal)
     session.runbookAuthoringProposals[proposalIndex] = approval.proposal
     return { proposal: this.summarizeRunbookAuthoringProposal(approval.proposal), savedRunbook, approvedOperationIds: approval.approvedOperationIds }
   }
@@ -2956,17 +2956,47 @@ export class AgentRuntimeService {
     return runbook
   }
 
-  private async persistApprovedRunbookAuthoringProposal(runbook: RunbookRecord, kind: RunbookAuthoringProposal['kind']): Promise<RunbookRecord> {
+  private async persistApprovedRunbookAuthoringProposal(runbook: RunbookRecord, proposal: RunbookAuthoringProposal): Promise<RunbookRecord> {
     const store = this.getRunbookStore()
-    if (kind === 'create_new_runbook') {
-      let saved = await store.create({ id: runbook.id, title: runbook.title, description: runbook.description, idleTimeout: runbook.idleTimeout })
-      if (runbook.actions.length > 0) saved = await store.updateActions({ runbookId: saved.id, actions: runbook.actions }) ?? saved
-      return saved
+    if (proposal.kind === 'create_new_runbook') {
+      const saved = await store.create({ id: runbook.id, title: runbook.title, description: runbook.description, idleTimeout: runbook.idleTimeout })
+      try {
+        const updated = runbook.actions.length > 0
+          ? await store.updateActions({ runbookId: saved.id, actions: runbook.actions })
+          : saved
+        if (updated === null) throw new Error(`Runbook authoring approval did not save runbook: ${runbook.id}`)
+        this.verifyApprovedRunbookPersistence(runbook, updated)
+        return updated
+      } catch (error) {
+        await store.remove({ id: saved.id }).catch((cleanupError: unknown) => {
+          log.error('[agent-runtime] Failed to remove runbook shell after authoring approval persistence failed', {
+            runbookId: saved.id,
+            error: getErrorMessage(cleanupError),
+          })
+        })
+        throw error
+      }
     }
+
+    const latest = await this.resolveCurrentRunbookForAuthoringApproval(proposal)
+    if (getRunbookAuthoringRevisionHash(latest) !== proposal.targetRevisionHash) throw new Error('This runbook changed after the authoring proposal was created. Ask the agent to revise the proposal against the latest runbook before approving it.')
     const metadata = await store.updateMeta({ id: runbook.id, title: runbook.title, description: runbook.description, idleTimeout: runbook.idleTimeout })
     const saved = await store.updateActions({ runbookId: runbook.id, actions: runbook.actions }) ?? metadata
     if (saved === null) throw new Error(`Runbook authoring approval did not save runbook: ${runbook.id}`)
+    this.verifyApprovedRunbookPersistence(runbook, saved)
     return saved
+  }
+
+  private verifyApprovedRunbookPersistence(expected: RunbookRecord, saved: RunbookRecord): void {
+    if (saved.title === expected.title && saved.actions.length === expected.actions.length) return
+    log.error('[agent-runtime] Runbook authoring approval saved an inconsistent runbook', {
+      runbookId: expected.id,
+      expectedTitle: expected.title,
+      savedTitle: saved.title,
+      expectedActionCount: expected.actions.length,
+      savedActionCount: saved.actions.length,
+    })
+    throw new Error(`Runbook authoring approval saved an inconsistent runbook: ${expected.id}`)
   }
 
   private summarizeRunbookAuthoringProposal(proposal: RunbookAuthoringProposal): RunbookAuthoringProposalReview {

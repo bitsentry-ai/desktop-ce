@@ -63,11 +63,11 @@ import type {
   ThreadStatus,
 } from "../chat/types";
 import { Composer } from "../chat/Composer";
-import { CODING_AGENT_PRIORITY } from "../desktop/codingAgentPriority";
 import type {
   AgentServicePort,
   RunbookAuthoringProposalReview,
 } from "../services/contracts";
+import { CODING_AGENT_PRIORITY } from "../desktop/codingAgentPriority";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
