@@ -712,7 +712,10 @@ export class RunbookExecutionService {
       await this.resultStore.requestExecutionCancellation(executionId);
 
     const session = this.sessions.get(executionId);
-    if (!cancellationRequested) {
+    if (
+      !cancellationRequested &&
+      (session === undefined || session.snapshot.status !== "running")
+    ) {
       throw new Error(
         `Runbook execution '${executionId}' is no longer cancellable`,
       );

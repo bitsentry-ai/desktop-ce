@@ -112,4 +112,51 @@ describe('SqliteRunbookResultStore', () => {
     expect(snapshots.get('result-a')?.snapshotVersion).toBe(1)
     expect(snapshots.get('result-b')?.snapshotVersion).toBe(1)
   })
+
+  it('reconciles a running row whose execution control is gone', async () => {
+    const running = snapshot('execution-stuck', 3)
+    const row: Record<string, unknown> = {
+      id: 'result-stuck',
+      executionId: running.executionId,
+      status: 'running',
+      startedAt: running.startedAt,
+      completedAt: null,
+      updatedAt: running.startedAt,
+      executionSnapshotJson: JSON.stringify(running),
+    }
+    const database: DesktopRunbookResultDatabase = {
+      investigationSession: {
+        create: async () => ({}),
+        update: async ({ data }) => {
+          Object.assign(row, data)
+          return row
+        },
+        updateMany: async ({ where, data }) => {
+          if (where?.id !== row.id || where?.status !== row.status) {
+            return { count: 0 }
+          }
+          Object.assign(row, data)
+          return { count: 1 }
+        },
+        findUnique: async () => row,
+        findFirst: async () => null,
+        findMany: async () => [row],
+      },
+      $executeRawUnsafe: async () => {},
+      // There is no execution-control row, which means no process still owns
+      // the apparently running execution.
+      $queryRawUnsafe: async () => [],
+      $transaction: async <T>(operation: () => Promise<T>): Promise<T> => operation(),
+    }
+    const store = new SqliteRunbookResultStore(database)
+
+    await expect(store.markStaleRunningSessionsFailed({ heartbeatGraceMs: 0 })).resolves.toBe(1)
+
+    expect(row.status).toBe('failed')
+    expect(JSON.parse(String(row.executionSnapshotJson))).toMatchObject({
+      status: 'failed',
+      completionReason: 'app_shutdown',
+    })
+    expect(row.completedAt).toEqual(expect.any(String))
+  })
 })

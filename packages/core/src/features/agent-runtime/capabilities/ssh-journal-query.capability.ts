@@ -23,6 +23,7 @@ import {
   classifySshError,
 } from '../shared/ssh-journal-query-builder'
 import { runOrchestratedOperation } from '../shared/effect-orchestration'
+import { terminateLocalProcessTree } from '../shared/local-process'
 
 const log = console
 const SSH_JOURNAL_QUERY_TIMEOUT_MS = 60_000
@@ -91,6 +92,9 @@ async function executeSshJournalQuery(
   const sshProcess = spawn('ssh', command.args, {
     shell: false,  // Prevent command injection
     env: process.env,  // Inherit user environment (ssh-agent, HOME, etc.)
+    // Keep an SSH prompt from attaching to the desktop process terminal on
+    // POSIX without changing the established Windows child-process behaviour.
+    detached: process.platform !== 'win32',
     stdio: ['ignore', 'pipe', 'pipe'],
   })
 
@@ -147,10 +151,10 @@ async function executeSshJournalQuery(
         const abortHandler = () => {
           if (!sshExited && sshProcess.exitCode === null && sshProcess.signalCode === null) {
             log.info(`[agent-runtime:${sessionId}] Killing ssh_journal_query via abort:`, { toolCallId })
-            sshProcess.kill('SIGTERM')
+            terminateLocalProcessTree(sshProcess, 'SIGTERM')
             terminationTimer = setTimeout(() => {
               if (!sshExited && sshProcess.exitCode === null && sshProcess.signalCode === null) {
-                sshProcess.kill('SIGKILL')
+                terminateLocalProcessTree(sshProcess, 'SIGKILL')
               }
             }, 2000)
           }
@@ -216,7 +220,7 @@ async function executeSshJournalQuery(
     return { error: message }
   } finally {
     if (!sshExited && sshProcess.exitCode === null && sshProcess.signalCode === null) {
-      sshProcess.kill()
+      terminateLocalProcessTree(sshProcess, 'SIGTERM')
     }
     if (terminationTimer !== undefined) {
       clearTimeout(terminationTimer)

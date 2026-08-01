@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest'
+import { vi } from 'vitest'
 
 import {
   RunbookExecutionService,
   type RunbookExecutionLlmAdapter,
 } from '../src/features/runbooks/desktop-runbook-execution.service'
+import { executeShellCommandTool } from '../src/features/agent-runtime/capabilities/execute-shell-command.capability'
 import type { ExternalSourceRunbookQueryExecutor } from '../src/features/error-sources/desktop-external-source-runbook-query-service'
 import type {
   RunbookExecutionRecord,
@@ -33,12 +35,57 @@ function makeRunbook(): RunbookRecord {
   }
 }
 
+function makeShellRunbook(): RunbookRecord {
+  return {
+    ...makeRunbook(),
+    actions: [{
+      id: 'shell-step-1',
+      type: 'shell',
+      title: 'Run shell command',
+      command: 'never exits',
+    }],
+  }
+}
+
+function createInMemoryResultStore(
+  requestExecutionCancellation: () => Promise<boolean>,
+): RunbookResultPersistence {
+  const snapshots = new Map<string, RunbookExecutionRecord>()
+  const resultToExecution = new Map<string, string>()
+
+  return {
+    createRunbookResultSession: async ({ resultId, executionId, snapshot }) => {
+      snapshots.set(executionId, clone(snapshot))
+      resultToExecution.set(resultId, executionId)
+    },
+    saveExecutionSnapshot: async () => {},
+    applyExecutionSnapshotEvent: async (_resultId, input) => {
+      snapshots.set(input.snapshot.executionId, clone(input.snapshot))
+      return 'accepted'
+    },
+    getExecutionSnapshotByExecutionId: async (executionId) =>
+      clone(snapshots.get(executionId) ?? null),
+    getExecutionSnapshotByResultId: async (resultId) => {
+      const executionId = resultToExecution.get(resultId)
+      return executionId === undefined ? null : clone(snapshots.get(executionId) ?? null)
+    },
+    getExecutionByRequestKey: async () => null,
+    getLatestExecutionSnapshotByIncidentThreadId: async () => null,
+    getLatestExecutionByIncidentThreadId: async () => null,
+    touchExecutionHeartbeat: async () => {},
+    requestExecutionCancellation,
+    isExecutionCancellationRequested: async () => false,
+    completeExecutionControl: async () => {},
+    markStaleRunningSessionsFailed: async () => 0,
+  }
+}
+
 async function waitFor(
-  predicate: () => boolean,
+  predicate: () => boolean | Promise<boolean>,
   timeoutMs = 2_000,
 ): Promise<void> {
   const deadline = Date.now() + timeoutMs
-  while (!predicate() && Date.now() < deadline) {
+  while (!(await predicate()) && Date.now() < deadline) {
     await new Promise((resolve) => setTimeout(resolve, 10))
   }
 }
@@ -156,5 +203,86 @@ describe('RunbookExecutionService lifecycle', () => {
       'no live execution session is available',
     )
     expect(requestedExecutionId).toBe('execution-after-restart')
+  })
+
+  it('rejects cancellation when there is neither a live session nor a cancellable control row', async () => {
+    const service = new RunbookExecutionService(
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      createInMemoryResultStore(async () => false),
+      () => null,
+      undefined,
+      undefined,
+      {} as never,
+    )
+
+    await expect(service.cancel('already-finished')).rejects.toThrow(
+      "Runbook execution 'already-finished' is no longer cancellable",
+    )
+  })
+
+  it('cancels an active session when its control row was already completed or absent', async () => {
+    const executeSpy = vi.spyOn(executeShellCommandTool, 'execute').mockImplementation(
+      async (_input, context) => new Promise((resolve) => {
+        context.signal.addEventListener('abort', () => {
+          resolve({ error: 'Shell command cancelled' })
+        }, { once: true })
+      }),
+    )
+    const service = new RunbookExecutionService(
+      { getRunbookOrThrow: async () => makeShellRunbook() } as never,
+      { loadResolvedGlobals: async () => ({ definitions: [], values: {} }) } as never,
+      {} as RunbookExecutionLlmAdapter,
+      {} as never,
+      createInMemoryResultStore(async () => false),
+      () => null,
+      undefined,
+      undefined,
+      {} as never,
+    )
+
+    const started = await service.start('runbook-1')
+    await waitFor(() => executeSpy.mock.calls.length === 1)
+
+    await expect(service.cancel(started.executionId)).resolves.toBeUndefined()
+    await expect(service.get(started.executionId)).resolves.toMatchObject({
+      status: 'cancelled',
+      completionReason: 'user_cancelled',
+    })
+
+    executeSpy.mockRestore()
+    await service.destroy()
+  })
+
+  it('turns a timed-out shell step into a terminal failed execution', async () => {
+    const executeSpy = vi.spyOn(executeShellCommandTool, 'execute').mockResolvedValue({
+      error: 'Shell command timed out',
+      output: '[BitSentry stopped this command after 300000ms to avoid a hung runbook.]',
+    })
+    const service = new RunbookExecutionService(
+      { getRunbookOrThrow: async () => makeShellRunbook() } as never,
+      { loadResolvedGlobals: async () => ({ definitions: [], values: {} }) } as never,
+      {} as RunbookExecutionLlmAdapter,
+      {} as never,
+      createInMemoryResultStore(async () => true),
+      () => null,
+      undefined,
+      undefined,
+      {} as never,
+    )
+
+    const started = await service.start('runbook-1')
+    await waitFor(async () => (await service.get(started.executionId))?.status === 'failed')
+
+    await expect(service.get(started.executionId)).resolves.toMatchObject({
+      status: 'failed',
+      completionReason: 'step_failed',
+      steps: [{ status: 'failed', error: 'Shell command timed out' }],
+    })
+
+    executeSpy.mockRestore()
+    await service.destroy()
   })
 })
