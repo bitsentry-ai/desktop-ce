@@ -8,6 +8,7 @@ import {
   executeCursor,
   extractCursorModelIds,
 } from '@bitsentry-ce/coding-agents/cursor-provider.service'
+import { getHostTools } from '@bitsentry-ce/core/features/agent-runtime'
 import { setCodingAgentsLoggerForTesting } from '@bitsentry-ce/coding-agents/logger'
 
 const tmpDirs: string[] = []
@@ -196,6 +197,22 @@ const permissionOptions = [
   { optionId: 'reject-always', name: 'Reject always', kind: 'reject_always' },
 ]
 
+const capturedBitsentryMcpPermissionRequest = {
+  sessionId: 'cursor-session-1',
+  toolCall: {
+    toolCallId: 'mcp__bitsentry__propose_runbook_edit',
+    name: 'propose_runbook_edit',
+    serverName: 'bitsentry',
+    kind: 'execute',
+    title: 'Propose a runbook revision',
+    rawInput: {
+      title: 'Run shell command to update the service',
+      feedback: 'Use shell command details from the operator.',
+    },
+  },
+  options: permissionOptions,
+} as const
+
 describe('Cursor provider behavior', () => {
   it('chooses ACP permission options from access level and tool kind', () => {
     expect(
@@ -227,6 +244,94 @@ describe('Cursor provider behavior', () => {
         'full-access',
       ),
     ).toEqual({ outcome: { outcome: 'selected', optionId: 'allow-once' } })
+  })
+
+  it('allows Bitsentry MCP calls before classifying argument vocabulary', () => {
+    expect(
+      chooseCursorPermissionResponse(
+        {
+          ...capturedBitsentryMcpPermissionRequest,
+          toolCall: {
+            ...capturedBitsentryMcpPermissionRequest.toolCall,
+            kind: undefined,
+            title: 'MCP proposal request',
+            rawInput: { detail: 'shell command only' },
+          },
+        },
+        'auto-accept-edits',
+      ),
+    ).toEqual({ outcome: { outcome: 'selected', optionId: 'allow-once' } })
+
+    expect(
+      chooseCursorPermissionResponse(
+        {
+          ...capturedBitsentryMcpPermissionRequest,
+          toolCall: {
+            ...capturedBitsentryMcpPermissionRequest.toolCall,
+            name: 'list_runbooks',
+            toolCallId: 'list_runbooks',
+            serverName: undefined,
+            kind: undefined,
+            title: 'MCP catalog request',
+            rawInput: { request: 'production' },
+          },
+        },
+        'auto-accept-edits',
+      ),
+    ).toEqual({ outcome: { outcome: 'selected', optionId: 'allow-once' } })
+  })
+
+  it('pins Bitsentry MCP identity matching and keeps built-in execute calls rejected', () => {
+    expect(
+      chooseCursorPermissionResponse(
+        {
+          ...capturedBitsentryMcpPermissionRequest,
+          toolCall: {
+            toolCallId: 'cursor-bash-1',
+            name: 'bash',
+            serverName: 'not-bitsentry',
+            kind: 'execute',
+            title: 'Run shell command',
+          },
+        },
+        'auto-accept-edits',
+      ),
+    ).toEqual({ outcome: { outcome: 'selected', optionId: 'reject-once' } })
+
+    expect(
+      chooseCursorPermissionResponse(
+        {
+          ...capturedBitsentryMcpPermissionRequest,
+          toolCall: {
+            toolCallId: 'cursor-mcp-1',
+            toolName: 'get_runbook_execution',
+            server: { name: 'bitsentry' },
+            kind: 'execute',
+            title: 'Run shell command',
+          },
+        },
+        'auto-accept-edits',
+      ),
+    ).toEqual({ outcome: { outcome: 'selected', optionId: 'allow-once' } })
+
+    for (const hostTool of getHostTools()) {
+      expect(
+        chooseCursorPermissionResponse(
+          {
+            ...capturedBitsentryMcpPermissionRequest,
+            toolCall: {
+              toolCallId: `mcp__bitsentry__${hostTool.name}`,
+              name: hostTool.name,
+              serverName: 'bitsentry',
+              kind: 'execute',
+              title: 'Run shell command',
+              rawInput: { command: 'ignored by identity matching' },
+            },
+          },
+          'auto-accept-edits',
+        ),
+      ).toEqual({ outcome: { outcome: 'selected', optionId: 'allow-once' } })
+    }
   })
 
   it('keeps automatic full-access approvals scoped to a single Cursor request', () => {

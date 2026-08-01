@@ -2,6 +2,7 @@ import { EventEmitter } from 'events'
 import { readFile } from 'fs/promises'
 import { PassThrough } from 'stream'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { getHostTools } from '@bitsentry-ce/core/features/agent-runtime'
 
 const mocks = vi.hoisted(() => ({
   spawn: vi.fn(),
@@ -125,6 +126,12 @@ describe('executeOpenCode', () => {
         },
       },
     })
+    const config = JSON.parse(await readFile(configPath!, 'utf8')) as {
+      permission: Record<string, string>
+    }
+    for (const hostTool of getHostTools()) {
+      expect(config.permission[`bitsentry_${hostTool.name}`]).toBe('allow')
+    }
 
     finishOpenCodeProcess(child)
     await expect(resultPromise).resolves.toMatchObject({ exitCode: 0 })

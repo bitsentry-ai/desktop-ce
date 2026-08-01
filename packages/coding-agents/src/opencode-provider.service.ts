@@ -16,6 +16,7 @@ import {
 } from './composer.js'
 import { terminateSubprocess } from './subprocess-lifecycle.js'
 import type { HostMcpEndpoint } from './host-mcp-server.service.js'
+import { getHostTools } from '@bitsentry-ce/core/features/agent-runtime'
 
 export interface OpenCodeDebugRecorder {
   recordEvent(stage: string, data: Record<string, unknown>): void
@@ -576,6 +577,9 @@ async function createOpenCodeMcpConfig(endpoint: HostMcpEndpoint | undefined): P
   if (endpoint === undefined) return undefined
   const directory = await mkdtemp(path.join(os.tmpdir(), 'bitsentry-opencode-mcp-'))
   const configPath = path.join(directory, 'opencode.json')
+  const hostToolPermissions = Object.fromEntries(
+    getHostTools().map((tool) => [`bitsentry_${tool.name}`, 'allow']),
+  )
   await writeFile(configPath, JSON.stringify({
     mcp: {
       bitsentry: {
@@ -584,6 +588,10 @@ async function createOpenCodeMcpConfig(endpoint: HostMcpEndpoint | undefined): P
         environment: endpoint.env,
       },
     },
+    // OpenCode applies permission rules to MCP tools by their server-prefixed
+    // names. Keep the provider's built-in restrictions in place while letting
+    // the scoped, host-validated BitSentry tools run deterministically.
+    permission: hostToolPermissions,
   }), 'utf8')
   return { directory, path: configPath }
 }

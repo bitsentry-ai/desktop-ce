@@ -9,6 +9,7 @@ import {
   normalizeAccessLevel,
   type AccessLevel,
 } from './composer.js'
+import { getHostTools } from '@bitsentry-ce/core/features/agent-runtime'
 
 export interface CodingAgentDebugRecorder {
   recordEvent(stage: string, data: Record<string, unknown>): void
@@ -77,6 +78,10 @@ const CURSOR_TOOL_KINDS: readonly CursorToolKind[] = [
   'other',
 ]
 const CURSOR_TOOL_KIND_NAMES = new Set<string>(CURSOR_TOOL_KINDS)
+const BITSENTRY_MCP_SERVER_NAME = 'bitsentry'
+const HOST_TOOL_NAMES: ReadonlySet<string> = new Set(getHostTools().map((tool) => tool.name))
+const HOST_TOOL_IDENTITY_FIELDS = ['name', 'toolName', 'toolCallId'] as const
+const MCP_SERVER_IDENTITY_FIELDS = ['server', 'serverName', 'serverId', 'mcpServer', 'mcpServerName'] as const
 const TOOL_KIND_PATTERNS: Array<{ kind: CursorToolKind; pattern: RegExp }> = [
   { kind: 'read', pattern: /\b(read|cat|view|open|list|ls)\b/ },
   { kind: 'search', pattern: /\b(search|grep|find|glob|rg)\b/ },
@@ -196,6 +201,51 @@ function inferToolKind(toolCall: Record<string, unknown> | undefined): CursorToo
   return 'other'
 }
 
+function hostToolNameFromIdentity(value: unknown): string | undefined {
+  const identity = asString(value)
+  if (identity === undefined) return undefined
+  if (HOST_TOOL_NAMES.has(identity)) return identity
+
+  const prefixed = /^mcp__bitsentry__(.+)$/i.exec(identity)
+  if (prefixed !== null && HOST_TOOL_NAMES.has(prefixed[1])) {
+    return prefixed[1]
+  }
+
+  return undefined
+}
+
+function mcpServerNameFromIdentity(value: unknown): string | undefined {
+  return asString(value)
+    ?? asString(asRecord(value)?.name)
+    ?? asString(asRecord(value)?.id)
+}
+
+function hasBitsentryMcpServerIdentity(toolCall: Record<string, unknown>): boolean {
+  return MCP_SERVER_IDENTITY_FIELDS.some((field) => (
+    mcpServerNameFromIdentity(toolCall[field])?.toLowerCase() === BITSENTRY_MCP_SERVER_NAME
+  ))
+}
+
+function isBitsentryHostToolCall(toolCall: Record<string, unknown> | undefined): boolean {
+  if (toolCall === undefined) return false
+
+  for (const field of HOST_TOOL_IDENTITY_FIELDS) {
+    const identity = asString(toolCall[field])
+    const hostToolName = hostToolNameFromIdentity(identity)
+    if (hostToolName === undefined) continue
+
+    if (/^mcp__bitsentry__/i.test(identity ?? '')) return true
+    if (hasBitsentryMcpServerIdentity(toolCall)) return true
+
+    // ACP may expose the host tool as its exact plain name without a separate
+    // server field. This remains safe because host tool names are an exact,
+    // runtime-derived allowlist, never words from the title or arguments.
+    if (identity === hostToolName) return true
+  }
+
+  return false
+}
+
 function getToolSearchText(toolCall: Record<string, unknown> | undefined): string {
   return [
     stringifyToolSearchValue(toolCall?.title),
@@ -250,9 +300,10 @@ export function chooseCursorPermissionResponse(
 
   const params = asRecord(requestParams)
   const toolCall = asRecord(params?.toolCall)
-  const toolKind = inferToolKind(toolCall)
   const options = normalizePermissionOptions(params?.options)
-  const selected = chooseOption(options, canAllowTool(accessLevel, toolKind))
+  const allow = isBitsentryHostToolCall(toolCall)
+    || canAllowTool(accessLevel, inferToolKind(toolCall))
+  const selected = chooseOption(options, allow)
 
   if (selected === undefined) {
     return { outcome: { outcome: 'cancelled' } }
