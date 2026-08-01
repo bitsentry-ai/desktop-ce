@@ -7,15 +7,9 @@ import {
 } from "../services/desktop-api";
 import { useToast } from "../hooks/use-toast";
 import type { ProviderId as CodingAgentId } from "../settings/CodingAgentProvidersSection";
+import { CODING_AGENT_PRIORITY } from "./codingAgentPriority";
 
-const PRIMARY_AGENT_PRIORITY: CodingAgentId[] = [
-  "codex",
-  "claude_code",
-  "opencode",
-  "cursor",
-];
-
-const PRIMARY_AGENT_IDS = new Set<string>(PRIMARY_AGENT_PRIORITY);
+const PRIMARY_AGENT_IDS = new Set<string>(CODING_AGENT_PRIORITY);
 
 export type DesktopSavedLlmProviders = Partial<
   Record<string, DesktopSavedLlmProviderConfig>
@@ -77,7 +71,7 @@ export function withPrimarySavedProvider(
 export function getPrimaryCodingAgentFromSavedProviders(
   saved: DesktopSavedLlmProviders,
 ): CodingAgentId | null {
-  for (const providerKey of PRIMARY_AGENT_PRIORITY) {
+  for (const providerKey of CODING_AGENT_PRIORITY) {
     if (saved[providerKey]?.isPrimary === true) return providerKey;
   }
   return null;
