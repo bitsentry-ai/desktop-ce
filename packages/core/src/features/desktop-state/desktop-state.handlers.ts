@@ -1136,6 +1136,18 @@ class DesktopStateStore {
     incidents: IncidentThreadRecord[],
     incidentMessages: Record<string, ChatMessage[]>,
   ): Promise<void> {
+    /**
+     * Incident threads and messages are renderer-owned. Every persistent
+     * write currently arrives through a renderer snapshot: the explicit
+     * replacement IPC, its compatibility sync alias, or legacy localStorage
+     * bootstrap. The agent runtime and runbook execution service only retain
+     * incidentThreadId on their own records.
+     *
+     * This wholesale replacement is safe only while that ownership remains
+     * true. If a main-process feature starts writing either incident table,
+     * change periodic synchronization to a non-destructive merge like
+     * mergeRunbooksFromRenderer and reserve full replacement for import.
+     */
     await this.ensureIncidentThreadSessionIdColumn()
     await this.db.incidentMessage.deleteMany({})
     await this.db.incidentThread.deleteMany({})
