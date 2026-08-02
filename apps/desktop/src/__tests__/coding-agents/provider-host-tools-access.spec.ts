@@ -9,6 +9,7 @@ import {
   isBitsentryMcpToolItem,
 } from '@bitsentry-ce/coding-agents/codex-provider.service'
 import {
+  CursorToolCallRegistry,
   chooseCursorPermissionResponse,
   isBitsentryHostToolCall,
 } from '@bitsentry-ce/coding-agents/cursor-provider.service'
@@ -65,16 +66,32 @@ describe.each(accessLevels)('host tools at %s', (accessLevel) => {
 
   it('passes every host tool through Cursor ACP permission handling', () => {
     for (const hostTool of getHostTools()) {
+      const toolCallId = `tool_${hostTool.name}`
+      const toolCallRegistry = new CursorToolCallRegistry()
+      toolCallRegistry.recordSessionUpdate({
+        sessionId: 'cursor-session-1',
+        update: {
+          sessionUpdate: 'tool_call',
+          toolCallId,
+          name: `mcp__${HOST_MCP_SERVER_NAME}__${hostTool.name}`,
+          title: hostTool.name,
+          kind: 'other',
+          rawInput: {},
+        },
+      })
       const toolCall = {
-        toolCallId: `mcp__${HOST_MCP_SERVER_NAME}__${hostTool.name}`,
-        name: hostTool.name,
-        serverName: HOST_MCP_SERVER_NAME,
-        kind: 'execute',
+        content: [],
+        kind: 'other',
+        status: 'pending',
+        title: 'Cursor MCP call',
+        toolCallId,
       }
-      expect(isBitsentryHostToolCall(toolCall)).toBe(true)
+      expect(isBitsentryHostToolCall(toolCall)).toBe(false)
       expect(chooseCursorPermissionResponse(
         { toolCall, options: permissionOptions },
         accessLevel,
+        false,
+        toolCallRegistry.get(toolCallId),
       )).toEqual({ outcome: { outcome: 'selected', optionId: 'allow-once' } })
     }
   })

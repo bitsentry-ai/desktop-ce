@@ -3,6 +3,7 @@ import os from 'os'
 import path from 'path'
 import { afterEach, describe, expect, it } from 'vitest'
 import {
+  CursorToolCallRegistry,
   chooseCursorPermissionResponse,
   cursorDeltasFromSessionUpdate,
   executeCursor,
@@ -10,6 +11,7 @@ import {
 } from '@bitsentry-ce/coding-agents/cursor-provider.service'
 import { getHostTools } from '@bitsentry-ce/core/features/agent-runtime'
 import { setCodingAgentsLoggerForTesting } from '@bitsentry-ce/coding-agents/logger'
+import { HOST_MCP_SERVER_NAME } from '@bitsentry-ce/coding-agents/host-mcp-server.service'
 
 const tmpDirs: string[] = []
 
@@ -203,15 +205,30 @@ const permissionOptions = [
 const syntheticBitsentryMcpPermissionRequest = {
   sessionId: 'cursor-session-1',
   toolCall: {
-    toolCallId: 'mcp__bitsentry__propose_runbook_edit',
+    toolCallId: `mcp__${HOST_MCP_SERVER_NAME}__propose_runbook_edit`,
     name: 'propose_runbook_edit',
-    serverName: 'bitsentry',
+    serverName: HOST_MCP_SERVER_NAME,
     kind: 'execute',
     title: 'Propose a runbook revision',
     rawInput: {
       title: 'Run shell command to update the service',
       feedback: 'Use shell command details from the operator.',
     },
+  },
+  options: permissionOptions,
+} as const
+
+// The 2026-08-02 live Cursor ACP permission request exposed exactly these
+// toolCall keys. Its title and content values are intentionally not used as
+// identity here because permission-time metadata is opaque.
+const liveCursorMcpPermissionRequest = {
+  sessionId: 'cursor-session-live-shape',
+  toolCall: {
+    content: [],
+    kind: 'other',
+    status: 'pending',
+    title: 'Cursor MCP call',
+    toolCallId: 'tool_635dd6e1-2997-4930-8af3-669aa7cb61f',
   },
   options: permissionOptions,
 } as const
@@ -291,7 +308,7 @@ describe('Cursor provider behavior', () => {
           toolCall: {
             toolCallId: 'cursor-mcp-1',
             toolName: 'get_runbook_execution',
-            server: { name: 'bitsentry' },
+            server: { name: HOST_MCP_SERVER_NAME },
             kind: 'execute',
             title: 'Run shell command',
           },
@@ -306,9 +323,9 @@ describe('Cursor provider behavior', () => {
           {
             ...syntheticBitsentryMcpPermissionRequest,
             toolCall: {
-              toolCallId: `mcp__bitsentry__${hostTool.name}`,
+              toolCallId: `mcp__${HOST_MCP_SERVER_NAME}__${hostTool.name}`,
               name: hostTool.name,
-              serverName: 'bitsentry',
+              serverName: HOST_MCP_SERVER_NAME,
               kind: 'execute',
               title: 'Run shell command',
               rawInput: { command: 'ignored by identity matching' },
@@ -318,6 +335,77 @@ describe('Cursor provider behavior', () => {
         ),
       ).toEqual({ outcome: { outcome: 'selected', optionId: 'allow-once' } })
     }
+  })
+
+  it('correlates an opaque live-shaped permission request with an announced host tool', () => {
+    const hostTool = getHostTools()[0]
+    expect(hostTool).toBeDefined()
+    const toolCallRegistry = new CursorToolCallRegistry()
+    toolCallRegistry.recordSessionUpdate({
+      sessionId: liveCursorMcpPermissionRequest.sessionId,
+      update: {
+        sessionUpdate: 'tool_call',
+        toolCallId: liveCursorMcpPermissionRequest.toolCall.toolCallId,
+        title: 'Cursor MCP call',
+        kind: 'other',
+      },
+    })
+    toolCallRegistry.recordSessionUpdate({
+      sessionId: liveCursorMcpPermissionRequest.sessionId,
+      update: {
+        sessionUpdate: 'tool_call_update',
+        toolCallId: liveCursorMcpPermissionRequest.toolCall.toolCallId,
+        name: `mcp__${HOST_MCP_SERVER_NAME}__${hostTool!.name}`,
+        rawInput: {},
+      },
+    })
+
+    expect(chooseCursorPermissionResponse(
+      liveCursorMcpPermissionRequest,
+      'auto-accept-edits',
+      false,
+      toolCallRegistry.get(liveCursorMcpPermissionRequest.toolCall.toolCallId),
+    )).toEqual({ outcome: { outcome: 'selected', optionId: 'allow-once' } })
+  })
+
+  it('keeps an uncorrelated live-shaped permission request rejected at Safe Tools', () => {
+    expect(chooseCursorPermissionResponse(
+      liveCursorMcpPermissionRequest,
+      'auto-accept-edits',
+    )).toEqual({ outcome: { outcome: 'selected', optionId: 'reject-once' } })
+  })
+
+  it('uses an exact host title on a permission request as a secondary signal', () => {
+    const hostTool = getHostTools()[0]
+    expect(hostTool).toBeDefined()
+    expect(chooseCursorPermissionResponse(
+      {
+        ...liveCursorMcpPermissionRequest,
+        toolCall: { ...liveCursorMcpPermissionRequest.toolCall, title: hostTool!.name },
+      },
+      'auto-accept-edits',
+    )).toEqual({ outcome: { outcome: 'selected', optionId: 'allow-once' } })
+  })
+
+  it('does not let an announced built-in execute tool bypass Safe Tools', () => {
+    const toolCallRegistry = new CursorToolCallRegistry()
+    toolCallRegistry.recordSessionUpdate({
+      sessionId: 'cursor-session-built-in',
+      update: {
+        sessionUpdate: 'tool_call',
+        toolCallId: liveCursorMcpPermissionRequest.toolCall.toolCallId,
+        name: 'terminal',
+        title: 'Run terminal command',
+        kind: 'execute',
+      },
+    })
+
+    expect(chooseCursorPermissionResponse(
+      liveCursorMcpPermissionRequest,
+      'auto-accept-edits',
+      false,
+      toolCallRegistry.get(liveCursorMcpPermissionRequest.toolCall.toolCallId),
+    )).toEqual({ outcome: { outcome: 'selected', optionId: 'reject-once' } })
   })
 
   it('rejects an untyped built-in terminal call even when its command says update', () => {
@@ -491,7 +579,7 @@ describe('Cursor provider behavior', () => {
       error: () => {},
     })
     const mock = await createMockCursorAgent(DEFAULT_CURSOR_CONFIG_OPTIONS, {
-      reportedMcpServers: { bitsentry: {}, github: {}, pagerduty: {} },
+      reportedMcpServers: { [HOST_MCP_SERVER_NAME]: {}, github: {}, pagerduty: {} },
     })
 
     await expect(executeCursor({
