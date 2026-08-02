@@ -237,6 +237,17 @@ function resolveSyntheticRunbookId(runbooks: RunbookRecord[], runbookId: string)
   return matches[0].runbook
 }
 
+function staleRunbookIdError(runbooks: RunbookRecord[], runbookId: string, runbookTitle?: string): Error {
+  const normalizedTitle = runbookTitle?.trim().toLowerCase()
+  const matchingTitles = normalizedTitle === undefined || normalizedTitle.length === 0
+    ? []
+    : runbooks.filter((runbook) => runbook.title.toLowerCase().includes(normalizedTitle))
+  const hint = matchingTitles.length === 0
+    ? ''
+    : ` Live title hint: ${describeRunbookCandidates(matchingTitles)}.`
+  return new Error(`Runbook id ${runbookId} was not found and may be stale. Call list_runbooks, then retry execute_runbook with a current id.${hint}`)
+}
+
 async function resolveRunbookReference(
   context: HostToolContext,
   input: ExecuteRunbookHostToolInput,
@@ -258,9 +269,7 @@ async function resolveRunbookReference(
 
     const syntheticMatch = resolveSyntheticRunbookId(runbooks, runbookId)
     if (syntheticMatch !== null) return syntheticMatch
-    if (runbookTitle === undefined || runbookTitle.length === 0) {
-      throw new Error(`Runbook not found for id: ${runbookId}`)
-    }
+    if (runbookTitle === undefined || runbookTitle.length === 0) throw staleRunbookIdError(runbooks, runbookId)
   }
 
   if (runbookTitle !== undefined && runbookTitle.length > 0) {
@@ -268,14 +277,17 @@ async function resolveRunbookReference(
     const exactMatches = runbooks.filter((runbook) => runbook.title.trim().toLowerCase() === normalizedTitle)
     if (exactMatches.length === 1) return exactMatches[0]
     if (exactMatches.length > 1) {
+      if (runbookId !== undefined && runbookId.length > 0) throw staleRunbookIdError(runbooks, runbookId, runbookTitle)
       throw new Error(`Multiple runbooks exactly match "${runbookTitle}". Use runbookId. Matches: ${describeRunbookCandidates(exactMatches)}`)
     }
 
     const partialMatches = runbooks.filter((runbook) => runbook.title.toLowerCase().includes(normalizedTitle))
     if (partialMatches.length === 1) return partialMatches[0]
     if (partialMatches.length > 1) {
+      if (runbookId !== undefined && runbookId.length > 0) throw staleRunbookIdError(runbooks, runbookId, runbookTitle)
       throw new Error(`Multiple runbooks match "${runbookTitle}". Use runbookId. Matches: ${describeRunbookCandidates(partialMatches)}`)
     }
+    if (runbookId !== undefined && runbookId.length > 0) throw staleRunbookIdError(runbooks, runbookId, runbookTitle)
     throw new Error(`Runbook not found for title: ${runbookTitle}`)
   }
 

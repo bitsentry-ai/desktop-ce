@@ -888,10 +888,18 @@ async function createCursorSession(
   cwd: string,
   mcpEndpoint?: HostMcpEndpoint,
 ): Promise<unknown> {
+  const mcpServers = toCursorMcpServers(mcpEndpoint)
+  if (mcpEndpoint !== undefined) {
+    const configuredHostTools = getHostTools()
+    log.info('[cursor-provider] configured host tools', {
+      agentSessionId: mcpEndpoint.agentSessionId,
+      toolNames: configuredHostTools.map((hostTool) => hostTool.name),
+    })
+  }
   return withTimeout(
     client.sendRequest('session/new', {
       cwd,
-      mcpServers: toCursorMcpServers(mcpEndpoint),
+      mcpServers,
     }),
     CURSOR_SETUP_TIMEOUT_MS,
     'Cursor ACP session/new',

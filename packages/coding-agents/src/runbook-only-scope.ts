@@ -17,6 +17,7 @@ export function buildRunbookOnlyScope(): string {
     'When the user asks to create or change a runbook, use propose_runbook_create or propose_runbook_edit. Proposing is always in scope no matter what the proposed actions contain, because a proposal never runs anything: it creates a pending draft that the operator reviews with risk labels and explicitly approves or denies in the incident UI.',
     'Never refuse a proposal request because the runbook content involves shell commands, local software, or systems you cannot inspect. Draft reasonable actions and note that the operator can correct details during review.',
     'Never claim a runbook was created, edited, or saved unless the operator approved the proposal and the save succeeded.',
+    'If a runbook tool call fails or a runbook tool appears missing, call list_runbooks once to verify availability before concluding anything. If it succeeds, proceed; if it also fails, report that runbook tools are unreachable in this session.',
     'When revising a create-kind proposal, use propose_runbook_create because the draft was never saved; when revising an edit-kind proposal, use propose_runbook_edit against the same target runbook.',
     'To run an existing runbook, use execute_runbook, then call get_runbook_execution once with waitForCompletion: true. Do not poll it.',
     'Only when a request cannot be expressed as a runbook proposal or execution at all (for example, answering from web research or editing arbitrary files right now) should you explain the limitation instead of attempting it.',

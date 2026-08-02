@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { randomUUID } from 'crypto'
 
 import {
   AgentRuntimeService,
@@ -595,6 +596,35 @@ describe('summarizeRunbookExecutionForToolOutput', () => {
 })
 
 describe('AgentRuntimeService runbook outcomes', () => {
+  it('places approved authoring outcomes in the next-turn session context', async () => {
+    const title = `Generated runbook ${randomUUID()}`
+    const { store } = createInMemoryAuthoringStore()
+    const llmAdapter = makeCreationAuthoringLlmAdapter(title)
+    llmAdapter.chatWithTools.mockResolvedValueOnce({ content: 'Acknowledged.', toolCalls: [] })
+    const runbookExecutionService = { start: vi.fn(), waitForCompletion: vi.fn(), get: vi.fn().mockResolvedValue(null), getLatestForIncidentThread: vi.fn().mockResolvedValue(null) }
+    const service = createRuntime({ llmAdapter, runbookStore: store as unknown as { list(): Promise<RunbookRecord[]> }, runbookExecutionService })
+    const sessionId = await service.start({ prompt: `Create ${title}.`, incidentThreadId: `incident-${randomUUID()}` })
+    await waitForCondition(() => service.getStatus(sessionId).state === 'COMPLETED')
+    const proposal = service.listRunbookAuthoringProposals({ sessionId })[0]!
+
+    expect(proposal.nextStep).toContain('draft runbook id is provisional')
+    expect(proposal.nextStep).toContain('list_runbooks or the approval notification')
+
+    const approval = await service.approveRunbookAuthoringProposal({ sessionId, proposalId: proposal.proposalId })
+    await service.send({ sessionId, message: 'Continue.' })
+    await waitForCondition(() => service.getStatus(sessionId).state === 'COMPLETED')
+
+    const nextTurnContext = getLlmCallMessages(llmAdapter as MockLlmAdapter, 2)
+      .filter((message) => message.role === 'system')
+      .map((message) => message.content)
+      .join('\n')
+    expect(nextTurnContext).toContain(`proposalId=${proposal.proposalId}`)
+    expect(nextTurnContext).toContain('decision=approved')
+    expect(nextTurnContext).toContain(`savedRunbookId=${approval.savedRunbook?.id}`)
+    expect(nextTurnContext).toContain(`savedRunbookTitle=${approval.savedRunbook?.title}`)
+    expect(nextTurnContext).toContain('Use savedRunbookId with execute_runbook')
+  })
+
   it('creates an MCP authoring proposal without persisting and rejects stale approval', async () => {
     const originalRunbook = makeRunbook('rb-logs', 'Check backend logs', [{ id: 'step-1', type: 'shell', title: 'Check service status', command: 'systemctl status bitsentry' }])
     const changedRunbook = { ...originalRunbook, revisionNumber: 2, description: 'Updated outside the proposal.' }

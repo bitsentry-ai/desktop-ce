@@ -8,6 +8,7 @@ import {
   normalizeCodexExecutionError,
 } from '@bitsentry-ce/desktop-cli/runtime/desktop-coding-agents'
 import { getHostTools } from '@bitsentry-ce/core/features/agent-runtime'
+import { setCodingAgentsLoggerForTesting } from '@bitsentry-ce/coding-agents/logger'
 
 const tempDirs: string[] = []
 async function createMultiItemCodexAppServer(): Promise<{
@@ -74,6 +75,7 @@ async function readLoggedCodexMessages(logPath: string): Promise<Array<Record<st
 
 afterEach(async () => {
   await Promise.all(tempDirs.splice(0).map((directory) => rm(directory, { recursive: true, force: true })))
+  setCodingAgentsLoggerForTesting({ info: () => {}, warn: () => {}, error: () => {} })
 })
 
 describe('Codex provider behavior', () => {
@@ -92,6 +94,8 @@ describe('Codex provider behavior', () => {
   })
 
   it('prepends the runbook-only scope to Codex prompts with every host tool', async () => {
+    const infos: unknown[][] = []
+    setCodingAgentsLoggerForTesting({ info: (...args) => { infos.push(args) }, warn: () => {}, error: () => {} })
     const mock = await createMultiItemCodexAppServer()
     await executeCodex({
       prompt: 'Update the local CLI.',
@@ -119,7 +123,12 @@ describe('Codex provider behavior', () => {
     }
     expect(scope).toContain('You must NEVER execute maintenance or remediation steps directly with built-in tools')
     expect(scope).toContain('there is no direct-execution fallback when a runbook is missing or unapproved.')
+    expect(scope).toContain('call list_runbooks once to verify availability before concluding anything')
     expect(scope).toContain('## Conversation\n\nUpdate the local CLI.')
+    expect(infos).toContainEqual([
+      '[codex-provider] configured host tools',
+      { agentSessionId: 'session-1', toolNames: getHostTools().map((tool) => tool.name) },
+    ])
   })
 
   it('keeps Codex assistant, reasoning, and command streams separate', () => {

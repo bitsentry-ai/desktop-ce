@@ -12,6 +12,7 @@ import {
   DEFAULT_ACCESS_LEVEL,
 } from './composer.js'
 import { getErrorMessage } from '@bitsentry-ce/core'
+import { getHostTools } from '@bitsentry-ce/core/features/agent-runtime'
 import { prependRunbookOnlyScope } from './runbook-only-scope.js'
 
 type LocalAiTextStreamDelta = LocalAiStreamDelta & { type: 'text'; text?: string }
@@ -506,17 +507,25 @@ export async function executeCodex(
 
     await client.start()
 
-    const threadConfig = options.mcpEndpoint === undefined
+    const mcpEndpoint = options.mcpEndpoint
+    const threadConfig = mcpEndpoint === undefined
       ? undefined
       : {
           mcp_servers: {
             bitsentry: {
-              command: options.mcpEndpoint.command,
-              args: options.mcpEndpoint.args,
-              env: options.mcpEndpoint.env,
+              command: mcpEndpoint.command,
+              args: mcpEndpoint.args,
+              env: mcpEndpoint.env,
             },
           },
         }
+    if (threadConfig !== undefined && mcpEndpoint !== undefined) {
+      const configuredHostTools = getHostTools()
+      log.info('[codex-provider] configured host tools', {
+        agentSessionId: mcpEndpoint.agentSessionId,
+        toolNames: configuredHostTools.map((hostTool) => hostTool.name),
+      })
+    }
     const threadResult = asRecord(await client.sendRequest('thread/start', {
       cwd,
       ...(threadConfig === undefined ? {} : { config: threadConfig }),

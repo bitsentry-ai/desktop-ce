@@ -17,6 +17,7 @@ import {
 import { terminateSubprocess } from './subprocess-lifecycle.js'
 import type { HostMcpEndpoint } from './host-mcp-server.service.js'
 import { getHostTools } from '@bitsentry-ce/core/features/agent-runtime'
+import { prependRunbookOnlyScope } from './runbook-only-scope.js'
 
 export interface OpenCodeDebugRecorder {
   recordEvent(stage: string, data: Record<string, unknown>): void
@@ -154,8 +155,9 @@ function buildOpenCodePrompt(
   accessLevel: AccessLevel,
   hasRunbookTools: boolean,
 ): string {
+  const scopedPrompt = hasRunbookTools ? prependRunbookOnlyScope(prompt) : prompt
   if (accessLevel === 'full-access') {
-    return prompt
+    return scopedPrompt
   }
 
   const guardrails = [
@@ -166,7 +168,7 @@ function buildOpenCodePrompt(
   if (hasRunbookTools) {
     guardrails.push('This direct-tool restriction does not prevent you from proposing operator-reviewed runbooks that contain shell or local-software actions.')
   }
-  return [...guardrails, '', prompt].join('\n')
+  return [...guardrails, '', scopedPrompt].join('\n')
 }
 
 function getOpenCodeVariant(traitValues?: Record<string, string | boolean>): string | undefined {
@@ -580,6 +582,10 @@ async function createOpenCodeMcpConfig(endpoint: HostMcpEndpoint | undefined): P
   const hostToolPermissions = Object.fromEntries(
     getHostTools().map((tool) => [`bitsentry_${tool.name}`, 'allow']),
   )
+  log.info('[opencode-provider] configured host tools', {
+    agentSessionId: endpoint.agentSessionId,
+    toolNames: Object.keys(hostToolPermissions).map((name) => name.slice('bitsentry_'.length)),
+  })
   await writeFile(configPath, JSON.stringify({
     mcp: {
       bitsentry: {

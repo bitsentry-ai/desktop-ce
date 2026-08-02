@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
+import { randomUUID } from 'crypto'
 import {
   executeHostTool,
   type HostToolContext,
@@ -189,6 +190,20 @@ describe('host tools', () => {
     expect(start).toHaveBeenNthCalledWith(2, expect.objectContaining({ runbookId: 'rb-sentry' }))
     expect(JSON.parse(byTitle?.output ?? '')).toMatchObject({ executionId: execution.executionId })
     expect(JSON.parse(byId?.output ?? '')).toMatchObject({ executionId: execution.executionId })
+  })
+
+  it('guides stale runbook ids to list current runbooks before retrying', async () => {
+    const context = createContext()
+    const staleId = randomUUID()
+    const liveTitle = `Live runbook ${randomUUID()}`
+    context.gateway.listExecutable = vi.fn().mockResolvedValue([
+      makeRunbook({ id: randomUUID(), title: liveTitle }),
+    ])
+
+    const result = await executeHostTool(context, 'execute_runbook', { runbookId: staleId })
+
+    expect(result?.error).toContain('may be stale')
+    expect(result?.error).toContain('Call list_runbooks, then retry execute_runbook with a current id.')
   })
 
   it('returns a terminal result after the bounded completion wait', async () => {

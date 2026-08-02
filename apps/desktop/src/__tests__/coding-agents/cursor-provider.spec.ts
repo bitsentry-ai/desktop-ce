@@ -522,6 +522,8 @@ describe('Cursor provider behavior', () => {
   })
 
   it('prepends the runbook-only scope to Cursor ACP prompts with every host tool', async () => {
+    const infos: unknown[][] = []
+    setCodingAgentsLoggerForTesting({ info: (...args) => { infos.push(args) }, warn: () => {}, error: () => {} })
     const mock = await createMockCursorAgent()
     await executeCursor({
       prompt: 'Update the local CLI.',
@@ -549,7 +551,12 @@ describe('Cursor provider behavior', () => {
     }
     expect(scope).toContain('You must NEVER execute maintenance or remediation steps directly with built-in tools')
     expect(scope).toContain('there is no direct-execution fallback when a runbook is missing or unapproved.')
+    expect(scope).toContain('call list_runbooks once to verify availability before concluding anything')
     expect(scope).toContain('## Conversation\n\nUpdate the local CLI.')
+    expect(infos).toContainEqual([
+      '[cursor-provider] configured host tools',
+      { agentSessionId: 'session-1', toolNames: getHostTools().map((tool) => tool.name) },
+    ])
   })
 
   it('sets Cursor effort through advertised ACP config options', async () => {

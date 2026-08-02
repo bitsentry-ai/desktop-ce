@@ -3,6 +3,7 @@ import type { ChildProcess } from 'child_process'
 import { existsSync } from 'fs'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { getHostTools } from '@bitsentry-ce/core/features/agent-runtime'
+import { setCodingAgentsLoggerForTesting } from '@bitsentry-ce/coding-agents/logger'
 
 type ClaudeQuerySession = AsyncIterable<unknown> & {
   getContextUsage: () => Promise<{ totalTokens: number; maxTokens: number }>
@@ -561,6 +562,8 @@ describe('executeClaudeCode', () => {
   })
 
   it('keeps the Claude incident scope synchronized with every registered host tool', async () => {
+    const infos: unknown[][] = []
+    setCodingAgentsLoggerForTesting({ info: (...args) => { infos.push(args) }, warn: () => {}, error: () => {} })
     queryMock.mockReturnValue({
       async *[Symbol.asyncIterator]() {
         yield { type: 'result', subtype: 'success', result: 'Proposal drafted.' }
@@ -592,8 +595,13 @@ describe('executeClaudeCode', () => {
     expect(scope).toContain('Never claim a runbook was created, edited, or saved unless the operator approved the proposal and the save succeeded.')
     expect(scope).toContain('You must NEVER execute maintenance or remediation steps directly with built-in tools')
     expect(scope).toContain('there is no direct-execution fallback when a runbook is missing or unapproved.')
+    expect(scope).toContain('call list_runbooks once to verify availability before concluding anything')
     expect(scope).toContain('When revising a create-kind proposal, use propose_runbook_create because the draft was never saved')
     expect(scope).toContain('To run an existing runbook, use execute_runbook, then call get_runbook_execution once with waitForCompletion: true. Do not poll it.')
+    expect(infos).toContainEqual([
+      '[claude-code-provider] configured host tools',
+      { agentSessionId: 'session-1', toolNames: getHostTools().map((tool) => tool.name) },
+    ])
   })
 
   it('enables the Claude 1M context beta when requested', async () => {

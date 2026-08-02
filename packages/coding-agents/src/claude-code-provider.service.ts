@@ -152,7 +152,8 @@ type ClaudeSdkMcpServerFactory = {
 
 async function createClaudeHostMcpServer(context: HostToolContext): Promise<unknown> {
   const sdk = await import('@anthropic-ai/claude-agent-sdk') as unknown as ClaudeSdkMcpServerFactory
-  const tools = getHostTools().map((hostTool) => sdk.tool(
+  const configuredHostTools = getHostTools()
+  const tools = configuredHostTools.map((hostTool) => sdk.tool(
     hostTool.name,
     hostTool.description,
     hostTool.argsSchema.shape,
@@ -165,6 +166,10 @@ async function createClaudeHostMcpServer(context: HostToolContext): Promise<unkn
       }
     },
   ))
+  log.info('[claude-code-provider] configured host tools', {
+    agentSessionId: context.session.id,
+    toolNames: configuredHostTools.map((hostTool) => hostTool.name),
+  })
   return sdk.createSdkMcpServer({
     name: BITSENTRY_MCP_SERVER_NAME,
     version: '1.0.0',

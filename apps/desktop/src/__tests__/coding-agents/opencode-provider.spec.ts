@@ -3,6 +3,7 @@ import { readFile } from 'fs/promises'
 import { PassThrough } from 'stream'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { getHostTools } from '@bitsentry-ce/core/features/agent-runtime'
+import { setCodingAgentsLoggerForTesting } from '@bitsentry-ce/coding-agents/logger'
 
 const mocks = vi.hoisted(() => ({
   spawn: vi.fn(),
@@ -87,6 +88,8 @@ describe('executeOpenCode', () => {
   })
 
   it('writes a scoped MCP config for the OpenCode subprocess', async () => {
+    const infos: unknown[][] = []
+    setCodingAgentsLoggerForTesting({ info: (...args) => { infos.push(args) }, warn: () => {}, error: () => {} })
     const child = new MockChildProcess()
     mocks.spawn.mockReturnValue(child)
     const { executeOpenCode } = await import(
@@ -117,7 +120,12 @@ describe('executeOpenCode', () => {
     const configPath = spawnOptions.env.OPENCODE_CONFIG
     expect(configPath).toBeDefined()
     const [, args] = mocks.spawn.mock.calls[0] as [string, string[]]
-    expect(args.at(-1)).toContain('This direct-tool restriction does not prevent you from proposing operator-reviewed runbooks that contain shell or local-software actions.')
+    const scope = args.at(-1) ?? ''
+    for (const hostTool of getHostTools()) {
+      expect(scope).toContain(hostTool.name)
+    }
+    expect(scope).toContain('This direct-tool restriction does not prevent you from proposing operator-reviewed runbooks that contain shell or local-software actions.')
+    expect(scope).toContain('call list_runbooks once to verify availability before concluding anything')
     expect(JSON.parse(await readFile(configPath!, 'utf8'))).toMatchObject({
       mcp: {
         bitsentry: {
@@ -132,6 +140,10 @@ describe('executeOpenCode', () => {
     for (const hostTool of getHostTools()) {
       expect(config.permission[`bitsentry_${hostTool.name}`]).toBe('allow')
     }
+    expect(infos).toContainEqual([
+      '[opencode-provider] configured host tools',
+      { agentSessionId: 'agent-session-opencode', toolNames: getHostTools().map((tool) => tool.name) },
+    ])
 
     finishOpenCodeProcess(child)
     await expect(resultPromise).resolves.toMatchObject({ exitCode: 0 })

@@ -1921,6 +1921,11 @@ export class AgentRuntimeService {
     const approval = approveRunbookAuthoringProposal({ proposal, approvedOperationIds: input.approvedOperationIds })
     const savedRunbook = await this.persistApprovedRunbookAuthoringProposal(approval.runbook, proposal)
     session.runbookAuthoringProposals[proposalIndex] = approval.proposal
+    this.appendRunbookAuthoringDecisionNote(session, {
+      proposal: approval.proposal,
+      decision: 'approved',
+      savedRunbook,
+    })
     this.onRunbooksChanged?.()
     return { proposal: this.summarizeRunbookAuthoringProposal(approval.proposal), savedRunbook, approvedOperationIds: approval.approvedOperationIds }
   }
@@ -1929,6 +1934,11 @@ export class AgentRuntimeService {
     const { session, proposal, proposalIndex } = this.resolveRunbookAuthoringProposal(input)
     const rejection = rejectRunbookAuthoringProposal({ proposal, reason: input.reason })
     session.runbookAuthoringProposals[proposalIndex] = rejection.proposal
+    this.appendRunbookAuthoringDecisionNote(session, {
+      proposal: rejection.proposal,
+      decision: 'rejected',
+      reason: rejection.reason,
+    })
     return { proposal: this.summarizeRunbookAuthoringProposal(rejection.proposal), reason: rejection.reason }
   }
 
@@ -1936,6 +1946,11 @@ export class AgentRuntimeService {
     const { session, proposal, proposalIndex } = this.resolveRunbookAuthoringProposal(input)
     const revision = requestRunbookAuthoringRevision({ proposal, requestedEdit: input.requestedEdit })
     session.runbookAuthoringProposals[proposalIndex] = revision.proposal
+    this.appendRunbookAuthoringDecisionNote(session, {
+      proposal: revision.proposal,
+      decision: 'revision_requested',
+      requestedEdit: revision.requestedEdit,
+    })
     return { proposal: this.summarizeRunbookAuthoringProposal(revision.proposal), requestedEdit: revision.requestedEdit }
   }
 
@@ -3080,8 +3095,37 @@ export class AgentRuntimeService {
     throw new Error(`Runbook authoring approval saved an inconsistent runbook: ${expected.id}`)
   }
 
+  private appendRunbookAuthoringDecisionNote(
+    session: AgentSession,
+    input: {
+      proposal: RunbookAuthoringProposal
+      decision: 'approved' | 'rejected' | 'revision_requested'
+      savedRunbook?: RunbookRecord
+      reason?: string
+      requestedEdit?: string
+    },
+  ): void {
+    const details = [
+      `proposalId=${input.proposal.id}`,
+      `decision=${input.decision}`,
+    ]
+    if (input.savedRunbook !== undefined) {
+      details.push(`savedRunbookId=${input.savedRunbook.id}`, `savedRunbookTitle=${input.savedRunbook.title}`)
+    }
+    if (input.reason !== undefined && input.reason.length > 0) details.push(`reason=${input.reason}`)
+    if (input.requestedEdit !== undefined && input.requestedEdit.length > 0) details.push(`requestedEdit=${input.requestedEdit}`)
+
+    const executionInstruction = input.decision === 'approved'
+      ? ' Use savedRunbookId with execute_runbook, or call list_runbooks to obtain a current id.'
+      : ''
+    session.messages.push({
+      role: 'system',
+      content: `Internal runbook authoring outcome: ${details.join('; ')}.${executionInstruction}`,
+    })
+  }
+
   private summarizeRunbookAuthoringProposal(proposal: RunbookAuthoringProposal): RunbookAuthoringProposalReview {
-    return { status: proposal.status, approvalRequired: true, saved: proposal.status === 'approved', proposalId: proposal.id, kind: proposal.kind, incidentThreadId: proposal.incidentThreadId, targetRunbookId: proposal.kind === 'edit_existing_runbook' ? proposal.targetRunbookId : undefined, targetRevisionNumber: proposal.kind === 'edit_existing_runbook' ? proposal.targetRevisionNumber : undefined, proposedRunbook: { id: proposal.proposedRunbook.id, title: proposal.proposedRunbook.title, description: proposal.proposedRunbook.description, revisionNumber: proposal.proposedRunbook.revisionNumber, actionCount: proposal.proposedRunbook.actions.length, actions: proposal.proposedRunbook.actions.map((action) => ({ id: action.id, type: action.type, title: action.title })) }, validation: proposal.validation, operationDiffs: proposal.operationDiffs, nextStep: 'Show this proposal to the operator. Do not claim it was saved; it requires explicit approve, deny, or revise action.' }
+    return { status: proposal.status, approvalRequired: true, saved: proposal.status === 'approved', proposalId: proposal.id, kind: proposal.kind, incidentThreadId: proposal.incidentThreadId, targetRunbookId: proposal.kind === 'edit_existing_runbook' ? proposal.targetRunbookId : undefined, targetRevisionNumber: proposal.kind === 'edit_existing_runbook' ? proposal.targetRevisionNumber : undefined, proposedRunbook: { id: proposal.proposedRunbook.id, title: proposal.proposedRunbook.title, description: proposal.proposedRunbook.description, revisionNumber: proposal.proposedRunbook.revisionNumber, actionCount: proposal.proposedRunbook.actions.length, actions: proposal.proposedRunbook.actions.map((action) => ({ id: action.id, type: action.type, title: action.title })) }, validation: proposal.validation, operationDiffs: proposal.operationDiffs, nextStep: 'Show this proposal to the operator. The draft runbook id is provisional and the saved id may differ; execute only with an id from list_runbooks or the approval notification.' }
   }
 
   private shouldDeferRunbookLookupInBatch(
