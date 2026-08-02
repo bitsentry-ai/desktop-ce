@@ -1075,6 +1075,7 @@ export interface RunbooksServicePort {
       execution: RunbookExecutionRecord;
     }) => void,
   ): () => void;
+  onChanged(handler: () => void): () => void;
 }
 
 export type AgentEvent =

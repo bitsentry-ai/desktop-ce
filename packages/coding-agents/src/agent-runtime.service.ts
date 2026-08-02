@@ -1641,6 +1641,7 @@ export class AgentRuntimeService {
     private readonly runbookGateway?: AgentRuntimeRunbookGateway,
     private readonly debugHooks: AgentRuntimeDebugHooks = DEFAULT_AGENT_RUNTIME_DEBUG_HOOKS,
     private readonly runbookStore?: AgentRuntimeRunbookStore,
+    private readonly onRunbooksChanged?: () => void,
   ) {}
 
   /**
@@ -1866,6 +1867,7 @@ export class AgentRuntimeService {
     const approval = approveRunbookAuthoringProposal({ proposal, approvedOperationIds: input.approvedOperationIds })
     const savedRunbook = await this.persistApprovedRunbookAuthoringProposal(approval.runbook, proposal)
     session.runbookAuthoringProposals[proposalIndex] = approval.proposal
+    this.onRunbooksChanged?.()
     return { proposal: this.summarizeRunbookAuthoringProposal(approval.proposal), savedRunbook, approvedOperationIds: approval.approvedOperationIds }
   }
 

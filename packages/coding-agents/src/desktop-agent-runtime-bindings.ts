@@ -15,6 +15,7 @@ export function createDesktopAgentRuntimeBindings(
     llmAdapter: AgentRuntimeLlmAdapter,
     runbookGateway?: AgentRuntimeRunbookGateway,
     runbookStore?: AgentRuntimeRunbookStore,
+    onRunbooksChanged?: () => void,
   ) => SharedAgentRuntimeService
 } {
   return {
@@ -24,6 +25,7 @@ export function createDesktopAgentRuntimeBindings(
         llmAdapter: AgentRuntimeLlmAdapter,
         runbookGateway?: AgentRuntimeRunbookGateway,
         runbookStore?: AgentRuntimeRunbookStore,
+        onRunbooksChanged?: () => void,
       ) {
         super(
           windowGetter,
@@ -31,6 +33,7 @@ export function createDesktopAgentRuntimeBindings(
           runbookGateway,
           debugHooks,
           runbookStore,
+          onRunbooksChanged,
         )
       }
     },

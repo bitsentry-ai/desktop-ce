@@ -9,6 +9,7 @@ import { captureDesktopAnalyticsEvent } from './DesktopPosthogRenderer'
 type DesktopRunbookBridge = {
   runbooks: {
     onExecutionEvent: DesktopStateBootstrapProps['subscribeToRunbookExecutionEvents']
+    onChanged: DesktopStateBootstrapProps['subscribeToRunbookChangeEvents']
   }
 }
 
@@ -34,12 +35,26 @@ function subscribeToRunbookExecutionEvents(
   return desktopWindow.bitsentry.runbooks.onExecutionEvent(callback)
 }
 
+function subscribeToRunbookChangeEvents(
+  callback: Parameters<
+    DesktopStateBootstrapProps['subscribeToRunbookChangeEvents']
+  >[0],
+) {
+  const desktopWindow: DesktopRunbookWindow = window
+  if (desktopWindow.bitsentry === undefined) {
+    throw new Error('Desktop runbook bridge is unavailable.')
+  }
+
+  return desktopWindow.bitsentry.runbooks.onChanged(callback)
+}
+
 export function DesktopStateBootstrap({ children }: { children: ReactNode }) {
   return (
     <SharedDesktopStateBootstrap
       ipcInvoke={sharedIpcInvoke}
       captureDesktopAnalyticsEvent={captureDesktopAnalyticsEvent}
       subscribeToRunbookExecutionEvents={subscribeToRunbookExecutionEvents}
+      subscribeToRunbookChangeEvents={subscribeToRunbookChangeEvents}
     >
       {children}
     </SharedDesktopStateBootstrap>

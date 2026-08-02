@@ -52,10 +52,12 @@ type RunbookExecutionEvent = {
 let executionCallback:
   | ((event: RunbookExecutionEvent) => void)
   | undefined;
+let runbookChangeCallback: (() => void) | undefined;
 
 beforeEach(() => {
   mockIpcInvoke.mockReset();
   executionCallback = undefined;
+  runbookChangeCallback = undefined;
   localStorage.clear();
   Object.defineProperty(window, "bitsentry", {
     configurable: true,
@@ -65,6 +67,12 @@ beforeEach(() => {
           executionCallback = callback;
           return () => {
             executionCallback = undefined;
+          };
+        },
+        onChanged: (callback: () => void) => {
+          runbookChangeCallback = callback;
+          return () => {
+            runbookChangeCallback = undefined;
           };
         },
       },
@@ -80,6 +88,50 @@ afterEach(() => {
 });
 
 describe("DesktopStateBootstrap", () => {
+  it("refreshes the mirrored runbook snapshot after a main-process mutation", async () => {
+    localStorage.setItem(
+      "bitsentry_runbooks",
+      JSON.stringify([{ id: "stale-runbook" }]),
+    );
+    let bootstrapCalls = 0;
+    mockIpcInvoke.mockImplementation((channel: string) => {
+      if (channel === "desktopState:bootstrap") {
+        bootstrapCalls += 1;
+        return Promise.resolve({
+          incidents: [],
+          incidentMessages: {},
+          runbooks: bootstrapCalls === 1
+            ? [{ id: "server-runbook" }]
+            : [{ id: "server-runbook" }, { id: "agent-approved" }],
+          results: [],
+          resultTraces: {},
+        });
+      }
+      if (channel === "desktopState:syncRunbooks") return Promise.resolve();
+      if (channel === "desktopState:syncResults") return Promise.resolve();
+      throw new Error(`Unexpected channel: ${channel}`);
+    });
+
+    render(
+      <DesktopStateBootstrap>
+        <div>workspace-ready</div>
+      </DesktopStateBootstrap>,
+    );
+    await waitFor(() => expect(screen.getByText("workspace-ready")).toBeTruthy());
+    await waitFor(() => expect(runbookChangeCallback).toBeTypeOf("function"));
+
+    act(() => {
+      runbookChangeCallback?.();
+    });
+    await waitFor(() => {
+      expect(JSON.parse(localStorage.getItem("bitsentry_runbooks") ?? "[]")).toEqual([
+        { id: "server-runbook" },
+        { id: "agent-approved" },
+      ]);
+    });
+
+  });
+
   it("hydrates local state from the desktop bridge and mirrors execution events into storage", async () => {
     localStorage.setItem(
       "bitsentry_runbooks",

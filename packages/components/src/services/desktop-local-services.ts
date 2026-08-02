@@ -66,6 +66,7 @@ type DesktopLocalBridge = {
         execution: RunbookExecutionRecord
       }) => void,
     ) => () => void
+    onChanged: (callback: () => void) => () => void
   }
   agent: {
     start: (input: AgentStartRequest) => Promise<{ sessionId: string }>
@@ -626,6 +627,9 @@ export function createDesktopLocalBitsentryServices({
         }) => void,
       ): () => void {
         return getDesktopBridge().runbooks.onExecutionEvent(handler)
+      },
+      onChanged(handler: () => void): () => void {
+        return getDesktopBridge().runbooks.onChanged(handler)
       },
     },
 

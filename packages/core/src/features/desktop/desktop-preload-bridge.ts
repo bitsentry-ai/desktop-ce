@@ -506,6 +506,9 @@ export function createDesktopBitsentryApi({
       ): (() => void) => {
         return createSubscription(bridge, 'bitsentry:runbooks:execution', callback)
       },
+      onChanged: (callback: () => void): (() => void) => {
+        return createSubscription(bridge, 'bitsentry:runbooks:changed', () => callback())
+      },
     },
     incidents: {
       getState: async (): Promise<{

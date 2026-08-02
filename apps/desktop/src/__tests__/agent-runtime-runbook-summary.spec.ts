@@ -194,6 +194,7 @@ function createRuntime(options: {
   runbookStore?: { list(): Promise<RunbookRecord[]> }
   runbookExecutionService?: TestRunbookExecutionService
   sentEvents?: AgentRuntimeEventPayload[]
+  onRunbooksChanged?: () => void
 }): AgentRuntimeService {
   const windowGetter = () => {
     if (options.sentEvents === undefined) {
@@ -281,6 +282,7 @@ function createRuntime(options: {
     runbookGateway,
     undefined,
     options.runbookStore as AgentRuntimeRunbookStore | undefined,
+    options.onRunbooksChanged,
   )
 }
 
@@ -527,13 +529,20 @@ describe('AgentRuntimeService runbook outcomes', () => {
         .mockResolvedValueOnce({ content: 'I will draft an edit for review.', toolCalls: [{ id: 'call-propose-edit', name: 'propose_runbook_edit', args: { runbookId: 'rb-logs', prompt: 'Add an uptime check.', operations: [{ id: 'op-title', type: 'update_metadata', rationale: 'Clarify that uptime is covered.', metadata: { title: 'Check backend logs and uptime' } }, { id: 'op-add-uptime', type: 'add_action', rationale: 'Collect uptime before log inspection.', action: { id: 'step-2', type: 'shell', title: 'Collect uptime', command: 'uptime' } }] } }] })
         .mockResolvedValueOnce({ content: 'The proposal requires approval.', toolCalls: [] }),
     }
-    const service = createRuntime({ llmAdapter, runbookStore, runbookExecutionService })
+    const onRunbooksChanged = vi.fn()
+    const service = createRuntime({
+      llmAdapter,
+      runbookStore,
+      runbookExecutionService,
+      onRunbooksChanged,
+    })
     const sessionId = await service.start({ prompt: 'Update the backend runbook.', incidentThreadId: 'incident-authoring' })
     await waitForCondition(() => service.getStatus(sessionId).state === 'COMPLETED')
     const proposal = service.listRunbookAuthoringProposals({ sessionId })[0]
 
     await expect(service.approveRunbookAuthoringProposal({ sessionId, proposalId: proposal.proposalId, approvedOperationIds: ['op-title'] })).resolves.toMatchObject({ savedRunbook: { title: 'Check backend logs and uptime', actions: [{ id: 'step-1' }] } })
     expect(runbookStore.updateActions).toHaveBeenCalledWith({ runbookId: 'rb-logs', actions: originalRunbook.actions })
+    expect(onRunbooksChanged).toHaveBeenCalledTimes(1)
   })
 
   it('does not persist an invalid approved result', async () => {

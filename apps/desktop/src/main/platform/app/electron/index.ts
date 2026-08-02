@@ -137,6 +137,7 @@ class DesktopBrowserWindow extends BrowserWindow {
 }
 
 const pendingOAuthCallbacks: OAuthCallbackPayload[] = []
+const RUNBOOKS_CHANGED_EVENT_CHANNEL = 'bitsentry:runbooks:changed'
 let rendererReadyForEvents = false
 let rendererReadyPromise: Promise<void> | null = null
 let resolveRendererReady: (() => void) | null = null
@@ -213,6 +214,12 @@ function publishOAuthCallback(payload: OAuthCallbackPayload): void {
     return
   }
   pendingOAuthCallbacks.push(payload)
+}
+
+function publishRunbooksChanged(): void {
+  const window = desktopShell.mainWindow
+  if (window === null || window.isDestroyed()) return
+  window.webContents.send(RUNBOOKS_CHANGED_EVENT_CHANNEL)
 }
 
 function handleDeepLink(rawUrl: string, source: string): void {
@@ -533,6 +540,7 @@ app
       const runbookHandlers = createRunbookHandlers(db, {
         executionService: runbookExecutionService,
         globalVariablesService,
+        onRunbooksChanged: publishRunbooksChanged,
       }, { edition: 'ce', runbookGateway })
       dispatcher.registerAll(runbookHandlers)
       localRunbookExecutionHost = new LocalRunbookExecutionHost({
@@ -591,6 +599,7 @@ app
           llmAdapter: agentLlmAdapter,
           runbookGateway,
           runbookStore,
+          onRunbooksChanged: publishRunbooksChanged,
           windowGetter: () => desktopShell.mainWindow,
         },
         { AgentRuntimeService },

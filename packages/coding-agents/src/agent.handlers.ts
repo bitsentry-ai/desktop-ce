@@ -44,6 +44,7 @@ export interface AgentServiceDependencies {
   llmAdapter: AgentRuntimeLlmAdapter
   runbookGateway?: AgentRuntimeRunbookGateway
   runbookStore?: AgentRuntimeRunbookStore
+  onRunbooksChanged?: () => void
   windowGetter: () => AgentRuntimeWindow | null
 }
 
@@ -52,18 +53,20 @@ export type AgentRuntimeServiceClass = new (
   llmAdapter: AgentRuntimeLlmAdapter,
   runbookGateway?: AgentRuntimeRunbookGateway,
   runbookStore?: AgentRuntimeRunbookStore,
+  onRunbooksChanged?: () => void,
 ) => AgentRuntimeSessionController
 
 export function createDesktopAgentService(
   dependencies: AgentServiceDependencies,
   services: { AgentRuntimeService: AgentRuntimeServiceClass },
 ): AgentRuntimeSessionController {
-  const { llmAdapter, runbookGateway, runbookStore, windowGetter } = dependencies
+  const { llmAdapter, runbookGateway, runbookStore, onRunbooksChanged, windowGetter } = dependencies
   return new services.AgentRuntimeService(
     windowGetter,
     llmAdapter,
     runbookGateway,
     runbookStore,
+    onRunbooksChanged,
   )
 }
 

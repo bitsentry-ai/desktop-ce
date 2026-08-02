@@ -92,6 +92,8 @@ export interface DesktopRunbookHandlersDatabase
 
 export interface DesktopRunbookHandlerDependencies {
   executionService: DesktopRunbookHandlerExecutionService;
+  /** Refresh renderer-owned state after a main-process runbook mutation. */
+  onRunbooksChanged?: () => void;
   /** Transitional fallback for runtimes that have not yet adopted the gateway. */
   runbookGateway?: RunbookGateway;
   globalVariablesService: DesktopRunbookHandlerGlobalVariablesService;
@@ -369,6 +371,7 @@ export function createDesktopRunbookHandlers(
 ) {
   const {
     executionService,
+    onRunbooksChanged,
     runbookGateway,
     globalVariablesService,
     artifactIo,
@@ -421,6 +424,16 @@ export function createDesktopRunbookHandlers(
     }
   };
 
+  const afterRunbookMutation = async <T>(operation: () => Promise<T>): Promise<T> => {
+    const result = await operation();
+    try {
+      onRunbooksChanged?.();
+    } catch (error) {
+      logger.warn("[runbooks] Failed to notify renderer of runbook mutation:", error);
+    }
+    return result;
+  };
+
   return {
     "globals:list": async () => globalVariablesService.list(),
     "globals:create": async (payload: unknown) =>
@@ -445,19 +458,19 @@ export function createDesktopRunbookHandlers(
       return runbook;
     },
     "runbooks:create": async (payload: unknown) =>
-      store.create(asObject(payload)),
+      afterRunbookMutation(() => store.create(asObject(payload))),
     "runbooks:updateMeta": async (payload: unknown) =>
-      store.updateMeta(asObject(payload)),
+      afterRunbookMutation(() => store.updateMeta(asObject(payload))),
     "runbooks:updateActions": async (payload: unknown) =>
-      store.updateActions(asObject(payload)),
+      afterRunbookMutation(() => store.updateActions(asObject(payload))),
     "runbooks:saveAction": async (payload: unknown) =>
-      store.saveAction(asObject(payload)),
+      afterRunbookMutation(() => store.saveAction(asObject(payload))),
     "runbooks:deleteAction": async (payload: unknown) =>
-      store.deleteAction(asObject(payload)),
+      afterRunbookMutation(() => store.deleteAction(asObject(payload))),
     "runbooks:reorderActions": async (payload: unknown) =>
-      store.reorderActions(asObject(payload)),
+      afterRunbookMutation(() => store.reorderActions(asObject(payload))),
     "runbooks:delete": async (payload: unknown) =>
-      store.remove(asObject(payload)),
+      afterRunbookMutation(() => store.remove(asObject(payload))),
     "runbooks:exportContext": async (payload: unknown) =>
       store.exportContext(asObject(payload)),
     "runbooks:export": async (payload: unknown) =>
@@ -481,10 +494,10 @@ export function createDesktopRunbookHandlers(
     },
     "runbooks:import": async (payload: unknown) => {
       const input = asObject(payload);
-      return store.importRunbooks({
-        ...input,
-        artifact: validateRunbookImportArtifact(input.artifact, edition),
-      });
+      return afterRunbookMutation(() => store.importRunbooks({
+          ...input,
+          artifact: validateRunbookImportArtifact(input.artifact, edition),
+        }));
     },
     "runbooks:readImportArtifact": async (payload: unknown) => {
       const input = asObject(payload);
@@ -500,10 +513,10 @@ export function createDesktopRunbookHandlers(
         asString(input.filePath),
       );
       const raw = await fileSystem.readFile(filePath, "utf-8");
-      return store.importRunbooks({
-        artifact: readValidatedRunbookImportArtifact(raw),
-        options: input.options,
-      });
+      return afterRunbookMutation(() => store.importRunbooks({
+          artifact: readValidatedRunbookImportArtifact(raw),
+          options: input.options,
+        }));
     },
     "runbooks:execute": async (payload: unknown) => {
       const input = asObject(payload);

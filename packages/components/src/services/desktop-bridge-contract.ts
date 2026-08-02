@@ -398,6 +398,7 @@ export interface DesktopBitsentryBridge<
       incidentThreadId?: string | null;
       execution: DesktopRunbookExecutionRecord;
     }) => void) => () => void;
+    onChanged: (callback: () => void) => () => void;
   };
   incidents: {
     getState: () => Promise<DesktopIncidentsState>;

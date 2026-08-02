@@ -108,6 +108,7 @@ function createRunbookServices(): BitsentryServicePorts["runbooks"] {
     ),
     cancelExecution: unusedRunbookPortMethod("cancelExecution"),
     onExecutionEvent: vi.fn(() => () => {}),
+    onChanged: vi.fn(() => () => {}),
   };
 }
 
