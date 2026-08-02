@@ -287,45 +287,50 @@ export interface CursorToolCallIdentity {
 }
 
 export class CursorToolCallRegistry {
-  private readonly identities = new Map<string, CursorToolCallIdentity>()
+  private readonly identitiesBySession = new Map<string, Map<string, CursorToolCallIdentity>>()
 
   recordSessionUpdate(params: unknown): void {
-    const update = asRecord(asRecord(params)?.update)
+    const sessionUpdate = asRecord(params)
+    const sessionId = asString(sessionUpdate?.sessionId)
+    const update = asRecord(sessionUpdate?.update)
     if (update === undefined || (update.sessionUpdate !== 'tool_call' && update.sessionUpdate !== 'tool_call_update')) {
       return
     }
 
     const toolCallId = asString(update.toolCallId)
-    if (toolCallId === undefined) return
+    if (sessionId === undefined || toolCallId === undefined) return
 
-    const previous = this.identities.get(toolCallId)
+    const identities = this.identitiesBySession.get(sessionId) ?? new Map<string, CursorToolCallIdentity>()
+    this.identitiesBySession.set(sessionId, identities)
+    const previous = identities.get(toolCallId)
     const identity: CursorToolCallIdentity = {
       name: asString(update.name) ?? asString(update.toolName) ?? previous?.name,
       title: asString(update.title) ?? previous?.title,
       kind: asString(update.kind) ?? previous?.kind,
       hasRawInput: previous?.hasRawInput === true || hasOwn(update, 'rawInput'),
     }
-    this.identities.delete(toolCallId)
-    this.identities.set(toolCallId, identity)
+    identities.delete(toolCallId)
+    identities.set(toolCallId, identity)
 
-    while (this.identities.size > MAX_CURSOR_TOOL_CALL_IDENTITIES) {
-      const oldestToolCallId = this.identities.keys().next().value
+    while (identities.size > MAX_CURSOR_TOOL_CALL_IDENTITIES) {
+      const oldestToolCallId = identities.keys().next().value
       if (oldestToolCallId === undefined) break
-      this.identities.delete(oldestToolCallId)
+      identities.delete(oldestToolCallId)
     }
   }
 
-  get(toolCallId: string | undefined): CursorToolCallIdentity | undefined {
-    if (toolCallId === undefined) return undefined
-    return this.identities.get(toolCallId)
+  get(sessionId: string | undefined, toolCallId: string | undefined): CursorToolCallIdentity | undefined {
+    if (sessionId === undefined || toolCallId === undefined) return undefined
+    return this.identitiesBySession.get(sessionId)?.get(toolCallId)
   }
 
-  get size(): number {
-    return this.identities.size
+  sizeForSession(sessionId: string | undefined): number {
+    if (sessionId === undefined) return 0
+    return this.identitiesBySession.get(sessionId)?.size ?? 0
   }
 
   clear(): void {
-    this.identities.clear()
+    this.identitiesBySession.clear()
   }
 }
 
@@ -926,8 +931,9 @@ function registerCursorServerRequestHandler(
   client.on('serverRequest', (request: { id: CursorJsonRpcId; method: string; params: unknown }) => {
     if (request.method === 'session/request_permission') {
       const toolCall = asRecord(asRecord(request.params)?.toolCall)
+      const sessionId = asString(asRecord(request.params)?.sessionId)
       const toolCallId = asString(toolCall?.toolCallId)
-      const resolvedToolCall = toolCallRegistry.get(toolCallId)
+      const resolvedToolCall = toolCallRegistry.get(sessionId, toolCallId)
       const hostToolMatched = isBitsentryHostToolIdentity(resolvedToolCall) || isBitsentryHostToolCall(toolCall)
       const inferredKind = inferToolKind(toolCall)
       const response = chooseCursorPermissionResponse(
@@ -942,9 +948,10 @@ function registerCursorServerRequestHandler(
         inferredKind,
         hostToolMatched,
         correlation: {
+          sessionId: sessionId ?? null,
           toolCallId: toolCallId ?? null,
           status: resolvedToolCall === undefined ? 'miss' : 'hit',
-          registrySize: toolCallRegistry.size,
+          registrySize: toolCallRegistry.sizeForSession(sessionId),
           resolvedIdentity: resolvedToolCall ?? null,
         },
         decision: response.outcome.outcome,

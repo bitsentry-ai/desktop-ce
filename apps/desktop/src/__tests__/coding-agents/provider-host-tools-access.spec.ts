@@ -91,7 +91,7 @@ describe.each(accessLevels)('host tools at %s', (accessLevel) => {
         { toolCall, options: permissionOptions },
         accessLevel,
         false,
-        toolCallRegistry.get(toolCallId),
+        toolCallRegistry.get('cursor-session-1', toolCallId),
       )).toEqual({ outcome: { outcome: 'selected', optionId: 'allow-once' } })
     }
   })

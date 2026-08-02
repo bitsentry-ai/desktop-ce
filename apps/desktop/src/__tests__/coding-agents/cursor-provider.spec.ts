@@ -364,7 +364,10 @@ describe('Cursor provider behavior', () => {
       liveCursorMcpPermissionRequest,
       'auto-accept-edits',
       false,
-      toolCallRegistry.get(liveCursorMcpPermissionRequest.toolCall.toolCallId),
+      toolCallRegistry.get(
+        liveCursorMcpPermissionRequest.sessionId,
+        liveCursorMcpPermissionRequest.toolCall.toolCallId,
+      ),
     )).toEqual({ outcome: { outcome: 'selected', optionId: 'allow-once' } })
   })
 
@@ -372,6 +375,30 @@ describe('Cursor provider behavior', () => {
     expect(chooseCursorPermissionResponse(
       liveCursorMcpPermissionRequest,
       'auto-accept-edits',
+    )).toEqual({ outcome: { outcome: 'selected', optionId: 'reject-once' } })
+  })
+
+  it('does not resolve an opaque tool call from another Cursor session', () => {
+    const hostTool = getHostTools()[0]
+    expect(hostTool).toBeDefined()
+    const toolCallRegistry = new CursorToolCallRegistry()
+    toolCallRegistry.recordSessionUpdate({
+      sessionId: 'other-cursor-session',
+      update: {
+        sessionUpdate: 'tool_call',
+        toolCallId: liveCursorMcpPermissionRequest.toolCall.toolCallId,
+        name: `mcp__${HOST_MCP_SERVER_NAME}__${hostTool!.name}`,
+      },
+    })
+
+    expect(chooseCursorPermissionResponse(
+      liveCursorMcpPermissionRequest,
+      'auto-accept-edits',
+      false,
+      toolCallRegistry.get(
+        liveCursorMcpPermissionRequest.sessionId,
+        liveCursorMcpPermissionRequest.toolCall.toolCallId,
+      ),
     )).toEqual({ outcome: { outcome: 'selected', optionId: 'reject-once' } })
   })
 
@@ -404,7 +431,10 @@ describe('Cursor provider behavior', () => {
       liveCursorMcpPermissionRequest,
       'auto-accept-edits',
       false,
-      toolCallRegistry.get(liveCursorMcpPermissionRequest.toolCall.toolCallId),
+      toolCallRegistry.get(
+        liveCursorMcpPermissionRequest.sessionId,
+        liveCursorMcpPermissionRequest.toolCall.toolCallId,
+      ),
     )).toEqual({ outcome: { outcome: 'selected', optionId: 'reject-once' } })
   })
 
