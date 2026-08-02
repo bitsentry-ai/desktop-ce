@@ -10,6 +10,7 @@ import {
   type AccessLevel,
 } from './composer.js'
 import { getHostTools } from '@bitsentry-ce/core/features/agent-runtime'
+import { prependRunbookOnlyScope } from './runbook-only-scope.js'
 
 export interface CodingAgentDebugRecorder {
   recordEvent(stage: string, data: Record<string, unknown>): void
@@ -189,12 +190,20 @@ function isPermissionOptionKind(value: unknown): value is PermissionOptionKind {
 }
 
 function inferToolKind(toolCall: Record<string, unknown> | undefined): CursorToolKind {
-  if (isCursorToolKind(toolCall?.kind)) {
-    return toolCall.kind
+  const explicitKind = asString(toolCall?.kind)
+  if (explicitKind !== undefined) {
+    return isCursorToolKind(explicitKind) ? explicitKind : 'other'
   }
 
   const searchable = getToolSearchText(toolCall)
+  // ACP occasionally omits kind. In that case, prefer rejecting a possible
+  // shell/terminal action over treating an "update" inside its arguments as a
+  // benign file edit. An explicit ACP kind above remains authoritative.
+  if (/\b(run|exec|execute|bash|shell|terminal|command|cmd|powershell)\b/.test(searchable)) {
+    return 'execute'
+  }
   for (const { kind, pattern } of TOOL_KIND_PATTERNS) {
+    if (kind === 'execute') continue
     if (pattern.test(searchable)) return kind
   }
 
@@ -248,6 +257,9 @@ function isBitsentryHostToolCall(toolCall: Record<string, unknown> | undefined):
 
 function getToolSearchText(toolCall: Record<string, unknown> | undefined): string {
   return [
+    stringifyToolSearchValue(toolCall?.name),
+    stringifyToolSearchValue(toolCall?.toolName),
+    stringifyToolSearchValue(toolCall?.toolCallId),
     stringifyToolSearchValue(toolCall?.title),
     stringifyToolSearchValue(toolCall?.rawInput),
     stringifyToolSearchValue(toolCall?.rawOutput),
@@ -954,7 +966,10 @@ async function runCursorSession(
   await setCursorModel(client, sessionResult, state.sessionId, options.model)
   await setCursorEffort(client, sessionResult, state.sessionId, options.traitValues?.effort)
 
-  const promptResult = await sendCursorPrompt(client, state.sessionId, options.prompt)
+  const prompt = options.mcpEndpoint === undefined
+    ? options.prompt
+    : prependRunbookOnlyScope(options.prompt)
+  const promptResult = await sendCursorPrompt(client, state.sessionId, prompt)
   return cursorPromptResult(promptResult, options, accessLevel, state)
 }
 

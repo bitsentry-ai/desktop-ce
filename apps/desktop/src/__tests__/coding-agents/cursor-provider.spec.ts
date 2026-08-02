@@ -334,6 +334,40 @@ describe('Cursor provider behavior', () => {
     }
   })
 
+  it('rejects an untyped built-in terminal call even when its command says update', () => {
+    expect(
+      chooseCursorPermissionResponse(
+        {
+          toolCall: {
+            toolCallId: 'cursor-terminal-1',
+            name: 'terminal',
+            title: 'Update the CLI',
+            rawInput: { command: 'claude update' },
+          },
+          options: permissionOptions,
+        },
+        'auto-accept-edits',
+      ),
+    ).toEqual({ outcome: { outcome: 'selected', optionId: 'reject-once' } })
+  })
+
+  it('trusts an explicit execute kind and rejects it regardless of edit-flavored wording', () => {
+    expect(
+      chooseCursorPermissionResponse(
+        {
+          toolCall: {
+            toolCallId: 'cursor-terminal-1',
+            kind: 'execute',
+            title: 'Update configuration',
+            rawInput: { command: 'update the running service' },
+          },
+          options: permissionOptions,
+        },
+        'auto-accept-edits',
+      ),
+    ).toEqual({ outcome: { outcome: 'selected', optionId: 'reject-once' } })
+  })
+
   it('keeps automatic full-access approvals scoped to a single Cursor request', () => {
     expect(
       chooseCursorPermissionResponse(
@@ -485,6 +519,37 @@ describe('Cursor provider behavior', () => {
       '[cursor-provider] Cursor reported additional MCP servers at session start',
       { sessionId: 'session-1', mcpServers: ['github', 'pagerduty'] },
     ])
+  })
+
+  it('prepends the runbook-only scope to Cursor ACP prompts with every host tool', async () => {
+    const mock = await createMockCursorAgent()
+    await executeCursor({
+      prompt: 'Update the local CLI.',
+      binaryPath: mock.binaryPath,
+      abortController: new AbortController(),
+      cwd: mock.cwd,
+      mcpEndpoint: {
+        url: 'http://127.0.0.1:1/mcp',
+        token: 'token',
+        expiresAt: Date.now() + 60_000,
+        command: 'node',
+        args: ['host-mcp-shim.js'],
+        env: {},
+        agentSessionId: 'session-1',
+      },
+    })
+
+    const promptRequest = (await readLoggedMessages(mock.logPath)).find(
+      (message) => message.method === 'session/prompt',
+    )
+    const prompt = getMessageParams(promptRequest ?? {})?.prompt as Array<{ text?: string }> | undefined
+    const scope = prompt?.[0]?.text ?? ''
+    for (const hostTool of getHostTools()) {
+      expect(scope).toContain(hostTool.name)
+    }
+    expect(scope).toContain('You must NEVER execute maintenance or remediation steps directly with built-in tools')
+    expect(scope).toContain('there is no direct-execution fallback when a runbook is missing or unapproved.')
+    expect(scope).toContain('## Conversation\n\nUpdate the local CLI.')
   })
 
   it('sets Cursor effort through advertised ACP config options', async () => {

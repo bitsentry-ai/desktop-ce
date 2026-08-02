@@ -12,6 +12,7 @@ import {
   DEFAULT_ACCESS_LEVEL,
 } from './composer.js'
 import { getErrorMessage } from '@bitsentry-ce/core'
+import { prependRunbookOnlyScope } from './runbook-only-scope.js'
 
 type LocalAiTextStreamDelta = LocalAiStreamDelta & { type: 'text'; text?: string }
 
@@ -582,9 +583,12 @@ export async function executeCodex(
 
     const policies = getCodexPolicies(effectiveAccessLevel)
     const effortValue = options.traitValues?.effort
+    const prompt = options.mcpEndpoint === undefined
+      ? options.prompt
+      : prependRunbookOnlyScope(options.prompt)
     const turnStartPayload: Record<string, unknown> = {
       threadId,
-      input: [{ type: 'text', text: options.prompt, text_elements: [] }],
+      input: [{ type: 'text', text: prompt, text_elements: [] }],
       approvalPolicy: policies.approvalPolicy,
       sandboxPolicy: policies.sandboxPolicy,
     }

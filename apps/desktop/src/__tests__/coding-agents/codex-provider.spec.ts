@@ -1,4 +1,4 @@
-import { chmod, mkdtemp, rm, writeFile } from 'fs/promises'
+import { chmod, mkdtemp, readFile, rm, writeFile } from 'fs/promises'
 import os from 'os'
 import path from 'path'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -7,26 +7,32 @@ import {
   codexStreamDeltasFromNotification,
   normalizeCodexExecutionError,
 } from '@bitsentry-ce/desktop-cli/runtime/desktop-coding-agents'
+import { getHostTools } from '@bitsentry-ce/core/features/agent-runtime'
 
 const tempDirs: string[] = []
 async function createMultiItemCodexAppServer(): Promise<{
   binaryPath: string
   cwd: string
+  logPath: string
 }> {
   const cwd = await mkdtemp(path.join(os.tmpdir(), 'codex-provider-test-'))
   tempDirs.push(cwd)
 
   const scriptPath = path.join(cwd, 'mock-codex-app-server.cjs')
+  const logPath = path.join(cwd, 'messages.jsonl')
   const script = `
+const fs = require('fs')
 const readline = require('readline')
 
 const respond = (id, result) => process.stdout.write(JSON.stringify({ id, result }) + '\\n')
 const notify = (method, params) => process.stdout.write(JSON.stringify({ method, params }) + '\\n')
+const logMessage = (message) => fs.appendFileSync(${JSON.stringify(logPath)}, JSON.stringify(message) + '\\n')
 if (!process.argv.slice(2).includes('app-server')) process.exit(64)
 
 const rl = readline.createInterface({ input: process.stdin })
 rl.on('line', (line) => {
   const message = JSON.parse(line)
+  logMessage(message)
 
   if (message.method === 'initialize') {
     respond(message.id, { userAgent: 'mock-codex-app-server' })
@@ -58,7 +64,12 @@ rl.on('line', (line) => {
   const binaryPath = path.join(cwd, 'codex')
   await writeFile(binaryPath, `#!/usr/bin/env node\nrequire(${JSON.stringify(scriptPath)})\n`)
   await chmod(binaryPath, 0o755)
-  return { binaryPath, cwd }
+  return { binaryPath, cwd, logPath }
+}
+
+async function readLoggedCodexMessages(logPath: string): Promise<Array<Record<string, unknown>>> {
+  const contents = await readFile(logPath, 'utf8').catch(() => '')
+  return contents.split(/\r?\n/).filter(Boolean).map((line) => JSON.parse(line) as Record<string, unknown>)
 }
 
 afterEach(async () => {
@@ -78,6 +89,37 @@ describe('Codex provider behavior', () => {
 
     expect(result.output).toContain('I will list runbooks.')
     expect(result.output).not.toContain('mcpToolCall')
+  })
+
+  it('prepends the runbook-only scope to Codex prompts with every host tool', async () => {
+    const mock = await createMultiItemCodexAppServer()
+    await executeCodex({
+      prompt: 'Update the local CLI.',
+      binaryPath: mock.binaryPath,
+      cwd: mock.cwd,
+      abortController: new AbortController(),
+      mcpEndpoint: {
+        url: 'http://127.0.0.1:1/mcp',
+        token: 'token',
+        expiresAt: Date.now() + 60_000,
+        command: 'node',
+        args: ['host-mcp-shim.js'],
+        env: {},
+        agentSessionId: 'session-1',
+      },
+    })
+
+    const turnStart = (await readLoggedCodexMessages(mock.logPath)).find(
+      (message) => message.method === 'turn/start',
+    )
+    const params = turnStart?.params as { input?: Array<{ text?: string }> } | undefined
+    const scope = params?.input?.[0]?.text ?? ''
+    for (const hostTool of getHostTools()) {
+      expect(scope).toContain(hostTool.name)
+    }
+    expect(scope).toContain('You must NEVER execute maintenance or remediation steps directly with built-in tools')
+    expect(scope).toContain('there is no direct-execution fallback when a runbook is missing or unapproved.')
+    expect(scope).toContain('## Conversation\n\nUpdate the local CLI.')
   })
 
   it('keeps Codex assistant, reasoning, and command streams separate', () => {
