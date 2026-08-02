@@ -88,6 +88,52 @@ afterEach(() => {
 });
 
 describe("DesktopStateBootstrap", () => {
+  it("boots and mirrors safely when a stale bridge lacks onChanged", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    Object.defineProperty(window, "bitsentry", {
+      configurable: true,
+      value: {
+        runbooks: {
+          onExecutionEvent: () => () => {},
+        },
+      },
+    });
+    mockIpcInvoke.mockImplementation((channel: string) => {
+      if (channel === "desktopState:bootstrap") {
+        return Promise.resolve({
+          incidents: [],
+          incidentMessages: {},
+          runbooks: [{ id: "server-runbook" }],
+          results: [],
+          resultTraces: {},
+        });
+      }
+      if (channel === "desktopState:syncRunbooks") return Promise.resolve();
+      if (channel === "desktopState:syncResults") return Promise.resolve();
+      throw new Error(`Unexpected channel: ${channel}`);
+    });
+
+    render(
+      <DesktopStateBootstrap>
+        <div>workspace-ready</div>
+      </DesktopStateBootstrap>,
+    );
+    await waitFor(() => expect(screen.getByText("workspace-ready")).toBeTruthy());
+    expect(warn).toHaveBeenCalledWith(
+      "[desktop-state] Runbook change bridge is unavailable; using non-destructive mirror sync only.",
+    );
+
+    vi.useFakeTimers();
+    await act(async () => {
+      window.dispatchEvent(new Event("bitsentry:runbooks-updated"));
+      vi.advanceTimersByTime(200);
+      await Promise.resolve();
+    });
+    expect(mockIpcInvoke).toHaveBeenCalledWith("desktopState:syncRunbooks", {
+      runbooks: [{ id: "server-runbook" }],
+    });
+  });
+
   it("refreshes the mirrored runbook snapshot after a main-process mutation", async () => {
     localStorage.setItem(
       "bitsentry_runbooks",
