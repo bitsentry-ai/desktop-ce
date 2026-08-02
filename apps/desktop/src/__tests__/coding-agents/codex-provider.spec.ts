@@ -74,7 +74,7 @@ async function readLoggedCodexMessages(logPath: string): Promise<Array<Record<st
   return contents.split(/\r?\n/).filter(Boolean).map((line) => JSON.parse(line) as Record<string, unknown>)
 }
 
-async function createHostApprovalCodexAppServer(hostToolName: string): Promise<{
+async function createHostApprovalCodexAppServer(): Promise<{
   binaryPath: string
   cwd: string
   logPath: string
@@ -101,9 +101,11 @@ const requestApproval = () => process.stdout.write(JSON.stringify({
     message: 'Allow MCP call?',
     requestedSchema: { type: 'object', properties: {} },
     _meta: {
-      codex_request_type: 'approval_request',
       codex_approval_kind: 'mcp_tool_call',
-      tool_name: ${JSON.stringify(hostToolName)},
+      persist: 'session',
+      tool_description: 'Creates a governed runbook proposal.',
+      tool_params: {},
+      tool_params_display: [],
     },
   },
 }) + '\\n')
@@ -126,17 +128,10 @@ rl.on('line', (line) => {
   }
   if (message.method === 'turn/start') {
     respond(message.id, { turn: { id: 'turn-approval' } })
-    notify('item/started', { item: {
-      id: 'bitsentry-mcp-item',
-      type: 'mcpToolCall',
-      server: ${JSON.stringify(HOST_MCP_SERVER_NAME)},
-      tool: ${JSON.stringify(hostToolName)},
-    } })
     requestApproval()
     return
   }
   if (message.id === approvalId) {
-    notify('item/completed', { item: { id: 'bitsentry-mcp-item', type: 'mcpToolCall' } })
     notify('turn/completed', { turn: { id: 'turn-approval' } })
   }
 })
@@ -209,9 +204,7 @@ describe('Codex provider behavior', () => {
   it('approves a BitSentry MCP tool elicitation at Safe Tools', async () => {
     const infos: unknown[][] = []
     setCodingAgentsLoggerForTesting({ info: (...args) => { infos.push(args) }, warn: () => {}, error: () => {} })
-    const hostToolName = getHostTools()[0]?.name
-    expect(hostToolName).toBeDefined()
-    const mock = await createHostApprovalCodexAppServer(hostToolName!)
+    const mock = await createHostApprovalCodexAppServer()
 
     await expect(executeCodex({
       prompt: 'List incident runbooks.',
@@ -229,6 +222,7 @@ describe('Codex provider behavior', () => {
       result: {
         action: 'accept',
         content: {},
+        _meta: null,
       },
     })
     expect(infos).toContainEqual([
@@ -236,11 +230,16 @@ describe('Codex provider behavior', () => {
       expect.objectContaining({
         method: 'mcpServer/elicitation/request',
         choice: 'allow-host-tool',
+        responsePayloadKeys: ['_meta', 'action', 'content'],
         elicitation: expect.objectContaining({
           serverName: HOST_MCP_SERVER_NAME,
           approvalKind: 'mcp_tool_call',
-          toolName: hostToolName,
-          hostToolName,
+          serverScopedHostApproval: true,
+          requestedSchemaShape: {
+            keys: ['properties', 'type'],
+            type: 'object',
+            propertyKeys: [],
+          },
         }),
       }),
     ])

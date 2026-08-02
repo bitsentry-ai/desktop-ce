@@ -21,8 +21,6 @@ const CODEX_MODELS_WITHOUT_REASONING_SUMMARIES = new Set([
   'gpt-5.3-codex-spark',
 ])
 const CODEX_MCP_ELICITATION_METHOD = 'mcpServer/elicitation/request'
-const CODEX_MCP_APPROVAL_REQUEST_TYPE = 'approval_request'
-const CODEX_MCP_TOOL_CALL_APPROVAL_KIND = 'mcp_tool_call'
 
 export interface CodexDebugRecorder {
   recordEvent(stage: string, data: Record<string, unknown>): void
@@ -77,20 +75,25 @@ function codexMcpElicitationMetadata(params: unknown): Record<string, unknown> |
   return asRecord(asRecord(params)?._meta)
 }
 
-export function getCodexMcpElicitationHostToolName(params: unknown): string | undefined {
+function isBitsentryMcpToolApprovalElicitation(params: unknown): boolean {
   const record = asRecord(params)
-  const metadata = codexMcpElicitationMetadata(params)
+  const requestedSchema = asRecord(record?.requestedSchema)
+  const properties = asRecord(requestedSchema?.properties)
+
+  // Codex does not associate this elicitation channel with an MCP tool item.
+  // bitsentry exposes only getHostTools(), so server-level approval is complete
+  // while that server-surface invariant remains true.
   if (
     readStringField(record, 'serverName') !== HOST_MCP_SERVER_NAME ||
     readStringField(record, 'mode') !== 'form' ||
-    readStringField(metadata, 'codex_request_type') !== CODEX_MCP_APPROVAL_REQUEST_TYPE ||
-    readStringField(metadata, 'codex_approval_kind') !== CODEX_MCP_TOOL_CALL_APPROVAL_KIND
+    readStringField(requestedSchema, 'type') !== 'object' ||
+    properties === undefined ||
+    Object.keys(properties).length !== 0
   ) {
-    return undefined
+    return false
   }
 
-  const toolName = readStringField(metadata, 'tool_name')
-  return getHostTools().some((hostTool) => hostTool.name === toolName) ? toolName : undefined
+  return true
 }
 
 function summarizeCodexMcpElicitation(params: unknown): Record<string, unknown> {
@@ -102,12 +105,16 @@ function summarizeCodexMcpElicitation(params: unknown): Record<string, unknown> 
     serverName: readStringField(record, 'serverName')?.slice(0, 120) ?? null,
     mode: readStringField(record, 'mode') ?? null,
     metadataKeys: metadata === undefined ? [] : Object.keys(metadata).sort(),
-    requestType: readStringField(metadata, 'codex_request_type') ?? null,
     approvalKind: readStringField(metadata, 'codex_approval_kind') ?? null,
-    toolName: readStringField(metadata, 'tool_name')?.slice(0, 120) ?? null,
     requestedSchemaShape: requestedSchema === undefined
       ? null
-      : { keys: Object.keys(requestedSchema).sort(), type: readStringField(requestedSchema, 'type') ?? null },
+      : {
+          keys: Object.keys(requestedSchema).sort(),
+          type: readStringField(requestedSchema, 'type') ?? null,
+          propertyKeys: asRecord(requestedSchema.properties) === undefined
+            ? null
+            : Object.keys(asRecord(requestedSchema.properties)!).sort(),
+        },
   }
 }
 
@@ -121,10 +128,9 @@ export function chooseCodexApprovalResponse(
   const fullAccess = accessLevel === 'full-access'
 
   if (method === CODEX_MCP_ELICITATION_METHOD) {
-    const hostToolName = getCodexMcpElicitationHostToolName(params)
-    return hostToolName === undefined
-      ? { choice: 'deny', result: { action: 'decline', content: null } }
-      : { choice: 'allow-host-tool', result: { action: 'accept', content: {} } }
+    return isBitsentryMcpToolApprovalElicitation(params)
+      ? { choice: 'allow-host-tool', result: { action: 'accept', content: {}, _meta: null } }
+      : { choice: 'deny', result: { action: 'decline', content: null, _meta: null } }
   }
 
   if (method === 'item/tool/requestUserInput') {
@@ -585,9 +591,6 @@ export async function executeCodex(
     const elicitation = request.method === CODEX_MCP_ELICITATION_METHOD
       ? summarizeCodexMcpElicitation(request.params)
       : undefined
-    const elicitationHostToolName = request.method === CODEX_MCP_ELICITATION_METHOD
-      ? getCodexMcpElicitationHostToolName(request.params)
-      : undefined
     if (decision === undefined) {
       log.info('[codex-provider] approval decision', {
         agentSessionId: options.mcpEndpoint?.agentSessionId ?? 'unknown',
@@ -603,10 +606,11 @@ export async function executeCodex(
       method: request.method,
       choice: decision.choice,
       itemId: itemId ?? null,
+      responsePayloadKeys: Object.keys(decision.result).sort(),
       ...(elicitation === undefined ? {} : {
         elicitation: {
           ...elicitation,
-          hostToolName: elicitationHostToolName ?? null,
+          serverScopedHostApproval: isBitsentryMcpToolApprovalElicitation(request.params),
         },
       }),
     })

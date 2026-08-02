@@ -94,6 +94,7 @@ import { startAutoUpdater } from '@bitsentry-ce/desktop-cli/runtime/desktop-upda
 import { LocalPluginCredentialsStore } from '@bitsentry-ce/desktop-cli/runtime/plugin-credentials-store'
 import { LocalRunbookExecutionHost } from '@bitsentry-ce/desktop-cli/runtime/local-runbook-execution-host'
 import { DesktopShutdownCoordinator } from './shutdown-coordinator'
+import { formatDesktopStartupFingerprint } from './startup-fingerprint'
 
 type UpdaterController = ReturnType<typeof startAutoUpdater> | null
 type LocalAiProviderService = InstanceType<typeof CodingAgentsProviderService>
@@ -116,6 +117,7 @@ const SMOKE_TEST_READY_MARKER = '[smoke] desktop-ready'
 const SMOKE_RUNBOOK_COMPLETE_MARKER = '[smoke] runbook-completed'
 const isRunbookSmokeScenario = process.env.BITSENTRY_DESKTOP_SMOKE_SCENARIO === 'runbook'
 const smokeMarkerFilePath = process.env.BITSENTRY_DESKTOP_SMOKE_MARKER_FILE
+const buildGitSha = process.env.BITSENTRY_BUILD_GIT_SHA ?? 'unknown'
 // electron-log resolves its file path from Electron's mutable app name. Pin
 // the dev destination before the first agent/provider log line is emitted.
 if (isDebug) {
@@ -447,6 +449,8 @@ app.on('before-quit', (event) => {
 app
   .whenReady()
   .then(async () => {
+    log.info(formatDesktopStartupFingerprint(buildGitSha, new Date().toISOString()))
+
     // Set app name and dock icon (overrides default Electron branding in dev)
     app.setName(APP_DATA_NAME)
     if (process.platform === 'darwin' && app.dock !== undefined) {

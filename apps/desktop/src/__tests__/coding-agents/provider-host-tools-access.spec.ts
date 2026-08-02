@@ -39,32 +39,33 @@ describe.each(accessLevels)('host tools at %s', (accessLevel) => {
     expect(allowedTools).toEqual(expect.arrayContaining(CLAUDE_HOST_MCP_ALLOWED_TOOLS))
   })
 
-  it('passes every host tool through Codex approval handling', () => {
-    for (const hostTool of getHostTools()) {
-      expect(chooseCodexApprovalResponse(
-        'mcpServer/elicitation/request',
-        {
-          threadId: 'thread-1',
-          turnId: 'turn-1',
-          serverName: HOST_MCP_SERVER_NAME,
-          mode: 'form',
-          message: 'Allow MCP call?',
-          requestedSchema: { type: 'object', properties: {} },
-          _meta: {
-            codex_request_type: 'approval_request',
-            codex_approval_kind: 'mcp_tool_call',
-            tool_name: hostTool.name,
-          },
+  it('approves the real BitSentry Codex elicitation payload', () => {
+    expect(chooseCodexApprovalResponse(
+      'mcpServer/elicitation/request',
+      {
+        threadId: 'thread-1',
+        turnId: 'turn-1',
+        serverName: HOST_MCP_SERVER_NAME,
+        mode: 'form',
+        message: 'Allow MCP call?',
+        requestedSchema: { type: 'object', properties: {} },
+        _meta: {
+          codex_approval_kind: 'mcp_tool_call',
+          persist: 'session',
+          tool_description: 'Creates a governed runbook proposal.',
+          tool_params: {},
+          tool_params_display: [],
         },
-        accessLevel,
-      )).toEqual({
-        choice: 'allow-host-tool',
-        result: {
-          action: 'accept',
-          content: {},
-        },
-      })
-    }
+      },
+      accessLevel,
+    )).toEqual({
+      choice: 'allow-host-tool',
+      result: {
+        action: 'accept',
+        content: {},
+        _meta: null,
+      },
+    })
   })
 
   it('passes every host tool through Cursor ACP permission handling', () => {
@@ -116,31 +117,19 @@ describe('Codex native approval behavior', () => {
     )).toEqual({ choice: 'allow-full-access', result: { decision: 'acceptForSession' } })
   })
 
-  it('declines non-host and non-tool MCP elicitations at Safe Tools', () => {
-    const hostToolName = getHostTools()[0]?.name
-    expect(hostToolName).toBeDefined()
-    const approvalMetadata = {
-      codex_request_type: 'approval_request',
-      codex_approval_kind: 'mcp_tool_call',
-      tool_name: hostToolName,
-    }
+  it('declines non-BitSentry MCP elicitations at Safe Tools', () => {
     expect(chooseCodexApprovalResponse(
       'mcpServer/elicitation/request',
       {
+        threadId: 'thread-1',
+        turnId: 'turn-1',
         serverName: 'other-server',
         mode: 'form',
-        _meta: approvalMetadata,
+        message: 'Allow MCP call?',
+        requestedSchema: { type: 'object', properties: {} },
+        _meta: {},
       },
       'auto-accept-edits',
-    )).toEqual({ choice: 'deny', result: { action: 'decline', content: null } })
-    expect(chooseCodexApprovalResponse(
-      'mcpServer/elicitation/request',
-      {
-        serverName: HOST_MCP_SERVER_NAME,
-        mode: 'form',
-        _meta: { ...approvalMetadata, codex_approval_kind: 'other' },
-      },
-      'auto-accept-edits',
-    )).toEqual({ choice: 'deny', result: { action: 'decline', content: null } })
+    )).toEqual({ choice: 'deny', result: { action: 'decline', content: null, _meta: null } })
   })
 })
