@@ -1,7 +1,7 @@
 import os from 'os'
 import path from 'path'
 import { CursorAcpClient, type CursorJsonRpcId } from './cursor-acp-client.js'
-import type { HostMcpEndpoint } from './host-mcp-server.service.js'
+import { HOST_MCP_SERVER_NAME, type HostMcpEndpoint } from './host-mcp-server.service.js'
 import type { LocalAiExecutionResult, LocalAiStreamDelta } from './types.js'
 import { codingAgentsLogger as log } from './logger.js'
 import {
@@ -63,6 +63,7 @@ interface CursorExecutionState {
 
 const MAX_OUTPUT_LENGTH = 50_000
 const CURSOR_SETUP_TIMEOUT_MS = 15_000
+const CURSOR_SESSION_NEW_TIMEOUT_MS = 30_000
 const READ_ONLY_TOOL_KINDS = new Set<CursorToolKind>(['read', 'search', 'think'])
 const EDIT_TOOL_KINDS = new Set<CursorToolKind>(['edit', 'delete', 'move'])
 const TEXTY_TOOL_CONTENT_TYPES = new Set(['content', 'text', 'markdown', 'stdout', 'stderr'])
@@ -79,10 +80,10 @@ const CURSOR_TOOL_KINDS: readonly CursorToolKind[] = [
   'other',
 ]
 const CURSOR_TOOL_KIND_NAMES = new Set<string>(CURSOR_TOOL_KINDS)
-const BITSENTRY_MCP_SERVER_NAME = 'bitsentry'
 const HOST_TOOL_NAMES: ReadonlySet<string> = new Set(getHostTools().map((tool) => tool.name))
 const HOST_TOOL_IDENTITY_FIELDS = ['name', 'toolName', 'toolCallId'] as const
 const MCP_SERVER_IDENTITY_FIELDS = ['server', 'serverName', 'serverId', 'mcpServer', 'mcpServerName'] as const
+const NESTED_TOOL_IDENTITY_FIELDS = ['tool', 'mcpTool', 'mcp'] as const
 const TOOL_KIND_PATTERNS: Array<{ kind: CursorToolKind; pattern: RegExp }> = [
   { kind: 'read', pattern: /\b(read|cat|view|open|list|ls)\b/ },
   { kind: 'search', pattern: /\b(search|grep|find|glob|rg)\b/ },
@@ -215,7 +216,7 @@ function hostToolNameFromIdentity(value: unknown): string | undefined {
   if (identity === undefined) return undefined
   if (HOST_TOOL_NAMES.has(identity)) return identity
 
-  const prefixed = /^mcp__bitsentry__(.+)$/i.exec(identity)
+  const prefixed = new RegExp(`^mcp__${HOST_MCP_SERVER_NAME}__(.+)$`, 'i').exec(identity)
   if (prefixed !== null && HOST_TOOL_NAMES.has(prefixed[1])) {
     return prefixed[1]
   }
@@ -230,26 +231,34 @@ function mcpServerNameFromIdentity(value: unknown): string | undefined {
 }
 
 function hasBitsentryMcpServerIdentity(toolCall: Record<string, unknown>): boolean {
-  return MCP_SERVER_IDENTITY_FIELDS.some((field) => (
-    mcpServerNameFromIdentity(toolCall[field])?.toLowerCase() === BITSENTRY_MCP_SERVER_NAME
-  ))
+  return toolIdentityRecords(toolCall).some((identity) => MCP_SERVER_IDENTITY_FIELDS.some((field) => (
+    mcpServerNameFromIdentity(identity[field])?.toLowerCase() === HOST_MCP_SERVER_NAME
+  )))
 }
 
-function isBitsentryHostToolCall(toolCall: Record<string, unknown> | undefined): boolean {
+function toolIdentityRecords(toolCall: Record<string, unknown>): Record<string, unknown>[] {
+  return [
+    toolCall,
+    ...NESTED_TOOL_IDENTITY_FIELDS.flatMap((field) => {
+      const value = toolCall[field]
+      const record = asRecord(value)
+      return record === undefined ? [] : [record]
+    }),
+  ]
+}
+
+export function isBitsentryHostToolCall(toolCall: Record<string, unknown> | undefined): boolean {
   if (toolCall === undefined) return false
 
-  for (const field of HOST_TOOL_IDENTITY_FIELDS) {
-    const identity = asString(toolCall[field])
-    const hostToolName = hostToolNameFromIdentity(identity)
-    if (hostToolName === undefined) continue
+  for (const identityRecord of toolIdentityRecords(toolCall)) {
+    for (const field of HOST_TOOL_IDENTITY_FIELDS) {
+      const identity = asString(identityRecord[field])
+      const hostToolName = hostToolNameFromIdentity(identity)
+      if (hostToolName === undefined) continue
 
-    if (/^mcp__bitsentry__/i.test(identity ?? '')) return true
-    if (hasBitsentryMcpServerIdentity(toolCall)) return true
-
-    // ACP may expose the host tool as its exact plain name without a separate
-    // server field. This remains safe because host tool names are an exact,
-    // runtime-derived allowlist, never words from the title or arguments.
-    if (identity === hostToolName) return true
+      if (new RegExp(`^mcp__${HOST_MCP_SERVER_NAME}__`, 'i').test(identity ?? '')) return true
+      if (hasBitsentryMcpServerIdentity(toolCall)) return true
+    }
   }
 
   return false
@@ -326,6 +335,23 @@ export function chooseCursorPermissionResponse(
       outcome: 'selected',
       optionId: selected.optionId,
     },
+  }
+}
+
+function summarizeCursorPermissionRequest(requestParams: unknown): Record<string, unknown> {
+  const toolCall = asRecord(asRecord(requestParams)?.toolCall)
+  const identities = toolCall === undefined
+    ? []
+    : toolIdentityRecords(toolCall).map((record) => Object.fromEntries(
+      [...HOST_TOOL_IDENTITY_FIELDS, ...MCP_SERVER_IDENTITY_FIELDS]
+        .flatMap((field) => {
+          const value = mcpServerNameFromIdentity(record[field])
+          return value === undefined ? [] : [[field, value.slice(0, 120)]]
+        }),
+    ))
+  return {
+    toolCallKeys: toolCall === undefined ? [] : Object.keys(toolCall).sort(),
+    identityFields: identities,
   }
 }
 
@@ -779,7 +805,7 @@ export async function listCursorModels(binaryPath: string): Promise<string[]> {
         cwd: os.tmpdir(),
         mcpServers: [],
       }),
-      CURSOR_SETUP_TIMEOUT_MS,
+      CURSOR_SESSION_NEW_TIMEOUT_MS,
       'Cursor ACP session/new',
     )
     return extractCursorModelIds(sessionResult)
@@ -809,14 +835,23 @@ function registerCursorServerRequestHandler(
 ): void {
   client.on('serverRequest', (request: { id: CursorJsonRpcId; method: string; params: unknown }) => {
     if (request.method === 'session/request_permission') {
-      client.respondToServerRequest(
-        request.id,
-        chooseCursorPermissionResponse(
-          request.params,
-          accessLevel,
-          isAbortSignalAborted(options.abortController.signal),
-        ),
+      const toolCall = asRecord(asRecord(request.params)?.toolCall)
+      const hostToolMatched = isBitsentryHostToolCall(toolCall)
+      const inferredKind = inferToolKind(toolCall)
+      const response = chooseCursorPermissionResponse(
+        request.params,
+        accessLevel,
+        isAbortSignalAborted(options.abortController.signal),
       )
+      log.info('[cursor-provider] permission decision', {
+        agentSessionId: options.mcpEndpoint?.agentSessionId ?? 'unknown',
+        ...summarizeCursorPermissionRequest(request.params),
+        inferredKind,
+        hostToolMatched,
+        decision: response.outcome.outcome,
+        optionId: response.outcome.outcome === 'selected' ? response.outcome.optionId : null,
+      })
+      client.respondToServerRequest(request.id, response)
       return
     }
 
@@ -896,14 +931,29 @@ async function createCursorSession(
       toolNames: configuredHostTools.map((hostTool) => hostTool.name),
     })
   }
-  return withTimeout(
-    client.sendRequest('session/new', {
-      cwd,
-      mcpServers,
-    }),
-    CURSOR_SETUP_TIMEOUT_MS,
-    'Cursor ACP session/new',
-  )
+  const startedAt = Date.now()
+  try {
+    const session = await withTimeout(
+      client.sendRequest('session/new', {
+        cwd,
+        mcpServers,
+      }),
+      CURSOR_SESSION_NEW_TIMEOUT_MS,
+      'Cursor ACP session/new',
+    )
+    log.info('[cursor-provider] session/new completed', {
+      agentSessionId: mcpEndpoint?.agentSessionId ?? 'unknown',
+      durationMs: Date.now() - startedAt,
+    })
+    return session
+  } catch (error) {
+    log.warn('[cursor-provider] session/new failed', {
+      agentSessionId: mcpEndpoint?.agentSessionId ?? 'unknown',
+      durationMs: Date.now() - startedAt,
+      error: getErrorMessage(error),
+    })
+    throw error
+  }
 }
 
 function requireCursorSessionId(sessionResult: unknown): string {

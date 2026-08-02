@@ -3,7 +3,7 @@ import { mkdtemp, rm } from 'fs/promises'
 import path from 'path'
 import { codingAgentsLogger as log } from './logger.js'
 import { CodexAppServerClient, type JsonRpcId } from './codex-app-server-client.js'
-import type { HostMcpEndpoint } from './host-mcp-server.service.js'
+import { HOST_MCP_SERVER_NAME, type HostMcpEndpoint } from './host-mcp-server.service.js'
 import type { LocalAiStreamDelta, LocalAiExecutionResult } from './types.js'
 import {
   getCodexPolicies,
@@ -66,6 +66,61 @@ function readStringField(
   key: string,
 ): string | undefined {
   return readString(record?.[key])
+}
+
+type CodexApprovalChoice = 'allow-host-tool' | 'allow-file-change' | 'allow-full-access' | 'deny'
+
+export function chooseCodexApprovalResponse(
+  method: string,
+  params: unknown,
+  accessLevel: AccessLevel,
+  isBitsentryHostToolCall = false,
+): { choice: CodexApprovalChoice; result: Record<string, unknown> } | undefined {
+  const record = asRecord(params)
+  const fullAccess = accessLevel === 'full-access'
+
+  if (method === 'item/tool/requestUserInput') {
+    const questions = Array.isArray(record?.questions) ? record.questions : []
+    const answer = isBitsentryHostToolCall ? 'Allow' : '__codex_mcp_decline__'
+    const answers = Object.fromEntries(questions.flatMap((question) => {
+      const id = readStringField(asRecord(question), 'id')
+      return id === undefined ? [] : [[id, { answers: [answer] }]]
+    }))
+    return {
+      choice: isBitsentryHostToolCall ? 'allow-host-tool' : 'deny',
+      result: { answers },
+    }
+  }
+
+  if (method === 'item/fileChange/requestApproval') {
+    return {
+      choice: fullAccess || accessLevel === 'auto-accept-edits' ? 'allow-file-change' : 'deny',
+      result: { decision: fullAccess ? 'acceptForSession' : 'accept' },
+    }
+  }
+
+  if (method === 'item/commandExecution/requestApproval') {
+    return {
+      choice: fullAccess ? 'allow-full-access' : 'deny',
+      result: { decision: fullAccess ? 'acceptForSession' : 'decline' },
+    }
+  }
+
+  if (method === 'item/permissions/requestApproval') {
+    const permissions = asRecord(record?.permissions) ?? {}
+    return {
+      choice: fullAccess ? 'allow-full-access' : 'deny',
+      result: { permissions: fullAccess ? permissions : {}, scope: fullAccess ? 'session' : 'turn' },
+    }
+  }
+
+  return undefined
+}
+
+export function isBitsentryMcpToolItem(item: Record<string, unknown> | undefined): boolean {
+  return item?.type === 'mcpToolCall' &&
+    readStringField(item, 'server') === HOST_MCP_SERVER_NAME &&
+    getHostTools().some((hostTool) => hostTool.name === readStringField(item, 'tool'))
 }
 
 function firstNumber(...values: unknown[]): number | undefined {
@@ -284,6 +339,7 @@ export async function executeCodex(
   let tokenUsage: LocalAiExecutionResult['tokenUsage']
   let pendingAssistantMessageBreak = false
   const streamedAgentMessageIds = new Set<string>()
+  const bitsentryMcpToolItemIds = new Set<string>()
   let resolveTokenUsageSeen: (() => void) | undefined
   const tokenUsageSeen = new Promise<void>((resolve) => {
     resolveTokenUsageSeen = resolve
@@ -325,9 +381,6 @@ export async function executeCodex(
   }
 
   options.abortController.signal.addEventListener('abort', onAbort, { once: true })
-
-  const isAutoAcceptEdits = effectiveAccessLevel === 'auto-accept-edits'
-  const isFullAccess = effectiveAccessLevel === 'full-access'
 
   client.on('notification', (notification: { method: string; params: unknown }) => {
     const params = asRecord(notification.params)
@@ -421,6 +474,10 @@ export async function executeCodex(
 
       case 'item/started': {
         const item = asRecord(params?.item)
+        const itemId = readStringField(item, 'id')
+        if (itemId !== undefined && isBitsentryMcpToolItem(item)) {
+          bitsentryMcpToolItemIds.add(itemId)
+        }
         const itemType = readStringField(item, 'type')
         if (itemType === 'agentMessage' && output.trim().length > 0) {
           pendingAssistantMessageBreak = true
@@ -469,37 +526,30 @@ export async function executeCodex(
   })
 
   client.on('serverRequest', (request: { id: JsonRpcId; method: string; params: unknown }) => {
-    if (request.method === 'item/permissions/requestApproval') {
-      // Codex interprets result.permissions as the granted SUBSET of the requested
-      // permissions. Echoing back arbitrary requested fileSystem roots would let
-      // a model widen itself beyond the active sandboxPolicy (e.g. to ~/.ssh).
-      // BitSentry uses Codex as a chat/runbook assistant, not a code editor, so the
-      // chat path doesn't pass cwd and doesn't need to edit arbitrary local files.
-      // Therefore only full-access grants permission expansions; Safe Tools
-      // stays within its sandboxPolicy boundary.
-      const params = asRecord(request.params)
-      const requestedPermissions = asRecord(params?.permissions) ?? {}
-      if (isFullAccess) {
-        client.respondToServerRequest(request.id, { permissions: requestedPermissions, scope: 'session' })
-      } else {
-        client.respondToServerRequest(request.id, { permissions: {}, scope: 'turn' })
-      }
-    } else if (request.method.endsWith('requestApproval')) {
-      if (isFullAccess) {
-        client.respondToServerRequest(request.id, { decision: 'acceptForSession' })
-      } else if (isAutoAcceptEdits) {
-        const isFileAction = /fileChange|fileEdit/i.test(request.method)
-        let decision = 'decline'
-        if (isFileAction) {
-          decision = 'accept'
-        }
-        client.respondToServerRequest(request.id, { decision })
-      } else {
-        client.respondToServerRequest(request.id, { decision: 'decline' })
-      }
-    } else {
+    const requestParams = asRecord(request.params)
+    const itemId = readStringField(requestParams, 'itemId')
+    const decision = chooseCodexApprovalResponse(
+      request.method,
+      request.params,
+      effectiveAccessLevel,
+      itemId !== undefined && bitsentryMcpToolItemIds.has(itemId),
+    )
+    if (decision === undefined) {
+      log.info('[codex-provider] approval decision', {
+        agentSessionId: options.mcpEndpoint?.agentSessionId ?? 'unknown',
+        method: request.method,
+        choice: 'deny',
+      })
       client.respondToServerRequestError(request.id, 'Method not supported')
+      return
     }
+    log.info('[codex-provider] approval decision', {
+      agentSessionId: options.mcpEndpoint?.agentSessionId ?? 'unknown',
+      method: request.method,
+      choice: decision.choice,
+      itemId: itemId ?? null,
+    })
+    client.respondToServerRequest(request.id, decision.result)
   })
 
   try {

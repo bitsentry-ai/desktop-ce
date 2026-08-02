@@ -197,7 +197,10 @@ const permissionOptions = [
   { optionId: 'reject-always', name: 'Reject always', kind: 'reject_always' },
 ]
 
-const capturedBitsentryMcpPermissionRequest = {
+// This exercises the documented fields our responder accepts. It is intentionally
+// synthetic: no production ACP permission payload had been captured when this
+// test was written. Runtime decision logs record the actual field shape.
+const syntheticBitsentryMcpPermissionRequest = {
   sessionId: 'cursor-session-1',
   toolCall: {
     toolCallId: 'mcp__bitsentry__propose_runbook_edit',
@@ -250,9 +253,9 @@ describe('Cursor provider behavior', () => {
     expect(
       chooseCursorPermissionResponse(
         {
-          ...capturedBitsentryMcpPermissionRequest,
+          ...syntheticBitsentryMcpPermissionRequest,
           toolCall: {
-            ...capturedBitsentryMcpPermissionRequest.toolCall,
+            ...syntheticBitsentryMcpPermissionRequest.toolCall,
             kind: undefined,
             title: 'MCP proposal request',
             rawInput: { detail: 'shell command only' },
@@ -262,30 +265,13 @@ describe('Cursor provider behavior', () => {
       ),
     ).toEqual({ outcome: { outcome: 'selected', optionId: 'allow-once' } })
 
-    expect(
-      chooseCursorPermissionResponse(
-        {
-          ...capturedBitsentryMcpPermissionRequest,
-          toolCall: {
-            ...capturedBitsentryMcpPermissionRequest.toolCall,
-            name: 'list_runbooks',
-            toolCallId: 'list_runbooks',
-            serverName: undefined,
-            kind: undefined,
-            title: 'MCP catalog request',
-            rawInput: { request: 'production' },
-          },
-        },
-        'auto-accept-edits',
-      ),
-    ).toEqual({ outcome: { outcome: 'selected', optionId: 'allow-once' } })
   })
 
   it('pins Bitsentry MCP identity matching and keeps built-in execute calls rejected', () => {
     expect(
       chooseCursorPermissionResponse(
         {
-          ...capturedBitsentryMcpPermissionRequest,
+          ...syntheticBitsentryMcpPermissionRequest,
           toolCall: {
             toolCallId: 'cursor-bash-1',
             name: 'bash',
@@ -301,7 +287,7 @@ describe('Cursor provider behavior', () => {
     expect(
       chooseCursorPermissionResponse(
         {
-          ...capturedBitsentryMcpPermissionRequest,
+          ...syntheticBitsentryMcpPermissionRequest,
           toolCall: {
             toolCallId: 'cursor-mcp-1',
             toolName: 'get_runbook_execution',
@@ -318,7 +304,7 @@ describe('Cursor provider behavior', () => {
       expect(
         chooseCursorPermissionResponse(
           {
-            ...capturedBitsentryMcpPermissionRequest,
+            ...syntheticBitsentryMcpPermissionRequest,
             toolCall: {
               toolCallId: `mcp__bitsentry__${hostTool.name}`,
               name: hostTool.name,

@@ -10,8 +10,8 @@ export function buildRunbookOnlyScope(): string {
   const hostToolNames = getHostTools().map((toolDefinition) => toolDefinition.name).join(', ')
   return [
     'This is a BitSentry incident-chat session.',
-    `Your only tools are: ${hostToolNames}. You have no other tools here.`,
-    'You cannot directly run shell commands, read or write files, or browse the web, and you must not attempt built-in tools for those.',
+    `Your BitSentry incident-operation tools are: ${hostToolNames}. The provider may also expose built-in tools, but they are not permitted for incident work.`,
+    'Do not use built-in tools to directly run shell commands, read or write files, or browse the web for an incident.',
     'You must NEVER execute maintenance or remediation steps directly with built-in tools in an incident session. Anything that changes the operator\'s system goes through a runbook proposal, operator approval, and the runbook engine; there is no direct-execution fallback when a runbook is missing or unapproved.',
     'Runbooks are separate from your own tool access. A runbook is a saved sequence of actions (shell, http, plugin, and others) that the operator executes on their own machines. Runbook content may legitimately include shell commands, including commands that install or update software on the operator\'s machine.',
     'When the user asks to create or change a runbook, use propose_runbook_create or propose_runbook_edit. Proposing is always in scope no matter what the proposed actions contain, because a proposal never runs anything: it creates a pending draft that the operator reviews with risk labels and explicitly approves or denies in the incident UI.',

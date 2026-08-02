@@ -11,6 +11,7 @@ import {
   getHostTools,
   type HostToolContext,
 } from '@bitsentry-ce/core/features/agent-runtime'
+import { HOST_MCP_SERVER_NAME } from './host-mcp-server.service.js'
 import { buildRunbookOnlyScope } from './runbook-only-scope.js'
 import {
   buildWindowsCmdCommandLine,
@@ -105,13 +106,12 @@ type ClaudeSdkQuery = (params: {
 
 let testClaudeSdkQueryLoader: (() => Promise<ClaudeSdkQuery> | ClaudeSdkQuery) | undefined
 const CLAUDE_ONE_M_CONTEXT_BETA: ClaudeCodeSdkBeta = 'context-1m-2025-08-07'
-const BITSENTRY_MCP_SERVER_NAME = 'bitsentry'
 function buildClaudeRunbookOnlyScope(): string {
   return buildRunbookOnlyScope()
 }
 
 export const CLAUDE_HOST_MCP_ALLOWED_TOOLS = getHostTools().map(
-  (toolDefinition) => `mcp__${BITSENTRY_MCP_SERVER_NAME}__${toolDefinition.name}`,
+  (toolDefinition) => `mcp__${HOST_MCP_SERVER_NAME}__${toolDefinition.name}`,
 )
 
 export function __setLoadClaudeSdkQueryForTests(
@@ -171,7 +171,7 @@ async function createClaudeHostMcpServer(context: HostToolContext): Promise<unkn
     toolNames: configuredHostTools.map((hostTool) => hostTool.name),
   })
   return sdk.createSdkMcpServer({
-    name: BITSENTRY_MCP_SERVER_NAME,
+    name: HOST_MCP_SERVER_NAME,
     version: '1.0.0',
     tools,
     alwaysLoad: true,
@@ -224,6 +224,17 @@ function resolveAllowedTools(accessLevel: ClaudeCodeAccessLevel): string[] | und
     case 'full-access':
       return undefined
   }
+}
+
+export function resolveClaudeAllowedTools(
+  accessLevel: ClaudeCodeAccessLevel,
+  includeHostTools: boolean,
+  explicitlyAllowedTools?: string[],
+): string[] | undefined {
+  const allowedTools = explicitlyAllowedTools ?? resolveAllowedTools(accessLevel)
+  if (!includeHostTools || allowedTools === undefined) return allowedTools
+
+  return [...new Set([...allowedTools, ...CLAUDE_HOST_MCP_ALLOWED_TOOLS])]
 }
 
 function asRecord(value: unknown): Record<string, unknown> | undefined {
@@ -543,9 +554,11 @@ function buildClaudeCodeQueryOptions(
   cwd: string,
   mcpServer: unknown | undefined,
 ): ClaudeCodeQueryOptions {
-  const resolvedTools = mcpServer === undefined
-    ? options.allowedTools ?? resolveAllowedTools(effectiveAccessLevel)
-    : CLAUDE_HOST_MCP_ALLOWED_TOOLS
+  const resolvedTools = resolveClaudeAllowedTools(
+    effectiveAccessLevel,
+    mcpServer !== undefined,
+    options.allowedTools,
+  )
   const permissionMode = resolveClaudePermissionMode(effectiveAccessLevel)
   const shouldWrapWindowsCmdShim =
     process.platform === 'win32' && isWindowsCmdShim(options.binaryPath)
@@ -566,7 +579,7 @@ function buildClaudeCodeQueryOptions(
   applyClaudeToolOptions(queryOptions, resolvedTools)
   applyClaudeSpawnerOption(queryOptions, shouldWrapWindowsCmdShim)
   if (mcpServer !== undefined) {
-    queryOptions.mcpServers = { [BITSENTRY_MCP_SERVER_NAME]: mcpServer }
+    queryOptions.mcpServers = { [HOST_MCP_SERVER_NAME]: mcpServer }
   }
   const systemPrompt = [
     options.systemPrompt,

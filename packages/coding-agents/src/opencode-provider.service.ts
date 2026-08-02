@@ -15,7 +15,7 @@ import {
   DEFAULT_ACCESS_LEVEL,
 } from './composer.js'
 import { terminateSubprocess } from './subprocess-lifecycle.js'
-import type { HostMcpEndpoint } from './host-mcp-server.service.js'
+import { HOST_MCP_SERVER_NAME, type HostMcpEndpoint } from './host-mcp-server.service.js'
 import { getHostTools } from '@bitsentry-ce/core/features/agent-runtime'
 import { prependRunbookOnlyScope } from './runbook-only-scope.js'
 
@@ -125,7 +125,7 @@ function stringField(record: Record<string, unknown> | undefined, field: string)
   return record[field]
 }
 
-function createOpenCodePermissionEnv(accessLevel: AccessLevel): Record<string, string> {
+export function createOpenCodePermissionEnv(accessLevel: AccessLevel): Record<string, string> {
   if (accessLevel === 'full-access') {
     return {}
   }
@@ -148,6 +148,12 @@ function createOpenCodePermissionEnv(accessLevel: AccessLevel): Record<string, s
       question: allow,
     }),
   }
+}
+
+export function getOpenCodeHostToolPermissions(): Record<string, 'allow'> {
+  return Object.fromEntries(
+    getHostTools().map((tool) => [`${HOST_MCP_SERVER_NAME}_${tool.name}`, 'allow'] as const),
+  )
 }
 
 function buildOpenCodePrompt(
@@ -572,23 +578,25 @@ function createOpenCodeProcess(
   return child
 }
 
-async function createOpenCodeMcpConfig(endpoint: HostMcpEndpoint | undefined): Promise<{
+async function createOpenCodeMcpConfig(
+  endpoint: HostMcpEndpoint | undefined,
+  accessLevel: AccessLevel,
+): Promise<{
   directory: string
   path: string
 } | undefined> {
   if (endpoint === undefined) return undefined
   const directory = await mkdtemp(path.join(os.tmpdir(), 'bitsentry-opencode-mcp-'))
   const configPath = path.join(directory, 'opencode.json')
-  const hostToolPermissions = Object.fromEntries(
-    getHostTools().map((tool) => [`bitsentry_${tool.name}`, 'allow']),
-  )
-  log.info('[opencode-provider] configured host tools', {
+  const hostToolPermissions = getOpenCodeHostToolPermissions()
+  log.info('[opencode-provider] configured host tool permissions', {
     agentSessionId: endpoint.agentSessionId,
-    toolNames: Object.keys(hostToolPermissions).map((name) => name.slice('bitsentry_'.length)),
+    accessLevel,
+    toolNames: Object.keys(hostToolPermissions).map((name) => name.slice(`${HOST_MCP_SERVER_NAME}_`.length)),
   })
   await writeFile(configPath, JSON.stringify({
     mcp: {
-      bitsentry: {
+      [HOST_MCP_SERVER_NAME]: {
         type: 'local',
         command: [endpoint.command, ...endpoint.args],
         environment: endpoint.env,
@@ -761,7 +769,7 @@ export async function executeOpenCode(
   const accessLevel = normalizeAccessLevel(options.accessLevel ?? DEFAULT_ACCESS_LEVEL)
   const config = options.mcpEndpoint === undefined
     ? undefined
-    : await createOpenCodeMcpConfig(options.mcpEndpoint)
+    : await createOpenCodeMcpConfig(options.mcpEndpoint, accessLevel)
   const child = createOpenCodeProcess(options, cwd, accessLevel, config?.path)
   const state = createOpenCodeExecutionState()
   const appendOutput = createAppendOpenCodeOutput(state, options)

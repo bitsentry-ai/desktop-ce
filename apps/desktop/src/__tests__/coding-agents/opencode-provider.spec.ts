@@ -141,8 +141,12 @@ describe('executeOpenCode', () => {
       expect(config.permission[`bitsentry_${hostTool.name}`]).toBe('allow')
     }
     expect(infos).toContainEqual([
-      '[opencode-provider] configured host tools',
-      { agentSessionId: 'agent-session-opencode', toolNames: getHostTools().map((tool) => tool.name) },
+      '[opencode-provider] configured host tool permissions',
+      {
+        agentSessionId: 'agent-session-opencode',
+        accessLevel: 'auto-accept-edits',
+        toolNames: getHostTools().map((tool) => tool.name),
+      },
     ])
 
     finishOpenCodeProcess(child)

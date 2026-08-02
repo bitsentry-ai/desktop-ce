@@ -9,6 +9,7 @@ import {
 } from '@bitsentry-ce/desktop-cli/runtime/desktop-coding-agents'
 import { getHostTools } from '@bitsentry-ce/core/features/agent-runtime'
 import { setCodingAgentsLoggerForTesting } from '@bitsentry-ce/coding-agents/logger'
+import { HOST_MCP_SERVER_NAME } from '@bitsentry-ce/coding-agents/host-mcp-server.service'
 
 const tempDirs: string[] = []
 async function createMultiItemCodexAppServer(): Promise<{
@@ -73,6 +74,71 @@ async function readLoggedCodexMessages(logPath: string): Promise<Array<Record<st
   return contents.split(/\r?\n/).filter(Boolean).map((line) => JSON.parse(line) as Record<string, unknown>)
 }
 
+async function createHostApprovalCodexAppServer(hostToolName: string): Promise<{
+  binaryPath: string
+  cwd: string
+  logPath: string
+}> {
+  const cwd = await mkdtemp(path.join(os.tmpdir(), 'codex-provider-approval-'))
+  tempDirs.push(cwd)
+  const scriptPath = path.join(cwd, 'mock-codex-app-server-approval.cjs')
+  const logPath = path.join(cwd, 'messages.jsonl')
+  const script = `
+const fs = require('fs')
+const readline = require('readline')
+
+const approvalId = 'mcp-approval-1'
+const respond = (id, result) => process.stdout.write(JSON.stringify({ id, result }) + '\\n')
+const notify = (method, params) => process.stdout.write(JSON.stringify({ method, params }) + '\\n')
+const requestApproval = () => process.stdout.write(JSON.stringify({
+  id: approvalId,
+  method: 'item/tool/requestUserInput',
+  params: {
+    itemId: 'bitsentry-mcp-item',
+    questions: [{ id: 'mcp_tool_call_approval_test', question: 'Allow MCP call?' }],
+  },
+}) + '\\n')
+const logMessage = (message) => fs.appendFileSync(${JSON.stringify(logPath)}, JSON.stringify(message) + '\\n')
+
+if (!process.argv.slice(2).includes('app-server')) process.exit(64)
+
+const rl = readline.createInterface({ input: process.stdin })
+rl.on('line', (line) => {
+  const message = JSON.parse(line)
+  logMessage(message)
+
+  if (message.method === 'initialize') {
+    respond(message.id, { userAgent: 'mock-codex-app-server' })
+    return
+  }
+  if (message.method === 'thread/start') {
+    respond(message.id, { thread: { id: 'thread-approval' } })
+    return
+  }
+  if (message.method === 'turn/start') {
+    respond(message.id, { turn: { id: 'turn-approval' } })
+    notify('item/started', { item: {
+      id: 'bitsentry-mcp-item',
+      type: 'mcpToolCall',
+      server: ${JSON.stringify(HOST_MCP_SERVER_NAME)},
+      tool: ${JSON.stringify(hostToolName)},
+    } })
+    requestApproval()
+    return
+  }
+  if (message.id === approvalId) {
+    notify('item/completed', { item: { id: 'bitsentry-mcp-item', type: 'mcpToolCall' } })
+    notify('turn/completed', { turn: { id: 'turn-approval' } })
+  }
+})
+`
+  await writeFile(scriptPath, script)
+  const binaryPath = path.join(cwd, 'codex')
+  await writeFile(binaryPath, `#!/usr/bin/env node\nrequire(${JSON.stringify(scriptPath)})\n`)
+  await chmod(binaryPath, 0o755)
+  return { binaryPath, cwd, logPath }
+}
+
 afterEach(async () => {
   await Promise.all(tempDirs.splice(0).map((directory) => rm(directory, { recursive: true, force: true })))
   setCodingAgentsLoggerForTesting({ info: () => {}, warn: () => {}, error: () => {} })
@@ -128,6 +194,42 @@ describe('Codex provider behavior', () => {
     expect(infos).toContainEqual([
       '[codex-provider] configured host tools',
       { agentSessionId: 'session-1', toolNames: getHostTools().map((tool) => tool.name) },
+    ])
+  })
+
+  it('approves a tracked BitSentry MCP request at Safe Tools', async () => {
+    const infos: unknown[][] = []
+    setCodingAgentsLoggerForTesting({ info: (...args) => { infos.push(args) }, warn: () => {}, error: () => {} })
+    const hostToolName = getHostTools()[0]?.name
+    expect(hostToolName).toBeDefined()
+    const mock = await createHostApprovalCodexAppServer(hostToolName!)
+
+    await expect(executeCodex({
+      prompt: 'List incident runbooks.',
+      binaryPath: mock.binaryPath,
+      cwd: mock.cwd,
+      abortController: new AbortController(),
+      accessLevel: 'auto-accept-edits',
+    })).resolves.toMatchObject({ threadId: 'thread-approval' })
+
+    const approvalResponse = (await readLoggedCodexMessages(mock.logPath)).find(
+      (message) => message.id === 'mcp-approval-1',
+    )
+    expect(approvalResponse).toEqual({
+      id: 'mcp-approval-1',
+      result: {
+        answers: {
+          mcp_tool_call_approval_test: { answers: ['Allow'] },
+        },
+      },
+    })
+    expect(infos).toContainEqual([
+      '[codex-provider] approval decision',
+      expect.objectContaining({
+        method: 'item/tool/requestUserInput',
+        choice: 'allow-host-tool',
+        itemId: 'bitsentry-mcp-item',
+      }),
     ])
   })
 
