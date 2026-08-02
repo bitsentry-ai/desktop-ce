@@ -39,6 +39,26 @@ function getDb(): DbClient {
   return db
 }
 
+/**
+ * Earlier authoring approvals soft-deleted a shell after persistence failed.
+ * Those shells were never visible to an operator, but their global action ids
+ * remained allocated. The matching timestamps are the legacy rollback marker;
+ * user-initiated deletes update only deletedAt and are deliberately preserved.
+ */
+async function purgeFailedRunbookAuthoringAttempts(): Promise<void> {
+  await getDb().$executeRawUnsafe(`
+    DELETE FROM "RunbookAction"
+    WHERE "runbookId" IN (
+      SELECT "id" FROM "Runbook"
+      WHERE "deletedAt" IS NOT NULL AND "deletedAt" = "updatedAt"
+    )
+  `)
+  await getDb().$executeRawUnsafe(`
+    DELETE FROM "Runbook"
+    WHERE "deletedAt" IS NOT NULL AND "deletedAt" = "updatedAt"
+  `)
+}
+
 export async function initializeDatabase(): Promise<DbClient> {
   if (db !== null) return db
 
@@ -73,6 +93,7 @@ export async function initializeDatabase(): Promise<DbClient> {
 
     await assertDatabaseIntegrity()
     await runMigrations()
+    await purgeFailedRunbookAuthoringAttempts()
     await assertDatabaseIntegrity()
 
     await seeders.seedDefaults(db)
