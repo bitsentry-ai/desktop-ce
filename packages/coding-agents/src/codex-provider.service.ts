@@ -20,6 +20,9 @@ type LocalAiTextStreamDelta = LocalAiStreamDelta & { type: 'text'; text?: string
 const CODEX_MODELS_WITHOUT_REASONING_SUMMARIES = new Set([
   'gpt-5.3-codex-spark',
 ])
+const CODEX_MCP_ELICITATION_METHOD = 'mcpServer/elicitation/request'
+const CODEX_MCP_APPROVAL_REQUEST_TYPE = 'approval_request'
+const CODEX_MCP_TOOL_CALL_APPROVAL_KIND = 'mcp_tool_call'
 
 export interface CodexDebugRecorder {
   recordEvent(stage: string, data: Record<string, unknown>): void
@@ -70,6 +73,44 @@ function readStringField(
 
 type CodexApprovalChoice = 'allow-host-tool' | 'allow-file-change' | 'allow-full-access' | 'deny'
 
+function codexMcpElicitationMetadata(params: unknown): Record<string, unknown> | undefined {
+  return asRecord(asRecord(params)?._meta)
+}
+
+export function getCodexMcpElicitationHostToolName(params: unknown): string | undefined {
+  const record = asRecord(params)
+  const metadata = codexMcpElicitationMetadata(params)
+  if (
+    readStringField(record, 'serverName') !== HOST_MCP_SERVER_NAME ||
+    readStringField(record, 'mode') !== 'form' ||
+    readStringField(metadata, 'codex_request_type') !== CODEX_MCP_APPROVAL_REQUEST_TYPE ||
+    readStringField(metadata, 'codex_approval_kind') !== CODEX_MCP_TOOL_CALL_APPROVAL_KIND
+  ) {
+    return undefined
+  }
+
+  const toolName = readStringField(metadata, 'tool_name')
+  return getHostTools().some((hostTool) => hostTool.name === toolName) ? toolName : undefined
+}
+
+function summarizeCodexMcpElicitation(params: unknown): Record<string, unknown> {
+  const record = asRecord(params)
+  const metadata = codexMcpElicitationMetadata(params)
+  const requestedSchema = asRecord(record?.requestedSchema)
+  return {
+    paramKeys: record === undefined ? [] : Object.keys(record).sort(),
+    serverName: readStringField(record, 'serverName')?.slice(0, 120) ?? null,
+    mode: readStringField(record, 'mode') ?? null,
+    metadataKeys: metadata === undefined ? [] : Object.keys(metadata).sort(),
+    requestType: readStringField(metadata, 'codex_request_type') ?? null,
+    approvalKind: readStringField(metadata, 'codex_approval_kind') ?? null,
+    toolName: readStringField(metadata, 'tool_name')?.slice(0, 120) ?? null,
+    requestedSchemaShape: requestedSchema === undefined
+      ? null
+      : { keys: Object.keys(requestedSchema).sort(), type: readStringField(requestedSchema, 'type') ?? null },
+  }
+}
+
 export function chooseCodexApprovalResponse(
   method: string,
   params: unknown,
@@ -78,6 +119,13 @@ export function chooseCodexApprovalResponse(
 ): { choice: CodexApprovalChoice; result: Record<string, unknown> } | undefined {
   const record = asRecord(params)
   const fullAccess = accessLevel === 'full-access'
+
+  if (method === CODEX_MCP_ELICITATION_METHOD) {
+    const hostToolName = getCodexMcpElicitationHostToolName(params)
+    return hostToolName === undefined
+      ? { choice: 'deny', result: { action: 'decline', content: null } }
+      : { choice: 'allow-host-tool', result: { action: 'accept', content: {} } }
+  }
 
   if (method === 'item/tool/requestUserInput') {
     const questions = Array.isArray(record?.questions) ? record.questions : []
@@ -534,11 +582,18 @@ export async function executeCodex(
       effectiveAccessLevel,
       itemId !== undefined && bitsentryMcpToolItemIds.has(itemId),
     )
+    const elicitation = request.method === CODEX_MCP_ELICITATION_METHOD
+      ? summarizeCodexMcpElicitation(request.params)
+      : undefined
+    const elicitationHostToolName = request.method === CODEX_MCP_ELICITATION_METHOD
+      ? getCodexMcpElicitationHostToolName(request.params)
+      : undefined
     if (decision === undefined) {
       log.info('[codex-provider] approval decision', {
         agentSessionId: options.mcpEndpoint?.agentSessionId ?? 'unknown',
         method: request.method,
         choice: 'deny',
+        ...(elicitation === undefined ? {} : { elicitation }),
       })
       client.respondToServerRequestError(request.id, 'Method not supported')
       return
@@ -548,6 +603,12 @@ export async function executeCodex(
       method: request.method,
       choice: decision.choice,
       itemId: itemId ?? null,
+      ...(elicitation === undefined ? {} : {
+        elicitation: {
+          ...elicitation,
+          hostToolName: elicitationHostToolName ?? null,
+        },
+      }),
     })
     client.respondToServerRequest(request.id, decision.result)
   })

@@ -199,39 +199,21 @@ const permissionOptions = [
   { optionId: 'reject-always', name: 'Reject always', kind: 'reject_always' },
 ]
 
-// This exercises the documented fields our responder accepts. It is intentionally
-// synthetic: no production ACP permission payload had been captured when this
-// test was written. Runtime decision logs record the actual field shape.
-const syntheticBitsentryMcpPermissionRequest = {
-  sessionId: 'cursor-session-1',
-  toolCall: {
-    toolCallId: `mcp__${HOST_MCP_SERVER_NAME}__propose_runbook_edit`,
-    name: 'propose_runbook_edit',
-    serverName: HOST_MCP_SERVER_NAME,
-    kind: 'execute',
-    title: 'Propose a runbook revision',
-    rawInput: {
-      title: 'Run shell command to update the service',
-      feedback: 'Use shell command details from the operator.',
+// The 2026-08-03 Safe Tools logs establish this exact permission payload shape.
+// Cursor puts MCP identity in title as "server-tool: tool"; content is not identity.
+function liveCursorMcpPermissionRequest(hostToolName: string) {
+  return {
+    sessionId: 'cursor-session-live-shape',
+    toolCall: {
+      content: [{ type: 'content', content: 'MCP tool request' }],
+      kind: 'other',
+      status: 'pending',
+      title: `${HOST_MCP_SERVER_NAME}-${hostToolName}: ${hostToolName}`,
+      toolCallId: 'tool_635dd6e1-2997-4930-8af3-669aa7cb61f',
     },
-  },
-  options: permissionOptions,
-} as const
-
-// The 2026-08-02 live Cursor ACP permission request exposed exactly these
-// toolCall keys. Its title and content values are intentionally not used as
-// identity here because permission-time metadata is opaque.
-const liveCursorMcpPermissionRequest = {
-  sessionId: 'cursor-session-live-shape',
-  toolCall: {
-    content: [],
-    kind: 'other',
-    status: 'pending',
-    title: 'Cursor MCP call',
-    toolCallId: 'tool_635dd6e1-2997-4930-8af3-669aa7cb61f',
-  },
-  options: permissionOptions,
-} as const
+    options: permissionOptions,
+  } as const
+}
 
 describe('Cursor provider behavior', () => {
   it('chooses ACP permission options from access level and tool kind', () => {
@@ -266,175 +248,100 @@ describe('Cursor provider behavior', () => {
     ).toEqual({ outcome: { outcome: 'selected', optionId: 'allow-once' } })
   })
 
-  it('allows Bitsentry MCP calls before classifying argument vocabulary', () => {
+  it('allows a live-shaped Bitsentry MCP title before classifying content', () => {
+    const hostToolName = getHostTools()[0]?.name
+    expect(hostToolName).toBeDefined()
     expect(
       chooseCursorPermissionResponse(
         {
-          ...syntheticBitsentryMcpPermissionRequest,
+          ...liveCursorMcpPermissionRequest(hostToolName!),
           toolCall: {
-            ...syntheticBitsentryMcpPermissionRequest.toolCall,
-            kind: undefined,
-            title: 'MCP proposal request',
-            rawInput: { detail: 'shell command only' },
+            ...liveCursorMcpPermissionRequest(hostToolName!).toolCall,
+            content: [{ type: 'content', content: 'run a shell command' }],
           },
         },
         'auto-accept-edits',
       ),
     ).toEqual({ outcome: { outcome: 'selected', optionId: 'allow-once' } })
-
   })
 
-  it('pins Bitsentry MCP identity matching and keeps built-in execute calls rejected', () => {
-    expect(
-      chooseCursorPermissionResponse(
-        {
-          ...syntheticBitsentryMcpPermissionRequest,
-          toolCall: {
-            toolCallId: 'cursor-bash-1',
-            name: 'bash',
-            serverName: 'not-bitsentry',
-            kind: 'execute',
-            title: 'Run shell command',
-          },
-        },
-        'auto-accept-edits',
-      ),
-    ).toEqual({ outcome: { outcome: 'selected', optionId: 'reject-once' } })
-
-    expect(
-      chooseCursorPermissionResponse(
-        {
-          ...syntheticBitsentryMcpPermissionRequest,
-          toolCall: {
-            toolCallId: 'cursor-mcp-1',
-            toolName: 'get_runbook_execution',
-            server: { name: HOST_MCP_SERVER_NAME },
-            kind: 'execute',
-            title: 'Run shell command',
-          },
-        },
-        'auto-accept-edits',
-      ),
-    ).toEqual({ outcome: { outcome: 'selected', optionId: 'allow-once' } })
-
+  it('matches every host tool only through the live Cursor title format', () => {
     for (const hostTool of getHostTools()) {
+      const request = liveCursorMcpPermissionRequest(hostTool.name)
       expect(
         chooseCursorPermissionResponse(
-          {
-            ...syntheticBitsentryMcpPermissionRequest,
-            toolCall: {
-              toolCallId: `mcp__${HOST_MCP_SERVER_NAME}__${hostTool.name}`,
-              name: hostTool.name,
-              serverName: HOST_MCP_SERVER_NAME,
-              kind: 'execute',
-              title: 'Run shell command',
-              rawInput: { command: 'ignored by identity matching' },
-            },
-          },
+          request,
           'auto-accept-edits',
         ),
       ).toEqual({ outcome: { outcome: 'selected', optionId: 'allow-once' } })
+      expect(chooseCursorPermissionResponse(
+        {
+          ...request,
+          toolCall: {
+            ...request.toolCall,
+            title: `${HOST_MCP_SERVER_NAME}-${hostTool.name}`,
+          },
+        },
+        'auto-accept-edits',
+      )).toEqual({ outcome: { outcome: 'selected', optionId: 'allow-once' } })
     }
   })
 
-  it('correlates an opaque live-shaped permission request with an announced host tool', () => {
+  it('uses the permission title when the correlated stream identity is generic', () => {
     const hostTool = getHostTools()[0]
     expect(hostTool).toBeDefined()
+    const request = liveCursorMcpPermissionRequest(hostTool!.name)
     const toolCallRegistry = new CursorToolCallRegistry()
     toolCallRegistry.recordSessionUpdate({
-      sessionId: liveCursorMcpPermissionRequest.sessionId,
+      sessionId: request.sessionId,
       update: {
         sessionUpdate: 'tool_call',
-        toolCallId: liveCursorMcpPermissionRequest.toolCall.toolCallId,
-        title: 'Cursor MCP call',
+        toolCallId: request.toolCall.toolCallId,
+        title: 'MCP: tool',
         kind: 'other',
       },
     })
-    toolCallRegistry.recordSessionUpdate({
-      sessionId: liveCursorMcpPermissionRequest.sessionId,
-      update: {
-        sessionUpdate: 'tool_call_update',
-        toolCallId: liveCursorMcpPermissionRequest.toolCall.toolCallId,
-        name: `mcp__${HOST_MCP_SERVER_NAME}__${hostTool!.name}`,
-        rawInput: {},
-      },
-    })
 
     expect(chooseCursorPermissionResponse(
-      liveCursorMcpPermissionRequest,
+      request,
       'auto-accept-edits',
-      false,
-      toolCallRegistry.get(
-        liveCursorMcpPermissionRequest.sessionId,
-        liveCursorMcpPermissionRequest.toolCall.toolCallId,
-      ),
     )).toEqual({ outcome: { outcome: 'selected', optionId: 'allow-once' } })
-  })
-
-  it('keeps an uncorrelated live-shaped permission request rejected at Safe Tools', () => {
-    expect(chooseCursorPermissionResponse(
-      liveCursorMcpPermissionRequest,
-      'auto-accept-edits',
-    )).toEqual({ outcome: { outcome: 'selected', optionId: 'reject-once' } })
-  })
-
-  it('does not resolve an opaque tool call from another Cursor session', () => {
-    const hostTool = getHostTools()[0]
-    expect(hostTool).toBeDefined()
-    const toolCallRegistry = new CursorToolCallRegistry()
-    toolCallRegistry.recordSessionUpdate({
-      sessionId: 'other-cursor-session',
-      update: {
-        sessionUpdate: 'tool_call',
-        toolCallId: liveCursorMcpPermissionRequest.toolCall.toolCallId,
-        name: `mcp__${HOST_MCP_SERVER_NAME}__${hostTool!.name}`,
-      },
+    expect(toolCallRegistry.get(request.sessionId, request.toolCall.toolCallId)).toMatchObject({
+      title: 'MCP: tool',
+      kind: 'other',
     })
-
-    expect(chooseCursorPermissionResponse(
-      liveCursorMcpPermissionRequest,
-      'auto-accept-edits',
-      false,
-      toolCallRegistry.get(
-        liveCursorMcpPermissionRequest.sessionId,
-        liveCursorMcpPermissionRequest.toolCall.toolCallId,
-      ),
-    )).toEqual({ outcome: { outcome: 'selected', optionId: 'reject-once' } })
   })
 
-  it('uses an exact host title on a permission request as a secondary signal', () => {
+  it('does not let a built-in call spoof identity through its content', () => {
     const hostTool = getHostTools()[0]
     expect(hostTool).toBeDefined()
     expect(chooseCursorPermissionResponse(
       {
-        ...liveCursorMcpPermissionRequest,
-        toolCall: { ...liveCursorMcpPermissionRequest.toolCall, title: hostTool!.name },
+        ...liveCursorMcpPermissionRequest(hostTool!.name),
+        toolCall: {
+          ...liveCursorMcpPermissionRequest(hostTool!.name).toolCall,
+          title: 'Run shell command',
+          content: [{ type: 'content', content: `${HOST_MCP_SERVER_NAME}-${hostTool!.name}: ${hostTool!.name}` }],
+        },
       },
       'auto-accept-edits',
-    )).toEqual({ outcome: { outcome: 'selected', optionId: 'allow-once' } })
+    )).toEqual({ outcome: { outcome: 'selected', optionId: 'reject-once' } })
   })
 
-  it('does not let an announced built-in execute tool bypass Safe Tools', () => {
-    const toolCallRegistry = new CursorToolCallRegistry()
-    toolCallRegistry.recordSessionUpdate({
-      sessionId: 'cursor-session-built-in',
-      update: {
-        sessionUpdate: 'tool_call',
-        toolCallId: liveCursorMcpPermissionRequest.toolCall.toolCallId,
-        name: 'terminal',
-        title: 'Run terminal command',
-        kind: 'execute',
-      },
-    })
-
+  it('rejects a mismatched displayed tool name in a host-formatted title', () => {
+    const hostTool = getHostTools()[0]
+    const otherHostTool = getHostTools()[1]
+    expect(hostTool).toBeDefined()
+    expect(otherHostTool).toBeDefined()
     expect(chooseCursorPermissionResponse(
-      liveCursorMcpPermissionRequest,
+      {
+        ...liveCursorMcpPermissionRequest(hostTool!.name),
+        toolCall: {
+          ...liveCursorMcpPermissionRequest(hostTool!.name).toolCall,
+          title: `${HOST_MCP_SERVER_NAME}-${hostTool!.name}: ${otherHostTool!.name}`,
+        },
+      },
       'auto-accept-edits',
-      false,
-      toolCallRegistry.get(
-        liveCursorMcpPermissionRequest.sessionId,
-        liveCursorMcpPermissionRequest.toolCall.toolCallId,
-      ),
     )).toEqual({ outcome: { outcome: 'selected', optionId: 'reject-once' } })
   })
 

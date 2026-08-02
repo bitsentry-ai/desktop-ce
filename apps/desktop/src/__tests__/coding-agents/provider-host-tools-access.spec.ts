@@ -6,10 +6,8 @@ import {
 } from '@bitsentry-ce/coding-agents/claude-code-provider.service'
 import {
   chooseCodexApprovalResponse,
-  isBitsentryMcpToolItem,
 } from '@bitsentry-ce/coding-agents/codex-provider.service'
 import {
-  CursorToolCallRegistry,
   chooseCursorPermissionResponse,
   isBitsentryHostToolCall,
 } from '@bitsentry-ce/coding-agents/cursor-provider.service'
@@ -43,22 +41,27 @@ describe.each(accessLevels)('host tools at %s', (accessLevel) => {
 
   it('passes every host tool through Codex approval handling', () => {
     for (const hostTool of getHostTools()) {
-      expect(isBitsentryMcpToolItem({
-        type: 'mcpToolCall',
-        server: HOST_MCP_SERVER_NAME,
-        tool: hostTool.name,
-      })).toBe(true)
       expect(chooseCodexApprovalResponse(
-        'item/tool/requestUserInput',
-        { questions: [{ id: `mcp_tool_call_approval_${hostTool.name}` }] },
+        'mcpServer/elicitation/request',
+        {
+          threadId: 'thread-1',
+          turnId: 'turn-1',
+          serverName: HOST_MCP_SERVER_NAME,
+          mode: 'form',
+          message: 'Allow MCP call?',
+          requestedSchema: { type: 'object', properties: {} },
+          _meta: {
+            codex_request_type: 'approval_request',
+            codex_approval_kind: 'mcp_tool_call',
+            tool_name: hostTool.name,
+          },
+        },
         accessLevel,
-        true,
       )).toEqual({
         choice: 'allow-host-tool',
         result: {
-          answers: {
-            [`mcp_tool_call_approval_${hostTool.name}`]: { answers: ['Allow'] },
-          },
+          action: 'accept',
+          content: {},
         },
       })
     }
@@ -66,32 +69,17 @@ describe.each(accessLevels)('host tools at %s', (accessLevel) => {
 
   it('passes every host tool through Cursor ACP permission handling', () => {
     for (const hostTool of getHostTools()) {
-      const toolCallId = `tool_${hostTool.name}`
-      const toolCallRegistry = new CursorToolCallRegistry()
-      toolCallRegistry.recordSessionUpdate({
-        sessionId: 'cursor-session-1',
-        update: {
-          sessionUpdate: 'tool_call',
-          toolCallId,
-          name: `mcp__${HOST_MCP_SERVER_NAME}__${hostTool.name}`,
-          title: hostTool.name,
-          kind: 'other',
-          rawInput: {},
-        },
-      })
       const toolCall = {
-        content: [],
+        content: [{ type: 'content', content: 'MCP tool request' }],
         kind: 'other',
         status: 'pending',
-        title: 'Cursor MCP call',
-        toolCallId,
+        title: `${HOST_MCP_SERVER_NAME}-${hostTool.name}: ${hostTool.name}`,
+        toolCallId: `tool_${hostTool.name}`,
       }
-      expect(isBitsentryHostToolCall(toolCall)).toBe(false)
+      expect(isBitsentryHostToolCall(toolCall)).toBe(true)
       expect(chooseCursorPermissionResponse(
         { toolCall, options: permissionOptions },
         accessLevel,
-        false,
-        toolCallRegistry.get('cursor-session-1', toolCallId),
       )).toEqual({ outcome: { outcome: 'selected', optionId: 'allow-once' } })
     }
   })
@@ -126,5 +114,33 @@ describe('Codex native approval behavior', () => {
       {},
       'full-access',
     )).toEqual({ choice: 'allow-full-access', result: { decision: 'acceptForSession' } })
+  })
+
+  it('declines non-host and non-tool MCP elicitations at Safe Tools', () => {
+    const hostToolName = getHostTools()[0]?.name
+    expect(hostToolName).toBeDefined()
+    const approvalMetadata = {
+      codex_request_type: 'approval_request',
+      codex_approval_kind: 'mcp_tool_call',
+      tool_name: hostToolName,
+    }
+    expect(chooseCodexApprovalResponse(
+      'mcpServer/elicitation/request',
+      {
+        serverName: 'other-server',
+        mode: 'form',
+        _meta: approvalMetadata,
+      },
+      'auto-accept-edits',
+    )).toEqual({ choice: 'deny', result: { action: 'decline', content: null } })
+    expect(chooseCodexApprovalResponse(
+      'mcpServer/elicitation/request',
+      {
+        serverName: HOST_MCP_SERVER_NAME,
+        mode: 'form',
+        _meta: { ...approvalMetadata, codex_approval_kind: 'other' },
+      },
+      'auto-accept-edits',
+    )).toEqual({ choice: 'deny', result: { action: 'decline', content: null } })
   })
 })

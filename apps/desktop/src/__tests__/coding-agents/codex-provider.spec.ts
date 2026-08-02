@@ -92,10 +92,19 @@ const respond = (id, result) => process.stdout.write(JSON.stringify({ id, result
 const notify = (method, params) => process.stdout.write(JSON.stringify({ method, params }) + '\\n')
 const requestApproval = () => process.stdout.write(JSON.stringify({
   id: approvalId,
-  method: 'item/tool/requestUserInput',
+  method: 'mcpServer/elicitation/request',
   params: {
-    itemId: 'bitsentry-mcp-item',
-    questions: [{ id: 'mcp_tool_call_approval_test', question: 'Allow MCP call?' }],
+    threadId: 'thread-approval',
+    turnId: 'turn-approval',
+    serverName: ${JSON.stringify(HOST_MCP_SERVER_NAME)},
+    mode: 'form',
+    message: 'Allow MCP call?',
+    requestedSchema: { type: 'object', properties: {} },
+    _meta: {
+      codex_request_type: 'approval_request',
+      codex_approval_kind: 'mcp_tool_call',
+      tool_name: ${JSON.stringify(hostToolName)},
+    },
   },
 }) + '\\n')
 const logMessage = (message) => fs.appendFileSync(${JSON.stringify(logPath)}, JSON.stringify(message) + '\\n')
@@ -197,7 +206,7 @@ describe('Codex provider behavior', () => {
     ])
   })
 
-  it('approves a tracked BitSentry MCP request at Safe Tools', async () => {
+  it('approves a BitSentry MCP tool elicitation at Safe Tools', async () => {
     const infos: unknown[][] = []
     setCodingAgentsLoggerForTesting({ info: (...args) => { infos.push(args) }, warn: () => {}, error: () => {} })
     const hostToolName = getHostTools()[0]?.name
@@ -218,17 +227,21 @@ describe('Codex provider behavior', () => {
     expect(approvalResponse).toEqual({
       id: 'mcp-approval-1',
       result: {
-        answers: {
-          mcp_tool_call_approval_test: { answers: ['Allow'] },
-        },
+        action: 'accept',
+        content: {},
       },
     })
     expect(infos).toContainEqual([
       '[codex-provider] approval decision',
       expect.objectContaining({
-        method: 'item/tool/requestUserInput',
+        method: 'mcpServer/elicitation/request',
         choice: 'allow-host-tool',
-        itemId: 'bitsentry-mcp-item',
+        elicitation: expect.objectContaining({
+          serverName: HOST_MCP_SERVER_NAME,
+          approvalKind: 'mcp_tool_call',
+          toolName: hostToolName,
+          hostToolName,
+        }),
       }),
     ])
   })

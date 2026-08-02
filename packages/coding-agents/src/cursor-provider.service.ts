@@ -238,16 +238,26 @@ function hostToolNameFromIdentity(value: unknown): string | undefined {
   return undefined
 }
 
+function hostToolNameFromPermissionTitle(value: unknown): string | undefined {
+  const title = asString(value)
+  if (title === undefined) return undefined
+
+  const separatorIndex = title.indexOf(':')
+  const label = (separatorIndex === -1 ? title : title.slice(0, separatorIndex)).trim()
+  const displayedToolName = separatorIndex === -1 ? undefined : title.slice(separatorIndex + 1).trim()
+  const serverPrefix = `${HOST_MCP_SERVER_NAME}-`
+  if (!label.toLowerCase().startsWith(serverPrefix.toLowerCase())) return undefined
+
+  const toolName = label.slice(serverPrefix.length)
+  if (!HOST_TOOL_NAMES.has(toolName)) return undefined
+  if (displayedToolName !== undefined && displayedToolName !== toolName) return undefined
+  return toolName
+}
+
 function mcpServerNameFromIdentity(value: unknown): string | undefined {
   return asString(value)
     ?? asString(asRecord(value)?.name)
     ?? asString(asRecord(value)?.id)
-}
-
-function hasBitsentryMcpServerIdentity(toolCall: Record<string, unknown>): boolean {
-  return toolIdentityRecords(toolCall).some((identity) => MCP_SERVER_IDENTITY_FIELDS.some((field) => (
-    mcpServerNameFromIdentity(identity[field])?.toLowerCase() === HOST_MCP_SERVER_NAME
-  )))
 }
 
 function toolIdentityRecords(toolCall: Record<string, unknown>): Record<string, unknown>[] {
@@ -262,21 +272,7 @@ function toolIdentityRecords(toolCall: Record<string, unknown>): Record<string, 
 }
 
 export function isBitsentryHostToolCall(toolCall: Record<string, unknown> | undefined): boolean {
-  if (toolCall === undefined) return false
-
-  for (const identityRecord of toolIdentityRecords(toolCall)) {
-    for (const field of HOST_TOOL_IDENTITY_FIELDS) {
-      const identity = asString(identityRecord[field])
-      const hostToolName = hostToolNameFromIdentity(identity)
-      if (hostToolName === undefined) continue
-
-      if (new RegExp(`^mcp__${HOST_MCP_SERVER_NAME}__`, 'i').test(identity ?? '')) return true
-      if (hasBitsentryMcpServerIdentity(toolCall)) return true
-      if (field === 'title' && identity === hostToolName) return true
-    }
-  }
-
-  return false
+  return hostToolNameFromPermissionTitle(toolCall?.title) !== undefined
 }
 
 export interface CursorToolCallIdentity {
@@ -334,10 +330,9 @@ export class CursorToolCallRegistry {
   }
 }
 
-function isBitsentryHostToolIdentity(identity: CursorToolCallIdentity | undefined): boolean {
-  if (identity === undefined) return false
-  return hostToolNameFromIdentity(identity.name) !== undefined ||
-    hostToolNameFromIdentity(identity.title) !== undefined
+function hostToolNameFromCursorToolIdentity(identity: CursorToolCallIdentity | undefined): string | undefined {
+  if (identity === undefined) return undefined
+  return hostToolNameFromIdentity(identity.name) ?? hostToolNameFromIdentity(identity.title)
 }
 
 function getToolSearchText(toolCall: Record<string, unknown> | undefined): string {
@@ -390,7 +385,6 @@ export function chooseCursorPermissionResponse(
   requestParams: unknown,
   accessLevel: AccessLevel,
   isAborted = false,
-  resolvedToolCall?: CursorToolCallIdentity,
 ): CursorPermissionResponse {
   if (isAborted) {
     return { outcome: { outcome: 'cancelled' } }
@@ -399,8 +393,7 @@ export function chooseCursorPermissionResponse(
   const params = asRecord(requestParams)
   const toolCall = asRecord(params?.toolCall)
   const options = normalizePermissionOptions(params?.options)
-  const allow = isBitsentryHostToolIdentity(resolvedToolCall)
-    || isBitsentryHostToolCall(toolCall)
+  const allow = isBitsentryHostToolCall(toolCall)
     || canAllowTool(accessLevel, inferToolKind(toolCall))
   const selected = chooseOption(options, allow)
 
@@ -934,19 +927,23 @@ function registerCursorServerRequestHandler(
       const sessionId = asString(asRecord(request.params)?.sessionId)
       const toolCallId = asString(toolCall?.toolCallId)
       const resolvedToolCall = toolCallRegistry.get(sessionId, toolCallId)
-      const hostToolMatched = isBitsentryHostToolIdentity(resolvedToolCall) || isBitsentryHostToolCall(toolCall)
+      const permissionTitleHostToolName = hostToolNameFromPermissionTitle(toolCall?.title)
+      const registryHostToolName = hostToolNameFromCursorToolIdentity(resolvedToolCall)
       const inferredKind = inferToolKind(toolCall)
       const response = chooseCursorPermissionResponse(
         request.params,
         accessLevel,
         isAbortSignalAborted(options.abortController.signal),
-        resolvedToolCall,
       )
       log.info('[cursor-provider] permission decision', {
         agentSessionId: options.mcpEndpoint?.agentSessionId ?? 'unknown',
         ...summarizeCursorPermissionRequest(request.params),
         inferredKind,
-        hostToolMatched,
+        hostToolMatched: permissionTitleHostToolName !== undefined,
+        hostToolSignals: {
+          permissionTitle: permissionTitleHostToolName ?? null,
+          registry: registryHostToolName ?? null,
+        },
         correlation: {
           sessionId: sessionId ?? null,
           toolCallId: toolCallId ?? null,
