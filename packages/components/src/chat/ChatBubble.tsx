@@ -148,19 +148,6 @@ function AssistantWaitingIndicator({
   );
 }
 
-function activityLabel(activity: AgentMessage["activity"]): string | null {
-  switch (activity) {
-    case "asking_model":
-      return "Asking model";
-    case "running_runbook":
-      return "Running runbook";
-    case "waiting_for_summary":
-      return "Waiting for summary";
-    default:
-      return null;
-  }
-}
-
 export const ChatBubble = memo(function ChatBubble({
   msg,
   providerKey,
@@ -247,7 +234,6 @@ export const ChatBubble = memo(function ChatBubble({
 
   const isWaitingForAssistant =
     msg.status === "thinking" || msg.status === "streaming";
-  const visibleActivityLabel = activityLabel(msg.activity);
 
   let copyResponseButton: ReactNode = null;
   if (copyableMarkdown.length > 0) {
@@ -286,9 +272,6 @@ export const ChatBubble = memo(function ChatBubble({
       </div>
       <div className="flex min-w-0 flex-1 items-start gap-2 pt-0.5">
         <div className="min-w-0 flex-1 space-y-3">
-          {visibleActivityLabel !== null && isWaitingForAssistant && (
-            <AssistantWaitingIndicator label={visibleActivityLabel} />
-          )}
           {/* Render each iteration */}
           {msg.iterations.map((iter, index) => {
             const iterTools = dedupeToolCalls(
@@ -312,11 +295,7 @@ export const ChatBubble = memo(function ChatBubble({
             }
             const hasVisibleText =
               visibleText.trim().length > 0;
-            const shouldShowWaitingIndicator =
-              isActive &&
-              (iter.status === "thinking" || msg.status === "thinking") &&
-              !hasVisibleText &&
-              iterTools.length === 0;
+            const shouldShowWaitingIndicator = isActive && isWaitingForAssistant;
 
             // Show timestamp when iteration completes
             const showTimestamp =

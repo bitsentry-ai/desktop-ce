@@ -33,7 +33,6 @@ import {
 import { useTranslation } from "@bitsentry-ce/i18n";
 import {
   ImagePlus,
-  Loader2,
   Paperclip,
   Plus,
   X,
@@ -299,12 +298,6 @@ export function Composer({
 
   return (
     <div className="shrink-0 px-4 pb-4">
-      {threadStatus === "streaming" && (
-        <div className="mb-2 flex items-center gap-2 text-xs text-muted-foreground">
-          <Loader2 size={11} className="animate-spin" />
-          {t("common.incidents.aiIsResponding")}
-        </div>
-      )}
       <input
         ref={imageInputRef}
         type="file"
