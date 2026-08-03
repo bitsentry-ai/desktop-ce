@@ -155,17 +155,19 @@ export function normalizePostHogSearchQuery(value: string): string {
 }
 
 function unwrapFencedMarkdownCode(value: string): string | null {
-  const fenced = value.match(/^```[^\n`]*\n?([\s\S]*?)\n?```$/);
-  const fencedBody = fenced?.[1]?.trim();
-  if (fencedBody !== undefined && fencedBody !== "") return fencedBody;
-  return null;
+  if (!value.startsWith("```") || !value.endsWith("```")) return null;
+  const openingEnd = value.indexOf("\n");
+  if (openingEnd < 3) return null;
+  const body = value.slice(openingEnd + 1, -3).trim();
+  return body === "" ? null : body;
 }
 
 function unwrapInlineMarkdownCode(value: string): string | null {
-  const inline = value.match(/^`([^`\n]+)`$/);
-  const inlineBody = inline?.[1]?.trim();
-  if (inlineBody !== undefined && inlineBody !== "") return inlineBody;
-  return null;
+  if (!value.startsWith("`") || !value.endsWith("`") || value.length < 3) return null;
+  const body = value.slice(1, -1);
+  if (body.includes("\n") || body.includes("`")) return null;
+  const inlineBody = body.trim();
+  return inlineBody === "" ? null : inlineBody;
 }
 
 function padUtcComponent(value: number, length = 2): string {

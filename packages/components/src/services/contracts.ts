@@ -365,12 +365,10 @@ export interface RuntimeServicePort {
 
 export type LogLevelThreshold = "error" | "warning" | "info" | "debug";
 
-export type ErrorSourceType = string;
-
 export interface ErrorSourceRow {
   id: string;
   pluginId?: string;
-  sourceType: ErrorSourceType;
+  sourceType: string;
   name: string;
   syncEnabled: boolean;
   autoDiagnosisEnabled: boolean;
@@ -383,7 +381,7 @@ export interface ErrorSourceRow {
 
 export interface CreateErrorSourceInput {
   pluginId: string;
-  sourceType: ErrorSourceType;
+  sourceType: string;
   name: string;
   setupValues?: Record<string, unknown>;
   logLevelThreshold: LogLevelThreshold;
@@ -447,7 +445,7 @@ export interface PluginActionDefinition {
 }
 
 export interface PluginDataSourceMetadata {
-  sourceType: ErrorSourceType;
+  sourceType: string;
   setupFields: PluginDataSourceSetupField[];
   oauth?: {
     envClientIdName?: string;
@@ -608,7 +606,7 @@ export interface RunbookTriggerContext {
   needLabel?: string;
   sourceId?: string;
   sourceName?: string;
-  sourceType?: ErrorSourceType;
+  sourceType?: string;
   entrypoint: RunbookTriggerSurface;
   incidentThreadId?: string;
 }
@@ -617,7 +615,7 @@ export interface TelemetryActionConfig {
   needId?: string;
   needLabel?: string;
   sourceId?: string;
-  sourceType?: ErrorSourceType;
+  sourceType?: string;
   sourceName?: string;
   queryMode?: "search" | "collector";
   queryLimit?: number;

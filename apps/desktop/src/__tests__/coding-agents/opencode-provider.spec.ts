@@ -71,7 +71,7 @@ describe('executeOpenCode', () => {
       prompt: 'Investigate the incident',
       binaryPath: 'opencode',
       abortController: new AbortController(),
-      cwd: '/tmp/bitsentry-incident',
+      cwd: '/tmp/bitsentry-incident', // eslint-disable-line sonarjs/publicly-writable-directories -- Mock subprocess fixture; the test never creates or trusts this path.
       model: 'openai/gpt-5',
       accessLevel: 'auto-accept-edits',
       traitValues: { effort: 'high' },
@@ -105,7 +105,7 @@ describe('executeOpenCode', () => {
         token: 'token',
         expiresAt: Date.now() + 60_000,
         command: process.execPath,
-        args: ['/tmp/host-mcp-shim.cjs'],
+        args: ['/tmp/host-mcp-shim.cjs'], // eslint-disable-line sonarjs/publicly-writable-directories -- Mock MCP shim argument; the test never executes this path.
         env: { BITSENTRY_MCP_URL: 'http://127.0.0.1:40123/mcp', BITSENTRY_MCP_TOKEN: 'token' },
         agentSessionId: 'agent-session-opencode',
       },
@@ -130,7 +130,7 @@ describe('executeOpenCode', () => {
       mcp: {
         bitsentry: {
           type: 'local',
-          command: [process.execPath, '/tmp/host-mcp-shim.cjs'],
+          command: [process.execPath, '/tmp/host-mcp-shim.cjs'], // eslint-disable-line sonarjs/publicly-writable-directories -- Asserted mock config, not an executed filesystem path.
         },
       },
     })

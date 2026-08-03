@@ -224,12 +224,43 @@ function runOpenCodeModelsCommand(
 function parseOpenCodeModelList(stdout: string, stderr: string): string[] {
   const models = new Set<string>();
   for (const line of `${stdout}\n${stderr}`.split(/\r?\n/)) {
-    const trimmed = line.trim();
-    if (trimmed === "" || /^provider\b/i.test(trimmed)) continue;
-    const match = trimmed.match(/[a-z0-9_.-]+\/[a-z0-9_.:|+-]+/i);
-    if (match !== null) models.add(match[0]);
+    const trimmed = line.trim()
+    if (trimmed === '' || /^provider\b/i.test(trimmed)) continue
+    const modelId = readOpenCodeModelId(trimmed)
+    if (modelId !== undefined) models.add(modelId)
   }
   return [...models];
+}
+
+function readOpenCodeModelId(value: string): string | undefined {
+  let start = 0
+  while (start < value.length) {
+    while (start < value.length && !isOpenCodeModelCharacter(value[start])) start += 1
+    let end = start
+    let slashIndex = -1
+    while (end < value.length && isOpenCodeModelCharacter(value[end])) {
+      if (value[end] === "/") slashIndex = end
+      end += 1
+    }
+    if (slashIndex > start && slashIndex < end - 1) return value.slice(start, end)
+    start = end + 1
+  }
+  return undefined
+}
+
+function isOpenCodeModelCharacter(value: string | undefined): boolean {
+  return value !== undefined && (
+    (value >= "a" && value <= "z")
+    || (value >= "A" && value <= "Z")
+    || (value >= "0" && value <= "9")
+    || value === "_"
+    || value === "."
+    || value === "-"
+    || value === "/"
+    || value === ":"
+    || value === "|"
+    || value === "+"
+  )
 }
 
 function isOpenCodeDatabaseLockedError(error: unknown): boolean {

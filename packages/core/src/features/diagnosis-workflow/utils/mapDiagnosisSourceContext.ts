@@ -33,6 +33,8 @@ const SOURCE_KIND_BY_CATEGORY: Readonly<
   telemetry: "telemetry_entry",
 };
 
+type DiagnosisSourceKeyValue = string | number | null;
+
 export interface DiagnosisSourceContextPayload {
   sourceCategory?: string;
   sourceKind?: string;
@@ -43,7 +45,7 @@ export interface DiagnosisSourceContextPayload {
   sourceRef?: {
     sourceTableName?: string | null;
     sourceFieldName?: string | null;
-    sourceKeyValue?: string | number | null;
+    sourceKeyValue?: DiagnosisSourceKeyValue;
   };
 }
 
@@ -135,11 +137,13 @@ function defaultLogLevel(sourceKind: DiagnosisSourceKind): DiagnosisLogLevel {
   return "infrastructure";
 }
 
-function inferSeverity(input: {
+type SeverityInput = {
   sourceKind: DiagnosisSourceKind;
   severity?: string | number | null;
   ruleLevel?: number | null;
-}): DiagnosisSeverity {
+};
+
+function inferSeverity(input: SeverityInput): DiagnosisSeverity {
   if (input.sourceKind === "telemetry_entry") {
     // For infrastructure-style telemetry sources, severity is derived only from rule level.
     return mapTelemetrySeverityByRuleLevel(parseRuleLevel(input.ruleLevel));
@@ -157,11 +161,13 @@ function pickFirstSourceText(values: unknown[]): string | undefined {
   return undefined;
 }
 
-function buildDefaultSourceRef(input: {
+type DefaultSourceRefInput = {
   sourceKind: DiagnosisSourceKind;
   telemetryEntryId?: number;
   sourceKeyValue?: string | number | null;
-}): DiagnosisSourceRef {
+};
+
+function buildDefaultSourceRef(input: DefaultSourceRefInput): DiagnosisSourceRef {
   const normalizedKey = sourceText(input.sourceKeyValue);
   if (input.sourceKind === "error_issue") {
     return {
@@ -227,18 +233,20 @@ function completeSourceRef(
   };
 }
 
+type SourceSeverityInput = string | number | null;
+
 export interface MapDiagnosisSourceContextInput {
   telemetryEntryId?: number;
   sourceCategory?: string;
   sourceKind?: string;
   logLevel?: string;
-  severity?: string | number | null;
+  severity?: SourceSeverityInput;
   ruleLevel?: number | null;
   description?: string | null;
   title?: string | null;
   message?: string | null;
   environment?: string | null;
-  providerNativeSeverity?: string | number | null;
+  providerNativeSeverity?: SourceSeverityInput;
   providerNativeId?: string | number | null;
   sourceMetadata?: Record<string, unknown>;
   normalizedData?: Record<string, unknown>;

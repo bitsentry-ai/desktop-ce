@@ -147,6 +147,44 @@ export function resolveDesktopPluginDirectories(
   );
 }
 
+function parseStoredBooleanField(field: DesktopPluginFieldDefinition, rawValue: unknown, normalized: string | undefined): boolean {
+  if (typeof rawValue === "boolean") return rawValue;
+  if (normalized !== "true" && normalized !== "false") {
+    throw new Error(`Stored auth field "${field.key}" for plugin auth must be true or false.`);
+  }
+  return normalized === "true";
+}
+
+function parseStoredNumberField(field: DesktopPluginFieldDefinition, rawValue: unknown, normalized: string | undefined): number {
+  if (typeof rawValue === "number" && Number.isFinite(rawValue)) return rawValue;
+  const numeric = Number(normalized);
+  if (!Number.isFinite(numeric)) {
+    throw new Error(`Stored auth field "${field.key}" for plugin auth must be a number.`);
+  }
+  return numeric;
+}
+
+function parseStoredStringArrayField(field: DesktopPluginFieldDefinition, rawValue: unknown): string[] {
+  if (Array.isArray(rawValue)) {
+    return rawValue.filter((item): item is string => typeof item === "string")
+      .map((item) => item.trim()).filter((item) => item.length > 0);
+  }
+  if (typeof rawValue !== "string") {
+    throw new Error(`Stored auth field "${field.key}" for plugin auth must be a string array.`);
+  }
+  return rawValue.split(/\r?\n|,/).map((item) => item.trim()).filter((item) => item.length > 0);
+}
+
+function parseStoredStringField(field: DesktopPluginFieldDefinition, rawValue: unknown): string {
+  if (typeof rawValue !== "string") {
+    throw new Error(`Stored auth field "${field.key}" for plugin auth must be a string.`);
+  }
+  if (field.enumValues !== undefined && !field.enumValues.includes(rawValue)) {
+    throw new Error(`Stored auth field "${field.key}" for plugin auth must be one of: ${field.enumValues.join(", ")}.`);
+  }
+  return rawValue;
+}
+
 function parseStoredFieldValue(
   field: DesktopPluginFieldDefinition,
   rawValue: unknown,
@@ -156,33 +194,8 @@ function parseStoredFieldValue(
     normalized = rawValue.trim();
   }
 
-  if (field.type === "boolean") {
-    if (typeof rawValue === "boolean") {
-      return rawValue;
-    }
-
-    if (normalized !== "true" && normalized !== "false") {
-      throw new Error(
-        `Stored auth field "${field.key}" for plugin auth must be true or false.`,
-      );
-    }
-
-    return normalized === "true";
-  }
-
-  if (field.type === "number") {
-    if (typeof rawValue === "number" && Number.isFinite(rawValue)) {
-      return rawValue;
-    }
-
-    const numeric = Number(normalized);
-    if (!Number.isFinite(numeric)) {
-      throw new Error(
-        `Stored auth field "${field.key}" for plugin auth must be a number.`,
-      );
-    }
-    return numeric;
-  }
+  if (field.type === "boolean") return parseStoredBooleanField(field, rawValue, normalized);
+  if (field.type === "number") return parseStoredNumberField(field, rawValue, normalized);
 
   if (field.type === "json") {
     if (typeof rawValue !== "string") {
@@ -192,42 +205,8 @@ function parseStoredFieldValue(
     return JSON.parse(rawValue);
   }
 
-  if (field.type === "string_array") {
-    if (Array.isArray(rawValue)) {
-      return rawValue
-        .filter((item): item is string => typeof item === "string")
-        .map((item) => item.trim())
-        .filter((item) => item.length > 0);
-    }
-
-    if (typeof rawValue !== "string") {
-      throw new Error(
-        `Stored auth field "${field.key}" for plugin auth must be a string array.`,
-      );
-    }
-
-    return rawValue
-      .split(/\r?\n|,/)
-      .map((item) => item.trim())
-      .filter((item) => item.length > 0);
-  }
-
-  if (typeof rawValue !== "string") {
-    throw new Error(
-      `Stored auth field "${field.key}" for plugin auth must be a string.`,
-    );
-  }
-
-  if (
-    field.enumValues !== undefined &&
-    !field.enumValues.includes(rawValue)
-  ) {
-    throw new Error(
-      `Stored auth field "${field.key}" for plugin auth must be one of: ${field.enumValues.join(", ")}.`,
-    );
-  }
-
-  return rawValue;
+  if (field.type === "string_array") return parseStoredStringArrayField(field, rawValue);
+  return parseStoredStringField(field, rawValue);
 }
 
 function resolveStoredAuth(

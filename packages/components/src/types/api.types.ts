@@ -515,12 +515,18 @@ export interface AgentHealthMetrics {
 // Missing API types that need to be implemented
 
 // Notifications
+type NotificationType = "info" | "warning" | "error" | "success";
+type TicketSeverity = "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
+type TicketStatus = "OPEN" | "IN_PROGRESS" | "RESOLVED" | "CLOSED" | "REJECTED";
+type TicketPriority = "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
+type TicketType = "BUG" | "FEATURE" | "SUPPORT" | "SECURITY" | "INCIDENT";
+
 export interface Notification {
   id: string;
   title: string;
   message: string;
-  type: "info" | "warning" | "error" | "success";
-  severity: "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
+  type: NotificationType;
+  severity: TicketSeverity;
   read: boolean;
   userId: number;
   createdAt: string;
@@ -549,7 +555,7 @@ export interface CreateNotification {
   title: string;
   message: string;
   type: "info" | "warning" | "error" | "success";
-  severity: "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
+  severity: TicketSeverity;
   userId: number;
   metadata?: Record<string, unknown>;
 }
@@ -559,7 +565,7 @@ export interface ThreatIntelligence {
   id: string;
   title: string;
   description: string;
-  severity: "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
+  severity: TicketSeverity;
   source: string;
   indicators: string[];
   affectedSystems: string[];
@@ -569,9 +575,11 @@ export interface ThreatIntelligence {
   metadata?: Record<string, unknown>;
 }
 
+type ThreatType = "MALWARE" | "PHISHING" | "VULNERABILITY" | "EXPLOIT" | "IOC" | "TTPs";
+
 export interface ThreatQuery {
-  type?: "MALWARE" | "PHISHING" | "VULNERABILITY" | "EXPLOIT" | "IOC" | "TTPs";
-  severity?: "CRITICAL" | "HIGH" | "MEDIUM" | "LOW";
+  type?: ThreatType;
+  severity?: TicketSeverity;
   source?: string;
   active?: boolean;
   search?: string;
@@ -588,7 +596,7 @@ export type Threat = ThreatIntelligence;
 export interface CreateThreat {
   title: string;
   description: string;
-  severity: "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
+  severity: TicketSeverity;
   source: string;
   indicators: string[];
   affectedSystems: string[];
@@ -599,7 +607,7 @@ export interface CreateThreat {
 export interface UpdateThreat {
   title?: string;
   description?: string;
-  severity?: "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
+  severity?: TicketSeverity;
   source?: string;
   indicators?: string[];
   affectedSystems?: string[];
@@ -915,9 +923,9 @@ export interface Ticket {
   id: string;
   title: string;
   description: string;
-  status: "OPEN" | "IN_PROGRESS" | "RESOLVED" | "CLOSED" | "REJECTED";
-  priority: "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
-  type: "BUG" | "FEATURE" | "SUPPORT" | "SECURITY" | "INCIDENT";
+  status: TicketStatus;
+  priority: TicketPriority;
+  type: TicketType;
   assigneeId?: number;
   reporterId: number;
   vulnerabilityId?: string;
@@ -946,9 +954,9 @@ export interface Ticket {
 }
 
 export interface TicketQuery {
-  status?: "OPEN" | "IN_PROGRESS" | "RESOLVED" | "CLOSED" | "REJECTED";
-  priority?: "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
-  type?: "BUG" | "FEATURE" | "SUPPORT" | "SECURITY" | "INCIDENT";
+  status?: TicketStatus;
+  priority?: TicketPriority;
+  type?: TicketType;
   assigneeId?: number;
   reporterId?: number;
   vulnerabilityId?: string;
@@ -961,8 +969,8 @@ export interface TicketQuery {
 export interface CreateTicket {
   title: string;
   description: string;
-  priority: "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
-  type: "BUG" | "FEATURE" | "SUPPORT" | "SECURITY" | "INCIDENT";
+  priority: TicketPriority;
+  type: TicketType;
   assigneeId?: number;
   reporterId: number;
   vulnerabilityId?: string;
@@ -972,9 +980,9 @@ export interface CreateTicket {
 export interface UpdateTicket {
   title?: string;
   description?: string;
-  status?: "OPEN" | "IN_PROGRESS" | "RESOLVED" | "CLOSED" | "REJECTED";
-  priority?: "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
-  type?: "BUG" | "FEATURE" | "SUPPORT" | "SECURITY" | "INCIDENT";
+  status?: TicketStatus;
+  priority?: TicketPriority;
+  type?: TicketType;
   assigneeId?: number;
   resolution?: string;
 }

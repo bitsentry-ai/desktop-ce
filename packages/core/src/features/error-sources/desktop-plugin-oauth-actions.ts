@@ -142,8 +142,6 @@ export async function exchangePluginCodeForToken(input: {
   baseUrl?: string;
   exchange: DesktopOAuthTokenExchangeInput;
 }): Promise<DesktopOAuthTokenResponse> {
-  void input.exchange.signal;
-
   const result = await input.runtime.executeAction({
     pluginId: input.pluginId,
     actionId: resolveErrorSourceProviderActionId({
@@ -181,8 +179,6 @@ export async function refreshPluginAccessToken(input: {
     signal?: AbortSignal;
   };
 }): Promise<DesktopOAuthTokenResponse> {
-  void input.refresh.signal;
-
   const result = await input.runtime.executeAction({
     pluginId: input.pluginId,
     actionId: resolveErrorSourceProviderActionId({

@@ -551,7 +551,7 @@ export function createDesktopRunbookHandlers(
             runbookId,
             requestKey: asString(
               input.requestKey,
-              `gui:${Date.now().toString(36)}:${Math.random().toString(36).slice(2)}`,
+              `gui:${crypto.randomUUID()}`,
             ),
             incidentId: incidentThreadId,
             parameterValues: asStringRecord(input.parameterValues),
@@ -579,7 +579,6 @@ export function createDesktopRunbookHandlers(
     },
     "runbooks:cancelExecution": async (payload: unknown) => {
       await (runbookGateway ?? executionService).cancel(asString(asObject(payload).executionId));
-      return;
     },
   };
 }

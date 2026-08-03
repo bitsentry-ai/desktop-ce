@@ -64,6 +64,45 @@ interface ResultTraceMemory {
   execution: RunbookExecutionRecord | null;
 }
 
+type RunbookExecutionEvent = {
+  resultId: string;
+  executionId: string;
+  incidentThreadId?: string | null;
+  execution: RunbookExecutionRecord;
+};
+
+function mergeExecutionEventIntoResults(
+  previous: StoredRunResult[],
+  event: RunbookExecutionEvent,
+): StoredRunResult[] {
+  const { resultId, executionId, incidentThreadId, execution } = event;
+  const existing = previous.find((item) => item.id === resultId);
+  if (existing === undefined) {
+    return [{
+      id: resultId,
+      executionId,
+      incidentThreadId: incidentThreadId ?? undefined,
+      runbookId: execution.runbookId,
+      runbookTitle: execution.runbookTitle,
+      status: execution.status,
+      startedAt: execution.startedAt,
+      completedAt: execution.completedAt,
+      completionReason: execution.completionReason,
+    }, ...previous];
+  }
+  return previous.map((result) => result.id !== resultId ? result : {
+    ...result,
+    executionId,
+    incidentThreadId: incidentThreadId ?? result.incidentThreadId,
+    runbookId: execution.runbookId,
+    runbookTitle: execution.runbookTitle,
+    status: execution.status,
+    startedAt: result.startedAt.length === 0 ? execution.startedAt : result.startedAt,
+    completedAt: execution.completedAt ?? result.completedAt,
+    completionReason: execution.completionReason ?? result.completionReason,
+  });
+}
+
 const RESULTS_KEY = "bitsentry_results";
 const LEGACY_RESULTS_KEY = "bitsentry_investigations";
 const RESULT_TRACES_KEY = "bitsentry_result_traces";
@@ -315,22 +354,44 @@ function stepSelectionKey(step: RunbookExecutionStepRecord): string {
   return `${String(step.order)}:${actionPart}:${step.title}`;
 }
 
+function hasMarkdownStructureLine(text: string): boolean {
+  return text.split("\n").some((line) => {
+    const value = line.trimStart();
+    const firstCharacter = value[0] ?? "";
+    if (firstCharacter === "#") {
+      const headingLength = value.indexOf(" ");
+      return headingLength > 0 && headingLength <= 6;
+    }
+    if (["-", "*", "+", ">"].includes(firstCharacter) && value[1] === " ") return true;
+    if (value.startsWith("|") && value.lastIndexOf("|") > 0) return true;
+
+    let digitCount = 0;
+    while (value[digitCount] >= "0" && value[digitCount] <= "9") digitCount += 1;
+    return digitCount > 0 && value[digitCount] === "." && value[digitCount + 1] === " ";
+  });
+}
+
+function hasDelimitedText(value: string, delimiter: string): boolean {
+  const first = value.indexOf(delimiter);
+  return first >= 0 && value.indexOf(delimiter, first + delimiter.length) > first + delimiter.length;
+}
+
+function hasMarkdownLink(value: string): boolean {
+  const labelStart = value.indexOf("[");
+  const labelEnd = value.indexOf("](", labelStart + 1);
+  const urlEnd = value.indexOf(")", labelEnd + 2);
+  return labelStart >= 0 && labelEnd > labelStart + 1 && urlEnd > labelEnd + 2;
+}
+
 function looksLikeMarkdown(value: string): boolean {
   const text = value.trim();
-  if (text.length === 0) return false;
-  if (text.startsWith("{") || text.startsWith("[")) return false;
+  if (text.length === 0 || text.startsWith("{") || text.startsWith("[")) return false;
 
-  return (
-    /^#{1,6}\s/m.test(text) ||
-    /^\s*[-*+]\s/m.test(text) ||
-    /^\s*\d+\.\s/m.test(text) ||
-    /^\s*>\s/m.test(text) ||
-    /^\s*\|.+\|\s*$/m.test(text) ||
-    /\*\*[^*]+\*\*/.test(text) ||
-    /`[^`]+`/.test(text) ||
-    /\[[^\]]+\]\([^)]+\)/.test(text) ||
-    text.includes("```")
-  );
+  return hasMarkdownStructureLine(text)
+    || hasDelimitedText(text, "**")
+    || hasDelimitedText(text, "`")
+    || hasMarkdownLink(text)
+    || text.includes("```");
 }
 
 function RenderedOutput({
@@ -921,50 +982,9 @@ export default function ResultsPage() {
           [resultId]: { execution },
         }));
 
-        setResults((prev) => {
-          const existingIndex = prev.findIndex((item) => item.id === resultId);
-          if (existingIndex >= 0) {
-            return prev.map((result, index) => {
-              if (index !== existingIndex) {
-                return result;
-              }
-
-              let startedAt = result.startedAt;
-              if (startedAt.length === 0) {
-                startedAt = execution.startedAt;
-              }
-
-              return {
-                ...result,
-                executionId,
-                incidentThreadId:
-                  incidentThreadId ?? result.incidentThreadId,
-                runbookId: execution.runbookId,
-                runbookTitle: execution.runbookTitle,
-                status: execution.status,
-                startedAt,
-                completedAt: execution.completedAt ?? result.completedAt,
-                completionReason:
-                  execution.completionReason ?? result.completionReason,
-              };
-            });
-          }
-
-          return [
-            {
-              id: resultId,
-              executionId,
-              incidentThreadId: incidentThreadId ?? undefined,
-              runbookId: execution.runbookId,
-              runbookTitle: execution.runbookTitle,
-              status: execution.status,
-              startedAt: execution.startedAt,
-              completedAt: execution.completedAt,
-              completionReason: execution.completionReason,
-            },
-            ...prev,
-          ];
-        });
+        setResults((previous) => mergeExecutionEventIntoResults(previous, {
+          resultId, executionId, incidentThreadId, execution,
+        }));
       },
     );
   }, [runbooks]);

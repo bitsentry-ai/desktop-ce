@@ -17,6 +17,7 @@ import type {
 } from '@bitsentry-ce/coding-agents'
 import { DEFAULT_LOCAL_AI_SETTINGS } from '@bitsentry-ce/coding-agents'
 import type { RunbookLlmProviderKey } from '@bitsentry-ce/core/features/runbooks/desktop-runbook-ce.types'
+import { expect, it } from 'vitest'
 
 // Type assignment tests — these fail at compile time if types are incompatible
 
@@ -94,5 +95,6 @@ const _result: LocalAiExecutionResult = {
   resumeCursor: { sessionId: 'abc', lastMessageUuid: 'def' },
 }
 
-// Suppress unused variable warnings
-void [_claudeCode, _codex, _opencode, _cursor, _errorKinds, _probeResult, _probeError, _claudeSettings, _codexSettings, _opencodeSettings, _cursorSettings, _defaults, _textDelta, _statusDelta, _toolDelta, _result]
+it('keeps local AI contracts type-compatible', () => {
+  expect([_claudeCode, _codex, _opencode, _cursor, _errorKinds, _probeResult, _probeError, _claudeSettings, _codexSettings, _opencodeSettings, _cursorSettings, _defaults, _textDelta, _statusDelta, _toolDelta, _result]).toHaveLength(16)
+})

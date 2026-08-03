@@ -896,8 +896,7 @@ export function createDesktopErrorSourcesHandlers(
         );
       }
 
-      try {
-        const customPluginConfiguration = {
+      const customPluginConfiguration = {
           ...persistedSetup.configuration,
           ...(readPayloadRecord(payload.configuration) ?? {}),
         };
@@ -920,10 +919,7 @@ export function createDesktopErrorSourcesHandlers(
           syncEnabled: payload.syncEnabled !== false,
           autoDiagnosisEnabled: payload.autoDiagnosisEnabled === true,
         });
-        return toRendererErrorSource(created);
-      } catch (error) {
-        throw error;
-      }
+      return toRendererErrorSource(created);
     },
 
     "errorSources:update": async (rawPayload: unknown) => {

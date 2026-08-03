@@ -10,6 +10,8 @@ import type {
 /**
  * Options for generating registration options
  */
+type WebAuthnUserVerification = 'required' | 'preferred' | 'discouraged';
+
 export interface WebAuthnGenerateRegistrationInput {
   readonly rpName: string;
   readonly rpId: string;
@@ -21,7 +23,7 @@ export interface WebAuthnGenerateRegistrationInput {
   readonly attestationType?: 'none' | 'indirect' | 'direct' | 'enterprise';
   readonly authenticatorSelection?: {
     residentKey?: 'required' | 'preferred' | 'discouraged';
-    userVerification?: 'required' | 'preferred' | 'discouraged';
+    userVerification?: WebAuthnUserVerification;
   };
 }
 

@@ -83,6 +83,10 @@ export function RunbookActionParametersSection({
     });
   };
 
+  const removeParameter = (parameterIndex: number) => {
+    updateParameters((current) => current.filter((_item, index) => index !== parameterIndex));
+  };
+
   return (
     <>
       <div
@@ -284,13 +288,7 @@ export function RunbookActionParametersSection({
                     </div>
                     <button
                       type="button"
-                      onClick={() => {
-                        updateParameters((current) =>
-                          current.filter(
-                            (_item, index) => index !== parameterIndex,
-                          ),
-                        );
-                      }}
+                      onClick={() => { removeParameter(parameterIndex); }}
                       className="shrink-0 pb-1.5 text-muted-foreground/40 transition-colors hover:text-destructive"
                       title={t("runbooks.runbook.removeParameter")}
                     >

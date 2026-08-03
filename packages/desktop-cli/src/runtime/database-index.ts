@@ -404,7 +404,7 @@ async function backfillRunbookActionsFromLegacyVersions(): Promise<void> {
   }
 }
 
-// eslint-disable-next-line complexity -- Idempotent schema sync intentionally lists independent migration steps.
+// eslint-disable-next-line sonarjs/cognitive-complexity -- Migration ordering and idempotent schema recovery must remain in one auditable startup boundary.
 async function runMigrations(): Promise<void> {
   await ensureMigrationLedger()
   const appliedVersions = await getAppliedMigrationVersions()

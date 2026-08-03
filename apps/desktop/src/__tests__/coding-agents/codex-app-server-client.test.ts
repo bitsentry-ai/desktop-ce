@@ -4,8 +4,9 @@
  */
 
 import { EventEmitter } from 'events'
+import { expect, it } from 'vitest'
 
-async function _typeCheck() {
+it('exposes its public client contract', async () => {
   const { CodexAppServerClient } = await import('@bitsentry-ce/coding-agents/codex-app-server-client')
 
   // Constructor
@@ -29,7 +30,5 @@ async function _typeCheck() {
   client.on('closed', (_reason: string) => {})
   client.on('parseError', (_error: { error: string; raw: string }) => {})
 
-  void [_isEmitter, _start, _sendRequest, _respondToServer, _respondToServerError, _getStderrTail, _kill, _isRunning]
-}
-
-void _typeCheck
+  expect([_isEmitter, _start, _sendRequest, _respondToServer, _respondToServerError, _getStderrTail, _kill, _isRunning]).toHaveLength(8)
+})

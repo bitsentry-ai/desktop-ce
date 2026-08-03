@@ -25,7 +25,6 @@ import {
   Ban,
   BookOpen,
   Check,
-  CopyIcon,
   Archive,
   FileText,
   RefreshCw,
@@ -43,7 +42,6 @@ import { hasValidRunbook, loadRunbooks } from "../runbook/runbookStorage";
 import {
   type ModelCatalogEntry,
   type ModelCatalogProviderKey,
-  getCapabilityBadges,
   getCatalogModel,
 } from "../llm/modelCatalog";
 import { useTranslation } from "@bitsentry-ce/i18n";
@@ -85,6 +83,39 @@ interface IncidentThread {
   sessionId?: string;
   archived?: boolean;
   lastMessagePreview?: string | null;
+}
+
+function setIncidentArchiveState(
+  incidents: IncidentThread[],
+  incidentId: string,
+  archived: boolean,
+): IncidentThread[] {
+  return incidents.map((incident) =>
+    incident.id === incidentId ? { ...incident, archived } : incident,
+  );
+}
+
+function updateIncidentById(
+  incidents: IncidentThread[],
+  incidentId: string,
+  update: (incident: IncidentThread) => IncidentThread,
+): IncidentThread[] {
+  return incidents.map((incident) => incident.id === incidentId ? update(incident) : incident);
+}
+
+function canSendIncidentMessage(
+  prompt: string,
+  imageCount: number,
+  activeId: string | null,
+  providerKey: ModelCatalogProviderKey | null,
+  modelId: string,
+): boolean {
+  return (prompt.trim().length > 0 || imageCount > 0) && activeId !== null && providerKey !== null && modelId.length > 0;
+}
+
+function resolveIncidentTitle(incident: IncidentThread | null | undefined, text: string): string {
+  if (!shouldAutoTitleIncident(incident?.title)) return incident?.title ?? "New Incident";
+  return text.slice(0, 50) || "New Incident";
 }
 
 // ─── Local-storage helpers ────────────────────────────────────────────────────
@@ -1072,6 +1103,33 @@ function getRunbookAuthoringProposalsFromMessage(
     .filter((proposal): proposal is RunbookAuthoringProposalReview => proposal !== null);
 }
 
+function OperationDiffApprovalCheckbox({
+  proposalId,
+  operationIds,
+  operationId,
+  operationType,
+  selected,
+  onToggle,
+}: {
+  proposalId: string;
+  operationIds: string[];
+  operationId: string;
+  operationType: string;
+  selected: boolean;
+  onToggle: (proposalId: string, operationIds: string[], operationId: string) => void;
+}) {
+  return (
+    <input
+      type="checkbox"
+      checked={selected}
+      onClick={(event) => event.stopPropagation()}
+      onChange={() => onToggle(proposalId, operationIds, operationId)}
+      aria-label={`Approve ${operationType}`}
+      className="mr-2 align-middle"
+    />
+  );
+}
+
 export function RunbookAuthoringProposalCards({
   agent,
   incidentId,
@@ -1095,6 +1153,14 @@ export function RunbookAuthoringProposalCards({
   const [errorByProposalId, setErrorByProposalId] = useState<Record<string, string>>({});
   const [savedTitleByProposalId, setSavedTitleByProposalId] = useState<Record<string, string>>({});
   const [selectedOperationIdsByProposalId, setSelectedOperationIdsByProposalId] = useState<Record<string, string[]>>({});
+
+  const toggleSelectedOperation = useCallback((proposalId: string, operationIds: string[], operationId: string) => {
+    setSelectedOperationIdsByProposalId((previous) => {
+      const current = previous[proposalId] ?? operationIds;
+      const next = current.includes(operationId) ? current.filter((id) => id !== operationId) : [...current, operationId];
+      return { ...previous, [proposalId]: next };
+    });
+  }, []);
 
   const refreshLiveProposals = useCallback(async () => {
     if (sessionId === null) return undefined;
@@ -1169,7 +1235,8 @@ export function RunbookAuthoringProposalCards({
           ),
         ];
         const error = errorByProposalId[proposal.proposalId];
-        const selectedOperationIds = selectedOperationIdsByProposalId[proposal.proposalId] ?? proposal.operationDiffs.map((diff) => diff.operationId);
+        const allOperationIds = proposal.operationDiffs.map((diff) => diff.operationId);
+        const selectedOperationIds = selectedOperationIdsByProposalId[proposal.proposalId] ?? allOperationIds;
         const statusKey = { approved: "common.incidents.statusApproved", pending_approval: "common.incidents.statusPendingApproval", rejected: "common.incidents.statusRejected", revision_requested: "common.incidents.statusRevisionRequested" }[proposal.status];
 
         const handleApprove = async () => {
@@ -1347,11 +1414,14 @@ export function RunbookAuthoringProposalCards({
                 >
                   <summary className="cursor-pointer text-xs font-medium text-foreground">
                     {isPending && proposal.kind === "edit_existing_runbook" && (
-                      <input type="checkbox" checked={selectedOperationIds.includes(diff.operationId)} onClick={(event) => event.stopPropagation()} onChange={() => setSelectedOperationIdsByProposalId((previous) => {
-                        const current = previous[proposal.proposalId] ?? proposal.operationDiffs.map((item) => item.operationId);
-                        const next = current.includes(diff.operationId) ? current.filter((id) => id !== diff.operationId) : [...current, diff.operationId];
-                        return { ...previous, [proposal.proposalId]: next };
-                      })} aria-label={`Approve ${diff.type}`} className="mr-2 align-middle" />
+                      <OperationDiffApprovalCheckbox
+                        proposalId={proposal.proposalId}
+                        operationIds={allOperationIds}
+                        operationId={diff.operationId}
+                        operationType={diff.type}
+                        selected={selectedOperationIds.includes(diff.operationId)}
+                        onToggle={toggleSelectedOperation}
+                      />
                     )}
                     {diff.type.replace(/_/g, " ")}: {diff.rationale}
                   </summary>
@@ -1509,17 +1579,11 @@ export default function IncidentsPage() {
     },
     [selectedModelId, selectedProviderKey],
   );
-  const composerSupportsPhotos = Boolean(
-    selectedModelCapability?.supportsImageInput,
-  );
   const composerSupportsFiles = Boolean(
     selectedModelCapability &&
     (selectedModelCapability.supportsPdfInput ||
       selectedModelCapability.supportsAudioInput ||
       selectedModelCapability.supportsVideoInput),
-  );
-  const composerSupportsThinking = Boolean(
-    selectedModelCapability?.supportsThinking,
   );
   const composerFileAccept = useMemo(() => {
     if (selectedModelCapability === undefined) return "";
@@ -1664,17 +1728,15 @@ export default function IncidentsPage() {
         }>
       ).detail;
 
-      if (detail?.incidentId === undefined) return;
+      const incidentId = detail?.incidentId;
+      if (incidentId === undefined) return;
 
       if (detail.action === "archive") {
         setIncidents((prev) =>
-          prev.map((incident) => {
-            if (incident.id !== detail.incidentId) return incident;
-            return { ...incident, archived: true };
-          }),
+          setIncidentArchiveState(prev, incidentId, true),
         );
 
-        if (activeId === detail.incidentId && !isHistoryContext) {
+        if (activeId === incidentId && !isHistoryContext) {
           void navigate("/incidents");
         }
         return;
@@ -1682,10 +1744,7 @@ export default function IncidentsPage() {
 
       if (detail.action === "unarchive") {
         setIncidents((prev) =>
-          prev.map((incident) => {
-            if (incident.id !== detail.incidentId) return incident;
-            return { ...incident, archived: false };
-          }),
+          setIncidentArchiveState(prev, incidentId, false),
         );
       }
     };
@@ -2426,25 +2485,14 @@ export default function IncidentsPage() {
     interactionMode?: InteractionMode;
     traitValues?: Record<string, boolean | string>;
   }) => {
-    if (
-      (!prompt.trim() && composerImages.length === 0) ||
-      activeId === null ||
-      selectedProviderKey === null ||
-      selectedModelId.length === 0
-    )
-      return;
+    if (!canSendIncidentMessage(prompt, composerImages.length, activeId, selectedProviderKey, selectedModelId)) return;
+    if (activeId === null || selectedProviderKey === null) return;
     if (activeIncident?.archived === true) return;
     const text = prompt.trim();
     const wasRunning = activeIncident?.state === "RUNNING";
     const shouldContinueSession = activeSessionId !== null || wasRunning;
     const preview = normalizeIncidentPreview(text);
-    let nextTitle = activeIncident?.title ?? "New Incident";
-    if (shouldAutoTitleIncident(activeIncident?.title)) {
-      nextTitle = text.slice(0, 50);
-      if (nextTitle.length === 0) {
-        nextTitle = "New Incident";
-      }
-    }
+    const nextTitle = resolveIncidentTitle(activeIncident, text);
     setPrompt("");
     const outgoingImages = composerImages;
     setComposerImages([]);
@@ -2455,16 +2503,13 @@ export default function IncidentsPage() {
     }
 
     setIncidents((prev) =>
-      prev.map((incident) => {
-        if (incident.id !== activeId) return incident;
-        return {
+      updateIncidentById(prev, activeId, (incident) => ({
           ...incident,
           title: nextTitle,
           prompt: text,
           state: "RUNNING",
           lastMessagePreview: preview ?? incident.lastMessagePreview,
-        };
-      }),
+      })),
     );
 
     try {
@@ -2507,10 +2552,7 @@ export default function IncidentsPage() {
         });
       }
       setIncidents((prev) =>
-        prev.map((incident) => {
-          if (incident.id !== activeId) return incident;
-          return { ...incident, sessionId: result.sessionId };
-        }),
+        updateIncidentById(prev, activeId, (incident) => ({ ...incident, sessionId: result.sessionId })),
       );
       try {
         const snapshot = await agent.getSnapshot(result.sessionId);
@@ -2541,13 +2583,7 @@ export default function IncidentsPage() {
         setPrompt(text);
         setComposerImages(outgoingImages);
         setIncidents((prev) =>
-          prev.map((incident) => {
-            if (incident.id !== activeId) return incident;
-            return {
-              ...incident,
-              state: "RUNNING",
-            };
-          }),
+          updateIncidentById(prev, activeId, (incident) => ({ ...incident, state: "RUNNING" })),
         );
         return;
       }
@@ -2585,10 +2621,7 @@ export default function IncidentsPage() {
         ],
       }));
       setIncidents((prev) =>
-        prev.map((incident) => {
-          if (incident.id !== activeId) return incident;
-          return { ...incident, state: "FAILED", sessionId: undefined };
-        }),
+        updateIncidentById(prev, activeId, (incident) => ({ ...incident, state: "FAILED", sessionId: undefined })),
       );
     }
   };
@@ -2640,15 +2673,6 @@ export default function IncidentsPage() {
     providerConfigsLoaded &&
     selectedProviderKey !== null &&
     selectedModelId.length > 0;
-  const modelOptions = useMemo(() => {
-    if (selectedProviderKey === null) return [];
-    return getProviderModelOptions(selectedProviderKey, providerConfigs);
-  }, [providerConfigs, selectedProviderKey]);
-  const capabilityBadges = useMemo(() => {
-    if (selectedModelCapability === undefined) return [];
-    return getCapabilityBadges(selectedModelCapability);
-  }, [selectedModelCapability]);
-
   // ── Callbacks must be declared before early returns (React hooks rule) ──────
 
   // Navigate to runbook page (handoff - no inline creation per spec)

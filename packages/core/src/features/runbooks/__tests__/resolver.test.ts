@@ -3,6 +3,7 @@ import {
   TemplateResolutionError,
   TemplateResolver,
 } from "../resolver";
+import { expect, it } from "vitest";
 
 const assert = (condition: boolean, message: string): void => {
   if (!condition) {
@@ -18,6 +19,7 @@ const assertEqual = <T>(actual: T, expected: T, message: string): void => {
   }
 };
 
+it("resolves legacy, runtime, and secure template references", () => {
 const legacy = resolveRequiredRunbookTemplate("psql -h {{ db_host }}", {
   parameterDefinitions: [
     {
@@ -134,3 +136,5 @@ assertEqual(
   "url=[secure-global:webhook]",
   "secure global should use secure-global placeholder",
 );
+expect(secureGlobal.value).toBe("url=[secure-global:webhook]");
+});

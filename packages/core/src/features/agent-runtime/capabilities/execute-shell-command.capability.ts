@@ -43,19 +43,17 @@ function resolveTimeoutMs(value: number | null | undefined): number | null {
 }
 
 function createChildEnv(): NodeJS.ProcessEnv {
-  const {
-    ELECTRON_RUN_AS_NODE: _electronRunAsNode,
-    [CLI_WRAPPER_NODE_PATH_ENV]: wrapperNodePath,
-    ...childEnv
-  } = process.env
+  const childEnv = { ...process.env }
+  const wrapperNodePath = childEnv[CLI_WRAPPER_NODE_PATH_ENV]
+  delete childEnv.ELECTRON_RUN_AS_NODE
 
   if (
     typeof wrapperNodePath === 'string' &&
     wrapperNodePath.length > 0 &&
     childEnv.NODE_PATH === wrapperNodePath
   ) {
-    const { NODE_PATH: _nodePath, ...withoutNodePath } = childEnv
-    return { ...withoutNodePath, CI: '1' }
+    delete childEnv.NODE_PATH
+    return { ...childEnv, CI: '1' }
   }
 
   return { ...childEnv, CI: '1' }

@@ -1,4 +1,5 @@
 import { SecureRedactor } from "../redactor";
+import { expect, it } from "vitest";
 
 const assertEqual = <T>(actual: T, expected: T, message: string): void => {
   if (actual !== expected) {
@@ -23,6 +24,7 @@ const assertDeepEqual = (
   }
 };
 
+it("redacts secure values across nested runbook output", () => {
 const redactor = new SecureRedactor([
   {
     key: "api_token",
@@ -114,3 +116,5 @@ assertEqual(
   "abc",
   "empty secure values should be ignored",
 );
+expect(emptySecretRedactor.redactString("abc")).toBe("abc");
+});

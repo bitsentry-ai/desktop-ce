@@ -24,13 +24,21 @@ import {
 import { toast } from "sonner";
 import type {
   CreateErrorSourceInput,
-  ErrorSourceType,
   PluginDataSourceSetupField,
   ErrorSourceRow,
   LogLevelThreshold,
   PluginDescriptor,
 } from "../services/contracts";
 import { useTranslation } from "@bitsentry-ce/i18n";
+
+function removePendingSync(
+  pendingSyncs: Record<string, { name: string }>,
+  sourceId: string,
+): Record<string, { name: string }> {
+  return Object.fromEntries(
+    Object.entries(pendingSyncs).filter(([id]) => id !== sourceId),
+  );
+}
 import { Download, Pencil, RefreshCw, Trash2 } from "lucide-react";
 import { ProviderIcon, type ProviderIconKind } from "./icons";
 import InstallPluginDialog from "./InstallPluginDialog";
@@ -86,20 +94,31 @@ function formatStoredSyncErrorMessage(error: unknown, t: Translate): string {
     return t("common.dataSourcesManager.workerEndpointUnavailable");
   }
 
-  const match = /^(.+?) API (\d+):\s*(.*)$/i.exec(message);
-  if (match === null) return message;
+  const apiMarker = message.toLowerCase().indexOf(" api ");
+  const detailMarker = apiMarker < 0 ? -1 : message.indexOf(":", apiMarker + 5);
+  if (apiMarker < 1 || detailMarker < apiMarker + 6) return message;
 
-  const provider = match[1].trim();
+  const provider = message.slice(0, apiMarker).trim();
+  const status = message.slice(apiMarker + 5, detailMarker).trim();
+  if (!isNumericStatus(status)) return message;
   const prefix = t("common.dataSourcesManager.apiErrorDetail", {
     provider,
-    status: match[2],
+    status,
   });
-  const detail = match[3].trim();
+  const detail = message.slice(detailMarker + 1).trim();
   if (detail.length > 0) {
     return `${prefix}: ${detail}`;
   }
 
   return prefix;
+}
+
+function isNumericStatus(value: string): boolean {
+  if (value === "") return false;
+  for (const character of value) {
+    if (character < "0" || character > "9") return false;
+  }
+  return true;
 }
 
 function toProjectSlugs(raw: string): string[] {
@@ -169,7 +188,7 @@ function normalizeLastUsedExternalSourceId(
 
 function readPluginDataSourceType(
   plugin: PluginDescriptor,
-): ErrorSourceType | null {
+): string | null {
   return plugin.metadata?.dataSource?.sourceType ?? null;
 }
 
@@ -414,7 +433,7 @@ interface FieldLabelProps {
 
 interface ProviderCard {
   pluginId: string;
-  sourceType: ErrorSourceType;
+  sourceType: string;
   label: string;
 }
 
@@ -467,7 +486,7 @@ export default function DataSourcesManager({
   // ---- Create-source dialog state ----
   const [addDialogOpen, setAddDialogOpen] = useState(false);
   const [installDialogOpen, setInstallDialogOpen] = useState(false);
-  const [sourceType, setSourceType] = useState<ErrorSourceType>("");
+  const [sourceType, setSourceType] = useState<string>("");
   const [selectedProviderId, setSelectedProviderId] = useState("");
   const [sourceName, setSourceName] = useState("");
 
@@ -916,11 +935,7 @@ export default function DataSourcesManager({
       },
       {
         onSuccess: (result) => {
-          setPendingSyncs((current) => {
-            return Object.fromEntries(
-              Object.entries(current).filter(([id]) => id !== source.id),
-            );
-          });
+          setPendingSyncs((current) => removePendingSync(current, source.id));
           void refetchSources();
           toast.success(
             t("common.dataSourcesManager.syncCompleteForSource", {
@@ -935,11 +950,7 @@ export default function DataSourcesManager({
           );
         },
         onError: (err) => {
-          setPendingSyncs((current) => {
-            return Object.fromEntries(
-              Object.entries(current).filter(([id]) => id !== source.id),
-            );
-          });
+          setPendingSyncs((current) => removePendingSync(current, source.id));
           void refetchSources();
           const message = formatStoredSyncErrorMessage(err, t);
           setStatus({

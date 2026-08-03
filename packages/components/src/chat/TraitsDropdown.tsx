@@ -57,6 +57,23 @@ function getSelectedLabel(
   return "";
 }
 
+function getSelectSummaryLabel(
+  option: ComposerSelectOption,
+  rawValue: string | boolean | undefined,
+  t: (key: string) => string,
+): string {
+  return getSelectedLabel(option, typeof rawValue === "string" ? rawValue : undefined, t);
+}
+
+function getBooleanSummaryLabel(
+  option: ComposerBooleanOption,
+  rawValue: string | boolean | undefined,
+  t: (key: string) => string,
+): string {
+  const checked = typeof rawValue === "boolean" ? rawValue : option.defaultValue === true;
+  return checked && option.shortLabel !== undefined ? translateLabel(t, option.shortLabel) : "";
+}
+
 function buildSummary(
   options: ComposerOptionDescriptor[],
   values: Record<string, string | boolean>,
@@ -65,30 +82,10 @@ function buildSummary(
   const parts: string[] = [];
   for (const option of options) {
     const rawValue = values[option.id];
-    if (option.type === "select") {
-      let selectedValue: string | undefined;
-      if (typeof rawValue === "string") {
-        selectedValue = rawValue;
-      }
-
-      const label = getSelectedLabel(
-        option,
-        selectedValue,
-        t,
-      );
-      if (label.length > 0) parts.push(label);
-    } else {
-      let checked = false;
-      if (typeof rawValue === "boolean") {
-        checked = rawValue;
-      } else if (option.defaultValue !== undefined) {
-        checked = option.defaultValue;
-      }
-
-      if (checked && option.shortLabel !== undefined) {
-        parts.push(translateLabel(t, option.shortLabel));
-      }
-    }
+    const label = option.type === "select"
+      ? getSelectSummaryLabel(option, rawValue, t)
+      : getBooleanSummaryLabel(option, rawValue, t);
+    if (label.length > 0) parts.push(label);
   }
   if (parts.length > 0) {
     return parts.join(" | ");

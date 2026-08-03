@@ -292,6 +292,7 @@ async function waitBeforeOwnershipLockRetry(attempt: number): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, OWNERSHIP_LOCK_RETRY_DELAY_MS + jitterMs))
 }
 
+// eslint-disable-next-line sonarjs/cognitive-complexity -- lock-transition control flow verified by CLI stress suite; extraction changes retry semantics
 async function acquireOwnershipLock(userDataPath: string, token: string): Promise<string> {
   const lockPath = ownershipLockPath(userDataPath)
   await mkdir(userDataPath, { recursive: true, mode: 0o700 })

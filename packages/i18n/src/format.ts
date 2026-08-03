@@ -53,7 +53,9 @@ function rtf(
   return f;
 }
 
-function toDate(value: Date | string | number): Date {
+type DateInput = Date | string | number;
+
+function toDate(value: DateInput): Date {
   if (value instanceof Date) {
     return value;
   }
@@ -62,7 +64,7 @@ function toDate(value: Date | string | number): Date {
 }
 
 export function formatDate(
-  value: Date | string | number,
+  value: DateInput,
   locale: SupportedLocale = DEFAULT_LOCALE,
   style: Intl.DateTimeFormatOptions["dateStyle"] = "medium",
 ): string {
@@ -70,7 +72,7 @@ export function formatDate(
 }
 
 export function formatTime(
-  value: Date | string | number,
+  value: DateInput,
   locale: SupportedLocale = DEFAULT_LOCALE,
   style: Intl.DateTimeFormatOptions["timeStyle"] = "short",
 ): string {
@@ -78,7 +80,7 @@ export function formatTime(
 }
 
 export function formatDateTime(
-  value: Date | string | number,
+  value: DateInput,
   locale: SupportedLocale = DEFAULT_LOCALE,
   options: { dateStyle?: Intl.DateTimeFormatOptions["dateStyle"]; timeStyle?: Intl.DateTimeFormatOptions["timeStyle"] } = {
     dateStyle: "medium",
@@ -129,7 +131,7 @@ const RTF_THRESHOLDS: Array<[Intl.RelativeTimeFormatUnit, number]> = [
  * Replaces ad-hoc `${mins}m ago` strings scattered through the codebase.
  */
 export function formatRelativeTime(
-  value: Date | string | number,
+  value: DateInput,
   locale: SupportedLocale = DEFAULT_LOCALE,
 ): string {
   const target = toDate(value).getTime();
@@ -146,10 +148,10 @@ export function formatRelativeTime(
 }
 
 export interface Formatters {
-  date: (value: Date | string | number, style?: Intl.DateTimeFormatOptions["dateStyle"]) => string;
-  time: (value: Date | string | number, style?: Intl.DateTimeFormatOptions["timeStyle"]) => string;
+  date: (value: DateInput, style?: Intl.DateTimeFormatOptions["dateStyle"]) => string;
+  time: (value: DateInput, style?: Intl.DateTimeFormatOptions["timeStyle"]) => string;
   dateTime: (
-    value: Date | string | number,
+    value: DateInput,
     options?: { dateStyle?: Intl.DateTimeFormatOptions["dateStyle"]; timeStyle?: Intl.DateTimeFormatOptions["timeStyle"] },
   ) => string;
   number: (value: number, options?: Intl.NumberFormatOptions) => string;

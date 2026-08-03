@@ -16,7 +16,6 @@ import type {
   RunbookActionRecord,
   RunbookActionType,
   RunbookHttpHeader,
-  RunbookHttpMethod,
   RunbookLlmProviderKey,
   PluginDescriptor,
 } from "../../services";

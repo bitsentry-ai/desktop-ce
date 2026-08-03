@@ -25,6 +25,36 @@ function dedupeToolCalls(toolCalls: ToolCallCard[]): ToolCallCard[] {
 }
 
 type AgentMessage = Extract<ChatMessage, { kind: "agent" }>;
+type UserMessage = Extract<ChatMessage, { kind: "user" }>;
+
+function UserChatBubble({ msg }: { msg: UserMessage }) {
+  const attachmentsContent: ReactNode = msg.attachments !== undefined && msg.attachments.length > 0
+    ? (
+        <div className="grid grid-cols-2 gap-2">
+          {msg.attachments.map((attachment) => (
+            <img
+              key={attachment.id}
+              src={attachment.dataUrl}
+              alt={attachment.name}
+              className="max-h-40 w-full rounded-xl border border-border/60 object-cover"
+            />
+          ))}
+        </div>
+      )
+    : null;
+  const textContent = msg.text.length > 0
+    ? <div className="whitespace-pre-wrap">{msg.text}</div>
+    : null;
+
+  return (
+    <div className="flex justify-end">
+      <div className="max-w-[75%] space-y-2 rounded-2xl bg-muted px-4 py-2.5 text-sm">
+        {attachmentsContent}
+        {textContent}
+      </div>
+    </div>
+  );
+}
 
 function getVisibleIterationText(
   msg: AgentMessage,
@@ -184,35 +214,7 @@ export const ChatBubble = memo(function ChatBubble({
   }, [shouldTickElapsed]);
 
   if (msg.kind === "user") {
-    let attachmentsContent: ReactNode = null;
-    if (msg.attachments !== undefined && msg.attachments.length > 0) {
-      attachmentsContent = (
-        <div className="grid grid-cols-2 gap-2">
-          {msg.attachments.map((attachment) => (
-            <img
-              key={attachment.id}
-              src={attachment.dataUrl}
-              alt={attachment.name}
-              className="max-h-40 w-full rounded-xl border border-border/60 object-cover"
-            />
-          ))}
-        </div>
-      );
-    }
-
-    let textContent: ReactNode = null;
-    if (msg.text.length > 0) {
-      textContent = <div className="whitespace-pre-wrap">{msg.text}</div>;
-    }
-
-    return (
-      <div className="flex justify-end">
-        <div className="max-w-[75%] space-y-2 rounded-2xl bg-muted px-4 py-2.5 text-sm">
-          {attachmentsContent}
-          {textContent}
-        </div>
-      </div>
-    );
+    return <UserChatBubble msg={msg} />;
   }
 
   const copyableMarkdown = getCopyableMarkdown(msg);

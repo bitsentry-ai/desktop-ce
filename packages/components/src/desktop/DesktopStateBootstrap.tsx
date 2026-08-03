@@ -28,6 +28,23 @@ type CaptureDesktopAnalyticsEvent = (
   properties?: Record<string, unknown>,
 ) => void;
 
+function scheduleDesktopStateSync(
+  timerRef: RefObject<number | null>,
+  hydrateInProgressRef: RefObject<boolean>,
+  action: () => Promise<void>,
+): void {
+  if (hydrateInProgressRef.current) return;
+  if (timerRef.current !== null) {
+    window.clearTimeout(timerRef.current);
+  }
+  timerRef.current = window.setTimeout(() => {
+    timerRef.current = null;
+    void action().catch((error: unknown) => {
+      console.error("[desktop-state] sync failed:", error);
+    });
+  }, 150);
+}
+
 type RunbookExecutionActionType =
   | "shell"
   | "llm"
@@ -593,24 +610,8 @@ export function DesktopStateBootstrap({
   useEffect(() => {
     if (!ready) return;
 
-    const schedule = (
-      timerRef: RefObject<number | null>,
-      action: () => Promise<void>,
-    ) => {
-      if (hydrateInProgressRef.current) return;
-      if (timerRef.current !== null) {
-        window.clearTimeout(timerRef.current);
-      }
-      timerRef.current = window.setTimeout(() => {
-        timerRef.current = null;
-        void action().catch((error: unknown) => {
-          console.error("[desktop-state] sync failed:", error);
-        });
-      }, 150);
-    };
-
     const handleRunbooksUpdated = () => {
-      schedule(runbookTimerRef, syncFns.syncRunbooks);
+      scheduleDesktopStateSync(runbookTimerRef, hydrateInProgressRef, syncFns.syncRunbooks);
     };
     const handleResultsUpdated = (event: Event) => {
       const { detail } = event as CustomEvent<{ source?: string }>;
@@ -618,7 +619,7 @@ export function DesktopStateBootstrap({
       if (source === "execution-mirror") {
         return;
       }
-      schedule(resultTimerRef, syncFns.syncResults);
+      scheduleDesktopStateSync(resultTimerRef, hydrateInProgressRef, syncFns.syncResults);
     };
 
     window.addEventListener(

@@ -18,9 +18,11 @@ type SpawnedShell = EventEmitter & {
   kill: ReturnType<typeof vi.fn>
 }
 
+let nextMockPid = 1
+
 function createSpawnedShell(): SpawnedShell {
   const child = new EventEmitter() as SpawnedShell
-  child.pid = Math.floor(Math.random() * 100_000) + 1
+  child.pid = nextMockPid++
   child.exitCode = null
   child.signalCode = null
   child.stdout = new PassThrough()

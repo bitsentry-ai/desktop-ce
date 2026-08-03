@@ -196,71 +196,47 @@ function omitRecordField(
   return nextRecord;
 }
 
+function updateNumberField(record: Record<string, unknown>, field: PluginFieldDefinition, value: string | boolean): Record<string, unknown> {
+  if (typeof value !== "string" || value.trim().length === 0) return omitRecordField(record, field.key);
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return record;
+  return { ...record, [field.key]: numeric };
+}
+
+function updateStringArrayField(record: Record<string, unknown>, field: PluginFieldDefinition, value: string | boolean): Record<string, unknown> {
+  if (typeof value !== "string") return omitRecordField(record, field.key);
+  const items = readStringArrayInput(value);
+  return items.length === 0 ? omitRecordField(record, field.key) : { ...record, [field.key]: items };
+}
+
+function updateJsonField(record: Record<string, unknown>, field: PluginFieldDefinition, value: string | boolean): Record<string, unknown> {
+  if (typeof value !== "string" || value.trim().length === 0) return omitRecordField(record, field.key);
+  try {
+    return { ...record, [field.key]: JSON.parse(value) as unknown };
+  } catch {
+    return record;
+  }
+}
+
+function updateStringField(record: Record<string, unknown>, field: PluginFieldDefinition, value: string | boolean): Record<string, unknown> {
+  if (typeof value !== "string" || (value.length === 0 && !field.required)) return omitRecordField(record, field.key);
+  return { ...record, [field.key]: value };
+}
+
 function updateStructuredFieldRecord(input: {
   record: Record<string, unknown>;
   field: PluginFieldDefinition;
   nextValue: string | boolean;
 }): Record<string, unknown> {
-  const nextRecord = { ...input.record };
   const { field, nextValue } = input;
 
   switch (field.type) {
-    case "boolean": {
-      nextRecord[field.key] = nextValue;
-      return nextRecord;
-    }
-    case "number": {
-      if (typeof nextValue !== "string" || nextValue.trim().length === 0) {
-        return omitRecordField(nextRecord, field.key);
-      }
-
-      const numeric = Number(nextValue);
-      if (!Number.isFinite(numeric)) {
-        return nextRecord;
-      }
-
-      nextRecord[field.key] = numeric;
-      return nextRecord;
-    }
-    case "string_array": {
-      if (typeof nextValue !== "string") {
-        return omitRecordField(nextRecord, field.key);
-      }
-
-      const items = readStringArrayInput(nextValue);
-      if (items.length === 0) {
-        return omitRecordField(nextRecord, field.key);
-      }
-
-      nextRecord[field.key] = items;
-      return nextRecord;
-    }
-    case "json": {
-      if (typeof nextValue !== "string" || nextValue.trim().length === 0) {
-        return omitRecordField(nextRecord, field.key);
-      }
-
-      try {
-        nextRecord[field.key] = JSON.parse(nextValue) as unknown;
-      } catch {
-        return nextRecord;
-      }
-
-      return nextRecord;
-    }
+    case "boolean": return { ...input.record, [field.key]: nextValue };
+    case "number": return updateNumberField(input.record, field, nextValue);
+    case "string_array": return updateStringArrayField(input.record, field, nextValue);
+    case "json": return updateJsonField(input.record, field, nextValue);
     case "string":
-    default: {
-      if (typeof nextValue !== "string") {
-        return omitRecordField(nextRecord, field.key);
-      }
-
-      if (nextValue.length === 0 && !field.required) {
-        return omitRecordField(nextRecord, field.key);
-      }
-
-      nextRecord[field.key] = nextValue;
-      return nextRecord;
-    }
+    default: return updateStringField(input.record, field, nextValue);
   }
 }
 

@@ -368,9 +368,8 @@ export class DesktopPluginRuntimeService {
   }
 
   installFromArtifact(
-    request: DesktopPluginInstallFromArtifactRequest,
+    _request: DesktopPluginInstallFromArtifactRequest,
   ): Promise<DesktopPluginInstallFromArtifactResult> {
-    void request;
     return Promise.reject(
       new Error("Plugin installation is not available in this runtime."),
     );

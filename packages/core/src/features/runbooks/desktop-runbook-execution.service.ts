@@ -398,10 +398,9 @@ type RunbookLocalAiAccessLevel = NonNullable<
 >;
 
 export function resolveRunbookLocalAiAccessLevel(
-  providerKey: LocalAiProviderKey,
+  _providerKey: LocalAiProviderKey,
   accessLevel: RunbookExecutionSession["accessLevel"],
 ): RunbookLocalAiAccessLevel | undefined {
-  void providerKey;
   return accessLevel ?? "auto-accept-edits";
 }
 
@@ -2931,27 +2930,7 @@ export class RunbookExecutionService {
         return;
       }
 
-      // Stale: the persisted version diverged from the in-memory one.
-      // Resync so subsequent emits line up again; without this a single
-      // rejected write leaves the in-memory version permanently ahead and
-      // every later write is rejected too.
-      const persisted = await this.resultStore.getExecutionSnapshotByResultId(
-        session.resultId,
-      );
-      if (persisted === null || persisted.status !== "running") {
-        // The store already holds a terminal state (another owner or the
-        // stale-recovery sweep finalized it). It wins; stop heartbeating.
-        if (snapshot.status !== "running") {
-          this.stopExecutionHeartbeat(session);
-        }
-        return;
-      }
-      session.snapshot.snapshotVersion = persisted.snapshotVersion ?? 0;
-      if (snapshot.status === "running") {
-        // Streaming snapshots may drop; the next emit carries the
-        // resynced version. Terminal snapshots retry in this loop.
-        return;
-      }
+      if (await this.resyncStaleSnapshot(session, snapshot)) return;
     }
     if (options?.failOnReject === true) {
       throw new RunbookExecutionSnapshotRejectedError(
@@ -2959,6 +2938,20 @@ export class RunbookExecutionService {
         session.snapshot.executionId,
       );
     }
+  }
+
+  private async resyncStaleSnapshot(
+    session: RunbookExecutionSession,
+    snapshot: RunbookExecutionRecord,
+  ): Promise<boolean> {
+    // Resync so subsequent emits line up again; terminal store state wins.
+    const persisted = await this.resultStore.getExecutionSnapshotByResultId(session.resultId);
+    if (persisted === null || persisted.status !== "running") {
+      if (snapshot.status !== "running") this.stopExecutionHeartbeat(session);
+      return true;
+    }
+    session.snapshot.snapshotVersion = persisted.snapshotVersion ?? 0;
+    return snapshot.status === "running";
   }
 
   private async publishAcceptedSnapshot(

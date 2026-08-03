@@ -82,10 +82,10 @@ function makeValidPayloads(): Record<DesktopRpcChannel, unknown> {
     'runbooks:delete': { id: 'runbook-1' },
     'runbooks:exportContext': { id: 'runbook-1' },
     'runbooks:export': { ids: ['runbook-1'] },
-    'runbooks:exportToFile': { ids: ['runbook-1'], filePath: '/tmp/runbooks.json' },
+    'runbooks:exportToFile': { ids: ['runbook-1'], filePath: '/tmp/runbooks.json' }, // eslint-disable-line sonarjs/publicly-writable-directories -- Schema fixture; no file access occurs.
     'runbooks:import': { artifact: {} },
-    'runbooks:readImportArtifact': { filePath: '/tmp/runbooks.json' },
-    'runbooks:importFromFile': { filePath: '/tmp/runbooks.json', options: {} },
+    'runbooks:readImportArtifact': { filePath: '/tmp/runbooks.json' }, // eslint-disable-line sonarjs/publicly-writable-directories -- Schema fixture; no file access occurs.
+    'runbooks:importFromFile': { filePath: '/tmp/runbooks.json', options: {} }, // eslint-disable-line sonarjs/publicly-writable-directories -- Schema fixture; no file access occurs.
     'runbooks:execute': { runbookId: 'runbook-1' },
     'runbooks:getExecution': { executionId: UUID },
     'runbooks:cancelExecution': { executionId: UUID },

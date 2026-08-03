@@ -12,8 +12,6 @@
 
 const COMPACT_VALUE_MAX_LENGTH = 40;
 
-const WHITESPACE_ESCAPE_PATTERN = /(\\+)([nrt])/g;
-
 function whitespaceForEscapeMarker(marker: string): string | null {
   switch (marker) {
     case "n":
@@ -38,21 +36,28 @@ function whitespaceForEscapeMarker(marker: string): string | null {
  * that arrived from elsewhere, since an author-written `\n` is real content.
  */
 export function expandJsonWhitespaceEscapes(json: string): string {
-  return json.replace(
-    WHITESPACE_ESCAPE_PATTERN,
-    (match, backslashes: string, marker: string) => {
-      if (backslashes.length % 2 === 0) {
-        return match;
-      }
+  let result = "";
+  let cursor = 0;
+  while (cursor < json.length) {
+    if (json[cursor] !== "\\") {
+      result += json[cursor];
+      cursor += 1;
+      continue;
+    }
 
-      const whitespace = whitespaceForEscapeMarker(marker);
-      if (whitespace === null) {
-        return match;
-      }
-
-      return `${backslashes.slice(0, -1)}${whitespace}`;
-    },
-  );
+    let runEnd = cursor;
+    while (json[runEnd] === "\\") runEnd += 1;
+    const marker = json[runEnd];
+    const whitespace = marker === undefined ? null : whitespaceForEscapeMarker(marker);
+    const backslashCount = runEnd - cursor;
+    if (whitespace === null || backslashCount % 2 === 0) {
+      result += json.slice(cursor, runEnd + (marker === undefined ? 0 : 1));
+    } else {
+      result += `${json.slice(cursor, runEnd - 1)}${whitespace}`;
+    }
+    cursor = marker === undefined ? runEnd : runEnd + 1;
+  }
+  return result;
 }
 
 /**

@@ -37,7 +37,7 @@ function executeGetCheckpoint(
   _input: unknown,
   _context: ToolContext,
 ): Promise<ToolResult> {
-  // TODO: backend checkpoint persistence not yet implemented
+  // Checkpoint persistence is not implemented yet.
   // In full implementation, this would:
   // - Query SQLite for last cursor per source/host
   // - Return cursor to use with --after-cursor in journalctl

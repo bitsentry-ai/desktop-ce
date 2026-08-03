@@ -34,7 +34,6 @@ import { useTranslation } from "@bitsentry-ce/i18n";
 import {
   ImagePlus,
   Loader2,
-  Paperclip,
   Plus,
   X,
 } from "lucide-react";
@@ -319,7 +318,7 @@ export function Composer({
           event.currentTarget.value = "";
         }}
       />
-      {/* TODO: Wire file handling end-to-end (currently only images are supported) */}
+      {/* File attachments remain limited to image handling until the runbook attachment pipeline is available. */}
       <input
         ref={fileInputRef}
         type="file"

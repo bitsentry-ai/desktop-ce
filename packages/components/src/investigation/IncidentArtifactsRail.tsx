@@ -27,10 +27,12 @@ import type {
 import { useBitsentryServices } from "../services/context";
 import { useTranslation } from "@bitsentry-ce/i18n";
 
+type IncidentArtifactsToolCallState = "running" | "done" | "failed";
+
 export interface IncidentArtifactsToolCall {
   toolCallId: string;
   toolName: string;
-  state: "running" | "done" | "failed";
+  state: IncidentArtifactsToolCallState;
   input?: Record<string, unknown>;
   output?: string;
   error?: string;
@@ -302,22 +304,44 @@ function finalOutput(execution: RunbookExecutionRecord | null): string {
   return completed?.output ?? "";
 }
 
+function hasMarkdownStructureLine(text: string): boolean {
+  return text.split("\n").some((line) => {
+    const value = line.trimStart();
+    const firstCharacter = value[0] ?? "";
+    if (firstCharacter === "#") {
+      const headingLength = value.indexOf(" ");
+      return headingLength > 0 && headingLength <= 6;
+    }
+    if (["-", "*", "+", ">"].includes(firstCharacter) && value[1] === " ") return true;
+    if (value.startsWith("|") && value.lastIndexOf("|") > 0) return true;
+
+    let digitCount = 0;
+    while (value[digitCount] >= "0" && value[digitCount] <= "9") digitCount += 1;
+    return digitCount > 0 && value[digitCount] === "." && value[digitCount + 1] === " ";
+  });
+}
+
+function hasDelimitedText(value: string, delimiter: string): boolean {
+  const first = value.indexOf(delimiter);
+  return first >= 0 && value.indexOf(delimiter, first + delimiter.length) > first + delimiter.length;
+}
+
+function hasMarkdownLink(value: string): boolean {
+  const labelStart = value.indexOf("[");
+  const labelEnd = value.indexOf("](", labelStart + 1);
+  const urlEnd = value.indexOf(")", labelEnd + 2);
+  return labelStart >= 0 && labelEnd > labelStart + 1 && urlEnd > labelEnd + 2;
+}
+
 function looksLikeMarkdown(value: string): boolean {
   const text = value.trim();
-  if (text.length === 0) return false;
-  if (text.startsWith("{") || text.startsWith("[")) return false;
+  if (text.length === 0 || text.startsWith("{") || text.startsWith("[")) return false;
 
-  return (
-    /^#{1,6}\s/m.test(text) ||
-    /^\s*[-*+]\s/m.test(text) ||
-    /^\s*\d+\.\s/m.test(text) ||
-    /^\s*>\s/m.test(text) ||
-    /^\s*\|.+\|\s*$/m.test(text) ||
-    /\*\*[^*]+\*\*/.test(text) ||
-    /`[^`]+`/.test(text) ||
-    /\[[^\]]+\]\([^)]+\)/.test(text) ||
-    text.includes("```")
-  );
+  return hasMarkdownStructureLine(text)
+    || hasDelimitedText(text, "**")
+    || hasDelimitedText(text, "`")
+    || hasMarkdownLink(text)
+    || text.includes("```");
 }
 
 function OutputContent({
@@ -517,30 +541,17 @@ function preferArtifact(
   current: IncidentArtifactEntry,
   candidate: IncidentArtifactEntry,
 ): IncidentArtifactEntry {
-  const currentStartedAt = timestampScore(current.startedAt);
-  const candidateStartedAt = timestampScore(candidate.startedAt);
-  if (candidateStartedAt !== currentStartedAt) {
-    if (candidateStartedAt > currentStartedAt) return candidate;
-    return current;
-  }
-
-  const currentStatus = artifactStatusPriority(current.status);
-  const candidateStatus = artifactStatusPriority(candidate.status);
-  if (candidateStatus !== currentStatus) {
-    if (candidateStatus > currentStatus) return candidate;
-    return current;
-  }
-
-  const currentCompletedAt = timestampScore(current.completedAt);
-  const candidateCompletedAt = timestampScore(candidate.completedAt);
-  if (candidateCompletedAt !== currentCompletedAt) {
-    if (candidateCompletedAt > currentCompletedAt) return candidate;
-    return current;
-  }
-
-  if (candidate.order !== current.order) {
-    if (candidate.order > current.order) return candidate;
-    return current;
+  const currentRanks = [
+    timestampScore(current.startedAt), artifactStatusPriority(current.status),
+    timestampScore(current.completedAt), current.order,
+  ];
+  const candidateRanks = [
+    timestampScore(candidate.startedAt), artifactStatusPriority(candidate.status),
+    timestampScore(candidate.completedAt), candidate.order,
+  ];
+  for (const [index, candidateRank] of candidateRanks.entries()) {
+    const currentRank = currentRanks[index] ?? 0;
+    if (candidateRank !== currentRank) return candidateRank > currentRank ? candidate : current;
   }
 
   if (candidate.execution !== null && current.execution === null) {
@@ -772,6 +783,7 @@ function artifactEmptyStateCopy(
   return t("common.incidentArtifactsRail.noSnapshotYet");
 }
 
+// eslint-disable-next-line sonarjs/cognitive-complexity -- Sequential tool-call correlation keeps the state transitions auditable in one place.
 function collectArtifactReferences(
   messages: IncidentArtifactsMessage[],
 ): IncidentArtifactReference[] {

@@ -17,6 +17,7 @@ import {
   RunbookLogFilterError,
   validateRunbookLogFilterConfig,
 } from "../index";
+import { expect, it } from "vitest";
 
 const assert = (condition: boolean, message: string): void => {
   if (!condition) {
@@ -24,6 +25,7 @@ const assert = (condition: boolean, message: string): void => {
   }
 };
 
+it("validates runbook schemas and import helpers", () => {
 assert(
   runbookActionParameterSchema.safeParse({
     id: "param-1",
@@ -545,3 +547,5 @@ assert(
   importedTitle === "Count connections (imported 2)",
   "duplicate title helper should create deterministic imported suffixes",
 );
+expect(importedTitle).toBe("Count connections (imported 2)");
+});

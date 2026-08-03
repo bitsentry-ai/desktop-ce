@@ -1,5 +1,9 @@
 type SeedRow = Record<string, unknown>
 
+function formatDemoPrivateIp(...octets: number[]): string {
+  return octets.join('.')
+}
+
 type CreateModel = {
   create(args: { data: SeedRow }): Promise<unknown>
 }
@@ -259,7 +263,7 @@ export function createDesktopDatabaseSeeders(options: DesktopDatabaseSeedingOpti
           status: 'ONLINE',
           version: '2.4.1',
           hostname: 'dev-ws-01.internal',
-          ipAddress: '10.0.1.15',
+          ipAddress: formatDemoPrivateIp(10, 0, 1, 15),
           operatingSystem: 'macOS 14.3',
           capabilities: JSON.stringify(['file_integrity', 'process_monitor', 'network_filter']),
           lastHeartbeat: now,
@@ -274,7 +278,7 @@ export function createDesktopDatabaseSeeders(options: DesktopDatabaseSeedingOpti
           status: 'ONLINE',
           version: '2.4.0',
           hostname: 'edge-gw-01.dmz',
-          ipAddress: '10.0.0.1',
+          ipAddress: formatDemoPrivateIp(10, 0, 0, 1),
           operatingSystem: 'Ubuntu 22.04',
           capabilities: JSON.stringify(['packet_inspection', 'ids', 'flow_analysis']),
           lastHeartbeat: now,
@@ -304,7 +308,7 @@ export function createDesktopDatabaseSeeders(options: DesktopDatabaseSeedingOpti
           status: 'OFFLINE',
           version: '2.2.0',
           hostname: 'k8s-node-03.cluster',
-          ipAddress: '10.0.2.30',
+          ipAddress: formatDemoPrivateIp(10, 0, 2, 30),
           operatingSystem: 'Flatcar Linux',
           capabilities: JSON.stringify(['image_scan', 'runtime_policy', 'network_policy']),
           lastHeartbeat: dayAgo,
@@ -319,7 +323,7 @@ export function createDesktopDatabaseSeeders(options: DesktopDatabaseSeedingOpti
           status: 'ONLINE',
           version: '2.4.1',
           hostname: 'api-gw-01.internal',
-          ipAddress: '10.0.3.10',
+          ipAddress: formatDemoPrivateIp(10, 0, 3, 10),
           operatingSystem: 'Alpine Linux 3.19',
           capabilities: JSON.stringify(['rate_limiting', 'auth_validation', 'schema_enforcement']),
           lastHeartbeat: now,

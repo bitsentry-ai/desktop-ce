@@ -413,6 +413,7 @@ async function startDetachedExecution(
   return getRequiredStringField(payload, 'executionId', responseContext)
 }
 
+// eslint-disable-next-line sonarjs/cognitive-complexity -- cancellation race outcomes are asserted together to preserve the CLI smoke contract
 async function assertDetachedExecutionFlow(
   context: CliTestContext,
   userDataDir: string,

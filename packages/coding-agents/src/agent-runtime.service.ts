@@ -66,7 +66,6 @@ import {
   isHostToolName,
   type AgentSessionRef,
   type ExecuteRunbookHostToolInput,
-  type GetRunbookExecutionHostToolInput,
   type HostToolContext,
   type HostToolEvent,
 } from '@bitsentry-ce/core/features/agent-runtime'
@@ -143,7 +142,10 @@ function stableRunbookPersistenceValue(value: unknown): string {
 }
 
 function comparableRunbookPersistenceAction(action: RunbookRecord['actions'][number]): Record<string, unknown> {
-  const { id: _actionId, parameters, ...fields } = action
+  const actionWithoutId = Object.fromEntries(
+    Object.entries(action).filter(([key]) => key !== 'id'),
+  ) as Omit<typeof action, 'id'>
+  const { parameters, ...fields } = actionWithoutId
   return {
     ...fields,
     parameters: parameters?.map(({ id: _parameterId, ...parameter }) => ({
@@ -183,7 +185,7 @@ const MAX_ACTIONABLE_JOURNAL_TIME_WINDOWS = 5
 const MAX_STRUCTURED_RUNBOOK_ISSUES = 10
 const MAX_DERIVED_JOURNAL_TIME_WINDOW_SPAN_MS = 24 * 60 * 60 * 1000
 const INCIDENT_TIMESTAMP_PATTERN =
-  /\b\d{4}-\d{2}-\d{2}[Tt ][0-2]\d:[0-5]\d(?::[0-5]\d(?:\.\d{1,9})?)?(?:Z| UTC|[+-]\d{2}:?\d{2})?\b/g
+  /\b\d{4}-\d\d-\d\d[Tt ]\d\d:\d\d(?::\d\d(?:\.\d{1,9})?)?(?:Z| UTC|[+-]\d\d:?\d\d)?\b/g
 
 const unknownRecordSchema = z.record(z.string(), z.unknown())
 
@@ -438,7 +440,6 @@ function normalizeToolArgs(toolName: string, args: Record<string, unknown>): Rec
     const value = normalizeSshJournalValue(key, rawValue)
     if (value !== undefined) {
       normalized[key] = value
-      continue
     }
   }
 
@@ -516,6 +517,20 @@ type VisibleRunbookToolResult = {
   executionId?: string
   dedupeText?: string
   dedupeTokens?: string[]
+}
+
+type VisibleRunbookExecutionData = {
+  runbookTitle: string
+  status: string
+  executionId: string
+  latestStep: Record<string, unknown> | null
+  finalOutput: string | null
+  finalOutputTruncated: boolean
+  finalOutputLength: number | null
+  latestStepError: string | null
+  windowCount: number
+  completedStepCount: number | null
+  stepCount: number | null
 }
 
 type TurnTokenUsage = {
@@ -959,7 +974,8 @@ function formatStructuredIssuePreview(issues: Array<Record<string, unknown>>): s
       readStringProperty(issue, 'level'),
       readStringProperty(issue, 'lastSeen'),
     ].flatMap((value) => (value === null ? [] : [String(value)]))
-    return `- ${title}${details.length > 0 ? ` (${details.join(', ')})` : ''}`
+    const detailsSuffix = details.length > 0 ? ` (${details.join(', ')})` : ''
+    return `- ${title}${detailsSuffix}`
   })
 }
 
@@ -1193,12 +1209,16 @@ type JournalWindowTableHeader = {
 }
 
 function readIssueLabelFromLine(line: string): string | undefined {
-  const match = normalizeRunbookOutputCell(line).match(/^(?:[-*]\s*)?(?:issue|fingerprint)\s*:\s*(.+)$/i)
-  if (match === null) {
-    return undefined
-  }
+  let value = normalizeRunbookOutputCell(line).trimStart()
+  if (value.startsWith("-") || value.startsWith("*")) value = value.slice(1).trimStart()
+  const colon = value.indexOf(":")
+  if (colon < 0) return undefined
 
-  return compactRunbookOutputLabel(match[1])
+  const key = value.slice(0, colon).trim().toLowerCase()
+  if (key !== "issue" && key !== "fingerprint") return undefined
+
+  const label = value.slice(colon + 1).trim()
+  return label === "" ? undefined : compactRunbookOutputLabel(label)
 }
 
 function buildActionableJournalTimeWindowFromTimestamp(
@@ -1304,6 +1324,33 @@ function readJournalWindowFromTableCells(
   return window
 }
 
+function appendNonTableJournalWindow(
+  windows: ActionableJournalTimeWindow[],
+  line: string,
+  currentIssue: string | undefined,
+): void {
+  const namedWindow = extractNamedJournalTimeWindow(line)
+  if (namedWindow !== null) {
+    windows.push(namedWindow)
+    return
+  }
+  const anchorWindow = buildJournalWindowFromAnchorLine(line, currentIssue)
+  if (anchorWindow !== null) windows.push(anchorWindow)
+}
+
+function readJournalWindowFromTableLine(
+  line: string,
+  cells: string[],
+  tableHeader: JournalWindowTableHeader | null,
+): { tableHeader: JournalWindowTableHeader | null; window: ActionableJournalTimeWindow | null } {
+  const nextTableHeader = readJournalWindowTableHeader(cells)
+  if (nextTableHeader !== null) return { tableHeader: nextTableHeader, window: null }
+  if (tableHeader === null) {
+    return { tableHeader: null, window: extractNamedJournalTimeWindow(line) }
+  }
+  return { tableHeader, window: readJournalWindowFromTableCells(cells, tableHeader) }
+}
+
 function extractJournalTimeWindowsFromText(text: string): ActionableJournalTimeWindow[] {
   const windows: ActionableJournalTimeWindow[] = []
   let tableHeader: JournalWindowTableHeader | null = null
@@ -1315,16 +1362,7 @@ function extractJournalTimeWindowsFromText(text: string): ActionableJournalTimeW
 
     if (cells === null) {
       tableHeader = null
-      const namedWindow = extractNamedJournalTimeWindow(line)
-      if (namedWindow !== null) {
-        windows.push(namedWindow)
-        continue
-      }
-
-      const anchorWindow = buildJournalWindowFromAnchorLine(line, currentIssue)
-      if (anchorWindow !== null) {
-        windows.push(anchorWindow)
-      }
+      appendNonTableJournalWindow(windows, line, currentIssue)
       continue
     }
 
@@ -1332,24 +1370,9 @@ function extractJournalTimeWindowsFromText(text: string): ActionableJournalTimeW
       continue
     }
 
-    const nextTableHeader = readJournalWindowTableHeader(cells)
-    if (nextTableHeader !== null) {
-      tableHeader = nextTableHeader
-      continue
-    }
-
-    if (tableHeader !== null) {
-      const window = readJournalWindowFromTableCells(cells, tableHeader)
-      if (window !== null) {
-        windows.push(window)
-      }
-      continue
-    }
-
-    const namedWindow = extractNamedJournalTimeWindow(line)
-    if (namedWindow !== null) {
-      windows.push(namedWindow)
-    }
+    const result = readJournalWindowFromTableLine(line, cells, tableHeader)
+    tableHeader = result.tableHeader
+    if (result.window !== null) windows.push(result.window)
   }
 
   return windows
@@ -1397,6 +1420,82 @@ function buildAggregateActionableJournalTimeWindow(
   }
 }
 
+function summarizeRunbookExecutionStep(step: RunbookExecutionStepRecord): Record<string, unknown> {
+  const output = summarizeRunbookStepTextDetails(step.output)
+  const error = summarizeRunbookStepTextDetails(step.error)
+  const structuredOutput = summarizeRunbookStepStructuredOutput(step)
+  const summary: Record<string, unknown> = {
+    order: step.order,
+    title: step.title,
+    type: step.type,
+    status: step.status,
+  }
+  if (output !== undefined) {
+    summary.outputExcerpt = output.excerpt
+    summary.outputLength = output.length
+    summary.outputTruncated = output.truncated
+  }
+  if (error !== undefined) {
+    summary.errorExcerpt = error.excerpt
+    summary.errorLength = error.length
+    summary.errorTruncated = error.truncated
+  }
+  if (structuredOutput !== undefined) summary.structuredOutput = structuredOutput
+  return summary
+}
+
+function appendActionableJournalWindowSummary(
+  summary: Record<string, unknown>,
+  derivedJournalTimeWindow: RunbookParameterValues | undefined,
+  actionableJournalTimeWindows: ActionableJournalTimeWindow[],
+  aggregateActionableJournalTimeWindow: RunbookParameterValues | undefined,
+): void {
+  if (derivedJournalTimeWindow !== undefined && actionableJournalTimeWindows.length === 0) {
+    summary.derivedJournalTimeWindow = derivedJournalTimeWindow
+  }
+  if (actionableJournalTimeWindows.length === 0) return
+  summary.actionableJournalTimeWindowCount = actionableJournalTimeWindows.length
+  if (aggregateActionableJournalTimeWindow !== undefined) {
+    summary.aggregateActionableJournalTimeWindow = aggregateActionableJournalTimeWindow
+  }
+  summary.actionableJournalTimeWindows = actionableJournalTimeWindows.slice(0, MAX_ACTIONABLE_JOURNAL_TIME_WINDOWS)
+  if (actionableJournalTimeWindows.length > MAX_ACTIONABLE_JOURNAL_TIME_WINDOWS) {
+    summary.actionableJournalTimeWindowsTruncated = true
+  }
+}
+
+function appendFinalRunbookOutputSummary(
+  summary: Record<string, unknown>,
+  latestStep: RunbookExecutionStepRecord | undefined,
+  latestCompletedOutput: RunbookExecutionStepRecord | undefined,
+): void {
+  if (latestStep !== undefined) summary.latestStep = summarizeRunbookExecutionStep(latestStep)
+  const finalStructuredOutput = latestCompletedOutput === undefined
+    ? undefined
+    : summarizeRunbookStepStructuredOutput(latestCompletedOutput)
+  const finalOutput = finalStructuredOutput === undefined
+    ? summarizeRunbookStepTextDetails(latestCompletedOutput?.output, 320)
+    : undefined
+  const finalOutputMarkdown = finalStructuredOutput === undefined
+    ? summarizeRunbookStepMarkdownDetails(latestCompletedOutput?.output)
+    : undefined
+  if (finalOutput !== undefined) {
+    summary.finalOutputExcerpt = finalOutput.excerpt
+    summary.finalOutputLength = finalOutput.length
+    summary.finalOutputTruncated = finalOutput.truncated
+  }
+  if (finalOutputMarkdown !== undefined) {
+    summary.finalOutputMarkdownExcerpt = finalOutputMarkdown.excerpt
+    summary.finalOutputMarkdownLength = finalOutputMarkdown.length
+    summary.finalOutputMarkdownTruncated = finalOutputMarkdown.truncated
+  }
+  if (finalStructuredOutput !== undefined) {
+    summary.finalStructuredOutput = finalStructuredOutput
+    summary.finalOutputLength = latestCompletedOutput?.output?.trim().length ?? 0
+    summary.finalOutputTruncated = true
+  }
+}
+
 export function summarizeRunbookExecutionForToolOutput(execution: RunbookExecutionRecord): Record<string, unknown> {
   const completedStepCount = execution.steps.filter((step) => step.status === 'completed').length
   const failedStepCount = execution.steps.filter((step) => step.status === 'failed').length
@@ -1411,46 +1510,6 @@ export function summarizeRunbookExecutionForToolOutput(execution: RunbookExecuti
     aggregateActionableJournalTimeWindow = buildAggregateActionableJournalTimeWindow(actionableJournalTimeWindows)
   }
 
-  const summarizeStep = (step: RunbookExecutionStepRecord): Record<string, unknown> => {
-    const output = summarizeRunbookStepTextDetails(step.output)
-    const error = summarizeRunbookStepTextDetails(step.error)
-    const structuredOutput = summarizeRunbookStepStructuredOutput(step)
-    const summary: Record<string, unknown> = {
-      order: step.order,
-      title: step.title,
-      type: step.type,
-      status: step.status,
-    }
-
-    if (output !== undefined) {
-      summary.outputExcerpt = output.excerpt
-      summary.outputLength = output.length
-      summary.outputTruncated = output.truncated
-    }
-
-    if (error !== undefined) {
-      summary.errorExcerpt = error.excerpt
-      summary.errorLength = error.length
-      summary.errorTruncated = error.truncated
-    }
-
-    if (structuredOutput !== undefined) {
-      summary.structuredOutput = structuredOutput
-    }
-
-    return summary
-  }
-
-  const finalStructuredOutput = latestCompletedOutput === undefined
-    ? undefined
-    : summarizeRunbookStepStructuredOutput(latestCompletedOutput)
-  const finalOutput = finalStructuredOutput === undefined
-    ? summarizeRunbookStepTextDetails(latestCompletedOutput?.output, 320)
-    : undefined
-  const finalOutputMarkdown = finalStructuredOutput === undefined
-    ? summarizeRunbookStepMarkdownDetails(latestCompletedOutput?.output)
-    : undefined
-
   const summary: Record<string, unknown> = {
     executionId: execution.executionId,
     runbookId: execution.runbookId,
@@ -1460,7 +1519,7 @@ export function summarizeRunbookExecutionForToolOutput(execution: RunbookExecuti
     stepCount: execution.steps.length,
     completedStepCount,
     failedStepCount,
-    steps: execution.steps.map(summarizeStep),
+    steps: execution.steps.map(summarizeRunbookExecutionStep),
   }
 
   if (execution.completedAt !== undefined) {
@@ -1475,42 +1534,11 @@ export function summarizeRunbookExecutionForToolOutput(execution: RunbookExecuti
     summary.parameterValues = execution.parameterValues
   }
 
-  if (derivedJournalTimeWindow !== undefined && actionableJournalTimeWindows.length === 0) {
-    summary.derivedJournalTimeWindow = derivedJournalTimeWindow
-  }
-
-  if (actionableJournalTimeWindows.length > 0) {
-    summary.actionableJournalTimeWindowCount = actionableJournalTimeWindows.length
-    if (aggregateActionableJournalTimeWindow !== undefined) {
-      summary.aggregateActionableJournalTimeWindow = aggregateActionableJournalTimeWindow
-    }
-    summary.actionableJournalTimeWindows = actionableJournalTimeWindows.slice(0, MAX_ACTIONABLE_JOURNAL_TIME_WINDOWS)
-    if (actionableJournalTimeWindows.length > MAX_ACTIONABLE_JOURNAL_TIME_WINDOWS) {
-      summary.actionableJournalTimeWindowsTruncated = true
-    }
-  }
-
-  if (latestStep !== undefined) {
-    summary.latestStep = summarizeStep(latestStep)
-  }
-
-  if (finalOutput !== undefined) {
-    summary.finalOutputExcerpt = finalOutput.excerpt
-    summary.finalOutputLength = finalOutput.length
-    summary.finalOutputTruncated = finalOutput.truncated
-  }
-
-  if (finalOutputMarkdown !== undefined) {
-    summary.finalOutputMarkdownExcerpt = finalOutputMarkdown.excerpt
-    summary.finalOutputMarkdownLength = finalOutputMarkdown.length
-    summary.finalOutputMarkdownTruncated = finalOutputMarkdown.truncated
-  }
-
-  if (finalStructuredOutput !== undefined) {
-    summary.finalStructuredOutput = finalStructuredOutput
-    summary.finalOutputLength = latestCompletedOutput?.output?.trim().length ?? 0
-    summary.finalOutputTruncated = true
-  }
+  appendActionableJournalWindowSummary(
+    summary, derivedJournalTimeWindow, actionableJournalTimeWindows,
+    aggregateActionableJournalTimeWindow,
+  )
+  appendFinalRunbookOutputSummary(summary, latestStep, latestCompletedOutput)
 
   return summary
 }
@@ -1685,6 +1713,19 @@ function appendOptionalLine(lines: string[], line: string | null): void {
  * Manages agentic sessions with tool execution.
  * All execution happens in main process; renderer only receives events.
  */
+function formatVisibleRunbookListEntry(runbook: Record<string, unknown>): { title: string; lines: string[] } {
+  const title = readFirstStringProperty([runbook], 'title', 'Untitled runbook')
+  const actionCount = readNumberProperty(runbook, 'actionCount')
+  const actionSummary = actionCount === null
+    ? ''
+    : ` (${String(actionCount)} ${actionCount === 1 ? 'action' : 'actions'})`
+  const description = readNonEmptyTrimmedStringProperty(runbook, 'description')
+  return {
+    title,
+    lines: description === null ? [`- ${title}${actionSummary}`] : [`- ${title}${actionSummary}`, `  ${description}`],
+  }
+}
+
 export class AgentRuntimeService {
   private sessions = new Map<string, AgentSession>()
   private readonly authoringPersistence = new Map<string, Promise<RunbookRecord>>()
@@ -2042,29 +2083,38 @@ export class AgentRuntimeService {
       'If you cannot fulfill a request, explain why clearly.',
     )
 
-    // If runbook context is provided, add runbook-specific instructions
     if (runbookContext !== undefined) {
-      const runbookInstructions: string[] = [
+      return this.buildRunbookContextPrompt(baseInstructions, runbookContext)
+    }
+
+    return baseInstructions.join('\n')
+  }
+
+  private buildRunbookContextPrompt(
+    baseInstructions: string[],
+    runbookContext: RunbookContext,
+  ): string {
+    const runbookInstructions: string[] = [
         '',
         '--- ACTIVE RUNBOOK CONTEXT ---',
         'The runbook context below IS provided to you. You CAN and MUST reference it.',
         'Do NOT claim you do not have access to "internal documents" or "the runbook".',
         '',
         `Runbook: ${runbookContext.title}`,
-      ]
+    ]
 
-      if (runbookContext.description.length > 0) {
-        runbookInstructions.push(`Description: ${runbookContext.description}`)
-      }
+    if (runbookContext.description.length > 0) {
+      runbookInstructions.push(`Description: ${runbookContext.description}`)
+    }
 
-      runbookInstructions.push(
+    runbookInstructions.push(
         '',
         'Runbook Actions:',
         ...runbookContext.actions.map(formatRunbookActionPromptBlock),
         '',
-      )
-      appendRunbookToolPromptLines(runbookInstructions, runbookContext.id, this.hasRunbookTools())
-      runbookInstructions.push(
+    )
+    appendRunbookToolPromptLines(runbookInstructions, runbookContext.id, this.hasRunbookTools())
+    runbookInstructions.push(
         '',
         '--- HOW TO HANDLE EACH ACTION TYPE ---',
         'For [llm] actions: YOU are the LLM. Perform the requested analysis or summarization DIRECTLY in your response.',
@@ -2085,12 +2135,9 @@ export class AgentRuntimeService {
         '',
         'Do NOT stop after explaining your plan. Complete the full analysis.',
         '--- END RUNBOOK CONTEXT ---',
-      )
+    )
 
-      return [...baseInstructions, ...runbookInstructions].join('\n')
-    }
-
-    return baseInstructions.join('\n')
+    return [...baseInstructions, ...runbookInstructions].join('\n')
   }
 
   /**
@@ -2103,7 +2150,7 @@ export class AgentRuntimeService {
    *
    * @param session - Active session
    */
-  // eslint-disable-next-line complexity -- Main loop orchestrates LLM streaming, tool execution, runbook visibility, cancellation, and finalization.
+  // eslint-disable-next-line sonarjs/cognitive-complexity -- This cancellation, streaming, and tool-execution state machine must retain its ordered transitions.
   private async runAgentLoop(session: AgentSession): Promise<void> {
     const { id: sessionId, abortController, llmAdapter } = session
     session.loopActive = true
@@ -2118,7 +2165,6 @@ export class AgentRuntimeService {
       let lastToolResult: ToolResult | undefined
       let turnTokenUsage: TurnTokenUsage | undefined
       let postToolFallbackResults: CompletedToolResult[] | null = null
-      let hasExecutedToolCallInCurrentTurn = false
       let awaitingRunbookSummary = false
       const visibleRunbookExecutionIds = new Set<string>()
       const accumulateTurnTokenUsage = (usage: TurnTokenUsage): void => {
@@ -2143,7 +2189,6 @@ export class AgentRuntimeService {
 
       const directRunbookExecution = await this.runExplicitlyMentionedRunbook(session)
       if (directRunbookExecution !== null) {
-        hasExecutedToolCallInCurrentTurn = true
         awaitingRunbookSummary = true
         lastToolResult = directRunbookExecution.result
         this.sendEvent(sessionId, {
@@ -2239,9 +2284,7 @@ export class AgentRuntimeService {
           !isLocalCodingAgentProvider ||
           this.debugHooks.isLocalCodingAgentDeltaStreamingEnabled()
         const remainingSessionTimeoutMs = Math.max(1, session.expiresAt - Date.now())
-        let response: Awaited<ReturnType<AgentLlmAdapterService['chatWithTools']>>
-        try {
-          response = await runOrchestratedOperation({
+        const response: Awaited<ReturnType<AgentLlmAdapterService['chatWithTools']>> = await runOrchestratedOperation({
             operation: 'LLM response',
             signal: abortController.signal,
             timeoutMs: remainingSessionTimeoutMs,
@@ -2289,9 +2332,6 @@ export class AgentRuntimeService {
                 },
               }),
           })
-        } catch (error) {
-          throw error
-        }
 
         const toolResponseFallbackText = this.buildVisibleRunbookFallbackResponse(
           fallbackResultsForThisLlmCall,
@@ -2381,8 +2421,6 @@ export class AgentRuntimeService {
           emitFinal(responseContent)
           return
         }
-
-        hasExecutedToolCallInCurrentTurn = true
 
         const hasRunbookStartInBatch = toolCalls.some((toolCall) => toolCall.name === 'execute_runbook')
         let runbookStartCompletedInBatch = false
@@ -2504,10 +2542,9 @@ export class AgentRuntimeService {
           return
         }
 
-        postToolFallbackResults = null
-        if (this.hasVisibleRunbookToolResult(completedToolResults)) {
-          postToolFallbackResults = completedToolResults
-        }
+        postToolFallbackResults = this.hasVisibleRunbookToolResult(completedToolResults)
+          ? completedToolResults
+          : null
 
         // Trim message history if it's getting too long
         if (session.messages.length > MAX_MESSAGE_HISTORY) {
@@ -3044,42 +3081,58 @@ export class AgentRuntimeService {
     const store = this.getRunbookStore()
     const persistedRunbook = remapRunbookAuthoringPersistenceIds(runbook)
     if (proposal.kind === 'create_new_runbook') {
-      let saved: RunbookRecord
-      try {
-        saved = await store.create({ id: persistedRunbook.id, title: persistedRunbook.title, description: persistedRunbook.description, idleTimeout: persistedRunbook.idleTimeout })
-      } catch (error) {
-        const existing = await store.getIncludingDeleted(persistedRunbook.id)
-        if (existing !== null && existing.deletedAt === null && hasCompleteAuthoringPersistence(persistedRunbook, existing.runbook)) {
-          return existing.runbook
-        }
-        if (existing === null) throw error
-        await store.purge({ id: persistedRunbook.id })
-        saved = await store.create({ id: persistedRunbook.id, title: persistedRunbook.title, description: persistedRunbook.description, idleTimeout: persistedRunbook.idleTimeout })
-      }
-      try {
-        const updated = persistedRunbook.actions.length > 0
-          ? await store.updateActions({ runbookId: saved.id, actions: persistedRunbook.actions })
-          : saved
-        if (updated === null) throw new Error(`Runbook authoring approval did not save runbook: ${persistedRunbook.id}`)
-        this.verifyApprovedRunbookPersistence(persistedRunbook, updated)
-        return updated
-      } catch (error) {
-        await store.purge({ id: saved.id }).catch((cleanupError: unknown) => {
-          log.error('[agent-runtime] Failed to purge runbook shell after authoring approval persistence failed', {
-            runbookId: saved.id,
-            error: getErrorMessage(cleanupError),
-          })
-        })
-        throw error
-      }
+      return this.createApprovedRunbookAuthoringProposal(store, persistedRunbook)
     }
 
+    return this.updateApprovedRunbookAuthoringProposal(store, persistedRunbook, proposal)
+  }
+
+  private async createApprovedRunbookAuthoringProposal(store: AgentRuntimeRunbookStore, runbook: RunbookRecord): Promise<RunbookRecord> {
+    const saved = await this.createApprovedRunbookShell(store, runbook)
+    try {
+      const updated = runbook.actions.length > 0
+        ? await store.updateActions({ runbookId: saved.id, actions: runbook.actions })
+        : saved
+      if (updated === null) throw new Error(`Runbook authoring approval did not save runbook: ${runbook.id}`)
+      this.verifyApprovedRunbookPersistence(runbook, updated)
+      return updated
+    } catch (error) {
+      await store.purge({ id: saved.id }).catch((cleanupError: unknown) => {
+        log.error('[agent-runtime] Failed to purge runbook shell after authoring approval persistence failed', {
+          runbookId: saved.id,
+          error: getErrorMessage(cleanupError),
+        })
+      })
+      throw error
+    }
+  }
+
+  private async createApprovedRunbookShell(store: AgentRuntimeRunbookStore, runbook: RunbookRecord): Promise<RunbookRecord> {
+    const input = { id: runbook.id, title: runbook.title, description: runbook.description, idleTimeout: runbook.idleTimeout }
+    try {
+      return await store.create(input)
+    } catch (error) {
+      const existing = await store.getIncludingDeleted(runbook.id)
+      if (existing !== null && existing.deletedAt === null && hasCompleteAuthoringPersistence(runbook, existing.runbook)) {
+        return existing.runbook
+      }
+      if (existing === null) throw error
+      await store.purge({ id: runbook.id })
+      return store.create(input)
+    }
+  }
+
+  private async updateApprovedRunbookAuthoringProposal(
+    store: AgentRuntimeRunbookStore,
+    runbook: RunbookRecord,
+    proposal: Extract<RunbookAuthoringProposal, { kind: 'edit_existing_runbook' }>,
+  ): Promise<RunbookRecord> {
     const latest = await this.resolveCurrentRunbookForAuthoringApproval(proposal)
     if (getRunbookAuthoringRevisionHash(latest) !== proposal.targetRevisionHash) throw new Error('This runbook changed after the authoring proposal was created. Ask the agent to revise the proposal against the latest runbook before approving it.')
-    const metadata = await store.updateMeta({ id: persistedRunbook.id, title: persistedRunbook.title, description: persistedRunbook.description, idleTimeout: persistedRunbook.idleTimeout })
-    const saved = await store.updateActions({ runbookId: persistedRunbook.id, actions: persistedRunbook.actions }) ?? metadata
-    if (saved === null) throw new Error(`Runbook authoring approval did not save runbook: ${persistedRunbook.id}`)
-    this.verifyApprovedRunbookPersistence(persistedRunbook, saved)
+    const metadata = await store.updateMeta({ id: runbook.id, title: runbook.title, description: runbook.description, idleTimeout: runbook.idleTimeout })
+    const saved = await store.updateActions({ runbookId: runbook.id, actions: runbook.actions }) ?? metadata
+    if (saved === null) throw new Error(`Runbook authoring approval did not save runbook: ${runbook.id}`)
+    this.verifyApprovedRunbookPersistence(runbook, saved)
     return saved
   }
 
@@ -3310,19 +3363,9 @@ export class AgentRuntimeService {
     const lines = ['Available runbooks:']
     const dedupeTokens: string[] = []
     for (const runbook of runbooks) {
-      const title = readFirstStringProperty([runbook], 'title', 'Untitled runbook')
-      dedupeTokens.push(title)
-      const actionCount = readNumberProperty(runbook, 'actionCount')
-      let actionSummary = ''
-      if (actionCount !== null) {
-        actionSummary = ` (${String(actionCount)} ${actionCount === 1 ? 'action' : 'actions'})`
-      }
-      lines.push(`- ${title}${actionSummary}`)
-
-      const description = readNonEmptyTrimmedStringProperty(runbook, 'description')
-      if (description !== null) {
-        lines.push(`  ${description}`)
-      }
+      const entry = formatVisibleRunbookListEntry(runbook)
+      dedupeTokens.push(entry.title)
+      lines.push(...entry.lines)
     }
 
     return { text: lines.join('\n'), dedupeTokens }
@@ -3332,6 +3375,14 @@ export class AgentRuntimeService {
     result: ToolResult,
     toolName: 'execute_runbook' | 'get_runbook_execution' = 'execute_runbook',
   ): VisibleRunbookToolResult | null {
+    const data = this.readVisibleRunbookExecutionData(result, toolName)
+    return data === null ? null : this.formatVisibleRunbookExecutionResult(data)
+  }
+
+  private readVisibleRunbookExecutionData(
+    result: ToolResult,
+    toolName: 'execute_runbook' | 'get_runbook_execution',
+  ): VisibleRunbookExecutionData | null {
     if (result.error !== undefined && result.error.length > 0) {
       return null
     }
@@ -3358,53 +3409,61 @@ export class AgentRuntimeService {
     }
 
     const latestStep = readRecordProperty(executionSummary, 'latestStep')
+    const output = this.readVisibleRunbookExecutionOutput(executionSummary)
+    return {
+      runbookTitle,
+      status,
+      executionId,
+      latestStep,
+      ...output,
+      latestStepError: readNonEmptyTrimmedStringProperty(latestStep, 'errorExcerpt'),
+      completedStepCount: readNumberProperty(executionSummary, 'completedStepCount'),
+      stepCount: readNumberProperty(executionSummary, 'stepCount'),
+    }
+  }
+
+  private readVisibleRunbookExecutionOutput(executionSummary: Record<string, unknown> | null): Pick<VisibleRunbookExecutionData, 'finalOutput' | 'finalOutputTruncated' | 'finalOutputLength' | 'windowCount'> {
     const finalStructuredOutput = readRecordProperty(executionSummary, 'finalStructuredOutput')
     const structuredIssues = readRecordArrayProperty(finalStructuredOutput, 'issues')
-    let finalOutput = structuredIssues.length > 0
+    const finalOutput = structuredIssues.length > 0
       ? [`Top ${String(structuredIssues.length)} issues:`, ...formatStructuredIssuePreview(structuredIssues)].join('\n')
       : readNonEmptyTrimmedStringProperty(executionSummary, 'finalOutputMarkdownExcerpt')
-    if (finalOutput === null) {
-      finalOutput = readNonEmptyTrimmedStringProperty(executionSummary, 'finalOutputExcerpt')
+        ?? readNonEmptyTrimmedStringProperty(executionSummary, 'finalOutputExcerpt')
+    return {
+      finalOutput,
+      finalOutputTruncated: executionSummary?.finalOutputMarkdownTruncated === true || executionSummary?.finalOutputTruncated === true,
+      finalOutputLength: readNumberProperty(executionSummary, 'finalOutputMarkdownLength') ?? readNumberProperty(executionSummary, 'finalOutputLength'),
+      windowCount: readNumberProperty(executionSummary, 'actionableJournalTimeWindowCount')
+        ?? readRecordArrayProperty(executionSummary, 'actionableJournalTimeWindows').length,
     }
-    const finalOutputTruncated =
-      executionSummary?.finalOutputMarkdownTruncated === true || executionSummary?.finalOutputTruncated === true
-    let finalOutputLength = readNumberProperty(executionSummary, 'finalOutputMarkdownLength')
-    if (finalOutputLength === null) {
-      finalOutputLength = readNumberProperty(executionSummary, 'finalOutputLength')
-    }
-    const latestStepError = readNonEmptyTrimmedStringProperty(latestStep, 'errorExcerpt')
-    let windowCount = readNumberProperty(executionSummary, 'actionableJournalTimeWindowCount')
-    if (windowCount === null) {
-      windowCount = readRecordArrayProperty(executionSummary, 'actionableJournalTimeWindows').length
-    }
-    const completedStepCount = readNumberProperty(executionSummary, 'completedStepCount')
-    const stepCount = readNumberProperty(executionSummary, 'stepCount')
+  }
 
-    const lines = [`Runbook result: ${runbookTitle}`, `Status: ${status}`]
-    if (completedStepCount !== null && stepCount !== null) {
-      lines.push(`Steps: ${String(completedStepCount)}/${String(stepCount)} completed`)
+  private formatVisibleRunbookExecutionResult(data: VisibleRunbookExecutionData): VisibleRunbookToolResult {
+    const lines = [`Runbook result: ${data.runbookTitle}`, `Status: ${data.status}`]
+    if (data.completedStepCount !== null && data.stepCount !== null) {
+      lines.push(`Steps: ${String(data.completedStepCount)}/${String(data.stepCount)} completed`)
     }
 
-    if (latestStep !== null) {
-      const latestStepTitle = readFirstStringProperty([latestStep], 'title', 'Unknown')
-      const latestStepStatus = readFirstStringProperty([latestStep], 'status', 'unknown')
+    if (data.latestStep !== null) {
+      const latestStepTitle = readFirstStringProperty([data.latestStep], 'title', 'Unknown')
+      const latestStepStatus = readFirstStringProperty([data.latestStep], 'status', 'unknown')
       lines.push(`Latest step: ${latestStepTitle} (${latestStepStatus})`)
     }
 
-    if (latestStepError !== null) {
-      lines.push(`Error: ${latestStepError}`)
+    if (data.latestStepError !== null) {
+      lines.push(`Error: ${data.latestStepError}`)
     }
 
-    if (finalOutput !== null) {
-      lines.push('', finalOutput)
+    if (data.finalOutput !== null) {
+      lines.push('', data.finalOutput)
     }
 
-    if (finalOutputTruncated && finalOutputLength !== null) {
-      lines.push(`\nOutput preview truncated from ${String(finalOutputLength)} characters. Open Runbook Results for the full output.`)
+    if (data.finalOutputTruncated && data.finalOutputLength !== null) {
+      lines.push(`\nOutput preview truncated from ${String(data.finalOutputLength)} characters. Open Runbook Results for the full output.`)
     }
 
-    if (windowCount > 0) {
-      lines.push('', `Journal windows available: ${String(windowCount)}`)
+    if (data.windowCount > 0) {
+      lines.push('', `Journal windows available: ${String(data.windowCount)}`)
     }
 
     lines.push('', '')
@@ -3412,11 +3471,11 @@ export class AgentRuntimeService {
     const visibleResult: VisibleRunbookToolResult = {
       text: lines.join('\n'),
     }
-    if (finalOutput !== null) {
-      visibleResult.dedupeText = finalOutput
+    if (data.finalOutput !== null) {
+      visibleResult.dedupeText = data.finalOutput
     }
-    if (executionId.length > 0) {
-      visibleResult.executionId = executionId
+    if (data.executionId.length > 0) {
+      visibleResult.executionId = data.executionId
     }
 
     return visibleResult

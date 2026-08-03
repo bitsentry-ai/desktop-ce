@@ -263,8 +263,13 @@ export async function createDesktopMainWindow(
     options.logger.error(
       `[renderer] did-fail-load code=${String(errorCode)} mainFrame=${String(isMainFrame)} url=${validatedURL} error=${String(errorDescription)}`,
     )
-    const normalizedRendererUrl = (process.env.ELECTRON_RENDERER_URL ?? '').replace(/\/+$/, '')
-    const normalizedValidatedUrl = validatedURL.replace(/\/+$/, '')
+    const trimTrailingSlashes = (value: string): string => {
+      let end = value.length
+      while (end > 0 && value[end - 1] === '/') end -= 1
+      return value.slice(0, end)
+    }
+    const normalizedRendererUrl = trimTrailingSlashes(process.env.ELECTRON_RENDERER_URL ?? '')
+    const normalizedValidatedUrl = trimTrailingSlashes(validatedURL)
     if (
       isMainFrame &&
       errorCode === -102 &&

@@ -75,7 +75,8 @@ export interface DesktopPreloadBridgePort {
 export interface CreateDesktopBitsentryApiOptions {
   bridge: DesktopPreloadBridgePort
   managedLlm: boolean
-  agentProviderMode: 'remote' | 'local'
+  /** Compatibility input retained for Pro callers pinned to the prior bridge contract. */
+  agentProviderMode?: "local" | "remote"
 }
 
 function createSubscription<T>(
@@ -236,12 +237,7 @@ function createManagedLlmBridge(bridge: DesktopPreloadBridgePort) {
   }
 }
 
-function createAgentBridge(
-  bridge: DesktopPreloadBridgePort,
-  agentProviderMode: 'remote' | 'local',
-) {
-  void agentProviderMode
-
+function createAgentBridge(bridge: DesktopPreloadBridgePort) {
   return {
     start: async (
       input: {
@@ -377,7 +373,6 @@ function createAgentBridge(
 export function createDesktopBitsentryApi({
   bridge,
   managedLlm,
-  agentProviderMode,
 }: CreateDesktopBitsentryApiOptions) {
   const llm = createCommonLlmBridge(bridge)
   if (managedLlm) {
@@ -467,7 +462,7 @@ export function createDesktopBitsentryApi({
         return createSubscription(bridge, 'bitsentry:oauth:callback', callback)
       },
     },
-    agent: createAgentBridge(bridge, agentProviderMode),
+    agent: createAgentBridge(bridge),
     runbooks: {
       execute: async (input: {
         runbookId: string

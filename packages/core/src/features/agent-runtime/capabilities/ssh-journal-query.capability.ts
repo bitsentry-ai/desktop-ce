@@ -89,7 +89,7 @@ async function executeSshJournalQuery(
   })
 
   // Spawn SSH process (main process only, never renderer)
-  const sshProcess = spawn('ssh', command.args, {
+  const sshProcess = spawn('/usr/bin/ssh', command.args, {
     shell: false,  // Prevent command injection
     env: process.env,  // Inherit user environment (ssh-agent, HOME, etc.)
     // Prevent interactive SSH prompts from attaching to the desktop terminal

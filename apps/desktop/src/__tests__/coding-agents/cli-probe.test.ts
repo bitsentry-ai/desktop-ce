@@ -23,7 +23,7 @@ type DoctorFn = (provider: 'claude_code' | 'codex' | 'opencode' | 'cursor', bina
 }>
 
 // These imports verify the actual exports match the expected signatures
-async function _typeCheck() {
+it('keeps CLI probe exports type-compatible', async () => {
   const { probeClaudeCode, probeCodex, probeOpenCode, probeCursor, detectBinary, doctor } = await import('@bitsentry-ce/coding-agents/cli-probe.service')
 
   // Assign to typed variables — compile error if signatures don't match
@@ -34,10 +34,8 @@ async function _typeCheck() {
   const _db: DetectBinaryFn = detectBinary
   const _dr: DoctorFn = doctor
 
-  void [_pc, _px, _po, _pcu, _db, _dr]
-}
-
-void _typeCheck
+  expect([_pc, _px, _po, _pcu, _db, _dr]).toHaveLength(6)
+})
 
 describe('parseCursorAuthOutput', () => {
   it('treats bare unauthenticated text as unauthenticated', () => {

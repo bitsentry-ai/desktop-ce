@@ -1,6 +1,5 @@
 import {
   getDesktopAnalyticsContext as getSharedDesktopAnalyticsContext,
-  markDesktopFirstRunCaptured,
   type DesktopAnalyticsContext,
   type DesktopAnalyticsSettingsDb,
 } from '@bitsentry-ce/core/features/analytics/desktop-posthog'

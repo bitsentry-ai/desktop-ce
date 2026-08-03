@@ -195,10 +195,26 @@ function getErrorMessage(error: unknown): string {
   return "Unknown error";
 }
 
-const SENSITIVE_KEY_PATTERN =
-  /(password|secret|token|api[_-]?key|authorization|cookie|credential|private[_-]?key|prompt|content|body|text|code|script|command|stdout|stderr|input|output)/i;
-const SAFE_SCALAR_KEY_PATTERN =
-  /(^id$|Id$|^type$|Type$|^mode$|Mode$|^format$|Format$|^provider$|Provider$|^method$|Method$|^status$|Status$|^source$|Source$|^enabled$|Enabled$|^success$|Success$|^count$|Count$|Path$|^path$|Name$|^name$)/i;
+const SENSITIVE_KEY_TERMS = [
+  "password", "secret", "token", "apikey", "authorization", "cookie",
+  "credential", "privatekey", "prompt", "content", "body", "text",
+  "code", "script", "command", "stdout", "stderr", "input", "output",
+];
+const SAFE_SCALAR_KEY_NAMES = new Set([
+  "id", "type", "mode", "format", "provider", "method", "status",
+  "source", "enabled", "success", "count", "path", "name",
+]);
+const SAFE_SCALAR_KEY_SUFFIXES = ["Id", "Type", "Mode", "Format", "Provider", "Method", "Status", "Source", "Enabled", "Success", "Count", "Path", "Name"];
+
+function isSensitiveTelemetryKey(key: string): boolean {
+  const normalizedKey = key.toLowerCase().replaceAll("_", "").replaceAll("-", "");
+  return SENSITIVE_KEY_TERMS.some((term) => normalizedKey.includes(term));
+}
+
+function isSafeTelemetryScalarKey(key: string): boolean {
+  return SAFE_SCALAR_KEY_NAMES.has(key.toLowerCase()) ||
+    SAFE_SCALAR_KEY_SUFFIXES.some((suffix) => key.endsWith(suffix));
+}
 
 function summarizePayloadForTelemetry(payload: unknown): Record<string, unknown> {
   if (payload === null || payload === undefined) {
@@ -238,7 +254,7 @@ function summarizeTelemetryEntry(
   key: string,
   value: unknown,
 ): { key: string; value: unknown } | null {
-  if (SENSITIVE_KEY_PATTERN.test(key)) return null;
+  if (isSensitiveTelemetryKey(key)) return null;
 
   const telemetryKey = toTelemetryKey(key);
   if (typeof value === "boolean") {
@@ -249,7 +265,7 @@ function summarizeTelemetryEntry(
     return { key: `payload_${telemetryKey}_count`, value: value.length };
   }
 
-  if (!SAFE_SCALAR_KEY_PATTERN.test(key)) return null;
+  if (!isSafeTelemetryScalarKey(key)) return null;
 
   if (typeof value === "number") {
     return { key: `payload_${telemetryKey}`, value };
@@ -263,9 +279,17 @@ function summarizeTelemetryEntry(
 }
 
 function toTelemetryKey(value: string): string {
-  return value
+  const normalized = value
     .replace(/([a-z0-9])([A-Z])/g, "$1_$2")
     .replace(/[^a-zA-Z0-9]+/g, "_")
-    .replace(/^_+|_+$/g, "")
     .toLowerCase();
+  return trimCharacter(normalized, "_");
+}
+
+function trimCharacter(value: string, character: string): string {
+  let start = 0;
+  let end = value.length;
+  while (value[start] === character) start += 1;
+  while (end > start && value[end - 1] === character) end -= 1;
+  return value.slice(start, end);
 }
