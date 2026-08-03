@@ -280,7 +280,7 @@ export const ChatBubble = memo(function ChatBubble({
           />
         )}
       </div>
-      <div className="flex min-w-0 flex-1 items-start gap-2 pt-0.5">
+      <div className="min-w-0 flex-1 pt-0.5">
         <div className="min-w-0 flex-1 space-y-3">
           {/* Render each iteration */}
           {msg.iterations.map((iter, index) => {
@@ -380,9 +380,13 @@ export const ChatBubble = memo(function ChatBubble({
           )}
 
           {errorStatusContent}
-        </div>
 
-        {copyResponseButton}
+          {copyResponseButton !== null && (
+            <div className="flex items-center gap-1.5">
+              {copyResponseButton}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
