@@ -64,6 +64,7 @@ interface LookupResult {
 function replaceDelimitedReferences(
   template: string,
   opening: string,
+  closing: string,
   isValid: (reference: string) => boolean,
   replace: (match: string, reference: string) => string,
 ): string {
@@ -72,14 +73,14 @@ function replaceDelimitedReferences(
   while (cursor < template.length) {
     const start = template.indexOf(opening, cursor);
     if (start < 0) return result + template.slice(cursor);
-    const end = template.indexOf("}", start + opening.length);
+    const end = template.indexOf(closing, start + opening.length);
     if (end < 0) return result + template.slice(cursor);
 
-    const match = template.slice(start, end + 1);
+    const match = template.slice(start, end + closing.length);
     const reference = template.slice(start + opening.length, end).trim();
     result += template.slice(cursor, start);
     result += isValid(reference) ? replace(match, reference) : match;
-    cursor = end + 1;
+    cursor = end + closing.length;
   }
   return result;
 }
@@ -153,6 +154,7 @@ export class TemplateResolver {
     const legacyResolved = replaceDelimitedReferences(
       template,
       "{{",
+      "}}",
       isLegacyParameterKey,
       (match, key: string) =>
         replaceLookup(match, `params.${key}`, this.lookupParam(key)),
@@ -161,6 +163,7 @@ export class TemplateResolver {
     const value = replaceDelimitedReferences(
       legacyResolved,
       "${",
+      "}",
       isExecutionContextReference,
       (match, reference) => replaceLookup(match, reference, this.lookupReference(reference)),
     );
