@@ -502,6 +502,7 @@ export interface DesktopStateBootstrapProps {
   ipcInvoke: IpcInvoke;
   captureDesktopAnalyticsEvent?: CaptureDesktopAnalyticsEvent;
   subscribeToRunbookExecutionEvents: SubscribeToRunbookExecutionEvents;
+  subscribeToRunbookChangeEvents: (callback: () => void) => () => void;
 }
 
 function clearScheduledTimer(timerRef: RefObject<number | null>): void {
@@ -516,6 +517,7 @@ export function DesktopStateBootstrap({
   ipcInvoke,
   captureDesktopAnalyticsEvent = () => {},
   subscribeToRunbookExecutionEvents,
+  subscribeToRunbookChangeEvents,
 }: DesktopStateBootstrapProps) {
   const { t } = useTranslation();
   const [ready, setReady] = useState(false);
@@ -636,6 +638,30 @@ export function DesktopStateBootstrap({
         });
       },
     );
+    const unsubscribeRunbookChanges = subscribeToRunbookChangeEvents(() => {
+      void (async () => {
+        try {
+          const snapshot = await ipcInvoke<DesktopProductStateSnapshot>(
+            "desktopState:bootstrap",
+            readLocalSnapshot(),
+          );
+          if (hydrateInProgressRef.current) return;
+
+          const localSnapshot = readLocalSnapshot();
+          writeLocalSnapshot({
+            ...localSnapshot,
+            runbooks: snapshot.runbooks,
+          });
+          window.dispatchEvent(
+            new CustomEvent("bitsentry:runbooks-updated", {
+              detail: { source: "main-refresh" },
+            }),
+          );
+        } catch (error) {
+          console.error("[desktop-state] runbook refresh failed:", error);
+        }
+      })();
+    });
 
     return () => {
       window.removeEventListener(
@@ -647,13 +673,16 @@ export function DesktopStateBootstrap({
         handleResultsUpdated,
       );
       unsubscribeRunbookExecutions();
+      unsubscribeRunbookChanges();
 
       clearScheduledTimer(runbookTimerRef);
       clearScheduledTimer(resultTimerRef);
     };
   }, [
     ready,
+    ipcInvoke,
     subscribeToRunbookExecutionEvents,
+    subscribeToRunbookChangeEvents,
     syncFns,
     trackExecutionAnalytics,
   ]);

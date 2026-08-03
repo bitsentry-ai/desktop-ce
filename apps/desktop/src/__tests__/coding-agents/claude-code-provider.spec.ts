@@ -2,6 +2,8 @@ import { EventEmitter } from 'events'
 import type { ChildProcess } from 'child_process'
 import { existsSync } from 'fs'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { getHostTools } from '@bitsentry-ce/core/features/agent-runtime'
+import { setCodingAgentsLoggerForTesting } from '@bitsentry-ce/coding-agents/logger'
 
 type ClaudeQuerySession = AsyncIterable<unknown> & {
   getContextUsage: () => Promise<{ totalTokens: number; maxTokens: number }>
@@ -542,11 +544,11 @@ describe('executeClaudeCode', () => {
       'mcp__bitsentry__get_runbook_execution',
     ]))
     expect(options.settingSources).toEqual([])
-    expect(options.systemPrompt).toEqual({
+    expect(options.systemPrompt).toMatchObject({
       type: 'preset',
       preset: 'claude_code',
-      append: 'You are an incident-response assistant.\n\nThis is an incident-chat session with runbook tools only. The only available tools are list_runbooks, execute_runbook, and get_runbook_execution. After execute_runbook, call get_runbook_execution once with waitForCompletion: true. Do not poll it. General file access, shell commands, and web research are out of scope for this session. If the user asks for out-of-scope work, explain that limitation instead of attempting a built-in tool.',
     })
+    expect(options.systemPrompt?.append).toContain('You are an incident-response assistant.')
     expect(options.cwd).not.toBe(process.cwd())
     expect(existsSync(options.cwd ?? '')).toBe(false)
 
@@ -557,6 +559,49 @@ describe('executeClaudeCode', () => {
       isError: true,
       content: [{ type: 'text' }],
     })
+  })
+
+  it('keeps the Claude incident scope synchronized with every registered host tool', async () => {
+    const infos: unknown[][] = []
+    setCodingAgentsLoggerForTesting({ info: (...args) => { infos.push(args) }, warn: () => {}, error: () => {} })
+    queryMock.mockReturnValue({
+      async *[Symbol.asyncIterator]() {
+        yield { type: 'result', subtype: 'success', result: 'Proposal drafted.' }
+      },
+      getContextUsage: getContextUsageMock.mockResolvedValue({ totalTokens: 0, maxTokens: 0 }),
+      close: closeMock,
+    })
+    toolMock.mockImplementation((name, _description, _schema, handler) => ({ name, handler }))
+    createSdkMcpServerMock.mockReturnValue({ transport: 'in-process' })
+
+    const { executeClaudeCode } =
+      await import('@bitsentry-ce/desktop-cli/runtime/desktop-coding-agents')
+    await executeClaudeCode({
+      prompt: 'Create a runbook proposal.',
+      binaryPath: 'claude',
+      abortController: new AbortController(),
+      hostToolContext: {
+        gateway: {} as never,
+        session: { id: 'session-1' },
+      },
+    })
+
+    const scope = getQueryOptions(0).systemPrompt?.append ?? ''
+    for (const hostTool of getHostTools()) {
+      expect(scope).toContain(hostTool.name)
+    }
+    expect(scope).toContain('Proposing is always in scope no matter what the proposed actions contain')
+    expect(scope).toContain('Never refuse a proposal request because the runbook content involves shell commands')
+    expect(scope).toContain('Never claim a runbook was created, edited, or saved unless the operator approved the proposal and the save succeeded.')
+    expect(scope).toContain('You must NEVER execute maintenance or remediation steps directly with built-in tools')
+    expect(scope).toContain('there is no direct-execution fallback when a runbook is missing or unapproved.')
+    expect(scope).toContain('call list_runbooks once to verify availability before concluding anything')
+    expect(scope).toContain('When revising a create-kind proposal, use propose_runbook_create because the draft was never saved')
+    expect(scope).toContain('To run an existing runbook, use execute_runbook, then call get_runbook_execution once with waitForCompletion: true. Do not poll it.')
+    expect(infos).toContainEqual([
+      '[claude-code-provider] configured host tools',
+      { agentSessionId: 'session-1', toolNames: getHostTools().map((tool) => tool.name) },
+    ])
   })
 
   it('enables the Claude 1M context beta when requested', async () => {

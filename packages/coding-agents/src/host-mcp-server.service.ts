@@ -16,6 +16,7 @@ import {
 
 const HOST_MCP_PATH = '/mcp'
 const DEFAULT_SESSION_TTL_MS = 15 * 60 * 1000
+export const HOST_MCP_SERVER_NAME = 'bitsentry'
 
 export interface HostMcpEndpoint {
   url: string

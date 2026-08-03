@@ -56,6 +56,19 @@ function makeValidPayloads(): Record<DesktopRpcChannel, unknown> {
     'agent:cancel': { sessionId: UUID },
     'agent:getStatus': { sessionId: UUID },
     'agent:getSnapshot': { sessionId: UUID },
+    'agent:listRunbookAuthoringProposals': {},
+    'agent:approveRunbookAuthoringProposal': {
+      proposalId: UUID,
+      approvedOperationIds: ['operation-1'],
+    },
+    'agent:rejectRunbookAuthoringProposal': {
+      proposalId: UUID,
+      reason: 'The rollback needs more detail.',
+    },
+    'agent:requestRunbookAuthoringRevision': {
+      proposalId: UUID,
+      requestedEdit: 'Include a verification step before restarting the service.',
+    },
     'runbooks:get': { id: 'runbook-1' },
     'runbooks:create': { id: UUID, title: 'Inspect logs' },
     'runbooks:updateMeta': { id: 'runbook-1' },

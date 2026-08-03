@@ -712,19 +712,25 @@ export class RunbookExecutionService {
       await this.resultStore.requestExecutionCancellation(executionId);
 
     const session = this.sessions.get(executionId);
-    if (!cancellationRequested) {
+    if (
+      !cancellationRequested &&
+      (session === undefined || session.snapshot.status !== "running")
+    ) {
+      await this.resultStore.markStaleRunningSessionsFailed();
+      const reconciled = await this.resultStore.getExecutionSnapshotByExecutionId(
+        executionId,
+      );
+      if (reconciled !== null && reconciled.status !== "running") {
+        return;
+      }
       throw new Error(
         `Runbook execution '${executionId}' is no longer cancellable`,
       );
     }
 
-    if (session === undefined || session.snapshot.status !== "running") {
-      throw new Error(
-        `Cancellation was recorded for runbook execution '${executionId}', but no live execution session is available`,
-      );
+    if (session !== undefined && session.snapshot.status === "running") {
+      await this.cancelExecutionSession(session, "user_cancelled");
     }
-
-    await this.cancelExecutionSession(session, "user_cancelled");
   }
 
   async destroy(): Promise<void> {

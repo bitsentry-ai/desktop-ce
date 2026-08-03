@@ -11,6 +11,8 @@ import {
   getHostTools,
   type HostToolContext,
 } from '@bitsentry-ce/core/features/agent-runtime'
+import { HOST_MCP_SERVER_NAME } from './host-mcp-server.service.js'
+import { buildRunbookOnlyScope } from './runbook-only-scope.js'
 import {
   buildWindowsCmdCommandLine,
   getWindowsCmdExecutable,
@@ -104,17 +106,12 @@ type ClaudeSdkQuery = (params: {
 
 let testClaudeSdkQueryLoader: (() => Promise<ClaudeSdkQuery> | ClaudeSdkQuery) | undefined
 const CLAUDE_ONE_M_CONTEXT_BETA: ClaudeCodeSdkBeta = 'context-1m-2025-08-07'
-const BITSENTRY_MCP_SERVER_NAME = 'bitsentry'
-const CLAUDE_RUNBOOK_ONLY_SCOPE = [
-  'This is an incident-chat session with runbook tools only.',
-  'The only available tools are list_runbooks, execute_runbook, and get_runbook_execution.',
-  'After execute_runbook, call get_runbook_execution once with waitForCompletion: true. Do not poll it.',
-  'General file access, shell commands, and web research are out of scope for this session.',
-  'If the user asks for out-of-scope work, explain that limitation instead of attempting a built-in tool.',
-].join(' ')
+function buildClaudeRunbookOnlyScope(): string {
+  return buildRunbookOnlyScope()
+}
 
 export const CLAUDE_HOST_MCP_ALLOWED_TOOLS = getHostTools().map(
-  (toolDefinition) => `mcp__${BITSENTRY_MCP_SERVER_NAME}__${toolDefinition.name}`,
+  (toolDefinition) => `mcp__${HOST_MCP_SERVER_NAME}__${toolDefinition.name}`,
 )
 
 export function __setLoadClaudeSdkQueryForTests(
@@ -155,7 +152,8 @@ type ClaudeSdkMcpServerFactory = {
 
 async function createClaudeHostMcpServer(context: HostToolContext): Promise<unknown> {
   const sdk = await import('@anthropic-ai/claude-agent-sdk') as unknown as ClaudeSdkMcpServerFactory
-  const tools = getHostTools().map((hostTool) => sdk.tool(
+  const configuredHostTools = getHostTools()
+  const tools = configuredHostTools.map((hostTool) => sdk.tool(
     hostTool.name,
     hostTool.description,
     hostTool.argsSchema.shape,
@@ -168,8 +166,12 @@ async function createClaudeHostMcpServer(context: HostToolContext): Promise<unkn
       }
     },
   ))
+  log.info('[claude-code-provider] configured host tools', {
+    agentSessionId: context.session.id,
+    toolNames: configuredHostTools.map((hostTool) => hostTool.name),
+  })
   return sdk.createSdkMcpServer({
-    name: BITSENTRY_MCP_SERVER_NAME,
+    name: HOST_MCP_SERVER_NAME,
     version: '1.0.0',
     tools,
     alwaysLoad: true,
@@ -222,6 +224,17 @@ function resolveAllowedTools(accessLevel: ClaudeCodeAccessLevel): string[] | und
     case 'full-access':
       return undefined
   }
+}
+
+export function resolveClaudeAllowedTools(
+  accessLevel: ClaudeCodeAccessLevel,
+  includeHostTools: boolean,
+  explicitlyAllowedTools?: string[],
+): string[] | undefined {
+  const allowedTools = explicitlyAllowedTools ?? resolveAllowedTools(accessLevel)
+  if (!includeHostTools || allowedTools === undefined) return allowedTools
+
+  return [...new Set([...allowedTools, ...CLAUDE_HOST_MCP_ALLOWED_TOOLS])]
 }
 
 function asRecord(value: unknown): Record<string, unknown> | undefined {
@@ -541,9 +554,11 @@ function buildClaudeCodeQueryOptions(
   cwd: string,
   mcpServer: unknown | undefined,
 ): ClaudeCodeQueryOptions {
-  const resolvedTools = mcpServer === undefined
-    ? options.allowedTools ?? resolveAllowedTools(effectiveAccessLevel)
-    : CLAUDE_HOST_MCP_ALLOWED_TOOLS
+  const resolvedTools = resolveClaudeAllowedTools(
+    effectiveAccessLevel,
+    mcpServer !== undefined,
+    options.allowedTools,
+  )
   const permissionMode = resolveClaudePermissionMode(effectiveAccessLevel)
   const shouldWrapWindowsCmdShim =
     process.platform === 'win32' && isWindowsCmdShim(options.binaryPath)
@@ -564,11 +579,11 @@ function buildClaudeCodeQueryOptions(
   applyClaudeToolOptions(queryOptions, resolvedTools)
   applyClaudeSpawnerOption(queryOptions, shouldWrapWindowsCmdShim)
   if (mcpServer !== undefined) {
-    queryOptions.mcpServers = { [BITSENTRY_MCP_SERVER_NAME]: mcpServer }
+    queryOptions.mcpServers = { [HOST_MCP_SERVER_NAME]: mcpServer }
   }
   const systemPrompt = [
     options.systemPrompt,
-    mcpServer === undefined ? undefined : CLAUDE_RUNBOOK_ONLY_SCOPE,
+    mcpServer === undefined ? undefined : buildClaudeRunbookOnlyScope(),
   ].filter((prompt): prompt is string => prompt !== undefined && prompt.trim().length > 0).join('\n\n')
   if (systemPrompt.length > 0) {
     queryOptions.systemPrompt = {
@@ -709,7 +724,7 @@ function handleClaudeExecutionError(
       error: message,
     })
     options.onDelta?.({ type: 'status', status: 'failed' })
-    throw new Error('This incident chat can only use BitSentry runbook tools. General file, shell, and web work is out of scope.')
+    throw new Error('This incident chat can only use BitSentry runbook tools. You cannot directly use shell, file, or web tools here, but you can propose operator-reviewed runbooks that contain those actions.')
   }
 
   log.error('[claude-code-provider] Stream error:', error)

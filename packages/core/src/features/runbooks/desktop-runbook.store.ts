@@ -1355,6 +1355,22 @@ export class DesktopRunbookStore {
     return this.hydrateRunbook(row);
   }
 
+  /**
+   * Approval recovery deliberately needs to see soft-deleted rows so it can
+   * distinguish a user tombstone from a failed, never-visible create shell.
+   * Normal runbook reads must continue to use get() and list().
+   */
+  async getIncludingDeleted(
+    id: string,
+  ): Promise<{ runbook: DesktopRunbookRecord; deletedAt: string | null } | null> {
+    const row = await this.db.runbook.findUnique({ where: { id } });
+    if (row === null) return null;
+    return {
+      runbook: await this.hydrateRunbook(row),
+      deletedAt: asOptionalString(row.deletedAt) ?? null,
+    };
+  }
+
   async create(payload: Record<string, unknown>): Promise<DesktopRunbookRecord> {
     const id = asString(payload.id);
     const title = asString(payload.title, "New Runbook");
@@ -1679,6 +1695,20 @@ export class DesktopRunbookStore {
       data: {
         deletedAt: new Date().toISOString(),
       },
+    });
+    return { ok: true };
+  }
+
+  /**
+   * Permanently remove a runbook shell that was never exposed to an operator.
+   * This is intentionally separate from remove(), which is the user-facing
+   * tombstone operation and must remain merge-safe.
+   */
+  async purge(payload: Record<string, unknown>): Promise<{ ok: true }> {
+    const id = asString(payload.id);
+    await this.withTransaction(async () => {
+      await this.db.runbookAction.deleteMany({ where: { runbookId: id } });
+      await this.db.runbook.delete({ where: { id } });
     });
     return { ok: true };
   }

@@ -1,4 +1,5 @@
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { randomUUID } from 'crypto'
 
 import {
   AgentRuntimeService,
@@ -8,6 +9,7 @@ import type {
   AgentRuntimeEventPayload,
   AgentRuntimeLlmAdapter,
   AgentRuntimeRunbookGateway,
+  AgentRuntimeRunbookStore,
 } from '../main/features/agent-runtime/services/agent-runtime.service'
 import { createAgentThreadSnapshot, reduceAgentThreadSnapshot } from '@bitsentry-ce/components/chat/runtimeProjection'
 import type {
@@ -22,6 +24,8 @@ import type {
   RunbookRecord,
 } from '@bitsentry-ce/core/features/runbooks/desktop-runbook-ce.types'
 import { executeHostTool } from '@bitsentry-ce/core/features/agent-runtime'
+import { DbClient } from '@bitsentry-ce/core/features/desktop/desktop-database-client'
+import { DesktopRunbookStore } from '@bitsentry-ce/core/features/runbooks/desktop-runbook.store'
 
 type LlmChatRequest = Parameters<AgentRuntimeLlmAdapter['chatWithTools']>[0]
 type MockLlmAdapter = {
@@ -46,6 +50,134 @@ type TestRunbookExecutionService = {
     resultId: string
   }>
 }
+
+const sqliteRunbookClients: DbClient[] = []
+let supportsDesktopSqlite = true
+
+try {
+  const probe = new DbClient({ datasources: { db: { url: ':memory:' } } })
+  void probe.$disconnect()
+} catch (error) {
+  if (!/NODE_MODULE_VERSION|was compiled against a different Node\.js version/i.test(String(error))) {
+    throw error
+  }
+  supportsDesktopSqlite = false
+}
+
+const itWithDesktopSqlite = supportsDesktopSqlite ? it : it.skip
+
+async function createSqliteRunbookStore(): Promise<DesktopRunbookStore> {
+  const db = new DbClient({ datasources: { db: { url: ':memory:' } } })
+  sqliteRunbookClients.push(db)
+  await db.$executeRawUnsafe(`
+    CREATE TABLE "Runbook" (
+      "id" TEXT NOT NULL PRIMARY KEY,
+      "title" TEXT NOT NULL,
+      "description" TEXT NOT NULL,
+      "idleTimeout" INTEGER,
+      "revisionNumber" INTEGER NOT NULL,
+      "createdAt" TEXT NOT NULL,
+      "updatedAt" TEXT NOT NULL,
+      "deletedAt" TEXT
+    );
+    CREATE TABLE "RunbookAction" (
+      "id" TEXT NOT NULL PRIMARY KEY,
+      "runbookId" TEXT NOT NULL,
+      "sortOrder" INTEGER NOT NULL,
+      "type" TEXT NOT NULL,
+      "title" TEXT NOT NULL,
+      "command" TEXT,
+      "prompt" TEXT,
+      "llmProviderKey" TEXT,
+      "llmModel" TEXT,
+      "url" TEXT,
+      "method" TEXT,
+      "headersJson" TEXT,
+      "body" TEXT,
+      "query" TEXT,
+      "sourceId" TEXT,
+      "parametersJson" TEXT,
+      "logFilterJson" TEXT,
+      "createdAt" TEXT NOT NULL,
+      "updatedAt" TEXT NOT NULL
+    );
+  `)
+  return new DesktopRunbookStore(db as never, {
+    list: async () => [],
+    create: async () => ({}),
+  } as never)
+}
+
+function createInMemoryAuthoringStore(options?: { failAfterActionWriteCount?: number }) {
+  const rows = new Map<string, { runbook: RunbookRecord; deletedAt: string | null }>()
+  let remainingFailures = options?.failAfterActionWriteCount ?? 0
+  const store: AgentRuntimeRunbookStore = {
+    list: async () => [...rows.values()]
+      .filter((row) => row.deletedAt === null)
+      .map((row) => row.runbook),
+    create: async (payload) => {
+      const id = String(payload.id)
+      if (rows.has(id)) throw new Error('UNIQUE constraint failed: Runbook.id')
+      const runbook = makeRunbook(id, String(payload.title), [])
+      runbook.description = String(payload.description ?? '')
+      if (typeof payload.idleTimeout === 'number') runbook.idleTimeout = payload.idleTimeout
+      rows.set(id, { runbook, deletedAt: null })
+      return runbook
+    },
+    getIncludingDeleted: async (id) => rows.get(id) ?? null,
+    updateMeta: async () => null,
+    updateActions: async (payload) => {
+      const row = rows.get(String(payload.runbookId))
+      if (row === undefined) return null
+      row.runbook = {
+        ...row.runbook,
+        actions: (payload.actions as RunbookRecord['actions']).map((action) => ({ ...action })),
+      }
+      if (remainingFailures > 0) {
+        remainingFailures -= 1
+        throw new Error('simulated post-write failure')
+      }
+      return row.runbook
+    },
+    remove: async () => ({ ok: true }),
+    purge: async (payload) => {
+      rows.delete(String(payload.id))
+      return { ok: true }
+    },
+  }
+  return { store, rows }
+}
+
+function makeCreationAuthoringLlmAdapter(title: string, actionId = 'update-claude-code') {
+  return {
+    chatWithTools: vi.fn()
+      .mockResolvedValueOnce({ content: 'I will draft a runbook for review.', toolCalls: [{ id: `call-propose-${title}`, name: 'propose_runbook_create', args: { prompt: `Create ${title}.`, draftRunbook: { title, description: 'Collect status.', actions: [{ id: actionId, type: 'shell', title: 'Collect status', command: 'systemctl status bitsentry' }] } } }] })
+      .mockResolvedValueOnce({ content: 'The proposal requires approval.', toolCalls: [] }),
+  }
+}
+
+async function createPendingRunbookAuthoringProposal(
+  runbookStore: AgentRuntimeRunbookStore,
+  title: string,
+): Promise<{ service: AgentRuntimeService; sessionId: string; proposalId: string }> {
+  const runbookExecutionService = { start: vi.fn(), waitForCompletion: vi.fn(), get: vi.fn().mockResolvedValue(null), getLatestForIncidentThread: vi.fn().mockResolvedValue(null) }
+  const service = createRuntime({
+    llmAdapter: makeCreationAuthoringLlmAdapter(title),
+    runbookStore: runbookStore as unknown as { list(): Promise<RunbookRecord[]> },
+    runbookExecutionService,
+  })
+  const sessionId = await service.start({ prompt: `Create ${title}.`, incidentThreadId: `incident-${title}` })
+  await waitForCondition(() => service.getStatus(sessionId).state === 'COMPLETED')
+  return {
+    service,
+    sessionId,
+    proposalId: service.listRunbookAuthoringProposals({ sessionId })[0]!.proposalId,
+  }
+}
+
+afterEach(async () => {
+  await Promise.all(sqliteRunbookClients.splice(0).map((client) => client.$disconnect()))
+})
 
 async function waitForCondition(
   predicate: () => boolean,
@@ -193,6 +325,7 @@ function createRuntime(options: {
   runbookStore?: { list(): Promise<RunbookRecord[]> }
   runbookExecutionService?: TestRunbookExecutionService
   sentEvents?: AgentRuntimeEventPayload[]
+  onRunbooksChanged?: () => void
 }): AgentRuntimeService {
   const windowGetter = () => {
     if (options.sentEvents === undefined) {
@@ -278,6 +411,9 @@ function createRuntime(options: {
     windowGetter,
     options.llmAdapter,
     runbookGateway,
+    undefined,
+    options.runbookStore as AgentRuntimeRunbookStore | undefined,
+    options.onRunbooksChanged,
   )
 }
 
@@ -460,6 +596,268 @@ describe('summarizeRunbookExecutionForToolOutput', () => {
 })
 
 describe('AgentRuntimeService runbook outcomes', () => {
+  it('places approved authoring outcomes in the next-turn session context', async () => {
+    const title = `Generated runbook ${randomUUID()}`
+    const { store } = createInMemoryAuthoringStore()
+    const llmAdapter = makeCreationAuthoringLlmAdapter(title)
+    llmAdapter.chatWithTools.mockResolvedValueOnce({ content: 'Acknowledged.', toolCalls: [] })
+    const runbookExecutionService = { start: vi.fn(), waitForCompletion: vi.fn(), get: vi.fn().mockResolvedValue(null), getLatestForIncidentThread: vi.fn().mockResolvedValue(null) }
+    const service = createRuntime({ llmAdapter, runbookStore: store as unknown as { list(): Promise<RunbookRecord[]> }, runbookExecutionService })
+    const sessionId = await service.start({ prompt: `Create ${title}.`, incidentThreadId: `incident-${randomUUID()}` })
+    await waitForCondition(() => service.getStatus(sessionId).state === 'COMPLETED')
+    const proposal = service.listRunbookAuthoringProposals({ sessionId })[0]!
+
+    expect(proposal.nextStep).toContain('draft runbook id is provisional')
+    expect(proposal.nextStep).toContain('list_runbooks or the approval notification')
+
+    const approval = await service.approveRunbookAuthoringProposal({ sessionId, proposalId: proposal.proposalId })
+    await service.send({ sessionId, message: 'Continue.' })
+    await waitForCondition(() => service.getStatus(sessionId).state === 'COMPLETED')
+
+    const nextTurnContext = getLlmCallMessages(llmAdapter as MockLlmAdapter, 2)
+      .filter((message) => message.role === 'system')
+      .map((message) => message.content)
+      .join('\n')
+    expect(nextTurnContext).toContain(`proposalId=${proposal.proposalId}`)
+    expect(nextTurnContext).toContain('decision=approved')
+    expect(nextTurnContext).toContain(`savedRunbookId=${approval.savedRunbook?.id}`)
+    expect(nextTurnContext).toContain(`savedRunbookTitle=${approval.savedRunbook?.title}`)
+    expect(nextTurnContext).toContain('Use savedRunbookId with execute_runbook')
+  })
+
+  it('creates an MCP authoring proposal without persisting and rejects stale approval', async () => {
+    const originalRunbook = makeRunbook('rb-logs', 'Check backend logs', [{ id: 'step-1', type: 'shell', title: 'Check service status', command: 'systemctl status bitsentry' }])
+    const changedRunbook = { ...originalRunbook, revisionNumber: 2, description: 'Updated outside the proposal.' }
+    const runbookStore = { list: vi.fn().mockResolvedValue([originalRunbook]), create: vi.fn(), updateMeta: vi.fn(), updateActions: vi.fn() }
+    const runbookExecutionService = { start: vi.fn(), waitForCompletion: vi.fn(), get: vi.fn().mockResolvedValue(null), getLatestForIncidentThread: vi.fn().mockResolvedValue(null) }
+    const llmAdapter = { chatWithTools: vi.fn().mockResolvedValueOnce({ content: 'I will draft an edit for review.', toolCalls: [{ id: 'call-propose-edit', name: 'propose_runbook_edit', args: { runbookId: 'rb-logs', prompt: 'Add an uptime check.', operations: [{ id: 'op-add-uptime', type: 'add_action', rationale: 'Collect uptime before log inspection.', action: { id: 'step-2', type: 'shell', title: 'Collect uptime', command: 'uptime' } }] } }] }).mockResolvedValueOnce({ content: 'The proposal requires approval.', toolCalls: [] }) }
+    const service = createRuntime({ llmAdapter, runbookStore, runbookExecutionService })
+    const sessionId = await service.start({ prompt: 'Add an uptime check to the backend runbook.', incidentThreadId: 'incident-authoring' })
+    await waitForCondition(() => service.getStatus(sessionId).state === 'COMPLETED')
+    expect(runbookStore.updateMeta).not.toHaveBeenCalled()
+    expect(runbookStore.updateActions).not.toHaveBeenCalled()
+    const proposal = service.listRunbookAuthoringProposals({ sessionId })[0]
+    expect(proposal).toMatchObject({ approvalRequired: true, saved: false, status: 'pending_approval', targetRunbookId: 'rb-logs' })
+    runbookStore.list.mockResolvedValue([changedRunbook])
+    await expect(service.approveRunbookAuthoringProposal({ sessionId, proposalId: proposal.proposalId })).rejects.toThrow('changed after the authoring proposal was created')
+    expect(runbookStore.updateMeta).not.toHaveBeenCalled()
+    expect(runbookStore.updateActions).not.toHaveBeenCalled()
+  })
+
+  it('rechecks an edit proposal immediately before persistence', async () => {
+    const originalRunbook = makeRunbook('rb-logs', 'Check backend logs', [{ id: 'step-1', type: 'shell', title: 'Check service status', command: 'systemctl status bitsentry' }])
+    const changedRunbook = { ...originalRunbook, revisionNumber: 2, description: 'Updated after the approval was checked.' }
+    const runbookStore = {
+      list: vi.fn()
+        .mockResolvedValueOnce([originalRunbook])
+        .mockResolvedValueOnce([originalRunbook])
+        .mockResolvedValueOnce([changedRunbook]),
+      create: vi.fn(),
+      updateMeta: vi.fn(),
+      updateActions: vi.fn(),
+      remove: vi.fn(),
+    }
+    const runbookExecutionService = { start: vi.fn(), waitForCompletion: vi.fn(), get: vi.fn().mockResolvedValue(null), getLatestForIncidentThread: vi.fn().mockResolvedValue(null) }
+    const llmAdapter = {
+      chatWithTools: vi.fn()
+        .mockResolvedValueOnce({ content: 'I will draft an edit for review.', toolCalls: [{ id: 'call-propose-edit', name: 'propose_runbook_edit', args: { runbookId: 'rb-logs', prompt: 'Add an uptime check.', operations: [{ id: 'op-add-uptime', type: 'add_action', rationale: 'Collect uptime before log inspection.', action: { id: 'step-2', type: 'shell', title: 'Collect uptime', command: 'uptime' } }] } }] })
+        .mockResolvedValueOnce({ content: 'The proposal requires approval.', toolCalls: [] }),
+    }
+    const service = createRuntime({ llmAdapter, runbookStore, runbookExecutionService })
+    const sessionId = await service.start({ prompt: 'Add an uptime check to the backend runbook.', incidentThreadId: 'incident-authoring' })
+    await waitForCondition(() => service.getStatus(sessionId).state === 'COMPLETED')
+    const proposal = service.listRunbookAuthoringProposals({ sessionId })[0]
+
+    await expect(service.approveRunbookAuthoringProposal({ sessionId, proposalId: proposal.proposalId })).rejects.toThrow('changed after the authoring proposal was created')
+    expect(runbookStore.updateMeta).not.toHaveBeenCalled()
+    expect(runbookStore.updateActions).not.toHaveBeenCalled()
+  })
+
+  it('persists only selected authoring operations', async () => {
+    const originalRunbook = makeRunbook('rb-logs', 'Check backend logs', [{ id: 'step-1', type: 'shell', title: 'Check service status', command: 'systemctl status bitsentry' }])
+    const savedRunbook = { ...originalRunbook, title: 'Check backend logs and uptime' }
+    const runbookStore = {
+      list: vi.fn().mockResolvedValue([originalRunbook]),
+      create: vi.fn(),
+      updateMeta: vi.fn().mockResolvedValue(savedRunbook),
+      updateActions: vi.fn().mockResolvedValue(savedRunbook),
+      remove: vi.fn(),
+    }
+    const runbookExecutionService = { start: vi.fn(), waitForCompletion: vi.fn(), get: vi.fn().mockResolvedValue(null), getLatestForIncidentThread: vi.fn().mockResolvedValue(null) }
+    const llmAdapter = {
+      chatWithTools: vi.fn()
+        .mockResolvedValueOnce({ content: 'I will draft an edit for review.', toolCalls: [{ id: 'call-propose-edit', name: 'propose_runbook_edit', args: { runbookId: 'rb-logs', prompt: 'Add an uptime check.', operations: [{ id: 'op-title', type: 'update_metadata', rationale: 'Clarify that uptime is covered.', metadata: { title: 'Check backend logs and uptime' } }, { id: 'op-add-uptime', type: 'add_action', rationale: 'Collect uptime before log inspection.', action: { id: 'step-2', type: 'shell', title: 'Collect uptime', command: 'uptime' } }] } }] })
+        .mockResolvedValueOnce({ content: 'The proposal requires approval.', toolCalls: [] }),
+    }
+    const onRunbooksChanged = vi.fn()
+    const service = createRuntime({
+      llmAdapter,
+      runbookStore,
+      runbookExecutionService,
+      onRunbooksChanged,
+    })
+    const sessionId = await service.start({ prompt: 'Update the backend runbook.', incidentThreadId: 'incident-authoring' })
+    await waitForCondition(() => service.getStatus(sessionId).state === 'COMPLETED')
+    const proposal = service.listRunbookAuthoringProposals({ sessionId })[0]
+
+    await expect(service.approveRunbookAuthoringProposal({ sessionId, proposalId: proposal.proposalId, approvedOperationIds: ['op-title'] })).resolves.toMatchObject({ savedRunbook: { title: 'Check backend logs and uptime', actions: [{ id: 'step-1' }] } })
+    expect(runbookStore.updateActions).toHaveBeenCalledWith({
+      runbookId: 'rb-logs',
+      actions: [expect.objectContaining({
+        id: expect.any(String),
+        type: 'shell',
+        title: 'Check service status',
+        command: 'systemctl status bitsentry',
+      })],
+    })
+    expect((runbookStore.updateActions.mock.calls[0]?.[0] as { actions: Array<{ id: string }> }).actions[0]?.id).not.toBe('step-1')
+    expect(onRunbooksChanged).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not persist an invalid approved result', async () => {
+    const originalRunbook = makeRunbook('rb-logs', 'Check backend logs', [{ id: 'step-1', type: 'shell', title: 'Check service status', command: 'systemctl status bitsentry' }])
+    const runbookStore = { list: vi.fn().mockResolvedValue([originalRunbook]), create: vi.fn(), updateMeta: vi.fn(), updateActions: vi.fn(), remove: vi.fn() }
+    const runbookExecutionService = { start: vi.fn(), waitForCompletion: vi.fn(), get: vi.fn().mockResolvedValue(null), getLatestForIncidentThread: vi.fn().mockResolvedValue(null) }
+    const llmAdapter = {
+      chatWithTools: vi.fn()
+        .mockResolvedValueOnce({ content: 'I will draft an edit for review.', toolCalls: [{ id: 'call-propose-edit', name: 'propose_runbook_edit', args: { runbookId: 'rb-logs', prompt: 'Break the shell action.', operations: [{ id: 'op-break-shell', type: 'update_action', rationale: 'This should be rejected during approval.', actionId: 'step-1', action: { id: 'step-1', type: 'shell', title: 'Broken shell action', command: '' } }] } }] })
+        .mockResolvedValueOnce({ content: 'The proposal requires approval.', toolCalls: [] }),
+    }
+    const service = createRuntime({ llmAdapter, runbookStore, runbookExecutionService })
+    const sessionId = await service.start({ prompt: 'Break the backend runbook.', incidentThreadId: 'incident-authoring' })
+    await waitForCondition(() => service.getStatus(sessionId).state === 'COMPLETED')
+    const proposal = service.listRunbookAuthoringProposals({ sessionId })[0]
+
+    await expect(service.approveRunbookAuthoringProposal({ sessionId, proposalId: proposal.proposalId })).rejects.toThrow('produce an invalid runbook')
+    expect(runbookStore.create).not.toHaveBeenCalled()
+    expect(runbookStore.updateMeta).not.toHaveBeenCalled()
+    expect(runbookStore.updateActions).not.toHaveBeenCalled()
+  })
+
+  it('removes an incomplete newly created runbook when writing actions fails', async () => {
+    const createdShell = makeRunbook('rb-new', 'New runbook', [])
+    const runbookStore = {
+      list: vi.fn().mockResolvedValue([]),
+      create: vi.fn().mockResolvedValue(createdShell),
+      updateMeta: vi.fn(),
+      updateActions: vi.fn().mockRejectedValue(new Error('action persistence failed')),
+      remove: vi.fn().mockResolvedValue({ ok: true }),
+      getIncludingDeleted: vi.fn(),
+      purge: vi.fn().mockResolvedValue({ ok: true }),
+    }
+    const runbookExecutionService = { start: vi.fn(), waitForCompletion: vi.fn(), get: vi.fn().mockResolvedValue(null), getLatestForIncidentThread: vi.fn().mockResolvedValue(null) }
+    const llmAdapter = {
+      chatWithTools: vi.fn()
+        .mockResolvedValueOnce({ content: 'I will draft a runbook for review.', toolCalls: [{ id: 'call-propose-create', name: 'propose_runbook_create', args: { prompt: 'Create a status runbook.', draftRunbook: { title: 'New runbook', description: 'Collect status.', actions: [{ id: 'step-1', type: 'shell', title: 'Collect status', command: 'systemctl status bitsentry' }] } } }] })
+        .mockResolvedValueOnce({ content: 'The proposal requires approval.', toolCalls: [] }),
+    }
+    const service = createRuntime({ llmAdapter, runbookStore, runbookExecutionService })
+    const sessionId = await service.start({ prompt: 'Create a status runbook.', incidentThreadId: 'incident-authoring' })
+    await waitForCondition(() => service.getStatus(sessionId).state === 'COMPLETED')
+    const proposal = service.listRunbookAuthoringProposals({ sessionId })[0]
+
+    await expect(service.approveRunbookAuthoringProposal({ sessionId, proposalId: proposal.proposalId })).rejects.toThrow('action persistence failed')
+    expect(runbookStore.purge).toHaveBeenCalledWith({ id: createdShell.id })
+  })
+
+  it('approves proposals with identical model action ids without reusing a stored primary key', async () => {
+    const { store, rows } = createInMemoryAuthoringStore()
+    const first = await createPendingRunbookAuthoringProposal(store, 'First status runbook')
+    const second = await createPendingRunbookAuthoringProposal(store, 'Second status runbook')
+
+    const firstResult = await first.service.approveRunbookAuthoringProposal({
+      sessionId: first.sessionId,
+      proposalId: first.proposalId,
+    })
+    const secondResult = await second.service.approveRunbookAuthoringProposal({
+      sessionId: second.sessionId,
+      proposalId: second.proposalId,
+    })
+
+    const persistedActionIds = [...rows.values()].flatMap((row) => row.runbook.actions.map((action) => action.id))
+    expect(rows).toHaveLength(2)
+    expect(persistedActionIds).toHaveLength(2)
+    expect(new Set(persistedActionIds).size).toBe(2)
+    expect(persistedActionIds).not.toContain('update-claude-code')
+    expect(firstResult.savedRunbook?.actions[0]?.id).not.toBe('update-claude-code')
+    expect(secondResult.savedRunbook?.actions[0]?.id).not.toBe('update-claude-code')
+  })
+
+  it('purges a failed create attempt and lets the same pending approval converge on retry', async () => {
+    const { store, rows } = createInMemoryAuthoringStore({ failAfterActionWriteCount: 1 })
+    const pending = await createPendingRunbookAuthoringProposal(store, 'Retry status runbook')
+
+    await expect(pending.service.approveRunbookAuthoringProposal({
+      sessionId: pending.sessionId,
+      proposalId: pending.proposalId,
+    })).rejects.toThrow('simulated post-write failure')
+    expect(rows).toHaveLength(0)
+
+    const retried = await pending.service.approveRunbookAuthoringProposal({
+      sessionId: pending.sessionId,
+      proposalId: pending.proposalId,
+    })
+    expect(retried.savedRunbook).toMatchObject({ title: 'Retry status runbook' })
+    expect(rows).toHaveLength(1)
+    expect([...rows.values()][0]?.runbook.actions).toHaveLength(1)
+  })
+
+  itWithDesktopSqlite('persists an approval through the real SQLite store after every action row is written', async () => {
+    const runbookStore = await createSqliteRunbookStore()
+    const runbookExecutionService = { start: vi.fn(), waitForCompletion: vi.fn(), get: vi.fn().mockResolvedValue(null), getLatestForIncidentThread: vi.fn().mockResolvedValue(null) }
+    const llmAdapter = {
+      chatWithTools: vi.fn()
+        .mockResolvedValueOnce({ content: 'I will draft a runbook for review.', toolCalls: [{ id: 'call-propose-create', name: 'propose_runbook_create', args: { prompt: 'Create a status runbook.', draftRunbook: { title: 'New runbook', description: 'Collect status.', actions: [{ id: 'update-claude-code', type: 'shell', title: 'Collect status', command: 'systemctl status bitsentry', parameters: [{ id: 'target-host', key: 'host' }] }, { id: 'update-codex', type: 'shell', title: 'Collect uptime', command: 'uptime' }] } } }] })
+        .mockResolvedValueOnce({ content: 'The proposal requires approval.', toolCalls: [] }),
+    }
+    const service = createRuntime({ llmAdapter, runbookStore, runbookExecutionService })
+    const sessionId = await service.start({ prompt: 'Create a status runbook.', incidentThreadId: 'incident-authoring' })
+    await waitForCondition(() => service.getStatus(sessionId).state === 'COMPLETED')
+    const proposal = service.listRunbookAuthoringProposals({ sessionId })[0]
+
+    const result = await service.approveRunbookAuthoringProposal({ sessionId, proposalId: proposal.proposalId })
+    const saved = result.savedRunbook
+
+    expect(saved).toMatchObject({ title: 'New runbook', actions: [{ title: 'Collect status' }, { title: 'Collect uptime' }] })
+    expect(saved?.actions.map((action) => action.id)).not.toContain('update-claude-code')
+    expect(saved?.actions.map((action) => action.id)).not.toContain('update-codex')
+    expect(saved?.actions[0]?.parameters?.[0]?.id).not.toBe('target-host')
+    expect(proposal.proposedRunbook.actions.map((action) => action.id)).toEqual([
+      'update-claude-code',
+      'update-codex',
+    ])
+  })
+
+  it('persists a store-valid creation proposal with an idle timeout in minutes', async () => {
+    const createdRunbook = { ...makeRunbook('rb-new', 'New runbook', []), idleTimeout: 30 }
+    const savedRunbook = {
+      ...createdRunbook,
+      actions: [{ id: 'step-1', type: 'shell' as const, title: 'Collect status', command: 'systemctl status bitsentry' }],
+    }
+    const runbookStore = {
+      list: vi.fn().mockResolvedValue([]),
+      create: vi.fn().mockResolvedValue(createdRunbook),
+      updateMeta: vi.fn(),
+      updateActions: vi.fn().mockResolvedValue(savedRunbook),
+      remove: vi.fn(),
+    }
+    const runbookExecutionService = { start: vi.fn(), waitForCompletion: vi.fn(), get: vi.fn().mockResolvedValue(null), getLatestForIncidentThread: vi.fn().mockResolvedValue(null) }
+    const llmAdapter = {
+      chatWithTools: vi
+        .fn()
+        .mockResolvedValueOnce({ content: 'I will draft a runbook for review.', toolCalls: [{ id: 'call-propose-create', name: 'propose_runbook_create', args: { prompt: 'Create a status runbook.', draftRunbook: { title: 'New runbook', description: 'Collect status.', idleTimeout: 30, actions: [{ id: 'step-1', type: 'shell', title: 'Collect status', command: 'systemctl status bitsentry' }] } } }] })
+        .mockResolvedValueOnce({ content: 'The proposal requires approval.', toolCalls: [] }),
+    }
+    const service = createRuntime({ llmAdapter, runbookStore, runbookExecutionService })
+    const sessionId = await service.start({ prompt: 'Create a status runbook.', incidentThreadId: 'incident-authoring' })
+    await waitForCondition(() => service.getStatus(sessionId).state === 'COMPLETED')
+    const proposal = service.listRunbookAuthoringProposals({ sessionId })[0]
+
+    await expect(service.approveRunbookAuthoringProposal({ sessionId, proposalId: proposal.proposalId })).resolves.toMatchObject({
+      savedRunbook: { id: 'rb-new', idleTimeout: 30 },
+    })
+    expect(runbookStore.create).toHaveBeenCalledWith(expect.objectContaining({ idleTimeout: 30 }))
+  })
   it('records Claude MCP host tools in the thread snapshot and replay transcript', async () => {
     const runbookStore = {
       list: vi.fn().mockResolvedValue([

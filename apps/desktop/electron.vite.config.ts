@@ -1,15 +1,31 @@
 import { resolve } from 'path'
+import { execFileSync } from 'node:child_process'
 import { defineConfig } from 'electron-vite'
 import react from '@vitejs/plugin-react'
 
 const electronTrpcPackageRoot = resolve(__dirname, '../../packages/electron-trpc/packages/electron-trpc')
 const desktopNodeModules = resolve(__dirname, 'node_modules')
 
+function resolveBuildGitSha(): string {
+  try {
+    return execFileSync('git', ['rev-parse', 'HEAD'], {
+      cwd: resolve(__dirname, '../..'),
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    }).trim()
+  } catch {
+    return 'unknown'
+  }
+}
+
+const buildGitSha = resolveBuildGitSha()
+
 export default defineConfig({
   main: {
     define: {
       'process.env.BITSENTRY_SENTRY_DSN': JSON.stringify(process.env.BITSENTRY_SENTRY_DSN ?? ''),
       'process.env.BITSENTRY_RELEASE_CHANNEL': JSON.stringify(process.env.BITSENTRY_RELEASE_CHANNEL ?? 'stable'),
+      'process.env.BITSENTRY_BUILD_GIT_SHA': JSON.stringify(buildGitSha),
     },
     build: {
       externalizeDeps: {

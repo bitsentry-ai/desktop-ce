@@ -3,12 +3,15 @@ import os from 'os'
 import path from 'path'
 import { afterEach, describe, expect, it } from 'vitest'
 import {
+  CursorToolCallRegistry,
   chooseCursorPermissionResponse,
   cursorDeltasFromSessionUpdate,
   executeCursor,
   extractCursorModelIds,
 } from '@bitsentry-ce/coding-agents/cursor-provider.service'
+import { getHostTools } from '@bitsentry-ce/core/features/agent-runtime'
 import { setCodingAgentsLoggerForTesting } from '@bitsentry-ce/coding-agents/logger'
+import { HOST_MCP_SERVER_NAME } from '@bitsentry-ce/coding-agents/host-mcp-server.service'
 
 const tmpDirs: string[] = []
 
@@ -196,6 +199,22 @@ const permissionOptions = [
   { optionId: 'reject-always', name: 'Reject always', kind: 'reject_always' },
 ]
 
+// The 2026-08-03 Safe Tools logs establish this exact permission payload shape.
+// Cursor puts MCP identity in title as "server-tool: tool"; content is not identity.
+function liveCursorMcpPermissionRequest(hostToolName: string) {
+  return {
+    sessionId: 'cursor-session-live-shape',
+    toolCall: {
+      content: [{ type: 'content', content: 'MCP tool request' }],
+      kind: 'other',
+      status: 'pending',
+      title: `${HOST_MCP_SERVER_NAME}-${hostToolName}: ${hostToolName}`,
+      toolCallId: 'tool_635dd6e1-2997-4930-8af3-669aa7cb61f',
+    },
+    options: permissionOptions,
+  } as const
+}
+
 describe('Cursor provider behavior', () => {
   it('chooses ACP permission options from access level and tool kind', () => {
     expect(
@@ -227,6 +246,137 @@ describe('Cursor provider behavior', () => {
         'full-access',
       ),
     ).toEqual({ outcome: { outcome: 'selected', optionId: 'allow-once' } })
+  })
+
+  it('allows a live-shaped Bitsentry MCP title before classifying content', () => {
+    const hostToolName = getHostTools()[0]?.name
+    expect(hostToolName).toBeDefined()
+    expect(
+      chooseCursorPermissionResponse(
+        {
+          ...liveCursorMcpPermissionRequest(hostToolName!),
+          toolCall: {
+            ...liveCursorMcpPermissionRequest(hostToolName!).toolCall,
+            content: [{ type: 'content', content: 'run a shell command' }],
+          },
+        },
+        'auto-accept-edits',
+      ),
+    ).toEqual({ outcome: { outcome: 'selected', optionId: 'allow-once' } })
+  })
+
+  it('matches every host tool only through the live Cursor title format', () => {
+    for (const hostTool of getHostTools()) {
+      const request = liveCursorMcpPermissionRequest(hostTool.name)
+      expect(
+        chooseCursorPermissionResponse(
+          request,
+          'auto-accept-edits',
+        ),
+      ).toEqual({ outcome: { outcome: 'selected', optionId: 'allow-once' } })
+      expect(chooseCursorPermissionResponse(
+        {
+          ...request,
+          toolCall: {
+            ...request.toolCall,
+            title: `${HOST_MCP_SERVER_NAME}-${hostTool.name}`,
+          },
+        },
+        'auto-accept-edits',
+      )).toEqual({ outcome: { outcome: 'selected', optionId: 'allow-once' } })
+    }
+  })
+
+  it('uses the permission title when the correlated stream identity is generic', () => {
+    const hostTool = getHostTools()[0]
+    expect(hostTool).toBeDefined()
+    const request = liveCursorMcpPermissionRequest(hostTool!.name)
+    const toolCallRegistry = new CursorToolCallRegistry()
+    toolCallRegistry.recordSessionUpdate({
+      sessionId: request.sessionId,
+      update: {
+        sessionUpdate: 'tool_call',
+        toolCallId: request.toolCall.toolCallId,
+        title: 'MCP: tool',
+        kind: 'other',
+      },
+    })
+
+    expect(chooseCursorPermissionResponse(
+      request,
+      'auto-accept-edits',
+    )).toEqual({ outcome: { outcome: 'selected', optionId: 'allow-once' } })
+    expect(toolCallRegistry.get(request.sessionId, request.toolCall.toolCallId)).toMatchObject({
+      title: 'MCP: tool',
+      kind: 'other',
+    })
+  })
+
+  it('does not let a built-in call spoof identity through its content', () => {
+    const hostTool = getHostTools()[0]
+    expect(hostTool).toBeDefined()
+    expect(chooseCursorPermissionResponse(
+      {
+        ...liveCursorMcpPermissionRequest(hostTool!.name),
+        toolCall: {
+          ...liveCursorMcpPermissionRequest(hostTool!.name).toolCall,
+          title: 'Run shell command',
+          content: [{ type: 'content', content: `${HOST_MCP_SERVER_NAME}-${hostTool!.name}: ${hostTool!.name}` }],
+        },
+      },
+      'auto-accept-edits',
+    )).toEqual({ outcome: { outcome: 'selected', optionId: 'reject-once' } })
+  })
+
+  it('rejects a mismatched displayed tool name in a host-formatted title', () => {
+    const hostTool = getHostTools()[0]
+    const otherHostTool = getHostTools()[1]
+    expect(hostTool).toBeDefined()
+    expect(otherHostTool).toBeDefined()
+    expect(chooseCursorPermissionResponse(
+      {
+        ...liveCursorMcpPermissionRequest(hostTool!.name),
+        toolCall: {
+          ...liveCursorMcpPermissionRequest(hostTool!.name).toolCall,
+          title: `${HOST_MCP_SERVER_NAME}-${hostTool!.name}: ${otherHostTool!.name}`,
+        },
+      },
+      'auto-accept-edits',
+    )).toEqual({ outcome: { outcome: 'selected', optionId: 'reject-once' } })
+  })
+
+  it('rejects an untyped built-in terminal call even when its command says update', () => {
+    expect(
+      chooseCursorPermissionResponse(
+        {
+          toolCall: {
+            toolCallId: 'cursor-terminal-1',
+            name: 'terminal',
+            title: 'Update the CLI',
+            rawInput: { command: 'claude update' },
+          },
+          options: permissionOptions,
+        },
+        'auto-accept-edits',
+      ),
+    ).toEqual({ outcome: { outcome: 'selected', optionId: 'reject-once' } })
+  })
+
+  it('trusts an explicit execute kind and rejects it regardless of edit-flavored wording', () => {
+    expect(
+      chooseCursorPermissionResponse(
+        {
+          toolCall: {
+            toolCallId: 'cursor-terminal-1',
+            kind: 'execute',
+            title: 'Update configuration',
+            rawInput: { command: 'update the running service' },
+          },
+          options: permissionOptions,
+        },
+        'auto-accept-edits',
+      ),
+    ).toEqual({ outcome: { outcome: 'selected', optionId: 'reject-once' } })
   })
 
   it('keeps automatic full-access approvals scoped to a single Cursor request', () => {
@@ -366,7 +516,7 @@ describe('Cursor provider behavior', () => {
       error: () => {},
     })
     const mock = await createMockCursorAgent(DEFAULT_CURSOR_CONFIG_OPTIONS, {
-      reportedMcpServers: { bitsentry: {}, github: {}, pagerduty: {} },
+      reportedMcpServers: { [HOST_MCP_SERVER_NAME]: {}, github: {}, pagerduty: {} },
     })
 
     await expect(executeCursor({
@@ -379,6 +529,44 @@ describe('Cursor provider behavior', () => {
     expect(warnings).toContainEqual([
       '[cursor-provider] Cursor reported additional MCP servers at session start',
       { sessionId: 'session-1', mcpServers: ['github', 'pagerduty'] },
+    ])
+  })
+
+  it('prepends the runbook-only scope to Cursor ACP prompts with every host tool', async () => {
+    const infos: unknown[][] = []
+    setCodingAgentsLoggerForTesting({ info: (...args) => { infos.push(args) }, warn: () => {}, error: () => {} })
+    const mock = await createMockCursorAgent()
+    await executeCursor({
+      prompt: 'Update the local CLI.',
+      binaryPath: mock.binaryPath,
+      abortController: new AbortController(),
+      cwd: mock.cwd,
+      mcpEndpoint: {
+        url: 'http://127.0.0.1:1/mcp',
+        token: 'token',
+        expiresAt: Date.now() + 60_000,
+        command: 'node',
+        args: ['host-mcp-shim.js'],
+        env: {},
+        agentSessionId: 'session-1',
+      },
+    })
+
+    const promptRequest = (await readLoggedMessages(mock.logPath)).find(
+      (message) => message.method === 'session/prompt',
+    )
+    const prompt = getMessageParams(promptRequest ?? {})?.prompt as Array<{ text?: string }> | undefined
+    const scope = prompt?.[0]?.text ?? ''
+    for (const hostTool of getHostTools()) {
+      expect(scope).toContain(hostTool.name)
+    }
+    expect(scope).toContain('You must NEVER execute maintenance or remediation steps directly with built-in tools')
+    expect(scope).toContain('there is no direct-execution fallback when a runbook is missing or unapproved.')
+    expect(scope).toContain('call list_runbooks once to verify availability before concluding anything')
+    expect(scope).toContain('## Conversation\n\nUpdate the local CLI.')
+    expect(infos).toContainEqual([
+      '[cursor-provider] configured host tools',
+      { agentSessionId: 'session-1', toolNames: getHostTools().map((tool) => tool.name) },
     ])
   })
 

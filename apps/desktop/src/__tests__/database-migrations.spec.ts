@@ -140,6 +140,35 @@ describeSqliteMigrations('desktop SQLite upgrades', () => {
     )
   })
 
+  it('purges failed authoring shells on startup without removing user tombstones', async () => {
+    const { directory, databasePath } = await makeDatabaseDirectory()
+    configureNoopSeeders()
+    setRuntimeUserDataPath(directory)
+    await initializeDatabase()
+    await closeDatabase()
+
+    const sqlite = newDatabase(databasePath)
+    sqlite.exec(`
+      INSERT INTO "Runbook" ("id", "title", "description", "revisionNumber", "createdAt", "updatedAt", "deletedAt") VALUES
+        ('failed-authoring-shell', 'Failed authoring shell', '', 1, '2026-08-01T00:00:00.000Z', '2026-08-01T00:00:01.000Z', '2026-08-01T00:00:01.000Z'),
+        ('user-tombstone', 'User deleted runbook', '', 1, '2026-08-01T00:00:00.000Z', '2026-08-01T00:00:01.000Z', '2026-08-01T00:00:02.000Z');
+      INSERT INTO "RunbookAction" ("id", "runbookId", "sortOrder", "type", "title", "createdAt", "updatedAt") VALUES
+        ('failed-authoring-action', 'failed-authoring-shell', 0, 'shell', 'Leftover action', '2026-08-01T00:00:01.000Z', '2026-08-01T00:00:01.000Z');
+    `)
+    sqlite.close()
+
+    await initializeDatabase()
+    const remainingRunbooks = await getDatabase().$queryRawUnsafe<{ id: string }>(
+      'SELECT "id" FROM "Runbook" ORDER BY "id" ASC',
+    )
+    const remainingActions = await getDatabase().$queryRawUnsafe<{ id: string }>(
+      'SELECT "id" FROM "RunbookAction" ORDER BY "id" ASC',
+    )
+
+    expect(remainingRunbooks).toEqual([{ id: 'user-tombstone' }])
+    expect(remainingActions).toEqual([])
+  })
+
   it('fails closed and releases the database client when migration initialization fails', async () => {
     const { directory, databasePath } = await makeDatabaseDirectory()
     const sqlite = newDatabase(databasePath)

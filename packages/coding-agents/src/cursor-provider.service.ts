@@ -1,7 +1,7 @@
 import os from 'os'
 import path from 'path'
 import { CursorAcpClient, type CursorJsonRpcId } from './cursor-acp-client.js'
-import type { HostMcpEndpoint } from './host-mcp-server.service.js'
+import { HOST_MCP_SERVER_NAME, type HostMcpEndpoint } from './host-mcp-server.service.js'
 import type { LocalAiExecutionResult, LocalAiStreamDelta } from './types.js'
 import { codingAgentsLogger as log } from './logger.js'
 import {
@@ -9,6 +9,8 @@ import {
   normalizeAccessLevel,
   type AccessLevel,
 } from './composer.js'
+import { getHostTools } from '@bitsentry-ce/core/features/agent-runtime'
+import { prependRunbookOnlyScope } from './runbook-only-scope.js'
 
 export interface CodingAgentDebugRecorder {
   recordEvent(stage: string, data: Record<string, unknown>): void
@@ -60,7 +62,9 @@ interface CursorExecutionState {
 }
 
 const MAX_OUTPUT_LENGTH = 50_000
+const MAX_CURSOR_TOOL_CALL_IDENTITIES = 256
 const CURSOR_SETUP_TIMEOUT_MS = 15_000
+const CURSOR_SESSION_NEW_TIMEOUT_MS = 30_000
 const READ_ONLY_TOOL_KINDS = new Set<CursorToolKind>(['read', 'search', 'think'])
 const EDIT_TOOL_KINDS = new Set<CursorToolKind>(['edit', 'delete', 'move'])
 const TEXTY_TOOL_CONTENT_TYPES = new Set(['content', 'text', 'markdown', 'stdout', 'stderr'])
@@ -77,6 +81,10 @@ const CURSOR_TOOL_KINDS: readonly CursorToolKind[] = [
   'other',
 ]
 const CURSOR_TOOL_KIND_NAMES = new Set<string>(CURSOR_TOOL_KINDS)
+const HOST_TOOL_NAMES: ReadonlySet<string> = new Set(getHostTools().map((tool) => tool.name))
+const HOST_TOOL_IDENTITY_FIELDS = ['name', 'toolName', 'title', 'toolCallId'] as const
+const MCP_SERVER_IDENTITY_FIELDS = ['server', 'serverName', 'serverId', 'mcpServer', 'mcpServerName'] as const
+const NESTED_TOOL_IDENTITY_FIELDS = ['tool', 'mcpTool', 'mcp'] as const
 const TOOL_KIND_PATTERNS: Array<{ kind: CursorToolKind; pattern: RegExp }> = [
   { kind: 'read', pattern: /\b(read|cat|view|open|list|ls)\b/ },
   { kind: 'search', pattern: /\b(search|grep|find|glob|rg)\b/ },
@@ -109,6 +117,10 @@ function asString(value: unknown): string | undefined {
   }
 
   return undefined
+}
+
+function hasOwn(record: Record<string, unknown>, key: string): boolean {
+  return Object.prototype.hasOwnProperty.call(record, key)
 }
 
 function getErrorMessage(error: unknown): string {
@@ -184,20 +196,150 @@ function isPermissionOptionKind(value: unknown): value is PermissionOptionKind {
 }
 
 function inferToolKind(toolCall: Record<string, unknown> | undefined): CursorToolKind {
-  if (isCursorToolKind(toolCall?.kind)) {
-    return toolCall.kind
+  const explicitKind = asString(toolCall?.kind)
+  if (explicitKind !== undefined) {
+    return isCursorToolKind(explicitKind) ? explicitKind : 'other'
   }
 
   const searchable = getToolSearchText(toolCall)
+  // ACP occasionally omits kind. In that case, prefer rejecting a possible
+  // shell/terminal action over treating an "update" inside its arguments as a
+  // benign file edit. An explicit ACP kind above remains authoritative.
+  if (/\b(run|exec|execute|bash|shell|terminal|command|cmd|powershell)\b/.test(searchable)) {
+    return 'execute'
+  }
   for (const { kind, pattern } of TOOL_KIND_PATTERNS) {
+    if (kind === 'execute') continue
     if (pattern.test(searchable)) return kind
   }
 
   return 'other'
 }
 
+function hostToolNameFromIdentity(value: unknown): string | undefined {
+  const identity = asString(value)
+  if (identity === undefined) return undefined
+  if (HOST_TOOL_NAMES.has(identity)) return identity
+
+  const normalizedIdentity = identity.toLowerCase()
+  for (const prefix of [
+    `mcp__${HOST_MCP_SERVER_NAME}__`,
+    `${HOST_MCP_SERVER_NAME}_`,
+    `${HOST_MCP_SERVER_NAME}.`,
+    `${HOST_MCP_SERVER_NAME}/`,
+    `${HOST_MCP_SERVER_NAME}:`,
+  ]) {
+    const normalizedPrefix = prefix.toLowerCase()
+    if (!normalizedIdentity.startsWith(normalizedPrefix)) continue
+    const toolName = identity.slice(prefix.length)
+    if (HOST_TOOL_NAMES.has(toolName)) return toolName
+  }
+
+  return undefined
+}
+
+function hostToolNameFromPermissionTitle(value: unknown): string | undefined {
+  const title = asString(value)
+  if (title === undefined) return undefined
+
+  const separatorIndex = title.indexOf(':')
+  const label = (separatorIndex === -1 ? title : title.slice(0, separatorIndex)).trim()
+  const displayedToolName = separatorIndex === -1 ? undefined : title.slice(separatorIndex + 1).trim()
+  const serverPrefix = `${HOST_MCP_SERVER_NAME}-`
+  if (!label.toLowerCase().startsWith(serverPrefix.toLowerCase())) return undefined
+
+  const toolName = label.slice(serverPrefix.length)
+  if (!HOST_TOOL_NAMES.has(toolName)) return undefined
+  if (displayedToolName !== undefined && displayedToolName !== toolName) return undefined
+  return toolName
+}
+
+function mcpServerNameFromIdentity(value: unknown): string | undefined {
+  return asString(value)
+    ?? asString(asRecord(value)?.name)
+    ?? asString(asRecord(value)?.id)
+}
+
+function toolIdentityRecords(toolCall: Record<string, unknown>): Record<string, unknown>[] {
+  return [
+    toolCall,
+    ...NESTED_TOOL_IDENTITY_FIELDS.flatMap((field) => {
+      const value = toolCall[field]
+      const record = asRecord(value)
+      return record === undefined ? [] : [record]
+    }),
+  ]
+}
+
+export function isBitsentryHostToolCall(toolCall: Record<string, unknown> | undefined): boolean {
+  return hostToolNameFromPermissionTitle(toolCall?.title) !== undefined
+}
+
+export interface CursorToolCallIdentity {
+  name?: string
+  title?: string
+  kind?: string
+  hasRawInput: boolean
+}
+
+export class CursorToolCallRegistry {
+  private readonly identitiesBySession = new Map<string, Map<string, CursorToolCallIdentity>>()
+
+  recordSessionUpdate(params: unknown): void {
+    const sessionUpdate = asRecord(params)
+    const sessionId = asString(sessionUpdate?.sessionId)
+    const update = asRecord(sessionUpdate?.update)
+    if (update === undefined || (update.sessionUpdate !== 'tool_call' && update.sessionUpdate !== 'tool_call_update')) {
+      return
+    }
+
+    const toolCallId = asString(update.toolCallId)
+    if (sessionId === undefined || toolCallId === undefined) return
+
+    const identities = this.identitiesBySession.get(sessionId) ?? new Map<string, CursorToolCallIdentity>()
+    this.identitiesBySession.set(sessionId, identities)
+    const previous = identities.get(toolCallId)
+    const identity: CursorToolCallIdentity = {
+      name: asString(update.name) ?? asString(update.toolName) ?? previous?.name,
+      title: asString(update.title) ?? previous?.title,
+      kind: asString(update.kind) ?? previous?.kind,
+      hasRawInput: previous?.hasRawInput === true || hasOwn(update, 'rawInput'),
+    }
+    identities.delete(toolCallId)
+    identities.set(toolCallId, identity)
+
+    while (identities.size > MAX_CURSOR_TOOL_CALL_IDENTITIES) {
+      const oldestToolCallId = identities.keys().next().value
+      if (oldestToolCallId === undefined) break
+      identities.delete(oldestToolCallId)
+    }
+  }
+
+  get(sessionId: string | undefined, toolCallId: string | undefined): CursorToolCallIdentity | undefined {
+    if (sessionId === undefined || toolCallId === undefined) return undefined
+    return this.identitiesBySession.get(sessionId)?.get(toolCallId)
+  }
+
+  sizeForSession(sessionId: string | undefined): number {
+    if (sessionId === undefined) return 0
+    return this.identitiesBySession.get(sessionId)?.size ?? 0
+  }
+
+  clear(): void {
+    this.identitiesBySession.clear()
+  }
+}
+
+function hostToolNameFromCursorToolIdentity(identity: CursorToolCallIdentity | undefined): string | undefined {
+  if (identity === undefined) return undefined
+  return hostToolNameFromIdentity(identity.name) ?? hostToolNameFromIdentity(identity.title)
+}
+
 function getToolSearchText(toolCall: Record<string, unknown> | undefined): string {
   return [
+    stringifyToolSearchValue(toolCall?.name),
+    stringifyToolSearchValue(toolCall?.toolName),
+    stringifyToolSearchValue(toolCall?.toolCallId),
     stringifyToolSearchValue(toolCall?.title),
     stringifyToolSearchValue(toolCall?.rawInput),
     stringifyToolSearchValue(toolCall?.rawOutput),
@@ -250,9 +392,10 @@ export function chooseCursorPermissionResponse(
 
   const params = asRecord(requestParams)
   const toolCall = asRecord(params?.toolCall)
-  const toolKind = inferToolKind(toolCall)
   const options = normalizePermissionOptions(params?.options)
-  const selected = chooseOption(options, canAllowTool(accessLevel, toolKind))
+  const allow = isBitsentryHostToolCall(toolCall)
+    || canAllowTool(accessLevel, inferToolKind(toolCall))
+  const selected = chooseOption(options, allow)
 
   if (selected === undefined) {
     return { outcome: { outcome: 'cancelled' } }
@@ -263,6 +406,37 @@ export function chooseCursorPermissionResponse(
       outcome: 'selected',
       optionId: selected.optionId,
     },
+  }
+}
+
+function summarizeCursorPermissionRequest(requestParams: unknown): Record<string, unknown> {
+  const toolCall = asRecord(asRecord(requestParams)?.toolCall)
+  const identities = toolCall === undefined
+    ? []
+    : toolIdentityRecords(toolCall).map((record) => Object.fromEntries(
+      [...HOST_TOOL_IDENTITY_FIELDS, ...MCP_SERVER_IDENTITY_FIELDS]
+        .flatMap((field) => {
+          const value = mcpServerNameFromIdentity(record[field])
+          return value === undefined ? [] : [[field, value.slice(0, 120)]]
+        }),
+    ))
+  return {
+    toolCallKeys: toolCall === undefined ? [] : Object.keys(toolCall).sort(),
+    identityFields: identities,
+    title: asString(toolCall?.title)?.slice(0, 120) ?? null,
+    firstContentEntryShape: summarizeFirstContentEntry(toolCall?.content),
+  }
+}
+
+function summarizeFirstContentEntry(content: unknown): Record<string, unknown> | null {
+  const firstEntry = asArray(content)[0]
+  if (firstEntry === undefined) return null
+  const record = asRecord(firstEntry)
+  if (record === undefined) return { valueType: typeof firstEntry }
+  return {
+    valueType: 'object',
+    keys: Object.keys(record).sort(),
+    type: asString(record.type) ?? null,
   }
 }
 
@@ -551,9 +725,11 @@ function handleCursorSessionNotification(
   options: CursorExecutionOptions,
   accessLevel: AccessLevel,
   state: CursorExecutionState,
+  toolCallRegistry: CursorToolCallRegistry,
 ): void {
   if (notification.method !== 'session/update') return
 
+  toolCallRegistry.recordSessionUpdate(notification.params)
   for (const delta of cursorDeltasFromSessionUpdate(notification.params)) {
     handleCursorDelta(delta, options, accessLevel, state)
   }
@@ -716,7 +892,7 @@ export async function listCursorModels(binaryPath: string): Promise<string[]> {
         cwd: os.tmpdir(),
         mcpServers: [],
       }),
-      CURSOR_SETUP_TIMEOUT_MS,
+      CURSOR_SESSION_NEW_TIMEOUT_MS,
       'Cursor ACP session/new',
     )
     return extractCursorModelIds(sessionResult)
@@ -743,17 +919,42 @@ function registerCursorServerRequestHandler(
   client: CursorAcpClient,
   options: CursorExecutionOptions,
   accessLevel: AccessLevel,
+  toolCallRegistry: CursorToolCallRegistry,
 ): void {
   client.on('serverRequest', (request: { id: CursorJsonRpcId; method: string; params: unknown }) => {
     if (request.method === 'session/request_permission') {
-      client.respondToServerRequest(
-        request.id,
-        chooseCursorPermissionResponse(
-          request.params,
-          accessLevel,
-          isAbortSignalAborted(options.abortController.signal),
-        ),
+      const toolCall = asRecord(asRecord(request.params)?.toolCall)
+      const sessionId = asString(asRecord(request.params)?.sessionId)
+      const toolCallId = asString(toolCall?.toolCallId)
+      const resolvedToolCall = toolCallRegistry.get(sessionId, toolCallId)
+      const permissionTitleHostToolName = hostToolNameFromPermissionTitle(toolCall?.title)
+      const registryHostToolName = hostToolNameFromCursorToolIdentity(resolvedToolCall)
+      const inferredKind = inferToolKind(toolCall)
+      const response = chooseCursorPermissionResponse(
+        request.params,
+        accessLevel,
+        isAbortSignalAborted(options.abortController.signal),
       )
+      log.info('[cursor-provider] permission decision', {
+        agentSessionId: options.mcpEndpoint?.agentSessionId ?? 'unknown',
+        ...summarizeCursorPermissionRequest(request.params),
+        inferredKind,
+        hostToolMatched: permissionTitleHostToolName !== undefined,
+        hostToolSignals: {
+          permissionTitle: permissionTitleHostToolName ?? null,
+          registry: registryHostToolName ?? null,
+        },
+        correlation: {
+          sessionId: sessionId ?? null,
+          toolCallId: toolCallId ?? null,
+          status: resolvedToolCall === undefined ? 'miss' : 'hit',
+          registrySize: toolCallRegistry.sizeForSession(sessionId),
+          resolvedIdentity: resolvedToolCall ?? null,
+        },
+        decision: response.outcome.outcome,
+        optionId: response.outcome.outcome === 'selected' ? response.outcome.optionId : null,
+      })
+      client.respondToServerRequest(request.id, response)
       return
     }
 
@@ -764,7 +965,7 @@ function registerCursorServerRequestHandler(
 function toCursorMcpServers(endpoint: HostMcpEndpoint | undefined): unknown[] {
   if (endpoint === undefined) return []
   return [{
-    name: 'bitsentry',
+    name: HOST_MCP_SERVER_NAME,
     command: endpoint.command,
     args: endpoint.args,
     // ACP McpServer.env is a list of {name, value} pairs, not a record.
@@ -810,7 +1011,7 @@ function collectReportedCursorMcpServerNames(
 function logAdditionalCursorMcpServers(sessionResult: unknown, sessionId: string): void {
   const names = new Set<string>()
   collectReportedCursorMcpServerNames(sessionResult, names)
-  names.delete('bitsentry')
+  names.delete(HOST_MCP_SERVER_NAME)
 
   if (names.size > 0) {
     log.warn('[cursor-provider] Cursor reported additional MCP servers at session start', {
@@ -825,14 +1026,37 @@ async function createCursorSession(
   cwd: string,
   mcpEndpoint?: HostMcpEndpoint,
 ): Promise<unknown> {
-  return withTimeout(
-    client.sendRequest('session/new', {
-      cwd,
-      mcpServers: toCursorMcpServers(mcpEndpoint),
-    }),
-    CURSOR_SETUP_TIMEOUT_MS,
-    'Cursor ACP session/new',
-  )
+  const mcpServers = toCursorMcpServers(mcpEndpoint)
+  if (mcpEndpoint !== undefined) {
+    const configuredHostTools = getHostTools()
+    log.info('[cursor-provider] configured host tools', {
+      agentSessionId: mcpEndpoint.agentSessionId,
+      toolNames: configuredHostTools.map((hostTool) => hostTool.name),
+    })
+  }
+  const startedAt = Date.now()
+  try {
+    const session = await withTimeout(
+      client.sendRequest('session/new', {
+        cwd,
+        mcpServers,
+      }),
+      CURSOR_SESSION_NEW_TIMEOUT_MS,
+      'Cursor ACP session/new',
+    )
+    log.info('[cursor-provider] session/new completed', {
+      agentSessionId: mcpEndpoint?.agentSessionId ?? 'unknown',
+      durationMs: Date.now() - startedAt,
+    })
+    return session
+  } catch (error) {
+    log.warn('[cursor-provider] session/new failed', {
+      agentSessionId: mcpEndpoint?.agentSessionId ?? 'unknown',
+      durationMs: Date.now() - startedAt,
+      error: getErrorMessage(error),
+    })
+    throw error
+  }
 }
 
 function requireCursorSessionId(sessionResult: unknown): string {
@@ -903,7 +1127,10 @@ async function runCursorSession(
   await setCursorModel(client, sessionResult, state.sessionId, options.model)
   await setCursorEffort(client, sessionResult, state.sessionId, options.traitValues?.effort)
 
-  const promptResult = await sendCursorPrompt(client, state.sessionId, options.prompt)
+  const prompt = options.mcpEndpoint === undefined
+    ? options.prompt
+    : prependRunbookOnlyScope(options.prompt)
+  const promptResult = await sendCursorPrompt(client, state.sessionId, prompt)
   return cursorPromptResult(promptResult, options, accessLevel, state)
 }
 
@@ -918,14 +1145,15 @@ export async function executeCursor(
   const accessLevel = normalizeAccessLevel(options.accessLevel ?? DEFAULT_ACCESS_LEVEL)
   const client = new CursorAcpClient(options.binaryPath, cwd)
   const state: CursorExecutionState = { output: '', sessionId: undefined }
+  const toolCallRegistry = new CursorToolCallRegistry()
   const onAbort = createCursorAbortHandler(client, options, state)
 
   options.abortController.signal.addEventListener('abort', onAbort, { once: true })
 
   client.on('notification', (notification: { method: string; params: unknown }) => {
-    handleCursorSessionNotification(notification, options, accessLevel, state)
+    handleCursorSessionNotification(notification, options, accessLevel, state, toolCallRegistry)
   })
-  registerCursorServerRequestHandler(client, options, accessLevel)
+  registerCursorServerRequestHandler(client, options, accessLevel, toolCallRegistry)
 
   try {
     return await runCursorSession(client, cwd, options, accessLevel, state)
@@ -939,6 +1167,7 @@ export async function executeCursor(
     options.onDelta?.({ type: 'status', status: 'failed' })
     throw new Error(appendCursorStderrTail(getErrorMessage(err), client.getStderrTail()))
   } finally {
+    toolCallRegistry.clear()
     options.abortController.signal.removeEventListener('abort', onAbort)
     const stderrTail = client.getStderrTail().trim()
     if (stderrTail.length > 0) {

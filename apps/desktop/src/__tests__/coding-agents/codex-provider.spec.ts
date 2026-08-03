@@ -1,4 +1,4 @@
-import { chmod, mkdtemp, rm, writeFile } from 'fs/promises'
+import { chmod, mkdtemp, readFile, rm, writeFile } from 'fs/promises'
 import os from 'os'
 import path from 'path'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -7,26 +7,34 @@ import {
   codexStreamDeltasFromNotification,
   normalizeCodexExecutionError,
 } from '@bitsentry-ce/desktop-cli/runtime/desktop-coding-agents'
+import { getHostTools } from '@bitsentry-ce/core/features/agent-runtime'
+import { setCodingAgentsLoggerForTesting } from '@bitsentry-ce/coding-agents/logger'
+import { HOST_MCP_SERVER_NAME } from '@bitsentry-ce/coding-agents/host-mcp-server.service'
 
 const tempDirs: string[] = []
 async function createMultiItemCodexAppServer(): Promise<{
   binaryPath: string
   cwd: string
+  logPath: string
 }> {
   const cwd = await mkdtemp(path.join(os.tmpdir(), 'codex-provider-test-'))
   tempDirs.push(cwd)
 
   const scriptPath = path.join(cwd, 'mock-codex-app-server.cjs')
+  const logPath = path.join(cwd, 'messages.jsonl')
   const script = `
+const fs = require('fs')
 const readline = require('readline')
 
 const respond = (id, result) => process.stdout.write(JSON.stringify({ id, result }) + '\\n')
 const notify = (method, params) => process.stdout.write(JSON.stringify({ method, params }) + '\\n')
+const logMessage = (message) => fs.appendFileSync(${JSON.stringify(logPath)}, JSON.stringify(message) + '\\n')
 if (!process.argv.slice(2).includes('app-server')) process.exit(64)
 
 const rl = readline.createInterface({ input: process.stdin })
 rl.on('line', (line) => {
   const message = JSON.parse(line)
+  logMessage(message)
 
   if (message.method === 'initialize') {
     respond(message.id, { userAgent: 'mock-codex-app-server' })
@@ -58,11 +66,86 @@ rl.on('line', (line) => {
   const binaryPath = path.join(cwd, 'codex')
   await writeFile(binaryPath, `#!/usr/bin/env node\nrequire(${JSON.stringify(scriptPath)})\n`)
   await chmod(binaryPath, 0o755)
-  return { binaryPath, cwd }
+  return { binaryPath, cwd, logPath }
+}
+
+async function readLoggedCodexMessages(logPath: string): Promise<Array<Record<string, unknown>>> {
+  const contents = await readFile(logPath, 'utf8').catch(() => '')
+  return contents.split(/\r?\n/).filter(Boolean).map((line) => JSON.parse(line) as Record<string, unknown>)
+}
+
+async function createHostApprovalCodexAppServer(): Promise<{
+  binaryPath: string
+  cwd: string
+  logPath: string
+}> {
+  const cwd = await mkdtemp(path.join(os.tmpdir(), 'codex-provider-approval-'))
+  tempDirs.push(cwd)
+  const scriptPath = path.join(cwd, 'mock-codex-app-server-approval.cjs')
+  const logPath = path.join(cwd, 'messages.jsonl')
+  const script = `
+const fs = require('fs')
+const readline = require('readline')
+
+const approvalId = 'mcp-approval-1'
+const respond = (id, result) => process.stdout.write(JSON.stringify({ id, result }) + '\\n')
+const notify = (method, params) => process.stdout.write(JSON.stringify({ method, params }) + '\\n')
+const requestApproval = () => process.stdout.write(JSON.stringify({
+  id: approvalId,
+  method: 'mcpServer/elicitation/request',
+  params: {
+    threadId: 'thread-approval',
+    turnId: 'turn-approval',
+    serverName: ${JSON.stringify(HOST_MCP_SERVER_NAME)},
+    mode: 'form',
+    message: 'Allow MCP call?',
+    requestedSchema: { type: 'object', properties: {} },
+    _meta: {
+      codex_approval_kind: 'mcp_tool_call',
+      persist: 'session',
+      tool_description: 'Creates a governed runbook proposal.',
+      tool_params: {},
+      tool_params_display: [],
+    },
+  },
+}) + '\\n')
+const logMessage = (message) => fs.appendFileSync(${JSON.stringify(logPath)}, JSON.stringify(message) + '\\n')
+
+if (!process.argv.slice(2).includes('app-server')) process.exit(64)
+
+const rl = readline.createInterface({ input: process.stdin })
+rl.on('line', (line) => {
+  const message = JSON.parse(line)
+  logMessage(message)
+
+  if (message.method === 'initialize') {
+    respond(message.id, { userAgent: 'mock-codex-app-server' })
+    return
+  }
+  if (message.method === 'thread/start') {
+    respond(message.id, { thread: { id: 'thread-approval' } })
+    return
+  }
+  if (message.method === 'turn/start') {
+    respond(message.id, { turn: { id: 'turn-approval' } })
+    requestApproval()
+    return
+  }
+  if (message.id === approvalId) {
+    notify('turn/completed', { turn: { id: 'turn-approval' } })
+  }
+})
+`
+  await writeFile(scriptPath, script)
+  const binaryPath = path.join(cwd, 'codex')
+  await writeFile(binaryPath, `#!/usr/bin/env node\nrequire(${JSON.stringify(scriptPath)})\n`)
+  await chmod(binaryPath, 0o755)
+  return { binaryPath, cwd, logPath }
 }
 
 afterEach(async () => {
   await Promise.all(tempDirs.splice(0).map((directory) => rm(directory, { recursive: true, force: true })))
+  setCodingAgentsLoggerForTesting({ info: () => {}, warn: () => {}, error: () => {} })
 })
 
 describe('Codex provider behavior', () => {
@@ -78,6 +161,88 @@ describe('Codex provider behavior', () => {
 
     expect(result.output).toContain('I will list runbooks.')
     expect(result.output).not.toContain('mcpToolCall')
+  })
+
+  it('prepends the runbook-only scope to Codex prompts with every host tool', async () => {
+    const infos: unknown[][] = []
+    setCodingAgentsLoggerForTesting({ info: (...args) => { infos.push(args) }, warn: () => {}, error: () => {} })
+    const mock = await createMultiItemCodexAppServer()
+    await executeCodex({
+      prompt: 'Update the local CLI.',
+      binaryPath: mock.binaryPath,
+      cwd: mock.cwd,
+      abortController: new AbortController(),
+      mcpEndpoint: {
+        url: 'http://127.0.0.1:1/mcp',
+        token: 'token',
+        expiresAt: Date.now() + 60_000,
+        command: 'node',
+        args: ['host-mcp-shim.js'],
+        env: {},
+        agentSessionId: 'session-1',
+      },
+    })
+
+    const turnStart = (await readLoggedCodexMessages(mock.logPath)).find(
+      (message) => message.method === 'turn/start',
+    )
+    const params = turnStart?.params as { input?: Array<{ text?: string }> } | undefined
+    const scope = params?.input?.[0]?.text ?? ''
+    for (const hostTool of getHostTools()) {
+      expect(scope).toContain(hostTool.name)
+    }
+    expect(scope).toContain('You must NEVER execute maintenance or remediation steps directly with built-in tools')
+    expect(scope).toContain('there is no direct-execution fallback when a runbook is missing or unapproved.')
+    expect(scope).toContain('call list_runbooks once to verify availability before concluding anything')
+    expect(scope).toContain('## Conversation\n\nUpdate the local CLI.')
+    expect(infos).toContainEqual([
+      '[codex-provider] configured host tools',
+      { agentSessionId: 'session-1', toolNames: getHostTools().map((tool) => tool.name) },
+    ])
+  })
+
+  it('approves a BitSentry MCP tool elicitation at Safe Tools', async () => {
+    const infos: unknown[][] = []
+    setCodingAgentsLoggerForTesting({ info: (...args) => { infos.push(args) }, warn: () => {}, error: () => {} })
+    const mock = await createHostApprovalCodexAppServer()
+
+    await expect(executeCodex({
+      prompt: 'List incident runbooks.',
+      binaryPath: mock.binaryPath,
+      cwd: mock.cwd,
+      abortController: new AbortController(),
+      accessLevel: 'auto-accept-edits',
+    })).resolves.toMatchObject({ threadId: 'thread-approval' })
+
+    const approvalResponse = (await readLoggedCodexMessages(mock.logPath)).find(
+      (message) => message.id === 'mcp-approval-1',
+    )
+    expect(approvalResponse).toEqual({
+      id: 'mcp-approval-1',
+      result: {
+        action: 'accept',
+        content: {},
+        _meta: null,
+      },
+    })
+    expect(infos).toContainEqual([
+      '[codex-provider] approval decision',
+      expect.objectContaining({
+        method: 'mcpServer/elicitation/request',
+        choice: 'allow-host-tool',
+        responsePayloadKeys: ['_meta', 'action', 'content'],
+        elicitation: expect.objectContaining({
+          serverName: HOST_MCP_SERVER_NAME,
+          approvalKind: 'mcp_tool_call',
+          serverScopedHostApproval: true,
+          requestedSchemaShape: {
+            keys: ['properties', 'type'],
+            type: 'object',
+            propertyKeys: [],
+          },
+        }),
+      }),
+    ])
   })
 
   it('keeps Codex assistant, reasoning, and command streams separate', () => {

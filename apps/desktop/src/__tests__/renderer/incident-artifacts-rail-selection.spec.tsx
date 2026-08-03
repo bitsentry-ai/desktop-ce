@@ -153,6 +153,7 @@ function createRailServices(
       getLinkedTelemetryExecution: vi.fn().mockResolvedValue(null),
       cancelExecution: rejectUnusedRunbookMethod,
       onExecutionEvent: vi.fn(() => () => {}),
+      onChanged: vi.fn(() => () => {}),
     },
   };
 }

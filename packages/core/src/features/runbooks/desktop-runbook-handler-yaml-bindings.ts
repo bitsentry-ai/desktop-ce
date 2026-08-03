@@ -23,6 +23,7 @@ export function createDesktopYamlRunbookHandlers(
   dependencies: {
     executionService: RunbookExecutionService;
     globalVariablesService: DesktopGlobalVariablesService;
+    onRunbooksChanged?: () => void;
   },
   options?: {
     edition?: DesktopRunbookImportEdition;

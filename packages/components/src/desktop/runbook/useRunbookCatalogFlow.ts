@@ -59,8 +59,12 @@ export function useRunbookCatalogFlow({
     } catch {}
   }, []);
 
-  const notifyRunbooksUpdated = useCallback(() => {
-    window.dispatchEvent(new CustomEvent("bitsentry:runbooks-updated"));
+  const notifyRunbooksUpdated = useCallback((runbook?: RunbookRecord) => {
+    window.dispatchEvent(
+      new CustomEvent("bitsentry:runbooks-updated", {
+        detail: runbook === undefined ? undefined : { runbook },
+      }),
+    );
   }, []);
 
   const refreshRunbooks = useCallback(async () => {
@@ -137,9 +141,20 @@ export function useRunbookCatalogFlow({
   }, [refreshRunbooks]);
 
   useEffect(() => {
-    const handleRunbooksUpdated = () => {
-      const nextRunbooks = readStoredRunbooks();
+    const handleRunbooksUpdated = (event: Event) => {
+      const updatedRunbook =
+        event instanceof CustomEvent &&
+        typeof event.detail === "object" &&
+        event.detail !== null &&
+        "runbook" in event.detail
+          ? event.detail.runbook as RunbookRecord
+          : undefined;
+      const nextRunbooks =
+        updatedRunbook === undefined
+          ? readStoredRunbooks()
+          : replaceRunbookInList(runbooks, updatedRunbook);
       setRunbooks(nextRunbooks);
+      syncRunbooksCache(nextRunbooks);
 
       if (
         activeId !== null &&
@@ -156,7 +171,7 @@ export function useRunbookCatalogFlow({
         handleRunbooksUpdated,
       );
     };
-  }, [activeId, navigateToRunbooks]);
+  }, [activeId, navigateToRunbooks, runbooks, syncRunbooksCache]);
 
   useEffect(() => {
     setEditingRunbook(cloneRunbook(activeRunbook));

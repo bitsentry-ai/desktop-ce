@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto'
 import { describe, expect, it } from 'vitest'
 
 import {
@@ -111,5 +112,43 @@ describe('SqliteRunbookResultStore', () => {
 
     expect(snapshots.get('result-a')?.snapshotVersion).toBe(1)
     expect(snapshots.get('result-b')?.snapshotVersion).toBe(1)
+  })
+
+  it('reconciles a running result whose execution control row is gone', async () => {
+    const executionId = randomUUID()
+    const resultId = randomUUID()
+    const running = snapshot(executionId, 3)
+    const row: Record<string, unknown> = {
+      id: resultId,
+      executionId,
+      status: 'running',
+      startedAt: running.startedAt,
+      completedAt: null,
+      updatedAt: running.startedAt,
+      executionSnapshotJson: JSON.stringify(running),
+    }
+    const database: DesktopRunbookResultDatabase = {
+      investigationSession: {
+        create: async () => ({}),
+        update: async ({ data }) => { Object.assign(row, data); return row },
+        updateMany: async ({ where, data }) => {
+          if (where?.id !== row.id || where?.status !== row.status) return { count: 0 }
+          Object.assign(row, data)
+          return { count: 1 }
+        },
+        findUnique: async () => row,
+        findFirst: async () => null,
+        findMany: async () => [row],
+      },
+      $executeRawUnsafe: async () => {},
+      $queryRawUnsafe: async () => [],
+      $transaction: async <T>(operation: () => Promise<T>): Promise<T> => await operation(),
+    }
+    const store = new SqliteRunbookResultStore(database)
+
+    await expect(store.markStaleRunningSessionsFailed({ heartbeatGraceMs: 0 })).resolves.toBe(1)
+    expect(row.status).toBe('failed')
+    expect(JSON.parse(String(row.executionSnapshotJson))).toMatchObject({ status: 'failed' })
+    expect(row.completedAt).toEqual(expect.any(String))
   })
 })

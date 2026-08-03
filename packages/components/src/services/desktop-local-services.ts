@@ -26,6 +26,8 @@ import type {
   RunbookRecord,
   RunbookResultRecord,
   AgentEvent,
+  RunbookAuthoringProposalDecisionResult,
+  RunbookAuthoringProposalReview,
   AgentSendRequest,
   AgentSessionStatus,
   AgentStartRequest,
@@ -64,6 +66,7 @@ type DesktopLocalBridge = {
         execution: RunbookExecutionRecord
       }) => void,
     ) => () => void
+    onChanged: (callback: () => void) => () => void
   }
   agent: {
     start: (input: AgentStartRequest) => Promise<{ sessionId: string }>
@@ -71,6 +74,28 @@ type DesktopLocalBridge = {
     cancel: (sessionId: string) => Promise<void>
     getStatus: (sessionId: string) => Promise<AgentSessionStatus | null>
     getSnapshot: (sessionId: string) => Promise<AgentThreadSnapshot | null>
+    listRunbookAuthoringProposals: (input: {
+      sessionId?: string
+      incidentThreadId?: string
+    }) => Promise<RunbookAuthoringProposalReview[]>
+    approveRunbookAuthoringProposal: (input: {
+      sessionId?: string
+      incidentThreadId?: string
+      proposalId: string
+      approvedOperationIds?: string[]
+    }) => Promise<RunbookAuthoringProposalDecisionResult>
+    rejectRunbookAuthoringProposal: (input: {
+      sessionId?: string
+      incidentThreadId?: string
+      proposalId: string
+      reason?: string
+    }) => Promise<RunbookAuthoringProposalDecisionResult>
+    requestRunbookAuthoringRevision: (input: {
+      sessionId?: string
+      incidentThreadId?: string
+      proposalId: string
+      requestedEdit: string
+    }) => Promise<RunbookAuthoringProposalDecisionResult>
     onEvent: (
       handler: (data: {
         sessionId: string
@@ -603,6 +628,9 @@ export function createDesktopLocalBitsentryServices({
       ): () => void {
         return getDesktopBridge().runbooks.onExecutionEvent(handler)
       },
+      onChanged(handler: () => void): () => void {
+        return getDesktopBridge().runbooks.onChanged(handler)
+      },
     },
 
     agent: {
@@ -611,6 +639,28 @@ export function createDesktopLocalBitsentryServices({
       cancel: (sessionId: string) => getDesktopBridge().agent.cancel(sessionId),
       getStatus: (sessionId: string) => getDesktopBridge().agent.getStatus(sessionId),
       getSnapshot: (sessionId: string) => getDesktopBridge().agent.getSnapshot(sessionId),
+      listRunbookAuthoringProposals: (input: {
+        sessionId?: string
+        incidentThreadId?: string
+      }) => getDesktopBridge().agent.listRunbookAuthoringProposals(input),
+      approveRunbookAuthoringProposal: (input: {
+        sessionId?: string
+        incidentThreadId?: string
+        proposalId: string
+        approvedOperationIds?: string[]
+      }) => getDesktopBridge().agent.approveRunbookAuthoringProposal(input),
+      rejectRunbookAuthoringProposal: (input: {
+        sessionId?: string
+        incidentThreadId?: string
+        proposalId: string
+        reason?: string
+      }) => getDesktopBridge().agent.rejectRunbookAuthoringProposal(input),
+      requestRunbookAuthoringRevision: (input: {
+        sessionId?: string
+        incidentThreadId?: string
+        proposalId: string
+        requestedEdit: string
+      }) => getDesktopBridge().agent.requestRunbookAuthoringRevision(input),
       onEvent: (
         handler: (data: {
           sessionId: string

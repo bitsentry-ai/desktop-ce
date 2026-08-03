@@ -15,7 +15,9 @@ import {
   DEFAULT_ACCESS_LEVEL,
 } from './composer.js'
 import { terminateSubprocess } from './subprocess-lifecycle.js'
-import type { HostMcpEndpoint } from './host-mcp-server.service.js'
+import { HOST_MCP_SERVER_NAME, type HostMcpEndpoint } from './host-mcp-server.service.js'
+import { getHostTools } from '@bitsentry-ce/core/features/agent-runtime'
+import { prependRunbookOnlyScope } from './runbook-only-scope.js'
 
 export interface OpenCodeDebugRecorder {
   recordEvent(stage: string, data: Record<string, unknown>): void
@@ -123,7 +125,7 @@ function stringField(record: Record<string, unknown> | undefined, field: string)
   return record[field]
 }
 
-function createOpenCodePermissionEnv(accessLevel: AccessLevel): Record<string, string> {
+export function createOpenCodePermissionEnv(accessLevel: AccessLevel): Record<string, string> {
   if (accessLevel === 'full-access') {
     return {}
   }
@@ -148,9 +150,20 @@ function createOpenCodePermissionEnv(accessLevel: AccessLevel): Record<string, s
   }
 }
 
-function buildOpenCodePrompt(prompt: string, accessLevel: AccessLevel): string {
+export function getOpenCodeHostToolPermissions(): Record<string, 'allow'> {
+  return Object.fromEntries(
+    getHostTools().map((tool) => [`${HOST_MCP_SERVER_NAME}_${tool.name}`, 'allow'] as const),
+  )
+}
+
+function buildOpenCodePrompt(
+  prompt: string,
+  accessLevel: AccessLevel,
+  hasRunbookTools: boolean,
+): string {
+  const scopedPrompt = hasRunbookTools ? prependRunbookOnlyScope(prompt) : prompt
   if (accessLevel === 'full-access') {
-    return prompt
+    return scopedPrompt
   }
 
   const guardrails = [
@@ -158,7 +171,10 @@ function buildOpenCodePrompt(prompt: string, accessLevel: AccessLevel): string {
     'Do not run shell commands, browse the web, or access external directories.',
     'Use only safe local read/edit style capabilities if the provider permits them.',
   ]
-  return [...guardrails, '', prompt].join('\n')
+  if (hasRunbookTools) {
+    guardrails.push('This direct-tool restriction does not prevent you from proposing operator-reviewed runbooks that contain shell or local-software actions.')
+  }
+  return [...guardrails, '', scopedPrompt].join('\n')
 }
 
 function getOpenCodeVariant(traitValues?: Record<string, string | boolean>): string | undefined {
@@ -505,7 +521,7 @@ function buildOpenCodeArgs(
     args.push('--dangerously-skip-permissions')
   }
 
-  args.push(buildOpenCodePrompt(options.prompt, accessLevel))
+  args.push(buildOpenCodePrompt(options.prompt, accessLevel, options.mcpEndpoint !== undefined))
   return args
 }
 
@@ -562,21 +578,34 @@ function createOpenCodeProcess(
   return child
 }
 
-async function createOpenCodeMcpConfig(endpoint: HostMcpEndpoint | undefined): Promise<{
+async function createOpenCodeMcpConfig(
+  endpoint: HostMcpEndpoint | undefined,
+  accessLevel: AccessLevel,
+): Promise<{
   directory: string
   path: string
 } | undefined> {
   if (endpoint === undefined) return undefined
   const directory = await mkdtemp(path.join(os.tmpdir(), 'bitsentry-opencode-mcp-'))
   const configPath = path.join(directory, 'opencode.json')
+  const hostToolPermissions = getOpenCodeHostToolPermissions()
+  log.info('[opencode-provider] configured host tool permissions', {
+    agentSessionId: endpoint.agentSessionId,
+    accessLevel,
+    toolNames: Object.keys(hostToolPermissions).map((name) => name.slice(`${HOST_MCP_SERVER_NAME}_`.length)),
+  })
   await writeFile(configPath, JSON.stringify({
     mcp: {
-      bitsentry: {
+      [HOST_MCP_SERVER_NAME]: {
         type: 'local',
         command: [endpoint.command, ...endpoint.args],
         environment: endpoint.env,
       },
     },
+    // OpenCode applies permission rules to MCP tools by their server-prefixed
+    // names. Keep the provider's built-in restrictions in place while letting
+    // the scoped, host-validated BitSentry tools run deterministically.
+    permission: hostToolPermissions,
   }), 'utf8')
   return { directory, path: configPath }
 }
@@ -740,7 +769,7 @@ export async function executeOpenCode(
   const accessLevel = normalizeAccessLevel(options.accessLevel ?? DEFAULT_ACCESS_LEVEL)
   const config = options.mcpEndpoint === undefined
     ? undefined
-    : await createOpenCodeMcpConfig(options.mcpEndpoint)
+    : await createOpenCodeMcpConfig(options.mcpEndpoint, accessLevel)
   const child = createOpenCodeProcess(options, cwd, accessLevel, config?.path)
   const state = createOpenCodeExecutionState()
   const appendOutput = createAppendOpenCodeOutput(state, options)

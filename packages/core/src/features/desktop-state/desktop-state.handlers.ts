@@ -50,6 +50,7 @@ export interface DesktopStateDatabase {
     & DesktopStateDeleteManyTable
     & DesktopStateCreateTable
     & DesktopStateFindManyTable
+    & DesktopStateUpsertTable
   runbookAction: DesktopStateDeleteManyTable & DesktopStateCreateTable & DesktopStateFindManyTable
   runbookVersion: DesktopStateDeleteManyTable
   investigationSession:
@@ -228,6 +229,21 @@ function asIsoString(value: unknown): string {
 function asNullableIsoString(value: unknown): string | undefined {
   if (value == null || value === '') return undefined
   return asIsoString(value)
+}
+
+function parseTimestamp(value: unknown): number | undefined {
+  if (value instanceof Date) return value.getTime()
+  if (typeof value !== 'string') return undefined
+
+  const timestamp = Date.parse(value)
+  return Number.isNaN(timestamp) ? undefined : timestamp
+}
+
+function isAtLeastAsRecent(existing: unknown, incoming: unknown): boolean {
+  const existingTimestamp = parseTimestamp(existing)
+  const incomingTimestamp = parseTimestamp(incoming)
+  return existingTimestamp !== undefined && incomingTimestamp !== undefined
+    && existingTimestamp >= incomingTimestamp
 }
 
 function safeJsonParse<T>(value: unknown, fallback: T): T {
@@ -1005,7 +1021,7 @@ class DesktopStateStore {
   ): Promise<void> {
     if (hasImportPayload(incidents, runbooks, results, incidentMessages, resultTraces)) {
       await this.replaceIncidents(incidents, incidentMessages)
-      await this.replaceRunbooks(runbooks)
+      await this.replaceRunbooksForLegacyImport(runbooks)
       const existingInvestigationCount = await this.db.investigationSession.count({})
       if (existingInvestigationCount === 0 && hasResultPayload(results, resultTraces)) {
         await this.replaceResults(results, resultTraces)
@@ -1034,7 +1050,7 @@ class DesktopStateStore {
     }
 
     if (existingRunbookCount === 0 && runbooks.length > 0) {
-      await this.replaceRunbooks(runbooks)
+      await this.replaceRunbooksForLegacyImport(runbooks)
     }
 
     if (existingInvestigationCount === 0 && hasResultPayload(results, resultTraces)) {
@@ -1088,7 +1104,7 @@ class DesktopStateStore {
 
   async syncRunbooks(payload: DesktopStatePayload): Promise<{ ok: true; count: number }> {
     const runbooks = normalizeRunbooksList(payload.runbooks)
-    await this.replaceRunbooks(runbooks)
+    await this.mergeRunbooksFromRenderer(runbooks)
     return { ok: true, count: runbooks.length }
   }
 
@@ -1120,6 +1136,18 @@ class DesktopStateStore {
     incidents: IncidentThreadRecord[],
     incidentMessages: Record<string, ChatMessage[]>,
   ): Promise<void> {
+    /**
+     * Incident threads and messages are renderer-owned. Every persistent
+     * write currently arrives through a renderer snapshot: the explicit
+     * replacement IPC, its compatibility sync alias, or legacy localStorage
+     * bootstrap. The agent runtime and runbook execution service only retain
+     * incidentThreadId on their own records.
+     *
+     * This wholesale replacement is safe only while that ownership remains
+     * true. If a main-process feature starts writing either incident table,
+     * change periodic synchronization to a non-destructive merge like
+     * mergeRunbooksFromRenderer and reserve full replacement for import.
+     */
     await this.ensureIncidentThreadSessionIdColumn()
     await this.db.incidentMessage.deleteMany({})
     await this.db.incidentThread.deleteMany({})
@@ -1175,13 +1203,62 @@ class DesktopStateStore {
     }
   }
 
-  private async replaceRunbooks(runbooks: RunbookRecord[]): Promise<void> {
+  /**
+   * Legacy localStorage bootstrap is the sole caller allowed to replace the
+   * entire runbook collection. Periodic renderer synchronization must merge
+   * so a stale snapshot cannot erase main-process writes.
+   */
+  private async replaceRunbooksForLegacyImport(runbooks: RunbookRecord[]): Promise<void> {
     await this.db.runbookAction.deleteMany({})
     await this.db.runbookVersion.deleteMany({})
     await this.db.runbook.deleteMany({})
 
     for (const runbook of runbooks) {
       await this.replaceRunbook(runbook)
+    }
+  }
+
+  private async mergeRunbooksFromRenderer(runbooks: RunbookRecord[]): Promise<void> {
+    for (const runbook of runbooks) {
+      const matchingRunbooks = await this.db.runbook.findMany({
+        where: { id: runbook.id },
+      })
+      const existingRunbook = matchingRunbooks[0]
+
+      // Explicit deletion creates a tombstone. A stale renderer snapshot must
+      // never recreate that row, even if it is newer than the deletion.
+      if (existingRunbook?.deletedAt != null) {
+        continue
+      }
+
+      if (existingRunbook !== undefined && isAtLeastAsRecent(
+        existingRunbook.updatedAt,
+        runbook.updatedAt,
+      )) {
+        continue
+      }
+
+      const data = {
+        id: runbook.id,
+        title: runbook.title,
+        description: runbook.description,
+        idleTimeout: runbook.idleTimeout ?? null,
+        revisionNumber: runbook.revisionNumber,
+        createdAt: runbook.createdAt,
+        updatedAt: runbook.updatedAt,
+      }
+      await this.db.runbook.upsert({
+        where: { id: runbook.id },
+        update: data,
+        create: data,
+      })
+
+      await this.db.runbookAction.deleteMany({
+        where: { runbookId: runbook.id },
+      })
+      for (let index = 0; index < runbook.actions.length; index += 1) {
+        await this.replaceRunbookAction(runbook, runbook.actions[index], index)
+      }
     }
   }
 
@@ -1366,7 +1443,10 @@ class DesktopStateStore {
       await Promise.all([
         this.db.incidentThread.findMany({ orderBy: { createdAt: 'desc' } }),
         this.db.incidentMessage.findMany({ orderBy: { sortOrder: 'asc' } }),
-        this.db.runbook.findMany({ orderBy: { createdAt: 'desc' } }),
+        this.db.runbook.findMany({
+          where: { deletedAt: null },
+          orderBy: { createdAt: 'desc' },
+        }),
         this.db.runbookAction.findMany({ orderBy: { sortOrder: 'asc' } }),
         this.db.investigationSession.findMany({ orderBy: { startedAt: 'desc' } }),
         this.db.investigationTraceEntry.findMany({}),

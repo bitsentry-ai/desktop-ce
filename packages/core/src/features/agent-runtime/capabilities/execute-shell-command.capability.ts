@@ -7,6 +7,7 @@ import {
   OrchestrationError,
   runOrchestratedOperation,
 } from '../shared/effect-orchestration'
+import { terminateLocalProcessTree } from '../shared/local-process'
 
 const CLI_WRAPPER_NODE_PATH_ENV = 'BITSENTRY_CLI_WRAPPER_NODE_PATH'
 const log = console
@@ -54,10 +55,10 @@ function createChildEnv(): NodeJS.ProcessEnv {
     childEnv.NODE_PATH === wrapperNodePath
   ) {
     const { NODE_PATH: _nodePath, ...withoutNodePath } = childEnv
-    return withoutNodePath
+    return { ...withoutNodePath, CI: '1' }
   }
 
-  return childEnv
+  return { ...childEnv, CI: '1' }
 }
 
 function trimToLimit(value: string, maxOutputBytes: number): string {
@@ -82,10 +83,10 @@ function terminateChildProcess(
   }
 
   state.forcedTermination = true
-  child.kill('SIGTERM')
+  terminateLocalProcessTree(child, 'SIGTERM')
   state.terminationTimer = setTimeout(() => {
     if (!state.childExited && child.exitCode === null && child.signalCode === null) {
-      child.kill('SIGKILL')
+      terminateLocalProcessTree(child, 'SIGKILL')
     }
   }, 2000)
 }
@@ -187,6 +188,9 @@ async function executeShellCommand(
   const child = spawn(input.command, {
     shell: true,
     env: childEnv,
+    // A new POSIX session keeps /dev/tty prompts from attaching to the
+    // desktop process terminal. Windows retains direct-child semantics.
+    detached: process.platform !== 'win32',
     windowsHide: true,
     stdio: ['ignore', 'pipe', 'pipe'],
   })
