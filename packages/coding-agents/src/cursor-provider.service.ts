@@ -411,21 +411,24 @@ export function chooseCursorPermissionResponse(
 
 function summarizeCursorPermissionRequest(requestParams: unknown): Record<string, unknown> {
   const toolCall = asRecord(asRecord(requestParams)?.toolCall)
-  const identities = toolCall === undefined
-    ? []
-    : toolIdentityRecords(toolCall).map((record) => Object.fromEntries(
-      [...HOST_TOOL_IDENTITY_FIELDS, ...MCP_SERVER_IDENTITY_FIELDS]
-        .flatMap((field) => {
-          const value = mcpServerNameFromIdentity(record[field])
-          return value === undefined ? [] : [[field, value.slice(0, 120)]]
-        }),
-    ))
   return {
     toolCallKeys: toolCall === undefined ? [] : Object.keys(toolCall).sort(),
-    identityFields: identities,
+    identityFields: summarizeToolIdentities(toolCall),
     title: asString(toolCall?.title)?.slice(0, 120) ?? null,
     firstContentEntryShape: summarizeFirstContentEntry(toolCall?.content),
   }
+}
+
+function summarizeToolIdentities(toolCall: Record<string, unknown> | undefined): Record<string, string>[] {
+  if (toolCall === undefined) return []
+
+  return toolIdentityRecords(toolCall).map((record) => Object.fromEntries(
+    [...HOST_TOOL_IDENTITY_FIELDS, ...MCP_SERVER_IDENTITY_FIELDS]
+      .flatMap((field) => {
+        const value = mcpServerNameFromIdentity(record[field])
+        return value === undefined ? [] : [[field, value.slice(0, 120)]]
+      }),
+  ))
 }
 
 function summarizeFirstContentEntry(content: unknown): Record<string, unknown> | null {
@@ -973,6 +976,37 @@ function toCursorMcpServers(endpoint: HostMcpEndpoint | undefined): unknown[] {
   }]
 }
 
+function collectMcpServerNamesFromList(servers: unknown[], names: Set<string>): void {
+  for (const server of servers) {
+    const serverRecord = asRecord(server)
+    const name = asString(serverRecord?.name) ?? asString(serverRecord?.id)
+    if (name !== undefined) names.add(name)
+  }
+}
+
+function collectMcpServerNamesFromMap(servers: Record<string, unknown>, names: Set<string>): void {
+  for (const name of Object.keys(servers)) {
+    if (name !== '') names.add(name)
+  }
+}
+
+function collectMcpServerNamesFromRecord(record: Record<string, unknown>, names: Set<string>): void {
+  for (const key of ['mcpServers', 'mcp_servers']) {
+    const servers = record[key]
+    if (Array.isArray(servers)) {
+      collectMcpServerNamesFromList(servers, names)
+    } else if (servers !== null && typeof servers === 'object') {
+      collectMcpServerNamesFromMap(servers as Record<string, unknown>, names)
+    }
+  }
+}
+
+function collectNestedMcpServerNames(record: Record<string, unknown>, names: Set<string>, depth: number): void {
+  for (const nested of Object.values(record)) {
+    collectReportedCursorMcpServerNames(nested, names, depth + 1)
+  }
+}
+
 function collectReportedCursorMcpServerNames(
   value: unknown,
   names: Set<string>,
@@ -988,24 +1022,8 @@ function collectReportedCursorMcpServerNames(
   }
 
   const record = value as Record<string, unknown>
-  for (const key of ['mcpServers', 'mcp_servers']) {
-    const servers = record[key]
-    if (Array.isArray(servers)) {
-      for (const server of servers) {
-        const serverRecord = asRecord(server)
-        const name = asString(serverRecord?.name) ?? asString(serverRecord?.id)
-        if (name !== undefined) names.add(name)
-      }
-    } else if (servers !== null && typeof servers === 'object') {
-      for (const name of Object.keys(servers as Record<string, unknown>)) {
-        if (name !== '') names.add(name)
-      }
-    }
-  }
-
-  for (const nested of Object.values(record)) {
-    collectReportedCursorMcpServerNames(nested, names, depth + 1)
-  }
+  collectMcpServerNamesFromRecord(record, names)
+  collectNestedMcpServerNames(record, names, depth)
 }
 
 function logAdditionalCursorMcpServers(sessionResult: unknown, sessionId: string): void {

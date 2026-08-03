@@ -211,7 +211,11 @@ function createClientId(): string {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
     return crypto.randomUUID()
   }
-  return `${String(Date.now())}-${Math.random().toString(36).slice(2)}`
+  if (typeof crypto === 'undefined' || typeof crypto.getRandomValues !== 'function') {
+    throw new Error('Secure random values are required to create a desktop client id')
+  }
+  const values = crypto.getRandomValues(new Uint32Array(2))
+  return `${values[0].toString(36)}-${values[1].toString(36)}`
 }
 
 function readLocalRunbookResults(): RunbookResultRecord[] {

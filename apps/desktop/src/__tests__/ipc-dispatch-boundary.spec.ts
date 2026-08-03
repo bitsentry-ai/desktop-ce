@@ -63,8 +63,8 @@ describe('desktop IPC dispatch boundary', () => {
         trustScope: 'runbooks-export',
       },
     ],
-    ['runbooks:exportToFile', { ids: ['runbook-1'], filePath: '/tmp/runbooks.json' }],
-    ['runbooks:importFromFile', { filePath: '/tmp/runbooks.json', options: {} }],
+    ['runbooks:exportToFile', { ids: ['runbook-1'], filePath: '/tmp/runbooks.json' }], // eslint-disable-line sonarjs/publicly-writable-directories -- Validated mock payload only; no file is opened.
+    ['runbooks:importFromFile', { filePath: '/tmp/runbooks.json', options: {} }], // eslint-disable-line sonarjs/publicly-writable-directories -- Validated mock payload only; no file is opened.
     ['runbooks:cancelExecution', { executionId: '11111111-1111-4111-8111-111111111111' }],
   ] as const)(
     'passes only validated %s payloads to its high-risk handler',

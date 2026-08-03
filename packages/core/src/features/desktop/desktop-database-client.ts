@@ -1608,7 +1608,7 @@ export class DbClient {
     if (dateColumnsByModel[model].has('updatedAt') && output.updatedAt === undefined) {
       output.updatedAt = new Date().toISOString()
     }
-    return output
+    return { ...output }
   }
 
   private toDbFieldValue(model: ModelName, field: string, value: unknown): unknown {
@@ -1682,7 +1682,7 @@ export class DbClient {
       return output
     }
 
-    return output
+    return { ...output }
   }
 
   private async applyUserInclude(

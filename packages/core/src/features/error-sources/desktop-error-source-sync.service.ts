@@ -172,36 +172,36 @@ function optionalJson(
   return JSON.stringify(value);
 }
 
+function addIssueTag(output: Record<string, unknown>, tag: unknown): void {
+  if (Array.isArray(tag) && tag.length >= 2) {
+    const key = readOptionalString(tag[0]);
+    if (key !== null) output[key] = tag[1];
+    return;
+  }
+  const tagRecord = readRecord(tag);
+  if (tagRecord === null) return;
+  const key = readOptionalString(tagRecord.key);
+  if (key !== null) output[key] = tagRecord.value;
+}
+
+function addIssueTagRecord(output: Record<string, unknown>, tags: unknown): void {
+  const tagsRecord = readRecord(tags);
+  if (tagsRecord === null) return;
+  for (const [key, value] of Object.entries(tagsRecord)) {
+    const normalizedKey = key.trim();
+    if (normalizedKey.length > 0) output[normalizedKey] = value;
+  }
+}
+
 function parseIssueTags(tags: unknown): Record<string, unknown> {
   const output: Record<string, unknown> = {};
 
   if (Array.isArray(tags)) {
-    for (const tag of tags) {
-      if (Array.isArray(tag) && tag.length >= 2) {
-        const key = readOptionalString(tag[0]);
-        if (key === null) continue;
-        output[key] = tag[1];
-        continue;
-      }
-
-      const tagRecord = readRecord(tag);
-      if (tagRecord === null) continue;
-
-      const key = readOptionalString(tagRecord.key);
-      if (key === null) continue;
-      output[key] = tagRecord.value;
-    }
+    for (const tag of tags) addIssueTag(output, tag);
     return output;
   }
 
-  const tagsRecord = readRecord(tags);
-  if (tagsRecord !== null) {
-    for (const [key, value] of Object.entries(tagsRecord)) {
-      const normalizedKey = key.trim();
-      if (normalizedKey.length === 0) continue;
-      output[normalizedKey] = value;
-    }
-  }
+  addIssueTagRecord(output, tags);
 
   return output;
 }
@@ -1296,8 +1296,46 @@ export class ErrorSourceSyncService {
       eventPageCount < MAX_GENERIC_PLUGIN_EVENT_PAGES_PER_ISSUE
     ) {
       eventPageCount += 1;
-      const eventPageStartMs = Date.now();
-      const eventResult = await this.pluginRuntime.executeAction({
+      const eventPage = await this.listCustomPluginIssueEventsPage(
+        args,
+        eventCursor,
+        eventPageCount,
+      );
+      eventsHasMore = eventPage.hasMore && eventPage.events.length > 0;
+      eventCursor = eventPage.nextCursor;
+      syncedEvents = await this.syncCustomPluginEventPage(args, eventPage.events, syncedEvents);
+
+      if (
+        eventPage.nextCursor === undefined &&
+        eventPage.events.length < MAX_GENERIC_PLUGIN_ISSUES_PER_PAGE
+      ) {
+        eventsHasMore = false;
+      }
+    }
+
+    if (eventsHasMore) {
+      throw new Error(
+        `Plugin sync reached the ${String(MAX_GENERIC_PLUGIN_EVENT_PAGES_PER_ISSUE)} event page limit before all events were fetched.`,
+      );
+    }
+
+    return syncedEvents;
+  }
+
+  private async listCustomPluginIssueEventsPage(
+    args: {
+      source: ErrorSource;
+      pluginId: string;
+      auth: Record<string, unknown>;
+      issueContext: CustomPluginIssueContext;
+      since: string | undefined;
+      until: string;
+    },
+    cursor: string | undefined,
+    pageCount: number,
+  ) {
+    const eventPageStartMs = Date.now();
+    const eventResult = await this.pluginRuntime.executeAction({
         pluginId: args.pluginId,
         actionId: resolveErrorSourceProviderActionId({
           runtime: this.pluginRuntime,
@@ -1315,58 +1353,43 @@ export class ErrorSourceSyncService {
             until: args.until,
           }),
           issueId: args.issueContext.externalIssueId,
-          cursor: eventCursor,
+          cursor,
         },
-      });
-      if (!eventResult.ok) {
-        throw new Error(
-          `Plugin "${args.pluginId}" failed to list issue events for source sync: ${eventResult.summary}`,
-        );
-      }
-
-      const eventPage = readPluginEventBatch(eventResult.data);
-      if (eventPage === null) {
-        throw new Error(
-          `Plugin "${args.pluginId}" returned an invalid event batch for source sync`,
-        );
-      }
-
-      eventsHasMore = eventPage.hasMore && eventPage.events.length > 0;
-      eventCursor = eventPage.nextCursor;
-      log.info(
-        `[sync] id=${args.source.id} pluginListIssueEvents issue=${args.issueContext.externalIssueId} page=${String(eventPageCount)} returned=${String(eventPage.events.length)} hasMore=${String(eventsHasMore)} elapsedMs=${formatElapsedMs(eventPageStartMs)}`,
-      );
-
-      for (const eventRecord of eventPage.events) {
-        const didSync = await this.upsertListedCustomPluginEvent({
-          source: args.source,
-          issue: args.issueContext.issue,
-          eventRecord,
-          externalIssueId: args.issueContext.externalIssueId,
-          title: args.issueContext.title,
-          lastSeen: args.issueContext.lastSeen,
-          syncedEvents,
-        });
-        if (didSync) {
-          syncedEvents += 1;
-        }
-      }
-
-      if (
-        eventPage.nextCursor === undefined &&
-        eventPage.events.length < MAX_GENERIC_PLUGIN_ISSUES_PER_PAGE
-      ) {
-        eventsHasMore = false;
-      }
-    }
-
-    if (eventsHasMore) {
+    });
+    if (!eventResult.ok) {
       throw new Error(
-        `Plugin sync reached the ${String(MAX_GENERIC_PLUGIN_EVENT_PAGES_PER_ISSUE)} event page limit before all events were fetched.`,
+        `Plugin "${args.pluginId}" failed to list issue events for source sync: ${eventResult.summary}`,
       );
     }
+    const eventPage = readPluginEventBatch(eventResult.data);
+    if (eventPage === null) {
+      throw new Error(`Plugin "${args.pluginId}" returned an invalid event batch for source sync`);
+    }
+    log.info(
+      `[sync] id=${args.source.id} pluginListIssueEvents issue=${args.issueContext.externalIssueId} page=${String(pageCount)} returned=${String(eventPage.events.length)} hasMore=${String(eventPage.hasMore && eventPage.events.length > 0)} elapsedMs=${formatElapsedMs(eventPageStartMs)}`,
+    );
+    return eventPage;
+  }
 
-    return syncedEvents;
+  private async syncCustomPluginEventPage(
+    args: { source: ErrorSource; issueContext: CustomPluginIssueContext },
+    eventRecords: ExternalPayloadRecord[],
+    syncedEvents: number,
+  ): Promise<number> {
+    let nextSyncedEvents = syncedEvents;
+    for (const eventRecord of eventRecords) {
+      const didSync = await this.upsertListedCustomPluginEvent({
+        source: args.source,
+        issue: args.issueContext.issue,
+        eventRecord,
+        externalIssueId: args.issueContext.externalIssueId,
+        title: args.issueContext.title,
+        lastSeen: args.issueContext.lastSeen,
+        syncedEvents: nextSyncedEvents,
+      });
+      if (didSync) nextSyncedEvents += 1;
+    }
+    return nextSyncedEvents;
   }
 
   private async upsertSyntheticCustomPluginEvent(

@@ -181,7 +181,21 @@ function getCacheControl(fileName: string, objectKey: string): string {
 }
 
 function normalizePrefix(prefix: string): string {
-  return prefix.replace(/^\/+|\/+$/g, "");
+  return trimSlashes(prefix);
+}
+
+function trimSlashes(value: string): string {
+  let start = 0;
+  let end = value.length;
+  while (value[start] === "/") start += 1;
+  while (end > start && value[end - 1] === "/") end -= 1;
+  return value.slice(start, end);
+}
+
+function trimTrailingSlashes(value: string): string {
+  let end = value.length;
+  while (end > 0 && value[end - 1] === "/") end -= 1;
+  return value.slice(0, end);
 }
 
 function buildPublicUrl(baseUrl: string | undefined, key: string): string | null {
@@ -189,7 +203,7 @@ function buildPublicUrl(baseUrl: string | undefined, key: string): string | null
     return null;
   }
 
-  return `${baseUrl.replace(/\/+$/g, "")}/${key}`;
+  return `${trimTrailingSlashes(baseUrl)}/${key}`;
 }
 
 function readR2Env(): RequiredR2Env {

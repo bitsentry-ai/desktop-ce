@@ -136,10 +136,9 @@ export interface LocalAiProviderPort {
 type LocalAiAccessLevel = Parameters<LocalAiProviderPort['execute']>[6]
 
 function resolveAgentLocalAiAccessLevel(
-  providerKey: LocalAiProviderKey,
+  _providerKey: LocalAiProviderKey,
   accessLevel: LocalAiAccessLevel,
 ): LocalAiAccessLevel {
-  void providerKey
   return accessLevel ?? 'auto-accept-edits'
 }
 
@@ -458,6 +457,39 @@ interface OpenAiStreamingToolCallFragment {
   id?: string
   name?: string
   argumentsText: string
+}
+
+type OpenAiStreamingDelta = {
+  content?: string | null
+  tool_calls?: Array<{
+    index?: number
+    id?: string
+    function?: {
+      name?: string
+      arguments?: string
+    }
+  }>
+}
+
+type OpenAiStreamingChunk = {
+  choices?: Array<{ delta?: OpenAiStreamingDelta }>
+  usage?: { prompt_tokens?: number; completion_tokens?: number }
+}
+
+type OpenAiCompletionPayload = {
+  choices?: Array<{
+    message?: {
+      content?: string | null
+      tool_calls?: Array<{
+        id: string
+        function: {
+          name: string
+          arguments: string
+        }
+      }>
+    }
+  }>
+  usage?: { prompt_tokens?: number; completion_tokens?: number }
 }
 
 function hasEventStreamContentType(response: Response): boolean {
@@ -1004,112 +1036,86 @@ export class AgentLlmAdapterService {
     }
 
     if (response.body !== null && hasEventStreamContentType(response)) {
-      let content = ''
-      let tokenUsage: ChatResponse['tokenUsage']
-      const toolCallsByIndex = new Map<number, OpenAiStreamingToolCallFragment>()
-
-      for await (const event of iterateSseEvents(response.body)) {
-        if (event.data === '[DONE]') {
-          break
-        }
-
-        let chunk: {
-          choices?: Array<{
-            delta?: {
-              content?: string | null
-              tool_calls?: Array<{
-                index?: number
-                id?: string
-                function?: {
-                  name?: string
-                  arguments?: string
-                }
-              }>
-            }
-          }>
-          usage?: { prompt_tokens?: number; completion_tokens?: number }
-        }
-
-        try {
-          chunk = JSON.parse(event.data) as typeof chunk
-        } catch {
-          continue
-        }
-
-        const usage = chunk.usage
-        if (usage?.prompt_tokens != null) {
-          tokenUsage = {
-            inputTokens: usage.prompt_tokens,
-            outputTokens: usage.completion_tokens ?? 0,
-          }
-        }
-
-        for (const choice of chunk.choices ?? []) {
-          const delta = choice.delta
-          const deltaContent = delta?.content
-          if (deltaContent !== undefined && deltaContent !== null && deltaContent.length > 0) {
-            content += deltaContent
-            onDelta?.({
-              type: 'text',
-              text: deltaContent,
-            })
-          }
-
-          for (const partialToolCall of delta?.tool_calls ?? []) {
-            const index = partialToolCall.index ?? 0
-            const existing = toolCallsByIndex.get(index) ?? { argumentsText: '' }
-            if (partialToolCall.id !== undefined && partialToolCall.id.length > 0) {
-              existing.id = partialToolCall.id
-            }
-            if (partialToolCall.function?.name !== undefined && partialToolCall.function.name.length > 0) {
-              existing.name = partialToolCall.function.name
-            }
-            if (partialToolCall.function?.arguments !== undefined && partialToolCall.function.arguments.length > 0) {
-              existing.argumentsText += partialToolCall.function.arguments
-            }
-            toolCallsByIndex.set(index, existing)
-          }
-        }
-      }
-
-      const toolCalls = [...toolCallsByIndex.entries()]
-        .sort(([leftIndex], [rightIndex]) => leftIndex - rightIndex)
-        .map(([index, toolCall]) => {
-          if (toolCall.name === undefined || toolCall.name.length === 0) {
-            return null
-          }
-
-          return createNativeToolCall({
-            id: toolCall.id ?? `openai_${String(Date.now())}_${String(index)}`,
-            name: toolCall.name,
-            args: parseJsonObject(toolCall.argumentsText, `OpenAI tool arguments for ${toolCall.name}`),
-          }, 'OpenAI')
-        })
-        .filter((toolCall): toolCall is ToolCall => toolCall != null)
-
-      return {
-        content,
-        toolCalls,
-        toolProtocol: 'native_function_calling',
-        tokenUsage,
-      }
+      return this.readOpenAiStreamingResponse(response.body, onDelta)
     }
 
-    const data = await response.json() as {
-      choices?: Array<{
-        message?: {
-          content?: string | null
-          tool_calls?: Array<{
-            id: string
-            function: {
-              name: string
-              arguments: string
-            }
-          }>
-        }
-      }>
-      usage?: { prompt_tokens?: number; completion_tokens?: number }
+    return this.readOpenAiCompletionResponse(response)
+  }
+
+  private async readOpenAiStreamingResponse(body: ReadableStream<Uint8Array>, onDelta: OnDelta | undefined): Promise<ChatResponse> {
+    const state: {
+      content: string
+      tokenUsage: ChatResponse['tokenUsage']
+      toolCallsByIndex: Map<number, OpenAiStreamingToolCallFragment>
+    } = { content: '', tokenUsage: undefined, toolCallsByIndex: new Map() }
+    for await (const event of iterateSseEvents(body)) {
+      if (event.data === '[DONE]') break
+      this.applyOpenAiStreamEvent(event, state, onDelta)
     }
+    return {
+      content: state.content,
+      toolCalls: this.buildOpenAiStreamingToolCalls(state.toolCallsByIndex),
+      toolProtocol: 'native_function_calling',
+      tokenUsage: state.tokenUsage,
+    }
+  }
+
+  private applyOpenAiStreamEvent(
+    event: SseEvent,
+    state: { content: string; tokenUsage: ChatResponse['tokenUsage']; toolCallsByIndex: Map<number, OpenAiStreamingToolCallFragment> },
+    onDelta: OnDelta | undefined,
+  ): void {
+    let chunk: OpenAiStreamingChunk
+    try {
+      chunk = JSON.parse(event.data) as OpenAiStreamingChunk
+    } catch {
+      return
+    }
+    const usage = chunk.usage
+    if (usage?.prompt_tokens != null) {
+      state.tokenUsage = { inputTokens: usage.prompt_tokens, outputTokens: usage.completion_tokens ?? 0 }
+    }
+    for (const choice of chunk.choices ?? []) {
+      this.applyOpenAiStreamDelta(choice.delta, state, onDelta)
+    }
+  }
+
+  private applyOpenAiStreamDelta(
+    delta: OpenAiStreamingDelta | undefined,
+    state: { content: string; toolCallsByIndex: Map<number, OpenAiStreamingToolCallFragment> },
+    onDelta: OnDelta | undefined,
+  ): void {
+    const deltaContent = delta?.content
+    if (deltaContent !== undefined && deltaContent !== null && deltaContent.length > 0) {
+      state.content += deltaContent
+      onDelta?.({ type: 'text', text: deltaContent })
+    }
+    for (const partialToolCall of delta?.tool_calls ?? []) {
+      const index = partialToolCall.index ?? 0
+      const existing = state.toolCallsByIndex.get(index) ?? { argumentsText: '' }
+      if (partialToolCall.id !== undefined && partialToolCall.id.length > 0) existing.id = partialToolCall.id
+      if (partialToolCall.function?.name !== undefined && partialToolCall.function.name.length > 0) existing.name = partialToolCall.function.name
+      if (partialToolCall.function?.arguments !== undefined && partialToolCall.function.arguments.length > 0) existing.argumentsText += partialToolCall.function.arguments
+      state.toolCallsByIndex.set(index, existing)
+    }
+  }
+
+  private buildOpenAiStreamingToolCalls(toolCallsByIndex: Map<number, OpenAiStreamingToolCallFragment>): ToolCall[] {
+    return [...toolCallsByIndex.entries()]
+      .sort(([leftIndex], [rightIndex]) => leftIndex - rightIndex)
+      .flatMap(([index, toolCall]) => {
+        if (toolCall.name === undefined || toolCall.name.length === 0) return []
+        const parsed = createNativeToolCall({
+          id: toolCall.id ?? `openai_${String(Date.now())}_${String(index)}`,
+          name: toolCall.name,
+          args: parseJsonObject(toolCall.argumentsText, `OpenAI tool arguments for ${toolCall.name}`),
+        }, 'OpenAI')
+        return parsed === null ? [] : [parsed]
+      })
+  }
+
+  private async readOpenAiCompletionResponse(response: Response): Promise<ChatResponse> {
+    const data = await response.json() as OpenAiCompletionPayload
 
     const message = data.choices?.[0]?.message
     if (message === undefined) {

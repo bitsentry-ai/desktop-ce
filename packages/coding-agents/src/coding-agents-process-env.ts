@@ -3,14 +3,19 @@ import path from 'path'
 
 const PREFERRED_NODE_MAJOR = 22
 
-const SAFE_CODING_AGENT_ENVIRONMENT_KEY = /^(HOME|USER|LOGNAME|SHELL|PATH|NVM_DIR|LANG|TERM|COLORTERM|TMP|TEMP|TMPDIR|XDG_(CONFIG|CACHE|DATA)_HOME|APPDATA|LOCALAPPDATA|PROGRAMDATA|SYSTEMROOT|COMSPEC|WINDIR)$/i
+const SAFE_CODING_AGENT_ENVIRONMENT_KEYS = new Set([
+  'HOME', 'USER', 'LOGNAME', 'SHELL', 'PATH', 'NVM_DIR', 'LANG', 'TERM',
+  'COLORTERM', 'TMP', 'TEMP', 'TMPDIR', 'XDG_CONFIG_HOME', 'XDG_CACHE_HOME',
+  'XDG_DATA_HOME', 'APPDATA', 'LOCALAPPDATA', 'PROGRAMDATA', 'SYSTEMROOT',
+  'COMSPEC', 'WINDIR',
+])
 
 function createSafeCodingAgentEnvironment(
   baseEnv: NodeJS.ProcessEnv,
 ): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = {}
   for (const [key, value] of Object.entries(baseEnv)) {
-    if (SAFE_CODING_AGENT_ENVIRONMENT_KEY.test(key)) {
+    if (SAFE_CODING_AGENT_ENVIRONMENT_KEYS.has(key.toUpperCase())) {
       env[key] = value
     }
   }

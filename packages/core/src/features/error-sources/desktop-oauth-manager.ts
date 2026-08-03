@@ -90,11 +90,11 @@ const OAUTH_STATE_PREFIX = "errorSources.oauth.";
 const OAUTH_STATE_TTL_MS = 10 * 60 * 1000;
 
 function toBase64Url(input: Buffer): string {
-  return input
+  const encoded = input
     .toString("base64")
     .replace(/\+/g, "-")
-    .replace(/\//g, "_")
-    .replace(/=+$/g, "");
+    .replace(/\//g, "_");
+  return encoded.endsWith("=") ? encoded.replaceAll("=", "") : encoded;
 }
 
 function nowIso(): string {
@@ -176,6 +176,48 @@ function readBaseUrl(input: { baseUrl?: string } | undefined): string | undefine
     return undefined;
   }
   return raw;
+}
+
+function parsePendingOauthState(value: unknown): PendingOauthState {
+  try {
+    return JSON.parse(String(value)) as PendingOauthState;
+  } catch {
+    throw new Error("Corrupted OAuth state payload");
+  }
+}
+
+function validatePendingOauthState(
+  pending: PendingOauthState,
+  sourceType: ErrorSourceType,
+  requestedPluginId: string | undefined,
+): void {
+  if (
+    pending.sourceType !== sourceType ||
+    (pending.pluginId !== undefined && pending.pluginId !== requestedPluginId) ||
+    pending.codeVerifier.length === 0
+  ) {
+    throw new Error("Invalid OAuth state payload");
+  }
+  if (isExpired(pending.createdAt)) {
+    throw new Error("OAuth state expired. Please try again.");
+  }
+}
+
+function resolveOAuthCredentials(
+  sourceType: ErrorSourceType,
+  input: CompleteOAuthInput,
+  config: OAuthProviderConfig,
+): { clientId: string; clientSecret: string; redirectUri: string } {
+  const clientId = input.clientId?.trim() || getRequiredEnv(config.envClientIdName, sourceType);
+  const suppliedSecret = input.clientSecret?.trim() ?? "";
+  const clientSecret = suppliedSecret.length > 0
+    ? suppliedSecret
+    : config.publicClient
+      ? process.env[config.envClientSecretName]?.trim() ?? ""
+      : getRequiredEnv(config.envClientSecretName, sourceType);
+  const redirectUri = input.redirectUri?.trim() ||
+    process.env[config.envRedirectUriName]?.trim() || config.defaultRedirectUri;
+  return { clientId, clientSecret, redirectUri };
 }
 
 type ElectronShellLike = {
@@ -386,25 +428,9 @@ export class DesktopOauthManagerService {
     }
 
     try {
-      let pending: PendingOauthState;
-      try {
-        pending = JSON.parse(String(row.value)) as PendingOauthState;
-      } catch {
-        throw new Error("Corrupted OAuth state payload");
-      }
+      const pending = parsePendingOauthState(row.value);
       const requestedPluginId = input.pluginId?.trim() || undefined;
-
-      if (
-        pending.sourceType !== sourceType ||
-        (pending.pluginId !== undefined && pending.pluginId !== requestedPluginId) ||
-        pending.codeVerifier.length === 0
-      ) {
-        throw new Error("Invalid OAuth state payload");
-      }
-
-      if (isExpired(pending.createdAt)) {
-        throw new Error("OAuth state expired. Please try again.");
-      }
+      validatePendingOauthState(pending, sourceType, requestedPluginId);
 
       const effectivePluginId = pending.pluginId ?? requestedPluginId;
       const { config, pluginId: resolvedPluginId } = this.getProviderConfig(
@@ -423,25 +449,11 @@ export class DesktopOauthManagerService {
         );
       }
       const providerBaseUrl = pendingBaseUrl ?? requestedBaseUrl;
-      let clientId = input.clientId?.trim() ?? "";
-      if (clientId.length === 0) {
-        clientId = getRequiredEnv(config.envClientIdName, sourceType);
-      }
-      let clientSecret = input.clientSecret?.trim() ?? "";
-      if (clientSecret.length === 0 && config.publicClient) {
-        clientSecret =
-          process.env[config.envClientSecretName]?.trim() ?? "";
-      }
-      if (clientSecret.length === 0 && !config.publicClient) {
-        clientSecret = getRequiredEnv(config.envClientSecretName, sourceType);
-      }
-      let redirectUri = input.redirectUri?.trim() ?? "";
-      if (redirectUri.length === 0) {
-        redirectUri = process.env[config.envRedirectUriName]?.trim() ?? "";
-      }
-      if (redirectUri.length === 0) {
-        redirectUri = config.defaultRedirectUri;
-      }
+      const { clientId, clientSecret, redirectUri } = resolveOAuthCredentials(
+        sourceType,
+        input,
+        config,
+      );
 
       const tokens = await exchangePluginCodeForToken({
         runtime: this.pluginRuntime,

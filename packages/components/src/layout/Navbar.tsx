@@ -1,10 +1,9 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { cn } from "../lib/utils";
 import {
   useAppLogout,
   useAuthSession,
-  useDiagnosisResults,
   useRunbooksService,
 } from "../services/hooks";
 import { useBitsentryServices } from "../services/context";
@@ -187,6 +186,64 @@ type RunbookNavItem = {
   actions: unknown[];
 };
 
+function IncidentSubNavigation({
+  incidents,
+  search,
+  formatters,
+  t,
+  onArchive,
+}: {
+  incidents: IncidentNavItem[];
+  search: string;
+  formatters: ReturnType<typeof useFormatters>;
+  t: ReturnType<typeof useTranslation>["t"];
+  onArchive: (incidentId: string, shouldNavigate: boolean) => Promise<void>;
+}) {
+  const currentId = new URLSearchParams(search).get("id");
+  const active = incidents.filter((incident) => incident.archived !== true);
+  const shown = active.slice(0, 7);
+  const overflow = active.length - shown.length;
+  return <div className="ml-4 mt-1 space-y-0.5">
+    {shown.map((incident) => {
+      const preview = normalizeIncidentPreview(incident.lastMessagePreview);
+      return <div key={incident.id} className="group relative">
+        <Link to={`/incidents?id=${incident.id}`} className={cn("block px-3 py-1.5 pr-8 text-xs text-muted-foreground hover:text-foreground hover:bg-neutral-100/50 dark:hover:bg-white/10 rounded-md transition-colors", currentId === incident.id && "text-foreground font-medium bg-neutral-100/50 dark:bg-white/10")}>
+          <div className="truncate">{incident.title}</div>
+          {preview !== null && <div className="truncate text-[10px] text-muted-foreground/60">{translateIncidentPreview(preview, t)}</div>}
+          <div className="text-[10px] text-muted-foreground/50">{formatters.relativeTime(incident.createdAt)}</div>
+        </Link>
+        <button onClick={(event) => { event.preventDefault(); event.stopPropagation(); onArchive(incident.id, currentId === incident.id).catch(console.error); }} className="absolute right-1 top-1/2 -translate-y-1/2 hidden group-hover:flex size-5 items-center justify-center rounded text-muted-foreground hover:text-foreground hover:bg-muted transition-colors" title={t("common.navbar.archiveIncident")}>
+          <Archive size={11} />
+        </button>
+      </div>;
+    })}
+    {overflow > 0 && <Link to="/incidents?view=history" className="block px-3 py-1 text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground transition-colors">{overflow} {t("navigation.navbar.more")}</Link>}
+    {active.length === 0 && <p className="px-3 py-1 text-xs text-muted-foreground/60">{t("navigation.navbar.noIncidentsYet")}</p>}
+  </div>;
+}
+
+function RunbookSubNavigation({ runbooks, search, t, onDelete }: {
+  runbooks: RunbookNavItem[];
+  search: string;
+  t: ReturnType<typeof useTranslation>["t"];
+  onDelete: (runbook: Pick<RunbookNavItem, "id" | "title">) => void;
+}) {
+  const currentId = new URLSearchParams(search).get("id");
+  const shown = runbooks.slice(0, 7);
+  const overflow = runbooks.length - shown.length;
+  return <div className="ml-4 mt-1 space-y-0.5">
+    {shown.map((runbook) => <div key={runbook.id} className="group relative">
+      <Link to={`/runbooks?id=${runbook.id}`} className={cn("block px-3 py-1.5 pr-8 text-xs text-muted-foreground hover:text-foreground hover:bg-neutral-100/50 dark:hover:bg-white/10 rounded-md transition-colors", currentId === runbook.id && "text-foreground font-medium bg-neutral-100/50 dark:bg-white/10")}>
+        <div className="truncate">{runbook.title}</div>
+        {runbook.actions.length > 0 && <div className="text-[10px] text-muted-foreground/60">{t("navigation.navbar.actionCount", { count: runbook.actions.length })}</div>}
+      </Link>
+      <button onClick={(event) => { event.preventDefault(); event.stopPropagation(); onDelete(runbook); }} className="absolute right-1 top-1/2 -translate-y-1/2 hidden group-hover:flex size-5 items-center justify-center rounded text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors" title={t("common.navbar.deleteRunbook")}><Trash2 size={11} /></button>
+    </div>)}
+    {overflow > 0 && <Link to="/runbooks" className="block px-3 py-1 text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground transition-colors">{overflow} {t("navigation.navbar.more")}</Link>}
+    {runbooks.length === 0 && <p className="px-3 py-1 text-xs text-muted-foreground/60">{t("navigation.navbar.noRunbooksYet")}</p>}
+  </div>;
+}
+
 const UPDATE_ISLAND_DEBUG_STORAGE_KEY = "bitsentry_debug_update_island";
 
 function readDebugUpdateIslandState(): "available" | "downloaded" | null {
@@ -260,6 +317,47 @@ function readLocalIncidentNavItems(): IncidentNavItem[] {
     return normalizeIncidentNavItems(parsed);
   } catch {
     return [];
+  }
+}
+
+type NavbarServices = ReturnType<typeof useBitsentryServices>;
+type SetIncidentNavItems = React.Dispatch<React.SetStateAction<IncidentNavItem[]>>;
+
+async function loadWebIncidentNavItems(
+  services: NavbarServices,
+  currentPath: string,
+  setItems: SetIncidentNavItems,
+  isCancelled: () => boolean,
+): Promise<void> {
+  const incidents = services.incidents;
+  if (currentPath.startsWith("/incidents") || incidents === undefined) {
+    setItems(readLocalIncidentNavItems());
+    return;
+  }
+  try {
+    const response = await incidents.listThreads({ limit: 100, includeArchived: true });
+    if (!isCancelled()) setItems(normalizeIncidentNavItems(response.threads));
+  } catch {
+    if (!isCancelled()) setItems(readLocalIncidentNavItems());
+  }
+}
+
+async function loadDesktopIncidentNavItems(
+  setItems: SetIncidentNavItems,
+  isCancelled: () => boolean,
+): Promise<void> {
+  try {
+    const incidentsApi = getDesktopApi()?.incidents;
+    if (incidentsApi === undefined) {
+      setItems(readLocalIncidentNavItems());
+      return;
+    }
+    const snapshot = await incidentsApi.getState();
+    if (isCancelled()) return;
+    const items = normalizeIncidentNavItems(snapshot.incidents);
+    setItems(items.length === 0 ? readLocalIncidentNavItems() : items);
+  } catch {
+    if (!isCancelled()) setItems(readLocalIncidentNavItems());
   }
 }
 
@@ -622,7 +720,6 @@ const Navbar = ({
   const location = useLocation();
   const navigate = useNavigate();
   const currentPath = location.pathname;
-  const currentHash = location.hash;
   const { user } = useAuthSession();
   const logout = useAppLogout();
   const runbooks = useRunbooksService();
@@ -675,50 +772,11 @@ const Navbar = ({
   React.useEffect(() => {
     if (!openAccordions.has("/incidents")) return;
     let cancelled = false;
-    const load = async () => {
-      if (!isDesktop) {
-        if (currentPath.startsWith("/incidents") || !services.incidents) {
-          setInvestigationIncidents(readLocalIncidentNavItems());
-          return;
-        }
-
-        try {
-          const response = await services.incidents.listThreads({
-            limit: 100,
-            includeArchived: true,
-          });
-          if (cancelled) return;
-          setInvestigationIncidents(
-            normalizeIncidentNavItems(response.threads),
-          );
-        } catch {
-          if (!cancelled) {
-            setInvestigationIncidents(readLocalIncidentNavItems());
-          }
-        }
-        return;
-      }
-      try {
-        const incidentsApi = getDesktopApi()?.incidents;
-        if (incidentsApi === undefined) {
-          setInvestigationIncidents(readLocalIncidentNavItems());
-          return;
-        }
-
-        const snapshot = await incidentsApi.getState();
-        if (cancelled) return;
-        let nextItems = normalizeIncidentNavItems(snapshot.incidents);
-        if (nextItems.length === 0) {
-          nextItems = readLocalIncidentNavItems();
-        }
-        setInvestigationIncidents(nextItems);
-      } catch {
-        if (!cancelled) {
-          setInvestigationIncidents(readLocalIncidentNavItems());
-        }
-      }
-    };
-    void load();
+    const isCancelled = () => cancelled;
+    const load = isDesktop
+      ? loadDesktopIncidentNavItems(setInvestigationIncidents, isCancelled)
+      : loadWebIncidentNavItems(services, currentPath, setInvestigationIncidents, isCancelled);
+    load.catch(() => {});
     return () => {
       cancelled = true;
     };
@@ -813,8 +871,6 @@ const Navbar = ({
   // ── Results ───────────────────────────────────────────────────────────────
   const [resultItems, setResultItems] = React.useState<ResultNavItem[]>([]);
 
-  const { data: diagnosisData } = useDiagnosisResults({ limit: 100 });
-
   React.useEffect(() => {
     if (!openAccordions.has("/results")) return;
     let cancelled = false;
@@ -894,10 +950,6 @@ const Navbar = ({
       setOpenAccordions((prev) => new Set([...prev, currentPath]));
     }
   }, [currentPath, subNavigation]);
-
-  const diagnosisQuickItems = useMemo(() => {
-    return (diagnosisData?.records ?? []).slice(0, 7);
-  }, [diagnosisData]);
 
   let hiddenHrefs = webHiddenHrefs;
   if (isDesktop) {
@@ -1038,137 +1090,12 @@ const Navbar = ({
               {/* Incidents Sub-Navigation */}
               {canShowSubNav &&
                 isIncidents &&
-                (() => {
-                  const currentId = new URLSearchParams(location.search).get(
-                    "id",
-                  );
-                  const active = investigationIncidents.filter(
-                    (incident) => incident.archived !== true,
-                  );
-                  const shown = active.slice(0, 7);
-                  const overflow = active.length - 7;
-                  return (
-                    <div className="ml-4 mt-1 space-y-0.5">
-                      {shown.map((inc) => {
-                        const preview = normalizeIncidentPreview(
-                          inc.lastMessagePreview,
-                        );
-                        return (
-                          <div key={inc.id} className="group relative">
-                            <Link
-                              to={`/incidents?id=${inc.id}`}
-                              className={cn(
-                                "block px-3 py-1.5 pr-8 text-xs text-muted-foreground hover:text-foreground hover:bg-neutral-100/50 dark:hover:bg-white/10 rounded-md transition-colors",
-                                currentId === inc.id &&
-                                  "text-foreground font-medium bg-neutral-100/50 dark:bg-white/10",
-                              )}
-                            >
-                              <div className="truncate">{inc.title}</div>
-                              {preview !== null && (
-                                <div className="truncate text-[10px] text-muted-foreground/60">
-                                  {translateIncidentPreview(preview, t)}
-                                </div>
-                              )}
-                              <div className="text-[10px] text-muted-foreground/50">
-                                {formatters.relativeTime(inc.createdAt)}
-                              </div>
-                            </Link>
-                            <button
-                              onClick={(e) => {
-                                e.preventDefault();
-                                e.stopPropagation();
-                                void handleArchiveIncidentNavItem(inc.id);
-                                if (currentId === inc.id) {
-                                  void navigate("/incidents");
-                                }
-                              }}
-                              className="absolute right-1 top-1/2 -translate-y-1/2 hidden group-hover:flex size-5 items-center justify-center rounded text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
-                              title={t("common.navbar.archiveIncident")}
-                            >
-                              <Archive size={11} />
-                            </button>
-                          </div>
-                        );
-                      })}
-                      {overflow > 0 && (
-                        <Link
-                          to="/incidents?view=history"
-                          className="block px-3 py-1 text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground transition-colors"
-                        >
-                          {overflow} {t("navigation.navbar.more")}
-                        </Link>
-                      )}
-                      {active.length === 0 && (
-                        <p className="px-3 py-1 text-xs text-muted-foreground/60">
-                          {t("navigation.navbar.noIncidentsYet")}
-                        </p>
-                      )}
-                    </div>
-                  );
-                })()}
+                <IncidentSubNavigation incidents={investigationIncidents} search={location.search} formatters={formatters} t={t} onArchive={async (incidentId, shouldNavigate) => { await handleArchiveIncidentNavItem(incidentId); if (shouldNavigate) navigate("/incidents"); }} />}
 
               {/* Runbooks Sub-Navigation */}
               {canShowSubNav &&
                 isRunbooks &&
-                (() => {
-                  const currentId = new URLSearchParams(location.search).get(
-                    "id",
-                  );
-                  const shown = runbookItems.slice(0, 7);
-                  const overflow = runbookItems.length - 7;
-                  return (
-                    <div className="ml-4 mt-1 space-y-0.5">
-                      {shown.map((rb) => (
-                        <div key={rb.id} className="group relative">
-                          <Link
-                            to={`/runbooks?id=${rb.id}`}
-                            className={cn(
-                              "block px-3 py-1.5 pr-8 text-xs text-muted-foreground hover:text-foreground hover:bg-neutral-100/50 dark:hover:bg-white/10 rounded-md transition-colors",
-                              currentId === rb.id &&
-                                "text-foreground font-medium bg-neutral-100/50 dark:bg-white/10",
-                            )}
-                          >
-                            <div className="truncate">{rb.title}</div>
-                            {rb.actions.length > 0 && (
-                              <div className="text-[10px] text-muted-foreground/60">
-                                {t("navigation.navbar.actionCount", {
-                                  count: rb.actions.length,
-                                })}
-                              </div>
-                            )}
-                          </Link>
-                          <button
-                            onClick={(e) => {
-                              e.preventDefault();
-                              e.stopPropagation();
-                              setRunbookToDelete({
-                                id: rb.id,
-                                title: rb.title,
-                              });
-                            }}
-                            className="absolute right-1 top-1/2 -translate-y-1/2 hidden group-hover:flex size-5 items-center justify-center rounded text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
-                            title={t("common.navbar.deleteRunbook")}
-                          >
-                            <Trash2 size={11} />
-                          </button>
-                        </div>
-                      ))}
-                      {overflow > 0 && (
-                        <Link
-                          to="/runbooks"
-                          className="block px-3 py-1 text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground transition-colors"
-                        >
-                          {overflow} {t("navigation.navbar.more")}
-                        </Link>
-                      )}
-                      {runbookItems.length === 0 && (
-                        <p className="px-3 py-1 text-xs text-muted-foreground/60">
-                          {t("navigation.navbar.noRunbooksYet")}
-                        </p>
-                      )}
-                    </div>
-                  );
-                })()}
+                <RunbookSubNavigation runbooks={runbookItems} search={location.search} t={t} onDelete={setRunbookToDelete} />}
 
               {/* Results Sub-Navigation */}
               {canShowSubNav &&

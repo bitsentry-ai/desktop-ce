@@ -35,7 +35,7 @@ function executeListLogSources(
   _input: unknown,
   _context: ToolContext,
 ): Promise<ToolResult> {
-  // TODO: backend persistence not yet implemented
+  // Saved log-source persistence is not implemented yet.
   // In full implementation, this would query:
   // - SQLite table of saved log sources
   // - Each source: host, username, default since, units, etc.

@@ -64,7 +64,7 @@ describe('createCodingAgentsProcessEnv', () => {
 
   it('forwards only the environment needed to locate and run the local CLI', () => {
     const env = createCodingAgentsProcessEnv({
-      HOME: '/tmp/bitsentry-home',
+      HOME: '/tmp/bitsentry-home', // eslint-disable-line sonarjs/publicly-writable-directories -- Test-only environment value; no directory is accessed.
       PATH: '/usr/bin',
       LANG: 'en_US.UTF-8',
       OPENAI_API_KEY: 'must-not-reach-child-process',
@@ -73,7 +73,7 @@ describe('createCodingAgentsProcessEnv', () => {
     })
 
     expect(env).toMatchObject({
-      HOME: '/tmp/bitsentry-home',
+      HOME: '/tmp/bitsentry-home', // eslint-disable-line sonarjs/publicly-writable-directories -- Test-only expected environment value; no directory is accessed.
       PATH: '/usr/bin',
       LANG: 'en_US.UTF-8',
     })

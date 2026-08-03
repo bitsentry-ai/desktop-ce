@@ -9,6 +9,8 @@ vi.mock('child_process', () => ({ spawn: spawnMock }))
 
 import { sshJournalQueryTool } from '../src/features/agent-runtime/capabilities/ssh-journal-query.capability'
 
+let nextMockPid = 1
+
 function createSshChild() {
   const child = new EventEmitter() as EventEmitter & {
     pid: number
@@ -18,7 +20,7 @@ function createSshChild() {
     stderr: PassThrough
     kill: ReturnType<typeof vi.fn>
   }
-  child.pid = Math.floor(Math.random() * 100_000) + 1
+  child.pid = nextMockPid++
   child.exitCode = null
   child.signalCode = null
   child.stdout = new PassThrough()
@@ -48,7 +50,7 @@ describe('sshJournalQueryTool', () => {
     })
 
     await expect(result).resolves.toEqual({ output: '' })
-    expect(spawnMock).toHaveBeenCalledWith('ssh', expect.any(Array), expect.objectContaining({
+    expect(spawnMock).toHaveBeenCalledWith('/usr/bin/ssh', expect.any(Array), expect.objectContaining({
       shell: false,
       detached: process.platform !== 'win32',
       stdio: ['ignore', 'pipe', 'pipe'],

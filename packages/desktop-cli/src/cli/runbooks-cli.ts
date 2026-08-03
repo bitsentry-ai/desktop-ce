@@ -140,8 +140,11 @@ function parseArgv(argv: string[]): ParsedArgs {
   const positionals: string[] = []
   const flags = new Map<string, string[]>()
 
-  for (let index = 0; index < argv.length; index += 1) {
-    const token = argv[index]
+  let consumedThroughIndex = -1
+  for (const [index, token] of argv.entries()) {
+    if (index <= consumedThroughIndex) {
+      continue
+    }
     if (!token.startsWith('--')) {
       positionals.push(token)
       continue
@@ -159,7 +162,7 @@ function parseArgv(argv: string[]): ParsedArgs {
 
     const separated = readSeparatedFlagValue(argv, index)
     addFlagValue(flags, parsedFlag.key, separated.value)
-    index = separated.nextIndex
+    consumedThroughIndex = separated.nextIndex
   }
 
   return { positionals, flags }
@@ -681,55 +684,47 @@ function normalizeCliStoredAuthValue(
 
   switch (field.type) {
     case 'boolean':
-      if (typeof value === 'boolean') {
-        return value
-      }
-      if (value === 'true') {
-        return true
-      }
-      if (value === 'false') {
-        return false
-      }
-      throw new Error(`Auth field "${field.key}" must be a boolean`)
+      return normalizeCliBooleanAuthValue(field, value)
     case 'number':
-      if (typeof value === 'number' && Number.isFinite(value)) {
-        return value
-      }
-      if (typeof value === 'string' && value.trim().length > 0) {
-        const numeric = Number(value)
-        if (Number.isFinite(numeric)) {
-          return numeric
-        }
-      }
-      throw new Error(`Auth field "${field.key}" must be a number`)
+      return normalizeCliNumberAuthValue(field, value)
     case 'string_array':
-      if (Array.isArray(value)) {
-        return value
-          .filter((item): item is string => typeof item === 'string')
-          .map((item) => item.trim())
-          .filter((item) => item.length > 0)
-      }
-      if (typeof value === 'string') {
-        return value
-          .split(/\r?\n|,/)
-          .map((item) => item.trim())
-          .filter((item) => item.length > 0)
-      }
-      throw new Error(`Auth field "${field.key}" must be a string array`)
+      return normalizeCliStringArrayAuthValue(field, value)
     case 'json':
       return JSON.parse(JSON.stringify(value)) as DesktopPluginStoredAuthValue
     case 'string':
     default:
-      if (typeof value !== 'string') {
-        throw new Error(`Auth field "${field.key}" must be a string`)
-      }
-      if (field.enumValues !== undefined && !field.enumValues.includes(value)) {
-        throw new Error(
-          `Auth field "${field.key}" must be one of: ${field.enumValues.join(', ')}`,
-        )
-      }
-      return value
+      return normalizeCliStringAuthValue(field, value)
   }
+}
+
+function normalizeCliBooleanAuthValue(field: DesktopPluginFieldDefinition, value: unknown): boolean {
+  if (typeof value === 'boolean') return value
+  if (value === 'true') return true
+  if (value === 'false') return false
+  throw new Error(`Auth field "${field.key}" must be a boolean`)
+}
+
+function normalizeCliNumberAuthValue(field: DesktopPluginFieldDefinition, value: unknown): number {
+  if (typeof value === 'number' && Number.isFinite(value)) return value
+  if (typeof value === 'string' && value.trim().length > 0) {
+    const numeric = Number(value)
+    if (Number.isFinite(numeric)) return numeric
+  }
+  throw new Error(`Auth field "${field.key}" must be a number`)
+}
+
+function normalizeCliStringArrayAuthValue(field: DesktopPluginFieldDefinition, value: unknown): string[] {
+  if (Array.isArray(value)) return value.filter((item): item is string => typeof item === 'string').map((item) => item.trim()).filter((item) => item.length > 0)
+  if (typeof value === 'string') return value.split(/\r?\n|,/).map((item) => item.trim()).filter((item) => item.length > 0)
+  throw new Error(`Auth field "${field.key}" must be a string array`)
+}
+
+function normalizeCliStringAuthValue(field: DesktopPluginFieldDefinition, value: unknown): string {
+  if (typeof value !== 'string') throw new Error(`Auth field "${field.key}" must be a string`)
+  if (field.enumValues !== undefined && !field.enumValues.includes(value)) {
+    throw new Error(`Auth field "${field.key}" must be one of: ${field.enumValues.join(', ')}`)
+  }
+  return value
 }
 
 function normalizeCliStoredAuth(

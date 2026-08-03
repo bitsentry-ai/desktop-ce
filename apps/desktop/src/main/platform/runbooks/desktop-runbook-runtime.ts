@@ -1,6 +1,3 @@
-import {
-  type DesktopRunbookRuntimeOptions,
-} from '@bitsentry-ce/desktop-cli/runtime/desktop-runbook-runtime'
 import '../storage/database/seeding'
 import { createDesktopEditionRunbookRuntime } from '@bitsentry-ce/desktop-cli/runtime/desktop-runbook-runtime'
 import { RunbookExecutionService } from '../../features/runbooks/services/runbook-execution.service'

@@ -413,6 +413,41 @@ async function startDetachedExecution(
   return getRequiredStringField(payload, 'executionId', responseContext)
 }
 
+async function requestDetachedExecutionCancellation(
+  context: CliTestContext,
+  userDataDir: string,
+  executionId: string,
+): Promise<{ result: unknown; error: unknown }> {
+  try {
+    return {
+      result: await context.runCliJson(userDataDir, ['runbooks', 'cancel', '--execution-id', executionId]),
+      error: undefined,
+    }
+  } catch (error) {
+    return { result: undefined, error }
+  }
+}
+
+function assertDetachedCancellationAccepted(result: unknown, error: unknown, executionId: string): void {
+  if (error === undefined) {
+    const payload = result !== null && typeof result === 'object' && !Array.isArray(result)
+      ? result as Record<string, unknown>
+      : null
+    if (payload === null || payload.executionId !== executionId) {
+      throw new Error('Detached cancellation response did not include the expected execution id')
+    }
+    return
+  }
+  if (!(error instanceof Error)) throw new Error(`Detached cancellation failed unexpectedly: ${String(error)}`)
+  const acceptedMessages = [
+    `Cancellation was recorded for runbook execution '${executionId}', but no live execution session is available`,
+    `Runbook execution '${executionId}' is no longer cancellable`,
+  ]
+  if (!acceptedMessages.some((message) => error.message.includes(message))) {
+    throw new Error(`Detached cancellation failed unexpectedly: ${error.message}`)
+  }
+}
+
 async function assertDetachedExecutionFlow(
   context: CliTestContext,
   userDataDir: string,
@@ -430,51 +465,8 @@ async function assertDetachedExecutionFlow(
     runbookIds.cancellableRunbookId,
     'Second detached execution response',
   )
-  let cancellationResult: unknown
-  let cancellationError: unknown
-  try {
-    cancellationResult = await context.runCliJson(userDataDir, [
-      'runbooks',
-      'cancel',
-      '--execution-id',
-      cancellableExecutionId,
-    ])
-  } catch (error) {
-    cancellationError = error
-  }
-  if (cancellationError === undefined) {
-    const cancellationPayload =
-      cancellationResult !== null &&
-      typeof cancellationResult === 'object' &&
-      !Array.isArray(cancellationResult)
-        ? (cancellationResult as Record<string, unknown>)
-        : null
-    if (
-      cancellationPayload === null ||
-      cancellationPayload.executionId !== cancellableExecutionId
-    ) {
-      throw new Error('Detached cancellation response did not include the expected execution id')
-    }
-  } else if (
-    cancellationError instanceof Error &&
-    cancellationError.message.includes(
-      `Cancellation was recorded for runbook execution '${cancellableExecutionId}', but no live execution session is available`,
-    )
-  ) {
-    // Detached cancellation can persist the request from a separate process;
-    // the worker will observe it and finalize the execution asynchronously.
-  } else if (
-    cancellationError instanceof Error &&
-    cancellationError.message.includes(
-      `Runbook execution '${cancellableExecutionId}' is no longer cancellable`,
-    )
-  ) {
-    // The execution may finish between start and cancel on slower CI hosts.
-  } else {
-    throw new Error(
-      `Detached cancellation failed unexpectedly: ${String(cancellationError)}`,
-    )
-  }
+  const cancellation = await requestDetachedExecutionCancellation(context, userDataDir, cancellableExecutionId)
+  assertDetachedCancellationAccepted(cancellation.result, cancellation.error, cancellableExecutionId)
 
   const completedExecution = await context.waitForExecution(
     userDataDir,

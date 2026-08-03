@@ -103,63 +103,7 @@ export class CodexAppServerClient extends EventEmitter {
       this.stderrBuffer = (this.stderrBuffer + text).slice(-MAX_STDERR_BUFFER)
     })
 
-    this.output.on('line', (line) => {
-      if (line.trim().length === 0) return
-
-      let parsed: Record<string, unknown> | undefined
-      try {
-        parsed = asRecord(JSON.parse(line))
-      } catch (err) {
-        log.warn('[codex-app-server] Invalid JSON from stdout:', line.slice(0, 200))
-        this.emit('parseError', { error: String(err), raw: line.slice(0, 500) })
-        return
-      }
-      if (parsed === undefined) {
-        log.warn('[codex-app-server] Non-object JSON from stdout:', line.slice(0, 200))
-        this.emit('parseError', { error: 'Expected JSON object', raw: line.slice(0, 500) })
-        return
-      }
-
-      // Codex JSON-RPC ids may be number OR string per the protocol schema.
-      const id = readJsonRpcId(parsed.id)
-      const hasResult = 'result' in parsed
-      const hasError = 'error' in parsed
-      const method = readStringField(parsed, 'method')
-
-      // Client response (matches a pending request we sent)
-      if (id !== undefined && (hasResult || hasError)) {
-        const pending = this.pending.get(id)
-        if (pending !== undefined) {
-          this.pending.delete(id)
-          clearTimeout(pending.timeout)
-
-          if (hasError) {
-            const error = asRecord(parsed.error)
-            let message = `Codex RPC error for ${pending.method}`
-            if (error !== undefined) {
-              message = readStringField(error, 'message') ?? message
-            }
-            pending.reject(new Error(
-              message,
-            ))
-          } else {
-            pending.resolve(parsed.result)
-          }
-        }
-        return
-      }
-
-      // Server-initiated request (has id + method but no result/error)
-      if (method !== undefined && id !== undefined && !hasResult && !hasError) {
-        this.emit('serverRequest', { id, method, params: parsed.params })
-        return
-      }
-
-      // Notification (method only, no id)
-      if (method !== undefined && !hasResult && !hasError) {
-        this.emit('notification', { method, params: parsed.params })
-      }
-    })
+    this.output.on('line', (line) => this.handleOutputLine(line))
 
     this.child.once('error', (err) => {
       log.error('[codex-app-server] Process error:', err)
@@ -185,6 +129,55 @@ export class CodexAppServerClient extends EventEmitter {
     }, REQUEST_TIMEOUT_MS)
 
     this.writeMessage({ method: 'initialized' })
+  }
+
+  private parseOutputLine(line: string): Record<string, unknown> | undefined {
+    if (line.trim().length === 0) return undefined
+    try {
+      const parsed = asRecord(JSON.parse(line))
+      if (parsed !== undefined) return parsed
+      this.emit('parseError', { error: 'Expected JSON object', raw: line.slice(0, 500) })
+      log.warn('[codex-app-server] Non-object JSON from stdout:', line.slice(0, 200))
+    } catch (error) {
+      log.warn('[codex-app-server] Invalid JSON from stdout:', line.slice(0, 200))
+      this.emit('parseError', { error: String(error), raw: line.slice(0, 500) })
+    }
+    return undefined
+  }
+
+  private handleResponse(parsed: Record<string, unknown>, id: JsonRpcId, hasError: boolean): void {
+    const pending = this.pending.get(id)
+    if (pending === undefined) return
+    this.pending.delete(id)
+    clearTimeout(pending.timeout)
+    if (!hasError) {
+      pending.resolve(parsed.result)
+      return
+    }
+    const error = asRecord(parsed.error)
+    const message = error === undefined
+      ? `Codex RPC error for ${pending.method}`
+      : readStringField(error, 'message') ?? `Codex RPC error for ${pending.method}`
+    pending.reject(new Error(message))
+  }
+
+  private handleOutputLine(line: string): void {
+    const parsed = this.parseOutputLine(line)
+    if (parsed === undefined) return
+    const id = readJsonRpcId(parsed.id)
+    const hasResult = 'result' in parsed
+    const hasError = 'error' in parsed
+    const method = readStringField(parsed, 'method')
+    if (id !== undefined && (hasResult || hasError)) {
+      this.handleResponse(parsed, id, hasError)
+      return
+    }
+    if (method === undefined || hasResult || hasError) return
+    if (id !== undefined) {
+      this.emit('serverRequest', { id, method, params: parsed.params })
+      return
+    }
+    this.emit('notification', { method, params: parsed.params })
   }
 
   async sendRequest(method: string, params?: unknown): Promise<unknown> {

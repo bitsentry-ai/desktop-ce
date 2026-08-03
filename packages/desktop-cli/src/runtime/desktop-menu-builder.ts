@@ -3,7 +3,6 @@ import {
   Menu,
   shell,
   type BrowserWindow,
-  type MenuItemConstructorOptions,
 } from 'electron'
 import {
   buildDesktopMenuTemplate,

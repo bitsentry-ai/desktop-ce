@@ -173,11 +173,15 @@ function normalizeStringArray(value: unknown): string[] {
 }
 
 function toArtifactRefSlug(value: string): string {
-  return value
+  const slug = value
     .trim()
     .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "");
+    .replace(/[^a-z0-9]+/g, "-");
+  let start = 0;
+  let end = slug.length;
+  while (slug[start] === "-") start += 1;
+  while (end > start && slug[end - 1] === "-") end -= 1;
+  return slug.slice(start, end);
 }
 
 function buildArtifactSourceRefs(
@@ -336,42 +340,79 @@ function normalizeRunbookParameterFingerprint(
   });
 }
 
-function normalizeRunbookActionFingerprint(
-  action: {
-    type: RunbookActionType;
-    command?: string;
-    prompt?: string;
-    llmProviderKey?: RunbookLlmProviderKey;
-    llmModel?: string;
-    url?: string;
-    method?: RunbookHttpMethod;
-    headers?: RunbookHttpHeader[];
-    body?: string;
-    pluginId?: string;
-    pluginActionId?: string;
-    pluginInput?: string;
-    pluginAuth?: string;
-    query?: string;
-    sourceId?: string;
-    sourceRef?: string;
-    parameters?: RunbookActionParameter[];
-    logFilter?: LogFilterConfig;
-    telemetryConfig?: TelemetryActionConfig;
-    title?: string;
-  },
+type RunbookActionFingerprintInput = {
+  type: RunbookActionType;
+  command?: string;
+  prompt?: string;
+  llmProviderKey?: RunbookLlmProviderKey;
+  llmModel?: string;
+  url?: string;
+  method?: RunbookHttpMethod;
+  headers?: RunbookHttpHeader[];
+  body?: string;
+  pluginId?: string;
+  pluginActionId?: string;
+  pluginInput?: string;
+  pluginAuth?: string;
+  query?: string;
+  sourceId?: string;
+  sourceRef?: string;
+  parameters?: RunbookActionParameter[];
+  logFilter?: LogFilterConfig;
+  telemetryConfig?: TelemetryActionConfig;
+  title?: string;
+};
+
+function buildSharedRunbookActionFingerprint(action: RunbookActionFingerprintInput): Record<string, unknown> {
+  const shared: Record<string, unknown> = { type: action.type };
+  if (action.logFilter !== undefined) shared.logFilter = action.logFilter;
+  if (action.parameters !== undefined && action.parameters.length > 0) shared.parameters = normalizeRunbookParameterFingerprint(action.parameters);
+  return shared;
+}
+
+function buildLlmActionFingerprint(action: RunbookActionFingerprintInput, shared: Record<string, unknown>): Record<string, unknown> {
+  const fingerprint: Record<string, unknown> = { ...shared, prompt: action.prompt ?? "" };
+  if (action.llmProviderKey !== undefined) fingerprint.llmProviderKey = action.llmProviderKey;
+  if (action.llmModel !== undefined && action.llmModel.length > 0) fingerprint.llmModel = action.llmModel;
+  return fingerprint;
+}
+
+function buildHttpActionFingerprint(action: RunbookActionFingerprintInput, shared: Record<string, unknown>): Record<string, unknown> {
+  const fingerprint: Record<string, unknown> = { ...shared, method: action.method ?? "GET", url: action.url ?? "" };
+  if (typeof action.body === "string") fingerprint.body = action.body;
+  if (action.headers !== undefined && action.headers.length > 0) fingerprint.headers = action.headers;
+  return fingerprint;
+}
+
+function buildExternalSourceActionFingerprint(
+  action: RunbookActionFingerprintInput,
+  shared: Record<string, unknown>,
   resolveSourceFingerprint: (sourceId: string) => string | undefined,
 ): Record<string, unknown> {
-  const shared: Record<string, unknown> = {
-    type: action.type,
-  };
-
-  if (action.logFilter !== undefined) {
-    shared.logFilter = action.logFilter;
+  const sourceId = action.sourceId?.trim();
+  const sourceRef = action.sourceRef?.trim();
+  if (sourceId === undefined || sourceId.length === 0) {
+    if (sourceRef === undefined || sourceRef.length === 0) throw new Error(`External Source action "${action.title ?? "Untitled action"}" is missing a selected source`);
+    return { ...shared, query: action.query ?? "", sourceFingerprint: `unresolved:${sourceRef}` };
   }
+  const sourceFingerprint = resolveSourceFingerprint(sourceId);
+  if (sourceFingerprint === undefined || sourceFingerprint.length === 0) throw new Error(`External Source action "${action.title ?? "Untitled action"}" could not resolve a matching data source`);
+  return { ...shared, query: action.query ?? "", sourceFingerprint };
+}
 
-  if (action.parameters !== undefined && action.parameters.length > 0) {
-    shared.parameters = normalizeRunbookParameterFingerprint(action.parameters);
-  }
+function buildTelemetryActionFingerprint(action: RunbookActionFingerprintInput, shared: Record<string, unknown>): Record<string, unknown> {
+  const fingerprint: Record<string, unknown> = { ...shared };
+  if (typeof action.body === "string") fingerprint.body = action.body;
+  if (typeof action.query === "string") fingerprint.query = action.query;
+  if (action.telemetryConfig !== undefined) fingerprint.telemetryConfig = action.telemetryConfig;
+  return fingerprint;
+}
+
+function normalizeRunbookActionFingerprint(
+  action: RunbookActionFingerprintInput,
+  resolveSourceFingerprint: (sourceId: string) => string | undefined,
+): Record<string, unknown> {
+  const shared = buildSharedRunbookActionFingerprint(action);
 
   switch (action.type) {
     case "shell": {
@@ -381,37 +422,10 @@ function normalizeRunbookActionFingerprint(
       };
     }
     case "llm": {
-      const fingerprint: Record<string, unknown> = {
-        ...shared,
-        prompt: action.prompt ?? "",
-      };
-
-      if (action.llmProviderKey !== undefined) {
-        fingerprint.llmProviderKey = action.llmProviderKey;
-      }
-
-      if (action.llmModel !== undefined && action.llmModel.length > 0) {
-        fingerprint.llmModel = action.llmModel;
-      }
-
-      return fingerprint;
+      return buildLlmActionFingerprint(action, shared);
     }
     case "http": {
-      const fingerprint: Record<string, unknown> = {
-        ...shared,
-        method: action.method ?? "GET",
-        url: action.url ?? "",
-      };
-
-      if (typeof action.body === "string") {
-        fingerprint.body = action.body;
-      }
-
-      if (action.headers !== undefined && action.headers.length > 0) {
-        fingerprint.headers = action.headers;
-      }
-
-      return fingerprint;
+      return buildHttpActionFingerprint(action, shared);
     }
     case "plugin": {
       return {
@@ -423,34 +437,7 @@ function normalizeRunbookActionFingerprint(
       };
     }
     case "external_source": {
-      const sourceId = action.sourceId?.trim();
-      const sourceRef = action.sourceRef?.trim();
-      if (sourceId === undefined || sourceId.length === 0) {
-        if (sourceRef === undefined || sourceRef.length === 0) {
-          throw new Error(
-            `External Source action "${action.title ?? "Untitled action"}" is missing a selected source`,
-          );
-        }
-
-        return {
-          ...shared,
-          query: action.query ?? "",
-          sourceFingerprint: `unresolved:${sourceRef}`,
-        };
-      }
-
-      const sourceFingerprint = resolveSourceFingerprint(sourceId);
-      if (sourceFingerprint === undefined || sourceFingerprint.length === 0) {
-        throw new Error(
-          `External Source action "${action.title ?? "Untitled action"}" could not resolve a matching data source`,
-        );
-      }
-
-      return {
-        ...shared,
-        query: action.query ?? "",
-        sourceFingerprint,
-      };
+      return buildExternalSourceActionFingerprint(action, shared, resolveSourceFingerprint);
     }
     case "telemetry_existing_entry":
     case "data_source_query":
@@ -458,19 +445,7 @@ function normalizeRunbookActionFingerprint(
     case "diagnosis_diagnose":
     case "diagnosis_verify":
     case "diagnosis_recommend": {
-      const fingerprint = {
-        ...shared,
-      };
-      if (typeof action.body === "string") {
-        fingerprint.body = action.body;
-      }
-      if (typeof action.query === "string") {
-        fingerprint.query = action.query;
-      }
-      if (action.telemetryConfig !== undefined) {
-        fingerprint.telemetryConfig = action.telemetryConfig;
-      }
-      return fingerprint;
+      return buildTelemetryActionFingerprint(action, shared);
     }
     default:
       throw new Error(
@@ -721,6 +696,40 @@ function normalizePositiveIntegerArray(value: unknown): number[] | undefined {
   return normalized;
 }
 
+function copyTelemetryStringFields(
+  config: Record<string, unknown>,
+  normalized: TelemetryActionConfig,
+): void {
+  if (typeof config.needId === "string") normalized.needId = config.needId;
+  if (typeof config.needLabel === "string") normalized.needLabel = config.needLabel;
+  if (typeof config.sourceId === "string") normalized.sourceId = config.sourceId;
+  if (typeof config.sourceName === "string") normalized.sourceName = config.sourceName;
+  if (typeof config.queryText === "string") normalized.queryText = config.queryText;
+  if (typeof config.collectionDate === "string") normalized.collectionDate = config.collectionDate;
+  if (typeof config.include === "string") normalized.include = config.include;
+  if (typeof config.exclude === "string") normalized.exclude = config.exclude;
+  if (typeof config.indexPattern === "string") normalized.indexPattern = config.indexPattern;
+  if (typeof config.llmModel === "string") normalized.llmModel = config.llmModel;
+}
+
+function copyTelemetryValidatedFields(
+  config: Record<string, unknown>,
+  normalized: TelemetryActionConfig,
+): void {
+  const sourceType = errorSourceTypeSchema.safeParse(config.sourceType);
+  if (sourceType.success) normalized.sourceType = sourceType.data;
+  const queryMode = telemetryQueryModeSchema.safeParse(config.queryMode);
+  if (queryMode.success) normalized.queryMode = queryMode.data;
+  if (Number.isInteger(config.queryLimit)) normalized.queryLimit = Number(config.queryLimit);
+  const telemetryEntryIds = normalizePositiveIntegerArray(config.telemetryEntryIds);
+  if (telemetryEntryIds !== undefined) normalized.telemetryEntryIds = telemetryEntryIds;
+  const diagnosisEntryIds = normalizePositiveIntegerArray(config.diagnosisEntryIds);
+  if (diagnosisEntryIds !== undefined) normalized.diagnosisEntryIds = diagnosisEntryIds;
+  if (isTelemetryLlmProviderKey(config.llmProviderKey)) normalized.llmProviderKey = config.llmProviderKey;
+  const entrypoint = runbookTriggerSurfaceSchema.safeParse(config.entrypoint);
+  if (entrypoint.success) normalized.entrypoint = entrypoint.data;
+}
+
 function normalizeTelemetryConfig(
   value: unknown,
 ): TelemetryActionConfig | undefined {
@@ -730,64 +739,8 @@ function normalizeTelemetryConfig(
 
   const config = asObject(value);
   const normalized: TelemetryActionConfig = {};
-
-  if (typeof config.needId === "string") {
-    normalized.needId = config.needId;
-  }
-  if (typeof config.needLabel === "string") {
-    normalized.needLabel = config.needLabel;
-  }
-  if (typeof config.sourceId === "string") {
-    normalized.sourceId = config.sourceId;
-  }
-  const sourceType = errorSourceTypeSchema.safeParse(config.sourceType);
-  if (sourceType.success) {
-    normalized.sourceType = sourceType.data;
-  }
-  if (typeof config.sourceName === "string") {
-    normalized.sourceName = config.sourceName;
-  }
-  const queryMode = telemetryQueryModeSchema.safeParse(config.queryMode);
-  if (queryMode.success) {
-    normalized.queryMode = queryMode.data;
-  }
-  if (Number.isInteger(config.queryLimit)) {
-    normalized.queryLimit = Number(config.queryLimit);
-  }
-  if (typeof config.queryText === "string") {
-    normalized.queryText = config.queryText;
-  }
-  if (typeof config.collectionDate === "string") {
-    normalized.collectionDate = config.collectionDate;
-  }
-  if (typeof config.include === "string") {
-    normalized.include = config.include;
-  }
-  if (typeof config.exclude === "string") {
-    normalized.exclude = config.exclude;
-  }
-  if (typeof config.indexPattern === "string") {
-    normalized.indexPattern = config.indexPattern;
-  }
-
-  const telemetryEntryIds = normalizePositiveIntegerArray(config.telemetryEntryIds);
-  if (telemetryEntryIds !== undefined) {
-    normalized.telemetryEntryIds = telemetryEntryIds;
-  }
-  const diagnosisEntryIds = normalizePositiveIntegerArray(config.diagnosisEntryIds);
-  if (diagnosisEntryIds !== undefined) {
-    normalized.diagnosisEntryIds = diagnosisEntryIds;
-  }
-  if (isTelemetryLlmProviderKey(config.llmProviderKey)) {
-    normalized.llmProviderKey = config.llmProviderKey;
-  }
-  if (typeof config.llmModel === "string") {
-    normalized.llmModel = config.llmModel;
-  }
-  const entrypoint = runbookTriggerSurfaceSchema.safeParse(config.entrypoint);
-  if (entrypoint.success) {
-    normalized.entrypoint = entrypoint.data;
-  }
+  copyTelemetryStringFields(config, normalized);
+  copyTelemetryValidatedFields(config, normalized);
 
   return normalized;
 }
@@ -1135,90 +1088,70 @@ function toRunbookAction(raw: Record<string, unknown>): DesktopRunbookActionReco
   });
 }
 
-function actionPayload(
-  action: DesktopRunbookActionRecord,
-): DesktopRunbookContext["actions"][number]["payload"] {
-  const payload: DesktopRunbookContext["actions"][number]["payload"] = {};
-  if (action.parameters !== undefined && action.parameters.length > 0) {
-    payload.parameters = action.parameters;
-  }
-  if (action.logFilter !== undefined) {
-    payload.logFilter = action.logFilter;
-  }
+type RunbookActionPayload = DesktopRunbookContext["actions"][number]["payload"];
 
+function applySharedActionPayload(action: DesktopRunbookActionRecord, payload: RunbookActionPayload): void {
+  if (action.parameters !== undefined && action.parameters.length > 0) payload.parameters = action.parameters;
+  if (action.logFilter !== undefined) payload.logFilter = action.logFilter;
+}
+
+function applyShellActionPayload(action: DesktopRunbookActionRecord, payload: RunbookActionPayload): void {
+  if (action.command !== undefined && action.command.length > 0) payload.command = action.command;
+}
+
+function applyLlmActionPayload(action: DesktopRunbookActionRecord, payload: RunbookActionPayload): void {
+  if (action.prompt !== undefined && action.prompt.length > 0) payload.prompt = action.prompt;
+  if (action.llmProviderKey !== undefined) payload.llmProviderKey = action.llmProviderKey;
+  if (action.llmModel !== undefined && action.llmModel.length > 0) payload.llmModel = action.llmModel;
+}
+
+function applyHttpActionPayload(action: DesktopRunbookActionRecord, payload: RunbookActionPayload): void {
+  if (action.url !== undefined && action.url.length > 0) payload.url = action.url;
+  if (action.method !== undefined) payload.method = action.method;
+  if (action.headers !== undefined && action.headers.length > 0) payload.headers = action.headers;
+  if (typeof action.body === "string") payload.body = action.body;
+}
+
+function applyPluginActionPayload(action: DesktopRunbookActionRecord, payload: RunbookActionPayload): void {
+  if (action.pluginId !== undefined && action.pluginId.length > 0) payload.pluginId = action.pluginId;
+  if (action.pluginActionId !== undefined && action.pluginActionId.length > 0) payload.pluginActionId = action.pluginActionId;
+  if (typeof action.pluginInput === "string") payload.pluginInput = action.pluginInput;
+}
+
+function applyExternalSourceActionPayload(action: DesktopRunbookActionRecord, payload: RunbookActionPayload): void {
+  if (action.query !== undefined && action.query.length > 0) payload.query = action.query;
+  if (action.sourceId !== undefined && action.sourceId.length > 0) payload.sourceId = action.sourceId;
+}
+
+function actionPayload(action: DesktopRunbookActionRecord): RunbookActionPayload {
+  const payload: RunbookActionPayload = {};
+  applySharedActionPayload(action, payload);
   switch (action.type) {
-    case "shell": {
-      if (action.command !== undefined && action.command.length > 0) {
-        payload.command = action.command;
-      }
+    case "shell":
+      applyShellActionPayload(action, payload);
       return payload;
-    }
-    case "llm": {
-      if (action.prompt !== undefined && action.prompt.length > 0) {
-        payload.prompt = action.prompt;
-      }
-      if (action.llmProviderKey !== undefined) {
-        payload.llmProviderKey = action.llmProviderKey;
-      }
-      if (action.llmModel !== undefined && action.llmModel.length > 0) {
-        payload.llmModel = action.llmModel;
-      }
+    case "llm":
+      applyLlmActionPayload(action, payload);
       return payload;
-    }
-    case "http": {
-      if (action.url !== undefined && action.url.length > 0) {
-        payload.url = action.url;
-      }
-      if (action.method !== undefined) {
-        payload.method = action.method;
-      }
-      if (action.headers !== undefined && action.headers.length > 0) {
-        payload.headers = action.headers;
-      }
-      if (typeof action.body === "string") {
-        payload.body = action.body;
-      }
+    case "http":
+      applyHttpActionPayload(action, payload);
       return payload;
-    }
-    case "plugin": {
-      if (action.pluginId !== undefined && action.pluginId.length > 0) {
-        payload.pluginId = action.pluginId;
-      }
-      if (
-        action.pluginActionId !== undefined &&
-        action.pluginActionId.length > 0
-      ) {
-        payload.pluginActionId = action.pluginActionId;
-      }
-      if (typeof action.pluginInput === "string") {
-        payload.pluginInput = action.pluginInput;
-      }
+    case "plugin":
+      applyPluginActionPayload(action, payload);
       return payload;
-    }
-    case "external_source": {
-      if (action.query !== undefined && action.query.length > 0) {
-        payload.query = action.query;
-      }
-      if (action.sourceId !== undefined && action.sourceId.length > 0) {
-        payload.sourceId = action.sourceId;
-      }
+    case "external_source":
+      applyExternalSourceActionPayload(action, payload);
       return payload;
-    }
     case "telemetry_existing_entry":
     case "data_source_query":
     case "telemetry_ingest":
     case "diagnosis_diagnose":
     case "diagnosis_verify":
-    case "diagnosis_recommend": {
-      if (action.telemetryConfig !== undefined) {
-        payload.telemetryConfig = action.telemetryConfig;
-      }
+    case "diagnosis_recommend":
+      if (action.telemetryConfig !== undefined) payload.telemetryConfig = action.telemetryConfig;
       return payload;
-    }
     default:
-      throw new Error(
-        `Unsupported runbook action type: ${String(action.type)}`,
-      );
+      throw new Error(`Unsupported runbook action type: ${String(action.type)}`);
   }
 }
 
@@ -1847,7 +1780,7 @@ export class DesktopRunbookStore {
     return artifact;
   }
 
-  // eslint-disable-next-line complexity -- Import coordinates conflict handling, dependencies, and dry-run summaries.
+  // eslint-disable-next-line sonarjs/cognitive-complexity -- Import validation, conflict policy, and transactional writes form one ordered persistence workflow.
   async importRunbooks(
     payload: Record<string, unknown>,
   ): Promise<RunbookImportSummary> {

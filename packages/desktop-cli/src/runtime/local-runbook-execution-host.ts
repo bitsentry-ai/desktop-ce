@@ -292,6 +292,47 @@ async function waitBeforeOwnershipLockRetry(attempt: number): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, OWNERSHIP_LOCK_RETRY_DELAY_MS + jitterMs))
 }
 
+function throwOwnershipLockAlreadyRunning(): never {
+  throw new LocalRunbookExecutionHostAlreadyRunningError(
+    'A local runbook execution host is already starting or listening for this user data directory.',
+  )
+}
+
+async function quarantineOwnershipLock(lockPath: string): Promise<string | null> {
+  const quarantinePath = ownershipLockSiblingPath(lockPath, 'reclaim')
+  try {
+    await rename(lockPath, quarantinePath)
+    return quarantinePath
+  } catch (error) {
+    if (isMissingFile(error)) return null
+    throw error
+  }
+}
+
+async function reclaimStaleOwnershipLock(lockPath: string, attempt: number): Promise<void> {
+  const rawLock = await readFile(lockPath, 'utf-8').catch(() => null)
+  if (rawLock === null) {
+    await waitBeforeOwnershipLockRetry(attempt)
+    return
+  }
+  const current = parseOwnershipLock(rawLock)
+  if (current !== null && isOwnershipLockLive(current)) throwOwnershipLockAlreadyRunning()
+
+  const quarantinePath = await quarantineOwnershipLock(lockPath)
+  if (quarantinePath === null) {
+    await waitBeforeOwnershipLockRetry(attempt)
+    return
+  }
+  const quarantinedLock = await readFile(quarantinePath, 'utf-8').catch(() => null)
+  const quarantinedOwner = quarantinedLock === null ? null : parseOwnershipLock(quarantinedLock)
+  if (quarantinedOwner !== null && isOwnershipLockLive(quarantinedOwner)) {
+    await restoreOwnershipLock(quarantinePath, lockPath)
+    throwOwnershipLockAlreadyRunning()
+  }
+  await rm(quarantinePath, { force: true })
+  await waitBeforeOwnershipLockRetry(attempt)
+}
+
 async function acquireOwnershipLock(userDataPath: string, token: string): Promise<string> {
   const lockPath = ownershipLockPath(userDataPath)
   await mkdir(userDataPath, { recursive: true, mode: 0o700 })
@@ -302,48 +343,11 @@ async function acquireOwnershipLock(userDataPath: string, token: string): Promis
       return lockPath
     } catch (error) {
       if (!isAlreadyExists(error)) throw error
-
-      const rawLock = await readFile(lockPath, 'utf-8').catch(() => null)
-      if (rawLock === null) {
-        await waitBeforeOwnershipLockRetry(attempt)
-        continue
-      }
-
-      const current = parseOwnershipLock(rawLock)
-      if (current !== null && isOwnershipLockLive(current)) {
-        throw new LocalRunbookExecutionHostAlreadyRunningError(
-          'A local runbook execution host is already starting or listening for this user data directory.',
-        )
-      }
-
-      const quarantinePath = ownershipLockSiblingPath(lockPath, 'reclaim')
-      try {
-        await rename(lockPath, quarantinePath)
-      } catch (renameError) {
-        if (isMissingFile(renameError)) {
-          await waitBeforeOwnershipLockRetry(attempt)
-          continue
-        }
-        throw renameError
-      }
-
-      const quarantinedLock = await readFile(quarantinePath, 'utf-8').catch(() => null)
-      const quarantinedOwner = quarantinedLock === null ? null : parseOwnershipLock(quarantinedLock)
-      if (quarantinedOwner !== null && isOwnershipLockLive(quarantinedOwner)) {
-        await restoreOwnershipLock(quarantinePath, lockPath)
-        throw new LocalRunbookExecutionHostAlreadyRunningError(
-          'A local runbook execution host is already starting or listening for this user data directory.',
-        )
-      }
-
-      await rm(quarantinePath, { force: true })
-      await waitBeforeOwnershipLockRetry(attempt)
+      await reclaimStaleOwnershipLock(lockPath, attempt)
     }
   }
 
-  throw new LocalRunbookExecutionHostAlreadyRunningError(
-    'A local runbook execution host is already starting or listening for this user data directory.',
-  )
+  throwOwnershipLockAlreadyRunning()
 }
 
 async function removeOwnershipLock(lockPath: string | null, token: string): Promise<void> {

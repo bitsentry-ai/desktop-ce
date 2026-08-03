@@ -9,6 +9,7 @@ import type {
 } from "../application/ports/outbound";
 import { DiagnosisRecord } from "../domain/entities/DiagnosisRecord";
 import { DiagnosisState } from "../domain/value-objects/DiagnosisState";
+import { expect, it } from "vitest";
 
 const assert = (condition: boolean, message: string): void => {
   if (!condition) {
@@ -16,7 +17,7 @@ const assert = (condition: boolean, message: string): void => {
   }
 };
 
-const run = async (): Promise<void> => {
+it("runs the diagnosis and verification smoke workflow", async () => {
   const diagnosisRecord = DiagnosisRecord.create(11);
 
   const diagnosisRepository: DiagnosisRepository = {
@@ -112,6 +113,5 @@ const run = async (): Promise<void> => {
     ),
     "failed verification should never append a verified transition",
   );
-};
-
-void run();
+  expect(verificationResult.newState).toBe("failed");
+});

@@ -88,8 +88,10 @@ function formatExportedAt(
   return parsed.toLocaleString();
 }
 
+type ImportSummaryCount = "imported" | "skipped" | "failed";
+
 function formatSummaryCountLabel(
-  key: "imported" | "skipped" | "failed",
+  key: ImportSummaryCount,
   isPreview: boolean,
   t: (key: string) => string,
 ): string {
@@ -158,6 +160,7 @@ function resultDetailLines(result: {
   return lines;
 }
 
+// eslint-disable-next-line sonarjs/cognitive-complexity -- The import preview, conflict controls, and result state share one dialog lifecycle and must remain visually consistent.
 export function RunbookImportDialog({
   open,
   artifact,

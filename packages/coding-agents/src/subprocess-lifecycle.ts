@@ -88,7 +88,7 @@ function requestGracefulTermination(child: ChildProcess): void {
 function forceKillProcessTree(child: ChildProcess): void {
   if (process.platform === 'win32' && child.pid !== undefined) {
     try {
-      spawnSync('taskkill', ['/pid', String(child.pid), '/T', '/F'], { stdio: 'ignore' })
+      spawnSync('C:\\Windows\\System32\\taskkill.exe', ['/pid', String(child.pid), '/T', '/F'], { stdio: 'ignore' })
       return
     } catch {
       // Fall through to the direct process kill.

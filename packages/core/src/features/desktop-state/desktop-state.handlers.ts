@@ -37,9 +37,11 @@ interface DesktopStateUpsertTable {
   }): Promise<DesktopStateRow>
 }
 
+type DesktopStateCollectionTable = DesktopStateDeleteManyTable & DesktopStateCreateTable & DesktopStateFindManyTable
+
 export interface DesktopStateDatabase {
   legacyImportLedger: DesktopStateFindUniqueTable & DesktopStateUpsertTable
-  incidentMessage: DesktopStateDeleteManyTable & DesktopStateCreateTable & DesktopStateFindManyTable
+  incidentMessage: DesktopStateCollectionTable
   incidentThread:
     & DesktopStateCountTable
     & DesktopStateDeleteManyTable
@@ -51,7 +53,7 @@ export interface DesktopStateDatabase {
     & DesktopStateCreateTable
     & DesktopStateFindManyTable
     & DesktopStateUpsertTable
-  runbookAction: DesktopStateDeleteManyTable & DesktopStateCreateTable & DesktopStateFindManyTable
+  runbookAction: DesktopStateCollectionTable
   runbookVersion: DesktopStateDeleteManyTable
   investigationSession:
     & DesktopStateCountTable
@@ -59,9 +61,9 @@ export interface DesktopStateDatabase {
     & DesktopStateCreateTable
     & DesktopStateFindUniqueTable
     & DesktopStateFindManyTable
-  investigationTraceEntry: DesktopStateDeleteManyTable & DesktopStateCreateTable & DesktopStateFindManyTable
-  investigationToolRun: DesktopStateDeleteManyTable & DesktopStateCreateTable & DesktopStateFindManyTable
-  investigationReport: DesktopStateDeleteManyTable & DesktopStateCreateTable & DesktopStateFindManyTable
+  investigationTraceEntry: DesktopStateCollectionTable
+  investigationToolRun: DesktopStateCollectionTable
+  investigationReport: DesktopStateCollectionTable
   $queryRawUnsafe<T extends DesktopStateRow = DesktopStateRow>(query: string): Promise<T[]>
   $executeRawUnsafe(query: string): Promise<unknown>
 }

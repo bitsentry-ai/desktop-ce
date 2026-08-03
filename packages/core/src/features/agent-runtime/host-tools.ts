@@ -248,6 +248,50 @@ function staleRunbookIdError(runbooks: RunbookRecord[], runbookId: string, runbo
   return new Error(`Runbook id ${runbookId} was not found and may be stale. Call list_runbooks, then retry execute_runbook with a current id.${hint}`)
 }
 
+function resolveRunbookByTitle(runbooks: RunbookRecord[], runbookTitle: string, staleRunbookId?: string): RunbookRecord | null {
+  const normalizedTitle = runbookTitle.toLowerCase()
+  const exactMatches = runbooks.filter((runbook) => runbook.title.trim().toLowerCase() === normalizedTitle)
+  if (exactMatches.length === 1) return exactMatches[0]
+  if (exactMatches.length > 1) {
+    if (staleRunbookId !== undefined) throw staleRunbookIdError(runbooks, staleRunbookId, runbookTitle)
+    throw new Error(`Multiple runbooks exactly match "${runbookTitle}". Use runbookId. Matches: ${describeRunbookCandidates(exactMatches)}`)
+  }
+  const partialMatches = runbooks.filter((runbook) => runbook.title.toLowerCase().includes(normalizedTitle))
+  if (partialMatches.length === 1) return partialMatches[0]
+  if (partialMatches.length > 1) {
+    if (staleRunbookId !== undefined) throw staleRunbookIdError(runbooks, staleRunbookId, runbookTitle)
+    throw new Error(`Multiple runbooks match "${runbookTitle}". Use runbookId. Matches: ${describeRunbookCandidates(partialMatches)}`)
+  }
+  return null
+}
+
+function findRunbookById(runbooks: RunbookRecord[], runbookId: string | undefined): RunbookRecord | undefined {
+  return runbookId === undefined || runbookId.length === 0 ? undefined : runbooks.find((runbook) => runbook.id === runbookId)
+}
+
+function findUniqueExactRunbookTitle(runbooks: RunbookRecord[], runbookTitle: string): RunbookRecord | undefined {
+  const matches = runbooks.filter((runbook) => runbook.title.trim().toLowerCase() === runbookTitle.toLowerCase())
+  return matches.length === 1 ? matches[0] : undefined
+}
+
+function resolveRequestedRunbookById(
+  runbooks: RunbookRecord[],
+  runbookId: string | undefined,
+  runbookTitle: string | undefined,
+): RunbookRecord | null {
+  const byId = findRunbookById(runbooks, runbookId)
+  if (byId !== undefined) return byId
+  if (runbookId === undefined || runbookId.length === 0) return null
+  if (runbookTitle !== undefined && runbookTitle.length > 0) {
+    const exactTitleMatch = findUniqueExactRunbookTitle(runbooks, runbookTitle)
+    if (exactTitleMatch !== undefined) return exactTitleMatch
+  }
+  const syntheticMatch = resolveSyntheticRunbookId(runbooks, runbookId)
+  if (syntheticMatch !== null) return syntheticMatch
+  if (runbookTitle === undefined || runbookTitle.length === 0) throw staleRunbookIdError(runbooks, runbookId)
+  return null
+}
+
 async function resolveRunbookReference(
   context: HostToolContext,
   input: ExecuteRunbookHostToolInput,
@@ -256,46 +300,18 @@ async function resolveRunbookReference(
   const runbookId = input.runbookId?.trim()
   const runbookTitle = input.runbookTitle?.trim()
 
-  if (runbookId !== undefined && runbookId.length > 0) {
-    const byId = runbooks.find((runbook) => runbook.id === runbookId)
-    if (byId !== undefined) return byId
-
-    if (runbookTitle !== undefined && runbookTitle.length > 0) {
-      const exactTitleMatch = runbooks.filter(
-        (runbook) => runbook.title.trim().toLowerCase() === runbookTitle.toLowerCase(),
-      )
-      if (exactTitleMatch.length === 1) return exactTitleMatch[0]
-    }
-
-    const syntheticMatch = resolveSyntheticRunbookId(runbooks, runbookId)
-    if (syntheticMatch !== null) return syntheticMatch
-    if (runbookTitle === undefined || runbookTitle.length === 0) throw staleRunbookIdError(runbooks, runbookId)
-  }
+  const idMatch = resolveRequestedRunbookById(runbooks, runbookId, runbookTitle)
+  if (idMatch !== null) return idMatch
 
   if (runbookTitle !== undefined && runbookTitle.length > 0) {
-    const normalizedTitle = runbookTitle.toLowerCase()
-    const exactMatches = runbooks.filter((runbook) => runbook.title.trim().toLowerCase() === normalizedTitle)
-    if (exactMatches.length === 1) return exactMatches[0]
-    if (exactMatches.length > 1) {
-      if (runbookId !== undefined && runbookId.length > 0) throw staleRunbookIdError(runbooks, runbookId, runbookTitle)
-      throw new Error(`Multiple runbooks exactly match "${runbookTitle}". Use runbookId. Matches: ${describeRunbookCandidates(exactMatches)}`)
-    }
-
-    const partialMatches = runbooks.filter((runbook) => runbook.title.toLowerCase().includes(normalizedTitle))
-    if (partialMatches.length === 1) return partialMatches[0]
-    if (partialMatches.length > 1) {
-      if (runbookId !== undefined && runbookId.length > 0) throw staleRunbookIdError(runbooks, runbookId, runbookTitle)
-      throw new Error(`Multiple runbooks match "${runbookTitle}". Use runbookId. Matches: ${describeRunbookCandidates(partialMatches)}`)
-    }
+    const titleMatch = resolveRunbookByTitle(runbooks, runbookTitle, runbookId)
+    if (titleMatch !== null) return titleMatch
     if (runbookId !== undefined && runbookId.length > 0) throw staleRunbookIdError(runbooks, runbookId, runbookTitle)
     throw new Error(`Runbook not found for title: ${runbookTitle}`)
   }
 
-  const activeRunbookId = context.session.runbookContext?.id
-  if (activeRunbookId !== undefined && activeRunbookId.length > 0) {
-    const activeRunbook = runbooks.find((runbook) => runbook.id === activeRunbookId)
-    if (activeRunbook !== undefined) return activeRunbook
-  }
+  const activeRunbook = findRunbookById(runbooks, context.session.runbookContext?.id)
+  if (activeRunbook !== undefined) return activeRunbook
 
   throw new Error('execute_runbook requires runbookId or runbookTitle when there is no active runbook context')
 }
@@ -485,23 +501,14 @@ async function resolveAuthorableRunbookReference(context: HostToolContext, input
   const runbooks = await (context.listAuthorableRunbooks?.() ?? context.gateway.listExecutable())
   const runbookId = input.runbookId?.trim()
   const runbookTitle = input.runbookTitle?.trim()
-  if (runbookId !== undefined && runbookId.length > 0) {
-    const byId = runbooks.find((runbook) => runbook.id === runbookId)
-    if (byId !== undefined) return byId
-  }
+  const byId = findRunbookById(runbooks, runbookId)
+  if (byId !== undefined) return byId
   if (runbookTitle !== undefined && runbookTitle.length > 0) {
-    const exactMatches = runbooks.filter((runbook) => runbook.title.trim().toLowerCase() === runbookTitle.toLowerCase())
-    if (exactMatches.length === 1) return exactMatches[0]
-    if (exactMatches.length > 1) throw new Error(`Multiple runbooks exactly match "${runbookTitle}". Use runbookId. Matches: ${describeRunbookCandidates(exactMatches)}`)
-    const partialMatches = runbooks.filter((runbook) => runbook.title.toLowerCase().includes(runbookTitle.toLowerCase()))
-    if (partialMatches.length === 1) return partialMatches[0]
-    if (partialMatches.length > 1) throw new Error(`Multiple runbooks match "${runbookTitle}". Use runbookId. Matches: ${describeRunbookCandidates(partialMatches)}`)
+    const titleMatch = resolveRunbookByTitle(runbooks, runbookTitle)
+    if (titleMatch !== null) return titleMatch
   }
-  const activeRunbookId = context.session.runbookContext?.id
-  if (activeRunbookId !== undefined && activeRunbookId.length > 0) {
-    const active = runbooks.find((runbook) => runbook.id === activeRunbookId)
-    if (active !== undefined) return active
-  }
+  const active = findRunbookById(runbooks, context.session.runbookContext?.id)
+  if (active !== undefined) return active
   throw new Error('propose_runbook_edit requires runbookId or runbookTitle when there is no active runbook context')
 }
 

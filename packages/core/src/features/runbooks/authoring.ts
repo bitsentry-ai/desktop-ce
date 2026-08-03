@@ -189,7 +189,7 @@ function createAuthoringId(): string {
     ].join("-");
   }
 
-  return "proposal-" + Math.random().toString(36).slice(2, 12);
+  throw new Error("Secure random values are required to create an authoring proposal id");
 }
 
 function cloneRunbook(runbook: RunbookRecord): MutableRunbook {
@@ -321,6 +321,48 @@ function getOperationRiskLabels(
   return [...labels].sort();
 }
 
+function validateRunbookAction(
+  action: RunbookActionRecord,
+  seenActionIds: Set<string>,
+  errors: string[],
+): void {
+  validateRunbookActionIdentity(action, seenActionIds, errors);
+  validateRunbookActionFields(action, errors);
+  validateRunbookActionSecurity(action, errors);
+}
+
+function validateRunbookActionIdentity(
+  action: RunbookActionRecord,
+  seenActionIds: Set<string>,
+  errors: string[],
+): void {
+  const actionId = normalizeString(action.id);
+  if (actionId.length === 0) {
+    errors.push("Runbook action id is required.");
+  } else if (seenActionIds.has(actionId)) {
+    errors.push(`Duplicate runbook action id "${actionId}".`);
+  }
+  seenActionIds.add(actionId);
+
+  if (normalizeString(action.title).length === 0) errors.push(`Runbook action "${actionId}" title is required.`);
+}
+
+function validateRunbookActionFields(action: RunbookActionRecord, errors: string[]): void {
+  if (action.type === "shell" && normalizeString(action.command).length === 0) errors.push(`Shell action "${action.title}" is missing a command.`);
+  if (action.type === "llm" && normalizeString(action.prompt).length === 0) errors.push(`LLM action "${action.title}" is missing a prompt.`);
+  if (action.type === "http" && normalizeString(action.url).length === 0) errors.push(`HTTP action "${action.title}" is missing a URL.`);
+  if ((action.type === "external_source" || action.type === "data_source_query") && normalizeString(action.query).length === 0) errors.push(`Data-source action "${action.title}" is missing a query.`);
+  if (action.type === "external_source" && normalizeString(action.sourceId).length === 0) errors.push(`External Source action "${action.title}" is missing a source selection.`);
+  if (action.type === "plugin" && normalizeString(action.pluginId).length === 0) errors.push(`Plugin action "${action.title}" is missing a selected plugin.`);
+  if (action.type === "plugin" && normalizeString(action.pluginActionId).length === 0) errors.push(`Plugin action "${action.title}" is missing a selected plugin action.`);
+}
+
+function validateRunbookActionSecurity(action: RunbookActionRecord, errors: string[]): void {
+  if (action.parameters?.some((parameter) => parameter.secure === true && typeof parameter.defaultValue === "string" && parameter.defaultValue.length > 0) === true) {
+    errors.push(`Action "${action.title}" includes a plaintext default for a secure parameter.`);
+  }
+}
+
 export function validateRunbook(runbook: RunbookRecord): RunbookAuthoringValidationResult {
   const errors: string[] = [];
   const warnings: string[] = [];
@@ -347,70 +389,7 @@ export function validateRunbook(runbook: RunbookRecord): RunbookAuthoringValidat
 
   const seenActionIds = new Set<string>();
   for (const action of runbook.actions) {
-    const actionId = normalizeString(action.id);
-    if (actionId.length === 0) {
-      errors.push("Runbook action id is required.");
-    } else if (seenActionIds.has(actionId)) {
-      errors.push(`Duplicate runbook action id "${actionId}".`);
-    }
-    seenActionIds.add(actionId);
-
-    if (normalizeString(action.title).length === 0) {
-      errors.push(`Runbook action "${actionId}" title is required.`);
-    }
-
-    if (action.type === "shell" && normalizeString(action.command).length === 0) {
-      errors.push(`Shell action "${action.title}" is missing a command.`);
-    }
-
-    if (action.type === "llm" && normalizeString(action.prompt).length === 0) {
-      errors.push(`LLM action "${action.title}" is missing a prompt.`);
-    }
-
-    if (action.type === "http" && normalizeString(action.url).length === 0) {
-      errors.push(`HTTP action "${action.title}" is missing a URL.`);
-    }
-
-    if (
-      (action.type === "external_source" || action.type === "data_source_query") &&
-      normalizeString(action.query).length === 0
-    ) {
-      errors.push(`Data-source action "${action.title}" is missing a query.`);
-    }
-
-    if (
-      action.type === "external_source" &&
-      normalizeString(action.sourceId).length === 0
-    ) {
-      errors.push(`External Source action "${action.title}" is missing a source selection.`);
-    }
-
-    if (
-      action.type === "plugin" &&
-      normalizeString(action.pluginId).length === 0
-    ) {
-      errors.push(`Plugin action "${action.title}" is missing a selected plugin.`);
-    }
-
-    if (
-      action.type === "plugin" &&
-      normalizeString(action.pluginActionId).length === 0
-    ) {
-      errors.push(`Plugin action "${action.title}" is missing a selected plugin action.`);
-    }
-
-    if (
-      action.parameters?.some(
-        (parameter) =>
-          parameter.secure === true &&
-          typeof parameter.defaultValue === "string" &&
-          parameter.defaultValue.length > 0,
-      ) === true
-    ) {
-      errors.push(
-        `Action "${action.title}" includes a plaintext default for a secure parameter.`,
-      );
-    }
+    validateRunbookAction(action, seenActionIds, errors);
   }
 
   return {
@@ -443,6 +422,46 @@ function insertAction(
   runbook.actions.splice(insertIndex + 1, 0, nextAction);
 }
 
+function applyMetadataOperation(runbook: MutableRunbook, operation: RunbookAuthoringOperation): void {
+  if (operation.metadata?.title !== undefined) runbook.title = operation.metadata.title;
+  if (operation.metadata?.description !== undefined) runbook.description = operation.metadata.description;
+  if (operation.metadata?.idleTimeout !== undefined) runbook.idleTimeout = operation.metadata.idleTimeout;
+}
+
+function applyAddActionOperation(runbook: MutableRunbook, operation: RunbookAuthoringOperation): void {
+  if (operation.action === undefined) throw new Error(`Operation "${operation.id}" is missing an action.`);
+  if (runbook.actions.some((existing) => existing.id === operation.action?.id)) {
+    throw new Error(`Operation "${operation.id}" would duplicate action "${operation.action.id}".`);
+  }
+  insertAction(runbook, operation.action, operation.insertAfterActionId);
+}
+
+function applyUpdateActionOperation(runbook: MutableRunbook, operation: RunbookAuthoringOperation): void {
+  if (operation.action === undefined) throw new Error(`Operation "${operation.id}" is missing an action.`);
+  const actionId = operation.actionId ?? operation.action.id;
+  const index = runbook.actions.findIndex((action) => action.id === actionId);
+  if (index === -1) throw new Error(`Operation "${operation.id}" targets a missing action. ${describeAvailableActions(runbook)}`);
+  runbook.actions[index] = cloneAction(operation.action);
+}
+
+function applyDeleteActionOperation(runbook: MutableRunbook, operation: RunbookAuthoringOperation): void {
+  if (operation.actionId === undefined) throw new Error(`Operation "${operation.id}" is missing an action id.`);
+  const nextActions = runbook.actions.filter((action) => action.id !== operation.actionId);
+  if (nextActions.length === runbook.actions.length) throw new Error(`Operation "${operation.id}" targets a missing action. ${describeAvailableActions(runbook)}`);
+  runbook.actions = nextActions;
+}
+
+function applyReorderActionsOperation(runbook: MutableRunbook, operation: RunbookAuthoringOperation): void {
+  if (operation.actionIdsInOrder === undefined) throw new Error(`Operation "${operation.id}" is missing action order data.`);
+  const actionsById = new Map(runbook.actions.map((action) => [action.id, action] as const));
+  if (operation.actionIdsInOrder.length !== runbook.actions.length) throw new Error(`Operation "${operation.id}" must include every action id exactly once.`);
+  runbook.actions = operation.actionIdsInOrder.map((actionId) => {
+    const action = actionsById.get(actionId);
+    if (action === undefined) throw new Error(`Operation "${operation.id}" references missing action "${actionId}".`);
+    return action;
+  });
+}
+
 function applyOperation(
   runbook: MutableRunbook,
   operation: RunbookAuthoringOperation,
@@ -452,83 +471,23 @@ function applyOperation(
       throw new Error("Create-runbook operations are represented as proposals.");
     }
     case "update_metadata": {
-      if (operation.metadata?.title !== undefined) {
-        runbook.title = operation.metadata.title;
-      }
-      if (operation.metadata?.description !== undefined) {
-        runbook.description = operation.metadata.description;
-      }
-      if (operation.metadata?.idleTimeout !== undefined) {
-        runbook.idleTimeout = operation.metadata.idleTimeout;
-      }
+      applyMetadataOperation(runbook, operation);
       return;
     }
     case "add_action": {
-      if (operation.action === undefined) {
-        throw new Error(`Operation "${operation.id}" is missing an action.`);
-      }
-      if (
-        runbook.actions.some((existing) => existing.id === operation.action?.id)
-      ) {
-        throw new Error(
-          `Operation "${operation.id}" would duplicate action "${operation.action.id}".`,
-        );
-      }
-      insertAction(runbook, operation.action, operation.insertAfterActionId);
+      applyAddActionOperation(runbook, operation);
       return;
     }
     case "update_action": {
-      if (operation.action === undefined) {
-        throw new Error(`Operation "${operation.id}" is missing an action.`);
-      }
-      const actionId = operation.actionId ?? operation.action.id;
-      const index = runbook.actions.findIndex((action) => action.id === actionId);
-      if (index === -1) {
-        throw new Error(
-          `Operation "${operation.id}" targets a missing action. ${describeAvailableActions(runbook)}`,
-        );
-      }
-      runbook.actions[index] = cloneAction(operation.action);
+      applyUpdateActionOperation(runbook, operation);
       return;
     }
     case "delete_action": {
-      if (operation.actionId === undefined) {
-        throw new Error(`Operation "${operation.id}" is missing an action id.`);
-      }
-      const nextActions = runbook.actions.filter(
-        (action) => action.id !== operation.actionId,
-      );
-      if (nextActions.length === runbook.actions.length) {
-        throw new Error(
-          `Operation "${operation.id}" targets a missing action. ${describeAvailableActions(runbook)}`,
-        );
-      }
-      runbook.actions = nextActions;
+      applyDeleteActionOperation(runbook, operation);
       return;
     }
     case "reorder_actions": {
-      if (operation.actionIdsInOrder === undefined) {
-        throw new Error(
-          `Operation "${operation.id}" is missing action order data.`,
-        );
-      }
-      const actionsById = new Map(
-        runbook.actions.map((action) => [action.id, action] as const),
-      );
-      if (operation.actionIdsInOrder.length !== runbook.actions.length) {
-        throw new Error(
-          `Operation "${operation.id}" must include every action id exactly once.`,
-        );
-      }
-      runbook.actions = operation.actionIdsInOrder.map((actionId) => {
-        const action = actionsById.get(actionId);
-        if (action === undefined) {
-          throw new Error(
-            `Operation "${operation.id}" references missing action "${actionId}".`,
-          );
-        }
-        return action;
-      });
+      applyReorderActionsOperation(runbook, operation);
       return;
     }
     default:

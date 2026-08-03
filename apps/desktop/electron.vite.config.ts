@@ -8,7 +8,7 @@ const desktopNodeModules = resolve(__dirname, 'node_modules')
 
 function resolveBuildGitSha(): string {
   try {
-    return execFileSync('git', ['rev-parse', 'HEAD'], {
+    return execFileSync('/usr/bin/git', ['rev-parse', 'HEAD'], {
       cwd: resolve(__dirname, '../..'),
       encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'ignore'],

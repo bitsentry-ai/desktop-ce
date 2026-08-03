@@ -5,7 +5,6 @@ import {
   isSupportedLocale,
   useLocale,
   useTranslation,
-  type SupportedLocale,
 } from "@bitsentry-ce/i18n";
 
 import { cn } from "../lib/utils";

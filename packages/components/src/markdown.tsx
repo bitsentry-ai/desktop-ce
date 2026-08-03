@@ -28,8 +28,23 @@ export function normalizeMarkdownContent(content: string): string {
   return content.replace(/\r\n/g, "\n").replace(HTML_BREAK_TAG_REGEX, "\n");
 }
 
-const MARKDOWN_STRUCTURAL_LINE_REGEX =
-  /^(\s{0,3}(```|~~~)|\s{0,3}#{1,6}\s|\s{0,3}>\s?|\s*[-*+]\s+|\s*\d+\.\s+|\s*\|.*\|\s*$|\s{4,}\S)/;
+const MARKDOWN_FENCE_LINE_REGEX = /^\s{0,3}(```|~~~)/;
+const MARKDOWN_HEADING_LINE_REGEX = /^\s{0,3}#{1,6}\s/;
+const MARKDOWN_QUOTE_LINE_REGEX = /^\s{0,3}>\s?/;
+const MARKDOWN_BULLET_LINE_REGEX = /^\s*[-*+]\s+/;
+const MARKDOWN_ORDERED_LIST_LINE_REGEX = /^\s*\d+\.\s+/;
+const MARKDOWN_TABLE_LINE_REGEX = /^\s*\|.*\|\s*$/;
+const MARKDOWN_INDENTED_CODE_LINE_REGEX = /^\s{4,}\S/;
+
+function isMarkdownStructuralLine(line: string): boolean {
+  return MARKDOWN_FENCE_LINE_REGEX.test(line) ||
+    MARKDOWN_HEADING_LINE_REGEX.test(line) ||
+    MARKDOWN_QUOTE_LINE_REGEX.test(line) ||
+    MARKDOWN_BULLET_LINE_REGEX.test(line) ||
+    MARKDOWN_ORDERED_LIST_LINE_REGEX.test(line) ||
+    MARKDOWN_TABLE_LINE_REGEX.test(line) ||
+    MARKDOWN_INDENTED_CODE_LINE_REGEX.test(line);
+}
 
 export function paragraphizePlainTextSoftBreaks(content: string): string {
   const normalized = content
@@ -38,7 +53,7 @@ export function paragraphizePlainTextSoftBreaks(content: string): string {
   const lines = normalized.split("\n");
 
   if (
-    lines.some((line) => MARKDOWN_STRUCTURAL_LINE_REGEX.test(line)) ||
+    lines.some(isMarkdownStructuralLine) ||
     lines.filter((line) => line.trim().length > 0).length < 2
   ) {
     return normalized;
@@ -50,19 +65,90 @@ export function paragraphizePlainTextSoftBreaks(content: string): string {
     .replace(/\n{3,}/g, "\n\n");
 }
 
+function unwrapDelimitedText(value: string, delimiter: string): string {
+  let result = "";
+  let cursor = 0;
+  while (cursor < value.length) {
+    const start = value.indexOf(delimiter, cursor);
+    if (start < 0) return result + value.slice(cursor);
+    const end = value.indexOf(delimiter, start + delimiter.length);
+    if (end < 0) return result + value.slice(cursor);
+    result += value.slice(cursor, start) + value.slice(start + delimiter.length, end);
+    cursor = end + delimiter.length;
+  }
+  return result;
+}
+
+function replaceMarkdownLinks(value: string): string {
+  let result = "";
+  let cursor = 0;
+  while (cursor < value.length) {
+    const labelStart = value.indexOf("[", cursor);
+    if (labelStart < 0) return result + value.slice(cursor);
+    const labelEnd = value.indexOf("](", labelStart + 1);
+    const urlEnd = labelEnd < 0 ? -1 : value.indexOf(")", labelEnd + 2);
+    if (labelEnd < 0 || urlEnd < 0) return result + value.slice(cursor);
+
+    const imageMarker = labelStart > cursor && value[labelStart - 1] === "!" ? 1 : 0;
+    result += value.slice(cursor, labelStart - imageMarker);
+    result += value.slice(labelStart + 1, labelEnd);
+    cursor = urlEnd + 1;
+  }
+  return result;
+}
+
+function stripMarkdownLinePrefix(line: string): string {
+  let start = 0;
+  while (start < 3 && (line[start] === " " || line[start] === "\t")) start += 1;
+  const value = line.slice(start);
+  if (value.startsWith(">")) return value.slice(1).trimStart();
+
+  let headingLength = 0;
+  while (value[headingLength] === "#") headingLength += 1;
+  if (headingLength > 0 && headingLength <= 6 && value[headingLength]?.trim() === "") {
+    return value.slice(headingLength).trimStart();
+  }
+
+  if (["-", "*", "+"].includes(value[0] ?? "") && value[1]?.trim() === "") {
+    return value.slice(1).trimStart();
+  }
+
+  let digitCount = 0;
+  while (value[digitCount] >= "0" && value[digitCount] <= "9") digitCount += 1;
+  return value[digitCount] === "." && value[digitCount + 1]?.trim() === ""
+    ? value.slice(digitCount + 1).trimStart()
+    : line;
+}
+
+function stripHtmlTags(value: string): string {
+  let result = "";
+  let cursor = 0;
+  while (cursor < value.length) {
+    const start = value.indexOf("<", cursor);
+    if (start < 0) return result + value.slice(cursor);
+    const end = value.indexOf(">", start + 1);
+    if (end < 0) return result + value.slice(cursor);
+    result += value.slice(cursor, start) + " ";
+    cursor = end + 1;
+  }
+  return result;
+}
+
 export function getMarkdownPreview(content: string, maxLength = 180): string {
-  const normalized = normalizeMarkdownContent(content)
-    .replace(/```([\s\S]*?)```/g, "$1")
-    .replace(/`([^`]+)`/g, "$1")
-    .replace(/!\[([^\]]*)\]\([^)]+\)/g, "$1")
-    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, "$1")
-    .replace(/^\s{0,3}#{1,6}\s+/gm, "")
-    .replace(/^\s{0,3}>\s?/gm, "")
-    .replace(/^\s*[-*+]\s+/gm, "")
-    .replace(/^\s*\d+\.\s+/gm, "")
+  const withoutLinks = replaceMarkdownLinks(
+    unwrapDelimitedText(
+      unwrapDelimitedText(normalizeMarkdownContent(content), "```"),
+      "`",
+    ),
+  );
+  const normalized = stripHtmlTags(
+    withoutLinks
+      .split("\n")
+      .map((line) => stripMarkdownLinePrefix(line))
+      .join("\n"),
+  )
     .replace(/\|/g, " ")
     .replace(/\*\*|__|\*|_|~~/g, "")
-    .replace(/<[^>]+>/g, " ")
     .replace(/\s+/g, " ")
     .trim();
 

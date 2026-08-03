@@ -69,7 +69,15 @@ function parseArgs(argv: string[]): CliOptions {
 }
 
 function normalizePrefix(prefix: string): string {
-  return prefix.replace(/^\/+|\/+$/g, "");
+  return trimSlashes(prefix);
+}
+
+function trimSlashes(value: string): string {
+  let start = 0;
+  let end = value.length;
+  while (value[start] === "/") start += 1;
+  while (end > start && value[end - 1] === "/") end -= 1;
+  return value.slice(start, end);
 }
 
 function shouldRewriteValue(value: string, normalizedPrefix: string): boolean {
@@ -80,18 +88,45 @@ function shouldRewriteValue(value: string, normalizedPrefix: string): boolean {
   return true;
 }
 
+function parseManifestPathLine(
+  line: string,
+): { indentation: string; key: string; quote: string; value: string } | undefined {
+  let valueStart = 0;
+  while (line[valueStart] === " " || line[valueStart] === "\t") valueStart += 1;
+  if (line[valueStart] === "-") valueStart += 1;
+  while (line[valueStart] === " " || line[valueStart] === "\t") valueStart += 1;
+
+  const indentation = line.slice(0, valueStart);
+  const colon = line.indexOf(":", valueStart);
+  const key = line.slice(valueStart, colon);
+  if (colon < 0 || (key !== "path" && key !== "url")) return undefined;
+
+  valueStart = colon + 1;
+  while (line[valueStart] === " " || line[valueStart] === "\t") valueStart += 1;
+  const quote = line[valueStart] === "'" || line[valueStart] === '"' ? line[valueStart++] : "";
+  let valueEnd = line.length;
+  while (line[valueEnd - 1] === " " || line[valueEnd - 1] === "\t") valueEnd -= 1;
+  if (quote !== "") {
+    if (line[valueEnd - 1] !== quote) return undefined;
+    valueEnd -= 1;
+  }
+
+  const value = line.slice(valueStart, valueEnd);
+  return value === "" || value.includes("'") || value.includes('"')
+    ? undefined
+    : { indentation, key, quote, value };
+}
+
 function rewriteManifest(content: string, prefix: string): string {
   const normalizedPrefix = normalizePrefix(prefix);
-  const linePattern = /^([ \t]*-?[ \t]*)(path|url):[ \t]*(['"]?)([^'"]+)\3[ \t]*$/;
 
   return content
     .split(/\r?\n/)
     .map((line) => {
-      const match = line.match(linePattern);
-      if (match === null) return line;
+      const parsed = parseManifestPathLine(line);
+      if (parsed === undefined) return line;
 
-      const [, indentation, key, quote, rawValue] = match;
-      const value = rawValue.trim();
+      const { indentation, key, quote, value } = parsed;
       if (!shouldRewriteValue(value, normalizedPrefix)) {
         return line;
       }

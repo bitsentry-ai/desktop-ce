@@ -6,6 +6,7 @@ import {
   DESKTOP_RPC_CHANNELS,
   createDesktopTrpcRouter,
 } from '@bitsentry-ce/components/services'
+import { expect, it } from 'vitest'
 
 const dispatched: string[] = []
 const router = createDesktopTrpcRouter({
@@ -18,8 +19,7 @@ const router = createDesktopTrpcRouter({
 const routerChannels = Object.keys(router._def.procedures).sort()
 const contractChannels = [...DESKTOP_RPC_CHANNELS].sort()
 
-if (JSON.stringify(routerChannels) !== JSON.stringify(contractChannels)) {
-  throw new Error('Every desktop IPC contract channel must have an electron-trpc procedure')
-}
-
-void dispatched
+it('registers every desktop IPC contract channel', () => {
+  expect(routerChannels).toEqual(contractChannels)
+  expect(dispatched).toEqual([])
+})

@@ -19,7 +19,6 @@ import type {
 } from '@bitsentry-ce/components/chat/types'
 import type {
   RunbookExecutionRecord,
-  RunbookExecutionStepRecord,
   RunbookParameterValues,
   RunbookRecord,
 } from '@bitsentry-ce/core/features/runbooks/desktop-runbook-ce.types'
@@ -2718,6 +2717,8 @@ describe('AgentRuntimeService runbook outcomes', () => {
       const lastMessage = service.getSnapshot(sessionId).messages.at(-1)
       return lastMessage?.kind === 'agent' && lastMessage.finalText?.includes('is still running') === true
     })
+
+    expect(service.getSnapshot(sessionId).messages.at(-1)?.kind).toBe('agent')
   })
 
   it('finishes the conversation without extending its timeout for a runbook', async () => {

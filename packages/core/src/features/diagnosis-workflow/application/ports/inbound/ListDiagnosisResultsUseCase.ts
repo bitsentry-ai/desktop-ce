@@ -1,4 +1,3 @@
-import type { DiagnosisStateValue } from "../../../domain/value-objects/DiagnosisState";
 import type {
   StateHistoryEntry,
   LogCategory,

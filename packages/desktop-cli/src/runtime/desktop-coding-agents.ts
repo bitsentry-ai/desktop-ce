@@ -1,15 +1,7 @@
 import log from 'electron-log'
 import {
-  type ClaudeCodeExecutionOptions,
   type CodingAgentsErrorContext,
-  type CodingAgentsSettingsStore,
-  codexStreamDeltasFromNotification,
   createDesktopCodingAgentBindings,
-  normalizeCodexExecutionError,
-  type CodexDebugRecorder,
-  type CodexExecutionOptions,
-  type OpenCodeDebugRecorder,
-  type OpenCodeExecutionOptions,
 } from '@bitsentry-ce/coding-agents'
 import {
   addBreadcrumb,

@@ -61,8 +61,37 @@ interface LookupResult {
   missingReference?: string;
 }
 
-const LEGACY_PARAM_PATTERN = /\{\{\s*([A-Za-z_][A-Za-z0-9_.-]*)\s*\}\}/g;
-const EXECUTION_CONTEXT_PATTERN = /\$\{\s*([^}\s][^}]*)\s*\}/g;
+function replaceDelimitedReferences(
+  template: string,
+  opening: string,
+  isValid: (reference: string) => boolean,
+  replace: (match: string, reference: string) => string,
+): string {
+  let result = "";
+  let cursor = 0;
+  while (cursor < template.length) {
+    const start = template.indexOf(opening, cursor);
+    if (start < 0) return result + template.slice(cursor);
+    const end = template.indexOf("}", start + opening.length);
+    if (end < 0) return result + template.slice(cursor);
+
+    const match = template.slice(start, end + 1);
+    const reference = template.slice(start + opening.length, end).trim();
+    result += template.slice(cursor, start);
+    result += isValid(reference) ? replace(match, reference) : match;
+    cursor = end + 1;
+  }
+  return result;
+}
+
+function isLegacyParameterKey(value: string): boolean {
+  if (value === "" || !/[A-Za-z_]/.test(value[0] ?? "")) return false;
+  return [...value.slice(1)].every((character) => /[A-Za-z0-9_.-]/.test(character));
+}
+
+function isExecutionContextReference(value: string): boolean {
+  return value !== "" && value[0]?.trim() !== "";
+}
 
 export class TemplateResolutionError extends Error {
   constructor(readonly missing: string[]) {
@@ -121,18 +150,19 @@ export class TemplateResolver {
       return resolvedReplacement(reference, lookup, secureValueMode);
     };
 
-    const legacyResolved = template.replace(
-      LEGACY_PARAM_PATTERN,
+    const legacyResolved = replaceDelimitedReferences(
+      template,
+      "{{",
+      isLegacyParameterKey,
       (match, key: string) =>
         replaceLookup(match, `params.${key}`, this.lookupParam(key)),
     );
 
-    const value = legacyResolved.replace(
-      EXECUTION_CONTEXT_PATTERN,
-      (match, expression: string) => {
-        const reference = expression.trim();
-        return replaceLookup(match, reference, this.lookupReference(reference));
-      },
+    const value = replaceDelimitedReferences(
+      legacyResolved,
+      "${",
+      isExecutionContextReference,
+      (match, reference) => replaceLookup(match, reference, this.lookupReference(reference)),
     );
 
     const warnings = missing.map(

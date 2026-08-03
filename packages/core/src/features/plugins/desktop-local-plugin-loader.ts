@@ -64,6 +64,14 @@ function readPluginExport(moduleExports: unknown): unknown {
   return moduleExports;
 }
 
+function findPluginEntryPath(directory: string, entryName: string): string | undefined {
+  const candidateEntryPaths = [
+    path.join(directory, entryName, "plugin.js"),
+    path.join(directory, entryName, "dist", "plugin.js"),
+  ];
+  return candidateEntryPaths.find((entryPath) => fs.existsSync(entryPath));
+}
+
 function collectPluginEntryPaths(directory: string): string[] {
   if (!fs.existsSync(directory)) {
     return [];
@@ -78,15 +86,9 @@ function collectPluginEntryPaths(directory: string): string[] {
     }
 
     if (entry.isDirectory()) {
-      const candidateEntryPaths = [
-        path.join(directory, entry.name, "plugin.js"),
-        path.join(directory, entry.name, "dist", "plugin.js"),
-      ];
-      for (const pluginEntryPath of candidateEntryPaths) {
-        if (fs.existsSync(pluginEntryPath)) {
-          pluginEntries.push(pluginEntryPath);
-          break;
-        }
+      const pluginEntryPath = findPluginEntryPath(directory, entry.name);
+      if (pluginEntryPath !== undefined) {
+        pluginEntries.push(pluginEntryPath);
       }
       continue;
     }

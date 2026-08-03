@@ -50,10 +50,12 @@ export interface RegistrationOptionsResult {
 /**
  * WebAuthn authentication options input
  */
+type WebAuthnUserVerification = 'required' | 'preferred' | 'discouraged';
+
 export interface GenerateAuthenticationOptionsInput {
   readonly rpId: string;
   readonly allowedPasskeys?: Passkey[];
-  readonly userVerification?: 'required' | 'preferred' | 'discouraged';
+  readonly userVerification?: WebAuthnUserVerification;
 }
 
 /**
@@ -76,7 +78,7 @@ export interface WebAuthnPublicKeyCredentialCreationOptions {
   readonly timeout?: number;
   readonly excludeCredentials?: { id: string; type: 'public-key'; transports?: string[] }[];
   readonly authenticatorSelection?: {
-    residentKey?: 'required' | 'preferred' | 'discouraged';
+    residentKey?: WebAuthnUserVerification;
     userVerification?: 'required' | 'preferred' | 'discouraged';
   };
   readonly attestation?: 'none' | 'indirect' | 'direct' | 'enterprise';

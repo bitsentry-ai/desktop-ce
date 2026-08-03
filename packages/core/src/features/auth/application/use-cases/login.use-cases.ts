@@ -117,14 +117,6 @@ export class LoginUseCasesImpl implements LoginUseCases {
     // Update last login
     await this.userRepository.updateLastLogin(user.id);
 
-    // Get remember me expiry from settings
-    try {
-      const securityPolicy = await this.settingsPort.getSecurityPolicy();
-      void securityPolicy.rememberMeExpiryHours;
-    } catch {
-      // Ignore settings errors
-    }
-
     return {
       accessToken: tokens.token,
       refreshToken: tokens.refreshToken,

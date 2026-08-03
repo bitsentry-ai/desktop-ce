@@ -82,6 +82,7 @@
     "eslint": "10.5.0",
     "eslint-plugin-react-hooks": "^7.0.1",
     "eslint-plugin-react-refresh": "^0.5.2",
+    "eslint-plugin-sonarjs": "^4.2.0",
     "eslint-plugin-unicorn": "^68.0.0",
     "git-cliff": "^2.13.1",
     "globals": "^17.3.0",

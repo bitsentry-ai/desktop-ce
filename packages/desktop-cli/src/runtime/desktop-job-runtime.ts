@@ -1,5 +1,5 @@
 import log from 'electron-log'
-import cron, { type ScheduledTask } from 'node-cron'
+import cron from 'node-cron'
 import {
   DesktopJobRuntime,
   createDesktopJobRuntimeClass,

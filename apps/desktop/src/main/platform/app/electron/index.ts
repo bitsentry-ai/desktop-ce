@@ -17,7 +17,6 @@ import {
   session,
   shell,
   type BrowserWindowConstructorOptions,
-  type WebContents,
 } from 'electron'
 import { createIPCHandler } from 'electron-trpc/main'
 import log from 'electron-log'
@@ -61,7 +60,6 @@ import {
 } from '@bitsentry-ce/core/features/runbooks/desktop-trusted-runbook-paths'
 import {
   createDesktopDialogHandlers,
-  type DesktopDialogPort,
 } from '@bitsentry-ce/core/features/runbooks/desktop-dialog.handlers'
 import {
   createDesktopAgentHandlers as createAgentHandlers,

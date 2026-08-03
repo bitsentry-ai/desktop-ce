@@ -602,9 +602,11 @@ function getCommandProbeError(
   return undefined
 }
 
+type ProbeErrno = string | number | undefined
+
 function getErrnoProbeError(
   displayCommand: string,
-  errno: string | number | undefined,
+  errno: ProbeErrno,
 ): CLIProbeError | undefined {
   if (errno === 'ENOENT') {
     return new CLIProbeError(`${displayCommand} not found on PATH`, 'not_installed', errno)
@@ -666,10 +668,31 @@ function parseClaudeAuthOutput(stdout: string, stderr: string): CLIProbeResult['
 
 function parseVersion(output: string): string | null {
   const trimmed = output.trim()
-  const match = trimmed.match(/(\d+\.\d+[\w.-]*)/)
-  if (match !== null) return match[1]
+  for (let start = 0; start < trimmed.length; start += 1) {
+    if (trimmed[start] < "0" || trimmed[start] > "9") continue
+    let cursor = start
+    while (trimmed[cursor] >= "0" && trimmed[cursor] <= "9") cursor += 1
+    if (trimmed[cursor] !== "." || trimmed[cursor + 1] < "0" || trimmed[cursor + 1] > "9") {
+      continue
+    }
+    cursor += 1
+    while (trimmed[cursor] >= "0" && trimmed[cursor] <= "9") cursor += 1
+    while (isVersionCharacter(trimmed[cursor])) cursor += 1
+    return trimmed.slice(start, cursor)
+  }
   if (trimmed !== '') return trimmed
   return null
+}
+
+function isVersionCharacter(value: string | undefined): boolean {
+  return value !== undefined && (
+    (value >= "a" && value <= "z")
+    || (value >= "A" && value <= "Z")
+    || (value >= "0" && value <= "9")
+    || value === "_"
+    || value === "."
+    || value === "-"
+  )
 }
 
 function versionOutput(result: { stdout: string; stderr: string }): string {
@@ -916,10 +939,41 @@ function parseOpenCodeModelIds(stdout: string, stderr: string): string[] {
   for (const line of `${stdout}\n${stderr}`.split(/\r?\n/)) {
     const trimmed = line.trim()
     if (trimmed === '' || /^provider\b/i.test(trimmed)) continue
-    const match = trimmed.match(/[a-z0-9_.-]+\/[a-z0-9_.:|+-]+/i)
-    if (match !== null) models.add(match[0])
+    const modelId = readOpenCodeModelId(trimmed)
+    if (modelId !== undefined) models.add(modelId)
   }
   return [...models]
+}
+
+function readOpenCodeModelId(value: string): string | undefined {
+  let start = 0
+  while (start < value.length) {
+    while (start < value.length && !isOpenCodeModelCharacter(value[start])) start += 1
+    let end = start
+    let slashIndex = -1
+    while (end < value.length && isOpenCodeModelCharacter(value[end])) {
+      if (value[end] === "/") slashIndex = end
+      end += 1
+    }
+    if (slashIndex > start && slashIndex < end - 1) return value.slice(start, end)
+    start = end + 1
+  }
+  return undefined
+}
+
+function isOpenCodeModelCharacter(value: string | undefined): boolean {
+  return value !== undefined && (
+    (value >= "a" && value <= "z")
+    || (value >= "A" && value <= "Z")
+    || (value >= "0" && value <= "9")
+    || value === "_"
+    || value === "."
+    || value === "-"
+    || value === "/"
+    || value === ":"
+    || value === "|"
+    || value === "+"
+  )
 }
 
 function getOpenCodeAuthenticatedProviders(record: Record<string, unknown>): unknown[] | undefined {

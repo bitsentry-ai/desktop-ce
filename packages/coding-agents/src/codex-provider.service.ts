@@ -83,38 +83,35 @@ function isBitsentryMcpToolApprovalElicitation(params: unknown): boolean {
   // Codex does not associate this elicitation channel with an MCP tool item.
   // bitsentry exposes only getHostTools(), so server-level approval is complete
   // while that server-surface invariant remains true.
-  if (
-    readStringField(record, 'serverName') !== HOST_MCP_SERVER_NAME ||
-    readStringField(record, 'mode') !== 'form' ||
-    readStringField(requestedSchema, 'type') !== 'object' ||
-    properties === undefined ||
-    Object.keys(properties).length !== 0
-  ) {
-    return false
-  }
-
-  return true
+  return readStringField(record, 'serverName') === HOST_MCP_SERVER_NAME &&
+    readStringField(record, 'mode') === 'form' &&
+    readStringField(requestedSchema, 'type') === 'object' &&
+    properties !== undefined &&
+    Object.keys(properties).length === 0
 }
 
 function summarizeCodexMcpElicitation(params: unknown): Record<string, unknown> {
   const record = asRecord(params)
   const metadata = codexMcpElicitationMetadata(params)
-  const requestedSchema = asRecord(record?.requestedSchema)
   return {
     paramKeys: record === undefined ? [] : Object.keys(record).sort(),
     serverName: readStringField(record, 'serverName')?.slice(0, 120) ?? null,
     mode: readStringField(record, 'mode') ?? null,
     metadataKeys: metadata === undefined ? [] : Object.keys(metadata).sort(),
     approvalKind: readStringField(metadata, 'codex_approval_kind') ?? null,
-    requestedSchemaShape: requestedSchema === undefined
-      ? null
-      : {
-          keys: Object.keys(requestedSchema).sort(),
-          type: readStringField(requestedSchema, 'type') ?? null,
-          propertyKeys: asRecord(requestedSchema.properties) === undefined
-            ? null
-            : Object.keys(asRecord(requestedSchema.properties)!).sort(),
-        },
+    requestedSchemaShape: summarizeRequestedSchema(record?.requestedSchema),
+  }
+}
+
+function summarizeRequestedSchema(value: unknown): Record<string, unknown> | null {
+  const schema = asRecord(value)
+  if (schema === undefined) return null
+
+  const properties = asRecord(schema.properties)
+  return {
+    keys: Object.keys(schema).sort(),
+    type: readStringField(schema, 'type') ?? null,
+    propertyKeys: properties === undefined ? null : Object.keys(properties).sort(),
   }
 }
 
@@ -124,51 +121,61 @@ export function chooseCodexApprovalResponse(
   accessLevel: AccessLevel,
   isBitsentryHostToolCall = false,
 ): { choice: CodexApprovalChoice; result: Record<string, unknown> } | undefined {
-  const record = asRecord(params)
+  switch (method) {
+    case CODEX_MCP_ELICITATION_METHOD:
+      return chooseCodexMcpElicitationResponse(params)
+    case 'item/tool/requestUserInput':
+      return chooseCodexUserInputResponse(params, isBitsentryHostToolCall)
+    case 'item/fileChange/requestApproval':
+      return chooseCodexFileChangeApprovalResponse(accessLevel)
+    case 'item/commandExecution/requestApproval':
+      return chooseCodexCommandApprovalResponse(accessLevel)
+    case 'item/permissions/requestApproval':
+      return chooseCodexPermissionsApprovalResponse(params, accessLevel)
+    default:
+      return undefined
+  }
+}
+
+function chooseCodexMcpElicitationResponse(params: unknown): { choice: CodexApprovalChoice; result: Record<string, unknown> } {
+  return isBitsentryMcpToolApprovalElicitation(params)
+    ? { choice: 'allow-host-tool', result: { action: 'accept', content: {}, _meta: null } }
+    : { choice: 'deny', result: { action: 'decline', content: null, _meta: null } }
+}
+
+function chooseCodexUserInputResponse(params: unknown, isBitsentryHostToolCall: boolean): { choice: CodexApprovalChoice; result: Record<string, unknown> } {
+  const questions = Array.isArray(asRecord(params)?.questions) ? asRecord(params)?.questions as unknown[] : []
+  const answer = isBitsentryHostToolCall ? 'Allow' : '__codex_mcp_decline__'
+  const answers = Object.fromEntries(questions.flatMap((question) => {
+    const id = readStringField(asRecord(question), 'id')
+    return id === undefined ? [] : [[id, { answers: [answer] }]]
+  }))
+  return { choice: isBitsentryHostToolCall ? 'allow-host-tool' : 'deny', result: { answers } }
+}
+
+function chooseCodexFileChangeApprovalResponse(accessLevel: AccessLevel): { choice: CodexApprovalChoice; result: Record<string, unknown> } {
   const fullAccess = accessLevel === 'full-access'
-
-  if (method === CODEX_MCP_ELICITATION_METHOD) {
-    return isBitsentryMcpToolApprovalElicitation(params)
-      ? { choice: 'allow-host-tool', result: { action: 'accept', content: {}, _meta: null } }
-      : { choice: 'deny', result: { action: 'decline', content: null, _meta: null } }
+  return {
+    choice: fullAccess || accessLevel === 'auto-accept-edits' ? 'allow-file-change' : 'deny',
+    result: { decision: fullAccess ? 'acceptForSession' : 'accept' },
   }
+}
 
-  if (method === 'item/tool/requestUserInput') {
-    const questions = Array.isArray(record?.questions) ? record.questions : []
-    const answer = isBitsentryHostToolCall ? 'Allow' : '__codex_mcp_decline__'
-    const answers = Object.fromEntries(questions.flatMap((question) => {
-      const id = readStringField(asRecord(question), 'id')
-      return id === undefined ? [] : [[id, { answers: [answer] }]]
-    }))
-    return {
-      choice: isBitsentryHostToolCall ? 'allow-host-tool' : 'deny',
-      result: { answers },
-    }
+function chooseCodexCommandApprovalResponse(accessLevel: AccessLevel): { choice: CodexApprovalChoice; result: Record<string, unknown> } {
+  const fullAccess = accessLevel === 'full-access'
+  return {
+    choice: fullAccess ? 'allow-full-access' : 'deny',
+    result: { decision: fullAccess ? 'acceptForSession' : 'decline' },
   }
+}
 
-  if (method === 'item/fileChange/requestApproval') {
-    return {
-      choice: fullAccess || accessLevel === 'auto-accept-edits' ? 'allow-file-change' : 'deny',
-      result: { decision: fullAccess ? 'acceptForSession' : 'accept' },
-    }
+function chooseCodexPermissionsApprovalResponse(params: unknown, accessLevel: AccessLevel): { choice: CodexApprovalChoice; result: Record<string, unknown> } {
+  const fullAccess = accessLevel === 'full-access'
+  const permissions = asRecord(asRecord(params)?.permissions) ?? {}
+  return {
+    choice: fullAccess ? 'allow-full-access' : 'deny',
+    result: { permissions: fullAccess ? permissions : {}, scope: fullAccess ? 'session' : 'turn' },
   }
-
-  if (method === 'item/commandExecution/requestApproval') {
-    return {
-      choice: fullAccess ? 'allow-full-access' : 'deny',
-      result: { decision: fullAccess ? 'acceptForSession' : 'decline' },
-    }
-  }
-
-  if (method === 'item/permissions/requestApproval') {
-    const permissions = asRecord(record?.permissions) ?? {}
-    return {
-      choice: fullAccess ? 'allow-full-access' : 'deny',
-      result: { permissions: fullAccess ? permissions : {}, scope: fullAccess ? 'session' : 'turn' },
-    }
-  }
-
-  return undefined
 }
 
 export function isBitsentryMcpToolItem(item: Record<string, unknown> | undefined): boolean {
@@ -343,28 +350,29 @@ export function withCodexModelArgs(
     return args
   }
 
-  const hasModelOverride = args.some(
-    (arg, index) =>
-      arg === '--model' ||
-      arg.startsWith('--model=') ||
-      arg.startsWith('model=') && args[index - 1] === '-c',
-  )
-  if (!hasModelOverride) {
+  if (!hasCodexModelOverride(args)) {
     args.push('-c', `model="${model.replace(/"/g, '')}"`)
   }
 
   const reasoningSummariesUnsupported = CODEX_MODELS_WITHOUT_REASONING_SUMMARIES.has(model)
-  const hasReasoningSummaryOverride = args.some(
-    (arg, index) =>
-      arg.startsWith('model_reasoning_summary=') && args[index - 1] === '-c',
-  )
-  if (reasoningSummariesUnsupported && !hasReasoningSummaryOverride) {
+  if (reasoningSummariesUnsupported && !hasCodexReasoningSummaryOverride(args)) {
     args.push('-c', 'model_reasoning_summary="none"')
   }
 
   return args
 }
 
+function hasCodexModelOverride(args: string[]): boolean {
+  return args.some((arg, index) =>
+    arg === '--model' || arg.startsWith('--model=') || (arg.startsWith('model=') && args[index - 1] === '-c'),
+  )
+}
+
+function hasCodexReasoningSummaryOverride(args: string[]): boolean {
+  return args.some((arg, index) => arg.startsWith('model_reasoning_summary=') && args[index - 1] === '-c')
+}
+
+// eslint-disable-next-line sonarjs/cognitive-complexity -- Codex process setup, cancellation, turn lifecycle, and cleanup must remain in one ordered ownership boundary.
 export async function executeCodex(
   options: CodexExecutionOptions,
 ): Promise<LocalAiExecutionResult> {
@@ -406,7 +414,7 @@ export async function executeCodex(
     if (
       pendingAssistantMessageBreak &&
       output.trim().length > 0 &&
-      !/[\s\n]$/.test(output)
+      !/\s$/.test(output)
     ) {
       prefix = '\n\n'
     }
@@ -436,6 +444,7 @@ export async function executeCodex(
 
   options.abortController.signal.addEventListener('abort', onAbort, { once: true })
 
+  // eslint-disable-next-line sonarjs/cognitive-complexity -- Protocol notifications update one shared turn state machine whose ordering is required for streamed output and approvals.
   client.on('notification', (notification: { method: string; params: unknown }) => {
     const params = asRecord(notification.params)
 
@@ -540,13 +549,7 @@ export async function executeCodex(
       }
 
       case 'item/reasoning/textDelta':
-      case 'item/reasoning/summaryTextDelta': {
-        for (const delta of codexStreamDeltasFromNotification(notification.method, params)) {
-          options.onDelta?.(delta)
-        }
-        break
-      }
-
+      case 'item/reasoning/summaryTextDelta':
       case 'item/commandExecution/outputDelta':
       case 'item/commandExecution/terminalInteraction':
       case 'item/fileChange/outputDelta': {

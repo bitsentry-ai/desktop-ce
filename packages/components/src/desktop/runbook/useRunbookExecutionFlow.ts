@@ -7,7 +7,7 @@ import {
   isRuntimeParameterMissing,
 } from "./editorStateHelpers";
 import { persistRunningRunResult } from "./storageHelpers";
-import type { RuntimeParameterDefinition, TranslationFn } from "./types";
+import type { TranslationFn } from "./types";
 import type {
   DesktopRpcChannel,
   RunbookContextV1,

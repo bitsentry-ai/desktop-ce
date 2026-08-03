@@ -26,12 +26,12 @@ function getProductNames(context: AfterPackContextLike): string[] {
   const normalized = new Set<string>()
   for (const rawName of rawNames) {
     normalized.add(rawName)
-    normalized.add(
-      rawName
-        .toLowerCase()
-        .replace(/[^a-z0-9]+/g, '-')
-        .replace(/^-+|-+$/g, ''),
-    )
+    const slug = rawName.toLowerCase().replace(/[^a-z0-9]+/g, '-')
+    let start = 0
+    let end = slug.length
+    while (slug[start] === '-') start += 1
+    while (end > start && slug[end - 1] === '-') end -= 1
+    normalized.add(slug.slice(start, end))
   }
 
   return [...normalized].filter(Boolean)

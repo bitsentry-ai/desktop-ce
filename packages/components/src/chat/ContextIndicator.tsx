@@ -20,6 +20,57 @@ function formatVerbose(n: number): string {
   return n.toLocaleString();
 }
 
+function getUsageRatio(
+  total: number,
+  contextLimit: number | undefined,
+  usageUnavailable: boolean,
+): number | null {
+  if (usageUnavailable || contextLimit === undefined || contextLimit <= 0) {
+    return null;
+  }
+  return total / contextLimit;
+}
+
+function getUsageClasses(usageRatio: number | null): { ringClass: string; textClass: string } {
+  if (usageRatio !== null && usageRatio > 1) {
+    return { ringClass: "stroke-destructive", textClass: "text-destructive" };
+  }
+  if (usageRatio !== null && usageRatio > 0.8) {
+    return {
+      ringClass: "stroke-amber-500",
+      textClass: "text-amber-600 dark:text-amber-400",
+    };
+  }
+  return { ringClass: "stroke-muted-foreground/60", textClass: "text-muted-foreground/70" };
+}
+
+function getContextTitle(
+  t: ReturnType<typeof useTranslation>["t"],
+  inputTokens: number,
+  outputTokens: number,
+  total: number,
+  contextLimit: number | undefined,
+  contextTokens: number | undefined,
+  usageUnavailable: boolean,
+  contextPercentage: number,
+): string {
+  if (contextLimit === undefined) {
+    return t("common.contextIndicator.inputOutput", {
+      input: formatVerbose(inputTokens), output: formatVerbose(outputTokens),
+    });
+  }
+  if (usageUnavailable) {
+    return t("common.contextIndicator.contextLimitUsageUnavailable", { limit: formatVerbose(contextLimit) });
+  }
+  const commonValues = {
+    total: formatVerbose(total), limit: formatVerbose(contextLimit), percentage: contextPercentage,
+    input: formatVerbose(inputTokens), output: formatVerbose(outputTokens),
+  };
+  return contextTokens === undefined
+    ? t("common.contextIndicator.contextWithInputOutput", commonValues)
+    : t("common.contextIndicator.contextWithRequest", commonValues);
+}
+
 export function ContextIndicator({
   inputTokens,
   outputTokens,
@@ -33,47 +84,20 @@ export function ContextIndicator({
   const total = contextTokens ?? requestTotal;
   if (total === 0 && requestTotal === 0 && contextLimit === undefined) return null;
 
-  let usageRatio: number | null = null;
-  if (!usageUnavailable && contextLimit !== undefined && contextLimit > 0) {
-    usageRatio = total / contextLimit;
-  }
-  const isNearLimit = usageRatio !== null && usageRatio > 0.8;
-  const isOverLimit = usageRatio !== null && usageRatio > 1;
-  let percentage = 0;
-  if (usageRatio !== null) {
-    percentage = Math.min(usageRatio, 1) * 100;
-  }
-  let displayValue = formatK(total);
-  if (usageUnavailable && contextLimit !== undefined) {
-    displayValue = "?";
-  } else if (usageRatio !== null) {
-    displayValue = String(Math.round(usageRatio * 100));
-  }
+  const usageRatio = getUsageRatio(total, contextLimit, usageUnavailable);
+  const percentage = usageRatio === null ? 0 : Math.min(usageRatio, 1) * 100;
+  const displayValue = usageUnavailable && contextLimit !== undefined
+    ? "?"
+    : usageRatio === null ? formatK(total) : String(Math.round(usageRatio * 100));
   const radius = 14;
   const circumference = 2 * Math.PI * radius;
   const strokeDashoffset =
     circumference - (percentage / 100) * circumference;
 
-  let ringClass = "stroke-muted-foreground/60";
-  if (isNearLimit) {
-    ringClass = "stroke-amber-500";
-  }
-  if (isOverLimit) {
-    ringClass = "stroke-destructive";
-  }
-
-  let textClass = "text-muted-foreground/70";
-  if (isNearLimit) {
-    textClass = "text-amber-600 dark:text-amber-400";
-  }
-  if (isOverLimit) {
-    textClass = "text-destructive";
-  }
-
-  let contextPercentage = 0;
-  if (contextLimit !== undefined && contextLimit > 0) {
-    contextPercentage = Math.round((total / contextLimit) * 100);
-  }
+  const { ringClass, textClass } = getUsageClasses(usageRatio);
+  const contextPercentage = contextLimit !== undefined && contextLimit > 0
+    ? Math.round((total / contextLimit) * 100)
+    : 0;
 
   let progressCircle: React.ReactNode = null;
   if (contextLimit !== undefined) {
@@ -92,32 +116,10 @@ export function ContextIndicator({
     );
   }
 
-  let title = t("common.contextIndicator.inputOutput", {
-    input: formatVerbose(inputTokens),
-    output: formatVerbose(outputTokens),
-  });
-
-  if (contextLimit !== undefined && usageUnavailable) {
-    title = t("common.contextIndicator.contextLimitUsageUnavailable", {
-      limit: formatVerbose(contextLimit),
-    });
-  } else if (contextLimit !== undefined && contextTokens !== undefined) {
-    title = t("common.contextIndicator.contextWithRequest", {
-      total: formatVerbose(total),
-      limit: formatVerbose(contextLimit),
-      percentage: contextPercentage,
-      input: formatVerbose(inputTokens),
-      output: formatVerbose(outputTokens),
-    });
-  } else if (contextLimit !== undefined) {
-    title = t("common.contextIndicator.contextWithInputOutput", {
-      total: formatVerbose(total),
-      limit: formatVerbose(contextLimit),
-      percentage: contextPercentage,
-      input: formatVerbose(inputTokens),
-      output: formatVerbose(outputTokens),
-    });
-  }
+  const title = getContextTitle(
+    t, inputTokens, outputTokens, total, contextLimit, contextTokens,
+    usageUnavailable, contextPercentage,
+  );
 
   return (
     <div

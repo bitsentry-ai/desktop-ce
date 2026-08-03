@@ -1,5 +1,5 @@
 import type { AgentThreadSnapshot } from "../chat/types";
-import type { AgentEvent, ErrorSourceType } from "./contracts";
+import type { AgentEvent } from "./contracts";
 
 export interface DesktopOAuthCallbackPayload {
   url: string;
@@ -135,7 +135,7 @@ export interface DesktopRunbookTriggerContext {
   needLabel?: string;
   sourceId?: string;
   sourceName?: string;
-  sourceType?: ErrorSourceType;
+  sourceType?: string;
   incidentThreadId?: string;
 }
 

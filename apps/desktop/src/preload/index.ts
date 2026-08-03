@@ -24,7 +24,6 @@ const bridge = {
 export const bitsentryApi = configureDesktopPreloadRuntime({
   bridge,
   managedLlm: false,
-  agentProviderMode: 'local',
 })
 
 export type BitsentryAPI = typeof bitsentryApi
