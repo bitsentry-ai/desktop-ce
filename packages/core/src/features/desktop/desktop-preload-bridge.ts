@@ -75,6 +75,8 @@ export interface DesktopPreloadBridgePort {
 export interface CreateDesktopBitsentryApiOptions {
   bridge: DesktopPreloadBridgePort
   managedLlm: boolean
+  /** Compatibility input retained for Pro callers pinned to the prior bridge contract. */
+  agentProviderMode?: "local" | "remote"
 }
 
 function createSubscription<T>(
