@@ -1,113 +1,164 @@
 import { describe, expect, it } from "vitest";
 
-import { RunbookExecutionService } from "../src/features/runbooks/desktop-runbook-execution.service";
-import type { RunbookActionRecord } from "../src/features/runbooks/desktop-runbook.types";
+import {
+  RunbookExecutionService,
+  type LocalAiExecutionResult,
+} from "../src/features/runbooks/desktop-runbook-execution.service";
+import type { RunbookResultPersistence } from "../src/features/runbooks/desktop-runbook-result.store";
+import type {
+  RunbookExecutionRecord,
+  RunbookRecord,
+} from "../src/features/runbooks/desktop-runbook.types";
 
 type Dispatch = {
-  local: string[];
+  local: Array<{ provider: string; model: string | undefined }>;
   remote: number;
   requestedModels: Array<string | undefined>;
 };
 
-function createService(defaultProviderKey: string | null): {
-  service: RunbookExecutionService;
-  dispatch: Dispatch;
-} {
+function makeRunbook(model?: string): RunbookRecord {
+  return {
+    id: "provider-fallback",
+    title: "Provider fallback",
+    description: "Runs one provider-less LLM action.",
+    revisionNumber: 1,
+    actions: [
+      {
+        id: "llm-step",
+        type: "llm",
+        title: "Summarize",
+        prompt: "Summarize the incident.",
+        llmModel: model,
+      },
+    ],
+    createdAt: "2026-08-03T00:00:00.000Z",
+    updatedAt: "2026-08-03T00:00:00.000Z",
+  };
+}
+
+function createResultStore(): RunbookResultPersistence {
+  let snapshot: RunbookExecutionRecord | null = null;
+  return {
+    createRunbookResultSession: async (input) => {
+      snapshot = structuredClone(input.snapshot);
+    },
+    saveExecutionSnapshot: async (_resultId, nextSnapshot) => {
+      snapshot = structuredClone(nextSnapshot);
+    },
+    applyExecutionSnapshotEvent: async (_resultId, input) => {
+      snapshot = structuredClone(input.snapshot);
+      return "accepted";
+    },
+    getExecutionSnapshotByExecutionId: async () =>
+      snapshot === null ? null : structuredClone(snapshot),
+    getExecutionSnapshotByResultId: async () =>
+      snapshot === null ? null : structuredClone(snapshot),
+    getExecutionByRequestKey: async () => null,
+    getLatestExecutionSnapshotByIncidentThreadId: async () => null,
+    getLatestExecutionByIncidentThreadId: async () => null,
+    touchExecutionHeartbeat: async () => {},
+    requestExecutionCancellation: async () => false,
+    isExecutionCancellationRequested: async () => false,
+    completeExecutionControl: async () => {},
+    markStaleRunningSessionsFailed: async () => 0,
+  };
+}
+
+function createService(
+  defaultProviderKey: string | null,
+  runbook: RunbookRecord,
+): { service: RunbookExecutionService; dispatch: Dispatch } {
   const dispatch: Dispatch = { local: [], remote: 0, requestedModels: [] };
-
-  const llmAdapter = {
-    chatWithTools: async () => {
-      dispatch.remote += 1;
-      return { content: "" } as never;
-    },
-    getDefaultProviderKey: async (model?: string) => {
-      dispatch.requestedModels.push(model);
-      return defaultProviderKey;
-    },
+  const localResult: LocalAiExecutionResult = {
+    output: "Local provider result",
+    exitCode: 0,
   };
-
-  const localAiProvider = {
-    execute: async (provider: string) => {
-      dispatch.local.push(provider);
-      return { output: "local output", exitCode: 0 } as never;
-    },
-  };
-
   const service = new RunbookExecutionService(
+    { getRunbookOrThrow: async () => runbook } as never,
+    {
+      loadResolvedGlobals: async () => ({ definitions: [], values: {} }),
+    } as never,
+    {
+      chatWithTools: async () => {
+        dispatch.remote += 1;
+        return { content: "Remote provider result" };
+      },
+      getDefaultProviderKey: async (model?: string) => {
+        dispatch.requestedModels.push(model);
+        return defaultProviderKey;
+      },
+    },
     {} as never,
-    {} as never,
-    llmAdapter as never,
-    {} as never,
-    {} as never,
+    createResultStore(),
     () => null,
     { edition: "ce" },
-    localAiProvider as never,
+    {
+      execute: async (
+        provider,
+        _prompt,
+        _abortController,
+        _onDelta,
+        _cwd,
+        model,
+      ) => {
+        dispatch.local.push({ provider, model });
+        return localResult;
+      },
+    },
     {} as never,
   );
 
   return { service, dispatch };
 }
 
-function resolveProvider(
-  service: RunbookExecutionService,
-  model?: string,
-): Promise<RunbookActionRecord["llmProviderKey"]> {
-  return (
-    service as unknown as {
-      resolveDefaultProviderKey(model?: string): Promise<
-        RunbookActionRecord["llmProviderKey"]
-      >;
-    }
-  ).resolveDefaultProviderKey(model);
-}
-
-function usesLocalPath(
-  service: RunbookExecutionService,
-  providerKey: RunbookActionRecord["llmProviderKey"],
-): boolean {
-  return (
-    service as unknown as {
-      shouldUseDedicatedLocalAiExecution(
-        providerKey: RunbookActionRecord["llmProviderKey"],
-      ): boolean;
-    }
-  ).shouldUseDedicatedLocalAiExecution(providerKey);
-}
-
 describe("runbook LLM action provider fallback", () => {
-  it("falls back to the configured default provider when the action names none", async () => {
-    const { service } = createService("codex");
+  it("runs provider-less actions through the configured local provider", async () => {
+    const runbook = makeRunbook();
+    const { service, dispatch } = createService("codex", runbook);
+    const started = await service.start(runbook.id);
 
-    const providerKey = await resolveProvider(service);
-
-    expect(providerKey).toBe("codex");
-    expect(usesLocalPath(service, providerKey)).toBe(true);
+    await expect(
+      service.waitForCompletion(started.executionId),
+    ).resolves.toMatchObject({
+      status: "completed",
+      steps: [{ output: "Local provider result" }],
+    });
+    expect(dispatch.local).toEqual([{ provider: "codex", model: undefined }]);
+    expect(dispatch.remote).toBe(0);
+    await service.destroy();
   });
 
-  it("passes the action model to the provider resolver", async () => {
-    const { service, dispatch } = createService("claude_code");
+  it("passes the action model into configured-provider resolution", async () => {
+    const runbook = makeRunbook("claude-sonnet-4-6");
+    const { service, dispatch } = createService("claude_code", runbook);
+    const started = await service.start(runbook.id);
 
-    await resolveProvider(service, "claude-sonnet-4-6");
-
+    await expect(
+      service.waitForCompletion(started.executionId),
+    ).resolves.toMatchObject({
+      status: "completed",
+      steps: [{ output: "Local provider result" }],
+    });
     expect(dispatch.requestedModels).toEqual(["claude-sonnet-4-6"]);
+    expect(dispatch.local).toEqual([
+      { provider: "claude_code", model: "claude-sonnet-4-6" },
+    ]);
+    await service.destroy();
   });
 
-  it("routes a provider-less action to the local path instead of the tool-calling path", async () => {
-    const { service } = createService("claude_code");
+  it("uses the remote path when no default provider is configured", async () => {
+    const runbook = makeRunbook();
+    const { service, dispatch } = createService(null, runbook);
+    const started = await service.start(runbook.id);
 
-    const providerKey = await resolveProvider(service);
-
-    // The tool-calling remote path cannot be served by a local CLI provider,
-    // which is what produced "LLM action completed with no output".
-    expect(usesLocalPath(service, providerKey)).toBe(true);
-  });
-
-  it("leaves the remote path in place when no default provider is configured", async () => {
-    const { service } = createService(null);
-
-    const providerKey = await resolveProvider(service);
-
-    expect(providerKey).toBeUndefined();
-    expect(usesLocalPath(service, providerKey)).toBe(false);
+    await expect(
+      service.waitForCompletion(started.executionId),
+    ).resolves.toMatchObject({
+      status: "completed",
+      steps: [{ output: "Remote provider result" }],
+    });
+    expect(dispatch.local).toEqual([]);
+    expect(dispatch.remote).toBe(1);
+    await service.destroy();
   });
 });

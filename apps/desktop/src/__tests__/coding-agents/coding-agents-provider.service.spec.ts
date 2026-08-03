@@ -1,83 +1,55 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
-vi.mock('child_process', async () => {
-  const actual = await vi.importActual<typeof import('child_process')>('child_process')
+vi.mock("child_process", async () => {
+  const actual =
+    await vi.importActual<typeof import("child_process")>("child_process");
   return {
     ...actual,
     execFile: vi.fn(),
-  }
-})
+  };
+});
 
-vi.mock('@bitsentry-ce/coding-agents/cli-probe.service', () => ({
-  probeClaudeCode: vi.fn(),
-  probeCodex: vi.fn(),
-  probeOpenCode: vi.fn(),
-  probeCursor: vi.fn(),
-  detectBinary: vi.fn(),
-  doctor: vi.fn(),
-}))
-
-vi.mock('@bitsentry-ce/coding-agents/claude-code-provider.service', async () => {
-  const actual = await vi.importActual<typeof import('@bitsentry-ce/coding-agents/claude-code-provider.service')>(
-    '@bitsentry-ce/coding-agents/claude-code-provider.service',
-  )
-  return {
-    ...actual,
-    executeClaudeCode: vi.fn(),
-  }
-})
-
-vi.mock('@bitsentry-ce/coding-agents/codex-provider.service', async () => {
-  const actual = await vi.importActual<typeof import('@bitsentry-ce/coding-agents/codex-provider.service')>(
-    '@bitsentry-ce/coding-agents/codex-provider.service',
-  )
-  return {
-    ...actual,
-    executeCodex: vi.fn(),
-  }
-})
-
-vi.mock('@bitsentry-ce/coding-agents/opencode-provider.service', async () => {
-  const actual = await vi.importActual<typeof import('@bitsentry-ce/coding-agents/opencode-provider.service')>(
-    '@bitsentry-ce/coding-agents/opencode-provider.service',
-  )
-  return {
-    ...actual,
-    executeOpenCode: vi.fn(),
-  }
-})
-
-vi.mock('@bitsentry-ce/coding-agents/cursor-provider.service', () => ({
-  executeCursor: vi.fn(),
-  listCursorModels: vi.fn(),
-}))
-
-vi.mock('@bitsentry-ce/desktop-cli/runtime/desktop-sentry', () => ({
+vi.mock("@bitsentry-ce/desktop-cli/runtime/desktop-sentry", () => ({
   addBreadcrumb: vi.fn(),
   captureException: vi.fn(),
   captureMessage: vi.fn(),
-}))
+}));
 
-import { ChildProcess, execFile } from 'child_process'
+import { ChildProcess, execFile } from "child_process";
 import {
   CodingAgentsProviderService,
+  type CodingAgentsProviderDependencies,
   type CodingAgentsSettingsStore,
-} from '@bitsentry-ce/desktop-cli/runtime/desktop-coding-agents'
-import { prependHostSystemInstructions } from '@bitsentry-ce/coding-agents/coding-agents-provider.service'
-import {
-  detectBinary,
-  probeClaudeCode,
-  probeCodex,
-  probeOpenCode,
-} from '@bitsentry-ce/coding-agents/cli-probe.service'
-import { executeClaudeCode } from '@bitsentry-ce/coding-agents/claude-code-provider.service'
-import { executeCodex } from '@bitsentry-ce/coding-agents/codex-provider.service'
-import { executeOpenCode } from '@bitsentry-ce/coding-agents/opencode-provider.service'
+  prependHostSystemInstructions,
+} from "@bitsentry-ce/coding-agents/coding-agents-provider.service";
 import {
   getCatalogModel,
   getEffectiveComposerOptions,
   resolveCatalogModelRuntimeSelection,
-} from '@bitsentry-ce/components/llm/modelCatalog'
+} from "@bitsentry-ce/components/llm/modelCatalog";
+
+const cli = {
+  detectBinary: vi.fn(),
+  doctor: vi.fn(),
+  probeClaudeCode: vi.fn(),
+  probeCodex: vi.fn(),
+  probeOpenCode: vi.fn(),
+  probeCursor: vi.fn(),
+  executeClaudeCode: vi.fn(),
+  executeCodex: vi.fn(),
+  executeOpenCode: vi.fn(),
+  executeCursor: vi.fn(),
+};
+
+const {
+  detectBinary,
+  probeClaudeCode,
+  probeCodex,
+  probeOpenCode,
+  executeClaudeCode,
+  executeCodex,
+  executeOpenCode,
+} = cli;
 
 function createDbMock(): CodingAgentsSettingsStore {
   return {
@@ -85,41 +57,68 @@ function createDbMock(): CodingAgentsSettingsStore {
       findUnique: vi.fn().mockResolvedValue(null),
       upsert: vi.fn().mockResolvedValue(null),
     },
-  }
+  };
 }
 
-describe('CodingAgentsProviderService', () => {
+function createService(
+  db: CodingAgentsSettingsStore,
+): CodingAgentsProviderService {
+  const dependencies: CodingAgentsProviderDependencies = {
+    executeOpenCode: cli.executeOpenCode as never,
+    executeClaudeCode: cli.executeClaudeCode as never,
+    executeCodex: cli.executeCodex as never,
+    executeCursor: cli.executeCursor as never,
+    detectBinary: cli.detectBinary as never,
+    doctor: cli.doctor as never,
+    probeClaudeCode: cli.probeClaudeCode as never,
+    probeCodex: cli.probeCodex as never,
+    probeOpenCode: cli.probeOpenCode as never,
+    probeCursor: cli.probeCursor as never,
+    reportError: vi.fn(),
+  };
+  return new CodingAgentsProviderService(db, dependencies);
+}
+
+describe("CodingAgentsProviderService", () => {
   beforeEach(() => {
-    vi.clearAllMocks()
-  })
+    vi.clearAllMocks();
+  });
 
-  it('keeps host system instructions outside replayed conversation roles', () => {
-    expect(prependHostSystemInstructions(
-      '[user]: List runbooks',
-      'You are an incident-response assistant.',
-    )).toBe([
-      '## BitSentry host instructions',
-      'You are an incident-response assistant.',
-      '## Conversation',
-      '[user]: List runbooks',
-    ].join('\n\n'))
-  })
+  it("keeps host system instructions outside replayed conversation roles", () => {
+    expect(
+      prependHostSystemInstructions(
+        "[user]: List runbooks",
+        "You are an incident-response assistant.",
+      ),
+    ).toBe(
+      [
+        "## BitSentry host instructions",
+        "You are an incident-response assistant.",
+        "## Conversation",
+        "[user]: List runbooks",
+      ].join("\n\n"),
+    );
+  });
 
-  it('prepends host instructions when dispatching a provider without a system channel', async () => {
-    vi.mocked(detectBinary).mockResolvedValue('/opt/homebrew/bin/codex')
+  it("prepends host instructions when dispatching a provider without a system channel", async () => {
+    vi.mocked(detectBinary).mockResolvedValue("/opt/homebrew/bin/codex");
     vi.mocked(probeCodex).mockResolvedValue({
       installed: true,
-      version: '0.42.0',
-      auth: { status: 'authenticated' },
-      status: 'ready',
-    })
-    vi.mocked(executeCodex).mockResolvedValue({ output: 'Done.' })
+      version: "0.42.0",
+      auth: { status: "authenticated" },
+      status: "ready",
+    });
+    vi.mocked(executeCodex).mockImplementation(({ prompt }) =>
+      Promise.resolve({ output: prompt }),
+    );
 
-    const service = new CodingAgentsProviderService(createDbMock())
-    await service.saveSettings({ codex: { enabled: true, binaryPath: 'codex' } })
-    await service.execute(
-      'codex',
-      '[user]: List runbooks',
+    const service = createService(createDbMock());
+    await service.saveSettings({
+      codex: { enabled: true, binaryPath: "codex" },
+    });
+    const result = await service.execute(
+      "codex",
+      "[user]: List runbooks",
       new AbortController(),
       undefined,
       undefined,
@@ -127,319 +126,339 @@ describe('CodingAgentsProviderService', () => {
       undefined,
       undefined,
       undefined,
-      'Use concise incident language.',
-    )
+      "Use concise incident language.",
+    );
 
-    expect(executeCodex).toHaveBeenCalledWith(expect.objectContaining({
-      prompt: [
-        '## BitSentry host instructions',
-        'Use concise incident language.',
-        '## Conversation',
-        '[user]: List runbooks',
-      ].join('\n\n'),
-    }))
-  })
+    expect(result.output).toBe(
+      [
+        "## BitSentry host instructions",
+        "Use concise incident language.",
+        "## Conversation",
+        "[user]: List runbooks",
+      ].join("\n\n"),
+    );
+  });
 
-  it('exposes Opus 5 with separate effort and context options', () => {
-    const catalogModel = getCatalogModel('claude_code', 'claude-opus-5')
+  it("exposes Opus 5 with separate effort and context options", () => {
+    const catalogModel = getCatalogModel("claude_code", "claude-opus-5");
     expect(catalogModel).toMatchObject({
-      id: 'claude-opus-5',
-      displayName: 'Claude Opus 5',
-    })
+      id: "claude-opus-5",
+      displayName: "Claude Opus 5",
+    });
     expect(getEffectiveComposerOptions(catalogModel!)).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ id: 'effort' }),
-        expect.objectContaining({ id: 'contextWindow' }),
+        expect.objectContaining({ id: "effort" }),
+        expect.objectContaining({ id: "contextWindow" }),
       ]),
-    )
+    );
     expect(getEffectiveComposerOptions(catalogModel!)).not.toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ id: 'fastMode' }),
-      ]),
-    )
-    expect(resolveCatalogModelRuntimeSelection(
-      'claude_code',
-      'claude-opus-5',
-      { effort: 'high', contextWindow: '1m' },
-    )).toEqual({
-      modelId: 'claude-opus-5',
-      traitValues: { effort: 'high', contextWindow: '1m' },
-    })
-  })
+      expect.arrayContaining([expect.objectContaining({ id: "fastMode" })]),
+    );
+    expect(
+      resolveCatalogModelRuntimeSelection("claude_code", "claude-opus-5", {
+        effort: "high",
+        contextWindow: "1m",
+      }),
+    ).toEqual({
+      modelId: "claude-opus-5",
+      traitValues: { effort: "high", contextWindow: "1m" },
+    });
+  });
 
-  it('silently detects and uses the resolved codex binary without changing the saved path', async () => {
-    vi.mocked(detectBinary).mockResolvedValue('/opt/homebrew/bin/codex')
+  it("silently detects and uses the resolved codex binary without changing the saved path", async () => {
+    vi.mocked(detectBinary).mockResolvedValue("/opt/homebrew/bin/codex");
     vi.mocked(probeCodex).mockResolvedValue({
       installed: true,
-      version: '0.42.0',
-      auth: { status: 'authenticated' },
-      status: 'ready',
-    })
-    vi.mocked(executeCodex).mockImplementation(({ binaryPath, prompt }) => Promise.resolve({
-      output: `${binaryPath}:${prompt}`,
-    }))
+      version: "0.42.0",
+      auth: { status: "authenticated" },
+      status: "ready",
+    });
+    vi.mocked(executeCodex).mockImplementation(({ binaryPath, prompt }) =>
+      Promise.resolve({
+        output: `${binaryPath}:${prompt}`,
+      }),
+    );
 
-    const db = createDbMock()
-    const service = new CodingAgentsProviderService(db)
+    const db = createDbMock();
+    const service = createService(db);
     await service.saveSettings({
       codex: {
         enabled: true,
-        binaryPath: 'codex',
+        binaryPath: "codex",
       },
-    })
+    });
 
     const result = await service.execute(
-      'codex',
-      'hello',
+      "codex",
+      "hello",
       new AbortController(),
-    )
+    );
 
-    expect(result.output).toBe('/opt/homebrew/bin/codex:hello')
-    expect(service.getSettings().codex.binaryPath).toBe('codex')
-    expect(service.getSettings().codex.lastProbe?.status).toBe('ready')
-  })
+    expect(result.output).toBe("/opt/homebrew/bin/codex:hello");
+    expect(service.getSettings().codex.binaryPath).toBe("codex");
+    expect(service.getSettings().codex.lastProbe?.status).toBe("ready");
+  });
 
-  it('fails before execution when the silent startup probe still reports an error', async () => {
-    vi.mocked(detectBinary).mockResolvedValue('/opt/homebrew/bin/codex')
+  it("fails before execution when the silent startup probe still reports an error", async () => {
+    vi.mocked(detectBinary).mockResolvedValue("/opt/homebrew/bin/codex");
     vi.mocked(probeCodex).mockResolvedValue({
       installed: true,
-      version: '0.42.0',
-      auth: { status: 'unknown' },
-      status: 'error',
-      errorKind: 'app_server_init_failed',
-      message: 'Codex app-server probe failed: initialize failed',
-    })
-    vi.mocked(executeCodex).mockRejectedValue(new Error('execute should not run'))
+      version: "0.42.0",
+      auth: { status: "unknown" },
+      status: "error",
+      errorKind: "app_server_init_failed",
+      message: "Codex app-server probe failed: initialize failed",
+    });
+    vi.mocked(executeCodex).mockRejectedValue(
+      new Error("execute should not run"),
+    );
 
-    const db = createDbMock()
-    const service = new CodingAgentsProviderService(db)
+    const db = createDbMock();
+    const service = createService(db);
     await service.saveSettings({
       codex: {
         enabled: true,
-        binaryPath: 'codex',
+        binaryPath: "codex",
       },
-    })
+    });
 
     await expect(
-      service.execute(
-        'codex',
-        'hello',
-        new AbortController(),
-      ),
-    ).rejects.toThrow('Codex app-server probe failed: initialize failed')
-  })
+      service.execute("codex", "hello", new AbortController()),
+    ).rejects.toThrow("Codex app-server probe failed: initialize failed");
+  });
 
-  it('passes configured OpenCode args to provider probes', async () => {
+  it("passes configured OpenCode args to provider probes", async () => {
     vi.mocked(probeOpenCode).mockImplementation((_binaryPath, opencodeArgs) => {
-      let status: 'ready' | 'error' = 'error'
-      if (JSON.stringify(opencodeArgs) === JSON.stringify(['--provider', 'github-copilot'])) {
-        status = 'ready'
+      let status: "ready" | "error" = "error";
+      if (
+        JSON.stringify(opencodeArgs) ===
+        JSON.stringify(["--provider", "github-copilot"])
+      ) {
+        status = "ready";
       }
       return Promise.resolve({
         installed: true,
-        version: '0.7.0',
-        auth: { status: 'authenticated' },
+        version: "0.7.0",
+        auth: { status: "authenticated" },
         status,
-      })
-    })
+      });
+    });
 
-    const db = createDbMock()
-    const service = new CodingAgentsProviderService(db)
+    const db = createDbMock();
+    const service = createService(db);
     await service.saveSettings({
       opencode: {
         enabled: true,
-        binaryPath: 'opencode',
-        opencodeArgs: ['--provider', 'github-copilot'],
+        binaryPath: "opencode",
+        opencodeArgs: ["--provider", "github-copilot"],
       },
-    })
+    });
 
-    const result = await service.probe('opencode')
+    const result = await service.probe("opencode");
 
-    expect(result.status).toBe('ready')
-    expect(service.getSettings().opencode.lastProbe?.status).toBe('ready')
-  })
+    expect(result.status).toBe("ready");
+    expect(service.getSettings().opencode.lastProbe?.status).toBe("ready");
+  });
 
-  it('passes configured OpenCode args when syncing models', async () => {
-    vi.mocked(detectBinary).mockResolvedValue(null)
-    vi.mocked(execFile).mockImplementation((command, args, options, callback) => {
-      let cb = callback
-      if (typeof options === 'function') {
-        cb = options
-      }
-      if (
-        command === 'opencode' &&
-        Array.isArray(args) &&
-        args.join('\u0000') === ['--provider', 'github-copilot', 'models'].join('\u0000')
-      ) {
-        cb?.(null, 'opencode/grok-code-fast-free\n', '')
-      } else {
-        cb?.(new Error('unexpected models command'), '', '')
-      }
-      return new ChildProcess()
-    })
+  it("passes configured OpenCode args when syncing models", async () => {
+    vi.mocked(detectBinary).mockResolvedValue(null);
+    vi.mocked(execFile).mockImplementation(
+      (command, args, options, callback) => {
+        let cb = callback;
+        if (typeof options === "function") {
+          cb = options;
+        }
+        if (
+          command === "opencode" &&
+          Array.isArray(args) &&
+          args.join("\u0000") ===
+            ["--provider", "github-copilot", "models"].join("\u0000")
+        ) {
+          cb?.(null, "opencode/grok-code-fast-free\n", "");
+        } else {
+          cb?.(new Error("unexpected models command"), "", "");
+        }
+        return new ChildProcess();
+      },
+    );
 
-    const db = createDbMock()
-    const service = new CodingAgentsProviderService(db)
+    const db = createDbMock();
+    const service = createService(db);
     await service.saveSettings({
       opencode: {
         enabled: true,
-        binaryPath: 'opencode',
-        opencodeArgs: ['--provider', 'github-copilot'],
+        binaryPath: "opencode",
+        opencodeArgs: ["--provider", "github-copilot"],
       },
-    })
+    });
 
-    const models = await service.listModels('opencode')
+    const models = await service.listModels("opencode");
 
-    expect(models).toEqual(['opencode/grok-code-fast-free'])
-  })
+    expect(models).toEqual(["opencode/grok-code-fast-free"]);
+  });
 
-  it('uses the detected OpenCode binary when syncing models', async () => {
-    vi.mocked(detectBinary).mockResolvedValue('/opt/homebrew/bin/opencode')
-    vi.mocked(execFile).mockImplementation((command, args, options, callback) => {
-      let cb = callback
-      if (typeof options === 'function') {
-        cb = options
-      }
-      if (
-        command === '/opt/homebrew/bin/opencode' &&
-        Array.isArray(args) &&
-        args.join('\u0000') === ['--provider', 'github-copilot', 'models'].join('\u0000')
-      ) {
-        cb?.(null, 'resolved/opencode-model\n', '')
-      } else {
-        cb?.(new Error('unexpected models command'), '', '')
-      }
-      return new ChildProcess()
-    })
+  it("uses the detected OpenCode binary when syncing models", async () => {
+    vi.mocked(detectBinary).mockResolvedValue("/opt/homebrew/bin/opencode");
+    vi.mocked(execFile).mockImplementation(
+      (command, args, options, callback) => {
+        let cb = callback;
+        if (typeof options === "function") {
+          cb = options;
+        }
+        if (
+          command === "/opt/homebrew/bin/opencode" &&
+          Array.isArray(args) &&
+          args.join("\u0000") ===
+            ["--provider", "github-copilot", "models"].join("\u0000")
+        ) {
+          cb?.(null, "resolved/opencode-model\n", "");
+        } else {
+          cb?.(new Error("unexpected models command"), "", "");
+        }
+        return new ChildProcess();
+      },
+    );
 
-    const db = createDbMock()
-    const service = new CodingAgentsProviderService(db)
+    const db = createDbMock();
+    const service = createService(db);
     await service.saveSettings({
       opencode: {
         enabled: true,
-        binaryPath: 'opencode',
-        opencodeArgs: ['--provider', 'github-copilot'],
+        binaryPath: "opencode",
+        opencodeArgs: ["--provider", "github-copilot"],
       },
-    })
+    });
 
-    const models = await service.listModels('opencode')
+    const models = await service.listModels("opencode");
 
-    expect(models).toEqual(['resolved/opencode-model'])
-  })
+    expect(models).toEqual(["resolved/opencode-model"]);
+  });
 
-  it('uses catalog Cursor models without spawning Cursor ACP during model sync', async () => {
-    const db = createDbMock()
-    const service = new CodingAgentsProviderService(db)
+  it("uses catalog Cursor models without spawning Cursor ACP during model sync", async () => {
+    const db = createDbMock();
+    const service = createService(db);
     await service.saveSettings({
       cursor: {
         enabled: true,
-        binaryPath: 'cursor-agent',
+        binaryPath: "cursor-agent",
       },
-    })
+    });
 
-    const models = await service.listModels('cursor')
+    const models = await service.listModels("cursor");
 
     expect(models).toEqual([
-      'auto',
-      'composer-2.5',
-      'opus-4.8',
-      'gpt-5.5',
-      'fable-5',
-      'sonnet-5',
-      'sonnet-4.6',
-      'codex-5.3',
-      'opus-4.7',
-      'grok-build-0.1',
-    ])
-    expect(detectBinary).not.toHaveBeenCalled()
-    expect(service.getSettings().cursor.binaryPath).toBe('cursor-agent')
-  })
+      "auto",
+      "composer-2.5",
+      "opus-4.8",
+      "gpt-5.5",
+      "fable-5",
+      "sonnet-5",
+      "sonnet-4.6",
+      "codex-5.3",
+      "opus-4.7",
+      "grok-build-0.1",
+    ]);
+    expect(detectBinary).not.toHaveBeenCalled();
+    expect(service.getSettings().cursor.binaryPath).toBe("cursor-agent");
+  });
 
-  it('passes Claude context window traits into execution', async () => {
-    vi.mocked(detectBinary).mockResolvedValue('/opt/homebrew/bin/claude')
+  it("passes Claude context window traits into execution", async () => {
+    vi.mocked(detectBinary).mockResolvedValue("/opt/homebrew/bin/claude");
     vi.mocked(probeClaudeCode).mockResolvedValue({
       installed: true,
-      version: '2.0.0',
-      auth: { status: 'authenticated' },
-      status: 'ready',
-    })
-    vi.mocked(executeClaudeCode).mockResolvedValue({
-      output: 'done',
-    })
+      version: "2.0.0",
+      auth: { status: "authenticated" },
+      status: "ready",
+    });
+    vi.mocked(executeClaudeCode).mockImplementation((input) =>
+      Promise.resolve({
+        output: JSON.stringify({
+          binaryPath: input.binaryPath,
+          model: input.model,
+          maxTurns: input.maxTurns,
+          contextWindow: input.contextWindow,
+        }),
+      }),
+    );
 
-    const db = createDbMock()
-    const service = new CodingAgentsProviderService(db)
+    const db = createDbMock();
+    const service = createService(db);
     await service.saveSettings({
       claudeCode: {
         enabled: true,
-        binaryPath: 'claude',
+        binaryPath: "claude",
       },
-    })
+    });
 
-    await service.execute(
-      'claude_code',
-      'hello',
+    const result = await service.execute(
+      "claude_code",
+      "hello",
       new AbortController(),
       undefined,
       undefined,
-      'claude-sonnet-5',
-      'auto-accept-edits',
-      { effort: 'high', contextWindow: '1m' },
-    )
+      "claude-sonnet-5",
+      "auto-accept-edits",
+      { effort: "high", contextWindow: "1m" },
+    );
 
-    expect(executeClaudeCode).toHaveBeenCalledWith(expect.objectContaining({
-      binaryPath: '/opt/homebrew/bin/claude',
-      model: 'claude-sonnet-5',
+    expect(JSON.parse(result.output)).toEqual({
+      binaryPath: "/opt/homebrew/bin/claude",
+      model: "claude-sonnet-5",
       maxTurns: 16,
-      contextWindow: '1m',
-    }))
-  })
+      contextWindow: "1m",
+    });
+  });
 
-  it('silently detects and uses the resolved opencode binary without changing the saved path', async () => {
-    vi.mocked(detectBinary).mockResolvedValue('/opt/homebrew/bin/opencode')
+  it("silently detects and uses the resolved opencode binary without changing the saved path", async () => {
+    vi.mocked(detectBinary).mockResolvedValue("/opt/homebrew/bin/opencode");
     vi.mocked(probeOpenCode).mockImplementation((binaryPath, opencodeArgs) => {
-      let status: 'ready' | 'error' = 'error'
+      let status: "ready" | "error" = "error";
       if (
-        binaryPath === '/opt/homebrew/bin/opencode' &&
-        JSON.stringify(opencodeArgs) === JSON.stringify(['--provider', 'github-copilot'])
+        binaryPath === "/opt/homebrew/bin/opencode" &&
+        JSON.stringify(opencodeArgs) ===
+          JSON.stringify(["--provider", "github-copilot"])
       ) {
-        status = 'ready'
+        status = "ready";
       }
       return Promise.resolve({
         installed: true,
-        version: '0.7.0',
-        auth: { status: 'authenticated' },
+        version: "0.7.0",
+        auth: { status: "authenticated" },
         status,
-      })
-    })
-    vi.mocked(executeOpenCode).mockImplementation(({ binaryPath, opencodeArgs, prompt }) => {
-      let opencodeArgsText = ''
-      if (opencodeArgs !== undefined) {
-        opencodeArgsText = opencodeArgs.join(' ')
-      }
-      return Promise.resolve({
-        output: `${binaryPath}:${opencodeArgsText}:${prompt}`,
-      })
-    })
+      });
+    });
+    vi.mocked(executeOpenCode).mockImplementation(
+      ({ binaryPath, opencodeArgs, prompt }) => {
+        let opencodeArgsText = "";
+        if (opencodeArgs !== undefined) {
+          opencodeArgsText = opencodeArgs.join(" ");
+        }
+        return Promise.resolve({
+          output: `${binaryPath}:${opencodeArgsText}:${prompt}`,
+        });
+      },
+    );
 
-    const db = createDbMock()
-    const service = new CodingAgentsProviderService(db)
+    const db = createDbMock();
+    const service = createService(db);
     await service.saveSettings({
       opencode: {
         enabled: true,
-        binaryPath: 'opencode',
-        opencodeArgs: ['--provider', 'github-copilot'],
+        binaryPath: "opencode",
+        opencodeArgs: ["--provider", "github-copilot"],
       },
-    })
+    });
 
     const result = await service.execute(
-      'opencode',
-      'hello',
+      "opencode",
+      "hello",
       new AbortController(),
-    )
+    );
 
-    expect(result.output).toBe('/opt/homebrew/bin/opencode:--provider github-copilot:hello')
-    expect(service.getSettings().opencode.binaryPath).toBe('opencode')
-    expect(service.getSettings().opencode.lastProbe?.status).toBe('ready')
-  })
-})
+    expect(result.output).toBe(
+      "/opt/homebrew/bin/opencode:--provider github-copilot:hello",
+    );
+    expect(service.getSettings().opencode.binaryPath).toBe("opencode");
+    expect(service.getSettings().opencode.lastProbe?.status).toBe("ready");
+  });
+});

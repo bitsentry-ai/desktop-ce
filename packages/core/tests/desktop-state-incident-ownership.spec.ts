@@ -25,6 +25,8 @@ async function sourceFiles(directory: string): Promise<string[]> {
 }
 
 describe("incident persistence ownership", () => {
+  // This is an architecture-conformance test. It intentionally scans source
+  // ownership boundaries rather than exercising a runtime API.
   it("keeps IncidentThread and IncidentMessage writes in the renderer-state mirror", async () => {
     const writers: string[] = [];
 
