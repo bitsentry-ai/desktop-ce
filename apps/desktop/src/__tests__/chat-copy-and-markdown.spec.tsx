@@ -1,9 +1,23 @@
-import { createElement } from 'react'
-import { describe, expect, it } from 'vitest'
+// @vitest-environment jsdom
 
-import { getCopyableMarkdown } from '@bitsentry-ce/components/chat/ChatBubble'
+import { createElement } from 'react'
+import { cleanup, render, screen } from '@testing-library/react'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+
+import { ChatBubble, getCopyableMarkdown } from '@bitsentry-ce/components/chat/ChatBubble'
 import type { ChatMessage } from '@bitsentry-ce/components/chat/types'
 import { getCodeText } from '@bitsentry-ce/components/markdown'
+import { TooltipProvider } from '@bitsentry-ce/components/ui/tooltip'
+
+vi.mock('@bitsentry-ce/i18n', () => ({
+  useTranslation: () => ({
+    t: (key: string) => key,
+  }),
+}))
+
+afterEach(() => {
+  cleanup()
+})
 
 function makeAgentMessage(overrides: Partial<Extract<ChatMessage, { kind: 'agent' }>> = {}) {
   return {
@@ -41,6 +55,26 @@ describe('incident response copy and markdown extraction', () => {
     expect(getCopyableMarkdown(message)).toBe(
       'First complete paragraph.\n\nSecond complete paragraph.',
     )
+  })
+
+  it('renders the copy action below the response in a left-aligned row', () => {
+    const message = makeAgentMessage()
+
+    render(
+      <TooltipProvider>
+        <ChatBubble msg={message} providerKey="openai" />
+      </TooltipProvider>,
+    )
+
+    const response = screen.getByText('First complete paragraph.')
+    const copyButton = screen.getByRole('button', {
+      name: 'common.markdown.copyResponseMarkdown',
+    })
+
+    expect(
+      response.compareDocumentPosition(copyButton) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy()
+    expect(copyButton.parentElement?.className).toContain('flex items-center gap-1.5')
   })
 
   it('extracts nested code-block text recursively', () => {
