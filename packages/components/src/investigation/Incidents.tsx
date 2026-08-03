@@ -11,7 +11,7 @@ import * as Sentry from "@sentry/react";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import Navbar from "../layout/Navbar";
 import TopBar from "../layout/TopBar";
-import { ChatBubble } from "../chat/ChatBubble";
+import { ChatBubble, hasWaitingAgentIndicator } from "../chat/ChatBubble";
 import IncidentArtifactsRail, {
   countIncidentArtifacts,
 } from "./IncidentArtifactsRail";
@@ -2604,6 +2604,7 @@ export default function IncidentsPage() {
     () => countIncidentArtifacts(messages, activeId),
     [activeId, messages],
   );
+  const hasWaitingAgentBubble = messages.some(hasWaitingAgentIndicator);
   const visibleIncidents = useMemo(() => {
     if (isHistoryContext) return incidents;
     return incidents.filter((incident) => incident.archived !== true);
@@ -3108,6 +3109,7 @@ export default function IncidentsPage() {
                 thinkingEnabled={thinkingEnabled}
                 onThinkingToggle={() => { setThinkingEnabled((v) => !v); }}
                 threadStatus={threadStatus}
+                showThreadWaitingIndicator={!hasWaitingAgentBubble}
                 composerFileAccept={composerFileAccept}
                 tokenUsage={sessionTokenUsage}
                 accessLevel={selectedAccessLevel}

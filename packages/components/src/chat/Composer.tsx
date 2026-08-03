@@ -33,6 +33,7 @@ import {
 import { useTranslation } from "@bitsentry-ce/i18n";
 import {
   ImagePlus,
+  Loader2,
   Paperclip,
   Plus,
   X,
@@ -84,6 +85,8 @@ export interface ComposerProps {
   composerFileAccept?: string;
   // Thread status
   threadStatus?: ThreadStatus;
+  // Show a fallback while the agent snapshot has not created a ChatBubble yet.
+  showThreadWaitingIndicator?: boolean;
   // Cumulative token usage for the current session (from final events)
   tokenUsage?: {
     inputTokens: number;
@@ -124,6 +127,7 @@ export function Composer({
   placeholder,
   composerFileAccept,
   threadStatus,
+  showThreadWaitingIndicator = false,
   tokenUsage,
   accessLevel: accessLevelProp,
   onAccessLevelChange,
@@ -298,6 +302,12 @@ export function Composer({
 
   return (
     <div className="shrink-0 px-4 pb-4">
+      {threadStatus === "streaming" && showThreadWaitingIndicator && (
+        <div className="mb-2 flex items-center gap-2 text-xs text-muted-foreground">
+          <Loader2 size={11} className="animate-spin" />
+          {t("common.incidents.aiIsResponding")}
+        </div>
+      )}
       <input
         ref={imageInputRef}
         type="file"

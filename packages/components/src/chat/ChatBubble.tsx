@@ -36,6 +36,14 @@ function getVisibleIterationText(
   return "";
 }
 
+export function hasWaitingAgentIndicator(msg: ChatMessage): boolean {
+  if (msg.kind !== "agent") return false;
+  if (msg.status !== "thinking" && msg.status !== "streaming") return false;
+  if (msg.iterations.length === 0) return true;
+  if (msg.activeIterationId === null) return false;
+  return msg.iterations.some((iter) => iter.id === msg.activeIterationId);
+}
+
 export function shouldRenderIterationText(
   msg: AgentMessage,
   isLastIteration: boolean,
@@ -299,6 +307,7 @@ export const ChatBubble = memo(function ChatBubble({
 
             // Show timestamp when iteration completes
             const showTimestamp =
+              !shouldShowWaitingIndicator &&
               iter.completedAt !== undefined &&
               iter.status !== "thinking" &&
               (hasVisibleText || iterTools.length > 0);
