@@ -75,7 +75,7 @@ const sharedGlobals = {
 };
 
 const testStyleRuleOverrides = {
-  files: ["**/*.{spec,test}.{ts,tsx}", "**/__tests__/**/*.{ts,tsx}"],
+  files: ["**/*.{spec,test}.{ts,tsx}", "**/*.e2e-spec.ts", "**/__tests__/**/*.{ts,tsx}"],
   rules: {
     "@typescript-eslint/consistent-type-assertions": "off",
     "@typescript-eslint/no-extraneous-class": "off",
@@ -93,7 +93,15 @@ const testStyleRuleOverrides = {
 
 // WorkOS publishes this fixed webhook CIDR as part of its documented allowlist.
 const workosWebhookIpOverride = {
-  files: ["apps/backend/src/features/workos/workos-webhook.controller.ts"],
+  files: ["**/workos-webhook.controller.ts"],
+  rules: {
+    "sonarjs/no-hardcoded-ip": "off",
+  },
+};
+
+// Seed records use private-network examples as intentional fixture data.
+const demoFixtureIpOverride = {
+  files: ["**/seed-comprehensive.ts"],
   rules: {
     "sonarjs/no-hardcoded-ip": "off",
   },
@@ -150,6 +158,7 @@ export function createPackageConfig({
     },
     testStyleRuleOverrides,
     workosWebhookIpOverride,
+    demoFixtureIpOverride,
     ...overrides,
   );
 }
