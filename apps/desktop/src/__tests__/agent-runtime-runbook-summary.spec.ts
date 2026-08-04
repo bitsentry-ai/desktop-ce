@@ -595,6 +595,40 @@ describe('summarizeRunbookExecutionForToolOutput', () => {
 })
 
 describe('AgentRuntimeService runbook outcomes', () => {
+  it('keeps the saved-state invariant in the generic runtime system prompt', async () => {
+    const llmAdapter = {
+      chatWithTools: vi.fn().mockResolvedValue({ content: 'Acknowledged.', toolCalls: [] }),
+    }
+    const runbookStore = { list: vi.fn().mockResolvedValue([]) }
+    const runbookExecutionService = {
+      start: vi.fn(),
+      waitForCompletion: vi.fn(),
+      get: vi.fn().mockResolvedValue(null),
+      getLatestForIncidentThread: vi.fn().mockResolvedValue(null),
+    }
+    const service = createRuntime({ llmAdapter, runbookStore, runbookExecutionService })
+
+    const sessionId = await service.start({ prompt: 'Create a runbook proposal.', incidentThreadId: 'incident-prompt-invariants' })
+    await waitForCondition(() => service.getStatus(sessionId).state === 'COMPLETED')
+
+    const systemPrompt = getRequiredSystemContent(
+      getLlmCallMessages(llmAdapter as MockLlmAdapter, 0),
+      'You are a security operations assistant for BitSentry Desktop.',
+    )
+    expect(systemPrompt).toContain('Do not claim a runbook was created, edited, updated, or saved unless a user approved a proposal and the save operation succeeded.')
+    expect(systemPrompt).toContain('After starting a runbook, call get_runbook_execution exactly once with waitForCompletion: true')
+    expect(systemPrompt).toContain('Do not claim a runbook was executed unless execute_runbook succeeded.')
+    for (const resultInstruction of [
+      'When prior runbook results provide a combined journalctl window',
+      'When prior runbook results list only individual actionable journalctl windows',
+      'If you inspect a runbook in the same assistant response that starts it',
+      'Do not final-answer from a runbook start acknowledgement alone',
+      'If a later runbook fails, prefer the successful runbook results',
+    ]) {
+      expect(systemPrompt).not.toContain(resultInstruction)
+    }
+  })
+
   it('places approved authoring outcomes in the next-turn session context', async () => {
     const title = `Generated runbook ${randomUUID()}`
     const { store } = createInMemoryAuthoringStore()
@@ -1067,6 +1101,19 @@ describe('AgentRuntimeService runbook outcomes', () => {
       llmMessages,
       'This was app-owned runbook runtime behavior, not an AI-requested tool call.',
     )
+    const systemPrompt = getRequiredSystemContent(
+      llmMessages,
+      'You are a security operations assistant for BitSentry Desktop.',
+    )
+    for (const resultInstruction of [
+      'When prior runbook results provide a combined journalctl window',
+      'When prior runbook results list only individual actionable journalctl windows',
+      'If you inspect a runbook in the same assistant response that starts it',
+      'Do not final-answer from a runbook start acknowledgement alone',
+      'If a later runbook fails, prefer the successful runbook results',
+    ]) {
+      expect(systemPrompt).toContain(resultInstruction)
+    }
     expect(directRunbookContext).toContain('- Status: running')
     expect(llmAdapter.chatWithTools.mock.calls).toHaveLength(1)
     expect(service.getStatus(sessionId).state).toBe('COMPLETED')

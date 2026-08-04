@@ -45,18 +45,7 @@ import type { HostToolContext } from "@bitsentry-ce/core/features/agent-runtime"
 
 const SETTINGS_KEY = "local_ai_settings";
 const CLAUDE_CODE_CATALOG_MODELS = getCatalogModelIds("claude_code");
-const CURSOR_CATALOG_MODELS = [
-  "auto",
-  "composer-2.5",
-  "opus-4.8",
-  "gpt-5.5",
-  "fable-5",
-  "sonnet-5",
-  "sonnet-4.6",
-  "codex-5.3",
-  "opus-4.7",
-  "grok-build-0.1",
-];
+const CURSOR_CATALOG_MODELS = getCatalogModelIds("cursor");
 const OPEN_CODE_MODELS_LOCK_RETRY_DELAYS_MS = [150, 350];
 
 export function prependHostSystemInstructions(
@@ -67,14 +56,8 @@ export function prependHostSystemInstructions(
   if (instructions === undefined || instructions === "") return prompt;
 
   // Cursor ACP, Codex app-server, and OpenCode do not expose a supported
-  // system-message field. Keep host instructions structurally distinct from
-  // replayed chat text instead of impersonating a conversation role.
-  return [
-    "## BitSentry host instructions",
-    instructions,
-    "## Conversation",
-    prompt,
-  ].join("\n\n");
+  // system-message field. The prompt already owns the conversation boundary.
+  return [instructions, prompt].join("\n\n");
 }
 
 export interface CodingAgentsSettingsStore {

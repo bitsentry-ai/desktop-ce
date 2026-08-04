@@ -2000,7 +2000,10 @@ export class AgentRuntimeService {
    * @param runbookContext - Optional runbook context for contextualized responses
    */
 
-  private buildSystemPrompt(runbookContext?: RunbookContext): string {
+  private buildSystemPrompt(
+    runbookContext?: RunbookContext,
+    includeRunbookResultInstructions = false,
+  ): string {
     const isSshRelated = runbookContext?.actions.some((a) => a.type === 'shell') ?? false
     const hasHttpAction = runbookContext?.actions.some((a) => a.type === 'http') ?? false
     const hasShellAction = runbookContext?.actions.some((a) => a.type === 'shell') ?? false
@@ -2035,25 +2038,26 @@ export class AgentRuntimeService {
 
     if (this.hasRunbookTools()) {
       baseInstructions.push(
-        'When an incident requires a runbook, you MUST use the runbook tools to actually start it.',
-        'Use list_runbooks to discover available runbooks.',
-        'Use execute_runbook to start a runbook.',
-        'Use propose_runbook_edit or propose_runbook_create when the user asks to create or change a runbook. These tools only create a pending proposal; they never save changes.',
-        'Do not claim a runbook was created, edited, updated, or saved unless a user approved a proposal and the save operation succeeded.',
         'For incident diagnosis requests that require multiple data sources, decide which runbooks are needed, execute each required runbook, then inspect completed results before finalizing.',
         'If the user specifies values for runbook placeholders such as time windows, host fragments, usernames, service names, or IDs, pass them in execute_runbook.parameterValues.',
         'If list_runbooks shows required parameters, do not start that runbook until you supply them.',
         'Runbook parameter defaults are fallback values only when the user did not specify a value.',
-        'When prior runbook results provide a combined journalctl window, run the backend log runbook once with that combined since/until instead of starting one runbook per issue row.',
-        'When prior runbook results list only individual actionable journalctl windows, use those exact since/until values in execute_runbook.parameterValues for the backend log runbook; do not ask the user to paste timestamps you already received.',
+        'Do not claim a runbook was created, edited, updated, or saved unless a user approved a proposal and the save operation succeeded.',
         'After starting a runbook, call get_runbook_execution exactly once with waitForCompletion: true to obtain its terminal result or its latest snapshot after 30 seconds. You may omit executionId to use the latest runbook execution for this incident.',
-        'If you inspect a runbook in the same assistant response that starts it, omit executionId so the runtime can use the execution that actually started.',
-        'Do not final-answer from a runbook start acknowledgement alone when the user asked for cross-validation, matrices, or RCA.',
-        'If a later runbook fails, prefer the successful runbook results already present in this incident instead of restarting the entire investigation.',
-        'Do not poll get_runbook_execution. A single waitForCompletion: true lookup is the only follow-up lookup needed in this response.',
         'Do not claim a runbook was executed unless execute_runbook succeeded.',
         '',
       )
+
+      if (includeRunbookResultInstructions) {
+        baseInstructions.push(
+          'When prior runbook results provide a combined journalctl window, run the backend log runbook once with that combined since/until instead of starting one runbook per issue row.',
+          'When prior runbook results list only individual actionable journalctl windows, use those exact since/until values in execute_runbook.parameterValues for the backend log runbook; do not ask the user to paste timestamps you already received.',
+          'If you inspect a runbook in the same assistant response that starts it, omit executionId so the runtime can use the execution that actually started.',
+          'Do not final-answer from a runbook start acknowledgement alone when the user asked for cross-validation, matrices, or RCA.',
+          'If a later runbook fails, prefer the successful runbook results already present in this incident instead of restarting the entire investigation.',
+          '',
+        )
+      }
     }
 
     // Instructions for runbook action execution
@@ -2088,6 +2092,19 @@ export class AgentRuntimeService {
     }
 
     return baseInstructions.join('\n')
+  }
+
+  private refreshSystemPromptForRunbookResults(session: AgentSession): void {
+    if (session.latestRunbookExecutionId === undefined) {
+      return
+    }
+
+    const systemMessage = session.messages.find((message) => message.role === 'system')
+    if (systemMessage === undefined || typeof systemMessage.content !== 'string') {
+      return
+    }
+
+    systemMessage.content = this.buildSystemPrompt(session.runbookContext, true)
   }
 
   private buildRunbookContextPrompt(
@@ -2241,6 +2258,8 @@ export class AgentRuntimeService {
           timestamp: new Date().toISOString(),
           phase: awaitingRunbookSummary ? 'waiting_for_summary' : 'asking_model',
         })
+
+        this.refreshSystemPromptForRunbookResults(session)
 
         // Determine which tools should be available based on runbook actions
         const hasShellAction = session.runbookContext?.actions.some((a) => a.type === 'shell') ?? false

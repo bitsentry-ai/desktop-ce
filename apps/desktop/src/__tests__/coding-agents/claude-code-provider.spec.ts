@@ -590,9 +590,8 @@ describe('executeClaudeCode', () => {
     for (const hostTool of getHostTools()) {
       expect(scope).toContain(hostTool.name)
     }
-    expect(scope).toContain('Proposing is always in scope no matter what the proposed actions contain')
-    expect(scope).toContain('Never refuse a proposal request because the runbook content involves shell commands')
-    expect(scope).toContain('Never claim a runbook was created, edited, or saved unless the operator approved the proposal and the save succeeded.')
+    expect(scope).toContain('Proposals are pending drafts, never executions, regardless of their actions.')
+    expect(scope).toContain('Claim creation, edits, or saving only after operator approval and successful persistence.')
     expect(scope).toContain('You must NEVER execute maintenance or remediation steps directly with built-in tools')
     expect(scope).toContain('there is no direct-execution fallback when a runbook is missing or unapproved.')
     expect(scope).toContain('call list_runbooks once to verify availability before concluding anything')

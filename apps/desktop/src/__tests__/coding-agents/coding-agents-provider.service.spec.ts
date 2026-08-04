@@ -24,6 +24,7 @@ import {
 } from "@bitsentry-ce/coding-agents/coding-agents-provider.service";
 import {
   getCatalogModel,
+  getCatalogModelIds,
   getEffectiveComposerOptions,
   resolveCatalogModelRuntimeSelection,
 } from "@bitsentry-ce/components/llm/modelCatalog";
@@ -84,7 +85,7 @@ describe("CodingAgentsProviderService", () => {
     vi.clearAllMocks();
   });
 
-  it("keeps host system instructions outside replayed conversation roles", () => {
+  it("prepends host system instructions without adding a nested conversation wrapper", () => {
     expect(
       prependHostSystemInstructions(
         "[user]: List runbooks",
@@ -92,9 +93,7 @@ describe("CodingAgentsProviderService", () => {
       ),
     ).toBe(
       [
-        "## BitSentry host instructions",
         "You are an incident-response assistant.",
-        "## Conversation",
         "[user]: List runbooks",
       ].join("\n\n"),
     );
@@ -131,9 +130,7 @@ describe("CodingAgentsProviderService", () => {
 
     expect(result.output).toBe(
       [
-        "## BitSentry host instructions",
         "Use concise incident language.",
-        "## Conversation",
         "[user]: List runbooks",
       ].join("\n\n"),
     );
@@ -346,18 +343,9 @@ describe("CodingAgentsProviderService", () => {
 
     const models = await service.listModels("cursor");
 
-    expect(models).toEqual([
-      "auto",
-      "composer-2.5",
-      "opus-4.8",
-      "gpt-5.5",
-      "fable-5",
-      "sonnet-5",
-      "sonnet-4.6",
-      "codex-5.3",
-      "opus-4.7",
-      "grok-build-0.1",
-    ]);
+    expect(models).toEqual(getCatalogModelIds("cursor"));
+    expect(models).toContain("default");
+    expect(models).not.toContain("auto");
     expect(detectBinary).not.toHaveBeenCalled();
     expect(service.getSettings().cursor.binaryPath).toBe("cursor-agent");
   });
