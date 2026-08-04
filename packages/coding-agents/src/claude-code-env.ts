@@ -29,7 +29,7 @@ export function createClaudeCodeSubscriptionEnv(
   }
 
 
-  env.CLAUDE_AGENT_SDK_CLIENT_APP = 'bitsentry-superterminal/0.1.0'
+  env.CLAUDE_AGENT_SDK_CLIENT_APP = 'bitsentry-desktop/0.1.0'
 
   return env
 }

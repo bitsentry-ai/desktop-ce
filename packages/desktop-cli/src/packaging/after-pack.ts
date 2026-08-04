@@ -257,7 +257,7 @@ if [ -z "\${APP_BIN}" ]; then
 fi
 
 if [ -z "\${APP_BIN}" ]; then
-  echo "Unable to locate the packaged SuperTerminal executable in \${APP_DIR}" >&2
+  echo "Unable to locate the packaged BitSentry Desktop executable in \${APP_DIR}" >&2
   exit 1
 fi
 
@@ -309,7 +309,7 @@ if not exist "%CLI_ENTRY%" (
 ${candidateAssignments}
 
 if not defined APP_BIN (
-  echo Unable to locate the packaged SuperTerminal executable in %SCRIPT_DIR% 1>&2
+  echo Unable to locate the packaged BitSentry Desktop executable in %SCRIPT_DIR% 1>&2
   exit /b 1
 )
 

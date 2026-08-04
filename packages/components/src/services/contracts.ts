@@ -814,7 +814,7 @@ export interface RunbookExecutionStepRecord {
 }
 
 export type GlobalVariableScope =
-  | { product: "superterminal"; owner: "local_app" }
+  | { product: "bitsentry-desktop"; owner: "local_app" }
   | { product: "dashboard"; owner: "user"; userId: string };
 
 export interface GlobalVariable {
@@ -856,7 +856,7 @@ export interface GlobalVariablesServicePort {
 }
 
 export interface RunbookExportedBy {
-  product: "superterminal" | "dashboard";
+  product: "bitsentry-desktop" | "dashboard";
   runtime: "desktop" | "backend";
   appVersion?: string;
 }

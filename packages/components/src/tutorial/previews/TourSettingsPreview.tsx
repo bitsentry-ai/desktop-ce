@@ -1,5 +1,5 @@
 /**
- * Static preview of the SuperTerminal Settings page for guided tours.
+ * Static preview of the BitSentry Desktop Settings page for guided tours.
  * Renders hardcoded demo data; no IPC, database, or localStorage access.
  */
 // i18n-ignore-file -- scripted demo content for product tour preview
@@ -74,7 +74,7 @@ export default function TourSettingsPreview() {
           <div className="mb-8">
             <h1 className="text-lg font-semibold text-foreground">Settings</h1>
             <p className="text-sm text-muted-foreground">
-              Configure local SuperTerminal settings.
+              Configure local BitSentry Desktop settings.
             </p>
           </div>
 

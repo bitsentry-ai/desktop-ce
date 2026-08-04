@@ -218,7 +218,7 @@ export function createCliTestContext(desktopDir: string) {
         version: 1,
         exportedAt: '2026-06-17T00:00:00.000Z',
         exportedBy: {
-          product: 'superterminal',
+          product: 'bitsentry-desktop',
           runtime: 'desktop',
         },
         runbooks,

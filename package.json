@@ -1,7 +1,7 @@
 {
-  "name": "@bitsentry-ce/superterminal",
-  "version": "0.1.0",
-  "description": "SuperTerminal Community Edition - SSH runbooks for on-call engineers",
+  "name": "@bitsentry-ce/desktop-workspace",
+  "version": "0.1.0-beta.1",
+  "description": "BitSentry Desktop Community Edition - SSH runbooks for on-call engineers",
   "private": true,
   "packageManager": "pnpm@10.32.1",
   "engines": {

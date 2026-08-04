@@ -1,6 +1,6 @@
-# SuperTerminal
+# BitSentry Desktop
 
-SuperTerminal is a macOS desktop app for on-call engineers: SSH runbooks plus AI diagnosis, local-first by design. No data leaves your machine.
+BitSentry Desktop is a macOS desktop app for on-call engineers: SSH runbooks plus AI diagnosis, local-first by design. No data leaves your machine.
 
 This repository is the Community Edition codebase, extracted from the BitSentry monorepo.
 

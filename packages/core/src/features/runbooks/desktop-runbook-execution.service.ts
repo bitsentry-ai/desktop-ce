@@ -1826,7 +1826,7 @@ export class RunbookExecutionService {
   ): void {
     if (this.edition === "ce" && providerKey !== undefined) {
       throw new Error(
-        `LLM provider "${providerKey}" is not available in SuperTerminal CE.`,
+        `LLM provider "${providerKey}" is not available in BitSentry Desktop.`,
       );
     }
   }
@@ -1944,7 +1944,7 @@ export class RunbookExecutionService {
     if (localAiProvider === undefined) {
       let message = "Local AI provider is not available";
       if (this.edition === "ce") {
-        message = "Local AI provider is not available in SuperTerminal CE.";
+        message = "Local AI provider is not available in BitSentry Desktop.";
       }
       throw new Error(message);
     }
