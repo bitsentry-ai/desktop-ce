@@ -220,6 +220,68 @@ describe('executeClaudeCode', () => {
     })
   })
 
+  it('uses the last assistant iteration instead of cumulative SDK context usage', async () => {
+    queryMock.mockReturnValue({
+      async *[Symbol.asyncIterator]() {
+        await Promise.resolve()
+        yield {
+          type: 'assistant',
+          message: {
+            content: [],
+            usage: {
+              input_tokens: 2,
+              cache_creation_input_tokens: 36_169,
+              cache_read_input_tokens: 0,
+              output_tokens: 56,
+            },
+          },
+        }
+        yield {
+          type: 'assistant',
+          message: {
+            content: [],
+            usage: {
+              input_tokens: 2,
+              cache_creation_input_tokens: 1_890,
+              cache_read_input_tokens: 36_169,
+              output_tokens: 368,
+            },
+          },
+        }
+        yield {
+          type: 'result',
+          subtype: 'success',
+          result: 'Last iteration selected',
+          usage: {
+            input_tokens: 4,
+            cache_creation_input_tokens: 38_059,
+            cache_read_input_tokens: 36_169,
+            output_tokens: 424,
+          },
+        }
+      },
+      getContextUsage: getContextUsageMock.mockRejectedValue(
+        new Error('context usage unavailable'),
+      ),
+      close: closeMock,
+    })
+
+    const { executeClaudeCode } =
+      await import('@bitsentry-ce/desktop-cli/runtime/desktop-coding-agents')
+
+    const result = await executeClaudeCode({
+      prompt: 'Use the last iteration usage',
+      binaryPath: 'claude',
+      abortController: new AbortController(),
+    })
+
+    expect(result.tokenUsage).toEqual({
+      inputTokens: 2,
+      outputTokens: 368,
+      contextTokens: 38_429,
+    })
+  })
+
   it('handles delayed startup plus malformed and partial stream messages without corrupting later output', async () => {
     queryMock.mockReturnValue({
       async *[Symbol.asyncIterator]() {

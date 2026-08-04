@@ -89,6 +89,7 @@ interface ClaudeCodeSessionState {
   sessionId: string | undefined
   resumeCursor: unknown
   tokenUsage: LocalAiExecutionResult['tokenUsage']
+  lastAssistantTokenUsage: LocalAiExecutionResult['tokenUsage']
 }
 
 interface ClaudeSdkSession extends AsyncIterable<unknown> {
@@ -374,6 +375,10 @@ function handleAssistantMessage(
       }
     }
   }
+  applyTokenUsage(state, asRecord(innerMessage?.usage))
+  if (state.tokenUsage?.contextTokens !== undefined) {
+    state.lastAssistantTokenUsage = { ...state.tokenUsage }
+  }
 
   const uuid = asString(msg.uuid)
   if (uuid !== undefined) {
@@ -499,6 +504,7 @@ function handleSuccessResultMessage(
     state.output = resultOutput
   }
   applyTokenUsage(state, asRecord(msg.usage))
+  restoreLastAssistantTokenUsage(state)
   onDelta?.({ type: 'status', status: 'completed' })
 }
 
@@ -686,6 +692,17 @@ function errorMessage(error: unknown): string {
   return String(error)
 }
 
+function restoreLastAssistantTokenUsage(state: ClaudeCodeSessionState): void {
+  if (state.lastAssistantTokenUsage?.contextTokens === undefined) {
+    return
+  }
+
+  state.tokenUsage = {
+    ...state.tokenUsage,
+    ...state.lastAssistantTokenUsage,
+  }
+}
+
 function applyContextUsage(
   state: ClaudeCodeSessionState,
   contextUsage: { totalTokens: number; maxTokens: number },
@@ -694,14 +711,17 @@ function applyContextUsage(
     return
   }
 
+  const lastIterationTokenUsage = state.lastAssistantTokenUsage ?? state.tokenUsage
   state.tokenUsage = {
-    inputTokens: state.tokenUsage?.inputTokens ?? 0,
-    outputTokens: state.tokenUsage?.outputTokens ?? 0,
-    contextTokens: state.tokenUsage?.contextTokens ?? contextUsage.totalTokens,
+    inputTokens: lastIterationTokenUsage?.inputTokens ?? 0,
+    outputTokens: lastIterationTokenUsage?.outputTokens ?? 0,
+    contextTokens:
+      lastIterationTokenUsage?.contextTokens ?? contextUsage.totalTokens,
     contextLimit: contextUsage.maxTokens > 0
       ? contextUsage.maxTokens
-      : state.tokenUsage?.contextLimit,
+      : lastIterationTokenUsage?.contextLimit,
   }
+  restoreLastAssistantTokenUsage(state)
 }
 
 async function updateClaudeContextUsage(
@@ -780,6 +800,7 @@ export async function executeClaudeCode(
     sessionId: undefined,
     resumeCursor: undefined,
     tokenUsage: undefined,
+    lastAssistantTokenUsage: undefined,
   }
 
   options.onDelta?.({ type: 'status', status: 'started' })
