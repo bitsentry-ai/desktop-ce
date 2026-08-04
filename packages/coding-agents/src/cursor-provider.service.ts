@@ -783,7 +783,7 @@ async function initializeCursorClient(
       },
       clientInfo: {
         name: 'bitsentry_desktop',
-        title: 'BitSentry BitSentry Desktop',
+        title: 'BitSentry Desktop',
         version: '0.1.0',
       },
     }),
