@@ -129,12 +129,12 @@ describe('getAutoUpdaterEnablement', () => {
         platform: 'darwin',
         arch: 'arm64',
         releaseChannel: 'stable',
-        appUpdateConfigContents: 'provider: generic\nurl: https://updates.example.com/superterminal\n',
+        appUpdateConfigContents: 'provider: generic\nurl: https://updates.example.com/bitsentry-desktop\n',
       }),
     ).toEqual({
       enabled: true,
       disabledReasonCode: null,
-      feedUrl: 'https://updates.example.com/superterminal',
+      feedUrl: 'https://updates.example.com/bitsentry-desktop',
     })
   })
 

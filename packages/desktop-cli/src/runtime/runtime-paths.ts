@@ -1,8 +1,9 @@
 import os from 'os'
 import path from 'path'
+import { getDesktopEditionIdentity } from '@bitsentry-ce/core/features/desktop/desktop-edition-identity'
 import { tryGetElectronApp } from './electron-app.js'
 
-export const DESKTOP_APP_DATA_NAME = 'SuperTerminal CE'
+export const DESKTOP_APP_DATA_NAME = getDesktopEditionIdentity('ce').appDataName
 
 let userDataPathOverride = normalizeOverride(process.env.BITSENTRY_USER_DATA_DIR)
 let runtimeDefaultAppDataName = DESKTOP_APP_DATA_NAME

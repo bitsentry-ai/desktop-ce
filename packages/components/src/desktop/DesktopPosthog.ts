@@ -43,7 +43,7 @@ function envString(value: string | undefined, fallback = ''): string {
 let configuredPosthogClient: DesktopPosthogClient | null = null
 let POSTHOG_KEY = ''
 let POSTHOG_HOST = 'https://us.i.posthog.com'
-let PRODUCT_NAME = 'superterminal'
+let PRODUCT_NAME = 'bitsentry-desktop'
 const LAST_APP_OPENED_AT_KEY = 'bitsentry.analytics.lastAppOpenedAt'
 
 type DesktopAnalyticsContext = {
@@ -135,7 +135,7 @@ export function configureDesktopPosthogRuntime({
   configuredPosthogClient = posthogClient
   POSTHOG_KEY = envString(posthogKey)
   POSTHOG_HOST = envString(posthogHost, 'https://us.i.posthog.com')
-  PRODUCT_NAME = envString(productName, 'superterminal')
+  PRODUCT_NAME = envString(productName, 'bitsentry-desktop')
 
   return {
     initDesktopAnalytics,

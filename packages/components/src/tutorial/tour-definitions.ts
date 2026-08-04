@@ -463,7 +463,7 @@ export function getTours(t: Translate): Record<TourId, TourDefinition> {
     id: "settings",
     label: t("common.tours.settings.label.settingsTour"),
     description: t(
-      "common.tours.settings.description.learnHowToConfigureSuperTerminal.",
+      "common.tours.settings.description.learnHowToConfigureBitSentry Desktop.",
     ),
     route: "/tour/settings",
     returnRoute: "/app-settings",
@@ -472,7 +472,7 @@ export function getTours(t: Translate): Record<TourId, TourDefinition> {
         popover: {
           title: t("common.tours.settings.title.welcomeToSettings"),
           description: t(
-            "common.tours.settings.description.settingsKeepSuperTerminalLocalFirst.",
+            "common.tours.settings.description.settingsKeepBitSentry DesktopLocalFirst.",
           ),
         },
       },

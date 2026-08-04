@@ -122,7 +122,7 @@ export class CodexAppServerClient extends EventEmitter {
     await this.sendRequestWithTimeout('initialize', {
       clientInfo: {
         name: 'bitsentry_desktop',
-        title: 'BitSentry SuperTerminal',
+        title: 'BitSentry BitSentry Desktop',
         version: '0.1.0',
       },
       capabilities: { experimentalApi: true },

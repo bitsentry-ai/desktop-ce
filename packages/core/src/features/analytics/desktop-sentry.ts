@@ -4,7 +4,7 @@ import {
   type DesktopTelemetrySettingsDb,
 } from './desktop-telemetry-consent'
 
-const PRODUCT_NAME = 'superterminal'
+const PRODUCT_NAME = 'bitsentry-desktop'
 const PRIVACY_SENSITIVE_INTEGRATIONS = new Set([
   'ContextLines',
   'LocalVariables',

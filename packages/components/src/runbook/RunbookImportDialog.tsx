@@ -55,16 +55,16 @@ const CONFLICT_POLICIES: Array<{
   },
 ];
 
-const SUPERTERMINAL_PRODUCT_LABEL = "SuperTerminal";
+const DESKTOP_PRODUCT_LABEL = "BitSentry Desktop";
 const DASHBOARD_PRODUCT_LABEL = "Dashboard";
 
 function formatProductLabel(
-  product: "superterminal" | "dashboard" | undefined,
+  product: "bitsentry-desktop" | "dashboard" | undefined,
   t: (key: string) => string,
 ): string {
   switch (product) {
-      case "superterminal":
-        return SUPERTERMINAL_PRODUCT_LABEL;
+      case "bitsentry-desktop":
+        return DESKTOP_PRODUCT_LABEL;
       case "dashboard":
         return DASHBOARD_PRODUCT_LABEL;
       default:

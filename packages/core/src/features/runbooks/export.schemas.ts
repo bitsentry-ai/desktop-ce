@@ -15,7 +15,7 @@ import {
 } from "./runbooks.schemas";
 
 export const runbookExportedBySchema = z.object({
-  product: z.enum(["superterminal", "dashboard"]),
+  product: z.enum(["bitsentry-desktop", "dashboard"]),
   runtime: z.enum(["desktop", "backend"]),
   appVersion: z.string().optional(),
 });

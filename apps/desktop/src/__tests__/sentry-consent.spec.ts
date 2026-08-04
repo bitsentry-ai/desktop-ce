@@ -119,7 +119,7 @@ describe("desktop Sentry consent", () => {
         ipcMode: "classic",
         includeLocalVariables: false,
         profilesSampleRate: 0.1,
-        release: `superterminal@${EXPECTED_APP_VERSION}`,
+        release: `bitsentry-desktop@${EXPECTED_APP_VERSION}`,
         sendDefaultPii: false,
         tracesSampleRate: 0.2,
       }),

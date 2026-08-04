@@ -10,7 +10,7 @@ fi
 DB_DIRS=(
   "${HOME_DIR}/Library/Application Support/@bitsentry-ce/desktop"
   "${HOME_DIR}/Library/Application Support/BitSentry AI"
-  "${HOME_DIR}/Library/Application Support/SuperTerminal CE"
+  "${HOME_DIR}/Library/Application Support/BitSentry Desktop"
   "${HOME_DIR}/Library/Application Support/ai.bitsentry.desktop.ce"
 )
 

@@ -1,4 +1,5 @@
-productName: SuperTerminal
+productName: BitSentry Desktop
+executableName: BitSentry-Desktop
 # Distinct from the Pro appId (`ai.bitsentry.desktop`) so macOS treats CE and
 # Pro as separate apps (permissions, notifications, Launch Services).
 appId: ai.bitsentry.desktop.ce
@@ -42,7 +43,7 @@ mac:
   category: public.app-category.developer-tools
   # Notarization — enabled when CSC_LINK / APPLE_ID env vars are set
   notarize: false
-  artifactName: "${productName}.${ext}"
+  artifactName: "BitSentry-Desktop.${ext}"
 
 dmg:
   sign: false
@@ -59,7 +60,7 @@ win:
   target:
     - nsis
   icon: assets/icon.ico
-  artifactName: "${productName}.${ext}"
+  artifactName: "BitSentry-Desktop.${ext}"
 
 nsis:
   oneClick: false
@@ -71,7 +72,7 @@ linux:
     - AppImage
   icon: assets/icon.png
   category: Development
-  artifactName: "${productName}.${ext}"
+  artifactName: "BitSentry-Desktop.${ext}"
 
 # ── Auto-updater publish config ──────────────────────────────────────────────
 # Electron Builder requires a generic publish URL in config. CI always
