@@ -422,6 +422,21 @@ function normalizeIncidentTokenUsageMap(
   return normalized;
 }
 
+export function updateIncidentTokenUsage(
+  tokenUsageByIncident: Record<string, AgentThreadTokenUsage>,
+  incidentId: string,
+  tokenUsage: AgentThreadTokenUsage,
+): Record<string, AgentThreadTokenUsage> {
+  return { ...tokenUsageByIncident, [incidentId]: tokenUsage };
+}
+
+export function selectIncidentTokenUsage(
+  tokenUsageByIncident: Record<string, AgentThreadTokenUsage>,
+  incidentId: string | null,
+): AgentThreadTokenUsage | undefined {
+  return incidentId === null ? undefined : tokenUsageByIncident[incidentId];
+}
+
 function normalizeToolCallState(value: unknown): ToolCallCard["state"] {
   if (value === "running" || value === "done" || value === "failed") {
     return value;
@@ -2111,7 +2126,7 @@ export default function IncidentsPage() {
       setSessionTokenUsage(undefined);
       return;
     }
-    setSessionTokenUsage(tokenUsageByIncident[activeId]);
+    setSessionTokenUsage(selectIncidentTokenUsage(tokenUsageByIncident, activeId));
   }, [activeId, tokenUsageByIncident]);
 
   // Restore provider/model/accessLevel for this incident thread on tab switch.
@@ -2183,10 +2198,7 @@ export default function IncidentsPage() {
       }));
       if (snapshot.tokenUsage !== undefined) {
         const tokenUsage = snapshot.tokenUsage;
-        setTokenUsageByIncident((prev) => ({
-          ...prev,
-          [incidentId]: tokenUsage,
-        }));
+        setTokenUsageByIncident((prev) => updateIncidentTokenUsage(prev, incidentId, tokenUsage));
         if (incidentId === activeId) {
           setSessionTokenUsage(tokenUsage);
         }

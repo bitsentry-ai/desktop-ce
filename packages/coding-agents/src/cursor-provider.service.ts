@@ -1147,7 +1147,12 @@ async function runCursorSession(
 
   const prompt = options.mcpEndpoint === undefined
     ? options.prompt
-    : prependRunbookOnlyScope(options.prompt, options.mcpEndpoint.hasRunbookProposal === true)
+    : prependRunbookOnlyScope(options.prompt, {
+      includeProposalInstructions: options.mcpEndpoint.hasRunbookProposal === true,
+      includeToolFailureInstructions: options.mcpEndpoint.hasRunbookToolFailure === true,
+      includeParameterInstructions: options.mcpEndpoint.hasRunbookParameters === true,
+      includeMultiRunbookInstructions: options.mcpEndpoint.hasMultipleRunbooksInPlay === true,
+    })
   const promptResult = await sendCursorPrompt(client, state.sessionId, prompt)
   return cursorPromptResult(promptResult, options, accessLevel, state)
 }

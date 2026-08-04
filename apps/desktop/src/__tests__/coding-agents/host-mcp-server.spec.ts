@@ -127,6 +127,23 @@ describe('HostMcpServerService', () => {
     })
   })
 
+  it('exposes only behavior flags already observed by the runtime session', async () => {
+    const server = new HostMcpServerService()
+    servers.push(server)
+    const context = createContext()
+    context.session.runbookAuthoringProposals = [{} as never]
+    context.session.hasRunbookToolFailure = true
+    context.session.hasRunbookParameters = true
+    context.session.hasMultipleRunbooksInPlay = true
+
+    await expect(server.createSession(context)).resolves.toMatchObject({
+      hasRunbookProposal: true,
+      hasRunbookToolFailure: true,
+      hasRunbookParameters: true,
+      hasMultipleRunbooksInPlay: true,
+    })
+  })
+
   it('proxies stdio MCP requests to the token-scoped endpoint', async () => {
     const server = new HostMcpServerService()
     servers.push(server)

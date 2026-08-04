@@ -91,6 +91,9 @@ export interface AgentSessionRef {
   currentTurnRunbookExecutionLookups?: Set<string>
   currentTurnStartedRunbookExecutionIds?: Set<string>
   runbookAuthoringProposals?: RunbookAuthoringProposal[]
+  hasRunbookToolFailure?: boolean
+  hasRunbookParameters?: boolean
+  hasMultipleRunbooksInPlay?: boolean
 }
 
 export type HostToolEvent = {

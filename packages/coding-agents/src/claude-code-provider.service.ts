@@ -107,7 +107,12 @@ type ClaudeSdkQuery = (params: {
 let testClaudeSdkQueryLoader: (() => Promise<ClaudeSdkQuery> | ClaudeSdkQuery) | undefined
 const CLAUDE_ONE_M_CONTEXT_BETA: ClaudeCodeSdkBeta = 'context-1m-2025-08-07'
 function buildClaudeRunbookOnlyScope(hostToolContext: HostToolContext | undefined): string {
-  return buildRunbookOnlyScope((hostToolContext?.session.runbookAuthoringProposals?.length ?? 0) > 0)
+  return buildRunbookOnlyScope({
+    includeProposalInstructions: (hostToolContext?.session.runbookAuthoringProposals?.length ?? 0) > 0,
+    includeToolFailureInstructions: hostToolContext?.session.hasRunbookToolFailure === true,
+    includeParameterInstructions: hostToolContext?.session.hasRunbookParameters === true,
+    includeMultiRunbookInstructions: hostToolContext?.session.hasMultipleRunbooksInPlay === true,
+  })
 }
 
 export const CLAUDE_HOST_MCP_ALLOWED_TOOLS = getHostTools().map(
@@ -446,13 +451,25 @@ function applyTokenUsage(
 ): void {
   const inputTokens = asNumber(usage?.input_tokens)
   const outputTokens = asNumber(usage?.output_tokens)
-  if (inputTokens === undefined && outputTokens === undefined) {
+  const cacheCreationInputTokens = asNumber(usage?.cache_creation_input_tokens)
+  const cacheReadInputTokens = asNumber(usage?.cache_read_input_tokens)
+  if (
+    inputTokens === undefined &&
+    outputTokens === undefined &&
+    cacheCreationInputTokens === undefined &&
+    cacheReadInputTokens === undefined
+  ) {
     return
   }
 
   state.tokenUsage = {
     inputTokens: inputTokens ?? 0,
     outputTokens: outputTokens ?? 0,
+    contextTokens:
+      (inputTokens ?? 0) +
+      (cacheCreationInputTokens ?? 0) +
+      (cacheReadInputTokens ?? 0) +
+      (outputTokens ?? 0),
   }
 }
 
@@ -680,8 +697,10 @@ function applyContextUsage(
   state.tokenUsage = {
     inputTokens: state.tokenUsage?.inputTokens ?? 0,
     outputTokens: state.tokenUsage?.outputTokens ?? 0,
-    contextTokens: contextUsage.totalTokens,
-    contextLimit: contextUsage.maxTokens,
+    contextTokens: state.tokenUsage?.contextTokens ?? contextUsage.totalTokens,
+    contextLimit: contextUsage.maxTokens > 0
+      ? contextUsage.maxTokens
+      : state.tokenUsage?.contextLimit,
   }
 }
 

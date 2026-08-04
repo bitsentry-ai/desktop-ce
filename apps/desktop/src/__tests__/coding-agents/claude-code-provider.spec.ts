@@ -174,9 +174,50 @@ describe('executeClaudeCode', () => {
     expect(result.tokenUsage).toEqual({
       inputTokens: 5,
       outputTokens: 4,
+      contextTokens: 9,
     })
     expect(logMock.warn).not.toHaveBeenCalled()
     expect(closeMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('includes cached input tokens in Claude context usage', async () => {
+    queryMock.mockReturnValue({
+      async *[Symbol.asyncIterator]() {
+        await Promise.resolve()
+        yield {
+          type: 'result',
+          subtype: 'success',
+          result: 'Cached context accounted for',
+          usage: {
+            input_tokens: 2,
+            cache_creation_input_tokens: 1_885,
+            cache_read_input_tokens: 36_169,
+            output_tokens: 387,
+          },
+        }
+      },
+      getContextUsage: getContextUsageMock.mockResolvedValue({
+        totalTokens: 53,
+        maxTokens: 300_000,
+      }),
+      close: closeMock,
+    })
+
+    const { executeClaudeCode } =
+      await import('@bitsentry-ce/desktop-cli/runtime/desktop-coding-agents')
+
+    const result = await executeClaudeCode({
+      prompt: 'Account for cached context',
+      binaryPath: 'claude',
+      abortController: new AbortController(),
+    })
+
+    expect(result.tokenUsage).toEqual({
+      inputTokens: 2,
+      outputTokens: 387,
+      contextTokens: 38_443,
+      contextLimit: 300_000,
+    })
   })
 
   it('handles delayed startup plus malformed and partial stream messages without corrupting later output', async () => {
@@ -596,7 +637,7 @@ describe('executeClaudeCode', () => {
     expect(scope).not.toContain('Only when a request cannot be expressed as a runbook proposal or execution at all')
     expect(scope).toContain('You must NEVER execute maintenance or remediation steps directly with built-in tools')
     expect(scope).toContain('there is no direct-execution fallback when a runbook is missing or unapproved.')
-    expect(scope).toContain('call list_runbooks once to verify availability before concluding anything')
+    expect(scope).not.toContain('call list_runbooks once to verify availability before concluding anything')
     expect(scope).toContain('When revising a create-kind proposal, use propose_runbook_create because the draft was never saved')
     expect(scope).toContain('To run an existing runbook, use execute_runbook, then call get_runbook_execution once with waitForCompletion: true. Do not poll it.')
     expect(infos).toContainEqual([

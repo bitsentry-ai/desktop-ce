@@ -486,6 +486,9 @@ interface AgentSession {
   currentTurnHostToolCalls?: Map<string, ObservedHostToolCall>
   currentTurnVisibleRunbookExecutionIds?: Set<string>
   runbookAuthoringProposals: RunbookAuthoringProposal[]
+  hasRunbookToolFailure?: boolean
+  hasRunbookParameters?: boolean
+  hasMultipleRunbooksInPlay?: boolean
   queuedFollowUps: AgentSendInput[]
   loopActive?: boolean
   snapshot: AgentThreadSnapshot
@@ -2002,7 +2005,11 @@ export class AgentRuntimeService {
 
   private buildSystemPrompt(
     runbookContext?: RunbookContext,
-    includeRunbookResultInstructions = false,
+    options: {
+      includeRunbookResultInstructions?: boolean
+      includeRunbookParameterInstructions?: boolean
+      includeMultipleRunbookInstructions?: boolean
+    } = {},
   ): string {
     const isSshRelated = runbookContext?.actions.some((a) => a.type === 'shell') ?? false
     const hasHttpAction = runbookContext?.actions.some((a) => a.type === 'http') ?? false
@@ -2021,17 +2028,29 @@ export class AgentRuntimeService {
 
     if (this.hasRunbookTools()) {
       baseInstructions.push(
-        'For incident diagnosis requests that require multiple data sources, decide which runbooks are needed, execute each required runbook, then inspect completed results before finalizing.',
-        'If the user specifies values for runbook placeholders such as time windows, host fragments, usernames, service names, or IDs, pass them in execute_runbook.parameterValues.',
-        'If list_runbooks shows required parameters, do not start that runbook until you supply them.',
-        'Runbook parameter defaults are fallback values only when the user did not specify a value.',
         'Do not claim a runbook was created, edited, updated, or saved unless a user approved a proposal and the save operation succeeded.',
         'After starting a runbook, call get_runbook_execution exactly once with waitForCompletion: true to obtain its terminal result or its latest snapshot after 30 seconds. You may omit executionId to use the latest runbook execution for this incident.',
         'Do not claim a runbook was executed unless execute_runbook succeeded.',
         '',
       )
 
-      if (includeRunbookResultInstructions) {
+      if (options.includeRunbookParameterInstructions === true) {
+        baseInstructions.push(
+          'If the user specifies values for runbook placeholders such as time windows, host fragments, usernames, service names, or IDs, pass them in execute_runbook.parameterValues.',
+          'If list_runbooks shows required parameters, do not start that runbook until you supply them.',
+          'Runbook parameter defaults are fallback values only when the user did not specify a value.',
+          '',
+        )
+      }
+
+      if (options.includeMultipleRunbookInstructions === true) {
+        baseInstructions.push(
+          'For incident diagnosis requests that require multiple data sources, decide which runbooks are needed, execute each required runbook, then inspect completed results before finalizing.',
+          '',
+        )
+      }
+
+      if (options.includeRunbookResultInstructions === true) {
         baseInstructions.push(
           'When prior runbook results provide a combined journalctl window, run the backend log runbook once with that combined since/until instead of starting one runbook per issue row.',
           'When prior runbook results list only individual actionable journalctl windows, use those exact since/until values in execute_runbook.parameterValues for the backend log runbook; do not ask the user to paste timestamps you already received.',
@@ -2061,11 +2080,7 @@ export class AgentRuntimeService {
     }
 
     baseInstructions.push(
-      'When you need to use tools: you may write one brief planning sentence before the tool call.',
-      'After receiving tool results: write 1–3 sentences summarizing what you found, then continue with your analysis.',
       'Tool results are internal context. Do not paste raw JSON, transcript labels, or tool wrappers into the user-facing response unless the user explicitly asks for raw output.',
-      'When you do NOT need tools (e.g., LLM-only runbooks): provide your complete analysis directly - explain what you will do, then DO IT in the same response.',
-      'Never stop after saying "I will" - always follow through with the actual content.',
       '',
       'If you cannot fulfill a request, explain why clearly.',
     )
@@ -2098,7 +2113,11 @@ export class AgentRuntimeService {
   }
 
   private refreshSystemPromptForRunbookResults(session: AgentSession): void {
-    if (session.latestRunbookExecutionId === undefined) {
+    if (
+      session.latestRunbookExecutionId === undefined &&
+      session.hasRunbookParameters !== true &&
+      session.hasMultipleRunbooksInPlay !== true
+    ) {
       return
     }
 
@@ -2107,7 +2126,11 @@ export class AgentRuntimeService {
       return
     }
 
-    systemMessage.content = this.buildSystemPrompt(session.runbookContext, true)
+    systemMessage.content = this.buildSystemPrompt(session.runbookContext, {
+      includeRunbookResultInstructions: session.latestRunbookExecutionId !== undefined,
+      includeRunbookParameterInstructions: session.hasRunbookParameters === true,
+      includeMultipleRunbookInstructions: session.hasMultipleRunbooksInPlay === true,
+    })
   }
 
   private buildRunbookContextPrompt(
@@ -2998,6 +3021,19 @@ export class AgentRuntimeService {
       result: event.result,
       modelContext,
     })
+    if (event.result.error !== undefined || event.type === 'failed') {
+      session.hasRunbookToolFailure = true
+    }
+    if (event.toolName === 'list_runbooks' && event.result.error === undefined) {
+      const payload = this.safeParseObject(event.result.output ?? '')
+      const runbooks = readRecordArrayProperty(payload, 'runbooks')
+      if (runbooks.some((runbook) => readRecordArrayProperty(runbook, 'actionParameters').length > 0)) {
+        session.hasRunbookParameters = true
+      }
+    }
+    if (event.toolName === 'execute_runbook' && (session.currentTurnStartedRunbookExecutionIds?.size ?? 0) > 1) {
+      session.hasMultipleRunbooksInPlay = true
+    }
     if (session.currentToolCallId === event.toolCallId) {
       session.currentToolCallId = null
     }
