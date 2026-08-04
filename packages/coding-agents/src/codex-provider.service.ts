@@ -712,7 +712,7 @@ export async function executeCodex(
     const effortValue = options.traitValues?.effort
     const prompt = options.mcpEndpoint === undefined
       ? options.prompt
-      : prependRunbookOnlyScope(options.prompt)
+      : prependRunbookOnlyScope(options.prompt, options.mcpEndpoint.hasRunbookProposal === true)
     const turnStartPayload: Record<string, unknown> = {
       threadId,
       input: [{ type: 'text', text: prompt, text_elements: [] }],

@@ -106,8 +106,8 @@ type ClaudeSdkQuery = (params: {
 
 let testClaudeSdkQueryLoader: (() => Promise<ClaudeSdkQuery> | ClaudeSdkQuery) | undefined
 const CLAUDE_ONE_M_CONTEXT_BETA: ClaudeCodeSdkBeta = 'context-1m-2025-08-07'
-function buildClaudeRunbookOnlyScope(): string {
-  return buildRunbookOnlyScope()
+function buildClaudeRunbookOnlyScope(hostToolContext: HostToolContext | undefined): string {
+  return buildRunbookOnlyScope((hostToolContext?.session.runbookAuthoringProposals?.length ?? 0) > 0)
 }
 
 export const CLAUDE_HOST_MCP_ALLOWED_TOOLS = getHostTools().map(
@@ -583,7 +583,7 @@ function buildClaudeCodeQueryOptions(
   }
   const systemPrompt = [
     options.systemPrompt,
-    mcpServer === undefined ? undefined : buildClaudeRunbookOnlyScope(),
+    mcpServer === undefined ? undefined : buildClaudeRunbookOnlyScope(options.hostToolContext),
   ].filter((prompt): prompt is string => prompt !== undefined && prompt.trim().length > 0).join('\n\n')
   if (systemPrompt.length > 0) {
     queryOptions.systemPrompt = {

@@ -582,7 +582,7 @@ describe('executeClaudeCode', () => {
       abortController: new AbortController(),
       hostToolContext: {
         gateway: {} as never,
-        session: { id: 'session-1' },
+        session: { id: 'session-1', runbookAuthoringProposals: [{} as never] },
       },
     })
 
@@ -592,6 +592,7 @@ describe('executeClaudeCode', () => {
     }
     expect(scope).toContain('Proposals are pending drafts, never executions, regardless of their actions.')
     expect(scope).toContain('Claim creation, edits, or saving only after operator approval and successful persistence.')
+    expect(scope).toContain('Do not refuse a proposal because of its actions; the operator corrects details during review.')
     expect(scope).toContain('You must NEVER execute maintenance or remediation steps directly with built-in tools')
     expect(scope).toContain('there is no direct-execution fallback when a runbook is missing or unapproved.')
     expect(scope).toContain('call list_runbooks once to verify availability before concluding anything')

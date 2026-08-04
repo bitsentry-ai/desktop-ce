@@ -2017,24 +2017,7 @@ export class AgentRuntimeService {
       '',
     ]
 
-    // SSH-specific instructions - only included when runbook has shell actions
-    if (isSshRelated) {
-      baseInstructions.push(
-        'You have access to tools for collecting logs from Linux servers via SSH.',
-        'Always use tools when users request log collection or server diagnostics.',
-        '',
-        'CRITICAL: Tool parameters must be passed as top-level JSON fields, NOT wrapped in a string.',
-        'Correct: { "host": "192.168.1.10", "username": "ubuntu", "since": "1 hour ago" }',
-        'Wrong: { "input": "host: 192.168.1.10..." }',
-        '',
-        'When a user asks for logs, use the ssh_journal_query tool with:',
-        '- host: IP address or hostname',
-        '- username: SSH username',
-        '- since: Time range (e.g., "1 hour ago", "2026-01-01 00:00:00 UTC")',
-        '- For time windows, do NOT use ISO timestamps with "T" or "Z". Prefer "YYYY-MM-DD HH:mm:ss UTC" or a relative value like "1 hour ago".',
-        '',
-      )
-    }
+    this.appendSshInstructions(baseInstructions, isSshRelated)
 
     if (this.hasRunbookTools()) {
       baseInstructions.push(
@@ -2092,6 +2075,26 @@ export class AgentRuntimeService {
     }
 
     return baseInstructions.join('\n')
+  }
+
+  private appendSshInstructions(baseInstructions: string[], isSshRelated: boolean): void {
+    if (!isSshRelated) return
+
+    baseInstructions.push(
+      'You have access to tools for collecting logs from Linux servers via SSH.',
+      'Always use tools when users request log collection or server diagnostics.',
+      '',
+      'CRITICAL: Tool parameters must be passed as top-level JSON fields, NOT wrapped in a string.',
+      'Correct: { "host": "192.168.1.10", "username": "ubuntu", "since": "1 hour ago" }',
+      'Wrong: { "input": "host: 192.168.1.10..." }',
+      '',
+      'When a user asks for logs, use the ssh_journal_query tool with:',
+      '- host: IP address or hostname',
+      '- username: SSH username',
+      '- since: Time range (e.g., "1 hour ago", "2026-01-01 00:00:00 UTC")',
+      '- For time windows, do NOT use ISO timestamps with "T" or "Z". Prefer "YYYY-MM-DD HH:mm:ss UTC" or a relative value like "1 hour ago".',
+      '',
+    )
   }
 
   private refreshSystemPromptForRunbookResults(session: AgentSession): void {
