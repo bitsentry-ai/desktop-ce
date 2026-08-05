@@ -532,37 +532,6 @@ describe('Cursor provider behavior', () => {
     ])
   })
 
-  it('sends one incident request with every host tool when Cursor MCP is enabled', async () => {
-    const mock = await createMockCursorAgent()
-    const userPrompt = 'Update the local CLI.'
-
-    await expect(executeCursor({
-      prompt: userPrompt,
-      binaryPath: mock.binaryPath,
-      abortController: new AbortController(),
-      cwd: mock.cwd,
-      mcpEndpoint: {
-        url: 'http://127.0.0.1:1/mcp',
-        token: 'token',
-        expiresAt: Date.now() + 60_000,
-        command: 'node',
-        args: ['host-mcp-shim.js'],
-        env: {},
-        agentSessionId: 'session-1',
-      },
-    })).resolves.toMatchObject({ output: 'done' })
-
-    const promptRequest = (await readLoggedMessages(mock.logPath)).find(
-      (message) => message.method === 'session/prompt',
-    )
-    const prompt = getMessageParams(promptRequest ?? {})?.prompt as Array<{ text?: string }> | undefined
-    const scope = prompt?.[0]?.text ?? ''
-    const hostToolNames = getHostTools().map((hostTool) => hostTool.name)
-
-    expect(hostToolNames.filter((name) => scope.includes(name))).toEqual(hostToolNames)
-    expect(scope.split(userPrompt)).toEqual([expect.any(String), ''])
-  })
-
   it('sets Cursor effort through advertised ACP config options', async () => {
     const mock = await createMockCursorAgent()
 

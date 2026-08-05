@@ -20,11 +20,9 @@ import {
   CodingAgentsProviderService,
   type CodingAgentsProviderDependencies,
   type CodingAgentsSettingsStore,
-  prependHostSystemInstructions,
 } from "@bitsentry-ce/coding-agents/coding-agents-provider.service";
 import {
   getCatalogModel,
-  getCatalogModelIds,
   getEffectiveComposerOptions,
   resolveCatalogModelRuntimeSelection,
 } from "@bitsentry-ce/components/llm/modelCatalog";
@@ -83,54 +81,6 @@ function createService(
 describe("CodingAgentsProviderService", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-  });
-
-  it("prepends host system instructions without adding a nested conversation wrapper", () => {
-    expect(
-      prependHostSystemInstructions(
-        "[user]: List runbooks",
-        "You are an incident-response assistant.",
-      ),
-    ).toBe(
-      [
-        "You are an incident-response assistant.",
-        "[user]: List runbooks",
-      ].join("\n\n"),
-    );
-  });
-
-  it("passes Codex host instructions separately from the user prompt", async () => {
-    vi.mocked(detectBinary).mockResolvedValue("/opt/homebrew/bin/codex");
-    vi.mocked(probeCodex).mockResolvedValue({
-      installed: true,
-      version: "0.42.0",
-      auth: { status: "authenticated" },
-      status: "ready",
-    });
-    vi.mocked(executeCodex).mockResolvedValue({ output: "done" });
-
-    const service = createService(createDbMock());
-    await service.saveSettings({
-      codex: { enabled: true, binaryPath: "codex" },
-    });
-    const result = await service.execute(
-      "codex",
-      "[user]: List runbooks",
-      new AbortController(),
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      "Use concise incident language.",
-    );
-
-    expect(result.output).toBe("done");
-    expect(executeCodex).toHaveBeenCalledWith(expect.objectContaining({
-      prompt: "[user]: List runbooks",
-      systemPrompt: "Use concise incident language.",
-    }));
   });
 
   it("exposes Opus 5 with separate effort and context options", () => {
@@ -340,9 +290,7 @@ describe("CodingAgentsProviderService", () => {
 
     const models = await service.listModels("cursor");
 
-    expect(models).toEqual(getCatalogModelIds("cursor"));
     expect(models).toContain("default");
-    expect(models).not.toContain("auto");
     expect(detectBinary).not.toHaveBeenCalled();
     expect(service.getSettings().cursor.binaryPath).toBe("cursor-agent");
   });

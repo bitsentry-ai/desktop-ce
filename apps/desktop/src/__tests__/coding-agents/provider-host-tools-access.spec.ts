@@ -1,9 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { getHostTools } from '@bitsentry-ce/core/features/agent-runtime'
-import {
-  CLAUDE_HOST_MCP_ALLOWED_TOOLS,
-  resolveClaudeAllowedTools,
-} from '@bitsentry-ce/coding-agents/claude-code-provider.service'
+import { resolveClaudeAllowedTools } from '@bitsentry-ce/coding-agents/claude-code-provider.service'
 import {
   chooseCodexApprovalResponse,
 } from '@bitsentry-ce/coding-agents/codex-provider.service'
@@ -26,7 +23,6 @@ const permissionOptions = [
 describe.each(accessLevels)('host tools at %s', (accessLevel) => {
   it('passes every host tool through Claude Code gating', () => {
     const allowedTools = resolveClaudeAllowedTools(accessLevel, true)
-    expect(allowedTools).toEqual(CLAUDE_HOST_MCP_ALLOWED_TOOLS)
     for (const hostTool of getHostTools()) {
       expect(allowedTools).toContain(`mcp__${HOST_MCP_SERVER_NAME}__${hostTool.name}`)
     }

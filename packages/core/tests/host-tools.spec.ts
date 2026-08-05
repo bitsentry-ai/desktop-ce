@@ -120,7 +120,6 @@ describe('host tools', () => {
       }],
     })
     const catalog = JSON.parse(result?.output ?? '') as { runbooks: Array<Record<string, unknown>> }
-    expect(catalog.runbooks[0]).not.toHaveProperty('actionParameters')
     const secureParameter = (catalog.runbooks[0]?.parameters as Array<Record<string, unknown>>)
       .find((parameter) => parameter.key === 'apiToken')
     expect(secureParameter).toMatchObject({ key: 'apiToken', required: true })

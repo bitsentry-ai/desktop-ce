@@ -1,4 +1,4 @@
-import { chmod, mkdtemp, readFile, rm, writeFile } from 'fs/promises'
+import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from 'fs/promises'
 import os from 'os'
 import path from 'path'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -11,7 +11,7 @@ import { setCodingAgentsLoggerForTesting } from '@bitsentry-ce/coding-agents/log
 import { HOST_MCP_SERVER_NAME } from '@bitsentry-ce/coding-agents/host-mcp-server.service'
 
 const tempDirs: string[] = []
-async function createMultiItemCodexAppServer(): Promise<{
+async function createMultiItemCodexAppServer(options: { readsGlobalCodexInstructions?: boolean } = {}): Promise<{
   binaryPath: string
   cwd: string
   logPath: string
@@ -23,11 +23,17 @@ async function createMultiItemCodexAppServer(): Promise<{
   const logPath = path.join(cwd, 'messages.jsonl')
   const script = `
 const fs = require('fs')
+const path = require('path')
 const readline = require('readline')
 
 const respond = (id, result) => process.stdout.write(JSON.stringify({ id, result }) + '\\n')
 const notify = (method, params) => process.stdout.write(JSON.stringify({ method, params }) + '\\n')
 const logMessage = (message) => fs.appendFileSync(${JSON.stringify(logPath)}, JSON.stringify(message) + '\\n')
+const responseText = ${options.readsGlobalCodexInstructions === true}
+  ? (fs.existsSync(path.join(process.env.HOME || '', '.codex', 'config.toml'))
+      ? 'Global instruction loaded.'
+      : 'Incident instruction boundary preserved.')
+  : 'I will list runbooks.'
 if (!process.argv.slice(2).includes('app-server')) process.exit(64)
 
 const rl = readline.createInterface({ input: process.stdin })
@@ -48,9 +54,9 @@ rl.on('line', (line) => {
   if (message.method === 'turn/start') {
     respond(message.id, { turn: { id: 'turn-multi-item' } })
     notify('item/started', { item: { id: 'item-streamed', type: 'agentMessage' } })
-    notify('item/agentMessage/delta', { itemId: 'item-streamed', delta: 'I will list runbooks.' })
+    notify('item/agentMessage/delta', { itemId: 'item-streamed', delta: responseText })
     notify('item/completed', {
-      item: { id: 'item-streamed', type: 'agentMessage', text: 'I will list runbooks.' },
+      item: { id: 'item-streamed', type: 'agentMessage', text: responseText },
     })
     notify('item/started', { item: { id: 'item-tool-call', type: 'mcpToolCall' } })
     notify('item/completed', {
@@ -162,49 +168,6 @@ describe('Codex provider behavior', () => {
     expect(result.output).not.toContain('mcpToolCall')
   })
 
-  it('configures an isolated incident harness and keeps the raw user prompt unchanged', async () => {
-    const mock = await createMultiItemCodexAppServer()
-    await executeCodex({
-      prompt: 'Update the local CLI.',
-      binaryPath: mock.binaryPath,
-      cwd: mock.cwd,
-      abortController: new AbortController(),
-      mcpEndpoint: {
-        url: 'http://127.0.0.1:1/mcp',
-        token: 'token',
-        expiresAt: Date.now() + 60_000,
-        command: 'node',
-        args: ['host-mcp-shim.js'],
-        env: {},
-        agentSessionId: 'session-1',
-      },
-    })
-
-    const messages = await readLoggedCodexMessages(mock.logPath)
-    const threadStart = messages.find(
-      (message) => message.method === 'thread/start',
-    )
-    const turnStart = messages.find(
-      (message) => message.method === 'turn/start',
-    )
-    const threadParams = threadStart?.params as {
-      baseInstructions?: string
-      developerInstructions?: string
-      config?: Record<string, unknown>
-    } | undefined
-    const params = turnStart?.params as { input?: Array<{ text?: string }> } | undefined
-    expect(threadParams?.developerInstructions).toBe('')
-    expect(threadParams?.config).toMatchObject({
-      include_permissions_instructions: false,
-      include_apps_instructions: false,
-      include_collaboration_mode_instructions: false,
-      project_doc_max_bytes: 0,
-      features: { apps: false, plugins: false },
-      skills: { include_instructions: false },
-    })
-    expect(params?.input?.[0]?.text).toBe('Update the local CLI.')
-  })
-
   it('does not start Codex when cancellation arrives while the isolated HOME is being created', async () => {
     const mock = await createMultiItemCodexAppServer()
     const abortController = new AbortController()
@@ -227,6 +190,42 @@ describe('Codex provider behavior', () => {
 
     await expect(execution).resolves.toMatchObject({ output: '', exitCode: -1 })
     expect(await readLoggedCodexMessages(mock.logPath)).toEqual([])
+  })
+
+  it('keeps global Codex instructions out of incident sessions', async () => {
+    const userHome = await mkdtemp(path.join(os.tmpdir(), 'codex-user-home-'))
+    tempDirs.push(userHome)
+    await mkdir(path.join(userHome, '.codex'))
+    await writeFile(path.join(userHome, '.codex', 'config.toml'), 'developer_instructions = "global"\n')
+    const mock = await createMultiItemCodexAppServer({ readsGlobalCodexInstructions: true })
+    const originalHome = process.env.HOME
+    process.env.HOME = userHome
+
+    try {
+      const result = await executeCodex({
+        prompt: 'List available runbooks.',
+        binaryPath: mock.binaryPath,
+        cwd: mock.cwd,
+        abortController: new AbortController(),
+        mcpEndpoint: {
+          url: 'http://127.0.0.1:1/mcp',
+          token: 'token',
+          expiresAt: Date.now() + 60_000,
+          command: 'node',
+          args: ['host-mcp-shim.js'],
+          env: {},
+          agentSessionId: 'session-isolated-home',
+        },
+      })
+
+      expect(result.output).toBe('Incident instruction boundary preserved.')
+    } finally {
+      if (originalHome === undefined) {
+        delete process.env.HOME
+      } else {
+        process.env.HOME = originalHome
+      }
+    }
   })
 
   it('approves a BitSentry MCP tool elicitation at Safe Tools', async () => {
