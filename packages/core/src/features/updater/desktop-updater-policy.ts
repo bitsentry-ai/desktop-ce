@@ -1,5 +1,8 @@
-const PLACEHOLDER_UPDATE_URL_FRAGMENT = 'desktop/releases/local-build-placeholder'
-const PUBLIC_UPDATE_BASE_URL = 'https://downloads.bitsentry.ai/desktop/releases'
+const DOWNLOADS_HOST = 'downloads.bitsentry.ai'
+const PRODUCT_UPDATE_PATH = {
+  ce: 'desktop-ce',
+  pro: 'desktop',
+} as const
 const SEMVER_PATTERN =
   /^(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?(?:\+[0-9A-Za-z.-]+)?$/
 const STABLE_FEED_PATHS: Partial<Record<NodeJS.Platform, Partial<Record<string, string>>>> = {
@@ -18,6 +21,7 @@ const STABLE_FEED_PATHS: Partial<Record<NodeJS.Platform, Partial<Record<string, 
 
 export type UpdateDownloadPolicy = 'auto' | 'manual'
 export type DesktopReleaseChannel = 'stable' | 'beta' | 'preview'
+export type DesktopProduct = keyof typeof PRODUCT_UPDATE_PATH
 export type AutoUpdaterDisabledReasonCode =
   | 'not-packaged'
   | 'smoke-test'
@@ -79,21 +83,29 @@ function getCanonicalStableFeedPath(platform: NodeJS.Platform, arch: string): st
   return platformPaths[arch] ?? null
 }
 
-function normalizeConfiguredFeedUrl(input: string): string | null {
+function normalizeConfiguredFeedUrl(input: string, product: DesktopProduct): string | null {
   try {
     const url = new URL(input)
+    const productUpdatePath = PRODUCT_UPDATE_PATH[product]
 
-    if (url.pathname.includes(PLACEHOLDER_UPDATE_URL_FRAGMENT)) {
+    if (url.pathname.includes('/local-build-placeholder')) {
+      return null
+    }
+
+    if (
+      url.hostname === DOWNLOADS_HOST &&
+      !url.pathname.startsWith(`/${productUpdatePath}/`)
+    ) {
       return null
     }
 
     const stableReleaseMatch =
-      /^\/desktop\/releases\/(macos\/(?:arm64|x64)|windows\/x64|linux\/(?:arm64|x64))\/desktop-v[^/]+\/?$/.exec(
-        url.pathname,
-      )
+      new RegExp(
+        `^\\/${productUpdatePath}\\/releases\\/(macos\\/(?:arm64|x64)|windows\\/x64|linux\\/(?:arm64|x64))\\/(?:desktop|desktop-ce)-v[^/]+\\/?$`,
+      ).exec(url.pathname)
 
     if (stableReleaseMatch !== null) {
-      url.pathname = `/desktop/releases/${stableReleaseMatch[1]}`
+      url.pathname = `/${productUpdatePath}/releases/${stableReleaseMatch[1]}`
     }
 
     return url.toString().replace(/\/$/, '')
@@ -107,6 +119,7 @@ function resolveFallbackFeedUrl(options: {
   platform: NodeJS.Platform
   arch: string
   releaseChannel: DesktopReleaseChannel
+  product: DesktopProduct
 }): string | null {
   if (options.releaseChannel !== 'stable') return null
 
@@ -117,7 +130,7 @@ function resolveFallbackFeedUrl(options: {
   const stableFeedPath = getCanonicalStableFeedPath(options.platform, options.arch)
   if (stableFeedPath === null) return null
 
-  return `${PUBLIC_UPDATE_BASE_URL}/${stableFeedPath}`
+  return `https://downloads.bitsentry.ai/${PRODUCT_UPDATE_PATH[options.product]}/releases/${stableFeedPath}`
 }
 
 export function getAutoUpdaterEnablement(options: {
@@ -128,6 +141,7 @@ export function getAutoUpdaterEnablement(options: {
   arch: string
   releaseChannel: DesktopReleaseChannel
   appUpdateConfigContents?: string | null
+  product?: DesktopProduct
 }): AutoUpdaterEnablement {
   if (!options.isPackaged) {
     return {
@@ -145,10 +159,11 @@ export function getAutoUpdaterEnablement(options: {
     }
   }
 
+  const product = options.product ?? 'pro'
   const configuredFeedUrl = extractConfiguredFeedUrl(options.appUpdateConfigContents)
   let feedUrl: string | null = null
   if (configuredFeedUrl !== null) {
-    feedUrl = normalizeConfiguredFeedUrl(configuredFeedUrl)
+    feedUrl = normalizeConfiguredFeedUrl(configuredFeedUrl, product)
   }
   if (feedUrl === null) {
     feedUrl = resolveFallbackFeedUrl({
@@ -156,6 +171,7 @@ export function getAutoUpdaterEnablement(options: {
       platform: options.platform,
       arch: options.arch,
       releaseChannel: options.releaseChannel,
+      product,
     })
   }
 
