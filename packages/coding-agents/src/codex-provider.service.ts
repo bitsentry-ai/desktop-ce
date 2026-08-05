@@ -650,7 +650,6 @@ export async function executeCodex(
           options.systemPrompt,
           buildRunbookOnlyScope({
             includeProposalInstructions: mcpEndpoint.hasRunbookProposal === true,
-            includeToolFailureInstructions: mcpEndpoint.hasRunbookToolFailure === true,
             includeParameterInstructions: mcpEndpoint.hasRunbookParameters === true,
             includeMultiRunbookInstructions: mcpEndpoint.hasMultipleRunbooksInPlay === true,
           }),

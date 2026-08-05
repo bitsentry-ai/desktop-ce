@@ -132,13 +132,11 @@ describe('HostMcpServerService', () => {
     servers.push(server)
     const context = createContext()
     context.session.runbookAuthoringProposals = [{} as never]
-    context.session.hasRunbookToolFailure = true
     context.session.hasRunbookParameters = true
     context.session.hasMultipleRunbooksInPlay = true
 
     await expect(server.createSession(context)).resolves.toMatchObject({
       hasRunbookProposal: true,
-      hasRunbookToolFailure: true,
       hasRunbookParameters: true,
       hasMultipleRunbooksInPlay: true,
     })

@@ -111,7 +111,6 @@ const CLAUDE_ONE_M_CONTEXT_BETA: ClaudeCodeSdkBeta = 'context-1m-2025-08-07'
 function buildClaudeRunbookOnlyScope(hostToolContext: HostToolContext | undefined): string {
   return buildRunbookOnlyScope({
     includeProposalInstructions: (hostToolContext?.session.runbookAuthoringProposals?.length ?? 0) > 0,
-    includeToolFailureInstructions: hostToolContext?.session.hasRunbookToolFailure === true,
     includeParameterInstructions: hostToolContext?.session.hasRunbookParameters === true,
     includeMultiRunbookInstructions: hostToolContext?.session.hasMultipleRunbooksInPlay === true,
   })
@@ -453,27 +452,26 @@ function applyTokenUsage(
   state: ClaudeCodeSessionState,
   usage: Record<string, unknown> | undefined,
 ): void {
-  const inputTokens = asNumber(usage?.input_tokens)
-  const outputTokens = asNumber(usage?.output_tokens)
-  const cacheCreationInputTokens = asNumber(usage?.cache_creation_input_tokens)
-  const cacheReadInputTokens = asNumber(usage?.cache_read_input_tokens)
-  if (
-    inputTokens === undefined &&
-    outputTokens === undefined &&
-    cacheCreationInputTokens === undefined &&
-    cacheReadInputTokens === undefined
-  ) {
-    return
+  const tokenCounts = {
+    inputTokens: asNumber(usage?.input_tokens),
+    outputTokens: asNumber(usage?.output_tokens),
+    cacheCreationInputTokens: asNumber(usage?.cache_creation_input_tokens),
+    cacheReadInputTokens: asNumber(usage?.cache_read_input_tokens),
   }
+  if (Object.values(tokenCounts).every((tokenCount) => tokenCount === undefined)) return
+
+  const {
+    inputTokens = 0,
+    outputTokens = 0,
+    cacheCreationInputTokens = 0,
+    cacheReadInputTokens = 0,
+  } = tokenCounts
 
   state.tokenUsage = {
-    inputTokens: inputTokens ?? 0,
-    outputTokens: outputTokens ?? 0,
+    inputTokens,
+    outputTokens,
     contextTokens:
-      (inputTokens ?? 0) +
-      (cacheCreationInputTokens ?? 0) +
-      (cacheReadInputTokens ?? 0) +
-      (outputTokens ?? 0),
+      inputTokens + cacheCreationInputTokens + cacheReadInputTokens + outputTokens,
   }
 }
 

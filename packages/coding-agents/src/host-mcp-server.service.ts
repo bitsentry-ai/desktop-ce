@@ -27,7 +27,6 @@ export interface HostMcpEndpoint {
   env: Record<string, string>
   agentSessionId: string
   hasRunbookProposal?: boolean
-  hasRunbookToolFailure?: boolean
   hasRunbookParameters?: boolean
   hasMultipleRunbooksInPlay?: boolean
 }
@@ -178,7 +177,6 @@ export class HostMcpServerService {
       },
       agentSessionId: context.session.id,
       hasRunbookProposal: (context.session.runbookAuthoringProposals?.length ?? 0) > 0,
-      hasRunbookToolFailure: context.session.hasRunbookToolFailure === true,
       hasRunbookParameters: context.session.hasRunbookParameters === true,
       hasMultipleRunbooksInPlay: context.session.hasMultipleRunbooksInPlay === true,
     }

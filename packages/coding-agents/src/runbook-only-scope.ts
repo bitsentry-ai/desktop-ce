@@ -8,7 +8,6 @@ import { getHostTools } from '@bitsentry-ce/core/features/agent-runtime'
  */
 export interface RunbookOnlyScopeOptions {
   includeProposalInstructions?: boolean
-  includeToolFailureInstructions?: boolean
   includeParameterInstructions?: boolean
   includeMultiRunbookInstructions?: boolean
 }

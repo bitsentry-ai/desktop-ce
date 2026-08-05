@@ -166,7 +166,6 @@ function buildOpenCodePrompt(
     ? prompt
     : prependRunbookOnlyScope(prompt, {
       includeProposalInstructions: mcpEndpoint.hasRunbookProposal === true,
-      includeToolFailureInstructions: mcpEndpoint.hasRunbookToolFailure === true,
       includeParameterInstructions: mcpEndpoint.hasRunbookParameters === true,
       includeMultiRunbookInstructions: mcpEndpoint.hasMultipleRunbooksInPlay === true,
     })

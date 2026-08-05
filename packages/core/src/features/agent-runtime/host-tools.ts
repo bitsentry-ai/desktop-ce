@@ -2,6 +2,7 @@ import { z } from 'zod'
 import type { RunbookContext, ToolResult } from './types'
 import type {
   RunbookActionRecord,
+  RunbookActionParameter,
   RunbookExecutionRecord,
   RunbookParameterValues,
   RunbookRecord,
@@ -91,7 +92,6 @@ export interface AgentSessionRef {
   currentTurnRunbookExecutionLookups?: Set<string>
   currentTurnStartedRunbookExecutionIds?: Set<string>
   runbookAuthoringProposals?: RunbookAuthoringProposal[]
-  hasRunbookToolFailure?: boolean
   hasRunbookParameters?: boolean
   hasMultipleRunbooksInPlay?: boolean
 }
@@ -373,34 +373,43 @@ function buildTriggerContext(session: AgentSessionRef): RunbookTriggerContext | 
   return { entrypoint: 'incident_workspace', incidentThreadId: session.incidentThreadId }
 }
 
+type CatalogParameter = {
+  key: string
+  required: boolean
+  description?: string
+  defaultValue?: string
+}
+
+function publicCatalogParameterMetadata(parameter: RunbookActionParameter): Partial<CatalogParameter> {
+  if (parameter.secure === true) return {}
+
+  return {
+    ...(parameter.description === undefined || parameter.description.length === 0
+      ? {}
+      : { description: parameter.description }),
+    ...(parameter.defaultValue === undefined || parameter.defaultValue.length === 0
+      ? {}
+      : { defaultValue: parameter.defaultValue }),
+  }
+}
+
+function mergeCatalogParameter(
+  existing: CatalogParameter | undefined,
+  parameter: RunbookActionParameter,
+): CatalogParameter {
+  return {
+    ...existing,
+    key: parameter.key,
+    required: existing?.required === true || parameter.required !== false,
+    ...publicCatalogParameterMetadata(parameter),
+  }
+}
+
 function summarizeRunbookForCatalog(runbook: RunbookRecord): Record<string, unknown> {
-  const parameters = new Map<string, {
-    key: string
-    required: boolean
-    description?: string
-    defaultValue?: string
-  }>()
+  const parameters = new Map<string, CatalogParameter>()
   for (const action of runbook.actions) {
     for (const parameter of action.parameters ?? []) {
-      const existing = parameters.get(parameter.key)
-      const summary: {
-        key: string
-        required: boolean
-        description?: string
-        defaultValue?: string
-      } = {
-        key: parameter.key,
-        required: existing?.required === true || parameter.required !== false,
-      }
-      if (parameter.secure !== true) {
-        if (parameter.description !== undefined && parameter.description.length > 0) {
-          summary.description = parameter.description
-        }
-        if (parameter.defaultValue !== undefined && parameter.defaultValue.length > 0) {
-          summary.defaultValue = parameter.defaultValue
-        }
-      }
-      parameters.set(parameter.key, { ...existing, ...summary })
+      parameters.set(parameter.key, mergeCatalogParameter(parameters.get(parameter.key), parameter))
     }
   }
   return {

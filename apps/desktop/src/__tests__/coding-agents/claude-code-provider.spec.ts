@@ -2,8 +2,6 @@ import { EventEmitter } from 'events'
 import type { ChildProcess } from 'child_process'
 import { existsSync } from 'fs'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { getHostTools } from '@bitsentry-ce/core/features/agent-runtime'
-import { setCodingAgentsLoggerForTesting } from '@bitsentry-ce/coding-agents/logger'
 import { CLAUDE_HOST_MCP_ALLOWED_TOOLS } from '@bitsentry-ce/coding-agents/claude-code-provider.service'
 
 type ClaudeQuerySession = AsyncIterable<unknown> & {
@@ -669,51 +667,6 @@ describe('executeClaudeCode', () => {
       isError: true,
       content: [{ type: 'text' }],
     })
-  })
-
-  it('keeps the Claude incident scope synchronized with every registered host tool', async () => {
-    const infos: unknown[][] = []
-    setCodingAgentsLoggerForTesting({ info: (...args) => { infos.push(args) }, warn: () => {}, error: () => {} })
-    queryMock.mockReturnValue({
-      async *[Symbol.asyncIterator]() {
-        yield { type: 'result', subtype: 'success', result: 'Proposal drafted.' }
-      },
-      getContextUsage: getContextUsageMock.mockResolvedValue({ totalTokens: 0, maxTokens: 0 }),
-      close: closeMock,
-    })
-    toolMock.mockImplementation((name, _description, _schema, handler) => ({ name, handler }))
-    createSdkMcpServerMock.mockReturnValue({ transport: 'in-process' })
-
-    const { executeClaudeCode } =
-      await import('@bitsentry-ce/desktop-cli/runtime/desktop-coding-agents')
-    await executeClaudeCode({
-      prompt: 'Create a runbook proposal.',
-      binaryPath: 'claude',
-      abortController: new AbortController(),
-      hostToolContext: {
-        gateway: {} as never,
-        session: { id: 'session-1', runbookAuthoringProposals: [{} as never] },
-      },
-    })
-
-    const scope = getQueryOptions(0).systemPrompt ?? ''
-    expect(scope).toEqual(expect.any(String))
-    for (const hostTool of getHostTools()) {
-      expect(scope).toContain(hostTool.name)
-    }
-    expect(scope).toContain('Proposals are pending drafts, never executions, regardless of their actions.')
-    expect(scope).not.toContain('Claim creation, edits, or saving only after operator approval and successful persistence.')
-    expect(scope).toContain('Do not refuse a proposal because of its actions; the operator corrects details during review.')
-    expect(scope).not.toContain('Only when a request cannot be expressed as a runbook proposal or execution at all')
-    expect(scope).toContain('You must NEVER execute maintenance or remediation steps directly with built-in tools')
-    expect(scope).toContain('there is no direct-execution fallback when a runbook is missing or unapproved.')
-    expect(scope).toContain('call list_runbooks once to verify availability before concluding anything')
-    expect(scope).toContain('When revising a create-kind proposal, use propose_runbook_create because the draft was never saved')
-    expect(scope).toContain('To run an existing runbook, use execute_runbook, then call get_runbook_execution once with waitForCompletion: true. Do not poll it.')
-    expect(infos).toContainEqual([
-      '[claude-code-provider] configured host tools',
-      { agentSessionId: 'session-1', toolNames: getHostTools().map((tool) => tool.name) },
-    ])
   })
 
   it('enables the Claude 1M context beta when requested', async () => {

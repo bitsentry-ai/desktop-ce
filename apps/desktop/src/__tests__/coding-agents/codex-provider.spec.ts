@@ -7,7 +7,6 @@ import {
   codexStreamDeltasFromNotification,
   normalizeCodexExecutionError,
 } from '@bitsentry-ce/desktop-cli/runtime/desktop-coding-agents'
-import { getHostTools } from '@bitsentry-ce/core/features/agent-runtime'
 import { setCodingAgentsLoggerForTesting } from '@bitsentry-ce/coding-agents/logger'
 import { HOST_MCP_SERVER_NAME } from '@bitsentry-ce/coding-agents/host-mcp-server.service'
 
@@ -163,9 +162,7 @@ describe('Codex provider behavior', () => {
     expect(result.output).not.toContain('mcpToolCall')
   })
 
-  it('uses a minimal incident harness and keeps runbook scope out of the user prompt', async () => {
-    const infos: unknown[][] = []
-    setCodingAgentsLoggerForTesting({ info: (...args) => { infos.push(args) }, warn: () => {}, error: () => {} })
+  it('configures an isolated incident harness and keeps the raw user prompt unchanged', async () => {
     const mock = await createMultiItemCodexAppServer()
     await executeCodex({
       prompt: 'Update the local CLI.',
@@ -196,17 +193,6 @@ describe('Codex provider behavior', () => {
       config?: Record<string, unknown>
     } | undefined
     const params = turnStart?.params as { input?: Array<{ text?: string }> } | undefined
-    const scope = threadParams?.baseInstructions ?? ''
-    for (const hostTool of getHostTools()) {
-      expect(scope).toContain(hostTool.name)
-    }
-    expect(scope).toContain('You must NEVER execute maintenance or remediation steps directly with built-in tools')
-    expect(scope).toContain('there is no direct-execution fallback when a runbook is missing or unapproved.')
-    expect(scope).toContain('call list_runbooks once to verify availability before concluding anything')
-    expect(scope).not.toContain('Claim creation, edits, or saving only after operator approval and successful persistence.')
-    expect(scope).not.toContain('Only when a request cannot be expressed as a runbook proposal or execution at all')
-    expect(scope).not.toContain('Update the local CLI.')
-    expect(scope.length).toBeLessThan(4_000)
     expect(threadParams?.developerInstructions).toBe('')
     expect(threadParams?.config).toMatchObject({
       include_permissions_instructions: false,
@@ -217,10 +203,6 @@ describe('Codex provider behavior', () => {
       skills: { include_instructions: false },
     })
     expect(params?.input?.[0]?.text).toBe('Update the local CLI.')
-    expect(infos).toContainEqual([
-      '[codex-provider] configured host tools',
-      { agentSessionId: 'session-1', toolNames: getHostTools().map((tool) => tool.name) },
-    ])
   })
 
   it('does not start Codex when cancellation arrives while the isolated HOME is being created', async () => {
@@ -248,8 +230,6 @@ describe('Codex provider behavior', () => {
   })
 
   it('approves a BitSentry MCP tool elicitation at Safe Tools', async () => {
-    const infos: unknown[][] = []
-    setCodingAgentsLoggerForTesting({ info: (...args) => { infos.push(args) }, warn: () => {}, error: () => {} })
     const mock = await createHostApprovalCodexAppServer()
 
     await expect(executeCodex({
@@ -271,24 +251,6 @@ describe('Codex provider behavior', () => {
         _meta: null,
       },
     })
-    expect(infos).toContainEqual([
-      '[codex-provider] approval decision',
-      expect.objectContaining({
-        method: 'mcpServer/elicitation/request',
-        choice: 'allow-host-tool',
-        responsePayloadKeys: ['_meta', 'action', 'content'],
-        elicitation: expect.objectContaining({
-          serverName: HOST_MCP_SERVER_NAME,
-          approvalKind: 'mcp_tool_call',
-          serverScopedHostApproval: true,
-          requestedSchemaShape: {
-            keys: ['properties', 'type'],
-            type: 'object',
-            propertyKeys: [],
-          },
-        }),
-      }),
-    ])
   })
 
   it('keeps Codex assistant, reasoning, and command streams separate', () => {

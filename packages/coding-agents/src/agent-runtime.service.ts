@@ -486,7 +486,6 @@ interface AgentSession {
   currentTurnHostToolCalls?: Map<string, ObservedHostToolCall>
   currentTurnVisibleRunbookExecutionIds?: Set<string>
   runbookAuthoringProposals: RunbookAuthoringProposal[]
-  hasRunbookToolFailure?: boolean
   hasRunbookParameters?: boolean
   hasMultipleRunbooksInPlay?: boolean
   queuedFollowUps: AgentSendInput[]
@@ -3026,7 +3025,7 @@ export class AgentRuntimeService {
       result: event.result,
       modelContext,
     })
-    this.recordRunbookToolOutcome(session, event.toolName, event.result, event.type === 'failed')
+    this.recordRunbookToolOutcome(session, event.toolName, event.result)
     if (session.currentToolCallId === event.toolCallId) {
       session.currentToolCallId = null
     }
@@ -3068,11 +3067,7 @@ export class AgentRuntimeService {
     session: AgentSession,
     toolName: string,
     result: ToolResult,
-    failed = false,
   ): void {
-    if (result.error !== undefined || failed) {
-      session.hasRunbookToolFailure = true
-    }
     if (toolName === 'list_runbooks' && result.error === undefined) {
       const payload = this.safeParseObject(result.output ?? '')
       const runbooks = readRecordArrayProperty(payload, 'runbooks')
