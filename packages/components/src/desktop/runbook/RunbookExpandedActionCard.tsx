@@ -6,6 +6,7 @@ import type {
   PluginDescriptor,
   RunbookActionParameter,
   RunbookActionRecord,
+  RunbookActionType,
   RunbookHttpHeader,
   RunbookHttpMethod,
   RunbookLlmProviderKey,
@@ -15,6 +16,58 @@ import type { ActionMeta, SupportedActionType } from "./actionHelpers";
 import type { LlmModelOption } from "./RunbookActionFieldShared";
 import { RunbookActionTypeFields } from "./RunbookActionTypeFields";
 import type { TranslationFn } from "./types";
+
+type ActionTypeMeta = Pick<ActionMeta, "icon" | "labelKey">;
+
+type RunbookActionTypeSelectorProps<T extends RunbookActionType> = {
+  action: RunbookActionRecord;
+  actionTypes: readonly T[];
+  actionMeta: Record<T, ActionTypeMeta>;
+  onActionChange: (action: RunbookActionRecord) => void;
+  t: TranslationFn;
+};
+
+export function RunbookActionTypeSelector<T extends RunbookActionType>({
+  action,
+  actionTypes,
+  actionMeta,
+  onActionChange,
+  t,
+}: RunbookActionTypeSelectorProps<T>) {
+  return (
+    <div
+      data-tour="runbooks-action-types"
+      className="grid grid-cols-2 gap-1.5 sm:grid-cols-3 xl:grid-cols-5"
+    >
+      {actionTypes.map((type) => {
+        const { labelKey, icon: Icon } = actionMeta[type];
+        const actionTypeButtonClass =
+          action.type === type
+            ? "border-primary bg-primary/5 text-foreground"
+            : "border-border text-muted-foreground hover:bg-muted/50";
+
+        return (
+          <button
+            key={type}
+            onClick={() => {
+              onActionChange({
+                ...action,
+                type,
+              });
+            }}
+            className={[
+              "flex flex-col items-center gap-1.5 rounded-lg border px-2 py-2 text-xs transition-colors",
+              actionTypeButtonClass,
+            ].join(" ")}
+          >
+            <Icon size={13} />
+            {t(labelKey)}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
 
 type RunbookExpandedActionCardProps = {
   action: RunbookActionRecord;
@@ -221,39 +274,13 @@ export function RunbookExpandedActionCard({
       }}
       className="rounded-xl border border-primary/40 bg-card px-4 py-4 space-y-3 shadow-sm"
     >
-      <div
-        data-tour="runbooks-action-types"
-        className="grid grid-cols-2 gap-1.5 sm:grid-cols-3 xl:grid-cols-5"
-      >
-        {actionTypes.map((type) => {
-          const { labelKey, icon: Icon } = actionMeta[type];
-          let actionTypeButtonClass =
-            "border-border text-muted-foreground hover:bg-muted/50";
-          if (action.type === type) {
-            actionTypeButtonClass =
-              "border-primary bg-primary/5 text-foreground";
-          }
-
-          return (
-            <button
-              key={type}
-              onClick={() => {
-                onActionChange({
-                  ...action,
-                  type,
-                });
-              }}
-              className={[
-                "flex flex-col items-center gap-1.5 rounded-lg border px-2 py-2 text-xs transition-colors",
-                actionTypeButtonClass,
-              ].join(" ")}
-            >
-              <Icon size={13} />
-              {t(labelKey)}
-            </button>
-          );
-        })}
-      </div>
+      <RunbookActionTypeSelector
+        action={action}
+        actionTypes={actionTypes}
+        actionMeta={actionMeta}
+        onActionChange={onActionChange}
+        t={t}
+      />
       <div>
         <label className="mb-1.5 block text-[10px] font-medium uppercase tracking-wide text-muted-foreground/60">
           {t("runbooks.runbook.title")}
