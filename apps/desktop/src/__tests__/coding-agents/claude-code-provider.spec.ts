@@ -650,6 +650,10 @@ describe('executeClaudeCode', () => {
       'mcp__bitsentry__get_runbook_execution',
     ]))
     expect(options.allowedTools).toEqual(CLAUDE_HOST_MCP_ALLOWED_TOOLS)
+    expect(options.allowedTools).toEqual(expect.arrayContaining([
+      expect.stringMatching(/^mcp__bitsentry__/),
+    ]))
+    expect(options.allowedTools?.every((tool) => tool.startsWith('mcp__bitsentry__'))).toBe(true)
     expect(options.tools).toEqual([])
     expect(options.skills).toEqual([])
     expect(options.settingSources).toEqual([])

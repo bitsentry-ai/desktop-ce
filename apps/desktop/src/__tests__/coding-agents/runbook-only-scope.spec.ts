@@ -9,7 +9,7 @@ function countOccurrences(value: string, needle: string): number {
 describe('runbook-only scope invariants', () => {
   it('keeps proposal, no-poll, and single-completion rules explicit and singular', () => {
     const scope = buildRunbookOnlyScope()
-    expect(scope.length).toBeLessThanOrEqual(1_300)
+    expect(scope).toHaveLength(1_204)
     expect(countOccurrences(scope, 'Do not refuse a proposal because of its actions; the operator corrects details during review.')).toBe(1)
 
     expect(countOccurrences(scope, 'Proposals are pending drafts, never executions, regardless of their actions.')).toBe(1)
