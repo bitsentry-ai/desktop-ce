@@ -11,11 +11,13 @@
   /* Desktop overrides: brand cyan for primary/ring */
   :root {
     --primary: 190 100% 50%;
+    --primary-foreground: 0 0% 100%;
     --ring: 190 100% 50%;
   }
 
   .dark {
     --primary: 190 100% 50%;
+    --primary-foreground: 0 0% 100%;
     --ring: 190 100% 50%;
   }
 
