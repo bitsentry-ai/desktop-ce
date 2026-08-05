@@ -1010,6 +1010,9 @@ describe('AgentRuntimeService runbook outcomes', () => {
       'Internal runbook list:',
     )
     expect(getRequiredToolContent(getSecondCallMessages(llmAdapter))).toContain(
+      'Parameters: none.',
+    )
+    expect(getRequiredToolContent(getSecondCallMessages(llmAdapter))).toContain(
       'Summarize the available runbooks for the user in clean Markdown.',
     )
   })

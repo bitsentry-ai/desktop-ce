@@ -163,7 +163,7 @@ describe('Codex provider behavior', () => {
     expect(result.output).not.toContain('mcpToolCall')
   })
 
-  it('prepends the runbook-only scope to Codex prompts with every host tool', async () => {
+  it('uses a minimal incident harness and keeps runbook scope out of the user prompt', async () => {
     const infos: unknown[][] = []
     setCodingAgentsLoggerForTesting({ info: (...args) => { infos.push(args) }, warn: () => {}, error: () => {} })
     const mock = await createMultiItemCodexAppServer()
@@ -183,11 +183,20 @@ describe('Codex provider behavior', () => {
       },
     })
 
-    const turnStart = (await readLoggedCodexMessages(mock.logPath)).find(
+    const messages = await readLoggedCodexMessages(mock.logPath)
+    const threadStart = messages.find(
+      (message) => message.method === 'thread/start',
+    )
+    const turnStart = messages.find(
       (message) => message.method === 'turn/start',
     )
+    const threadParams = threadStart?.params as {
+      baseInstructions?: string
+      developerInstructions?: string
+      config?: Record<string, unknown>
+    } | undefined
     const params = turnStart?.params as { input?: Array<{ text?: string }> } | undefined
-    const scope = params?.input?.[0]?.text ?? ''
+    const scope = threadParams?.baseInstructions ?? ''
     for (const hostTool of getHostTools()) {
       expect(scope).toContain(hostTool.name)
     }
@@ -196,9 +205,18 @@ describe('Codex provider behavior', () => {
     expect(scope).not.toContain('call list_runbooks once to verify availability before concluding anything')
     expect(scope).not.toContain('Claim creation, edits, or saving only after operator approval and successful persistence.')
     expect(scope).not.toContain('Only when a request cannot be expressed as a runbook proposal or execution at all')
-    expect(scope).toContain('Update the local CLI.')
-    expect(scope).not.toContain('## BitSentry host instructions')
-    expect(scope.match(/## Conversation/g)).toHaveLength(1)
+    expect(scope).not.toContain('Update the local CLI.')
+    expect(scope.length).toBeLessThan(4_000)
+    expect(threadParams?.developerInstructions).toBe('')
+    expect(threadParams?.config).toMatchObject({
+      include_permissions_instructions: false,
+      include_apps_instructions: false,
+      include_collaboration_mode_instructions: false,
+      project_doc_max_bytes: 0,
+      features: { apps: false, plugins: false },
+      skills: { include_instructions: false },
+    })
+    expect(params?.input?.[0]?.text).toBe('Update the local CLI.')
     expect(infos).toContainEqual([
       '[codex-provider] configured host tools',
       { agentSessionId: 'session-1', toolNames: getHostTools().map((tool) => tool.name) },

@@ -73,7 +73,18 @@ describe('host tools', () => {
     context.gateway.listExecutable = vi.fn().mockResolvedValue([
       makeRunbook({
         actions: [
-          { id: 'step-1', type: 'shell', title: 'Check service status', command: 'systemctl status bitsentry' },
+          {
+            id: 'step-1',
+            type: 'shell',
+            title: 'Check service status',
+            command: 'systemctl status bitsentry',
+            parameters: [{
+              id: 'parameter-region',
+              key: 'region',
+              description: 'Deployment region.',
+              defaultValue: 'ap-southeast-1',
+            }],
+          },
           { id: 'step-2', type: 'http', title: 'Check health endpoint', url: 'https://example.test/health', method: 'GET' },
         ],
       }),
@@ -85,12 +96,14 @@ describe('host tools', () => {
     expect(JSON.parse(result?.output ?? '')).toMatchObject({
       runbooks: [{
         id: 'rb-sentry',
-        actions: [
-          { id: 'step-1', type: 'shell', title: 'Check service status' },
-          { id: 'step-2', type: 'http', title: 'Check health endpoint' },
-        ],
+        actionCount: 2,
+        actionTypes: ['shell', 'http'],
+        parameters: [{ key: 'region', required: true }],
       }],
     })
+    const catalog = JSON.parse(result?.output ?? '') as { runbooks: Array<Record<string, unknown>> }
+    expect(catalog.runbooks[0]).not.toHaveProperty('actions')
+    expect(catalog.runbooks[0]).not.toHaveProperty('actionParameters')
   })
 
   it('rejects an out-of-range proposal idle timeout with the documented unit', async () => {

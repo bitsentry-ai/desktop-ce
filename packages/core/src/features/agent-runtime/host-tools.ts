@@ -373,35 +373,32 @@ function buildTriggerContext(session: AgentSessionRef): RunbookTriggerContext | 
   return { entrypoint: 'incident_workspace', incidentThreadId: session.incidentThreadId }
 }
 
+function summarizeRunbookForCatalog(runbook: RunbookRecord): Record<string, unknown> {
+  const parameters = new Map<string, { key: string; required: boolean }>()
+  for (const action of runbook.actions) {
+    for (const parameter of action.parameters ?? []) {
+      const existing = parameters.get(parameter.key)
+      parameters.set(parameter.key, {
+        key: parameter.key,
+        required: existing?.required === true || parameter.required !== false,
+      })
+    }
+  }
+  return {
+    id: runbook.id,
+    title: runbook.title,
+    description: runbook.description,
+    actionCount: runbook.actions.length,
+    actionTypes: [...new Set(runbook.actions.map((action) => action.type))],
+    ...(parameters.size === 0 ? {} : { parameters: [...parameters.values()] }),
+  }
+}
+
 async function listRunbooks(context: HostToolContext): Promise<ToolResult> {
   const runbooks = await context.gateway.listExecutable()
   return {
     output: JSON.stringify({
-      runbooks: runbooks.map((runbook) => ({
-        id: runbook.id,
-        title: runbook.title,
-        description: runbook.description,
-        revisionNumber: runbook.revisionNumber,
-        actionCount: runbook.actions.length,
-        actionTypes: runbook.actions.map((action) => action.type),
-        actions: runbook.actions.map((action) => ({
-          id: action.id,
-          type: action.type,
-          title: action.title,
-        })),
-        actionParameters: runbook.actions
-          .filter((action) => action.parameters !== undefined && action.parameters.length > 0)
-          .map((action) => ({
-            actionId: action.id,
-            actionTitle: action.title,
-            parameters: action.parameters?.map((parameter) => ({
-              key: parameter.key,
-              description: parameter.description,
-              defaultValue: parameter.defaultValue,
-              required: parameter.required !== false,
-            })) ?? [],
-          })),
-      })),
+      runbooks: runbooks.map(summarizeRunbookForCatalog),
     }, null, 2),
   }
 }

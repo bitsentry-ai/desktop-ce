@@ -71,9 +71,10 @@ interface ClaudeCodeQueryOptions {
   allowDangerouslySkipPermissions?: boolean
   betas?: ClaudeCodeSdkBeta[]
   allowedTools?: string[]
-  tools?: []
+  tools?: string[]
+  skills?: string[]
   mcpServers?: Record<string, unknown>
-  systemPrompt?: {
+  systemPrompt?: string | {
     type: 'preset'
     preset: 'claude_code'
     append?: string
@@ -238,9 +239,7 @@ export function resolveClaudeAllowedTools(
   explicitlyAllowedTools?: string[],
 ): string[] | undefined {
   const allowedTools = explicitlyAllowedTools ?? resolveAllowedTools(accessLevel)
-  if (!includeHostTools || allowedTools === undefined) return allowedTools
-
-  return [...new Set([...allowedTools, ...CLAUDE_HOST_MCP_ALLOWED_TOOLS])]
+  return includeHostTools ? [...CLAUDE_HOST_MCP_ALLOWED_TOOLS] : allowedTools
 }
 
 function asRecord(value: unknown): Record<string, unknown> | undefined {
@@ -603,17 +602,15 @@ function buildClaudeCodeQueryOptions(
   applyClaudeSpawnerOption(queryOptions, shouldWrapWindowsCmdShim)
   if (mcpServer !== undefined) {
     queryOptions.mcpServers = { [HOST_MCP_SERVER_NAME]: mcpServer }
+    queryOptions.tools = []
+    queryOptions.skills = []
   }
   const systemPrompt = [
     options.systemPrompt,
     mcpServer === undefined ? undefined : buildClaudeRunbookOnlyScope(options.hostToolContext),
   ].filter((prompt): prompt is string => prompt !== undefined && prompt.trim().length > 0).join('\n\n')
   if (systemPrompt.length > 0) {
-    queryOptions.systemPrompt = {
-      type: 'preset',
-      preset: 'claude_code',
-      append: systemPrompt,
-    }
+    queryOptions.systemPrompt = systemPrompt
   }
 
   return queryOptions

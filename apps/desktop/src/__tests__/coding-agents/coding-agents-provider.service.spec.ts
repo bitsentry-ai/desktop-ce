@@ -99,7 +99,7 @@ describe("CodingAgentsProviderService", () => {
     );
   });
 
-  it("prepends host instructions when dispatching a provider without a system channel", async () => {
+  it("passes Codex host instructions separately from the user prompt", async () => {
     vi.mocked(detectBinary).mockResolvedValue("/opt/homebrew/bin/codex");
     vi.mocked(probeCodex).mockResolvedValue({
       installed: true,
@@ -107,9 +107,7 @@ describe("CodingAgentsProviderService", () => {
       auth: { status: "authenticated" },
       status: "ready",
     });
-    vi.mocked(executeCodex).mockImplementation(({ prompt }) =>
-      Promise.resolve({ output: prompt }),
-    );
+    vi.mocked(executeCodex).mockResolvedValue({ output: "done" });
 
     const service = createService(createDbMock());
     await service.saveSettings({
@@ -128,12 +126,11 @@ describe("CodingAgentsProviderService", () => {
       "Use concise incident language.",
     );
 
-    expect(result.output).toBe(
-      [
-        "Use concise incident language.",
-        "[user]: List runbooks",
-      ].join("\n\n"),
-    );
+    expect(result.output).toBe("done");
+    expect(executeCodex).toHaveBeenCalledWith(expect.objectContaining({
+      prompt: "[user]: List runbooks",
+      systemPrompt: "Use concise incident language.",
+    }));
   });
 
   it("exposes Opus 5 with separate effort and context options", () => {

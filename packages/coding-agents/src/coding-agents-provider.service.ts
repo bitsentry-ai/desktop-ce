@@ -654,7 +654,7 @@ export class CodingAgentsProviderService {
     }
 
     return (this.dependencies.executeCodex ?? executeCodex)({
-      prompt: promptWithHostInstructions,
+      prompt,
       binaryPath,
       abortController,
       cwd,
@@ -663,6 +663,7 @@ export class CodingAgentsProviderService {
       traitValues,
       codexArgs: this.settings.codex.codexArgs,
       mcpEndpoint,
+      systemPrompt,
       onDelta,
     });
   }

@@ -4,6 +4,7 @@ import { existsSync } from 'fs'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { getHostTools } from '@bitsentry-ce/core/features/agent-runtime'
 import { setCodingAgentsLoggerForTesting } from '@bitsentry-ce/coding-agents/logger'
+import { CLAUDE_HOST_MCP_ALLOWED_TOOLS } from '@bitsentry-ce/coding-agents/claude-code-provider.service'
 
 type ClaudeQuerySession = AsyncIterable<unknown> & {
   getContextUsage: () => Promise<{ totalTokens: number; maxTokens: number }>
@@ -37,7 +38,9 @@ interface ClaudeQueryOptions {
   cwd?: string
   settingSources?: string[]
   mcpServers?: Record<string, unknown>
-  systemPrompt?: { type: string; preset: string; append?: string }
+  skills?: string[]
+  tools?: string[]
+  systemPrompt?: string | { type: string; preset: string; append?: string }
 }
 
 interface ClaudeQueryInput {
@@ -646,12 +649,12 @@ describe('executeClaudeCode', () => {
       'mcp__bitsentry__execute_runbook',
       'mcp__bitsentry__get_runbook_execution',
     ]))
+    expect(options.allowedTools).toEqual(CLAUDE_HOST_MCP_ALLOWED_TOOLS)
+    expect(options.tools).toEqual([])
+    expect(options.skills).toEqual([])
     expect(options.settingSources).toEqual([])
-    expect(options.systemPrompt).toMatchObject({
-      type: 'preset',
-      preset: 'claude_code',
-    })
-    expect(options.systemPrompt?.append).toContain('You are an incident-response assistant.')
+    expect(options.systemPrompt).toEqual(expect.any(String))
+    expect(options.systemPrompt).toContain('You are an incident-response assistant.')
     expect(options.cwd).not.toBe(process.cwd())
     expect(existsSync(options.cwd ?? '')).toBe(false)
 
@@ -689,7 +692,8 @@ describe('executeClaudeCode', () => {
       },
     })
 
-    const scope = getQueryOptions(0).systemPrompt?.append ?? ''
+    const scope = getQueryOptions(0).systemPrompt ?? ''
+    expect(scope).toEqual(expect.any(String))
     for (const hostTool of getHostTools()) {
       expect(scope).toContain(hostTool.name)
     }

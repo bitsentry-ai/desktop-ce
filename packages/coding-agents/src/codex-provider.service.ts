@@ -13,7 +13,8 @@ import {
 } from './composer.js'
 import { getErrorMessage } from '@bitsentry-ce/core'
 import { getHostTools } from '@bitsentry-ce/core/features/agent-runtime'
-import { prependRunbookOnlyScope } from './runbook-only-scope.js'
+import { buildRunbookOnlyScope } from './runbook-only-scope.js'
+import { createIsolatedCodexIncidentHome } from './codex-incident-home.js'
 
 type LocalAiTextStreamDelta = LocalAiStreamDelta & { type: 'text'; text?: string }
 
@@ -39,6 +40,7 @@ export interface CodexExecutionOptions {
   mcpEndpoint?: HostMcpEndpoint
   onDelta?: (delta: LocalAiStreamDelta) => void
   debug?: CodexDebugRecorder
+  systemPrompt?: string
 }
 
 function asRecord(value: unknown): Record<string, unknown> | undefined {
@@ -392,7 +394,23 @@ export async function executeCodex(
   if (codexArgs.length > 0) {
     effectiveCodexArgs = codexArgs
   }
-  const client = new CodexAppServerClient(options.binaryPath, cwd, effectiveCodexArgs)
+  if (isAbortSignalAborted(options.abortController.signal)) {
+    if (scratchDirectory !== undefined) await rm(scratchDirectory, { recursive: true, force: true })
+    return { output: '', exitCode: -1 }
+  }
+
+  let isolatedHome: Awaited<ReturnType<typeof createIsolatedCodexIncidentHome>> | undefined
+  try {
+    isolatedHome = options.mcpEndpoint === undefined
+      ? undefined
+      : await createIsolatedCodexIncidentHome()
+  } catch (error) {
+    if (scratchDirectory !== undefined) await rm(scratchDirectory, { recursive: true, force: true })
+    throw error
+  }
+  const client = new CodexAppServerClient(options.binaryPath, cwd, effectiveCodexArgs, {
+    home: isolatedHome?.home,
+  })
 
   const MAX_OUTPUT_LENGTH = 50_000
   let output = ''
@@ -435,11 +453,6 @@ export async function executeCodex(
     // `kill` owns the bounded SIGTERM/SIGKILL escalation. Do not leave a
     // provider-local timer behind after the parent session has finished.
     void client.kill()
-  }
-
-  if (isAbortSignalAborted(options.abortController.signal)) {
-    if (scratchDirectory !== undefined) await rm(scratchDirectory, { recursive: true, force: true })
-    return { output: '', exitCode: -1 }
   }
 
   options.abortController.signal.addEventListener('abort', onAbort, { once: true })
@@ -626,9 +639,28 @@ export async function executeCodex(
     await client.start()
 
     const mcpEndpoint = options.mcpEndpoint
+    const incidentInstructions = mcpEndpoint === undefined
+      ? undefined
+      : [
+          options.systemPrompt,
+          buildRunbookOnlyScope({
+            includeProposalInstructions: mcpEndpoint.hasRunbookProposal === true,
+            includeToolFailureInstructions: mcpEndpoint.hasRunbookToolFailure === true,
+            includeParameterInstructions: mcpEndpoint.hasRunbookParameters === true,
+            includeMultiRunbookInstructions: mcpEndpoint.hasMultipleRunbooksInPlay === true,
+          }),
+        ].filter((instruction): instruction is string =>
+          instruction !== undefined && instruction.trim().length > 0,
+        ).join('\n\n')
     const threadConfig = mcpEndpoint === undefined
       ? undefined
       : {
+          include_permissions_instructions: false,
+          include_apps_instructions: false,
+          include_collaboration_mode_instructions: false,
+          project_doc_max_bytes: 0,
+          features: { apps: false, plugins: false },
+          skills: { include_instructions: false },
           mcp_servers: {
             bitsentry: {
               command: mcpEndpoint.command,
@@ -647,6 +679,12 @@ export async function executeCodex(
     const threadResult = asRecord(await client.sendRequest('thread/start', {
       cwd,
       ...(threadConfig === undefined ? {} : { config: threadConfig }),
+      ...(incidentInstructions === undefined
+        ? {}
+        : {
+            baseInstructions: incidentInstructions,
+            developerInstructions: '',
+          }),
     }))
     const thread = asRecord(threadResult?.thread)
     threadId =
@@ -710,14 +748,9 @@ export async function executeCodex(
 
     const policies = getCodexPolicies(effectiveAccessLevel)
     const effortValue = options.traitValues?.effort
-    const prompt = options.mcpEndpoint === undefined
-      ? options.prompt
-      : prependRunbookOnlyScope(options.prompt, {
-        includeProposalInstructions: options.mcpEndpoint.hasRunbookProposal === true,
-        includeToolFailureInstructions: options.mcpEndpoint.hasRunbookToolFailure === true,
-        includeParameterInstructions: options.mcpEndpoint.hasRunbookParameters === true,
-        includeMultiRunbookInstructions: options.mcpEndpoint.hasMultipleRunbooksInPlay === true,
-      })
+    const prompt = options.mcpEndpoint === undefined && options.systemPrompt?.trim()
+      ? [options.systemPrompt, options.prompt].join('\n\n')
+      : options.prompt
     const turnStartPayload: Record<string, unknown> = {
       threadId,
       input: [{ type: 'text', text: prompt, text_elements: [] }],
@@ -760,6 +793,7 @@ export async function executeCodex(
       })
     }
     await client.kill()
+    await isolatedHome?.dispose()
     if (scratchDirectory !== undefined) await rm(scratchDirectory, { recursive: true, force: true })
   }
 

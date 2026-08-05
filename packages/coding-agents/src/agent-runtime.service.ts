@@ -3595,6 +3595,8 @@ export class AgentRuntimeService {
       if (actionParameters.length > 0) {
         lines.push('  Parameters:')
         lines.push(...formatRunbookParameterSummary(actionParameters).map((parameter) => `  ${parameter}`))
+      } else {
+        lines.push('  Parameters: none.')
       }
     }
     lines.push('Choose only from the exact runbook titles above. Do not invent runbook titles or IDs.')
