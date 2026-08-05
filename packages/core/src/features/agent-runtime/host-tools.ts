@@ -374,14 +374,33 @@ function buildTriggerContext(session: AgentSessionRef): RunbookTriggerContext | 
 }
 
 function summarizeRunbookForCatalog(runbook: RunbookRecord): Record<string, unknown> {
-  const parameters = new Map<string, { key: string; required: boolean }>()
+  const parameters = new Map<string, {
+    key: string
+    required: boolean
+    description?: string
+    defaultValue?: string
+  }>()
   for (const action of runbook.actions) {
     for (const parameter of action.parameters ?? []) {
       const existing = parameters.get(parameter.key)
-      parameters.set(parameter.key, {
+      const summary: {
+        key: string
+        required: boolean
+        description?: string
+        defaultValue?: string
+      } = {
         key: parameter.key,
         required: existing?.required === true || parameter.required !== false,
-      })
+      }
+      if (parameter.secure !== true) {
+        if (parameter.description !== undefined && parameter.description.length > 0) {
+          summary.description = parameter.description
+        }
+        if (parameter.defaultValue !== undefined && parameter.defaultValue.length > 0) {
+          summary.defaultValue = parameter.defaultValue
+        }
+      }
+      parameters.set(parameter.key, { ...existing, ...summary })
     }
   }
   return {
@@ -390,6 +409,11 @@ function summarizeRunbookForCatalog(runbook: RunbookRecord): Record<string, unkn
     description: runbook.description,
     actionCount: runbook.actions.length,
     actionTypes: [...new Set(runbook.actions.map((action) => action.type))],
+    actions: runbook.actions.map((action) => ({
+      id: action.id,
+      type: action.type,
+      title: action.title,
+    })),
     ...(parameters.size === 0 ? {} : { parameters: [...parameters.values()] }),
   }
 }

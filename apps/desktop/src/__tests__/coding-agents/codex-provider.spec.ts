@@ -202,7 +202,7 @@ describe('Codex provider behavior', () => {
     }
     expect(scope).toContain('You must NEVER execute maintenance or remediation steps directly with built-in tools')
     expect(scope).toContain('there is no direct-execution fallback when a runbook is missing or unapproved.')
-    expect(scope).not.toContain('call list_runbooks once to verify availability before concluding anything')
+    expect(scope).toContain('call list_runbooks once to verify availability before concluding anything')
     expect(scope).not.toContain('Claim creation, edits, or saving only after operator approval and successful persistence.')
     expect(scope).not.toContain('Only when a request cannot be expressed as a runbook proposal or execution at all')
     expect(scope).not.toContain('Update the local CLI.')
@@ -221,6 +221,30 @@ describe('Codex provider behavior', () => {
       '[codex-provider] configured host tools',
       { agentSessionId: 'session-1', toolNames: getHostTools().map((tool) => tool.name) },
     ])
+  })
+
+  it('does not start Codex when cancellation arrives while the isolated HOME is being created', async () => {
+    const mock = await createMultiItemCodexAppServer()
+    const abortController = new AbortController()
+    const execution = executeCodex({
+      prompt: 'List available runbooks.',
+      binaryPath: mock.binaryPath,
+      cwd: mock.cwd,
+      abortController,
+      mcpEndpoint: {
+        url: 'http://127.0.0.1:1/mcp',
+        token: 'token',
+        expiresAt: Date.now() + 60_000,
+        command: 'node',
+        args: ['host-mcp-shim.js'],
+        env: {},
+        agentSessionId: 'session-cancelled',
+      },
+    })
+    abortController.abort()
+
+    await expect(execution).resolves.toMatchObject({ output: '', exitCode: -1 })
+    expect(await readLoggedCodexMessages(mock.logPath)).toEqual([])
   })
 
   it('approves a BitSentry MCP tool elicitation at Safe Tools', async () => {

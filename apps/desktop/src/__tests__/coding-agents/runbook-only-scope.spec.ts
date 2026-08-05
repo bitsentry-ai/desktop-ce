@@ -9,7 +9,7 @@ function countOccurrences(value: string, needle: string): number {
 describe('runbook-only scope invariants', () => {
   it('keeps proposal, no-poll, and single-completion rules explicit and singular', () => {
     const scope = buildRunbookOnlyScope()
-    expect(scope).toHaveLength(1_204)
+    expect(scope).toHaveLength(1_407)
     expect(countOccurrences(scope, 'Do not refuse a proposal because of its actions; the operator corrects details during review.')).toBe(1)
 
     expect(countOccurrences(scope, 'Proposals are pending drafts, never executions, regardless of their actions.')).toBe(1)
@@ -18,7 +18,7 @@ describe('runbook-only scope invariants', () => {
     expect(scope).toContain('Never claim a runbook was created, edited, or saved unless the operator approved the proposal and persistence succeeded.')
     expect(scope).not.toContain('When revising a create-kind proposal, use propose_runbook_create')
     expect(scope).not.toContain('Only when a request cannot be expressed as a runbook proposal or execution at all')
-    expect(scope).not.toContain('If a runbook tool call fails or appears missing')
+    expect(scope).toContain('If a runbook tool call fails or appears missing')
     expect(scope).not.toContain('If list_runbooks shows required parameters')
     expect(scope).not.toContain('For incident diagnosis requiring multiple data sources')
     expect(countOccurrences(scope, 'Do not poll it.')).toBe(1)

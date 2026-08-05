@@ -83,6 +83,12 @@ describe('host tools', () => {
               key: 'region',
               description: 'Deployment region.',
               defaultValue: 'ap-southeast-1',
+            }, {
+              id: 'parameter-token',
+              key: 'apiToken',
+              description: 'API token for the deployment.',
+              defaultValue: 'do-not-disclose',
+              secure: true,
             }],
           },
           { id: 'step-2', type: 'http', title: 'Check health endpoint', url: 'https://example.test/health', method: 'GET' },
@@ -98,12 +104,28 @@ describe('host tools', () => {
         id: 'rb-sentry',
         actionCount: 2,
         actionTypes: ['shell', 'http'],
-        parameters: [{ key: 'region', required: true }],
+        actions: [
+          { id: 'step-1', type: 'shell', title: 'Check service status' },
+          { id: 'step-2', type: 'http', title: 'Check health endpoint' },
+        ],
+        parameters: [{
+          key: 'region',
+          required: true,
+          description: 'Deployment region.',
+          defaultValue: 'ap-southeast-1',
+        }, {
+          key: 'apiToken',
+          required: true,
+        }],
       }],
     })
     const catalog = JSON.parse(result?.output ?? '') as { runbooks: Array<Record<string, unknown>> }
-    expect(catalog.runbooks[0]).not.toHaveProperty('actions')
     expect(catalog.runbooks[0]).not.toHaveProperty('actionParameters')
+    const secureParameter = (catalog.runbooks[0]?.parameters as Array<Record<string, unknown>>)
+      .find((parameter) => parameter.key === 'apiToken')
+    expect(secureParameter).toMatchObject({ key: 'apiToken', required: true })
+    expect(secureParameter).not.toHaveProperty('description')
+    expect(secureParameter).not.toHaveProperty('defaultValue')
   })
 
   it('rejects an out-of-range proposal idle timeout with the documented unit', async () => {

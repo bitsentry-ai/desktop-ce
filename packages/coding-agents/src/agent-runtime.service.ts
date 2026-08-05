@@ -2945,11 +2945,15 @@ export class AgentRuntimeService {
         phase: 'running_runbook',
       })
     }
-    return await executeHostTool(
+    const result = await executeHostTool(
       this.createHostToolContext(session),
       toolCall.name,
       toolCall.args,
     )
+    if (result !== null) {
+      this.recordRunbookToolOutcome(session, toolCall.name, result)
+    }
+    return result
   }
 
   private async executeRunbook(session: AgentSession, input: ExecuteRunbookInput): Promise<ToolResult> {
@@ -3022,19 +3026,7 @@ export class AgentRuntimeService {
       result: event.result,
       modelContext,
     })
-    if (event.result.error !== undefined || event.type === 'failed') {
-      session.hasRunbookToolFailure = true
-    }
-    if (event.toolName === 'list_runbooks' && event.result.error === undefined) {
-      const payload = this.safeParseObject(event.result.output ?? '')
-      const runbooks = readRecordArrayProperty(payload, 'runbooks')
-      if (runbooks.some((runbook) => readRunbookParameterSummaries(runbook).length > 0)) {
-        session.hasRunbookParameters = true
-      }
-    }
-    if (event.toolName === 'execute_runbook' && (session.currentTurnStartedRunbookExecutionIds?.size ?? 0) > 1) {
-      session.hasMultipleRunbooksInPlay = true
-    }
+    this.recordRunbookToolOutcome(session, event.toolName, event.result, event.type === 'failed')
     if (session.currentToolCallId === event.toolCallId) {
       session.currentToolCallId = null
     }
@@ -3070,6 +3062,27 @@ export class AgentRuntimeService {
       delta: visibleResult.text,
       kind: 'command_output',
     })
+  }
+
+  private recordRunbookToolOutcome(
+    session: AgentSession,
+    toolName: string,
+    result: ToolResult,
+    failed = false,
+  ): void {
+    if (result.error !== undefined || failed) {
+      session.hasRunbookToolFailure = true
+    }
+    if (toolName === 'list_runbooks' && result.error === undefined) {
+      const payload = this.safeParseObject(result.output ?? '')
+      const runbooks = readRecordArrayProperty(payload, 'runbooks')
+      if (runbooks.some((runbook) => readRunbookParameterSummaries(runbook).length > 0)) {
+        session.hasRunbookParameters = true
+      }
+    }
+    if (toolName === 'execute_runbook' && (session.currentTurnStartedRunbookExecutionIds?.size ?? 0) > 1) {
+      session.hasMultipleRunbooksInPlay = true
+    }
   }
 
   private takeCompletedHostToolCalls(session: AgentSession): CompletedToolResult[] {
@@ -3602,6 +3615,16 @@ export class AgentRuntimeService {
     }
 
     const parameters = readRunbookParameterSummaries(runbook)
+    const actions = readRecordArrayProperty(runbook, 'actions')
+    if (actions.length > 0) {
+      lines.push('  Actions:')
+      for (const action of actions) {
+        const id = readFirstStringProperty([action], 'id', 'unknown-action')
+        const type = readFirstStringProperty([action], 'type', 'unknown')
+        const title = readFirstStringProperty([action], 'title', 'Untitled action')
+        lines.push(`  - ${id} (${type}: ${title})`)
+      }
+    }
     if (parameters.length === 0) {
       lines.push('  Parameters: none.')
       return

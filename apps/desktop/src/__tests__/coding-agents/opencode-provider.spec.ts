@@ -125,7 +125,7 @@ describe('executeOpenCode', () => {
       expect(scope).toContain(hostTool.name)
     }
     expect(scope).toContain('This direct-tool restriction does not prevent you from proposing operator-reviewed runbooks that contain shell or local-software actions.')
-    expect(scope).not.toContain('call list_runbooks once to verify availability before concluding anything')
+    expect(scope).toContain('call list_runbooks once to verify availability before concluding anything')
     expect(JSON.parse(await readFile(configPath!, 'utf8'))).toMatchObject({
       mcp: {
         bitsentry: {

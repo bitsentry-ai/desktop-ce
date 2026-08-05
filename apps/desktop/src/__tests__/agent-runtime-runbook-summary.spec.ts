@@ -963,7 +963,13 @@ describe('AgentRuntimeService runbook outcomes', () => {
             id: 'step-1',
             type: 'external_source',
             title: 'Fetch Sentry issues',
-            parameters: [{ id: 'parameter-project', key: 'project', required: true }],
+            parameters: [{
+              id: 'parameter-project',
+              key: 'project',
+              description: 'Sentry project slug.',
+              defaultValue: 'desktop',
+              required: true,
+            }],
           },
           { id: 'step-2', type: 'llm', title: 'Summarize findings' },
         ]),
@@ -1015,11 +1021,18 @@ describe('AgentRuntimeService runbook outcomes', () => {
       'Internal runbook list:',
     )
     expect(getRequiredToolContent(getSecondCallMessages(llmAdapter))).toContain(
-      'Parameters:\n  - project (required)',
+      'Actions:\n  - step-1 (external_source: Fetch Sentry issues)\n  - step-2 (llm: Summarize findings)',
+    )
+    expect(getRequiredToolContent(getSecondCallMessages(llmAdapter))).toContain(
+      'Parameters:\n  - project (required) default=desktop - Sentry project slug.',
     )
     expect(getRequiredToolContent(getSecondCallMessages(llmAdapter))).toContain(
       'Summarize the available runbooks for the user in clean Markdown.',
     )
+    expect(getRequiredSystemContent(
+      getSecondCallMessages(llmAdapter),
+      'You are a security operations assistant for BitSentry Desktop.',
+    )).toContain('If list_runbooks shows required parameters, do not start that runbook until you supply them.')
   })
 
   it('executes an exactly named runbook from an incident prompt before asking the model to summarize it', async () => {

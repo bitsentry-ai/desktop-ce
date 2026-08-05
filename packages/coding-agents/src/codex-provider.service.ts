@@ -408,6 +408,11 @@ export async function executeCodex(
     if (scratchDirectory !== undefined) await rm(scratchDirectory, { recursive: true, force: true })
     throw error
   }
+  if (isAbortSignalAborted(options.abortController.signal)) {
+    await isolatedHome?.dispose()
+    if (scratchDirectory !== undefined) await rm(scratchDirectory, { recursive: true, force: true })
+    return { output: '', exitCode: -1 }
+  }
   const client = new CodexAppServerClient(options.binaryPath, cwd, effectiveCodexArgs, {
     home: isolatedHome?.home,
   })
