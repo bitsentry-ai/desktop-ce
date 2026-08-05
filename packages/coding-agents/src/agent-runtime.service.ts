@@ -1547,31 +1547,21 @@ export function summarizeRunbookExecutionForToolOutput(execution: RunbookExecuti
 }
 
 function formatRunbookParameterSummary(
-  actionParameters: Array<{
-    actionTitle: string
-    parameters: Array<{
-      key: string
-      description?: string
-      defaultValue?: string
-      required: boolean
-    }>
-  }>,
+  parameters: RunbookParameterSummary[],
 ): string[] {
   const lines: string[] = []
-  for (const action of actionParameters) {
-    for (const parameter of action.parameters) {
-      let line = `- ${parameter.key}`
-      if (parameter.required) {
-        line += ' (required)'
-      }
-      if (parameter.defaultValue !== undefined && parameter.defaultValue.length > 0) {
-        line += ` default=${parameter.defaultValue}`
-      }
-      if (parameter.description !== undefined && parameter.description.length > 0) {
-        line += ` - ${parameter.description}`
-      }
-      lines.push(line)
+  for (const parameter of parameters) {
+    let line = `- ${parameter.key}`
+    if (parameter.required) {
+      line += ' (required)'
     }
+    if (parameter.defaultValue !== undefined && parameter.defaultValue.length > 0) {
+      line += ` default=${parameter.defaultValue}`
+    }
+    if (parameter.description !== undefined && parameter.description.length > 0) {
+      line += ` - ${parameter.description}`
+    }
+    lines.push(line)
   }
   return lines
 }
@@ -1633,49 +1623,49 @@ function readRecordArrayProperty(record: Record<string, unknown> | null, key: st
 }
 
 type RunbookParameterSummary = {
-  actionTitle: string
-  parameters: Array<{
-    key: string
-    description?: string
-    defaultValue?: string
-    required: boolean
-  }>
+  key: string
+  description?: string
+  defaultValue?: string
+  required: boolean
+}
+
+function readRunbookParameters(parameters: Array<Record<string, unknown>>): RunbookParameterSummary[] {
+  return parameters.flatMap((parameter) => {
+    const key = readStringProperty(parameter, 'key')
+    if (key === null) {
+      return []
+    }
+
+    const summary: RunbookParameterSummary = {
+      key,
+      required: parameter.required !== false,
+    }
+    const description = readStringProperty(parameter, 'description')
+    if (description !== null) {
+      summary.description = description
+    }
+    const defaultValue = readStringProperty(parameter, 'defaultValue')
+    if (defaultValue !== null) {
+      summary.defaultValue = defaultValue
+    }
+
+    return [summary]
+  })
 }
 
 function readRunbookParameterSummaries(runbook: Record<string, unknown>): RunbookParameterSummary[] {
+  const catalogParameters = readRunbookParameters(readRecordArrayProperty(runbook, 'parameters'))
+  if (catalogParameters.length > 0) {
+    return catalogParameters
+  }
+
   return readRecordArrayProperty(runbook, 'actionParameters').flatMap((entry) => {
     const actionTitle = readStringProperty(entry, 'actionTitle')
     if (actionTitle === null) {
       return []
     }
 
-    const parameters = readRecordArrayProperty(entry, 'parameters').flatMap((parameter) => {
-      const key = readStringProperty(parameter, 'key')
-      if (key === null) {
-        return []
-      }
-
-      const summary: RunbookParameterSummary['parameters'][number] = {
-        key,
-        required: parameter.required !== false,
-      }
-      const description = readStringProperty(parameter, 'description')
-      if (description !== null) {
-        summary.description = description
-      }
-      const defaultValue = readStringProperty(parameter, 'defaultValue')
-      if (defaultValue !== null) {
-        summary.defaultValue = defaultValue
-      }
-
-      return [summary]
-    })
-
-    if (parameters.length === 0) {
-      return []
-    }
-
-    return [{ actionTitle, parameters }]
+    return readRunbookParameters(readRecordArrayProperty(entry, 'parameters'))
   })
 }
 
@@ -3038,7 +3028,7 @@ export class AgentRuntimeService {
     if (event.toolName === 'list_runbooks' && event.result.error === undefined) {
       const payload = this.safeParseObject(event.result.output ?? '')
       const runbooks = readRecordArrayProperty(payload, 'runbooks')
-      if (runbooks.some((runbook) => readRecordArrayProperty(runbook, 'actionParameters').length > 0)) {
+      if (runbooks.some((runbook) => readRunbookParameterSummaries(runbook).length > 0)) {
         session.hasRunbookParameters = true
       }
     }
@@ -3611,14 +3601,14 @@ export class AgentRuntimeService {
       lines.push(`  Description: ${description}`)
     }
 
-    const actionParameters = readRunbookParameterSummaries(runbook)
-    if (actionParameters.length === 0) {
+    const parameters = readRunbookParameterSummaries(runbook)
+    if (parameters.length === 0) {
       lines.push('  Parameters: none.')
       return
     }
 
     lines.push('  Parameters:')
-    lines.push(...formatRunbookParameterSummary(actionParameters).map((parameter) => `  ${parameter}`))
+    lines.push(...formatRunbookParameterSummary(parameters).map((parameter) => `  ${parameter}`))
   }
 
   private buildDirectRunbookExecutionConversationContent(

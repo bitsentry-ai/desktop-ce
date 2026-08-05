@@ -1,7 +1,18 @@
-import { access, mkdtemp, mkdir, readlink, rm, writeFile } from 'fs/promises'
+import { access, mkdtemp, mkdir, readlink, rm, writeFile } from 'node:fs/promises'
 import os from 'os'
 import path from 'path'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+
+const mocks = vi.hoisted(() => ({
+  symlink: vi.fn(),
+}))
+
+vi.mock('fs/promises', async (importOriginal) => ({
+  ...await importOriginal<typeof import('fs/promises')>(),
+  symlink: mocks.symlink,
+}))
+
+const { symlink: realSymlink } = await vi.importActual<typeof import('fs/promises')>('fs/promises')
 
 import { createIsolatedCodexIncidentHome } from '@bitsentry-ce/coding-agents/codex-incident-home'
 import { setCodingAgentsLoggerForTesting } from '@bitsentry-ce/coding-agents/logger'
@@ -9,7 +20,12 @@ import { setCodingAgentsLoggerForTesting } from '@bitsentry-ce/coding-agents/log
 const temporaryDirectories: string[] = []
 
 afterEach(async () => {
+  vi.restoreAllMocks()
   await Promise.all(temporaryDirectories.splice(0).map((directory) => rm(directory, { recursive: true, force: true })))
+})
+
+beforeEach(() => {
+  mocks.symlink.mockImplementation(realSymlink)
 })
 
 describe('createIsolatedCodexIncidentHome', () => {
@@ -36,9 +52,50 @@ describe('createIsolatedCodexIncidentHome', () => {
     await expect(access(isolated.home)).rejects.toThrow()
   })
 
-  it('falls back to the real home with one warning when auth.json is unavailable', async () => {
+  it('keeps keychain or environment-authenticated sessions isolated when auth.json is unavailable', async () => {
     const userHome = await mkdtemp(path.join(os.tmpdir(), 'bitsentry-codex-user-home-'))
     temporaryDirectories.push(userHome)
+    const warnings: unknown[][] = []
+    setCodingAgentsLoggerForTesting({
+      info: () => {},
+      warn: (...args) => { warnings.push(args) },
+      error: () => {},
+    })
+
+    const isolated = await createIsolatedCodexIncidentHome(userHome)
+    expect(isolated.home).not.toBe(userHome)
+    await expect(access(path.join(isolated.home, '.codex', 'auth.json'))).rejects.toThrow()
+    expect(warnings).toEqual([])
+
+    await isolated.dispose()
+    await expect(access(isolated.home)).rejects.toThrow()
+    await expect(access(userHome)).resolves.toBeUndefined()
+  })
+
+  it('uses the OS home when HOME is unavailable', async () => {
+    const userHome = await mkdtemp(path.join(os.tmpdir(), 'bitsentry-codex-user-home-'))
+    temporaryDirectories.push(userHome)
+    await mkdir(path.join(userHome, '.codex'), { recursive: true })
+    await writeFile(path.join(userHome, '.codex', 'auth.json'), '{}')
+    vi.spyOn(os, 'homedir').mockReturnValue(userHome)
+
+    const isolated = await createIsolatedCodexIncidentHome('')
+    try {
+      expect(await readlink(path.join(isolated.home, '.codex', 'auth.json'))).toBe(
+        path.join(userHome, '.codex', 'auth.json'),
+      )
+    } finally {
+      await isolated.dispose()
+    }
+  })
+
+  it('falls back to the real home when isolation links cannot be created', async () => {
+    const userHome = await mkdtemp(path.join(os.tmpdir(), 'bitsentry-codex-user-home-'))
+    temporaryDirectories.push(userHome)
+    const authPath = path.join(userHome, '.codex', 'auth.json')
+    await mkdir(path.dirname(authPath), { recursive: true })
+    await writeFile(authPath, '{}')
+    mocks.symlink.mockRejectedValueOnce(Object.assign(new Error('symlink denied'), { code: 'EPERM' }))
     const warnings: unknown[][] = []
     setCodingAgentsLoggerForTesting({
       info: () => {},
@@ -50,10 +107,8 @@ describe('createIsolatedCodexIncidentHome', () => {
     expect(fallback.home).toBe(userHome)
     expect(warnings).toEqual([[
       '[codex-provider] isolated HOME unavailable; using the real HOME for this incident session',
-      { reason: 'missing-auth-file' },
+      { reason: 'link-failed' },
     ]])
-
     await fallback.dispose()
-    await expect(access(userHome)).resolves.toBeUndefined()
   })
 })

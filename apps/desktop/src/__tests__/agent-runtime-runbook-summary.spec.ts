@@ -959,7 +959,12 @@ describe('AgentRuntimeService runbook outcomes', () => {
     const runbookStore = {
       list: vi.fn().mockResolvedValue([
         makeRunbook('rb-sentry', 'Investigate Sentry', [
-          { id: 'step-1', type: 'external_source', title: 'Fetch Sentry issues' },
+          {
+            id: 'step-1',
+            type: 'external_source',
+            title: 'Fetch Sentry issues',
+            parameters: [{ id: 'parameter-project', key: 'project', required: true }],
+          },
           { id: 'step-2', type: 'llm', title: 'Summarize findings' },
         ]),
       ]),
@@ -1010,7 +1015,7 @@ describe('AgentRuntimeService runbook outcomes', () => {
       'Internal runbook list:',
     )
     expect(getRequiredToolContent(getSecondCallMessages(llmAdapter))).toContain(
-      'Parameters: none.',
+      'Parameters:\n  - project (required)',
     )
     expect(getRequiredToolContent(getSecondCallMessages(llmAdapter))).toContain(
       'Summarize the available runbooks for the user in clean Markdown.',

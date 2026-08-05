@@ -8,6 +8,17 @@ export interface IsolatedCodexIncidentHome {
   dispose(): Promise<void>
 }
 
+function fallbackToRealHome(userHome: string, reason: string): IsolatedCodexIncidentHome {
+  log.warn(
+    '[codex-provider] isolated HOME unavailable; using the real HOME for this incident session',
+    { reason },
+  )
+  return {
+    home: userHome,
+    dispose: async () => {},
+  }
+}
+
 async function exists(filePath: string): Promise<boolean> {
   try {
     await access(filePath)
@@ -26,28 +37,18 @@ async function exists(filePath: string): Promise<boolean> {
 export async function createIsolatedCodexIncidentHome(
   userHome: string | undefined = process.env.HOME,
 ): Promise<IsolatedCodexIncidentHome> {
-  if (userHome === undefined || userHome.length === 0) {
-    throw new Error('Codex incident sessions require HOME to isolate provider context')
-  }
+  const realHome = userHome?.trim() || os.homedir()
 
-  const sourceCodexHome = path.join(userHome, '.codex')
+  const sourceCodexHome = path.join(realHome, '.codex')
   const authPath = path.join(sourceCodexHome, 'auth.json')
-  if (!await exists(authPath)) {
-    log.warn(
-      '[codex-provider] isolated HOME unavailable; using the real HOME for this incident session',
-      { reason: 'missing-auth-file' },
-    )
-    return {
-      home: userHome,
-      dispose: async () => {},
-    }
-  }
 
   const isolatedHome = await mkdtemp(path.join(os.tmpdir(), 'bitsentry-codex-home-'))
   try {
     const isolatedCodexHome = path.join(isolatedHome, '.codex')
     await mkdir(isolatedCodexHome)
-    await symlink(authPath, path.join(isolatedCodexHome, 'auth.json'))
+    if (await exists(authPath)) {
+      await symlink(authPath, path.join(isolatedCodexHome, 'auth.json'))
+    }
 
     const sessionsPath = path.join(sourceCodexHome, 'sessions')
     if (await exists(sessionsPath)) {
@@ -61,8 +62,8 @@ export async function createIsolatedCodexIncidentHome(
       home: isolatedHome,
       dispose: () => rm(isolatedHome, { recursive: true, force: true }),
     }
-  } catch (error) {
+  } catch {
     await rm(isolatedHome, { recursive: true, force: true })
-    throw error
+    return fallbackToRealHome(realHome, 'link-failed')
   }
 }
