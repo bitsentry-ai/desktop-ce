@@ -2026,41 +2026,7 @@ export class AgentRuntimeService {
 
     this.appendSshInstructions(baseInstructions, isSshRelated)
 
-    if (this.hasRunbookTools()) {
-      baseInstructions.push(
-        'Do not claim a runbook was created, edited, updated, or saved unless a user approved a proposal and the save operation succeeded.',
-        'After starting a runbook, call get_runbook_execution exactly once with waitForCompletion: true to obtain its terminal result or its latest snapshot after 30 seconds. You may omit executionId to use the latest runbook execution for this incident.',
-        'Do not claim a runbook was executed unless execute_runbook succeeded.',
-        '',
-      )
-
-      if (options.includeRunbookParameterInstructions === true) {
-        baseInstructions.push(
-          'If the user specifies values for runbook placeholders such as time windows, host fragments, usernames, service names, or IDs, pass them in execute_runbook.parameterValues.',
-          'If list_runbooks shows required parameters, do not start that runbook until you supply them.',
-          'Runbook parameter defaults are fallback values only when the user did not specify a value.',
-          '',
-        )
-      }
-
-      if (options.includeMultipleRunbookInstructions === true) {
-        baseInstructions.push(
-          'For incident diagnosis requests that require multiple data sources, decide which runbooks are needed, execute each required runbook, then inspect completed results before finalizing.',
-          '',
-        )
-      }
-
-      if (options.includeRunbookResultInstructions === true) {
-        baseInstructions.push(
-          'When prior runbook results provide a combined journalctl window, run the backend log runbook once with that combined since/until instead of starting one runbook per issue row.',
-          'When prior runbook results list only individual actionable journalctl windows, use those exact since/until values in execute_runbook.parameterValues for the backend log runbook; do not ask the user to paste timestamps you already received.',
-          'If you inspect a runbook in the same assistant response that starts it, omit executionId so the runtime can use the execution that actually started.',
-          'Do not final-answer from a runbook start acknowledgement alone when the user asked for cross-validation, matrices, or RCA.',
-          'If a later runbook fails, prefer the successful runbook results already present in this incident instead of restarting the entire investigation.',
-          '',
-        )
-      }
-    }
+    this.appendRunbookToolInstructions(baseInstructions, options)
 
     // Instructions for runbook action execution
     if (runbookContext !== undefined) {
@@ -2090,6 +2056,51 @@ export class AgentRuntimeService {
     }
 
     return baseInstructions.join('\n')
+  }
+
+  private appendRunbookToolInstructions(
+    baseInstructions: string[],
+    options: {
+      includeRunbookResultInstructions?: boolean
+      includeRunbookParameterInstructions?: boolean
+      includeMultipleRunbookInstructions?: boolean
+    },
+  ): void {
+    if (!this.hasRunbookTools()) return
+
+    baseInstructions.push(
+      'Do not claim a runbook was created, edited, updated, or saved unless a user approved a proposal and the save operation succeeded.',
+      'After starting a runbook, call get_runbook_execution exactly once with waitForCompletion: true to obtain its terminal result or its latest snapshot after 30 seconds. You may omit executionId to use the latest runbook execution for this incident.',
+      'Do not claim a runbook was executed unless execute_runbook succeeded.',
+      '',
+    )
+
+    if (options.includeRunbookParameterInstructions === true) {
+      baseInstructions.push(
+        'If the user specifies values for runbook placeholders such as time windows, host fragments, usernames, service names, or IDs, pass them in execute_runbook.parameterValues.',
+        'If list_runbooks shows required parameters, do not start that runbook until you supply them.',
+        'Runbook parameter defaults are fallback values only when the user did not specify a value.',
+        '',
+      )
+    }
+
+    if (options.includeMultipleRunbookInstructions === true) {
+      baseInstructions.push(
+        'For incident diagnosis requests that require multiple data sources, decide which runbooks are needed, execute each required runbook, then inspect completed results before finalizing.',
+        '',
+      )
+    }
+
+    if (options.includeRunbookResultInstructions === true) {
+      baseInstructions.push(
+        'When prior runbook results provide a combined journalctl window, run the backend log runbook once with that combined since/until instead of starting one runbook per issue row.',
+        'When prior runbook results list only individual actionable journalctl windows, use those exact since/until values in execute_runbook.parameterValues for the backend log runbook; do not ask the user to paste timestamps you already received.',
+        'If you inspect a runbook in the same assistant response that starts it, omit executionId so the runtime can use the execution that actually started.',
+        'Do not final-answer from a runbook start acknowledgement alone when the user asked for cross-validation, matrices, or RCA.',
+        'If a later runbook fails, prefer the successful runbook results already present in this incident instead of restarting the entire investigation.',
+        '',
+      )
+    }
   }
 
   private appendSshInstructions(baseInstructions: string[], isSshRelated: boolean): void {
@@ -3585,24 +3596,29 @@ export class AgentRuntimeService {
 
     const lines = ['Internal runbook list:']
     for (const runbook of runbooks) {
-      lines.push(`- ${readFirstStringProperty([runbook], 'title', 'Untitled runbook')}`)
-      const description = readNonEmptyTrimmedStringProperty(runbook, 'description')
-      if (description !== null) {
-        lines.push(`  Description: ${description}`)
-      }
-
-      const actionParameters = readRunbookParameterSummaries(runbook)
-      if (actionParameters.length > 0) {
-        lines.push('  Parameters:')
-        lines.push(...formatRunbookParameterSummary(actionParameters).map((parameter) => `  ${parameter}`))
-      } else {
-        lines.push('  Parameters: none.')
-      }
+      this.appendRunbookListSummary(lines, runbook)
     }
     lines.push('Choose only from the exact runbook titles above. Do not invent runbook titles or IDs.')
     lines.push('Summarize the available runbooks for the user in clean Markdown.')
 
     return lines.join('\n')
+  }
+
+  private appendRunbookListSummary(lines: string[], runbook: Record<string, unknown>): void {
+    lines.push(`- ${readFirstStringProperty([runbook], 'title', 'Untitled runbook')}`)
+    const description = readNonEmptyTrimmedStringProperty(runbook, 'description')
+    if (description !== null) {
+      lines.push(`  Description: ${description}`)
+    }
+
+    const actionParameters = readRunbookParameterSummaries(runbook)
+    if (actionParameters.length === 0) {
+      lines.push('  Parameters: none.')
+      return
+    }
+
+    lines.push('  Parameters:')
+    lines.push(...formatRunbookParameterSummary(actionParameters).map((parameter) => `  ${parameter}`))
   }
 
   private buildDirectRunbookExecutionConversationContent(
