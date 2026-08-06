@@ -42,28 +42,28 @@ const commonTranslationsByLocale: Record<string, Record<string, string>> = {
   'id-ID': idIDCommon,
 }
 
+const cliProviders = ['claude_code', 'codex', 'opencode', 'cursor'] as const
+
+function getCliEffortLabelKeys(providerKey: (typeof cliProviders)[number]): string[] {
+  const capabilities = [
+    ...getProviderCatalogModels(providerKey),
+    getModelCapability(providerKey, `future-${providerKey}-model`),
+  ]
+
+  return capabilities.flatMap((capability) => {
+    const effort = capability?.composerOptions?.find((option) => option.id === 'effort')
+    if (effort?.type !== 'select') return []
+
+    return [
+      effort.label,
+      ...effort.options.flatMap((choice) => [choice.label, choice.shortLabel].filter(Boolean)),
+    ]
+  })
+}
+
 describe('local model catalog selection', () => {
   it('localizes every CLI effort label in the catalog and fallback descriptors', async () => {
-    const labelKeys = new Set<string>()
-    const cliProviders = ['claude_code', 'codex', 'opencode', 'cursor'] as const
-
-    for (const providerKey of cliProviders) {
-      const capabilities = [
-        ...getProviderCatalogModels(providerKey),
-        getModelCapability(providerKey, `future-${providerKey}-model`),
-      ]
-
-      for (const capability of capabilities) {
-        const effort = capability?.composerOptions?.find((option) => option.id === 'effort')
-        if (effort?.type !== 'select') continue
-
-        labelKeys.add(effort.label)
-        for (const choice of effort.options) {
-          labelKeys.add(choice.label)
-          if (choice.shortLabel !== undefined) labelKeys.add(choice.shortLabel)
-        }
-      }
-    }
+    const labelKeys = new Set(cliProviders.flatMap(getCliEffortLabelKeys))
 
     expect(labelKeys.size).toBeGreaterThan(0)
     for (const key of labelKeys) {
