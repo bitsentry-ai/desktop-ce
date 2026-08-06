@@ -653,15 +653,48 @@ function getGeminiRole(role: ChatMessage['role']): 'model' | 'user' {
   return 'user'
 }
 
-function getAnthropicThinkingConfig(thinkingEnabled: boolean | undefined): Record<string, unknown> {
+const ANTHROPIC_MANUAL_THINKING_BUDGETS = {
+  low: 1024,
+  medium: 1536,
+  high: 2048,
+  max: 3072,
+} as const
+
+type AnthropicEffort = keyof typeof ANTHROPIC_MANUAL_THINKING_BUDGETS
+
+function getAnthropicEffort(effortLevel: string | undefined): AnthropicEffort {
+  if (effortLevel !== undefined && effortLevel in ANTHROPIC_MANUAL_THINKING_BUDGETS) {
+    return effortLevel as AnthropicEffort
+  }
+
+  return 'high'
+}
+
+function usesAdaptiveAnthropicThinking(model: string): boolean {
+  return /^claude-(?:opus|sonnet|haiku|fable|mythos)-(?:4[-.](?:[6-9]|[1-9]\d)|[5-9]\d*)(?:-|$)/.test(model)
+}
+
+function getAnthropicThinkingConfig(
+  model: string,
+  thinkingEnabled: boolean | undefined,
+  effortLevel: string | undefined,
+): Record<string, unknown> {
   if (thinkingEnabled !== true) {
     return {}
+  }
+
+  const effort = getAnthropicEffort(effortLevel)
+  if (usesAdaptiveAnthropicThinking(model)) {
+    return {
+      thinking: { type: 'adaptive' },
+      output_config: { effort },
+    }
   }
 
   return {
     thinking: {
       type: 'enabled',
-      budget_tokens: 2048,
+      budget_tokens: ANTHROPIC_MANUAL_THINKING_BUDGETS[effort],
     },
   }
 }
@@ -1213,7 +1246,11 @@ export class AgentLlmAdapterService {
         }),
         tools: anthropicTools,
         max_tokens: 4096,
-        ...getAnthropicThinkingConfig(input.llm?.thinkingEnabled),
+        ...getAnthropicThinkingConfig(
+          model,
+          input.llm?.thinkingEnabled,
+          getEffortTrait(input.traitValues),
+        ),
       }),
       signal,
     })
