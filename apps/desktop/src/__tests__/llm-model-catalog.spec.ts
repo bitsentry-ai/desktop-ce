@@ -7,8 +7,11 @@ import frFRCommon from '../../../../packages/i18n/src/locales/fr-FR/common.json'
 import idIDCommon from '../../../../packages/i18n/src/locales/id-ID/common.json'
 import zhCNCommon from '../../../../packages/i18n/src/locales/zh-CN/common.json'
 import {
+  type ModelCatalogEntry,
+  type ComposerSelectOption,
   getCatalogModel,
   getCatalogModelIds,
+  getEffectiveComposerOptions,
   getModelCapability,
   getModelDisplayName,
   getProviderCatalogModels,
@@ -56,7 +59,9 @@ function getCliEffortLabelKeys(providerKey: (typeof cliProviders)[number]): stri
 
     return [
       effort.label,
-      ...effort.options.flatMap((choice) => [choice.label, choice.shortLabel].filter(Boolean)),
+      ...effort.options.flatMap((choice) =>
+        [choice.label, choice.shortLabel].filter((label): label is string => Boolean(label)),
+      ),
     ]
   })
 }
@@ -75,6 +80,72 @@ describe('local model catalog selection', () => {
         expect(translations[key]).toEqual(expect.any(String))
         expect(translations[key]).not.toBe(key)
       }
+    }
+  })
+})
+
+function derivedEffortModel(
+  defaultReasoningOption: 'low' | 'high',
+): ModelCatalogEntry {
+  return {
+    id: `derived-${defaultReasoningOption}`,
+    displayName: `Derived ${defaultReasoningOption}`,
+    supportsImageInput: false,
+    supportsAudioInput: false,
+    supportsVideoInput: false,
+    supportsPdfInput: false,
+    supportsThinking: false,
+    thinkingMode: 'unsupported',
+    reasoningOptions: ['low', 'medium', 'high'],
+    defaultReasoningOption,
+  }
+}
+
+describe('local model catalog selection', () => {
+  it('uses the catalog default for derived effort options', () => {
+    const model = derivedEffortModel('high')
+    const effort = getEffectiveComposerOptions(model).find((option) => option.id === 'effort')
+
+    expect(effort).toMatchObject({ type: 'select' })
+    if (effort?.type !== 'select') throw new Error('Derived model must expose effort')
+    expect(effort.options.filter((option) => option.isDefault)).toEqual([
+      expect.objectContaining({ value: 'high' }),
+    ])
+    const reorderedModel: ModelCatalogEntry = {
+      ...model,
+      reasoningOptions: ['high', 'low', 'medium'],
+    }
+    const reorderedEffort = getEffectiveComposerOptions(reorderedModel)
+      .find((option) => option.id === 'effort')
+    expect(reorderedEffort).toMatchObject({ type: 'select' })
+    if (reorderedEffort?.type !== 'select') throw new Error('Derived model must expose effort')
+    expect(reorderedEffort.options.filter((option) => option.isDefault)).toEqual([
+      expect.objectContaining({ value: 'high' }),
+    ])
+  })
+
+  it('gives every catalog effort selector exactly one default', () => {
+    const providerKeys = [
+      'groq',
+      'kilocode',
+      'openai',
+      'anthropic',
+      'gemini',
+      'openrouter',
+      'claude_code',
+      'codex',
+      'opencode',
+      'cursor',
+    ] as const
+    const effortSelectors = providerKeys.flatMap((providerKey) =>
+      getProviderCatalogModels(providerKey)
+        .map((model) => getEffectiveComposerOptions(model).find((option) => option.id === 'effort'))
+        .filter((option): option is ComposerSelectOption => option?.type === 'select'),
+    )
+
+    expect(effortSelectors.length).toBeGreaterThan(0)
+    for (const effort of effortSelectors) {
+      expect(effort.options.filter((option) => option.isDefault)).toHaveLength(1)
     }
   })
 

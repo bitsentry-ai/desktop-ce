@@ -25,6 +25,7 @@ import { cn } from "../lib/utils";
 import {
   type ModelCatalogEntry,
   type ModelCatalogProviderKey,
+  getComposerDefaultTraitValues,
   getEffectiveComposerOptions,
   getModelContextWindowLimit,
   providerSupportsPlanMode,
@@ -98,6 +99,16 @@ export interface ComposerProps {
   onAccessLevelChange?: (level: AccessLevel) => void;
 }
 
+function getSeededTraitValues(
+  model: ModelCatalogEntry | undefined,
+  thinkingEnabled: boolean,
+): Record<string, string | boolean> {
+  const defaults = getComposerDefaultTraitValues(model);
+  if (defaults.thinking === undefined) return defaults;
+
+  return { ...defaults, thinking: thinkingEnabled };
+}
+
 export function Composer({
   prompt,
   onPromptChange,
@@ -146,22 +157,9 @@ export function Composer({
     onAccessLevelChange?.(level);
   };
   const [interactionMode, setInteractionMode] = useState<InteractionMode>(DEFAULT_INTERACTION_MODE);
-  // Seed with defaults from EXPLICIT composerOptions only (not derived from reasoningOptions).
-  // Derived options (cloud LLMs) are controlled by thinkingEnabled; seeding them would override it.
-  const [traitValues, setTraitValues] = useState<Record<string, string | boolean>>(() => {
-    const explicitOpts = selectedModelCapability?.composerOptions ?? [];
-    if (explicitOpts.length === 0) return {};
-    const defaults: Record<string, string | boolean> = {};
-    for (const opt of explicitOpts) {
-      if (opt.type === "select") {
-        const defaultChoice = opt.options.find((o) => o.isDefault === true);
-        if (defaultChoice !== undefined) defaults[opt.id] = defaultChoice.value;
-      } else if (opt.defaultValue !== undefined) {
-        defaults[opt.id] = opt.defaultValue;
-      }
-    }
-    return defaults;
-  });
+  const [traitValues, setTraitValues] = useState<Record<string, string | boolean>>(() =>
+    getSeededTraitValues(selectedModelCapability, thinkingEnabled),
+  );
 
   // ── Derived ────────────────────────────────────────────────────────────────
   const composerSupportsPhotos = Boolean(selectedModelCapability?.supportsImageInput);
@@ -193,20 +191,12 @@ export function Composer({
 
   // Reset traitValues to new model's defaults when selectedModelCapability changes
   const prevCapabilityRef = useRef(selectedModelCapability);
+  const thinkingEnabledRef = useRef(thinkingEnabled);
+  thinkingEnabledRef.current = thinkingEnabled;
   useEffect(() => {
     if (prevCapabilityRef.current === selectedModelCapability) return;
     prevCapabilityRef.current = selectedModelCapability;
-    const explicitOpts = selectedModelCapability?.composerOptions ?? [];
-    const defaults: Record<string, string | boolean> = {};
-    for (const opt of explicitOpts) {
-      if (opt.type === "select") {
-        const defaultChoice = opt.options.find((o) => o.isDefault === true);
-        if (defaultChoice !== undefined) defaults[opt.id] = defaultChoice.value;
-      } else if (opt.defaultValue !== undefined) {
-        defaults[opt.id] = opt.defaultValue;
-      }
-    }
-    setTraitValues(defaults);
+    setTraitValues(getSeededTraitValues(selectedModelCapability, thinkingEnabledRef.current));
   }, [selectedModelCapability]);
 
   // traitValues.thinking → onThinkingToggle (user changes via TraitsDropdown)
