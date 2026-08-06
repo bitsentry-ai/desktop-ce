@@ -101,6 +101,44 @@ describe('getAutoUpdaterEnablement', () => {
     })
   })
 
+  it('uses the CE stable feed for CE packaged builds', () => {
+    expect(
+      getAutoUpdaterEnablement({
+        isPackaged: true,
+        isSmokeTest: false,
+        currentVersion: '0.1.0',
+        platform: 'darwin',
+        arch: 'arm64',
+        releaseChannel: 'stable',
+        product: 'ce',
+      }),
+    ).toEqual({
+      enabled: true,
+      disabledReasonCode: null,
+      feedUrl: 'https://downloads.bitsentry.ai/desktop-ce/releases/macos/arm64',
+    })
+  })
+
+  it('disables a CE prerelease with the local placeholder instead of requesting it', () => {
+    expect(
+      getAutoUpdaterEnablement({
+        isPackaged: true,
+        isSmokeTest: false,
+        currentVersion: '0.1.0-beta.1',
+        platform: 'darwin',
+        arch: 'arm64',
+        releaseChannel: 'stable',
+        product: 'ce',
+        appUpdateConfigContents:
+          'provider: generic\nurl: https://downloads.bitsentry.ai/desktop-ce/releases/local-build-placeholder\n',
+      }),
+    ).toEqual({
+      enabled: false,
+      disabledReasonCode: 'unsupported-feed',
+      feedUrl: null,
+    })
+  })
+
   it('repairs stable release feeds that still point at a versioned artifact directory', () => {
     expect(
       getAutoUpdaterEnablement({
@@ -129,12 +167,12 @@ describe('getAutoUpdaterEnablement', () => {
         platform: 'darwin',
         arch: 'arm64',
         releaseChannel: 'stable',
-        appUpdateConfigContents: 'provider: generic\nurl: https://updates.example.com/superterminal\n',
+        appUpdateConfigContents: 'provider: generic\nurl: https://updates.example.com/bitsentry-desktop\n',
       }),
     ).toEqual({
       enabled: true,
       disabledReasonCode: null,
-      feedUrl: 'https://updates.example.com/superterminal',
+      feedUrl: 'https://updates.example.com/bitsentry-desktop',
     })
   })
 
@@ -202,6 +240,28 @@ describe('getAutoUpdaterEnablement', () => {
       })
     },
   )
+
+  it.each([
+    ['ce', 'https://downloads.bitsentry.ai/desktop/beta/main/macos/arm64'],
+    ['pro', 'https://downloads.bitsentry.ai/desktop-ce/beta/main/macos/arm64'],
+  ] as const)('rejects a managed feed belonging to the other product', (product, feedUrl) => {
+    expect(
+      getAutoUpdaterEnablement({
+        isPackaged: true,
+        isSmokeTest: false,
+        currentVersion: '0.1.0-beta.1',
+        platform: 'darwin',
+        arch: 'arm64',
+        releaseChannel: 'beta',
+        product,
+        appUpdateConfigContents: `provider: generic\nurl: ${feedUrl}\n`,
+      }),
+    ).toEqual({
+      enabled: false,
+      disabledReasonCode: 'unsupported-feed',
+      feedUrl: null,
+    })
+  })
 })
 
 describe('getUpdateDownloadPolicy', () => {

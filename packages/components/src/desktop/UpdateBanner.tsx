@@ -97,7 +97,7 @@ function UpdateBannerContent({
           {t("common.updateBanner.updateAvailable")}
         </p>
         <p className="mt-0.5 text-xs text-muted-foreground">
-          {t("common.updateBanner.superterminalReadyToDownload", {
+          {t("common.updateBanner.bitsentry-desktopReadyToDownload", {
             version: availableVersion,
           })}
         </p>
@@ -131,7 +131,7 @@ function UpdateBannerContent({
           {t("common.updateBanner.updateReadyToInstall")}
         </p>
         <p className="mt-0.5 text-xs text-muted-foreground">
-          {t("common.updateBanner.superterminalWillInstallOnRestart", {
+          {t("common.updateBanner.bitsentry-desktopWillInstallOnRestart", {
             version: downloadedVersion,
           })}
         </p>

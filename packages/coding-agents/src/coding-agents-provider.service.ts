@@ -45,7 +45,6 @@ import type { HostToolContext } from "@bitsentry-ce/core/features/agent-runtime"
 
 const SETTINGS_KEY = "local_ai_settings";
 const CLAUDE_CODE_CATALOG_MODELS = getCatalogModelIds("claude_code");
-const CURSOR_CATALOG_MODELS = getCatalogModelIds("cursor");
 const OPEN_CODE_MODELS_LOCK_RETRY_DELAYS_MS = [150, 350];
 
 export function prependHostSystemInstructions(
@@ -113,6 +112,7 @@ export interface CodingAgentsProviderDependencies {
   doctor?: typeof doctor;
 }
 
+// Claude Code's composer effort caps the agent loop; it is not a model thinking-token budget.
 const EFFORT_MAX_TURNS: Record<string, number> = {
   low: 3,
   medium: 8,
@@ -696,7 +696,7 @@ export class CodingAgentsProviderService {
       // Cursor ACP can launch the browser login flow during passive model
       // discovery. Keep listing side-effect-free; execution authenticates when
       // the user intentionally runs Cursor.
-      return [...CURSOR_CATALOG_MODELS];
+      return getCatalogModelIds("cursor");
     }
 
     return this.listCodexModels();

@@ -1764,7 +1764,7 @@ export class DesktopRunbookStore {
       version: 1,
       exportedAt: new Date().toISOString(),
       exportedBy: {
-        product: "superterminal",
+        product: "bitsentry-desktop",
         runtime: "desktop",
       },
       runbooks: exportedRunbooks,
@@ -1796,7 +1796,7 @@ export class DesktopRunbookStore {
 
     if (normalizedOptions.conflictPolicy === "overwrite") {
       throw new Error(
-        'conflictPolicy "overwrite" is not supported yet for SuperTerminal import',
+        'conflictPolicy "overwrite" is not supported yet for BitSentry Desktop import',
       );
     }
 
@@ -1956,7 +1956,7 @@ export class DesktopRunbookStore {
 
       if (exportedRunbook.tags !== undefined && exportedRunbook.tags.length > 0) {
         warnings.add(
-          `Runbook "${requestedTitle}" includes tags that are not stored in SuperTerminal yet.`,
+          `Runbook "${requestedTitle}" includes tags that are not stored in BitSentry Desktop yet.`,
         );
       }
 
@@ -1970,13 +1970,13 @@ export class DesktopRunbookStore {
       for (const action of exportedRunbook.actions) {
         if (typeof action.timeout === "number") {
           warnings.add(
-            `Action "${action.title}" includes a timeout that is not stored in SuperTerminal yet.`,
+            `Action "${action.title}" includes a timeout that is not stored in BitSentry Desktop yet.`,
           );
         }
 
         if (isTelemetryActionType(action.type)) {
           warnings.add(
-            `Action "${action.title}" uses ${action.type} and will need review in SuperTerminal before execution.`,
+            `Action "${action.title}" uses ${action.type} and will need review in BitSentry Desktop before execution.`,
           );
         }
 

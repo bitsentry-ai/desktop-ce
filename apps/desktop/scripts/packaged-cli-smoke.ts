@@ -18,8 +18,8 @@ const { runPackagedCliSmoke } = require(
 function getCandidateWrapperPaths(): string[] {
   if (process.platform === 'darwin') {
     return [
-      path.join('release', 'build', 'mac-arm64', 'SuperTerminal.app', 'Contents', 'Resources', 'bin', 'bitsentry'),
-      path.join('release', 'build', 'mac', 'SuperTerminal.app', 'Contents', 'Resources', 'bin', 'bitsentry'),
+      path.join('release', 'build', 'mac-arm64', 'BitSentry-Desktop.app', 'Contents', 'Resources', 'bin', 'bitsentry'),
+      path.join('release', 'build', 'mac', 'BitSentry-Desktop.app', 'Contents', 'Resources', 'bin', 'bitsentry'),
     ]
   }
 

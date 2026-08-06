@@ -6,8 +6,8 @@ import {
   type GlobalVariablePatch,
 } from './globals.schemas'
 
-const SUPERTERMINAL_SCOPE = {
-  product: 'superterminal',
+const DESKTOP_SCOPE = {
+  product: 'bitsentry-desktop',
   owner: 'local_app',
 } as const
 
@@ -328,7 +328,7 @@ export class DesktopGlobalVariablesService {
     const variable: GlobalVariable = {
       id: String(row.id),
       key: String(row.key),
-      scope: SUPERTERMINAL_SCOPE,
+      scope: DESKTOP_SCOPE,
       createdAt: asIsoString(row.createdAt),
       updatedAt: asIsoString(row.updatedAt),
     }

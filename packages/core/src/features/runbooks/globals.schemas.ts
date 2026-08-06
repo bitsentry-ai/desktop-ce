@@ -7,8 +7,8 @@ export const globalVariableKeySchema = z
     "Global variable keys must start with a letter or underscore and contain only letters, numbers, underscores, dots, and hyphens",
   );
 
-export const superterminalGlobalVariableScopeSchema = z.object({
-  product: z.literal("superterminal"),
+export const desktopGlobalVariableScopeSchema = z.object({
+  product: z.literal("bitsentry-desktop"),
   owner: z.literal("local_app"),
 });
 
@@ -19,7 +19,7 @@ export const dashboardGlobalVariableScopeSchema = z.object({
 });
 
 export const globalVariableScopeSchema = z.union([
-  superterminalGlobalVariableScopeSchema,
+  desktopGlobalVariableScopeSchema,
   dashboardGlobalVariableScopeSchema,
 ]);
 

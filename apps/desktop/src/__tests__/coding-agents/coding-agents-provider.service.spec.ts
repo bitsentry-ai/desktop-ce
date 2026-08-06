@@ -23,6 +23,7 @@ import {
 } from "@bitsentry-ce/coding-agents/coding-agents-provider.service";
 import {
   getCatalogModel,
+  getCatalogModelIds,
   getEffectiveComposerOptions,
   resolveCatalogModelRuntimeSelection,
 } from "@bitsentry-ce/components/llm/modelCatalog";
@@ -290,12 +291,15 @@ describe("CodingAgentsProviderService", () => {
 
     const models = await service.listModels("cursor");
 
-    expect(models).toContain("default");
+    expect(models).toEqual(getCatalogModelIds("cursor"));
+    for (const modelId of models) {
+      expect(getCatalogModel("cursor", modelId)).toBeDefined();
+    }
     expect(detectBinary).not.toHaveBeenCalled();
     expect(service.getSettings().cursor.binaryPath).toBe("cursor-agent");
   });
 
-  it("passes Claude context window traits into execution", async () => {
+  it("maps every Claude effort tier to agent max turns", async () => {
     vi.mocked(detectBinary).mockResolvedValue("/opt/homebrew/bin/claude");
     vi.mocked(probeClaudeCode).mockResolvedValue({
       installed: true,
@@ -323,23 +327,32 @@ describe("CodingAgentsProviderService", () => {
       },
     });
 
-    const result = await service.execute(
-      "claude_code",
-      "hello",
-      new AbortController(),
-      undefined,
-      undefined,
-      "claude-sonnet-5",
-      "auto-accept-edits",
-      { effort: "high", contextWindow: "1m" },
-    );
+    for (const [effort, maxTurns] of [
+      ["low", 3],
+      ["medium", 8],
+      ["high", 16],
+      ["xhigh", 24],
+      ["max", 40],
+      ["ultrathink", 64],
+    ] as const) {
+      const result = await service.execute(
+        "claude_code",
+        "hello",
+        new AbortController(),
+        undefined,
+        undefined,
+        "claude-sonnet-5",
+        "auto-accept-edits",
+        { effort, contextWindow: "1m" },
+      );
 
-    expect(JSON.parse(result.output)).toEqual({
-      binaryPath: "/opt/homebrew/bin/claude",
-      model: "claude-sonnet-5",
-      maxTurns: 16,
-      contextWindow: "1m",
-    });
+      expect(JSON.parse(result.output)).toEqual({
+        binaryPath: "/opt/homebrew/bin/claude",
+        model: "claude-sonnet-5",
+        maxTurns,
+        contextWindow: "1m",
+      });
+    }
   });
 
   it("silently detects and uses the resolved opencode binary without changing the saved path", async () => {

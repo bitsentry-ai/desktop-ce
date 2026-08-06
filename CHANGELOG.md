@@ -1,9 +1,9 @@
 # Changelog
 
-All notable changes to SuperTerminal Community Edition are documented in this file.
+All notable changes to BitSentry Desktop are documented in this file.
 Entries are generated from git history with [git-cliff](https://git-cliff.org) (`pnpm run changelog`).
 
-## [0.1.0] - Unreleased
+## [0.1.0-beta.1] - Unreleased
 
 ### Added
 

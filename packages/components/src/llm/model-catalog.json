@@ -20,6 +20,7 @@
             "medium",
             "high"
           ],
+          "defaultReasoningOption": "medium",
           "composerOptions": [
             {
               "id": "effort",
@@ -57,6 +58,7 @@
             "medium",
             "high"
           ],
+          "defaultReasoningOption": "medium",
           "composerOptions": [
             {
               "id": "effort",
@@ -94,6 +96,7 @@
             "medium",
             "high"
           ],
+          "defaultReasoningOption": "medium",
           "composerOptions": [
             {
               "id": "effort",
@@ -131,6 +134,7 @@
             "medium",
             "high"
           ],
+          "defaultReasoningOption": "medium",
           "composerOptions": [
             {
               "id": "effort",
@@ -168,6 +172,7 @@
             "medium",
             "high"
           ],
+          "defaultReasoningOption": "medium",
           "composerOptions": [
             {
               "id": "effort",
@@ -205,6 +210,7 @@
             "medium",
             "high"
           ],
+          "defaultReasoningOption": "medium",
           "composerOptions": [
             {
               "id": "effort",
@@ -245,6 +251,7 @@
             "high",
             "xhigh"
           ],
+          "defaultReasoningOption": "high",
           "composerOptions": [
             {
               "id": "effort",
@@ -295,6 +302,7 @@
             "medium",
             "high"
           ],
+          "defaultReasoningOption": "medium",
           "composerOptions": [
             {
               "id": "effort",
@@ -332,6 +340,7 @@
             "medium",
             "high"
           ],
+          "defaultReasoningOption": "medium",
           "composerOptions": [
             {
               "id": "effort",
@@ -369,6 +378,7 @@
             "medium",
             "high"
           ],
+          "defaultReasoningOption": "medium",
           "composerOptions": [
             {
               "id": "effort",
@@ -825,10 +835,22 @@
           "supportsAudioInput": false,
           "supportsVideoInput": false,
           "supportsPdfInput": false,
-          "supportsThinking": false,
-          "thinkingMode": "unsupported",
-          "reasoningOptions": [],
-          "composerOptions": []
+          "supportsThinking": true,
+          "thinkingMode": "toggle",
+          "reasoningOptions": ["low", "medium", "high"],
+          "defaultReasoningOption": "medium",
+          "composerOptions": [
+            {
+              "id": "effort",
+              "label": "Reasoning",
+              "type": "select",
+              "options": [
+                { "value": "low", "label": "Low" },
+                { "value": "medium", "label": "Medium", "isDefault": true },
+                { "value": "high", "label": "High" }
+              ]
+            }
+          ]
         },
         {
           "id": "openai/gpt-oss-20b",
@@ -837,10 +859,22 @@
           "supportsAudioInput": false,
           "supportsVideoInput": false,
           "supportsPdfInput": false,
-          "supportsThinking": false,
-          "thinkingMode": "unsupported",
-          "reasoningOptions": [],
-          "composerOptions": []
+          "supportsThinking": true,
+          "thinkingMode": "toggle",
+          "reasoningOptions": ["low", "medium", "high"],
+          "defaultReasoningOption": "medium",
+          "composerOptions": [
+            {
+              "id": "effort",
+              "label": "Reasoning",
+              "type": "select",
+              "options": [
+                { "value": "low", "label": "Low" },
+                { "value": "medium", "label": "Medium", "isDefault": true },
+                { "value": "high", "label": "High" }
+              ]
+            }
+          ]
         },
         {
           "id": "meta-llama/llama-4-scout-17b-16e-instruct",
@@ -941,10 +975,23 @@
           "supportsAudioInput": false,
           "supportsVideoInput": false,
           "supportsPdfInput": true,
-          "supportsThinking": false,
-          "thinkingMode": "unsupported",
-          "reasoningOptions": [],
-          "composerOptions": []
+          "supportsThinking": true,
+          "thinkingMode": "toggle",
+          "reasoningOptions": ["low", "medium", "high", "max"],
+          "defaultReasoningOption": "high",
+          "composerOptions": [
+            {
+              "id": "effort",
+              "label": "Effort",
+              "type": "select",
+              "options": [
+                { "value": "low", "label": "Low" },
+                { "value": "medium", "label": "Medium" },
+                { "value": "high", "label": "High", "isDefault": true },
+                { "value": "max", "label": "Max" }
+              ]
+            }
+          ]
         },
         {
           "id": "openai/gpt-5.2",
@@ -953,10 +1000,25 @@
           "supportsAudioInput": false,
           "supportsVideoInput": false,
           "supportsPdfInput": false,
-          "supportsThinking": false,
-          "thinkingMode": "unsupported",
-          "reasoningOptions": [],
-          "composerOptions": []
+          "supportsThinking": true,
+          "thinkingMode": "toggle",
+          "reasoningOptions": ["none", "minimal", "low", "medium", "high", "xhigh"],
+          "defaultReasoningOption": "high",
+          "composerOptions": [
+            {
+              "id": "effort",
+              "label": "Reasoning",
+              "type": "select",
+              "options": [
+                { "value": "none", "label": "None" },
+                { "value": "minimal", "label": "Minimal" },
+                { "value": "low", "label": "Low" },
+                { "value": "medium", "label": "Medium" },
+                { "value": "high", "label": "High", "isDefault": true },
+                { "value": "xhigh", "label": "Extra High", "shortLabel": "xHigh" }
+              ]
+            }
+          ]
         }
       ]
     },
@@ -973,10 +1035,25 @@
           "supportsAudioInput": false,
           "supportsVideoInput": false,
           "supportsPdfInput": false,
-          "supportsThinking": false,
-          "thinkingMode": "unsupported",
-          "reasoningOptions": [],
-          "composerOptions": []
+          "supportsThinking": true,
+          "thinkingMode": "toggle",
+          "reasoningOptions": ["none", "minimal", "low", "medium", "high", "xhigh"],
+          "defaultReasoningOption": "high",
+          "composerOptions": [
+            {
+              "id": "effort",
+              "label": "Reasoning",
+              "type": "select",
+              "options": [
+                { "value": "none", "label": "None" },
+                { "value": "minimal", "label": "Minimal" },
+                { "value": "low", "label": "Low" },
+                { "value": "medium", "label": "Medium" },
+                { "value": "high", "label": "High", "isDefault": true },
+                { "value": "xhigh", "label": "Extra High", "shortLabel": "xHigh" }
+              ]
+            }
+          ]
         },
         {
           "id": "openai/gpt-4.1",
@@ -997,10 +1074,22 @@
           "supportsAudioInput": false,
           "supportsVideoInput": false,
           "supportsPdfInput": false,
-          "supportsThinking": false,
-          "thinkingMode": "unsupported",
-          "reasoningOptions": [],
-          "composerOptions": []
+          "supportsThinking": true,
+          "thinkingMode": "toggle",
+          "reasoningOptions": ["low", "medium", "high"],
+          "defaultReasoningOption": "medium",
+          "composerOptions": [
+            {
+              "id": "effort",
+              "label": "Reasoning",
+              "type": "select",
+              "options": [
+                { "value": "low", "label": "Low" },
+                { "value": "medium", "label": "Medium", "isDefault": true },
+                { "value": "high", "label": "High" }
+              ]
+            }
+          ]
         },
         {
           "id": "anthropic/claude-opus-4",
@@ -1009,10 +1098,23 @@
           "supportsAudioInput": false,
           "supportsVideoInput": false,
           "supportsPdfInput": true,
-          "supportsThinking": false,
-          "thinkingMode": "unsupported",
-          "reasoningOptions": [],
-          "composerOptions": []
+          "supportsThinking": true,
+          "thinkingMode": "toggle",
+          "reasoningOptions": ["low", "medium", "high", "max"],
+          "defaultReasoningOption": "high",
+          "composerOptions": [
+            {
+              "id": "effort",
+              "label": "Effort",
+              "type": "select",
+              "options": [
+                { "value": "low", "label": "Low" },
+                { "value": "medium", "label": "Medium" },
+                { "value": "high", "label": "High", "isDefault": true },
+                { "value": "max", "label": "Max" }
+              ]
+            }
+          ]
         },
         {
           "id": "anthropic/claude-sonnet-4",
@@ -1095,35 +1197,35 @@
           "composerOptions": [
             {
               "id": "effort",
-              "label": "Reasoning",
+              "label": "common.traitsDropdown.reasoning",
               "type": "select",
               "options": [
                 {
                   "value": "low",
-                  "label": "Low"
+                  "label": "common.traitsDropdown.reasoningLow"
                 },
                 {
                   "value": "medium",
-                  "label": "Medium"
+                  "label": "common.traitsDropdown.reasoningMedium"
                 },
                 {
                   "value": "high",
-                  "label": "High",
+                  "label": "common.traitsDropdown.reasoningHigh",
                   "isDefault": true
                 },
                 {
                   "value": "xhigh",
-                  "label": "Extra High",
-                  "shortLabel": "xHigh"
+                  "label": "common.traitsDropdown.reasoningExtraHigh",
+                  "shortLabel": "common.traitsDropdown.reasoningExtraHighShort"
                 },
                 {
                   "value": "max",
-                  "label": "Max"
+                  "label": "common.traitsDropdown.reasoningMax"
                 },
                 {
                   "value": "ultrathink",
-                  "label": "Ultrathink",
-                  "shortLabel": "Ultra"
+                  "label": "common.traitsDropdown.reasoningUltrathink",
+                  "shortLabel": "common.traitsDropdown.reasoningUltrathinkShort"
                 }
               ]
             },
@@ -1158,26 +1260,26 @@
           "composerOptions": [
             {
               "id": "effort",
-              "label": "Reasoning",
+              "label": "common.traitsDropdown.reasoning",
               "type": "select",
               "options": [
                 {
                   "value": "low",
-                  "label": "Low"
+                  "label": "common.traitsDropdown.reasoningLow"
                 },
                 {
                   "value": "medium",
-                  "label": "Medium"
+                  "label": "common.traitsDropdown.reasoningMedium"
                 },
                 {
                   "value": "high",
-                  "label": "High",
+                  "label": "common.traitsDropdown.reasoningHigh",
                   "isDefault": true
                 },
                 {
                   "value": "ultrathink",
-                  "label": "Ultrathink",
-                  "shortLabel": "Ultra"
+                  "label": "common.traitsDropdown.reasoningUltrathink",
+                  "shortLabel": "common.traitsDropdown.reasoningUltrathinkShort"
                 }
               ]
             },
@@ -1212,26 +1314,26 @@
           "composerOptions": [
             {
               "id": "effort",
-              "label": "Reasoning",
+              "label": "common.traitsDropdown.reasoning",
               "type": "select",
               "options": [
                 {
                   "value": "low",
-                  "label": "Low"
+                  "label": "common.traitsDropdown.reasoningLow"
                 },
                 {
                   "value": "medium",
-                  "label": "Medium"
+                  "label": "common.traitsDropdown.reasoningMedium"
                 },
                 {
                   "value": "high",
-                  "label": "High",
+                  "label": "common.traitsDropdown.reasoningHigh",
                   "isDefault": true
                 },
                 {
                   "value": "ultrathink",
-                  "label": "Ultrathink",
-                  "shortLabel": "Ultra"
+                  "label": "common.traitsDropdown.reasoningUltrathink",
+                  "shortLabel": "common.traitsDropdown.reasoningUltrathinkShort"
                 }
               ]
             },
@@ -1266,35 +1368,35 @@
           "composerOptions": [
             {
               "id": "effort",
-              "label": "Reasoning",
+              "label": "common.traitsDropdown.reasoning",
               "type": "select",
               "options": [
                 {
                   "value": "low",
-                  "label": "Low"
+                  "label": "common.traitsDropdown.reasoningLow"
                 },
                 {
                   "value": "medium",
-                  "label": "Medium"
+                  "label": "common.traitsDropdown.reasoningMedium"
                 },
                 {
                   "value": "high",
-                  "label": "High"
+                  "label": "common.traitsDropdown.reasoningHigh"
                 },
                 {
                   "value": "xhigh",
-                  "label": "Extra High",
+                  "label": "common.traitsDropdown.reasoningExtraHigh",
                   "isDefault": true,
-                  "shortLabel": "xHigh"
+                  "shortLabel": "common.traitsDropdown.reasoningExtraHighShort"
                 },
                 {
                   "value": "max",
-                  "label": "Max"
+                  "label": "common.traitsDropdown.reasoningMax"
                 },
                 {
                   "value": "ultrathink",
-                  "label": "Ultrathink",
-                  "shortLabel": "Ultra"
+                  "label": "common.traitsDropdown.reasoningUltrathink",
+                  "shortLabel": "common.traitsDropdown.reasoningUltrathinkShort"
                 }
               ]
             },
@@ -1336,35 +1438,35 @@
           "composerOptions": [
             {
               "id": "effort",
-              "label": "Reasoning",
+              "label": "common.traitsDropdown.reasoning",
               "type": "select",
               "options": [
                 {
                   "value": "low",
-                  "label": "Low"
+                  "label": "common.traitsDropdown.reasoningLow"
                 },
                 {
                   "value": "medium",
-                  "label": "Medium"
+                  "label": "common.traitsDropdown.reasoningMedium"
                 },
                 {
                   "value": "high",
-                  "label": "High"
+                  "label": "common.traitsDropdown.reasoningHigh"
                 },
                 {
                   "value": "xhigh",
-                  "label": "Extra High",
+                  "label": "common.traitsDropdown.reasoningExtraHigh",
                   "isDefault": true,
-                  "shortLabel": "xHigh"
+                  "shortLabel": "common.traitsDropdown.reasoningExtraHighShort"
                 },
                 {
                   "value": "max",
-                  "label": "Max"
+                  "label": "common.traitsDropdown.reasoningMax"
                 },
                 {
                   "value": "ultrathink",
-                  "label": "Ultrathink",
-                  "shortLabel": "Ultra"
+                  "label": "common.traitsDropdown.reasoningUltrathink",
+                  "shortLabel": "common.traitsDropdown.reasoningUltrathinkShort"
                 }
               ]
             },
@@ -1399,35 +1501,35 @@
           "composerOptions": [
             {
               "id": "effort",
-              "label": "Reasoning",
+              "label": "common.traitsDropdown.reasoning",
               "type": "select",
               "options": [
                 {
                   "value": "low",
-                  "label": "Low"
+                  "label": "common.traitsDropdown.reasoningLow"
                 },
                 {
                   "value": "medium",
-                  "label": "Medium"
+                  "label": "common.traitsDropdown.reasoningMedium"
                 },
                 {
                   "value": "high",
-                  "label": "High"
+                  "label": "common.traitsDropdown.reasoningHigh"
                 },
                 {
                   "value": "xhigh",
-                  "label": "Extra High",
+                  "label": "common.traitsDropdown.reasoningExtraHigh",
                   "isDefault": true,
-                  "shortLabel": "xHigh"
+                  "shortLabel": "common.traitsDropdown.reasoningExtraHighShort"
                 },
                 {
                   "value": "max",
-                  "label": "Max"
+                  "label": "common.traitsDropdown.reasoningMax"
                 },
                 {
                   "value": "ultrathink",
-                  "label": "Ultrathink",
-                  "shortLabel": "Ultra"
+                  "label": "common.traitsDropdown.reasoningUltrathink",
+                  "shortLabel": "common.traitsDropdown.reasoningUltrathinkShort"
                 }
               ]
             },
@@ -1462,30 +1564,30 @@
           "composerOptions": [
             {
               "id": "effort",
-              "label": "Reasoning",
+              "label": "common.traitsDropdown.reasoning",
               "type": "select",
               "options": [
                 {
                   "value": "low",
-                  "label": "Low"
+                  "label": "common.traitsDropdown.reasoningLow"
                 },
                 {
                   "value": "medium",
-                  "label": "Medium"
+                  "label": "common.traitsDropdown.reasoningMedium"
                 },
                 {
                   "value": "high",
-                  "label": "High",
+                  "label": "common.traitsDropdown.reasoningHigh",
                   "isDefault": true
                 },
                 {
                   "value": "max",
-                  "label": "Max"
+                  "label": "common.traitsDropdown.reasoningMax"
                 },
                 {
                   "value": "ultrathink",
-                  "label": "Ultrathink",
-                  "shortLabel": "Ultra"
+                  "label": "common.traitsDropdown.reasoningUltrathink",
+                  "shortLabel": "common.traitsDropdown.reasoningUltrathinkShort"
                 }
               ]
             },
@@ -1520,26 +1622,26 @@
           "composerOptions": [
             {
               "id": "effort",
-              "label": "Reasoning",
+              "label": "common.traitsDropdown.reasoning",
               "type": "select",
               "options": [
                 {
                   "value": "low",
-                  "label": "Low"
+                  "label": "common.traitsDropdown.reasoningLow"
                 },
                 {
                   "value": "medium",
-                  "label": "Medium"
+                  "label": "common.traitsDropdown.reasoningMedium"
                 },
                 {
                   "value": "high",
-                  "label": "High",
+                  "label": "common.traitsDropdown.reasoningHigh",
                   "isDefault": true
                 },
                 {
                   "value": "ultrathink",
-                  "label": "Ultrathink",
-                  "shortLabel": "Ultra"
+                  "label": "common.traitsDropdown.reasoningUltrathink",
+                  "shortLabel": "common.traitsDropdown.reasoningUltrathinkShort"
                 }
               ]
             },
@@ -1582,6 +1684,120 @@
       "supportsPlanMode": false,
       "models": [
         {
+          "id": "gpt-5.6-sol",
+          "displayName": "GPT-5.6 Sol",
+          "supportsImageInput": false,
+          "supportsAudioInput": false,
+          "supportsVideoInput": false,
+          "supportsPdfInput": false,
+          "supportsThinking": false,
+          "thinkingMode": "unsupported",
+          "reasoningOptions": [],
+          "composerOptions": [
+            {
+              "id": "effort",
+              "label": "common.traitsDropdown.reasoning",
+              "type": "select",
+              "options": [
+                {
+                  "value": "low",
+                  "label": "common.traitsDropdown.reasoningLow"
+                },
+                {
+                  "value": "medium",
+                  "label": "common.traitsDropdown.reasoningMedium"
+                },
+                {
+                  "value": "high",
+                  "label": "common.traitsDropdown.reasoningHigh",
+                  "isDefault": true
+                },
+                {
+                  "value": "xhigh",
+                  "label": "common.traitsDropdown.reasoningExtraHigh",
+                  "shortLabel": "common.traitsDropdown.reasoningExtraHighShort"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "gpt-5.6-terra",
+          "displayName": "GPT-5.6 Terra",
+          "supportsImageInput": false,
+          "supportsAudioInput": false,
+          "supportsVideoInput": false,
+          "supportsPdfInput": false,
+          "supportsThinking": false,
+          "thinkingMode": "unsupported",
+          "reasoningOptions": [],
+          "composerOptions": [
+            {
+              "id": "effort",
+              "label": "common.traitsDropdown.reasoning",
+              "type": "select",
+              "options": [
+                {
+                  "value": "low",
+                  "label": "common.traitsDropdown.reasoningLow"
+                },
+                {
+                  "value": "medium",
+                  "label": "common.traitsDropdown.reasoningMedium"
+                },
+                {
+                  "value": "high",
+                  "label": "common.traitsDropdown.reasoningHigh",
+                  "isDefault": true
+                },
+                {
+                  "value": "xhigh",
+                  "label": "common.traitsDropdown.reasoningExtraHigh",
+                  "shortLabel": "common.traitsDropdown.reasoningExtraHighShort"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "gpt-5.6-luna",
+          "displayName": "GPT-5.6 Luna",
+          "supportsImageInput": false,
+          "supportsAudioInput": false,
+          "supportsVideoInput": false,
+          "supportsPdfInput": false,
+          "supportsThinking": false,
+          "thinkingMode": "unsupported",
+          "reasoningOptions": [],
+          "composerOptions": [
+            {
+              "id": "effort",
+              "label": "common.traitsDropdown.reasoning",
+              "type": "select",
+              "options": [
+                {
+                  "value": "low",
+                  "label": "common.traitsDropdown.reasoningLow"
+                },
+                {
+                  "value": "medium",
+                  "label": "common.traitsDropdown.reasoningMedium"
+                },
+                {
+                  "value": "high",
+                  "label": "common.traitsDropdown.reasoningHigh",
+                  "isDefault": true
+                },
+                {
+                  "value": "xhigh",
+                  "label": "common.traitsDropdown.reasoningExtraHigh",
+                  "shortLabel": "common.traitsDropdown.reasoningExtraHighShort"
+                }
+              ]
+            }
+          ]
+        },
+        {
           "id": "gpt-5.4",
           "displayName": "GPT-5.4",
           "supportsImageInput": false,
@@ -1594,26 +1810,26 @@
           "composerOptions": [
             {
               "id": "effort",
-              "label": "Reasoning",
+              "label": "common.traitsDropdown.reasoning",
               "type": "select",
               "options": [
                 {
                   "value": "low",
-                  "label": "Low"
+                  "label": "common.traitsDropdown.reasoningLow"
                 },
                 {
                   "value": "medium",
-                  "label": "Medium"
+                  "label": "common.traitsDropdown.reasoningMedium"
                 },
                 {
                   "value": "high",
-                  "label": "High",
+                  "label": "common.traitsDropdown.reasoningHigh",
                   "isDefault": true
                 },
                 {
                   "value": "xhigh",
-                  "label": "Extra High",
-                  "shortLabel": "xHigh"
+                  "label": "common.traitsDropdown.reasoningExtraHigh",
+                  "shortLabel": "common.traitsDropdown.reasoningExtraHighShort"
                 }
               ]
             },
@@ -1638,21 +1854,21 @@
           "composerOptions": [
             {
               "id": "effort",
-              "label": "Reasoning",
+              "label": "common.traitsDropdown.reasoning",
               "type": "select",
               "options": [
                 {
                   "value": "low",
-                  "label": "Low"
+                  "label": "common.traitsDropdown.reasoningLow"
                 },
                 {
                   "value": "medium",
-                  "label": "Medium",
+                  "label": "common.traitsDropdown.reasoningMedium",
                   "isDefault": true
                 },
                 {
                   "value": "high",
-                  "label": "High"
+                  "label": "common.traitsDropdown.reasoningHigh"
                 }
               ]
             },
@@ -1677,26 +1893,26 @@
           "composerOptions": [
             {
               "id": "effort",
-              "label": "Reasoning",
+              "label": "common.traitsDropdown.reasoning",
               "type": "select",
               "options": [
                 {
                   "value": "low",
-                  "label": "Low"
+                  "label": "common.traitsDropdown.reasoningLow"
                 },
                 {
                   "value": "medium",
-                  "label": "Medium"
+                  "label": "common.traitsDropdown.reasoningMedium"
                 },
                 {
                   "value": "high",
-                  "label": "High",
+                  "label": "common.traitsDropdown.reasoningHigh",
                   "isDefault": true
                 },
                 {
                   "value": "xhigh",
-                  "label": "Extra High",
-                  "shortLabel": "xHigh"
+                  "label": "common.traitsDropdown.reasoningExtraHigh",
+                  "shortLabel": "common.traitsDropdown.reasoningExtraHighShort"
                 }
               ]
             },
@@ -1721,21 +1937,21 @@
           "composerOptions": [
             {
               "id": "effort",
-              "label": "Reasoning",
+              "label": "common.traitsDropdown.reasoning",
               "type": "select",
               "options": [
                 {
                   "value": "low",
-                  "label": "Low"
+                  "label": "common.traitsDropdown.reasoningLow"
                 },
                 {
                   "value": "medium",
-                  "label": "Medium",
+                  "label": "common.traitsDropdown.reasoningMedium",
                   "isDefault": true
                 },
                 {
                   "value": "high",
-                  "label": "High"
+                  "label": "common.traitsDropdown.reasoningHigh"
                 }
               ]
             },
@@ -1760,26 +1976,26 @@
           "composerOptions": [
             {
               "id": "effort",
-              "label": "Reasoning",
+              "label": "common.traitsDropdown.reasoning",
               "type": "select",
               "options": [
                 {
                   "value": "low",
-                  "label": "Low"
+                  "label": "common.traitsDropdown.reasoningLow"
                 },
                 {
                   "value": "medium",
-                  "label": "Medium"
+                  "label": "common.traitsDropdown.reasoningMedium"
                 },
                 {
                   "value": "high",
-                  "label": "High",
+                  "label": "common.traitsDropdown.reasoningHigh",
                   "isDefault": true
                 },
                 {
                   "value": "xhigh",
-                  "label": "Extra High",
-                  "shortLabel": "xHigh"
+                  "label": "common.traitsDropdown.reasoningExtraHigh",
+                  "shortLabel": "common.traitsDropdown.reasoningExtraHighShort"
                 }
               ]
             },
@@ -1804,26 +2020,26 @@
           "composerOptions": [
             {
               "id": "effort",
-              "label": "Reasoning",
+              "label": "common.traitsDropdown.reasoning",
               "type": "select",
               "options": [
                 {
                   "value": "low",
-                  "label": "Low"
+                  "label": "common.traitsDropdown.reasoningLow"
                 },
                 {
                   "value": "medium",
-                  "label": "Medium"
+                  "label": "common.traitsDropdown.reasoningMedium"
                 },
                 {
                   "value": "high",
-                  "label": "High",
+                  "label": "common.traitsDropdown.reasoningHigh",
                   "isDefault": true
                 },
                 {
                   "value": "xhigh",
-                  "label": "Extra High",
-                  "shortLabel": "xHigh"
+                  "label": "common.traitsDropdown.reasoningExtraHigh",
+                  "shortLabel": "common.traitsDropdown.reasoningExtraHighShort"
                 }
               ]
             }
@@ -1842,20 +2058,20 @@
           "composerOptions": [
             {
               "id": "effort",
-              "label": "Reasoning",
+              "label": "common.traitsDropdown.reasoning",
               "type": "select",
               "options": [
                 {
                   "value": "low",
-                  "label": "Low"
+                  "label": "common.traitsDropdown.reasoningLow"
                 },
                 {
                   "value": "medium",
-                  "label": "Medium"
+                  "label": "common.traitsDropdown.reasoningMedium"
                 },
                 {
                   "value": "high",
-                  "label": "High",
+                  "label": "common.traitsDropdown.reasoningHigh",
                   "isDefault": true
                 }
               ]
@@ -1875,21 +2091,21 @@
           "composerOptions": [
             {
               "id": "effort",
-              "label": "Reasoning",
+              "label": "common.traitsDropdown.reasoning",
               "type": "select",
               "options": [
                 {
                   "value": "low",
-                  "label": "Low"
+                  "label": "common.traitsDropdown.reasoningLow"
                 },
                 {
                   "value": "medium",
-                  "label": "Medium",
+                  "label": "common.traitsDropdown.reasoningMedium",
                   "isDefault": true
                 },
                 {
                   "value": "high",
-                  "label": "High"
+                  "label": "common.traitsDropdown.reasoningHigh"
                 }
               ]
             }
@@ -1904,6 +2120,204 @@
       "supportsPlanMode": false,
       "models": [
         {
+          "id": "openrouter/openai/gpt-5.6-luna",
+          "displayName": "OpenAI GPT-5.6 Luna",
+          "supportsImageInput": false,
+          "supportsAudioInput": false,
+          "supportsVideoInput": false,
+          "supportsPdfInput": false,
+          "supportsThinking": false,
+          "thinkingMode": "unsupported",
+          "reasoningOptions": [],
+          "composerOptions": [
+            {
+              "id": "effort",
+              "label": "common.traitsDropdown.reasoning",
+              "type": "select",
+              "options": [
+                {
+                  "value": "low",
+                  "label": "common.traitsDropdown.reasoningLow"
+                },
+                {
+                  "value": "medium",
+                  "label": "common.traitsDropdown.reasoningMedium",
+                  "isDefault": true
+                },
+                {
+                  "value": "high",
+                  "label": "common.traitsDropdown.reasoningHigh"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "openrouter/openai/gpt-5.6-luna-pro",
+          "displayName": "OpenAI GPT-5.6 Luna Pro",
+          "supportsImageInput": false,
+          "supportsAudioInput": false,
+          "supportsVideoInput": false,
+          "supportsPdfInput": false,
+          "supportsThinking": false,
+          "thinkingMode": "unsupported",
+          "reasoningOptions": [],
+          "composerOptions": [
+            {
+              "id": "effort",
+              "label": "common.traitsDropdown.reasoning",
+              "type": "select",
+              "options": [
+                {
+                  "value": "low",
+                  "label": "common.traitsDropdown.reasoningLow"
+                },
+                {
+                  "value": "medium",
+                  "label": "common.traitsDropdown.reasoningMedium",
+                  "isDefault": true
+                },
+                {
+                  "value": "high",
+                  "label": "common.traitsDropdown.reasoningHigh"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "openrouter/openai/gpt-5.6-sol",
+          "displayName": "OpenAI GPT-5.6 Sol",
+          "supportsImageInput": false,
+          "supportsAudioInput": false,
+          "supportsVideoInput": false,
+          "supportsPdfInput": false,
+          "supportsThinking": false,
+          "thinkingMode": "unsupported",
+          "reasoningOptions": [],
+          "composerOptions": [
+            {
+              "id": "effort",
+              "label": "common.traitsDropdown.reasoning",
+              "type": "select",
+              "options": [
+                {
+                  "value": "low",
+                  "label": "common.traitsDropdown.reasoningLow"
+                },
+                {
+                  "value": "medium",
+                  "label": "common.traitsDropdown.reasoningMedium",
+                  "isDefault": true
+                },
+                {
+                  "value": "high",
+                  "label": "common.traitsDropdown.reasoningHigh"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "openrouter/openai/gpt-5.6-sol-pro",
+          "displayName": "OpenAI GPT-5.6 Sol Pro",
+          "supportsImageInput": false,
+          "supportsAudioInput": false,
+          "supportsVideoInput": false,
+          "supportsPdfInput": false,
+          "supportsThinking": false,
+          "thinkingMode": "unsupported",
+          "reasoningOptions": [],
+          "composerOptions": [
+            {
+              "id": "effort",
+              "label": "common.traitsDropdown.reasoning",
+              "type": "select",
+              "options": [
+                {
+                  "value": "low",
+                  "label": "common.traitsDropdown.reasoningLow"
+                },
+                {
+                  "value": "medium",
+                  "label": "common.traitsDropdown.reasoningMedium",
+                  "isDefault": true
+                },
+                {
+                  "value": "high",
+                  "label": "common.traitsDropdown.reasoningHigh"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "openrouter/openai/gpt-5.6-terra",
+          "displayName": "OpenAI GPT-5.6 Terra",
+          "supportsImageInput": false,
+          "supportsAudioInput": false,
+          "supportsVideoInput": false,
+          "supportsPdfInput": false,
+          "supportsThinking": false,
+          "thinkingMode": "unsupported",
+          "reasoningOptions": [],
+          "composerOptions": [
+            {
+              "id": "effort",
+              "label": "common.traitsDropdown.reasoning",
+              "type": "select",
+              "options": [
+                {
+                  "value": "low",
+                  "label": "common.traitsDropdown.reasoningLow"
+                },
+                {
+                  "value": "medium",
+                  "label": "common.traitsDropdown.reasoningMedium",
+                  "isDefault": true
+                },
+                {
+                  "value": "high",
+                  "label": "common.traitsDropdown.reasoningHigh"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "openrouter/openai/gpt-5.6-terra-pro",
+          "displayName": "OpenAI GPT-5.6 Terra Pro",
+          "supportsImageInput": false,
+          "supportsAudioInput": false,
+          "supportsVideoInput": false,
+          "supportsPdfInput": false,
+          "supportsThinking": false,
+          "thinkingMode": "unsupported",
+          "reasoningOptions": [],
+          "composerOptions": [
+            {
+              "id": "effort",
+              "label": "common.traitsDropdown.reasoning",
+              "type": "select",
+              "options": [
+                {
+                  "value": "low",
+                  "label": "common.traitsDropdown.reasoningLow"
+                },
+                {
+                  "value": "medium",
+                  "label": "common.traitsDropdown.reasoningMedium",
+                  "isDefault": true
+                },
+                {
+                  "value": "high",
+                  "label": "common.traitsDropdown.reasoningHigh"
+                }
+              ]
+            }
+          ]
+        },
+        {
           "id": "openai/gpt-5.5",
           "displayName": "OpenAI GPT-5.5",
           "supportsImageInput": false,
@@ -1916,21 +2330,21 @@
           "composerOptions": [
             {
               "id": "effort",
-              "label": "Reasoning",
+              "label": "common.traitsDropdown.reasoning",
               "type": "select",
               "options": [
                 {
                   "value": "low",
-                  "label": "Low"
+                  "label": "common.traitsDropdown.reasoningLow"
                 },
                 {
                   "value": "medium",
-                  "label": "Medium",
+                  "label": "common.traitsDropdown.reasoningMedium",
                   "isDefault": true
                 },
                 {
                   "value": "high",
-                  "label": "High"
+                  "label": "common.traitsDropdown.reasoningHigh"
                 }
               ]
             }
@@ -1949,21 +2363,21 @@
           "composerOptions": [
             {
               "id": "effort",
-              "label": "Reasoning",
+              "label": "common.traitsDropdown.reasoning",
               "type": "select",
               "options": [
                 {
                   "value": "low",
-                  "label": "Low"
+                  "label": "common.traitsDropdown.reasoningLow"
                 },
                 {
                   "value": "medium",
-                  "label": "Medium",
+                  "label": "common.traitsDropdown.reasoningMedium",
                   "isDefault": true
                 },
                 {
                   "value": "high",
-                  "label": "High"
+                  "label": "common.traitsDropdown.reasoningHigh"
                 }
               ]
             }
@@ -1982,20 +2396,20 @@
           "composerOptions": [
             {
               "id": "effort",
-              "label": "Reasoning",
+              "label": "common.traitsDropdown.reasoning",
               "type": "select",
               "options": [
                 {
                   "value": "low",
-                  "label": "Low"
+                  "label": "common.traitsDropdown.reasoningLow"
                 },
                 {
                   "value": "medium",
-                  "label": "Medium"
+                  "label": "common.traitsDropdown.reasoningMedium"
                 },
                 {
                   "value": "high",
-                  "label": "High",
+                  "label": "common.traitsDropdown.reasoningHigh",
                   "isDefault": true
                 }
               ]
@@ -2015,21 +2429,21 @@
           "composerOptions": [
             {
               "id": "effort",
-              "label": "Reasoning",
+              "label": "common.traitsDropdown.reasoning",
               "type": "select",
               "options": [
                 {
                   "value": "low",
-                  "label": "Low"
+                  "label": "common.traitsDropdown.reasoningLow"
                 },
                 {
                   "value": "medium",
-                  "label": "Medium",
+                  "label": "common.traitsDropdown.reasoningMedium",
                   "isDefault": true
                 },
                 {
                   "value": "high",
-                  "label": "High"
+                  "label": "common.traitsDropdown.reasoningHigh"
                 }
               ]
             }
@@ -2048,21 +2462,21 @@
           "composerOptions": [
             {
               "id": "effort",
-              "label": "Reasoning",
+              "label": "common.traitsDropdown.reasoning",
               "type": "select",
               "options": [
                 {
                   "value": "low",
-                  "label": "Low"
+                  "label": "common.traitsDropdown.reasoningLow"
                 },
                 {
                   "value": "medium",
-                  "label": "Medium",
+                  "label": "common.traitsDropdown.reasoningMedium",
                   "isDefault": true
                 },
                 {
                   "value": "high",
-                  "label": "High"
+                  "label": "common.traitsDropdown.reasoningHigh"
                 }
               ]
             }
@@ -2081,21 +2495,21 @@
           "composerOptions": [
             {
               "id": "effort",
-              "label": "Reasoning",
+              "label": "common.traitsDropdown.reasoning",
               "type": "select",
               "options": [
                 {
                   "value": "low",
-                  "label": "Low"
+                  "label": "common.traitsDropdown.reasoningLow"
                 },
                 {
                   "value": "medium",
-                  "label": "Medium",
+                  "label": "common.traitsDropdown.reasoningMedium",
                   "isDefault": true
                 },
                 {
                   "value": "high",
-                  "label": "High"
+                  "label": "common.traitsDropdown.reasoningHigh"
                 }
               ]
             }
@@ -2114,21 +2528,59 @@
           "composerOptions": [
             {
               "id": "effort",
-              "label": "Reasoning",
+              "label": "common.traitsDropdown.reasoning",
               "type": "select",
               "options": [
                 {
                   "value": "low",
-                  "label": "Low"
+                  "label": "common.traitsDropdown.reasoningLow"
                 },
                 {
                   "value": "medium",
-                  "label": "Medium",
+                  "label": "common.traitsDropdown.reasoningMedium",
                   "isDefault": true
                 },
                 {
                   "value": "high",
-                  "label": "High"
+                  "label": "common.traitsDropdown.reasoningHigh"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "openrouter/anthropic/claude-opus-5",
+          "displayName": "Anthropic Claude Opus 5",
+          "supportsImageInput": false,
+          "supportsAudioInput": false,
+          "supportsVideoInput": false,
+          "supportsPdfInput": false,
+          "supportsThinking": false,
+          "thinkingMode": "unsupported",
+          "reasoningOptions": [],
+          "composerOptions": [
+            {
+              "id": "effort",
+              "label": "common.traitsDropdown.reasoning",
+              "type": "select",
+              "options": [
+                {
+                  "value": "low",
+                  "label": "common.traitsDropdown.reasoningLow"
+                },
+                {
+                  "value": "medium",
+                  "label": "common.traitsDropdown.reasoningMedium"
+                },
+                {
+                  "value": "high",
+                  "label": "common.traitsDropdown.reasoningHigh"
+                },
+                {
+                  "value": "xhigh",
+                  "label": "common.traitsDropdown.reasoningExtraHigh",
+                  "isDefault": true,
+                  "shortLabel": "common.traitsDropdown.reasoningExtraHighShort"
                 }
               ]
             }
@@ -2147,20 +2599,20 @@
           "composerOptions": [
             {
               "id": "effort",
-              "label": "Reasoning",
+              "label": "common.traitsDropdown.reasoning",
               "type": "select",
               "options": [
                 {
                   "value": "low",
-                  "label": "Low"
+                  "label": "common.traitsDropdown.reasoningLow"
                 },
                 {
                   "value": "medium",
-                  "label": "Medium"
+                  "label": "common.traitsDropdown.reasoningMedium"
                 },
                 {
                   "value": "high",
-                  "label": "High",
+                  "label": "common.traitsDropdown.reasoningHigh",
                   "isDefault": true
                 }
               ]
@@ -2180,20 +2632,20 @@
           "composerOptions": [
             {
               "id": "effort",
-              "label": "Reasoning",
+              "label": "common.traitsDropdown.reasoning",
               "type": "select",
               "options": [
                 {
                   "value": "low",
-                  "label": "Low"
+                  "label": "common.traitsDropdown.reasoningLow"
                 },
                 {
                   "value": "medium",
-                  "label": "Medium"
+                  "label": "common.traitsDropdown.reasoningMedium"
                 },
                 {
                   "value": "high",
-                  "label": "High",
+                  "label": "common.traitsDropdown.reasoningHigh",
                   "isDefault": true
                 }
               ]
@@ -2213,26 +2665,26 @@
           "composerOptions": [
             {
               "id": "effort",
-              "label": "Reasoning",
+              "label": "common.traitsDropdown.reasoning",
               "type": "select",
               "options": [
                 {
                   "value": "low",
-                  "label": "Low"
+                  "label": "common.traitsDropdown.reasoningLow"
                 },
                 {
                   "value": "medium",
-                  "label": "Medium"
+                  "label": "common.traitsDropdown.reasoningMedium"
                 },
                 {
                   "value": "high",
-                  "label": "High"
+                  "label": "common.traitsDropdown.reasoningHigh"
                 },
                 {
                   "value": "xhigh",
-                  "label": "Extra High",
+                  "label": "common.traitsDropdown.reasoningExtraHigh",
                   "isDefault": true,
-                  "shortLabel": "xHigh"
+                  "shortLabel": "common.traitsDropdown.reasoningExtraHighShort"
                 }
               ]
             }
@@ -2251,20 +2703,20 @@
           "composerOptions": [
             {
               "id": "effort",
-              "label": "Reasoning",
+              "label": "common.traitsDropdown.reasoning",
               "type": "select",
               "options": [
                 {
                   "value": "low",
-                  "label": "Low"
+                  "label": "common.traitsDropdown.reasoningLow"
                 },
                 {
                   "value": "medium",
-                  "label": "Medium"
+                  "label": "common.traitsDropdown.reasoningMedium"
                 },
                 {
                   "value": "high",
-                  "label": "High",
+                  "label": "common.traitsDropdown.reasoningHigh",
                   "isDefault": true
                 }
               ]
@@ -2284,26 +2736,26 @@
           "composerOptions": [
             {
               "id": "effort",
-              "label": "Reasoning",
+              "label": "common.traitsDropdown.reasoning",
               "type": "select",
               "options": [
                 {
                   "value": "low",
-                  "label": "Low"
+                  "label": "common.traitsDropdown.reasoningLow"
                 },
                 {
                   "value": "medium",
-                  "label": "Medium"
+                  "label": "common.traitsDropdown.reasoningMedium"
                 },
                 {
                   "value": "high",
-                  "label": "High"
+                  "label": "common.traitsDropdown.reasoningHigh"
                 },
                 {
                   "value": "xhigh",
-                  "label": "Extra High",
+                  "label": "common.traitsDropdown.reasoningExtraHigh",
                   "isDefault": true,
-                  "shortLabel": "xHigh"
+                  "shortLabel": "common.traitsDropdown.reasoningExtraHighShort"
                 }
               ]
             }
@@ -2322,20 +2774,20 @@
           "composerOptions": [
             {
               "id": "effort",
-              "label": "Reasoning",
+              "label": "common.traitsDropdown.reasoning",
               "type": "select",
               "options": [
                 {
                   "value": "low",
-                  "label": "Low"
+                  "label": "common.traitsDropdown.reasoningLow"
                 },
                 {
                   "value": "medium",
-                  "label": "Medium"
+                  "label": "common.traitsDropdown.reasoningMedium"
                 },
                 {
                   "value": "high",
-                  "label": "High",
+                  "label": "common.traitsDropdown.reasoningHigh",
                   "isDefault": true
                 }
               ]
@@ -2355,21 +2807,21 @@
           "composerOptions": [
             {
               "id": "effort",
-              "label": "Reasoning",
+              "label": "common.traitsDropdown.reasoning",
               "type": "select",
               "options": [
                 {
                   "value": "low",
-                  "label": "Low"
+                  "label": "common.traitsDropdown.reasoningLow"
                 },
                 {
                   "value": "medium",
-                  "label": "Medium",
+                  "label": "common.traitsDropdown.reasoningMedium",
                   "isDefault": true
                 },
                 {
                   "value": "high",
-                  "label": "High"
+                  "label": "common.traitsDropdown.reasoningHigh"
                 }
               ]
             }
@@ -2384,7 +2836,7 @@
       "supportsPlanMode": false,
       "models": [
         {
-          "id": "default",
+          "id": "auto",
           "displayName": "Auto",
           "supportsImageInput": false,
           "supportsAudioInput": false,
@@ -2408,21 +2860,59 @@
           "composerOptions": [
             {
               "id": "effort",
-              "label": "Reasoning",
+              "label": "common.traitsDropdown.reasoning",
               "type": "select",
               "options": [
                 {
                   "value": "low",
-                  "label": "Low"
+                  "label": "common.traitsDropdown.reasoningLow"
                 },
                 {
                   "value": "medium",
-                  "label": "Medium"
+                  "label": "common.traitsDropdown.reasoningMedium"
                 },
                 {
                   "value": "high",
-                  "label": "High",
+                  "label": "common.traitsDropdown.reasoningHigh",
                   "isDefault": true
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "opus-5",
+          "displayName": "Opus 5",
+          "supportsImageInput": false,
+          "supportsAudioInput": false,
+          "supportsVideoInput": false,
+          "supportsPdfInput": false,
+          "supportsThinking": false,
+          "thinkingMode": "unsupported",
+          "reasoningOptions": [],
+          "composerOptions": [
+            {
+              "id": "effort",
+              "label": "common.traitsDropdown.reasoning",
+              "type": "select",
+              "options": [
+                {
+                  "value": "low",
+                  "label": "common.traitsDropdown.reasoningLow"
+                },
+                {
+                  "value": "medium",
+                  "label": "common.traitsDropdown.reasoningMedium"
+                },
+                {
+                  "value": "high",
+                  "label": "common.traitsDropdown.reasoningHigh",
+                  "isDefault": true
+                },
+                {
+                  "value": "xhigh",
+                  "label": "common.traitsDropdown.reasoningExtraHigh",
+                  "shortLabel": "common.traitsDropdown.reasoningExtraHighShort"
                 }
               ]
             }
@@ -2441,26 +2931,64 @@
           "composerOptions": [
             {
               "id": "effort",
-              "label": "Reasoning",
+              "label": "common.traitsDropdown.reasoning",
               "type": "select",
               "options": [
                 {
                   "value": "low",
-                  "label": "Low"
+                  "label": "common.traitsDropdown.reasoningLow"
                 },
                 {
                   "value": "medium",
-                  "label": "Medium"
+                  "label": "common.traitsDropdown.reasoningMedium"
                 },
                 {
                   "value": "high",
-                  "label": "High",
+                  "label": "common.traitsDropdown.reasoningHigh",
                   "isDefault": true
                 },
                 {
                   "value": "xhigh",
-                  "label": "Extra High",
-                  "shortLabel": "xHigh"
+                  "label": "common.traitsDropdown.reasoningExtraHigh",
+                  "shortLabel": "common.traitsDropdown.reasoningExtraHighShort"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "gpt-5.6",
+          "displayName": "GPT-5.6",
+          "supportsImageInput": false,
+          "supportsAudioInput": false,
+          "supportsVideoInput": false,
+          "supportsPdfInput": false,
+          "supportsThinking": false,
+          "thinkingMode": "unsupported",
+          "reasoningOptions": [],
+          "composerOptions": [
+            {
+              "id": "effort",
+              "label": "common.traitsDropdown.reasoning",
+              "type": "select",
+              "options": [
+                {
+                  "value": "low",
+                  "label": "common.traitsDropdown.reasoningLow"
+                },
+                {
+                  "value": "medium",
+                  "label": "common.traitsDropdown.reasoningMedium"
+                },
+                {
+                  "value": "high",
+                  "label": "common.traitsDropdown.reasoningHigh",
+                  "isDefault": true
+                },
+                {
+                  "value": "xhigh",
+                  "label": "common.traitsDropdown.reasoningExtraHigh",
+                  "shortLabel": "common.traitsDropdown.reasoningExtraHighShort"
                 }
               ]
             }
@@ -2479,21 +3007,21 @@
           "composerOptions": [
             {
               "id": "effort",
-              "label": "Reasoning",
+              "label": "common.traitsDropdown.reasoning",
               "type": "select",
               "options": [
                 {
                   "value": "low",
-                  "label": "Low"
+                  "label": "common.traitsDropdown.reasoningLow"
                 },
                 {
                   "value": "medium",
-                  "label": "Medium",
+                  "label": "common.traitsDropdown.reasoningMedium",
                   "isDefault": true
                 },
                 {
                   "value": "high",
-                  "label": "High"
+                  "label": "common.traitsDropdown.reasoningHigh"
                 }
               ]
             }
@@ -2512,20 +3040,20 @@
           "composerOptions": [
             {
               "id": "effort",
-              "label": "Reasoning",
+              "label": "common.traitsDropdown.reasoning",
               "type": "select",
               "options": [
                 {
                   "value": "low",
-                  "label": "Low"
+                  "label": "common.traitsDropdown.reasoningLow"
                 },
                 {
                   "value": "medium",
-                  "label": "Medium"
+                  "label": "common.traitsDropdown.reasoningMedium"
                 },
                 {
                   "value": "high",
-                  "label": "High",
+                  "label": "common.traitsDropdown.reasoningHigh",
                   "isDefault": true
                 }
               ]
@@ -2545,20 +3073,20 @@
           "composerOptions": [
             {
               "id": "effort",
-              "label": "Reasoning",
+              "label": "common.traitsDropdown.reasoning",
               "type": "select",
               "options": [
                 {
                   "value": "low",
-                  "label": "Low"
+                  "label": "common.traitsDropdown.reasoningLow"
                 },
                 {
                   "value": "medium",
-                  "label": "Medium"
+                  "label": "common.traitsDropdown.reasoningMedium"
                 },
                 {
                   "value": "high",
-                  "label": "High",
+                  "label": "common.traitsDropdown.reasoningHigh",
                   "isDefault": true
                 }
               ]
@@ -2578,21 +3106,21 @@
           "composerOptions": [
             {
               "id": "effort",
-              "label": "Reasoning",
+              "label": "common.traitsDropdown.reasoning",
               "type": "select",
               "options": [
                 {
                   "value": "low",
-                  "label": "Low"
+                  "label": "common.traitsDropdown.reasoningLow"
                 },
                 {
                   "value": "medium",
-                  "label": "Medium",
+                  "label": "common.traitsDropdown.reasoningMedium",
                   "isDefault": true
                 },
                 {
                   "value": "high",
-                  "label": "High"
+                  "label": "common.traitsDropdown.reasoningHigh"
                 }
               ]
             }
@@ -2611,21 +3139,21 @@
           "composerOptions": [
             {
               "id": "effort",
-              "label": "Reasoning",
+              "label": "common.traitsDropdown.reasoning",
               "type": "select",
               "options": [
                 {
                   "value": "low",
-                  "label": "Low"
+                  "label": "common.traitsDropdown.reasoningLow"
                 },
                 {
                   "value": "medium",
-                  "label": "Medium",
+                  "label": "common.traitsDropdown.reasoningMedium",
                   "isDefault": true
                 },
                 {
                   "value": "high",
-                  "label": "High"
+                  "label": "common.traitsDropdown.reasoningHigh"
                 }
               ]
             }
@@ -2644,26 +3172,26 @@
           "composerOptions": [
             {
               "id": "effort",
-              "label": "Reasoning",
+              "label": "common.traitsDropdown.reasoning",
               "type": "select",
               "options": [
                 {
                   "value": "low",
-                  "label": "Low"
+                  "label": "common.traitsDropdown.reasoningLow"
                 },
                 {
                   "value": "medium",
-                  "label": "Medium"
+                  "label": "common.traitsDropdown.reasoningMedium"
                 },
                 {
                   "value": "high",
-                  "label": "High"
+                  "label": "common.traitsDropdown.reasoningHigh"
                 },
                 {
                   "value": "xhigh",
-                  "label": "Extra High",
+                  "label": "common.traitsDropdown.reasoningExtraHigh",
                   "isDefault": true,
-                  "shortLabel": "xHigh"
+                  "shortLabel": "common.traitsDropdown.reasoningExtraHighShort"
                 }
               ]
             }

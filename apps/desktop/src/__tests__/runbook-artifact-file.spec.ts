@@ -10,7 +10,7 @@ const artifact: DesktopRunbookExportArtifactV1 = {
   version: 1,
   exportedAt: "2026-05-31T00:00:00.000Z",
   exportedBy: {
-    product: "superterminal",
+    product: "bitsentry-desktop",
     runtime: "desktop",
   },
   runbooks: [

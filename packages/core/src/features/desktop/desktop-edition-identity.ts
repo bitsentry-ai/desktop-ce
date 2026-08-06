@@ -8,16 +8,14 @@ export interface DesktopEditionIdentity {
 
 const DESKTOP_EDITION_IDENTITY: Record<DesktopEdition, DesktopEditionIdentity> = {
   ce: {
-    appDataName: 'SuperTerminal CE',
+    appDataName: 'BitSentry Desktop',
     oauthProtocolClientId: 'bitsentry-desktop-ce',
-    productName: 'SuperTerminal',
+    productName: 'BitSentry Desktop',
   },
   pro: {
-    // Keep the historical app-data name so existing Pro installs continue to
-    // read the same userData directory and encrypted secret store.
-    appDataName: 'SuperTerminal',
+    appDataName: 'BitSentry Desktop Pro',
     oauthProtocolClientId: 'bitsentry-desktop',
-    productName: 'SuperTerminal Pro',
+    productName: 'BitSentry Desktop Pro',
   },
 }
 

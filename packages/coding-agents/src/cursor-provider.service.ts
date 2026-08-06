@@ -10,6 +10,7 @@ import {
   type AccessLevel,
 } from './composer.js'
 import { getHostTools } from '@bitsentry-ce/core/features/agent-runtime'
+import { resolveCatalogModelId } from '@bitsentry-ce/components/llm/modelCatalog'
 import { prependRunbookOnlyScope } from './runbook-only-scope.js'
 
 export interface CodingAgentDebugRecorder {
@@ -783,7 +784,7 @@ async function initializeCursorClient(
       },
       clientInfo: {
         name: 'bitsentry_desktop',
-        title: 'BitSentry SuperTerminal',
+        title: 'BitSentry Desktop',
         version: '0.1.0',
       },
     }),
@@ -813,6 +814,7 @@ async function setCursorModel(
   model: string | undefined,
 ): Promise<void> {
   if (model === undefined || model === '') return
+  const resolvedModel = resolveCatalogModelId('cursor', model) ?? model
 
   const modelConfigOptionId = getModelConfigOptionId(sessionResult)
   if (modelConfigOptionId !== undefined) {
@@ -821,7 +823,7 @@ async function setCursorModel(
         client.sendRequest('session/set_config_option', {
           sessionId,
           configId: modelConfigOptionId,
-          value: model,
+          value: resolvedModel,
         }),
         CURSOR_SETUP_TIMEOUT_MS,
         'Cursor ACP session/set_config_option',
@@ -834,7 +836,7 @@ async function setCursorModel(
 
   try {
     await withTimeout(
-      client.sendRequest('session/set_model', { sessionId, modelId: model }),
+      client.sendRequest('session/set_model', { sessionId, modelId: resolvedModel }),
       CURSOR_SETUP_TIMEOUT_MS,
       'Cursor ACP session/set_model',
     )
@@ -848,7 +850,7 @@ async function setCursorModel(
       client.sendRequest('session/set_config_option', {
         sessionId,
         configId: 'model',
-        value: model,
+        value: resolvedModel,
       }),
       CURSOR_SETUP_TIMEOUT_MS,
       'Cursor ACP session/set_config_option',

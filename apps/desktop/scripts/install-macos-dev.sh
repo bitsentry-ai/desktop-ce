@@ -4,8 +4,8 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 APP_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
-SOURCE_APP="${1:-${APP_ROOT}/release/build/mac-arm64/SuperTerminal.app}"
-DEST_APP="${2:-/Applications/SuperTerminal.app}"
+SOURCE_APP="${1:-${APP_ROOT}/release/build/mac-arm64/BitSentry-Desktop.app}"
+DEST_APP="${2:-/Applications/BitSentry-Desktop.app}"
 
 if [ ! -d "${SOURCE_APP}" ]; then
   echo "Source app bundle not found: ${SOURCE_APP}"

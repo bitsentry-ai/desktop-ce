@@ -55,6 +55,8 @@ export interface ModelCatalogEntry {
   supportsThinking: boolean
   thinkingMode: ModelThinkingMode
   reasoningOptions: ModelReasoningOption[]
+  /** Deliberate default used when composer options are derived from reasoningOptions. */
+  defaultReasoningOption?: ModelReasoningOption
   /**
    * Composer toolbar option descriptors. When present, the toolbar renders
    * controls for each descriptor (effort selector, context window, fast mode,
@@ -100,6 +102,23 @@ const HIDDEN_MODEL_IDS_BY_PROVIDER: Partial<Record<
   // offer them as selectable models.
   codex: new Set(['gpt-5.2-codex', 'gpt-5.1-codex-mini']),
 }
+const LEGACY_CATALOG_MODEL_ID_ALIASES: Partial<Record<
+  ModelCatalogProviderKey,
+  Readonly<Record<string, string>>
+>> = {
+  // Cursor ACP uses `auto`; older Desktop CE settings stored this as `default`.
+  cursor: { default: 'auto' },
+}
+
+function resolveLegacyCatalogModelId(
+  providerKey: ModelCatalogProviderKey,
+  modelId: string,
+): string {
+  const normalizedModelId = normalizeValue(modelId)
+  return LEGACY_CATALOG_MODEL_ID_ALIASES[providerKey]?.[normalizedModelId]
+    ?? normalizedModelId
+}
+
 const CONTEXT_WINDOW_OPTION_ID = 'contextWindow'
 const MODEL_CONTEXT_WINDOW_LIMIT_FALLBACKS: Readonly<Record<string, number>> = {
   // Official OpenAI model docs show 1M for gpt-5.4 and 400K for gpt-5.4-mini.
@@ -111,6 +130,66 @@ const MODEL_CONTEXT_WINDOW_LIMIT_FALLBACKS: Readonly<Record<string, number>> = {
   'gpt-5.3-codex-spark': 400_000,
   'gpt-5.2': 400_000,
 }
+const CLI_FALLBACK_EFFORT_OPTIONS: Partial<
+  Record<ModelCatalogProviderKey, ComposerSelectOption>
+> = {
+  claude_code: {
+    id: 'effort',
+    label: 'common.traitsDropdown.reasoning',
+    type: 'select',
+    options: [
+      { value: 'low', label: 'common.traitsDropdown.reasoningLow' },
+      { value: 'medium', label: 'common.traitsDropdown.reasoningMedium' },
+      { value: 'high', label: 'common.traitsDropdown.reasoningHigh', isDefault: true },
+      {
+        value: 'xhigh',
+        label: 'common.traitsDropdown.reasoningExtraHigh',
+        shortLabel: 'common.traitsDropdown.reasoningExtraHighShort',
+      },
+      { value: 'max', label: 'common.traitsDropdown.reasoningMax' },
+      {
+        value: 'ultrathink',
+        label: 'common.traitsDropdown.reasoningUltrathink',
+        shortLabel: 'common.traitsDropdown.reasoningUltrathinkShort',
+      },
+    ],
+  },
+  codex: {
+    id: 'effort',
+    label: 'common.traitsDropdown.reasoning',
+    type: 'select',
+    options: [
+      { value: 'low', label: 'common.traitsDropdown.reasoningLow' },
+      { value: 'medium', label: 'common.traitsDropdown.reasoningMedium' },
+      { value: 'high', label: 'common.traitsDropdown.reasoningHigh', isDefault: true },
+      {
+        value: 'xhigh',
+        label: 'common.traitsDropdown.reasoningExtraHigh',
+        shortLabel: 'common.traitsDropdown.reasoningExtraHighShort',
+      },
+    ],
+  },
+  opencode: {
+    id: 'effort',
+    label: 'common.traitsDropdown.reasoning',
+    type: 'select',
+    options: [
+      { value: 'low', label: 'common.traitsDropdown.reasoningLow' },
+      { value: 'medium', label: 'common.traitsDropdown.reasoningMedium', isDefault: true },
+      { value: 'high', label: 'common.traitsDropdown.reasoningHigh' },
+    ],
+  },
+  cursor: {
+    id: 'effort',
+    label: 'common.traitsDropdown.reasoning',
+    type: 'select',
+    options: [
+      { value: 'low', label: 'common.traitsDropdown.reasoningLow' },
+      { value: 'medium', label: 'common.traitsDropdown.reasoningMedium' },
+      { value: 'high', label: 'common.traitsDropdown.reasoningHigh', isDefault: true },
+    ],
+  },
+}
 
 export function filterSelectableModelIds(
   providerKey: ModelCatalogProviderKey,
@@ -118,20 +197,24 @@ export function filterSelectableModelIds(
 ): string[] {
   const hiddenModelIds = HIDDEN_MODEL_IDS_BY_PROVIDER[providerKey]
   const seen = new Set<string>()
+  const filtered: string[] = []
 
-  return modelIds.filter((modelId) => {
+  for (const modelId of modelIds) {
     const normalizedModelId = normalizeValue(modelId)
+    const resolvedModelId = resolveLegacyCatalogModelId(providerKey, modelId)
     if (
-      normalizedModelId.length === 0 ||
-      hiddenModelIds?.has(normalizedModelId) === true ||
-      seen.has(normalizedModelId)
+      resolvedModelId.length === 0 ||
+      hiddenModelIds?.has(resolvedModelId) === true ||
+      seen.has(resolvedModelId)
     ) {
-      return false
+      continue
     }
 
-    seen.add(normalizedModelId)
-    return true
-  })
+    seen.add(resolvedModelId)
+    filtered.push(resolvedModelId === normalizedModelId ? modelId : resolvedModelId)
+  }
+
+  return filtered
 }
 
 export function getModelCatalogProviders(): ProviderModelCatalogEntry[] {
@@ -155,10 +238,45 @@ export function getCatalogModel(
   modelId: string | null | undefined,
 ): ModelCatalogEntry | undefined {
   if (modelId === null || modelId === undefined || modelId.length === 0) return undefined
-  const normalizedModelId = normalizeValue(modelId)
+  const normalizedModelId = resolveLegacyCatalogModelId(providerKey, modelId)
   return getProviderCatalogModels(providerKey).find(
     (model) => normalizeValue(model.id) === normalizedModelId,
   )
+}
+
+/**
+ * Resolve the composer capability for a selected model. CLI discovery is
+ * authoritative, so newly released CLI models can be selected before they
+ * are cataloged. Give those models the provider's conservative effort
+ * selector without claiming unsupported media or context capabilities.
+ */
+export function getModelCapability(
+  providerKey: ModelCatalogProviderKey,
+  modelId: string | null | undefined,
+): ModelCatalogEntry | undefined {
+  const catalogModel = getCatalogModel(providerKey, modelId)
+  if (catalogModel !== undefined) return catalogModel
+  if (modelId === null || modelId === undefined || modelId.length === 0) return undefined
+  if (!isCliProvider(providerKey)) return undefined
+
+  const effortOption = CLI_FALLBACK_EFFORT_OPTIONS[providerKey]
+  if (effortOption === undefined) return undefined
+
+  return {
+    id: modelId,
+    displayName: formatModelDisplayName(modelId),
+    supportsImageInput: false,
+    supportsAudioInput: false,
+    supportsVideoInput: false,
+    supportsPdfInput: false,
+    supportsThinking: false,
+    thinkingMode: 'unsupported',
+    reasoningOptions: [],
+    composerOptions: [{
+      ...effortOption,
+      options: effortOption.options.map((option) => ({ ...option })),
+    }],
+  }
 }
 
 export function resolveCatalogModelId(
@@ -192,6 +310,12 @@ const LEGACY_RUNTIME_SELECTIONS: Partial<Record<
     'claude-opus-4-8-fast': {
       modelId: 'claude-opus-4-8',
       traitValues: { fastMode: true },
+    },
+  },
+  cursor: {
+    default: {
+      modelId: 'auto',
+      traitValues: {},
     },
   },
 }
@@ -267,11 +391,10 @@ export function getEffectiveComposerOptions(model: ModelCatalogEntry): ComposerO
       id: 'effort',
       label: 'common.traitsDropdown.reasoning',
       type: 'select',
-      options: model.reasoningOptions.map((opt, i) => ({
+      options: model.reasoningOptions.map((opt) => ({
         value: opt,
         label: REASONING_LABELS[opt] ?? opt,
-        // Default to the middle option, or the last one if only a few
-        isDefault: i === Math.floor(model.reasoningOptions.length / 2),
+        isDefault: opt === model.defaultReasoningOption,
       })),
     })
   } else if (model.supportsThinking && model.thinkingMode === 'toggle') {
@@ -286,6 +409,24 @@ export function getEffectiveComposerOptions(model: ModelCatalogEntry): ComposerO
   // Models with thinkingMode 'always_on' don't get a toggle (it's always on)
 
   return options
+}
+
+export function getComposerDefaultTraitValues(
+  model: ModelCatalogEntry | undefined,
+): Record<string, string | boolean> {
+  if (model === undefined) return {}
+
+  const defaults: Record<string, string | boolean> = {}
+  for (const option of getEffectiveComposerOptions(model)) {
+    if (option.type === 'select') {
+      const defaultChoice = option.options.find((choice) => choice.isDefault === true)
+      if (defaultChoice !== undefined) defaults[option.id] = defaultChoice.value
+    } else if (option.defaultValue !== undefined) {
+      defaults[option.id] = option.defaultValue
+    }
+  }
+
+  return defaults
 }
 
 function parseCompactTokenLimit(value: string): number | undefined {

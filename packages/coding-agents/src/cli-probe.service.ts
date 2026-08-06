@@ -1453,7 +1453,7 @@ function probeCursorAcp(binaryPath: string): Promise<void> {
         },
         clientInfo: {
           name: 'bitsentry_desktop',
-          title: 'BitSentry SuperTerminal',
+          title: 'BitSentry Desktop',
           version: '0.1.0',
         },
       },
@@ -1535,7 +1535,7 @@ function probeCodexAccount(
       id: initId,
       method: 'initialize',
       params: {
-        clientInfo: { name: 'bitsentry_desktop', title: 'BitSentry SuperTerminal', version: '0.1.0' },
+        clientInfo: { name: 'bitsentry_desktop', title: 'BitSentry Desktop', version: '0.1.0' },
         capabilities: { experimentalApi: true },
       },
     })

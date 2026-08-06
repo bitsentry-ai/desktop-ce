@@ -5,7 +5,7 @@ import { captureDesktopAnalyticsException } from './DesktopPosthogRenderer'
 let initialized = false
 const TRACES_SAMPLE_RATE = 0.2
 const PROFILE_SESSION_SAMPLE_RATE = 0.1
-let PRODUCT_NAME = 'superterminal'
+let PRODUCT_NAME = 'bitsentry-desktop'
 
 type DesktopSentryRuntime = {
   init: (

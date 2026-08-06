@@ -67,7 +67,7 @@ export const AppearanceSettingsSection = ({
   );
 };
 
-// Web-only. SuperTerminal is local-first; there is no backend to be "connected" to,
+// Web-only. BitSentry Desktop is local-first; there is no backend to be "connected" to,
 // so we drop this row in the desktop renderer and show a simple browser online flag on web.
 const NetworkRow = () => {
   const isConnected = useConnectionStatus();

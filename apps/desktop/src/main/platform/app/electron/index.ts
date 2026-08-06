@@ -375,6 +375,7 @@ const createWindow = async () => {
     arch: process.arch,
     releaseChannel: readReleaseChannel(),
     appUpdateConfigContents: readPackagedAutoUpdateConfig(),
+    product: 'ce',
   })
   log.transports.file.level = 'info'
   if (updaterController === null) {
