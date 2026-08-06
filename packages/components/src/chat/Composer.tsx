@@ -46,6 +46,7 @@ import { ModeToggle } from "./ModeToggle";
 import { AccessSelector } from "./AccessSelector";
 import { SendButton } from "./SendButton";
 import { ContextIndicator } from "./ContextIndicator";
+import { getDesktopApi } from "../services/desktop-api";
 
 export interface ComposerProps {
   prompt: string;
@@ -266,7 +267,11 @@ export function Composer({
   }
 
   let accessSelector: ReactNode = null;
-  if (selectedProviderKey !== null && isCliProvider(selectedProviderKey)) {
+  const isDesktop = getDesktopApi() !== undefined;
+  const shouldShowAccessSelector =
+    selectedProviderKey !== null &&
+    (!isDesktop || isCliProvider(selectedProviderKey));
+  if (shouldShowAccessSelector) {
     accessSelector = (
       <AccessSelector
         value={accessLevel}
