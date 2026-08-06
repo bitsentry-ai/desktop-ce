@@ -355,7 +355,7 @@ describe("CodingAgentsProviderService", () => {
     expect(service.getSettings().cursor.binaryPath).toBe("cursor-agent");
   });
 
-  it("passes Claude context window traits into execution", async () => {
+  it("maps every Claude effort tier to agent max turns", async () => {
     vi.mocked(detectBinary).mockResolvedValue("/opt/homebrew/bin/claude");
     vi.mocked(probeClaudeCode).mockResolvedValue({
       installed: true,
@@ -383,23 +383,32 @@ describe("CodingAgentsProviderService", () => {
       },
     });
 
-    const result = await service.execute(
-      "claude_code",
-      "hello",
-      new AbortController(),
-      undefined,
-      undefined,
-      "claude-sonnet-5",
-      "auto-accept-edits",
-      { effort: "high", contextWindow: "1m" },
-    );
+    for (const [effort, maxTurns] of [
+      ["low", 3],
+      ["medium", 8],
+      ["high", 16],
+      ["xhigh", 24],
+      ["max", 40],
+      ["ultrathink", 64],
+    ] as const) {
+      const result = await service.execute(
+        "claude_code",
+        "hello",
+        new AbortController(),
+        undefined,
+        undefined,
+        "claude-sonnet-5",
+        "auto-accept-edits",
+        { effort, contextWindow: "1m" },
+      );
 
-    expect(JSON.parse(result.output)).toEqual({
-      binaryPath: "/opt/homebrew/bin/claude",
-      model: "claude-sonnet-5",
-      maxTurns: 16,
-      contextWindow: "1m",
-    });
+      expect(JSON.parse(result.output)).toEqual({
+        binaryPath: "/opt/homebrew/bin/claude",
+        model: "claude-sonnet-5",
+        maxTurns,
+        contextWindow: "1m",
+      });
+    }
   });
 
   it("silently detects and uses the resolved opencode binary without changing the saved path", async () => {

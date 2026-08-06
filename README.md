@@ -28,6 +28,10 @@ pnpm run desktop:quality
 
 This builds electron-trpc, typechecks, runs contract checks and tests, then builds the app. Packaging targets live under `desktop:package*`.
 
+## Claude Code effort semantics
+
+Claude Code effort controls the maximum agent loop turns, not a model thinking-token budget: `low=3`, `medium=8`, `high=16`, `xhigh=24`, `max=40`, and `ultrathink=64`. A model thinking-budget control requires a separate, supported Agent SDK design.
+
 ## License
 
 Apache-2.0 (see [LICENSE](LICENSE)).
