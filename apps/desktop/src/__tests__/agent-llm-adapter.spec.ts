@@ -330,6 +330,74 @@ describe('AgentLlmAdapterService', () => {
     })
   })
 
+  it('emits selected reasoning effort for supported OpenAI-compatible providers', async () => {
+    const adapter = createAdapter({
+      getApiKey: () => Promise.resolve('test-key'),
+    })
+    const requestBodies: Array<Record<string, unknown>> = []
+    vi.stubGlobal('fetch', vi.fn().mockImplementation((_url: string, init?: RequestInit) => {
+      requestBodies.push(JSON.parse(String(init?.body)) as Record<string, unknown>)
+      return Promise.resolve(new Response(JSON.stringify({
+        choices: [{ message: { content: 'Done' } }],
+      })))
+    }))
+
+    for (const [providerKey, model, efforts] of [
+      ['groq', 'openai/gpt-oss-20b', ['low', 'high']],
+      ['kilocode', 'anthropic/claude-opus-4.6', ['low', 'max']],
+      ['openrouter', 'openai/gpt-5.2', ['medium', 'xhigh']],
+    ] as const) {
+      for (const effort of efforts) {
+        await adapter.chatWithTools({
+          messages: [{ role: 'user', content: 'Explain this briefly.' }],
+          signal: new AbortController().signal,
+          llm: { providerKey, model },
+          traitValues: { effort },
+        })
+      }
+    }
+
+    expect(requestBodies.map((body) => body.reasoning_effort)).toEqual([
+      'low', 'high',
+      'low', 'max',
+      'medium', 'xhigh',
+    ])
+  })
+
+  it('keeps OpenAI effort clamping and rejects unsupported routed models', async () => {
+    const adapter = createAdapter({
+      getApiKey: () => Promise.resolve('test-key'),
+    })
+    const requestBodies: Array<Record<string, unknown>> = []
+    vi.stubGlobal('fetch', vi.fn().mockImplementation((_url: string, init?: RequestInit) => {
+      requestBodies.push(JSON.parse(String(init?.body)) as Record<string, unknown>)
+      return Promise.resolve(new Response(JSON.stringify({
+        choices: [{ message: { content: 'Done' } }],
+      })))
+    }))
+
+    for (const effort of ['xhigh', 'max', 'ultrathink']) {
+      await adapter.chatWithTools({
+        messages: [{ role: 'user', content: 'Explain this briefly.' }],
+        signal: new AbortController().signal,
+        llm: { providerKey: 'openai', model: 'gpt-5.2' },
+        traitValues: { effort },
+      })
+    }
+
+    await adapter.chatWithTools({
+      messages: [{ role: 'user', content: 'Explain this briefly.' }],
+      signal: new AbortController().signal,
+      llm: { providerKey: 'groq', model: 'llama-3.3-70b-versatile' },
+      traitValues: { effort: 'high' },
+    })
+
+    expect(requestBodies.slice(0, 3).map((body) => body.reasoning_effort)).toEqual([
+      'high', 'high', 'high',
+    ])
+    expect(requestBodies[3]?.reasoning_effort).toBeUndefined()
+  })
+
   it('maps legacy Anthropic effort tiers to distinct manual thinking budgets', async () => {
     const adapter = createAdapter({
       getApiKey: () => Promise.resolve('test-key'),

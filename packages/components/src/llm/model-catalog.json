@@ -835,10 +835,22 @@
           "supportsAudioInput": false,
           "supportsVideoInput": false,
           "supportsPdfInput": false,
-          "supportsThinking": false,
-          "thinkingMode": "unsupported",
-          "reasoningOptions": [],
-          "composerOptions": []
+          "supportsThinking": true,
+          "thinkingMode": "toggle",
+          "reasoningOptions": ["low", "medium", "high"],
+          "defaultReasoningOption": "medium",
+          "composerOptions": [
+            {
+              "id": "effort",
+              "label": "Reasoning",
+              "type": "select",
+              "options": [
+                { "value": "low", "label": "Low" },
+                { "value": "medium", "label": "Medium", "isDefault": true },
+                { "value": "high", "label": "High" }
+              ]
+            }
+          ]
         },
         {
           "id": "openai/gpt-oss-20b",
@@ -847,10 +859,22 @@
           "supportsAudioInput": false,
           "supportsVideoInput": false,
           "supportsPdfInput": false,
-          "supportsThinking": false,
-          "thinkingMode": "unsupported",
-          "reasoningOptions": [],
-          "composerOptions": []
+          "supportsThinking": true,
+          "thinkingMode": "toggle",
+          "reasoningOptions": ["low", "medium", "high"],
+          "defaultReasoningOption": "medium",
+          "composerOptions": [
+            {
+              "id": "effort",
+              "label": "Reasoning",
+              "type": "select",
+              "options": [
+                { "value": "low", "label": "Low" },
+                { "value": "medium", "label": "Medium", "isDefault": true },
+                { "value": "high", "label": "High" }
+              ]
+            }
+          ]
         },
         {
           "id": "meta-llama/llama-4-scout-17b-16e-instruct",
@@ -951,10 +975,23 @@
           "supportsAudioInput": false,
           "supportsVideoInput": false,
           "supportsPdfInput": true,
-          "supportsThinking": false,
-          "thinkingMode": "unsupported",
-          "reasoningOptions": [],
-          "composerOptions": []
+          "supportsThinking": true,
+          "thinkingMode": "toggle",
+          "reasoningOptions": ["low", "medium", "high", "max"],
+          "defaultReasoningOption": "high",
+          "composerOptions": [
+            {
+              "id": "effort",
+              "label": "Effort",
+              "type": "select",
+              "options": [
+                { "value": "low", "label": "Low" },
+                { "value": "medium", "label": "Medium" },
+                { "value": "high", "label": "High", "isDefault": true },
+                { "value": "max", "label": "Max" }
+              ]
+            }
+          ]
         },
         {
           "id": "openai/gpt-5.2",
@@ -963,10 +1000,25 @@
           "supportsAudioInput": false,
           "supportsVideoInput": false,
           "supportsPdfInput": false,
-          "supportsThinking": false,
-          "thinkingMode": "unsupported",
-          "reasoningOptions": [],
-          "composerOptions": []
+          "supportsThinking": true,
+          "thinkingMode": "toggle",
+          "reasoningOptions": ["none", "minimal", "low", "medium", "high", "xhigh"],
+          "defaultReasoningOption": "high",
+          "composerOptions": [
+            {
+              "id": "effort",
+              "label": "Reasoning",
+              "type": "select",
+              "options": [
+                { "value": "none", "label": "None" },
+                { "value": "minimal", "label": "Minimal" },
+                { "value": "low", "label": "Low" },
+                { "value": "medium", "label": "Medium" },
+                { "value": "high", "label": "High", "isDefault": true },
+                { "value": "xhigh", "label": "Extra High", "shortLabel": "xHigh" }
+              ]
+            }
+          ]
         }
       ]
     },
@@ -983,10 +1035,25 @@
           "supportsAudioInput": false,
           "supportsVideoInput": false,
           "supportsPdfInput": false,
-          "supportsThinking": false,
-          "thinkingMode": "unsupported",
-          "reasoningOptions": [],
-          "composerOptions": []
+          "supportsThinking": true,
+          "thinkingMode": "toggle",
+          "reasoningOptions": ["none", "minimal", "low", "medium", "high", "xhigh"],
+          "defaultReasoningOption": "high",
+          "composerOptions": [
+            {
+              "id": "effort",
+              "label": "Reasoning",
+              "type": "select",
+              "options": [
+                { "value": "none", "label": "None" },
+                { "value": "minimal", "label": "Minimal" },
+                { "value": "low", "label": "Low" },
+                { "value": "medium", "label": "Medium" },
+                { "value": "high", "label": "High", "isDefault": true },
+                { "value": "xhigh", "label": "Extra High", "shortLabel": "xHigh" }
+              ]
+            }
+          ]
         },
         {
           "id": "openai/gpt-4.1",
@@ -1007,10 +1074,22 @@
           "supportsAudioInput": false,
           "supportsVideoInput": false,
           "supportsPdfInput": false,
-          "supportsThinking": false,
-          "thinkingMode": "unsupported",
-          "reasoningOptions": [],
-          "composerOptions": []
+          "supportsThinking": true,
+          "thinkingMode": "toggle",
+          "reasoningOptions": ["low", "medium", "high"],
+          "defaultReasoningOption": "medium",
+          "composerOptions": [
+            {
+              "id": "effort",
+              "label": "Reasoning",
+              "type": "select",
+              "options": [
+                { "value": "low", "label": "Low" },
+                { "value": "medium", "label": "Medium", "isDefault": true },
+                { "value": "high", "label": "High" }
+              ]
+            }
+          ]
         },
         {
           "id": "anthropic/claude-opus-4",
@@ -1019,10 +1098,23 @@
           "supportsAudioInput": false,
           "supportsVideoInput": false,
           "supportsPdfInput": true,
-          "supportsThinking": false,
-          "thinkingMode": "unsupported",
-          "reasoningOptions": [],
-          "composerOptions": []
+          "supportsThinking": true,
+          "thinkingMode": "toggle",
+          "reasoningOptions": ["low", "medium", "high", "max"],
+          "defaultReasoningOption": "high",
+          "composerOptions": [
+            {
+              "id": "effort",
+              "label": "Effort",
+              "type": "select",
+              "options": [
+                { "value": "low", "label": "Low" },
+                { "value": "medium", "label": "Medium" },
+                { "value": "high", "label": "High", "isDefault": true },
+                { "value": "max", "label": "Max" }
+              ]
+            }
+          ]
         },
         {
           "id": "anthropic/claude-sonnet-4",

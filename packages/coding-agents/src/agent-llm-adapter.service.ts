@@ -265,6 +265,17 @@ function isOpenAiProvider(providerKey: LlmProviderKey): boolean {
   return providerKey === 'openai'
 }
 
+function isOpenAiCompatibleReasoningProvider(providerKey: LlmProviderKey): boolean {
+  return providerKey === 'openai'
+    || providerKey === 'groq'
+    || providerKey === 'kilocode'
+    || providerKey === 'openrouter'
+}
+
+function normalizeRoutedModelId(model: string): string {
+  return model.trim().toLowerCase()
+}
+
 function isOpenAiGpt5FamilyModel(model: string): boolean {
   return /^gpt-5(?:[.-]|$)/i.test(model.trim())
 }
@@ -316,6 +327,40 @@ function getExplicitOpenAiReasoningEffort(effortLevel?: string): string | null {
   return OPENAI_EFFORT_MAP[effortLevel] ?? null
 }
 
+function getRoutedReasoningEffort(
+  providerKey: LlmProviderKey,
+  model: string,
+  effortLevel?: string,
+): string | null {
+  if (effortLevel === undefined || effortLevel.length === 0) {
+    return null
+  }
+
+  const modelId = normalizeRoutedModelId(model)
+  let supportedEfforts: readonly string[] | undefined
+
+  if (providerKey === 'groq' && /^openai\/gpt-oss-(?:20b|120b)$/.test(modelId)) {
+    supportedEfforts = ['low', 'medium', 'high']
+  } else if (
+    providerKey === 'kilocode'
+    && (modelId === 'anthropic/claude-opus-4.6' || modelId === 'openai/gpt-5.2')
+  ) {
+    supportedEfforts = modelId.startsWith('anthropic/')
+      ? ['low', 'medium', 'high', 'max']
+      : ['none', 'minimal', 'low', 'medium', 'high', 'xhigh']
+  } else if (providerKey === 'openrouter') {
+    if (modelId === 'openai/gpt-5.2') {
+      supportedEfforts = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh']
+    } else if (modelId === 'openai/o3') {
+      supportedEfforts = ['low', 'medium', 'high']
+    } else if (modelId === 'anthropic/claude-opus-4') {
+      supportedEfforts = ['low', 'medium', 'high', 'max']
+    }
+  }
+
+  return supportedEfforts?.includes(effortLevel) === true ? effortLevel : null
+}
+
 function getOpenAiThinkingEffort(
   model: string,
   thinkingEnabled: boolean | undefined,
@@ -343,14 +388,22 @@ function getOpenAiReasoningParams(
   thinkingEnabled: boolean | undefined,
   effortLevel?: string,
 ): Record<string, string> {
-  if (!isOpenAiProvider(providerKey)) {
+  if (!isOpenAiCompatibleReasoningProvider(providerKey)) {
     return {}
   }
 
-  // Prefer explicit effort level from composer traitValues (only if explicitly set by user)
-  const explicitEffort = getExplicitOpenAiReasoningEffort(effortLevel)
+  // Prefer an explicit effort level from composer traitValues.
+  // OpenAI keeps its API-specific clamp; routed providers pass through only
+  // values advertised by the selected model.
+  const explicitEffort = isOpenAiProvider(providerKey)
+    ? getExplicitOpenAiReasoningEffort(effortLevel)
+    : getRoutedReasoningEffort(providerKey, model, effortLevel)
   if (explicitEffort !== null) {
     return { reasoning_effort: explicitEffort }
+  }
+
+  if (!isOpenAiProvider(providerKey)) {
+    return {}
   }
 
   const thinkingEffort = getOpenAiThinkingEffort(model, thinkingEnabled)
