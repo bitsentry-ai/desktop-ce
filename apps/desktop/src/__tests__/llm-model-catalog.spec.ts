@@ -149,6 +149,58 @@ describe('local model catalog selection', () => {
     }
   })
 
+  it('keeps every thinking-capable CLI model controllable in the composer', () => {
+    const modelsWithoutComposerControl = cliProviders.flatMap((providerKey) =>
+      getProviderCatalogModels(providerKey)
+        .filter((model) => model.supportsThinking)
+        .filter((model) => !getEffectiveComposerOptions(model).some(
+          (option) => (option.id === 'effort' && option.type === 'select')
+            || (option.id === 'thinking' && option.type === 'boolean'),
+        ))
+        .map((model) => `${providerKey}/${model.id}`),
+    )
+
+    expect(modelsWithoutComposerControl).toEqual([])
+  })
+
+  it('covers the current CLI models with provider-accurate effort tiers', () => {
+    const expectedEffortTiers = {
+      codex: {
+        'gpt-5.6-sol': { tiers: ['low', 'medium', 'high', 'xhigh'], default: 'high' },
+        'gpt-5.6-terra': { tiers: ['low', 'medium', 'high', 'xhigh'], default: 'high' },
+        'gpt-5.6-luna': { tiers: ['low', 'medium', 'high', 'xhigh'], default: 'high' },
+      },
+      cursor: {
+        'opus-5': { tiers: ['low', 'medium', 'high', 'xhigh'], default: 'high' },
+        'gpt-5.6': { tiers: ['low', 'medium', 'high', 'xhigh'], default: 'high' },
+      },
+      opencode: {
+        'openrouter/openai/gpt-5.6-luna': { tiers: ['low', 'medium', 'high'], default: 'medium' },
+        'openrouter/openai/gpt-5.6-luna-pro': { tiers: ['low', 'medium', 'high'], default: 'medium' },
+        'openrouter/openai/gpt-5.6-sol': { tiers: ['low', 'medium', 'high'], default: 'medium' },
+        'openrouter/openai/gpt-5.6-sol-pro': { tiers: ['low', 'medium', 'high'], default: 'medium' },
+        'openrouter/openai/gpt-5.6-terra': { tiers: ['low', 'medium', 'high'], default: 'medium' },
+        'openrouter/openai/gpt-5.6-terra-pro': { tiers: ['low', 'medium', 'high'], default: 'medium' },
+        'openrouter/anthropic/claude-opus-5': { tiers: ['low', 'medium', 'high', 'xhigh'], default: 'xhigh' },
+      },
+    } as const
+
+    for (const [providerKey, models] of Object.entries(expectedEffortTiers) as Array<[
+      'codex' | 'cursor' | 'opencode',
+      Record<string, { readonly tiers: readonly string[]; readonly default: string }>,
+    ]>) {
+      for (const [modelId, expected] of Object.entries(models)) {
+        const effort = getEffectiveComposerOptions(getCatalogModel(providerKey, modelId)!)
+          .find((option) => option.id === 'effort')
+
+        expect(effort).toMatchObject({ type: 'select' })
+        if (effort?.type !== 'select') throw new Error(`${providerKey}/${modelId} needs effort`)
+        expect(effort.options.map((option) => option.value)).toEqual(expected.tiers)
+        expect(effort.options.find((option) => option.isDefault)?.value).toBe(expected.default)
+      }
+    }
+  })
+
   it('does not expose Codex models rejected for ChatGPT accounts', () => {
     const models = getCatalogModelIds('codex')
 
