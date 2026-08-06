@@ -1095,35 +1095,35 @@
           "composerOptions": [
             {
               "id": "effort",
-              "label": "Reasoning",
+              "label": "common.traitsDropdown.reasoning",
               "type": "select",
               "options": [
                 {
                   "value": "low",
-                  "label": "Low"
+                  "label": "common.traitsDropdown.reasoningLow"
                 },
                 {
                   "value": "medium",
-                  "label": "Medium"
+                  "label": "common.traitsDropdown.reasoningMedium"
                 },
                 {
                   "value": "high",
-                  "label": "High",
+                  "label": "common.traitsDropdown.reasoningHigh",
                   "isDefault": true
                 },
                 {
                   "value": "xhigh",
-                  "label": "Extra High",
-                  "shortLabel": "xHigh"
+                  "label": "common.traitsDropdown.reasoningExtraHigh",
+                  "shortLabel": "common.traitsDropdown.reasoningExtraHighShort"
                 },
                 {
                   "value": "max",
-                  "label": "Max"
+                  "label": "common.traitsDropdown.reasoningMax"
                 },
                 {
                   "value": "ultrathink",
-                  "label": "Ultrathink",
-                  "shortLabel": "Ultra"
+                  "label": "common.traitsDropdown.reasoningUltrathink",
+                  "shortLabel": "common.traitsDropdown.reasoningUltrathinkShort"
                 }
               ]
             },
@@ -1158,26 +1158,26 @@
           "composerOptions": [
             {
               "id": "effort",
-              "label": "Reasoning",
+              "label": "common.traitsDropdown.reasoning",
               "type": "select",
               "options": [
                 {
                   "value": "low",
-                  "label": "Low"
+                  "label": "common.traitsDropdown.reasoningLow"
                 },
                 {
                   "value": "medium",
-                  "label": "Medium"
+                  "label": "common.traitsDropdown.reasoningMedium"
                 },
                 {
                   "value": "high",
-                  "label": "High",
+                  "label": "common.traitsDropdown.reasoningHigh",
                   "isDefault": true
                 },
                 {
                   "value": "ultrathink",
-                  "label": "Ultrathink",
-                  "shortLabel": "Ultra"
+                  "label": "common.traitsDropdown.reasoningUltrathink",
+                  "shortLabel": "common.traitsDropdown.reasoningUltrathinkShort"
                 }
               ]
             },
@@ -1212,26 +1212,26 @@
           "composerOptions": [
             {
               "id": "effort",
-              "label": "Reasoning",
+              "label": "common.traitsDropdown.reasoning",
               "type": "select",
               "options": [
                 {
                   "value": "low",
-                  "label": "Low"
+                  "label": "common.traitsDropdown.reasoningLow"
                 },
                 {
                   "value": "medium",
-                  "label": "Medium"
+                  "label": "common.traitsDropdown.reasoningMedium"
                 },
                 {
                   "value": "high",
-                  "label": "High",
+                  "label": "common.traitsDropdown.reasoningHigh",
                   "isDefault": true
                 },
                 {
                   "value": "ultrathink",
-                  "label": "Ultrathink",
-                  "shortLabel": "Ultra"
+                  "label": "common.traitsDropdown.reasoningUltrathink",
+                  "shortLabel": "common.traitsDropdown.reasoningUltrathinkShort"
                 }
               ]
             },
@@ -1266,35 +1266,35 @@
           "composerOptions": [
             {
               "id": "effort",
-              "label": "Reasoning",
+              "label": "common.traitsDropdown.reasoning",
               "type": "select",
               "options": [
                 {
                   "value": "low",
-                  "label": "Low"
+                  "label": "common.traitsDropdown.reasoningLow"
                 },
                 {
                   "value": "medium",
-                  "label": "Medium"
+                  "label": "common.traitsDropdown.reasoningMedium"
                 },
                 {
                   "value": "high",
-                  "label": "High"
+                  "label": "common.traitsDropdown.reasoningHigh"
                 },
                 {
                   "value": "xhigh",
-                  "label": "Extra High",
+                  "label": "common.traitsDropdown.reasoningExtraHigh",
                   "isDefault": true,
-                  "shortLabel": "xHigh"
+                  "shortLabel": "common.traitsDropdown.reasoningExtraHighShort"
                 },
                 {
                   "value": "max",
-                  "label": "Max"
+                  "label": "common.traitsDropdown.reasoningMax"
                 },
                 {
                   "value": "ultrathink",
-                  "label": "Ultrathink",
-                  "shortLabel": "Ultra"
+                  "label": "common.traitsDropdown.reasoningUltrathink",
+                  "shortLabel": "common.traitsDropdown.reasoningUltrathinkShort"
                 }
               ]
             },
@@ -1336,35 +1336,35 @@
           "composerOptions": [
             {
               "id": "effort",
-              "label": "Reasoning",
+              "label": "common.traitsDropdown.reasoning",
               "type": "select",
               "options": [
                 {
                   "value": "low",
-                  "label": "Low"
+                  "label": "common.traitsDropdown.reasoningLow"
                 },
                 {
                   "value": "medium",
-                  "label": "Medium"
+                  "label": "common.traitsDropdown.reasoningMedium"
                 },
                 {
                   "value": "high",
-                  "label": "High"
+                  "label": "common.traitsDropdown.reasoningHigh"
                 },
                 {
                   "value": "xhigh",
-                  "label": "Extra High",
+                  "label": "common.traitsDropdown.reasoningExtraHigh",
                   "isDefault": true,
-                  "shortLabel": "xHigh"
+                  "shortLabel": "common.traitsDropdown.reasoningExtraHighShort"
                 },
                 {
                   "value": "max",
-                  "label": "Max"
+                  "label": "common.traitsDropdown.reasoningMax"
                 },
                 {
                   "value": "ultrathink",
-                  "label": "Ultrathink",
-                  "shortLabel": "Ultra"
+                  "label": "common.traitsDropdown.reasoningUltrathink",
+                  "shortLabel": "common.traitsDropdown.reasoningUltrathinkShort"
                 }
               ]
             },
@@ -1399,35 +1399,35 @@
           "composerOptions": [
             {
               "id": "effort",
-              "label": "Reasoning",
+              "label": "common.traitsDropdown.reasoning",
               "type": "select",
               "options": [
                 {
                   "value": "low",
-                  "label": "Low"
+                  "label": "common.traitsDropdown.reasoningLow"
                 },
                 {
                   "value": "medium",
-                  "label": "Medium"
+                  "label": "common.traitsDropdown.reasoningMedium"
                 },
                 {
                   "value": "high",
-                  "label": "High"
+                  "label": "common.traitsDropdown.reasoningHigh"
                 },
                 {
                   "value": "xhigh",
-                  "label": "Extra High",
+                  "label": "common.traitsDropdown.reasoningExtraHigh",
                   "isDefault": true,
-                  "shortLabel": "xHigh"
+                  "shortLabel": "common.traitsDropdown.reasoningExtraHighShort"
                 },
                 {
                   "value": "max",
-                  "label": "Max"
+                  "label": "common.traitsDropdown.reasoningMax"
                 },
                 {
                   "value": "ultrathink",
-                  "label": "Ultrathink",
-                  "shortLabel": "Ultra"
+                  "label": "common.traitsDropdown.reasoningUltrathink",
+                  "shortLabel": "common.traitsDropdown.reasoningUltrathinkShort"
                 }
               ]
             },
@@ -1462,30 +1462,30 @@
           "composerOptions": [
             {
               "id": "effort",
-              "label": "Reasoning",
+              "label": "common.traitsDropdown.reasoning",
               "type": "select",
               "options": [
                 {
                   "value": "low",
-                  "label": "Low"
+                  "label": "common.traitsDropdown.reasoningLow"
                 },
                 {
                   "value": "medium",
-                  "label": "Medium"
+                  "label": "common.traitsDropdown.reasoningMedium"
                 },
                 {
                   "value": "high",
-                  "label": "High",
+                  "label": "common.traitsDropdown.reasoningHigh",
                   "isDefault": true
                 },
                 {
                   "value": "max",
-                  "label": "Max"
+                  "label": "common.traitsDropdown.reasoningMax"
                 },
                 {
                   "value": "ultrathink",
-                  "label": "Ultrathink",
-                  "shortLabel": "Ultra"
+                  "label": "common.traitsDropdown.reasoningUltrathink",
+                  "shortLabel": "common.traitsDropdown.reasoningUltrathinkShort"
                 }
               ]
             },
@@ -1520,26 +1520,26 @@
           "composerOptions": [
             {
               "id": "effort",
-              "label": "Reasoning",
+              "label": "common.traitsDropdown.reasoning",
               "type": "select",
               "options": [
                 {
                   "value": "low",
-                  "label": "Low"
+                  "label": "common.traitsDropdown.reasoningLow"
                 },
                 {
                   "value": "medium",
-                  "label": "Medium"
+                  "label": "common.traitsDropdown.reasoningMedium"
                 },
                 {
                   "value": "high",
-                  "label": "High",
+                  "label": "common.traitsDropdown.reasoningHigh",
                   "isDefault": true
                 },
                 {
                   "value": "ultrathink",
-                  "label": "Ultrathink",
-                  "shortLabel": "Ultra"
+                  "label": "common.traitsDropdown.reasoningUltrathink",
+                  "shortLabel": "common.traitsDropdown.reasoningUltrathinkShort"
                 }
               ]
             },
@@ -1594,26 +1594,26 @@
           "composerOptions": [
             {
               "id": "effort",
-              "label": "Reasoning",
+              "label": "common.traitsDropdown.reasoning",
               "type": "select",
               "options": [
                 {
                   "value": "low",
-                  "label": "Low"
+                  "label": "common.traitsDropdown.reasoningLow"
                 },
                 {
                   "value": "medium",
-                  "label": "Medium"
+                  "label": "common.traitsDropdown.reasoningMedium"
                 },
                 {
                   "value": "high",
-                  "label": "High",
+                  "label": "common.traitsDropdown.reasoningHigh",
                   "isDefault": true
                 },
                 {
                   "value": "xhigh",
-                  "label": "Extra High",
-                  "shortLabel": "xHigh"
+                  "label": "common.traitsDropdown.reasoningExtraHigh",
+                  "shortLabel": "common.traitsDropdown.reasoningExtraHighShort"
                 }
               ]
             },
@@ -1638,21 +1638,21 @@
           "composerOptions": [
             {
               "id": "effort",
-              "label": "Reasoning",
+              "label": "common.traitsDropdown.reasoning",
               "type": "select",
               "options": [
                 {
                   "value": "low",
-                  "label": "Low"
+                  "label": "common.traitsDropdown.reasoningLow"
                 },
                 {
                   "value": "medium",
-                  "label": "Medium",
+                  "label": "common.traitsDropdown.reasoningMedium",
                   "isDefault": true
                 },
                 {
                   "value": "high",
-                  "label": "High"
+                  "label": "common.traitsDropdown.reasoningHigh"
                 }
               ]
             },
@@ -1677,26 +1677,26 @@
           "composerOptions": [
             {
               "id": "effort",
-              "label": "Reasoning",
+              "label": "common.traitsDropdown.reasoning",
               "type": "select",
               "options": [
                 {
                   "value": "low",
-                  "label": "Low"
+                  "label": "common.traitsDropdown.reasoningLow"
                 },
                 {
                   "value": "medium",
-                  "label": "Medium"
+                  "label": "common.traitsDropdown.reasoningMedium"
                 },
                 {
                   "value": "high",
-                  "label": "High",
+                  "label": "common.traitsDropdown.reasoningHigh",
                   "isDefault": true
                 },
                 {
                   "value": "xhigh",
-                  "label": "Extra High",
-                  "shortLabel": "xHigh"
+                  "label": "common.traitsDropdown.reasoningExtraHigh",
+                  "shortLabel": "common.traitsDropdown.reasoningExtraHighShort"
                 }
               ]
             },
@@ -1721,21 +1721,21 @@
           "composerOptions": [
             {
               "id": "effort",
-              "label": "Reasoning",
+              "label": "common.traitsDropdown.reasoning",
               "type": "select",
               "options": [
                 {
                   "value": "low",
-                  "label": "Low"
+                  "label": "common.traitsDropdown.reasoningLow"
                 },
                 {
                   "value": "medium",
-                  "label": "Medium",
+                  "label": "common.traitsDropdown.reasoningMedium",
                   "isDefault": true
                 },
                 {
                   "value": "high",
-                  "label": "High"
+                  "label": "common.traitsDropdown.reasoningHigh"
                 }
               ]
             },
@@ -1760,26 +1760,26 @@
           "composerOptions": [
             {
               "id": "effort",
-              "label": "Reasoning",
+              "label": "common.traitsDropdown.reasoning",
               "type": "select",
               "options": [
                 {
                   "value": "low",
-                  "label": "Low"
+                  "label": "common.traitsDropdown.reasoningLow"
                 },
                 {
                   "value": "medium",
-                  "label": "Medium"
+                  "label": "common.traitsDropdown.reasoningMedium"
                 },
                 {
                   "value": "high",
-                  "label": "High",
+                  "label": "common.traitsDropdown.reasoningHigh",
                   "isDefault": true
                 },
                 {
                   "value": "xhigh",
-                  "label": "Extra High",
-                  "shortLabel": "xHigh"
+                  "label": "common.traitsDropdown.reasoningExtraHigh",
+                  "shortLabel": "common.traitsDropdown.reasoningExtraHighShort"
                 }
               ]
             },
@@ -1804,26 +1804,26 @@
           "composerOptions": [
             {
               "id": "effort",
-              "label": "Reasoning",
+              "label": "common.traitsDropdown.reasoning",
               "type": "select",
               "options": [
                 {
                   "value": "low",
-                  "label": "Low"
+                  "label": "common.traitsDropdown.reasoningLow"
                 },
                 {
                   "value": "medium",
-                  "label": "Medium"
+                  "label": "common.traitsDropdown.reasoningMedium"
                 },
                 {
                   "value": "high",
-                  "label": "High",
+                  "label": "common.traitsDropdown.reasoningHigh",
                   "isDefault": true
                 },
                 {
                   "value": "xhigh",
-                  "label": "Extra High",
-                  "shortLabel": "xHigh"
+                  "label": "common.traitsDropdown.reasoningExtraHigh",
+                  "shortLabel": "common.traitsDropdown.reasoningExtraHighShort"
                 }
               ]
             }
@@ -1842,20 +1842,20 @@
           "composerOptions": [
             {
               "id": "effort",
-              "label": "Reasoning",
+              "label": "common.traitsDropdown.reasoning",
               "type": "select",
               "options": [
                 {
                   "value": "low",
-                  "label": "Low"
+                  "label": "common.traitsDropdown.reasoningLow"
                 },
                 {
                   "value": "medium",
-                  "label": "Medium"
+                  "label": "common.traitsDropdown.reasoningMedium"
                 },
                 {
                   "value": "high",
-                  "label": "High",
+                  "label": "common.traitsDropdown.reasoningHigh",
                   "isDefault": true
                 }
               ]
@@ -1875,21 +1875,21 @@
           "composerOptions": [
             {
               "id": "effort",
-              "label": "Reasoning",
+              "label": "common.traitsDropdown.reasoning",
               "type": "select",
               "options": [
                 {
                   "value": "low",
-                  "label": "Low"
+                  "label": "common.traitsDropdown.reasoningLow"
                 },
                 {
                   "value": "medium",
-                  "label": "Medium",
+                  "label": "common.traitsDropdown.reasoningMedium",
                   "isDefault": true
                 },
                 {
                   "value": "high",
-                  "label": "High"
+                  "label": "common.traitsDropdown.reasoningHigh"
                 }
               ]
             }
@@ -1916,21 +1916,21 @@
           "composerOptions": [
             {
               "id": "effort",
-              "label": "Reasoning",
+              "label": "common.traitsDropdown.reasoning",
               "type": "select",
               "options": [
                 {
                   "value": "low",
-                  "label": "Low"
+                  "label": "common.traitsDropdown.reasoningLow"
                 },
                 {
                   "value": "medium",
-                  "label": "Medium",
+                  "label": "common.traitsDropdown.reasoningMedium",
                   "isDefault": true
                 },
                 {
                   "value": "high",
-                  "label": "High"
+                  "label": "common.traitsDropdown.reasoningHigh"
                 }
               ]
             }
@@ -1949,21 +1949,21 @@
           "composerOptions": [
             {
               "id": "effort",
-              "label": "Reasoning",
+              "label": "common.traitsDropdown.reasoning",
               "type": "select",
               "options": [
                 {
                   "value": "low",
-                  "label": "Low"
+                  "label": "common.traitsDropdown.reasoningLow"
                 },
                 {
                   "value": "medium",
-                  "label": "Medium",
+                  "label": "common.traitsDropdown.reasoningMedium",
                   "isDefault": true
                 },
                 {
                   "value": "high",
-                  "label": "High"
+                  "label": "common.traitsDropdown.reasoningHigh"
                 }
               ]
             }
@@ -1982,20 +1982,20 @@
           "composerOptions": [
             {
               "id": "effort",
-              "label": "Reasoning",
+              "label": "common.traitsDropdown.reasoning",
               "type": "select",
               "options": [
                 {
                   "value": "low",
-                  "label": "Low"
+                  "label": "common.traitsDropdown.reasoningLow"
                 },
                 {
                   "value": "medium",
-                  "label": "Medium"
+                  "label": "common.traitsDropdown.reasoningMedium"
                 },
                 {
                   "value": "high",
-                  "label": "High",
+                  "label": "common.traitsDropdown.reasoningHigh",
                   "isDefault": true
                 }
               ]
@@ -2015,21 +2015,21 @@
           "composerOptions": [
             {
               "id": "effort",
-              "label": "Reasoning",
+              "label": "common.traitsDropdown.reasoning",
               "type": "select",
               "options": [
                 {
                   "value": "low",
-                  "label": "Low"
+                  "label": "common.traitsDropdown.reasoningLow"
                 },
                 {
                   "value": "medium",
-                  "label": "Medium",
+                  "label": "common.traitsDropdown.reasoningMedium",
                   "isDefault": true
                 },
                 {
                   "value": "high",
-                  "label": "High"
+                  "label": "common.traitsDropdown.reasoningHigh"
                 }
               ]
             }
@@ -2048,21 +2048,21 @@
           "composerOptions": [
             {
               "id": "effort",
-              "label": "Reasoning",
+              "label": "common.traitsDropdown.reasoning",
               "type": "select",
               "options": [
                 {
                   "value": "low",
-                  "label": "Low"
+                  "label": "common.traitsDropdown.reasoningLow"
                 },
                 {
                   "value": "medium",
-                  "label": "Medium",
+                  "label": "common.traitsDropdown.reasoningMedium",
                   "isDefault": true
                 },
                 {
                   "value": "high",
-                  "label": "High"
+                  "label": "common.traitsDropdown.reasoningHigh"
                 }
               ]
             }
@@ -2081,21 +2081,21 @@
           "composerOptions": [
             {
               "id": "effort",
-              "label": "Reasoning",
+              "label": "common.traitsDropdown.reasoning",
               "type": "select",
               "options": [
                 {
                   "value": "low",
-                  "label": "Low"
+                  "label": "common.traitsDropdown.reasoningLow"
                 },
                 {
                   "value": "medium",
-                  "label": "Medium",
+                  "label": "common.traitsDropdown.reasoningMedium",
                   "isDefault": true
                 },
                 {
                   "value": "high",
-                  "label": "High"
+                  "label": "common.traitsDropdown.reasoningHigh"
                 }
               ]
             }
@@ -2114,21 +2114,21 @@
           "composerOptions": [
             {
               "id": "effort",
-              "label": "Reasoning",
+              "label": "common.traitsDropdown.reasoning",
               "type": "select",
               "options": [
                 {
                   "value": "low",
-                  "label": "Low"
+                  "label": "common.traitsDropdown.reasoningLow"
                 },
                 {
                   "value": "medium",
-                  "label": "Medium",
+                  "label": "common.traitsDropdown.reasoningMedium",
                   "isDefault": true
                 },
                 {
                   "value": "high",
-                  "label": "High"
+                  "label": "common.traitsDropdown.reasoningHigh"
                 }
               ]
             }
@@ -2147,20 +2147,20 @@
           "composerOptions": [
             {
               "id": "effort",
-              "label": "Reasoning",
+              "label": "common.traitsDropdown.reasoning",
               "type": "select",
               "options": [
                 {
                   "value": "low",
-                  "label": "Low"
+                  "label": "common.traitsDropdown.reasoningLow"
                 },
                 {
                   "value": "medium",
-                  "label": "Medium"
+                  "label": "common.traitsDropdown.reasoningMedium"
                 },
                 {
                   "value": "high",
-                  "label": "High",
+                  "label": "common.traitsDropdown.reasoningHigh",
                   "isDefault": true
                 }
               ]
@@ -2180,20 +2180,20 @@
           "composerOptions": [
             {
               "id": "effort",
-              "label": "Reasoning",
+              "label": "common.traitsDropdown.reasoning",
               "type": "select",
               "options": [
                 {
                   "value": "low",
-                  "label": "Low"
+                  "label": "common.traitsDropdown.reasoningLow"
                 },
                 {
                   "value": "medium",
-                  "label": "Medium"
+                  "label": "common.traitsDropdown.reasoningMedium"
                 },
                 {
                   "value": "high",
-                  "label": "High",
+                  "label": "common.traitsDropdown.reasoningHigh",
                   "isDefault": true
                 }
               ]
@@ -2213,26 +2213,26 @@
           "composerOptions": [
             {
               "id": "effort",
-              "label": "Reasoning",
+              "label": "common.traitsDropdown.reasoning",
               "type": "select",
               "options": [
                 {
                   "value": "low",
-                  "label": "Low"
+                  "label": "common.traitsDropdown.reasoningLow"
                 },
                 {
                   "value": "medium",
-                  "label": "Medium"
+                  "label": "common.traitsDropdown.reasoningMedium"
                 },
                 {
                   "value": "high",
-                  "label": "High"
+                  "label": "common.traitsDropdown.reasoningHigh"
                 },
                 {
                   "value": "xhigh",
-                  "label": "Extra High",
+                  "label": "common.traitsDropdown.reasoningExtraHigh",
                   "isDefault": true,
-                  "shortLabel": "xHigh"
+                  "shortLabel": "common.traitsDropdown.reasoningExtraHighShort"
                 }
               ]
             }
@@ -2251,20 +2251,20 @@
           "composerOptions": [
             {
               "id": "effort",
-              "label": "Reasoning",
+              "label": "common.traitsDropdown.reasoning",
               "type": "select",
               "options": [
                 {
                   "value": "low",
-                  "label": "Low"
+                  "label": "common.traitsDropdown.reasoningLow"
                 },
                 {
                   "value": "medium",
-                  "label": "Medium"
+                  "label": "common.traitsDropdown.reasoningMedium"
                 },
                 {
                   "value": "high",
-                  "label": "High",
+                  "label": "common.traitsDropdown.reasoningHigh",
                   "isDefault": true
                 }
               ]
@@ -2284,26 +2284,26 @@
           "composerOptions": [
             {
               "id": "effort",
-              "label": "Reasoning",
+              "label": "common.traitsDropdown.reasoning",
               "type": "select",
               "options": [
                 {
                   "value": "low",
-                  "label": "Low"
+                  "label": "common.traitsDropdown.reasoningLow"
                 },
                 {
                   "value": "medium",
-                  "label": "Medium"
+                  "label": "common.traitsDropdown.reasoningMedium"
                 },
                 {
                   "value": "high",
-                  "label": "High"
+                  "label": "common.traitsDropdown.reasoningHigh"
                 },
                 {
                   "value": "xhigh",
-                  "label": "Extra High",
+                  "label": "common.traitsDropdown.reasoningExtraHigh",
                   "isDefault": true,
-                  "shortLabel": "xHigh"
+                  "shortLabel": "common.traitsDropdown.reasoningExtraHighShort"
                 }
               ]
             }
@@ -2322,20 +2322,20 @@
           "composerOptions": [
             {
               "id": "effort",
-              "label": "Reasoning",
+              "label": "common.traitsDropdown.reasoning",
               "type": "select",
               "options": [
                 {
                   "value": "low",
-                  "label": "Low"
+                  "label": "common.traitsDropdown.reasoningLow"
                 },
                 {
                   "value": "medium",
-                  "label": "Medium"
+                  "label": "common.traitsDropdown.reasoningMedium"
                 },
                 {
                   "value": "high",
-                  "label": "High",
+                  "label": "common.traitsDropdown.reasoningHigh",
                   "isDefault": true
                 }
               ]
@@ -2355,21 +2355,21 @@
           "composerOptions": [
             {
               "id": "effort",
-              "label": "Reasoning",
+              "label": "common.traitsDropdown.reasoning",
               "type": "select",
               "options": [
                 {
                   "value": "low",
-                  "label": "Low"
+                  "label": "common.traitsDropdown.reasoningLow"
                 },
                 {
                   "value": "medium",
-                  "label": "Medium",
+                  "label": "common.traitsDropdown.reasoningMedium",
                   "isDefault": true
                 },
                 {
                   "value": "high",
-                  "label": "High"
+                  "label": "common.traitsDropdown.reasoningHigh"
                 }
               ]
             }
@@ -2408,20 +2408,20 @@
           "composerOptions": [
             {
               "id": "effort",
-              "label": "Reasoning",
+              "label": "common.traitsDropdown.reasoning",
               "type": "select",
               "options": [
                 {
                   "value": "low",
-                  "label": "Low"
+                  "label": "common.traitsDropdown.reasoningLow"
                 },
                 {
                   "value": "medium",
-                  "label": "Medium"
+                  "label": "common.traitsDropdown.reasoningMedium"
                 },
                 {
                   "value": "high",
-                  "label": "High",
+                  "label": "common.traitsDropdown.reasoningHigh",
                   "isDefault": true
                 }
               ]
@@ -2441,26 +2441,26 @@
           "composerOptions": [
             {
               "id": "effort",
-              "label": "Reasoning",
+              "label": "common.traitsDropdown.reasoning",
               "type": "select",
               "options": [
                 {
                   "value": "low",
-                  "label": "Low"
+                  "label": "common.traitsDropdown.reasoningLow"
                 },
                 {
                   "value": "medium",
-                  "label": "Medium"
+                  "label": "common.traitsDropdown.reasoningMedium"
                 },
                 {
                   "value": "high",
-                  "label": "High",
+                  "label": "common.traitsDropdown.reasoningHigh",
                   "isDefault": true
                 },
                 {
                   "value": "xhigh",
-                  "label": "Extra High",
-                  "shortLabel": "xHigh"
+                  "label": "common.traitsDropdown.reasoningExtraHigh",
+                  "shortLabel": "common.traitsDropdown.reasoningExtraHighShort"
                 }
               ]
             }
@@ -2479,21 +2479,21 @@
           "composerOptions": [
             {
               "id": "effort",
-              "label": "Reasoning",
+              "label": "common.traitsDropdown.reasoning",
               "type": "select",
               "options": [
                 {
                   "value": "low",
-                  "label": "Low"
+                  "label": "common.traitsDropdown.reasoningLow"
                 },
                 {
                   "value": "medium",
-                  "label": "Medium",
+                  "label": "common.traitsDropdown.reasoningMedium",
                   "isDefault": true
                 },
                 {
                   "value": "high",
-                  "label": "High"
+                  "label": "common.traitsDropdown.reasoningHigh"
                 }
               ]
             }
@@ -2512,20 +2512,20 @@
           "composerOptions": [
             {
               "id": "effort",
-              "label": "Reasoning",
+              "label": "common.traitsDropdown.reasoning",
               "type": "select",
               "options": [
                 {
                   "value": "low",
-                  "label": "Low"
+                  "label": "common.traitsDropdown.reasoningLow"
                 },
                 {
                   "value": "medium",
-                  "label": "Medium"
+                  "label": "common.traitsDropdown.reasoningMedium"
                 },
                 {
                   "value": "high",
-                  "label": "High",
+                  "label": "common.traitsDropdown.reasoningHigh",
                   "isDefault": true
                 }
               ]
@@ -2545,20 +2545,20 @@
           "composerOptions": [
             {
               "id": "effort",
-              "label": "Reasoning",
+              "label": "common.traitsDropdown.reasoning",
               "type": "select",
               "options": [
                 {
                   "value": "low",
-                  "label": "Low"
+                  "label": "common.traitsDropdown.reasoningLow"
                 },
                 {
                   "value": "medium",
-                  "label": "Medium"
+                  "label": "common.traitsDropdown.reasoningMedium"
                 },
                 {
                   "value": "high",
-                  "label": "High",
+                  "label": "common.traitsDropdown.reasoningHigh",
                   "isDefault": true
                 }
               ]
@@ -2578,21 +2578,21 @@
           "composerOptions": [
             {
               "id": "effort",
-              "label": "Reasoning",
+              "label": "common.traitsDropdown.reasoning",
               "type": "select",
               "options": [
                 {
                   "value": "low",
-                  "label": "Low"
+                  "label": "common.traitsDropdown.reasoningLow"
                 },
                 {
                   "value": "medium",
-                  "label": "Medium",
+                  "label": "common.traitsDropdown.reasoningMedium",
                   "isDefault": true
                 },
                 {
                   "value": "high",
-                  "label": "High"
+                  "label": "common.traitsDropdown.reasoningHigh"
                 }
               ]
             }
@@ -2611,21 +2611,21 @@
           "composerOptions": [
             {
               "id": "effort",
-              "label": "Reasoning",
+              "label": "common.traitsDropdown.reasoning",
               "type": "select",
               "options": [
                 {
                   "value": "low",
-                  "label": "Low"
+                  "label": "common.traitsDropdown.reasoningLow"
                 },
                 {
                   "value": "medium",
-                  "label": "Medium",
+                  "label": "common.traitsDropdown.reasoningMedium",
                   "isDefault": true
                 },
                 {
                   "value": "high",
-                  "label": "High"
+                  "label": "common.traitsDropdown.reasoningHigh"
                 }
               ]
             }
@@ -2644,26 +2644,26 @@
           "composerOptions": [
             {
               "id": "effort",
-              "label": "Reasoning",
+              "label": "common.traitsDropdown.reasoning",
               "type": "select",
               "options": [
                 {
                   "value": "low",
-                  "label": "Low"
+                  "label": "common.traitsDropdown.reasoningLow"
                 },
                 {
                   "value": "medium",
-                  "label": "Medium"
+                  "label": "common.traitsDropdown.reasoningMedium"
                 },
                 {
                   "value": "high",
-                  "label": "High"
+                  "label": "common.traitsDropdown.reasoningHigh"
                 },
                 {
                   "value": "xhigh",
-                  "label": "Extra High",
+                  "label": "common.traitsDropdown.reasoningExtraHigh",
                   "isDefault": true,
-                  "shortLabel": "xHigh"
+                  "shortLabel": "common.traitsDropdown.reasoningExtraHighShort"
                 }
               ]
             }
