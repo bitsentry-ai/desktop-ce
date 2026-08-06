@@ -662,6 +662,27 @@ const ANTHROPIC_MANUAL_THINKING_BUDGETS = {
 
 type AnthropicEffort = keyof typeof ANTHROPIC_MANUAL_THINKING_BUDGETS
 
+function logAnthropicEffortEvidence(
+  model: string,
+  effort: AnthropicEffort,
+  thinkingType: 'enabled' | 'adaptive',
+  budgetTokens: number | undefined,
+): void {
+  if (process.env.BITSENTRY_DEBUG_ANTHROPIC_EFFORT !== '1') {
+    return
+  }
+
+  // Deliberately log only provider-safe routing metadata. Never include the
+  // prompt, API key, headers, or response content in this QA-only evidence.
+  log.info('[anthropic-effort]', {
+    provider: 'anthropic',
+    model,
+    effort,
+    thinkingType,
+    budgetTokens: budgetTokens ?? null,
+  })
+}
+
 function getAnthropicEffort(effortLevel: string | undefined): AnthropicEffort {
   if (effortLevel !== undefined && effortLevel in ANTHROPIC_MANUAL_THINKING_BUDGETS) {
     return effortLevel as AnthropicEffort
@@ -685,16 +706,20 @@ function getAnthropicThinkingConfig(
 
   const effort = getAnthropicEffort(effortLevel)
   if (usesAdaptiveAnthropicThinking(model)) {
+    logAnthropicEffortEvidence(model, effort, 'adaptive', undefined)
     return {
       thinking: { type: 'adaptive' },
       output_config: { effort },
     }
   }
 
+  const budgetTokens = ANTHROPIC_MANUAL_THINKING_BUDGETS[effort]
+  logAnthropicEffortEvidence(model, effort, 'enabled', budgetTokens)
+
   return {
     thinking: {
       type: 'enabled',
-      budget_tokens: ANTHROPIC_MANUAL_THINKING_BUDGETS[effort],
+      budget_tokens: budgetTokens,
     },
   }
 }

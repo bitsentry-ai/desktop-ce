@@ -344,6 +344,7 @@ describe('AgentLlmAdapterService', () => {
 
     const expectedBudgets = {
       low: 1024,
+      medium: 1536,
       high: 2048,
       max: 3072,
     }
@@ -361,9 +362,10 @@ describe('AgentLlmAdapterService', () => {
       })
     }
 
-    expect(requestBodies).toHaveLength(3)
+    expect(requestBodies).toHaveLength(4)
     expect(requestBodies.map((body) => body.thinking)).toEqual([
       { type: 'enabled', budget_tokens: expectedBudgets.low },
+      { type: 'enabled', budget_tokens: expectedBudgets.medium },
       { type: 'enabled', budget_tokens: expectedBudgets.high },
       { type: 'enabled', budget_tokens: expectedBudgets.max },
     ])
