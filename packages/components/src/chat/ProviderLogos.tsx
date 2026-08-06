@@ -222,6 +222,27 @@ export function CursorLogo({ size = 16, className }: LogoProps) {
   );
 }
 
+/** Kilo's 60px avatar mark, traced as a vector so it remains available offline. */
+export function KiloCodeLogo({ size = 16, className }: LogoProps) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 60 60"
+      className={className}
+      role="img"
+      aria-label="Kilo Code"
+      shapeRendering="crispEdges"
+    >
+      <rect width="60" height="60" rx="8" fill="#FAF74F" />
+      <path
+        fill="#050505"
+        d="M33 11h8v1h-8ZM33 12h9v1h-9ZM33 13h10v2h-10ZM23 11h4v5h-4ZM11 11h4v5h-4ZM38 15h5v1h-5ZM11 16h5v1h-5ZM11 17h12v1h-12ZM11 18h13v1h-13ZM11 19h14v1h-14ZM11 20h15v1h-15ZM39 16h4v6h-4ZM22 21h5v1h-5ZM11 21h5v1h-5ZM38 22h6v1h-6ZM23 22h4v5h-4ZM11 22h4v5h-4ZM33 23h16v4h-16ZM38 33h9v1h-9ZM38 34h10v2h-10ZM23 33h4v4h-4ZM38 36h11v1h-11ZM44 37h5v1h-5ZM11 33h4v11h-4ZM45 38h4v6h-4ZM33 38h4v6h-4ZM33 44h5v1h-5ZM11 44h5v1h-5ZM11 45h16v2h-16ZM33 45h11v2h-11ZM12 47h15v1h-15ZM34 47h10v1h-10ZM13 48h14v1h-14ZM36 48h8v1h-8Z"
+      />
+    </svg>
+  );
+}
+
 type ProviderLogoComponent = (props: LogoProps) => React.ReactElement | null;
 
 const PROVIDER_LOGO_MAP: Record<string, ProviderLogoComponent> = {
@@ -233,6 +254,7 @@ const PROVIDER_LOGO_MAP: Record<string, ProviderLogoComponent> = {
   openai: OpenAILogo,
   gemini: GeminiLogo,
   groq: GroqLogo,
+  kilocode: KiloCodeLogo,
   openrouter: OpenRouterLogo,
   ollama: OllamaLogo,
 };

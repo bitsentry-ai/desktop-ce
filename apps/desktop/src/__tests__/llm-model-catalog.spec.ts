@@ -201,6 +201,47 @@ describe('local model catalog selection', () => {
     }
   })
 
+  it('covers API reasoning models with provider-accurate effort tiers', () => {
+    const expectedEffortTiers = {
+      groq: {
+        'openai/gpt-oss-120b': { tiers: ['low', 'medium', 'high'], default: 'medium' },
+        'openai/gpt-oss-20b': { tiers: ['low', 'medium', 'high'], default: 'medium' },
+      },
+      kilocode: {
+        'anthropic/claude-opus-4.6': { tiers: ['low', 'medium', 'high', 'max'], default: 'high' },
+        'openai/gpt-5.2': {
+          tiers: ['none', 'minimal', 'low', 'medium', 'high', 'xhigh'],
+          default: 'high',
+        },
+      },
+      openrouter: {
+        'openai/gpt-5.2': {
+          tiers: ['none', 'minimal', 'low', 'medium', 'high', 'xhigh'],
+          default: 'high',
+        },
+        'openai/o3': { tiers: ['low', 'medium', 'high'], default: 'medium' },
+        'anthropic/claude-opus-4': { tiers: ['low', 'medium', 'high', 'max'], default: 'high' },
+      },
+    } as const
+
+    for (const [providerKey, models] of Object.entries(expectedEffortTiers) as Array<[
+      'groq' | 'kilocode' | 'openrouter',
+      Record<string, { readonly tiers: readonly string[]; readonly default: string }>,
+    ]>) {
+      for (const [modelId, expected] of Object.entries(models)) {
+        const model = getCatalogModel(providerKey, modelId)
+        expect(model?.supportsThinking).toBe(true)
+        const effort = getEffectiveComposerOptions(model!).find((option) => option.id === 'effort')
+
+        expect(effort).toMatchObject({ type: 'select' })
+        if (effort?.type !== 'select') throw new Error(`${providerKey}/${modelId} needs effort`)
+        expect(effort.options.map((option) => option.value)).toEqual(expected.tiers)
+        expect(effort.options.filter((option) => option.isDefault)).toHaveLength(1)
+        expect(effort.options.find((option) => option.isDefault)?.value).toBe(expected.default)
+      }
+    }
+  })
+
   it('does not expose Codex models rejected for ChatGPT accounts', () => {
     const models = getCatalogModelIds('codex')
 
