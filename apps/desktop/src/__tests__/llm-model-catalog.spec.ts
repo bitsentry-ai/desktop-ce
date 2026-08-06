@@ -1,10 +1,17 @@
 import { describe, expect, it } from 'vitest'
 import type { SavedProviderConfig } from '@bitsentry-ce/components/chat/types'
+import enAUCommon from '../../../../packages/i18n/src/locales/en-AU/common.json'
+import enGBCommon from '../../../../packages/i18n/src/locales/en-GB/common.json'
+import enUSCommon from '../../../../packages/i18n/src/locales/en-US/common.json'
+import frFRCommon from '../../../../packages/i18n/src/locales/fr-FR/common.json'
+import idIDCommon from '../../../../packages/i18n/src/locales/id-ID/common.json'
+import zhCNCommon from '../../../../packages/i18n/src/locales/zh-CN/common.json'
 import {
   getCatalogModel,
   getCatalogModelIds,
   getModelCapability,
   getModelDisplayName,
+  getProviderCatalogModels,
   resolveCatalogModelRuntimeSelection,
 } from '@bitsentry-ce/components/llm/modelCatalog'
 import { getProviderModelOptions } from '@bitsentry-ce/components/chat/utils'
@@ -26,7 +33,51 @@ function providerConfig(
   }
 }
 
+const commonTranslationsByLocale: Record<string, Record<string, string>> = {
+  'en-US': enUSCommon,
+  'en-GB': enGBCommon,
+  'en-AU': enAUCommon,
+  'fr-FR': frFRCommon,
+  'zh-CN': zhCNCommon,
+  'id-ID': idIDCommon,
+}
+
 describe('local model catalog selection', () => {
+  it('localizes every CLI effort label in the catalog and fallback descriptors', async () => {
+    const labelKeys = new Set<string>()
+    const cliProviders = ['claude_code', 'codex', 'opencode', 'cursor'] as const
+
+    for (const providerKey of cliProviders) {
+      const capabilities = [
+        ...getProviderCatalogModels(providerKey),
+        getModelCapability(providerKey, `future-${providerKey}-model`),
+      ]
+
+      for (const capability of capabilities) {
+        const effort = capability?.composerOptions?.find((option) => option.id === 'effort')
+        if (effort?.type !== 'select') continue
+
+        labelKeys.add(effort.label)
+        for (const choice of effort.options) {
+          labelKeys.add(choice.label)
+          if (choice.shortLabel !== undefined) labelKeys.add(choice.shortLabel)
+        }
+      }
+    }
+
+    expect(labelKeys.size).toBeGreaterThan(0)
+    for (const key of labelKeys) {
+      expect(key).toMatch(/^common\.traitsDropdown\./)
+    }
+
+    for (const translations of Object.values(commonTranslationsByLocale)) {
+      for (const key of labelKeys) {
+        expect(translations[key]).toEqual(expect.any(String))
+        expect(translations[key]).not.toBe(key)
+      }
+    }
+  })
+
   it('does not expose Codex models rejected for ChatGPT accounts', () => {
     const models = getCatalogModelIds('codex')
 

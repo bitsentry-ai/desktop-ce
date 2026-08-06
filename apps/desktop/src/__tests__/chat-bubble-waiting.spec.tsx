@@ -9,14 +9,37 @@ import type { ChatMessage } from "@bitsentry-ce/components/chat/types";
 import { getModelCapability } from "@bitsentry-ce/components/llm/modelCatalog";
 import { TooltipProvider } from "@bitsentry-ce/components/ui/tooltip";
 
+let traitTranslations: Record<string, string> = {
+  "common.traitsDropdown.reasoning": "Reasoning",
+  "common.traitsDropdown.reasoningExtraHigh": "Extra High",
+  "common.traitsDropdown.reasoningExtraHighShort": "xHigh",
+  "common.traitsDropdown.reasoningHigh": "High",
+  "common.traitsDropdown.reasoningLow": "Low",
+  "common.traitsDropdown.reasoningMax": "Max",
+  "common.traitsDropdown.reasoningMedium": "Medium",
+  "common.traitsDropdown.reasoningUltrathink": "Ultrathink",
+  "common.traitsDropdown.reasoningUltrathinkShort": "Ultra",
+};
+
 vi.mock("@bitsentry-ce/i18n", () => ({
   useTranslation: () => ({
-    t: (key: string) => key,
+    t: (key: string) => traitTranslations[key] ?? key,
   }),
 }));
 
 afterEach(() => {
   cleanup();
+  traitTranslations = {
+    "common.traitsDropdown.reasoning": "Reasoning",
+    "common.traitsDropdown.reasoningExtraHigh": "Extra High",
+    "common.traitsDropdown.reasoningExtraHighShort": "xHigh",
+    "common.traitsDropdown.reasoningHigh": "High",
+    "common.traitsDropdown.reasoningLow": "Low",
+    "common.traitsDropdown.reasoningMax": "Max",
+    "common.traitsDropdown.reasoningMedium": "Medium",
+    "common.traitsDropdown.reasoningUltrathink": "Ultrathink",
+    "common.traitsDropdown.reasoningUltrathinkShort": "Ultra",
+  };
 });
 
 describe("ChatBubble waiting state", () => {
@@ -128,6 +151,57 @@ describe("ChatBubble waiting state", () => {
 });
 
 describe("Composer traits", () => {
+  it("renders translated CLI fallback effort labels", () => {
+    traitTranslations = {
+      "common.traitsDropdown.reasoning": "Penalaran",
+      "common.traitsDropdown.reasoningExtraHigh": "Sangat Tinggi",
+      "common.traitsDropdown.reasoningExtraHighShort": "Sangat Tinggi",
+      "common.traitsDropdown.reasoningHigh": "Tinggi",
+      "common.traitsDropdown.reasoningLow": "Rendah",
+      "common.traitsDropdown.reasoningMax": "Maksimum",
+      "common.traitsDropdown.reasoningMedium": "Sedang",
+      "common.traitsDropdown.reasoningUltrathink": "Berpikir Ultra",
+      "common.traitsDropdown.reasoningUltrathinkShort": "Ultra",
+    };
+
+    render(
+      <Composer
+        prompt=""
+        onPromptChange={vi.fn()}
+        onSend={vi.fn()}
+        onCancel={vi.fn()}
+        isProcessing={false}
+        isBlocked={false}
+        isArchived={false}
+        composerImages={[]}
+        onRemoveImage={vi.fn()}
+        onPickImages={vi.fn()}
+        onPickFiles={vi.fn()}
+        onImageFilesSelected={vi.fn()}
+        onPaste={vi.fn()}
+        imageInputRef={React.createRef<HTMLInputElement>()}
+        fileInputRef={React.createRef<HTMLInputElement>()}
+        selectedProviderKey="codex"
+        selectedModelId="gpt-5.6-terra"
+        onSelectProvider={vi.fn()}
+        onSelectModel={vi.fn()}
+        configuredProviderKeys={['codex']}
+        providerConfigs={{}}
+        selectedModelCapability={getModelCapability('codex', 'gpt-5.6-terra')}
+        thinkingEnabled={false}
+        onThinkingToggle={vi.fn()}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Tinggi" }));
+
+    expect(screen.getByText("Penalaran")).toBeTruthy();
+    expect(screen.getByText("Rendah")).toBeTruthy();
+    expect(screen.getByText("Sedang")).toBeTruthy();
+    expect(screen.getAllByText("Tinggi").length).toBeGreaterThan(1);
+    expect(screen.getByText("Sangat Tinggi")).toBeTruthy();
+  });
+
   it("submits the selected fallback CLI effort", () => {
     const onSend = vi.fn();
 
