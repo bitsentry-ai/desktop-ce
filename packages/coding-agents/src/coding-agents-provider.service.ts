@@ -118,6 +118,7 @@ export interface CodingAgentsProviderDependencies {
   doctor?: typeof doctor;
 }
 
+// Claude Code's composer effort caps the agent loop; it is not a model thinking-token budget.
 const EFFORT_MAX_TURNS: Record<string, number> = {
   low: 3,
   medium: 8,
