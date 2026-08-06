@@ -42,7 +42,7 @@ import { hasValidRunbook, loadRunbooks } from "../runbook/runbookStorage";
 import {
   type ModelCatalogEntry,
   type ModelCatalogProviderKey,
-  getCatalogModel,
+  getModelCapability,
 } from "../llm/modelCatalog";
 import { useTranslation } from "@bitsentry-ce/i18n";
 import { getProviderModelOptions } from "../chat/utils";
@@ -1575,7 +1575,7 @@ export default function IncidentsPage() {
   const selectedModelCapability = useMemo<ModelCatalogEntry | undefined>(
     () => {
       if (selectedProviderKey === null) return;
-      return getCatalogModel(selectedProviderKey, selectedModelId);
+      return getModelCapability(selectedProviderKey, selectedModelId);
     },
     [selectedModelId, selectedProviderKey],
   );
