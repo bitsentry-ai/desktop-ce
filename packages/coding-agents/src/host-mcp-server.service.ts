@@ -26,6 +26,9 @@ export interface HostMcpEndpoint {
   args: string[]
   env: Record<string, string>
   agentSessionId: string
+  hasRunbookProposal?: boolean
+  hasRunbookParameters?: boolean
+  hasMultipleRunbooksInPlay?: boolean
 }
 
 type HostMcpSession = {
@@ -173,6 +176,9 @@ export class HostMcpServerService {
         ELECTRON_RUN_AS_NODE: '1',
       },
       agentSessionId: context.session.id,
+      hasRunbookProposal: (context.session.runbookAuthoringProposals?.length ?? 0) > 0,
+      hasRunbookParameters: context.session.hasRunbookParameters === true,
+      hasMultipleRunbooksInPlay: context.session.hasMultipleRunbooksInPlay === true,
     }
   }
 

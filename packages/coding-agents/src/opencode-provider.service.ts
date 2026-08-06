@@ -159,9 +159,16 @@ export function getOpenCodeHostToolPermissions(): Record<string, 'allow'> {
 function buildOpenCodePrompt(
   prompt: string,
   accessLevel: AccessLevel,
-  hasRunbookTools: boolean,
+  mcpEndpoint: HostMcpEndpoint | undefined,
 ): string {
-  const scopedPrompt = hasRunbookTools ? prependRunbookOnlyScope(prompt) : prompt
+  const hasRunbookTools = mcpEndpoint !== undefined
+  const scopedPrompt = mcpEndpoint === undefined
+    ? prompt
+    : prependRunbookOnlyScope(prompt, {
+      includeProposalInstructions: mcpEndpoint.hasRunbookProposal === true,
+      includeParameterInstructions: mcpEndpoint.hasRunbookParameters === true,
+      includeMultiRunbookInstructions: mcpEndpoint.hasMultipleRunbooksInPlay === true,
+    })
   if (accessLevel === 'full-access') {
     return scopedPrompt
   }
@@ -521,7 +528,7 @@ function buildOpenCodeArgs(
     args.push('--dangerously-skip-permissions')
   }
 
-  args.push(buildOpenCodePrompt(options.prompt, accessLevel, options.mcpEndpoint !== undefined))
+  args.push(buildOpenCodePrompt(options.prompt, accessLevel, options.mcpEndpoint))
   return args
 }
 

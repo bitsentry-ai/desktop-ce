@@ -532,44 +532,6 @@ describe('Cursor provider behavior', () => {
     ])
   })
 
-  it('prepends the runbook-only scope to Cursor ACP prompts with every host tool', async () => {
-    const infos: unknown[][] = []
-    setCodingAgentsLoggerForTesting({ info: (...args) => { infos.push(args) }, warn: () => {}, error: () => {} })
-    const mock = await createMockCursorAgent()
-    await executeCursor({
-      prompt: 'Update the local CLI.',
-      binaryPath: mock.binaryPath,
-      abortController: new AbortController(),
-      cwd: mock.cwd,
-      mcpEndpoint: {
-        url: 'http://127.0.0.1:1/mcp',
-        token: 'token',
-        expiresAt: Date.now() + 60_000,
-        command: 'node',
-        args: ['host-mcp-shim.js'],
-        env: {},
-        agentSessionId: 'session-1',
-      },
-    })
-
-    const promptRequest = (await readLoggedMessages(mock.logPath)).find(
-      (message) => message.method === 'session/prompt',
-    )
-    const prompt = getMessageParams(promptRequest ?? {})?.prompt as Array<{ text?: string }> | undefined
-    const scope = prompt?.[0]?.text ?? ''
-    for (const hostTool of getHostTools()) {
-      expect(scope).toContain(hostTool.name)
-    }
-    expect(scope).toContain('You must NEVER execute maintenance or remediation steps directly with built-in tools')
-    expect(scope).toContain('there is no direct-execution fallback when a runbook is missing or unapproved.')
-    expect(scope).toContain('call list_runbooks once to verify availability before concluding anything')
-    expect(scope).toContain('## Conversation\n\nUpdate the local CLI.')
-    expect(infos).toContainEqual([
-      '[cursor-provider] configured host tools',
-      { agentSessionId: 'session-1', toolNames: getHostTools().map((tool) => tool.name) },
-    ])
-  })
-
   it('sets Cursor effort through advertised ACP config options', async () => {
     const mock = await createMockCursorAgent()
 

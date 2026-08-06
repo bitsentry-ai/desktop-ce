@@ -1,4 +1,4 @@
-import { chmod, mkdtemp, readFile, rm, writeFile } from 'fs/promises'
+import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from 'fs/promises'
 import os from 'os'
 import path from 'path'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -7,12 +7,11 @@ import {
   codexStreamDeltasFromNotification,
   normalizeCodexExecutionError,
 } from '@bitsentry-ce/desktop-cli/runtime/desktop-coding-agents'
-import { getHostTools } from '@bitsentry-ce/core/features/agent-runtime'
 import { setCodingAgentsLoggerForTesting } from '@bitsentry-ce/coding-agents/logger'
 import { HOST_MCP_SERVER_NAME } from '@bitsentry-ce/coding-agents/host-mcp-server.service'
 
 const tempDirs: string[] = []
-async function createMultiItemCodexAppServer(): Promise<{
+async function createMultiItemCodexAppServer(options: { readsGlobalCodexInstructions?: boolean } = {}): Promise<{
   binaryPath: string
   cwd: string
   logPath: string
@@ -24,11 +23,17 @@ async function createMultiItemCodexAppServer(): Promise<{
   const logPath = path.join(cwd, 'messages.jsonl')
   const script = `
 const fs = require('fs')
+const path = require('path')
 const readline = require('readline')
 
 const respond = (id, result) => process.stdout.write(JSON.stringify({ id, result }) + '\\n')
 const notify = (method, params) => process.stdout.write(JSON.stringify({ method, params }) + '\\n')
 const logMessage = (message) => fs.appendFileSync(${JSON.stringify(logPath)}, JSON.stringify(message) + '\\n')
+const responseText = ${options.readsGlobalCodexInstructions === true}
+  ? (fs.existsSync(path.join(process.env.HOME || '', '.codex', 'config.toml'))
+      ? 'Global instruction loaded.'
+      : 'Incident instruction boundary preserved.')
+  : 'I will list runbooks.'
 if (!process.argv.slice(2).includes('app-server')) process.exit(64)
 
 const rl = readline.createInterface({ input: process.stdin })
@@ -49,9 +54,9 @@ rl.on('line', (line) => {
   if (message.method === 'turn/start') {
     respond(message.id, { turn: { id: 'turn-multi-item' } })
     notify('item/started', { item: { id: 'item-streamed', type: 'agentMessage' } })
-    notify('item/agentMessage/delta', { itemId: 'item-streamed', delta: 'I will list runbooks.' })
+    notify('item/agentMessage/delta', { itemId: 'item-streamed', delta: responseText })
     notify('item/completed', {
-      item: { id: 'item-streamed', type: 'agentMessage', text: 'I will list runbooks.' },
+      item: { id: 'item-streamed', type: 'agentMessage', text: responseText },
     })
     notify('item/started', { item: { id: 'item-tool-call', type: 'mcpToolCall' } })
     notify('item/completed', {
@@ -163,15 +168,14 @@ describe('Codex provider behavior', () => {
     expect(result.output).not.toContain('mcpToolCall')
   })
 
-  it('prepends the runbook-only scope to Codex prompts with every host tool', async () => {
-    const infos: unknown[][] = []
-    setCodingAgentsLoggerForTesting({ info: (...args) => { infos.push(args) }, warn: () => {}, error: () => {} })
+  it('does not start Codex when cancellation arrives while the isolated HOME is being created', async () => {
     const mock = await createMultiItemCodexAppServer()
-    await executeCodex({
-      prompt: 'Update the local CLI.',
+    const abortController = new AbortController()
+    const execution = executeCodex({
+      prompt: 'List available runbooks.',
       binaryPath: mock.binaryPath,
       cwd: mock.cwd,
-      abortController: new AbortController(),
+      abortController,
       mcpEndpoint: {
         url: 'http://127.0.0.1:1/mcp',
         token: 'token',
@@ -179,31 +183,52 @@ describe('Codex provider behavior', () => {
         command: 'node',
         args: ['host-mcp-shim.js'],
         env: {},
-        agentSessionId: 'session-1',
+        agentSessionId: 'session-cancelled',
       },
     })
+    abortController.abort()
 
-    const turnStart = (await readLoggedCodexMessages(mock.logPath)).find(
-      (message) => message.method === 'turn/start',
-    )
-    const params = turnStart?.params as { input?: Array<{ text?: string }> } | undefined
-    const scope = params?.input?.[0]?.text ?? ''
-    for (const hostTool of getHostTools()) {
-      expect(scope).toContain(hostTool.name)
+    await expect(execution).resolves.toMatchObject({ output: '', exitCode: -1 })
+    expect(await readLoggedCodexMessages(mock.logPath)).toEqual([])
+  })
+
+  it('keeps global Codex instructions out of incident sessions', async () => {
+    const userHome = await mkdtemp(path.join(os.tmpdir(), 'codex-user-home-'))
+    tempDirs.push(userHome)
+    await mkdir(path.join(userHome, '.codex'))
+    await writeFile(path.join(userHome, '.codex', 'config.toml'), 'developer_instructions = "global"\n')
+    const mock = await createMultiItemCodexAppServer({ readsGlobalCodexInstructions: true })
+    const originalHome = process.env.HOME
+    process.env.HOME = userHome
+
+    try {
+      const result = await executeCodex({
+        prompt: 'List available runbooks.',
+        binaryPath: mock.binaryPath,
+        cwd: mock.cwd,
+        abortController: new AbortController(),
+        mcpEndpoint: {
+          url: 'http://127.0.0.1:1/mcp',
+          token: 'token',
+          expiresAt: Date.now() + 60_000,
+          command: 'node',
+          args: ['host-mcp-shim.js'],
+          env: {},
+          agentSessionId: 'session-isolated-home',
+        },
+      })
+
+      expect(result.output).toBe('Incident instruction boundary preserved.')
+    } finally {
+      if (originalHome === undefined) {
+        delete process.env.HOME
+      } else {
+        process.env.HOME = originalHome
+      }
     }
-    expect(scope).toContain('You must NEVER execute maintenance or remediation steps directly with built-in tools')
-    expect(scope).toContain('there is no direct-execution fallback when a runbook is missing or unapproved.')
-    expect(scope).toContain('call list_runbooks once to verify availability before concluding anything')
-    expect(scope).toContain('## Conversation\n\nUpdate the local CLI.')
-    expect(infos).toContainEqual([
-      '[codex-provider] configured host tools',
-      { agentSessionId: 'session-1', toolNames: getHostTools().map((tool) => tool.name) },
-    ])
   })
 
   it('approves a BitSentry MCP tool elicitation at Safe Tools', async () => {
-    const infos: unknown[][] = []
-    setCodingAgentsLoggerForTesting({ info: (...args) => { infos.push(args) }, warn: () => {}, error: () => {} })
     const mock = await createHostApprovalCodexAppServer()
 
     await expect(executeCodex({
@@ -225,24 +250,6 @@ describe('Codex provider behavior', () => {
         _meta: null,
       },
     })
-    expect(infos).toContainEqual([
-      '[codex-provider] approval decision',
-      expect.objectContaining({
-        method: 'mcpServer/elicitation/request',
-        choice: 'allow-host-tool',
-        responsePayloadKeys: ['_meta', 'action', 'content'],
-        elicitation: expect.objectContaining({
-          serverName: HOST_MCP_SERVER_NAME,
-          approvalKind: 'mcp_tool_call',
-          serverScopedHostApproval: true,
-          requestedSchemaShape: {
-            keys: ['properties', 'type'],
-            type: 'object',
-            propertyKeys: [],
-          },
-        }),
-      }),
-    ])
   })
 
   it('keeps Codex assistant, reasoning, and command streams separate', () => {

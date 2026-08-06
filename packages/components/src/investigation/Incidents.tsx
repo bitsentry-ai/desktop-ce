@@ -38,7 +38,7 @@ import {
 } from "../ui/tooltip";
 import { useAgentService } from "../services/hooks";
 import { getDesktopApi } from "../services/desktop-api";
-import { hasValidRunbook, loadRunbooks } from "../runbook/runbookStorage";
+import { hasValidRunbook } from "../runbook/runbookStorage";
 import {
   type ModelCatalogEntry,
   type ModelCatalogProviderKey,
@@ -62,6 +62,9 @@ import type {
 } from "../chat/types";
 import { Composer } from "../chat/Composer";
 import type {
+  AgentLlmSelection,
+  AgentSendRequest,
+  AgentStartRequest,
   AgentServicePort,
   RunbookAuthoringProposalReview,
 } from "../services/contracts";
@@ -111,6 +114,60 @@ function canSendIncidentMessage(
   modelId: string,
 ): boolean {
   return (prompt.trim().length > 0 || imageCount > 0) && activeId !== null && providerKey !== null && modelId.length > 0;
+}
+
+type IncidentAgentRequestBase = {
+  text: string;
+  sessionId: string | null;
+  attachments: ComposerImageAttachment[];
+  llm: AgentLlmSelection;
+  incidentThreadId: string;
+  accessLevel?: AccessLevel;
+  interactionMode?: InteractionMode;
+  traitValues?: Record<string, boolean | string>;
+};
+
+export function buildIncidentAgentRequest(
+  input: IncidentAgentRequestBase & { continueSession: true },
+): AgentSendRequest;
+export function buildIncidentAgentRequest(
+  input: IncidentAgentRequestBase & { continueSession: false },
+): AgentStartRequest;
+export function buildIncidentAgentRequest(
+  input: IncidentAgentRequestBase & { continueSession: boolean },
+): AgentStartRequest | AgentSendRequest {
+  const common = {
+    attachments: input.attachments,
+    llm: input.llm,
+    incidentThreadId: input.incidentThreadId,
+    accessLevel: input.accessLevel,
+    interactionMode: input.interactionMode,
+    traitValues: input.traitValues,
+  };
+
+  if (input.continueSession) {
+    return {
+      message: input.text,
+      sessionId: input.sessionId ?? undefined,
+      ...common,
+    };
+  }
+
+  return {
+    prompt: input.text,
+    ...common,
+  };
+}
+
+export async function sendIncidentAgentMessage(
+  agent: Pick<AgentServicePort, "start" | "send">,
+  input: IncidentAgentRequestBase & { continueSession: boolean },
+): Promise<{ sessionId: string }> {
+  if (input.continueSession) {
+    return agent.send(buildIncidentAgentRequest({ ...input, continueSession: true }));
+  }
+
+  return agent.start(buildIncidentAgentRequest({ ...input, continueSession: false }));
 }
 
 function resolveIncidentTitle(incident: IncidentThread | null | undefined, text: string): string {
@@ -363,6 +420,21 @@ function normalizeIncidentTokenUsageMap(
     normalized[incidentId] = entry;
   }
   return normalized;
+}
+
+export function updateIncidentTokenUsage(
+  tokenUsageByIncident: Record<string, AgentThreadTokenUsage>,
+  incidentId: string,
+  tokenUsage: AgentThreadTokenUsage,
+): Record<string, AgentThreadTokenUsage> {
+  return { ...tokenUsageByIncident, [incidentId]: tokenUsage };
+}
+
+export function selectIncidentTokenUsage(
+  tokenUsageByIncident: Record<string, AgentThreadTokenUsage>,
+  incidentId: string | null,
+): AgentThreadTokenUsage | undefined {
+  return incidentId === null ? undefined : tokenUsageByIncident[incidentId];
 }
 
 function normalizeToolCallState(value: unknown): ToolCallCard["state"] {
@@ -839,20 +911,6 @@ function relativeTime(iso: string): string {
   const hrs = Math.floor(mins / 60);
   if (hrs < 24) return `${String(hrs)}h ago`;
   return `${String(Math.floor(hrs / 24))}d ago`;
-}
-
-/**
- * Get the active runbook id for the incident agent.
- */
-function getSelectedRunbookReference(): { id: string } | undefined {
-  try {
-    const runbook = loadRunbooks().find((item) => item.actions.length > 0);
-    return runbook === undefined
-      ? undefined
-      : { id: runbook.id };
-  } catch {
-    return undefined;
-  }
 }
 
 const NO_LLM_PROVIDER_CONFIGURED_MESSAGE =
@@ -2068,7 +2126,7 @@ export default function IncidentsPage() {
       setSessionTokenUsage(undefined);
       return;
     }
-    setSessionTokenUsage(tokenUsageByIncident[activeId]);
+    setSessionTokenUsage(selectIncidentTokenUsage(tokenUsageByIncident, activeId));
   }, [activeId, tokenUsageByIncident]);
 
   // Restore provider/model/accessLevel for this incident thread on tab switch.
@@ -2140,10 +2198,7 @@ export default function IncidentsPage() {
       }));
       if (snapshot.tokenUsage !== undefined) {
         const tokenUsage = snapshot.tokenUsage;
-        setTokenUsageByIncident((prev) => ({
-          ...prev,
-          [incidentId]: tokenUsage,
-        }));
+        setTokenUsageByIncident((prev) => updateIncidentTokenUsage(prev, incidentId, tokenUsage));
         if (incidentId === activeId) {
           setSessionTokenUsage(tokenUsage);
         }
@@ -2513,7 +2568,6 @@ export default function IncidentsPage() {
     );
 
     try {
-      const selectedRunbook = getSelectedRunbookReference();
       const llm: {
         providerKey: ModelCatalogProviderKey;
         model: string;
@@ -2526,31 +2580,17 @@ export default function IncidentsPage() {
         llm.thinkingEnabled = thinkingEnabled;
       }
 
-      let result: { sessionId: string };
-      if (shouldContinueSession) {
-        result = await agent.send({
-          message: text,
-          sessionId: activeSessionId ?? undefined,
-          attachments: outgoingImages,
-          llm,
-          runbookId: selectedRunbook?.id,
-          incidentThreadId: activeId,
-          accessLevel: options?.accessLevel ?? selectedAccessLevel,
-          interactionMode: options?.interactionMode,
-          traitValues: options?.traitValues,
-        });
-      } else {
-        result = await agent.start({
-          prompt: text,
-          attachments: outgoingImages,
-          llm,
-          runbookId: selectedRunbook?.id,
-          incidentThreadId: activeId,
-          accessLevel: options?.accessLevel ?? selectedAccessLevel,
-          interactionMode: options?.interactionMode,
-          traitValues: options?.traitValues,
-        });
-      }
+      const result = await sendIncidentAgentMessage(agent, {
+        continueSession: shouldContinueSession,
+        text,
+        sessionId: activeSessionId,
+        attachments: outgoingImages,
+        llm,
+        incidentThreadId: activeId,
+        accessLevel: options?.accessLevel ?? selectedAccessLevel,
+        interactionMode: options?.interactionMode,
+        traitValues: options?.traitValues,
+      });
       setIncidents((prev) =>
         updateIncidentById(prev, activeId, (incident) => ({ ...incident, sessionId: result.sessionId })),
       );
@@ -2600,7 +2640,6 @@ export default function IncidentsPage() {
         modelId: selectedModelId,
         accessLevel: options?.accessLevel ?? selectedAccessLevel,
         interactionMode: options?.interactionMode ?? null,
-        hasRunbookId: getSelectedRunbookReference() !== undefined,
         promptLength: text.length,
         attachmentCount: outgoingImages.length,
       });

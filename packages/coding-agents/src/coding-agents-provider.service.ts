@@ -55,14 +55,8 @@ export function prependHostSystemInstructions(
   if (instructions === undefined || instructions === "") return prompt;
 
   // Cursor ACP, Codex app-server, and OpenCode do not expose a supported
-  // system-message field. Keep host instructions structurally distinct from
-  // replayed chat text instead of impersonating a conversation role.
-  return [
-    "## BitSentry host instructions",
-    instructions,
-    "## Conversation",
-    prompt,
-  ].join("\n\n");
+  // system-message field. The prompt already owns the conversation boundary.
+  return [instructions, prompt].join("\n\n");
 }
 
 export interface CodingAgentsSettingsStore {
@@ -660,7 +654,7 @@ export class CodingAgentsProviderService {
     }
 
     return (this.dependencies.executeCodex ?? executeCodex)({
-      prompt: promptWithHostInstructions,
+      prompt,
       binaryPath,
       abortController,
       cwd,
@@ -669,6 +663,7 @@ export class CodingAgentsProviderService {
       traitValues,
       codexArgs: this.settings.codex.codexArgs,
       mcpEndpoint,
+      systemPrompt,
       onDelta,
     });
   }

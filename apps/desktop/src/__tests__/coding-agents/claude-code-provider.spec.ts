@@ -2,8 +2,6 @@ import { EventEmitter } from 'events'
 import type { ChildProcess } from 'child_process'
 import { existsSync } from 'fs'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { getHostTools } from '@bitsentry-ce/core/features/agent-runtime'
-import { setCodingAgentsLoggerForTesting } from '@bitsentry-ce/coding-agents/logger'
 
 type ClaudeQuerySession = AsyncIterable<unknown> & {
   getContextUsage: () => Promise<{ totalTokens: number; maxTokens: number }>
@@ -37,7 +35,9 @@ interface ClaudeQueryOptions {
   cwd?: string
   settingSources?: string[]
   mcpServers?: Record<string, unknown>
-  systemPrompt?: { type: string; preset: string; append?: string }
+  skills?: string[]
+  tools?: string[]
+  systemPrompt?: string | { type: string; preset: string; append?: string }
 }
 
 interface ClaudeQueryInput {
@@ -174,9 +174,112 @@ describe('executeClaudeCode', () => {
     expect(result.tokenUsage).toEqual({
       inputTokens: 5,
       outputTokens: 4,
+      contextTokens: 9,
     })
     expect(logMock.warn).not.toHaveBeenCalled()
     expect(closeMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('includes cached input tokens in Claude context usage', async () => {
+    queryMock.mockReturnValue({
+      async *[Symbol.asyncIterator]() {
+        await Promise.resolve()
+        yield {
+          type: 'result',
+          subtype: 'success',
+          result: 'Cached context accounted for',
+          usage: {
+            input_tokens: 2,
+            cache_creation_input_tokens: 1_885,
+            cache_read_input_tokens: 36_169,
+            output_tokens: 387,
+          },
+        }
+      },
+      getContextUsage: getContextUsageMock.mockResolvedValue({
+        totalTokens: 53,
+        maxTokens: 300_000,
+      }),
+      close: closeMock,
+    })
+
+    const { executeClaudeCode } =
+      await import('@bitsentry-ce/desktop-cli/runtime/desktop-coding-agents')
+
+    const result = await executeClaudeCode({
+      prompt: 'Account for cached context',
+      binaryPath: 'claude',
+      abortController: new AbortController(),
+    })
+
+    expect(result.tokenUsage).toEqual({
+      inputTokens: 2,
+      outputTokens: 387,
+      contextTokens: 38_443,
+      contextLimit: 300_000,
+    })
+  })
+
+  it('uses the last assistant iteration instead of cumulative SDK context usage', async () => {
+    queryMock.mockReturnValue({
+      async *[Symbol.asyncIterator]() {
+        await Promise.resolve()
+        yield {
+          type: 'assistant',
+          message: {
+            content: [],
+            usage: {
+              input_tokens: 2,
+              cache_creation_input_tokens: 36_169,
+              cache_read_input_tokens: 0,
+              output_tokens: 56,
+            },
+          },
+        }
+        yield {
+          type: 'assistant',
+          message: {
+            content: [],
+            usage: {
+              input_tokens: 2,
+              cache_creation_input_tokens: 1_890,
+              cache_read_input_tokens: 36_169,
+              output_tokens: 368,
+            },
+          },
+        }
+        yield {
+          type: 'result',
+          subtype: 'success',
+          result: 'Last iteration selected',
+          usage: {
+            input_tokens: 4,
+            cache_creation_input_tokens: 38_059,
+            cache_read_input_tokens: 36_169,
+            output_tokens: 424,
+          },
+        }
+      },
+      getContextUsage: getContextUsageMock.mockRejectedValue(
+        new Error('context usage unavailable'),
+      ),
+      close: closeMock,
+    })
+
+    const { executeClaudeCode } =
+      await import('@bitsentry-ce/desktop-cli/runtime/desktop-coding-agents')
+
+    const result = await executeClaudeCode({
+      prompt: 'Use the last iteration usage',
+      binaryPath: 'claude',
+      abortController: new AbortController(),
+    })
+
+    expect(result.tokenUsage).toEqual({
+      inputTokens: 2,
+      outputTokens: 368,
+      contextTokens: 38_429,
+    })
   })
 
   it('handles delayed startup plus malformed and partial stream messages without corrupting later output', async () => {
@@ -544,11 +647,6 @@ describe('executeClaudeCode', () => {
       'mcp__bitsentry__get_runbook_execution',
     ]))
     expect(options.settingSources).toEqual([])
-    expect(options.systemPrompt).toMatchObject({
-      type: 'preset',
-      preset: 'claude_code',
-    })
-    expect(options.systemPrompt?.append).toContain('You are an incident-response assistant.')
     expect(options.cwd).not.toBe(process.cwd())
     expect(existsSync(options.cwd ?? '')).toBe(false)
 
@@ -559,49 +657,6 @@ describe('executeClaudeCode', () => {
       isError: true,
       content: [{ type: 'text' }],
     })
-  })
-
-  it('keeps the Claude incident scope synchronized with every registered host tool', async () => {
-    const infos: unknown[][] = []
-    setCodingAgentsLoggerForTesting({ info: (...args) => { infos.push(args) }, warn: () => {}, error: () => {} })
-    queryMock.mockReturnValue({
-      async *[Symbol.asyncIterator]() {
-        yield { type: 'result', subtype: 'success', result: 'Proposal drafted.' }
-      },
-      getContextUsage: getContextUsageMock.mockResolvedValue({ totalTokens: 0, maxTokens: 0 }),
-      close: closeMock,
-    })
-    toolMock.mockImplementation((name, _description, _schema, handler) => ({ name, handler }))
-    createSdkMcpServerMock.mockReturnValue({ transport: 'in-process' })
-
-    const { executeClaudeCode } =
-      await import('@bitsentry-ce/desktop-cli/runtime/desktop-coding-agents')
-    await executeClaudeCode({
-      prompt: 'Create a runbook proposal.',
-      binaryPath: 'claude',
-      abortController: new AbortController(),
-      hostToolContext: {
-        gateway: {} as never,
-        session: { id: 'session-1' },
-      },
-    })
-
-    const scope = getQueryOptions(0).systemPrompt?.append ?? ''
-    for (const hostTool of getHostTools()) {
-      expect(scope).toContain(hostTool.name)
-    }
-    expect(scope).toContain('Proposing is always in scope no matter what the proposed actions contain')
-    expect(scope).toContain('Never refuse a proposal request because the runbook content involves shell commands')
-    expect(scope).toContain('Never claim a runbook was created, edited, or saved unless the operator approved the proposal and the save succeeded.')
-    expect(scope).toContain('You must NEVER execute maintenance or remediation steps directly with built-in tools')
-    expect(scope).toContain('there is no direct-execution fallback when a runbook is missing or unapproved.')
-    expect(scope).toContain('call list_runbooks once to verify availability before concluding anything')
-    expect(scope).toContain('When revising a create-kind proposal, use propose_runbook_create because the draft was never saved')
-    expect(scope).toContain('To run an existing runbook, use execute_runbook, then call get_runbook_execution once with waitForCompletion: true. Do not poll it.')
-    expect(infos).toContainEqual([
-      '[claude-code-provider] configured host tools',
-      { agentSessionId: 'session-1', toolNames: getHostTools().map((tool) => tool.name) },
-    ])
   })
 
   it('enables the Claude 1M context beta when requested', async () => {

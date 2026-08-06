@@ -20,7 +20,6 @@ import {
   CodingAgentsProviderService,
   type CodingAgentsProviderDependencies,
   type CodingAgentsSettingsStore,
-  prependHostSystemInstructions,
 } from "@bitsentry-ce/coding-agents/coding-agents-provider.service";
 import {
   getCatalogModel,
@@ -83,61 +82,6 @@ function createService(
 describe("CodingAgentsProviderService", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-  });
-
-  it("keeps host system instructions outside replayed conversation roles", () => {
-    expect(
-      prependHostSystemInstructions(
-        "[user]: List runbooks",
-        "You are an incident-response assistant.",
-      ),
-    ).toBe(
-      [
-        "## BitSentry host instructions",
-        "You are an incident-response assistant.",
-        "## Conversation",
-        "[user]: List runbooks",
-      ].join("\n\n"),
-    );
-  });
-
-  it("prepends host instructions when dispatching a provider without a system channel", async () => {
-    vi.mocked(detectBinary).mockResolvedValue("/opt/homebrew/bin/codex");
-    vi.mocked(probeCodex).mockResolvedValue({
-      installed: true,
-      version: "0.42.0",
-      auth: { status: "authenticated" },
-      status: "ready",
-    });
-    vi.mocked(executeCodex).mockImplementation(({ prompt }) =>
-      Promise.resolve({ output: prompt }),
-    );
-
-    const service = createService(createDbMock());
-    await service.saveSettings({
-      codex: { enabled: true, binaryPath: "codex" },
-    });
-    const result = await service.execute(
-      "codex",
-      "[user]: List runbooks",
-      new AbortController(),
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      "Use concise incident language.",
-    );
-
-    expect(result.output).toBe(
-      [
-        "## BitSentry host instructions",
-        "Use concise incident language.",
-        "## Conversation",
-        "[user]: List runbooks",
-      ].join("\n\n"),
-    );
   });
 
   it("exposes Opus 5 with separate effort and context options", () => {

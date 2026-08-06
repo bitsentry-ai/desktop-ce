@@ -34,6 +34,7 @@ interface JsonRpcRequest {
 
 export interface CodexAppServerClientOptions {
   requestTimeoutMs?: number
+  home?: string
 }
 
 interface JsonRpcNotification {
@@ -83,9 +84,11 @@ export class CodexAppServerClient extends EventEmitter {
   ) {
     super()
     this.requestTimeoutMs = resolveRequestTimeoutMs(options.requestTimeoutMs)
+    this.home = options.home
   }
 
   private readonly requestTimeoutMs: number
+  private readonly home: string | undefined
 
   async start(): Promise<void> {
     const args = [...this.extraArgs, 'app-server']
@@ -93,7 +96,10 @@ export class CodexAppServerClient extends EventEmitter {
       cwd: this.cwd,
       stdio: ['pipe', 'pipe', 'pipe'],
       shell: process.platform === 'win32',
-      env: createCodingAgentsProcessEnv(process.env),
+      env: {
+        ...createCodingAgentsProcessEnv(process.env),
+        ...(this.home === undefined ? {} : { HOME: this.home }),
+      },
     })
 
     this.output = readline.createInterface({ input: this.child.stdout })

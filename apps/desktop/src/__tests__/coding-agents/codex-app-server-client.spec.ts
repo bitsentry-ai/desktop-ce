@@ -96,6 +96,7 @@ rl.on('line', (line) => {
   logMessage(message)
 
   if (message.method === 'initialize') {
+    logMessage({ method: 'environment', params: { home: process.env.HOME ?? null } })
     if (stderr) process.stderr.write(stderr)
     if (emitMalformedFrame) process.stdout.write('{not json}\\n')
     respond(message.id, { userAgent: 'mock-codex-app-server' })
@@ -202,6 +203,25 @@ describe('CodexAppServerClient subprocess protocol', () => {
         await expect(readLoggedMessages(mock.logPath)).resolves.toContainEqual({
           id: 'approval-1',
           result: { answers: { approved: true } },
+        })
+      })
+    } finally {
+      await client.kill()
+    }
+  })
+
+  it('uses an isolated home only when the caller provides one', async () => {
+    const mock = await createMockCodexAppServer()
+    const isolatedHome = await mkdtemp(path.join(os.tmpdir(), 'bitsentry-isolated-codex-home-'))
+    tmpDirs.push(isolatedHome)
+    const client = new CodexAppServerClient(mock.binaryPath, mock.cwd, [], { home: isolatedHome })
+
+    try {
+      await client.start()
+      await waitFor(async () => {
+        await expect(readLoggedMessages(mock.logPath)).resolves.toContainEqual({
+          method: 'environment',
+          params: { home: isolatedHome },
         })
       })
     } finally {

@@ -73,7 +73,24 @@ describe('host tools', () => {
     context.gateway.listExecutable = vi.fn().mockResolvedValue([
       makeRunbook({
         actions: [
-          { id: 'step-1', type: 'shell', title: 'Check service status', command: 'systemctl status bitsentry' },
+          {
+            id: 'step-1',
+            type: 'shell',
+            title: 'Check service status',
+            command: 'systemctl status bitsentry',
+            parameters: [{
+              id: 'parameter-region',
+              key: 'region',
+              description: 'Deployment region.',
+              defaultValue: 'ap-southeast-1',
+            }, {
+              id: 'parameter-token',
+              key: 'apiToken',
+              description: 'API token for the deployment.',
+              defaultValue: 'do-not-disclose',
+              secure: true,
+            }],
+          },
           { id: 'step-2', type: 'http', title: 'Check health endpoint', url: 'https://example.test/health', method: 'GET' },
         ],
       }),
@@ -85,12 +102,29 @@ describe('host tools', () => {
     expect(JSON.parse(result?.output ?? '')).toMatchObject({
       runbooks: [{
         id: 'rb-sentry',
+        actionCount: 2,
+        actionTypes: ['shell', 'http'],
         actions: [
           { id: 'step-1', type: 'shell', title: 'Check service status' },
           { id: 'step-2', type: 'http', title: 'Check health endpoint' },
         ],
+        parameters: [{
+          key: 'region',
+          required: true,
+          description: 'Deployment region.',
+          defaultValue: 'ap-southeast-1',
+        }, {
+          key: 'apiToken',
+          required: true,
+        }],
       }],
     })
+    const catalog = JSON.parse(result?.output ?? '') as { runbooks: Array<Record<string, unknown>> }
+    const secureParameter = (catalog.runbooks[0]?.parameters as Array<Record<string, unknown>>)
+      .find((parameter) => parameter.key === 'apiToken')
+    expect(secureParameter).toMatchObject({ key: 'apiToken', required: true })
+    expect(secureParameter).not.toHaveProperty('description')
+    expect(secureParameter).not.toHaveProperty('defaultValue')
   })
 
   it('rejects an out-of-range proposal idle timeout with the documented unit', async () => {

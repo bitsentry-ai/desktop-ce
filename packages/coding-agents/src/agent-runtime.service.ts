@@ -486,6 +486,8 @@ interface AgentSession {
   currentTurnHostToolCalls?: Map<string, ObservedHostToolCall>
   currentTurnVisibleRunbookExecutionIds?: Set<string>
   runbookAuthoringProposals: RunbookAuthoringProposal[]
+  hasRunbookParameters?: boolean
+  hasMultipleRunbooksInPlay?: boolean
   queuedFollowUps: AgentSendInput[]
   loopActive?: boolean
   snapshot: AgentThreadSnapshot
@@ -1544,31 +1546,21 @@ export function summarizeRunbookExecutionForToolOutput(execution: RunbookExecuti
 }
 
 function formatRunbookParameterSummary(
-  actionParameters: Array<{
-    actionTitle: string
-    parameters: Array<{
-      key: string
-      description?: string
-      defaultValue?: string
-      required: boolean
-    }>
-  }>,
+  parameters: RunbookParameterSummary[],
 ): string[] {
   const lines: string[] = []
-  for (const action of actionParameters) {
-    for (const parameter of action.parameters) {
-      let line = `- ${parameter.key}`
-      if (parameter.required) {
-        line += ' (required)'
-      }
-      if (parameter.defaultValue !== undefined && parameter.defaultValue.length > 0) {
-        line += ` default=${parameter.defaultValue}`
-      }
-      if (parameter.description !== undefined && parameter.description.length > 0) {
-        line += ` - ${parameter.description}`
-      }
-      lines.push(line)
+  for (const parameter of parameters) {
+    let line = `- ${parameter.key}`
+    if (parameter.required) {
+      line += ' (required)'
     }
+    if (parameter.defaultValue !== undefined && parameter.defaultValue.length > 0) {
+      line += ` default=${parameter.defaultValue}`
+    }
+    if (parameter.description !== undefined && parameter.description.length > 0) {
+      line += ` - ${parameter.description}`
+    }
+    lines.push(line)
   }
   return lines
 }
@@ -1630,49 +1622,49 @@ function readRecordArrayProperty(record: Record<string, unknown> | null, key: st
 }
 
 type RunbookParameterSummary = {
-  actionTitle: string
-  parameters: Array<{
-    key: string
-    description?: string
-    defaultValue?: string
-    required: boolean
-  }>
+  key: string
+  description?: string
+  defaultValue?: string
+  required: boolean
+}
+
+function readRunbookParameters(parameters: Array<Record<string, unknown>>): RunbookParameterSummary[] {
+  return parameters.flatMap((parameter) => {
+    const key = readStringProperty(parameter, 'key')
+    if (key === null) {
+      return []
+    }
+
+    const summary: RunbookParameterSummary = {
+      key,
+      required: parameter.required !== false,
+    }
+    const description = readStringProperty(parameter, 'description')
+    if (description !== null) {
+      summary.description = description
+    }
+    const defaultValue = readStringProperty(parameter, 'defaultValue')
+    if (defaultValue !== null) {
+      summary.defaultValue = defaultValue
+    }
+
+    return [summary]
+  })
 }
 
 function readRunbookParameterSummaries(runbook: Record<string, unknown>): RunbookParameterSummary[] {
+  const catalogParameters = readRunbookParameters(readRecordArrayProperty(runbook, 'parameters'))
+  if (catalogParameters.length > 0) {
+    return catalogParameters
+  }
+
   return readRecordArrayProperty(runbook, 'actionParameters').flatMap((entry) => {
     const actionTitle = readStringProperty(entry, 'actionTitle')
     if (actionTitle === null) {
       return []
     }
 
-    const parameters = readRecordArrayProperty(entry, 'parameters').flatMap((parameter) => {
-      const key = readStringProperty(parameter, 'key')
-      if (key === null) {
-        return []
-      }
-
-      const summary: RunbookParameterSummary['parameters'][number] = {
-        key,
-        required: parameter.required !== false,
-      }
-      const description = readStringProperty(parameter, 'description')
-      if (description !== null) {
-        summary.description = description
-      }
-      const defaultValue = readStringProperty(parameter, 'defaultValue')
-      if (defaultValue !== null) {
-        summary.defaultValue = defaultValue
-      }
-
-      return [summary]
-    })
-
-    if (parameters.length === 0) {
-      return []
-    }
-
-    return [{ actionTitle, parameters }]
+    return readRunbookParameters(readRecordArrayProperty(entry, 'parameters'))
   })
 }
 
@@ -2000,7 +1992,14 @@ export class AgentRuntimeService {
    * @param runbookContext - Optional runbook context for contextualized responses
    */
 
-  private buildSystemPrompt(runbookContext?: RunbookContext): string {
+  private buildSystemPrompt(
+    runbookContext?: RunbookContext,
+    options: {
+      includeRunbookResultInstructions?: boolean
+      includeRunbookParameterInstructions?: boolean
+      includeMultipleRunbookInstructions?: boolean
+    } = {},
+  ): string {
     const isSshRelated = runbookContext?.actions.some((a) => a.type === 'shell') ?? false
     const hasHttpAction = runbookContext?.actions.some((a) => a.type === 'http') ?? false
     const hasShellAction = runbookContext?.actions.some((a) => a.type === 'shell') ?? false
@@ -2014,47 +2013,9 @@ export class AgentRuntimeService {
       '',
     ]
 
-    // SSH-specific instructions - only included when runbook has shell actions
-    if (isSshRelated) {
-      baseInstructions.push(
-        'You have access to tools for collecting logs from Linux servers via SSH.',
-        'Always use tools when users request log collection or server diagnostics.',
-        '',
-        'CRITICAL: Tool parameters must be passed as top-level JSON fields, NOT wrapped in a string.',
-        'Correct: { "host": "192.168.1.10", "username": "ubuntu", "since": "1 hour ago" }',
-        'Wrong: { "input": "host: 192.168.1.10..." }',
-        '',
-        'When a user asks for logs, use the ssh_journal_query tool with:',
-        '- host: IP address or hostname',
-        '- username: SSH username',
-        '- since: Time range (e.g., "1 hour ago", "2026-01-01 00:00:00 UTC")',
-        '- For time windows, do NOT use ISO timestamps with "T" or "Z". Prefer "YYYY-MM-DD HH:mm:ss UTC" or a relative value like "1 hour ago".',
-        '',
-      )
-    }
+    this.appendSshInstructions(baseInstructions, isSshRelated)
 
-    if (this.hasRunbookTools()) {
-      baseInstructions.push(
-        'When an incident requires a runbook, you MUST use the runbook tools to actually start it.',
-        'Use list_runbooks to discover available runbooks.',
-        'Use execute_runbook to start a runbook.',
-        'Use propose_runbook_edit or propose_runbook_create when the user asks to create or change a runbook. These tools only create a pending proposal; they never save changes.',
-        'Do not claim a runbook was created, edited, updated, or saved unless a user approved a proposal and the save operation succeeded.',
-        'For incident diagnosis requests that require multiple data sources, decide which runbooks are needed, execute each required runbook, then inspect completed results before finalizing.',
-        'If the user specifies values for runbook placeholders such as time windows, host fragments, usernames, service names, or IDs, pass them in execute_runbook.parameterValues.',
-        'If list_runbooks shows required parameters, do not start that runbook until you supply them.',
-        'Runbook parameter defaults are fallback values only when the user did not specify a value.',
-        'When prior runbook results provide a combined journalctl window, run the backend log runbook once with that combined since/until instead of starting one runbook per issue row.',
-        'When prior runbook results list only individual actionable journalctl windows, use those exact since/until values in execute_runbook.parameterValues for the backend log runbook; do not ask the user to paste timestamps you already received.',
-        'After starting a runbook, call get_runbook_execution exactly once with waitForCompletion: true to obtain its terminal result or its latest snapshot after 30 seconds. You may omit executionId to use the latest runbook execution for this incident.',
-        'If you inspect a runbook in the same assistant response that starts it, omit executionId so the runtime can use the execution that actually started.',
-        'Do not final-answer from a runbook start acknowledgement alone when the user asked for cross-validation, matrices, or RCA.',
-        'If a later runbook fails, prefer the successful runbook results already present in this incident instead of restarting the entire investigation.',
-        'Do not poll get_runbook_execution. A single waitForCompletion: true lookup is the only follow-up lookup needed in this response.',
-        'Do not claim a runbook was executed unless execute_runbook succeeded.',
-        '',
-      )
-    }
+    this.appendRunbookToolInstructions(baseInstructions, options)
 
     // Instructions for runbook action execution
     if (runbookContext !== undefined) {
@@ -2074,11 +2035,7 @@ export class AgentRuntimeService {
     }
 
     baseInstructions.push(
-      'When you need to use tools: you may write one brief planning sentence before the tool call.',
-      'After receiving tool results: write 1–3 sentences summarizing what you found, then continue with your analysis.',
       'Tool results are internal context. Do not paste raw JSON, transcript labels, or tool wrappers into the user-facing response unless the user explicitly asks for raw output.',
-      'When you do NOT need tools (e.g., LLM-only runbooks): provide your complete analysis directly - explain what you will do, then DO IT in the same response.',
-      'Never stop after saying "I will" - always follow through with the actual content.',
       '',
       'If you cannot fulfill a request, explain why clearly.',
     )
@@ -2088,6 +2045,92 @@ export class AgentRuntimeService {
     }
 
     return baseInstructions.join('\n')
+  }
+
+  private appendRunbookToolInstructions(
+    baseInstructions: string[],
+    options: {
+      includeRunbookResultInstructions?: boolean
+      includeRunbookParameterInstructions?: boolean
+      includeMultipleRunbookInstructions?: boolean
+    },
+  ): void {
+    if (!this.hasRunbookTools()) return
+
+    baseInstructions.push(
+      'Do not claim a runbook was created, edited, updated, or saved unless a user approved a proposal and the save operation succeeded.',
+      'After starting a runbook, call get_runbook_execution exactly once with waitForCompletion: true to obtain its terminal result or its latest snapshot after 30 seconds. You may omit executionId to use the latest runbook execution for this incident.',
+      'Do not claim a runbook was executed unless execute_runbook succeeded.',
+      '',
+    )
+
+    if (options.includeRunbookParameterInstructions === true) {
+      baseInstructions.push(
+        'If the user specifies values for runbook placeholders such as time windows, host fragments, usernames, service names, or IDs, pass them in execute_runbook.parameterValues.',
+        'If list_runbooks shows required parameters, do not start that runbook until you supply them.',
+        'Runbook parameter defaults are fallback values only when the user did not specify a value.',
+        '',
+      )
+    }
+
+    if (options.includeMultipleRunbookInstructions === true) {
+      baseInstructions.push(
+        'For incident diagnosis requests that require multiple data sources, decide which runbooks are needed, execute each required runbook, then inspect completed results before finalizing.',
+        '',
+      )
+    }
+
+    if (options.includeRunbookResultInstructions === true) {
+      baseInstructions.push(
+        'When prior runbook results provide a combined journalctl window, run the backend log runbook once with that combined since/until instead of starting one runbook per issue row.',
+        'When prior runbook results list only individual actionable journalctl windows, use those exact since/until values in execute_runbook.parameterValues for the backend log runbook; do not ask the user to paste timestamps you already received.',
+        'If you inspect a runbook in the same assistant response that starts it, omit executionId so the runtime can use the execution that actually started.',
+        'Do not final-answer from a runbook start acknowledgement alone when the user asked for cross-validation, matrices, or RCA.',
+        'If a later runbook fails, prefer the successful runbook results already present in this incident instead of restarting the entire investigation.',
+        '',
+      )
+    }
+  }
+
+  private appendSshInstructions(baseInstructions: string[], isSshRelated: boolean): void {
+    if (!isSshRelated) return
+
+    baseInstructions.push(
+      'You have access to tools for collecting logs from Linux servers via SSH.',
+      'Always use tools when users request log collection or server diagnostics.',
+      '',
+      'CRITICAL: Tool parameters must be passed as top-level JSON fields, NOT wrapped in a string.',
+      'Correct: { "host": "192.168.1.10", "username": "ubuntu", "since": "1 hour ago" }',
+      'Wrong: { "input": "host: 192.168.1.10..." }',
+      '',
+      'When a user asks for logs, use the ssh_journal_query tool with:',
+      '- host: IP address or hostname',
+      '- username: SSH username',
+      '- since: Time range (e.g., "1 hour ago", "2026-01-01 00:00:00 UTC")',
+      '- For time windows, do NOT use ISO timestamps with "T" or "Z". Prefer "YYYY-MM-DD HH:mm:ss UTC" or a relative value like "1 hour ago".',
+      '',
+    )
+  }
+
+  private refreshSystemPromptForRunbookResults(session: AgentSession): void {
+    if (
+      session.latestRunbookExecutionId === undefined &&
+      session.hasRunbookParameters !== true &&
+      session.hasMultipleRunbooksInPlay !== true
+    ) {
+      return
+    }
+
+    const systemMessage = session.messages.find((message) => message.role === 'system')
+    if (systemMessage === undefined || typeof systemMessage.content !== 'string') {
+      return
+    }
+
+    systemMessage.content = this.buildSystemPrompt(session.runbookContext, {
+      includeRunbookResultInstructions: session.latestRunbookExecutionId !== undefined,
+      includeRunbookParameterInstructions: session.hasRunbookParameters === true,
+      includeMultipleRunbookInstructions: session.hasMultipleRunbooksInPlay === true,
+    })
   }
 
   private buildRunbookContextPrompt(
@@ -2241,6 +2284,8 @@ export class AgentRuntimeService {
           timestamp: new Date().toISOString(),
           phase: awaitingRunbookSummary ? 'waiting_for_summary' : 'asking_model',
         })
+
+        this.refreshSystemPromptForRunbookResults(session)
 
         // Determine which tools should be available based on runbook actions
         const hasShellAction = session.runbookContext?.actions.some((a) => a.type === 'shell') ?? false
@@ -2899,11 +2944,15 @@ export class AgentRuntimeService {
         phase: 'running_runbook',
       })
     }
-    return await executeHostTool(
+    const result = await executeHostTool(
       this.createHostToolContext(session),
       toolCall.name,
       toolCall.args,
     )
+    if (result !== null) {
+      this.recordRunbookToolOutcome(session, toolCall.name, result)
+    }
+    return result
   }
 
   private async executeRunbook(session: AgentSession, input: ExecuteRunbookInput): Promise<ToolResult> {
@@ -2976,6 +3025,7 @@ export class AgentRuntimeService {
       result: event.result,
       modelContext,
     })
+    this.recordRunbookToolOutcome(session, event.toolName, event.result)
     if (session.currentToolCallId === event.toolCallId) {
       session.currentToolCallId = null
     }
@@ -3011,6 +3061,23 @@ export class AgentRuntimeService {
       delta: visibleResult.text,
       kind: 'command_output',
     })
+  }
+
+  private recordRunbookToolOutcome(
+    session: AgentSession,
+    toolName: string,
+    result: ToolResult,
+  ): void {
+    if (toolName === 'list_runbooks' && result.error === undefined) {
+      const payload = this.safeParseObject(result.output ?? '')
+      const runbooks = readRecordArrayProperty(payload, 'runbooks')
+      if (runbooks.some((runbook) => readRunbookParameterSummaries(runbook).length > 0)) {
+        session.hasRunbookParameters = true
+      }
+    }
+    if (toolName === 'execute_runbook' && (session.currentTurnStartedRunbookExecutionIds?.size ?? 0) > 1) {
+      session.hasMultipleRunbooksInPlay = true
+    }
   }
 
   private takeCompletedHostToolCalls(session: AgentSession): CompletedToolResult[] {
@@ -3527,22 +3594,39 @@ export class AgentRuntimeService {
 
     const lines = ['Internal runbook list:']
     for (const runbook of runbooks) {
-      lines.push(`- ${readFirstStringProperty([runbook], 'title', 'Untitled runbook')}`)
-      const description = readNonEmptyTrimmedStringProperty(runbook, 'description')
-      if (description !== null) {
-        lines.push(`  Description: ${description}`)
-      }
-
-      const actionParameters = readRunbookParameterSummaries(runbook)
-      if (actionParameters.length > 0) {
-        lines.push('  Parameters:')
-        lines.push(...formatRunbookParameterSummary(actionParameters).map((parameter) => `  ${parameter}`))
-      }
+      this.appendRunbookListSummary(lines, runbook)
     }
     lines.push('Choose only from the exact runbook titles above. Do not invent runbook titles or IDs.')
     lines.push('Summarize the available runbooks for the user in clean Markdown.')
 
     return lines.join('\n')
+  }
+
+  private appendRunbookListSummary(lines: string[], runbook: Record<string, unknown>): void {
+    lines.push(`- ${readFirstStringProperty([runbook], 'title', 'Untitled runbook')}`)
+    const description = readNonEmptyTrimmedStringProperty(runbook, 'description')
+    if (description !== null) {
+      lines.push(`  Description: ${description}`)
+    }
+
+    const parameters = readRunbookParameterSummaries(runbook)
+    const actions = readRecordArrayProperty(runbook, 'actions')
+    if (actions.length > 0) {
+      lines.push('  Actions:')
+      for (const action of actions) {
+        const id = readFirstStringProperty([action], 'id', 'unknown-action')
+        const type = readFirstStringProperty([action], 'type', 'unknown')
+        const title = readFirstStringProperty([action], 'title', 'Untitled action')
+        lines.push(`  - ${id} (${type}: ${title})`)
+      }
+    }
+    if (parameters.length === 0) {
+      lines.push('  Parameters: none.')
+      return
+    }
+
+    lines.push('  Parameters:')
+    lines.push(...formatRunbookParameterSummary(parameters).map((parameter) => `  ${parameter}`))
   }
 
   private buildDirectRunbookExecutionConversationContent(

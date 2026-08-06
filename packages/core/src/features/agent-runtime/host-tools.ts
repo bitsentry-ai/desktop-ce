@@ -2,6 +2,7 @@ import { z } from 'zod'
 import type { RunbookContext, ToolResult } from './types'
 import type {
   RunbookActionRecord,
+  RunbookActionParameter,
   RunbookExecutionRecord,
   RunbookParameterValues,
   RunbookRecord,
@@ -91,6 +92,8 @@ export interface AgentSessionRef {
   currentTurnRunbookExecutionLookups?: Set<string>
   currentTurnStartedRunbookExecutionIds?: Set<string>
   runbookAuthoringProposals?: RunbookAuthoringProposal[]
+  hasRunbookParameters?: boolean
+  hasMultipleRunbooksInPlay?: boolean
 }
 
 export type HostToolEvent = {
@@ -370,35 +373,65 @@ function buildTriggerContext(session: AgentSessionRef): RunbookTriggerContext | 
   return { entrypoint: 'incident_workspace', incidentThreadId: session.incidentThreadId }
 }
 
+type CatalogParameter = {
+  key: string
+  required: boolean
+  description?: string
+  defaultValue?: string
+}
+
+function publicCatalogParameterMetadata(parameter: RunbookActionParameter): Partial<CatalogParameter> {
+  if (parameter.secure === true) return {}
+
+  return {
+    ...(parameter.description === undefined || parameter.description.length === 0
+      ? {}
+      : { description: parameter.description }),
+    ...(parameter.defaultValue === undefined || parameter.defaultValue.length === 0
+      ? {}
+      : { defaultValue: parameter.defaultValue }),
+  }
+}
+
+function mergeCatalogParameter(
+  existing: CatalogParameter | undefined,
+  parameter: RunbookActionParameter,
+): CatalogParameter {
+  return {
+    ...existing,
+    key: parameter.key,
+    required: existing?.required === true || parameter.required !== false,
+    ...publicCatalogParameterMetadata(parameter),
+  }
+}
+
+function summarizeRunbookForCatalog(runbook: RunbookRecord): Record<string, unknown> {
+  const parameters = new Map<string, CatalogParameter>()
+  for (const action of runbook.actions) {
+    for (const parameter of action.parameters ?? []) {
+      parameters.set(parameter.key, mergeCatalogParameter(parameters.get(parameter.key), parameter))
+    }
+  }
+  return {
+    id: runbook.id,
+    title: runbook.title,
+    description: runbook.description,
+    actionCount: runbook.actions.length,
+    actionTypes: [...new Set(runbook.actions.map((action) => action.type))],
+    actions: runbook.actions.map((action) => ({
+      id: action.id,
+      type: action.type,
+      title: action.title,
+    })),
+    ...(parameters.size === 0 ? {} : { parameters: [...parameters.values()] }),
+  }
+}
+
 async function listRunbooks(context: HostToolContext): Promise<ToolResult> {
   const runbooks = await context.gateway.listExecutable()
   return {
     output: JSON.stringify({
-      runbooks: runbooks.map((runbook) => ({
-        id: runbook.id,
-        title: runbook.title,
-        description: runbook.description,
-        revisionNumber: runbook.revisionNumber,
-        actionCount: runbook.actions.length,
-        actionTypes: runbook.actions.map((action) => action.type),
-        actions: runbook.actions.map((action) => ({
-          id: action.id,
-          type: action.type,
-          title: action.title,
-        })),
-        actionParameters: runbook.actions
-          .filter((action) => action.parameters !== undefined && action.parameters.length > 0)
-          .map((action) => ({
-            actionId: action.id,
-            actionTitle: action.title,
-            parameters: action.parameters?.map((parameter) => ({
-              key: parameter.key,
-              description: parameter.description,
-              defaultValue: parameter.defaultValue,
-              required: parameter.required !== false,
-            })) ?? [],
-          })),
-      })),
+      runbooks: runbooks.map(summarizeRunbookForCatalog),
     }, null, 2),
   }
 }
