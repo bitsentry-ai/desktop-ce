@@ -1592,6 +1592,120 @@
       "supportsPlanMode": false,
       "models": [
         {
+          "id": "gpt-5.6-sol",
+          "displayName": "GPT-5.6 Sol",
+          "supportsImageInput": false,
+          "supportsAudioInput": false,
+          "supportsVideoInput": false,
+          "supportsPdfInput": false,
+          "supportsThinking": false,
+          "thinkingMode": "unsupported",
+          "reasoningOptions": [],
+          "composerOptions": [
+            {
+              "id": "effort",
+              "label": "common.traitsDropdown.reasoning",
+              "type": "select",
+              "options": [
+                {
+                  "value": "low",
+                  "label": "common.traitsDropdown.reasoningLow"
+                },
+                {
+                  "value": "medium",
+                  "label": "common.traitsDropdown.reasoningMedium"
+                },
+                {
+                  "value": "high",
+                  "label": "common.traitsDropdown.reasoningHigh",
+                  "isDefault": true
+                },
+                {
+                  "value": "xhigh",
+                  "label": "common.traitsDropdown.reasoningExtraHigh",
+                  "shortLabel": "common.traitsDropdown.reasoningExtraHighShort"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "gpt-5.6-terra",
+          "displayName": "GPT-5.6 Terra",
+          "supportsImageInput": false,
+          "supportsAudioInput": false,
+          "supportsVideoInput": false,
+          "supportsPdfInput": false,
+          "supportsThinking": false,
+          "thinkingMode": "unsupported",
+          "reasoningOptions": [],
+          "composerOptions": [
+            {
+              "id": "effort",
+              "label": "common.traitsDropdown.reasoning",
+              "type": "select",
+              "options": [
+                {
+                  "value": "low",
+                  "label": "common.traitsDropdown.reasoningLow"
+                },
+                {
+                  "value": "medium",
+                  "label": "common.traitsDropdown.reasoningMedium"
+                },
+                {
+                  "value": "high",
+                  "label": "common.traitsDropdown.reasoningHigh",
+                  "isDefault": true
+                },
+                {
+                  "value": "xhigh",
+                  "label": "common.traitsDropdown.reasoningExtraHigh",
+                  "shortLabel": "common.traitsDropdown.reasoningExtraHighShort"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "gpt-5.6-luna",
+          "displayName": "GPT-5.6 Luna",
+          "supportsImageInput": false,
+          "supportsAudioInput": false,
+          "supportsVideoInput": false,
+          "supportsPdfInput": false,
+          "supportsThinking": false,
+          "thinkingMode": "unsupported",
+          "reasoningOptions": [],
+          "composerOptions": [
+            {
+              "id": "effort",
+              "label": "common.traitsDropdown.reasoning",
+              "type": "select",
+              "options": [
+                {
+                  "value": "low",
+                  "label": "common.traitsDropdown.reasoningLow"
+                },
+                {
+                  "value": "medium",
+                  "label": "common.traitsDropdown.reasoningMedium"
+                },
+                {
+                  "value": "high",
+                  "label": "common.traitsDropdown.reasoningHigh",
+                  "isDefault": true
+                },
+                {
+                  "value": "xhigh",
+                  "label": "common.traitsDropdown.reasoningExtraHigh",
+                  "shortLabel": "common.traitsDropdown.reasoningExtraHighShort"
+                }
+              ]
+            }
+          ]
+        },
+        {
           "id": "gpt-5.4",
           "displayName": "GPT-5.4",
           "supportsImageInput": false,
@@ -1914,6 +2028,204 @@
       "supportsPlanMode": false,
       "models": [
         {
+          "id": "openrouter/openai/gpt-5.6-luna",
+          "displayName": "OpenAI GPT-5.6 Luna",
+          "supportsImageInput": false,
+          "supportsAudioInput": false,
+          "supportsVideoInput": false,
+          "supportsPdfInput": false,
+          "supportsThinking": false,
+          "thinkingMode": "unsupported",
+          "reasoningOptions": [],
+          "composerOptions": [
+            {
+              "id": "effort",
+              "label": "common.traitsDropdown.reasoning",
+              "type": "select",
+              "options": [
+                {
+                  "value": "low",
+                  "label": "common.traitsDropdown.reasoningLow"
+                },
+                {
+                  "value": "medium",
+                  "label": "common.traitsDropdown.reasoningMedium",
+                  "isDefault": true
+                },
+                {
+                  "value": "high",
+                  "label": "common.traitsDropdown.reasoningHigh"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "openrouter/openai/gpt-5.6-luna-pro",
+          "displayName": "OpenAI GPT-5.6 Luna Pro",
+          "supportsImageInput": false,
+          "supportsAudioInput": false,
+          "supportsVideoInput": false,
+          "supportsPdfInput": false,
+          "supportsThinking": false,
+          "thinkingMode": "unsupported",
+          "reasoningOptions": [],
+          "composerOptions": [
+            {
+              "id": "effort",
+              "label": "common.traitsDropdown.reasoning",
+              "type": "select",
+              "options": [
+                {
+                  "value": "low",
+                  "label": "common.traitsDropdown.reasoningLow"
+                },
+                {
+                  "value": "medium",
+                  "label": "common.traitsDropdown.reasoningMedium",
+                  "isDefault": true
+                },
+                {
+                  "value": "high",
+                  "label": "common.traitsDropdown.reasoningHigh"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "openrouter/openai/gpt-5.6-sol",
+          "displayName": "OpenAI GPT-5.6 Sol",
+          "supportsImageInput": false,
+          "supportsAudioInput": false,
+          "supportsVideoInput": false,
+          "supportsPdfInput": false,
+          "supportsThinking": false,
+          "thinkingMode": "unsupported",
+          "reasoningOptions": [],
+          "composerOptions": [
+            {
+              "id": "effort",
+              "label": "common.traitsDropdown.reasoning",
+              "type": "select",
+              "options": [
+                {
+                  "value": "low",
+                  "label": "common.traitsDropdown.reasoningLow"
+                },
+                {
+                  "value": "medium",
+                  "label": "common.traitsDropdown.reasoningMedium",
+                  "isDefault": true
+                },
+                {
+                  "value": "high",
+                  "label": "common.traitsDropdown.reasoningHigh"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "openrouter/openai/gpt-5.6-sol-pro",
+          "displayName": "OpenAI GPT-5.6 Sol Pro",
+          "supportsImageInput": false,
+          "supportsAudioInput": false,
+          "supportsVideoInput": false,
+          "supportsPdfInput": false,
+          "supportsThinking": false,
+          "thinkingMode": "unsupported",
+          "reasoningOptions": [],
+          "composerOptions": [
+            {
+              "id": "effort",
+              "label": "common.traitsDropdown.reasoning",
+              "type": "select",
+              "options": [
+                {
+                  "value": "low",
+                  "label": "common.traitsDropdown.reasoningLow"
+                },
+                {
+                  "value": "medium",
+                  "label": "common.traitsDropdown.reasoningMedium",
+                  "isDefault": true
+                },
+                {
+                  "value": "high",
+                  "label": "common.traitsDropdown.reasoningHigh"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "openrouter/openai/gpt-5.6-terra",
+          "displayName": "OpenAI GPT-5.6 Terra",
+          "supportsImageInput": false,
+          "supportsAudioInput": false,
+          "supportsVideoInput": false,
+          "supportsPdfInput": false,
+          "supportsThinking": false,
+          "thinkingMode": "unsupported",
+          "reasoningOptions": [],
+          "composerOptions": [
+            {
+              "id": "effort",
+              "label": "common.traitsDropdown.reasoning",
+              "type": "select",
+              "options": [
+                {
+                  "value": "low",
+                  "label": "common.traitsDropdown.reasoningLow"
+                },
+                {
+                  "value": "medium",
+                  "label": "common.traitsDropdown.reasoningMedium",
+                  "isDefault": true
+                },
+                {
+                  "value": "high",
+                  "label": "common.traitsDropdown.reasoningHigh"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "openrouter/openai/gpt-5.6-terra-pro",
+          "displayName": "OpenAI GPT-5.6 Terra Pro",
+          "supportsImageInput": false,
+          "supportsAudioInput": false,
+          "supportsVideoInput": false,
+          "supportsPdfInput": false,
+          "supportsThinking": false,
+          "thinkingMode": "unsupported",
+          "reasoningOptions": [],
+          "composerOptions": [
+            {
+              "id": "effort",
+              "label": "common.traitsDropdown.reasoning",
+              "type": "select",
+              "options": [
+                {
+                  "value": "low",
+                  "label": "common.traitsDropdown.reasoningLow"
+                },
+                {
+                  "value": "medium",
+                  "label": "common.traitsDropdown.reasoningMedium",
+                  "isDefault": true
+                },
+                {
+                  "value": "high",
+                  "label": "common.traitsDropdown.reasoningHigh"
+                }
+              ]
+            }
+          ]
+        },
+        {
           "id": "openai/gpt-5.5",
           "displayName": "OpenAI GPT-5.5",
           "supportsImageInput": false,
@@ -2139,6 +2451,44 @@
                 {
                   "value": "high",
                   "label": "common.traitsDropdown.reasoningHigh"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "openrouter/anthropic/claude-opus-5",
+          "displayName": "Anthropic Claude Opus 5",
+          "supportsImageInput": false,
+          "supportsAudioInput": false,
+          "supportsVideoInput": false,
+          "supportsPdfInput": false,
+          "supportsThinking": false,
+          "thinkingMode": "unsupported",
+          "reasoningOptions": [],
+          "composerOptions": [
+            {
+              "id": "effort",
+              "label": "common.traitsDropdown.reasoning",
+              "type": "select",
+              "options": [
+                {
+                  "value": "low",
+                  "label": "common.traitsDropdown.reasoningLow"
+                },
+                {
+                  "value": "medium",
+                  "label": "common.traitsDropdown.reasoningMedium"
+                },
+                {
+                  "value": "high",
+                  "label": "common.traitsDropdown.reasoningHigh"
+                },
+                {
+                  "value": "xhigh",
+                  "label": "common.traitsDropdown.reasoningExtraHigh",
+                  "isDefault": true,
+                  "shortLabel": "common.traitsDropdown.reasoningExtraHighShort"
                 }
               ]
             }
@@ -2439,8 +2789,84 @@
           ]
         },
         {
+          "id": "opus-5",
+          "displayName": "Opus 5",
+          "supportsImageInput": false,
+          "supportsAudioInput": false,
+          "supportsVideoInput": false,
+          "supportsPdfInput": false,
+          "supportsThinking": false,
+          "thinkingMode": "unsupported",
+          "reasoningOptions": [],
+          "composerOptions": [
+            {
+              "id": "effort",
+              "label": "common.traitsDropdown.reasoning",
+              "type": "select",
+              "options": [
+                {
+                  "value": "low",
+                  "label": "common.traitsDropdown.reasoningLow"
+                },
+                {
+                  "value": "medium",
+                  "label": "common.traitsDropdown.reasoningMedium"
+                },
+                {
+                  "value": "high",
+                  "label": "common.traitsDropdown.reasoningHigh",
+                  "isDefault": true
+                },
+                {
+                  "value": "xhigh",
+                  "label": "common.traitsDropdown.reasoningExtraHigh",
+                  "shortLabel": "common.traitsDropdown.reasoningExtraHighShort"
+                }
+              ]
+            }
+          ]
+        },
+        {
           "id": "opus-4.8",
           "displayName": "Opus 4.8",
+          "supportsImageInput": false,
+          "supportsAudioInput": false,
+          "supportsVideoInput": false,
+          "supportsPdfInput": false,
+          "supportsThinking": false,
+          "thinkingMode": "unsupported",
+          "reasoningOptions": [],
+          "composerOptions": [
+            {
+              "id": "effort",
+              "label": "common.traitsDropdown.reasoning",
+              "type": "select",
+              "options": [
+                {
+                  "value": "low",
+                  "label": "common.traitsDropdown.reasoningLow"
+                },
+                {
+                  "value": "medium",
+                  "label": "common.traitsDropdown.reasoningMedium"
+                },
+                {
+                  "value": "high",
+                  "label": "common.traitsDropdown.reasoningHigh",
+                  "isDefault": true
+                },
+                {
+                  "value": "xhigh",
+                  "label": "common.traitsDropdown.reasoningExtraHigh",
+                  "shortLabel": "common.traitsDropdown.reasoningExtraHighShort"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "gpt-5.6",
+          "displayName": "GPT-5.6",
           "supportsImageInput": false,
           "supportsAudioInput": false,
           "supportsVideoInput": false,
