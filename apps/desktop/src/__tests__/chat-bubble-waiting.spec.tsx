@@ -1,11 +1,12 @@
 // @vitest-environment jsdom
 
 import React from "react";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ChatBubble, hasWaitingAgentIndicator } from "@bitsentry-ce/components/chat/ChatBubble";
 import { Composer } from "@bitsentry-ce/components/chat/Composer";
 import type { ChatMessage } from "@bitsentry-ce/components/chat/types";
+import { getModelCapability } from "@bitsentry-ce/components/llm/modelCatalog";
 import { TooltipProvider } from "@bitsentry-ce/components/ui/tooltip";
 
 vi.mock("@bitsentry-ce/i18n", () => ({
@@ -123,5 +124,48 @@ describe("ChatBubble waiting state", () => {
     );
 
     expect(screen.getByText("common.incidents.aiIsResponding")).toBeTruthy();
+  });
+});
+
+describe("Composer traits", () => {
+  it("submits the selected fallback CLI effort", () => {
+    const onSend = vi.fn();
+
+    render(
+      <Composer
+        prompt="QA effort fallback"
+        onPromptChange={vi.fn()}
+        onSend={onSend}
+        onCancel={vi.fn()}
+        isProcessing={false}
+        isBlocked={false}
+        isArchived={false}
+        composerImages={[]}
+        onRemoveImage={vi.fn()}
+        onPickImages={vi.fn()}
+        onPickFiles={vi.fn()}
+        onImageFilesSelected={vi.fn()}
+        onPaste={vi.fn()}
+        imageInputRef={React.createRef<HTMLInputElement>()}
+        fileInputRef={React.createRef<HTMLInputElement>()}
+        selectedProviderKey="codex"
+        selectedModelId="gpt-5.6-terra"
+        onSelectProvider={vi.fn()}
+        onSelectModel={vi.fn()}
+        configuredProviderKeys={['codex']}
+        providerConfigs={{}}
+        selectedModelCapability={getModelCapability('codex', 'gpt-5.6-terra')}
+        thinkingEnabled={false}
+        onThinkingToggle={vi.fn()}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "High" }));
+    fireEvent.click(screen.getByRole("button", { name: "Low" }));
+    fireEvent.click(screen.getByRole("button", { name: "common.incidents.sendMessage" }));
+
+    expect(onSend).toHaveBeenCalledWith(expect.objectContaining({
+      traitValues: expect.objectContaining({ effort: "low" }),
+    }));
   });
 });

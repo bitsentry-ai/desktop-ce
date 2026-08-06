@@ -111,6 +111,54 @@ const MODEL_CONTEXT_WINDOW_LIMIT_FALLBACKS: Readonly<Record<string, number>> = {
   'gpt-5.3-codex-spark': 400_000,
   'gpt-5.2': 400_000,
 }
+const CLI_FALLBACK_EFFORT_OPTIONS: Partial<
+  Record<ModelCatalogProviderKey, ComposerSelectOption>
+> = {
+  claude_code: {
+    id: 'effort',
+    label: 'Reasoning',
+    type: 'select',
+    options: [
+      { value: 'low', label: 'Low' },
+      { value: 'medium', label: 'Medium' },
+      { value: 'high', label: 'High', isDefault: true },
+      { value: 'xhigh', label: 'Extra High', shortLabel: 'xHigh' },
+      { value: 'max', label: 'Max' },
+      { value: 'ultrathink', label: 'Ultrathink', shortLabel: 'Ultra' },
+    ],
+  },
+  codex: {
+    id: 'effort',
+    label: 'Reasoning',
+    type: 'select',
+    options: [
+      { value: 'low', label: 'Low' },
+      { value: 'medium', label: 'Medium' },
+      { value: 'high', label: 'High', isDefault: true },
+      { value: 'xhigh', label: 'Extra High', shortLabel: 'xHigh' },
+    ],
+  },
+  opencode: {
+    id: 'effort',
+    label: 'Reasoning',
+    type: 'select',
+    options: [
+      { value: 'low', label: 'Low' },
+      { value: 'medium', label: 'Medium', isDefault: true },
+      { value: 'high', label: 'High' },
+    ],
+  },
+  cursor: {
+    id: 'effort',
+    label: 'Reasoning',
+    type: 'select',
+    options: [
+      { value: 'low', label: 'Low' },
+      { value: 'medium', label: 'Medium' },
+      { value: 'high', label: 'High', isDefault: true },
+    ],
+  },
+}
 
 export function filterSelectableModelIds(
   providerKey: ModelCatalogProviderKey,
@@ -159,6 +207,41 @@ export function getCatalogModel(
   return getProviderCatalogModels(providerKey).find(
     (model) => normalizeValue(model.id) === normalizedModelId,
   )
+}
+
+/**
+ * Resolve the composer capability for a selected model. CLI discovery is
+ * authoritative, so newly released CLI models can be selected before they
+ * are cataloged. Give those models the provider's conservative effort
+ * selector without claiming unsupported media or context capabilities.
+ */
+export function getModelCapability(
+  providerKey: ModelCatalogProviderKey,
+  modelId: string | null | undefined,
+): ModelCatalogEntry | undefined {
+  const catalogModel = getCatalogModel(providerKey, modelId)
+  if (catalogModel !== undefined) return catalogModel
+  if (modelId === null || modelId === undefined || modelId.length === 0) return undefined
+  if (!isCliProvider(providerKey)) return undefined
+
+  const effortOption = CLI_FALLBACK_EFFORT_OPTIONS[providerKey]
+  if (effortOption === undefined) return undefined
+
+  return {
+    id: modelId,
+    displayName: formatModelDisplayName(modelId),
+    supportsImageInput: false,
+    supportsAudioInput: false,
+    supportsVideoInput: false,
+    supportsPdfInput: false,
+    supportsThinking: false,
+    thinkingMode: 'unsupported',
+    reasoningOptions: [],
+    composerOptions: [{
+      ...effortOption,
+      options: effortOption.options.map((option) => ({ ...option })),
+    }],
+  }
 }
 
 export function resolveCatalogModelId(

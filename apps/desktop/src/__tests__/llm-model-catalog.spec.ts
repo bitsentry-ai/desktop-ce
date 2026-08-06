@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import type { SavedProviderConfig } from '@bitsentry-ce/components/chat/types'
 import {
+  getCatalogModel,
   getCatalogModelIds,
+  getModelCapability,
   getModelDisplayName,
 } from '@bitsentry-ce/components/llm/modelCatalog'
 import { getProviderModelOptions } from '@bitsentry-ce/components/chat/utils'
@@ -75,6 +77,35 @@ describe('local model catalog selection', () => {
   it('uses catalog display labels for discovered Codex models', () => {
     expect(getModelDisplayName('codex', 'gpt-5.6-sol')).toBe('GPT-5.6 Sol')
     expect(getModelDisplayName('codex', 'gpt-5.6-terra')).toBe('GPT-5.6 Terra')
+  })
+
+  it('gives uncataloged CLI models provider-specific effort options', () => {
+    const expectedDefaults = {
+      claude_code: 'high',
+      codex: 'high',
+      opencode: 'medium',
+      cursor: 'high',
+    } as const
+
+    for (const [providerKey, defaultValue] of Object.entries(expectedDefaults) as Array<[
+      keyof typeof expectedDefaults,
+      string,
+    ]>) {
+      const capability = getModelCapability(providerKey, `future-${providerKey}-model`)
+      const effort = capability?.composerOptions?.find((option) => option.id === 'effort')
+
+      expect(capability?.id).toBe(`future-${providerKey}-model`)
+      expect(effort?.type).toBe('select')
+      if (effort?.type !== 'select') throw new Error('CLI fallback must expose an effort selector')
+      expect(effort.options.some((option) => option.isDefault && option.value === defaultValue)).toBe(true)
+    }
+  })
+
+  it('keeps catalog capabilities exact and does not infer API capabilities', () => {
+    const catalogCapability = getCatalogModel('codex', 'gpt-5.4')
+
+    expect(getModelCapability('codex', 'gpt-5.4')).toBe(catalogCapability)
+    expect(getModelCapability('openai', 'gpt-future-unknown')).toBeUndefined()
   })
 
   it('reads the persisted availability snapshot when discovery is empty', async () => {
