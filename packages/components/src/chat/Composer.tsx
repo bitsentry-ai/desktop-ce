@@ -407,7 +407,7 @@ export function Composer({
               onPaste={(event) => { onPaste(event); }}
               disabled={isProcessing || isBlocked}
               placeholder={placeholderText}
-              className="w-full flex-1 resize-none bg-transparent text-sm outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed"
+              className="w-full flex-1 resize-none bg-transparent p-0 pt-1 text-sm leading-5 outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed"
             />
           </div>
         </div>
