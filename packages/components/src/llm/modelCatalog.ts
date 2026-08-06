@@ -55,6 +55,8 @@ export interface ModelCatalogEntry {
   supportsThinking: boolean
   thinkingMode: ModelThinkingMode
   reasoningOptions: ModelReasoningOption[]
+  /** Deliberate default used when composer options are derived from reasoningOptions. */
+  defaultReasoningOption?: ModelReasoningOption
   /**
    * Composer toolbar option descriptors. When present, the toolbar renders
    * controls for each descriptor (effort selector, context window, fast mode,
@@ -389,11 +391,10 @@ export function getEffectiveComposerOptions(model: ModelCatalogEntry): ComposerO
       id: 'effort',
       label: 'common.traitsDropdown.reasoning',
       type: 'select',
-      options: model.reasoningOptions.map((opt, i) => ({
+      options: model.reasoningOptions.map((opt) => ({
         value: opt,
         label: REASONING_LABELS[opt] ?? opt,
-        // Default to the middle option, or the last one if only a few
-        isDefault: i === Math.floor(model.reasoningOptions.length / 2),
+        isDefault: opt === model.defaultReasoningOption,
       })),
     })
   } else if (model.supportsThinking && model.thinkingMode === 'toggle') {
@@ -408,6 +409,24 @@ export function getEffectiveComposerOptions(model: ModelCatalogEntry): ComposerO
   // Models with thinkingMode 'always_on' don't get a toggle (it's always on)
 
   return options
+}
+
+export function getComposerDefaultTraitValues(
+  model: ModelCatalogEntry | undefined,
+): Record<string, string | boolean> {
+  if (model === undefined) return {}
+
+  const defaults: Record<string, string | boolean> = {}
+  for (const option of getEffectiveComposerOptions(model)) {
+    if (option.type === 'select') {
+      const defaultChoice = option.options.find((choice) => choice.isDefault === true)
+      if (defaultChoice !== undefined) defaults[option.id] = defaultChoice.value
+    } else if (option.defaultValue !== undefined) {
+      defaults[option.id] = option.defaultValue
+    }
+  }
+
+  return defaults
 }
 
 function parseCompactTokenLimit(value: string): number | undefined {

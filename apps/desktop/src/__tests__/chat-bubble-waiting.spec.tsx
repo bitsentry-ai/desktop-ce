@@ -4,9 +4,10 @@ import React from "react";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ChatBubble, hasWaitingAgentIndicator } from "@bitsentry-ce/components/chat/ChatBubble";
-import { Composer } from "@bitsentry-ce/components/chat/Composer";
+import { Composer, type ComposerProps } from "@bitsentry-ce/components/chat/Composer";
 import type { ChatMessage } from "@bitsentry-ce/components/chat/types";
 import { getModelCapability } from "@bitsentry-ce/components/llm/modelCatalog";
+import type { ModelCatalogEntry } from "@bitsentry-ce/components/llm/modelCatalog";
 import { TooltipProvider } from "@bitsentry-ce/components/ui/tooltip";
 
 let traitTranslations: Record<string, string> = {
@@ -41,6 +42,71 @@ afterEach(() => {
     "common.traitsDropdown.reasoningUltrathinkShort": "Ultra",
   };
 });
+
+function derivedEffortModel(
+  id: string,
+  defaultReasoningOption: 'low' | 'high',
+): ModelCatalogEntry {
+  return {
+    id,
+    displayName: id,
+    supportsImageInput: false,
+    supportsAudioInput: false,
+    supportsVideoInput: false,
+    supportsPdfInput: false,
+    supportsThinking: false,
+    thinkingMode: 'unsupported',
+    reasoningOptions: ['low', 'medium', 'high'],
+    defaultReasoningOption,
+  };
+}
+
+function derivedThinkingModel(): ModelCatalogEntry {
+  return {
+    id: "derived-thinking",
+    displayName: "Derived thinking",
+    supportsImageInput: false,
+    supportsAudioInput: false,
+    supportsVideoInput: false,
+    supportsPdfInput: false,
+    supportsThinking: true,
+    thinkingMode: "toggle",
+    reasoningOptions: [],
+  };
+}
+
+function composerProps(
+  selectedModelCapability: ModelCatalogEntry,
+  onSend: ComposerProps['onSend'],
+  thinkingEnabled = false,
+): ComposerProps {
+  return {
+    prompt: "QA derived effort",
+    onPromptChange: vi.fn(),
+    onSend,
+    onCancel: vi.fn(),
+    isProcessing: false,
+    isBlocked: false,
+    isArchived: false,
+    composerImages: [],
+    onRemoveImage: vi.fn(),
+    onPickImages: vi.fn(),
+    onPickFiles: vi.fn(),
+    onImageFilesSelected: vi.fn(),
+    onPaste: vi.fn(),
+    imageInputRef: React.createRef<HTMLInputElement>(),
+    fileInputRef: React.createRef<HTMLInputElement>(),
+    selectedProviderKey: "openai",
+    selectedModelId: selectedModelCapability.id,
+    onSelectProvider: vi.fn(),
+    onSelectModel: vi.fn(),
+    configuredProviderKeys: ["openai"],
+    providerConfigs: {},
+    selectedModelCapability,
+    thinkingEnabled,
+    onThinkingToggle: vi.fn(),
+  };
+}
 
 describe("ChatBubble waiting state", () => {
   it("renders only Working for while thinking, without an Asking model chip", () => {
@@ -200,6 +266,36 @@ describe("Composer traits", () => {
     expect(screen.getByText("Sedang")).toBeTruthy();
     expect(screen.getAllByText("Tinggi").length).toBeGreaterThan(1);
     expect(screen.getByText("Sangat Tinggi")).toBeTruthy();
+  });
+
+  it("submits the current thinking value from a derived option", () => {
+    const onSend = vi.fn();
+
+    render(<Composer {...composerProps(derivedThinkingModel(), onSend, true)} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "common.incidents.sendMessage" }));
+
+    expect(onSend).toHaveBeenCalledWith(expect.objectContaining({
+      traitValues: expect.objectContaining({ thinking: true }),
+    }));
+  });
+
+  it("submits derived default effort before interaction and after model switching", () => {
+    const onSend = vi.fn();
+    const highEffortModel = derivedEffortModel("derived-high", "high");
+    const lowEffortModel = derivedEffortModel("derived-low", "low");
+    const { rerender } = render(<Composer {...composerProps(highEffortModel, onSend)} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "common.incidents.sendMessage" }));
+    expect(onSend).toHaveBeenLastCalledWith(expect.objectContaining({
+      traitValues: expect.objectContaining({ effort: "high" }),
+    }));
+
+    rerender(<Composer {...composerProps(lowEffortModel, onSend)} />);
+    fireEvent.click(screen.getByRole("button", { name: "common.incidents.sendMessage" }));
+    expect(onSend).toHaveBeenLastCalledWith(expect.objectContaining({
+      traitValues: expect.objectContaining({ effort: "low" }),
+    }));
   });
 
   it("submits the selected fallback CLI effort", () => {

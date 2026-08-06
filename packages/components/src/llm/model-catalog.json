@@ -20,6 +20,7 @@
             "medium",
             "high"
           ],
+          "defaultReasoningOption": "medium",
           "composerOptions": [
             {
               "id": "effort",
@@ -57,6 +58,7 @@
             "medium",
             "high"
           ],
+          "defaultReasoningOption": "medium",
           "composerOptions": [
             {
               "id": "effort",
@@ -94,6 +96,7 @@
             "medium",
             "high"
           ],
+          "defaultReasoningOption": "medium",
           "composerOptions": [
             {
               "id": "effort",
@@ -131,6 +134,7 @@
             "medium",
             "high"
           ],
+          "defaultReasoningOption": "medium",
           "composerOptions": [
             {
               "id": "effort",
@@ -168,6 +172,7 @@
             "medium",
             "high"
           ],
+          "defaultReasoningOption": "medium",
           "composerOptions": [
             {
               "id": "effort",
@@ -205,6 +210,7 @@
             "medium",
             "high"
           ],
+          "defaultReasoningOption": "medium",
           "composerOptions": [
             {
               "id": "effort",
@@ -245,6 +251,7 @@
             "high",
             "xhigh"
           ],
+          "defaultReasoningOption": "high",
           "composerOptions": [
             {
               "id": "effort",
@@ -295,6 +302,7 @@
             "medium",
             "high"
           ],
+          "defaultReasoningOption": "medium",
           "composerOptions": [
             {
               "id": "effort",
@@ -332,6 +340,7 @@
             "medium",
             "high"
           ],
+          "defaultReasoningOption": "medium",
           "composerOptions": [
             {
               "id": "effort",
@@ -369,6 +378,7 @@
             "medium",
             "high"
           ],
+          "defaultReasoningOption": "medium",
           "composerOptions": [
             {
               "id": "effort",
