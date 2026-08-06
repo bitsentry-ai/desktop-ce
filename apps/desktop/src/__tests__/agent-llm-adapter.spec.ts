@@ -330,6 +330,115 @@ describe('AgentLlmAdapterService', () => {
     })
   })
 
+  it('maps legacy Anthropic effort tiers to distinct manual thinking budgets', async () => {
+    const adapter = createAdapter({
+      getApiKey: () => Promise.resolve('test-key'),
+    })
+    const requestBodies: Array<Record<string, unknown>> = []
+    vi.stubGlobal('fetch', vi.fn().mockImplementation((_url: string, init?: RequestInit) => {
+      requestBodies.push(JSON.parse(String(init?.body)) as Record<string, unknown>)
+      return Promise.resolve(new Response(JSON.stringify({
+        content: [{ type: 'text', text: 'Done' }],
+      })))
+    }))
+
+    const expectedBudgets = {
+      low: 1024,
+      medium: 1536,
+      high: 2048,
+      max: 3072,
+    }
+
+    for (const effort of Object.keys(expectedBudgets)) {
+      await adapter.chatWithTools({
+        messages: [{ role: 'user', content: 'Solve this task' }],
+        signal: new AbortController().signal,
+        llm: {
+          providerKey: 'anthropic',
+          model: 'claude-sonnet-4-5',
+          thinkingEnabled: true,
+        },
+        traitValues: { effort },
+      })
+    }
+
+    expect(requestBodies).toHaveLength(4)
+    expect(requestBodies.map((body) => body.thinking)).toEqual([
+      { type: 'enabled', budget_tokens: expectedBudgets.low },
+      { type: 'enabled', budget_tokens: expectedBudgets.medium },
+      { type: 'enabled', budget_tokens: expectedBudgets.high },
+      { type: 'enabled', budget_tokens: expectedBudgets.max },
+    ])
+    expect(requestBodies.every((body) => body.output_config === undefined)).toBe(true)
+  })
+
+  it('maps modern Anthropic effort tiers to adaptive thinking requests', async () => {
+    const adapter = createAdapter({
+      getApiKey: () => Promise.resolve('test-key'),
+    })
+    const requestBodies: Array<Record<string, unknown>> = []
+    vi.stubGlobal('fetch', vi.fn().mockImplementation((_url: string, init?: RequestInit) => {
+      requestBodies.push(JSON.parse(String(init?.body)) as Record<string, unknown>)
+      return Promise.resolve(new Response(JSON.stringify({
+        content: [{ type: 'text', text: 'Done' }],
+      })))
+    }))
+
+    for (const [model, effort] of [
+      ['claude-sonnet-4-6', 'low'],
+      ['claude-opus-4-7', 'max'],
+    ] as const) {
+      await adapter.chatWithTools({
+        messages: [{ role: 'user', content: 'Solve this task' }],
+        signal: new AbortController().signal,
+        llm: { providerKey: 'anthropic', model, thinkingEnabled: true },
+        traitValues: { effort },
+      })
+    }
+
+    expect(requestBodies).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        thinking: { type: 'adaptive' },
+        output_config: { effort: 'low' },
+      }),
+      expect.objectContaining({
+        thinking: { type: 'adaptive' },
+        output_config: { effort: 'max' },
+      }),
+    ]))
+    expect(requestBodies.every((body) => {
+      const thinking = body.thinking as { budget_tokens?: number } | undefined
+      return thinking?.budget_tokens === undefined
+    })).toBe(true)
+  })
+
+  it('omits Anthropic thinking configuration when thinking is disabled', async () => {
+    const adapter = createAdapter({
+      getApiKey: () => Promise.resolve('test-key'),
+    })
+    let requestBody: Record<string, unknown> | undefined
+    vi.stubGlobal('fetch', vi.fn().mockImplementation((_url: string, init?: RequestInit) => {
+      requestBody = JSON.parse(String(init?.body)) as Record<string, unknown>
+      return Promise.resolve(new Response(JSON.stringify({
+        content: [{ type: 'text', text: 'Done' }],
+      })))
+    }))
+
+    await adapter.chatWithTools({
+      messages: [{ role: 'user', content: 'Solve this task' }],
+      signal: new AbortController().signal,
+      llm: {
+        providerKey: 'anthropic',
+        model: 'claude-opus-4-7',
+        thinkingEnabled: false,
+      },
+      traitValues: { effort: 'max' },
+    })
+
+    expect(requestBody?.thinking).toBeUndefined()
+    expect(requestBody?.output_config).toBeUndefined()
+  })
+
   it('keeps a natural MCP CLI response independent of the supplied tool list', async () => {
     const adapter = createAdapter()
     const output = 'I can inspect a runbook after you choose one.'
