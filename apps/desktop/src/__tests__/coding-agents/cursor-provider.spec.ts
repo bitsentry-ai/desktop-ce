@@ -626,6 +626,30 @@ describe('Cursor provider behavior', () => {
     })).toHaveLength(2)
   })
 
+  it('maps the legacy Cursor default ID to the ACP auto ID', async () => {
+    const mock = await createMockCursorAgent()
+
+    await expect(
+      executeCursor({
+        prompt: 'Summarize the incident',
+        binaryPath: mock.binaryPath,
+        abortController: new AbortController(),
+        cwd: mock.cwd,
+        model: 'default',
+      }),
+    ).resolves.toMatchObject({ output: 'done' })
+
+    const messages = await readLoggedMessages(mock.logPath)
+    expect(messages).toContainEqual(expect.objectContaining({
+      method: 'session/set_config_option',
+      params: {
+        sessionId: 'session-1',
+        configId: 'model',
+        value: 'auto',
+      },
+    }))
+  })
+
   it('skips Cursor effort-looking options that cannot accept the selected value', async () => {
     const mock = await createMockCursorAgent([
       DEFAULT_CURSOR_CONFIG_OPTIONS[0],

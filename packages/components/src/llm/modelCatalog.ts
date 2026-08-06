@@ -100,6 +100,23 @@ const HIDDEN_MODEL_IDS_BY_PROVIDER: Partial<Record<
   // offer them as selectable models.
   codex: new Set(['gpt-5.2-codex', 'gpt-5.1-codex-mini']),
 }
+const LEGACY_CATALOG_MODEL_ID_ALIASES: Partial<Record<
+  ModelCatalogProviderKey,
+  Readonly<Record<string, string>>
+>> = {
+  // Cursor ACP uses `auto`; older Desktop CE settings stored this as `default`.
+  cursor: { default: 'auto' },
+}
+
+function resolveLegacyCatalogModelId(
+  providerKey: ModelCatalogProviderKey,
+  modelId: string,
+): string {
+  const normalizedModelId = normalizeValue(modelId)
+  return LEGACY_CATALOG_MODEL_ID_ALIASES[providerKey]?.[normalizedModelId]
+    ?? normalizedModelId
+}
+
 const CONTEXT_WINDOW_OPTION_ID = 'contextWindow'
 const MODEL_CONTEXT_WINDOW_LIMIT_FALLBACKS: Readonly<Record<string, number>> = {
   // Official OpenAI model docs show 1M for gpt-5.4 and 400K for gpt-5.4-mini.
@@ -166,20 +183,24 @@ export function filterSelectableModelIds(
 ): string[] {
   const hiddenModelIds = HIDDEN_MODEL_IDS_BY_PROVIDER[providerKey]
   const seen = new Set<string>()
+  const filtered: string[] = []
 
-  return modelIds.filter((modelId) => {
+  for (const modelId of modelIds) {
     const normalizedModelId = normalizeValue(modelId)
+    const resolvedModelId = resolveLegacyCatalogModelId(providerKey, modelId)
     if (
-      normalizedModelId.length === 0 ||
-      hiddenModelIds?.has(normalizedModelId) === true ||
-      seen.has(normalizedModelId)
+      resolvedModelId.length === 0 ||
+      hiddenModelIds?.has(resolvedModelId) === true ||
+      seen.has(resolvedModelId)
     ) {
-      return false
+      continue
     }
 
-    seen.add(normalizedModelId)
-    return true
-  })
+    seen.add(resolvedModelId)
+    filtered.push(resolvedModelId === normalizedModelId ? modelId : resolvedModelId)
+  }
+
+  return filtered
 }
 
 export function getModelCatalogProviders(): ProviderModelCatalogEntry[] {
@@ -203,7 +224,7 @@ export function getCatalogModel(
   modelId: string | null | undefined,
 ): ModelCatalogEntry | undefined {
   if (modelId === null || modelId === undefined || modelId.length === 0) return undefined
-  const normalizedModelId = normalizeValue(modelId)
+  const normalizedModelId = resolveLegacyCatalogModelId(providerKey, modelId)
   return getProviderCatalogModels(providerKey).find(
     (model) => normalizeValue(model.id) === normalizedModelId,
   )
@@ -275,6 +296,12 @@ const LEGACY_RUNTIME_SELECTIONS: Partial<Record<
     'claude-opus-4-8-fast': {
       modelId: 'claude-opus-4-8',
       traitValues: { fastMode: true },
+    },
+  },
+  cursor: {
+    default: {
+      modelId: 'auto',
+      traitValues: {},
     },
   },
 }

@@ -5,6 +5,7 @@ import {
   getCatalogModelIds,
   getModelCapability,
   getModelDisplayName,
+  resolveCatalogModelRuntimeSelection,
 } from '@bitsentry-ce/components/llm/modelCatalog'
 import { getProviderModelOptions } from '@bitsentry-ce/components/chat/utils'
 import { resolveIncidentModelSelection } from '@bitsentry-ce/components/investigation/provider-selection'
@@ -106,6 +107,21 @@ describe('local model catalog selection', () => {
 
     expect(getModelCapability('codex', 'gpt-5.4')).toBe(catalogCapability)
     expect(getModelCapability('openai', 'gpt-future-unknown')).toBeUndefined()
+  })
+
+  it('normalizes the legacy Cursor default ID to the Cursor ACP auto ID', () => {
+    const cursorModels = getCatalogModelIds('cursor')
+
+    expect(cursorModels).toContain('auto')
+    expect(cursorModels).not.toContain('default')
+    expect(getCatalogModel('cursor', 'default')?.id).toBe('auto')
+    expect(getProviderModelOptions('cursor', {
+      cursor: providerConfig('default', ['default']),
+    })).toContain('auto')
+    expect(resolveCatalogModelRuntimeSelection('cursor', 'default')).toEqual({
+      modelId: 'auto',
+      traitValues: {},
+    })
   })
 
   it('reads the persisted availability snapshot when discovery is empty', async () => {
