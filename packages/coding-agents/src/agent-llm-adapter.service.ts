@@ -1527,17 +1527,23 @@ export class AgentLlmAdapterService {
           }
         }
         if (m.toolCalls !== undefined && m.toolCalls.length > 0) {
+          const text = normalizeTextContent(m.content)
+          const parts: Array<Record<string, unknown>> = []
+          if (text.length > 0) {
+            parts.push({ text })
+          }
+          parts.push(...m.toolCalls.map(tc => ({
+            functionCall: {
+              name: tc.name,
+              args: tc.args,
+            },
+            ...(tc.thoughtSignature !== undefined
+              ? { thoughtSignature: tc.thoughtSignature }
+              : {}),
+          })))
           return {
             role: 'model' as const,
-            parts: [
-              { text: normalizeTextContent(m.content) },
-              ...m.toolCalls.map(tc => ({
-                functionCall: {
-                  name: tc.name,
-                  args: tc.args,
-                },
-              })),
-            ],
+            parts,
           }
         }
         return {
@@ -1582,6 +1588,7 @@ export class AgentLlmAdapterService {
         content?: {
           parts?: Array<{
             text?: string
+            thoughtSignature?: string
             functionCall?: {
               name: string
               args: Record<string, unknown>
@@ -1605,6 +1612,7 @@ export class AgentLlmAdapterService {
           id: `gemini_${String(Date.now())}_${String(toolCalls.length)}`,
           name: part.functionCall.name,
           args: part.functionCall.args,
+          thoughtSignature: part.thoughtSignature,
         }, 'Gemini')
         if (toolCall !== null) toolCalls.push(toolCall)
       }

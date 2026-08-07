@@ -462,6 +462,102 @@ describe('AgentLlmAdapterService', () => {
     expect(requestBody?.generationConfig).not.toHaveProperty('thinkingBudget')
   })
 
+  it('replays Gemini thought signatures on the next tool turn', async () => {
+    const adapter = createAdapter({
+      getApiKey: () => Promise.resolve('test-key'),
+    })
+    const requestBodies: Array<Record<string, unknown>> = []
+    let responseNumber = 0
+    vi.stubGlobal('fetch', vi.fn().mockImplementation((_url: string, init?: RequestInit) => {
+      requestBodies.push(JSON.parse(String(init?.body)) as Record<string, unknown>)
+      responseNumber += 1
+      const response = responseNumber === 1
+        ? {
+            candidates: [{
+              content: {
+                role: 'model',
+                parts: [
+                  {
+                    functionCall: { name: 'list_runbooks', args: {} },
+                    thoughtSignature: 'AgQKA...',
+                  },
+                  { functionCall: { name: 'get_runbook', args: { id: 'runbook-1' } } },
+                ],
+              },
+            }],
+          }
+        : {
+            candidates: [{ content: { parts: [{ text: 'Done' }] } }],
+          }
+      return Promise.resolve(new Response(JSON.stringify(response)))
+    }))
+
+    const firstResponse = await adapter.chatWithTools({
+      messages: [{ role: 'user', content: 'List runbooks.' }],
+      tools: [
+        { name: 'list_runbooks', description: 'List available runbooks.', inputSchema: { type: 'object', properties: {} } },
+        { name: 'get_runbook', description: 'Get a runbook.', inputSchema: { type: 'object', properties: { id: { type: 'string' } } } },
+      ],
+      signal: new AbortController().signal,
+      llm: { providerKey: 'gemini', model: 'gemini-3.6-flash' },
+    })
+
+    await adapter.chatWithTools({
+      messages: [
+        { role: 'user', content: 'List runbooks.' },
+        { role: 'assistant', content: '', toolCalls: firstResponse.toolCalls },
+        { role: 'tool', content: 'No runbooks found.', toolCallId: firstResponse.toolCalls?.[0]?.id },
+        { role: 'tool', content: 'Runbook details.', toolCallId: firstResponse.toolCalls?.[1]?.id },
+      ],
+      tools: [
+        { name: 'list_runbooks', description: 'List available runbooks.', inputSchema: { type: 'object', properties: {} } },
+        { name: 'get_runbook', description: 'Get a runbook.', inputSchema: { type: 'object', properties: { id: { type: 'string' } } } },
+      ],
+      signal: new AbortController().signal,
+      llm: { providerKey: 'gemini', model: 'gemini-3.6-flash' },
+    })
+
+    expect(firstResponse.toolCalls).toMatchObject([{
+      name: 'list_runbooks',
+      args: {},
+      thoughtSignature: 'AgQKA...',
+    }, {
+      name: 'get_runbook',
+      args: { id: 'runbook-1' },
+    }])
+    expect(requestBodies[1]?.contents).toEqual([
+      { role: 'user', parts: [{ text: 'List runbooks.' }] },
+      {
+        role: 'model',
+        parts: [
+          {
+            functionCall: { name: 'list_runbooks', args: {} },
+            thoughtSignature: 'AgQKA...',
+          },
+          { functionCall: { name: 'get_runbook', args: { id: 'runbook-1' } } },
+        ],
+      },
+      {
+        role: 'user',
+        parts: [{
+          functionResponse: {
+            name: firstResponse.toolCalls?.[0]?.id,
+            response: { result: 'No runbooks found.' },
+          },
+        }],
+      },
+      {
+        role: 'user',
+        parts: [{
+          functionResponse: {
+            name: firstResponse.toolCalls?.[1]?.id,
+            response: { result: 'Runbook details.' },
+          },
+        }],
+      },
+    ])
+  })
+
   it('emits selected reasoning effort for supported OpenAI-compatible providers', async () => {
     const adapter = createAdapter({
       getApiKey: () => Promise.resolve('test-key'),

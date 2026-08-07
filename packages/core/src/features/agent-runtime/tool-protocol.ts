@@ -10,6 +10,7 @@ export const agentToolCallSchema = z.object({
   id: z.string().min(1),
   name: z.string().min(1),
   args: z.record(z.string(), z.unknown()),
+  thoughtSignature: z.string().optional(),
 }).strict()
 
 export const agentToolResultSchema = z.object({
