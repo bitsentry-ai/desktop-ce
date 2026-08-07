@@ -785,7 +785,27 @@ function getGeminiSystemInstruction(systemInstruction: string): Record<string, u
   return { parts: [{ text: systemInstruction }] }
 }
 
-const GEMINI_SCHEMA_OMITTED_KEYS = new Set(['$schema', '$ref', '$defs', 'definitions', 'additionalProperties'])
+const GEMINI_SCHEMA_ALLOWED_KEYS = new Set([
+  'type',
+  'format',
+  'title',
+  'description',
+  'nullable',
+  'enum',
+  'items',
+  'properties',
+  'required',
+  'propertyOrdering',
+  'minItems',
+  'maxItems',
+  'minProperties',
+  'maxProperties',
+  'minimum',
+  'maximum',
+  'minLength',
+  'maxLength',
+  'pattern',
+])
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
@@ -819,7 +839,11 @@ function resolveGeminiSchemaReference(
 function sanitizeGeminiSchema(
   schema: Record<string, unknown>,
 ): Record<string, unknown> {
-  const visit = (value: unknown, resolvingReferences: Set<string>): unknown => {
+  const visit = (
+    value: unknown,
+    resolvingReferences: Set<string>,
+    preserveObjectKeys = false,
+  ): unknown => {
     if (Array.isArray(value)) {
       return value.map((item) => visit(item, resolvingReferences))
     }
@@ -830,22 +854,31 @@ function sanitizeGeminiSchema(
 
     const reference = value.$ref
     if (typeof reference === 'string') {
+      const siblings = Object.fromEntries(
+        Object.entries(value).filter(([key]) => key !== '$ref'),
+      )
       if (resolvingReferences.has(reference)) {
-        return {}
+        return visit({ type: 'object', ...siblings }, resolvingReferences)
       }
 
       const resolved = resolveGeminiSchemaReference(schema, reference)
       if (resolved !== undefined) {
         const nextReferences = new Set(resolvingReferences)
         nextReferences.add(reference)
-        return visit(resolved, nextReferences)
+        return visit(
+          isRecord(resolved) ? { ...resolved, ...siblings } : siblings,
+          nextReferences,
+        )
       }
     }
 
     return Object.fromEntries(
       Object.entries(value)
-        .filter(([key]) => !GEMINI_SCHEMA_OMITTED_KEYS.has(key))
-        .map(([key, child]) => [key, visit(child, resolvingReferences)]),
+        .filter(([key]) => preserveObjectKeys || GEMINI_SCHEMA_ALLOWED_KEYS.has(key))
+        .map(([key, child]) => [
+          key,
+          visit(child, resolvingReferences, key === 'properties'),
+        ]),
     )
   }
 

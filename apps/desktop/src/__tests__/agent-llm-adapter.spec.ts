@@ -55,6 +55,20 @@ function collectObjectKeys(value: unknown): string[] {
   return Object.entries(value).flatMap(([key, child]) => [key, ...collectObjectKeys(child)])
 }
 
+const GEMINI_SCHEMA_FORBIDDEN_KEYS = new Set([
+  '$schema',
+  '$ref',
+  '$defs',
+  'definitions',
+  'additionalProperties',
+  'const',
+  'allOf',
+  'oneOf',
+  'exclusiveMinimum',
+  'additionalItems',
+  'prefixItems',
+])
+
 describe('AgentLlmAdapterService', () => {
   afterEach(() => {
     vi.unstubAllGlobals()
@@ -360,15 +374,31 @@ describe('AgentLlmAdapterService', () => {
       properties: {
         values: {
           type: 'array',
-          items: { $ref: '#/$defs/Value' },
+          items: {
+            $ref: '#/$defs/Value',
+            description: 'Values to record.',
+          },
         },
+        unsupported: {
+          const: 'not-supported',
+          allOf: [{ type: 'string' }],
+          oneOf: [{ type: 'string' }],
+          exclusiveMinimum: 0,
+          additionalItems: false,
+          prefixItems: [{ type: 'string' }],
+        },
+        cycle: { $ref: '#/$defs/Node' },
       },
       additionalProperties: false,
       $defs: {
         Value: {
           type: 'object',
-          properties: { label: { type: 'string' } },
+          properties: { label: { type: 'string', const: 'label' } },
           additionalProperties: false,
+        },
+        Node: {
+          type: 'object',
+          properties: { next: { $ref: '#/$defs/Node' } },
         },
       },
     }
@@ -384,15 +414,27 @@ describe('AgentLlmAdapterService', () => {
     const tools = requestBody?.tools as Array<Record<string, unknown>> | undefined
     const declarations = tools?.[0]?.functionDeclarations as Array<Record<string, unknown>> | undefined
     const parameters = declarations?.[0]?.parameters as Record<string, unknown> | undefined
-    const nestedItems = ((parameters?.properties as Record<string, unknown>)?.values as Record<string, unknown>)?.items
+    if (parameters === undefined) {
+      throw new Error('Gemini function declaration parameters were not emitted')
+    }
 
-    expect(collectObjectKeys(parameters)).not.toEqual(expect.arrayContaining([
-      '$schema', '$ref', '$defs', 'definitions', 'additionalProperties',
-    ]))
+    const parameterProperties = parameters.properties as Record<string, unknown>
+    const nestedItems = (parameterProperties.values as Record<string, unknown>)?.items
+
+    const forbiddenKeys = collectObjectKeys(parameters).filter((key) =>
+      GEMINI_SCHEMA_FORBIDDEN_KEYS.has(key),
+    )
+
+    expect(forbiddenKeys).toEqual([])
     expect(nestedItems).toMatchObject({
       type: 'object',
       properties: { label: { type: 'string' } },
+      description: 'Values to record.',
     })
+    expect(parameterProperties.unsupported).toEqual({})
+    expect(
+      ((parameterProperties.cycle as Record<string, unknown>).properties as Record<string, unknown>).next,
+    ).toEqual({ type: 'object' })
   })
 
   it('emits selected reasoning effort for supported OpenAI-compatible providers', async () => {
