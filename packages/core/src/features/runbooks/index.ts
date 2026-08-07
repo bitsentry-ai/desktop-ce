@@ -4,6 +4,7 @@ export * from './execution';
 export * from './resolver';
 export * from './redactor';
 export * from './log-filter';
+export * from './reorder-commit';
 export * from './globals.schemas';
 export * from './desktop-global-variables-service';
 export * from './desktop-runbook.gateway';

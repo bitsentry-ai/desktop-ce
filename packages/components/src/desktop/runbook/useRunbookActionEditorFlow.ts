@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type Dispatch, type SetStateAction } from "react";
 
+import { rollbackRunbookReorder } from "@bitsentry-ce/core";
 import {
   canPersistRunbookAction,
   createDraftAction,
@@ -11,6 +12,7 @@ import type {
   RunbookActionRecord,
   RunbookRecord,
 } from "../../services";
+import type { DraftReconcileMode } from "./useRunbookCatalogFlow";
 
 type DesktopIpcInvoke = <T>(
   channel: DesktopRpcChannel,
@@ -42,7 +44,10 @@ type UseRunbookActionEditorFlowOptions = {
   captureDesktopAnalyticsEvent: CaptureDesktopAnalyticsEvent;
   summarizeRunbookForTelemetry: (runbook: RunbookRecord) => Record<string, unknown>;
   summarizeRunbookActionForTelemetry: (action: RunbookActionRecord) => Record<string, unknown>;
-  replaceRunbook: (updated: RunbookRecord) => void;
+  replaceRunbook: (
+    updated: RunbookRecord,
+    draftMode?: DraftReconcileMode,
+  ) => void;
   validErrorSourceIds: Set<string>;
   validPluginActionIdsByPluginId: Map<string, Set<string>>;
 };
@@ -373,7 +378,9 @@ export function useRunbookActionEditorFlow({
         return;
       }
 
-      const previousRunbook = cloneRunbook(activeRunbook);
+      const previousActionIds = activeEditingRunbook.actions.map(
+        (action) => action.id,
+      );
       setEditingRunbook((prev) => {
         if (prev === null) {
           return prev;
@@ -393,18 +400,21 @@ export function useRunbookActionEditorFlow({
             actionIdsInOrder: nextActions.map((action) => action.id),
           },
         );
-        replaceRunbook(updated);
+        // A reorder must not adopt the server's action objects: another card may
+        // be expanded with unsaved edits that only exist in the draft.
+        replaceRunbook(updated, "preserve-actions");
         captureDesktopAnalyticsEvent("desktop_runbook_actions_reordered", {
           ...summarizeRunbookForTelemetry(updated),
         });
       } catch (error) {
         console.error("Failed to reorder runbook actions:", error);
-        setEditingRunbook(previousRunbook);
+        setEditingRunbook((prev) =>
+          rollbackRunbookReorder(prev, previousActionIds),
+        );
       }
     },
     [
       activeEditingRunbook,
-      activeRunbook,
       captureDesktopAnalyticsEvent,
       ipcInvoke,
       replaceRunbook,
