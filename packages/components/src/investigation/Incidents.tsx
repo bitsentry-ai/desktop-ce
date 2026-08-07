@@ -1220,12 +1220,15 @@ export function RunbookAuthoringProposalCards({
     });
   }, []);
 
+  const canDecideProposals = sessionId !== null || incidentId.length > 0;
+  const decisionSessionId = sessionId ?? undefined;
+
   const refreshLiveProposals = useCallback(async () => {
-    if (sessionId === null) return undefined;
+    if (!canDecideProposals) return undefined;
 
     try {
       const liveProposals = await agent.listRunbookAuthoringProposals({
-        sessionId,
+        sessionId: decisionSessionId,
         incidentThreadId: incidentId,
       });
       setDecisionStateByProposalId((previous) => ({
@@ -1238,7 +1241,7 @@ export function RunbookAuthoringProposalCards({
     } catch {
       return undefined;
     }
-  }, [agent, incidentId, sessionId]);
+  }, [agent, canDecideProposals, decisionSessionId, incidentId]);
 
   useEffect(() => {
     void refreshLiveProposals();
@@ -1298,12 +1301,12 @@ export function RunbookAuthoringProposalCards({
         const statusKey = { approved: "common.incidents.statusApproved", pending_approval: "common.incidents.statusPendingApproval", rejected: "common.incidents.statusRejected", revision_requested: "common.incidents.statusRevisionRequested" }[proposal.status];
 
         const handleApprove = async () => {
-          if (sessionId === null) return;
+          if (!canDecideProposals) return;
           setPendingProposalId(proposal.proposalId);
           setErrorByProposalId((prev) => ({ ...prev, [proposal.proposalId]: "" }));
           try {
             const result = await agent.approveRunbookAuthoringProposal({
-              sessionId,
+              sessionId: decisionSessionId,
               incidentThreadId: incidentId,
               proposalId: proposal.proposalId,
               approvedOperationIds: proposal.kind === "edit_existing_runbook" ? selectedOperationIds : undefined,
@@ -1329,12 +1332,12 @@ export function RunbookAuthoringProposalCards({
         };
 
         const handleReject = async () => {
-          if (sessionId === null) return;
+          if (!canDecideProposals) return;
           setPendingProposalId(proposal.proposalId);
           setErrorByProposalId((prev) => ({ ...prev, [proposal.proposalId]: "" }));
           try {
             const result = await agent.rejectRunbookAuthoringProposal({
-              sessionId,
+              sessionId: decisionSessionId,
               incidentThreadId: incidentId,
               proposalId: proposal.proposalId,
               reason: "Rejected from incident runbook authoring review.",
@@ -1349,13 +1352,13 @@ export function RunbookAuthoringProposalCards({
         };
 
         const handleRequestRevision = async () => {
-          if (sessionId === null || revisionDraft.trim().length === 0) return;
+          if (!canDecideProposals || revisionDraft.trim().length === 0) return;
           const requestedEdit = revisionDraft.trim();
           setPendingProposalId(proposal.proposalId);
           setErrorByProposalId((prev) => ({ ...prev, [proposal.proposalId]: "" }));
           try {
             const result = await agent.requestRunbookAuthoringRevision({
-              sessionId,
+              sessionId: decisionSessionId,
               incidentThreadId: incidentId,
               proposalId: proposal.proposalId,
               requestedEdit,
@@ -1416,7 +1419,7 @@ export function RunbookAuthoringProposalCards({
                   <button
                     type="button"
                     onClick={handleApprove}
-                    disabled={isBusy || sessionId === null || !proposal.validation.valid || (proposal.kind === "edit_existing_runbook" && selectedOperationIds.length === 0)}
+                    disabled={isBusy || !canDecideProposals || !proposal.validation.valid || (proposal.kind === "edit_existing_runbook" && selectedOperationIds.length === 0)}
                     className="inline-flex h-8 items-center gap-1.5 rounded-md border border-emerald-500/40 bg-emerald-500/10 px-2.5 text-xs font-medium text-emerald-700 transition-colors hover:bg-emerald-500/15 disabled:cursor-not-allowed disabled:opacity-50 dark:text-emerald-300"
                   >
                     <Check size={13} />
@@ -1425,7 +1428,7 @@ export function RunbookAuthoringProposalCards({
                   <button
                     type="button"
                     onClick={handleReject}
-                    disabled={isBusy || sessionId === null}
+                    disabled={isBusy || !canDecideProposals}
                     className="inline-flex h-8 items-center gap-1.5 rounded-md border border-border bg-muted/60 px-2.5 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     <Ban size={13} />
@@ -1507,12 +1510,12 @@ export function RunbookAuthoringProposalCards({
                   }}
                   className="h-8 min-w-0 flex-1 rounded-md border border-border bg-background px-2 text-xs outline-none transition-colors placeholder:text-muted-foreground focus:border-primary/50"
                   placeholder={t("common.incidents.suggestDifferentEdit")}
-                  disabled={isBusy || sessionId === null}
+                  disabled={isBusy || !canDecideProposals}
                 />
                 <button
                   type="button"
                   onClick={handleRequestRevision}
-                  disabled={isBusy || sessionId === null || revisionDraft.trim().length === 0}
+                  disabled={isBusy || !canDecideProposals || revisionDraft.trim().length === 0}
                   className="inline-flex h-8 shrink-0 items-center justify-center gap-1.5 rounded-md border border-border bg-muted/60 px-2.5 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   <RefreshCw size={13} />
