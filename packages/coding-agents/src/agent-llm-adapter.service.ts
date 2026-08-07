@@ -785,6 +785,73 @@ function getGeminiSystemInstruction(systemInstruction: string): Record<string, u
   return { parts: [{ text: systemInstruction }] }
 }
 
+const GEMINI_SCHEMA_OMITTED_KEYS = new Set(['$schema', '$ref', '$defs', 'definitions', 'additionalProperties'])
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
+}
+
+function decodeJsonPointerPart(part: string): string {
+  return part.replaceAll('~1', '/').replaceAll('~0', '~')
+}
+
+function resolveGeminiSchemaReference(
+  root: Record<string, unknown>,
+  reference: string,
+): unknown {
+  if (!reference.startsWith('#/')) {
+    return undefined
+  }
+
+  return reference
+    .slice(2)
+    .split('/')
+    .map(decodeJsonPointerPart)
+    .reduce<unknown>((value, part) => {
+      if (!isRecord(value)) {
+        return undefined
+      }
+
+      return value[part]
+    }, root)
+}
+
+function sanitizeGeminiSchema(
+  schema: Record<string, unknown>,
+): Record<string, unknown> {
+  const visit = (value: unknown, resolvingReferences: Set<string>): unknown => {
+    if (Array.isArray(value)) {
+      return value.map((item) => visit(item, resolvingReferences))
+    }
+
+    if (!isRecord(value)) {
+      return value
+    }
+
+    const reference = value.$ref
+    if (typeof reference === 'string') {
+      if (resolvingReferences.has(reference)) {
+        return {}
+      }
+
+      const resolved = resolveGeminiSchemaReference(schema, reference)
+      if (resolved !== undefined) {
+        const nextReferences = new Set(resolvingReferences)
+        nextReferences.add(reference)
+        return visit(resolved, nextReferences)
+      }
+    }
+
+    return Object.fromEntries(
+      Object.entries(value)
+        .filter(([key]) => !GEMINI_SCHEMA_OMITTED_KEYS.has(key))
+        .map(([key, child]) => [key, visit(child, resolvingReferences)]),
+    )
+  }
+
+  return visit(schema, new Set()) as Record<string, unknown>
+}
+
 function getGeminiTools(
   functionDeclarations: Array<Record<string, unknown>> | undefined,
 ): Array<Record<string, unknown>> | undefined {
@@ -1432,7 +1499,7 @@ export class AgentLlmAdapterService {
     const functionDeclarations = tools?.map(tool => ({
       name: tool.name,
       description: tool.description,
-      parameters: tool.inputSchema,
+      parameters: sanitizeGeminiSchema(tool.inputSchema),
     }))
 
     const response = await fetch(

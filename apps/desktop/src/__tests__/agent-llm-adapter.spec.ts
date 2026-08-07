@@ -43,6 +43,18 @@ function createLocalAiProvider(overrides: Partial<LocalAiProviderPort>): LocalAi
   }
 }
 
+function collectObjectKeys(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return value.flatMap(collectObjectKeys)
+  }
+
+  if (value === null || typeof value !== 'object') {
+    return []
+  }
+
+  return Object.entries(value).flatMap(([key, child]) => [key, ...collectObjectKeys(child)])
+}
+
 describe('AgentLlmAdapterService', () => {
   afterEach(() => {
     vi.unstubAllGlobals()
@@ -327,6 +339,59 @@ describe('AgentLlmAdapterService', () => {
         name: 'list_runbooks',
         args: {},
       }],
+    })
+  })
+
+  it('serializes nested Gemini tool schemas in the provider wire format', async () => {
+    const adapter = createAdapter({
+      getApiKey: () => Promise.resolve('test-key'),
+    })
+    let requestBody: Record<string, unknown> | undefined
+    vi.stubGlobal('fetch', vi.fn().mockImplementation((_url: string, init?: RequestInit) => {
+      requestBody = JSON.parse(String(init?.body)) as Record<string, unknown>
+      return Promise.resolve(new Response(JSON.stringify({
+        candidates: [{ content: { parts: [{ text: 'Done' }] } }],
+      })))
+    }))
+
+    const inputSchema = {
+      $schema: 'http://json-schema.org/draft-07/schema#',
+      type: 'object',
+      properties: {
+        values: {
+          type: 'array',
+          items: { $ref: '#/$defs/Value' },
+        },
+      },
+      additionalProperties: false,
+      $defs: {
+        Value: {
+          type: 'object',
+          properties: { label: { type: 'string' } },
+          additionalProperties: false,
+        },
+      },
+    }
+
+    const response = await adapter.chatWithTools({
+      messages: [{ role: 'user', content: 'Use the tool.' }],
+      tools: [{ name: 'record_values', description: 'Record values.', inputSchema }],
+      signal: new AbortController().signal,
+      llm: { providerKey: 'gemini', model: 'gemini-2.0-flash' },
+    })
+
+    expect(response.content).toBe('Done')
+    const tools = requestBody?.tools as Array<Record<string, unknown>> | undefined
+    const declarations = tools?.[0]?.functionDeclarations as Array<Record<string, unknown>> | undefined
+    const parameters = declarations?.[0]?.parameters as Record<string, unknown> | undefined
+    const nestedItems = ((parameters?.properties as Record<string, unknown>)?.values as Record<string, unknown>)?.items
+
+    expect(collectObjectKeys(parameters)).not.toEqual(expect.arrayContaining([
+      '$schema', '$ref', '$defs', 'definitions', 'additionalProperties',
+    ]))
+    expect(nestedItems).toMatchObject({
+      type: 'object',
+      properties: { label: { type: 'string' } },
     })
   })
 
