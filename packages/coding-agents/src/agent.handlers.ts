@@ -12,6 +12,7 @@ import type {
   AgentSessionStatus,
   RunbookContext,
 } from '@bitsentry-ce/core/features/agent-runtime/types'
+import type { DesktopPluginRuntimeService } from '@bitsentry-ce/core/features/plugins'
 import type { RunbookContextV1 } from '@bitsentry-ce/core/features/runbooks/desktop-runbook.types'
 import type {
   AgentRuntimeLlmAdapter,
@@ -45,6 +46,7 @@ export interface AgentServiceDependencies {
   runbookGateway?: AgentRuntimeRunbookGateway
   runbookStore?: AgentRuntimeRunbookStore
   onRunbooksChanged?: () => void
+  pluginRuntime?: DesktopPluginRuntimeService
   windowGetter: () => AgentRuntimeWindow | null
 }
 
@@ -54,19 +56,21 @@ export type AgentRuntimeServiceClass = new (
   runbookGateway?: AgentRuntimeRunbookGateway,
   runbookStore?: AgentRuntimeRunbookStore,
   onRunbooksChanged?: () => void,
+  pluginRuntime?: DesktopPluginRuntimeService,
 ) => AgentRuntimeSessionController
 
 export function createDesktopAgentService(
   dependencies: AgentServiceDependencies,
   services: { AgentRuntimeService: AgentRuntimeServiceClass },
 ): AgentRuntimeSessionController {
-  const { llmAdapter, runbookGateway, runbookStore, onRunbooksChanged, windowGetter } = dependencies
+  const { llmAdapter, runbookGateway, runbookStore, onRunbooksChanged, pluginRuntime, windowGetter } = dependencies
   return new services.AgentRuntimeService(
     windowGetter,
     llmAdapter,
     runbookGateway,
     runbookStore,
     onRunbooksChanged,
+    pluginRuntime,
   )
 }
 

@@ -16,8 +16,14 @@ import {
   type RunbookAuthoringOperation,
   type RunbookAuthoringProposal,
 } from '../runbooks/authoring'
+import {
+  buildPluginInputSchema,
+  type DesktopPluginDescriptor,
+  type DesktopPluginRuntimeService,
+} from '../plugins'
 
 export const listRunbooksHostToolSchema = z.object({}).strict()
+export const listPluginsHostToolSchema = z.object({}).strict()
 
 const idleTimeoutDescription = `Idle timeout in minutes, 0 to ${String(MAX_RUNBOOK_IDLE_TIMEOUT_MINUTES)}.`
 const idleTimeoutSchema = z.number()
@@ -74,6 +80,7 @@ export const RUNBOOK_COMPLETION_WAIT_SECONDS = RUNBOOK_COMPLETION_WAIT_TIMEOUT_M
 
 export type HostToolName =
   | 'list_runbooks'
+  | 'list_plugins'
   | 'execute_runbook'
   | 'get_runbook_execution'
   | 'propose_runbook_edit'
@@ -123,6 +130,7 @@ export interface HostToolContext {
   summarizeExecution?: (execution: RunbookExecutionRecord) => Record<string, unknown>
   rememberExecution?: (session: AgentSessionRef, execution: RunbookExecutionRecord) => void
   listAuthorableRunbooks?: () => Promise<RunbookRecord[]>
+  pluginRuntime?: Pick<DesktopPluginRuntimeService, 'listPlugins'>
   onToolEvent?: (event: HostToolEvent) => void
 }
 
@@ -436,6 +444,31 @@ async function listRunbooks(context: HostToolContext): Promise<ToolResult> {
   }
 }
 
+function summarizePluginForCatalog(plugin: DesktopPluginDescriptor): Record<string, unknown> {
+  return {
+    id: plugin.id,
+    name: plugin.name,
+    version: plugin.version,
+    description: plugin.description,
+    actions: plugin.actions.map((action) => ({
+      id: action.id,
+      title: action.title,
+      description: action.description,
+      riskLevel: action.riskLevel,
+      inputSchema: z.toJSONSchema(buildPluginInputSchema(action.fields)),
+    })),
+  }
+}
+
+async function listPlugins(context: HostToolContext): Promise<ToolResult> {
+  const plugins = context.pluginRuntime?.listPlugins() ?? []
+  return {
+    output: JSON.stringify({
+      plugins: plugins.map(summarizePluginForCatalog),
+    }, null, 2),
+  }
+}
+
 async function executeRunbook(
   context: HostToolContext,
   input: ExecuteRunbookHostToolInput,
@@ -581,6 +614,12 @@ export const hostTools = [
     description: 'List available runbooks that can be executed for the incident.',
     argsSchema: listRunbooksHostToolSchema,
     handler: async (context: HostToolContext) => await listRunbooks(context),
+  },
+  {
+    name: 'list_plugins',
+    description: 'List installed plugins, their action IDs, and each action input JSON schema. Auth values and secrets are never returned.',
+    argsSchema: listPluginsHostToolSchema,
+    handler: async (context: HostToolContext) => await listPlugins(context),
   },
   {
     name: 'execute_runbook',

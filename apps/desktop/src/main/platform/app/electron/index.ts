@@ -603,6 +603,7 @@ app
           runbookGateway,
           runbookStore,
           onRunbooksChanged: publishRunbooksChanged,
+          pluginRuntime,
           windowGetter: () => desktopShell.mainWindow,
         },
         { AgentRuntimeService },
