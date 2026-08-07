@@ -242,6 +242,35 @@ describe('local model catalog selection', () => {
     }
   })
 
+  it('exposes current Gemini models with the Gemini 3 thinking-level control', () => {
+    const modelIds = getProviderCatalogModels('gemini').map((model) => model.id)
+
+    expect(modelIds).toEqual([
+      'gemini-2.5-pro',
+      'gemini-2.5-flash',
+      'gemini-2.5-flash-lite',
+      'gemini-3.6-flash',
+      'gemini-3.5-flash',
+      'gemini-3.5-flash-lite',
+      'gemini-3.1-flash-lite',
+      'gemini-3.1-pro-preview',
+      'gemini-3-flash-preview',
+    ])
+    expect(modelIds).not.toContain('gemini-2.0-flash')
+
+    for (const model of getProviderCatalogModels('gemini').filter((entry) => entry.id.startsWith('gemini-3'))) {
+      const thinkingLevel = getEffectiveComposerOptions(model).find((option) => option.id === 'thinkingLevel')
+      expect(thinkingLevel).toMatchObject({ type: 'select' })
+      if (thinkingLevel?.type !== 'select') throw new Error(`${model.id} needs thinkingLevel`)
+      expect(thinkingLevel.options.map((option) => option.value)).toEqual(
+        model.id === 'gemini-3.1-pro-preview'
+          ? ['low', 'medium', 'high']
+          : ['minimal', 'low', 'medium', 'high'],
+      )
+      expect(thinkingLevel.options.find((option) => option.isDefault)?.value).toBe('high')
+    }
+  })
+
   it('does not expose Codex models rejected for ChatGPT accounts', () => {
     const models = getCatalogModelIds('codex')
 

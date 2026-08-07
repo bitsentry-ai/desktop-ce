@@ -407,7 +407,7 @@ describe('AgentLlmAdapterService', () => {
       messages: [{ role: 'user', content: 'Use the tool.' }],
       tools: [{ name: 'record_values', description: 'Record values.', inputSchema }],
       signal: new AbortController().signal,
-      llm: { providerKey: 'gemini', model: 'gemini-2.0-flash' },
+      llm: { providerKey: 'gemini', model: 'gemini-2.5-flash' },
     })
 
     expect(response.content).toBe('Done')
@@ -435,6 +435,29 @@ describe('AgentLlmAdapterService', () => {
     expect(
       ((parameterProperties.cycle as Record<string, unknown>).properties as Record<string, unknown>).next,
     ).toEqual({ type: 'object' })
+  })
+
+  it('uses Gemini 3 thinkingLevel without sending the legacy thinkingBudget', async () => {
+    const adapter = createAdapter({
+      getApiKey: () => Promise.resolve('test-key'),
+    })
+    let requestBody: Record<string, unknown> | undefined
+    vi.stubGlobal('fetch', vi.fn().mockImplementation((_url: string, init?: RequestInit) => {
+      requestBody = JSON.parse(String(init?.body)) as Record<string, unknown>
+      return Promise.resolve(new Response(JSON.stringify({
+        candidates: [{ content: { parts: [{ text: 'Done' }] } }],
+      })))
+    }))
+
+    await adapter.chatWithTools({
+      messages: [{ role: 'user', content: 'Explain the alert.' }],
+      signal: new AbortController().signal,
+      llm: { providerKey: 'gemini', model: 'gemini-3.5-flash', thinkingEnabled: true },
+      traitValues: { thinkingLevel: 'low' },
+    })
+
+    expect(requestBody?.generationConfig).toEqual({ thinkingLevel: 'low' })
+    expect(requestBody?.generationConfig).not.toHaveProperty('thinkingConfig')
   })
 
   it('emits selected reasoning effort for supported OpenAI-compatible providers', async () => {

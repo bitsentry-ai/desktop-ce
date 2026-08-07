@@ -895,7 +895,23 @@ function getGeminiTools(
   return [{ functionDeclarations }]
 }
 
-function getGeminiGenerationConfig(thinkingEnabled: boolean | undefined): Record<string, unknown> | undefined {
+const GEMINI_3_THINKING_LEVELS = new Set(['minimal', 'low', 'medium', 'high'])
+
+function getGeminiGenerationConfig(
+  model: string,
+  thinkingEnabled: boolean | undefined,
+  traitValues?: Record<string, string | boolean>,
+): Record<string, unknown> | undefined {
+  if (model.startsWith('gemini-3')) {
+    const selectedLevel = traitValues?.thinkingLevel
+    const thinkingLevel = typeof selectedLevel === 'string'
+      && GEMINI_3_THINKING_LEVELS.has(selectedLevel)
+      ? selectedLevel
+      : 'high'
+
+    return { thinkingLevel }
+  }
+
   if (thinkingEnabled === undefined) {
     return undefined
   }
@@ -1544,7 +1560,11 @@ export class AgentLlmAdapterService {
           systemInstruction: getGeminiSystemInstruction(systemInstruction),
           contents,
           tools: getGeminiTools(functionDeclarations),
-          generationConfig: getGeminiGenerationConfig(input.llm?.thinkingEnabled),
+          generationConfig: getGeminiGenerationConfig(
+            model,
+            input.llm?.thinkingEnabled,
+            input.traitValues,
+          ),
         }),
         signal,
       },

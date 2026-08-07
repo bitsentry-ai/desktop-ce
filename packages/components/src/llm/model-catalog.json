@@ -809,16 +809,147 @@
           ]
         },
         {
-          "id": "gemini-2.0-flash",
-          "displayName": "Gemini 2.0 Flash",
+          "id": "gemini-3.6-flash",
+          "displayName": "Gemini 3.6 Flash",
           "supportsImageInput": true,
           "supportsAudioInput": true,
           "supportsVideoInput": true,
           "supportsPdfInput": true,
-          "supportsThinking": false,
-          "thinkingMode": "unsupported",
+          "supportsThinking": true,
+          "thinkingMode": "toggle",
           "reasoningOptions": [],
-          "composerOptions": []
+          "composerOptions": [
+            {
+              "id": "thinkingLevel",
+              "label": "common.traitsDropdown.thinking",
+              "type": "select",
+              "options": [
+                { "value": "minimal", "label": "common.traitsDropdown.reasoningMinimal" },
+                { "value": "low", "label": "common.traitsDropdown.reasoningLow" },
+                { "value": "medium", "label": "common.traitsDropdown.reasoningMedium" },
+                { "value": "high", "label": "common.traitsDropdown.reasoningHigh", "isDefault": true }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "gemini-3.5-flash",
+          "displayName": "Gemini 3.5 Flash",
+          "supportsImageInput": true,
+          "supportsAudioInput": true,
+          "supportsVideoInput": true,
+          "supportsPdfInput": true,
+          "supportsThinking": true,
+          "thinkingMode": "toggle",
+          "reasoningOptions": [],
+          "composerOptions": [
+            {
+              "id": "thinkingLevel",
+              "label": "common.traitsDropdown.thinking",
+              "type": "select",
+              "options": [
+                { "value": "minimal", "label": "common.traitsDropdown.reasoningMinimal" },
+                { "value": "low", "label": "common.traitsDropdown.reasoningLow" },
+                { "value": "medium", "label": "common.traitsDropdown.reasoningMedium" },
+                { "value": "high", "label": "common.traitsDropdown.reasoningHigh", "isDefault": true }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "gemini-3.5-flash-lite",
+          "displayName": "Gemini 3.5 Flash-Lite",
+          "supportsImageInput": true,
+          "supportsAudioInput": true,
+          "supportsVideoInput": true,
+          "supportsPdfInput": true,
+          "supportsThinking": true,
+          "thinkingMode": "toggle",
+          "reasoningOptions": [],
+          "composerOptions": [
+            {
+              "id": "thinkingLevel",
+              "label": "common.traitsDropdown.thinking",
+              "type": "select",
+              "options": [
+                { "value": "minimal", "label": "common.traitsDropdown.reasoningMinimal" },
+                { "value": "low", "label": "common.traitsDropdown.reasoningLow" },
+                { "value": "medium", "label": "common.traitsDropdown.reasoningMedium" },
+                { "value": "high", "label": "common.traitsDropdown.reasoningHigh", "isDefault": true }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "gemini-3.1-flash-lite",
+          "displayName": "Gemini 3.1 Flash-Lite",
+          "supportsImageInput": true,
+          "supportsAudioInput": true,
+          "supportsVideoInput": true,
+          "supportsPdfInput": true,
+          "supportsThinking": true,
+          "thinkingMode": "toggle",
+          "reasoningOptions": [],
+          "composerOptions": [
+            {
+              "id": "thinkingLevel",
+              "label": "common.traitsDropdown.thinking",
+              "type": "select",
+              "options": [
+                { "value": "minimal", "label": "common.traitsDropdown.reasoningMinimal" },
+                { "value": "low", "label": "common.traitsDropdown.reasoningLow" },
+                { "value": "medium", "label": "common.traitsDropdown.reasoningMedium" },
+                { "value": "high", "label": "common.traitsDropdown.reasoningHigh", "isDefault": true }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "gemini-3.1-pro-preview",
+          "displayName": "Gemini 3.1 Pro Preview",
+          "supportsImageInput": true,
+          "supportsAudioInput": true,
+          "supportsVideoInput": true,
+          "supportsPdfInput": true,
+          "supportsThinking": true,
+          "thinkingMode": "toggle",
+          "reasoningOptions": [],
+          "composerOptions": [
+            {
+              "id": "thinkingLevel",
+              "label": "common.traitsDropdown.thinking",
+              "type": "select",
+              "options": [
+                { "value": "low", "label": "common.traitsDropdown.reasoningLow" },
+                { "value": "medium", "label": "common.traitsDropdown.reasoningMedium" },
+                { "value": "high", "label": "common.traitsDropdown.reasoningHigh", "isDefault": true }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "gemini-3-flash-preview",
+          "displayName": "Gemini 3 Flash Preview",
+          "supportsImageInput": true,
+          "supportsAudioInput": true,
+          "supportsVideoInput": true,
+          "supportsPdfInput": true,
+          "supportsThinking": true,
+          "thinkingMode": "toggle",
+          "reasoningOptions": [],
+          "composerOptions": [
+            {
+              "id": "thinkingLevel",
+              "label": "common.traitsDropdown.thinking",
+              "type": "select",
+              "options": [
+                { "value": "minimal", "label": "common.traitsDropdown.reasoningMinimal" },
+                { "value": "low", "label": "common.traitsDropdown.reasoningLow" },
+                { "value": "medium", "label": "common.traitsDropdown.reasoningMedium" },
+                { "value": "high", "label": "common.traitsDropdown.reasoningHigh", "isDefault": true }
+              ]
+            }
+          ]
         }
       ]
     },
