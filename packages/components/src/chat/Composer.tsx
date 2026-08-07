@@ -74,6 +74,10 @@ export interface ComposerProps {
   selectedModelId: string;
   onSelectProvider: (key: ModelCatalogProviderKey) => void;
   onSelectModel: (modelId: string) => void;
+  onSelectModelSelection?: (
+    providerKey: ModelCatalogProviderKey,
+    modelId: string,
+  ) => void;
   configuredProviderKeys: ModelCatalogProviderKey[];
   providerConfigs: Record<string, SavedProviderConfig>;
   // Model capabilities
@@ -130,6 +134,7 @@ export function Composer({
   selectedModelId,
   onSelectProvider,
   onSelectModel,
+  onSelectModelSelection,
   configuredProviderKeys,
   providerConfigs,
   selectedModelCapability,
@@ -422,6 +427,7 @@ export function Composer({
               selectedModelId={selectedModelId}
               onSelectProvider={onSelectProvider}
               onSelectModel={onSelectModel}
+              onSelectModelSelection={onSelectModelSelection}
               configuredProviderKeys={configuredProviderKeys}
               providerConfigs={providerConfigs}
               threadStatus={threadStatus}
