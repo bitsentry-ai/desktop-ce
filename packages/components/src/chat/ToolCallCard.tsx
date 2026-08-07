@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { parseHostToolError } from "@bitsentry-ce/core";
 import type { ToolCallCard } from "./types";
 import { cn } from "../lib/utils";
 import { useTranslation } from "@bitsentry-ce/i18n";
@@ -17,8 +18,19 @@ export function ToolCard({ card }: { card: ToolCallCard }) {
     label = t("common.incidents.toolStateDone");
   }
   const modelContext = card.modelContext?.trim();
+  // Host tools fail with a JSON payload aimed at the model. Show the sentence
+  // and keep the codes and field paths behind the details disclosure.
+  const failure =
+    card.error !== undefined && card.error.trim().length > 0
+      ? parseHostToolError(card.error)
+      : undefined;
+  const hasFailureDetails =
+    failure !== undefined && (failure.structured || failure.summary !== failure.raw);
   let containerClassName = "flex w-fit max-w-xs items-center gap-2";
-  if (modelContext !== undefined && modelContext.length > 0) {
+  if (
+    (modelContext !== undefined && modelContext.length > 0) ||
+    failure !== undefined
+  ) {
     containerClassName = "w-full max-w-full space-y-2";
   }
 
@@ -29,14 +41,44 @@ export function ToolCard({ card }: { card: ToolCallCard }) {
         containerClassName,
       )}
     >
-      <div className="flex items-center gap-2">
+      <div className="flex min-w-0 items-center gap-2">
         <span className={cn("size-1.5 rounded-full shrink-0", dot)} />
         <span className="font-mono font-medium truncate">{card.toolName}</span>
-        {label.length > 0 && <span className="text-muted-foreground">{label}</span>}
-        {card.error !== undefined && card.error.length > 0 && (
-          <span className="text-destructive truncate">{card.error}</span>
+        {label.length > 0 && (
+          <span className="text-muted-foreground shrink-0">{label}</span>
         )}
       </div>
+      {failure !== undefined && (
+        <div className="min-w-0 space-y-1.5">
+          <p className="break-words text-destructive">{failure.summary}</p>
+          {hasFailureDetails && (
+            <details className="rounded-md border border-border/70 bg-background/70 px-2 py-1.5">
+              <summary className="cursor-pointer select-none text-[11px] font-medium text-muted-foreground">
+                {t("common.toolCallCard.viewTechnicalDetails")}
+              </summary>
+              {failure.issues.length > 0 && (
+                <ul className="mt-2 space-y-1">
+                  {failure.issues.map((issue) => (
+                    <li key={`${issue.path}:${issue.message}`} className="min-w-0">
+                      {issue.path.length > 0 && (
+                        <span className="font-mono text-[11px] text-muted-foreground break-all">
+                          {issue.path}
+                        </span>
+                      )}
+                      <span className="block break-words text-[11px] text-muted-foreground">
+                        {issue.message}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              <pre className="mt-2 max-h-72 overflow-auto whitespace-pre-wrap break-words rounded bg-muted/50 p-2 font-mono text-[11px] leading-relaxed text-muted-foreground">
+                {failure.raw}
+              </pre>
+            </details>
+          )}
+        </div>
+      )}
       {modelContext !== undefined && modelContext.length > 0 && (
         <details className="rounded-md border border-border/70 bg-background/70 px-2 py-1.5">
           <summary className="cursor-pointer select-none text-[11px] font-medium text-muted-foreground">

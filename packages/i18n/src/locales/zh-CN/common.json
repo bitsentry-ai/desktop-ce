@@ -1087,6 +1087,7 @@
   "common.threatIntelligence.yourSystemsAreSecure": "您的系统安全无虞",
   "common.threatItem.source": "来源：",
   "common.toolCallCard.modelContextSentToLlm": "发送给 LLM 的模型上下文",
+  "common.toolCallCard.viewTechnicalDetails": "查看技术细节",
   "common.toolCard.configure": "配置",
   "common.toolCard.lastScan": "上次扫描：",
   "common.toolCard.noScansYet": "暂无扫描记录",

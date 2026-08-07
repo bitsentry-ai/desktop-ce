@@ -1087,6 +1087,7 @@
   "common.threatIntelligence.yourSystemsAreSecure": "Your systems are secure",
   "common.threatItem.source": "Source:",
   "common.toolCallCard.modelContextSentToLlm": "Model context sent to LLM",
+  "common.toolCallCard.viewTechnicalDetails": "View technical details",
   "common.toolCard.configure": "Configure",
   "common.toolCard.lastScan": "Last scan:",
   "common.toolCard.noScansYet": "No scans yet",

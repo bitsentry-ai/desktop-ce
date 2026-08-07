@@ -1087,6 +1087,7 @@
   "common.threatIntelligence.yourSystemsAreSecure": "Sistem Anda aman",
   "common.threatItem.source": "Sumber:",
   "common.toolCallCard.modelContextSentToLlm": "Konteks model yang dikirim ke LLM",
+  "common.toolCallCard.viewTechnicalDetails": "Lihat detail teknis",
   "common.toolCard.configure": "Konfigurasikan",
   "common.toolCard.lastScan": "Pemindaian terakhir:",
   "common.toolCard.noScansYet": "Belum ada pemindaian",
