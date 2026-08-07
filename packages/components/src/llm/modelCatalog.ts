@@ -1,4 +1,5 @@
 import catalogJson from './model-catalog.json'
+import { isChatCompletionModelId } from '@bitsentry-ce/core'
 
 export type ModelCatalogProviderKey = 'groq' | 'kilocode' | 'openai' | 'anthropic' | 'gemini' | 'openrouter' | 'claude_code' | 'codex' | 'opencode' | 'cursor'
 export type ModelThinkingMode = 'unsupported' | 'toggle' | 'always_on'
@@ -203,6 +204,7 @@ export function filterSelectableModelIds(
     const normalizedModelId = normalizeValue(modelId)
     const resolvedModelId = resolveLegacyCatalogModelId(providerKey, modelId)
     if (
+      !isChatCompletionModelId(modelId) ||
       resolvedModelId.length === 0 ||
       hiddenModelIds?.has(resolvedModelId) === true ||
       seen.has(resolvedModelId)
