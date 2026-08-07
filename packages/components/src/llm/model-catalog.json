@@ -816,7 +816,7 @@
           "supportsVideoInput": true,
           "supportsPdfInput": true,
           "supportsThinking": true,
-          "thinkingMode": "toggle",
+          "thinkingMode": "always_on",
           "reasoningOptions": [],
           "composerOptions": [
             {
@@ -840,7 +840,7 @@
           "supportsVideoInput": true,
           "supportsPdfInput": true,
           "supportsThinking": true,
-          "thinkingMode": "toggle",
+          "thinkingMode": "always_on",
           "reasoningOptions": [],
           "composerOptions": [
             {
@@ -864,7 +864,7 @@
           "supportsVideoInput": true,
           "supportsPdfInput": true,
           "supportsThinking": true,
-          "thinkingMode": "toggle",
+          "thinkingMode": "always_on",
           "reasoningOptions": [],
           "composerOptions": [
             {
@@ -888,7 +888,7 @@
           "supportsVideoInput": true,
           "supportsPdfInput": true,
           "supportsThinking": true,
-          "thinkingMode": "toggle",
+          "thinkingMode": "always_on",
           "reasoningOptions": [],
           "composerOptions": [
             {
@@ -912,7 +912,7 @@
           "supportsVideoInput": true,
           "supportsPdfInput": true,
           "supportsThinking": true,
-          "thinkingMode": "toggle",
+          "thinkingMode": "always_on",
           "reasoningOptions": [],
           "composerOptions": [
             {
@@ -935,7 +935,7 @@
           "supportsVideoInput": true,
           "supportsPdfInput": true,
           "supportsThinking": true,
-          "thinkingMode": "toggle",
+          "thinkingMode": "always_on",
           "reasoningOptions": [],
           "composerOptions": [
             {

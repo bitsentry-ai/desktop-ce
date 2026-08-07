@@ -909,7 +909,9 @@ function getGeminiGenerationConfig(
       ? selectedLevel
       : 'high'
 
-    return { thinkingLevel }
+    return {
+      thinkingConfig: { thinkingLevel },
+    }
   }
 
   if (thinkingEnabled === undefined) {

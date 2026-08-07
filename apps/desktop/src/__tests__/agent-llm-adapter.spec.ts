@@ -456,8 +456,10 @@ describe('AgentLlmAdapterService', () => {
       traitValues: { thinkingLevel: 'low' },
     })
 
-    expect(requestBody?.generationConfig).toEqual({ thinkingLevel: 'low' })
-    expect(requestBody?.generationConfig).not.toHaveProperty('thinkingConfig')
+    expect(requestBody?.generationConfig).toEqual({
+      thinkingConfig: { thinkingLevel: 'low' },
+    })
+    expect(requestBody?.generationConfig).not.toHaveProperty('thinkingBudget')
   })
 
   it('emits selected reasoning effort for supported OpenAI-compatible providers', async () => {

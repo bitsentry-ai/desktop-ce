@@ -259,6 +259,7 @@ describe('local model catalog selection', () => {
     expect(modelIds).not.toContain('gemini-2.0-flash')
 
     for (const model of getProviderCatalogModels('gemini').filter((entry) => entry.id.startsWith('gemini-3'))) {
+      expect(model.thinkingMode).toBe('always_on')
       const thinkingLevel = getEffectiveComposerOptions(model).find((option) => option.id === 'thinkingLevel')
       expect(thinkingLevel).toMatchObject({ type: 'select' })
       if (thinkingLevel?.type !== 'select') throw new Error(`${model.id} needs thinkingLevel`)
