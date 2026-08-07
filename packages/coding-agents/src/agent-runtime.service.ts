@@ -58,6 +58,7 @@ import type {
   RunbookTriggerContext,
 } from '@bitsentry-ce/core/features/runbooks/desktop-runbook.types'
 import type { RunbookGateway } from '@bitsentry-ce/core/features/runbooks'
+import type { DesktopPluginRuntimeService } from '@bitsentry-ce/core/features/plugins'
 import { approveRunbookAuthoringProposal, getRunbookAuthoringRevisionHash, rejectRunbookAuthoringProposal, requestRunbookAuthoringRevision, type RunbookAuthoringProposal } from '@bitsentry-ce/core/features/runbooks/authoring'
 import {
   createAgentToolResultEnvelope,
@@ -1729,6 +1730,7 @@ export class AgentRuntimeService {
     private readonly debugHooks: AgentRuntimeDebugHooks = DEFAULT_AGENT_RUNTIME_DEBUG_HOOKS,
     private readonly runbookStore?: AgentRuntimeRunbookStore,
     private readonly onRunbooksChanged?: () => void,
+    private readonly pluginRuntime?: DesktopPluginRuntimeService,
   ) {}
 
   /**
@@ -2983,6 +2985,7 @@ export class AgentRuntimeService {
       rememberExecution: (sessionRef, execution) =>
         this.rememberJournalTimeWindowParameters(sessionRef as AgentSession, execution),
       listAuthorableRunbooks: () => this.getRunbookStore().list(),
+      pluginRuntime: this.pluginRuntime,
       ...(options.observeEvents
         ? { onToolEvent: (event: HostToolEvent) => this.observeHostToolEvent(session, event) }
         : {}),

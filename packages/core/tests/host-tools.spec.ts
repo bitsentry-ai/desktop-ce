@@ -4,6 +4,7 @@ import {
   executeHostTool,
   type HostToolContext,
 } from '../src/features/agent-runtime'
+import type { DesktopPluginDescriptor } from '../src/features/plugins'
 import type {
   RunbookExecutionRecord,
   RunbookRecord,
@@ -125,6 +126,89 @@ describe('host tools', () => {
     expect(secureParameter).toMatchObject({ key: 'apiToken', required: true })
     expect(secureParameter).not.toHaveProperty('description')
     expect(secureParameter).not.toHaveProperty('defaultValue')
+  })
+
+  it('lets an agent discover plugin schemas before creating a valid proposal', async () => {
+    const plugin: DesktopPluginDescriptor = {
+      id: 'ops-health',
+      name: 'Ops Health',
+      version: '0.1.0',
+      description: 'Health checks for the operations team.',
+      type: 'data_source',
+      auth: {
+        fields: [{
+          key: 'apiToken',
+          label: 'API token',
+          type: 'string',
+          required: true,
+          secret: true,
+        }],
+      },
+      actions: [{
+        id: 'list_checks',
+        title: 'List checks',
+        description: 'List checks for a team.',
+        riskLevel: 'read',
+        fields: [{
+          key: 'team',
+          label: 'Team',
+          type: 'string',
+          required: true,
+        }],
+      }],
+    }
+    const context = createContext()
+    context.pluginRuntime = {
+      listPlugins: () => [plugin],
+    }
+
+    const catalogResult = await executeHostTool(context, 'list_plugins', {})
+    const catalog = JSON.parse(catalogResult?.output ?? '') as {
+      plugins: Array<{
+        id: string
+        actions: Array<{
+          id: string
+          inputSchema: { type: string; properties: Record<string, unknown>; required?: string[] }
+        }>
+      }>
+    }
+    const discoveredPlugin = catalog.plugins[0]
+    const discoveredAction = discoveredPlugin?.actions[0]
+
+    expect(discoveredPlugin?.id).toBe('ops-health')
+    expect(discoveredAction?.id).toBe('list_checks')
+    expect(discoveredAction?.inputSchema).toMatchObject({
+      type: 'object',
+      properties: { team: { type: 'string' } },
+      required: ['team'],
+    })
+    expect(catalog.plugins[0]).not.toHaveProperty('auth')
+    expect(JSON.stringify(catalog)).not.toContain('apiToken')
+
+    const proposalResult = await executeHostTool(context, 'propose_runbook_create', {
+      prompt: 'Create a runbook that lists health checks for the platform team.',
+      draftRunbook: {
+        title: 'List platform health checks',
+        description: 'Use the discovered plugin action to list health checks.',
+        actions: [{
+          id: 'step-list-checks',
+          type: 'plugin',
+          title: 'List platform checks',
+          pluginId: discoveredPlugin?.id,
+          pluginActionId: discoveredAction?.id,
+          pluginInput: JSON.stringify({ team: 'platform' }),
+        }],
+      },
+    })
+
+    expect(JSON.parse(proposalResult?.output ?? '')).toMatchObject({
+      approvalRequired: true,
+      saved: false,
+      validation: { valid: true, errors: [] },
+      proposedRunbook: {
+        actions: [{ id: 'step-list-checks', type: 'plugin', title: 'List platform checks' }],
+      },
+    })
   })
 
   it('rejects an out-of-range proposal idle timeout with the documented unit', async () => {

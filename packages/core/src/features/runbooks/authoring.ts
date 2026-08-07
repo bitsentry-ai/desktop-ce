@@ -261,6 +261,7 @@ function actionTypeRiskLabels(
       return [];
     case "external_source":
     case "data_source_query":
+    case "plugin":
       return ["external_source"];
     case "llm":
       return ["local_ai"];
@@ -296,6 +297,14 @@ function getActionRiskLabels(
     /webhook/i.test(action.url)
   ) {
     labels.add("webhook");
+  }
+
+  if (
+    action.type === "plugin" &&
+    typeof action.pluginAuth === "string" &&
+    action.pluginAuth.trim().length > 0
+  ) {
+    labels.add("secret_consuming");
   }
 
   if (action.parameters?.some((parameter) => parameter.secure === true)) {

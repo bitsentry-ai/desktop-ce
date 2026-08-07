@@ -166,6 +166,130 @@ describe("runbook authoring", () => {
     });
   });
 
+  it("keeps the existing action risk-label regression matrix intact", () => {
+    const cases = [
+      {
+        id: "shell",
+        action: {
+          type: "shell" as const,
+          title: "Run a shell check",
+          command: "printf ok",
+        },
+        labels: ["shell"],
+      },
+      {
+        id: "http-write",
+        action: {
+          type: "http" as const,
+          title: "Send an HTTP update",
+          method: "POST" as const,
+          url: "https://example.com/update",
+        },
+        labels: ["http_write"],
+      },
+      {
+        id: "webhook",
+        action: {
+          type: "http" as const,
+          title: "Call a webhook",
+          method: "GET" as const,
+          url: "https://example.com/webhook",
+        },
+        labels: ["webhook"],
+      },
+      {
+        id: "local-ai",
+        action: {
+          type: "llm" as const,
+          title: "Summarize locally",
+          prompt: "Summarize the collected evidence.",
+        },
+        labels: ["local_ai"],
+      },
+      {
+        id: "external-source",
+        action: {
+          type: "external_source" as const,
+          title: "Read an external source",
+          query: "status:error",
+          sourceId: "source-test",
+        },
+        labels: ["external_source"],
+      },
+      {
+        id: "unsupported",
+        action: {
+          type: "future_action" as RunbookRecord["actions"][number]["type"],
+          title: "Future action",
+        },
+        labels: ["unsupported"],
+      },
+    ] as const;
+
+    for (const testCase of cases) {
+      const proposal = createRunbookCreationProposal({
+        id: `proposal-risk-regression-${testCase.id}`,
+        prompt: "Verify the existing authoring risk labels.",
+        now: "2026-07-05T00:07:30.000Z",
+        draftRunbook: {
+          title: `Risk-label regression: ${testCase.id}`,
+          description: "Exercise one existing authoring risk category.",
+          actions: [{ id: `action-${testCase.id}`, ...testCase.action }],
+        },
+      });
+
+      expect(proposal.validation.valid).toBe(true);
+      expect(proposal.operationDiffs[0]?.riskLabels).toEqual(testCase.labels);
+    }
+  });
+
+  it("labels a plugin proposal as an external source instead of unsupported", () => {
+    const proposal = createRunbookCreationProposal({
+      id: "proposal-plugin",
+      prompt: "Create a runbook that lists open issues through the GitHub plugin.",
+      now: "2026-07-05T00:08:00.000Z",
+      draftRunbook: {
+        title: "List GitHub issues",
+        description: "Read issue data through the installed plugin.",
+        actions: [{
+          id: "action-plugin",
+          type: "plugin",
+          title: "List issues",
+          pluginId: "github",
+          pluginActionId: "list_issues",
+        }],
+      },
+    });
+
+    expect(proposal.operationDiffs[0]?.riskLabels).toEqual(["external_source"]);
+    expect(proposal.operationDiffs[0]?.riskLabels).not.toContain("unsupported");
+  });
+
+  it("adds secret-consuming risk to an authenticated plugin proposal", () => {
+    const proposal = createRunbookCreationProposal({
+      id: "proposal-authenticated-plugin",
+      prompt: "Create an authenticated GitHub issue lookup runbook.",
+      now: "2026-07-05T00:09:00.000Z",
+      draftRunbook: {
+        title: "Authenticated GitHub issue lookup",
+        description: "Read issue data with plugin authentication.",
+        actions: [{
+          id: "action-authenticated-plugin",
+          type: "plugin",
+          title: "List private issues",
+          pluginId: "github",
+          pluginActionId: "list_issues",
+          pluginAuth: '{"token":"${globals.github_token}"}',
+        }],
+      },
+    });
+
+    expect(proposal.operationDiffs[0]?.riskLabels).toEqual([
+      "external_source",
+      "secret_consuming",
+    ]);
+  });
+
   it("does not approve invalid creation proposals", () => {
     const unsafeCreationProposal = createRunbookCreationProposal({
       id: "proposal-unsafe-create",

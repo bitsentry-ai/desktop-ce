@@ -88,6 +88,7 @@ export {
   hostTools,
   isHostToolName,
   listRunbooksHostToolSchema,
+  listPluginsHostToolSchema,
   executeRunbookHostToolSchema,
   getRunbookExecutionHostToolSchema,
   proposeRunbookEditHostToolSchema,
