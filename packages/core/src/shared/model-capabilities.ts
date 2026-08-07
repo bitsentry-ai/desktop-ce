@@ -5,7 +5,6 @@ const NON_CHAT_MODEL_ID_PATTERNS = [
   /(?:^|[-_\/.])dall[-_]?e(?:$|[-_\/.])/i,
   /(?:^|[-_\/.])moderation(?:$|[-_\/.])/i,
   /(?:^|[-_\/.])image(?:$|[-_\/.])/i,
-  /(?:^|[-_\/.])audio(?:$|[-_\/.])/i,
   /(?:^|[-_\/.])(?:realtime[-_]?transcrib|transcrib)(?:e|er|ing)?(?:$|[-_\/.])/i,
 ] as const
 

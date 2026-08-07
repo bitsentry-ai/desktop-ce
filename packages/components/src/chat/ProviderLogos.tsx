@@ -230,8 +230,6 @@ export function KiloCodeLogo({ size = 16, className }: LogoProps) {
       height={size}
       viewBox="0 0 60 60"
       className={className}
-      role="img"
-      aria-label="Kilo Code"
       shapeRendering="crispEdges"
     >
       <rect width="60" height="60" rx="8" fill="#FAF74F" />

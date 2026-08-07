@@ -27,6 +27,7 @@ describe('chat model capability classification', () => {
       'moonshotai/kimi-k2.5',
       'z-ai/glm-5',
       'gpt-4o-realtime-preview',
+      'gpt-4o-audio-preview',
     ])
   })
 })
