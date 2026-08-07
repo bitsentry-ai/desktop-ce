@@ -659,6 +659,17 @@ function runbookLogFilterToggleText(
   return t("runbooks.runbook.addFilter");
 }
 
+/**
+ * A collapsed card shows only a title, so it must not pay for the expanded
+ * card's parameter validation, log-filter validation, and filter preview.
+ */
+export function getRunbookCollapsedActionTitle(
+  action: RunbookActionRecord,
+  t: TranslationFn,
+): ReactNode {
+  return runbookCollapsedActionTitle(action, t);
+}
+
 function runbookCollapsedActionTitle(
   action: RunbookActionRecord,
   t: TranslationFn,

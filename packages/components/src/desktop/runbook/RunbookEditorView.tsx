@@ -5,6 +5,7 @@ import type {
   GlobalVariable,
   PluginDescriptor,
   RunbookActionRecord,
+  RunbookActionType,
   RunbookLlmProviderKey,
   RunbookRecord,
 } from "../../services";
@@ -14,6 +15,7 @@ import {
   ACTION_TYPES,
   getActionMeta,
   getRunbookActionRenderState,
+  getRunbookCollapsedActionTitle,
   TypeBadge,
 } from "./actionHelpers";
 import {
@@ -48,6 +50,11 @@ type UseSortableRuntime = (options: {
   isDragSource: boolean;
   isDropTarget: boolean;
 };
+
+// Module scope so every collapsed card gets the same function on every render.
+function renderActionTypeBadge(type: RunbookActionType) {
+  return <TypeBadge type={type} />;
+}
 
 type DragDropProviderComponent = (props: {
   children: ReactNode;
@@ -312,18 +319,10 @@ export function RunbookEditorView({
                 );
               }}
               renderCollapsedCard={(action, index, sortableApi) => {
-                const { collapsedActionTitle } = getRunbookActionRenderState({
+                const collapsedActionTitle = getRunbookCollapsedActionTitle(
                   action,
-                  modelDropdownOpen,
-                  validErrorSourceIds,
-                  validPluginActionIdsByPluginId,
-                  selectableLlmProviderCount,
-                  llmProviderLabelsByKey,
-                  errorSourcesLoading,
-                  errorSourceCount,
-                  logFilterSamples,
                   t,
-                });
+                );
 
                 return (
                   <RunbookCollapsedActionCard
@@ -347,7 +346,7 @@ export function RunbookEditorView({
                       onDeleteAction(action.id);
                     }}
                     deleteTitle={t("runbooks.runbook.deleteAction_2")}
-                    renderTypeBadge={(type) => <TypeBadge type={type} />}
+                    renderTypeBadge={renderActionTypeBadge}
                   />
                 );
               }}
