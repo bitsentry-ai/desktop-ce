@@ -43,6 +43,32 @@ function createLocalAiProvider(overrides: Partial<LocalAiProviderPort>): LocalAi
   }
 }
 
+function collectObjectKeys(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return value.flatMap(collectObjectKeys)
+  }
+
+  if (value === null || typeof value !== 'object') {
+    return []
+  }
+
+  return Object.entries(value).flatMap(([key, child]) => [key, ...collectObjectKeys(child)])
+}
+
+const GEMINI_SCHEMA_FORBIDDEN_KEYS = new Set([
+  '$schema',
+  '$ref',
+  '$defs',
+  'definitions',
+  'additionalProperties',
+  'const',
+  'allOf',
+  'oneOf',
+  'exclusiveMinimum',
+  'additionalItems',
+  'prefixItems',
+])
+
 describe('AgentLlmAdapterService', () => {
   afterEach(() => {
     vi.unstubAllGlobals()
@@ -328,6 +354,208 @@ describe('AgentLlmAdapterService', () => {
         args: {},
       }],
     })
+  })
+
+  it('serializes nested Gemini tool schemas in the provider wire format', async () => {
+    const adapter = createAdapter({
+      getApiKey: () => Promise.resolve('test-key'),
+    })
+    let requestBody: Record<string, unknown> | undefined
+    vi.stubGlobal('fetch', vi.fn().mockImplementation((_url: string, init?: RequestInit) => {
+      requestBody = JSON.parse(String(init?.body)) as Record<string, unknown>
+      return Promise.resolve(new Response(JSON.stringify({
+        candidates: [{ content: { parts: [{ text: 'Done' }] } }],
+      })))
+    }))
+
+    const inputSchema = {
+      $schema: 'http://json-schema.org/draft-07/schema#',
+      type: 'object',
+      properties: {
+        values: {
+          type: 'array',
+          items: {
+            $ref: '#/$defs/Value',
+            description: 'Values to record.',
+          },
+        },
+        unsupported: {
+          const: 'not-supported',
+          allOf: [{ type: 'string' }],
+          oneOf: [{ type: 'string' }],
+          exclusiveMinimum: 0,
+          additionalItems: false,
+          prefixItems: [{ type: 'string' }],
+        },
+        cycle: { $ref: '#/$defs/Node' },
+      },
+      additionalProperties: false,
+      $defs: {
+        Value: {
+          type: 'object',
+          properties: { label: { type: 'string', const: 'label' } },
+          additionalProperties: false,
+        },
+        Node: {
+          type: 'object',
+          properties: { next: { $ref: '#/$defs/Node' } },
+        },
+      },
+    }
+
+    const response = await adapter.chatWithTools({
+      messages: [{ role: 'user', content: 'Use the tool.' }],
+      tools: [{ name: 'record_values', description: 'Record values.', inputSchema }],
+      signal: new AbortController().signal,
+      llm: { providerKey: 'gemini', model: 'gemini-2.5-flash' },
+    })
+
+    expect(response.content).toBe('Done')
+    const tools = requestBody?.tools as Array<Record<string, unknown>> | undefined
+    const declarations = tools?.[0]?.functionDeclarations as Array<Record<string, unknown>> | undefined
+    const parameters = declarations?.[0]?.parameters as Record<string, unknown> | undefined
+    if (parameters === undefined) {
+      throw new Error('Gemini function declaration parameters were not emitted')
+    }
+
+    const parameterProperties = parameters.properties as Record<string, unknown>
+    const nestedItems = (parameterProperties.values as Record<string, unknown>)?.items
+
+    const forbiddenKeys = collectObjectKeys(parameters).filter((key) =>
+      GEMINI_SCHEMA_FORBIDDEN_KEYS.has(key),
+    )
+
+    expect(forbiddenKeys).toEqual([])
+    expect(nestedItems).toMatchObject({
+      type: 'object',
+      properties: { label: { type: 'string' } },
+      description: 'Values to record.',
+    })
+    expect(parameterProperties.unsupported).toEqual({})
+    expect(
+      ((parameterProperties.cycle as Record<string, unknown>).properties as Record<string, unknown>).next,
+    ).toEqual({ type: 'object' })
+  })
+
+  it('uses Gemini 3 thinkingLevel without sending the legacy thinkingBudget', async () => {
+    const adapter = createAdapter({
+      getApiKey: () => Promise.resolve('test-key'),
+    })
+    let requestBody: Record<string, unknown> | undefined
+    vi.stubGlobal('fetch', vi.fn().mockImplementation((_url: string, init?: RequestInit) => {
+      requestBody = JSON.parse(String(init?.body)) as Record<string, unknown>
+      return Promise.resolve(new Response(JSON.stringify({
+        candidates: [{ content: { parts: [{ text: 'Done' }] } }],
+      })))
+    }))
+
+    await adapter.chatWithTools({
+      messages: [{ role: 'user', content: 'Explain the alert.' }],
+      signal: new AbortController().signal,
+      llm: { providerKey: 'gemini', model: 'gemini-3.5-flash', thinkingEnabled: true },
+      traitValues: { thinkingLevel: 'low' },
+    })
+
+    expect(requestBody?.generationConfig).toEqual({
+      thinkingConfig: { thinkingLevel: 'low' },
+    })
+    expect(requestBody?.generationConfig).not.toHaveProperty('thinkingBudget')
+  })
+
+  it('replays Gemini thought signatures on the next tool turn', async () => {
+    const adapter = createAdapter({
+      getApiKey: () => Promise.resolve('test-key'),
+    })
+    const requestBodies: Array<Record<string, unknown>> = []
+    let responseNumber = 0
+    vi.stubGlobal('fetch', vi.fn().mockImplementation((_url: string, init?: RequestInit) => {
+      requestBodies.push(JSON.parse(String(init?.body)) as Record<string, unknown>)
+      responseNumber += 1
+      const response = responseNumber === 1
+        ? {
+            candidates: [{
+              content: {
+                role: 'model',
+                parts: [
+                  {
+                    functionCall: { name: 'list_runbooks', args: {} },
+                    thoughtSignature: 'AgQKA...',
+                  },
+                  { functionCall: { name: 'get_runbook', args: { id: 'runbook-1' } } },
+                ],
+              },
+            }],
+          }
+        : {
+            candidates: [{ content: { parts: [{ text: 'Done' }] } }],
+          }
+      return Promise.resolve(new Response(JSON.stringify(response)))
+    }))
+
+    const firstResponse = await adapter.chatWithTools({
+      messages: [{ role: 'user', content: 'List runbooks.' }],
+      tools: [
+        { name: 'list_runbooks', description: 'List available runbooks.', inputSchema: { type: 'object', properties: {} } },
+        { name: 'get_runbook', description: 'Get a runbook.', inputSchema: { type: 'object', properties: { id: { type: 'string' } } } },
+      ],
+      signal: new AbortController().signal,
+      llm: { providerKey: 'gemini', model: 'gemini-3.6-flash' },
+    })
+
+    await adapter.chatWithTools({
+      messages: [
+        { role: 'user', content: 'List runbooks.' },
+        { role: 'assistant', content: '', toolCalls: firstResponse.toolCalls },
+        { role: 'tool', content: 'No runbooks found.', toolCallId: firstResponse.toolCalls?.[0]?.id },
+        { role: 'tool', content: 'Runbook details.', toolCallId: firstResponse.toolCalls?.[1]?.id },
+      ],
+      tools: [
+        { name: 'list_runbooks', description: 'List available runbooks.', inputSchema: { type: 'object', properties: {} } },
+        { name: 'get_runbook', description: 'Get a runbook.', inputSchema: { type: 'object', properties: { id: { type: 'string' } } } },
+      ],
+      signal: new AbortController().signal,
+      llm: { providerKey: 'gemini', model: 'gemini-3.6-flash' },
+    })
+
+    expect(firstResponse.toolCalls).toMatchObject([{
+      name: 'list_runbooks',
+      args: {},
+      thoughtSignature: 'AgQKA...',
+    }, {
+      name: 'get_runbook',
+      args: { id: 'runbook-1' },
+    }])
+    expect(requestBodies[1]?.contents).toEqual([
+      { role: 'user', parts: [{ text: 'List runbooks.' }] },
+      {
+        role: 'model',
+        parts: [
+          {
+            functionCall: { name: 'list_runbooks', args: {} },
+            thoughtSignature: 'AgQKA...',
+          },
+          { functionCall: { name: 'get_runbook', args: { id: 'runbook-1' } } },
+        ],
+      },
+      {
+        role: 'user',
+        parts: [{
+          functionResponse: {
+            name: firstResponse.toolCalls?.[0]?.id,
+            response: { result: 'No runbooks found.' },
+          },
+        }],
+      },
+      {
+        role: 'user',
+        parts: [{
+          functionResponse: {
+            name: firstResponse.toolCalls?.[1]?.id,
+            response: { result: 'Runbook details.' },
+          },
+        }],
+      },
+    ])
   })
 
   it('emits selected reasoning effort for supported OpenAI-compatible providers', async () => {

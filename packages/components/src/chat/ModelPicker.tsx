@@ -38,6 +38,10 @@ interface ModelPickerProps {
   selectedModelId: string;
   onSelectProvider: (key: ModelCatalogProviderKey) => void;
   onSelectModel: (modelId: string) => void;
+  onSelectModelSelection?: (
+    providerKey: ModelCatalogProviderKey,
+    modelId: string,
+  ) => void;
   configuredProviderKeys: ModelCatalogProviderKey[];
   providerConfigs: Record<string, SavedProviderConfig>;
   threadStatus?: ThreadStatus;
@@ -49,6 +53,7 @@ export function ModelPicker({
   selectedModelId,
   onSelectProvider,
   onSelectModel,
+  onSelectModelSelection,
   configuredProviderKeys,
   providerConfigs,
   threadStatus,
@@ -100,11 +105,16 @@ export function ModelPicker({
 
   const handleSelect = useCallback(
     (providerKey: ModelCatalogProviderKey, modelId: string) => {
-      onSelectProvider(providerKey);
-      onSelectModel(modelId);
+      const selectModelSelection = onSelectModelSelection;
+      if (selectModelSelection !== undefined) {
+        selectModelSelection(providerKey, modelId);
+      } else {
+        onSelectProvider(providerKey);
+        onSelectModel(modelId);
+      }
       setOpen(false);
     },
-    [onSelectProvider, onSelectModel],
+    [onSelectModelSelection, onSelectProvider, onSelectModel],
   );
 
   const handleProviderClick = useCallback(

@@ -46,6 +46,7 @@ import { ModeToggle } from "./ModeToggle";
 import { AccessSelector } from "./AccessSelector";
 import { SendButton } from "./SendButton";
 import { ContextIndicator } from "./ContextIndicator";
+import { getDesktopApi } from "../services/desktop-api";
 
 export interface ComposerProps {
   prompt: string;
@@ -73,6 +74,10 @@ export interface ComposerProps {
   selectedModelId: string;
   onSelectProvider: (key: ModelCatalogProviderKey) => void;
   onSelectModel: (modelId: string) => void;
+  onSelectModelSelection?: (
+    providerKey: ModelCatalogProviderKey,
+    modelId: string,
+  ) => void;
   configuredProviderKeys: ModelCatalogProviderKey[];
   providerConfigs: Record<string, SavedProviderConfig>;
   // Model capabilities
@@ -129,6 +134,7 @@ export function Composer({
   selectedModelId,
   onSelectProvider,
   onSelectModel,
+  onSelectModelSelection,
   configuredProviderKeys,
   providerConfigs,
   selectedModelCapability,
@@ -266,7 +272,11 @@ export function Composer({
   }
 
   let accessSelector: ReactNode = null;
-  if (selectedProviderKey !== null && isCliProvider(selectedProviderKey)) {
+  const isDesktop = getDesktopApi() !== undefined;
+  const shouldShowAccessSelector =
+    selectedProviderKey !== null &&
+    (!isDesktop || isCliProvider(selectedProviderKey));
+  if (shouldShowAccessSelector) {
     accessSelector = (
       <AccessSelector
         value={accessLevel}
@@ -402,7 +412,7 @@ export function Composer({
               onPaste={(event) => { onPaste(event); }}
               disabled={isProcessing || isBlocked}
               placeholder={placeholderText}
-              className="w-full flex-1 resize-none bg-transparent text-sm outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed"
+              className="w-full flex-1 resize-none bg-transparent p-0 pt-1 text-sm leading-5 outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed"
             />
           </div>
         </div>
@@ -417,6 +427,7 @@ export function Composer({
               selectedModelId={selectedModelId}
               onSelectProvider={onSelectProvider}
               onSelectModel={onSelectModel}
+              onSelectModelSelection={onSelectModelSelection}
               configuredProviderKeys={configuredProviderKeys}
               providerConfigs={providerConfigs}
               threadStatus={threadStatus}

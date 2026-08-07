@@ -785,6 +785,106 @@ function getGeminiSystemInstruction(systemInstruction: string): Record<string, u
   return { parts: [{ text: systemInstruction }] }
 }
 
+const GEMINI_SCHEMA_ALLOWED_KEYS = new Set([
+  'type',
+  'format',
+  'title',
+  'description',
+  'nullable',
+  'enum',
+  'items',
+  'properties',
+  'required',
+  'propertyOrdering',
+  'minItems',
+  'maxItems',
+  'minProperties',
+  'maxProperties',
+  'minimum',
+  'maximum',
+  'minLength',
+  'maxLength',
+  'pattern',
+])
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
+}
+
+function decodeJsonPointerPart(part: string): string {
+  return part.replaceAll('~1', '/').replaceAll('~0', '~')
+}
+
+function resolveGeminiSchemaReference(
+  root: Record<string, unknown>,
+  reference: string,
+): unknown {
+  if (!reference.startsWith('#/')) {
+    return undefined
+  }
+
+  return reference
+    .slice(2)
+    .split('/')
+    .map(decodeJsonPointerPart)
+    .reduce<unknown>((value, part) => {
+      if (!isRecord(value)) {
+        return undefined
+      }
+
+      return value[part]
+    }, root)
+}
+
+function sanitizeGeminiSchema(
+  schema: Record<string, unknown>,
+): Record<string, unknown> {
+  const visit = (
+    value: unknown,
+    resolvingReferences: Set<string>,
+    preserveObjectKeys = false,
+  ): unknown => {
+    if (Array.isArray(value)) {
+      return value.map((item) => visit(item, resolvingReferences))
+    }
+
+    if (!isRecord(value)) {
+      return value
+    }
+
+    const reference = value.$ref
+    if (typeof reference === 'string') {
+      const siblings = Object.fromEntries(
+        Object.entries(value).filter(([key]) => key !== '$ref'),
+      )
+      if (resolvingReferences.has(reference)) {
+        return visit({ type: 'object', ...siblings }, resolvingReferences)
+      }
+
+      const resolved = resolveGeminiSchemaReference(schema, reference)
+      if (resolved !== undefined) {
+        const nextReferences = new Set(resolvingReferences)
+        nextReferences.add(reference)
+        return visit(
+          isRecord(resolved) ? { ...resolved, ...siblings } : siblings,
+          nextReferences,
+        )
+      }
+    }
+
+    return Object.fromEntries(
+      Object.entries(value)
+        .filter(([key]) => preserveObjectKeys || GEMINI_SCHEMA_ALLOWED_KEYS.has(key))
+        .map(([key, child]) => [
+          key,
+          visit(child, resolvingReferences, key === 'properties'),
+        ]),
+    )
+  }
+
+  return visit(schema, new Set()) as Record<string, unknown>
+}
+
 function getGeminiTools(
   functionDeclarations: Array<Record<string, unknown>> | undefined,
 ): Array<Record<string, unknown>> | undefined {
@@ -795,7 +895,25 @@ function getGeminiTools(
   return [{ functionDeclarations }]
 }
 
-function getGeminiGenerationConfig(thinkingEnabled: boolean | undefined): Record<string, unknown> | undefined {
+const GEMINI_3_THINKING_LEVELS = new Set(['minimal', 'low', 'medium', 'high'])
+
+function getGeminiGenerationConfig(
+  model: string,
+  thinkingEnabled: boolean | undefined,
+  traitValues?: Record<string, string | boolean>,
+): Record<string, unknown> | undefined {
+  if (model.startsWith('gemini-3')) {
+    const selectedLevel = traitValues?.thinkingLevel
+    const thinkingLevel = typeof selectedLevel === 'string'
+      && GEMINI_3_THINKING_LEVELS.has(selectedLevel)
+      ? selectedLevel
+      : 'high'
+
+    return {
+      thinkingConfig: { thinkingLevel },
+    }
+  }
+
   if (thinkingEnabled === undefined) {
     return undefined
   }
@@ -1409,17 +1527,23 @@ export class AgentLlmAdapterService {
           }
         }
         if (m.toolCalls !== undefined && m.toolCalls.length > 0) {
+          const text = normalizeTextContent(m.content)
+          const parts: Array<Record<string, unknown>> = []
+          if (text.length > 0) {
+            parts.push({ text })
+          }
+          parts.push(...m.toolCalls.map(tc => ({
+            functionCall: {
+              name: tc.name,
+              args: tc.args,
+            },
+            ...(tc.thoughtSignature !== undefined
+              ? { thoughtSignature: tc.thoughtSignature }
+              : {}),
+          })))
           return {
             role: 'model' as const,
-            parts: [
-              { text: normalizeTextContent(m.content) },
-              ...m.toolCalls.map(tc => ({
-                functionCall: {
-                  name: tc.name,
-                  args: tc.args,
-                },
-              })),
-            ],
+            parts,
           }
         }
         return {
@@ -1432,7 +1556,7 @@ export class AgentLlmAdapterService {
     const functionDeclarations = tools?.map(tool => ({
       name: tool.name,
       description: tool.description,
-      parameters: tool.inputSchema,
+      parameters: sanitizeGeminiSchema(tool.inputSchema),
     }))
 
     const response = await fetch(
@@ -1444,7 +1568,11 @@ export class AgentLlmAdapterService {
           systemInstruction: getGeminiSystemInstruction(systemInstruction),
           contents,
           tools: getGeminiTools(functionDeclarations),
-          generationConfig: getGeminiGenerationConfig(input.llm?.thinkingEnabled),
+          generationConfig: getGeminiGenerationConfig(
+            model,
+            input.llm?.thinkingEnabled,
+            input.traitValues,
+          ),
         }),
         signal,
       },
@@ -1460,6 +1588,7 @@ export class AgentLlmAdapterService {
         content?: {
           parts?: Array<{
             text?: string
+            thoughtSignature?: string
             functionCall?: {
               name: string
               args: Record<string, unknown>
@@ -1483,6 +1612,7 @@ export class AgentLlmAdapterService {
           id: `gemini_${String(Date.now())}_${String(toolCalls.length)}`,
           name: part.functionCall.name,
           args: part.functionCall.args,
+          thoughtSignature: part.thoughtSignature,
         }, 'Gemini')
         if (toolCall !== null) toolCalls.push(toolCall)
       }
