@@ -1,0 +1,515 @@
+name: Desktop CE Release (Manual)
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_targets:
+        description: Platforms to build
+        required: true
+        type: choice
+        default: all
+        options:
+          - all
+          - linux
+          - mac
+          - windows
+      release_channel:
+        description: Release channel
+        required: true
+        type: choice
+        default: beta
+        options:
+          - preview
+          - beta
+          - stable
+      release_version:
+        description: CE version to package, for example 0.1.0-beta.1
+        required: true
+        type: string
+        default: 0.1.0-beta.1
+      skip_notarize:
+        description: Skip macOS notarization
+        type: boolean
+        default: true
+      posthog_host:
+        description: PostHog ingestion host for the desktop build
+        required: true
+        type: string
+        default: https://eu.i.posthog.com
+
+concurrency:
+  group: desktop-ce-release-${{ github.event.inputs.release_targets }}-${{ github.ref_name }}
+  cancel-in-progress: true
+
+env:
+  R2_PUBLIC_BASE_URL: ${{ vars.R2_PUBLIC_BASE_URL || 'https://downloads.bitsentry.ai' }}
+
+jobs:
+  resolve-release-metadata:
+    name: Resolve CE Release Metadata
+    runs-on: ubuntu-24.04
+    outputs:
+      release_tag: ${{ steps.metadata.outputs.release_tag }}
+      release_version: ${{ steps.metadata.outputs.release_version }}
+      release_display_version: ${{ steps.metadata.outputs.release_display_version }}
+      release_channel: ${{ steps.metadata.outputs.release_channel }}
+      artifact_prefix: ${{ steps.metadata.outputs.artifact_prefix }}
+      artifact_version_segment: ${{ steps.metadata.outputs.artifact_version_segment }}
+      artifact_base_url: ${{ steps.metadata.outputs.artifact_base_url }}
+      publish_release_metadata: ${{ steps.metadata.outputs.publish_release_metadata }}
+
+    steps:
+      - name: Resolve release metadata
+        id: metadata
+        env:
+          RELEASE_VERSION: ${{ github.event.inputs.release_version }}
+          RELEASE_CHANNEL: ${{ github.event.inputs.release_channel }}
+          BASE_URL: ${{ env.R2_PUBLIC_BASE_URL }}
+        run: |
+          if [[ ! "${RELEASE_VERSION}" =~ ^[0-9]+\.[0-9]+\.[0-9]+([-.+][0-9A-Za-z.-]+)?$ ]]; then
+            echo "Invalid CE release version: ${RELEASE_VERSION}" >&2
+            exit 1
+          fi
+
+          sanitized_ref="$(printf '%s' "${GITHUB_REF_NAME}" | tr '/:@' '---')"
+          if [ "${RELEASE_CHANNEL}" = "stable" ] && [ "${GITHUB_REF_NAME}" != "main" ]; then
+            echo "Stable CE releases can only be published from main." >&2
+            exit 1
+          fi
+
+          if [ "${RELEASE_CHANNEL}" = "stable" ]; then
+            artifact_prefix="desktop-ce/releases"
+            artifact_version_segment="desktop-ce-v${RELEASE_VERSION}"
+            publish_release_metadata=true
+          elif [ "${RELEASE_CHANNEL}" = "beta" ]; then
+            artifact_prefix="desktop-ce/beta/${sanitized_ref}"
+            artifact_version_segment="${GITHUB_SHA}"
+            publish_release_metadata=true
+          else
+            artifact_prefix="desktop-ce/previews/${sanitized_ref}"
+            artifact_version_segment="${GITHUB_SHA}"
+            publish_release_metadata=false
+          fi
+
+          {
+            echo "release_tag=desktop-ce-v${RELEASE_VERSION}"
+            echo "release_version=${RELEASE_VERSION}"
+            echo "release_display_version=v${RELEASE_VERSION}"
+            echo "release_channel=${RELEASE_CHANNEL}"
+            echo "artifact_prefix=${artifact_prefix}"
+            echo "artifact_version_segment=${artifact_version_segment}"
+            echo "artifact_base_url=${BASE_URL}/${artifact_prefix}"
+            echo "publish_release_metadata=${publish_release_metadata}"
+          } >> "${GITHUB_OUTPUT}"
+
+  build-macos:
+    name: Build CE ${{ matrix.label }}
+    if: github.event.inputs.release_targets == 'all' || github.event.inputs.release_targets == 'mac'
+    needs: resolve-release-metadata
+    runs-on: ${{ matrix.runner }}
+    env:
+      CE_RELEASE_VERSION: ${{ needs.resolve-release-metadata.outputs.release_version }}
+      ARTIFACT_PREFIX: ${{ needs.resolve-release-metadata.outputs.artifact_prefix }}
+      ARTIFACT_VERSION_SEGMENT: ${{ needs.resolve-release-metadata.outputs.artifact_version_segment }}
+      ARTIFACT_BASE_URL: ${{ needs.resolve-release-metadata.outputs.artifact_base_url }}
+      BITSENTRY_POSTHOG_KEY: ${{ vars.BITSENTRY_POSTHOG_KEY }}
+      BITSENTRY_POSTHOG_HOST: ${{ github.event.inputs.posthog_host || vars.BITSENTRY_POSTHOG_HOST || 'https://eu.i.posthog.com' }}
+      BITSENTRY_SENTRY_DSN: ${{ vars.BITSENTRY_SENTRY_DSN }}
+      BITSENTRY_RELEASE_CHANNEL: ${{ needs.resolve-release-metadata.outputs.release_channel }}
+      SKIP_NOTARIZE_INPUT: ${{ github.event.inputs.skip_notarize }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: macOS arm64
+            runner: macos-14
+            arch: arm64
+            artifact_arch: aarch64
+            electron_arch: arm64
+            app_path: release/build/mac-arm64/BitSentry-Desktop.app
+          - label: macOS x64
+            runner: macos-15-intel
+            arch: x64
+            artifact_arch: x86_64
+            electron_arch: x64
+            app_path: release/build/mac/BitSentry-Desktop.app
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.12.0
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.32.1
+          run_install: false
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Set CE release version
+        run: |
+          node -e "const fs=require('node:fs'); const p='apps/desktop/package.json'; const j=JSON.parse(fs.readFileSync(p,'utf8')); j.version=process.env.CE_RELEASE_VERSION; fs.writeFileSync(p, JSON.stringify(j,null,2)+'\\n')"
+
+      - name: Build release helper scripts
+        run: pnpm --filter @bitsentry-ce/desktop run build:scripts
+
+      - name: Build CE packages
+        run: pnpm run build:packages
+
+      - name: Build CE electron-trpc package
+        run: pnpm --filter electron-trpc build
+
+      - name: Build CE desktop bundles
+        working-directory: ./apps/desktop
+        run: |
+          pnpm run build:shared-cli
+          pnpm run build:cli-bundle
+          pnpm run build:notarize-hook
+          pnpm run build
+
+      - name: Rebuild native dependencies
+        working-directory: ./apps/desktop
+        run: npx electron-builder install-app-deps --arch=${{ matrix.electron_arch }}
+
+      - name: Package CE macOS app
+        working-directory: ./apps/desktop
+        env:
+          CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD || secrets.MAC_CSC_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          export DESKTOP_UPDATE_BASE_URL="${ARTIFACT_BASE_URL}/macos/${{ matrix.arch }}"
+          export DESKTOP_ARTIFACT_NAME="bitsentry-desktop-ce-\${version}-macos-${{ matrix.artifact_arch }}.\${ext}"
+          if [ "${SKIP_NOTARIZE_INPUT}" = "true" ]; then
+            unset APPLE_ID APPLE_APP_PASSWORD APPLE_TEAM_ID
+            export DESKTOP_ENABLE_AFTER_SIGN=false
+          else
+            export DESKTOP_ENABLE_AFTER_SIGN=true
+          fi
+          bash scripts/create-ci-builder-config.sh electron-builder.ci.yml
+          bash scripts/normalize-ce-builder-config.sh electron-builder.ci.yml "$DESKTOP_ARTIFACT_NAME"
+          npx electron-builder build --config electron-builder.ci.yml --mac --${{ matrix.electron_arch }} --publish never
+
+      - name: Verify CE macOS artifact
+        working-directory: ./apps/desktop
+        env:
+          DESKTOP_SKIP_SIGNATURE_CHECK: ${{ github.event.inputs.skip_notarize }}
+        run: bash scripts/verify-macos-artifact.sh "${{ matrix.app_path }}"
+
+      - name: Prepare CE updater manifest
+        if: env.BITSENTRY_RELEASE_CHANNEL != 'preview'
+        working-directory: ./apps/desktop
+        run: |
+          node scripts/dist/rewrite-update-manifest.js \
+            --input release/build/latest-mac.yml \
+            --output release/build/channel-feed/latest-mac.yml \
+            --url-prefix "${ARTIFACT_VERSION_SEGMENT}"
+
+      - name: Upload CE macOS artifacts
+        env:
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
+          R2_PUBLIC_BASE_URL: ${{ env.R2_PUBLIC_BASE_URL }}
+        run: |
+          manifest="apps/desktop/release/build/latest-mac.yml"
+          if [ "${BITSENTRY_RELEASE_CHANNEL}" != "preview" ]; then
+            manifest="apps/desktop/release/build/channel-feed/latest-mac.yml"
+          fi
+          args=(--manifest "${manifest}" --artifact-root apps/desktop/release/build --required-artifact-prefix bitsentry-desktop-ce-)
+          if [ "${BITSENTRY_RELEASE_CHANNEL}" != "preview" ]; then args+=(--required-path-prefix "${ARTIFACT_VERSION_SEGMENT}"); fi
+          node apps/desktop/scripts/dist/verify-update-manifest.js "${args[@]}"
+          node apps/desktop/scripts/dist/upload-r2-artifacts.js \
+            --root apps/desktop/release/build \
+            --prefix "${ARTIFACT_PREFIX}/macos/${{ matrix.arch }}/${ARTIFACT_VERSION_SEGMENT}" \
+            --include "bitsentry-desktop-ce-${{ needs.resolve-release-metadata.outputs.release_version }}-macos-${{ matrix.artifact_arch }}.dmg" \
+            --include "bitsentry-desktop-ce-${{ needs.resolve-release-metadata.outputs.release_version }}-macos-${{ matrix.artifact_arch }}.zip" \
+            --include "bitsentry-desktop-ce-${{ needs.resolve-release-metadata.outputs.release_version }}-macos-${{ matrix.artifact_arch }}.dmg.blockmap" \
+            --include "bitsentry-desktop-ce-${{ needs.resolve-release-metadata.outputs.release_version }}-macos-${{ matrix.artifact_arch }}.zip.blockmap" \
+            --if-no-files-found error
+          if [ "${BITSENTRY_RELEASE_CHANNEL}" != "preview" ]; then
+            node apps/desktop/scripts/dist/upload-r2-artifacts.js --root apps/desktop/release/build/channel-feed --prefix "${ARTIFACT_PREFIX}/macos/${{ matrix.arch }}" --include latest-mac.yml --if-no-files-found error
+          else
+            node apps/desktop/scripts/dist/upload-r2-artifacts.js --root apps/desktop/release/build --prefix "${ARTIFACT_PREFIX}/macos/${{ matrix.arch }}/${ARTIFACT_VERSION_SEGMENT}" --include latest-mac.yml --if-no-files-found error
+          fi
+
+  build-windows:
+    name: Build CE Windows
+    if: github.event.inputs.release_targets == 'all' || github.event.inputs.release_targets == 'windows'
+    needs: resolve-release-metadata
+    runs-on: windows-2025
+    env:
+      CE_RELEASE_VERSION: ${{ needs.resolve-release-metadata.outputs.release_version }}
+      ARTIFACT_PREFIX: ${{ needs.resolve-release-metadata.outputs.artifact_prefix }}
+      ARTIFACT_VERSION_SEGMENT: ${{ needs.resolve-release-metadata.outputs.artifact_version_segment }}
+      ARTIFACT_BASE_URL: ${{ needs.resolve-release-metadata.outputs.artifact_base_url }}
+      BITSENTRY_POSTHOG_KEY: ${{ vars.BITSENTRY_POSTHOG_KEY }}
+      BITSENTRY_POSTHOG_HOST: ${{ vars.BITSENTRY_POSTHOG_HOST || 'https://us.i.posthog.com' }}
+      BITSENTRY_SENTRY_DSN: ${{ vars.BITSENTRY_SENTRY_DSN }}
+      BITSENTRY_RELEASE_CHANNEL: ${{ needs.resolve-release-metadata.outputs.release_channel }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.12.0
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.32.1
+          run_install: false
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Set CE release version
+        shell: bash
+        run: node -e "const fs=require('node:fs'); const p='apps/desktop/package.json'; const j=JSON.parse(fs.readFileSync(p,'utf8')); j.version=process.env.CE_RELEASE_VERSION; fs.writeFileSync(p, JSON.stringify(j,null,2)+'\\n')"
+
+      - name: Build release helper scripts
+        run: pnpm --filter @bitsentry-ce/desktop run build:scripts
+
+      - name: Build CE packages
+        run: pnpm run build:packages
+
+      - name: Build CE electron-trpc package
+        run: pnpm --filter electron-trpc build
+
+      - name: Build CE desktop bundles
+        working-directory: ./apps/desktop
+        run: pnpm run build:shared-cli && pnpm run build:cli-bundle && pnpm run build:notarize-hook && pnpm run build
+
+      - name: Rebuild native dependencies
+        working-directory: ./apps/desktop
+        shell: bash
+        run: npx electron-builder install-app-deps --arch=x64
+
+      - name: Package CE Windows app
+        working-directory: ./apps/desktop
+        shell: bash
+        run: |
+          export DESKTOP_UPDATE_BASE_URL="${ARTIFACT_BASE_URL}/windows/x64"
+          export DESKTOP_ENABLE_AFTER_SIGN=false
+          export DESKTOP_ARTIFACT_NAME="bitsentry-desktop-ce-\${version}-windows-x86_64.\${ext}"
+          bash scripts/create-ci-builder-config.sh electron-builder.ci.yml
+          bash scripts/normalize-ce-builder-config.sh electron-builder.ci.yml "$DESKTOP_ARTIFACT_NAME"
+          npx electron-builder build --config electron-builder.ci.yml --win --x64 --publish never
+
+      - name: Prepare CE updater manifest
+        if: env.BITSENTRY_RELEASE_CHANNEL != 'preview'
+        working-directory: ./apps/desktop
+        shell: bash
+        run: node scripts/dist/rewrite-update-manifest.js --input release/build/latest.yml --output release/build/channel-feed/latest.yml --url-prefix "${ARTIFACT_VERSION_SEGMENT}"
+
+      - name: Upload CE Windows artifacts
+        shell: bash
+        env:
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
+          R2_PUBLIC_BASE_URL: ${{ env.R2_PUBLIC_BASE_URL }}
+        run: |
+          manifest="apps/desktop/release/build/latest.yml"
+          object_prefix="${ARTIFACT_PREFIX}/windows/x64/${ARTIFACT_VERSION_SEGMENT}"
+          if [ "${BITSENTRY_RELEASE_CHANNEL}" != "preview" ]; then manifest="apps/desktop/release/build/channel-feed/latest.yml"; fi
+          args=(--manifest "${manifest}" --artifact-root apps/desktop/release/build --required-artifact-prefix bitsentry-desktop-ce-)
+          if [ "${BITSENTRY_RELEASE_CHANNEL}" != "preview" ]; then args+=(--required-path-prefix "${ARTIFACT_VERSION_SEGMENT}"); fi
+          node apps/desktop/scripts/dist/verify-update-manifest.js "${args[@]}"
+          node apps/desktop/scripts/dist/upload-r2-artifacts.js --root apps/desktop/release/build --prefix "${object_prefix}" --include "bitsentry-desktop-ce-${{ needs.resolve-release-metadata.outputs.release_version }}-windows-x86_64.exe" --include "bitsentry-desktop-ce-${{ needs.resolve-release-metadata.outputs.release_version }}-windows-x86_64.exe.blockmap" --if-no-files-found error
+          node apps/desktop/scripts/dist/verify-r2-artifacts.js --manifest "${manifest}" --object-prefix "${object_prefix}" --exe "apps/desktop/release/build/bitsentry-desktop-ce-${{ needs.resolve-release-metadata.outputs.release_version }}-windows-x86_64.exe" --blockmap "apps/desktop/release/build/bitsentry-desktop-ce-${{ needs.resolve-release-metadata.outputs.release_version }}-windows-x86_64.exe.blockmap"
+          if [ "${BITSENTRY_RELEASE_CHANNEL}" != "preview" ]; then node apps/desktop/scripts/dist/upload-r2-artifacts.js --root apps/desktop/release/build/channel-feed --prefix "${ARTIFACT_PREFIX}/windows/x64" --include latest.yml --if-no-files-found error; else node apps/desktop/scripts/dist/upload-r2-artifacts.js --root apps/desktop/release/build --prefix "${object_prefix}" --include latest.yml --if-no-files-found error; fi
+
+  build-linux:
+    name: Build CE Linux (${{ matrix.arch }})
+    if: github.event.inputs.release_targets == 'all' || github.event.inputs.release_targets == 'linux'
+    needs: resolve-release-metadata
+    runs-on: ubuntu-24.04
+    env:
+      CE_RELEASE_VERSION: ${{ needs.resolve-release-metadata.outputs.release_version }}
+      ARTIFACT_PREFIX: ${{ needs.resolve-release-metadata.outputs.artifact_prefix }}
+      ARTIFACT_VERSION_SEGMENT: ${{ needs.resolve-release-metadata.outputs.artifact_version_segment }}
+      ARTIFACT_BASE_URL: ${{ needs.resolve-release-metadata.outputs.artifact_base_url }}
+      BITSENTRY_POSTHOG_KEY: ${{ vars.BITSENTRY_POSTHOG_KEY }}
+      BITSENTRY_POSTHOG_HOST: ${{ vars.BITSENTRY_POSTHOG_HOST || 'https://us.i.posthog.com' }}
+      BITSENTRY_SENTRY_DSN: ${{ vars.BITSENTRY_SENTRY_DSN }}
+      BITSENTRY_RELEASE_CHANNEL: ${{ needs.resolve-release-metadata.outputs.release_channel }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x64
+            electron_arch: x64
+            artifact_arch: x86_64
+            update_manifest: latest-linux.yml
+          - arch: arm64
+            electron_arch: arm64
+            artifact_arch: aarch64
+            update_manifest: latest-linux-arm64.yml
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.12.0
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.32.1
+          run_install: false
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends dpkg fakeroot rpm libgtk-3-dev libwebkit2gtk-4.1-dev libnss3 libxss1 libasound2t64
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Set CE release version
+        run: node -e "const fs=require('node:fs'); const p='apps/desktop/package.json'; const j=JSON.parse(fs.readFileSync(p,'utf8')); j.version=process.env.CE_RELEASE_VERSION; fs.writeFileSync(p, JSON.stringify(j,null,2)+'\\n')"
+
+      - name: Build release helper scripts
+        run: pnpm --filter @bitsentry-ce/desktop run build:scripts
+
+      - name: Build CE packages
+        run: pnpm run build:packages
+
+      - name: Build CE electron-trpc package
+        run: pnpm --filter electron-trpc build
+
+      - name: Build CE desktop bundles
+        working-directory: ./apps/desktop
+        run: pnpm run build:shared-cli && pnpm run build:cli-bundle && pnpm run build:notarize-hook && pnpm run build
+
+      - name: Rebuild native dependencies
+        working-directory: ./apps/desktop
+        run: npx electron-builder install-app-deps --arch=${{ matrix.electron_arch }}
+
+      - name: Package CE Linux app
+        working-directory: ./apps/desktop
+        run: |
+          export DESKTOP_UPDATE_BASE_URL="${ARTIFACT_BASE_URL}/linux/${{ matrix.arch }}"
+          export DESKTOP_ENABLE_AFTER_SIGN=false
+          export DESKTOP_ARTIFACT_NAME="bitsentry-desktop-ce-\${version}-linux-${{ matrix.artifact_arch }}.\${ext}"
+          bash scripts/create-ci-builder-config.sh electron-builder.ci.yml
+          bash scripts/normalize-ce-builder-config.sh electron-builder.ci.yml "$DESKTOP_ARTIFACT_NAME"
+          npx electron-builder build --config electron-builder.ci.yml --linux --${{ matrix.electron_arch }} --publish never
+
+      - name: Prepare CE updater manifest
+        if: env.BITSENTRY_RELEASE_CHANNEL != 'preview'
+        working-directory: ./apps/desktop
+        run: node scripts/dist/rewrite-update-manifest.js --input release/build/${{ matrix.update_manifest }} --output release/build/channel-feed/${{ matrix.update_manifest }} --url-prefix "${ARTIFACT_VERSION_SEGMENT}"
+
+      - name: Upload CE Linux artifacts
+        env:
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
+          R2_PUBLIC_BASE_URL: ${{ env.R2_PUBLIC_BASE_URL }}
+        run: |
+          manifest="apps/desktop/release/build/${{ matrix.update_manifest }}"
+          object_prefix="${ARTIFACT_PREFIX}/linux/${{ matrix.arch }}/${ARTIFACT_VERSION_SEGMENT}"
+          if [ "${BITSENTRY_RELEASE_CHANNEL}" != "preview" ]; then manifest="apps/desktop/release/build/channel-feed/${{ matrix.update_manifest }}"; fi
+          args=(--manifest "${manifest}" --artifact-root apps/desktop/release/build --required-artifact-prefix bitsentry-desktop-ce-)
+          if [ "${BITSENTRY_RELEASE_CHANNEL}" != "preview" ]; then args+=(--required-path-prefix "${ARTIFACT_VERSION_SEGMENT}"); fi
+          node apps/desktop/scripts/dist/verify-update-manifest.js "${args[@]}"
+          node apps/desktop/scripts/dist/upload-r2-artifacts.js --root apps/desktop/release/build --prefix "${object_prefix}" --include "bitsentry-desktop-ce-${{ needs.resolve-release-metadata.outputs.release_version }}-linux-${{ matrix.artifact_arch }}.AppImage" --if-no-files-found error
+          if [ "${BITSENTRY_RELEASE_CHANNEL}" != "preview" ]; then node apps/desktop/scripts/dist/upload-r2-artifacts.js --root apps/desktop/release/build/channel-feed --prefix "${ARTIFACT_PREFIX}/linux/${{ matrix.arch }}" --include "${{ matrix.update_manifest }}" --if-no-files-found error; else node apps/desktop/scripts/dist/upload-r2-artifacts.js --root apps/desktop/release/build --prefix "${object_prefix}" --include "${{ matrix.update_manifest }}" --if-no-files-found error; fi
+
+  publish-release:
+    name: Publish CE GitHub Release Metadata
+    if: >-
+      ${{
+        always() &&
+        needs.resolve-release-metadata.outputs.publish_release_metadata == 'true' &&
+        (
+          (
+            (github.event.inputs.release_targets == 'all' || github.event.inputs.release_targets == 'mac') &&
+            needs.build-macos.result == 'success'
+          ) ||
+          (
+            github.event.inputs.release_targets != 'all' &&
+            github.event.inputs.release_targets != 'mac' &&
+            needs.build-macos.result == 'skipped'
+          )
+        ) &&
+        (
+          (
+            (github.event.inputs.release_targets == 'all' || github.event.inputs.release_targets == 'windows') &&
+            needs.build-windows.result == 'success'
+          ) ||
+          (
+            github.event.inputs.release_targets != 'all' &&
+            github.event.inputs.release_targets != 'windows' &&
+            needs.build-windows.result == 'skipped'
+          )
+        ) &&
+        (
+          (
+            (github.event.inputs.release_targets == 'all' || github.event.inputs.release_targets == 'linux') &&
+            needs.build-linux.result == 'success'
+          ) ||
+          (
+            github.event.inputs.release_targets != 'all' &&
+            github.event.inputs.release_targets != 'linux' &&
+            needs.build-linux.result == 'skipped'
+          )
+        )
+      }}
+    needs: [resolve-release-metadata, build-macos, build-windows, build-linux]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - name: Publish release metadata
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.resolve-release-metadata.outputs.release_tag }}
+          RELEASE_VERSION: ${{ needs.resolve-release-metadata.outputs.release_version }}
+          RELEASE_CHANNEL: ${{ needs.resolve-release-metadata.outputs.release_channel }}
+          RELEASE_TARGETS: ${{ github.event.inputs.release_targets }}
+          ARTIFACT_BASE_URL: ${{ needs.resolve-release-metadata.outputs.artifact_base_url }}
+          ARTIFACT_VERSION_SEGMENT: ${{ needs.resolve-release-metadata.outputs.artifact_version_segment }}
+        run: |
+          cat > release-body.md <<EOF
+          ## BitSentry Desktop CE ${RELEASE_VERSION}
+
+          Channel: ${RELEASE_CHANNEL}
+
+          ### Updater feeds
+          - macOS arm64: ${ARTIFACT_BASE_URL}/macos/arm64/latest-mac.yml
+          - macOS x64: ${ARTIFACT_BASE_URL}/macos/x64/latest-mac.yml
+          - Windows x64: ${ARTIFACT_BASE_URL}/windows/x64/latest.yml
+          - Linux x64: ${ARTIFACT_BASE_URL}/linux/x64/latest-linux.yml
+          - Linux arm64: ${ARTIFACT_BASE_URL}/linux/arm64/latest-linux-arm64.yml
+
+          Versioned artifact prefix: ${ARTIFACT_VERSION_SEGMENT}/
+          EOF
+          if gh release view "${RELEASE_TAG}" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
+            gh release edit "${RELEASE_TAG}" --repo "${GITHUB_REPOSITORY}" --title "BitSentry Desktop CE ${RELEASE_VERSION}" --notes-file release-body.md
+          else
+            gh release create "${RELEASE_TAG}" --repo "${GITHUB_REPOSITORY}" --title "BitSentry Desktop CE ${RELEASE_VERSION}" --notes-file release-body.md --prerelease
+          fi
