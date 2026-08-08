@@ -255,7 +255,7 @@ jobs:
       ARTIFACT_VERSION_SEGMENT: ${{ needs.resolve-release-metadata.outputs.artifact_version_segment }}
       ARTIFACT_BASE_URL: ${{ needs.resolve-release-metadata.outputs.artifact_base_url }}
       BITSENTRY_POSTHOG_KEY: ${{ vars.BITSENTRY_POSTHOG_KEY }}
-      BITSENTRY_POSTHOG_HOST: ${{ vars.BITSENTRY_POSTHOG_HOST || 'https://us.i.posthog.com' }}
+      BITSENTRY_POSTHOG_HOST: ${{ github.event.inputs.posthog_host || vars.BITSENTRY_POSTHOG_HOST || 'https://eu.i.posthog.com' }}
       BITSENTRY_SENTRY_DSN: ${{ vars.BITSENTRY_SENTRY_DSN }}
       BITSENTRY_RELEASE_CHANNEL: ${{ needs.resolve-release-metadata.outputs.release_channel }}
     steps:
@@ -329,11 +329,15 @@ jobs:
           manifest="apps/desktop/release/build/latest.yml"
           object_prefix="${ARTIFACT_PREFIX}/windows/x64/${ARTIFACT_VERSION_SEGMENT}"
           if [ "${BITSENTRY_RELEASE_CHANNEL}" != "preview" ]; then manifest="apps/desktop/release/build/channel-feed/latest.yml"; fi
+          verify_object_prefix="${object_prefix}"
           args=(--manifest "${manifest}" --artifact-root apps/desktop/release/build --required-artifact-prefix bitsentry-desktop-ce-)
-          if [ "${BITSENTRY_RELEASE_CHANNEL}" != "preview" ]; then args+=(--required-path-prefix "${ARTIFACT_VERSION_SEGMENT}"); fi
+          if [ "${BITSENTRY_RELEASE_CHANNEL}" != "preview" ]; then
+            args+=(--required-path-prefix "${ARTIFACT_VERSION_SEGMENT}")
+            verify_object_prefix="${ARTIFACT_PREFIX}/windows/x64"
+          fi
           node apps/desktop/scripts/dist/verify-update-manifest.js "${args[@]}"
           node apps/desktop/scripts/dist/upload-r2-artifacts.js --root apps/desktop/release/build --prefix "${object_prefix}" --include "bitsentry-desktop-ce-${{ needs.resolve-release-metadata.outputs.release_version }}-windows-x86_64.exe" --include "bitsentry-desktop-ce-${{ needs.resolve-release-metadata.outputs.release_version }}-windows-x86_64.exe.blockmap" --if-no-files-found error
-          node apps/desktop/scripts/dist/verify-r2-artifacts.js --manifest "${manifest}" --object-prefix "${object_prefix}" --exe "apps/desktop/release/build/bitsentry-desktop-ce-${{ needs.resolve-release-metadata.outputs.release_version }}-windows-x86_64.exe" --blockmap "apps/desktop/release/build/bitsentry-desktop-ce-${{ needs.resolve-release-metadata.outputs.release_version }}-windows-x86_64.exe.blockmap"
+          node apps/desktop/scripts/dist/verify-r2-artifacts.js --manifest "${manifest}" --object-prefix "${verify_object_prefix}" --exe "apps/desktop/release/build/bitsentry-desktop-ce-${{ needs.resolve-release-metadata.outputs.release_version }}-windows-x86_64.exe" --blockmap "apps/desktop/release/build/bitsentry-desktop-ce-${{ needs.resolve-release-metadata.outputs.release_version }}-windows-x86_64.exe.blockmap"
           if [ "${BITSENTRY_RELEASE_CHANNEL}" != "preview" ]; then node apps/desktop/scripts/dist/upload-r2-artifacts.js --root apps/desktop/release/build/channel-feed --prefix "${ARTIFACT_PREFIX}/windows/x64" --include latest.yml --if-no-files-found error; else node apps/desktop/scripts/dist/upload-r2-artifacts.js --root apps/desktop/release/build --prefix "${object_prefix}" --include latest.yml --if-no-files-found error; fi
 
   build-linux:
@@ -347,7 +351,7 @@ jobs:
       ARTIFACT_VERSION_SEGMENT: ${{ needs.resolve-release-metadata.outputs.artifact_version_segment }}
       ARTIFACT_BASE_URL: ${{ needs.resolve-release-metadata.outputs.artifact_base_url }}
       BITSENTRY_POSTHOG_KEY: ${{ vars.BITSENTRY_POSTHOG_KEY }}
-      BITSENTRY_POSTHOG_HOST: ${{ vars.BITSENTRY_POSTHOG_HOST || 'https://us.i.posthog.com' }}
+      BITSENTRY_POSTHOG_HOST: ${{ github.event.inputs.posthog_host || vars.BITSENTRY_POSTHOG_HOST || 'https://eu.i.posthog.com' }}
       BITSENTRY_SENTRY_DSN: ${{ vars.BITSENTRY_SENTRY_DSN }}
       BITSENTRY_RELEASE_CHANNEL: ${{ needs.resolve-release-metadata.outputs.release_channel }}
     strategy:
@@ -511,5 +515,7 @@ jobs:
           if gh release view "${RELEASE_TAG}" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
             gh release edit "${RELEASE_TAG}" --repo "${GITHUB_REPOSITORY}" --title "BitSentry Desktop CE ${RELEASE_VERSION}" --notes-file release-body.md
           else
-            gh release create "${RELEASE_TAG}" --repo "${GITHUB_REPOSITORY}" --title "BitSentry Desktop CE ${RELEASE_VERSION}" --notes-file release-body.md --prerelease
+            release_args=(--repo "${GITHUB_REPOSITORY}" --title "BitSentry Desktop CE ${RELEASE_VERSION}" --notes-file release-body.md --target "${GITHUB_SHA}")
+            if [ "${RELEASE_CHANNEL}" != "stable" ]; then release_args+=(--prerelease); fi
+            gh release create "${RELEASE_TAG}" "${release_args[@]}"
           fi

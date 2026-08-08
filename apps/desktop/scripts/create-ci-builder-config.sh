@@ -27,6 +27,9 @@ line == "publish:" {
   print "npmRebuild: false"
   next
 }
+skipping_publish && line ~ /^[^[:space:]#][^:]*:/ {
+  skipping_publish = 0
+}
 skipping_publish && line == "afterSign: scripts/dist/notarize.js" {
   skipping_publish = 0
   if (enable_after_sign == "true") {
@@ -50,3 +53,8 @@ END {
   }
 }
 ' electron-builder.yml > "$output_file"
+
+if ! grep -Fqx 'afterPack: scripts/electron-builder-after-pack.js' "$output_file"; then
+  echo "Generated builder config is missing the afterPack hook" >&2
+  exit 1
+fi
