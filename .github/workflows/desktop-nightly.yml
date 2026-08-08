@@ -25,8 +25,10 @@ jobs:
     outputs:
       should_run: ${{ steps.gate.outputs.should_run }}
       nightly_date: ${{ steps.gate.outputs.nightly_date }}
+      nightly_version: ${{ steps.gate.outputs.nightly_version }}
       nightly_tag: ${{ steps.gate.outputs.nightly_tag }}
       r2_prefix: ${{ steps.gate.outputs.r2_prefix }}
+      artifact_version_segment: ${{ steps.gate.outputs.artifact_version_segment }}
     env:
       R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
       R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
@@ -57,8 +59,10 @@ jobs:
           fi
 
           nightly_date="$(date -u +%Y%m%d)"
+          nightly_version="0.1.0-nightly.${nightly_date}"
           nightly_tag="desktop-nightly-${nightly_date}.${GITHUB_RUN_NUMBER}.${GITHUB_RUN_ATTEMPT}"
-          r2_prefix="desktop-ce/nightly/${nightly_date}/${nightly_tag}/macos/arm64"
+          r2_prefix="desktop-ce/nightly/${nightly_date}/${nightly_tag}"
+          artifact_version_segment="${GITHUB_SHA}"
           last_nightly_tag="$(git tag --list 'desktop-nightly-*' --sort=-creatordate | head -n 1 || true)"
           should_run=true
 
@@ -72,8 +76,10 @@ jobs:
           {
             echo "should_run=${should_run}"
             echo "nightly_date=${nightly_date}"
+            echo "nightly_version=${nightly_version}"
             echo "nightly_tag=${nightly_tag}"
             echo "r2_prefix=${r2_prefix}"
+            echo "artifact_version_segment=${artifact_version_segment}"
           } >> "${GITHUB_OUTPUT}"
 
       - name: Validate release secrets before using macOS minutes
@@ -202,8 +208,10 @@ jobs:
       contents: write
     env:
       NIGHTLY_DATE: ${{ needs.change-gate.outputs.nightly_date }}
+      NIGHTLY_VERSION: ${{ needs.change-gate.outputs.nightly_version }}
       NIGHTLY_TAG: ${{ needs.change-gate.outputs.nightly_tag }}
       R2_PREFIX: ${{ needs.change-gate.outputs.r2_prefix }}
+      ARTIFACT_VERSION_SEGMENT: ${{ needs.change-gate.outputs.artifact_version_segment }}
       R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
       R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
       R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
@@ -262,13 +270,15 @@ jobs:
         working-directory: apps/desktop
         run: |
           set -euo pipefail
+          node -e "const fs=require('node:fs'); const p='package.json'; const j=JSON.parse(fs.readFileSync(p,'utf8')); j.version=process.env.NIGHTLY_VERSION; fs.writeFileSync(p, JSON.stringify(j,null,2)+'\\n')"
           pnpm run build:shared-cli
           pnpm run build:notarize-hook
           pnpm run build:cli-bundle
           pnpm run prepare:native-deps -- --arch=arm64
           pnpm run build
 
-          export DESKTOP_UPDATE_BASE_URL="${R2_PUBLIC_BASE_URL}/${R2_PREFIX}"
+          export DESKTOP_UPDATE_BASE_URL="${R2_PUBLIC_BASE_URL}/${R2_PREFIX}/macos/arm64"
+          export DESKTOP_ARTIFACT_NAME="bitsentry-desktop-ce-\${version}-macos-aarch64.\${ext}"
           if [ -n "${APPLE_ID:-}" ] && [ -n "${APPLE_APP_PASSWORD:-}" ] && [ -n "${APPLE_TEAM_ID:-}" ]; then
             export DESKTOP_ENABLE_AFTER_SIGN=true
           else
@@ -276,6 +286,7 @@ jobs:
           fi
 
           bash scripts/create-ci-builder-config.sh electron-builder.ci.yml
+          bash scripts/normalize-ce-builder-config.sh electron-builder.ci.yml "$DESKTOP_ARTIFACT_NAME"
           npx electron-builder build \
             --config electron-builder.ci.yml \
             --mac \
@@ -286,7 +297,9 @@ jobs:
         working-directory: apps/desktop
         run: |
           set -euo pipefail
-          app_path="release/build/mac-arm64/SuperTerminal.app"
+          app_path="release/build/mac-arm64/BitSentry-Desktop.app"
+          dmg="release/build/bitsentry-desktop-ce-${NIGHTLY_VERSION}-macos-aarch64.dmg"
+          zip="release/build/bitsentry-desktop-ce-${NIGHTLY_VERSION}-macos-aarch64.zip"
           bash scripts/verify-macos-artifact.sh "${app_path}"
           codesign_output="$(codesign -dv --verbose=4 "${app_path}" 2>&1 || true)"
           team_id="$(printf '%s\n' "${codesign_output}" | sed -n 's/^TeamIdentifier=//p' | head -n 1)"
@@ -306,36 +319,61 @@ jobs:
               exit 1
               ;;
           esac
-          test -f release/build/SuperTerminal.dmg
-          test -f release/build/SuperTerminal.zip
-          hdiutil verify release/build/SuperTerminal.dmg
-          unzip -t release/build/SuperTerminal.zip >/dev/null
+          test -f "${dmg}"
+          test -f "${zip}"
+          test -f "${dmg}.blockmap"
+          test -f "${zip}.blockmap"
+          hdiutil verify "${dmg}"
+          unzip -t "${zip}" >/dev/null
           shasum -a 256 \
-            release/build/SuperTerminal.dmg \
-            release/build/SuperTerminal.zip \
+            "${dmg}" \
+            "${zip}" \
+            "${dmg}.blockmap" \
+            "${zip}.blockmap" \
             > release/build/SHA256SUMS
 
-      - name: Upload isolated nightly artifacts to R2
+      - name: Prepare nightly updater manifest
         working-directory: apps/desktop
         run: |
+          node scripts/dist/rewrite-update-manifest.js \
+            --input release/build/latest-mac.yml \
+            --output release/build/channel-feed/latest-mac.yml \
+            --url-prefix "${ARTIFACT_VERSION_SEGMENT}"
+
+      - name: Verify and upload isolated nightly artifacts to R2
+        working-directory: apps/desktop
+        run: |
+          set -euo pipefail
+          node scripts/dist/verify-update-manifest.js \
+            --manifest release/build/channel-feed/latest-mac.yml \
+            --artifact-root release/build \
+            --required-path-prefix "${ARTIFACT_VERSION_SEGMENT}" \
+            --required-artifact-prefix bitsentry-desktop-ce-
           node scripts/dist/upload-r2-artifacts.js \
             --root release/build \
-            --prefix "${R2_PREFIX}" \
-            --include "SuperTerminal.dmg" \
-            --include "SuperTerminal.zip" \
+            --prefix "${R2_PREFIX}/macos/arm64/${ARTIFACT_VERSION_SEGMENT}" \
+            --include "bitsentry-desktop-ce-${NIGHTLY_VERSION}-macos-aarch64.dmg" \
+            --include "bitsentry-desktop-ce-${NIGHTLY_VERSION}-macos-aarch64.zip" \
+            --include "bitsentry-desktop-ce-${NIGHTLY_VERSION}-macos-aarch64.dmg.blockmap" \
+            --include "bitsentry-desktop-ce-${NIGHTLY_VERSION}-macos-aarch64.zip.blockmap" \
             --include "SHA256SUMS" \
+            --if-no-files-found error
+          node scripts/dist/upload-r2-artifacts.js \
+            --root release/build/channel-feed \
+            --prefix "${R2_PREFIX}/macos/arm64" \
+            --include latest-mac.yml \
             --if-no-files-found error
 
       - name: Publish GitHub prerelease
         working-directory: apps/desktop
         run: |
           gh release create "${NIGHTLY_TAG}" \
-            release/build/SuperTerminal.dmg \
-            release/build/SuperTerminal.zip \
+            "release/build/bitsentry-desktop-ce-${NIGHTLY_VERSION}-macos-aarch64.dmg" \
+            "release/build/bitsentry-desktop-ce-${NIGHTLY_VERSION}-macos-aarch64.zip" \
             release/build/SHA256SUMS \
             --repo "${GITHUB_REPOSITORY}" \
             --target "${GITHUB_SHA}" \
-            --title "Desktop CE nightly ${NIGHTLY_DATE}" \
-            --notes "Manual Desktop CE nightly from ${GITHUB_SHA}. R2 prefix: ${R2_PUBLIC_BASE_URL}/${R2_PREFIX}. Stable and beta feeds are unchanged. Notarization is enabled only when all Apple credentials are configured." \
+            --title "BitSentry Desktop CE nightly ${NIGHTLY_VERSION}" \
+            --notes "BitSentry Desktop CE nightly from ${GITHUB_SHA}. R2 prefix: ${R2_PUBLIC_BASE_URL}/${R2_PREFIX}. Stable and beta feeds are unchanged. Notarization is enabled only when all Apple credentials are configured." \
             --prerelease \
             --latest=false
