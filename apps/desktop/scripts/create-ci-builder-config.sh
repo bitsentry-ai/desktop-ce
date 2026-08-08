@@ -38,6 +38,10 @@ skipping_publish && line == "afterSign: scripts/dist/notarize.js" {
   }
   next
 }
+skipping_publish && line == "afterPack: scripts/electron-builder-after-pack.js" {
+  print line
+  next
+}
 !skipping_publish && line == "afterSign: scripts/dist/notarize.js" {
   if (enable_after_sign == "true") {
     print line
