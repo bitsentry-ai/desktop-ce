@@ -4,6 +4,7 @@ import type {
   RunbookRecord,
 } from "./desktop-runbook.types";
 import { MAX_RUNBOOK_IDLE_TIMEOUT_MINUTES } from "./desktop-runbook.types";
+import type { DesktopPluginDescriptor } from "../plugins/plugins.types";
 
 export type RunbookAuthoringProposalKind =
   | "edit_existing_runbook"
@@ -370,6 +371,55 @@ function validateRunbookActionSecurity(action: RunbookActionRecord, errors: stri
   if (action.parameters?.some((parameter) => parameter.secure === true && typeof parameter.defaultValue === "string" && parameter.defaultValue.length > 0) === true) {
     errors.push(`Action "${action.title}" includes a plaintext default for a secure parameter.`);
   }
+}
+
+export function validatePluginAuthContracts(
+  runbook: RunbookRecord,
+  plugins: DesktopPluginDescriptor[],
+): string[] {
+  const pluginsById = new Map(plugins.map((plugin) => [plugin.id, plugin]));
+  const errors: string[] = [];
+
+  for (const action of runbook.actions) {
+    if (action.type !== "plugin") continue;
+
+    const pluginId = normalizeString(action.pluginId);
+    if (pluginId.length === 0) continue;
+
+    const plugin = pluginsById.get(pluginId);
+    if (plugin === undefined) {
+      errors.push(`Plugin action "${action.title}" references unknown plugin "${pluginId}".`);
+      continue;
+    }
+
+    const pluginAuth = normalizeString(action.pluginAuth);
+    if (pluginAuth.length === 0) continue;
+
+    let parsedAuth: unknown;
+    try {
+      parsedAuth = JSON.parse(pluginAuth);
+    } catch {
+      errors.push(`Plugin action "${action.title}" has invalid pluginAuth JSON.`);
+      continue;
+    }
+
+    if (parsedAuth === null || typeof parsedAuth !== "object" || Array.isArray(parsedAuth)) {
+      errors.push(`Plugin action "${action.title}" pluginAuth must be a JSON object.`);
+      continue;
+    }
+
+    const expectedKeys = plugin.auth.fields.map((field) => field.key);
+    const expectedKeySet = new Set(expectedKeys);
+    for (const key of Object.keys(parsedAuth)) {
+      if (expectedKeySet.has(key)) continue;
+      const expected = expectedKeys.length > 0 ? expectedKeys.join(", ") : "none";
+      errors.push(
+        `Plugin action "${action.title}" uses unknown auth field "${key}" for plugin "${pluginId}". Expected auth fields: ${expected}.`,
+      );
+    }
+  }
+
+  return errors;
 }
 
 export function validateRunbook(runbook: RunbookRecord): RunbookAuthoringValidationResult {
