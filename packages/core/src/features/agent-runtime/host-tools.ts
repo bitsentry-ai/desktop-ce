@@ -13,6 +13,7 @@ import type { RunbookGateway } from '../runbooks/runbook.gateway'
 import {
   createRunbookCreationProposal,
   createRunbookEditProposal,
+  validatePluginAuthContracts,
   type RunbookAuthoringOperation,
   type RunbookAuthoringProposal,
 } from '../runbooks/authoring'
@@ -450,6 +451,15 @@ function summarizePluginForCatalog(plugin: DesktopPluginDescriptor): Record<stri
     name: plugin.name,
     version: plugin.version,
     description: plugin.description,
+    auth: {
+      fields: plugin.auth.fields.map((field) => ({
+        key: field.key,
+        label: field.label,
+        type: field.type,
+        required: field.required,
+        secret: field.secret === true,
+      })),
+    },
     actions: plugin.actions.map((action) => ({
       id: action.id,
       title: action.title,
@@ -467,6 +477,24 @@ async function listPlugins(context: HostToolContext): Promise<ToolResult> {
       plugins: plugins.map(summarizePluginForCatalog),
     }, null, 2),
   }
+}
+
+function applyPluginAuthValidation(
+  proposal: RunbookAuthoringProposal,
+  context: HostToolContext,
+): RunbookAuthoringProposal {
+  const plugins = context.pluginRuntime?.listPlugins()
+  if (plugins === undefined) return proposal
+
+  const errors = validatePluginAuthContracts(proposal.proposedRunbook, plugins)
+  if (errors.length === 0) return proposal
+
+  proposal.validation = {
+    ...proposal.validation,
+    valid: false,
+    errors: [...proposal.validation.errors, ...errors],
+  }
+  return proposal
 }
 
 async function executeRunbook(
@@ -596,6 +624,7 @@ function summarizeAuthoringProposal(proposal: RunbookAuthoringProposal): Record<
 
 async function proposeRunbookEdit(context: HostToolContext, input: ProposeRunbookEditHostToolInput): Promise<ToolResult> {
   const proposal = createRunbookEditProposal({ incidentThreadId: context.session.incidentThreadId, prompt: input.prompt, targetRunbook: await resolveAuthorableRunbookReference(context, input), operations: input.operations.map((operation) => ({ ...operation, action: operation.action as RunbookActionRecord | undefined })) as RunbookAuthoringOperation[] })
+  applyPluginAuthValidation(proposal, context)
   context.session.runbookAuthoringProposals ??= []
   context.session.runbookAuthoringProposals.push(proposal)
   return { output: JSON.stringify(summarizeAuthoringProposal(proposal), null, 2) }
@@ -603,6 +632,7 @@ async function proposeRunbookEdit(context: HostToolContext, input: ProposeRunboo
 
 async function proposeRunbookCreate(context: HostToolContext, input: ProposeRunbookCreateHostToolInput): Promise<ToolResult> {
   const proposal = createRunbookCreationProposal({ incidentThreadId: context.session.incidentThreadId, prompt: input.prompt, draftRunbook: { ...input.draftRunbook, actions: input.draftRunbook.actions as RunbookActionRecord[] } })
+  applyPluginAuthValidation(proposal, context)
   context.session.runbookAuthoringProposals ??= []
   context.session.runbookAuthoringProposals.push(proposal)
   return { output: JSON.stringify(summarizeAuthoringProposal(proposal), null, 2) }
@@ -617,7 +647,7 @@ export const hostTools = [
   },
   {
     name: 'list_plugins',
-    description: 'List installed plugins, their action IDs, and each action input JSON schema. Auth values and secrets are never returned.',
+    description: 'List installed plugins, their action IDs, input JSON schemas, and auth field contracts. Use the exact auth field keys returned here when constructing pluginAuth. Auth values and secrets are never returned.',
     argsSchema: listPluginsHostToolSchema,
     handler: async (context: HostToolContext) => await listPlugins(context),
   },

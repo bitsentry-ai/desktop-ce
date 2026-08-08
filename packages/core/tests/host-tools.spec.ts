@@ -142,6 +142,7 @@ describe('host tools', () => {
           type: 'string',
           required: true,
           secret: true,
+          defaultValue: 'do-not-disclose',
         }],
       },
       actions: [{
@@ -166,6 +167,7 @@ describe('host tools', () => {
     const catalog = JSON.parse(catalogResult?.output ?? '') as {
       plugins: Array<{
         id: string
+        auth: { fields: Array<Record<string, unknown>> }
         actions: Array<{
           id: string
           inputSchema: { type: string; properties: Record<string, unknown>; required?: string[] }
@@ -176,14 +178,22 @@ describe('host tools', () => {
     const discoveredAction = discoveredPlugin?.actions[0]
 
     expect(discoveredPlugin?.id).toBe('ops-health')
+    expect(discoveredPlugin?.auth).toEqual({
+      fields: [{
+        key: 'apiToken',
+        label: 'API token',
+        type: 'string',
+        required: true,
+        secret: true,
+      }],
+    })
     expect(discoveredAction?.id).toBe('list_checks')
     expect(discoveredAction?.inputSchema).toMatchObject({
       type: 'object',
       properties: { team: { type: 'string' } },
       required: ['team'],
     })
-    expect(catalog.plugins[0]).not.toHaveProperty('auth')
-    expect(JSON.stringify(catalog)).not.toContain('apiToken')
+    expect(JSON.stringify(catalog)).not.toContain('do-not-disclose')
 
     const proposalResult = await executeHostTool(context, 'propose_runbook_create', {
       prompt: 'Create a runbook that lists health checks for the platform team.',
@@ -207,6 +217,101 @@ describe('host tools', () => {
       validation: { valid: true, errors: [] },
       proposedRunbook: {
         actions: [{ id: 'step-list-checks', type: 'plugin', title: 'List platform checks' }],
+      },
+    })
+  })
+
+  it('rejects unknown plugin auth keys while accepting descriptor keys', async () => {
+    const plugin: DesktopPluginDescriptor = {
+      id: 'ops-health',
+      name: 'Ops Health',
+      version: '0.1.0',
+      description: 'Health checks for the operations team.',
+      type: 'data_source',
+      auth: {
+        fields: [{
+          key: 'accessToken',
+          label: 'Access token',
+          type: 'string',
+          required: true,
+          secret: true,
+        }],
+      },
+      actions: [{
+        id: 'list_checks',
+        title: 'List checks',
+        description: 'List checks for a team.',
+        riskLevel: 'read',
+        fields: [],
+      }],
+    }
+    const context = createContext()
+    context.pluginRuntime = { listPlugins: () => [plugin] }
+
+    const invalidResult = await executeHostTool(context, 'propose_runbook_create', {
+      prompt: 'Create an authenticated health-check runbook.',
+      draftRunbook: {
+        title: 'Invalid auth contract',
+        description: 'The proposal should be rejected before approval.',
+        actions: [{
+          id: 'step-list-checks',
+          type: 'plugin',
+          title: 'List platform checks',
+          pluginId: 'ops-health',
+          pluginActionId: 'list_checks',
+          pluginAuth: '{"token":"${globals.ops_token}"}',
+        }],
+      },
+    })
+    expect(JSON.parse(invalidResult?.output ?? '')).toMatchObject({
+      validation: {
+        valid: false,
+        errors: [expect.stringContaining('unknown auth field "token"')],
+      },
+    })
+
+    const validResult = await executeHostTool(context, 'propose_runbook_create', {
+      prompt: 'Create an authenticated health-check runbook.',
+      draftRunbook: {
+        title: 'Valid auth contract',
+        description: 'The proposal should be approvable.',
+        actions: [{
+          id: 'step-list-checks',
+          type: 'plugin',
+          title: 'List platform checks',
+          pluginId: 'ops-health',
+          pluginActionId: 'list_checks',
+          pluginAuth: '{"accessToken":"${globals.ops_token}"}',
+        }],
+      },
+    })
+    expect(JSON.parse(validResult?.output ?? '')).toMatchObject({
+      validation: { valid: true, errors: [] },
+    })
+    expect(validResult?.output).not.toContain('do-not-disclose')
+
+    context.listAuthorableRunbooks = vi.fn().mockResolvedValue([makeRunbook()])
+    const invalidEditResult = await executeHostTool(context, 'propose_runbook_edit', {
+      runbookId: 'rb-sentry',
+      prompt: 'Add an authenticated health-check action.',
+      operations: [{
+        id: 'op-add-checks',
+        type: 'add_action',
+        rationale: 'Use the plugin to collect health checks.',
+        action: {
+          id: 'step-list-checks',
+          type: 'plugin',
+          title: 'List platform checks',
+          pluginId: 'ops-health',
+          pluginActionId: 'list_checks',
+          pluginAuth: '{"token":"${globals.ops_token}"}',
+        },
+      }],
+    })
+    expect(JSON.parse(invalidEditResult?.output ?? '')).toMatchObject({
+      validation: {
+        valid: false,
+        errors: [expect.stringContaining('unknown auth field "token"')],
       },
     })
   })
