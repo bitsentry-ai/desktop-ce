@@ -112,9 +112,9 @@ jobs:
       ARTIFACT_PREFIX: ${{ needs.resolve-release-metadata.outputs.artifact_prefix }}
       ARTIFACT_VERSION_SEGMENT: ${{ needs.resolve-release-metadata.outputs.artifact_version_segment }}
       ARTIFACT_BASE_URL: ${{ needs.resolve-release-metadata.outputs.artifact_base_url }}
-      BITSENTRY_POSTHOG_KEY: ${{ vars.BITSENTRY_POSTHOG_KEY }}
+      BITSENTRY_POSTHOG_KEY: ${{ secrets.BITSENTRY_POSTHOG_KEY }}
       BITSENTRY_POSTHOG_HOST: ${{ github.event.inputs.posthog_host || vars.BITSENTRY_POSTHOG_HOST || 'https://eu.i.posthog.com' }}
-      BITSENTRY_SENTRY_DSN: ${{ vars.BITSENTRY_SENTRY_DSN }}
+      BITSENTRY_SENTRY_DSN: ${{ secrets.BITSENTRY_SENTRY_DSN }}
       BITSENTRY_RELEASE_CHANNEL: ${{ needs.resolve-release-metadata.outputs.release_channel }}
       SKIP_NOTARIZE_INPUT: ${{ github.event.inputs.skip_notarize }}
     strategy:
@@ -158,11 +158,11 @@ jobs:
         run: |
           node -e "const fs=require('node:fs'); const p='apps/desktop/package.json'; const j=JSON.parse(fs.readFileSync(p,'utf8')); j.version=process.env.CE_RELEASE_VERSION; fs.writeFileSync(p, JSON.stringify(j,null,2)+'\\n')"
 
-      - name: Build release helper scripts
-        run: pnpm --filter @bitsentry-ce/desktop run build:scripts
-
       - name: Build CE packages
         run: pnpm run build:packages
+
+      - name: Build release helper scripts
+        run: pnpm --filter @bitsentry-ce/desktop run build:scripts
 
       - name: Build CE electron-trpc package
         run: pnpm --filter electron-trpc build
@@ -254,9 +254,9 @@ jobs:
       ARTIFACT_PREFIX: ${{ needs.resolve-release-metadata.outputs.artifact_prefix }}
       ARTIFACT_VERSION_SEGMENT: ${{ needs.resolve-release-metadata.outputs.artifact_version_segment }}
       ARTIFACT_BASE_URL: ${{ needs.resolve-release-metadata.outputs.artifact_base_url }}
-      BITSENTRY_POSTHOG_KEY: ${{ vars.BITSENTRY_POSTHOG_KEY }}
+      BITSENTRY_POSTHOG_KEY: ${{ secrets.BITSENTRY_POSTHOG_KEY }}
       BITSENTRY_POSTHOG_HOST: ${{ github.event.inputs.posthog_host || vars.BITSENTRY_POSTHOG_HOST || 'https://eu.i.posthog.com' }}
-      BITSENTRY_SENTRY_DSN: ${{ vars.BITSENTRY_SENTRY_DSN }}
+      BITSENTRY_SENTRY_DSN: ${{ secrets.BITSENTRY_SENTRY_DSN }}
       BITSENTRY_RELEASE_CHANNEL: ${{ needs.resolve-release-metadata.outputs.release_channel }}
     steps:
       - name: Checkout repository
@@ -282,11 +282,11 @@ jobs:
         shell: bash
         run: node -e "const fs=require('node:fs'); const p='apps/desktop/package.json'; const j=JSON.parse(fs.readFileSync(p,'utf8')); j.version=process.env.CE_RELEASE_VERSION; fs.writeFileSync(p, JSON.stringify(j,null,2)+'\\n')"
 
-      - name: Build release helper scripts
-        run: pnpm --filter @bitsentry-ce/desktop run build:scripts
-
       - name: Build CE packages
         run: pnpm run build:packages
+
+      - name: Build release helper scripts
+        run: pnpm --filter @bitsentry-ce/desktop run build:scripts
 
       - name: Build CE electron-trpc package
         run: pnpm --filter electron-trpc build
@@ -350,9 +350,9 @@ jobs:
       ARTIFACT_PREFIX: ${{ needs.resolve-release-metadata.outputs.artifact_prefix }}
       ARTIFACT_VERSION_SEGMENT: ${{ needs.resolve-release-metadata.outputs.artifact_version_segment }}
       ARTIFACT_BASE_URL: ${{ needs.resolve-release-metadata.outputs.artifact_base_url }}
-      BITSENTRY_POSTHOG_KEY: ${{ vars.BITSENTRY_POSTHOG_KEY }}
+      BITSENTRY_POSTHOG_KEY: ${{ secrets.BITSENTRY_POSTHOG_KEY }}
       BITSENTRY_POSTHOG_HOST: ${{ github.event.inputs.posthog_host || vars.BITSENTRY_POSTHOG_HOST || 'https://eu.i.posthog.com' }}
-      BITSENTRY_SENTRY_DSN: ${{ vars.BITSENTRY_SENTRY_DSN }}
+      BITSENTRY_SENTRY_DSN: ${{ secrets.BITSENTRY_SENTRY_DSN }}
       BITSENTRY_RELEASE_CHANNEL: ${{ needs.resolve-release-metadata.outputs.release_channel }}
     strategy:
       fail-fast: false
@@ -394,11 +394,11 @@ jobs:
       - name: Set CE release version
         run: node -e "const fs=require('node:fs'); const p='apps/desktop/package.json'; const j=JSON.parse(fs.readFileSync(p,'utf8')); j.version=process.env.CE_RELEASE_VERSION; fs.writeFileSync(p, JSON.stringify(j,null,2)+'\\n')"
 
-      - name: Build release helper scripts
-        run: pnpm --filter @bitsentry-ce/desktop run build:scripts
-
       - name: Build CE packages
         run: pnpm run build:packages
+
+      - name: Build release helper scripts
+        run: pnpm --filter @bitsentry-ce/desktop run build:scripts
 
       - name: Build CE electron-trpc package
         run: pnpm --filter electron-trpc build
