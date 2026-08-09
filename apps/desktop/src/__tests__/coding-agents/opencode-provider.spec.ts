@@ -124,6 +124,11 @@ describe('executeOpenCode', () => {
     ]
     const configPath = spawnOptions.env.OPENCODE_CONFIG
     expect(configPath).toBeDefined()
+    expect(spawnOptions.env).toMatchObject({
+      BITSENTRY_MCP_URL: 'http://127.0.0.1:40123/mcp',
+      BITSENTRY_MCP_TOKEN: 'token',
+      BITSENTRY_MCP_CONTEXT_ID: 'context-opencode',
+    })
     const [, args] = mocks.spawn.mock.calls[0] as [string, string[]]
     const scope = args.at(-1) ?? ''
     for (const hostTool of getHostTools()) {
@@ -138,6 +143,7 @@ describe('executeOpenCode', () => {
         },
       },
     })
+    expect(await readFile(configPath!, 'utf8')).not.toContain('BITSENTRY_MCP_TOKEN')
     const config = JSON.parse(await readFile(configPath!, 'utf8')) as {
       permission: Record<string, string>
     }

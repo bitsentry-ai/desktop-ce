@@ -565,6 +565,7 @@ function createOpenCodeProcess(
   cwd: string,
   accessLevel: AccessLevel,
   configPath: string | undefined,
+  endpoint: HostMcpEndpoint | undefined,
 ): OpenCodeChildProcess {
   const binaryPath = resolveOpenCodeWindowsBinary(options.binaryPath)
   const invocation = createCommandInvocation(
@@ -578,6 +579,7 @@ function createOpenCodeProcess(
     env: {
       ...createCodingAgentsProcessEnv(process.env),
       ...createOpenCodePermissionEnv(accessLevel),
+      ...endpoint?.env,
       ...(configPath === undefined ? {} : { OPENCODE_CONFIG: configPath }),
     },
   })
@@ -606,7 +608,6 @@ async function createOpenCodeMcpConfig(
       [HOST_MCP_SERVER_NAME]: {
         type: 'local',
         command: [endpoint.command, ...endpoint.args],
-        environment: endpoint.env,
       },
     },
     // OpenCode applies permission rules to MCP tools by their server-prefixed
@@ -777,7 +778,7 @@ export async function executeOpenCode(
   const config = options.mcpEndpoint === undefined
     ? undefined
     : await createOpenCodeMcpConfig(options.mcpEndpoint, accessLevel)
-  const child = createOpenCodeProcess(options, cwd, accessLevel, config?.path)
+  const child = createOpenCodeProcess(options, cwd, accessLevel, config?.path, options.mcpEndpoint)
   const state = createOpenCodeExecutionState()
   const appendOutput = createAppendOpenCodeOutput(state, options)
   const { stdoutLines, onAbort } = wireOpenCodeProcess(
