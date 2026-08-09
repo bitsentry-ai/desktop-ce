@@ -4,12 +4,11 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { HOST_MCP_SHIM_FILE_NAME, HOST_MCP_SHIM_SOURCE } from './host-mcp-shim-source.js'
+import { createHostToolCore } from './host-tool-core.js'
 import { codingAgentsLogger as log } from './logger.js'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js'
 import {
-  executeHostTool,
-  getHostTools,
   type HostToolContext,
   type HostToolEvent,
 } from '@bitsentry-ce/core/features/agent-runtime'
@@ -80,24 +79,12 @@ async function readMcpRequestBody(request: IncomingMessage): Promise<unknown> {
 
 function createSessionServer(session: HostMcpSession): McpServer {
   const server = new McpServer({ name: 'bitsentry-host-tools', version: '1.0.0' })
-  for (const hostTool of getHostTools()) {
+  const hostTools = createHostToolCore(session.context, (event) => session.ledger.push(event))
+  for (const hostTool of hostTools.tools) {
     server.registerTool(hostTool.name, {
       description: hostTool.description,
       inputSchema: hostTool.argsSchema.shape,
-    }, async (args) => {
-      const result = await executeHostTool({
-        ...session.context,
-        onToolEvent: (event) => {
-          session.ledger.push(event)
-          session.context.onToolEvent?.(event)
-        },
-      }, hostTool.name, args)
-      const text = result?.error ?? result?.output ?? 'Host tool completed without output.'
-      return {
-        content: [{ type: 'text' as const, text }],
-        ...(result?.error !== undefined ? { isError: true } : {}),
-      }
-    })
+    }, async (args) => await hostTools.call(hostTool.name, args))
   }
   return server
 }
