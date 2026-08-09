@@ -127,6 +127,30 @@ describe('HostMcpServerService', () => {
     })
   })
 
+  it('removes an endpoint ledger when its execution closes', async () => {
+    const server = new HostMcpServerService()
+    servers.push(server)
+    const endpoint = await server.createSession(createContext())
+
+    expect(server.getLedger(endpoint.token)).toEqual([])
+    server.closeSession(endpoint.token)
+
+    expect(server.getLedger(endpoint.token)).toEqual([])
+    await expect(request(endpoint, { jsonrpc: '2.0', id: 1, method: 'tools/list' }))
+      .resolves.toMatchObject({ status: 401 })
+  })
+
+  it('sweeps expired endpoint contexts without waiting for another request', async () => {
+    const server = new HostMcpServerService(1)
+    servers.push(server)
+    const endpoint = await server.createSession(createContext(), 1)
+
+    await new Promise((resolve) => setTimeout(resolve, 20))
+
+    await expect(request(endpoint, { jsonrpc: '2.0', id: 1, method: 'tools/list' }))
+      .resolves.toMatchObject({ status: 401 })
+  })
+
   it('proxies stdio MCP requests to the token-scoped endpoint', async () => {
     const server = new HostMcpServerService()
     servers.push(server)

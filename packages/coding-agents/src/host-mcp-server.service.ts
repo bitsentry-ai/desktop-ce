@@ -15,6 +15,7 @@ import {
 
 const HOST_MCP_PATH = '/mcp'
 const DEFAULT_SESSION_TTL_MS = 15 * 60 * 1000
+const DEFAULT_SESSION_SWEEP_INTERVAL_MS = 60 * 1000
 export const HOST_MCP_SERVER_NAME = 'bitsentry'
 
 export interface HostMcpEndpoint {
@@ -95,6 +96,9 @@ export class HostMcpServerService {
   private baseUrl: string | undefined
   private shimDirectory: string | undefined
   private shimPath: string | undefined
+  private sessionSweepTimer: ReturnType<typeof setInterval> | undefined
+
+  constructor(private readonly sessionSweepIntervalMs = DEFAULT_SESSION_SWEEP_INTERVAL_MS) {}
 
   async start(): Promise<void> {
     await this.ensureShimFile()
@@ -107,6 +111,8 @@ export class HostMcpServerService {
         resolve()
       })
     })
+    this.sessionSweepTimer = setInterval(() => this.pruneExpiredSessions(), this.sessionSweepIntervalMs)
+    this.sessionSweepTimer.unref?.()
     const address = this.httpServer.address()
     if (address === null || typeof address === 'string') throw new Error('Host MCP endpoint did not bind to a TCP port')
     this.baseUrl = `http://127.0.0.1:${String(address.port)}${HOST_MCP_PATH}`
@@ -114,6 +120,8 @@ export class HostMcpServerService {
 
   async stop(): Promise<void> {
     this.sessions.clear()
+    if (this.sessionSweepTimer !== undefined) clearInterval(this.sessionSweepTimer)
+    this.sessionSweepTimer = undefined
     const server = this.httpServer
     this.httpServer = undefined
     this.baseUrl = undefined

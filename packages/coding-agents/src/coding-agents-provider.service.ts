@@ -607,65 +607,69 @@ export class CodingAgentsProviderService {
       systemPrompt,
     );
 
-    if (provider === "claude_code") {
-      return (this.dependencies.executeClaudeCode ?? executeClaudeCode)({
+    try {
+      if (provider === "claude_code") {
+        return await (this.dependencies.executeClaudeCode ?? executeClaudeCode)({
+          prompt,
+          binaryPath,
+          abortController,
+          cwd,
+          model,
+          accessLevel,
+          maxTurns: effortToMaxTurns(readTraitString(traitValues?.effort)),
+          contextWindow: readTraitString(traitValues?.contextWindow),
+          hostToolContext,
+          systemPrompt,
+          onDelta,
+        });
+      }
+
+      if (provider === "opencode") {
+        return await this.dependencies.executeOpenCode({
+          prompt: promptWithHostInstructions,
+          binaryPath,
+          abortController,
+          cwd,
+          model,
+          accessLevel,
+          traitValues,
+          opencodeArgs: this.settings.opencode.opencodeArgs,
+          mcpEndpoint,
+          onDelta,
+        });
+      }
+
+      if (provider === "cursor") {
+        return await (this.dependencies.executeCursor ?? executeCursor)({
+          prompt: promptWithHostInstructions,
+          binaryPath,
+          abortController,
+          cwd,
+          model,
+          accessLevel,
+          traitValues,
+          mcpEndpoint,
+          onDelta,
+          debug: this.dependencies.debugRecorder,
+        });
+      }
+
+      return await (this.dependencies.executeCodex ?? executeCodex)({
         prompt,
         binaryPath,
         abortController,
         cwd,
         model,
         accessLevel,
-        maxTurns: effortToMaxTurns(readTraitString(traitValues?.effort)),
-        contextWindow: readTraitString(traitValues?.contextWindow),
-        hostToolContext,
+        traitValues,
+        codexArgs: this.settings.codex.codexArgs,
+        mcpEndpoint,
         systemPrompt,
         onDelta,
       });
+    } finally {
+      if (mcpEndpoint !== undefined) this.hostMcpServer.closeSession(mcpEndpoint.token);
     }
-
-    if (provider === "opencode") {
-      return this.dependencies.executeOpenCode({
-        prompt: promptWithHostInstructions,
-        binaryPath,
-        abortController,
-        cwd,
-        model,
-        accessLevel,
-        traitValues,
-        opencodeArgs: this.settings.opencode.opencodeArgs,
-        mcpEndpoint,
-        onDelta,
-      });
-    }
-
-    if (provider === "cursor") {
-      return (this.dependencies.executeCursor ?? executeCursor)({
-        prompt: promptWithHostInstructions,
-        binaryPath,
-        abortController,
-        cwd,
-        model,
-        accessLevel,
-        traitValues,
-        mcpEndpoint,
-        onDelta,
-        debug: this.dependencies.debugRecorder,
-      });
-    }
-
-    return (this.dependencies.executeCodex ?? executeCodex)({
-      prompt,
-      binaryPath,
-      abortController,
-      cwd,
-      model,
-      accessLevel,
-      traitValues,
-      codexArgs: this.settings.codex.codexArgs,
-      mcpEndpoint,
-      systemPrompt,
-      onDelta,
-    });
   }
 
   private async createHostMcpEndpoint(
@@ -798,8 +802,9 @@ export class CodingAgentsProviderService {
     return [];
   }
 
-  destroy(): void {
+  async destroy(): Promise<void> {
     this.probeCache.clear();
+    await this.hostMcpServer.stop();
   }
 }
 
