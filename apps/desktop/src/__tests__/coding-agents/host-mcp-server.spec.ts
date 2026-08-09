@@ -173,6 +173,29 @@ describe('HostMcpServerService', () => {
     })
   })
 
+  it.each(['list_runbooks', 'list_plugins'] as const)(
+    'rejects a foreign context handle for %s',
+    async (name) => {
+      const server = new HostMcpServerService()
+      servers.push(server)
+      const endpoint = await server.createSession(createContext())
+
+      const response = await request(endpoint, {
+        jsonrpc: '2.0',
+        id: 10,
+        method: 'tools/call',
+        params: { name, arguments: { contextId: 'foreign-context' } },
+      })
+
+      expect(await readMcpResponse(response)).toMatchObject({
+        result: {
+          isError: true,
+          content: [{ type: 'text', text: expect.stringContaining('INVALID_CONTEXT_HANDLE') }],
+        },
+      })
+    },
+  )
+
   it('serves discovery only through the 2026-07-28 request envelope', async () => {
     const server = new HostMcpServerService()
     servers.push(server)
@@ -291,30 +314,58 @@ describe('HostMcpServerService', () => {
       id: 4,
       result: { tools: expect.arrayContaining([expect.objectContaining({ name: 'execute_runbook' })]) },
     })
+
+    await expect(requestThroughShim(endpoint, {
+      jsonrpc: '2.0',
+      id: 5,
+      method: 'tools/call',
+      params: { name: 'execute_runbook', arguments: {} },
+    })).resolves.toMatchObject({
+      jsonrpc: '2.0',
+      id: 5,
+      result: {
+        isError: true,
+        content: [{ text: expect.not.stringContaining('INVALID_CONTEXT_HANDLE') }],
+      },
+    })
   })
 
-  it('accepts null or omitted arguments for zero-argument MCP tools', async () => {
+  it('returns JSON-RPC errors with the original id when the host is unavailable', async () => {
     const server = new HostMcpServerService()
     servers.push(server)
-    const context = createContext()
-    const endpoint = await server.createSession(context)
+    const endpoint = await server.createSession(createContext())
+    const unavailableEndpoint = {
+      ...endpoint,
+      env: { ...endpoint.env, BITSENTRY_MCP_URL: 'http://127.0.0.1:1/mcp' },
+    }
 
-    const responses = await Promise.all([
-      request(endpoint, {
-        jsonrpc: '2.0', id: 4, method: 'tools/call',
-        params: { name: 'list_runbooks', arguments: null },
-      }),
-      request(endpoint, {
-        jsonrpc: '2.0', id: 5, method: 'tools/call',
-        params: { name: 'list_runbooks' },
-      }),
-    ])
+    await expect(requestThroughShim(unavailableEndpoint, {
+      jsonrpc: '2.0',
+      id: 6,
+      method: 'tools/list',
+    })).resolves.toMatchObject({
+      jsonrpc: '2.0',
+      id: 6,
+      error: { code: -32000 },
+    })
+  })
 
-    await expect(Promise.all(responses.map(readMcpResponse))).resolves.toEqual([
-      expect.objectContaining({ id: 4, result: expect.anything() }),
-      expect.objectContaining({ id: 5, result: expect.anything() }),
-    ])
-    expect(context.gateway.listExecutable).toHaveBeenCalledTimes(2)
+  it('advertises clean object schemas for host tools', async () => {
+    const server = new HostMcpServerService()
+    servers.push(server)
+    const endpoint = await server.createSession(createContext())
+
+    const response = await request(endpoint, { jsonrpc: '2.0', id: 4, method: 'tools/list' })
+    const payload = await readMcpResponse(response) as {
+      result: { tools: Array<{ name: string; inputSchema: Record<string, unknown> }> }
+    }
+    const executeRunbook = payload.result.tools.find((tool) => tool.name === 'execute_runbook')
+
+    expect(executeRunbook?.inputSchema).toMatchObject({
+      type: 'object',
+      properties: expect.objectContaining({ contextId: expect.any(Object) }),
+    })
+    expect(executeRunbook?.inputSchema).not.toHaveProperty('anyOf')
   })
 
   it('keeps concurrent token-scoped requests independent', async () => {
@@ -335,6 +386,20 @@ describe('HostMcpServerService', () => {
     expect(responses).toEqual(Array.from({ length: 8 }, (_, index) =>
       expect.objectContaining({ id: index + 10, result: expect.objectContaining({ tools: expect.any(Array) }) }),
     ))
+  })
+
+  it('renews a session TTL when an authenticated request is received', async () => {
+    const server = new HostMcpServerService(1)
+    servers.push(server)
+    const endpoint = await server.createSession(createContext(), 30)
+
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    await expect(request(endpoint, { jsonrpc: '2.0', id: 18, method: 'tools/list' }))
+      .resolves.toMatchObject({ status: 200 })
+    await new Promise((resolve) => setTimeout(resolve, 20))
+
+    await expect(request(endpoint, { jsonrpc: '2.0', id: 19, method: 'tools/list' }))
+      .resolves.toMatchObject({ status: 200 })
   })
 
   it('keeps a streamable get_runbook_execution request open until the gateway completes', async () => {

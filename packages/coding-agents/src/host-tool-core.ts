@@ -25,13 +25,16 @@ export function createHostToolCore(
   onToolEvent?: (event: HostToolEvent) => void,
   contextId?: string,
 ): HostToolCore {
+  const contextIdSchema = z.string().min(1).describe(
+    'Omit contextId. The BitSentry MCP shim injects the scoped context handle automatically.',
+  )
   const requiresContextId = (tool: HostToolDefinition): boolean =>
     contextId !== undefined && tool.name !== 'list_runbooks' && tool.name !== 'list_plugins'
 
   const inputSchemaFor = (tool: HostToolDefinition): z.ZodType => {
     if (contextId === undefined) return tool.argsSchema
     return tool.argsSchema.extend({
-      contextId: requiresContextId(tool) ? z.string().min(1) : z.string().min(1).optional(),
+      contextId: requiresContextId(tool) ? contextIdSchema : contextIdSchema.optional(),
     })
   }
 
@@ -43,13 +46,13 @@ export function createHostToolCore(
       const suppliedContextId = args !== null && typeof args === 'object' && !Array.isArray(args)
         ? (args as Record<string, unknown>).contextId
         : undefined
-      if (contextId !== undefined && tool !== undefined && requiresContextId(tool) && suppliedContextId !== contextId) {
+      if (contextId !== undefined && tool !== undefined && suppliedContextId !== undefined && suppliedContextId !== contextId) {
         return {
           content: [{
             type: 'text',
             text: JSON.stringify({
               code: 'INVALID_CONTEXT_HANDLE',
-              message: 'The contextId is not authorised for this host-tool session.',
+              message: 'The contextId is not authorised for this host-tool session. Omit contextId so the BitSentry MCP shim can inject the scoped handle.',
             }),
           }],
           isError: true,
