@@ -74,7 +74,7 @@ export interface StateTexts {
   /** Canonical: AI-generated diagnosis text */
   diagnose?: string;
 
-  /** Canonical: Verification result from MCP tools */
+  /** Canonical: Verification result from configured evidence sources. */
   verify?: string;
 
   /** Canonical: Remediation recommendation text */
