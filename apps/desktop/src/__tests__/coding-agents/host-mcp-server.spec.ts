@@ -8,6 +8,24 @@ import type { HostToolContext } from '@bitsentry-ce/core/features/agent-runtime'
 import type { RunbookExecutionRecord } from '@bitsentry-ce/core/features/runbooks/desktop-runbook.types'
 
 const servers: HostMcpServerService[] = []
+const MCP_PROTOCOL_VERSION = '2026-07-28'
+
+function modernMcpRequest(body: Record<string, unknown>): Record<string, unknown> {
+  const params = body.params !== null && typeof body.params === 'object' && !Array.isArray(body.params)
+    ? body.params as Record<string, unknown>
+    : {}
+  return {
+    ...body,
+    params: {
+      ...params,
+      _meta: {
+        'io.modelcontextprotocol/protocolVersion': MCP_PROTOCOL_VERSION,
+        'io.modelcontextprotocol/clientInfo': { name: 'bitsentry-test-client', version: '1.0.0' },
+        'io.modelcontextprotocol/clientCapabilities': {},
+      },
+    },
+  }
+}
 
 function createContext(): HostToolContext {
   return {
@@ -39,14 +57,22 @@ function makeExecution(overrides: Partial<RunbookExecutionRecord> = {}): Runbook
 }
 
 async function request(endpoint: HostMcpEndpoint, body: Record<string, unknown>, token = endpoint.token) {
+  const modernBody = modernMcpRequest(body)
+  const method = typeof modernBody.method === 'string' ? modernBody.method : ''
+  const toolName = method === 'tools/call' && typeof (modernBody.params as Record<string, unknown>).name === 'string'
+    ? (modernBody.params as Record<string, unknown>).name as string
+    : undefined
   return await fetch(endpoint.url, {
     method: 'POST',
     headers: {
       authorization: `Bearer ${token}`,
       'content-type': 'application/json',
       accept: 'application/json, text/event-stream',
+      'mcp-protocol-version': MCP_PROTOCOL_VERSION,
+      'mcp-method': method,
+      ...(toolName === undefined ? {} : { 'mcp-name': toolName }),
     },
-    body: JSON.stringify(body),
+    body: JSON.stringify(modernBody),
   })
 }
 
@@ -112,6 +138,51 @@ describe('HostMcpServerService', () => {
     ])
   })
 
+  it('serves discovery only through the 2026-07-28 request envelope', async () => {
+    const server = new HostMcpServerService()
+    servers.push(server)
+    const endpoint = await server.createSession(createContext())
+
+    const response = await request(endpoint, {
+      jsonrpc: '2.0',
+      id: 7,
+      method: 'server/discover',
+    })
+
+    expect(response.status).toBe(200)
+    expect(await readMcpResponse(response)).toMatchObject({
+      jsonrpc: '2.0',
+      id: 7,
+      result: {
+        ttlMs: expect.any(Number),
+        cacheScope: expect.any(String),
+        supportedVersions: expect.arrayContaining([MCP_PROTOCOL_VERSION]),
+      },
+    })
+  })
+
+  it('rejects requests without the required stateless MCP headers and envelope', async () => {
+    const server = new HostMcpServerService()
+    servers.push(server)
+    const endpoint = await server.createSession(createContext())
+
+    const response = await fetch(endpoint.url, {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${endpoint.token}`,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({ jsonrpc: '2.0', id: 8, method: 'tools/list' }),
+    })
+
+    expect(response.status).toBe(400)
+    expect(await readMcpResponse(response)).toMatchObject({
+      jsonrpc: '2.0',
+      id: 8,
+      error: expect.objectContaining({ code: expect.any(Number) }),
+    })
+  })
+
   it('gives each endpoint a distinct scoped token', async () => {
     const server = new HostMcpServerService()
     servers.push(server)
@@ -151,7 +222,7 @@ describe('HostMcpServerService', () => {
       .resolves.toMatchObject({ status: 401 })
   })
 
-  it('proxies stdio MCP requests to the token-scoped endpoint', async () => {
+  it('rejects legacy stdio MCP requests at the stateless host boundary', async () => {
     const server = new HostMcpServerService()
     servers.push(server)
     const endpoint = await server.createSession(createContext())
@@ -163,7 +234,7 @@ describe('HostMcpServerService', () => {
     })).resolves.toMatchObject({
       jsonrpc: '2.0',
       id: 3,
-      result: { tools: expect.arrayContaining([expect.objectContaining({ name: 'execute_runbook' })]) },
+      error: expect.objectContaining({ code: expect.any(Number) }),
     })
   })
 

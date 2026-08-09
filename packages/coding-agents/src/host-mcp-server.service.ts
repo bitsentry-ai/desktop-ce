@@ -6,8 +6,9 @@ import { join } from 'node:path'
 import { HOST_MCP_SHIM_FILE_NAME, HOST_MCP_SHIM_SOURCE } from './host-mcp-shim-source.js'
 import { createHostToolCore } from './host-tool-core.js'
 import { codingAgentsLogger as log } from './logger.js'
-import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
-import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js'
+import { toNodeHandler } from '@modelcontextprotocol/node'
+import { createMcpHandler, McpServer } from '@modelcontextprotocol/server'
+import { z } from 'zod'
 import {
   type HostToolContext,
   type HostToolEvent,
@@ -42,8 +43,7 @@ function sendJson(response: ServerResponse, statusCode: number, payload: Record<
   response.end(JSON.stringify(payload))
 }
 
-function readBearerToken(request: IncomingMessage): string | undefined {
-  const authorization = request.headers.authorization
+function readBearerToken(authorization: string | undefined): string | undefined {
   return authorization?.startsWith('Bearer ') ? authorization.slice('Bearer '.length) : undefined
 }
 
@@ -84,7 +84,7 @@ function createSessionServer(session: HostMcpSession): McpServer {
   for (const hostTool of hostTools.tools) {
     server.registerTool(hostTool.name, {
       description: hostTool.description,
-      inputSchema: hostTool.argsSchema.shape,
+      inputSchema: z.union([hostTool.argsSchema, z.null()]),
     }, async (args) => await hostTools.call(hostTool.name, args))
   }
   return server
@@ -97,6 +97,17 @@ export class HostMcpServerService {
   private shimDirectory: string | undefined
   private shimPath: string | undefined
   private sessionSweepTimer: ReturnType<typeof setInterval> | undefined
+  private readonly mcpHandler = createMcpHandler(({ requestInfo }) => {
+    const session = this.findSession(readBearerToken(requestInfo?.headers.get('authorization') ?? undefined))
+    if (session === undefined) throw new Error('Authenticated host MCP request lost its scoped context')
+    return createSessionServer(session)
+  }, {
+    legacy: 'reject',
+    onerror: (error) => log.warn('[host-mcp] stateless request failed', { reason: error.message }),
+  })
+  private readonly nodeMcpHandler = toNodeHandler(this.mcpHandler, {
+    onerror: (error) => log.warn('[host-mcp] node transport failed', { reason: error.message }),
+  })
 
   constructor(private readonly sessionSweepIntervalMs = DEFAULT_SESSION_SWEEP_INTERVAL_MS) {}
 
@@ -181,6 +192,10 @@ export class HostMcpServerService {
 
   getLedger(token: string): readonly HostToolEvent[] { return this.sessions.get(token)?.ledger ?? [] }
 
+  private findSession(receivedToken: string | undefined): HostMcpSession | undefined {
+    return [...this.sessions.entries()].find(([token]) => hasMatchingToken(receivedToken, token))?.[1]
+  }
+
   private pruneExpiredSessions(): void {
     const now = Date.now()
     for (const [token, session] of this.sessions) if (session.expiresAt <= now) this.sessions.delete(token)
@@ -197,8 +212,8 @@ export class HostMcpServerService {
       return sendJson(response, 404, { error: 'Not found' })
     }
     this.pruneExpiredSessions()
-    const receivedToken = readBearerToken(request)
-    const session = [...this.sessions.entries()].find(([token]) => hasMatchingToken(receivedToken, token))?.[1]
+    const receivedToken = readBearerToken(request.headers.authorization)
+    const session = this.findSession(receivedToken)
     if (session === undefined) {
       log.warn('[host-mcp] request rejected', {
         agentSessionId: 'unknown',
@@ -208,14 +223,6 @@ export class HostMcpServerService {
       })
       return sendJson(response, 401, { error: 'Unauthorized' })
     }
-    const server = createSessionServer(session)
-    const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined })
-    try {
-      await server.connect(transport)
-      const body = await readMcpRequestBody(request)
-      await transport.handleRequest(request, response, body)
-    } finally {
-      await server.close()
-    }
+    await this.nodeMcpHandler(request, response, await readMcpRequestBody(request))
   }
 }
