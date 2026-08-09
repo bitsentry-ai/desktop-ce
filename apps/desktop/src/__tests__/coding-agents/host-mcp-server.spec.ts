@@ -488,6 +488,22 @@ describe('HostMcpServerService', () => {
       .resolves.toMatchObject({ status: 200 })
   })
 
+  it('stops promptly when a client keeps its HTTP connection open', async () => {
+    const server = new HostMcpServerService()
+    const endpoint = await server.createSession(createContext())
+    const agent = new Agent({ keepAlive: true })
+
+    try {
+      await openKeepAliveConnection(endpoint, agent)
+      await expect(Promise.race([
+        server.stop(),
+        new Promise<never>((_, reject) => setTimeout(() => reject(new Error('Host MCP stop timed out')), 200)),
+      ])).resolves.toBeUndefined()
+    } finally {
+      agent.destroy()
+    }
+  })
+
   it('keeps a streamable get_runbook_execution request open until the gateway completes', async () => {
     const server = new HostMcpServerService()
     servers.push(server)

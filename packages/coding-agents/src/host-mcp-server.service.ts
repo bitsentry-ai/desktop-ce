@@ -122,6 +122,7 @@ export class HostMcpServerService {
           if (!response.writableEnded) sendJson(response, 500, { error: 'Internal server error' })
         })
       })
+      server.keepAliveTimeout = 1_000
       this.httpServer = server
       try {
         await new Promise<void>((resolve, reject) => {
@@ -171,7 +172,11 @@ export class HostMcpServerService {
       await rm(shimDirectory, { recursive: true, force: true })
     }
     if (server === undefined) return
-    await new Promise<void>((resolve, reject) => server.close((error) => error === undefined ? resolve() : reject(error)))
+    const closePromise = new Promise<void>((resolve, reject) => {
+      server.close((error) => error === undefined ? resolve() : reject(error))
+    })
+    server.closeAllConnections()
+    await closePromise
   }
 
   // CLIs spawn the shim themselves, so it must exist as a plain file outside
