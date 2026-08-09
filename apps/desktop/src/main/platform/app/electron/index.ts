@@ -392,7 +392,7 @@ const createWindow = async () => {
           localRunbookExecutionHost = null
           await runbookExecutionService?.destroy()
           runbookExecutionService = null
-          localAiProvider?.destroy()
+          await localAiProvider?.destroy()
           unregisterCodingAgentsHandlers(ipcMain)
           localAiProvider = null
           if (services !== null) {
@@ -418,8 +418,8 @@ const shutdownCoordinator = new DesktopShutdownCoordinator({
     updaterController = null
   },
   destroyAgentRuntime: () => agentRuntime?.destroy(),
-  destroyCodingAgents: () => {
-    localAiProvider?.destroy()
+  destroyCodingAgents: async () => {
+    await localAiProvider?.destroy()
     unregisterCodingAgentsHandlers(ipcMain)
     localAiProvider = null
   },
