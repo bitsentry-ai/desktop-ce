@@ -60,13 +60,17 @@ function hasMatchingToken(receivedToken: string | undefined, expectedToken: stri
 
 async function readMcpRequestBody(request: IncomingMessage): Promise<unknown> {
   if (request.method !== 'POST') return undefined
-  let body = ''
+  const chunks: Buffer[] = []
+  let byteLength = 0
   for await (const chunk of request) {
-    body += chunk.toString()
-    if (Buffer.byteLength(body) > MAX_MCP_REQUEST_BODY_BYTES) {
+    const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)
+    byteLength += buffer.length
+    if (byteLength > MAX_MCP_REQUEST_BODY_BYTES) {
       throw new Error('MCP request body exceeds the 1 MiB limit')
     }
+    chunks.push(buffer)
   }
+  const body = Buffer.concat(chunks).toString('utf8')
   return body.length === 0 ? undefined : JSON.parse(body)
 }
 

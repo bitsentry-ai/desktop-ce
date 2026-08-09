@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { spawn } from 'node:child_process'
+import { Agent, request as createHttpRequest } from 'node:http'
 import {
   HostMcpServerService,
 } from '@bitsentry-ce/coding-agents/host-mcp-server.service'
@@ -97,22 +98,85 @@ async function readMcpResponse(response: Response): Promise<unknown> {
 }
 
 async function requestThroughShim(endpoint: HostMcpEndpoint, body: Record<string, unknown>): Promise<unknown> {
+  const result = await runShim(endpoint, [body])
+  return result.messages[0]
+}
+
+async function runShim(
+  endpoint: HostMcpEndpoint,
+  bodies: Record<string, unknown>[],
+): Promise<{ messages: unknown[]; stderr: string }> {
   return await new Promise((resolve, reject) => {
     const child = spawn(endpoint.command, endpoint.args, {
       env: { ...process.env, ...endpoint.env },
       stdio: ['pipe', 'pipe', 'pipe'],
     })
+    let stdout = ''
     let stderr = ''
+    child.stdout.on('data', (chunk: Buffer) => { stdout += chunk.toString() })
     child.stderr.on('data', (chunk: Buffer) => { stderr += chunk.toString() })
-    child.stdout.once('data', (chunk: Buffer) => {
-      child.kill()
-      resolve(JSON.parse(chunk.toString()))
-    })
     child.once('error', reject)
     child.once('close', (code) => {
-      if (code !== 0 && code !== null) reject(new Error(stderr || `Shim exited with ${String(code)}`))
+      if (code !== 0 && code !== null) {
+        reject(new Error(stderr || `Shim exited with ${String(code)}`))
+        return
+      }
+      resolve({
+        messages: stdout.split('\n').filter((line) => line.length > 0).map((line) => JSON.parse(line)),
+        stderr,
+      })
     })
-    child.stdin.write(`${JSON.stringify(body)}\n`)
+    child.stdin.end(bodies.map((body) => `${JSON.stringify(body)}\n`).join(''))
+  })
+}
+
+async function requestInChunks(endpoint: HostMcpEndpoint, body: Buffer, splitAt: number): Promise<number> {
+  const url = new URL(endpoint.url)
+  return await new Promise((resolve, reject) => {
+    const clientRequest = createHttpRequest({
+      hostname: url.hostname,
+      port: url.port,
+      path: url.pathname,
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${endpoint.token}`,
+        'content-type': 'application/json',
+        accept: 'application/json, text/event-stream',
+        'mcp-protocol-version': MCP_PROTOCOL_VERSION,
+        'mcp-method': 'tools/list',
+      },
+    }, (response) => {
+      response.resume()
+      response.once('end', () => resolve(response.statusCode ?? 0))
+    })
+    clientRequest.once('error', reject)
+    clientRequest.write(body.subarray(0, splitAt))
+    clientRequest.end(body.subarray(splitAt))
+  })
+}
+
+async function openKeepAliveConnection(endpoint: HostMcpEndpoint, agent: Agent): Promise<void> {
+  const url = new URL(endpoint.url)
+  await new Promise<void>((resolve, reject) => {
+    const clientRequest = createHttpRequest({
+      hostname: url.hostname,
+      port: url.port,
+      path: url.pathname,
+      method: 'POST',
+      agent,
+      headers: {
+        authorization: `Bearer ${endpoint.token}`,
+        'content-type': 'application/json',
+        accept: 'application/json, text/event-stream',
+        'mcp-protocol-version': MCP_PROTOCOL_VERSION,
+        'mcp-method': 'tools/list',
+      },
+    }, (response) => {
+      response.resume()
+      response.once('end', resolve)
+    })
+    clientRequest.once('error', reject)
+    clientRequest.end(JSON.stringify(modernMcpRequest({ jsonrpc: '2.0', id: 1, method: 'tools/list' }, endpoint.contextId)))
   })
 }
 
@@ -239,6 +303,28 @@ describe('HostMcpServerService', () => {
       id: 8,
       error: expect.objectContaining({ code: expect.any(Number) }),
     })
+  })
+
+  it('decodes multibyte request bodies split across TCP chunks', async () => {
+    const server = new HostMcpServerService()
+    servers.push(server)
+    const endpoint = await server.createSession(createContext())
+    const body = Buffer.from(JSON.stringify({
+      jsonrpc: '2.0',
+      id: 11,
+      method: 'tools/list',
+      params: {
+        _meta: {
+          'io.modelcontextprotocol/protocolVersion': MCP_PROTOCOL_VERSION,
+          'io.modelcontextprotocol/clientInfo': { name: 'bitsentry-😀-client', version: '1.0.0' },
+          'io.modelcontextprotocol/clientCapabilities': {},
+        },
+      },
+    }))
+    const emojiStart = body.indexOf(Buffer.from('😀'))
+
+    expect(emojiStart).toBeGreaterThanOrEqual(0)
+    await expect(requestInChunks(endpoint, body, emojiStart + 2)).resolves.toBe(200)
   })
 
   it('gives each endpoint a distinct scoped token', async () => {
