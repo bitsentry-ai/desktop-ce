@@ -173,7 +173,7 @@ export interface VerifyDiagnosisResponse {
   entryId: number;
   newState: DiagnosisStateValue;
   verificationText: string;
-  mcpToolsUsed: string[];
+  evidenceToolsUsed: string[];
   verificationPassed: boolean;
   providerUsed?: DiagnosisLlmProviderKey;
   modelUsed?: string;

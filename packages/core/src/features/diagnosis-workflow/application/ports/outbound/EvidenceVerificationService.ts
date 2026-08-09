@@ -1,11 +1,11 @@
 import type { DiagnosisLlmProviderKey } from "../../../../diagnosis/contracts";
 
 /**
- * Outbound Port: MCPService
- * Interface for MCP-based verification
+ * Outbound Port: EvidenceVerificationService
+ * Interface for evidence-backed diagnosis verification.
  */
 
-export interface MCPVerificationRequest {
+export interface EvidenceVerificationRequest {
   entryId?: number;
   entryIndex?: string;
   ruleId?: string;
@@ -22,7 +22,7 @@ export interface MCPVerificationRequest {
   llmModel?: string;
 }
 
-export interface MCPVerificationResult {
+export interface EvidenceVerificationResult {
   verificationText: string;
   toolsUsed: string[];
   passed: boolean;
@@ -34,17 +34,17 @@ export interface MCPVerificationResult {
 }
 
 /** Internal operation context; it is not serialized with verification input. */
-export interface MCPVerificationOperationOptions {
+export interface EvidenceVerificationOperationOptions {
   signal?: AbortSignal;
   executionId?: string;
 }
 
-export interface MCPService {
+export interface EvidenceVerificationService {
   /**
-   * Verifies a diagnosis using MCP tools
+   * Verifies a diagnosis with configured evidence sources.
    */
   verify(
-    request: MCPVerificationRequest,
-    options?: MCPVerificationOperationOptions,
-  ): Promise<MCPVerificationResult>;
+    request: EvidenceVerificationRequest,
+    options?: EvidenceVerificationOperationOptions,
+  ): Promise<EvidenceVerificationResult>;
 }

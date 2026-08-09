@@ -3,7 +3,7 @@ import { VerifyDiagnosisUseCaseImpl } from "../application/use-cases/VerifyDiagn
 import type {
   DiagnosisRepository,
   LLMService,
-  MCPService,
+  EvidenceVerificationService,
   TelemetryEntryData,
   TelemetryQueryService,
 } from "../application/ports/outbound";
@@ -84,7 +84,7 @@ it("runs the diagnosis and verification smoke workflow", async () => {
     getDebugInfo: () => Promise.resolve(null),
   };
 
-  const failingMcpService: MCPService = {
+  const failingEvidenceVerificationService: EvidenceVerificationService = {
     verify: () =>
       Promise.resolve({
         verificationText: "Evidence is insufficient",
@@ -96,7 +96,7 @@ it("runs the diagnosis and verification smoke workflow", async () => {
   const verificationResult = await new VerifyDiagnosisUseCaseImpl(
     verificationRepository,
     telemetryQueryService,
-    failingMcpService,
+    failingEvidenceVerificationService,
   ).execute({ entryId: 12 });
 
   assert(
