@@ -6,9 +6,9 @@ import type {
 import type { DiagnosisRepository } from "../ports/outbound/DiagnosisRepository";
 import type { TelemetryQueryService } from "../ports/outbound/TelemetryQueryService";
 import type {
-  MCPService,
-  MCPVerificationResult,
-} from "../ports/outbound/MCPService";
+  EvidenceVerificationService,
+  EvidenceVerificationResult,
+} from "../ports/outbound/EvidenceVerificationService";
 import type { TelemetryEntryData } from "../ports/outbound/TelemetryQueryService";
 import type { DiagnosisRecord } from "../../domain/entities/DiagnosisRecord";
 import {
@@ -19,18 +19,18 @@ import {
   EntryNotFoundError,
   DiagnosisNotFoundError,
   WrongStateError,
-  MCPServiceError,
+  EvidenceVerificationServiceError,
 } from "../../domain/errors/DiagnosisError";
 
 /**
  * Application Service: VerifyDiagnosisUseCaseImpl
- * Verifies a diagnosis using MCP tools
+ * Verifies a diagnosis using configured evidence sources.
  */
 export class VerifyDiagnosisUseCaseImpl implements VerifyDiagnosisUseCase {
   constructor(
     private readonly diagnosisRepository: DiagnosisRepository,
     private readonly telemetryQueryService: TelemetryQueryService,
-    private readonly mcpService: MCPService,
+    private readonly evidenceVerificationService: EvidenceVerificationService,
   ) {}
 
   async execute(input: VerifyDiagnosisInput): Promise<VerifyDiagnosisOutput> {
@@ -55,7 +55,7 @@ export class VerifyDiagnosisUseCaseImpl implements VerifyDiagnosisUseCase {
     if (diagnosisText === undefined || diagnosisText.length === 0) {
       const stateTextsDebug = JSON.stringify(diagnosisRecord.stateTexts);
       const currentState = diagnosisRecord.currentState.value();
-      throw new MCPServiceError(
+      throw new EvidenceVerificationServiceError(
         `No diagnose text found in diagnosis record (entryId=${String(input.entryId)}). ` +
           `Current state: '${currentState}'. ` +
           `State texts: ${stateTextsDebug}. ` +
@@ -63,8 +63,8 @@ export class VerifyDiagnosisUseCaseImpl implements VerifyDiagnosisUseCase {
       );
     }
 
-    // 5. Run MCP verification
-    const verificationResult = await this.verifyWithMcp(
+    // 5. Run evidence verification
+    const verificationResult = await this.verifyWithEvidence(
       input,
       entry,
       diagnosisText,
@@ -81,7 +81,7 @@ export class VerifyDiagnosisUseCaseImpl implements VerifyDiagnosisUseCase {
       operation: "verify",
       text: verificationResult.verificationText,
       metadata: {
-        mcp_tools_used: verificationResult.toolsUsed,
+        evidence_tools_used: verificationResult.toolsUsed,
         verification_passed: verificationResult.passed,
         verification_method: verificationResult.verificationMethod,
         evidence_sources_used: verificationResult.evidenceSourcesUsed,
@@ -99,7 +99,7 @@ export class VerifyDiagnosisUseCaseImpl implements VerifyDiagnosisUseCase {
       entryId: input.entryId,
       newState,
       verificationText: verificationResult.verificationText,
-      mcpToolsUsed: verificationResult.toolsUsed,
+      evidenceToolsUsed: verificationResult.toolsUsed,
       verificationPassed: verificationResult.passed,
       verificationMethod: verificationResult.verificationMethod,
       evidenceSourcesUsed: verificationResult.evidenceSourcesUsed,
@@ -134,13 +134,13 @@ export class VerifyDiagnosisUseCaseImpl implements VerifyDiagnosisUseCase {
     );
   }
 
-  private async verifyWithMcp(
+  private async verifyWithEvidence(
     input: VerifyDiagnosisInput,
     entry: TelemetryEntryData,
     diagnosisText: string,
-  ): Promise<MCPVerificationResult> {
+  ): Promise<EvidenceVerificationResult> {
     try {
-      return await this.mcpService.verify({
+      return await this.evidenceVerificationService.verify({
         entryId: entry.id,
         entryIndex: entry.entryIndex,
         ruleId: entry.ruleId,
@@ -157,14 +157,14 @@ export class VerifyDiagnosisUseCaseImpl implements VerifyDiagnosisUseCase {
         llmModel: input.llmModel,
       });
     } catch (error) {
-      if (error instanceof MCPServiceError) {
+      if (error instanceof EvidenceVerificationServiceError) {
         throw error;
       }
-      throw new MCPServiceError(this.mcpErrorMessage(error));
+      throw new EvidenceVerificationServiceError(this.evidenceErrorMessage(error));
     }
   }
 
-  private mcpErrorMessage(error: unknown): string {
+  private evidenceErrorMessage(error: unknown): string {
     if (error instanceof Error) return error.message;
     return "unknown error";
   }

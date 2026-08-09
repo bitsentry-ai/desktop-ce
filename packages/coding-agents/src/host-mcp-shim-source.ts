@@ -12,34 +12,153 @@ const readline = require('node:readline')
 
 const url = process.env.BITSENTRY_MCP_URL
 const token = process.env.BITSENTRY_MCP_TOKEN
+const contextId = process.env.BITSENTRY_MCP_CONTEXT_ID
+const protocolVersion = '2026-07-28'
+const legacyProtocolVersion = '2025-11-25'
+const requestTimeoutMs = 10_000
+const clientInfo = { name: 'bitsentry-host-mcp-legacy-shim', version: '1.0.0' }
+const clientCapabilities = {}
 
-if (!url || !token) {
-  process.stderr.write('BITSENTRY_MCP_URL and BITSENTRY_MCP_TOKEN are required.\\n')
+function isRecord(value) {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
+}
+
+function parseResponse(response, body) {
+  const messages = response.headers.get('content-type')?.includes('text/event-stream')
+    ? body.split('\\n').filter((entry) => entry.startsWith('data:')).map((entry) => entry.slice('data:'.length).trim())
+    : [body]
+  return messages.filter((message) => message.length > 0).map((message) => JSON.parse(message))
+}
+
+function modernEnvelope(legacyMeta) {
+  const traceMeta = isRecord(legacyMeta)
+    ? Object.fromEntries(Object.entries(legacyMeta).filter(([key]) => key === 'traceparent' || key === 'tracestate' || key === 'baggage' || key === 'progressToken'))
+    : {}
+  return {
+    ...traceMeta,
+    'io.modelcontextprotocol/protocolVersion': protocolVersion,
+    'io.modelcontextprotocol/clientInfo': clientInfo,
+    'io.modelcontextprotocol/clientCapabilities': clientCapabilities,
+  }
+}
+
+function modernRequest(message) {
+  const legacyParams = isRecord(message.params) ? message.params : {}
+  const params = {
+    ...legacyParams,
+    _meta: modernEnvelope(legacyParams._meta),
+  }
+  if (message.method === 'tools/call') {
+    const argumentsValue = isRecord(params.arguments) ? params.arguments : {}
+    params.arguments = {
+      ...argumentsValue,
+      ...(argumentsValue.contextId === undefined ? { contextId } : {}),
+    }
+  }
+  const headers = {
+    authorization: \`Bearer \${token}\`,
+    'content-type': 'application/json',
+    accept: 'application/json, text/event-stream',
+    'mcp-protocol-version': protocolVersion,
+    'mcp-method': message.method,
+  }
+  if (typeof params.name === 'string') headers['mcp-name'] = params.name
+  return {
+    headers,
+    body: JSON.stringify({ ...message, params }),
+  }
+}
+
+async function sendModernRequest(message) {
+  const translated = modernRequest(message)
+  const abortController = new AbortController()
+  const timeout = setTimeout(() => abortController.abort(), requestTimeoutMs)
+  try {
+    const response = await fetch(url, { method: 'POST', ...translated, signal: abortController.signal })
+    const body = await response.text()
+    if (!response.ok) {
+      throw new Error(\`Host MCP request failed with status \${response.status}: \${body || response.statusText}\`)
+    }
+    return parseResponse(response, body)
+  } finally {
+    clearTimeout(timeout)
+  }
+}
+
+let discovery
+
+async function discover() {
+  if (discovery === undefined) {
+    const candidate = (async () => {
+      const [response] = await sendModernRequest({ jsonrpc: '2.0', id: 'bitsentry-discover', method: 'server/discover' })
+      if (response?.error !== undefined || response?.result === undefined) {
+        throw new Error(response?.error?.message ?? 'Stateless MCP discovery failed')
+      }
+      return response.result
+    })()
+    discovery = candidate
+    try {
+      return await candidate
+    } catch (error) {
+      if (discovery === candidate) discovery = undefined
+      throw error
+    }
+  }
+  return await discovery
+}
+
+async function handleLegacyRequest(message) {
+  if (message.method === 'notifications/initialized') return []
+  if (message.method === 'initialize') {
+    const result = await discover()
+    return [{
+      jsonrpc: '2.0',
+      id: message.id ?? null,
+      result: {
+        protocolVersion: typeof message.params?.protocolVersion === 'string'
+          ? message.params.protocolVersion
+          : legacyProtocolVersion,
+        capabilities: result.capabilities,
+        serverInfo: { name: 'bitsentry-host-tools', version: '1.0.0' },
+        ...(typeof result.instructions === 'string' ? { instructions: result.instructions } : {}),
+      },
+    }]
+  }
+  return await sendModernRequest(message)
+}
+
+if (!url || !token || !contextId) {
+  process.stderr.write('BITSENTRY_MCP_URL, BITSENTRY_MCP_TOKEN, and BITSENTRY_MCP_CONTEXT_ID are required.\\n')
   process.exitCode = 1
 } else {
   const input = readline.createInterface({ input: process.stdin, crlfDelay: Infinity })
-  input.on('line', async (line) => {
-    try {
-      const response = await fetch(url, {
-        method: 'POST',
-        headers: {
-          authorization: \`Bearer \${token}\`,
-          'content-type': 'application/json',
-          accept: 'application/json, text/event-stream',
-        },
-        body: line,
-      })
-      const body = await response.text()
-      const messages = response.headers.get('content-type')?.includes('text/event-stream')
-        ? body.split('\\n').filter((entry) => entry.startsWith('data:')).map((entry) => entry.slice('data:'.length).trim())
-        : [body]
-      for (const message of messages) {
-        if (message.length > 0) process.stdout.write(\`\${message}\\n\`)
-      }
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error)
-      process.stdout.write(\`\${JSON.stringify({ jsonrpc: '2.0', error: { code: -32000, message }, id: null })}\\n\`)
+  ;(async () => {
+    let stdout = Promise.resolve()
+    const pending = new Set()
+    const writeMessage = async (message) => {
+      stdout = stdout.then(() => new Promise((resolve, reject) => {
+        process.stdout.write(\`\${JSON.stringify(message)}\\n\`, (error) => error ? reject(error) : resolve())
+      }))
+      await stdout
     }
-  })
+    const handleLine = async (line) => {
+      let request
+      try {
+        request = JSON.parse(line)
+        const messages = await handleLegacyRequest(request)
+        for (const message of messages) await writeMessage(message)
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error)
+        const id = isRecord(request) && request.id !== undefined ? request.id : null
+        await writeMessage({ jsonrpc: '2.0', error: { code: -32000, message }, id })
+      }
+    }
+    for await (const line of input) {
+      if (line.trim().length === 0) continue
+      const task = handleLine(line).finally(() => pending.delete(task))
+      pending.add(task)
+    }
+    await Promise.allSettled(pending)
+  })()
 }
 `

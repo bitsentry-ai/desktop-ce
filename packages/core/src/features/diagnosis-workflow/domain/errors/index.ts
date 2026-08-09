@@ -5,6 +5,6 @@ export {
   InvalidStateTransitionError,
   WrongStateError,
   LLMServiceError,
-  MCPServiceError,
+  EvidenceVerificationServiceError,
   ConfigurationError,
 } from "./DiagnosisError";

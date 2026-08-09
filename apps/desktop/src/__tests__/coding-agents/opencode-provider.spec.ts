@@ -103,10 +103,15 @@ describe('executeOpenCode', () => {
       mcpEndpoint: {
         url: 'http://127.0.0.1:40123/mcp',
         token: 'token',
+        contextId: 'context-opencode',
         expiresAt: Date.now() + 60_000,
         command: process.execPath,
         args: ['/tmp/host-mcp-shim.cjs'], // eslint-disable-line sonarjs/publicly-writable-directories -- Mock MCP shim argument; the test never executes this path.
-        env: { BITSENTRY_MCP_URL: 'http://127.0.0.1:40123/mcp', BITSENTRY_MCP_TOKEN: 'token' },
+        env: {
+          BITSENTRY_MCP_URL: 'http://127.0.0.1:40123/mcp',
+          BITSENTRY_MCP_TOKEN: 'token',
+          BITSENTRY_MCP_CONTEXT_ID: 'context-opencode',
+        },
         agentSessionId: 'agent-session-opencode',
       },
     })
@@ -119,6 +124,11 @@ describe('executeOpenCode', () => {
     ]
     const configPath = spawnOptions.env.OPENCODE_CONFIG
     expect(configPath).toBeDefined()
+    expect(spawnOptions.env).toMatchObject({
+      BITSENTRY_MCP_URL: 'http://127.0.0.1:40123/mcp',
+      BITSENTRY_MCP_TOKEN: 'token',
+      BITSENTRY_MCP_CONTEXT_ID: 'context-opencode',
+    })
     const [, args] = mocks.spawn.mock.calls[0] as [string, string[]]
     const scope = args.at(-1) ?? ''
     for (const hostTool of getHostTools()) {
@@ -133,6 +143,7 @@ describe('executeOpenCode', () => {
         },
       },
     })
+    expect(await readFile(configPath!, 'utf8')).not.toContain('BITSENTRY_MCP_TOKEN')
     const config = JSON.parse(await readFile(configPath!, 'utf8')) as {
       permission: Record<string, string>
     }

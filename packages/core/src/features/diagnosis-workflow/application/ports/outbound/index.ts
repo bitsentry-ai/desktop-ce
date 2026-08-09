@@ -16,7 +16,7 @@ export type {
   LLMRecommendationResult,
 } from "./LLMService";
 export type {
-  MCPService,
-  MCPVerificationRequest,
-  MCPVerificationResult,
-} from "./MCPService";
+  EvidenceVerificationService,
+  EvidenceVerificationRequest,
+  EvidenceVerificationResult,
+} from "./EvidenceVerificationService";

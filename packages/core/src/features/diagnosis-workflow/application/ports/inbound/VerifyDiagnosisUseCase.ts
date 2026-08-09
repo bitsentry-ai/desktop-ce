@@ -3,7 +3,7 @@ import type { DiagnosisLlmProviderKey } from "../../../../diagnosis/contracts";
 
 /**
  * Inbound Port: VerifyDiagnosisUseCase
- * Interface for verifying a diagnosis using MCP tools
+ * Interface for verifying a diagnosis using configured evidence sources.
  */
 
 export interface VerifyDiagnosisInput {
@@ -16,7 +16,7 @@ export interface VerifyDiagnosisOutput {
   entryId: number;
   newState: DiagnosisStateValue;
   verificationText: string;
-  mcpToolsUsed: string[];
+  evidenceToolsUsed: string[];
   verificationPassed: boolean;
   verificationMethod?: string;
   evidenceSourcesUsed?: string[];

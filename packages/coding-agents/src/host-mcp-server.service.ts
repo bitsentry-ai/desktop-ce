@@ -4,23 +4,25 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { HOST_MCP_SHIM_FILE_NAME, HOST_MCP_SHIM_SOURCE } from './host-mcp-shim-source.js'
+import { createHostToolCore } from './host-tool-core.js'
 import { codingAgentsLogger as log } from './logger.js'
-import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
-import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js'
+import { toNodeHandler } from '@modelcontextprotocol/node'
+import { createMcpHandler, McpServer } from '@modelcontextprotocol/server'
 import {
-  executeHostTool,
-  getHostTools,
   type HostToolContext,
   type HostToolEvent,
 } from '@bitsentry-ce/core/features/agent-runtime'
 
 const HOST_MCP_PATH = '/mcp'
 const DEFAULT_SESSION_TTL_MS = 15 * 60 * 1000
+const DEFAULT_SESSION_SWEEP_INTERVAL_MS = 60 * 1000
+const MAX_MCP_REQUEST_BODY_BYTES = 1024 * 1024
 export const HOST_MCP_SERVER_NAME = 'bitsentry'
 
 export interface HostMcpEndpoint {
   url: string
   token: string
+  contextId: string
   expiresAt: number
   command: string
   args: string[]
@@ -32,9 +34,12 @@ export interface HostMcpEndpoint {
 }
 
 type HostMcpSession = {
+  contextId: string
   context: HostToolContext
   expiresAt: number
+  ttlMs: number
   ledger: HostToolEvent[]
+  activeRequests: number
 }
 
 function sendJson(response: ServerResponse, statusCode: number, payload: Record<string, unknown>): void {
@@ -42,8 +47,7 @@ function sendJson(response: ServerResponse, statusCode: number, payload: Record<
   response.end(JSON.stringify(payload))
 }
 
-function readBearerToken(request: IncomingMessage): string | undefined {
-  const authorization = request.headers.authorization
+function readBearerToken(authorization: string | undefined): string | undefined {
   return authorization?.startsWith('Bearer ') ? authorization.slice('Bearer '.length) : undefined
 }
 
@@ -54,50 +58,26 @@ function hasMatchingToken(receivedToken: string | undefined, expectedToken: stri
   return received.length === expected.length && timingSafeEqual(received, expected)
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === 'object' && !Array.isArray(value)
-}
-
-function normalizeMcpRequestArguments(payload: unknown): unknown {
-  const normalizeMessage = (message: unknown): unknown => {
-    if (!isRecord(message) || message.method !== 'tools/call' || !isRecord(message.params)) {
-      return message
-    }
-    if (message.params.arguments !== null && message.params.arguments !== undefined) {
-      return message
-    }
-    return { ...message, params: { ...message.params, arguments: {} } }
-  }
-  return Array.isArray(payload) ? payload.map(normalizeMessage) : normalizeMessage(payload)
-}
-
 async function readMcpRequestBody(request: IncomingMessage): Promise<unknown> {
   if (request.method !== 'POST') return undefined
   let body = ''
-  for await (const chunk of request) body += chunk.toString()
-  return body.length === 0 ? undefined : normalizeMcpRequestArguments(JSON.parse(body))
+  for await (const chunk of request) {
+    body += chunk.toString()
+    if (Buffer.byteLength(body) > MAX_MCP_REQUEST_BODY_BYTES) {
+      throw new Error('MCP request body exceeds the 1 MiB limit')
+    }
+  }
+  return body.length === 0 ? undefined : JSON.parse(body)
 }
 
 function createSessionServer(session: HostMcpSession): McpServer {
   const server = new McpServer({ name: 'bitsentry-host-tools', version: '1.0.0' })
-  for (const hostTool of getHostTools()) {
+  const hostTools = createHostToolCore(session.context, (event) => session.ledger.push(event), session.contextId)
+  for (const hostTool of hostTools.tools) {
     server.registerTool(hostTool.name, {
       description: hostTool.description,
-      inputSchema: hostTool.argsSchema.shape,
-    }, async (args) => {
-      const result = await executeHostTool({
-        ...session.context,
-        onToolEvent: (event) => {
-          session.ledger.push(event)
-          session.context.onToolEvent?.(event)
-        },
-      }, hostTool.name, args)
-      const text = result?.error ?? result?.output ?? 'Host tool completed without output.'
-      return {
-        content: [{ type: 'text' as const, text }],
-        ...(result?.error !== undefined ? { isError: true } : {}),
-      }
-    })
+      inputSchema: hostTools.inputSchemaFor(hostTool),
+    }, async (args) => await hostTools.call(hostTool.name, args))
   }
   return server
 }
@@ -108,31 +88,81 @@ export class HostMcpServerService {
   private baseUrl: string | undefined
   private shimDirectory: string | undefined
   private shimPath: string | undefined
+  private shimPromise: Promise<string> | undefined
+  private sessionSweepTimer: ReturnType<typeof setInterval> | undefined
+  private startPromise: Promise<void> | undefined
+  private readonly mcpHandler = createMcpHandler(({ requestInfo }) => {
+    const session = this.findSession(readBearerToken(requestInfo?.headers.get('authorization') ?? undefined))
+    if (session === undefined) throw new Error('Authenticated host MCP request lost its scoped context')
+    return createSessionServer(session)
+  }, {
+    legacy: 'reject',
+    onerror: (error) => log.warn('[host-mcp] stateless request failed', { reason: error.message }),
+  })
+  private readonly nodeMcpHandler = toNodeHandler(this.mcpHandler, {
+    onerror: (error) => log.warn('[host-mcp] node transport failed', { reason: error.message }),
+  })
+
+  constructor(private readonly sessionSweepIntervalMs = DEFAULT_SESSION_SWEEP_INTERVAL_MS) {}
 
   async start(): Promise<void> {
-    await this.ensureShimFile()
-    if (this.httpServer !== undefined) return
-    this.httpServer = createServer((request, response) => { void this.handleRequest(request, response) })
-    await new Promise<void>((resolve, reject) => {
-      this.httpServer?.once('error', reject)
-      this.httpServer?.listen(0, '127.0.0.1', () => {
-        this.httpServer?.off('error', reject)
-        resolve()
+    if (this.httpServer !== undefined && this.baseUrl !== undefined) return
+    if (this.startPromise !== undefined) return await this.startPromise
+    this.startPromise = (async () => {
+      await this.ensureShimFile()
+      const server = createServer((request, response) => {
+        void this.handleRequest(request, response).catch((error: unknown) => {
+          log.warn('[host-mcp] request handler failed', {
+            reason: error instanceof Error ? error.message : String(error),
+          })
+          if (!response.writableEnded) sendJson(response, 500, { error: 'Internal server error' })
+        })
       })
-    })
-    const address = this.httpServer.address()
-    if (address === null || typeof address === 'string') throw new Error('Host MCP endpoint did not bind to a TCP port')
-    this.baseUrl = `http://127.0.0.1:${String(address.port)}${HOST_MCP_PATH}`
+      this.httpServer = server
+      try {
+        await new Promise<void>((resolve, reject) => {
+          const onError = (error: Error): void => {
+            server.off('listening', onListening)
+            reject(error)
+          }
+          const onListening = (): void => {
+            server.off('error', onError)
+            resolve()
+          }
+          server.once('error', onError)
+          server.once('listening', onListening)
+          server.listen(0, '127.0.0.1')
+        })
+        this.sessionSweepTimer = setInterval(() => this.pruneExpiredSessions(), this.sessionSweepIntervalMs)
+        this.sessionSweepTimer.unref?.()
+        const address = server.address()
+        if (address === null || typeof address === 'string') throw new Error('Host MCP endpoint did not bind to a TCP port')
+        this.baseUrl = `http://127.0.0.1:${String(address.port)}${HOST_MCP_PATH}`
+      } catch (error) {
+        this.httpServer = undefined
+        this.baseUrl = undefined
+        await new Promise<void>((resolve) => server.close(() => resolve()))
+        throw error
+      }
+    })()
+    try {
+      await this.startPromise
+    } finally {
+      this.startPromise = undefined
+    }
   }
 
   async stop(): Promise<void> {
     this.sessions.clear()
+    if (this.sessionSweepTimer !== undefined) clearInterval(this.sessionSweepTimer)
+    this.sessionSweepTimer = undefined
     const server = this.httpServer
     this.httpServer = undefined
     this.baseUrl = undefined
     const shimDirectory = this.shimDirectory
     this.shimDirectory = undefined
     this.shimPath = undefined
+    this.shimPromise = undefined
     if (shimDirectory !== undefined) {
       await rm(shimDirectory, { recursive: true, force: true })
     }
@@ -145,31 +175,47 @@ export class HostMcpServerService {
   // apps serve code from asar, which external processes cannot execute from).
   private async ensureShimFile(): Promise<string> {
     if (this.shimPath !== undefined) return this.shimPath
-    const directory = await mkdtemp(join(tmpdir(), 'bitsentry-host-mcp-'))
-    const shimPath = join(directory, HOST_MCP_SHIM_FILE_NAME)
-    await writeFile(shimPath, HOST_MCP_SHIM_SOURCE, { mode: 0o600 })
-    this.shimDirectory = directory
-    this.shimPath = shimPath
-    return shimPath
+    if (this.shimPromise !== undefined) return await this.shimPromise
+    this.shimPromise = (async () => {
+      const directory = await mkdtemp(join(tmpdir(), 'bitsentry-host-mcp-'))
+      const shimPath = join(directory, HOST_MCP_SHIM_FILE_NAME)
+      try {
+        await writeFile(shimPath, HOST_MCP_SHIM_SOURCE, { mode: 0o600 })
+        this.shimDirectory = directory
+        this.shimPath = shimPath
+        return shimPath
+      } catch (error) {
+        await rm(directory, { recursive: true, force: true })
+        throw error
+      }
+    })()
+    try {
+      return await this.shimPromise
+    } finally {
+      this.shimPromise = undefined
+    }
   }
 
   async createSession(context: HostToolContext, ttlMs = DEFAULT_SESSION_TTL_MS): Promise<HostMcpEndpoint> {
     await this.start()
     this.pruneExpiredSessions()
     const token = randomBytes(32).toString('base64url')
+    const contextId = randomBytes(16).toString('base64url')
     const expiresAt = Date.now() + ttlMs
-    this.sessions.set(token, { context, expiresAt, ledger: [] })
+    this.sessions.set(token, { contextId, context, expiresAt, ttlMs, ledger: [], activeRequests: 0 })
     if (this.baseUrl === undefined) throw new Error('Host MCP endpoint is not running')
     const shimPath = await this.ensureShimFile()
     return {
       url: this.baseUrl,
       token,
+      contextId,
       expiresAt,
       command: process.execPath,
       args: [shimPath],
       env: {
         BITSENTRY_MCP_URL: this.baseUrl,
         BITSENTRY_MCP_TOKEN: token,
+        BITSENTRY_MCP_CONTEXT_ID: contextId,
         // Inside Electron, process.execPath is the app binary, not node.
         // Without this flag a spawned shim boots a full Electron instance
         // that never speaks MCP on stdio, and the CLI stalls on startup.
@@ -186,9 +232,15 @@ export class HostMcpServerService {
 
   getLedger(token: string): readonly HostToolEvent[] { return this.sessions.get(token)?.ledger ?? [] }
 
+  private findSession(receivedToken: string | undefined): HostMcpSession | undefined {
+    return [...this.sessions.entries()].find(([token]) => hasMatchingToken(receivedToken, token))?.[1]
+  }
+
   private pruneExpiredSessions(): void {
     const now = Date.now()
-    for (const [token, session] of this.sessions) if (session.expiresAt <= now) this.sessions.delete(token)
+    for (const [token, session] of this.sessions) {
+      if (session.activeRequests === 0 && session.expiresAt <= now) this.sessions.delete(token)
+    }
   }
 
   private async handleRequest(request: IncomingMessage, response: ServerResponse): Promise<void> {
@@ -202,8 +254,8 @@ export class HostMcpServerService {
       return sendJson(response, 404, { error: 'Not found' })
     }
     this.pruneExpiredSessions()
-    const receivedToken = readBearerToken(request)
-    const session = [...this.sessions.entries()].find(([token]) => hasMatchingToken(receivedToken, token))?.[1]
+    const receivedToken = readBearerToken(request.headers.authorization)
+    const session = this.findSession(receivedToken)
     if (session === undefined) {
       log.warn('[host-mcp] request rejected', {
         agentSessionId: 'unknown',
@@ -213,14 +265,22 @@ export class HostMcpServerService {
       })
       return sendJson(response, 401, { error: 'Unauthorized' })
     }
-    const server = createSessionServer(session)
-    const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined })
+    session.expiresAt = Date.now() + session.ttlMs
+    session.activeRequests += 1
     try {
-      await server.connect(transport)
       const body = await readMcpRequestBody(request)
-      await transport.handleRequest(request, response, body)
+      await this.nodeMcpHandler(request, response, body)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Invalid MCP request'
+      const statusCode = message === 'MCP request body exceeds the 1 MiB limit' ? 413 : 400
+      sendJson(response, statusCode, {
+        jsonrpc: '2.0',
+        error: { code: -32700, message },
+        id: null,
+      })
     } finally {
-      await server.close()
+      session.activeRequests -= 1
+      this.pruneExpiredSessions()
     }
   }
 }

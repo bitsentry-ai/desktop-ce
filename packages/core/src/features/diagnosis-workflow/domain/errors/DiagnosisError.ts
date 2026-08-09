@@ -61,12 +61,12 @@ export class LLMServiceError extends DiagnosisError {
 }
 
 /**
- * Error thrown when MCP service fails
+ * Error thrown when evidence verification fails
  */
-export class MCPServiceError extends DiagnosisError {
+export class EvidenceVerificationServiceError extends DiagnosisError {
   constructor(message: string) {
-    super(`MCP service error: ${message}`);
-    this.name = "MCPServiceError";
+    super(`Evidence verification service error: ${message}`);
+    this.name = "EvidenceVerificationServiceError";
   }
 }
 
