@@ -549,4 +549,46 @@ describe('HostMcpServerService', () => {
       status: 'completed',
     })
   })
+
+  it('keeps a shim tool call open beyond the short request timeout', async () => {
+    const server = new HostMcpServerService()
+    servers.push(server)
+    const context = createContext()
+    const runningExecution = makeExecution()
+    const completedExecution = makeExecution({
+      status: 'completed',
+      completedAt: '2026-07-31T00:00:11.000Z',
+    })
+    let completeExecution: ((execution: RunbookExecutionRecord) => void) | undefined
+    const completion = new Promise<RunbookExecutionRecord>((resolve) => {
+      completeExecution = resolve
+    })
+    context.session.latestRunbookExecutionId = runningExecution.executionId
+    context.gateway.get = vi.fn().mockResolvedValue(runningExecution)
+    context.gateway.waitForCompletion = vi.fn().mockReturnValue(completion)
+    const endpoint = await server.createSession(context)
+
+    const responsePromise = requestThroughShim(endpoint, {
+      jsonrpc: '2.0',
+      id: 32,
+      method: 'tools/call',
+      params: {
+        name: 'get_runbook_execution',
+        arguments: { waitForCompletion: true },
+      },
+    })
+    await vi.waitFor(() => {
+      expect(context.gateway.waitForCompletion).toHaveBeenCalledOnce()
+    })
+    await new Promise((resolve) => setTimeout(resolve, 10_100))
+    completeExecution?.(completedExecution)
+
+    await expect(responsePromise).resolves.toMatchObject({
+      jsonrpc: '2.0',
+      id: 32,
+      result: {
+        content: [{ text: expect.stringContaining('completed') }],
+      },
+    })
+  }, 15_000)
 })

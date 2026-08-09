@@ -4,6 +4,8 @@
 // package into out/main and a packaged app serves code from an asar archive,
 // which external CLI processes cannot spawn from. The endpoint writes this
 // source to a real file on disk at session start and hands CLIs that path.
+import { RUNBOOK_COMPLETION_WAIT_TIMEOUT_MS } from '@bitsentry-ce/core/features/agent-runtime'
+
 export const HOST_MCP_SHIM_FILE_NAME = 'bitsentry-host-mcp-shim.cjs'
 
 export const HOST_MCP_SHIM_SOURCE = `#!/usr/bin/env node
@@ -15,7 +17,8 @@ const token = process.env.BITSENTRY_MCP_TOKEN
 const contextId = process.env.BITSENTRY_MCP_CONTEXT_ID
 const protocolVersion = '2026-07-28'
 const legacyProtocolVersion = '2025-11-25'
-const requestTimeoutMs = 10_000
+const shortRequestTimeoutMs = 10_000
+const toolCallTimeoutMs = ${RUNBOOK_COMPLETION_WAIT_TIMEOUT_MS + 5_000}
 const clientInfo = { name: 'bitsentry-host-mcp-legacy-shim', version: '1.0.0' }
 const clientCapabilities = {}
 
@@ -69,10 +72,20 @@ function modernRequest(message) {
   }
 }
 
+function requestTimeoutFor(message) {
+  return message.method === 'tools/call' ? toolCallTimeoutMs : shortRequestTimeoutMs
+}
+
+function requestLabel(message) {
+  if (message.method !== 'tools/call') return String(message.method)
+  return typeof message.params?.name === 'string' ? \`tools/call \${message.params.name}\` : 'tools/call'
+}
+
 async function sendModernRequest(message) {
   const translated = modernRequest(message)
   const abortController = new AbortController()
-  const timeout = setTimeout(() => abortController.abort(), requestTimeoutMs)
+  const timeoutMs = requestTimeoutFor(message)
+  const timeout = setTimeout(() => abortController.abort(), timeoutMs)
   try {
     const response = await fetch(url, { method: 'POST', ...translated, signal: abortController.signal })
     const body = await response.text()
@@ -80,6 +93,11 @@ async function sendModernRequest(message) {
       throw new Error(\`Host MCP request failed with status \${response.status}: \${body || response.statusText}\`)
     }
     return parseResponse(response, body)
+  } catch (error) {
+    if (abortController.signal.aborted) {
+      throw new Error(\`Host MCP \${requestLabel(message)} exceeded its \${timeoutMs}ms budget and was aborted\`)
+    }
+    throw error
   } finally {
     clearTimeout(timeout)
   }
