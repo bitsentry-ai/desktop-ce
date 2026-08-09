@@ -391,12 +391,12 @@ describe('HostMcpServerService', () => {
   it('renews a session TTL when an authenticated request is received', async () => {
     const server = new HostMcpServerService(1)
     servers.push(server)
-    const endpoint = await server.createSession(createContext(), 30)
+    const endpoint = await server.createSession(createContext(), 100)
 
-    await new Promise((resolve) => setTimeout(resolve, 20))
+    await new Promise((resolve) => setTimeout(resolve, 50))
     await expect(request(endpoint, { jsonrpc: '2.0', id: 18, method: 'tools/list' }))
       .resolves.toMatchObject({ status: 200 })
-    await new Promise((resolve) => setTimeout(resolve, 20))
+    await new Promise((resolve) => setTimeout(resolve, 70))
 
     await expect(request(endpoint, { jsonrpc: '2.0', id: 19, method: 'tools/list' }))
       .resolves.toMatchObject({ status: 200 })
