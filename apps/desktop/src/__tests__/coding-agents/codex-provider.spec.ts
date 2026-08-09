@@ -179,6 +179,7 @@ describe('Codex provider behavior', () => {
       mcpEndpoint: {
         url: 'http://127.0.0.1:1/mcp',
         token: 'token',
+        contextId: 'context-cancelled',
         expiresAt: Date.now() + 60_000,
         command: 'node',
         args: ['host-mcp-shim.js'],
@@ -208,8 +209,9 @@ describe('Codex provider behavior', () => {
         cwd: mock.cwd,
         abortController: new AbortController(),
         mcpEndpoint: {
-          url: 'http://127.0.0.1:1/mcp',
-          token: 'token',
+        url: 'http://127.0.0.1:1/mcp',
+        token: 'token',
+        contextId: 'context-isolated-home',
           expiresAt: Date.now() + 60_000,
           command: 'node',
           args: ['host-mcp-shim.js'],
