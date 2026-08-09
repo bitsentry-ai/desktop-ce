@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { spawn } from 'node:child_process'
+import { Agent, request as createHttpRequest } from 'node:http'
 import {
   HostMcpServerService,
 } from '@bitsentry-ce/coding-agents/host-mcp-server.service'
@@ -97,22 +98,85 @@ async function readMcpResponse(response: Response): Promise<unknown> {
 }
 
 async function requestThroughShim(endpoint: HostMcpEndpoint, body: Record<string, unknown>): Promise<unknown> {
+  const result = await runShim(endpoint, [body])
+  return result.messages[0]
+}
+
+async function runShim(
+  endpoint: HostMcpEndpoint,
+  bodies: Record<string, unknown>[],
+): Promise<{ messages: unknown[]; stderr: string }> {
   return await new Promise((resolve, reject) => {
     const child = spawn(endpoint.command, endpoint.args, {
       env: { ...process.env, ...endpoint.env },
       stdio: ['pipe', 'pipe', 'pipe'],
     })
+    let stdout = ''
     let stderr = ''
+    child.stdout.on('data', (chunk: Buffer) => { stdout += chunk.toString() })
     child.stderr.on('data', (chunk: Buffer) => { stderr += chunk.toString() })
-    child.stdout.once('data', (chunk: Buffer) => {
-      child.kill()
-      resolve(JSON.parse(chunk.toString()))
-    })
     child.once('error', reject)
     child.once('close', (code) => {
-      if (code !== 0 && code !== null) reject(new Error(stderr || `Shim exited with ${String(code)}`))
+      if (code !== 0 && code !== null) {
+        reject(new Error(stderr || `Shim exited with ${String(code)}`))
+        return
+      }
+      resolve({
+        messages: stdout.split('\n').filter((line) => line.length > 0).map((line) => JSON.parse(line)),
+        stderr,
+      })
     })
-    child.stdin.write(`${JSON.stringify(body)}\n`)
+    child.stdin.end(bodies.map((body) => `${JSON.stringify(body)}\n`).join(''))
+  })
+}
+
+async function requestInChunks(endpoint: HostMcpEndpoint, body: Buffer, splitAt: number): Promise<number> {
+  const url = new URL(endpoint.url)
+  return await new Promise((resolve, reject) => {
+    const clientRequest = createHttpRequest({
+      hostname: url.hostname,
+      port: url.port,
+      path: url.pathname,
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${endpoint.token}`,
+        'content-type': 'application/json',
+        accept: 'application/json, text/event-stream',
+        'mcp-protocol-version': MCP_PROTOCOL_VERSION,
+        'mcp-method': 'tools/list',
+      },
+    }, (response) => {
+      response.resume()
+      response.once('end', () => resolve(response.statusCode ?? 0))
+    })
+    clientRequest.once('error', reject)
+    clientRequest.write(body.subarray(0, splitAt))
+    clientRequest.end(body.subarray(splitAt))
+  })
+}
+
+async function openKeepAliveConnection(endpoint: HostMcpEndpoint, agent: Agent): Promise<void> {
+  const url = new URL(endpoint.url)
+  await new Promise<void>((resolve, reject) => {
+    const clientRequest = createHttpRequest({
+      hostname: url.hostname,
+      port: url.port,
+      path: url.pathname,
+      method: 'POST',
+      agent,
+      headers: {
+        authorization: `Bearer ${endpoint.token}`,
+        'content-type': 'application/json',
+        accept: 'application/json, text/event-stream',
+        'mcp-protocol-version': MCP_PROTOCOL_VERSION,
+        'mcp-method': 'tools/list',
+      },
+    }, (response) => {
+      response.resume()
+      response.once('end', resolve)
+    })
+    clientRequest.once('error', reject)
+    clientRequest.end(JSON.stringify(modernMcpRequest({ jsonrpc: '2.0', id: 1, method: 'tools/list' }, endpoint.contextId)))
   })
 }
 
@@ -241,6 +305,28 @@ describe('HostMcpServerService', () => {
     })
   })
 
+  it('decodes multibyte request bodies split across TCP chunks', async () => {
+    const server = new HostMcpServerService()
+    servers.push(server)
+    const endpoint = await server.createSession(createContext())
+    const body = Buffer.from(JSON.stringify({
+      jsonrpc: '2.0',
+      id: 11,
+      method: 'tools/list',
+      params: {
+        _meta: {
+          'io.modelcontextprotocol/protocolVersion': MCP_PROTOCOL_VERSION,
+          'io.modelcontextprotocol/clientInfo': { name: 'bitsentry-😀-client', version: '1.0.0' },
+          'io.modelcontextprotocol/clientCapabilities': {},
+        },
+      },
+    }))
+    const emojiStart = body.indexOf(Buffer.from('😀'))
+
+    expect(emojiStart).toBeGreaterThanOrEqual(0)
+    await expect(requestInChunks(endpoint, body, emojiStart + 2)).resolves.toBe(200)
+  })
+
   it('gives each endpoint a distinct scoped token', async () => {
     const server = new HostMcpServerService()
     servers.push(server)
@@ -330,6 +416,48 @@ describe('HostMcpServerService', () => {
     })
   })
 
+  it('reports only the supported legacy protocol version during shim initialization', async () => {
+    const server = new HostMcpServerService()
+    servers.push(server)
+    const endpoint = await server.createSession(createContext())
+
+    await expect(requestThroughShim(endpoint, {
+      jsonrpc: '2.0',
+      id: 31,
+      method: 'initialize',
+      params: {
+        protocolVersion: '2099-01-01',
+        capabilities: {},
+        clientInfo: { name: 'unsupported-legacy-cli', version: '1.0.0' },
+      },
+    })).resolves.toMatchObject({
+      jsonrpc: '2.0',
+      id: 31,
+      result: {
+        protocolVersion: '2025-11-25',
+        capabilities: { tools: expect.any(Object) },
+      },
+    })
+  })
+
+  it('does not respond to failed shim notifications', async () => {
+    const server = new HostMcpServerService()
+    servers.push(server)
+    const endpoint = await server.createSession(createContext())
+    const unavailableEndpoint = {
+      ...endpoint,
+      env: { ...endpoint.env, BITSENTRY_MCP_URL: 'http://127.0.0.1:1/mcp' },
+    }
+
+    await expect(runShim(unavailableEndpoint, [{
+      jsonrpc: '2.0',
+      method: 'notifications/cancelled',
+    }])).resolves.toMatchObject({
+      messages: [],
+      stderr: expect.stringContaining('notification failed'),
+    })
+  })
+
   it('returns JSON-RPC errors with the original id when the host is unavailable', async () => {
     const server = new HostMcpServerService()
     servers.push(server)
@@ -402,6 +530,22 @@ describe('HostMcpServerService', () => {
       .resolves.toMatchObject({ status: 200 })
   })
 
+  it('stops promptly when a client keeps its HTTP connection open', async () => {
+    const server = new HostMcpServerService()
+    const endpoint = await server.createSession(createContext())
+    const agent = new Agent({ keepAlive: true })
+
+    try {
+      await openKeepAliveConnection(endpoint, agent)
+      await expect(Promise.race([
+        server.stop(),
+        new Promise<never>((_, reject) => setTimeout(() => reject(new Error('Host MCP stop timed out')), 200)),
+      ])).resolves.toBeUndefined()
+    } finally {
+      agent.destroy()
+    }
+  })
+
   it('keeps a streamable get_runbook_execution request open until the gateway completes', async () => {
     const server = new HostMcpServerService()
     servers.push(server)
@@ -447,4 +591,46 @@ describe('HostMcpServerService', () => {
       status: 'completed',
     })
   })
+
+  it('keeps a shim tool call open beyond the short request timeout', async () => {
+    const server = new HostMcpServerService()
+    servers.push(server)
+    const context = createContext()
+    const runningExecution = makeExecution()
+    const completedExecution = makeExecution({
+      status: 'completed',
+      completedAt: '2026-07-31T00:00:11.000Z',
+    })
+    let completeExecution: ((execution: RunbookExecutionRecord) => void) | undefined
+    const completion = new Promise<RunbookExecutionRecord>((resolve) => {
+      completeExecution = resolve
+    })
+    context.session.latestRunbookExecutionId = runningExecution.executionId
+    context.gateway.get = vi.fn().mockResolvedValue(runningExecution)
+    context.gateway.waitForCompletion = vi.fn().mockReturnValue(completion)
+    const endpoint = await server.createSession(context)
+
+    const responsePromise = requestThroughShim(endpoint, {
+      jsonrpc: '2.0',
+      id: 32,
+      method: 'tools/call',
+      params: {
+        name: 'get_runbook_execution',
+        arguments: { waitForCompletion: true },
+      },
+    })
+    await vi.waitFor(() => {
+      expect(context.gateway.waitForCompletion).toHaveBeenCalledOnce()
+    })
+    await new Promise((resolve) => setTimeout(resolve, 10_100))
+    completeExecution?.(completedExecution)
+
+    await expect(responsePromise).resolves.toMatchObject({
+      jsonrpc: '2.0',
+      id: 32,
+      result: {
+        content: [{ text: expect.stringContaining('completed') }],
+      },
+    })
+  }, 15_000)
 })

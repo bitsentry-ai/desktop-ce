@@ -60,13 +60,17 @@ function hasMatchingToken(receivedToken: string | undefined, expectedToken: stri
 
 async function readMcpRequestBody(request: IncomingMessage): Promise<unknown> {
   if (request.method !== 'POST') return undefined
-  let body = ''
+  const chunks: Buffer[] = []
+  let byteLength = 0
   for await (const chunk of request) {
-    body += chunk.toString()
-    if (Buffer.byteLength(body) > MAX_MCP_REQUEST_BODY_BYTES) {
+    const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)
+    byteLength += buffer.length
+    if (byteLength > MAX_MCP_REQUEST_BODY_BYTES) {
       throw new Error('MCP request body exceeds the 1 MiB limit')
     }
+    chunks.push(buffer)
   }
+  const body = Buffer.concat(chunks).toString('utf8')
   return body.length === 0 ? undefined : JSON.parse(body)
 }
 
@@ -118,6 +122,7 @@ export class HostMcpServerService {
           if (!response.writableEnded) sendJson(response, 500, { error: 'Internal server error' })
         })
       })
+      server.keepAliveTimeout = 1_000
       this.httpServer = server
       try {
         await new Promise<void>((resolve, reject) => {
@@ -167,7 +172,11 @@ export class HostMcpServerService {
       await rm(shimDirectory, { recursive: true, force: true })
     }
     if (server === undefined) return
-    await new Promise<void>((resolve, reject) => server.close((error) => error === undefined ? resolve() : reject(error)))
+    const closePromise = new Promise<void>((resolve, reject) => {
+      server.close((error) => error === undefined ? resolve() : reject(error))
+    })
+    server.closeAllConnections()
+    await closePromise
   }
 
   // CLIs spawn the shim themselves, so it must exist as a plain file outside
