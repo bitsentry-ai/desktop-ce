@@ -22,6 +22,7 @@ export const HOST_MCP_SERVER_NAME = 'bitsentry'
 export interface HostMcpEndpoint {
   url: string
   token: string
+  contextId: string
   expiresAt: number
   command: string
   args: string[]
@@ -33,6 +34,7 @@ export interface HostMcpEndpoint {
 }
 
 type HostMcpSession = {
+  contextId: string
   context: HostToolContext
   expiresAt: number
   ledger: HostToolEvent[]
@@ -80,11 +82,11 @@ async function readMcpRequestBody(request: IncomingMessage): Promise<unknown> {
 
 function createSessionServer(session: HostMcpSession): McpServer {
   const server = new McpServer({ name: 'bitsentry-host-tools', version: '1.0.0' })
-  const hostTools = createHostToolCore(session.context, (event) => session.ledger.push(event))
+  const hostTools = createHostToolCore(session.context, (event) => session.ledger.push(event), session.contextId)
   for (const hostTool of hostTools.tools) {
     server.registerTool(hostTool.name, {
       description: hostTool.description,
-      inputSchema: z.union([hostTool.argsSchema, z.null()]),
+      inputSchema: z.union([hostTools.inputSchemaFor(hostTool), z.null()]),
     }, async (args) => await hostTools.call(hostTool.name, args))
   }
   return server
@@ -163,19 +165,22 @@ export class HostMcpServerService {
     await this.start()
     this.pruneExpiredSessions()
     const token = randomBytes(32).toString('base64url')
+    const contextId = randomBytes(16).toString('base64url')
     const expiresAt = Date.now() + ttlMs
-    this.sessions.set(token, { context, expiresAt, ledger: [] })
+    this.sessions.set(token, { contextId, context, expiresAt, ledger: [] })
     if (this.baseUrl === undefined) throw new Error('Host MCP endpoint is not running')
     const shimPath = await this.ensureShimFile()
     return {
       url: this.baseUrl,
       token,
+      contextId,
       expiresAt,
       command: process.execPath,
       args: [shimPath],
       env: {
         BITSENTRY_MCP_URL: this.baseUrl,
         BITSENTRY_MCP_TOKEN: token,
+        BITSENTRY_MCP_CONTEXT_ID: contextId,
         // Inside Electron, process.execPath is the app binary, not node.
         // Without this flag a spawned shim boots a full Electron instance
         // that never speaks MCP on stdio, and the CLI stalls on startup.

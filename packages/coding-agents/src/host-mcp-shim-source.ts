@@ -12,6 +12,7 @@ const readline = require('node:readline')
 
 const url = process.env.BITSENTRY_MCP_URL
 const token = process.env.BITSENTRY_MCP_TOKEN
+const contextId = process.env.BITSENTRY_MCP_CONTEXT_ID
 const protocolVersion = '2026-07-28'
 const legacyProtocolVersion = '2025-11-25'
 const clientInfo = { name: 'bitsentry-host-mcp-legacy-shim', version: '1.0.0' }
@@ -46,8 +47,12 @@ function modernRequest(message) {
     ...legacyParams,
     _meta: modernEnvelope(legacyParams._meta),
   }
-  if (message.method === 'tools/call' && (params.arguments === null || params.arguments === undefined)) {
-    params.arguments = {}
+  if (message.method === 'tools/call') {
+    const argumentsValue = isRecord(params.arguments) ? params.arguments : {}
+    params.arguments = {
+      ...argumentsValue,
+      ...(argumentsValue.contextId === undefined ? { contextId } : {}),
+    }
   }
   const headers = {
     authorization: \`Bearer \${token}\`,
@@ -101,8 +106,8 @@ async function handleLegacyRequest(message) {
   return await sendModernRequest(message)
 }
 
-if (!url || !token) {
-  process.stderr.write('BITSENTRY_MCP_URL and BITSENTRY_MCP_TOKEN are required.\\n')
+if (!url || !token || !contextId) {
+  process.stderr.write('BITSENTRY_MCP_URL, BITSENTRY_MCP_TOKEN, and BITSENTRY_MCP_CONTEXT_ID are required.\\n')
   process.exitCode = 1
 } else {
   const input = readline.createInterface({ input: process.stdin, crlfDelay: Infinity })

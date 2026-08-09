@@ -10,20 +10,32 @@ import type { RunbookExecutionRecord } from '@bitsentry-ce/core/features/runbook
 const servers: HostMcpServerService[] = []
 const MCP_PROTOCOL_VERSION = '2026-07-28'
 
-function modernMcpRequest(body: Record<string, unknown>): Record<string, unknown> {
+function modernMcpRequest(body: Record<string, unknown>, contextId: string): Record<string, unknown> {
   const params = body.params !== null && typeof body.params === 'object' && !Array.isArray(body.params)
     ? body.params as Record<string, unknown>
     : {}
+  const toolArguments = body.method === 'tools/call'
+    ? (params.arguments !== null && typeof params.arguments === 'object' && !Array.isArray(params.arguments)
+      ? params.arguments as Record<string, unknown>
+      : {})
+    : undefined
+  const modernParams = {
+    ...params,
+    ...(toolArguments === undefined ? {} : {
+      arguments: {
+        ...toolArguments,
+        ...(toolArguments.contextId === undefined ? { contextId } : {}),
+      },
+    }),
+    _meta: {
+      'io.modelcontextprotocol/protocolVersion': MCP_PROTOCOL_VERSION,
+      'io.modelcontextprotocol/clientInfo': { name: 'bitsentry-test-client', version: '1.0.0' },
+      'io.modelcontextprotocol/clientCapabilities': {},
+    },
+  }
   return {
     ...body,
-    params: {
-      ...params,
-      _meta: {
-        'io.modelcontextprotocol/protocolVersion': MCP_PROTOCOL_VERSION,
-        'io.modelcontextprotocol/clientInfo': { name: 'bitsentry-test-client', version: '1.0.0' },
-        'io.modelcontextprotocol/clientCapabilities': {},
-      },
-    },
+    params: modernParams,
   }
 }
 
@@ -57,7 +69,7 @@ function makeExecution(overrides: Partial<RunbookExecutionRecord> = {}): Runbook
 }
 
 async function request(endpoint: HostMcpEndpoint, body: Record<string, unknown>, token = endpoint.token) {
-  const modernBody = modernMcpRequest(body)
+  const modernBody = modernMcpRequest(body, endpoint.contextId)
   const method = typeof modernBody.method === 'string' ? modernBody.method : ''
   const toolName = method === 'tools/call' && typeof (modernBody.params as Record<string, unknown>).name === 'string'
     ? (modernBody.params as Record<string, unknown>).name as string
@@ -138,6 +150,29 @@ describe('HostMcpServerService', () => {
     ])
   })
 
+  it('rejects a context handle that is outside the bearer token scope', async () => {
+    const server = new HostMcpServerService()
+    servers.push(server)
+    const endpoint = await server.createSession(createContext())
+
+    const response = await request(endpoint, {
+      jsonrpc: '2.0',
+      id: 9,
+      method: 'tools/call',
+      params: { name: 'execute_runbook', arguments: { contextId: 'foreign-context' } },
+    })
+
+    expect(response.status).toBe(200)
+    expect(await readMcpResponse(response)).toMatchObject({
+      jsonrpc: '2.0',
+      id: 9,
+      result: {
+        isError: true,
+        content: [{ type: 'text', text: expect.stringContaining('INVALID_CONTEXT_HANDLE') }],
+      },
+    })
+  })
+
   it('serves discovery only through the 2026-07-28 request envelope', async () => {
     const server = new HostMcpServerService()
     servers.push(server)
@@ -191,10 +226,12 @@ describe('HostMcpServerService', () => {
 
     expect(first.url).toBe(second.url)
     expect(first.token).not.toBe(second.token)
+    expect(first.contextId).not.toBe(second.contextId)
     expect(first.args).toHaveLength(1)
     expect(first.env).toMatchObject({
       BITSENTRY_MCP_URL: first.url,
       BITSENTRY_MCP_TOKEN: first.token,
+      BITSENTRY_MCP_CONTEXT_ID: first.contextId,
     })
   })
 
