@@ -8,7 +8,6 @@ import { createHostToolCore } from './host-tool-core.js'
 import { codingAgentsLogger as log } from './logger.js'
 import { toNodeHandler } from '@modelcontextprotocol/node'
 import { createMcpHandler, McpServer } from '@modelcontextprotocol/server'
-import { z } from 'zod'
 import {
   type HostToolContext,
   type HostToolEvent,
