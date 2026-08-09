@@ -165,7 +165,11 @@ if (!url || !token || !contextId) {
         for (const message of messages) await writeMessage(message)
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error)
-        const id = isRecord(request) && request.id !== undefined ? request.id : null
+        if (!isRecord(request) || request.id === undefined) {
+          process.stderr.write(\`[bitsentry-host-mcp] notification failed: \${message}\\n\`)
+          return
+        }
+        const id = request.id
         await writeMessage({ jsonrpc: '2.0', error: { code: -32000, message }, id })
       }
     }
