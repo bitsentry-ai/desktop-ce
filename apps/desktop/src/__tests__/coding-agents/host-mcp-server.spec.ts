@@ -222,7 +222,7 @@ describe('HostMcpServerService', () => {
       .resolves.toMatchObject({ status: 401 })
   })
 
-  it('rejects legacy stdio MCP requests at the stateless host boundary', async () => {
+  it('translates legacy stdio MCP initialize and tool requests at the shim boundary', async () => {
     const server = new HostMcpServerService()
     servers.push(server)
     const endpoint = await server.createSession(createContext())
@@ -230,11 +230,29 @@ describe('HostMcpServerService', () => {
     await expect(requestThroughShim(endpoint, {
       jsonrpc: '2.0',
       id: 3,
-      method: 'tools/list',
+      method: 'initialize',
+      params: {
+        protocolVersion: '2025-11-25',
+        capabilities: {},
+        clientInfo: { name: 'legacy-cli', version: '1.0.0' },
+      },
     })).resolves.toMatchObject({
       jsonrpc: '2.0',
       id: 3,
-      error: expect.objectContaining({ code: expect.any(Number) }),
+      result: {
+        protocolVersion: '2025-11-25',
+        capabilities: expect.any(Object),
+      },
+    })
+
+    await expect(requestThroughShim(endpoint, {
+      jsonrpc: '2.0',
+      id: 4,
+      method: 'tools/list',
+    })).resolves.toMatchObject({
+      jsonrpc: '2.0',
+      id: 4,
+      result: { tools: expect.arrayContaining([expect.objectContaining({ name: 'execute_runbook' })]) },
     })
   })
 
