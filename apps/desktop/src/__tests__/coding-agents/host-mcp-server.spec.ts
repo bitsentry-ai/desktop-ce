@@ -416,6 +416,48 @@ describe('HostMcpServerService', () => {
     })
   })
 
+  it('reports only the supported legacy protocol version during shim initialization', async () => {
+    const server = new HostMcpServerService()
+    servers.push(server)
+    const endpoint = await server.createSession(createContext())
+
+    await expect(requestThroughShim(endpoint, {
+      jsonrpc: '2.0',
+      id: 31,
+      method: 'initialize',
+      params: {
+        protocolVersion: '2099-01-01',
+        capabilities: {},
+        clientInfo: { name: 'unsupported-legacy-cli', version: '1.0.0' },
+      },
+    })).resolves.toMatchObject({
+      jsonrpc: '2.0',
+      id: 31,
+      result: {
+        protocolVersion: '2025-11-25',
+        capabilities: { tools: expect.any(Object) },
+      },
+    })
+  })
+
+  it('does not respond to failed shim notifications', async () => {
+    const server = new HostMcpServerService()
+    servers.push(server)
+    const endpoint = await server.createSession(createContext())
+    const unavailableEndpoint = {
+      ...endpoint,
+      env: { ...endpoint.env, BITSENTRY_MCP_URL: 'http://127.0.0.1:1/mcp' },
+    }
+
+    await expect(runShim(unavailableEndpoint, [{
+      jsonrpc: '2.0',
+      method: 'notifications/cancelled',
+    }])).resolves.toMatchObject({
+      messages: [],
+      stderr: expect.stringContaining('notification failed'),
+    })
+  })
+
   it('returns JSON-RPC errors with the original id when the host is unavailable', async () => {
     const server = new HostMcpServerService()
     servers.push(server)

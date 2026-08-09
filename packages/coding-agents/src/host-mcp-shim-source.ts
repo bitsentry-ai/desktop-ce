@@ -133,9 +133,7 @@ async function handleLegacyRequest(message) {
       jsonrpc: '2.0',
       id: message.id ?? null,
       result: {
-        protocolVersion: typeof message.params?.protocolVersion === 'string'
-          ? message.params.protocolVersion
-          : legacyProtocolVersion,
+        protocolVersion: legacyProtocolVersion,
         capabilities: result.capabilities,
         serverInfo: { name: 'bitsentry-host-tools', version: '1.0.0' },
         ...(typeof result.instructions === 'string' ? { instructions: result.instructions } : {}),
