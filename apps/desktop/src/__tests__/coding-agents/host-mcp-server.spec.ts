@@ -160,6 +160,33 @@ async function requestInChunks(endpoint: HostMcpEndpoint, body: Buffer, splitAt:
   })
 }
 
+async function requestExpectingDisconnect(endpoint: HostMcpEndpoint): Promise<void> {
+  const url = new URL(endpoint.url)
+  const body = JSON.stringify(modernMcpRequest({ jsonrpc: '2.0', id: 12, method: 'tools/list' }, endpoint.contextId))
+  await new Promise<void>((resolve, reject) => {
+    const clientRequest = createHttpRequest({
+      hostname: url.hostname,
+      port: url.port,
+      path: url.pathname,
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${endpoint.token}`,
+        'content-type': 'application/json',
+        accept: 'application/json, text/event-stream',
+        'mcp-protocol-version': MCP_PROTOCOL_VERSION,
+        'mcp-method': 'tools/list',
+      },
+    }, (response) => {
+      response.resume()
+      response.once('aborted', resolve)
+      response.once('error', resolve)
+      response.once('end', () => reject(new Error('Expected the partial response to be destroyed')))
+    })
+    clientRequest.once('error', resolve)
+    clientRequest.end(body)
+  })
+}
+
 async function openKeepAliveConnection(endpoint: HostMcpEndpoint, agent: Agent): Promise<void> {
   const url = new URL(endpoint.url)
   await new Promise<void>((resolve, reject) => {
@@ -328,6 +355,29 @@ describe('HostMcpServerService', () => {
       id: 8,
       error: expect.objectContaining({ code: expect.any(Number) }),
     })
+  })
+
+  it('destroys a partial response without poisoning the host error path', async () => {
+    const server = new HostMcpServerService()
+    servers.push(server)
+    const endpoint = await server.createSession(createContext())
+    const mutableServer = server as unknown as {
+      nodeMcpHandler: (request: unknown, response: { writeHead(statusCode: number): void }) => Promise<void>
+    }
+    const originalHandler = mutableServer.nodeMcpHandler
+    mutableServer.nodeMcpHandler = async (_request, response) => {
+      response.writeHead(200)
+      throw new Error('late handler failure')
+    }
+
+    try {
+      await expect(requestExpectingDisconnect(endpoint)).resolves.toBeUndefined()
+    } finally {
+      mutableServer.nodeMcpHandler = originalHandler
+    }
+
+    await expect(request(endpoint, { jsonrpc: '2.0', id: 13, method: 'tools/list' }))
+      .resolves.toMatchObject({ status: 200 })
   })
 
   it('decodes multibyte request bodies split across TCP chunks', async () => {
