@@ -19,15 +19,11 @@ import {
   isWindowsCmdShim,
 } from './windows-cmd.js'
 import { linkSubprocessAbort } from './subprocess-lifecycle.js'
+import type { CodingAgentsDebugRecorder } from './coding-agents-debug-recorder.js'
 
 export type ClaudeCodeAccessLevel = 'auto-accept-edits' | 'full-access'
 
 export const DEFAULT_CLAUDE_CODE_ACCESS_LEVEL: ClaudeCodeAccessLevel = 'auto-accept-edits'
-
-export interface ClaudeCodeDebugRecorder {
-  recordEvent(stage: string, data: Record<string, unknown>): void
-  recordAnomaly(stage: string, data: Record<string, unknown>): void
-}
 
 export interface ClaudeCodeExecutionOptions {
   prompt: string
@@ -42,7 +38,7 @@ export interface ClaudeCodeExecutionOptions {
   hostToolContext?: HostToolContext
   systemPrompt?: string
   onDelta?: (delta: LocalAiStreamDelta) => void
-  debug?: ClaudeCodeDebugRecorder
+  debug?: CodingAgentsDebugRecorder
 }
 
 type ClaudeCodePermissionMode = 'acceptEdits' | 'bypassPermissions'
@@ -289,7 +285,7 @@ function recordClaudeTextDelta(
   state: ClaudeCodeSessionState,
   text: string,
   accessLevel: ClaudeCodeAccessLevel,
-  debug: ClaudeCodeDebugRecorder | undefined,
+  debug: CodingAgentsDebugRecorder | undefined,
   onDelta: ClaudeCodeExecutionOptions['onDelta'],
 ): void {
   state.streamedOutput = true
@@ -308,7 +304,7 @@ function handleAssistantTextBlock(
   state: ClaudeCodeSessionState,
   text: string,
   accessLevel: ClaudeCodeAccessLevel,
-  debug: ClaudeCodeDebugRecorder | undefined,
+  debug: CodingAgentsDebugRecorder | undefined,
   onDelta: ClaudeCodeExecutionOptions['onDelta'],
 ): void {
   if (state.streamedOutput) {
@@ -330,7 +326,7 @@ function handleAssistantContentBlock(
   block: Record<string, unknown>,
   state: ClaudeCodeSessionState,
   accessLevel: ClaudeCodeAccessLevel,
-  debug: ClaudeCodeDebugRecorder | undefined,
+  debug: CodingAgentsDebugRecorder | undefined,
   onDelta: ClaudeCodeExecutionOptions['onDelta'],
 ): void {
   if (block.type === 'text' && typeof block.text === 'string') {
@@ -353,7 +349,7 @@ function handleAssistantMessage(
   msg: Record<string, unknown>,
   state: ClaudeCodeSessionState,
   accessLevel: ClaudeCodeAccessLevel,
-  debug: ClaudeCodeDebugRecorder | undefined,
+  debug: CodingAgentsDebugRecorder | undefined,
   onDelta: ClaudeCodeExecutionOptions['onDelta'],
 ): void {
   const innerMessage = asRecord(msg.message)
@@ -384,7 +380,7 @@ function handleContentBlockStart(
   event: Record<string, unknown>,
   state: ClaudeCodeSessionState,
   accessLevel: ClaudeCodeAccessLevel,
-  debug: ClaudeCodeDebugRecorder | undefined,
+  debug: CodingAgentsDebugRecorder | undefined,
   onDelta: ClaudeCodeExecutionOptions['onDelta'],
 ): void {
   const contentBlock = extractClaudeTextBlock(
@@ -403,7 +399,7 @@ function handleContentBlockDelta(
   event: Record<string, unknown>,
   state: ClaudeCodeSessionState,
   accessLevel: ClaudeCodeAccessLevel,
-  debug: ClaudeCodeDebugRecorder | undefined,
+  debug: CodingAgentsDebugRecorder | undefined,
   onDelta: ClaudeCodeExecutionOptions['onDelta'],
 ): void {
   const delta = asRecord(event.delta)
@@ -423,7 +419,7 @@ function handleStreamEventMessage(
   msg: Record<string, unknown>,
   state: ClaudeCodeSessionState,
   accessLevel: ClaudeCodeAccessLevel,
-  debug: ClaudeCodeDebugRecorder | undefined,
+  debug: CodingAgentsDebugRecorder | undefined,
   onDelta: ClaudeCodeExecutionOptions['onDelta'],
 ): void {
   const event = asRecord(msg.event)
@@ -527,7 +523,7 @@ function handleClaudeSessionMessage(
   message: unknown,
   state: ClaudeCodeSessionState,
   accessLevel: ClaudeCodeAccessLevel,
-  debug: ClaudeCodeDebugRecorder | undefined,
+  debug: CodingAgentsDebugRecorder | undefined,
   onDelta: ClaudeCodeExecutionOptions['onDelta'],
 ): void {
   const msg = asRecord(message)

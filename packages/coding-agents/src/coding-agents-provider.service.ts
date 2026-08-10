@@ -37,6 +37,7 @@ import {
   createCommandInvocation,
   resolveOpenCodeWindowsBinary,
 } from "./cli-binary-resolution.js";
+import type { CodingAgentsDebugRecorder } from './coding-agents-debug-recorder.js'
 import {
   HostMcpServerService,
   type HostMcpEndpoint,
@@ -72,10 +73,7 @@ export interface CodingAgentsSettingsStore {
   };
 }
 
-export interface CodingAgentsDebugRecorder {
-  recordEvent(stage: string, data: Record<string, unknown>): void;
-  recordAnomaly(stage: string, data: Record<string, unknown>): void;
-}
+export type { CodingAgentsDebugRecorder } from './coding-agents-debug-recorder.js'
 
 export interface CodingAgentsErrorContext {
   provider: string;
