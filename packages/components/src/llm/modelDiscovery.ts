@@ -49,9 +49,9 @@ export function publishDiscoveredModels(
 export function clearDiscoveredModels(providerKey: ModelCatalogProviderKey): void {
   if (!(providerKey in snapshot)) return;
 
-  const next = { ...snapshot };
-  delete next[providerKey];
-  snapshot = next;
+  snapshot = Object.fromEntries(
+    Object.entries(snapshot).filter(([key]) => key !== providerKey),
+  );
   listeners.forEach((listener) => { listener(); });
 }
 

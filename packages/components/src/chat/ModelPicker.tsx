@@ -82,6 +82,51 @@ function isMissingApiKeyError(error: unknown): boolean {
   return /api key is required/i.test(message);
 }
 
+function buildTriggerPresentation({
+  selectedProviderKey,
+  selectedModelId,
+  isProviderLocked,
+  t,
+}: {
+  selectedProviderKey: ModelCatalogProviderKey | null;
+  selectedModelId: string;
+  isProviderLocked: boolean;
+  t: (key: string, options?: Record<string, unknown>) => string;
+}): {
+  triggerIcon: ReactNode;
+  triggerLabel: string;
+  triggerTitle: string | undefined;
+  triggerRightIcon: ReactNode;
+} {
+  let triggerIcon: ReactNode = <Cpu size={13} className="shrink-0" />;
+  if (selectedProviderKey !== null) {
+    const TriggerLogo = getProviderLogo(selectedProviderKey);
+    if (TriggerLogo !== null) {
+      triggerIcon = <TriggerLogo size={13} className="shrink-0" />;
+    }
+  }
+
+  let triggerLabel = t("common.incidents.selectModel");
+  if (selectedProviderKey !== null && selectedModelId.length > 0) {
+    triggerLabel = getModelDisplayName(selectedProviderKey, selectedModelId);
+  }
+
+  let triggerTitle: string | undefined;
+  if (isProviderLocked && selectedProviderKey !== null) {
+    triggerTitle = t("common.modelPicker.providerLockedDuringActiveConversation", {
+      provider:
+        getProviderModelCatalog(selectedProviderKey)?.displayName ??
+        selectedProviderKey,
+    });
+  }
+
+  const triggerRightIcon: ReactNode = isProviderLocked
+    ? <Lock size={9} className="shrink-0 opacity-50" />
+    : <ChevronDown size={10} className="shrink-0 opacity-60" />;
+
+  return { triggerIcon, triggerLabel, triggerTitle, triggerRightIcon };
+}
+
 function useModelDiscovery({
   open,
   panelProvider,
@@ -255,35 +300,13 @@ export function ModelPicker({
     return () => { document.removeEventListener("keydown", onKeyDown); };
   }, [open, panelModels, panelProvider, handleSelect]);
 
-  const triggerProviderKey = selectedProviderKey;
-  let triggerIcon: ReactNode = <Cpu size={13} className="shrink-0" />;
-  if (triggerProviderKey !== null) {
-    const TriggerLogo = getProviderLogo(triggerProviderKey);
-    if (TriggerLogo !== null) {
-      triggerIcon = <TriggerLogo size={13} className="shrink-0" />;
-    }
-  }
-
-  let triggerLabel = t("common.incidents.selectModel");
-  if (triggerProviderKey !== null && selectedModelId.length > 0) {
-    triggerLabel = getModelDisplayName(triggerProviderKey, selectedModelId);
-  }
-
-  let triggerTitle: string | undefined;
-  if (isProviderLocked && selectedProviderKey !== null) {
-    triggerTitle = t("common.modelPicker.providerLockedDuringActiveConversation", {
-      provider:
-        getProviderModelCatalog(selectedProviderKey)?.displayName ??
-        selectedProviderKey,
+  const { triggerIcon, triggerLabel, triggerTitle, triggerRightIcon } =
+    buildTriggerPresentation({
+      selectedProviderKey,
+      selectedModelId,
+      isProviderLocked,
+      t,
     });
-  }
-
-  let triggerRightIcon: ReactNode = (
-    <ChevronDown size={10} className="shrink-0 opacity-60" />
-  );
-  if (isProviderLocked) {
-    triggerRightIcon = <Lock size={9} className="shrink-0 opacity-50" />;
-  }
 
   let panelHeader: ReactNode = null;
   if (panelProvider !== null) {
