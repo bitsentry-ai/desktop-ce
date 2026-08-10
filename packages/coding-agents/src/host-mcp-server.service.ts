@@ -43,6 +43,10 @@ type HostMcpSession = {
 }
 
 function sendJson(response: ServerResponse, statusCode: number, payload: Record<string, unknown>): void {
+  if (response.headersSent) {
+    response.destroy()
+    return
+  }
   response.writeHead(statusCode, { 'content-type': 'application/json' })
   response.end(JSON.stringify(payload))
 }
