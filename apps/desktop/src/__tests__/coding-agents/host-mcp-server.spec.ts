@@ -616,6 +616,8 @@ describe('HostMcpServerService', () => {
     context.gateway.get = vi.fn().mockResolvedValue(runningExecution)
     context.gateway.waitForCompletion = vi.fn().mockReturnValue(completion)
     const endpoint = await server.createSession(context)
+    endpoint.env.BITSENTRY_MCP_SHORT_TIMEOUT_MS = '200'
+    endpoint.env.BITSENTRY_MCP_TOOL_TIMEOUT_MS = '2000'
 
     const responsePromise = requestThroughShim(endpoint, {
       jsonrpc: '2.0',
@@ -629,7 +631,7 @@ describe('HostMcpServerService', () => {
     await vi.waitFor(() => {
       expect(context.gateway.waitForCompletion).toHaveBeenCalledOnce()
     })
-    await new Promise((resolve) => setTimeout(resolve, 10_100))
+    await new Promise((resolve) => setTimeout(resolve, 300))
     completeExecution?.(completedExecution)
 
     await expect(responsePromise).resolves.toMatchObject({
@@ -639,5 +641,5 @@ describe('HostMcpServerService', () => {
         content: [{ text: expect.stringContaining('completed') }],
       },
     })
-  }, 15_000)
+  }, 3_000)
 })
