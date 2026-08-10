@@ -34,7 +34,7 @@ export function getCodexPolicies(accessLevel: AccessLevel): {
   switch (accessLevel) {
     case 'auto-accept-edits':
       return {
-        approvalPolicy: 'on-request',
+        approvalPolicy: 'untrusted',
         sandboxPolicy: { type: 'workspaceWrite' },
       }
     case 'full-access':

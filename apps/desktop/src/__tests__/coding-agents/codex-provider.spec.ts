@@ -154,6 +154,25 @@ afterEach(async () => {
 })
 
 describe('Codex provider behavior', () => {
+  it('sends the Safe Tools policy that gates workspace shell execution', async () => {
+    const mock = await createMultiItemCodexAppServer()
+    await executeCodex({
+      prompt: 'Print the current working directory.',
+      binaryPath: mock.binaryPath,
+      cwd: mock.cwd,
+      abortController: new AbortController(),
+      accessLevel: 'auto-accept-edits',
+    })
+
+    const turnStart = (await readLoggedCodexMessages(mock.logPath)).find(
+      (message) => message.method === 'turn/start',
+    )
+    expect(turnStart?.params).toMatchObject({
+      approvalPolicy: 'untrusted',
+      sandboxPolicy: { type: 'workspaceWrite' },
+    })
+  })
+
   it('keeps completed assistant messages separate from MCP tool activity', async () => {
     const mock = await createMultiItemCodexAppServer()
     const result = await executeCodex({
