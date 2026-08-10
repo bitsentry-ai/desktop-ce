@@ -155,6 +155,7 @@ describe('host tools', () => {
           label: 'Team',
           type: 'string',
           required: true,
+          enumValues: ['platform', 'security'],
         }],
       }],
     }
@@ -190,7 +191,7 @@ describe('host tools', () => {
     expect(discoveredAction?.id).toBe('list_checks')
     expect(discoveredAction?.inputSchema).toMatchObject({
       type: 'object',
-      properties: { team: { type: 'string' } },
+      properties: { team: { type: 'string', enum: ['platform', 'security'] } },
       required: ['team'],
     })
     expect(JSON.stringify(catalog)).not.toContain('do-not-disclose')

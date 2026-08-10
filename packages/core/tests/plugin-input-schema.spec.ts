@@ -16,19 +16,6 @@ function stringField(
 }
 
 describe('buildPluginInputSchema', () => {
-  it('publishes enumValues in the JSON Schema', () => {
-    const schema = z.toJSONSchema(buildPluginInputSchema([
-      stringField({ enumValues: ['read', 'write', 'admin'] }),
-    ])) as {
-      properties: { scope: Record<string, unknown> };
-    }
-
-    expect(schema.properties.scope).toEqual({
-      type: 'string',
-      enum: ['read', 'write', 'admin'],
-    })
-  })
-
   it('publishes enumValues and keeps fields without them unchanged', () => {
     const schema = z.toJSONSchema(buildPluginInputSchema([
       stringField({ enumValues: ['read', 'write', 'admin'] }),
@@ -48,14 +35,6 @@ describe('buildPluginInputSchema', () => {
     const schema = buildPluginInputSchema([
       stringField({ enumValues: ['read', 'write', 'admin'] }),
     ])
-    const jsonSchema = z.toJSONSchema(schema) as {
-      properties: { scope: Record<string, unknown> };
-    }
-
-    expect(jsonSchema.properties.scope).toEqual({
-      type: 'string',
-      enum: ['read', 'write', 'admin'],
-    })
     const result = schema.safeParse({ scope: 'delete' })
 
     expect(result.success).toBe(false)
