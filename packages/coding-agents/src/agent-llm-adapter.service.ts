@@ -736,7 +736,26 @@ function logAnthropicEffortEvidence(
   })
 }
 
+function logAnthropicEffortInput(
+  model: string,
+  traitValues: Record<string, string | boolean> | undefined,
+): void {
+  if (process.env.BITSENTRY_DEBUG_ANTHROPIC_EFFORT !== '1') {
+    return
+  }
+
+  log.info('[anthropic-effort-input]', {
+    provider: 'anthropic',
+    model,
+    traitValues: traitValues ?? null,
+  })
+}
+
 function getAnthropicEffort(effortLevel: string | undefined): AnthropicEffort {
+  if (effortLevel === 'xhigh' || effortLevel === 'ultrathink') {
+    return 'max'
+  }
+
   if (effortLevel !== undefined && effortLevel in ANTHROPIC_MANUAL_THINKING_BUDGETS) {
     return effortLevel as AnthropicEffort
   }
@@ -1073,6 +1092,9 @@ export class AgentLlmAdapterService {
     const model = await this.getModel(providerKey, input.llm?.model)
 
     log.info(`[agent-llm] Using provider: ${providerKey}, model: ${model}`)
+    if (providerKey === 'anthropic') {
+      logAnthropicEffortInput(model, input.traitValues)
+    }
 
     switch (providerKey) {
       case 'groq':

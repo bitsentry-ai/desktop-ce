@@ -643,6 +643,8 @@ describe('AgentLlmAdapterService', () => {
       medium: 1536,
       high: 2048,
       max: 3072,
+      xhigh: 3072,
+      ultrathink: 3072,
     }
 
     for (const effort of Object.keys(expectedBudgets)) {
@@ -658,12 +660,14 @@ describe('AgentLlmAdapterService', () => {
       })
     }
 
-    expect(requestBodies).toHaveLength(4)
+    expect(requestBodies).toHaveLength(6)
     expect(requestBodies.map((body) => body.thinking)).toEqual([
       { type: 'enabled', budget_tokens: expectedBudgets.low },
       { type: 'enabled', budget_tokens: expectedBudgets.medium },
       { type: 'enabled', budget_tokens: expectedBudgets.high },
       { type: 'enabled', budget_tokens: expectedBudgets.max },
+      { type: 'enabled', budget_tokens: expectedBudgets.xhigh },
+      { type: 'enabled', budget_tokens: expectedBudgets.ultrathink },
     ])
     expect(requestBodies.every((body) => body.output_config === undefined)).toBe(true)
   })
@@ -683,6 +687,8 @@ describe('AgentLlmAdapterService', () => {
     for (const [model, effort] of [
       ['claude-sonnet-4-6', 'low'],
       ['claude-opus-4-7', 'max'],
+      ['claude-sonnet-4-6', 'xhigh'],
+      ['claude-opus-4-7', 'ultrathink'],
     ] as const) {
       await adapter.chatWithTools({
         messages: [{ role: 'user', content: 'Solve this task' }],
@@ -692,16 +698,10 @@ describe('AgentLlmAdapterService', () => {
       })
     }
 
-    expect(requestBodies).toEqual(expect.arrayContaining([
-      expect.objectContaining({
-        thinking: { type: 'adaptive' },
-        output_config: { effort: 'low' },
-      }),
-      expect.objectContaining({
-        thinking: { type: 'adaptive' },
-        output_config: { effort: 'max' },
-      }),
-    ]))
+    expect(requestBodies.map((body) => {
+      const outputConfig = body.output_config as { effort: string }
+      return outputConfig.effort
+    })).toEqual(['low', 'max', 'max', 'max'])
     expect(requestBodies.every((body) => {
       const thinking = body.thinking as { budget_tokens?: number } | undefined
       return thinking?.budget_tokens === undefined
