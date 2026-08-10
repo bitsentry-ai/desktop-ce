@@ -87,6 +87,37 @@ describe('executeOpenCode', () => {
     expect(args.indexOf('--variant')).toBeGreaterThan(args.indexOf('run'))
   })
 
+  it.each([
+    ['anthropic/claude-opus-4-8', 'claude-opus-4-8'],
+    ['openai/gpt-5.5', 'gpt-5.5'],
+  ])('passes the OpenCode alias for %s', async (model, expectedModel) => {
+    const child = new MockChildProcess()
+    mocks.spawn.mockReturnValue(child)
+
+    const { executeOpenCode } = await import(
+      '@bitsentry-ce/desktop-cli/runtime/desktop-coding-agents'
+    )
+
+    const resultPromise = executeOpenCode({
+      prompt: 'Run the OpenCode smoke test',
+      binaryPath: 'opencode',
+      abortController: new AbortController(),
+      cwd: '/tmp/bitsentry-incident', // eslint-disable-line sonarjs/publicly-writable-directories -- Mock subprocess fixture; the test never creates or trusts this path.
+      model,
+      accessLevel: 'auto-accept-edits',
+    })
+
+    queueMicrotask(() => { finishOpenCodeProcess(child) })
+
+    await expect(resultPromise).resolves.toMatchObject({ exitCode: 0 })
+
+    const [, args] = mocks.spawn.mock.calls[0] as [string, string[]]
+    expect(args.slice(args.indexOf('--model'), args.indexOf('--model') + 2)).toEqual([
+      '--model',
+      expectedModel,
+    ])
+  })
+
   it('writes a scoped MCP config for the OpenCode subprocess', async () => {
     const infos: unknown[][] = []
     setCodingAgentsLoggerForTesting({ info: (...args) => { infos.push(args) }, warn: () => {}, error: () => {} })
