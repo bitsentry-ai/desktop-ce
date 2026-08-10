@@ -38,6 +38,10 @@ type HostMcpSession = {
   activeRequests: number
 }
 
+type HostMcpAuthInfo = {
+  extra: { hostMcpSession: HostMcpSession }
+}
+
 function sendJson(response: ServerResponse, statusCode: number, payload: Record<string, unknown>): void {
   if (response.headersSent) {
     response.destroy()
@@ -95,10 +99,9 @@ export class HostMcpServerService {
   private shimPromise: Promise<string> | undefined
   private sessionSweepTimer: ReturnType<typeof setInterval> | undefined
   private startPromise: Promise<void> | undefined
-  private readonly mcpHandler = createMcpHandler(({ requestInfo }) => {
-    const session = this.findSession(readBearerToken(requestInfo?.headers.get('authorization') ?? undefined))
-    if (session === undefined) throw new Error('Authenticated host MCP request lost its scoped context')
-    return createSessionServer(session)
+  private readonly mcpHandler = createMcpHandler(({ authInfo }) => {
+    const { hostMcpSession } = (authInfo as unknown as HostMcpAuthInfo).extra
+    return createSessionServer(hostMcpSession)
   }, {
     legacy: 'reject',
     onerror: (error) => log.warn('[host-mcp] stateless request failed', { reason: error.message }),
@@ -275,7 +278,19 @@ export class HostMcpServerService {
     session.activeRequests += 1
     try {
       const body = await readMcpRequestBody(request)
-      await this.nodeMcpHandler(request, response, body)
+      // `toNodeHandler` forwards this private Node request property as trusted
+      // authInfo; it never reaches the HTTP wire. The bearer token was checked
+      // above, so the MCP factory can use this exact session without re-looking
+      // up attacker-controlled request headers.
+      const authenticatedRequest = Object.assign(request, {
+        auth: {
+          token: 'host-mcp-session',
+          clientId: session.contextId,
+          scopes: [],
+          extra: { hostMcpSession: session },
+        },
+      })
+      await this.nodeMcpHandler(authenticatedRequest, response, body)
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Invalid MCP request'
       const statusCode = message === 'MCP request body exceeds the 1 MiB limit' ? 413 : 400
