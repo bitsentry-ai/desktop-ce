@@ -79,13 +79,10 @@ export function buildPluginInputSchema(
     }
 
     if (field.type === "string" && field.enumValues !== undefined) {
-      schema = schema.refine(
-        (value) =>
-          typeof value === "string" && field.enumValues?.includes(value) === true,
-        {
-          message: `${field.label} must be one of: ${field.enumValues.join(", ")}.`,
-        },
-      );
+      const enumValues = field.enumValues;
+      schema = z.enum(enumValues, {
+        error: () => `${field.label} must be one of: ${enumValues.join(", ")}.`,
+      });
     }
 
     if (field.defaultValue !== undefined) {
