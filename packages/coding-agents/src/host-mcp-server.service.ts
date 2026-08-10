@@ -22,7 +22,6 @@ export interface HostMcpEndpoint {
   url: string
   token: string
   contextId: string
-  expiresAt: number
   command: string
   args: string[]
   env: Record<string, string>
@@ -222,7 +221,6 @@ export class HostMcpServerService {
       url: this.baseUrl,
       token,
       contextId,
-      expiresAt,
       command: process.execPath,
       args: [shimPath],
       env: {

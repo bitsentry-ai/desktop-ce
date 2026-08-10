@@ -104,7 +104,6 @@ describe('executeOpenCode', () => {
         url: 'http://127.0.0.1:40123/mcp',
         token: 'token',
         contextId: 'context-opencode',
-        expiresAt: Date.now() + 60_000,
         command: process.execPath,
         args: ['/tmp/host-mcp-shim.cjs'], // eslint-disable-line sonarjs/publicly-writable-directories -- Mock MCP shim argument; the test never executes this path.
         env: {
