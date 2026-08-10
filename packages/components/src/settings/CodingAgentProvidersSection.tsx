@@ -1087,7 +1087,19 @@ export function CodingAgentProvidersSection({
     async (provider: ProviderId): Promise<number> => {
       const setter = getProviderSetter(provider)
       const llmApi = getDesktopLlmApi()
-      const detectedModels = await llmApi.local.listModels(provider)
+      let detectedModels: string[] = []
+      let modelSyncFailed = false
+      let modelSyncError: unknown
+      try {
+        detectedModels = await llmApi.local.listModels(provider)
+      } catch (error) {
+        modelSyncFailed = true
+        modelSyncError = error
+        captureRendererException(error, {
+          provider,
+          operation: 'listModels',
+        })
+      }
       const currentModel = getProviderModel(provider)
       let baseModels = PROVIDER_META[provider].defaultModels
       if (detectedModels.length > 0) {
@@ -1114,9 +1126,17 @@ export function CodingAgentProvidersSection({
         provider,
         model_count: models.length,
       })
+      if (modelSyncFailed) {
+        throw modelSyncError
+      }
       return models.length
     },
-    [captureDesktopAnalyticsEvent, getProviderModel, getProviderSetter],
+    [
+      captureDesktopAnalyticsEvent,
+      captureRendererException,
+      getProviderModel,
+      getProviderSetter,
+    ],
   )
 
   return (

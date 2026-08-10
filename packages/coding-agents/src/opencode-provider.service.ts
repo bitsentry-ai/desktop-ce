@@ -512,7 +512,7 @@ function buildOpenCodeArgs(
 ): string[] {
   const args = [...(options.opencodeArgs ?? []), 'run', '--format', 'json', '--dir', cwd]
   if (options.model !== undefined && options.model.length > 0) {
-    args.push('--model', normalizeOpenCodeModelId(options.model))
+    args.push('--model', options.model)
   }
 
   const variant = getOpenCodeVariant(options.traitValues)
@@ -526,12 +526,6 @@ function buildOpenCodeArgs(
 
   args.push(buildOpenCodePrompt(options.prompt, accessLevel, options.mcpEndpoint))
   return args
-}
-
-function normalizeOpenCodeModelId(model: string): string {
-  const trimmed = model.trim()
-  const match = /^(?:anthropic|openai)\/(.+)$/i.exec(trimmed)
-  return match?.[1] ?? trimmed
 }
 
 function createOpenCodeExecutionState(): OpenCodeExecutionState {

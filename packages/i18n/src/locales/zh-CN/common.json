@@ -669,6 +669,7 @@
   "common.markdown.scrollableTable": "可滚动表格",
   "common.modelPicker.addToFavorites": "添加到收藏",
   "common.modelPicker.noModelsFound": "未找到模型",
+  "common.modelPicker.modelsUnavailable": "无法加载模型",
   "common.modelPicker.providerLockedDuringActiveConversation": "当前会话进行中，提供商已锁定为 {{provider}}",
   "common.modelPicker.removeFromFavorites": "从收藏中移除",
   "common.modelPicker.searchModels": "搜索模型……",

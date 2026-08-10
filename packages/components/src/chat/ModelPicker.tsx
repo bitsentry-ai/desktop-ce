@@ -31,6 +31,7 @@ import type { SavedProviderConfig, ThreadStatus } from "./types";
 import { getProviderLogo } from "./ProviderLogos";
 import { useTranslation } from "@bitsentry-ce/i18n";
 import { useFavoriteModels } from "../hooks/useFavoriteModels";
+import { getDesktopApi } from "../services/desktop-api";
 import { Check, ChevronDown, Cpu, Lock, Search, Star } from "lucide-react";
 
 interface ModelPickerProps {
@@ -63,6 +64,8 @@ export function ModelPicker({
   const { isFavorite, toggleFavorite } = useFavoriteModels();
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
+  const [discoveredModels, setDiscoveredModels] = useState<Record<string, string[]>>({});
+  const [modelLoadErrors, setModelLoadErrors] = useState<Record<string, boolean>>({});
   // Which provider's models are shown in the right panel
   const [activePanel, setActivePanel] = useState<ModelCatalogProviderKey | null>(null);
   const ref = useRef<HTMLDivElement>(null);
@@ -128,9 +131,33 @@ export function ModelPicker({
 
   const panelProvider = activePanel ?? selectedProviderKey ?? configuredProviderKeys[0] ?? null;
 
+  useEffect(() => {
+    if (!open || panelProvider !== "opencode") return;
+    const listModels = getDesktopApi()?.llm?.local?.listModels;
+    if (listModels === undefined) return;
+
+    let cancelled = false;
+    setModelLoadErrors((previous) => ({ ...previous, [panelProvider]: false }));
+    void listModels(panelProvider)
+      .then((models) => {
+        if (cancelled) return;
+        setDiscoveredModels((previous) => ({ ...previous, [panelProvider]: models }));
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setModelLoadErrors((previous) => ({ ...previous, [panelProvider]: true }));
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [open, panelProvider]);
+
   const panelModels = useMemo(() => {
     if (panelProvider === null) return [];
-    const all = getProviderModelOptions(panelProvider, providerConfigs);
+    const all = discoveredModels[panelProvider] === undefined
+      ? getProviderModelOptions(panelProvider, providerConfigs)
+      : discoveredModels[panelProvider];
     const searchTerm = search.trim().toLowerCase();
     let filtered = all;
     if (searchTerm.length > 0) {
@@ -144,7 +171,7 @@ export function ModelPicker({
     const starred = filtered.filter((id) => isFavorite(panelProvider, id));
     const rest = filtered.filter((id) => !isFavorite(panelProvider, id));
     return [...starred, ...rest];
-  }, [panelProvider, providerConfigs, search, isFavorite]);
+  }, [discoveredModels, panelProvider, providerConfigs, search, isFavorite]);
 
   // Cmd+K to open/close, Escape to close, Cmd+1–5 to pick Nth model when open
   useEffect(() => {
@@ -212,7 +239,17 @@ export function ModelPicker({
       {t("common.modelPicker.noModelsFound")}
     </div>
   );
-  if (panelProvider !== null && panelModels.length > 0) {
+  if (
+    panelProvider !== null &&
+    modelLoadErrors[panelProvider] === true &&
+    panelModels.length === 0
+  ) {
+    modelListContent = (
+      <div className="px-3 py-3 text-xs text-muted-foreground/50">
+        {t("common.modelPicker.modelsUnavailable")}
+      </div>
+    );
+  } else if (panelProvider !== null && panelModels.length > 0) {
     modelListContent = panelModels.map((modelId, idx) => {
       const isSelected =
         selectedProviderKey === panelProvider && selectedModelId === modelId;

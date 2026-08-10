@@ -661,7 +661,7 @@ export class CodingAgentsProviderService {
         operation: "listModels",
         binaryPath: this.settings.opencode.binaryPath,
       });
-      return [];
+      throw err;
     }
   }
 

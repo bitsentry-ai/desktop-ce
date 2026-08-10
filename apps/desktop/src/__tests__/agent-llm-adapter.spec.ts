@@ -6,6 +6,7 @@ import {
   type AgentLlmSettingsStore,
   type LocalAiProviderPort,
 } from '@bitsentry-ce/coding-agents/agent-llm-adapter.service'
+import { setCodingAgentsLoggerForTesting } from '@bitsentry-ce/coding-agents/logger'
 import type { HostToolContext } from '@bitsentry-ce/core/features/agent-runtime'
 
 function createHostToolContext(): HostToolContext {
@@ -72,6 +73,7 @@ const GEMINI_SCHEMA_FORBIDDEN_KEYS = new Set([
 describe('AgentLlmAdapterService', () => {
   afterEach(() => {
     vi.unstubAllGlobals()
+    setCodingAgentsLoggerForTesting({ info: () => {}, warn: () => {}, error: () => {} })
   })
 
   it('routes a provider-less CLI action by its selected model', async () => {
@@ -589,6 +591,193 @@ describe('AgentLlmAdapterService', () => {
       'low', 'high',
       'low', 'max',
       'medium', 'xhigh',
+    ])
+  })
+
+  it('routes GPT-5.6 tool calls with effort through the OpenAI Responses API', async () => {
+    const adapter = createAdapter({
+      getApiKey: () => Promise.resolve('test-key'),
+    })
+    const requests: Array<{ url: string; body: Record<string, unknown> }> = []
+    vi.stubGlobal('fetch', vi.fn().mockImplementation((url: string, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body)) as Record<string, unknown>
+      requests.push({ url, body })
+      const responseBody = requests.length === 1
+        ? {
+            output: [{
+              type: 'function_call',
+              call_id: 'call-shell',
+              name: 'execute_shell_command',
+              arguments: '{"command":"pwd"}',
+            }],
+            usage: { input_tokens: 4, output_tokens: 3 },
+          }
+        : { choices: [{ message: { content: 'Done' } }] }
+      return Promise.resolve(new Response(JSON.stringify(responseBody)))
+    }))
+
+    const tool = {
+      name: 'execute_shell_command',
+      description: 'Execute a shell command.',
+      inputSchema: { type: 'object', properties: { command: { type: 'string' } } },
+    }
+    const firstResponse = await adapter.chatWithTools({
+      messages: [{ role: 'user', content: 'Print the working directory.' }],
+      tools: [tool],
+      signal: new AbortController().signal,
+      llm: { providerKey: 'openai', model: 'gpt-5.6-terra' },
+      traitValues: { effort: 'medium' },
+    })
+    await adapter.chatWithTools({
+      messages: [{ role: 'user', content: 'Explain this briefly.' }],
+      tools: [tool],
+      signal: new AbortController().signal,
+      llm: { providerKey: 'openai', model: 'gpt-5.5' },
+      traitValues: { effort: 'medium' },
+    })
+
+    expect(requests.map((request) => request.url)).toEqual([
+      'https://api.openai.com/v1/responses',
+      'https://api.openai.com/v1/chat/completions',
+    ])
+    expect(requests[0]?.body).toMatchObject({
+      reasoning: { effort: 'medium' },
+      tools: [{
+        type: 'function',
+        name: 'execute_shell_command',
+      }],
+    })
+    expect(requests[0]?.body.reasoning_effort).toBeUndefined()
+    expect(firstResponse).toMatchObject({
+      content: '',
+      toolProtocol: 'native_function_calling',
+      toolCalls: [{
+        id: 'call-shell',
+        name: 'execute_shell_command',
+        args: { command: 'pwd' },
+      }],
+    })
+  })
+
+  it('logs effort evidence from the serialized provider request body', async () => {
+    const adapter = createAdapter({
+      getApiKey: () => Promise.resolve('test-key'),
+    })
+    const infos: unknown[][] = []
+    setCodingAgentsLoggerForTesting({
+      info: (...args) => { infos.push(args) },
+      warn: () => {},
+      error: () => {},
+    })
+    const requests: Array<{ url: string; body: Record<string, unknown> }> = []
+    vi.stubGlobal('fetch', vi.fn().mockImplementation((url: string, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body)) as Record<string, unknown>
+      requests.push({ url, body })
+      if (url.includes('/responses')) {
+        return Promise.resolve(new Response(JSON.stringify({ output_text: 'Done' })))
+      }
+      if (url.includes('anthropic')) {
+        return Promise.resolve(new Response(JSON.stringify({ content: [{ type: 'text', text: 'Done' }] })))
+      }
+      if (url.includes('generativelanguage')) {
+        return Promise.resolve(new Response(JSON.stringify({ candidates: [{ content: { parts: [{ text: 'Done' }] } }] })))
+      }
+      return Promise.resolve(new Response(JSON.stringify({ choices: [{ message: { content: 'Done' } }] })))
+    }))
+
+    const tool = {
+      name: 'execute_shell_command',
+      description: 'Execute a shell command.',
+      inputSchema: { type: 'object', properties: { command: { type: 'string' } } },
+    }
+    await adapter.chatWithTools({
+      messages: [{ role: 'user', content: 'Explain this briefly.' }],
+      signal: new AbortController().signal,
+      llm: { providerKey: 'openai', model: 'gpt-5.5' },
+      traitValues: { effort: 'medium' },
+    })
+    await adapter.chatWithTools({
+      messages: [{ role: 'user', content: 'Print the working directory.' }],
+      tools: [tool],
+      signal: new AbortController().signal,
+      llm: { providerKey: 'openai', model: 'gpt-5.6-terra' },
+      traitValues: { effort: 'medium' },
+    })
+    await adapter.chatWithTools({
+      messages: [{ role: 'user', content: 'Solve this task.' }],
+      signal: new AbortController().signal,
+      llm: {
+        providerKey: 'anthropic',
+        model: 'claude-sonnet-4-5',
+        thinkingEnabled: true,
+      },
+      traitValues: { effort: 'medium' },
+    })
+    await adapter.chatWithTools({
+      messages: [{ role: 'user', content: 'Solve this task.' }],
+      signal: new AbortController().signal,
+      llm: {
+        providerKey: 'anthropic',
+        model: 'claude-sonnet-4-6',
+        thinkingEnabled: true,
+      },
+      traitValues: { effort: 'low' },
+    })
+    await adapter.chatWithTools({
+      messages: [{ role: 'user', content: 'Solve this task.' }],
+      signal: new AbortController().signal,
+      llm: { providerKey: 'gemini', model: 'gemini-3-flash-preview' },
+      traitValues: { thinkingLevel: 'medium' },
+    })
+
+    const evidence = infos
+      .filter(([label]) => label === '[effort-evidence]')
+      .map(([, entry]) => entry as Record<string, unknown>)
+    expect(evidence).toHaveLength(5)
+    const serializedEfforts = [
+      requests[0]?.body.reasoning_effort,
+      (requests[1]?.body.reasoning as Record<string, unknown> | undefined)?.effort,
+      (requests[2]?.body.thinking as Record<string, unknown> | undefined)?.budget_tokens,
+      (requests[3]?.body.output_config as Record<string, unknown> | undefined)?.effort,
+      (((requests[4]?.body.generationConfig as Record<string, unknown> | undefined)
+        ?.thinkingConfig) as Record<string, unknown> | undefined)?.thinkingLevel,
+    ]
+    expect(evidence).toEqual([
+      {
+        provider: 'openai',
+        model: 'gpt-5.5',
+        endpoint: '/v1/chat/completions',
+        effort: serializedEfforts[0],
+        parameter: 'reasoning_effort',
+      },
+      {
+        provider: 'openai',
+        model: 'gpt-5.6-terra',
+        endpoint: '/v1/responses',
+        effort: serializedEfforts[1],
+        parameter: 'reasoning.effort',
+      },
+      {
+        provider: 'anthropic',
+        model: 'claude-sonnet-4-5',
+        endpoint: '/v1/messages',
+        effort: serializedEfforts[2],
+        parameter: 'thinking.budget_tokens',
+      },
+      {
+        provider: 'anthropic',
+        model: 'claude-sonnet-4-6',
+        endpoint: '/v1/messages',
+        effort: serializedEfforts[3],
+        parameter: 'output_config.effort',
+      },
+      {
+        provider: 'gemini',
+        model: 'gemini-3-flash-preview',
+        endpoint: '/v1beta/models/gemini-3-flash-preview:generateContent',
+        effort: serializedEfforts[4],
+        parameter: 'generationConfig.thinkingConfig.thinkingLevel',
+      },
     ])
   })
 

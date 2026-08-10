@@ -669,6 +669,7 @@
   "common.markdown.scrollableTable": "Scrollable table",
   "common.modelPicker.addToFavorites": "Add to favorites",
   "common.modelPicker.noModelsFound": "No models found",
+  "common.modelPicker.modelsUnavailable": "Unable to load models",
   "common.modelPicker.providerLockedDuringActiveConversation": "Provider locked to {{provider}} during active conversation",
   "common.modelPicker.removeFromFavorites": "Remove from favorites",
   "common.modelPicker.searchModels": "Search models...",

@@ -280,6 +280,10 @@ function isOpenAiGpt5FamilyModel(model: string): boolean {
   return /^gpt-5(?:[.-]|$)/i.test(model.trim())
 }
 
+function isOpenAiGpt56FamilyModel(model: string): boolean {
+  return /^gpt-5\.6(?:[.-]|$)/i.test(model.trim())
+}
+
 function isOpenAiOFamilyModel(model: string): boolean {
   return /^o[134](?:[.-]|$)/i.test(model.trim())
 }
@@ -414,6 +418,19 @@ function getOpenAiReasoningParams(
   return {}
 }
 
+function shouldUseOpenAiResponsesApi(
+  providerKey: LlmProviderKey,
+  model: string,
+  tools: LlmToolDefinition[] | undefined,
+  reasoningParams: Record<string, string>,
+): boolean {
+  return providerKey === 'openai'
+    && isOpenAiGpt56FamilyModel(model)
+    && (tools?.length ?? 0) > 0
+    && reasoningParams.reasoning_effort !== undefined
+    && reasoningParams.reasoning_effort !== 'none'
+}
+
 function parseDataUrl(dataUrl: string): { mediaType: string; base64: string } {
   const match = dataUrl.match(/^data:([^;]+);base64,(.+)$/)
   if (match === null) {
@@ -442,6 +459,36 @@ function toOpenAiMessageContent(content: string | ChatContentPart[]): string | A
         url: part.image.dataUrl,
       },
     }
+  })
+}
+
+function toOpenAiResponsesInput(messages: ChatMessage[]): Array<Record<string, unknown>> {
+  return messages.flatMap((message): Array<Record<string, unknown>> => {
+    if (message.role === 'tool') {
+      return [{
+        type: 'function_call_output',
+        call_id: getRequiredToolCallId(message, 'OpenAI Responses'),
+        output: normalizeTextContent(message.content),
+      }]
+    }
+
+    if (message.role === 'assistant' && message.toolCalls !== undefined && message.toolCalls.length > 0) {
+      const text = normalizeTextContent(message.content)
+      return [
+        ...(text.length > 0 ? [{ role: 'assistant', content: text }] : []),
+        ...message.toolCalls.map((toolCall) => ({
+          type: 'function_call',
+          call_id: toolCall.id,
+          name: toolCall.name,
+          arguments: JSON.stringify(toolCall.args),
+        })),
+      ]
+    }
+
+    return [{
+      role: message.role,
+      content: toOpenAiMessageContent(message.content),
+    }]
   })
 }
 
@@ -543,6 +590,19 @@ type OpenAiCompletionPayload = {
     }
   }>
   usage?: { prompt_tokens?: number; completion_tokens?: number }
+}
+
+type OpenAiResponsesPayload = {
+  output?: Array<{
+    type?: string
+    id?: string
+    call_id?: string
+    name?: string
+    arguments?: string
+    content?: Array<{ type?: string; text?: string }>
+  }>
+  output_text?: string | null
+  usage?: { input_tokens?: number; output_tokens?: number }
 }
 
 function hasEventStreamContentType(response: Response): boolean {
@@ -699,6 +759,75 @@ function getRequiredToolCallId(m: ChatMessage, providerLabel: string): string {
   throw new Error(`${providerLabel} tool result is missing tool call id`)
 }
 
+function getRequestEndpoint(url: string): string {
+  try {
+    return new URL(url).pathname
+  } catch {
+    return url.split('?')[0] ?? url
+  }
+}
+
+function getNestedValue(value: unknown, path: readonly string[]): unknown {
+  let current = value
+  for (const key of path) {
+    if (current === null || typeof current !== 'object') {
+      return undefined
+    }
+    current = (current as Record<string, unknown>)[key]
+  }
+  return current
+}
+
+function logEffortEvidence(
+  provider: string,
+  model: string,
+  endpoint: string,
+  serializedRequestBody: string,
+): void {
+  let requestBody: unknown
+  try {
+    requestBody = JSON.parse(serializedRequestBody) as unknown
+  } catch {
+    requestBody = undefined
+  }
+
+  const effortParameters: Array<{ name: string; path: readonly string[] }> = [
+    { name: 'reasoning_effort', path: ['reasoning_effort'] },
+    { name: 'reasoning.effort', path: ['reasoning', 'effort'] },
+    { name: 'output_config.effort', path: ['output_config', 'effort'] },
+    { name: 'thinking.budget_tokens', path: ['thinking', 'budget_tokens'] },
+    { name: 'generationConfig.thinkingConfig.thinkingLevel', path: ['generationConfig', 'thinkingConfig', 'thinkingLevel'] },
+  ]
+  const matchedParameter = effortParameters.find(({ path }) => getNestedValue(requestBody, path) !== undefined)
+  const effort = matchedParameter === undefined
+    ? null
+    : getNestedValue(requestBody, matchedParameter.path)
+
+  // Deliberately log only provider-safe routing metadata. Never include the prompt, API key, headers, or response content.
+  log.info('[effort-evidence]', {
+    provider,
+    model,
+    endpoint,
+    effort,
+    parameter: matchedParameter?.name ?? null,
+  })
+}
+
+function logCliEffortEvidence(
+  provider: string,
+  model: string,
+  traitValues: Record<string, string | boolean> | undefined,
+): void {
+  const effort = traitValues?.effort
+  log.info('[effort-evidence]', {
+    provider,
+    model,
+    endpoint: 'cli',
+    effort: typeof effort === 'string' ? effort : null,
+    parameter: typeof effort === 'string' ? 'traitValues.effort' : null,
+  })
+}
+
 function getGeminiRole(role: ChatMessage['role']): 'model' | 'user' {
   if (role === 'assistant') {
     return 'model'
@@ -714,42 +843,6 @@ const ANTHROPIC_MANUAL_THINKING_BUDGETS = {
 } as const
 
 type AnthropicEffort = keyof typeof ANTHROPIC_MANUAL_THINKING_BUDGETS
-
-function logAnthropicEffortEvidence(
-  model: string,
-  effort: AnthropicEffort,
-  thinkingType: 'enabled' | 'adaptive',
-  budgetTokens: number | undefined,
-): void {
-  if (process.env.BITSENTRY_DEBUG_ANTHROPIC_EFFORT !== '1') {
-    return
-  }
-
-  // Deliberately log only provider-safe routing metadata. Never include the
-  // prompt, API key, headers, or response content in this QA-only evidence.
-  log.info('[anthropic-effort]', {
-    provider: 'anthropic',
-    model,
-    effort,
-    thinkingType,
-    budgetTokens: budgetTokens ?? null,
-  })
-}
-
-function logAnthropicEffortInput(
-  model: string,
-  traitValues: Record<string, string | boolean> | undefined,
-): void {
-  if (process.env.BITSENTRY_DEBUG_ANTHROPIC_EFFORT !== '1') {
-    return
-  }
-
-  log.info('[anthropic-effort-input]', {
-    provider: 'anthropic',
-    model,
-    traitValues: traitValues ?? null,
-  })
-}
 
 function getAnthropicEffort(effortLevel: string | undefined): AnthropicEffort {
   if (effortLevel === 'xhigh' || effortLevel === 'ultrathink') {
@@ -778,7 +871,6 @@ function getAnthropicThinkingConfig(
 
   const effort = getAnthropicEffort(effortLevel)
   if (usesAdaptiveAnthropicThinking(model)) {
-    logAnthropicEffortEvidence(model, effort, 'adaptive', undefined)
     return {
       thinking: { type: 'adaptive' },
       output_config: { effort },
@@ -786,7 +878,6 @@ function getAnthropicThinkingConfig(
   }
 
   const budgetTokens = ANTHROPIC_MANUAL_THINKING_BUDGETS[effort]
-  logAnthropicEffortEvidence(model, effort, 'enabled', budgetTokens)
 
   return {
     thinking: {
@@ -1092,9 +1183,6 @@ export class AgentLlmAdapterService {
     const model = await this.getModel(providerKey, input.llm?.model)
 
     log.info(`[agent-llm] Using provider: ${providerKey}, model: ${model}`)
-    if (providerKey === 'anthropic') {
-      logAnthropicEffortInput(model, input.traitValues)
-    }
 
     switch (providerKey) {
       case 'groq':
@@ -1151,6 +1239,7 @@ export class AgentLlmAdapterService {
     const accessLevel = resolveAgentLocalAiAccessLevel(providerKey, input.accessLevel)
 
     const toolProtocol = input.hostToolContext === undefined ? 'none' : 'mcp'
+    logCliEffortEvidence(providerKey, model, input.traitValues)
 
     try {
       const result = await this.localAiProvider.execute(
@@ -1232,6 +1321,21 @@ export class AgentLlmAdapterService {
     model: string
   }): Promise<ChatResponse> {
     const { messages, tools, signal, onDelta, apiKey, baseUrl, model } = input
+    const reasoningParams = getOpenAiReasoningParams(
+      input.providerKey,
+      model,
+      input.llm?.thinkingEnabled,
+      getEffortTrait(input.traitValues),
+    )
+    if (shouldUseOpenAiResponsesApi(input.providerKey, model, tools, reasoningParams)) {
+      return await this.chatOpenAiResponses({
+        ...input,
+        apiKey,
+        baseUrl,
+        model,
+        reasoningEffort: reasoningParams.reasoning_effort,
+      })
+    }
     const headers: Record<string, string> = {
       'Authorization': `Bearer ${apiKey}`,
       'Content-Type': 'application/json',
@@ -1251,33 +1355,38 @@ export class AgentLlmAdapterService {
       },
     }))
 
+    const endpoint = getRequestEndpoint(`${baseUrl}/chat/completions`)
+    const requestBody = {
+      model,
+      stream: true,
+      stream_options: {
+        include_usage: true,
+      },
+      messages: messages.map(m => ({
+        role: m.role,
+        content: toOpenAiMessageContent(m.content),
+        tool_call_id: m.toolCallId,
+        tool_calls: m.toolCalls?.map(tc => ({
+          id: tc.id,
+          type: 'function' as const,
+          function: {
+            name: tc.name,
+            arguments: JSON.stringify(tc.args),
+          },
+        })),
+      })),
+      tools: openAiTools,
+      ...getOpenAiSamplingParams(input.providerKey, model),
+      ...getOpenAiCompletionLimitParams(input.providerKey, 4096),
+      ...reasoningParams,
+    }
+    const serializedRequestBody = JSON.stringify(requestBody)
+    logEffortEvidence(input.providerKey, model, endpoint, serializedRequestBody)
+
     const response = await fetch(`${baseUrl}/chat/completions`, {
       method: 'POST',
       headers,
-      body: JSON.stringify({
-        model,
-        stream: true,
-        stream_options: {
-          include_usage: true,
-        },
-        messages: messages.map(m => ({
-          role: m.role,
-          content: toOpenAiMessageContent(m.content),
-          tool_call_id: m.toolCallId,
-          tool_calls: m.toolCalls?.map(tc => ({
-            id: tc.id,
-            type: 'function' as const,
-            function: {
-              name: tc.name,
-              arguments: JSON.stringify(tc.args),
-            },
-          })),
-        })),
-        tools: openAiTools,
-        ...getOpenAiSamplingParams(input.providerKey, model),
-        ...getOpenAiCompletionLimitParams(input.providerKey, 4096),
-        ...getOpenAiReasoningParams(input.providerKey, model, input.llm?.thinkingEnabled, getEffortTrait(input.traitValues)),
-      }),
+      body: serializedRequestBody,
       signal,
     })
 
@@ -1291,6 +1400,48 @@ export class AgentLlmAdapterService {
     }
 
     return this.readOpenAiCompletionResponse(response)
+  }
+
+  private async chatOpenAiResponses(input: ChatWithToolsInput & {
+    providerKey: LlmProviderKey
+    apiKey: string
+    baseUrl: string
+    model: string
+    reasoningEffort: string
+  }): Promise<ChatResponse> {
+    const { messages, tools, signal, apiKey, baseUrl, model, reasoningEffort } = input
+    const endpoint = getRequestEndpoint(`${baseUrl}/responses`)
+    const requestBody = {
+      model,
+      stream: false,
+      input: toOpenAiResponsesInput(messages),
+      tools: tools?.map((tool) => ({
+        type: 'function' as const,
+        name: tool.name,
+        description: tool.description,
+        parameters: tool.inputSchema,
+      })),
+      reasoning: { effort: reasoningEffort },
+      max_output_tokens: 4096,
+    }
+    const serializedRequestBody = JSON.stringify(requestBody)
+    logEffortEvidence(input.providerKey, model, endpoint, serializedRequestBody)
+    const response = await fetch(`${baseUrl}/responses`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: serializedRequestBody,
+      signal,
+    })
+
+    if (!response.ok) {
+      const body = await response.text().catch(() => '')
+      throw new Error(formatProviderHttpError('LLM', response, body))
+    }
+
+    return this.readOpenAiResponsesResponse(response)
   }
 
   private async readOpenAiStreamingResponse(body: ReadableStream<Uint8Array>, onDelta: OnDelta | undefined): Promise<ChatResponse> {
@@ -1393,6 +1544,33 @@ export class AgentLlmAdapterService {
     }
   }
 
+  private async readOpenAiResponsesResponse(response: Response): Promise<ChatResponse> {
+    const data = await response.json() as OpenAiResponsesPayload
+    const output = data.output ?? []
+    const toolCalls = output
+      .filter((item) => item.type === 'function_call' && item.name !== undefined)
+      .map((item, index) => createNativeToolCall({
+        id: item.call_id ?? item.id ?? `openai_response_${String(index)}`,
+        name: item.name,
+        args: parseJsonObject(item.arguments ?? '', `OpenAI Responses tool arguments for ${item.name}`),
+      }, 'OpenAI Responses'))
+      .filter((toolCall): toolCall is ToolCall => toolCall !== null)
+
+    const outputText = data.output_text ?? output
+      .filter((item) => item.type === 'message')
+      .flatMap((item) => item.content ?? [])
+      .filter((item) => item.type === 'output_text')
+      .map((item) => item.text ?? '')
+      .join('')
+
+    return {
+      content: outputText,
+      toolCalls,
+      toolProtocol: 'native_function_calling',
+      tokenUsage: toTokenUsage(data.usage?.input_tokens, data.usage?.output_tokens),
+    }
+  }
+
   /**
    * Anthropic chat (Claude).
    */
@@ -1422,6 +1600,51 @@ export class AgentLlmAdapterService {
       input_schema: tool.inputSchema,
     }))
 
+    const endpoint = getRequestEndpoint(`${baseUrl}/v1/messages`)
+    const requestBody = {
+      model,
+      system,
+      messages: chatMessages.map(m => {
+        if (m.role === 'tool') {
+          return {
+            role: 'user' as const,
+            content: [{
+              type: 'tool_result' as const,
+              tool_use_id: getRequiredToolCallId(m, 'Anthropic'),
+              content: normalizeTextContent(m.content),
+            }],
+          }
+        }
+        if (m.toolCalls !== undefined && m.toolCalls.length > 0) {
+          return {
+            role: m.role,
+            content: [
+              { type: 'text', text: normalizeTextContent(m.content) },
+              ...m.toolCalls.map(tc => ({
+                type: 'tool_use' as const,
+                id: tc.id,
+                name: tc.name,
+                input: tc.args,
+              })),
+            ],
+          }
+        }
+        return {
+          role: m.role,
+          content: toAnthropicContent(m.content),
+        }
+      }),
+      tools: anthropicTools,
+      max_tokens: 4096,
+      ...getAnthropicThinkingConfig(
+        model,
+        input.llm?.thinkingEnabled,
+        getEffortTrait(input.traitValues),
+      ),
+    }
+    const serializedRequestBody = JSON.stringify(requestBody)
+    logEffortEvidence('anthropic', model, endpoint, serializedRequestBody)
+
     const response = await fetch(`${baseUrl}/v1/messages`, {
       method: 'POST',
       headers: {
@@ -1429,47 +1652,7 @@ export class AgentLlmAdapterService {
         'Content-Type': 'application/json',
         'anthropic-version': '2023-06-01',
       },
-      body: JSON.stringify({
-        model,
-        system,
-        messages: chatMessages.map(m => {
-          if (m.role === 'tool') {
-            return {
-              role: 'user' as const,
-              content: [{
-                type: 'tool_result' as const,
-                tool_use_id: getRequiredToolCallId(m, 'Anthropic'),
-                content: normalizeTextContent(m.content),
-              }],
-            }
-          }
-          if (m.toolCalls !== undefined && m.toolCalls.length > 0) {
-            return {
-              role: m.role,
-              content: [
-                { type: 'text', text: normalizeTextContent(m.content) },
-                ...m.toolCalls.map(tc => ({
-                  type: 'tool_use' as const,
-                  id: tc.id,
-                  name: tc.name,
-                  input: tc.args,
-                })),
-              ],
-            }
-          }
-          return {
-            role: m.role,
-            content: toAnthropicContent(m.content),
-          }
-        }),
-        tools: anthropicTools,
-        max_tokens: 4096,
-        ...getAnthropicThinkingConfig(
-          model,
-          input.llm?.thinkingEnabled,
-          getEffortTrait(input.traitValues),
-        ),
-      }),
+      body: serializedRequestBody,
       signal,
     })
 
@@ -1581,21 +1764,26 @@ export class AgentLlmAdapterService {
       parameters: sanitizeGeminiSchema(tool.inputSchema),
     }))
 
+    const endpoint = `/v1beta/models/${model}:generateContent`
+    const requestBody = {
+      systemInstruction: getGeminiSystemInstruction(systemInstruction),
+      contents,
+      tools: getGeminiTools(functionDeclarations),
+      generationConfig: getGeminiGenerationConfig(
+        model,
+        input.llm?.thinkingEnabled,
+        input.traitValues,
+      ),
+    }
+    const serializedRequestBody = JSON.stringify(requestBody)
+    logEffortEvidence('gemini', model, endpoint, serializedRequestBody)
+
     const response = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(apiKey)}`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          systemInstruction: getGeminiSystemInstruction(systemInstruction),
-          contents,
-          tools: getGeminiTools(functionDeclarations),
-          generationConfig: getGeminiGenerationConfig(
-            model,
-            input.llm?.thinkingEnabled,
-            input.traitValues,
-          ),
-        }),
+        body: serializedRequestBody,
         signal,
       },
     )

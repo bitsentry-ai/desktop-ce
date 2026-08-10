@@ -595,6 +595,59 @@ describe('summarizeRunbookExecutionForToolOutput', () => {
 })
 
 describe('AgentRuntimeService runbook outcomes', () => {
+  it.each([
+    { accessLevel: 'auto-accept-edits' as const, shouldExecuteShell: false },
+    { accessLevel: 'full-access' as const, shouldExecuteShell: true },
+  ])('gates API provider shell execution by access level: $accessLevel', async ({ accessLevel, shouldExecuteShell }) => {
+    const llmAdapter = {
+      chatWithTools: vi
+        .fn()
+        .mockResolvedValueOnce({
+          content: 'I will inspect the working directory.',
+          toolCalls: [{ id: 'call-shell', name: 'execute_shell_command', args: { command: 'pwd' } }],
+        })
+        .mockResolvedValueOnce({ content: 'Inspection complete.', toolCalls: [] }),
+    }
+    const service = createRuntime({ llmAdapter })
+
+    const sessionId = await service.start({
+      prompt: 'Inspect the working directory.',
+      accessLevel,
+      llm: { providerKey: 'anthropic', model: 'claude-sonnet-4-6' },
+      runbookContext: {
+        description: '',
+        actions: [{ id: 'step-shell', type: 'shell', title: 'Print working directory', command: 'pwd' }],
+      },
+    })
+    await waitForCondition(() => service.getStatus(sessionId).state === 'COMPLETED')
+
+    const firstRequest = llmAdapter.chatWithTools.mock.calls[0]?.[0]
+    const restrictedToolNames = [
+      'execute_shell_command',
+      'ssh_journal_query',
+      'list_log_sources',
+      'get_checkpoint',
+    ]
+    const availableToolNames = firstRequest?.tools.map((tool) => tool.name) ?? []
+    if (shouldExecuteShell) {
+      expect(availableToolNames).toEqual(expect.arrayContaining(restrictedToolNames))
+    } else {
+      expect(availableToolNames).not.toEqual(expect.arrayContaining(restrictedToolNames))
+    }
+
+    const shellToolCall = getAllAgentToolCalls(service, sessionId).find(
+      (toolCall) => toolCall.toolName === 'execute_shell_command',
+    )
+    expect(shellToolCall).toBeDefined()
+    if (shouldExecuteShell) {
+      expect(shellToolCall?.error).toBeUndefined()
+      expect(shellToolCall?.output).toContain('/')
+    } else {
+      expect(shellToolCall?.error).toContain('unavailable to API providers in Safe Tools mode')
+      expect(shellToolCall?.output).toBeUndefined()
+    }
+  })
+
   it('places approved authoring outcomes in the next-turn session context', async () => {
     const title = `Generated runbook ${randomUUID()}`
     const { store } = createInMemoryAuthoringStore()
