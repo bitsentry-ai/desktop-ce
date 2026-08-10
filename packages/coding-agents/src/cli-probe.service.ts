@@ -934,7 +934,7 @@ function parseOpenCodeTextAuth(combined: string): CLIProbeResult['auth'] {
   return { status: 'unknown' }
 }
 
-function parseOpenCodeModelIds(stdout: string, stderr: string): string[] {
+export function parseOpenCodeModelIds(stdout: string, stderr: string): string[] {
   const models = new Set<string>()
   for (const line of `${stdout}\n${stderr}`.split(/\r?\n/)) {
     const trimmed = line.trim()
@@ -946,6 +946,11 @@ function parseOpenCodeModelIds(stdout: string, stderr: string): string[] {
 }
 
 function readOpenCodeModelId(value: string): string | undefined {
+  const trimmed = value.trim()
+  if (trimmed.length > 0 && [...trimmed].every((character) => isOpenCodeModelCharacter(character))) {
+    return trimmed
+  }
+
   let start = 0
   while (start < value.length) {
     while (start < value.length && !isOpenCodeModelCharacter(value[start])) start += 1
@@ -1041,7 +1046,7 @@ function mergeCursorAuthSignals(
 
 function hasUsableOpenCodeFreeModels(stdout: string, stderr: string): boolean {
   return parseOpenCodeModelIds(stdout, stderr).some((model) =>
-    /^opencode\/.+(?:free|pickle)/i.test(model),
+    /^(?:opencode\/)?.+(?:free|pickle)$/i.test(model),
   )
 }
 
