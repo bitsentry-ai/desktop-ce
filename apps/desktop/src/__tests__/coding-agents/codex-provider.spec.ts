@@ -198,6 +198,7 @@ describe('Codex provider behavior', () => {
       return params?.item?.type === 'commandExecution'
     })).toBe(false)
     expect(result.output).not.toMatch(/runbook proposal/i)
+    expect(result.output).not.toContain(mock.cwd)
   })
 
   it('keeps completed assistant messages separate from MCP tool activity', async () => {

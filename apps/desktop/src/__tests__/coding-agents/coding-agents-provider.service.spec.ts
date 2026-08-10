@@ -219,7 +219,7 @@ describe("CodingAgentsProviderService", () => {
           args.join("\u0000") ===
             ["--provider", "github-copilot", "models"].join("\u0000")
         ) {
-          cb?.(null, "opencode/grok-code-fast-free\n", "");
+          cb?.(null, "grok-code-fast-free\nopencode/grok-code-fast-free\n", "");
         } else {
           cb?.(new Error("unexpected models command"), "", "");
         }
@@ -239,7 +239,7 @@ describe("CodingAgentsProviderService", () => {
 
     const models = await service.listModels("opencode");
 
-    expect(models).toEqual(["opencode/grok-code-fast-free"]);
+    expect(models).toEqual(["grok-code-fast-free", "opencode/grok-code-fast-free"]);
   });
 
   it("uses the detected OpenCode binary when syncing models", async () => {

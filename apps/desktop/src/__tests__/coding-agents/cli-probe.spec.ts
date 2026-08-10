@@ -572,4 +572,13 @@ describe('cli-probe service', () => {
     expect(result).toBe('C:\\Tools\\codex.exe')
     expect(mocks.execFile.mock.calls.some(([command]) => command === 'cmd.exe')).toBe(false)
   })
+
+  it('accepts bare and provider-prefixed OpenCode model IDs', async () => {
+    const { parseOpenCodeModelIds } = await import('@bitsentry-ce/coding-agents/cli-probe.service')
+
+    expect(parseOpenCodeModelIds('claude-opus-4-8\nopencode/grok-code-fast-free\n', '')).toEqual([
+      'claude-opus-4-8',
+      'opencode/grok-code-fast-free',
+    ])
+  })
 })
