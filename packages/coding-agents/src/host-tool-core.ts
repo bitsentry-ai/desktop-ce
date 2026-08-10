@@ -28,13 +28,10 @@ export function createHostToolCore(
   const contextIdSchema = z.string().min(1).describe(
     'Omit contextId. The BitSentry MCP shim injects the scoped context handle automatically.',
   )
-  const requiresContextId = (tool: HostToolDefinition): boolean =>
-    contextId !== undefined && tool.name !== 'list_runbooks' && tool.name !== 'list_plugins'
-
   const inputSchemaFor = (tool: HostToolDefinition): z.ZodType => {
     if (contextId === undefined) return tool.argsSchema
     return tool.argsSchema.extend({
-      contextId: requiresContextId(tool) ? contextIdSchema : contextIdSchema.optional(),
+      contextId: contextIdSchema.optional(),
     })
   }
 

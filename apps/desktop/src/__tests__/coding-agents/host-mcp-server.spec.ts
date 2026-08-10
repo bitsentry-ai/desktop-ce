@@ -493,6 +493,8 @@ describe('HostMcpServerService', () => {
       type: 'object',
       properties: expect.objectContaining({ contextId: expect.any(Object) }),
     })
+    expect((executeRunbook?.inputSchema.required as string[] | undefined) ?? [])
+      .not.toContain('contextId')
     expect(executeRunbook?.inputSchema).not.toHaveProperty('anyOf')
   })
 
