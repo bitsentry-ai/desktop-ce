@@ -12,7 +12,7 @@ import {
   type HostToolContext,
 } from '@bitsentry-ce/core/features/agent-runtime'
 import { HOST_MCP_SERVER_NAME } from './host-mcp-server.service.js'
-import { buildRunbookOnlyScope } from './runbook-only-scope.js'
+import { buildRunbookOnlyScope, scopeOptionsFor } from './runbook-only-scope.js'
 import {
   buildWindowsCmdCommandLine,
   getWindowsCmdExecutable,
@@ -105,11 +105,7 @@ type ClaudeSdkQuery = (params: {
 let testClaudeSdkQueryLoader: (() => Promise<ClaudeSdkQuery> | ClaudeSdkQuery) | undefined
 const CLAUDE_ONE_M_CONTEXT_BETA: ClaudeCodeSdkBeta = 'context-1m-2025-08-07'
 function buildClaudeRunbookOnlyScope(hostToolContext: HostToolContext | undefined): string {
-  return buildRunbookOnlyScope({
-    includeProposalInstructions: (hostToolContext?.session.runbookAuthoringProposals?.length ?? 0) > 0,
-    includeParameterInstructions: hostToolContext?.session.hasRunbookParameters === true,
-    includeMultiRunbookInstructions: hostToolContext?.session.hasMultipleRunbooksInPlay === true,
-  })
+  return buildRunbookOnlyScope(scopeOptionsFor(hostToolContext?.session))
 }
 
 export const CLAUDE_HOST_MCP_ALLOWED_TOOLS = getHostTools().map(

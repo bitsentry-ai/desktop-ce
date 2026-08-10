@@ -648,11 +648,7 @@ export async function executeCodex(
       ? undefined
       : [
           options.systemPrompt,
-          buildRunbookOnlyScope({
-            includeProposalInstructions: mcpEndpoint.hasRunbookProposal === true,
-            includeParameterInstructions: mcpEndpoint.hasRunbookParameters === true,
-            includeMultiRunbookInstructions: mcpEndpoint.hasMultipleRunbooksInPlay === true,
-          }),
+          buildRunbookOnlyScope(mcpEndpoint.scopeOptions),
         ].filter((instruction): instruction is string =>
           instruction !== undefined && instruction.trim().length > 0,
         ).join('\n\n')

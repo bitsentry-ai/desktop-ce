@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { HOST_MCP_SHIM_FILE_NAME, HOST_MCP_SHIM_SOURCE } from './host-mcp-shim-source.js'
 import { createHostToolCore } from './host-tool-core.js'
+import { scopeOptionsFor, type RunbookOnlyScopeOptions } from './runbook-only-scope.js'
 import { codingAgentsLogger as log } from './logger.js'
 import { toNodeHandler } from '@modelcontextprotocol/node'
 import { createMcpHandler, McpServer } from '@modelcontextprotocol/server'
@@ -26,9 +27,7 @@ export interface HostMcpEndpoint {
   args: string[]
   env: Record<string, string>
   agentSessionId: string
-  hasRunbookProposal?: boolean
-  hasRunbookParameters?: boolean
-  hasMultipleRunbooksInPlay?: boolean
+  scopeOptions?: RunbookOnlyScopeOptions
 }
 
 type HostMcpSession = {
@@ -233,9 +232,7 @@ export class HostMcpServerService {
         ELECTRON_RUN_AS_NODE: '1',
       },
       agentSessionId: context.session.id,
-      hasRunbookProposal: (context.session.runbookAuthoringProposals?.length ?? 0) > 0,
-      hasRunbookParameters: context.session.hasRunbookParameters === true,
-      hasMultipleRunbooksInPlay: context.session.hasMultipleRunbooksInPlay === true,
+      scopeOptions: scopeOptionsFor(context.session),
     }
   }
 

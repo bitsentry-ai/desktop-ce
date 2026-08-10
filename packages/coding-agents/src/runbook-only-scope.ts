@@ -1,4 +1,4 @@
-import { getHostTools } from '@bitsentry-ce/core/features/agent-runtime'
+import { getHostTools, type AgentSessionRef } from '@bitsentry-ce/core/features/agent-runtime'
 
 /**
  * Incident-chat boundary for providers that expose BitSentry's runbook MCP.
@@ -10,6 +10,14 @@ export interface RunbookOnlyScopeOptions {
   includeProposalInstructions?: boolean
   includeParameterInstructions?: boolean
   includeMultiRunbookInstructions?: boolean
+}
+
+export function scopeOptionsFor(session: AgentSessionRef | undefined): RunbookOnlyScopeOptions {
+  return {
+    includeProposalInstructions: (session?.runbookAuthoringProposals?.length ?? 0) > 0,
+    includeParameterInstructions: session?.hasRunbookParameters === true,
+    includeMultiRunbookInstructions: session?.hasMultipleRunbooksInPlay === true,
+  }
 }
 
 export function buildRunbookOnlyScope(options: RunbookOnlyScopeOptions = {}): string {
