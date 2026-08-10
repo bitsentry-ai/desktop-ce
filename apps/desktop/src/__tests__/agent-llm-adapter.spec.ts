@@ -897,6 +897,126 @@ describe('AgentLlmAdapterService', () => {
     })).toBe(true)
   })
 
+  it('round-trips Anthropic tool history without an empty assistant text block', async () => {
+    const adapter = createAdapter({
+      getApiKey: () => Promise.resolve('test-key'),
+    })
+    let requestBody: Record<string, unknown> | undefined
+    vi.stubGlobal('fetch', vi.fn().mockImplementation((_url: string, init?: RequestInit) => {
+      requestBody = JSON.parse(String(init?.body)) as Record<string, unknown>
+      return Promise.resolve(new Response(JSON.stringify({
+        content: [{ type: 'text', text: 'Tool round-trip complete.' }],
+      })))
+    }))
+
+    const response = await adapter.chatWithTools({
+      messages: [
+        { role: 'user', content: 'Inspect the runbook.' },
+        {
+          role: 'assistant',
+          content: '',
+          toolCalls: [{
+            id: 'call-runbook',
+            name: 'get_runbook_execution',
+            args: { executionId: 'execution-1' },
+          }],
+        },
+        {
+          role: 'tool',
+          toolCallId: 'call-runbook',
+          content: '{"status":"completed"}',
+        },
+      ],
+      tools: [{
+        name: 'get_runbook_execution',
+        description: 'Get a runbook execution.',
+        inputSchema: { type: 'object', properties: {} },
+      }],
+      signal: new AbortController().signal,
+      llm: { providerKey: 'anthropic', model: 'claude-opus-4-8' },
+    })
+
+    const messages = requestBody?.messages as Array<{ role: string; content: unknown }>
+    const assistantMessage = messages.find((message) => message.role === 'assistant')
+    const assistantContent = assistantMessage?.content as Array<Record<string, unknown>>
+
+    expect(response.content).toBe('Tool round-trip complete.')
+    expect(assistantContent).toEqual([{
+      type: 'tool_use',
+      id: 'call-runbook',
+      name: 'get_runbook_execution',
+      input: { executionId: 'execution-1' },
+    }])
+    expect(JSON.stringify(requestBody)).not.toContain('"type":"text","text":""')
+  })
+
+  it('preserves non-empty Anthropic assistant text alongside tool_use', async () => {
+    const adapter = createAdapter({
+      getApiKey: () => Promise.resolve('test-key'),
+    })
+    let requestBody: Record<string, unknown> | undefined
+    vi.stubGlobal('fetch', vi.fn().mockImplementation((_url: string, init?: RequestInit) => {
+      requestBody = JSON.parse(String(init?.body)) as Record<string, unknown>
+      return Promise.resolve(new Response(JSON.stringify({
+        content: [{ type: 'text', text: 'Done.' }],
+      })))
+    }))
+
+    await adapter.chatWithTools({
+      messages: [{
+        role: 'assistant',
+        content: 'I found the runbook.',
+        toolCalls: [{
+          id: 'call-runbook',
+          name: 'get_runbook_execution',
+          args: { executionId: 'execution-1' },
+        }],
+      }],
+      tools: [{
+        name: 'get_runbook_execution',
+        description: 'Get a runbook execution.',
+        inputSchema: { type: 'object', properties: {} },
+      }],
+      signal: new AbortController().signal,
+      llm: { providerKey: 'anthropic', model: 'claude-opus-4-8' },
+    })
+
+    const messages = requestBody?.messages as Array<{ role: string; content: unknown }>
+    const assistantMessage = messages.find((message) => message.role === 'assistant')
+    expect(assistantMessage?.content).toEqual([
+      { type: 'text', text: 'I found the runbook.' },
+      {
+        type: 'tool_use',
+        id: 'call-runbook',
+        name: 'get_runbook_execution',
+        input: { executionId: 'execution-1' },
+      },
+    ])
+  })
+
+  it('omits empty plain Anthropic text content', async () => {
+    const adapter = createAdapter({
+      getApiKey: () => Promise.resolve('test-key'),
+    })
+    let requestBody: Record<string, unknown> | undefined
+    vi.stubGlobal('fetch', vi.fn().mockImplementation((_url: string, init?: RequestInit) => {
+      requestBody = JSON.parse(String(init?.body)) as Record<string, unknown>
+      return Promise.resolve(new Response(JSON.stringify({
+        content: [{ type: 'text', text: 'Done.' }],
+      })))
+    }))
+
+    await adapter.chatWithTools({
+      messages: [{ role: 'assistant', content: '' }],
+      signal: new AbortController().signal,
+      llm: { providerKey: 'anthropic', model: 'claude-opus-4-8' },
+    })
+
+    const messages = requestBody?.messages as Array<{ role: string; content: unknown }>
+    expect(messages[0]?.content).toEqual([])
+    expect(JSON.stringify(requestBody)).not.toContain('"type":"text","text":""')
+  })
+
   it('omits Anthropic thinking configuration when thinking is disabled', async () => {
     const adapter = createAdapter({
       getApiKey: () => Promise.resolve('test-key'),

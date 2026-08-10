@@ -7,6 +7,28 @@ export interface IncidentModelSelection {
   droppedModelId?: string;
 }
 
+export function resolveSyncedModelId(
+  selectedProviderKey: ModelCatalogProviderKey | null,
+  nextProviderKey: ModelCatalogProviderKey,
+  selectedModelId: string,
+  preferredModel: string | undefined,
+  modelOptions: readonly string[],
+): string {
+  if (selectedProviderKey === nextProviderKey && selectedModelId.length > 0) {
+    return selectedModelId;
+  }
+
+  if (
+    preferredModel !== undefined &&
+    preferredModel.length > 0 &&
+    modelOptions.includes(preferredModel)
+  ) {
+    return preferredModel;
+  }
+
+  return modelOptions[0] ?? "";
+}
+
 /**
  * Resolve an incident's saved model against the current provider options.
  * A stale per-incident lock must never outrank the synced provider default.

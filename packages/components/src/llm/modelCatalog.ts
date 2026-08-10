@@ -246,11 +246,41 @@ export function getCatalogModel(
   )
 }
 
+function getAnthropicFallbackCapability(modelId: string): ModelCatalogEntry | undefined {
+  const sourceModel = getProviderCatalogModels('anthropic').find((model) =>
+    getEffectiveComposerOptions(model).some(
+      (option) => option.id === "effort" && option.type === "select",
+    ),
+  )
+  if (sourceModel === undefined) return undefined
+
+  const effortOption = getEffectiveComposerOptions(sourceModel).find(
+    (option): option is ComposerSelectOption =>
+      option.id === "effort" && option.type === "select",
+  )
+  if (effortOption === undefined) return undefined
+
+  return {
+    id: modelId,
+    displayName: formatModelDisplayName(modelId),
+    supportsImageInput: false,
+    supportsAudioInput: false,
+    supportsVideoInput: false,
+    supportsPdfInput: false,
+    supportsThinking: sourceModel.supportsThinking,
+    thinkingMode: sourceModel.thinkingMode,
+    reasoningOptions: [],
+    composerOptions: [{
+      ...effortOption,
+      options: effortOption.options.map((option) => ({ ...option })),
+    }],
+  }
+}
+
 /**
- * Resolve the composer capability for a selected model. CLI discovery is
- * authoritative, so newly released CLI models can be selected before they
- * are cataloged. Give those models the provider's conservative effort
- * selector without claiming unsupported media or context capabilities.
+ * Resolve the composer capability for a selected model. Discovery is
+ * authoritative for model existence, while catalog entries remain
+ * authoritative for model-specific traits.
  */
 export function getModelCapability(
   providerKey: ModelCatalogProviderKey,
@@ -259,6 +289,7 @@ export function getModelCapability(
   const catalogModel = getCatalogModel(providerKey, modelId)
   if (catalogModel !== undefined) return catalogModel
   if (modelId === null || modelId === undefined || modelId.length === 0) return undefined
+  if (providerKey === "anthropic") return getAnthropicFallbackCapability(modelId)
   if (!isCliProvider(providerKey)) return undefined
 
   const effortOption = CLI_FALLBACK_EFFORT_OPTIONS[providerKey]

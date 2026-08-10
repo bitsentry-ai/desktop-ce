@@ -615,6 +615,8 @@ describe('AgentRuntimeService runbook outcomes', () => {
       accessLevel,
       llm: { providerKey: 'anthropic', model: 'claude-sonnet-4-6' },
       runbookContext: {
+        id: 'runbook-shell',
+        title: 'Print working directory',
         description: '',
         actions: [{ id: 'step-shell', type: 'shell', title: 'Print working directory', command: 'pwd' }],
       },
@@ -628,7 +630,7 @@ describe('AgentRuntimeService runbook outcomes', () => {
       'list_log_sources',
       'get_checkpoint',
     ]
-    const availableToolNames = firstRequest?.tools.map((tool) => tool.name) ?? []
+    const availableToolNames = firstRequest?.tools.map((tool: { name: string }) => tool.name) ?? []
     if (shouldExecuteShell) {
       expect(availableToolNames).toEqual(expect.arrayContaining(restrictedToolNames))
     } else {

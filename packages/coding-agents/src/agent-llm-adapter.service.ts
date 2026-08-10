@@ -493,20 +493,20 @@ function toOpenAiResponsesInput(messages: ChatMessage[]): Array<Record<string, u
 }
 
 function toAnthropicContent(content: string | ChatContentPart[]): string | Array<Record<string, unknown>> {
-  if (typeof content === 'string') return content
-  return content.map((part) => {
+  if (typeof content === 'string') return content.length > 0 ? content : []
+  return content.flatMap((part): Array<Record<string, unknown>> => {
     if (part.type === 'text') {
-      return { type: 'text', text: part.text }
+      return part.text.length > 0 ? [{ type: 'text', text: part.text }] : []
     }
     const { mediaType, base64 } = parseDataUrl(part.image.dataUrl)
-    return {
+    return [{
       type: 'image',
       source: {
         type: 'base64',
         media_type: mediaType,
         data: base64,
       },
-    }
+    }]
   })
 }
 
@@ -1616,10 +1616,11 @@ export class AgentLlmAdapterService {
           }
         }
         if (m.toolCalls !== undefined && m.toolCalls.length > 0) {
+          const text = normalizeTextContent(m.content)
           return {
             role: m.role,
             content: [
-              { type: 'text', text: normalizeTextContent(m.content) },
+              ...(text.length > 0 ? [{ type: 'text', text }] : []),
               ...m.toolCalls.map(tc => ({
                 type: 'tool_use' as const,
                 id: tc.id,

@@ -11,6 +11,11 @@ import {
 import { useTranslation } from '@bitsentry-ce/i18n'
 import { resolveSyncedDefaultModel } from './model-selection'
 import {
+  mergeDiscoveredModelIds,
+  publishDiscoveredModels,
+  useDiscoveredModels,
+} from '../llm/modelDiscovery'
+import {
   getDesktopApi,
   type DesktopBitsentryApi,
   type DesktopCliProbeResult,
@@ -827,6 +832,7 @@ export function CodingAgentProvidersSection({
 }: CodingAgentProvidersSectionProps) {
   const { t } = useTranslation()
   const { toast } = useToast()
+  const discoveredModels = useDiscoveredModels()
   const [claudeCode, setClaudeCode] = useState<CodingAgentProviderState>({
     enabled: true,
     binaryPath: 'claude',
@@ -1111,6 +1117,9 @@ export function CodingAgentProvidersSection({
           ? detectedModels
           : [...baseModels, currentModel],
       )
+      if (detectedModels.length > 0) {
+        publishDiscoveredModels(provider, models)
+      }
       const nextModel = resolveSyncedDefaultModel(currentModel, models)
       setter((prev) => ({
         ...prev,
@@ -1156,7 +1165,10 @@ export function CodingAgentProvidersSection({
       <div className="rounded-lg border border-border divide-y divide-border overflow-hidden">
         <ProviderPanel
           meta={PROVIDER_META.codex}
-          state={codex}
+          state={{
+            ...codex,
+            availableModels: mergeDiscoveredModelIds('codex', codex.availableModels, discoveredModels),
+          }}
           setState={setCodex}
           isPrimary={primaryAgent === 'codex'}
           isPrimarySelectionPending={isPrimarySelectionPending}
@@ -1170,7 +1182,10 @@ export function CodingAgentProvidersSection({
         />
         <ProviderPanel
           meta={PROVIDER_META.cursor}
-          state={cursor}
+          state={{
+            ...cursor,
+            availableModels: mergeDiscoveredModelIds('cursor', cursor.availableModels, discoveredModels),
+          }}
           setState={setCursor}
           isPrimary={primaryAgent === 'cursor'}
           isPrimarySelectionPending={isPrimarySelectionPending}
@@ -1184,7 +1199,10 @@ export function CodingAgentProvidersSection({
         />
         <ProviderPanel
           meta={PROVIDER_META.claude_code}
-          state={claudeCode}
+          state={{
+            ...claudeCode,
+            availableModels: mergeDiscoveredModelIds('claude_code', claudeCode.availableModels, discoveredModels),
+          }}
           setState={setClaudeCode}
           isPrimary={primaryAgent === 'claude_code'}
           isPrimarySelectionPending={isPrimarySelectionPending}
@@ -1198,7 +1216,10 @@ export function CodingAgentProvidersSection({
         />
         <ProviderPanel
           meta={PROVIDER_META.opencode}
-          state={opencode}
+          state={{
+            ...opencode,
+            availableModels: mergeDiscoveredModelIds('opencode', opencode.availableModels, discoveredModels),
+          }}
           setState={setOpenCode}
           isPrimary={primaryAgent === 'opencode'}
           isPrimarySelectionPending={isPrimarySelectionPending}
