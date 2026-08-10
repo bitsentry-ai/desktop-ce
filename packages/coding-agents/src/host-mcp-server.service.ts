@@ -158,6 +158,8 @@ export class HostMcpServerService {
   }
 
   async stop(): Promise<void> {
+    const startPromise = this.startPromise
+    if (startPromise !== undefined) await startPromise.catch(() => {})
     this.sessions.clear()
     if (this.sessionSweepTimer !== undefined) clearInterval(this.sessionSweepTimer)
     this.sessionSweepTimer = undefined

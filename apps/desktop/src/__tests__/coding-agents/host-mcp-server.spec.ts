@@ -546,6 +546,18 @@ describe('HostMcpServerService', () => {
     }
   })
 
+  it('stops a host that is still starting', async () => {
+    const server = new HostMcpServerService()
+    const endpointPromise = server.createSession(createContext())
+    const stopPromise = server.stop()
+
+    const endpoint = await endpointPromise
+    await stopPromise
+
+    await expect(request(endpoint, { jsonrpc: '2.0', id: 21, method: 'tools/list' }))
+      .rejects.toThrow()
+  })
+
   it('keeps a streamable get_runbook_execution request open until the gateway completes', async () => {
     const server = new HostMcpServerService()
     servers.push(server)
