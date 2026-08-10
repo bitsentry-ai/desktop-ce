@@ -132,6 +132,10 @@ async function runShim(
 
 async function requestInChunks(endpoint: HostMcpEndpoint, body: Buffer, splitAt: number): Promise<number> {
   const url = new URL(endpoint.url)
+  const requestBody = JSON.parse(body.toString()) as {
+    method?: string
+    params?: { name?: string }
+  }
   return await new Promise((resolve, reject) => {
     const clientRequest = createHttpRequest({
       hostname: url.hostname,
@@ -143,7 +147,8 @@ async function requestInChunks(endpoint: HostMcpEndpoint, body: Buffer, splitAt:
         'content-type': 'application/json',
         accept: 'application/json, text/event-stream',
         'mcp-protocol-version': MCP_PROTOCOL_VERSION,
-        'mcp-method': 'tools/list',
+        'mcp-method': requestBody.method ?? '',
+        ...(requestBody.params?.name === undefined ? {} : { 'mcp-name': requestBody.params.name }),
       },
     }, (response) => {
       response.resume()
@@ -328,15 +333,28 @@ describe('HostMcpServerService', () => {
   it('decodes multibyte request bodies split across TCP chunks', async () => {
     const server = new HostMcpServerService()
     servers.push(server)
-    const endpoint = await server.createSession(createContext())
+    const context = createContext()
+    const events: Array<{ args: Record<string, unknown> }> = []
+    context.onToolEvent = (event) => events.push(event)
+    const endpoint = await server.createSession(context)
     const body = Buffer.from(JSON.stringify({
       jsonrpc: '2.0',
       id: 11,
-      method: 'tools/list',
+      method: 'tools/call',
       params: {
+        name: 'propose_runbook_create',
+        arguments: {
+          contextId: endpoint.contextId,
+          prompt: 'Create a check for caf\u00e9 \ud83d\ude00',
+          draftRunbook: {
+            title: 'UTF-8 probe',
+            description: '',
+            actions: [{ id: 'check', type: 'shell', title: 'Check', command: 'printf caf\u00e9 \ud83d\ude00' }],
+          },
+        },
         _meta: {
           'io.modelcontextprotocol/protocolVersion': MCP_PROTOCOL_VERSION,
-          'io.modelcontextprotocol/clientInfo': { name: 'bitsentry-😀-client', version: '1.0.0' },
+          'io.modelcontextprotocol/clientInfo': { name: 'bitsentry-test-client', version: '1.0.0' },
           'io.modelcontextprotocol/clientCapabilities': {},
         },
       },
@@ -345,6 +363,9 @@ describe('HostMcpServerService', () => {
 
     expect(emojiStart).toBeGreaterThanOrEqual(0)
     await expect(requestInChunks(endpoint, body, emojiStart + 2)).resolves.toBe(200)
+    expect(events).toContainEqual(expect.objectContaining({
+      args: expect.objectContaining({ prompt: 'Create a check for caf\u00e9 \ud83d\ude00' }),
+    }))
   })
 
   it('gives each endpoint a distinct scoped token', async () => {
