@@ -154,7 +154,9 @@ if (!url || !token || !contextId) {
     const writeMessage = async (message) => {
       stdout = stdout.then(() => new Promise((resolve, reject) => {
         process.stdout.write(\`\${JSON.stringify(message)}\\n\`, (error) => error ? reject(error) : resolve())
-      }))
+      })).catch((error) => {
+        process.stderr.write(\`[bitsentry-host-mcp] stdout write failed: \${error instanceof Error ? error.message : String(error)}\\n\`)
+      })
       await stdout
     }
     const handleLine = async (line) => {
