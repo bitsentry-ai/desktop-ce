@@ -279,7 +279,7 @@ describe('HostMcpServerService', () => {
     })
   })
 
-  it('rejects requests without the required stateless MCP headers and envelope', async () => {
+  it('rejects a valid stateless envelope without required MCP headers', async () => {
     const server = new HostMcpServerService()
     servers.push(server)
     const endpoint = await server.createSession(createContext())
@@ -289,6 +289,30 @@ describe('HostMcpServerService', () => {
       headers: {
         authorization: `Bearer ${endpoint.token}`,
         'content-type': 'application/json',
+      },
+      body: JSON.stringify(modernMcpRequest({ jsonrpc: '2.0', id: 8, method: 'tools/list' }, endpoint.contextId)),
+    })
+
+    expect(response.status).toBe(400)
+    expect(await readMcpResponse(response)).toMatchObject({
+      jsonrpc: '2.0',
+      id: 8,
+      error: expect.objectContaining({ code: expect.any(Number) }),
+    })
+  })
+
+  it('rejects required MCP headers without the stateless envelope', async () => {
+    const server = new HostMcpServerService()
+    servers.push(server)
+    const endpoint = await server.createSession(createContext())
+
+    const response = await fetch(endpoint.url, {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${endpoint.token}`,
+        'content-type': 'application/json',
+        'mcp-protocol-version': MCP_PROTOCOL_VERSION,
+        'mcp-method': 'tools/list',
       },
       body: JSON.stringify({ jsonrpc: '2.0', id: 8, method: 'tools/list' }),
     })
@@ -350,7 +374,7 @@ describe('HostMcpServerService', () => {
       .resolves.toMatchObject({ status: 401 })
   })
 
-  it('sweeps expired endpoint contexts without waiting for another request', async () => {
+  it('lazily rejects an expired endpoint on its next request', async () => {
     const server = new HostMcpServerService(1)
     servers.push(server)
     const endpoint = await server.createSession(createContext(), 1)
@@ -451,6 +475,38 @@ describe('HostMcpServerService', () => {
     })
   })
 
+  it('does not respond to successful shim or HTTP notifications', async () => {
+    const server = new HostMcpServerService()
+    servers.push(server)
+    const endpoint = await server.createSession(createContext())
+
+    await expect(runShim(endpoint, [{ jsonrpc: '2.0', method: 'notifications/cancelled' }]))
+      .resolves.toMatchObject({ messages: [], stderr: '' })
+
+    const response = await request(endpoint, { jsonrpc: '2.0', method: 'notifications/cancelled' })
+    expect(await response.text()).toBe('')
+  })
+
+  it.each([undefined, null])('injects an empty argument object for shim tool calls with %s arguments', async (argumentsValue) => {
+    const server = new HostMcpServerService()
+    servers.push(server)
+    const endpoint = await server.createSession(createContext())
+    const params = argumentsValue === undefined
+      ? { name: 'list_runbooks' }
+      : { name: 'list_runbooks', arguments: argumentsValue }
+
+    await expect(requestThroughShim(endpoint, {
+      jsonrpc: '2.0',
+      id: 33,
+      method: 'tools/call',
+      params,
+    })).resolves.toMatchObject({
+      jsonrpc: '2.0',
+      id: 33,
+      result: { content: [{ type: 'text' }] },
+    })
+  })
+
   it('returns JSON-RPC errors with the original id when the host is unavailable', async () => {
     const server = new HostMcpServerService()
     servers.push(server)
@@ -514,12 +570,12 @@ describe('HostMcpServerService', () => {
   it('renews a session TTL when an authenticated request is received', async () => {
     const server = new HostMcpServerService(1)
     servers.push(server)
-    const endpoint = await server.createSession(createContext(), 100)
+    const endpoint = await server.createSession(createContext(), 500)
 
-    await new Promise((resolve) => setTimeout(resolve, 50))
+    await new Promise((resolve) => setTimeout(resolve, 250))
     await expect(request(endpoint, { jsonrpc: '2.0', id: 18, method: 'tools/list' }))
       .resolves.toMatchObject({ status: 200 })
-    await new Promise((resolve) => setTimeout(resolve, 70))
+    await new Promise((resolve) => setTimeout(resolve, 300))
 
     await expect(request(endpoint, { jsonrpc: '2.0', id: 19, method: 'tools/list' }))
       .resolves.toMatchObject({ status: 200 })
