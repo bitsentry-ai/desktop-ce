@@ -110,6 +110,47 @@ export interface CodingAgentsProviderDependencies {
   doctor?: typeof doctor;
 }
 
+type ProviderSettingsKey = keyof LocalAiSettings;
+type ProviderConfig = {
+  provider: LocalAiProviderKey;
+  settingsKey: ProviderSettingsKey;
+  argsKey?: "codexArgs" | "opencodeArgs";
+  probe(
+    dependencies: CodingAgentsProviderDependencies,
+    binaryPath: string,
+    args: string[] | undefined,
+  ): Promise<CLIProbeResult>;
+};
+
+const PROVIDER_CONFIGS: readonly ProviderConfig[] = [
+  {
+    provider: "claude_code",
+    settingsKey: "claudeCode",
+    probe: (dependencies, binaryPath) =>
+      (dependencies.probeClaudeCode ?? probeClaudeCode)(binaryPath),
+  },
+  {
+    provider: "codex",
+    settingsKey: "codex",
+    argsKey: "codexArgs",
+    probe: (dependencies, binaryPath, args) =>
+      (dependencies.probeCodex ?? probeCodex)(binaryPath, args),
+  },
+  {
+    provider: "opencode",
+    settingsKey: "opencode",
+    argsKey: "opencodeArgs",
+    probe: (dependencies, binaryPath, args) =>
+      (dependencies.probeOpenCode ?? probeOpenCode)(binaryPath, args),
+  },
+  {
+    provider: "cursor",
+    settingsKey: "cursor",
+    probe: (dependencies, binaryPath) =>
+      (dependencies.probeCursor ?? probeCursor)(binaryPath),
+  },
+];
+
 // Claude Code's composer effort caps the agent loop; it is not a model thinking-token budget.
 const EFFORT_MAX_TURNS: Record<string, number> = {
   low: 3,
@@ -162,10 +203,21 @@ function getProviderSettings(
   settings: LocalAiSettings,
   provider: LocalAiProviderKey,
 ) {
-  if (provider === "claude_code") return settings.claudeCode;
-  if (provider === "codex") return settings.codex;
-  if (provider === "opencode") return settings.opencode;
-  return settings.cursor;
+  return settings[getProviderConfig(provider).settingsKey];
+}
+
+function getProviderConfig(provider: LocalAiProviderKey): ProviderConfig {
+  return PROVIDER_CONFIGS.find((config) => config.provider === provider) ?? PROVIDER_CONFIGS[0];
+}
+
+function getProviderArgs(
+  settings: LocalAiSettings,
+  provider: LocalAiProviderKey,
+): string[] | undefined {
+  const config = getProviderConfig(provider);
+  if (config.argsKey === undefined) return undefined;
+  const value = (settings[config.settingsKey] as unknown as Record<string, unknown>)[config.argsKey];
+  return Array.isArray(value) ? value as string[] : undefined;
 }
 
 function runOpenCodeModelsCommand(
@@ -330,82 +382,22 @@ export class CodingAgentsProviderService {
     patch: Partial<LocalAiSettings>,
     previous: LocalAiSettings,
   ): void {
-    this.clearClaudeProbeIfChanged(patch, previous);
-    this.clearCodexProbeIfChanged(patch, previous);
-    this.clearOpenCodeProbeIfChanged(patch, previous);
-    this.clearCursorProbeIfChanged(patch, previous);
-  }
+    for (const config of PROVIDER_CONFIGS) {
+      const patchSettings = patch[config.settingsKey] as Record<string, unknown> | undefined;
+      if (patchSettings === undefined) continue;
+      const previousSettings = previous[config.settingsKey] as unknown as Record<string, unknown>;
+      const binaryChanged =
+        patchSettings.binaryPath !== undefined &&
+        patchSettings.binaryPath !== previousSettings.binaryPath;
+      const argsChanged =
+        config.argsKey !== undefined &&
+        patchSettings[config.argsKey] !== undefined &&
+        JSON.stringify(patchSettings[config.argsKey]) !== JSON.stringify(previousSettings[config.argsKey]);
+      if (!binaryChanged && !argsChanged) continue;
 
-  private clearClaudeProbeIfChanged(
-    patch: Partial<LocalAiSettings>,
-    previous: LocalAiSettings,
-  ): void {
-    if (patch.claudeCode?.binaryPath === undefined) {
-      return;
+      delete this.settings[config.settingsKey].lastProbe;
+      this.probeCache.delete(config.provider);
     }
-
-    if (patch.claudeCode.binaryPath === previous.claudeCode.binaryPath) {
-      return;
-    }
-
-    delete this.settings.claudeCode.lastProbe;
-    this.probeCache.delete("claude_code");
-  }
-
-  private clearCodexProbeIfChanged(
-    patch: Partial<LocalAiSettings>,
-    previous: LocalAiSettings,
-  ): void {
-    const binaryChanged =
-      patch.codex?.binaryPath !== undefined &&
-      patch.codex.binaryPath !== previous.codex.binaryPath;
-    const argsChanged =
-      patch.codex?.codexArgs !== undefined &&
-      JSON.stringify(patch.codex.codexArgs) !==
-        JSON.stringify(previous.codex.codexArgs);
-
-    if (!binaryChanged && !argsChanged) {
-      return;
-    }
-
-    delete this.settings.codex.lastProbe;
-    this.probeCache.delete("codex");
-  }
-
-  private clearOpenCodeProbeIfChanged(
-    patch: Partial<LocalAiSettings>,
-    previous: LocalAiSettings,
-  ): void {
-    const binaryChanged =
-      patch.opencode?.binaryPath !== undefined &&
-      patch.opencode.binaryPath !== previous.opencode.binaryPath;
-    const argsChanged =
-      patch.opencode?.opencodeArgs !== undefined &&
-      JSON.stringify(patch.opencode.opencodeArgs) !==
-        JSON.stringify(previous.opencode.opencodeArgs);
-
-    if (!binaryChanged && !argsChanged) {
-      return;
-    }
-
-    delete this.settings.opencode.lastProbe;
-    this.probeCache.delete("opencode");
-  }
-
-  private clearCursorProbeIfChanged(
-    patch: Partial<LocalAiSettings>,
-    previous: LocalAiSettings,
-  ): void {
-    if (patch.cursor?.binaryPath === undefined) {
-      return;
-    }
-
-    if (patch.cursor.binaryPath === previous.cursor.binaryPath) {
-      return;
-    }
-
-    delete this.settings.cursor.lastProbe;
-    this.probeCache.delete("cursor");
   }
 
   async probe(provider: LocalAiProviderKey): Promise<CLIProbeResult> {
@@ -454,13 +446,7 @@ export class CodingAgentsProviderService {
 
   async runDoctor(provider: LocalAiProviderKey): Promise<DoctorResult> {
     const settings = getProviderSettings(this.settings, provider);
-    let args: string[] | undefined;
-    if (provider === "codex") {
-      args = this.settings.codex.codexArgs;
-    }
-    if (provider === "opencode") {
-      args = this.settings.opencode.opencodeArgs;
-    }
+    const args = getProviderArgs(this.settings, provider);
     const result = await (this.dependencies.doctor ?? doctor)(
       provider,
       settings.binaryPath,
@@ -513,15 +499,7 @@ export class CodingAgentsProviderService {
   ): Promise<void> {
     this.probeCache.set(provider, result);
 
-    if (provider === "claude_code") {
-      this.settings.claudeCode.lastProbe = result;
-    } else if (provider === "codex") {
-      this.settings.codex.lastProbe = result;
-    } else if (provider === "opencode") {
-      this.settings.opencode.lastProbe = result;
-    } else {
-      this.settings.cursor.lastProbe = result;
-    }
+    this.settings[getProviderConfig(provider).settingsKey].lastProbe = result;
 
     await this.persistSettings("persist probe state");
   }
@@ -530,25 +508,8 @@ export class CodingAgentsProviderService {
     provider: LocalAiProviderKey,
     binaryPath: string,
   ): Promise<CLIProbeResult> {
-    if (provider === "claude_code") {
-      return (this.dependencies.probeClaudeCode ?? probeClaudeCode)(binaryPath);
-    }
-
-    if (provider === "codex") {
-      return (this.dependencies.probeCodex ?? probeCodex)(
-        binaryPath,
-        this.settings.codex.codexArgs,
-      );
-    }
-
-    if (provider === "opencode") {
-      return (this.dependencies.probeOpenCode ?? probeOpenCode)(
-        binaryPath,
-        this.settings.opencode.opencodeArgs,
-      );
-    }
-
-    return (this.dependencies.probeCursor ?? probeCursor)(binaryPath);
+    const config = getProviderConfig(provider);
+    return config.probe(this.dependencies, binaryPath, getProviderArgs(this.settings, provider));
   }
 
   private async prepareProviderForExecution(
