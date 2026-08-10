@@ -15,12 +15,14 @@ async function createMultiItemCodexAppServer(options: { readsGlobalCodexInstruct
   binaryPath: string
   cwd: string
   logPath: string
+  argsPath: string
 }> {
   const cwd = await mkdtemp(path.join(os.tmpdir(), 'codex-provider-test-'))
   tempDirs.push(cwd)
 
   const scriptPath = path.join(cwd, 'mock-codex-app-server.cjs')
   const logPath = path.join(cwd, 'messages.jsonl')
+  const argsPath = path.join(cwd, 'args.json')
   const script = `
 const fs = require('fs')
 const path = require('path')
@@ -29,6 +31,7 @@ const readline = require('readline')
 const respond = (id, result) => process.stdout.write(JSON.stringify({ id, result }) + '\\n')
 const notify = (method, params) => process.stdout.write(JSON.stringify({ method, params }) + '\\n')
 const logMessage = (message) => fs.appendFileSync(${JSON.stringify(logPath)}, JSON.stringify(message) + '\\n')
+fs.writeFileSync(${JSON.stringify(argsPath)}, JSON.stringify(process.argv.slice(2)))
 const responseText = ${options.readsGlobalCodexInstructions === true}
   ? (fs.existsSync(path.join(process.env.HOME || '', '.codex', 'config.toml'))
       ? 'Global instruction loaded.'
@@ -71,7 +74,7 @@ rl.on('line', (line) => {
   const binaryPath = path.join(cwd, 'codex')
   await writeFile(binaryPath, `#!/usr/bin/env node\nrequire(${JSON.stringify(scriptPath)})\n`)
   await chmod(binaryPath, 0o755)
-  return { binaryPath, cwd, logPath }
+  return { binaryPath, cwd, logPath, argsPath }
 }
 
 async function readLoggedCodexMessages(logPath: string): Promise<Array<Record<string, unknown>>> {
@@ -171,6 +174,30 @@ describe('Codex provider behavior', () => {
       approvalPolicy: 'untrusted',
       sandboxPolicy: { type: 'workspaceWrite' },
     })
+  })
+
+  it('disables native shell execution for Safe Tools without proposing a runbook', async () => {
+    const mock = await createMultiItemCodexAppServer()
+    const result = await executeCodex({
+      prompt: 'Print the current working directory.',
+      binaryPath: mock.binaryPath,
+      cwd: mock.cwd,
+      abortController: new AbortController(),
+      accessLevel: 'auto-accept-edits',
+    })
+
+    const args = JSON.parse(await readFile(mock.argsPath, 'utf8')) as string[]
+    const messages = await readLoggedCodexMessages(mock.logPath)
+    const executionItems = messages.filter((message) =>
+      message.method === 'item/started' || message.method === 'item/completed',
+    )
+
+    expect(args).toEqual(expect.arrayContaining(['-c', 'features.shell_tool=false', 'app-server']))
+    expect(executionItems.some((message) => {
+      const params = message.params as { item?: { type?: unknown } } | undefined
+      return params?.item?.type === 'commandExecution'
+    })).toBe(false)
+    expect(result.output).not.toMatch(/runbook proposal/i)
   })
 
   it('keeps completed assistant messages separate from MCP tool activity', async () => {

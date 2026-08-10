@@ -374,6 +374,14 @@ function hasCodexReasoningSummaryOverride(args: string[]): boolean {
   return args.some((arg, index) => arg.startsWith('model_reasoning_summary=') && args[index - 1] === '-c')
 }
 
+function withCodexAccessArgs(codexArgs: string[], accessLevel: AccessLevel): string[] {
+  const args = [...codexArgs]
+  if (accessLevel === 'auto-accept-edits') {
+    args.push('-c', 'features.shell_tool=false')
+  }
+  return args
+}
+
 // eslint-disable-next-line sonarjs/cognitive-complexity -- Codex process setup, cancellation, turn lifecycle, and cleanup must remain in one ordered ownership boundary.
 export async function executeCodex(
   options: CodexExecutionOptions,
@@ -389,7 +397,10 @@ export async function executeCodex(
     ? await mkdtemp(path.join(os.tmpdir(), 'bitsentry-codex-'))
     : undefined
   const cwd = options.cwd ?? scratchDirectory ?? os.tmpdir()
-  const codexArgs = withCodexModelArgs(options.codexArgs ?? [], options.model)
+  const codexArgs = withCodexAccessArgs(
+    withCodexModelArgs(options.codexArgs ?? [], options.model),
+    effectiveAccessLevel,
+  )
   let effectiveCodexArgs: string[] | undefined
   if (codexArgs.length > 0) {
     effectiveCodexArgs = codexArgs
