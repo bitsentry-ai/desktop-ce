@@ -17,8 +17,12 @@ const token = process.env.BITSENTRY_MCP_TOKEN
 const contextId = process.env.BITSENTRY_MCP_CONTEXT_ID
 const protocolVersion = '2026-07-28'
 const legacyProtocolVersion = '2025-11-25'
-const shortRequestTimeoutMs = 10_000
-const toolCallTimeoutMs = ${RUNBOOK_COMPLETION_WAIT_TIMEOUT_MS + 5_000}
+function timeoutFromEnv(name, fallback) {
+  const value = Number(process.env[name])
+  return Number.isFinite(value) && value > 0 ? value : fallback
+}
+const shortRequestTimeoutMs = timeoutFromEnv('BITSENTRY_MCP_SHORT_TIMEOUT_MS', 10_000)
+const toolCallTimeoutMs = timeoutFromEnv('BITSENTRY_MCP_TOOL_TIMEOUT_MS', ${RUNBOOK_COMPLETION_WAIT_TIMEOUT_MS + 5_000})
 const clientInfo = { name: 'bitsentry-host-mcp-legacy-shim', version: '1.0.0' }
 const clientCapabilities = {}
 
@@ -154,7 +158,9 @@ if (!url || !token || !contextId) {
     const writeMessage = async (message) => {
       stdout = stdout.then(() => new Promise((resolve, reject) => {
         process.stdout.write(\`\${JSON.stringify(message)}\\n\`, (error) => error ? reject(error) : resolve())
-      }))
+      })).catch((error) => {
+        process.stderr.write(\`[bitsentry-host-mcp] stdout write failed: \${error instanceof Error ? error.message : String(error)}\\n\`)
+      })
       await stdout
     }
     const handleLine = async (line) => {

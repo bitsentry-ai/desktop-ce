@@ -132,7 +132,38 @@ async function runShim(
 
 async function requestInChunks(endpoint: HostMcpEndpoint, body: Buffer, splitAt: number): Promise<number> {
   const url = new URL(endpoint.url)
+  const requestBody = JSON.parse(body.toString()) as {
+    method?: string
+    params?: { name?: string }
+  }
   return await new Promise((resolve, reject) => {
+    const clientRequest = createHttpRequest({
+      hostname: url.hostname,
+      port: url.port,
+      path: url.pathname,
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${endpoint.token}`,
+        'content-type': 'application/json',
+        accept: 'application/json, text/event-stream',
+        'mcp-protocol-version': MCP_PROTOCOL_VERSION,
+        'mcp-method': requestBody.method ?? '',
+        ...(requestBody.params?.name === undefined ? {} : { 'mcp-name': requestBody.params.name }),
+      },
+    }, (response) => {
+      response.resume()
+      response.once('end', () => resolve(response.statusCode ?? 0))
+    })
+    clientRequest.once('error', reject)
+    clientRequest.write(body.subarray(0, splitAt))
+    clientRequest.end(body.subarray(splitAt))
+  })
+}
+
+async function requestExpectingDisconnect(endpoint: HostMcpEndpoint): Promise<void> {
+  const url = new URL(endpoint.url)
+  const body = JSON.stringify(modernMcpRequest({ jsonrpc: '2.0', id: 12, method: 'tools/list' }, endpoint.contextId))
+  await new Promise<void>((resolve, reject) => {
     const clientRequest = createHttpRequest({
       hostname: url.hostname,
       port: url.port,
@@ -147,11 +178,12 @@ async function requestInChunks(endpoint: HostMcpEndpoint, body: Buffer, splitAt:
       },
     }, (response) => {
       response.resume()
-      response.once('end', () => resolve(response.statusCode ?? 0))
+      response.once('aborted', resolve)
+      response.once('error', resolve)
+      response.once('end', () => reject(new Error('Expected the partial response to be destroyed')))
     })
-    clientRequest.once('error', reject)
-    clientRequest.write(body.subarray(0, splitAt))
-    clientRequest.end(body.subarray(splitAt))
+    clientRequest.once('error', resolve)
+    clientRequest.end(body)
   })
 }
 
@@ -185,7 +217,7 @@ afterEach(async () => {
 })
 
 describe('HostMcpServerService', () => {
-  it('requires a session token and executes tools in the matching session ledger', async () => {
+  it('requires a session token and executes tools in the matching context', async () => {
     const server = new HostMcpServerService()
     servers.push(server)
     const context = createContext()
@@ -208,10 +240,6 @@ describe('HostMcpServerService', () => {
       result: { content: [{ type: 'text' }] },
     })
     expect(context.gateway.listExecutable).toHaveBeenCalledOnce()
-    expect(server.getLedger(endpoint.token)).toEqual([
-      expect.objectContaining({ type: 'started', toolName: 'list_runbooks' }),
-      expect.objectContaining({ type: 'completed', toolName: 'list_runbooks' }),
-    ])
   })
 
   it('rejects a context handle that is outside the bearer token scope', async () => {
@@ -283,7 +311,7 @@ describe('HostMcpServerService', () => {
     })
   })
 
-  it('rejects requests without the required stateless MCP headers and envelope', async () => {
+  it('rejects a valid stateless envelope without required MCP headers', async () => {
     const server = new HostMcpServerService()
     servers.push(server)
     const endpoint = await server.createSession(createContext())
@@ -293,6 +321,30 @@ describe('HostMcpServerService', () => {
       headers: {
         authorization: `Bearer ${endpoint.token}`,
         'content-type': 'application/json',
+      },
+      body: JSON.stringify(modernMcpRequest({ jsonrpc: '2.0', id: 8, method: 'tools/list' }, endpoint.contextId)),
+    })
+
+    expect(response.status).toBe(400)
+    expect(await readMcpResponse(response)).toMatchObject({
+      jsonrpc: '2.0',
+      id: 8,
+      error: expect.objectContaining({ code: expect.any(Number) }),
+    })
+  })
+
+  it('rejects required MCP headers without the stateless envelope', async () => {
+    const server = new HostMcpServerService()
+    servers.push(server)
+    const endpoint = await server.createSession(createContext())
+
+    const response = await fetch(endpoint.url, {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${endpoint.token}`,
+        'content-type': 'application/json',
+        'mcp-protocol-version': MCP_PROTOCOL_VERSION,
+        'mcp-method': 'tools/list',
       },
       body: JSON.stringify({ jsonrpc: '2.0', id: 8, method: 'tools/list' }),
     })
@@ -305,18 +357,54 @@ describe('HostMcpServerService', () => {
     })
   })
 
-  it('decodes multibyte request bodies split across TCP chunks', async () => {
+  it('destroys a partial response without poisoning the host error path', async () => {
     const server = new HostMcpServerService()
     servers.push(server)
     const endpoint = await server.createSession(createContext())
+    const mutableServer = server as unknown as {
+      nodeMcpHandler: (request: unknown, response: { writeHead(statusCode: number): void }) => Promise<void>
+    }
+    const originalHandler = mutableServer.nodeMcpHandler
+    mutableServer.nodeMcpHandler = async (_request, response) => {
+      response.writeHead(200)
+      throw new Error('late handler failure')
+    }
+
+    try {
+      await expect(requestExpectingDisconnect(endpoint)).resolves.toBeUndefined()
+    } finally {
+      mutableServer.nodeMcpHandler = originalHandler
+    }
+
+    await expect(request(endpoint, { jsonrpc: '2.0', id: 13, method: 'tools/list' }))
+      .resolves.toMatchObject({ status: 200 })
+  })
+
+  it('decodes multibyte request bodies split across TCP chunks', async () => {
+    const server = new HostMcpServerService()
+    servers.push(server)
+    const context = createContext()
+    const events: Array<{ args: Record<string, unknown> }> = []
+    context.onToolEvent = (event) => events.push(event)
+    const endpoint = await server.createSession(context)
     const body = Buffer.from(JSON.stringify({
       jsonrpc: '2.0',
       id: 11,
-      method: 'tools/list',
+      method: 'tools/call',
       params: {
+        name: 'propose_runbook_create',
+        arguments: {
+          contextId: endpoint.contextId,
+          prompt: 'Create a check for caf\u00e9 \ud83d\ude00',
+          draftRunbook: {
+            title: 'UTF-8 probe',
+            description: '',
+            actions: [{ id: 'check', type: 'shell', title: 'Check', command: 'printf caf\u00e9 \ud83d\ude00' }],
+          },
+        },
         _meta: {
           'io.modelcontextprotocol/protocolVersion': MCP_PROTOCOL_VERSION,
-          'io.modelcontextprotocol/clientInfo': { name: 'bitsentry-😀-client', version: '1.0.0' },
+          'io.modelcontextprotocol/clientInfo': { name: 'bitsentry-test-client', version: '1.0.0' },
           'io.modelcontextprotocol/clientCapabilities': {},
         },
       },
@@ -325,6 +413,9 @@ describe('HostMcpServerService', () => {
 
     expect(emojiStart).toBeGreaterThanOrEqual(0)
     await expect(requestInChunks(endpoint, body, emojiStart + 2)).resolves.toBe(200)
+    expect(events).toContainEqual(expect.objectContaining({
+      args: expect.objectContaining({ prompt: 'Create a check for caf\u00e9 \ud83d\ude00' }),
+    }))
   })
 
   it('gives each endpoint a distinct scoped token', async () => {
@@ -344,20 +435,17 @@ describe('HostMcpServerService', () => {
     })
   })
 
-  it('removes an endpoint ledger when its execution closes', async () => {
+  it('rejects an endpoint after its execution closes', async () => {
     const server = new HostMcpServerService()
     servers.push(server)
     const endpoint = await server.createSession(createContext())
 
-    expect(server.getLedger(endpoint.token)).toEqual([])
     server.closeSession(endpoint.token)
-
-    expect(server.getLedger(endpoint.token)).toEqual([])
     await expect(request(endpoint, { jsonrpc: '2.0', id: 1, method: 'tools/list' }))
       .resolves.toMatchObject({ status: 401 })
   })
 
-  it('sweeps expired endpoint contexts without waiting for another request', async () => {
+  it('lazily rejects an expired endpoint on its next request', async () => {
     const server = new HostMcpServerService(1)
     servers.push(server)
     const endpoint = await server.createSession(createContext(), 1)
@@ -458,6 +546,38 @@ describe('HostMcpServerService', () => {
     })
   })
 
+  it('does not respond to successful shim or HTTP notifications', async () => {
+    const server = new HostMcpServerService()
+    servers.push(server)
+    const endpoint = await server.createSession(createContext())
+
+    await expect(runShim(endpoint, [{ jsonrpc: '2.0', method: 'notifications/cancelled' }]))
+      .resolves.toMatchObject({ messages: [], stderr: '' })
+
+    const response = await request(endpoint, { jsonrpc: '2.0', method: 'notifications/cancelled' })
+    expect(await response.text()).toBe('')
+  })
+
+  it.each([undefined, null])('injects an empty argument object for shim tool calls with %s arguments', async (argumentsValue) => {
+    const server = new HostMcpServerService()
+    servers.push(server)
+    const endpoint = await server.createSession(createContext())
+    const params = argumentsValue === undefined
+      ? { name: 'list_runbooks' }
+      : { name: 'list_runbooks', arguments: argumentsValue }
+
+    await expect(requestThroughShim(endpoint, {
+      jsonrpc: '2.0',
+      id: 33,
+      method: 'tools/call',
+      params,
+    })).resolves.toMatchObject({
+      jsonrpc: '2.0',
+      id: 33,
+      result: { content: [{ type: 'text' }] },
+    })
+  })
+
   it('returns JSON-RPC errors with the original id when the host is unavailable', async () => {
     const server = new HostMcpServerService()
     servers.push(server)
@@ -493,6 +613,8 @@ describe('HostMcpServerService', () => {
       type: 'object',
       properties: expect.objectContaining({ contextId: expect.any(Object) }),
     })
+    expect((executeRunbook?.inputSchema.required as string[] | undefined) ?? [])
+      .not.toContain('contextId')
     expect(executeRunbook?.inputSchema).not.toHaveProperty('anyOf')
   })
 
@@ -519,12 +641,12 @@ describe('HostMcpServerService', () => {
   it('renews a session TTL when an authenticated request is received', async () => {
     const server = new HostMcpServerService(1)
     servers.push(server)
-    const endpoint = await server.createSession(createContext(), 100)
+    const endpoint = await server.createSession(createContext(), 500)
 
-    await new Promise((resolve) => setTimeout(resolve, 50))
+    await new Promise((resolve) => setTimeout(resolve, 250))
     await expect(request(endpoint, { jsonrpc: '2.0', id: 18, method: 'tools/list' }))
       .resolves.toMatchObject({ status: 200 })
-    await new Promise((resolve) => setTimeout(resolve, 70))
+    await new Promise((resolve) => setTimeout(resolve, 300))
 
     await expect(request(endpoint, { jsonrpc: '2.0', id: 19, method: 'tools/list' }))
       .resolves.toMatchObject({ status: 200 })
@@ -544,6 +666,18 @@ describe('HostMcpServerService', () => {
     } finally {
       agent.destroy()
     }
+  })
+
+  it('stops a host that is still starting', async () => {
+    const server = new HostMcpServerService()
+    const endpointPromise = server.createSession(createContext())
+    const stopPromise = server.stop()
+
+    const endpoint = await endpointPromise
+    await stopPromise
+
+    await expect(request(endpoint, { jsonrpc: '2.0', id: 21, method: 'tools/list' }))
+      .rejects.toThrow()
   })
 
   it('keeps a streamable get_runbook_execution request open until the gateway completes', async () => {
@@ -609,6 +743,8 @@ describe('HostMcpServerService', () => {
     context.gateway.get = vi.fn().mockResolvedValue(runningExecution)
     context.gateway.waitForCompletion = vi.fn().mockReturnValue(completion)
     const endpoint = await server.createSession(context)
+    endpoint.env.BITSENTRY_MCP_SHORT_TIMEOUT_MS = '200'
+    endpoint.env.BITSENTRY_MCP_TOOL_TIMEOUT_MS = '2000'
 
     const responsePromise = requestThroughShim(endpoint, {
       jsonrpc: '2.0',
@@ -622,7 +758,7 @@ describe('HostMcpServerService', () => {
     await vi.waitFor(() => {
       expect(context.gateway.waitForCompletion).toHaveBeenCalledOnce()
     })
-    await new Promise((resolve) => setTimeout(resolve, 10_100))
+    await new Promise((resolve) => setTimeout(resolve, 300))
     completeExecution?.(completedExecution)
 
     await expect(responsePromise).resolves.toMatchObject({
@@ -632,5 +768,5 @@ describe('HostMcpServerService', () => {
         content: [{ text: expect.stringContaining('completed') }],
       },
     })
-  }, 15_000)
+  }, 3_000)
 })

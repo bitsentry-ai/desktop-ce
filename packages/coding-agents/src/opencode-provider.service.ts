@@ -164,11 +164,7 @@ function buildOpenCodePrompt(
   const hasRunbookTools = mcpEndpoint !== undefined
   const scopedPrompt = mcpEndpoint === undefined
     ? prompt
-    : prependRunbookOnlyScope(prompt, {
-      includeProposalInstructions: mcpEndpoint.hasRunbookProposal === true,
-      includeParameterInstructions: mcpEndpoint.hasRunbookParameters === true,
-      includeMultiRunbookInstructions: mcpEndpoint.hasMultipleRunbooksInPlay === true,
-    })
+    : prependRunbookOnlyScope(prompt, mcpEndpoint.scopeOptions)
   if (accessLevel === 'full-access') {
     return scopedPrompt
   }
