@@ -185,7 +185,7 @@ afterEach(async () => {
 })
 
 describe('HostMcpServerService', () => {
-  it('requires a session token and executes tools in the matching session ledger', async () => {
+  it('requires a session token and executes tools in the matching context', async () => {
     const server = new HostMcpServerService()
     servers.push(server)
     const context = createContext()
@@ -208,10 +208,6 @@ describe('HostMcpServerService', () => {
       result: { content: [{ type: 'text' }] },
     })
     expect(context.gateway.listExecutable).toHaveBeenCalledOnce()
-    expect(server.getLedger(endpoint.token)).toEqual([
-      expect.objectContaining({ type: 'started', toolName: 'list_runbooks' }),
-      expect.objectContaining({ type: 'completed', toolName: 'list_runbooks' }),
-    ])
   })
 
   it('rejects a context handle that is outside the bearer token scope', async () => {
@@ -344,15 +340,12 @@ describe('HostMcpServerService', () => {
     })
   })
 
-  it('removes an endpoint ledger when its execution closes', async () => {
+  it('rejects an endpoint after its execution closes', async () => {
     const server = new HostMcpServerService()
     servers.push(server)
     const endpoint = await server.createSession(createContext())
 
-    expect(server.getLedger(endpoint.token)).toEqual([])
     server.closeSession(endpoint.token)
-
-    expect(server.getLedger(endpoint.token)).toEqual([])
     await expect(request(endpoint, { jsonrpc: '2.0', id: 1, method: 'tools/list' }))
       .resolves.toMatchObject({ status: 401 })
   })

@@ -10,7 +10,6 @@ import { toNodeHandler } from '@modelcontextprotocol/node'
 import { createMcpHandler, McpServer } from '@modelcontextprotocol/server'
 import {
   type HostToolContext,
-  type HostToolEvent,
 } from '@bitsentry-ce/core/features/agent-runtime'
 
 const HOST_MCP_PATH = '/mcp'
@@ -38,7 +37,6 @@ type HostMcpSession = {
   context: HostToolContext
   expiresAt: number
   ttlMs: number
-  ledger: HostToolEvent[]
   activeRequests: number
 }
 
@@ -80,7 +78,7 @@ async function readMcpRequestBody(request: IncomingMessage): Promise<unknown> {
 
 function createSessionServer(session: HostMcpSession): McpServer {
   const server = new McpServer({ name: 'bitsentry-host-tools', version: '1.0.0' })
-  const hostTools = createHostToolCore(session.context, (event) => session.ledger.push(event), session.contextId)
+  const hostTools = createHostToolCore(session.context, undefined, session.contextId)
   for (const hostTool of hostTools.tools) {
     server.registerTool(hostTool.name, {
       description: hostTool.description,
@@ -217,7 +215,7 @@ export class HostMcpServerService {
     const token = randomBytes(32).toString('base64url')
     const contextId = randomBytes(16).toString('base64url')
     const expiresAt = Date.now() + ttlMs
-    this.sessions.set(token, { contextId, context, expiresAt, ttlMs, ledger: [], activeRequests: 0 })
+    this.sessions.set(token, { contextId, context, expiresAt, ttlMs, activeRequests: 0 })
     if (this.baseUrl === undefined) throw new Error('Host MCP endpoint is not running')
     const shimPath = await this.ensureShimFile()
     return {
@@ -244,8 +242,6 @@ export class HostMcpServerService {
   }
 
   closeSession(token: string): void { this.sessions.delete(token) }
-
-  getLedger(token: string): readonly HostToolEvent[] { return this.sessions.get(token)?.ledger ?? [] }
 
   private findSession(receivedToken: string | undefined): HostMcpSession | undefined {
     return [...this.sessions.entries()].find(([token]) => hasMatchingToken(receivedToken, token))?.[1]
