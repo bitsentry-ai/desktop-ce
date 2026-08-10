@@ -12,12 +12,7 @@ export interface RunbookOnlyScopeOptions {
   includeMultiRunbookInstructions?: boolean
 }
 
-function normalizeScopeOptions(options: RunbookOnlyScopeOptions | boolean): RunbookOnlyScopeOptions {
-  return typeof options === 'boolean' ? { includeProposalInstructions: options } : options
-}
-
-export function buildRunbookOnlyScope(options: RunbookOnlyScopeOptions | boolean = {}): string {
-  const scopeOptions = normalizeScopeOptions(options)
+export function buildRunbookOnlyScope(options: RunbookOnlyScopeOptions = {}): string {
   const hostToolNames = getHostTools().map((toolDefinition) => toolDefinition.name).join(', ')
   const instructions = [
     'This is a BitSentry incident-chat session.',
@@ -30,19 +25,19 @@ export function buildRunbookOnlyScope(options: RunbookOnlyScopeOptions | boolean
     'To run an existing runbook, use execute_runbook, then call get_runbook_execution once with waitForCompletion: true. Do not poll it.',
     'If a runbook tool call fails or appears missing, call list_runbooks once to verify availability before concluding anything; if that also fails, report that runbook tools are unreachable in this session.',
   ]
-  if (scopeOptions.includeProposalInstructions === true) {
+  if (options.includeProposalInstructions === true) {
     instructions.splice(7, 0, 'When revising a create-kind proposal, use propose_runbook_create because the draft was never saved; when revising an edit-kind proposal, use propose_runbook_edit against the same target runbook.')
   }
-  if (scopeOptions.includeParameterInstructions === true) {
+  if (options.includeParameterInstructions === true) {
     instructions.push('If list_runbooks shows required parameters, supply them before starting that runbook; user-provided values override defaults.')
   }
-  if (scopeOptions.includeMultiRunbookInstructions === true) {
+  if (options.includeMultiRunbookInstructions === true) {
     instructions.push('For incident diagnosis requiring multiple data sources, execute each required runbook and inspect all completed results before finalizing.')
   }
   return instructions.join(' ')
 }
 
-export function prependRunbookOnlyScope(prompt: string, options: RunbookOnlyScopeOptions | boolean = {}): string {
+export function prependRunbookOnlyScope(prompt: string, options: RunbookOnlyScopeOptions = {}): string {
   return [
     '## BitSentry incident-session scope',
     buildRunbookOnlyScope(options),
