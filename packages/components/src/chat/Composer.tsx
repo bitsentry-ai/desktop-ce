@@ -29,7 +29,6 @@ import {
   getEffectiveComposerOptions,
   getModelContextWindowLimit,
   providerSupportsPlanMode,
-  isCliProvider,
 } from "../llm/modelCatalog";
 import { useTranslation } from "@bitsentry-ce/i18n";
 import {
@@ -46,7 +45,6 @@ import { ModeToggle } from "./ModeToggle";
 import { AccessSelector } from "./AccessSelector";
 import { SendButton } from "./SendButton";
 import { ContextIndicator } from "./ContextIndicator";
-import { getDesktopApi } from "../services/desktop-api";
 
 export interface ComposerProps {
   prompt: string;
@@ -272,10 +270,7 @@ export function Composer({
   }
 
   let accessSelector: ReactNode = null;
-  const isDesktop = getDesktopApi() !== undefined;
-  const shouldShowAccessSelector =
-    selectedProviderKey !== null &&
-    (!isDesktop || isCliProvider(selectedProviderKey));
+  const shouldShowAccessSelector = selectedProviderKey !== null;
   if (shouldShowAccessSelector) {
     accessSelector = (
       <AccessSelector

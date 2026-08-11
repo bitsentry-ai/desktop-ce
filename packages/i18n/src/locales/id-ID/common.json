@@ -669,6 +669,7 @@
   "common.markdown.scrollableTable": "Tabel yang dapat digulir",
   "common.modelPicker.addToFavorites": "Tambahkan ke favorit",
   "common.modelPicker.noModelsFound": "Tidak ada model yang ditemukan",
+  "common.modelPicker.modelsUnavailable": "Model tidak dapat dimuat",
   "common.modelPicker.providerLockedDuringActiveConversation": "Penyedia dikunci ke {{provider}} selama percakapan aktif",
   "common.modelPicker.removeFromFavorites": "Hapus dari favorit",
   "common.modelPicker.searchModels": "Cari model...",

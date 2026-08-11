@@ -545,6 +545,17 @@ type TurnTokenUsage = {
 
 type LocalCodingAgentProviderKey = Extract<AgentProviderKey, 'claude_code' | 'codex' | 'opencode' | 'cursor'>
 
+const API_ACCESS_RESTRICTED_TOOL_NAMES = new Set([
+  'execute_shell_command',
+  'ssh_journal_query',
+  'list_log_sources',
+  'get_checkpoint',
+])
+
+function isApiProviderWithSafeTools(session: AgentSession): boolean {
+  return getLocalCodingAgentProviderKey(session.llmSelection) === null && session.accessLevel !== 'full-access'
+}
+
 function getLocalCodingAgentProviderKey(selection: AgentLlmSelection | undefined): LocalCodingAgentProviderKey | null {
   const providerKey = selection?.providerKey
   if (
@@ -2292,6 +2303,7 @@ export class AgentRuntimeService {
         // Determine which tools should be available based on runbook actions
         const hasShellAction = session.runbookContext?.actions.some((a) => a.type === 'shell') ?? false
         const hasHttpAction = session.runbookContext?.actions.some((a) => a.type === 'http') ?? false
+        const isApiProviderWithSafeAccess = isApiProviderWithSafeTools(session)
 
         // SSH tools - only available when runbook has shell actions
         const sshToolNames = ['ssh_journal_query', 'list_log_sources', 'get_checkpoint']
@@ -2299,6 +2311,7 @@ export class AgentRuntimeService {
         // Get tool definitions for LLM, filtering based on runbook actions
         const toolDefinitions = getAllToolDefinitions()
           .filter((tool) => {
+            if (isApiProviderWithSafeAccess && API_ACCESS_RESTRICTED_TOOL_NAMES.has(tool.name)) return false
             if (tool.name === 'execute_shell_command') return hasShellAction
             if (tool.name === 'execute_http_request') return hasHttpAction
             // SSH tools only when shell action exists
@@ -2682,6 +2695,11 @@ export class AgentRuntimeService {
       const dynamicToolResult = await this.executeDynamicToolCall(session, toolCall)
       if (dynamicToolResult !== null) {
         return dynamicToolResult
+      }
+
+      if (isApiProviderWithSafeTools(session) && API_ACCESS_RESTRICTED_TOOL_NAMES.has(toolName)) {
+        emitToolStart()
+        throw new Error(`Tool ${toolName} is unavailable to API providers in Safe Tools mode`)
       }
 
       const toolDef = getTool(toolName)

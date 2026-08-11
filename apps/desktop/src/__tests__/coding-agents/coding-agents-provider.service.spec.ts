@@ -15,6 +15,17 @@ vi.mock("@bitsentry-ce/desktop-cli/runtime/desktop-sentry", () => ({
   captureMessage: vi.fn(),
 }));
 
+vi.mock("../../../../../packages/coding-agents/src/cli-probe.service", () => ({
+  parseOpenCodeModelIds: (stdout: string, stderr: string): string[] => [
+    ...new Set(
+      `${stdout}\n${stderr}`
+        .split(/\r?\n/)
+        .map((line) => line.trim())
+        .filter((line) => line.length > 0),
+    ),
+  ],
+}));
+
 import { ChildProcess, execFile } from "child_process";
 import {
   CodingAgentsProviderService,

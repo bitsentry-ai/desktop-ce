@@ -669,6 +669,7 @@
   "common.markdown.scrollableTable": "Tableau défilant",
   "common.modelPicker.addToFavorites": "Ajouter aux favoris",
   "common.modelPicker.noModelsFound": "Aucun modèle trouvé",
+  "common.modelPicker.modelsUnavailable": "Impossible de charger les modèles",
   "common.modelPicker.providerLockedDuringActiveConversation": "Fournisseur verrouillé sur {{provider}} pendant la conversation active",
   "common.modelPicker.removeFromFavorites": "Supprimer des favoris",
   "common.modelPicker.searchModels": "Rechercher des modèles…",

@@ -17,7 +17,9 @@ import {
   useMemo,
   useRef,
   useState,
+  type Dispatch,
   type ReactNode,
+  type SetStateAction,
 } from "react";
 import { cn } from "../lib/utils";
 import {
@@ -31,6 +33,13 @@ import type { SavedProviderConfig, ThreadStatus } from "./types";
 import { getProviderLogo } from "./ProviderLogos";
 import { useTranslation } from "@bitsentry-ce/i18n";
 import { useFavoriteModels } from "../hooks/useFavoriteModels";
+import { getDesktopApi } from "../services/desktop-api";
+import {
+  clearDiscoveredModels,
+  mergeDiscoveredModelIds,
+  publishDiscoveredModels,
+  useDiscoveredModels,
+} from "../llm/modelDiscovery";
 import { Check, ChevronDown, Cpu, Lock, Search, Star } from "lucide-react";
 
 interface ModelPickerProps {
@@ -48,6 +57,116 @@ interface ModelPickerProps {
   disabled?: boolean;
 }
 
+function resolveModelListRequest(
+  panelProvider: ModelCatalogProviderKey,
+  providerConfigs: Record<string, SavedProviderConfig>,
+): Promise<string[]> | null {
+  const desktopApi = getDesktopApi();
+  if (isCliProvider(panelProvider)) {
+    if (panelProvider !== "opencode") return null;
+    const localListModels = desktopApi?.llm?.local?.listModels;
+    return localListModels === undefined ? null : localListModels(panelProvider);
+  }
+
+  const apiListModels = desktopApi?.llm?.listModels;
+  if (apiListModels === undefined) return null;
+  const config = providerConfigs[panelProvider];
+  return apiListModels(panelProvider, {
+    apiKey: config?.apiKey,
+    baseUrl: config?.baseUrl,
+  }).then((result) => result.models);
+}
+
+function isMissingApiKeyError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return /api key is required/i.test(message);
+}
+
+function buildTriggerPresentation({
+  selectedProviderKey,
+  selectedModelId,
+  isProviderLocked,
+  t,
+}: {
+  selectedProviderKey: ModelCatalogProviderKey | null;
+  selectedModelId: string;
+  isProviderLocked: boolean;
+  t: (key: string, options?: Record<string, unknown>) => string;
+}): {
+  triggerIcon: ReactNode;
+  triggerLabel: string;
+  triggerTitle: string | undefined;
+  triggerRightIcon: ReactNode;
+} {
+  let triggerIcon: ReactNode = <Cpu size={13} className="shrink-0" />;
+  if (selectedProviderKey !== null) {
+    const TriggerLogo = getProviderLogo(selectedProviderKey);
+    if (TriggerLogo !== null) {
+      triggerIcon = <TriggerLogo size={13} className="shrink-0" />;
+    }
+  }
+
+  let triggerLabel = t("common.incidents.selectModel");
+  if (selectedProviderKey !== null && selectedModelId.length > 0) {
+    triggerLabel = getModelDisplayName(selectedProviderKey, selectedModelId);
+  }
+
+  let triggerTitle: string | undefined;
+  if (isProviderLocked && selectedProviderKey !== null) {
+    triggerTitle = t("common.modelPicker.providerLockedDuringActiveConversation", {
+      provider:
+        getProviderModelCatalog(selectedProviderKey)?.displayName ??
+        selectedProviderKey,
+    });
+  }
+
+  const triggerRightIcon: ReactNode = isProviderLocked
+    ? <Lock size={9} className="shrink-0 opacity-50" />
+    : <ChevronDown size={10} className="shrink-0 opacity-60" />;
+
+  return { triggerIcon, triggerLabel, triggerTitle, triggerRightIcon };
+}
+
+function useModelDiscovery({
+  open,
+  panelProvider,
+  providerConfigs,
+  setModelLoadErrors,
+}: {
+  open: boolean;
+  panelProvider: ModelCatalogProviderKey | null;
+  providerConfigs: Record<string, SavedProviderConfig>;
+  setModelLoadErrors: Dispatch<SetStateAction<Record<string, boolean>>>;
+}): void {
+  useEffect(() => {
+    if (!open || panelProvider === null) return;
+    const request = resolveModelListRequest(panelProvider, providerConfigs);
+    if (request === null) return;
+
+    let cancelled = false;
+    setModelLoadErrors((previous) => ({ ...previous, [panelProvider]: false }));
+
+    void request
+      .then((models) => {
+        if (cancelled) return;
+        publishDiscoveredModels(panelProvider, models);
+      })
+      .catch((error: unknown) => {
+        if (cancelled) return;
+        if (isMissingApiKeyError(error)) {
+          clearDiscoveredModels(panelProvider);
+          setModelLoadErrors((previous) => ({ ...previous, [panelProvider]: false }));
+          return;
+        }
+        setModelLoadErrors((previous) => ({ ...previous, [panelProvider]: true }));
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [open, panelProvider, providerConfigs, setModelLoadErrors]);
+}
+
 export function ModelPicker({
   selectedProviderKey,
   selectedModelId,
@@ -63,6 +182,8 @@ export function ModelPicker({
   const { isFavorite, toggleFavorite } = useFavoriteModels();
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
+  const [modelLoadErrors, setModelLoadErrors] = useState<Record<string, boolean>>({});
+  const discoveredModels = useDiscoveredModels();
   // Which provider's models are shown in the right panel
   const [activePanel, setActivePanel] = useState<ModelCatalogProviderKey | null>(null);
   const ref = useRef<HTMLDivElement>(null);
@@ -128,9 +249,20 @@ export function ModelPicker({
 
   const panelProvider = activePanel ?? selectedProviderKey ?? configuredProviderKeys[0] ?? null;
 
+  useModelDiscovery({
+    open,
+    panelProvider,
+    providerConfigs,
+    setModelLoadErrors,
+  });
+
   const panelModels = useMemo(() => {
     if (panelProvider === null) return [];
-    const all = getProviderModelOptions(panelProvider, providerConfigs);
+    const all = mergeDiscoveredModelIds(
+      panelProvider,
+      getProviderModelOptions(panelProvider, providerConfigs),
+      discoveredModels,
+    );
     const searchTerm = search.trim().toLowerCase();
     let filtered = all;
     if (searchTerm.length > 0) {
@@ -144,7 +276,7 @@ export function ModelPicker({
     const starred = filtered.filter((id) => isFavorite(panelProvider, id));
     const rest = filtered.filter((id) => !isFavorite(panelProvider, id));
     return [...starred, ...rest];
-  }, [panelProvider, providerConfigs, search, isFavorite]);
+  }, [discoveredModels, panelProvider, providerConfigs, search, isFavorite]);
 
   // Cmd+K to open/close, Escape to close, Cmd+1–5 to pick Nth model when open
   useEffect(() => {
@@ -168,35 +300,13 @@ export function ModelPicker({
     return () => { document.removeEventListener("keydown", onKeyDown); };
   }, [open, panelModels, panelProvider, handleSelect]);
 
-  const triggerProviderKey = selectedProviderKey;
-  let triggerIcon: ReactNode = <Cpu size={13} className="shrink-0" />;
-  if (triggerProviderKey !== null) {
-    const TriggerLogo = getProviderLogo(triggerProviderKey);
-    if (TriggerLogo !== null) {
-      triggerIcon = <TriggerLogo size={13} className="shrink-0" />;
-    }
-  }
-
-  let triggerLabel = t("common.incidents.selectModel");
-  if (triggerProviderKey !== null && selectedModelId.length > 0) {
-    triggerLabel = getModelDisplayName(triggerProviderKey, selectedModelId);
-  }
-
-  let triggerTitle: string | undefined;
-  if (isProviderLocked && selectedProviderKey !== null) {
-    triggerTitle = t("common.modelPicker.providerLockedDuringActiveConversation", {
-      provider:
-        getProviderModelCatalog(selectedProviderKey)?.displayName ??
-        selectedProviderKey,
+  const { triggerIcon, triggerLabel, triggerTitle, triggerRightIcon } =
+    buildTriggerPresentation({
+      selectedProviderKey,
+      selectedModelId,
+      isProviderLocked,
+      t,
     });
-  }
-
-  let triggerRightIcon: ReactNode = (
-    <ChevronDown size={10} className="shrink-0 opacity-60" />
-  );
-  if (isProviderLocked) {
-    triggerRightIcon = <Lock size={9} className="shrink-0 opacity-50" />;
-  }
 
   let panelHeader: ReactNode = null;
   if (panelProvider !== null) {
@@ -212,7 +322,16 @@ export function ModelPicker({
       {t("common.modelPicker.noModelsFound")}
     </div>
   );
-  if (panelProvider !== null && panelModels.length > 0) {
+  if (
+    panelProvider !== null &&
+    modelLoadErrors[panelProvider] === true
+  ) {
+    modelListContent = (
+      <div className="px-3 py-3 text-xs text-muted-foreground/50">
+        {t("common.modelPicker.modelsUnavailable")}
+      </div>
+    );
+  } else if (panelProvider !== null && panelModels.length > 0) {
     modelListContent = panelModels.map((modelId, idx) => {
       const isSelected =
         selectedProviderKey === panelProvider && selectedModelId === modelId;

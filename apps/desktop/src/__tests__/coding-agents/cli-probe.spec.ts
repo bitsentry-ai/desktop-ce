@@ -581,4 +581,35 @@ describe('cli-probe service', () => {
       'opencode/grok-code-fast-free',
     ])
   })
+
+  it('recognizes versioned OpenCode free model IDs during probing', async () => {
+    stubPlatform('linux')
+    mockExecFile((command, args) => {
+      if (command === 'which' && args[0] === 'opencode') {
+        return { stdout: '/usr/local/bin/opencode\n' }
+      }
+
+      if (command === '/usr/local/bin/opencode' && args[0] === '--version') {
+        return { stdout: '1.0.0\n' }
+      }
+
+      if (command === '/usr/local/bin/opencode' && args[0] === 'auth' && args[1] === 'list') {
+        return { stdout: '', stderr: '' }
+      }
+
+      if (command === '/usr/local/bin/opencode' && args[0] === 'models') {
+        return { stdout: 'opencode/big-pickle-v2\nopencode/grok-code-free-2\n' }
+      }
+
+      throw new Error(`Unexpected execFile call: ${command} ${JSON.stringify(args)}`)
+    })
+
+    const { probeOpenCode } = await import('@bitsentry-ce/coding-agents/cli-probe.service')
+
+    await expect(probeOpenCode('opencode')).resolves.toMatchObject({
+      auth: { status: 'authenticated' },
+      status: 'ready',
+      message: 'OpenCode free hosted models are available.',
+    })
+  })
 })

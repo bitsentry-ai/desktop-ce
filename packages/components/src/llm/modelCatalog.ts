@@ -241,16 +241,51 @@ export function getCatalogModel(
 ): ModelCatalogEntry | undefined {
   if (modelId === null || modelId === undefined || modelId.length === 0) return undefined
   const normalizedModelId = resolveLegacyCatalogModelId(providerKey, modelId)
-  return getProviderCatalogModels(providerKey).find(
+  const catalogModels = getProviderCatalogModels(providerKey)
+  const exactMatch = catalogModels.find(
     (model) => normalizeValue(model.id) === normalizedModelId,
   )
+  if (exactMatch !== undefined) return exactMatch
+  const undatedModelId = normalizedModelId.replace(/-\d{8}$/, '')
+  if (undatedModelId === normalizedModelId) return undefined
+  return catalogModels.find((model) => normalizeValue(model.id) === undatedModelId)
+}
+
+function getAnthropicFallbackCapability(modelId: string): ModelCatalogEntry | undefined {
+  const sourceModel = getProviderCatalogModels('anthropic').find((model) =>
+    getEffectiveComposerOptions(model).some(
+      (option) => option.id === "effort" && option.type === "select",
+    ),
+  )
+  if (sourceModel === undefined) return undefined
+
+  const effortOption = getEffectiveComposerOptions(sourceModel).find(
+    (option): option is ComposerSelectOption =>
+      option.id === "effort" && option.type === "select",
+  )
+  if (effortOption === undefined) return undefined
+
+  return {
+    id: modelId,
+    displayName: formatModelDisplayName(modelId),
+    supportsImageInput: false,
+    supportsAudioInput: false,
+    supportsVideoInput: false,
+    supportsPdfInput: false,
+    supportsThinking: sourceModel.supportsThinking,
+    thinkingMode: sourceModel.thinkingMode,
+    reasoningOptions: [],
+    composerOptions: [{
+      ...effortOption,
+      options: effortOption.options.map((option) => ({ ...option })),
+    }],
+  }
 }
 
 /**
- * Resolve the composer capability for a selected model. CLI discovery is
- * authoritative, so newly released CLI models can be selected before they
- * are cataloged. Give those models the provider's conservative effort
- * selector without claiming unsupported media or context capabilities.
+ * Resolve the composer capability for a selected model. Discovery is
+ * authoritative for model existence, while catalog entries remain
+ * authoritative for model-specific traits.
  */
 export function getModelCapability(
   providerKey: ModelCatalogProviderKey,
@@ -259,6 +294,7 @@ export function getModelCapability(
   const catalogModel = getCatalogModel(providerKey, modelId)
   if (catalogModel !== undefined) return catalogModel
   if (modelId === null || modelId === undefined || modelId.length === 0) return undefined
+  if (providerKey === "anthropic") return getAnthropicFallbackCapability(modelId)
   if (!isCliProvider(providerKey)) return undefined
 
   const effortOption = CLI_FALLBACK_EFFORT_OPTIONS[providerKey]

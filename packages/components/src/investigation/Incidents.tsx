@@ -44,8 +44,11 @@ import {
   type ModelCatalogProviderKey,
   getModelCapability,
 } from "../llm/modelCatalog";
+import {
+  getProviderModelOptionsWithDiscovery,
+  useDiscoveredModels,
+} from "../llm/modelDiscovery";
 import { useTranslation } from "@bitsentry-ce/i18n";
-import { getProviderModelOptions } from "../chat/utils";
 import type {
   AccessLevel,
   AgentActivityPhase,
@@ -69,6 +72,7 @@ import type {
   RunbookAuthoringProposalReview,
 } from "../services/contracts";
 import { CODING_AGENT_PRIORITY } from "../desktop/codingAgentPriority";
+import { resolveSyncedModelId } from "./provider-selection";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -1574,6 +1578,7 @@ export default function IncidentsPage() {
   const [selectedProviderKey, setSelectedProviderKey] =
     useState<ModelCatalogProviderKey | null>(null);
   const [selectedModelId, setSelectedModelId] = useState("");
+  const discoveredModels = useDiscoveredModels();
   // Access level is per-incident state, persisted in the provider lock.
   // Managed here (not in Composer) so it can be saved/restored per chat.
   const [selectedAccessLevel, setSelectedAccessLevel] = useState<AccessLevel>("auto-accept-edits");
@@ -1897,26 +1902,19 @@ export default function IncidentsPage() {
       setSelectedProviderKey(nextProviderKey);
     }
 
-    const modelOptions = getProviderModelOptions(
+    const modelOptions = getProviderModelOptionsWithDiscovery(
       nextProviderKey,
       providerConfigs,
+      discoveredModels,
     );
     const preferredModel = providerConfigs[nextProviderKey]?.model?.trim();
-    let nextModelId = "";
-    if (
-      selectedProviderKey === nextProviderKey &&
-      modelOptions.includes(selectedModelId)
-    ) {
-      nextModelId = selectedModelId;
-    } else if (
-      preferredModel !== undefined &&
-      preferredModel.length > 0 &&
-      modelOptions.includes(preferredModel)
-    ) {
-      nextModelId = preferredModel;
-    } else if (modelOptions[0] !== undefined) {
-      nextModelId = modelOptions[0];
-    }
+    const nextModelId = resolveSyncedModelId(
+      selectedProviderKey,
+      nextProviderKey,
+      selectedModelId,
+      preferredModel,
+      modelOptions,
+    );
 
     if (nextModelId !== selectedModelId) {
       setSelectedModelId(nextModelId);
@@ -1924,6 +1922,7 @@ export default function IncidentsPage() {
   }, [
     configuredProviderKeys,
     providerConfigs,
+    discoveredModels,
     selectedModelId,
     selectedProviderKey,
   ]);
@@ -2167,7 +2166,11 @@ export default function IncidentsPage() {
     }
 
     setSelectedProviderKey(lock.providerKey);
-    const opts = getProviderModelOptions(lock.providerKey, providerConfigs);
+    const opts = getProviderModelOptionsWithDiscovery(
+      lock.providerKey,
+      providerConfigs,
+      discoveredModels,
+    );
     if (opts.includes(lock.modelId)) {
       setSelectedModelId(lock.modelId);
     } else {
@@ -2182,7 +2185,12 @@ export default function IncidentsPage() {
     setSelectedAccessLevel(savedLevel);
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeId, configuredProviderKeys.length, Object.keys(providerConfigs).length]);
+  }, [
+    activeId,
+    configuredProviderKeys.length,
+    discoveredModels,
+    Object.keys(providerConfigs).length,
+  ]);
 
   // Pre-populate prompt from ?prompt= URL param (e.g. launched from Runbook page)
   useEffect(() => {

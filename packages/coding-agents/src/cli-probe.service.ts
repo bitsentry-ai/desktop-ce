@@ -1046,7 +1046,7 @@ function mergeCursorAuthSignals(
 
 function hasUsableOpenCodeFreeModels(stdout: string, stderr: string): boolean {
   return parseOpenCodeModelIds(stdout, stderr).some((model) =>
-    /^(?:opencode\/)?.+(?:free|pickle)$/i.test(model),
+    /^(?:opencode\/)?.+(?:free|pickle)/i.test(model),
   )
 }
 
