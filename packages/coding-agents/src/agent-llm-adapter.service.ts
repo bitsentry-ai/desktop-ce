@@ -462,6 +462,19 @@ function toOpenAiMessageContent(content: string | ChatContentPart[]): string | A
   })
 }
 
+function toOpenAiResponsesContent(content: string | ChatContentPart[]): string | Array<Record<string, unknown>> {
+  if (typeof content === 'string') return content
+  return content.map((part) => {
+    if (part.type === 'text') {
+      return { type: 'input_text', text: part.text }
+    }
+    return {
+      type: 'input_image',
+      image_url: part.image.dataUrl,
+    }
+  })
+}
+
 function toOpenAiResponsesInput(messages: ChatMessage[]): Array<Record<string, unknown>> {
   return messages.flatMap((message): Array<Record<string, unknown>> => {
     if (message.role === 'tool') {
@@ -487,7 +500,7 @@ function toOpenAiResponsesInput(messages: ChatMessage[]): Array<Record<string, u
 
     return [{
       role: message.role,
-      content: toOpenAiMessageContent(message.content),
+      content: toOpenAiResponsesContent(message.content),
     }]
   })
 }

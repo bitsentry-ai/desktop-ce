@@ -241,9 +241,14 @@ export function getCatalogModel(
 ): ModelCatalogEntry | undefined {
   if (modelId === null || modelId === undefined || modelId.length === 0) return undefined
   const normalizedModelId = resolveLegacyCatalogModelId(providerKey, modelId)
-  return getProviderCatalogModels(providerKey).find(
+  const catalogModels = getProviderCatalogModels(providerKey)
+  const exactMatch = catalogModels.find(
     (model) => normalizeValue(model.id) === normalizedModelId,
   )
+  if (exactMatch !== undefined) return exactMatch
+  const undatedModelId = normalizedModelId.replace(/-\d{8}$/, '')
+  if (undatedModelId === normalizedModelId) return undefined
+  return catalogModels.find((model) => normalizeValue(model.id) === undatedModelId)
 }
 
 function getAnthropicFallbackCapability(modelId: string): ModelCatalogEntry | undefined {

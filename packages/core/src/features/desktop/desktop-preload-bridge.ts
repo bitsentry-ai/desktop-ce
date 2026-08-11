@@ -129,6 +129,17 @@ function createCommonLlmBridge(bridge: DesktopPreloadBridgePort) {
     ): Promise<{ ok: boolean }> => {
       return bridge.invoke('bitsentry:llm:saveProvider', providerKey, config) as Promise<{ ok: boolean }>
     },
+    listModels: (
+      providerKey: string,
+      config: { apiKey?: string; baseUrl?: string },
+    ): Promise<{ providerKey: string; models: string[]; count: number; fetchedAt: string }> => {
+      return bridge.invoke('bitsentry:llm:listModels', providerKey, config) as Promise<{
+        providerKey: string
+        models: string[]
+        count: number
+        fetchedAt: string
+      }>
+    },
     local: {
       getSettings: (): Promise<{
         claudeCode: { enabled: boolean; binaryPath: string; lastProbe?: unknown }

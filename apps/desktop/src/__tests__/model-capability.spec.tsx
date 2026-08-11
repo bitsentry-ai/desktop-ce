@@ -61,6 +61,25 @@ describe('model capability controls', () => {
     expect(screen.queryByRole('button')).toBeNull()
   })
 
+  it('hides effort controls for a dated Haiku model', () => {
+    const capability = getModelCapability('anthropic', 'claude-haiku-4-5-20251001')
+    expect(capability).toBeDefined()
+
+    const options = getEffectiveComposerOptions(capability!)
+    render(<TraitsDropdown options={options} values={{}} onChange={vi.fn()} />)
+
+    expect(screen.queryByRole('button')).toBeNull()
+  })
+
+  it('keeps effort controls for a dated Opus model', () => {
+    expect(renderEffortOptions('anthropic', 'claude-opus-4-7-20250620')).toEqual([
+      'Low',
+      'Medium',
+      'High',
+      'Max',
+    ])
+  })
+
   it('keeps CLI fallback effort controls unchanged', () => {
     expect(renderEffortOptions('opencode', 'future-opencode-model')).toEqual([
       'Low',

@@ -93,6 +93,7 @@ import { LocalPluginCredentialsStore } from '@bitsentry-ce/desktop-cli/runtime/p
 import { LocalRunbookExecutionHost } from '@bitsentry-ce/desktop-cli/runtime/local-runbook-execution-host'
 import { DesktopShutdownCoordinator } from './shutdown-coordinator'
 import { formatDesktopStartupFingerprint } from './startup-fingerprint'
+import { registerDesktopManagedLlmModelHandler } from './llm-models'
 
 type UpdaterController = ReturnType<typeof startAutoUpdater> | null
 type LocalAiProviderService = InstanceType<typeof CodingAgentsProviderService>
@@ -523,6 +524,7 @@ app
       localAiProvider = new CodingAgentsProviderService(db)
       await localAiProvider.loadSettings()
       registerCodingAgentsHandlers(ipcMain, localAiProvider)
+      registerDesktopManagedLlmModelHandler(ipcMain)
       agentLlmAdapter.setLocalAiProvider(localAiProvider)
 
       runbookExecutionService = new RunbookExecutionService(

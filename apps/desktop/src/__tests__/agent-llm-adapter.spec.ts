@@ -861,6 +861,51 @@ describe('AgentLlmAdapterService', () => {
     expect(requestBodies.every((body) => body.output_config === undefined)).toBe(true)
   })
 
+  it('serializes Responses image content with input_image blocks', async () => {
+    const adapter = createAdapter({
+      getApiKey: () => Promise.resolve('test-key'),
+    })
+    let requestBody: Record<string, unknown> | undefined
+    vi.stubGlobal('fetch', vi.fn().mockImplementation((_url: string, init?: RequestInit) => {
+      requestBody = JSON.parse(String(init?.body)) as Record<string, unknown>
+      return Promise.resolve(new Response(JSON.stringify({ output_text: 'Done' })))
+    }))
+
+    await adapter.chatWithTools({
+      messages: [{
+        role: 'user',
+        content: [
+          { type: 'text', text: 'Inspect this image.' },
+          {
+            type: 'image',
+            image: {
+              type: 'image',
+              name: 'incident.png',
+              mimeType: 'image/png',
+              dataUrl: 'data:image/png;base64,AAAA',
+            },
+          },
+        ],
+      }],
+      signal: new AbortController().signal,
+      llm: { providerKey: 'openai', model: 'gpt-5.6-terra' },
+      tools: [{
+        name: 'list_runbooks',
+        description: 'List available runbooks.',
+        inputSchema: { type: 'object', properties: {} },
+      }],
+      traitValues: { effort: 'medium' },
+    })
+
+    expect(requestBody?.input).toEqual([{
+      role: 'user',
+      content: [
+        { type: 'input_text', text: 'Inspect this image.' },
+        { type: 'input_image', image_url: 'data:image/png;base64,AAAA' },
+      ],
+    }])
+  })
+
   it('maps modern Anthropic effort tiers to adaptive thinking requests', async () => {
     const adapter = createAdapter({
       getApiKey: () => Promise.resolve('test-key'),
