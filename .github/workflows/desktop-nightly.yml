@@ -1,0 +1,379 @@
+name: Desktop CE Nightly
+
+on:
+  workflow_dispatch:
+
+# Enable the schedule only after the first manual run is green and the
+# signing/notarization decision is approved.
+#  schedule:
+#    - cron: '23 3 * * *'
+
+concurrency:
+  group: desktop-ce-nightly-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  R2_PUBLIC_BASE_URL: ${{ vars.R2_PUBLIC_BASE_URL || 'https://downloads.bitsentry.ai' }}
+
+jobs:
+  change-gate:
+    name: Change gate and release preflight
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    outputs:
+      should_run: ${{ steps.gate.outputs.should_run }}
+      nightly_date: ${{ steps.gate.outputs.nightly_date }}
+      nightly_version: ${{ steps.gate.outputs.nightly_version }}
+      nightly_tag: ${{ steps.gate.outputs.nightly_tag }}
+      r2_prefix: ${{ steps.gate.outputs.r2_prefix }}
+      artifact_version_segment: ${{ steps.gate.outputs.artifact_version_segment }}
+    env:
+      R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+      R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+      R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+      R2_BUCKET: ${{ secrets.R2_BUCKET }}
+      MAC_CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
+      MAC_CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
+      MAC_CSC_PASSWORD: ${{ secrets.MAC_CSC_PASSWORD }}
+      APPLE_ID: ${{ secrets.APPLE_ID }}
+      APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Resolve change gate and release identifiers
+        id: gate
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [ "${GITHUB_REF_NAME}" != "main" ]; then
+            echo "Desktop CE nightlies may only be published from main; received ${GITHUB_REF_NAME}." >&2
+            exit 1
+          fi
+
+          nightly_date="$(date -u +%Y%m%d)"
+          nightly_version="0.1.0-nightly.${nightly_date}"
+          nightly_tag="desktop-nightly-${nightly_date}.${GITHUB_RUN_NUMBER}.${GITHUB_RUN_ATTEMPT}"
+          r2_prefix="desktop-ce/nightly/${nightly_date}/${nightly_tag}"
+          artifact_version_segment="${GITHUB_SHA}"
+          last_nightly_tag="$(git tag --list 'desktop-nightly-*' --sort=-creatordate | head -n 1 || true)"
+          should_run=true
+
+          if [ -n "${last_nightly_tag}" ] && \
+            git merge-base --is-ancestor "${last_nightly_tag}" "${GITHUB_SHA}" && \
+            [ "$(git rev-list --count "${last_nightly_tag}..${GITHUB_SHA}")" -eq 0 ]; then
+            should_run=false
+            echo "No commits changed since ${last_nightly_tag}; skipping this nightly run."
+          fi
+
+          {
+            echo "should_run=${should_run}"
+            echo "nightly_date=${nightly_date}"
+            echo "nightly_version=${nightly_version}"
+            echo "nightly_tag=${nightly_tag}"
+            echo "r2_prefix=${r2_prefix}"
+            echo "artifact_version_segment=${artifact_version_segment}"
+          } >> "${GITHUB_OUTPUT}"
+
+      - name: Validate release secrets before using macOS minutes
+        if: steps.gate.outputs.should_run == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          for name in R2_ACCOUNT_ID R2_ACCESS_KEY_ID R2_SECRET_ACCESS_KEY R2_BUCKET; do
+            if [ -z "${!name:-}" ]; then
+              echo "Missing required R2 secret: ${name}" >&2
+              exit 1
+            fi
+          done
+
+          if [ -z "${MAC_CSC_LINK:-}" ] || \
+            { [ -z "${MAC_CSC_KEY_PASSWORD:-}" ] && [ -z "${MAC_CSC_PASSWORD:-}" ]; }; then
+            echo "Missing macOS signing secrets; refusing to create an unsigned nightly." >&2
+            echo "Configure MAC_CSC_LINK and MAC_CSC_KEY_PASSWORD (or MAC_CSC_PASSWORD)." >&2
+            exit 1
+          fi
+
+          apple_secret_count=0
+          for name in APPLE_ID APPLE_APP_PASSWORD APPLE_TEAM_ID; do
+            if [ -n "${!name:-}" ]; then
+              apple_secret_count=$((apple_secret_count + 1))
+            fi
+          done
+
+          if [ "${apple_secret_count}" -ne 0 ] && [ "${apple_secret_count}" -ne 3 ]; then
+            echo "Apple notarization configuration is partial; provide APPLE_ID, APPLE_APP_PASSWORD, and APPLE_TEAM_ID together or omit all three." >&2
+            exit 1
+          fi
+
+          if [ "${apple_secret_count}" -eq 3 ]; then
+            echo "Apple notarization is enabled."
+          else
+            echo "Apple notarization is disabled explicitly; the signed artifact will still be verified before publishing."
+          fi
+
+  quality:
+    name: Desktop CE quality and smoke checks
+    if: needs.change-gate.outputs.should_run == 'true'
+    needs: change-gate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Initialize package submodules
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config submodule.packages/electron-trpc.url https://github.com/bitsentry-ai/electron-trpc.git
+          git config submodule.packages/plugin-sdk.url https://github.com/bitsentry-ai/-bitsentry-plugin-sdk.git
+          git config submodule.packages/plugins/github.url https://github.com/bitsentry-ai/bitsentry-plugin-github.git
+          git config submodule.packages/plugins/posthog.url https://github.com/bitsentry-ai/bitsentry-plugin-posthog.git
+          git config submodule.packages/plugins/sentry.url https://github.com/bitsentry-ai/bitsentry-plugin-sentry.git
+          git config submodule.packages/plugins/wazuh.url https://github.com/bitsentry-ai/bitsentry-plugin-wazuh.git
+          git submodule update --init --depth 1 \
+            packages/electron-trpc \
+            packages/plugin-sdk \
+            packages/plugins/github \
+            packages/plugins/posthog \
+            packages/plugins/sentry \
+            packages/plugins/wazuh
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.12.0
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.32.1
+          run_install: false
+
+      - name: Install desktop runtime dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            xvfb \
+            libgtk-3-0 \
+            libnss3 \
+            libxss1 \
+            libasound2t64 \
+            libgbm1 \
+            libatk-bridge2.0-0
+
+      - name: Install dependencies
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm --dir packages/electron-trpc install --frozen-lockfile
+
+      - name: Run TypeScript 6 ESLint bridge
+        run: pnpm run lint:ts6
+
+      - name: Ensure Electron binary is installed
+        run: pnpm --dir apps/desktop exec node node_modules/electron/install.js
+
+      - name: Run desktop tests
+        run: pnpm --filter @bitsentry-ce/desktop test
+
+      - name: Install desktop native dependencies
+        run: pnpm --dir apps/desktop run prepare:native-deps
+
+      - name: Build Desktop CE
+        run: pnpm run build
+
+      - name: Run CE runbook smoke test
+        env:
+          BITSENTRY_DESKTOP_SMOKE_NO_SANDBOX: '1'
+        run: xvfb-run -a pnpm run desktop:test:smoke:runbook
+
+  package-macos-arm64:
+    name: Package signed macOS arm64 artifact
+    if: needs.change-gate.outputs.should_run == 'true'
+    needs: [change-gate, quality]
+    runs-on: macos-14
+    timeout-minutes: 45
+    permissions:
+      contents: write
+    env:
+      NIGHTLY_DATE: ${{ needs.change-gate.outputs.nightly_date }}
+      NIGHTLY_VERSION: ${{ needs.change-gate.outputs.nightly_version }}
+      NIGHTLY_TAG: ${{ needs.change-gate.outputs.nightly_tag }}
+      R2_PREFIX: ${{ needs.change-gate.outputs.r2_prefix }}
+      ARTIFACT_VERSION_SEGMENT: ${{ needs.change-gate.outputs.artifact_version_segment }}
+      R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+      R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+      R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+      R2_BUCKET: ${{ secrets.R2_BUCKET }}
+      R2_PUBLIC_BASE_URL: ${{ vars.R2_PUBLIC_BASE_URL || 'https://downloads.bitsentry.ai' }}
+      CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
+      CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD || secrets.MAC_CSC_PASSWORD }}
+      APPLE_ID: ${{ secrets.APPLE_ID }}
+      APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Initialize package submodules
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config submodule.packages/electron-trpc.url https://github.com/bitsentry-ai/electron-trpc.git
+          git config submodule.packages/plugin-sdk.url https://github.com/bitsentry-ai/-bitsentry-plugin-sdk.git
+          git config submodule.packages/plugins/github.url https://github.com/bitsentry-ai/bitsentry-plugin-github.git
+          git config submodule.packages/plugins/posthog.url https://github.com/bitsentry-ai/bitsentry-plugin-posthog.git
+          git config submodule.packages/plugins/sentry.url https://github.com/bitsentry-ai/bitsentry-plugin-sentry.git
+          git config submodule.packages/plugins/wazuh.url https://github.com/bitsentry-ai/bitsentry-plugin-wazuh.git
+          git submodule update --init --depth 1 \
+            packages/electron-trpc \
+            packages/plugin-sdk \
+            packages/plugins/github \
+            packages/plugins/posthog \
+            packages/plugins/sentry \
+            packages/plugins/wazuh
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.12.0
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.32.1
+          run_install: false
+
+      - name: Install dependencies
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm --dir packages/electron-trpc install --frozen-lockfile
+
+      - name: Build shared packages
+        run: |
+          pnpm run build:packages
+          pnpm --dir packages/electron-trpc --filter electron-trpc build
+
+      - name: Build desktop scripts and package the app
+        working-directory: apps/desktop
+        run: |
+          set -euo pipefail
+          node -e "const fs=require('node:fs'); const p='package.json'; const j=JSON.parse(fs.readFileSync(p,'utf8')); j.version=process.env.NIGHTLY_VERSION; fs.writeFileSync(p, JSON.stringify(j,null,2)+'\\n')"
+          pnpm run build:shared-cli
+          pnpm run build:notarize-hook
+          pnpm run build:cli-bundle
+          pnpm run prepare:native-deps -- --arch=arm64
+          pnpm run build
+
+          export DESKTOP_UPDATE_BASE_URL="${R2_PUBLIC_BASE_URL}/${R2_PREFIX}/macos/arm64"
+          export DESKTOP_ARTIFACT_NAME="bitsentry-desktop-ce-\${version}-macos-aarch64.\${ext}"
+          if [ -n "${APPLE_ID:-}" ] && [ -n "${APPLE_APP_PASSWORD:-}" ] && [ -n "${APPLE_TEAM_ID:-}" ]; then
+            export DESKTOP_ENABLE_AFTER_SIGN=true
+          else
+            export DESKTOP_ENABLE_AFTER_SIGN=false
+          fi
+
+          bash scripts/create-ci-builder-config.sh electron-builder.ci.yml
+          bash scripts/normalize-ce-builder-config.sh electron-builder.ci.yml "$DESKTOP_ARTIFACT_NAME"
+          npx electron-builder build \
+            --config electron-builder.ci.yml \
+            --mac \
+            --arm64 \
+            --publish never
+
+      - name: Verify packaged app and distributables
+        working-directory: apps/desktop
+        run: |
+          set -euo pipefail
+          app_path="release/build/mac-arm64/BitSentry-Desktop.app"
+          dmg="release/build/bitsentry-desktop-ce-${NIGHTLY_VERSION}-macos-aarch64.dmg"
+          zip="release/build/bitsentry-desktop-ce-${NIGHTLY_VERSION}-macos-aarch64.zip"
+          bash scripts/verify-macos-artifact.sh "${app_path}"
+          codesign_output="$(codesign -dv --verbose=4 "${app_path}" 2>&1 || true)"
+          team_id="$(printf '%s\n' "${codesign_output}" | sed -n 's/^TeamIdentifier=//p' | head -n 1)"
+          authority="$(printf '%s\n' "${codesign_output}" | sed -n 's/^Authority=//p' | head -n 1)"
+          case "${team_id}" in
+            ""|"not set"|"-")
+              echo "Refusing to publish an ad-hoc or unsigned nightly; expected a Developer ID team identity." >&2
+              printf '%s\n' "${codesign_output}" >&2
+              exit 1
+              ;;
+          esac
+          case "${authority}" in
+            "Developer ID Application:"*) ;;
+            *)
+              echo "Refusing to publish a non-Developer-ID macOS artifact." >&2
+              printf '%s\n' "${codesign_output}" >&2
+              exit 1
+              ;;
+          esac
+          test -f "${dmg}"
+          test -f "${zip}"
+          test -f "${dmg}.blockmap"
+          test -f "${zip}.blockmap"
+          hdiutil verify "${dmg}"
+          unzip -t "${zip}" >/dev/null
+          shasum -a 256 \
+            "${dmg}" \
+            "${zip}" \
+            "${dmg}.blockmap" \
+            "${zip}.blockmap" \
+            > release/build/SHA256SUMS
+
+      - name: Prepare nightly updater manifest
+        working-directory: apps/desktop
+        run: |
+          node scripts/dist/rewrite-update-manifest.js \
+            --input release/build/latest-mac.yml \
+            --output release/build/channel-feed/latest-mac.yml \
+            --url-prefix "${ARTIFACT_VERSION_SEGMENT}"
+
+      - name: Verify and upload isolated nightly artifacts to R2
+        working-directory: apps/desktop
+        run: |
+          set -euo pipefail
+          node scripts/dist/verify-update-manifest.js \
+            --manifest release/build/channel-feed/latest-mac.yml \
+            --artifact-root release/build \
+            --required-path-prefix "${ARTIFACT_VERSION_SEGMENT}" \
+            --required-artifact-prefix bitsentry-desktop-ce-
+          node scripts/dist/upload-r2-artifacts.js \
+            --root release/build \
+            --prefix "${R2_PREFIX}/macos/arm64/${ARTIFACT_VERSION_SEGMENT}" \
+            --include "bitsentry-desktop-ce-${NIGHTLY_VERSION}-macos-aarch64.dmg" \
+            --include "bitsentry-desktop-ce-${NIGHTLY_VERSION}-macos-aarch64.zip" \
+            --include "bitsentry-desktop-ce-${NIGHTLY_VERSION}-macos-aarch64.dmg.blockmap" \
+            --include "bitsentry-desktop-ce-${NIGHTLY_VERSION}-macos-aarch64.zip.blockmap" \
+            --include "SHA256SUMS" \
+            --if-no-files-found error
+          node scripts/dist/upload-r2-artifacts.js \
+            --root release/build/channel-feed \
+            --prefix "${R2_PREFIX}/macos/arm64" \
+            --include latest-mac.yml \
+            --if-no-files-found error
+
+      - name: Publish GitHub prerelease
+        working-directory: apps/desktop
+        run: |
+          gh release create "${NIGHTLY_TAG}" \
+            "release/build/bitsentry-desktop-ce-${NIGHTLY_VERSION}-macos-aarch64.dmg" \
+            "release/build/bitsentry-desktop-ce-${NIGHTLY_VERSION}-macos-aarch64.zip" \
+            release/build/SHA256SUMS \
+            --repo "${GITHUB_REPOSITORY}" \
+            --target "${GITHUB_SHA}" \
+            --title "BitSentry Desktop CE nightly ${NIGHTLY_VERSION}" \
+            --notes "BitSentry Desktop CE nightly from ${GITHUB_SHA}. R2 prefix: ${R2_PUBLIC_BASE_URL}/${R2_PREFIX}. Stable and beta feeds are unchanged. Notarization is enabled only when all Apple credentials are configured." \
+            --prerelease \
+            --latest=false
