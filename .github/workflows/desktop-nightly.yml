@@ -1,12 +1,9 @@
 name: Desktop CE Nightly
 
 on:
+  schedule:
+    - cron: '23 3 * * *'
   workflow_dispatch:
-
-# Enable the schedule only after the first manual run is green and the
-# signing/notarization decision is approved.
-#  schedule:
-#    - cron: '23 3 * * *'
 
 concurrency:
   group: desktop-ce-nightly-${{ github.ref }}
