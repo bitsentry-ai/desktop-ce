@@ -425,15 +425,27 @@ export function useRunbookActionEditorFlow({
 
   const handleActionDragEnd = useCallback(
     (event: DesktopDragEndEvent, isSortable: (value: unknown) => value is SortableSourceLike) => {
+      const revalidateActionOrder = () => {
+        setEditingRunbook((prev) => {
+          if (prev === null) {
+            return prev;
+          }
+
+          return { ...prev, actions: [...prev.actions] };
+        });
+      };
+
       window.setTimeout(() => {
         suppressExpandOnNextClickRef.current = false;
       }, 0);
       if (event.canceled) {
+        revalidateActionOrder();
         return;
       }
 
       const source = event.operation.source;
       if (source === null || !isSortable(source)) {
+        revalidateActionOrder();
         return;
       }
 
@@ -441,12 +453,13 @@ export function useRunbookActionEditorFlow({
       const actions = activeEditingRunbook?.actions ?? [];
       const next = reorderRunbookActions(actions, initialIndex, index);
       if (next === null) {
+        revalidateActionOrder();
         return;
       }
 
       void handleReorder(next);
     },
-    [activeEditingRunbook?.actions, handleReorder],
+    [activeEditingRunbook?.actions, handleReorder, setEditingRunbook],
   );
 
   const handleActionDragStart = useCallback(() => {

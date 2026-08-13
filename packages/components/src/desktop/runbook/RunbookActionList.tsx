@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
 
 import { ArrowDown, Plus } from "../../icons";
 import { cn } from "../../lib/utils";
@@ -56,6 +56,7 @@ function SortableActionWrapper({
   return (
     <div
       ref={ref}
+      data-runbook-action-id={id}
       className={cn(
         "transition-[padding,margin] duration-150 ease-out",
         showDropGap && "py-5",
@@ -109,8 +110,38 @@ export function RunbookActionList({
   className,
   t,
 }: RunbookActionListProps) {
+  const actionsListRef = useRef<HTMLDivElement>(null);
+  const validatedActionsRef = useRef(actions);
+  const [renderRevision, setRenderRevision] = useState(0);
+
+  useLayoutEffect(() => {
+    if (validatedActionsRef.current === actions) {
+      return;
+    }
+
+    validatedActionsRef.current = actions;
+    const actionsList = actionsListRef.current;
+    if (actionsList === null) {
+      return;
+    }
+
+    const renderedActionIds = Array.from(actionsList.children)
+      .map((child) => child.getAttribute("data-runbook-action-id"))
+      .filter((id): id is string => id !== null);
+    const expectedActionIds = actions.map((action) => action.id);
+    const isActionOrderStale =
+      renderedActionIds.length !== expectedActionIds.length ||
+      renderedActionIds.some((id, index) => id !== expectedActionIds[index]);
+
+    if (isActionOrderStale) {
+      setRenderRevision((revision) => revision + 1);
+    }
+  }, [actions]);
+
   return (
     <div
+      key={renderRevision}
+      ref={actionsListRef}
       data-tour="runbooks-actions-list"
       className={cn("max-w-2xl", className)}
     >
@@ -119,38 +150,37 @@ export function RunbookActionList({
         const showConnector = !expanded && index < actions.length - 1;
 
         return (
-          <div key={action.id}>
-            <SortableActionWrapper
-              id={action.id}
-              index={index}
-              disabled={expanded}
-              showConnector={showConnector}
-              useSortableRuntime={useSortableRuntime}
-            >
-              {(sortableApi) => {
-                if (expanded) {
-                  return renderExpandedCard(action, index);
-                }
-
-                return renderCollapsedCard(action, index, sortableApi);
-              }}
-            </SortableActionWrapper>
-            {expanded && (
-              <div className="flex justify-center py-2">
-                <button
-                  data-tour="runbooks-add-action"
-                  onClick={() => {
-                    onAddActionAt(index + 1);
-                  }}
-                  disabled={action.title.trim().length === 0}
-                  className="flex items-center gap-1.5 rounded-lg border border-dashed border-border px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-30"
-                >
-                  <Plus size={11} />
-                  {t("runbooks.runbook.addActionHere")}
-                </button>
-              </div>
+          <SortableActionWrapper
+            key={action.id}
+            id={action.id}
+            index={index}
+            disabled={expanded}
+            showConnector={showConnector}
+            useSortableRuntime={useSortableRuntime}
+          >
+            {(sortableApi) => (
+              <>
+                {expanded
+                  ? renderExpandedCard(action, index)
+                  : renderCollapsedCard(action, index, sortableApi)}
+                {expanded && (
+                  <div className="flex justify-center py-2">
+                    <button
+                      data-tour="runbooks-add-action"
+                      onClick={() => {
+                        onAddActionAt(index + 1);
+                      }}
+                      disabled={action.title.trim().length === 0}
+                      className="flex items-center gap-1.5 rounded-lg border border-dashed border-border px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-30"
+                    >
+                      <Plus size={11} />
+                      {t("runbooks.runbook.addActionHere")}
+                    </button>
+                  </div>
+                )}
+              </>
             )}
-          </div>
+          </SortableActionWrapper>
         );
       })}
       {actions.length > 0 && !actions.some(isExpanded) && (
