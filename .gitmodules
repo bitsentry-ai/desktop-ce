@@ -21,3 +21,7 @@
 	path = packages/plugins/wazuh
 	url = git@github.com:bitsentry-ai/bitsentry-plugin-wazuh.git
 	branch = main
+[submodule "packages/plugins/linux-cve-status"]
+	path = packages/plugins/linux-cve-status
+	url = git@github.com:bitsentry-ai/bitsentry-plugin-linux-cve-status.git
+	branch = main
