@@ -91,7 +91,7 @@ export interface AgentActivityEvent extends AgentEvent {
   phase: AgentActivityPhase | null
 }
 
-export interface AgentChatAttachment {
+export interface AgentChatImageAttachment {
   id: string
   type: 'image'
   name: string
@@ -99,6 +99,19 @@ export interface AgentChatAttachment {
   sizeBytes: number
   dataUrl: string
 }
+
+export interface AgentChatCsvAttachment {
+  id: string
+  type: 'csv'
+  name: string
+  mimeType: 'text/csv'
+  sizeBytes: number
+  text: string
+  rowCount: number
+  totalRowCount: number
+}
+
+export type AgentChatAttachment = AgentChatImageAttachment | AgentChatCsvAttachment
 
 export type AgentProviderKey = 'groq' | 'kilocode' | 'openai' | 'anthropic' | 'gemini' | 'openrouter' | 'claude_code' | 'codex' | 'opencode' | 'cursor'
 

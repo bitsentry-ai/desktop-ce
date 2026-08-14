@@ -17,7 +17,7 @@ import {
   type ReactNode,
 } from "react";
 import type {
-  ComposerImageAttachment,
+  ComposerAttachment,
   SavedProviderConfig,
   ThreadStatus,
 } from "./types";
@@ -32,6 +32,7 @@ import {
 } from "../llm/modelCatalog";
 import { useTranslation } from "@bitsentry-ce/i18n";
 import {
+  FileText,
   ImagePlus,
   Loader2,
   Plus,
@@ -59,7 +60,7 @@ export interface ComposerProps {
   isBlocked: boolean;
   isArchived: boolean;
   // Images
-  composerImages: ComposerImageAttachment[];
+  composerImages: ComposerAttachment[];
   onRemoveImage: (id: string) => void;
   onPickImages: () => void;
   onPickFiles: () => void;
@@ -86,6 +87,7 @@ export interface ComposerProps {
   placeholder?: string;
   // File accept types
   composerFileAccept?: string;
+  attachmentError?: string | null;
   // Thread status
   threadStatus?: ThreadStatus;
   // Show a fallback while the agent snapshot has not created a ChatBubble yet.
@@ -140,6 +142,7 @@ export function Composer({
   onThinkingToggle,
   placeholder,
   composerFileAccept,
+  attachmentError,
   threadStatus,
   showThreadWaitingIndicator = false,
   tokenUsage,
@@ -167,7 +170,8 @@ export function Composer({
 
   // ── Derived ────────────────────────────────────────────────────────────────
   const composerSupportsPhotos = Boolean(selectedModelCapability?.supportsImageInput);
-  const hasAttachOptions = composerSupportsPhotos;
+  const hasAttachOptions =
+    composerSupportsPhotos || composerFileAccept?.includes(".csv") === true;
   const canSend = !isBlocked && (prompt.trim().length > 0 || composerImages.length > 0);
 
   const composerOptions = useMemo(
@@ -313,7 +317,6 @@ export function Composer({
           event.currentTarget.value = "";
         }}
       />
-      {/* File attachments remain limited to image handling until the runbook attachment pipeline is available. */}
       <input
         ref={fileInputRef}
         type="file"
@@ -321,6 +324,7 @@ export function Composer({
         multiple
         className="hidden"
         onChange={(event) => {
+          onImageFilesSelected(event.target.files);
           event.currentTarget.value = "";
         }}
       />
@@ -339,13 +343,30 @@ export function Composer({
               {composerImages.map((image) => (
                 <div
                   key={image.id}
-                  className="relative h-16 w-16 overflow-hidden rounded-lg border border-border/80 bg-background"
+                  className={cn(
+                    "relative overflow-hidden rounded-lg border border-border/80 bg-background",
+                    image.type === "image"
+                      ? "h-16 w-16"
+                      : "flex min-h-16 items-center gap-2 px-3 py-2",
+                  )}
                 >
-                  <img
-                    src={image.dataUrl}
-                    alt={image.name}
-                    className="h-full w-full object-cover"
-                  />
+                  {image.type === "image" ? (
+                    <img
+                      src={image.dataUrl}
+                      alt={image.name}
+                      className="h-full w-full object-cover"
+                    />
+                  ) : (
+                    <>
+                      <FileText
+                        size={14}
+                        className="shrink-0 text-muted-foreground"
+                      />
+                      <span className="max-w-56 text-xs text-foreground">
+                        {image.name} ({image.rowCount}/{image.totalRowCount} rows)
+                      </span>
+                    </>
+                  )}
                   <button
                     type="button"
                     onClick={() => { onRemoveImage(image.id); }}
@@ -394,6 +415,23 @@ export function Composer({
                         {t("common.incidents.addPhotos")}
                       </button>
                     )}
+                    {composerFileAccept?.includes(".csv") === true && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          onPickFiles();
+                          setAttachMenuOpen(false);
+                        }}
+                        disabled={composerImages.length >= 4}
+                        className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm text-foreground transition-colors hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        <FileText
+                          size={14}
+                          className="shrink-0 text-muted-foreground"
+                        />
+                        {t("common.incidents.addFiles")}
+                      </button>
+                    )}
                   </div>
                 )}
               </div>
@@ -410,6 +448,11 @@ export function Composer({
               className="w-full flex-1 resize-none bg-transparent p-0 pt-1 text-sm leading-5 outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed"
             />
           </div>
+          {attachmentError !== undefined && attachmentError !== null && (
+            <p role="alert" className="mt-2 text-xs text-destructive">
+              {attachmentError}
+            </p>
+          )}
         </div>
 
         {/* ── Toolbar ─────────────────────────────────────────────────────── */}

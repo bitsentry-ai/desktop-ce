@@ -699,15 +699,22 @@ function createUserMessageContent(text: string, attachments?: AgentChatAttachmen
 
   return [
     { type: 'text', text: normalizedText },
-    ...normalizedAttachments.map((attachment) => ({
-      type: 'image' as const,
-      image: {
-        type: 'image' as const,
-        name: attachment.name,
-        mimeType: attachment.mimeType,
-        dataUrl: attachment.dataUrl,
-      },
-    })),
+    ...normalizedAttachments.map((attachment) =>
+      attachment.type === 'csv'
+        ? {
+            type: 'text' as const,
+            text: `Attached CSV "${attachment.name}":\n${attachment.text}`,
+          }
+        : {
+            type: 'image' as const,
+            image: {
+              type: 'image' as const,
+              name: attachment.name,
+              mimeType: attachment.mimeType,
+              dataUrl: attachment.dataUrl,
+            },
+          },
+    ),
   ]
 }
 

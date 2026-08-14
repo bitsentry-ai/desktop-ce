@@ -11,7 +11,13 @@ import { ToolCard, WorkLogGroup } from "./ToolCallCard";
 import { formatDuration } from "./utils";
 import { useTranslation } from "@bitsentry-ce/i18n";
 import { MarkdownContent } from "../markdown";
-import { CheckIcon, CopyIcon, ShieldAlert, Loader2 } from "lucide-react";
+import {
+  CheckIcon,
+  CopyIcon,
+  FileText,
+  ShieldAlert,
+  Loader2,
+} from "lucide-react";
 import { getProviderLogo } from "./ProviderLogos";
 import { Tooltip, TooltipContent, TooltipTrigger } from "../ui/tooltip";
 import { cn } from "../lib/utils";
@@ -31,14 +37,27 @@ function UserChatBubble({ msg }: { msg: UserMessage }) {
   const attachmentsContent: ReactNode = msg.attachments !== undefined && msg.attachments.length > 0
     ? (
         <div className="grid grid-cols-2 gap-2">
-          {msg.attachments.map((attachment) => (
-            <img
-              key={attachment.id}
-              src={attachment.dataUrl}
-              alt={attachment.name}
-              className="max-h-40 w-full rounded-xl border border-border/60 object-cover"
-            />
-          ))}
+          {msg.attachments.map((attachment) =>
+            attachment.type === "image" ? (
+              <img
+                key={attachment.id}
+                src={attachment.dataUrl}
+                alt={attachment.name}
+                className="max-h-40 w-full rounded-xl border border-border/60 object-cover"
+              />
+            ) : (
+              <div
+                key={attachment.id}
+                className="flex items-center gap-2 rounded-xl border border-border/60 px-3 py-2 text-xs"
+              >
+                <FileText size={14} className="shrink-0 text-muted-foreground" />
+                <span>
+                  {attachment.name} ({attachment.rowCount}/
+                  {attachment.totalRowCount} rows)
+                </span>
+              </div>
+            ),
+          )}
         </div>
       )
     : null;
