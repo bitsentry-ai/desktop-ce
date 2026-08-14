@@ -1396,6 +1396,7 @@ export interface IncidentToolCall {
   state: "running" | "done" | "failed";
   input?: Record<string, unknown>;
   output?: string;
+  modelContext?: string;
   error?: string;
 }
 
