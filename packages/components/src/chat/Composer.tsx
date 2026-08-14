@@ -340,48 +340,58 @@ export function Composer({
         <div className="relative px-3 pb-2 pt-3.5 sm:px-4 sm:pt-4">
           {composerImages.length > 0 && (
             <div className="mb-3 flex flex-wrap gap-2">
-              {composerImages.map((image) => (
-                <div
-                  key={image.id}
-                  className={cn(
-                    "relative overflow-hidden rounded-lg border border-border/80 bg-background",
-                    image.type === "image"
-                      ? "h-16 w-16"
-                      : "flex min-h-16 items-center gap-2 px-3 py-2",
-                  )}
-                >
-                  {image.type === "image" ? (
+              {composerImages.map((image) =>
+                image.type === "image" ? (
+                  <div
+                    key={image.id}
+                    className="relative size-16 overflow-hidden rounded-lg border border-border/80 bg-background"
+                  >
                     <img
                       src={image.dataUrl}
                       alt={image.name}
                       className="h-full w-full object-cover"
                     />
-                  ) : (
-                    <>
-                      <FileText
-                        size={14}
-                        className="shrink-0 text-muted-foreground"
-                      />
-                      <span className="max-w-56 text-xs text-foreground">
-                        {image.name} {t("common.incidents.attachmentRows", {
-                          rowCount: image.rowCount,
-                          totalRowCount: image.totalRowCount,
-                        })}
-                      </span>
-                    </>
-                  )}
-                  <button
-                    type="button"
-                    onClick={() => { onRemoveImage(image.id); }}
-                    className="absolute right-1 top-1 rounded-full bg-background/80 p-0.5 text-muted-foreground hover:bg-background/90"
-                    aria-label={t("common.incidents.removeAttachment", {
-                      name: image.name,
-                    })}
+                    <button
+                      type="button"
+                      onClick={() => { onRemoveImage(image.id); }}
+                      className="absolute right-1 top-1 rounded-full bg-background/80 p-0.5 text-muted-foreground hover:bg-background/90"
+                      aria-label={t("common.incidents.removeAttachment", {
+                        name: image.name,
+                      })}
+                    >
+                      <X size={12} />
+                    </button>
+                  </div>
+                ) : (
+                  <div
+                    key={image.id}
+                    className="flex max-w-72 items-center gap-2.5 rounded-lg border border-border/80 bg-background py-1.5 pl-2 pr-1.5 transition-colors hover:border-border"
                   >
-                    <X size={12} />
-                  </button>
-                </div>
-              ))}
+                    <span className="flex size-7 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground">
+                      <FileText size={14} />
+                    </span>
+                    <span className="min-w-0 truncate text-xs font-medium text-foreground">
+                      {image.name}
+                    </span>
+                    <span className="shrink-0 text-[11px] tabular-nums text-muted-foreground">
+                      {t("common.incidents.attachmentRows", {
+                        rowCount: image.rowCount,
+                        totalRowCount: image.totalRowCount,
+                      })}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => { onRemoveImage(image.id); }}
+                      className="flex size-5 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                      aria-label={t("common.incidents.removeAttachment", {
+                        name: image.name,
+                      })}
+                    >
+                      <X size={12} />
+                    </button>
+                  </div>
+                ),
+              )}
             </div>
           )}
           <div className="flex items-start gap-2">
