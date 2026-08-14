@@ -363,7 +363,10 @@ export function Composer({
                         className="shrink-0 text-muted-foreground"
                       />
                       <span className="max-w-56 text-xs text-foreground">
-                        {image.name} ({image.rowCount}/{image.totalRowCount} rows)
+                        {image.name} {t("common.incidents.attachmentRows", {
+                          rowCount: image.rowCount,
+                          totalRowCount: image.totalRowCount,
+                        })}
                       </span>
                     </>
                   )}

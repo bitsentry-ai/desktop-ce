@@ -533,6 +533,7 @@
   "common.incidents.addPhotos": "Tambahkan foto",
   "common.incidents.aiIsResponding": "AI sedang merespons…",
   "common.incidents.allIncidents": "Semua Insiden",
+  "common.incidents.attachmentRows": "({{rowCount}}/{{totalRowCount}} baris)",
   "common.incidents.approve": "Setujui",
   "common.incidents.archivedIncidentsAreReadOnly": "Insiden yang diarsipkan bersifat hanya-baca",
   "common.incidents.archiveIncident": "Arsipkan insiden",

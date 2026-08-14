@@ -6,7 +6,7 @@ import type {
   AgentThreadSnapshot,
   AgentThreadTokenUsage,
   ChatMessage,
-  ComposerImageAttachment,
+  ComposerAttachment,
 } from "./types";
 
 export type RuntimeProjectionEvent =
@@ -151,7 +151,7 @@ export function createAgentThreadSnapshot(input: {
   runtimeState: AgentSessionState;
   threadState?: AgentSessionState;
   prompt: string;
-  attachments?: ComposerImageAttachment[];
+  attachments?: ComposerAttachment[];
 }): AgentThreadSnapshot {
   return {
     sessionId: input.sessionId,
@@ -174,7 +174,7 @@ export function appendPromptToThreadSnapshot(
   snapshot: AgentThreadSnapshot,
   input: {
     prompt: string;
-    attachments?: ComposerImageAttachment[];
+    attachments?: ComposerAttachment[];
     runtimeState?: AgentSessionState;
   },
 ): AgentThreadSnapshot {

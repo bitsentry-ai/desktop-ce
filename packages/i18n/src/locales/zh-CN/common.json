@@ -533,6 +533,7 @@
   "common.incidents.addPhotos": "添加图片",
   "common.incidents.aiIsResponding": "AI 正在响应…",
   "common.incidents.allIncidents": "所有事件",
+  "common.incidents.attachmentRows": "({{rowCount}}/{{totalRowCount}} 行)",
   "common.incidents.approve": "批准",
   "common.incidents.archivedIncidentsAreReadOnly": "已归档的事件为只读状态",
   "common.incidents.archiveIncident": "归档事件",

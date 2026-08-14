@@ -34,6 +34,7 @@ type AgentMessage = Extract<ChatMessage, { kind: "agent" }>;
 type UserMessage = Extract<ChatMessage, { kind: "user" }>;
 
 function UserChatBubble({ msg }: { msg: UserMessage }) {
+  const { t } = useTranslation();
   const attachmentsContent: ReactNode = msg.attachments !== undefined && msg.attachments.length > 0
     ? (
         <div className="grid grid-cols-2 gap-2">
@@ -52,8 +53,10 @@ function UserChatBubble({ msg }: { msg: UserMessage }) {
               >
                 <FileText size={14} className="shrink-0 text-muted-foreground" />
                 <span>
-                  {attachment.name} ({attachment.rowCount}/
-                  {attachment.totalRowCount} rows)
+                  {attachment.name} {t("common.incidents.attachmentRows", {
+                    rowCount: attachment.rowCount,
+                    totalRowCount: attachment.totalRowCount,
+                  })}
                 </span>
               </div>
             ),

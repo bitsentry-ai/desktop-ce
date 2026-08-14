@@ -15,7 +15,7 @@ import { createHash, randomUUID } from 'crypto'
 import { zodToJsonSchema } from '@alcyone-labs/zod-to-json-schema'
 import { z } from 'zod'
 import { getErrorMessage } from '@bitsentry-ce/core'
-import type { AgentThreadSnapshot } from '@bitsentry-ce/components/chat/types'
+import type { AgentThreadSnapshot, ComposerAttachment } from '@bitsentry-ce/components/chat/types'
 import {
   appendPromptToThreadSnapshot,
   createAgentThreadSnapshot,
@@ -866,7 +866,7 @@ function findLatestUserMessageIndex(messages: ChatMessage[]): number {
   return -1
 }
 
-function toSnapshotAttachments(attachments?: AgentChatAttachment[]): AgentChatAttachment[] | undefined {
+function toSnapshotAttachments(attachments?: AgentChatAttachment[]): ComposerAttachment[] | undefined {
   if (attachments === undefined || attachments.length === 0) {
     return undefined
   }
