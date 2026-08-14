@@ -1135,7 +1135,7 @@ export type AgentEvent =
       timestamp: string;
     };
 
-export interface AgentChatAttachment {
+export interface AgentChatImageAttachment {
   id: string;
   type: "image";
   name: string;
@@ -1143,6 +1143,21 @@ export interface AgentChatAttachment {
   sizeBytes: number;
   dataUrl: string;
 }
+
+export interface AgentChatCsvAttachment {
+  id: string;
+  type: "csv";
+  name: string;
+  mimeType: "text/csv";
+  sizeBytes: number;
+  text: string;
+  rowCount: number;
+  totalRowCount: number;
+}
+
+export type AgentChatAttachment =
+  | AgentChatImageAttachment
+  | AgentChatCsvAttachment;
 
 export interface AgentLlmSelection {
   providerKey?:
@@ -1379,16 +1394,31 @@ export type IncidentMessageStatus =
   | "complete"
   | "error";
 
-export type IncidentAttachmentType = "image";
+export type IncidentAttachmentType = "image" | "csv";
 
-export interface IncidentAttachment {
+export interface IncidentImageAttachment {
   id: string;
-  type: IncidentAttachmentType;
+  type: "image";
   name: string;
   mimeType: string;
   sizeBytes: number;
   dataUrl?: string; // Optional - not stored in DB for efficiency
 }
+
+export interface IncidentCsvAttachment {
+  id: string;
+  type: "csv";
+  name: string;
+  mimeType: "text/csv";
+  sizeBytes: number;
+  text: string;
+  rowCount: number;
+  totalRowCount: number;
+}
+
+export type IncidentAttachment =
+  | IncidentImageAttachment
+  | IncidentCsvAttachment;
 
 export interface IncidentToolCall {
   toolCallId: string;

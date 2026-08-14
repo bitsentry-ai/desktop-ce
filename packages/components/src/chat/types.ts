@@ -72,14 +72,7 @@ export type ChatMessage =
   | {
       kind: "user";
       text: string;
-      attachments?: Array<{
-        id: string;
-        type: "image";
-        name: string;
-        mimeType: string;
-        sizeBytes: number;
-        dataUrl: string;
-      }>;
+      attachments?: ComposerAttachment[];
     }
   | {
       kind: "agent";
@@ -121,6 +114,21 @@ export interface ComposerImageAttachment {
   sizeBytes: number;
   dataUrl: string;
 }
+
+export interface ComposerCsvAttachment {
+  id: string;
+  type: "csv";
+  name: string;
+  mimeType: "text/csv";
+  sizeBytes: number;
+  text: string;
+  rowCount: number;
+  totalRowCount: number;
+}
+
+export type ComposerAttachment =
+  | ComposerImageAttachment
+  | ComposerCsvAttachment;
 
 // ---------------------------------------------------------------------------
 // Access Level

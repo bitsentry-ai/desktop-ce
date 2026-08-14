@@ -533,6 +533,7 @@
   "common.incidents.addPhotos": "Ajouter des photos",
   "common.incidents.aiIsResponding": "L'IA répond…",
   "common.incidents.allIncidents": "Tous les incidents",
+  "common.incidents.attachmentRows": "({{rowCount}}/{{totalRowCount}} lignes)",
   "common.incidents.approve": "Approuver",
   "common.incidents.archivedIncidentsAreReadOnly": "Les incidents archivés sont en lecture seule",
   "common.incidents.archiveIncident": "Archiver l'incident",
