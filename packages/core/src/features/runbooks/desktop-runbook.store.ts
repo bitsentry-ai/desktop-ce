@@ -903,7 +903,10 @@ function sanitizePluginRunbookAction(
   if (typeof action.pluginInput === "string") {
     target.pluginInput = action.pluginInput;
   }
-  if (typeof action.pluginAuth === "string") {
+  if (
+    typeof action.pluginAuth === "string" &&
+    action.pluginAuth.trim().length > 0
+  ) {
     target.pluginAuth = action.pluginAuth;
   }
   return target;
@@ -2122,7 +2125,11 @@ export class DesktopRunbookStore {
           let sourceId: string | null = null;
           if (action.type === "plugin") {
             body = action.pluginInput ?? null;
-            url = action.pluginAuth ?? null;
+            url =
+              typeof action.pluginAuth === "string" &&
+              action.pluginAuth.trim().length > 0
+                ? action.pluginAuth
+                : null;
             query = action.pluginActionId ?? null;
             sourceId = action.pluginId ?? null;
           } else if (action.sourceRef !== undefined && action.sourceRef.length > 0) {

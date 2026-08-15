@@ -258,6 +258,61 @@ describe("RunbookStore importRunbooks", () => {
     });
   });
 
+  it("omits empty plugin auth after import round-trip", async () => {
+    const storedRunbooks: Array<Record<string, unknown>> = [];
+    const storedActions: Array<Record<string, unknown>> = [];
+    const { store } = createStore({
+      runbook: {
+        findMany: vi.fn(() => storedRunbooks),
+        findUnique: vi.fn(({ where }: { where: { id: string } }) =>
+          storedRunbooks.find((runbook) => runbook.id === where.id) ?? null),
+        create: vi.fn(({ data }: { data: Record<string, unknown> }) => {
+          const row = { deletedAt: null, ...data };
+          storedRunbooks.push(row);
+          return row;
+        }),
+      },
+      runbookAction: {
+        findMany: vi.fn(({ where }: { where: { runbookId: string } }) =>
+          storedActions.filter((action) => action.runbookId === where.runbookId)),
+        create: vi.fn(({ data }: { data: Record<string, unknown> }) => {
+          storedActions.push(data);
+          return data;
+        }),
+      },
+    });
+    const artifact: DesktopRunbookExportArtifactV1 = {
+      format: "bitsentry.runbooks.export",
+      version: 1,
+      exportedAt: "2026-05-31T00:00:00.000Z",
+      runbooks: [
+        {
+          title: "Empty auth runbook",
+          actions: [
+            {
+              type: "plugin",
+              title: "Query GitHub issues",
+              pluginId: "github",
+              pluginActionId: "list_issues",
+              pluginInput: '{"owner":"bitsentry-ai","repo":"api"}',
+              pluginAuth: "",
+            },
+          ],
+        },
+      ],
+    };
+
+    const summary = await store.importRunbooks({
+      artifact,
+      options: { dryRun: false },
+    });
+
+    expect(summary).toMatchObject({ imported: 1, skipped: 0, failed: 0 });
+    expect(storedActions[0]).toMatchObject({ url: null });
+    const imported = await store.get(String(storedRunbooks[0].id));
+    expect(imported?.actions[0]?.pluginAuth).toBeUndefined();
+  });
+
   it("imports legacy external source actions without artifact externalSources", async () => {
     const { store, db } = createStore();
     const artifact: DesktopRunbookExportArtifactV1 = {

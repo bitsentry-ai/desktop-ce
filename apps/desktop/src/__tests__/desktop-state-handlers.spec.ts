@@ -103,6 +103,63 @@ describe("desktop state handlers", () => {
     expect(runbookActionCreate).toHaveBeenCalledWith({ data: dataMatch });
   });
 
+  it("omits empty plugin auth after state bootstrap round-trip", async () => {
+    const { db, runbookActionCreate } = createDesktopStateDatabase();
+    const storedActions: Array<Record<string, unknown>> = [];
+    const runbookRow = {
+      id: "runbook-empty-auth",
+      title: "Empty auth runbook",
+      description: "",
+      revisionNumber: 1,
+      createdAt: "2026-06-01T00:00:00.000Z",
+      updatedAt: "2026-06-01T00:00:00.000Z",
+      deletedAt: null,
+    };
+    const runbookActionFindMany = db.runbookAction.findMany as ReturnType<typeof vi.fn>;
+    const runbookFindMany = db.runbook.findMany as ReturnType<typeof vi.fn>;
+
+    runbookActionCreate.mockImplementation(({ data }: { data: Record<string, unknown> }) => {
+      storedActions.push(data);
+      return data;
+    });
+    runbookActionFindMany.mockImplementation(async () => storedActions);
+    runbookFindMany.mockImplementation(async () => [runbookRow]);
+
+    const handlers = createDesktopStateHandlers(db);
+    const snapshot = (await handlers["desktopState:bootstrap"]({
+      incidents: [],
+      runbooks: [
+        {
+          id: runbookRow.id,
+          title: runbookRow.title,
+          description: runbookRow.description,
+          revisionNumber: runbookRow.revisionNumber,
+          createdAt: runbookRow.createdAt,
+          updatedAt: runbookRow.updatedAt,
+          actions: [
+            {
+              id: "action-empty-auth",
+              type: "plugin",
+              title: "Query GitHub issues",
+              pluginId: "github",
+              pluginActionId: "list_issues",
+              pluginInput: '{"owner":"bitsentry-ai","repo":"api"}',
+              pluginAuth: "",
+            },
+          ],
+        },
+      ],
+      results: [],
+    })) as {
+      runbooks: Array<{
+        actions: Array<{ pluginAuth?: string }>;
+      }>;
+    };
+
+    expect(storedActions[0]).toMatchObject({ url: null });
+    expect(snapshot.runbooks[0]?.actions[0]?.pluginAuth).toBeUndefined();
+  });
+
   it.each(["running", "completed"] as const)(
     "does not replace a main-process-owned %s execution with renderer cache",
     async (status) => {
