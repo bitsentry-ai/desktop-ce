@@ -222,7 +222,13 @@ describe('DesktopPluginRuntimeService', () => {
 
   it('imports every first-party plugin artifact through the local runtime loader', async () => {
     const artifactRoot = path.resolve(__dirname, '../../../build/plugins')
-    const expectedPluginIds = ['github', 'posthog', 'sentry', 'wazuh']
+    const expectedPluginIds = [
+      'github',
+      'linux-cve-status',
+      'posthog',
+      'sentry',
+      'wazuh',
+    ]
 
     await Promise.all(
       expectedPluginIds.map((pluginId) =>
