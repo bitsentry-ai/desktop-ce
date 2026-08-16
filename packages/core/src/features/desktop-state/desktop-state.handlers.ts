@@ -1292,7 +1292,10 @@ class DesktopStateStore {
     let query = action.query
     let sourceId = action.sourceId
     if (action.type === 'plugin') {
-      url = action.pluginAuth
+      url =
+        typeof action.pluginAuth === 'string' && action.pluginAuth.trim().length > 0
+          ? action.pluginAuth
+          : undefined
       body = action.pluginInput
       query = action.pluginActionId
       sourceId = action.pluginId
