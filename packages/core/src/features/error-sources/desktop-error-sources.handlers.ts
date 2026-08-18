@@ -1,4 +1,5 @@
 import type { DbClient } from "../desktop/desktop-database-client";
+import { randomUUID } from "crypto";
 import log from "electron-log";
 import { z } from "zod";
 import { errorSourceTypeSchema } from "./error-sources.schemas";
@@ -22,6 +23,10 @@ import type {
   DesktopPluginRuntimeService,
 } from "../plugins";
 import { createDesktopNodePluginRuntimeService } from "../plugins/node";
+import {
+  resolveErrorSourceCredentials,
+  type ErrorSourceCredentialsStore,
+} from "./desktop-error-source-credentials";
 import {
   hasErrorSourceProviderAction,
   resolveErrorSourceProviderActionId,
@@ -713,6 +718,7 @@ export function createDesktopErrorSourcesHandlers(
   dependencies: {
     OauthManagerService: DesktopOauthManagerServiceClass;
     pluginRuntime?: DesktopPluginRuntimeService;
+    credentialsStore?: ErrorSourceCredentialsStore;
   },
 ): Record<string, (payload: unknown) => Promise<unknown>> {
   const sourcesRepository = new SqliteErrorSourcesRepositoryAdapter(db);
@@ -720,6 +726,7 @@ export function createDesktopErrorSourcesHandlers(
   const eventsRepository = new SqliteErrorEventsRepositoryAdapter(db);
   const pluginRuntime =
     dependencies.pluginRuntime ?? createDesktopNodePluginRuntimeService();
+  const credentialsStore = dependencies.credentialsStore;
   const oauthManager = new dependencies.OauthManagerService(db, pluginRuntime);
   const syncService = new ErrorSourceSyncService(
     db,
@@ -727,6 +734,7 @@ export function createDesktopErrorSourcesHandlers(
     issuesRepository,
     eventsRepository,
     pluginRuntime,
+    credentialsStore,
   );
   const syncRecovery = recoverInterruptedSyncs(sourcesRepository);
 
@@ -901,25 +909,39 @@ export function createDesktopErrorSourcesHandlers(
           ...(readPayloadRecord(payload.configuration) ?? {}),
         };
 
-        const created = await sourcesRepository.create({
+        const sourceId = randomUUID();
+        const credentials = {
+          accessToken: nullableNonEmptyString(persistedSetup.accessTokenRef ?? ""),
+          refreshToken: persistedSetup.refreshTokenRef ?? null,
+        };
+        if (credentialsStore !== undefined) {
+          await credentialsStore.set(sourceId, credentials);
+        }
+        try {
+          const created = await sourcesRepository.create({
+          id: sourceId,
           sourceType,
           name: sourceName,
           additionalMetadata: mergeErrorSourceAdditionalMetadata(
             readPayloadRecord(payload.additionalMetadata),
             pluginId,
           ),
-          accessTokenRef: nullableNonEmptyString(
-            persistedSetup.accessTokenRef ?? "",
-          ),
-          refreshTokenRef: persistedSetup.refreshTokenRef ?? null,
+          accessTokenRef: credentialsStore === undefined ? credentials.accessToken : null,
+          refreshTokenRef: credentialsStore === undefined ? credentials.refreshToken : null,
           expiresAt: persistedSetup.expiresAt ?? null,
           grantedScopes: persistedSetup.grantedScopes ?? [],
           configuration: customPluginConfiguration,
           logLevelThreshold: toLogLevelThreshold(payload.logLevelThreshold),
           syncEnabled: payload.syncEnabled !== false,
           autoDiagnosisEnabled: payload.autoDiagnosisEnabled === true,
-        });
-      return toRendererErrorSource(created);
+          });
+          return toRendererErrorSource(created);
+        } catch (error) {
+          if (credentialsStore !== undefined) {
+            await credentialsStore.clear(sourceId);
+          }
+          throw error;
+        }
     },
 
     "errorSources:update": async (rawPayload: unknown) => {
@@ -1004,12 +1026,21 @@ export function createDesktopErrorSourcesHandlers(
         tokenMetadataUpdate.grantedScopes = [];
       }
 
+      if (tokenReplacement && credentialsStore !== undefined) {
+        await credentialsStore.set(existing.id, {
+          accessToken: nullableNonEmptyString(persistedSetup.accessTokenRef ?? ""),
+          refreshToken: persistedSetup.refreshTokenRef ?? null,
+        });
+        tokenMetadataUpdate.refreshTokenRef = null;
+      }
+
       const updated = await sourcesRepository.update({
         id: existing.id,
         name: readOptionalTrimmed(payload.name),
         additionalMetadata:
           readPayloadRecord(payload.additionalMetadata) ?? undefined,
-        accessTokenRef: persistedSetup.accessTokenRef,
+        accessTokenRef:
+          credentialsStore === undefined ? persistedSetup.accessTokenRef : undefined,
         ...tokenMetadataUpdate,
         configuration: nextConfiguration,
         logLevelThreshold: payload.logLevelThreshold,
@@ -1029,6 +1060,9 @@ export function createDesktopErrorSourcesHandlers(
       }
 
       await sourcesRepository.remove(source.id);
+      if (credentialsStore !== undefined) {
+        await credentialsStore.clear(source.id);
+      }
       return { success: true };
     },
 
@@ -1123,7 +1157,15 @@ export function createDesktopErrorSourcesHandlers(
           oauthClientSecret,
           oauthRedirectUri,
         });
+        const sourceId = randomUUID();
+        if (credentialsStore !== undefined) {
+          await credentialsStore.set(sourceId, {
+            accessToken,
+            refreshToken: tokenResult.refreshToken,
+          });
+        }
         const source = await sourcesRepository.create({
+          id: sourceId,
           sourceType,
           name:
             payload.name ??
@@ -1133,8 +1175,9 @@ export function createDesktopErrorSourcesHandlers(
             readPayloadRecord(payload.additionalMetadata),
             pluginId,
           ),
-          accessTokenRef: accessToken,
-          refreshTokenRef: tokenResult.refreshToken,
+          accessTokenRef: credentialsStore === undefined ? accessToken : null,
+          refreshTokenRef:
+            credentialsStore === undefined ? tokenResult.refreshToken : null,
           expiresAt: tokenResult.expiresAt,
           grantedScopes: tokenResult.scopes,
           configuration,
@@ -1161,7 +1204,11 @@ export function createDesktopErrorSourcesHandlers(
       const payload = idPayloadSchema.parse(rawPayload);
       const sourceId = payload.id;
       log.info(`[error-sources] testConnection:start sourceId=${sourceId}`);
-      const source = await sourcesRepository.findById(payload.id);
+      const storedSource = await sourcesRepository.findById(payload.id);
+      const source =
+        storedSource === null
+          ? null
+          : await resolveErrorSourceCredentials(storedSource, credentialsStore);
       if (source === null)
         throw new Error(`Error source ${payload.id} not found`);
       const pluginId = readSourcePluginId(source);

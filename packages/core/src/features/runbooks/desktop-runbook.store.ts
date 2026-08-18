@@ -36,6 +36,7 @@ import {
   type LogFilterConfig,
 } from "./runbooks.schemas";
 import { errorSourceTypeSchema } from "../error-sources/error-sources.schemas";
+import type { ErrorSourceCredentialsStore } from "../error-sources/desktop-error-source-credentials";
 import type {
   GlobalVariable,
   GlobalVariableInput,
@@ -1199,6 +1200,7 @@ export class DesktopRunbookStore {
   constructor(
     private readonly db: DesktopRunbookStoreDatabase,
     private readonly globalVariablesService: DesktopRunbookStoreGlobalVariablesService,
+    private readonly errorSourceCredentialsStore?: ErrorSourceCredentialsStore,
   ) {
     this.errorSourcesRepository = new SqliteErrorSourcesRepositoryAdapter(db);
   }
@@ -2410,21 +2412,45 @@ export class DesktopRunbookStore {
         continue;
       }
 
-      const created = await this.errorSourcesRepository.create({
-        sourceType: externalSource.sourceType,
-        name: externalSource.name,
-        accessTokenRef: credentials.authToken ?? null,
-        refreshTokenRef: credentials.refreshToken ?? null,
-        expiresAt: credentials.expiresAt ?? null,
-        grantedScopes: credentials.grantedScopes ?? [],
-        configuration: sanitizedConfiguration,
-        logLevelThreshold: externalSource.logLevelThreshold,
-        additionalMetadata: buildExternalSourceAdditionalMetadata(
-          externalSource.pluginId,
-        ),
-        syncEnabled: externalSource.syncEnabled,
-        autoDiagnosisEnabled: externalSource.autoDiagnosisEnabled,
-      });
+      const hasCredentials =
+        credentials.authToken !== undefined ||
+        credentials.refreshToken !== undefined;
+      if (hasCredentials && this.errorSourceCredentialsStore === undefined) {
+        throw new Error(
+          "Importing external-source credentials requires encrypted credential storage.",
+        );
+      }
+      const sourceId = hasCredentials ? randomUUID() : undefined;
+      if (sourceId !== undefined) {
+        await this.errorSourceCredentialsStore?.set(sourceId, {
+          accessToken: credentials.authToken ?? null,
+          refreshToken: credentials.refreshToken ?? null,
+        });
+      }
+      let created;
+      try {
+        created = await this.errorSourcesRepository.create({
+          id: sourceId,
+          sourceType: externalSource.sourceType,
+          name: externalSource.name,
+          accessTokenRef: null,
+          refreshTokenRef: null,
+          expiresAt: credentials.expiresAt ?? null,
+          grantedScopes: credentials.grantedScopes ?? [],
+          configuration: sanitizedConfiguration,
+          logLevelThreshold: externalSource.logLevelThreshold,
+          additionalMetadata: buildExternalSourceAdditionalMetadata(
+            externalSource.pluginId,
+          ),
+          syncEnabled: externalSource.syncEnabled,
+          autoDiagnosisEnabled: externalSource.autoDiagnosisEnabled,
+        });
+      } catch (error) {
+        if (sourceId !== undefined) {
+          await this.errorSourceCredentialsStore?.clear(sourceId);
+        }
+        throw error;
+      }
       sourceIdByRef.set(externalSource.ref, created.id);
       existingBySignature.set(fingerprint, created);
     }

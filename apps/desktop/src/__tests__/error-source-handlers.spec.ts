@@ -629,6 +629,44 @@ describe("desktop error source handlers", () => {
     });
   });
 
+  it("stores created source tokens outside the SQLite row", async () => {
+    const runtime = new TestPluginRuntimeService([
+      createPostHogPluginDescriptor(),
+    ]);
+    const { db, create } = createTestDb();
+    const credentialsStore = {
+      get: vi.fn(),
+      set: vi.fn().mockResolvedValue(undefined),
+      clear: vi.fn().mockResolvedValue(undefined),
+    };
+    const oauthBindings = createDesktopOauthManagerBindings();
+    const handlers = createDesktopErrorSourcesHandlers(db, {
+      OauthManagerService: oauthBindings.OauthManagerService,
+      pluginRuntime: runtime,
+      credentialsStore,
+    });
+
+    await handlers["errorSources:create"]?.({
+      pluginId: "posthog",
+      sourceType: "posthog",
+      name: "Protected PostHog",
+      setupValues: { authToken: "phx-token" },
+    });
+
+    expect(credentialsStore.set).toHaveBeenCalledWith(expect.any(String), {
+      accessToken: "phx-token",
+      refreshToken: null,
+    });
+    expect(create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          accessTokenRef: null,
+          refreshTokenRef: null,
+        }),
+      }),
+    );
+  });
+
   it("rejects source creation without a matching code plugin", async () => {
     const runtime = new TestPluginRuntimeService([]);
     const { db, create } = createTestDb();

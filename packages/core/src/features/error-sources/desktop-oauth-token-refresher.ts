@@ -11,6 +11,7 @@ import {
   refreshPluginAccessToken,
   resolvePluginOAuthConfig,
 } from "./desktop-plugin-oauth-actions";
+import type { ErrorSourceCredentialsStore } from "./desktop-error-source-credentials";
 
 type RefreshOAuthProviderConfig = Pick<
   OAuthProviderConfig,
@@ -198,7 +199,7 @@ export interface DesktopOAuthSource {
 export interface DesktopOAuthSourcesRepository {
   update(args: {
     id: string;
-    accessTokenRef: string;
+    accessTokenRef: string | null;
     refreshTokenRef: string | null;
     expiresAt: string | null;
     grantedScopes: string[];
@@ -211,6 +212,7 @@ export interface RefreshAccessTokenInput<
   source: TSource;
   sourcesRepository: DesktopOAuthSourcesRepository;
   pluginRuntime?: DesktopPluginRuntimeService;
+  credentialsStore?: ErrorSourceCredentialsStore;
   signal?: AbortSignal;
 }
 
@@ -326,13 +328,22 @@ async function performTokenRefresh<
     },
   });
   const nextAccessToken = getNextAccessToken(refreshed.accessToken);
+  const nextRefreshToken = getNextRefreshToken(
+    source.refreshTokenRef,
+    refreshed.refreshToken,
+  );
+  if (input.credentialsStore !== undefined) {
+    await input.credentialsStore.set(source.id, {
+      accessToken: nextAccessToken,
+      refreshToken: nextRefreshToken,
+    });
+  }
   const updated = await sourcesRepository.update({
     id: source.id,
-    accessTokenRef: nextAccessToken,
-    refreshTokenRef: getNextRefreshToken(
-      source.refreshTokenRef,
-      refreshed.refreshToken,
-    ),
+    accessTokenRef:
+      input.credentialsStore === undefined ? nextAccessToken : null,
+    refreshTokenRef:
+      input.credentialsStore === undefined ? nextRefreshToken : null,
     expiresAt: getNextExpiresAt(source.expiresAt, refreshed.expiresIn),
     grantedScopes: getNextGrantedScopes(source.grantedScopes, refreshed.scope),
   });
