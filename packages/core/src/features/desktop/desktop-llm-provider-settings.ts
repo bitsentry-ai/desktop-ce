@@ -36,7 +36,7 @@ export interface BuildDesktopLocalProviderRecordsOptions {
   localAiProvider: DesktopLocalAiProviderPort | null
   primaryProviderKey: string
   readModelSetting: (providerKey: DesktopLocalAiProviderKey) => Promise<string>
-  normalizeModel?: (
+  normalizeModel: (
     providerKey: DesktopLocalAiProviderKey,
     model: string,
   ) => string

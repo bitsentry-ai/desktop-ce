@@ -102,6 +102,14 @@ const HIDDEN_MODEL_IDS_BY_PROVIDER: Partial<Record<
   // Keep the raw catalog data for migration/display compatibility, but never
   // offer them as selectable models.
   codex: new Set(['gpt-5.2-codex', 'gpt-5.1-codex-mini']),
+  // Confirmed stale by product decision. Keep live discovery from re-adding
+  // these IDs after they are removed from the static catalog.
+  gemini: new Set([
+    'gemini-2.5-pro',
+    'gemini-2.5-flash',
+    'gemini-2.5-flash-lite',
+    'gemini-2.5-computer-use-preview-10-2025',
+  ]),
 }
 const LEGACY_CATALOG_MODEL_ID_ALIASES: Partial<Record<
   ModelCatalogProviderKey,

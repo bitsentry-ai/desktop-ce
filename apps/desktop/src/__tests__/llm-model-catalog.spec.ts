@@ -15,6 +15,7 @@ import {
   getModelCapability,
   getModelDisplayName,
   getProviderCatalogModels,
+  filterSelectableModelIds,
   resolveCatalogModelRuntimeSelection,
 } from '@bitsentry-ce/components/llm/modelCatalog'
 import { getProviderModelOptions } from '@bitsentry-ce/components/chat/utils'
@@ -307,9 +308,6 @@ describe('local model catalog selection', () => {
     const modelIds = getProviderCatalogModels('gemini').map((model) => model.id)
 
     expect(modelIds).toEqual([
-      'gemini-2.5-pro',
-      'gemini-2.5-flash',
-      'gemini-2.5-flash-lite',
       'gemini-3.6-flash',
       'gemini-3.5-flash',
       'gemini-3.5-flash-lite',
@@ -331,6 +329,25 @@ describe('local model catalog selection', () => {
       )
       expect(thinkingLevel.options.find((option) => option.isDefault)?.value).toBe('high')
     }
+  })
+
+  it('hides confirmed stale Gemini IDs from catalog and live discovery', () => {
+    const staleIds = [
+      'gemini-2.5-pro',
+      'gemini-2.5-flash',
+      'gemini-2.5-flash-lite',
+      'gemini-2.5-computer-use-preview-10-2025',
+    ]
+
+    const filtered = filterSelectableModelIds('gemini', [
+      ...staleIds,
+      'gemini-3.6-flash',
+    ])
+
+    expect(filtered).toEqual(['gemini-3.6-flash'])
+    expect(getCatalogModelIds('gemini')).not.toEqual(
+      expect.arrayContaining(staleIds),
+    )
   })
 
   it('does not expose Codex models rejected for ChatGPT accounts', () => {
