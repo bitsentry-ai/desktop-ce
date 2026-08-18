@@ -175,13 +175,74 @@ describe('local model catalog selection', () => {
         'gpt-5.6': { tiers: ['low', 'medium', 'high', 'xhigh'], default: 'high' },
       },
       opencode: {
-        'openrouter/openai/gpt-5.6-luna': { tiers: ['low', 'medium', 'high'], default: 'medium' },
-        'openrouter/openai/gpt-5.6-luna-pro': { tiers: ['low', 'medium', 'high'], default: 'medium' },
-        'openrouter/openai/gpt-5.6-sol': { tiers: ['low', 'medium', 'high'], default: 'medium' },
-        'openrouter/openai/gpt-5.6-sol-pro': { tiers: ['low', 'medium', 'high'], default: 'medium' },
-        'openrouter/openai/gpt-5.6-terra': { tiers: ['low', 'medium', 'high'], default: 'medium' },
-        'openrouter/openai/gpt-5.6-terra-pro': { tiers: ['low', 'medium', 'high'], default: 'medium' },
-        'openrouter/anthropic/claude-opus-5': { tiers: ['low', 'medium', 'high', 'xhigh'], default: 'xhigh' },
+        'openrouter/openai/gpt-5.6-luna': {
+          tiers: ['none', 'low', 'medium', 'high', 'xhigh', 'max'],
+          default: 'medium',
+        },
+        'openrouter/openai/gpt-5.6-luna-pro': {
+          tiers: ['none', 'low', 'medium', 'high', 'xhigh', 'max'],
+          default: 'medium',
+        },
+        'openrouter/openai/gpt-5.6-sol': {
+          tiers: ['none', 'low', 'medium', 'high', 'xhigh', 'max'],
+          default: 'medium',
+        },
+        'openrouter/openai/gpt-5.6-sol-pro': {
+          tiers: ['none', 'low', 'medium', 'high', 'xhigh', 'max'],
+          default: 'medium',
+        },
+        'openrouter/openai/gpt-5.6-terra': {
+          tiers: ['none', 'low', 'medium', 'high', 'xhigh', 'max'],
+          default: 'medium',
+        },
+        'openrouter/openai/gpt-5.6-terra-pro': {
+          tiers: ['none', 'low', 'medium', 'high', 'xhigh', 'max'],
+          default: 'medium',
+        },
+        'openai/gpt-5.5': {
+          tiers: ['none', 'low', 'medium', 'high', 'xhigh'],
+          default: 'medium',
+        },
+        'openai/gpt-5.4': {
+          tiers: ['none', 'low', 'medium', 'high', 'xhigh'],
+          default: 'high',
+        },
+        'openai/gpt-5.4-mini': {
+          tiers: ['none', 'low', 'medium', 'high', 'xhigh'],
+          default: 'medium',
+        },
+        'openai/gpt-5.3-codex-spark': {
+          tiers: ['none', 'low', 'medium', 'high', 'xhigh'],
+          default: 'medium',
+        },
+        'openrouter/anthropic/claude-opus-5': {
+          tiers: ['low', 'medium', 'high', 'xhigh', 'max'],
+          default: 'xhigh',
+        },
+        'anthropic/claude-sonnet-5': {
+          tiers: ['low', 'medium', 'high', 'xhigh', 'max'],
+          default: 'high',
+        },
+        'anthropic/claude-fable-5': {
+          tiers: ['low', 'medium', 'high', 'xhigh', 'max'],
+          default: 'high',
+        },
+        'anthropic/claude-opus-4-8': {
+          tiers: ['low', 'medium', 'high', 'xhigh', 'max'],
+          default: 'xhigh',
+        },
+        'anthropic/claude-opus-4-7': {
+          tiers: ['low', 'medium', 'high', 'xhigh', 'max'],
+          default: 'xhigh',
+        },
+        'anthropic/claude-sonnet-4-6': {
+          tiers: ['low', 'medium', 'high', 'max'],
+          default: 'high',
+        },
+        'openai/gpt-5': {
+          tiers: ['minimal', 'low', 'medium', 'high'],
+          default: 'medium',
+        },
       },
     } as const
 
@@ -352,6 +413,27 @@ describe('local model catalog selection', () => {
 
     expect(getModelCapability('codex', 'gpt-5.4')).toBe(catalogCapability)
     expect(getModelCapability('openai', 'gpt-future-unknown')).toBeUndefined()
+  })
+
+  it('migrates legacy OpenCode fast IDs to their base models', () => {
+    const migrations = {
+      'openai/gpt-5.5-fast': 'openai/gpt-5.5',
+      'openai/gpt-5.4-fast': 'openai/gpt-5.4',
+      'openai/gpt-5.4-mini-fast': 'openai/gpt-5.4-mini',
+      'anthropic/claude-opus-4-8-fast': 'anthropic/claude-opus-4-8',
+    } as const
+
+    const catalogModelIds = getCatalogModelIds('opencode')
+    for (const [legacyId, baseId] of Object.entries(migrations)) {
+      expect(catalogModelIds).not.toContain(legacyId)
+      expect(getCatalogModel('opencode', legacyId)?.id).toBe(baseId)
+    }
+
+    const options = getProviderModelOptions('opencode', {
+      opencode: providerConfig('openai/gpt-5.5-fast', ['openai/gpt-5.5-fast']),
+    })
+    expect(options).toContain('openai/gpt-5.5')
+    expect(options).not.toContain('openai/gpt-5.5-fast')
   })
 
   it('normalizes the legacy Cursor default ID to the Cursor ACP auto ID', () => {

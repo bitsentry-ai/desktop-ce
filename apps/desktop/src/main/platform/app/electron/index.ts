@@ -22,7 +22,7 @@ import { createIPCHandler } from 'electron-trpc/main'
 import log from 'electron-log'
 import MenuBuilder from './menu'
 import { DesktopIpcDispatcher, createDesktopTrpcRouter } from '@bitsentry-ce/components/services'
-import { getCatalogModelIds } from '@bitsentry-ce/components/llm/modelCatalog'
+import { getCatalogModel, getCatalogModelIds } from '@bitsentry-ce/components/llm/modelCatalog'
 import {
   createDesktopElectronShell,
   createDesktopMainWindow,
@@ -719,6 +719,8 @@ app
         return buildDesktopLocalProviderRecords({
           localAiProvider,
           primaryProviderKey: primaryKey,
+          normalizeModel: (providerKey, rawModel) =>
+            getCatalogModel(providerKey, rawModel)?.id ?? rawModel,
           readModelSetting: async (providerKey) => {
             const setting = await db.setting.findUnique({
               where: { key: `llm.${providerKey}.model` },

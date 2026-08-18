@@ -28,7 +28,7 @@ import {
   type HostToolContext,
 } from '@bitsentry-ce/core/features/agent-runtime'
 import { codingAgentsLogger as log } from './logger.js'
-import { getCatalogModelIds } from '@bitsentry-ce/components/llm/modelCatalog'
+import { getCatalogModel, getCatalogModelIds } from '@bitsentry-ce/components/llm/modelCatalog'
 
 export type LlmProviderKey = 'groq' | 'kilocode' | 'openai' | 'anthropic' | 'gemini' | 'openrouter' | 'claude_code' | 'codex' | 'opencode' | 'cursor'
 
@@ -1113,15 +1113,19 @@ export class AgentLlmAdapterService {
    */
 
   private async getModel(providerKey: LlmProviderKey, overrideModel?: string): Promise<string> {
+    const normalizeModel = (model: string): string => {
+      if (providerKey !== 'opencode') return model
+      return getCatalogModel('opencode', model)?.id ?? model
+    }
     const trimmedOverrideModel = overrideModel?.trim()
     if (trimmedOverrideModel !== undefined && trimmedOverrideModel.length > 0) {
-      return trimmedOverrideModel
+      return normalizeModel(trimmedOverrideModel)
     }
     const setting = await this.db.setting.findUnique({
       where: { key: `llm.${providerKey}.model` },
     })
     const savedModel = setting?.value?.trim()
-    if (savedModel !== undefined && savedModel.length > 0) return savedModel
+    if (savedModel !== undefined && savedModel.length > 0) return normalizeModel(savedModel)
 
     if (providerKey === 'opencode' && this.localAiProvider?.isReady('opencode') === true) {
       try {

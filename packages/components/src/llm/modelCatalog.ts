@@ -109,6 +109,12 @@ const LEGACY_CATALOG_MODEL_ID_ALIASES: Partial<Record<
 >> = {
   // Cursor ACP uses `auto`; older Desktop CE settings stored this as `default`.
   cursor: { default: 'auto' },
+  opencode: {
+    'openai/gpt-5.5-fast': 'openai/gpt-5.5',
+    'openai/gpt-5.4-fast': 'openai/gpt-5.4',
+    'openai/gpt-5.4-mini-fast': 'openai/gpt-5.4-mini',
+    'anthropic/claude-opus-4-8-fast': 'anthropic/claude-opus-4-8',
+  },
 }
 
 function resolveLegacyCatalogModelId(
