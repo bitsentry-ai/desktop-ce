@@ -2,6 +2,10 @@ import { EventEmitter } from 'events'
 import { readFile } from 'fs/promises'
 import { PassThrough } from 'stream'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import {
+  AgentLlmAdapterService,
+  type AgentLlmSettingsStore,
+} from '@bitsentry-ce/coding-agents/agent-llm-adapter.service'
 import { getHostTools } from '@bitsentry-ce/core/features/agent-runtime'
 import { setCodingAgentsLoggerForTesting } from '@bitsentry-ce/coding-agents/logger'
 
@@ -49,6 +53,18 @@ function delay(milliseconds: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, milliseconds))
 }
 
+const LEGACY_OPENCODE_MODEL_MIGRATIONS = [
+  { legacyId: 'openai/gpt-5.5-fast', baseId: 'openai/gpt-5.5' },
+  { legacyId: 'openai/gpt-5.4-fast', baseId: 'openai/gpt-5.4' },
+  { legacyId: 'openai/gpt-5.4-mini-fast', baseId: 'openai/gpt-5.4-mini' },
+  { legacyId: 'anthropic/claude-opus-4-8-fast', baseId: 'anthropic/claude-opus-4-8' },
+] as const
+
+const LEGACY_OPENCODE_EXECUTION_CASES = [
+  ...LEGACY_OPENCODE_MODEL_MIGRATIONS.map((migration) => ({ ...migration, branch: 'saved' as const })),
+  ...LEGACY_OPENCODE_MODEL_MIGRATIONS.map((migration) => ({ ...migration, branch: 'override' as const })),
+]
+
 describe('executeOpenCode', () => {
   afterEach(() => {
     mocks.spawn.mockReset()
@@ -86,6 +102,57 @@ describe('executeOpenCode', () => {
     expect(args).toEqual(expect.arrayContaining(['--variant', 'high']))
     expect(args.indexOf('--variant')).toBeGreaterThan(args.indexOf('run'))
   })
+
+  it.each(LEGACY_OPENCODE_EXECUTION_CASES)(
+    'migrates the $branch legacy model before passing the final --model argument ($legacyId)',
+    async ({ legacyId, baseId, branch }) => {
+      const child = new MockChildProcess()
+      mocks.spawn.mockReturnValue(child)
+      const { executeOpenCode } = await import(
+        '@bitsentry-ce/desktop-cli/runtime/desktop-coding-agents'
+      )
+      const settingsStore: AgentLlmSettingsStore = {
+        setting: {
+          findUnique: vi.fn().mockResolvedValue(
+            branch === 'saved' ? { value: legacyId } : null,
+          ),
+        },
+      }
+      const adapter = new AgentLlmAdapterService(settingsStore)
+      adapter.setLocalAiProvider({
+        isReady: (provider) => provider === 'opencode',
+        listModels: () => Promise.resolve([]),
+        execute: (_provider, prompt, abortController, onDelta, cwd, model, accessLevel, traitValues) =>
+          executeOpenCode({
+            prompt,
+            binaryPath: 'opencode',
+            abortController,
+            onDelta,
+            cwd,
+            model,
+            accessLevel,
+            traitValues,
+          }),
+      })
+
+      const resultPromise = adapter.chatWithTools({
+        messages: [{ role: 'user', content: 'Migrate this model.' }],
+        signal: new AbortController().signal,
+        llm: {
+          providerKey: 'opencode',
+          ...(branch === 'override' ? { model: legacyId } : {}),
+        },
+      })
+
+      await vi.waitFor(() => expect(mocks.spawn).toHaveBeenCalledTimes(1))
+      const [, args] = mocks.spawn.mock.calls[0] as [string, string[]]
+      const modelFlagIndex = args.indexOf('--model')
+      expect(args.slice(modelFlagIndex, modelFlagIndex + 2)).toEqual(['--model', baseId])
+
+      finishOpenCodeProcess(child)
+      await expect(resultPromise).resolves.toMatchObject({ content: '' })
+    },
+  )
 
   it('writes a scoped MCP config for the OpenCode subprocess', async () => {
     const infos: unknown[][] = []

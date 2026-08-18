@@ -761,54 +761,6 @@
       "supportsPlanMode": false,
       "models": [
         {
-          "id": "gemini-2.5-pro",
-          "displayName": "Gemini 2.5 Pro",
-          "supportsImageInput": true,
-          "supportsAudioInput": true,
-          "supportsVideoInput": true,
-          "supportsPdfInput": true,
-          "supportsThinking": true,
-          "thinkingMode": "always_on",
-          "reasoningOptions": [],
-          "composerOptions": []
-        },
-        {
-          "id": "gemini-2.5-flash",
-          "displayName": "Gemini 2.5 Flash",
-          "supportsImageInput": true,
-          "supportsAudioInput": true,
-          "supportsVideoInput": true,
-          "supportsPdfInput": true,
-          "supportsThinking": true,
-          "thinkingMode": "toggle",
-          "reasoningOptions": [],
-          "composerOptions": [
-            {
-              "id": "thinking",
-              "label": "Thinking",
-              "type": "boolean"
-            }
-          ]
-        },
-        {
-          "id": "gemini-2.5-flash-lite",
-          "displayName": "Gemini 2.5 Flash-Lite",
-          "supportsImageInput": true,
-          "supportsAudioInput": true,
-          "supportsVideoInput": true,
-          "supportsPdfInput": true,
-          "supportsThinking": true,
-          "thinkingMode": "toggle",
-          "reasoningOptions": [],
-          "composerOptions": [
-            {
-              "id": "thinking",
-              "label": "Thinking",
-              "type": "boolean"
-            }
-          ]
-        },
-        {
           "id": "gemini-3.6-flash",
           "displayName": "Gemini 3.6 Flash",
           "supportsImageInput": true,
@@ -2267,6 +2219,10 @@
               "type": "select",
               "options": [
                 {
+                  "value": "none",
+                  "label": "common.traitsDropdown.reasoningNone"
+                },
+                {
                   "value": "low",
                   "label": "common.traitsDropdown.reasoningLow"
                 },
@@ -2278,6 +2234,15 @@
                 {
                   "value": "high",
                   "label": "common.traitsDropdown.reasoningHigh"
+                },
+                {
+                  "value": "xhigh",
+                  "label": "common.traitsDropdown.reasoningExtraHigh",
+                  "shortLabel": "common.traitsDropdown.reasoningExtraHighShort"
+                },
+                {
+                  "value": "max",
+                  "label": "common.traitsDropdown.reasoningMax"
                 }
               ]
             }
@@ -2300,6 +2265,10 @@
               "type": "select",
               "options": [
                 {
+                  "value": "none",
+                  "label": "common.traitsDropdown.reasoningNone"
+                },
+                {
                   "value": "low",
                   "label": "common.traitsDropdown.reasoningLow"
                 },
@@ -2311,6 +2280,15 @@
                 {
                   "value": "high",
                   "label": "common.traitsDropdown.reasoningHigh"
+                },
+                {
+                  "value": "xhigh",
+                  "label": "common.traitsDropdown.reasoningExtraHigh",
+                  "shortLabel": "common.traitsDropdown.reasoningExtraHighShort"
+                },
+                {
+                  "value": "max",
+                  "label": "common.traitsDropdown.reasoningMax"
                 }
               ]
             }
@@ -2333,6 +2311,10 @@
               "type": "select",
               "options": [
                 {
+                  "value": "none",
+                  "label": "common.traitsDropdown.reasoningNone"
+                },
+                {
                   "value": "low",
                   "label": "common.traitsDropdown.reasoningLow"
                 },
@@ -2344,6 +2326,15 @@
                 {
                   "value": "high",
                   "label": "common.traitsDropdown.reasoningHigh"
+                },
+                {
+                  "value": "xhigh",
+                  "label": "common.traitsDropdown.reasoningExtraHigh",
+                  "shortLabel": "common.traitsDropdown.reasoningExtraHighShort"
+                },
+                {
+                  "value": "max",
+                  "label": "common.traitsDropdown.reasoningMax"
                 }
               ]
             }
@@ -2366,6 +2357,10 @@
               "type": "select",
               "options": [
                 {
+                  "value": "none",
+                  "label": "common.traitsDropdown.reasoningNone"
+                },
+                {
                   "value": "low",
                   "label": "common.traitsDropdown.reasoningLow"
                 },
@@ -2377,6 +2372,15 @@
                 {
                   "value": "high",
                   "label": "common.traitsDropdown.reasoningHigh"
+                },
+                {
+                  "value": "xhigh",
+                  "label": "common.traitsDropdown.reasoningExtraHigh",
+                  "shortLabel": "common.traitsDropdown.reasoningExtraHighShort"
+                },
+                {
+                  "value": "max",
+                  "label": "common.traitsDropdown.reasoningMax"
                 }
               ]
             }
@@ -2399,6 +2403,10 @@
               "type": "select",
               "options": [
                 {
+                  "value": "none",
+                  "label": "common.traitsDropdown.reasoningNone"
+                },
+                {
                   "value": "low",
                   "label": "common.traitsDropdown.reasoningLow"
                 },
@@ -2410,6 +2418,15 @@
                 {
                   "value": "high",
                   "label": "common.traitsDropdown.reasoningHigh"
+                },
+                {
+                  "value": "xhigh",
+                  "label": "common.traitsDropdown.reasoningExtraHigh",
+                  "shortLabel": "common.traitsDropdown.reasoningExtraHighShort"
+                },
+                {
+                  "value": "max",
+                  "label": "common.traitsDropdown.reasoningMax"
                 }
               ]
             }
@@ -2432,6 +2449,10 @@
               "type": "select",
               "options": [
                 {
+                  "value": "none",
+                  "label": "common.traitsDropdown.reasoningNone"
+                },
+                {
                   "value": "low",
                   "label": "common.traitsDropdown.reasoningLow"
                 },
@@ -2443,6 +2464,15 @@
                 {
                   "value": "high",
                   "label": "common.traitsDropdown.reasoningHigh"
+                },
+                {
+                  "value": "xhigh",
+                  "label": "common.traitsDropdown.reasoningExtraHigh",
+                  "shortLabel": "common.traitsDropdown.reasoningExtraHighShort"
+                },
+                {
+                  "value": "max",
+                  "label": "common.traitsDropdown.reasoningMax"
                 }
               ]
             }
@@ -2465,38 +2495,9 @@
               "type": "select",
               "options": [
                 {
-                  "value": "low",
-                  "label": "common.traitsDropdown.reasoningLow"
+                  "value": "none",
+                  "label": "common.traitsDropdown.reasoningNone"
                 },
-                {
-                  "value": "medium",
-                  "label": "common.traitsDropdown.reasoningMedium",
-                  "isDefault": true
-                },
-                {
-                  "value": "high",
-                  "label": "common.traitsDropdown.reasoningHigh"
-                }
-              ]
-            }
-          ]
-        },
-        {
-          "id": "openai/gpt-5.5-fast",
-          "displayName": "OpenAI GPT-5.5 Fast",
-          "supportsImageInput": false,
-          "supportsAudioInput": false,
-          "supportsVideoInput": false,
-          "supportsPdfInput": false,
-          "supportsThinking": false,
-          "thinkingMode": "unsupported",
-          "reasoningOptions": [],
-          "composerOptions": [
-            {
-              "id": "effort",
-              "label": "common.traitsDropdown.reasoning",
-              "type": "select",
-              "options": [
                 {
                   "value": "low",
                   "label": "common.traitsDropdown.reasoningLow"
@@ -2509,6 +2510,11 @@
                 {
                   "value": "high",
                   "label": "common.traitsDropdown.reasoningHigh"
+                },
+                {
+                  "value": "xhigh",
+                  "label": "common.traitsDropdown.reasoningExtraHigh",
+                  "shortLabel": "common.traitsDropdown.reasoningExtraHighShort"
                 }
               ]
             }
@@ -2531,6 +2537,10 @@
               "type": "select",
               "options": [
                 {
+                  "value": "none",
+                  "label": "common.traitsDropdown.reasoningNone"
+                },
+                {
                   "value": "low",
                   "label": "common.traitsDropdown.reasoningLow"
                 },
@@ -2542,39 +2552,11 @@
                   "value": "high",
                   "label": "common.traitsDropdown.reasoningHigh",
                   "isDefault": true
-                }
-              ]
-            }
-          ]
-        },
-        {
-          "id": "openai/gpt-5.4-fast",
-          "displayName": "OpenAI GPT-5.4 Fast",
-          "supportsImageInput": false,
-          "supportsAudioInput": false,
-          "supportsVideoInput": false,
-          "supportsPdfInput": false,
-          "supportsThinking": false,
-          "thinkingMode": "unsupported",
-          "reasoningOptions": [],
-          "composerOptions": [
-            {
-              "id": "effort",
-              "label": "common.traitsDropdown.reasoning",
-              "type": "select",
-              "options": [
-                {
-                  "value": "low",
-                  "label": "common.traitsDropdown.reasoningLow"
                 },
                 {
-                  "value": "medium",
-                  "label": "common.traitsDropdown.reasoningMedium",
-                  "isDefault": true
-                },
-                {
-                  "value": "high",
-                  "label": "common.traitsDropdown.reasoningHigh"
+                  "value": "xhigh",
+                  "label": "common.traitsDropdown.reasoningExtraHigh",
+                  "shortLabel": "common.traitsDropdown.reasoningExtraHighShort"
                 }
               ]
             }
@@ -2597,38 +2579,9 @@
               "type": "select",
               "options": [
                 {
-                  "value": "low",
-                  "label": "common.traitsDropdown.reasoningLow"
+                  "value": "none",
+                  "label": "common.traitsDropdown.reasoningNone"
                 },
-                {
-                  "value": "medium",
-                  "label": "common.traitsDropdown.reasoningMedium",
-                  "isDefault": true
-                },
-                {
-                  "value": "high",
-                  "label": "common.traitsDropdown.reasoningHigh"
-                }
-              ]
-            }
-          ]
-        },
-        {
-          "id": "openai/gpt-5.4-mini-fast",
-          "displayName": "OpenAI GPT-5.4 Mini Fast",
-          "supportsImageInput": false,
-          "supportsAudioInput": false,
-          "supportsVideoInput": false,
-          "supportsPdfInput": false,
-          "supportsThinking": false,
-          "thinkingMode": "unsupported",
-          "reasoningOptions": [],
-          "composerOptions": [
-            {
-              "id": "effort",
-              "label": "common.traitsDropdown.reasoning",
-              "type": "select",
-              "options": [
                 {
                   "value": "low",
                   "label": "common.traitsDropdown.reasoningLow"
@@ -2641,6 +2594,11 @@
                 {
                   "value": "high",
                   "label": "common.traitsDropdown.reasoningHigh"
+                },
+                {
+                  "value": "xhigh",
+                  "label": "common.traitsDropdown.reasoningExtraHigh",
+                  "shortLabel": "common.traitsDropdown.reasoningExtraHighShort"
                 }
               ]
             }
@@ -2663,6 +2621,10 @@
               "type": "select",
               "options": [
                 {
+                  "value": "none",
+                  "label": "common.traitsDropdown.reasoningNone"
+                },
+                {
                   "value": "low",
                   "label": "common.traitsDropdown.reasoningLow"
                 },
@@ -2674,6 +2636,11 @@
                 {
                   "value": "high",
                   "label": "common.traitsDropdown.reasoningHigh"
+                },
+                {
+                  "value": "xhigh",
+                  "label": "common.traitsDropdown.reasoningExtraHigh",
+                  "shortLabel": "common.traitsDropdown.reasoningExtraHighShort"
                 }
               ]
             }
@@ -2712,6 +2679,10 @@
                   "label": "common.traitsDropdown.reasoningExtraHigh",
                   "isDefault": true,
                   "shortLabel": "common.traitsDropdown.reasoningExtraHighShort"
+                },
+                {
+                  "value": "max",
+                  "label": "common.traitsDropdown.reasoningMax"
                 }
               ]
             }
@@ -2745,6 +2716,15 @@
                   "value": "high",
                   "label": "common.traitsDropdown.reasoningHigh",
                   "isDefault": true
+                },
+                {
+                  "value": "xhigh",
+                  "label": "common.traitsDropdown.reasoningExtraHigh",
+                  "shortLabel": "common.traitsDropdown.reasoningExtraHighShort"
+                },
+                {
+                  "value": "max",
+                  "label": "common.traitsDropdown.reasoningMax"
                 }
               ]
             }
@@ -2778,6 +2758,15 @@
                   "value": "high",
                   "label": "common.traitsDropdown.reasoningHigh",
                   "isDefault": true
+                },
+                {
+                  "value": "xhigh",
+                  "label": "common.traitsDropdown.reasoningExtraHigh",
+                  "shortLabel": "common.traitsDropdown.reasoningExtraHighShort"
+                },
+                {
+                  "value": "max",
+                  "label": "common.traitsDropdown.reasoningMax"
                 }
               ]
             }
@@ -2816,39 +2805,10 @@
                   "label": "common.traitsDropdown.reasoningExtraHigh",
                   "isDefault": true,
                   "shortLabel": "common.traitsDropdown.reasoningExtraHighShort"
-                }
-              ]
-            }
-          ]
-        },
-        {
-          "id": "anthropic/claude-opus-4-8-fast",
-          "displayName": "Anthropic Claude Opus 4.8 Fast",
-          "supportsImageInput": false,
-          "supportsAudioInput": false,
-          "supportsVideoInput": false,
-          "supportsPdfInput": false,
-          "supportsThinking": false,
-          "thinkingMode": "unsupported",
-          "reasoningOptions": [],
-          "composerOptions": [
-            {
-              "id": "effort",
-              "label": "common.traitsDropdown.reasoning",
-              "type": "select",
-              "options": [
-                {
-                  "value": "low",
-                  "label": "common.traitsDropdown.reasoningLow"
                 },
                 {
-                  "value": "medium",
-                  "label": "common.traitsDropdown.reasoningMedium"
-                },
-                {
-                  "value": "high",
-                  "label": "common.traitsDropdown.reasoningHigh",
-                  "isDefault": true
+                  "value": "max",
+                  "label": "common.traitsDropdown.reasoningMax"
                 }
               ]
             }
@@ -2887,6 +2847,10 @@
                   "label": "common.traitsDropdown.reasoningExtraHigh",
                   "isDefault": true,
                   "shortLabel": "common.traitsDropdown.reasoningExtraHighShort"
+                },
+                {
+                  "value": "max",
+                  "label": "common.traitsDropdown.reasoningMax"
                 }
               ]
             }
@@ -2920,6 +2884,10 @@
                   "value": "high",
                   "label": "common.traitsDropdown.reasoningHigh",
                   "isDefault": true
+                },
+                {
+                  "value": "max",
+                  "label": "common.traitsDropdown.reasoningMax"
                 }
               ]
             }
@@ -2941,6 +2909,10 @@
               "label": "common.traitsDropdown.reasoning",
               "type": "select",
               "options": [
+                {
+                  "value": "minimal",
+                  "label": "common.traitsDropdown.reasoningMinimal"
+                },
                 {
                   "value": "low",
                   "label": "common.traitsDropdown.reasoningLow"

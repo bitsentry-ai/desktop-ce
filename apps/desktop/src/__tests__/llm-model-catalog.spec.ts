@@ -15,6 +15,7 @@ import {
   getModelCapability,
   getModelDisplayName,
   getProviderCatalogModels,
+  filterSelectableModelIds,
   resolveCatalogModelRuntimeSelection,
 } from '@bitsentry-ce/components/llm/modelCatalog'
 import { getProviderModelOptions } from '@bitsentry-ce/components/chat/utils'
@@ -175,13 +176,74 @@ describe('local model catalog selection', () => {
         'gpt-5.6': { tiers: ['low', 'medium', 'high', 'xhigh'], default: 'high' },
       },
       opencode: {
-        'openrouter/openai/gpt-5.6-luna': { tiers: ['low', 'medium', 'high'], default: 'medium' },
-        'openrouter/openai/gpt-5.6-luna-pro': { tiers: ['low', 'medium', 'high'], default: 'medium' },
-        'openrouter/openai/gpt-5.6-sol': { tiers: ['low', 'medium', 'high'], default: 'medium' },
-        'openrouter/openai/gpt-5.6-sol-pro': { tiers: ['low', 'medium', 'high'], default: 'medium' },
-        'openrouter/openai/gpt-5.6-terra': { tiers: ['low', 'medium', 'high'], default: 'medium' },
-        'openrouter/openai/gpt-5.6-terra-pro': { tiers: ['low', 'medium', 'high'], default: 'medium' },
-        'openrouter/anthropic/claude-opus-5': { tiers: ['low', 'medium', 'high', 'xhigh'], default: 'xhigh' },
+        'openrouter/openai/gpt-5.6-luna': {
+          tiers: ['none', 'low', 'medium', 'high', 'xhigh', 'max'],
+          default: 'medium',
+        },
+        'openrouter/openai/gpt-5.6-luna-pro': {
+          tiers: ['none', 'low', 'medium', 'high', 'xhigh', 'max'],
+          default: 'medium',
+        },
+        'openrouter/openai/gpt-5.6-sol': {
+          tiers: ['none', 'low', 'medium', 'high', 'xhigh', 'max'],
+          default: 'medium',
+        },
+        'openrouter/openai/gpt-5.6-sol-pro': {
+          tiers: ['none', 'low', 'medium', 'high', 'xhigh', 'max'],
+          default: 'medium',
+        },
+        'openrouter/openai/gpt-5.6-terra': {
+          tiers: ['none', 'low', 'medium', 'high', 'xhigh', 'max'],
+          default: 'medium',
+        },
+        'openrouter/openai/gpt-5.6-terra-pro': {
+          tiers: ['none', 'low', 'medium', 'high', 'xhigh', 'max'],
+          default: 'medium',
+        },
+        'openai/gpt-5.5': {
+          tiers: ['none', 'low', 'medium', 'high', 'xhigh'],
+          default: 'medium',
+        },
+        'openai/gpt-5.4': {
+          tiers: ['none', 'low', 'medium', 'high', 'xhigh'],
+          default: 'high',
+        },
+        'openai/gpt-5.4-mini': {
+          tiers: ['none', 'low', 'medium', 'high', 'xhigh'],
+          default: 'medium',
+        },
+        'openai/gpt-5.3-codex-spark': {
+          tiers: ['none', 'low', 'medium', 'high', 'xhigh'],
+          default: 'medium',
+        },
+        'openrouter/anthropic/claude-opus-5': {
+          tiers: ['low', 'medium', 'high', 'xhigh', 'max'],
+          default: 'xhigh',
+        },
+        'anthropic/claude-sonnet-5': {
+          tiers: ['low', 'medium', 'high', 'xhigh', 'max'],
+          default: 'high',
+        },
+        'anthropic/claude-fable-5': {
+          tiers: ['low', 'medium', 'high', 'xhigh', 'max'],
+          default: 'high',
+        },
+        'anthropic/claude-opus-4-8': {
+          tiers: ['low', 'medium', 'high', 'xhigh', 'max'],
+          default: 'xhigh',
+        },
+        'anthropic/claude-opus-4-7': {
+          tiers: ['low', 'medium', 'high', 'xhigh', 'max'],
+          default: 'xhigh',
+        },
+        'anthropic/claude-sonnet-4-6': {
+          tiers: ['low', 'medium', 'high', 'max'],
+          default: 'high',
+        },
+        'openai/gpt-5': {
+          tiers: ['minimal', 'low', 'medium', 'high'],
+          default: 'medium',
+        },
       },
     } as const
 
@@ -246,9 +308,6 @@ describe('local model catalog selection', () => {
     const modelIds = getProviderCatalogModels('gemini').map((model) => model.id)
 
     expect(modelIds).toEqual([
-      'gemini-2.5-pro',
-      'gemini-2.5-flash',
-      'gemini-2.5-flash-lite',
       'gemini-3.6-flash',
       'gemini-3.5-flash',
       'gemini-3.5-flash-lite',
@@ -270,6 +329,25 @@ describe('local model catalog selection', () => {
       )
       expect(thinkingLevel.options.find((option) => option.isDefault)?.value).toBe('high')
     }
+  })
+
+  it('hides confirmed stale Gemini IDs from catalog and live discovery', () => {
+    const staleIds = [
+      'gemini-2.5-pro',
+      'gemini-2.5-flash',
+      'gemini-2.5-flash-lite',
+      'gemini-2.5-computer-use-preview-10-2025',
+    ]
+
+    const filtered = filterSelectableModelIds('gemini', [
+      ...staleIds,
+      'gemini-3.6-flash',
+    ])
+
+    expect(filtered).toEqual(['gemini-3.6-flash'])
+    expect(getCatalogModelIds('gemini')).not.toEqual(
+      expect.arrayContaining(staleIds),
+    )
   })
 
   it('does not expose Codex models rejected for ChatGPT accounts', () => {
@@ -352,6 +430,27 @@ describe('local model catalog selection', () => {
 
     expect(getModelCapability('codex', 'gpt-5.4')).toBe(catalogCapability)
     expect(getModelCapability('openai', 'gpt-future-unknown')).toBeUndefined()
+  })
+
+  it('migrates legacy OpenCode fast IDs to their base models', () => {
+    const migrations = {
+      'openai/gpt-5.5-fast': 'openai/gpt-5.5',
+      'openai/gpt-5.4-fast': 'openai/gpt-5.4',
+      'openai/gpt-5.4-mini-fast': 'openai/gpt-5.4-mini',
+      'anthropic/claude-opus-4-8-fast': 'anthropic/claude-opus-4-8',
+    } as const
+
+    const catalogModelIds = getCatalogModelIds('opencode')
+    for (const [legacyId, baseId] of Object.entries(migrations)) {
+      expect(catalogModelIds).not.toContain(legacyId)
+      expect(getCatalogModel('opencode', legacyId)?.id).toBe(baseId)
+    }
+
+    const options = getProviderModelOptions('opencode', {
+      opencode: providerConfig('openai/gpt-5.5-fast', ['openai/gpt-5.5-fast']),
+    })
+    expect(options).toContain('openai/gpt-5.5')
+    expect(options).not.toContain('openai/gpt-5.5-fast')
   })
 
   it('normalizes the legacy Cursor default ID to the Cursor ACP auto ID', () => {

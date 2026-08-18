@@ -36,6 +36,10 @@ export interface BuildDesktopLocalProviderRecordsOptions {
   localAiProvider: DesktopLocalAiProviderPort | null
   primaryProviderKey: string
   readModelSetting: (providerKey: DesktopLocalAiProviderKey) => Promise<string>
+  normalizeModel: (
+    providerKey: DesktopLocalAiProviderKey,
+    model: string,
+  ) => string
   /** Last successful discovery snapshot, used only when live discovery is empty. */
   readAvailableModels: (
     providerKey: DesktopLocalAiProviderKey,
@@ -148,10 +152,11 @@ export async function buildDesktopLocalProviderRecords(
       models = await options.readAvailableModels(providerMeta.key)
     }
 
+    const rawModel = await options.readModelSetting(providerMeta.key)
     result[providerMeta.key] = {
       hasApiKey: isReady,
       baseUrl: '',
-      model: await options.readModelSetting(providerMeta.key),
+      model: options.normalizeModel?.(providerMeta.key, rawModel) ?? rawModel,
       availableModels: models,
       isSelectable: isReady,
       isPrimary: options.primaryProviderKey === providerMeta.key,
