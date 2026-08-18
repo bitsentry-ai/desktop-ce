@@ -37,7 +37,14 @@ function createDb(overrides?: Partial<Record<string, unknown>>) {
   };
 }
 
-function createStore(dbOverrides?: Partial<Record<string, unknown>>) {
+function createStore(
+  dbOverrides?: Partial<Record<string, unknown>>,
+  errorSourceCredentialsStore?: {
+    get: (sourceId: string) => Promise<{ accessToken: string | null; refreshToken: string | null }>;
+    set: (sourceId: string, credentials: { accessToken: string | null; refreshToken: string | null }) => Promise<void>;
+    clear: (sourceId: string) => Promise<void>;
+  },
+) {
   const db = createDb(dbOverrides);
   const globalVariablesService = {
     list: vi.fn(() => []),
@@ -45,7 +52,11 @@ function createStore(dbOverrides?: Partial<Record<string, unknown>>) {
 
   return {
     db,
-    store: new RunbookStore(db as never, globalVariablesService as never),
+    store: new RunbookStore(
+      db as never,
+      globalVariablesService as never,
+      errorSourceCredentialsStore,
+    ),
   };
 }
 
@@ -542,6 +553,54 @@ describe("RunbookStore importRunbooks", () => {
       data: {
         sourceId: createSourceCall[0].data.id,
       },
+    });
+  });
+
+  it("stores imported external-source credentials outside the SQLite row", async () => {
+    const credentialsStore = {
+      get: vi.fn(),
+      set: vi.fn().mockResolvedValue(undefined),
+      clear: vi.fn().mockResolvedValue(undefined),
+    };
+    const { store, db } = createStore(undefined, credentialsStore);
+    const artifact: DesktopRunbookExportArtifactV1 = {
+      format: "bitsentry.runbooks.export",
+      version: 1,
+      exportedAt: "2026-05-31T00:00:00.000Z",
+      runbooks: [
+        {
+          title: "Query imported Sentry source",
+          actions: [
+            {
+              type: "external_source",
+              title: "Query Sentry",
+              query: "is:unresolved",
+              sourceRef: "jagad",
+            },
+          ],
+        },
+      ],
+      externalSources: [
+        {
+          ref: "jagad",
+          sourceType: "sentry",
+          name: "Jagad Sentry",
+          configuration: {},
+          credentials: { authToken: "import-token" },
+        },
+      ],
+    };
+
+    await store.importRunbooks({ artifact, options: { dryRun: false } });
+
+    expect(credentialsStore.set).toHaveBeenCalledWith(expect.any(String), {
+      accessToken: "import-token",
+      refreshToken: null,
+    });
+    const [createSourceCall] = db.errorSource.create.mock.calls;
+    expect(createSourceCall[0].data).toMatchObject({
+      accessTokenRef: null,
+      refreshTokenRef: null,
     });
   });
 

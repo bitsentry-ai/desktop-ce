@@ -106,6 +106,7 @@ export interface ErrorEvent {
 }
 
 export interface CreateErrorSourceInput {
+  id?: string;
   sourceType: ErrorSourceType;
   name: string;
   logLevelThreshold?: LogLevelThreshold;

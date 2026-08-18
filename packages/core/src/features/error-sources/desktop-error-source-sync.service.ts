@@ -28,6 +28,10 @@ import {
   resolveErrorSourceProviderActionId,
 } from "./desktop-plugin-error-source-actions";
 import { refreshSourceAccessToken } from "./desktop-oauth-token-refresher";
+import {
+  resolveErrorSourceCredentials,
+  type ErrorSourceCredentialsStore,
+} from "./desktop-error-source-credentials";
 
 type ExternalPayloadRecord = Record<string, unknown>;
 
@@ -691,6 +695,7 @@ export class ErrorSourceSyncService {
     private readonly issuesRepository: ErrorIssuesRepository,
     private readonly eventsRepository: ErrorEventsRepository,
     private readonly pluginRuntime: DesktopPluginRuntimeService = createDesktopNodePluginRuntimeService(),
+    private readonly credentialsStore?: ErrorSourceCredentialsStore,
   ) {}
 
   async syncSourceById(
@@ -743,6 +748,7 @@ export class ErrorSourceSyncService {
   private async syncSource(
     source: ErrorSource,
   ): Promise<{ sourceId: string; syncedIssues: number; syncedEvents: number }> {
+    source = await resolveErrorSourceCredentials(source, this.credentialsStore);
     await this.sourcesRepository.updateSyncStatus(source.id, "in_progress");
     const syncStartMs = Date.now();
     log.info(
@@ -1460,6 +1466,7 @@ export class ErrorSourceSyncService {
       source,
       sourcesRepository: this.sourcesRepository,
       pluginRuntime: this.pluginRuntime,
+      credentialsStore: this.credentialsStore,
     });
     const refreshedSource = { ...source, accessTokenRef };
     const auth = await buildPluginAuthFromSource(
