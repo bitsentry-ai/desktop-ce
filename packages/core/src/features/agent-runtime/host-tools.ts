@@ -47,7 +47,7 @@ export const getRunbookExecutionHostToolSchema = z.object({
   waitForCompletion: z.boolean().optional(),
 }).strict()
 
-const runbookActionProposalSchema = z.object({
+const runbookActionProposalBaseSchema = z.object({
   id: z.string().min(1),
   type: z.enum(['shell', 'llm', 'http', 'plugin', 'external_source', 'telemetry_existing_entry', 'data_source_query', 'telemetry_ingest', 'diagnosis_diagnose', 'diagnosis_verify', 'diagnosis_recommend']),
   title: z.string().min(1), command: z.string().optional(), prompt: z.string().optional(),
@@ -57,43 +57,55 @@ const runbookActionProposalSchema = z.object({
   pluginId: z.string().optional(), pluginActionId: z.string().optional(), pluginInput: z.string().optional(), pluginAuth: z.string().optional(),
   query: z.string().optional(), sourceId: z.string().optional(),
   parameters: z.array(z.object({ id: z.string().min(1), key: z.string().min(1), label: z.string().optional(), description: z.string().optional(), defaultValue: z.string().optional(), required: z.boolean().optional(), secure: z.boolean().optional() }).strict()).optional(),
-}).strict().superRefine((action, context) => {
-  if (action.type === 'llm' && action.llmModel !== undefined && action.llmModel.trim().length > 0) {
-    const modelText = action.llmModel.trim()
-    const isRuntimePlaceholder = /^\{\{[^{}]+\}\}$/.test(modelText)
-    if (!isRuntimePlaceholder) {
-      const resolved = action.llmProviderKey === undefined
-        ? resolveCatalogModel(modelText)
-        : resolveCatalogModelForProvider(action.llmProviderKey, modelText)
-      if (resolved === undefined) {
-        context.addIssue({
-          code: 'custom',
-          path: ['llmModel'],
-          message: `Unknown LLM model "${modelText}". Use a model ID or display name from list_models.`,
-        })
-      } else if (action.llmProviderKey !== undefined && action.llmProviderKey !== resolved.providerKey) {
-        context.addIssue({
-          code: 'custom',
-          path: ['llmProviderKey'],
-          message: `Model "${modelText}" belongs to provider "${resolved.providerKey}", not "${action.llmProviderKey}".`,
-        })
-      } else {
-        action.llmProviderKey = resolved.providerKey
-        action.llmModel = resolved.modelId
-      }
-    }
+}).strict()
+
+type RunbookActionProposal = z.infer<typeof runbookActionProposalBaseSchema>
+
+function validateLlmActionProposal(action: RunbookActionProposal, context: z.RefinementCtx): void {
+  const modelText = action.llmModel?.trim() ?? ''
+  if (modelText.length === 0 || /^\{\{[^{}]+\}\}$/.test(modelText)) return
+
+  const resolved = action.llmProviderKey === undefined
+    ? resolveCatalogModel(modelText)
+    : resolveCatalogModelForProvider(action.llmProviderKey, modelText)
+  if (resolved === undefined) {
+    context.addIssue({
+      code: 'custom',
+      path: ['llmModel'],
+      message: `Unknown LLM model "${modelText}". Use a model ID or display name from list_models.`,
+    })
+    return
   }
-  if (action.type === 'external_source' && (action.sourceId === undefined || action.sourceId.trim().length === 0)) {
-    context.addIssue({ code: 'custom', path: ['sourceId'], message: 'External Source action requires a sourceId.' })
+  if (action.llmProviderKey !== undefined && action.llmProviderKey !== resolved.providerKey) {
+    context.addIssue({
+      code: 'custom',
+      path: ['llmProviderKey'],
+      message: `Model "${modelText}" belongs to provider "${resolved.providerKey}", not "${action.llmProviderKey}".`,
+    })
+    return
   }
-  if (action.type === 'plugin') {
-    if (action.pluginId === undefined || action.pluginId.trim().length === 0) {
-      context.addIssue({ code: 'custom', path: ['pluginId'], message: 'Plugin action requires a pluginId.' })
-    }
-    if (action.pluginActionId === undefined || action.pluginActionId.trim().length === 0) {
-      context.addIssue({ code: 'custom', path: ['pluginActionId'], message: 'Plugin action requires a pluginActionId.' })
-    }
+  action.llmProviderKey = resolved.providerKey
+  action.llmModel = resolved.modelId
+}
+
+function validateExternalSourceActionProposal(action: RunbookActionProposal, context: z.RefinementCtx): void {
+  if (action.sourceId !== undefined && action.sourceId.trim().length > 0) return
+  context.addIssue({ code: 'custom', path: ['sourceId'], message: 'External Source action requires a sourceId.' })
+}
+
+function validatePluginActionProposal(action: RunbookActionProposal, context: z.RefinementCtx): void {
+  if (action.pluginId === undefined || action.pluginId.trim().length === 0) {
+    context.addIssue({ code: 'custom', path: ['pluginId'], message: 'Plugin action requires a pluginId.' })
   }
+  if (action.pluginActionId === undefined || action.pluginActionId.trim().length === 0) {
+    context.addIssue({ code: 'custom', path: ['pluginActionId'], message: 'Plugin action requires a pluginActionId.' })
+  }
+}
+
+const runbookActionProposalSchema = runbookActionProposalBaseSchema.superRefine((action, context) => {
+  if (action.type === 'llm') validateLlmActionProposal(action, context)
+  if (action.type === 'external_source') validateExternalSourceActionProposal(action, context)
+  if (action.type === 'plugin') validatePluginActionProposal(action, context)
 })
 const runbookAuthoringOperationSchema = z.object({
   id: z.string().min(1), type: z.enum(['update_metadata', 'add_action', 'update_action', 'delete_action', 'reorder_actions']), rationale: z.string().min(1),
