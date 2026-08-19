@@ -561,6 +561,7 @@
         {
           "id": "claude-opus-5",
           "displayName": "Claude Opus 5",
+          "aliases": ["Opus 5", "Anthropic Claude Opus 5"],
           "supportsImageInput": true,
           "supportsAudioInput": false,
           "supportsVideoInput": false,
@@ -588,6 +589,7 @@
         {
           "id": "claude-sonnet-5",
           "displayName": "Claude Sonnet 5",
+          "aliases": ["Sonnet 5", "Anthropic Claude Sonnet 5"],
           "supportsImageInput": true,
           "supportsAudioInput": false,
           "supportsVideoInput": false,
@@ -615,6 +617,7 @@
         {
           "id": "claude-fable-5",
           "displayName": "Claude Fable 5",
+          "aliases": ["Fable", "Fable 5", "Anthropic Claude Fable 5"],
           "supportsImageInput": true,
           "supportsAudioInput": false,
           "supportsVideoInput": false,
@@ -642,6 +645,7 @@
         {
           "id": "claude-opus-4-8",
           "displayName": "Claude Opus 4.8",
+          "aliases": ["Opus 4.8", "Anthropic Claude Opus 4.8"],
           "supportsImageInput": true,
           "supportsAudioInput": false,
           "supportsVideoInput": false,

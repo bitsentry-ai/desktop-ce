@@ -45,6 +45,8 @@ export type ComposerOptionDescriptor = ComposerSelectOption | ComposerBooleanOpt
 export interface ModelCatalogEntry {
   id: string
   displayName: string
+  /** User-facing aliases accepted by Incident runbook authoring. */
+  aliases?: string[]
   /** Runtime model identifier used by the provider for named variants. */
   runtimeModelId?: string
   /** Provider traits implied by this catalog entry at execution time. */
@@ -127,7 +129,10 @@ function resolveCatalogModelInProvider(
   const displayNameMatch = provider.models.find(
     (model) => slugModelText(model.displayName) === sluggedValue,
   )
-  const model = exactIdMatch ?? sluggedIdMatch ?? displayNameMatch
+  const aliasMatch = provider.models.find((model) =>
+    model.aliases?.some((alias) => slugModelText(alias) === sluggedValue),
+  )
+  const model = exactIdMatch ?? sluggedIdMatch ?? aliasMatch ?? displayNameMatch
   return model === undefined
     ? undefined
     : { providerKey: provider.providerKey, modelId: model.id }
@@ -148,8 +153,8 @@ export function resolveCatalogModelForProvider(
  * Resolve user-facing model text to the provider-facing catalog ID.
  *
  * Matching is deliberately ordered: canonical IDs first, then slugged IDs,
- * then slugged display names. Provider order is the catalog order, so the
- * canonical OpenAI entry wins over duplicate CLI catalog entries.
+ * aliases, and display names. Provider order is the catalog order, so native
+ * Anthropic aliases win before duplicate CLI display names such as OpenCode.
  */
 export function resolveCatalogModel(
   value: string | null | undefined,
@@ -171,8 +176,12 @@ export function resolveCatalogModel(
     }
     return undefined
   }
+  const aliasMatch = findMatch((model) =>
+    model.aliases?.some((alias) => slugModelText(alias) === sluggedValue) === true,
+  )
 
   return findMatch((model) => normalizeValue(model.id) === normalizedValue)
+    ?? aliasMatch
     ?? findMatch((model) => modelIdMatchKey(model.id) === sluggedValue)
     ?? findMatch((model) => slugModelText(model.displayName) === sluggedValue)
 }

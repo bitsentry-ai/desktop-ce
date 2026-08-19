@@ -107,7 +107,10 @@ describe('host tools', () => {
 
   it.each([
     ['Claude Fable 5', 'claude-fable-5'],
+    ['Anthropic Claude Fable 5', 'claude-fable-5'],
+    ['Fable', 'claude-fable-5'],
     ['Claude Sonnet 5', 'claude-sonnet-5'],
+    ['Sonnet 5', 'claude-sonnet-5'],
   ])('canonicalizes %s to native Anthropic in Incident proposals', async (displayName, modelId) => {
     const context = createContext()
     const result = await executeHostTool(context, 'propose_runbook_create', {
