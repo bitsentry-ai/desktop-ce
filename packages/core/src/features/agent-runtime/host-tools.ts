@@ -529,6 +529,12 @@ async function listModels(): Promise<ToolResult> {
         models: provider.models.map((model) => ({
           modelId: model.id,
           displayName: model.displayName,
+          ...(model.contextWindowTokens === undefined
+            ? {}
+            : { contextWindowTokens: model.contextWindowTokens }),
+          ...(model.maxOutputTokens === undefined
+            ? {}
+            : { maxOutputTokens: model.maxOutputTokens }),
         })),
       })),
     }, null, 2),

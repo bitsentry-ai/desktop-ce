@@ -57,6 +57,10 @@ export interface ModelCatalogEntry {
   thinkingMode: ModelThinkingMode
   /** Whether the provider accepts sampling controls such as temperature. */
   supportsSamplingParameters?: boolean
+  /** Maximum context window reported by the provider, in tokens. */
+  contextWindowTokens?: number
+  /** Maximum generated output reported by the provider, in tokens. */
+  maxOutputTokens?: number
   reasoningOptions: ModelReasoningOption[]
   /** Deliberate default used when composer options are derived from reasoningOptions. */
   defaultReasoningOption?: ModelReasoningOption

@@ -366,6 +366,8 @@ describe('local model catalog selection', () => {
       expect(getCatalogModel('anthropic', modelId)).toMatchObject({
         id: modelId,
         supportsSamplingParameters: false,
+        contextWindowTokens: 1_000_000,
+        maxOutputTokens: 128_000,
       })
     }
   })

@@ -57,7 +57,12 @@ describe('host tools', () => {
     const result = await executeHostTool(createContext(), 'list_models', {})
     const catalog = JSON.parse(result?.output ?? '') as {
       source: string
-      providers: Array<{ providerKey: string; models: Array<{ modelId: string; displayName: string }> }>
+      providers: Array<{ providerKey: string; models: Array<{
+        modelId: string
+        displayName: string
+        contextWindowTokens?: number
+        maxOutputTokens?: number
+      }> }>
     }
 
     expect(catalog.source).toBe('static_catalog')
@@ -69,10 +74,10 @@ describe('host tools', () => {
 
     const anthropic = catalog.providers.find((provider) => provider.providerKey === 'anthropic')
     expect(anthropic?.models).toEqual(expect.arrayContaining([
-      { modelId: 'claude-opus-5', displayName: 'Claude Opus 5' },
-      { modelId: 'claude-sonnet-5', displayName: 'Claude Sonnet 5' },
-      { modelId: 'claude-fable-5', displayName: 'Claude Fable 5' },
-      { modelId: 'claude-opus-4-8', displayName: 'Claude Opus 4.8' },
+      { modelId: 'claude-opus-5', displayName: 'Claude Opus 5', contextWindowTokens: 1_000_000, maxOutputTokens: 128_000 },
+      { modelId: 'claude-sonnet-5', displayName: 'Claude Sonnet 5', contextWindowTokens: 1_000_000, maxOutputTokens: 128_000 },
+      { modelId: 'claude-fable-5', displayName: 'Claude Fable 5', contextWindowTokens: 1_000_000, maxOutputTokens: 128_000 },
+      { modelId: 'claude-opus-4-8', displayName: 'Claude Opus 4.8', contextWindowTokens: 1_000_000, maxOutputTokens: 128_000 },
     ]))
   })
 

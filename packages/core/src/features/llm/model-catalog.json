@@ -528,6 +528,8 @@
           "supportsThinking": true,
           "thinkingMode": "toggle",
           "supportsSamplingParameters": false,
+          "contextWindowTokens": 1000000,
+          "maxOutputTokens": 128000,
           "reasoningOptions": [],
           "composerOptions": [
             {
@@ -566,6 +568,8 @@
           "supportsThinking": true,
           "thinkingMode": "toggle",
           "supportsSamplingParameters": false,
+          "contextWindowTokens": 1000000,
+          "maxOutputTokens": 128000,
           "reasoningOptions": [],
           "composerOptions": [
             {
@@ -591,6 +595,8 @@
           "supportsThinking": true,
           "thinkingMode": "toggle",
           "supportsSamplingParameters": false,
+          "contextWindowTokens": 1000000,
+          "maxOutputTokens": 128000,
           "reasoningOptions": [],
           "composerOptions": [
             {
@@ -616,6 +622,8 @@
           "supportsThinking": true,
           "thinkingMode": "always_on",
           "supportsSamplingParameters": false,
+          "contextWindowTokens": 1000000,
+          "maxOutputTokens": 128000,
           "reasoningOptions": [],
           "composerOptions": [
             {
@@ -641,6 +649,8 @@
           "supportsThinking": true,
           "thinkingMode": "toggle",
           "supportsSamplingParameters": false,
+          "contextWindowTokens": 1000000,
+          "maxOutputTokens": 128000,
           "reasoningOptions": [],
           "composerOptions": [
             {
