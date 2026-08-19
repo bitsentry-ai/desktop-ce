@@ -105,6 +105,36 @@ describe('host tools', () => {
     })
   })
 
+  it.each([
+    ['Claude Fable 5', 'claude-fable-5'],
+    ['Claude Sonnet 5', 'claude-sonnet-5'],
+  ])('canonicalizes %s to native Anthropic in Incident proposals', async (displayName, modelId) => {
+    const context = createContext()
+    const result = await executeHostTool(context, 'propose_runbook_create', {
+      prompt: 'Create a summary runbook.',
+      draftRunbook: {
+        title: 'Summary',
+        description: 'Summarize evidence.',
+        actions: [{
+          id: 'step-summary',
+          type: 'llm',
+          title: 'Summarize',
+          prompt: 'Summarize the evidence.',
+          llmModel: displayName,
+        }],
+      },
+    })
+
+    expect(result?.error).toBeUndefined()
+    expect(context.session.runbookAuthoringProposals?.[0]?.proposedRunbook.actions[0]).toMatchObject({
+      llmProviderKey: 'anthropic',
+      llmModel: modelId,
+    })
+    expect(context.session.runbookAuthoringProposals?.[0]?.proposedRunbook.actions[0]).not.toMatchObject({
+      llmProviderKey: 'opencode',
+    })
+  })
+
   it('rejects an unknown LLM model instead of saving it into a proposal', async () => {
     const context = createContext()
     const result = await executeHostTool(context, 'propose_runbook_create', {
