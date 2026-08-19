@@ -1770,12 +1770,12 @@ export class RunbookExecutionService {
       const resolved = providerKey === undefined
         ? resolveCatalogModel(model)
         : resolveCatalogModelForProvider(providerKey, model);
-      if (resolved === undefined) {
+      if (resolved === undefined && providerKey === undefined) {
         throw new Error(
           `Unknown LLM model "${model}". Use a model ID or display name from the catalog.`,
         );
       }
-      if (providerKey !== undefined && providerKey !== resolved.providerKey) {
+      if (providerKey !== undefined && resolved !== undefined && providerKey !== resolved.providerKey) {
         throw new Error(
           `LLM model "${model}" belongs to provider "${resolved.providerKey}", not "${providerKey}".`,
         );
@@ -1784,9 +1784,9 @@ export class RunbookExecutionService {
       // default still chooses the execution path. The catalog provider is
       // only authoritative when the action already pins a provider.
       if (providerKey !== undefined) {
-        providerKey = resolved.providerKey;
+        providerKey = resolved?.providerKey ?? providerKey;
       }
-      model = resolved.modelId;
+      model = resolved?.modelId ?? model.trim();
     }
     this.setStepInput(session, actionIndex, {
       actionType: "llm",

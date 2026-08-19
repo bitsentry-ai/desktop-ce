@@ -13,6 +13,7 @@ import type {
   RunbookRecord,
 } from "../../services";
 import type { DraftReconcileMode } from "./useRunbookCatalogFlow";
+import type { LlmModelOption } from "./RunbookActionFieldShared";
 
 type DesktopIpcInvoke = <T>(
   channel: DesktopRpcChannel,
@@ -50,6 +51,7 @@ type UseRunbookActionEditorFlowOptions = {
   ) => void;
   validErrorSourceIds: Set<string>;
   validPluginActionIdsByPluginId: Map<string, Set<string>>;
+  llmModelOptions?: LlmModelOption[];
 };
 
 export function useRunbookActionEditorFlow({
@@ -63,6 +65,7 @@ export function useRunbookActionEditorFlow({
   replaceRunbook,
   validErrorSourceIds,
   validPluginActionIdsByPluginId,
+  llmModelOptions = [],
 }: UseRunbookActionEditorFlowOptions) {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const expandedCardRef = useRef<HTMLDivElement | null>(null);
@@ -276,6 +279,7 @@ export function useRunbookActionEditorFlow({
           action,
           validErrorSourceIds,
           validPluginActionIdsByPluginId,
+          llmModelOptions,
         )
       ) {
         return;
@@ -316,6 +320,7 @@ export function useRunbookActionEditorFlow({
       summarizeRunbookForTelemetry,
       validErrorSourceIds,
       validPluginActionIdsByPluginId,
+      llmModelOptions,
     ],
   );
 

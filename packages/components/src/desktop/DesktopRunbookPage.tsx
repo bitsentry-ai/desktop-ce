@@ -182,6 +182,7 @@ export default function DesktopRunbookPage({
     replaceRunbook,
     validErrorSourceIds,
     validPluginActionIdsByPluginId,
+    llmModelOptions,
   });
 
   const {

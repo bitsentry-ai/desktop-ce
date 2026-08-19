@@ -32,6 +32,7 @@ import {
   getCatalogModel,
   getCatalogModelIds,
   getComposerDefaultTraitValues,
+  resolveCatalogModel,
 } from '@bitsentry-ce/components/llm/modelCatalog'
 
 export type LlmProviderKey = 'groq' | 'kilocode' | 'openai' | 'anthropic' | 'gemini' | 'openrouter' | 'claude_code' | 'codex' | 'opencode' | 'cursor'
@@ -1179,6 +1180,22 @@ export class AgentLlmAdapterService {
     }
 
     const matches = getCliProvidersByModelId().get(normalizedModel)
+    const catalogMatch = resolveCatalogModel(normalizedModel)
+    if (catalogMatch !== undefined) {
+      // Keep provider-less legacy CLI actions on a compatible configured CLI
+      // provider when one exists, but never route a remote catalog model to a
+      // CLI just because that CLI happens to advertise the same ID.
+      if (
+        defaultProvider !== null
+        && CLI_PROVIDER_RESOLUTION_ORDER.includes(defaultProvider)
+        && matches !== undefined
+        && matches.length > 0
+      ) {
+        return matches[0]
+      }
+      return catalogMatch.providerKey
+    }
+
     if (matches === undefined) {
       return defaultProvider
     }

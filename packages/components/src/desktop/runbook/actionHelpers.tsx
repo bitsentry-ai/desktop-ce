@@ -229,6 +229,10 @@ export function canPersistRunbookAction(
   action: RunbookActionRecord,
   validErrorSourceIds: Set<string>,
   validPluginActionIdsByPluginId: Map<string, Set<string>>,
+  llmModelOptions: ReadonlyArray<{
+    providerKey: RunbookLlmProviderKey;
+    modelId: string;
+  }> = [],
 ): boolean {
   if (action.title.trim().length === 0) {
     return false;
@@ -252,7 +256,13 @@ export function canPersistRunbookAction(
       const resolved = action.llmProviderKey === undefined
         ? resolveCatalogModel(model)
         : resolveCatalogModelForProvider(action.llmProviderKey, model);
-      if (resolved === undefined || (action.llmProviderKey !== undefined && action.llmProviderKey !== resolved.providerKey)) {
+      const isDiscoveredModel = action.llmProviderKey !== undefined && llmModelOptions.some(
+        (option) => option.providerKey === action.llmProviderKey && option.modelId === model,
+      );
+      if (
+        (resolved === undefined && !isDiscoveredModel)
+        || (action.llmProviderKey !== undefined && resolved !== undefined && action.llmProviderKey !== resolved.providerKey)
+      ) {
         return false;
       }
     }

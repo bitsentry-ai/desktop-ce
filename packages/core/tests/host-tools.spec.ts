@@ -72,6 +72,10 @@ describe('host tools', () => {
       displayName: 'GPT-5.6 Terra',
     })
 
+    const codex = catalog.providers.find((provider) => provider.providerKey === 'codex')
+    expect(codex?.models.some((model) => model.modelId === 'gpt-5.2-codex')).toBe(false)
+    expect(codex?.models.some((model) => model.modelId === 'gpt-5.1-codex-mini')).toBe(false)
+
     const anthropic = catalog.providers.find((provider) => provider.providerKey === 'anthropic')
     expect(anthropic?.models).toEqual(expect.arrayContaining([
       { modelId: 'claude-opus-5', displayName: 'Claude Opus 5', contextWindowTokens: 1_000_000, maxOutputTokens: 128_000 },

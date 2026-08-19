@@ -91,6 +91,18 @@ describe('AgentLlmAdapterService', () => {
     await expect(adapter.getDefaultProviderKey('unknown-model')).resolves.toBe('codex')
   })
 
+  it('routes provider-less remote catalog models to their native provider', async () => {
+    const settingsStore: AgentLlmSettingsStore = {
+      setting: {
+        findUnique: vi.fn().mockResolvedValue({ value: 'openai' }),
+      },
+    }
+    const adapter = new AgentLlmAdapterService(settingsStore)
+
+    await expect(adapter.getDefaultProviderKey('gpt-5.6-terra')).resolves.toBe('openai')
+    await expect(adapter.getDefaultProviderKey('claude-fable-5')).resolves.toBe('anthropic')
+  })
+
   it('forwards live text deltas from local CLI providers', async () => {
     const adapter = createAdapter()
 

@@ -22,7 +22,12 @@ import {
   type DesktopPluginDescriptor,
   type DesktopPluginRuntimeService,
 } from '../plugins'
-import { getModelCatalogProviders, resolveCatalogModel, resolveCatalogModelForProvider } from '../llm/modelCatalog'
+import {
+  filterSelectableModelIds,
+  getModelCatalogProviders,
+  resolveCatalogModel,
+  resolveCatalogModelForProvider,
+} from '../llm/modelCatalog'
 
 export const listRunbooksHostToolSchema = z.object({}).strict()
 export const listPluginsHostToolSchema = z.object({}).strict()
@@ -523,10 +528,17 @@ async function listModels(): Promise<ToolResult> {
   return {
     output: JSON.stringify({
       source: 'static_catalog',
-      providers: getModelCatalogProviders().map((provider) => ({
-        providerKey: provider.providerKey,
-        displayName: provider.displayName,
-        models: provider.models.map((model) => ({
+      providers: getModelCatalogProviders().map((provider) => {
+        const selectableModelIds = new Set(
+          filterSelectableModelIds(
+            provider.providerKey,
+            provider.models.map((model) => model.id),
+          ),
+        )
+        return {
+          providerKey: provider.providerKey,
+          displayName: provider.displayName,
+          models: provider.models.filter((model) => selectableModelIds.has(model.id)).map((model) => ({
           modelId: model.id,
           displayName: model.displayName,
           ...(model.contextWindowTokens === undefined
@@ -535,8 +547,9 @@ async function listModels(): Promise<ToolResult> {
           ...(model.maxOutputTokens === undefined
             ? {}
             : { maxOutputTokens: model.maxOutputTokens }),
-        })),
-      })),
+          })),
+        }
+      }),
     }, null, 2),
   }
 }
