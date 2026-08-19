@@ -659,6 +659,38 @@ describe('AgentLlmAdapterService', () => {
     })
   })
 
+  it('routes GPT-5.6 tool calls without effort through Responses with the catalog default', async () => {
+    const adapter = createAdapter({
+      getApiKey: () => Promise.resolve('test-key'),
+    })
+    const requests: Array<{ url: string; body: Record<string, unknown> }> = []
+    vi.stubGlobal('fetch', vi.fn().mockImplementation((url: string, init?: RequestInit) => {
+      requests.push({
+        url,
+        body: JSON.parse(String(init?.body)) as Record<string, unknown>,
+      })
+      return Promise.resolve(new Response(JSON.stringify({ output_text: 'Done' })))
+    }))
+
+    await adapter.chatWithTools({
+      messages: [{ role: 'user', content: 'Summarize this runbook result.' }],
+      tools: [{
+        name: 'execute_shell_command',
+        description: 'Execute a shell command.',
+        inputSchema: { type: 'object', properties: { command: { type: 'string' } } },
+      }],
+      signal: new AbortController().signal,
+      llm: { providerKey: 'openai', model: 'gpt-5.6-terra' },
+    })
+
+    expect(requests).toHaveLength(1)
+    expect(requests[0]?.url).toBe('https://api.openai.com/v1/responses')
+    expect(requests[0]?.body).toMatchObject({
+      reasoning: { effort: 'medium' },
+      tools: [{ type: 'function', name: 'execute_shell_command' }],
+    })
+  })
+
   it('logs effort evidence from the serialized provider request body', async () => {
     const adapter = createAdapter({
       getApiKey: () => Promise.resolve('test-key'),

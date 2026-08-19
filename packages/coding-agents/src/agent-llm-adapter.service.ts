@@ -28,7 +28,11 @@ import {
   type HostToolContext,
 } from '@bitsentry-ce/core/features/agent-runtime'
 import { codingAgentsLogger as log } from './logger.js'
-import { getCatalogModel, getCatalogModelIds } from '@bitsentry-ce/components/llm/modelCatalog'
+import {
+  getCatalogModel,
+  getCatalogModelIds,
+  getComposerDefaultTraitValues,
+} from '@bitsentry-ce/components/llm/modelCatalog'
 
 export type LlmProviderKey = 'groq' | 'kilocode' | 'openai' | 'anthropic' | 'gemini' | 'openrouter' | 'claude_code' | 'codex' | 'opencode' | 'cursor'
 
@@ -422,13 +426,21 @@ function shouldUseOpenAiResponsesApi(
   providerKey: LlmProviderKey,
   model: string,
   tools: LlmToolDefinition[] | undefined,
-  reasoningParams: Record<string, string>,
 ): boolean {
   return providerKey === 'openai'
     && isOpenAiGpt56FamilyModel(model)
     && (tools?.length ?? 0) > 0
-    && reasoningParams.reasoning_effort !== undefined
-    && reasoningParams.reasoning_effort !== 'none'
+}
+
+function getOpenAiResponsesReasoningEffort(
+  model: string,
+  reasoningParams: Record<string, string>,
+): string {
+  const explicitEffort = reasoningParams.reasoning_effort
+  if (explicitEffort !== undefined) return explicitEffort
+
+  const defaultEffort = getComposerDefaultTraitValues(getCatalogModel('openai', model)).effort
+  return typeof defaultEffort === 'string' ? defaultEffort : 'medium'
 }
 
 function parseDataUrl(dataUrl: string): { mediaType: string; base64: string } {
@@ -1344,13 +1356,13 @@ export class AgentLlmAdapterService {
       input.llm?.thinkingEnabled,
       getEffortTrait(input.traitValues),
     )
-    if (shouldUseOpenAiResponsesApi(input.providerKey, model, tools, reasoningParams)) {
+    if (shouldUseOpenAiResponsesApi(input.providerKey, model, tools)) {
       return await this.chatOpenAiResponses({
         ...input,
         apiKey,
         baseUrl,
         model,
-        reasoningEffort: reasoningParams.reasoning_effort,
+        reasoningEffort: getOpenAiResponsesReasoningEffort(model, reasoningParams),
       })
     }
     const headers: Record<string, string> = {
