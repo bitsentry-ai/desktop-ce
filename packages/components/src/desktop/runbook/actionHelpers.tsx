@@ -87,6 +87,11 @@ export const ACTION_META: Record<SupportedActionType, ActionMeta> = {
 
 const ACTION_TYPE_SET = new Set<SupportedActionType>(ACTION_TYPES);
 
+type LlmModelOption = {
+  providerKey: RunbookLlmProviderKey;
+  modelId: string;
+};
+
 export type RunbookActionRenderState = {
   modelBorderClass: string;
   isMissingErrorSource: boolean;
@@ -225,14 +230,40 @@ export function createDraftAction(): RunbookActionRecord {
   };
 }
 
+function hasValidLlmModel(
+  action: RunbookActionRecord,
+  llmModelOptions: ReadonlyArray<LlmModelOption>,
+): boolean {
+  if (
+    action.type !== "llm" ||
+    action.llmModel === undefined ||
+    action.llmModel.trim().length === 0
+  ) {
+    return true;
+  }
+
+  const model = action.llmModel.trim();
+  if (/^\{\{[^{}]+\}\}$/.test(model)) {
+    return true;
+  }
+
+  const resolved = action.llmProviderKey === undefined
+    ? resolveCatalogModel(model)
+    : resolveCatalogModelForProvider(action.llmProviderKey, model);
+  if (resolved === undefined) {
+    return action.llmProviderKey !== undefined && llmModelOptions.some(
+      (option) => option.providerKey === action.llmProviderKey && option.modelId === model,
+    );
+  }
+
+  return action.llmProviderKey === undefined || action.llmProviderKey === resolved.providerKey;
+}
+
 export function canPersistRunbookAction(
   action: RunbookActionRecord,
   validErrorSourceIds: Set<string>,
   validPluginActionIdsByPluginId: Map<string, Set<string>>,
-  llmModelOptions: ReadonlyArray<{
-    providerKey: RunbookLlmProviderKey;
-    modelId: string;
-  }> = [],
+  llmModelOptions: ReadonlyArray<LlmModelOption> = [],
 ): boolean {
   if (action.title.trim().length === 0) {
     return false;
@@ -250,22 +281,8 @@ export function canPersistRunbookAction(
     return false;
   }
 
-  if (action.type === "llm" && action.llmModel !== undefined && action.llmModel.trim().length > 0) {
-    const model = action.llmModel.trim();
-    if (!/^\{\{[^{}]+\}\}$/.test(model)) {
-      const resolved = action.llmProviderKey === undefined
-        ? resolveCatalogModel(model)
-        : resolveCatalogModelForProvider(action.llmProviderKey, model);
-      const isDiscoveredModel = action.llmProviderKey !== undefined && llmModelOptions.some(
-        (option) => option.providerKey === action.llmProviderKey && option.modelId === model,
-      );
-      if (
-        (resolved === undefined && !isDiscoveredModel)
-        || (action.llmProviderKey !== undefined && resolved !== undefined && action.llmProviderKey !== resolved.providerKey)
-      ) {
-        return false;
-      }
-    }
+  if (!hasValidLlmModel(action, llmModelOptions)) {
+    return false;
   }
 
   return validateRunbookLogFilterConfig(action.logFilter).length === 0;
