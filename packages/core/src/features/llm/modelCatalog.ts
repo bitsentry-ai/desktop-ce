@@ -55,6 +55,8 @@ export interface ModelCatalogEntry {
   supportsPdfInput: boolean
   supportsThinking: boolean
   thinkingMode: ModelThinkingMode
+  /** Whether the provider accepts sampling controls such as temperature. */
+  supportsSamplingParameters?: boolean
   reasoningOptions: ModelReasoningOption[]
   /** Deliberate default used when composer options are derived from reasoningOptions. */
   defaultReasoningOption?: ModelReasoningOption

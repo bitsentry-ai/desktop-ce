@@ -527,6 +527,7 @@
           "supportsPdfInput": true,
           "supportsThinking": true,
           "thinkingMode": "toggle",
+          "supportsSamplingParameters": false,
           "reasoningOptions": [],
           "composerOptions": [
             {
@@ -551,6 +552,106 @@
                   "value": "max",
                   "label": "Max"
                 }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "claude-opus-5",
+          "displayName": "Claude Opus 5",
+          "supportsImageInput": true,
+          "supportsAudioInput": false,
+          "supportsVideoInput": false,
+          "supportsPdfInput": true,
+          "supportsThinking": true,
+          "thinkingMode": "toggle",
+          "supportsSamplingParameters": false,
+          "reasoningOptions": [],
+          "composerOptions": [
+            {
+              "id": "effort",
+              "label": "Effort",
+              "type": "select",
+              "options": [
+                { "value": "low", "label": "Low" },
+                { "value": "medium", "label": "Medium" },
+                { "value": "high", "label": "High", "isDefault": true },
+                { "value": "max", "label": "Max" }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "claude-sonnet-5",
+          "displayName": "Claude Sonnet 5",
+          "supportsImageInput": true,
+          "supportsAudioInput": false,
+          "supportsVideoInput": false,
+          "supportsPdfInput": true,
+          "supportsThinking": true,
+          "thinkingMode": "toggle",
+          "supportsSamplingParameters": false,
+          "reasoningOptions": [],
+          "composerOptions": [
+            {
+              "id": "effort",
+              "label": "Effort",
+              "type": "select",
+              "options": [
+                { "value": "low", "label": "Low" },
+                { "value": "medium", "label": "Medium" },
+                { "value": "high", "label": "High", "isDefault": true },
+                { "value": "max", "label": "Max" }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "claude-fable-5",
+          "displayName": "Claude Fable 5",
+          "supportsImageInput": true,
+          "supportsAudioInput": false,
+          "supportsVideoInput": false,
+          "supportsPdfInput": true,
+          "supportsThinking": true,
+          "thinkingMode": "always_on",
+          "supportsSamplingParameters": false,
+          "reasoningOptions": [],
+          "composerOptions": [
+            {
+              "id": "effort",
+              "label": "Effort",
+              "type": "select",
+              "options": [
+                { "value": "low", "label": "Low" },
+                { "value": "medium", "label": "Medium" },
+                { "value": "high", "label": "High", "isDefault": true },
+                { "value": "max", "label": "Max" }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "claude-opus-4-8",
+          "displayName": "Claude Opus 4.8",
+          "supportsImageInput": true,
+          "supportsAudioInput": false,
+          "supportsVideoInput": false,
+          "supportsPdfInput": true,
+          "supportsThinking": true,
+          "thinkingMode": "toggle",
+          "supportsSamplingParameters": false,
+          "reasoningOptions": [],
+          "composerOptions": [
+            {
+              "id": "effort",
+              "label": "Effort",
+              "type": "select",
+              "options": [
+                { "value": "low", "label": "Low" },
+                { "value": "medium", "label": "Medium" },
+                { "value": "high", "label": "High", "isDefault": true },
+                { "value": "max", "label": "Max" }
               ]
             }
           ]
@@ -681,43 +782,6 @@
         {
           "id": "claude-sonnet-4-5",
           "displayName": "Claude Sonnet 4.5",
-          "supportsImageInput": true,
-          "supportsAudioInput": false,
-          "supportsVideoInput": false,
-          "supportsPdfInput": true,
-          "supportsThinking": true,
-          "thinkingMode": "toggle",
-          "reasoningOptions": [],
-          "composerOptions": [
-            {
-              "id": "effort",
-              "label": "Effort",
-              "type": "select",
-              "options": [
-                {
-                  "value": "low",
-                  "label": "Low"
-                },
-                {
-                  "value": "medium",
-                  "label": "Medium"
-                },
-                {
-                  "value": "high",
-                  "label": "High",
-                  "isDefault": true
-                },
-                {
-                  "value": "max",
-                  "label": "Max"
-                }
-              ]
-            }
-          ]
-        },
-        {
-          "id": "claude-opus-4-1",
-          "displayName": "Claude Opus 4.1",
           "supportsImageInput": true,
           "supportsAudioInput": false,
           "supportsVideoInput": false,

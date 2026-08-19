@@ -951,6 +951,10 @@ describe('AgentLlmAdapterService', () => {
     }))
 
     for (const [model, effort] of [
+      ['claude-fable-5', 'high'],
+      ['claude-opus-5', 'medium'],
+      ['claude-sonnet-5', 'low'],
+      ['claude-opus-4-8', 'max'],
       ['claude-sonnet-4-6', 'low'],
       ['claude-opus-4-7', 'max'],
       ['claude-sonnet-4-6', 'xhigh'],
@@ -967,11 +971,14 @@ describe('AgentLlmAdapterService', () => {
     expect(requestBodies.map((body) => {
       const outputConfig = body.output_config as { effort: string }
       return outputConfig.effort
-    })).toEqual(['low', 'max', 'max', 'max'])
+    })).toEqual(['high', 'medium', 'low', 'max', 'low', 'max', 'max', 'max'])
     expect(requestBodies.every((body) => {
       const thinking = body.thinking as { budget_tokens?: number } | undefined
       return thinking?.budget_tokens === undefined
     })).toBe(true)
+    expect(requestBodies.every((body) =>
+      !('temperature' in body) && !('top_p' in body) && !('top_k' in body),
+    )).toBe(true)
   })
 
   it('round-trips Anthropic tool history without an empty assistant text block', async () => {

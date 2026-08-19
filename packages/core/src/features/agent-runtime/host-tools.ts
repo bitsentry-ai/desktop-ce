@@ -522,6 +522,7 @@ async function listPlugins(context: HostToolContext): Promise<ToolResult> {
 async function listModels(): Promise<ToolResult> {
   return {
     output: JSON.stringify({
+      source: 'static_catalog',
       providers: getModelCatalogProviders().map((provider) => ({
         providerKey: provider.providerKey,
         displayName: provider.displayName,
@@ -708,7 +709,7 @@ export const hostTools = [
   },
   {
     name: 'list_models',
-    description: 'List canonical model IDs and display names available for LLM runbook actions. Use a canonical modelId or an exact display name when proposing or editing a runbook.',
+    description: 'List canonical model IDs and display names available for LLM runbook actions from the static catalog. Settings may also show saved or discovered provider models; use a catalog modelId or exact display name when proposing or editing a runbook.',
     argsSchema: listModelsHostToolSchema,
     handler: async () => await listModels(),
   },
