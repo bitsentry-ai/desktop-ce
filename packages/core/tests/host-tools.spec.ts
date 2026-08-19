@@ -167,6 +167,53 @@ describe('host tools', () => {
     expect(context.session.runbookAuthoringProposals).toBeUndefined()
   })
 
+  it('rejects an undeclared runbook placeholder before creating a proposal', async () => {
+    const context = createContext()
+    const result = await executeHostTool(context, 'propose_runbook_create', {
+      prompt: 'Create a summary runbook.',
+      draftRunbook: {
+        title: 'Invalid placeholder summary',
+        description: 'The proposal should reject step output placeholders.',
+        actions: [{
+          id: 'step-summary',
+          type: 'llm',
+          title: 'Summarize',
+          prompt: 'Summarize {{step.output}}.',
+          llmModel: 'gpt-5.6-terra',
+        }],
+      },
+    })
+
+    expect(JSON.parse(result?.error ?? '')).toMatchObject({
+      code: 'INVALID_TOOL_ARGUMENTS',
+      toolName: 'propose_runbook_create',
+      issues: [{ path: 'draftRunbook.actions.0.prompt' }],
+    })
+    expect(context.session.runbookAuthoringProposals).toBeUndefined()
+  })
+
+  it('accepts a declared runbook placeholder in a proposal', async () => {
+    const context = createContext()
+    const result = await executeHostTool(context, 'propose_runbook_create', {
+      prompt: 'Create a findings summary runbook.',
+      draftRunbook: {
+        title: 'Findings summary',
+        description: 'Summarize normalized findings.',
+        actions: [{
+          id: 'step-summary',
+          type: 'llm',
+          title: 'Summarize findings',
+          prompt: 'Summarize {{findings}}.',
+          llmModel: 'gpt-5.6-terra',
+          parameters: [{ id: 'findings', key: 'findings', required: true }],
+        }],
+      },
+    })
+
+    expect(result?.error).toBeUndefined()
+    expect(context.session.runbookAuthoringProposals).toHaveLength(1)
+  })
+
   it('returns a structured model-visible error for invalid arguments', async () => {
     const context = createContext()
 

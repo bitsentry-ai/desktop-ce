@@ -13,6 +13,7 @@ import type { RunbookGateway } from '../runbooks/runbook.gateway'
 import {
   createRunbookCreationProposal,
   createRunbookEditProposal,
+  getUnknownRunbookTemplatePlaceholders,
   validatePluginAuthContracts,
   type RunbookAuthoringOperation,
   type RunbookAuthoringProposal,
@@ -107,10 +108,24 @@ function validatePluginActionProposal(action: RunbookActionProposal, context: z.
   }
 }
 
+function validateRunbookTemplatePlaceholders(
+  action: RunbookActionProposal,
+  context: z.RefinementCtx,
+): void {
+  for (const placeholder of getUnknownRunbookTemplatePlaceholders(action)) {
+    context.addIssue({
+      code: "custom",
+      path: placeholder.path,
+      message: `Unknown runbook placeholder "{{${placeholder.key}}}". Declare it as an action parameter.`,
+    });
+  }
+}
+
 const runbookActionProposalSchema = runbookActionProposalBaseSchema.superRefine((action, context) => {
   if (action.type === 'llm') validateLlmActionProposal(action, context)
   if (action.type === 'external_source') validateExternalSourceActionProposal(action, context)
   if (action.type === 'plugin') validatePluginActionProposal(action, context)
+  validateRunbookTemplatePlaceholders(action, context)
 })
 const runbookAuthoringOperationSchema = z.object({
   id: z.string().min(1), type: z.enum(['update_metadata', 'add_action', 'update_action', 'delete_action', 'reorder_actions']), rationale: z.string().min(1),
