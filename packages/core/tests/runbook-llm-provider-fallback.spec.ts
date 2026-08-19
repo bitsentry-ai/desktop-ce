@@ -16,7 +16,7 @@ type Dispatch = {
   requestedModels: Array<string | undefined>;
 };
 
-function makeRunbook(model?: string): RunbookRecord {
+function makeRunbook(model?: string, providerKey?: RunbookRecord["actions"][number]["llmProviderKey"]): RunbookRecord {
   return {
     id: "provider-fallback",
     title: "Provider fallback",
@@ -28,6 +28,7 @@ function makeRunbook(model?: string): RunbookRecord {
         type: "llm",
         title: "Summarize",
         prompt: "Summarize the incident.",
+        llmProviderKey: providerKey,
         llmModel: model,
       },
     ],
@@ -142,6 +143,23 @@ describe("runbook LLM action provider fallback", () => {
     expect(dispatch.requestedModels).toEqual(["claude-sonnet-4-6"]);
     expect(dispatch.local).toEqual([
       { provider: "claude_code", model: "claude-sonnet-4-6" },
+    ]);
+    await service.destroy();
+  });
+
+  it("normalizes a legacy friendly model name before local execution", async () => {
+    const runbook = makeRunbook("GPT 5.6 Terra", "codex");
+    const { service, dispatch } = createService("codex", runbook);
+    const started = await service.start(runbook.id);
+
+    await expect(
+      service.waitForCompletion(started.executionId),
+    ).resolves.toMatchObject({
+      status: "completed",
+      steps: [{ output: "Local provider result" }],
+    });
+    expect(dispatch.local).toEqual([
+      { provider: "codex", model: "gpt-5.6-terra" },
     ]);
     await service.destroy();
   });

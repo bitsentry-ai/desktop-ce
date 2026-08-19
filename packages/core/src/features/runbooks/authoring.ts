@@ -5,6 +5,7 @@ import type {
 } from "./desktop-runbook.types";
 import { MAX_RUNBOOK_IDLE_TIMEOUT_MINUTES } from "./desktop-runbook.types";
 import type { DesktopPluginDescriptor } from "../plugins/plugins.types";
+import { resolveCatalogModel, resolveCatalogModelForProvider } from "../llm/modelCatalog";
 
 export type RunbookAuthoringProposalKind =
   | "edit_existing_runbook"
@@ -360,6 +361,19 @@ function validateRunbookActionIdentity(
 function validateRunbookActionFields(action: RunbookActionRecord, errors: string[]): void {
   if (action.type === "shell" && normalizeString(action.command).length === 0) errors.push(`Shell action "${action.title}" is missing a command.`);
   if (action.type === "llm" && normalizeString(action.prompt).length === 0) errors.push(`LLM action "${action.title}" is missing a prompt.`);
+  if (action.type === "llm") {
+    const model = normalizeString(action.llmModel);
+    if (model.length > 0 && !/^\{\{[^{}]+\}\}$/.test(model)) {
+      const resolved = action.llmProviderKey === undefined
+        ? resolveCatalogModel(model)
+        : resolveCatalogModelForProvider(action.llmProviderKey, model);
+      if (resolved === undefined) {
+        errors.push(`LLM action "${action.title}" references unknown model "${model}". Use a model ID or display name from the catalog.`);
+      } else if (action.llmProviderKey !== undefined && action.llmProviderKey !== resolved.providerKey) {
+        errors.push(`LLM action "${action.title}" model "${model}" belongs to provider "${resolved.providerKey}", not "${action.llmProviderKey}".`);
+      }
+    }
+  }
   if (action.type === "http" && normalizeString(action.url).length === 0) errors.push(`HTTP action "${action.title}" is missing a URL.`);
   if ((action.type === "external_source" || action.type === "data_source_query") && normalizeString(action.query).length === 0) errors.push(`Data-source action "${action.title}" is missing a query.`);
   if (action.type === "external_source" && normalizeString(action.sourceId).length === 0) errors.push(`External Source action "${action.title}" is missing a source selection.`);

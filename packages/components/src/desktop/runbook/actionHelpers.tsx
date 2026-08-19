@@ -9,7 +9,7 @@ import {
   type LucideIcon,
 } from "../../icons";
 import { useTranslation } from "@bitsentry-ce/i18n";
-import { previewRunbookLogFilter, validateRunbookLogFilterConfig } from "@bitsentry-ce/core";
+import { previewRunbookLogFilter, resolveCatalogModel, resolveCatalogModelForProvider, validateRunbookLogFilterConfig } from "@bitsentry-ce/core";
 import { cn } from "../../lib/utils";
 import type {
   RunbookActionParameter,
@@ -244,6 +244,18 @@ export function canPersistRunbookAction(
 
   if (validateActionParameters(action.parameters).length > 0) {
     return false;
+  }
+
+  if (action.type === "llm" && action.llmModel !== undefined && action.llmModel.trim().length > 0) {
+    const model = action.llmModel.trim();
+    if (!/^\{\{[^{}]+\}\}$/.test(model)) {
+      const resolved = action.llmProviderKey === undefined
+        ? resolveCatalogModel(model)
+        : resolveCatalogModelForProvider(action.llmProviderKey, model);
+      if (resolved === undefined || (action.llmProviderKey !== undefined && action.llmProviderKey !== resolved.providerKey)) {
+        return false;
+      }
+    }
   }
 
   return validateRunbookLogFilterConfig(action.logFilter).length === 0;

@@ -53,6 +53,68 @@ function createContext(): HostToolContext {
 }
 
 describe('host tools', () => {
+  it('lists canonical model IDs and display names for runbook authoring', async () => {
+    const result = await executeHostTool(createContext(), 'list_models', {})
+    const catalog = JSON.parse(result?.output ?? '') as {
+      providers: Array<{ providerKey: string; models: Array<{ modelId: string; displayName: string }> }>
+    }
+
+    expect(catalog.providers[0]?.providerKey).toBe('openai')
+    expect(catalog.providers[0]?.models).toContainEqual({
+      modelId: 'gpt-5.6-terra',
+      displayName: 'GPT-5.6 Terra',
+    })
+  })
+
+  it('canonicalizes a friendly LLM model name in Incident proposals', async () => {
+    const context = createContext()
+    const result = await executeHostTool(context, 'propose_runbook_create', {
+      prompt: 'Create a summary runbook.',
+      draftRunbook: {
+        title: 'Summary',
+        description: 'Summarize evidence.',
+        actions: [{
+          id: 'step-summary',
+          type: 'llm',
+          title: 'Summarize',
+          prompt: 'Summarize the evidence.',
+          llmModel: 'GPT 5.6 Terra',
+        }],
+      },
+    })
+
+    expect(result?.error).toBeUndefined()
+    expect(context.session.runbookAuthoringProposals?.[0]?.proposedRunbook.actions[0]).toMatchObject({
+      llmProviderKey: 'openai',
+      llmModel: 'gpt-5.6-terra',
+    })
+  })
+
+  it('rejects an unknown LLM model instead of saving it into a proposal', async () => {
+    const context = createContext()
+    const result = await executeHostTool(context, 'propose_runbook_create', {
+      prompt: 'Create a summary runbook.',
+      draftRunbook: {
+        title: 'Summary',
+        description: 'Summarize evidence.',
+        actions: [{
+          id: 'step-summary',
+          type: 'llm',
+          title: 'Summarize',
+          prompt: 'Summarize the evidence.',
+          llmModel: 'GPT 5.6 Terra (invalid)',
+        }],
+      },
+    })
+
+    expect(JSON.parse(result?.error ?? '')).toMatchObject({
+      code: 'INVALID_TOOL_ARGUMENTS',
+      toolName: 'propose_runbook_create',
+      issues: [{ path: 'draftRunbook.actions.0.llmModel' }],
+    })
+    expect(context.session.runbookAuthoringProposals).toBeUndefined()
+  })
+
   it('returns a structured model-visible error for invalid arguments', async () => {
     const context = createContext()
 

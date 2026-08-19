@@ -22,9 +22,11 @@ import {
   type DesktopPluginDescriptor,
   type DesktopPluginRuntimeService,
 } from '../plugins'
+import { getModelCatalogProviders, resolveCatalogModel, resolveCatalogModelForProvider } from '../llm/modelCatalog'
 
 export const listRunbooksHostToolSchema = z.object({}).strict()
 export const listPluginsHostToolSchema = z.object({}).strict()
+export const listModelsHostToolSchema = z.object({}).strict()
 
 const idleTimeoutDescription = `Idle timeout in minutes, 0 to ${String(MAX_RUNBOOK_IDLE_TIMEOUT_MINUTES)}.`
 const idleTimeoutSchema = z.number()
@@ -56,6 +58,31 @@ const runbookActionProposalSchema = z.object({
   query: z.string().optional(), sourceId: z.string().optional(),
   parameters: z.array(z.object({ id: z.string().min(1), key: z.string().min(1), label: z.string().optional(), description: z.string().optional(), defaultValue: z.string().optional(), required: z.boolean().optional(), secure: z.boolean().optional() }).strict()).optional(),
 }).strict().superRefine((action, context) => {
+  if (action.type === 'llm' && action.llmModel !== undefined && action.llmModel.trim().length > 0) {
+    const modelText = action.llmModel.trim()
+    const isRuntimePlaceholder = /^\{\{[^{}]+\}\}$/.test(modelText)
+    if (!isRuntimePlaceholder) {
+      const resolved = action.llmProviderKey === undefined
+        ? resolveCatalogModel(modelText)
+        : resolveCatalogModelForProvider(action.llmProviderKey, modelText)
+      if (resolved === undefined) {
+        context.addIssue({
+          code: 'custom',
+          path: ['llmModel'],
+          message: `Unknown LLM model "${modelText}". Use a model ID or display name from list_models.`,
+        })
+      } else if (action.llmProviderKey !== undefined && action.llmProviderKey !== resolved.providerKey) {
+        context.addIssue({
+          code: 'custom',
+          path: ['llmProviderKey'],
+          message: `Model "${modelText}" belongs to provider "${resolved.providerKey}", not "${action.llmProviderKey}".`,
+        })
+      } else {
+        action.llmProviderKey = resolved.providerKey
+        action.llmModel = resolved.modelId
+      }
+    }
+  }
   if (action.type === 'external_source' && (action.sourceId === undefined || action.sourceId.trim().length === 0)) {
     context.addIssue({ code: 'custom', path: ['sourceId'], message: 'External Source action requires a sourceId.' })
   }
@@ -82,6 +109,7 @@ export const RUNBOOK_COMPLETION_WAIT_SECONDS = RUNBOOK_COMPLETION_WAIT_TIMEOUT_M
 export type HostToolName =
   | 'list_runbooks'
   | 'list_plugins'
+  | 'list_models'
   | 'execute_runbook'
   | 'get_runbook_execution'
   | 'propose_runbook_edit'
@@ -479,6 +507,21 @@ async function listPlugins(context: HostToolContext): Promise<ToolResult> {
   }
 }
 
+async function listModels(): Promise<ToolResult> {
+  return {
+    output: JSON.stringify({
+      providers: getModelCatalogProviders().map((provider) => ({
+        providerKey: provider.providerKey,
+        displayName: provider.displayName,
+        models: provider.models.map((model) => ({
+          modelId: model.id,
+          displayName: model.displayName,
+        })),
+      })),
+    }, null, 2),
+  }
+}
+
 function applyPluginAuthValidation(
   proposal: RunbookAuthoringProposal,
   context: HostToolContext,
@@ -650,6 +693,12 @@ export const hostTools = [
     description: 'List installed plugins, their action IDs, input JSON schemas, and auth field contracts. Use the exact auth field keys returned here when constructing pluginAuth. Auth values and secrets are never returned.',
     argsSchema: listPluginsHostToolSchema,
     handler: async (context: HostToolContext) => await listPlugins(context),
+  },
+  {
+    name: 'list_models',
+    description: 'List canonical model IDs and display names available for LLM runbook actions. Use a canonical modelId or an exact display name when proposing or editing a runbook.',
+    argsSchema: listModelsHostToolSchema,
+    handler: async () => await listModels(),
   },
   {
     name: 'execute_runbook',

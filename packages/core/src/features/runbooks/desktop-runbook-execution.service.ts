@@ -43,6 +43,7 @@ import type {
 } from "./desktop-runbook-result.store";
 import type { DesktopRunbookStore as RunbookStore } from "./desktop-runbook.store";
 import { collectRunbookGlobalReferences } from "./import-export";
+import { resolveCatalogModel, resolveCatalogModelForProvider } from "../llm/modelCatalog";
 import type { LogFilterConfig } from "./runbooks.schemas";
 import {
   DEFAULT_RUNBOOK_IDLE_TIMEOUT_MINUTES,
@@ -442,6 +443,7 @@ interface PreparedHttpRequest {
 interface PreparedAiStepInput {
   prompt: string;
   model: string | undefined;
+  providerKey: RunbookActionRecord["llmProviderKey"];
 }
 
 interface LocalAiSnapshotThrottleState {
@@ -1718,7 +1720,7 @@ export class RunbookExecutionService {
     // Without this it falls through to the tool-calling remote path, which a
     // local CLI provider cannot serve, and the step "succeeds" with no output.
     const providerKey =
-      action.llmProviderKey ??
+      input.providerKey ??
       (await this.resolveDefaultProviderKey(input.model));
 
     if (this.shouldUseDedicatedLocalAiExecution(providerKey)) {
@@ -1762,13 +1764,37 @@ export class RunbookExecutionService {
       parameters,
       "placeholder",
     );
+    let model = llmModel?.value;
+    let providerKey = action.llmProviderKey;
+    if (model !== undefined && model.trim().length > 0) {
+      const resolved = providerKey === undefined
+        ? resolveCatalogModel(model)
+        : resolveCatalogModelForProvider(providerKey, model);
+      if (resolved === undefined) {
+        throw new Error(
+          `Unknown LLM model "${model}". Use a model ID or display name from the catalog.`,
+        );
+      }
+      if (providerKey !== undefined && providerKey !== resolved.providerKey) {
+        throw new Error(
+          `LLM model "${model}" belongs to provider "${resolved.providerKey}", not "${providerKey}".`,
+        );
+      }
+      // Keep provider-less actions provider-less so the configured runtime
+      // default still chooses the execution path. The catalog provider is
+      // only authoritative when the action already pins a provider.
+      if (providerKey !== undefined) {
+        providerKey = resolved.providerKey;
+      }
+      model = resolved.modelId;
+    }
     this.setStepInput(session, actionIndex, {
       actionType: "llm",
       promptTemplate: action.prompt,
       prompt,
-      llmProviderKey: action.llmProviderKey,
+      llmProviderKey: providerKey,
       llmModelTemplate: action.llmModel,
-      llmModel: llmModel?.value,
+      llmModel: model,
       parameterValues: session.redactedParameterValues,
     });
     addSharedStepTemplateWarnings(
@@ -1779,7 +1805,8 @@ export class RunbookExecutionService {
 
     return {
       prompt,
-      model: llmModel?.value,
+      model,
+      providerKey,
     };
   }
 
@@ -1840,7 +1867,7 @@ export class RunbookExecutionService {
   ): Promise<ExecutedStepResult> {
     const { prompt, model } = input;
 
-    const llmSelection = this.createLlmSelection(action.llmProviderKey, model);
+    const llmSelection = this.createLlmSelection(input.providerKey, model);
     const tools = this.buildAiTools();
     const messages: ChatMessage[] = [
       {
