@@ -53,6 +53,120 @@ function createContext(): HostToolContext {
 }
 
 describe('host tools', () => {
+  it('lists canonical model IDs and display names for runbook authoring', async () => {
+    const result = await executeHostTool(createContext(), 'list_models', {})
+    const catalog = JSON.parse(result?.output ?? '') as {
+      source: string
+      providers: Array<{ providerKey: string; models: Array<{
+        modelId: string
+        displayName: string
+        contextWindowTokens?: number
+        maxOutputTokens?: number
+      }> }>
+    }
+
+    expect(catalog.source).toBe('static_catalog')
+    expect(catalog.providers[0]?.providerKey).toBe('openai')
+    expect(catalog.providers[0]?.models).toContainEqual({
+      modelId: 'gpt-5.6-terra',
+      displayName: 'GPT-5.6 Terra',
+    })
+
+    const codex = catalog.providers.find((provider) => provider.providerKey === 'codex')
+    expect(codex?.models.some((model) => model.modelId === 'gpt-5.2-codex')).toBe(false)
+    expect(codex?.models.some((model) => model.modelId === 'gpt-5.1-codex-mini')).toBe(false)
+
+    const anthropic = catalog.providers.find((provider) => provider.providerKey === 'anthropic')
+    expect(anthropic?.models).toEqual(expect.arrayContaining([
+      { modelId: 'claude-opus-5', displayName: 'Claude Opus 5', contextWindowTokens: 1_000_000, maxOutputTokens: 128_000 },
+      { modelId: 'claude-sonnet-5', displayName: 'Claude Sonnet 5', contextWindowTokens: 1_000_000, maxOutputTokens: 128_000 },
+      { modelId: 'claude-fable-5', displayName: 'Claude Fable 5', contextWindowTokens: 1_000_000, maxOutputTokens: 128_000 },
+      { modelId: 'claude-opus-4-8', displayName: 'Claude Opus 4.8', contextWindowTokens: 1_000_000, maxOutputTokens: 128_000 },
+    ]))
+  })
+
+  it('canonicalizes a friendly LLM model name in Incident proposals', async () => {
+    const context = createContext()
+    const result = await executeHostTool(context, 'propose_runbook_create', {
+      prompt: 'Create a summary runbook.',
+      draftRunbook: {
+        title: 'Summary',
+        description: 'Summarize evidence.',
+        actions: [{
+          id: 'step-summary',
+          type: 'llm',
+          title: 'Summarize',
+          prompt: 'Summarize the evidence.',
+          llmModel: 'GPT 5.6 Terra',
+        }],
+      },
+    })
+
+    expect(result?.error).toBeUndefined()
+    expect(context.session.runbookAuthoringProposals?.[0]?.proposedRunbook.actions[0]).toMatchObject({
+      llmProviderKey: 'openai',
+      llmModel: 'gpt-5.6-terra',
+    })
+  })
+
+  it.each([
+    ['Claude Fable 5', 'claude-fable-5'],
+    ['Anthropic Claude Fable 5', 'claude-fable-5'],
+    ['Fable', 'claude-fable-5'],
+    ['Claude Sonnet 5', 'claude-sonnet-5'],
+    ['Sonnet 5', 'claude-sonnet-5'],
+  ])('canonicalizes %s to native Anthropic in Incident proposals', async (displayName, modelId) => {
+    const context = createContext()
+    const result = await executeHostTool(context, 'propose_runbook_create', {
+      prompt: 'Create a summary runbook.',
+      draftRunbook: {
+        title: 'Summary',
+        description: 'Summarize evidence.',
+        actions: [{
+          id: 'step-summary',
+          type: 'llm',
+          title: 'Summarize',
+          prompt: 'Summarize the evidence.',
+          llmModel: displayName,
+        }],
+      },
+    })
+
+    expect(result?.error).toBeUndefined()
+    expect(context.session.runbookAuthoringProposals?.[0]?.proposedRunbook.actions[0]).toMatchObject({
+      llmProviderKey: 'anthropic',
+      llmModel: modelId,
+    })
+    expect(context.session.runbookAuthoringProposals?.[0]?.proposedRunbook.actions[0]).not.toMatchObject({
+      llmProviderKey: 'opencode',
+    })
+  })
+
+  it('rejects an unknown LLM model instead of saving it into a proposal', async () => {
+    const context = createContext()
+    const result = await executeHostTool(context, 'propose_runbook_create', {
+      prompt: 'Create a summary runbook.',
+      draftRunbook: {
+        title: 'Summary',
+        description: 'Summarize evidence.',
+        actions: [{
+          id: 'step-summary',
+          type: 'llm',
+          title: 'Summarize',
+          prompt: 'Summarize the evidence.',
+          llmModel: 'GPT 5.6 Terra (invalid)',
+        }],
+      },
+    })
+
+    expect(JSON.parse(result?.error ?? '')).toMatchObject({
+      code: 'INVALID_TOOL_ARGUMENTS',
+      toolName: 'propose_runbook_create',
+      issues: [{ path: 'draftRunbook.actions.0.llmModel' }],
+    })
+    expect(context.session.runbookAuthoringProposals).toBeUndefined()
+  })
+
   it('returns a structured model-visible error for invalid arguments', async () => {
     const context = createContext()
 

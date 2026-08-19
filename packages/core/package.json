@@ -197,6 +197,10 @@
       "types": "./dist/features/runbooks/authoring.d.ts",
       "default": "./dist/features/runbooks/authoring.js"
     },
+    "./features/llm/modelCatalog": {
+      "types": "./dist/features/llm/modelCatalog.d.ts",
+      "default": "./dist/features/llm/modelCatalog.js"
+    },
     "./features/settings/settings.schemas": {
       "types": "./dist/features/settings/settings.schemas.d.ts",
       "default": "./dist/features/settings/settings.schemas.js"

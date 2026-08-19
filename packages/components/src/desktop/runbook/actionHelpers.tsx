@@ -9,7 +9,7 @@ import {
   type LucideIcon,
 } from "../../icons";
 import { useTranslation } from "@bitsentry-ce/i18n";
-import { previewRunbookLogFilter, validateRunbookLogFilterConfig } from "@bitsentry-ce/core";
+import { previewRunbookLogFilter, resolveCatalogModel, resolveCatalogModelForProvider, validateRunbookLogFilterConfig } from "@bitsentry-ce/core";
 import { cn } from "../../lib/utils";
 import type {
   RunbookActionParameter,
@@ -86,6 +86,11 @@ export const ACTION_META: Record<SupportedActionType, ActionMeta> = {
 };
 
 const ACTION_TYPE_SET = new Set<SupportedActionType>(ACTION_TYPES);
+
+type LlmModelOption = {
+  providerKey: RunbookLlmProviderKey;
+  modelId: string;
+};
 
 export type RunbookActionRenderState = {
   modelBorderClass: string;
@@ -225,10 +230,40 @@ export function createDraftAction(): RunbookActionRecord {
   };
 }
 
+function hasValidLlmModel(
+  action: RunbookActionRecord,
+  llmModelOptions: ReadonlyArray<LlmModelOption>,
+): boolean {
+  if (
+    action.type !== "llm" ||
+    action.llmModel === undefined ||
+    action.llmModel.trim().length === 0
+  ) {
+    return true;
+  }
+
+  const model = action.llmModel.trim();
+  if (/^\{\{[^{}]+\}\}$/.test(model)) {
+    return true;
+  }
+
+  const resolved = action.llmProviderKey === undefined
+    ? resolveCatalogModel(model)
+    : resolveCatalogModelForProvider(action.llmProviderKey, model);
+  if (resolved === undefined) {
+    return action.llmProviderKey !== undefined && llmModelOptions.some(
+      (option) => option.providerKey === action.llmProviderKey && option.modelId === model,
+    );
+  }
+
+  return action.llmProviderKey === undefined || action.llmProviderKey === resolved.providerKey;
+}
+
 export function canPersistRunbookAction(
   action: RunbookActionRecord,
   validErrorSourceIds: Set<string>,
   validPluginActionIdsByPluginId: Map<string, Set<string>>,
+  llmModelOptions: ReadonlyArray<LlmModelOption> = [],
 ): boolean {
   if (action.title.trim().length === 0) {
     return false;
@@ -243,6 +278,10 @@ export function canPersistRunbookAction(
   }
 
   if (validateActionParameters(action.parameters).length > 0) {
+    return false;
+  }
+
+  if (!hasValidLlmModel(action, llmModelOptions)) {
     return false;
   }
 

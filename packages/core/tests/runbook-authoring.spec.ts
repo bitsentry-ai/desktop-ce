@@ -166,6 +166,49 @@ describe("runbook authoring", () => {
     });
   });
 
+  it("accepts a friendly catalog model name in an LLM authoring proposal", () => {
+    const proposal = createRunbookCreationProposal({
+      id: "proposal-friendly-model",
+      prompt: "Create an LLM summary runbook.",
+      draftRunbook: {
+        title: "Friendly model summary",
+        description: "Summarize evidence with a catalog model.",
+        actions: [{
+          id: "action-summary",
+          type: "llm",
+          title: "Summarize evidence",
+          prompt: "Summarize the evidence.",
+          llmModel: "GPT 5.6 Terra",
+        }],
+      },
+    });
+
+    expect(proposal.validation).toMatchObject({ valid: true, errors: [] });
+  });
+
+  it("rejects an unknown LLM model before approval", () => {
+    const proposal = createRunbookCreationProposal({
+      id: "proposal-unknown-model",
+      prompt: "Create an invalid LLM summary runbook.",
+      draftRunbook: {
+        title: "Unknown model summary",
+        description: "The model should be rejected.",
+        actions: [{
+          id: "action-summary",
+          type: "llm",
+          title: "Summarize evidence",
+          prompt: "Summarize the evidence.",
+          llmModel: "not-a-catalog-model",
+        }],
+      },
+    });
+
+    expect(proposal.validation.valid).toBe(false);
+    expect(proposal.validation.errors).toContain(
+      'LLM action "Summarize evidence" references unknown model "not-a-catalog-model". Use a model ID or display name from the catalog.',
+    );
+  });
+
   it("keeps the existing action risk-label regression matrix intact", () => {
     const cases = [
       {

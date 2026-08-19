@@ -22,9 +22,16 @@ import {
   type DesktopPluginDescriptor,
   type DesktopPluginRuntimeService,
 } from '../plugins'
+import {
+  filterSelectableModelIds,
+  getModelCatalogProviders,
+  resolveCatalogModel,
+  resolveCatalogModelForProvider,
+} from '../llm/modelCatalog'
 
 export const listRunbooksHostToolSchema = z.object({}).strict()
 export const listPluginsHostToolSchema = z.object({}).strict()
+export const listModelsHostToolSchema = z.object({}).strict()
 
 const idleTimeoutDescription = `Idle timeout in minutes, 0 to ${String(MAX_RUNBOOK_IDLE_TIMEOUT_MINUTES)}.`
 const idleTimeoutSchema = z.number()
@@ -45,7 +52,7 @@ export const getRunbookExecutionHostToolSchema = z.object({
   waitForCompletion: z.boolean().optional(),
 }).strict()
 
-const runbookActionProposalSchema = z.object({
+const runbookActionProposalBaseSchema = z.object({
   id: z.string().min(1),
   type: z.enum(['shell', 'llm', 'http', 'plugin', 'external_source', 'telemetry_existing_entry', 'data_source_query', 'telemetry_ingest', 'diagnosis_diagnose', 'diagnosis_verify', 'diagnosis_recommend']),
   title: z.string().min(1), command: z.string().optional(), prompt: z.string().optional(),
@@ -55,18 +62,55 @@ const runbookActionProposalSchema = z.object({
   pluginId: z.string().optional(), pluginActionId: z.string().optional(), pluginInput: z.string().optional(), pluginAuth: z.string().optional(),
   query: z.string().optional(), sourceId: z.string().optional(),
   parameters: z.array(z.object({ id: z.string().min(1), key: z.string().min(1), label: z.string().optional(), description: z.string().optional(), defaultValue: z.string().optional(), required: z.boolean().optional(), secure: z.boolean().optional() }).strict()).optional(),
-}).strict().superRefine((action, context) => {
-  if (action.type === 'external_source' && (action.sourceId === undefined || action.sourceId.trim().length === 0)) {
-    context.addIssue({ code: 'custom', path: ['sourceId'], message: 'External Source action requires a sourceId.' })
+}).strict()
+
+type RunbookActionProposal = z.infer<typeof runbookActionProposalBaseSchema>
+
+function validateLlmActionProposal(action: RunbookActionProposal, context: z.RefinementCtx): void {
+  const modelText = action.llmModel?.trim() ?? ''
+  if (modelText.length === 0 || /^\{\{[^{}]+\}\}$/.test(modelText)) return
+
+  const resolved = action.llmProviderKey === undefined
+    ? resolveCatalogModel(modelText)
+    : resolveCatalogModelForProvider(action.llmProviderKey, modelText)
+  if (resolved === undefined) {
+    context.addIssue({
+      code: 'custom',
+      path: ['llmModel'],
+      message: `Unknown LLM model "${modelText}". Use a model ID or display name from list_models.`,
+    })
+    return
   }
-  if (action.type === 'plugin') {
-    if (action.pluginId === undefined || action.pluginId.trim().length === 0) {
-      context.addIssue({ code: 'custom', path: ['pluginId'], message: 'Plugin action requires a pluginId.' })
-    }
-    if (action.pluginActionId === undefined || action.pluginActionId.trim().length === 0) {
-      context.addIssue({ code: 'custom', path: ['pluginActionId'], message: 'Plugin action requires a pluginActionId.' })
-    }
+  if (action.llmProviderKey !== undefined && action.llmProviderKey !== resolved.providerKey) {
+    context.addIssue({
+      code: 'custom',
+      path: ['llmProviderKey'],
+      message: `Model "${modelText}" belongs to provider "${resolved.providerKey}", not "${action.llmProviderKey}".`,
+    })
+    return
   }
+  action.llmProviderKey = resolved.providerKey
+  action.llmModel = resolved.modelId
+}
+
+function validateExternalSourceActionProposal(action: RunbookActionProposal, context: z.RefinementCtx): void {
+  if (action.sourceId !== undefined && action.sourceId.trim().length > 0) return
+  context.addIssue({ code: 'custom', path: ['sourceId'], message: 'External Source action requires a sourceId.' })
+}
+
+function validatePluginActionProposal(action: RunbookActionProposal, context: z.RefinementCtx): void {
+  if (action.pluginId === undefined || action.pluginId.trim().length === 0) {
+    context.addIssue({ code: 'custom', path: ['pluginId'], message: 'Plugin action requires a pluginId.' })
+  }
+  if (action.pluginActionId === undefined || action.pluginActionId.trim().length === 0) {
+    context.addIssue({ code: 'custom', path: ['pluginActionId'], message: 'Plugin action requires a pluginActionId.' })
+  }
+}
+
+const runbookActionProposalSchema = runbookActionProposalBaseSchema.superRefine((action, context) => {
+  if (action.type === 'llm') validateLlmActionProposal(action, context)
+  if (action.type === 'external_source') validateExternalSourceActionProposal(action, context)
+  if (action.type === 'plugin') validatePluginActionProposal(action, context)
 })
 const runbookAuthoringOperationSchema = z.object({
   id: z.string().min(1), type: z.enum(['update_metadata', 'add_action', 'update_action', 'delete_action', 'reorder_actions']), rationale: z.string().min(1),
@@ -82,6 +126,7 @@ export const RUNBOOK_COMPLETION_WAIT_SECONDS = RUNBOOK_COMPLETION_WAIT_TIMEOUT_M
 export type HostToolName =
   | 'list_runbooks'
   | 'list_plugins'
+  | 'list_models'
   | 'execute_runbook'
   | 'get_runbook_execution'
   | 'propose_runbook_edit'
@@ -479,6 +524,36 @@ async function listPlugins(context: HostToolContext): Promise<ToolResult> {
   }
 }
 
+async function listModels(): Promise<ToolResult> {
+  return {
+    output: JSON.stringify({
+      source: 'static_catalog',
+      providers: getModelCatalogProviders().map((provider) => {
+        const selectableModelIds = new Set(
+          filterSelectableModelIds(
+            provider.providerKey,
+            provider.models.map((model) => model.id),
+          ),
+        )
+        return {
+          providerKey: provider.providerKey,
+          displayName: provider.displayName,
+          models: provider.models.filter((model) => selectableModelIds.has(model.id)).map((model) => ({
+          modelId: model.id,
+          displayName: model.displayName,
+          ...(model.contextWindowTokens === undefined
+            ? {}
+            : { contextWindowTokens: model.contextWindowTokens }),
+          ...(model.maxOutputTokens === undefined
+            ? {}
+            : { maxOutputTokens: model.maxOutputTokens }),
+          })),
+        }
+      }),
+    }, null, 2),
+  }
+}
+
 function applyPluginAuthValidation(
   proposal: RunbookAuthoringProposal,
   context: HostToolContext,
@@ -650,6 +725,12 @@ export const hostTools = [
     description: 'List installed plugins, their action IDs, input JSON schemas, and auth field contracts. Use the exact auth field keys returned here when constructing pluginAuth. Auth values and secrets are never returned.',
     argsSchema: listPluginsHostToolSchema,
     handler: async (context: HostToolContext) => await listPlugins(context),
+  },
+  {
+    name: 'list_models',
+    description: 'List canonical model IDs and display names available for LLM runbook actions from the static catalog. Settings may also show saved or discovered provider models; use a catalog modelId or exact display name when proposing or editing a runbook.',
+    argsSchema: listModelsHostToolSchema,
+    handler: async () => await listModels(),
   },
   {
     name: 'execute_runbook',

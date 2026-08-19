@@ -91,6 +91,18 @@ describe('AgentLlmAdapterService', () => {
     await expect(adapter.getDefaultProviderKey('unknown-model')).resolves.toBe('codex')
   })
 
+  it('routes provider-less remote catalog models to their native provider', async () => {
+    const settingsStore: AgentLlmSettingsStore = {
+      setting: {
+        findUnique: vi.fn().mockResolvedValue({ value: 'openai' }),
+      },
+    }
+    const adapter = new AgentLlmAdapterService(settingsStore)
+
+    await expect(adapter.getDefaultProviderKey('gpt-5.6-terra')).resolves.toBe('openai')
+    await expect(adapter.getDefaultProviderKey('claude-fable-5')).resolves.toBe('anthropic')
+  })
+
   it('forwards live text deltas from local CLI providers', async () => {
     const adapter = createAdapter()
 
@@ -659,6 +671,38 @@ describe('AgentLlmAdapterService', () => {
     })
   })
 
+  it('routes GPT-5.6 tool calls without effort through Responses with the catalog default', async () => {
+    const adapter = createAdapter({
+      getApiKey: () => Promise.resolve('test-key'),
+    })
+    const requests: Array<{ url: string; body: Record<string, unknown> }> = []
+    vi.stubGlobal('fetch', vi.fn().mockImplementation((url: string, init?: RequestInit) => {
+      requests.push({
+        url,
+        body: JSON.parse(String(init?.body)) as Record<string, unknown>,
+      })
+      return Promise.resolve(new Response(JSON.stringify({ output_text: 'Done' })))
+    }))
+
+    await adapter.chatWithTools({
+      messages: [{ role: 'user', content: 'Summarize this runbook result.' }],
+      tools: [{
+        name: 'execute_shell_command',
+        description: 'Execute a shell command.',
+        inputSchema: { type: 'object', properties: { command: { type: 'string' } } },
+      }],
+      signal: new AbortController().signal,
+      llm: { providerKey: 'openai', model: 'gpt-5.6-terra' },
+    })
+
+    expect(requests).toHaveLength(1)
+    expect(requests[0]?.url).toBe('https://api.openai.com/v1/responses')
+    expect(requests[0]?.body).toMatchObject({
+      reasoning: { effort: 'medium' },
+      tools: [{ type: 'function', name: 'execute_shell_command' }],
+    })
+  })
+
   it('logs effort evidence from the serialized provider request body', async () => {
     const adapter = createAdapter({
       getApiKey: () => Promise.resolve('test-key'),
@@ -919,6 +963,10 @@ describe('AgentLlmAdapterService', () => {
     }))
 
     for (const [model, effort] of [
+      ['claude-fable-5', 'high'],
+      ['claude-opus-5', 'medium'],
+      ['claude-sonnet-5', 'low'],
+      ['claude-opus-4-8', 'max'],
       ['claude-sonnet-4-6', 'low'],
       ['claude-opus-4-7', 'max'],
       ['claude-sonnet-4-6', 'xhigh'],
@@ -935,11 +983,14 @@ describe('AgentLlmAdapterService', () => {
     expect(requestBodies.map((body) => {
       const outputConfig = body.output_config as { effort: string }
       return outputConfig.effort
-    })).toEqual(['low', 'max', 'max', 'max'])
+    })).toEqual(['high', 'medium', 'low', 'max', 'low', 'max', 'max', 'max'])
     expect(requestBodies.every((body) => {
       const thinking = body.thinking as { budget_tokens?: number } | undefined
       return thinking?.budget_tokens === undefined
     })).toBe(true)
+    expect(requestBodies.every((body) =>
+      !('temperature' in body) && !('top_p' in body) && !('top_k' in body),
+    )).toBe(true)
   })
 
   it('round-trips Anthropic tool history without an empty assistant text block', async () => {

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 
 import {
   getCatalogModelIds,
+  getModelDisplayName,
   type ModelCatalogProviderKey,
 } from "../../llm/modelCatalog";
 import type {
@@ -101,7 +102,7 @@ export function useRunbookResourceData({
         options.push({
           providerKey: provider.providerKey,
           modelId: normalized,
-          label: `${provider.displayName} · ${normalized}`,
+          label: getModelDisplayName(providerKey, normalized),
         });
       });
     });

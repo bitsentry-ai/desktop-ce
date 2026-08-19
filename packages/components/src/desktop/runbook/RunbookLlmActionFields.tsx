@@ -1,5 +1,11 @@
+import { useEffect, useState } from "react";
+
 import { ChevronDown } from "../../icons";
 import { cn } from "../../lib/utils";
+import {
+  getModelDisplayName,
+  resolveCatalogModel,
+} from "../../llm/modelCatalog";
 import type { RunbookActionTypeFieldsProps } from "./RunbookActionFieldShared";
 
 type RunbookLlmActionFieldsProps = Pick<
@@ -30,6 +36,34 @@ export function RunbookLlmActionFields({
   onActionChange,
   t,
 }: RunbookLlmActionFieldsProps) {
+  const resolvedActionModel = resolveCatalogModel(action.llmModel);
+  const currentDisplayName = resolvedActionModel === undefined
+    ? action.llmModel ?? ""
+    : getModelDisplayName(resolvedActionModel.providerKey, resolvedActionModel.modelId);
+  const [modelQuery, setModelQuery] = useState(currentDisplayName);
+  const [modelError, setModelError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setModelQuery(currentDisplayName);
+    setModelError(null);
+  }, [action.id, action.llmModel, action.llmProviderKey, currentDisplayName]);
+
+  const findSelectableModel = (value: string) => {
+    const resolved = resolveCatalogModel(value);
+    const resolvedOption = resolved === undefined
+      ? undefined
+      : llmModelOptions.find(
+        (option) => option.providerKey === resolved.providerKey && option.modelId === resolved.modelId,
+      );
+    if (resolvedOption !== undefined) return resolvedOption;
+
+    const slug = value.trim().toLowerCase().replace(/\s+/g, "-");
+    return llmModelOptions.find((option) =>
+      [option.modelId, option.label]
+        .some((candidate) => candidate.trim().toLowerCase().replace(/\s+/g, "-") === slug),
+    );
+  };
+
   return (
     <div className="space-y-3">
       <div>
@@ -65,29 +99,26 @@ export function RunbookLlmActionFields({
           >
             <input
               type="text"
-              value={action.llmModel ?? ""}
+              value={modelQuery}
               onChange={(event) => {
                 const nextModel = event.target.value;
-                const matchedOption = llmModelOptions.find(
-                  (option) => option.modelId === nextModel,
-                );
-                let llmModel: string | undefined;
-                if (nextModel.length > 0) {
-                  llmModel = nextModel;
+                setModelQuery(nextModel);
+                if (nextModel.trim().length === 0) {
+                  setModelError(null);
+                  onActionChange({ ...action, llmModel: undefined, llmProviderKey: undefined });
+                } else {
+                  const matchedOption = findSelectableModel(nextModel);
+                  if (matchedOption === undefined) {
+                    setModelError("Unknown model. Choose a model from the list; the saved value must be its canonical ID.");
+                  } else {
+                    setModelError(null);
+                    onActionChange({
+                      ...action,
+                      llmModel: matchedOption.modelId,
+                      llmProviderKey: matchedOption.providerKey,
+                    });
+                  }
                 }
-
-                let llmProviderKey = action.llmProviderKey;
-                if (nextModel.length === 0) {
-                  llmProviderKey = undefined;
-                } else if (matchedOption !== undefined) {
-                  llmProviderKey = matchedOption.providerKey;
-                }
-
-                onActionChange({
-                  ...action,
-                  llmModel,
-                  llmProviderKey,
-                });
                 if (!modelDropdownOpen) {
                   onModelDropdownOpenChange(true);
                 }
@@ -159,6 +190,8 @@ export function RunbookLlmActionFields({
                           llmModel: option.modelId,
                           llmProviderKey: option.providerKey,
                         });
+                        setModelQuery(option.label);
+                        setModelError(null);
                         onModelDropdownOpenChange(false);
                       }}
                       className={cn(
@@ -183,6 +216,9 @@ export function RunbookLlmActionFields({
         <p className="mt-1.5 text-[11px] text-muted-foreground/60">
           {llmProviderHint}
         </p>
+        {modelError !== null && (
+          <p className="mt-1 text-[11px] text-destructive">{modelError}</p>
+        )}
         <p className="mt-1 text-[11px] text-muted-foreground/60">
           {t("runbooks.runbook.youCanAlsoUsePlaceholders")}{" "}
           <code>{"{{target_model}}"}</code>.

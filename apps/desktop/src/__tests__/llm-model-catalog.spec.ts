@@ -350,6 +350,28 @@ describe('local model catalog selection', () => {
     )
   })
 
+  it('keeps current native Anthropic IDs in the canonical catalog', () => {
+    const modelIds = getCatalogModelIds('anthropic')
+
+    expect(modelIds).toEqual(expect.arrayContaining([
+      'claude-opus-5',
+      'claude-sonnet-5',
+      'claude-fable-5',
+      'claude-opus-4-8',
+      'claude-haiku-4-5',
+    ]))
+    expect(modelIds).not.toContain('claude-opus-4-1')
+
+    for (const modelId of ['claude-opus-5', 'claude-sonnet-5', 'claude-fable-5', 'claude-opus-4-8']) {
+      expect(getCatalogModel('anthropic', modelId)).toMatchObject({
+        id: modelId,
+        supportsSamplingParameters: false,
+        contextWindowTokens: 1_000_000,
+        maxOutputTokens: 128_000,
+      })
+    }
+  })
+
   it('does not expose Codex models rejected for ChatGPT accounts', () => {
     const models = getCatalogModelIds('codex')
 
