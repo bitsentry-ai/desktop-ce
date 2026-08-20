@@ -151,6 +151,9 @@ export interface AgentSessionRef {
   id: string
   currentTurnId?: string
   incidentThreadId?: string
+  sourceAttachmentId?: string
+  sourceMessageId?: string
+  normalizedFindings?: unknown[]
   accessLevel?: 'auto-accept-edits' | 'full-access'
   runbookContext?: RunbookContext
   latestRunbookExecutionId?: string
@@ -704,6 +707,9 @@ function summarizeAuthoringProposal(proposal: RunbookAuthoringProposal): Record<
   return {
     status: proposal.status, approvalRequired: true, saved: false, proposalId: proposal.id, kind: proposal.kind,
     incidentThreadId: proposal.incidentThreadId,
+    sourceAttachmentId: proposal.sourceAttachmentId,
+    sourceMessageId: proposal.sourceMessageId,
+    normalizedFindings: proposal.normalizedFindings,
     targetRunbookId: proposal.kind === 'edit_existing_runbook' ? proposal.targetRunbookId : undefined,
     targetRevisionNumber: proposal.kind === 'edit_existing_runbook' ? proposal.targetRevisionNumber : undefined,
     proposedRunbook: { id: proposal.proposedRunbook.id, title: proposal.proposedRunbook.title, description: proposal.proposedRunbook.description, revisionNumber: proposal.proposedRunbook.revisionNumber, actionCount: proposal.proposedRunbook.actions.length, actions: proposal.proposedRunbook.actions.map((action) => ({ id: action.id, type: action.type, title: action.title })) },
@@ -713,7 +719,7 @@ function summarizeAuthoringProposal(proposal: RunbookAuthoringProposal): Record<
 }
 
 async function proposeRunbookEdit(context: HostToolContext, input: ProposeRunbookEditHostToolInput): Promise<ToolResult> {
-  const proposal = createRunbookEditProposal({ incidentThreadId: context.session.incidentThreadId, prompt: input.prompt, targetRunbook: await resolveAuthorableRunbookReference(context, input), operations: input.operations.map((operation) => ({ ...operation, action: operation.action as RunbookActionRecord | undefined })) as RunbookAuthoringOperation[] })
+  const proposal = createRunbookEditProposal({ incidentThreadId: context.session.incidentThreadId, prompt: input.prompt, targetRunbook: await resolveAuthorableRunbookReference(context, input), operations: input.operations.map((operation) => ({ ...operation, action: operation.action as RunbookActionRecord | undefined })) as RunbookAuthoringOperation[], sourceAttachmentId: context.session.sourceAttachmentId, sourceMessageId: context.session.sourceMessageId, normalizedFindings: context.session.normalizedFindings })
   applyPluginAuthValidation(proposal, context)
   context.session.runbookAuthoringProposals ??= []
   context.session.runbookAuthoringProposals.push(proposal)
@@ -721,7 +727,7 @@ async function proposeRunbookEdit(context: HostToolContext, input: ProposeRunboo
 }
 
 async function proposeRunbookCreate(context: HostToolContext, input: ProposeRunbookCreateHostToolInput): Promise<ToolResult> {
-  const proposal = createRunbookCreationProposal({ incidentThreadId: context.session.incidentThreadId, prompt: input.prompt, draftRunbook: { ...input.draftRunbook, actions: input.draftRunbook.actions as RunbookActionRecord[] } })
+  const proposal = createRunbookCreationProposal({ incidentThreadId: context.session.incidentThreadId, prompt: input.prompt, draftRunbook: { ...input.draftRunbook, actions: input.draftRunbook.actions as RunbookActionRecord[] }, sourceAttachmentId: context.session.sourceAttachmentId, sourceMessageId: context.session.sourceMessageId, normalizedFindings: context.session.normalizedFindings })
   applyPluginAuthValidation(proposal, context)
   context.session.runbookAuthoringProposals ??= []
   context.session.runbookAuthoringProposals.push(proposal)

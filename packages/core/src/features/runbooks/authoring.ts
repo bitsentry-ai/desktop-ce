@@ -76,6 +76,9 @@ export interface RunbookAuthoringBaseProposal {
   updatedAt: string;
   operationDiffs: RunbookAuthoringOperationDiff[];
   validation: RunbookAuthoringValidationResult;
+  sourceAttachmentId?: string;
+  sourceMessageId?: string;
+  normalizedFindings?: unknown[];
 }
 
 export interface RunbookEditAuthoringProposal
@@ -105,6 +108,9 @@ export interface CreateRunbookEditProposalInput {
   prompt: string;
   targetRunbook: RunbookRecord;
   operations: RunbookAuthoringOperation[];
+  sourceAttachmentId?: string;
+  sourceMessageId?: string;
+  normalizedFindings?: unknown[];
   now?: string;
 }
 
@@ -121,6 +127,9 @@ export interface CreateRunbookCreationProposalInput {
     createdAt?: string;
     updatedAt?: string;
   };
+  sourceAttachmentId?: string;
+  sourceMessageId?: string;
+  normalizedFindings?: unknown[];
   now?: string;
 }
 
@@ -764,6 +773,9 @@ export function createRunbookEditProposal(
     kind: "edit_existing_runbook",
     status: "pending_approval",
     incidentThreadId: input.incidentThreadId,
+    sourceAttachmentId: input.sourceAttachmentId,
+    sourceMessageId: input.sourceMessageId,
+    normalizedFindings: input.normalizedFindings,
     prompt: input.prompt,
     createdAt,
     updatedAt: createdAt,
@@ -814,6 +826,9 @@ export function createRunbookCreationProposal(
     kind: "create_new_runbook",
     status: "pending_approval",
     incidentThreadId: input.incidentThreadId,
+    sourceAttachmentId: input.sourceAttachmentId,
+    sourceMessageId: input.sourceMessageId,
+    normalizedFindings: input.normalizedFindings,
     prompt: input.prompt,
     createdAt,
     updatedAt: createdAt,
