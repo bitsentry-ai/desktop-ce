@@ -133,6 +133,10 @@ function execution(
   status: RunbookExecutionStatus,
   output: string,
   incidentThreadId: string | null = INCIDENT_ID,
+  options: {
+    structuredOutput?: Record<string, unknown>;
+    type?: "shell" | "plugin";
+  } = {},
 ): RunbookExecutionRecord {
   return {
     executionId,
@@ -146,10 +150,11 @@ function execution(
       {
         actionId: `step-${executionId}`,
         order: 1,
-        type: "shell",
+        type: options.type ?? "shell",
         title: "SSH for journalctl",
         status: stepStatusFor(status),
         output,
+        structuredOutput: options.structuredOutput,
       },
     ],
   };
@@ -412,5 +417,52 @@ describe("IncidentArtifactsRail", () => {
       expect(detailOutputText()).toContain("clicked completed execution");
     });
     expect(detailOutputText()).not.toContain("clicked failed execution");
+  });
+
+  it("renders plugin structured output in the Incident result details", async () => {
+    const pluginExecution = execution(
+      ids.successExecution,
+      "completed",
+      "Plugin completed",
+      INCIDENT_ID,
+      {
+        type: "plugin",
+        structuredOutput: {
+          decisions: [
+            {
+              finding: { cve: "CVE-2026-1000" },
+              reason: "vendor_fix_available",
+              playbookDraft: { reviewRequired: true },
+            },
+            {
+              finding: { cve: "CVE-2026-1001" },
+              reason: "no_vendor_fix",
+            },
+          ],
+        },
+      },
+    );
+
+    writeStoredArtifacts(
+      [storedResult(ids.successResult, pluginExecution)],
+      { [pluginExecution.executionId]: pluginExecution },
+    );
+
+    renderRail();
+
+    await waitFor(() => {
+      expect(detailOutputText()).toContain("Plugin completed");
+    });
+
+    const rendered = detailPane().textContent ?? "";
+    expect(rendered).toContain("structuredOutput");
+    expect(rendered).toContain("CVE-2026-1000");
+    expect(rendered).toContain("vendor_fix_available");
+    expect(rendered).toContain("reviewRequired");
+    expect(rendered).toContain("CVE-2026-1001");
+    expect(rendered).toContain("no_vendor_fix");
+    expect(rendered.indexOf("CVE-2026-1000")).toBeLessThan(
+      rendered.indexOf("CVE-2026-1001"),
+    );
   });
 });
