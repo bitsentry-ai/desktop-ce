@@ -1,4 +1,5 @@
 import type {
+  RunbookActionParameter,
   RunbookActionRecord,
   RunbookActionType,
   RunbookRecord,
@@ -156,6 +157,69 @@ export interface RunbookAuthoringDecisionResult {
 type MutableRunbook = RunbookRecord & {
   actions: RunbookActionRecord[];
 };
+
+export interface RunbookTemplateAction {
+  command?: string;
+  prompt?: string;
+  url?: string;
+  headers?: Array<{ key: string; value: string }>;
+  body?: string;
+  pluginInput?: string;
+  pluginAuth?: string;
+  query?: string;
+  parameters?: Array<Pick<RunbookActionParameter, "key">>;
+}
+
+export interface UnknownRunbookTemplatePlaceholder {
+  field: string;
+  path: Array<string | number>;
+  key: string;
+}
+
+const RUNBOOK_TEMPLATE_FIELDS = [
+  "command",
+  "prompt",
+  "url",
+  "body",
+  "pluginInput",
+  "pluginAuth",
+  "query",
+] as const;
+
+export function getUnknownRunbookTemplatePlaceholders(
+  action: RunbookTemplateAction,
+): UnknownRunbookTemplatePlaceholder[] {
+  const parameterKeys = new Set(
+    action.parameters
+      ?.map((parameter) => normalizeString(parameter.key))
+      .filter((key) => key.length > 0),
+  );
+  const unknown: UnknownRunbookTemplatePlaceholder[] = [];
+  const seen = new Set<string>();
+  const inspect = (value: string | undefined, field: string, path: Array<string | number>): void => {
+    if (value === undefined) return;
+    const pattern = /\{\{\s*([a-zA-Z0-9_.-]+)\s*\}\}/g;
+    let match: RegExpExecArray | null;
+    while ((match = pattern.exec(value)) !== null) {
+      const key = match[1]?.trim();
+      if (key === undefined || parameterKeys.has(key)) continue;
+      const identity = `${field}:${key}`;
+      if (seen.has(identity)) continue;
+      seen.add(identity);
+      unknown.push({ field, path, key });
+    }
+  };
+
+  for (const field of RUNBOOK_TEMPLATE_FIELDS) {
+    inspect(action[field], field, [field]);
+  }
+  action.headers?.forEach((header, index) => {
+    inspect(header.key, `headers[${String(index)}].key`, ["headers", index, "key"]);
+    inspect(header.value, `headers[${String(index)}].value`, ["headers", index, "value"]);
+  });
+
+  return unknown;
+}
 
 function nowIso(value?: string): string {
   if (typeof value === "string" && value.trim().length > 0) {
@@ -359,6 +423,12 @@ function validateRunbookActionIdentity(
 }
 
 function validateRunbookActionFields(action: RunbookActionRecord, errors: string[]): void {
+  for (const placeholder of getUnknownRunbookTemplatePlaceholders(action)) {
+    errors.push(
+      `Action "${action.title}" references unknown placeholder "{{${placeholder.key}}}" in ${placeholder.field}. Declare it as an action parameter.`,
+    );
+  }
+
   switch (action.type) {
     case "shell":
       validateRequiredActionField(action.command, `Shell action "${action.title}" is missing a command.`, errors);
