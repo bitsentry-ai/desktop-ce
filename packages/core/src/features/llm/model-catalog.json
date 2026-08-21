@@ -2327,52 +2327,6 @@
           ]
         },
         {
-          "id": "openrouter/openai/gpt-5.6-luna-pro",
-          "displayName": "OpenAI GPT-5.6 Luna Pro",
-          "supportsImageInput": false,
-          "supportsAudioInput": false,
-          "supportsVideoInput": false,
-          "supportsPdfInput": false,
-          "supportsThinking": false,
-          "thinkingMode": "unsupported",
-          "reasoningOptions": [],
-          "composerOptions": [
-            {
-              "id": "effort",
-              "label": "common.traitsDropdown.reasoning",
-              "type": "select",
-              "options": [
-                {
-                  "value": "none",
-                  "label": "common.traitsDropdown.reasoningNone"
-                },
-                {
-                  "value": "low",
-                  "label": "common.traitsDropdown.reasoningLow"
-                },
-                {
-                  "value": "medium",
-                  "label": "common.traitsDropdown.reasoningMedium",
-                  "isDefault": true
-                },
-                {
-                  "value": "high",
-                  "label": "common.traitsDropdown.reasoningHigh"
-                },
-                {
-                  "value": "xhigh",
-                  "label": "common.traitsDropdown.reasoningExtraHigh",
-                  "shortLabel": "common.traitsDropdown.reasoningExtraHighShort"
-                },
-                {
-                  "value": "max",
-                  "label": "common.traitsDropdown.reasoningMax"
-                }
-              ]
-            }
-          ]
-        },
-        {
           "id": "openrouter/openai/gpt-5.6-sol",
           "displayName": "OpenAI GPT-5.6 Sol",
           "supportsImageInput": false,
@@ -2419,100 +2373,8 @@
           ]
         },
         {
-          "id": "openrouter/openai/gpt-5.6-sol-pro",
-          "displayName": "OpenAI GPT-5.6 Sol Pro",
-          "supportsImageInput": false,
-          "supportsAudioInput": false,
-          "supportsVideoInput": false,
-          "supportsPdfInput": false,
-          "supportsThinking": false,
-          "thinkingMode": "unsupported",
-          "reasoningOptions": [],
-          "composerOptions": [
-            {
-              "id": "effort",
-              "label": "common.traitsDropdown.reasoning",
-              "type": "select",
-              "options": [
-                {
-                  "value": "none",
-                  "label": "common.traitsDropdown.reasoningNone"
-                },
-                {
-                  "value": "low",
-                  "label": "common.traitsDropdown.reasoningLow"
-                },
-                {
-                  "value": "medium",
-                  "label": "common.traitsDropdown.reasoningMedium",
-                  "isDefault": true
-                },
-                {
-                  "value": "high",
-                  "label": "common.traitsDropdown.reasoningHigh"
-                },
-                {
-                  "value": "xhigh",
-                  "label": "common.traitsDropdown.reasoningExtraHigh",
-                  "shortLabel": "common.traitsDropdown.reasoningExtraHighShort"
-                },
-                {
-                  "value": "max",
-                  "label": "common.traitsDropdown.reasoningMax"
-                }
-              ]
-            }
-          ]
-        },
-        {
           "id": "openrouter/openai/gpt-5.6-terra",
           "displayName": "OpenAI GPT-5.6 Terra",
-          "supportsImageInput": false,
-          "supportsAudioInput": false,
-          "supportsVideoInput": false,
-          "supportsPdfInput": false,
-          "supportsThinking": false,
-          "thinkingMode": "unsupported",
-          "reasoningOptions": [],
-          "composerOptions": [
-            {
-              "id": "effort",
-              "label": "common.traitsDropdown.reasoning",
-              "type": "select",
-              "options": [
-                {
-                  "value": "none",
-                  "label": "common.traitsDropdown.reasoningNone"
-                },
-                {
-                  "value": "low",
-                  "label": "common.traitsDropdown.reasoningLow"
-                },
-                {
-                  "value": "medium",
-                  "label": "common.traitsDropdown.reasoningMedium",
-                  "isDefault": true
-                },
-                {
-                  "value": "high",
-                  "label": "common.traitsDropdown.reasoningHigh"
-                },
-                {
-                  "value": "xhigh",
-                  "label": "common.traitsDropdown.reasoningExtraHigh",
-                  "shortLabel": "common.traitsDropdown.reasoningExtraHighShort"
-                },
-                {
-                  "value": "max",
-                  "label": "common.traitsDropdown.reasoningMax"
-                }
-              ]
-            }
-          ]
-        },
-        {
-          "id": "openrouter/openai/gpt-5.6-terra-pro",
-          "displayName": "OpenAI GPT-5.6 Terra Pro",
           "supportsImageInput": false,
           "supportsAudioInput": false,
           "supportsVideoInput": false,

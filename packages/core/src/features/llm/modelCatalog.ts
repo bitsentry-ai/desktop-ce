@@ -232,6 +232,22 @@ const HIDDEN_MODEL_IDS_BY_PROVIDER: Partial<Record<
   ModelCatalogProviderKey,
   ReadonlySet<string>
 >> = {
+  // Keep legacy IDs resolvable for saved settings, but never show them in the picker.
+  openai: new Set(
+    catalog.providers
+      .find((provider) => provider.providerKey === 'openai')
+      ?.models
+      .map((model) => model.id)
+      .filter((modelId) => !['gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna'].includes(modelId))
+      ?? [],
+  ),
+  groq: new Set(['openai/gpt-oss-120b', 'openai/gpt-oss-20b']),
+  openrouter: new Set(['openai/gpt-oss-120b', 'openai/gpt-oss-20b']),
+  opencode: new Set([
+    'openrouter/openai/gpt-5.6-sol-pro',
+    'openrouter/openai/gpt-5.6-terra-pro',
+    'openrouter/openai/gpt-5.6-luna-pro',
+  ]),
   // These IDs are rejected by Codex when authenticated with a ChatGPT account.
   // Keep the raw catalog data for migration/display compatibility, but never
   // offer them as selectable models.

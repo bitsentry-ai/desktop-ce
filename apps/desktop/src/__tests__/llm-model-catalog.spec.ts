@@ -132,6 +132,25 @@ describe('local model catalog selection', () => {
     )
   })
 
+  it('hides frozen models while keeping their catalog records resolvable', () => {
+    expect(getCatalogModelIds('openai')).toEqual([
+      'gpt-5.6-sol',
+      'gpt-5.6-terra',
+      'gpt-5.6-luna',
+    ])
+    expect(getCatalogModel('openai', 'gpt-oss-120b')).toBeDefined()
+    expect(getCatalogModelIds('groq')).not.toEqual(
+      expect.arrayContaining(['openai/gpt-oss-120b', 'openai/gpt-oss-20b']),
+    )
+    expect(getCatalogModelIds('opencode')).not.toEqual(
+      expect.arrayContaining([
+        'openrouter/openai/gpt-5.6-sol-pro',
+        'openrouter/openai/gpt-5.6-terra-pro',
+        'openrouter/openai/gpt-5.6-luna-pro',
+      ]),
+    )
+  })
+
   it('localizes every CLI effort label in the catalog and fallback descriptors', async () => {
     const labelKeys = new Set(cliProviders.flatMap(getCliEffortLabelKeys))
 
@@ -244,23 +263,11 @@ describe('local model catalog selection', () => {
           tiers: ['none', 'low', 'medium', 'high', 'xhigh', 'max'],
           default: 'medium',
         },
-        'openrouter/openai/gpt-5.6-luna-pro': {
-          tiers: ['none', 'low', 'medium', 'high', 'xhigh', 'max'],
-          default: 'medium',
-        },
         'openrouter/openai/gpt-5.6-sol': {
           tiers: ['none', 'low', 'medium', 'high', 'xhigh', 'max'],
           default: 'medium',
         },
-        'openrouter/openai/gpt-5.6-sol-pro': {
-          tiers: ['none', 'low', 'medium', 'high', 'xhigh', 'max'],
-          default: 'medium',
-        },
         'openrouter/openai/gpt-5.6-terra': {
-          tiers: ['none', 'low', 'medium', 'high', 'xhigh', 'max'],
-          default: 'medium',
-        },
-        'openrouter/openai/gpt-5.6-terra-pro': {
           tiers: ['none', 'low', 'medium', 'high', 'xhigh', 'max'],
           default: 'medium',
         },
