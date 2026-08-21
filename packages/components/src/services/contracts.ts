@@ -1300,6 +1300,11 @@ export interface LLMProviderDto {
   updatedAt: string;
 }
 
+export interface LLMProviderListResponse {
+  providers: LLMProviderDto[];
+  enabledProviderKeys: ProviderKey[];
+}
+
 export interface SaveProviderRequest {
   providerKey: ProviderKey;
   apiKey?: string;
@@ -1342,7 +1347,7 @@ export interface LLMProviderServicePort {
   /**
    * List all LLM provider configurations (global-scoped).
    */
-  listProviders(): Promise<LLMProviderDto[]>;
+  listProviders(): Promise<LLMProviderListResponse>;
 
   /**
    * Save or update a provider configuration.

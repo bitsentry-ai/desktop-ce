@@ -16,6 +16,7 @@ import {
   getModelDisplayName,
   getProviderCatalogModels,
   getModelCatalogProviders,
+  isApiProviderEnabled,
   filterSelectableModelIds,
   resolveCatalogModelRuntimeSelection,
 } from '@bitsentry-ce/components/llm/modelCatalog'
@@ -69,6 +70,21 @@ function getCliEffortLabelKeys(providerKey: (typeof cliProviders)[number]): stri
 }
 
 describe('local model catalog selection', () => {
+  it('reads the packaged API provider flag from the Vite-replaced expression', () => {
+    const previousValue = process.env.BITSENTRY_ENABLED_API_PROVIDERS
+    process.env.BITSENTRY_ENABLED_API_PROVIDERS = 'openai,anthropic'
+
+    try {
+      expect(isApiProviderEnabled('anthropic')).toBe(true)
+    } finally {
+      if (previousValue === undefined) {
+        delete process.env.BITSENTRY_ENABLED_API_PROVIDERS
+      } else {
+        process.env.BITSENTRY_ENABLED_API_PROVIDERS = previousValue
+      }
+    }
+  })
+
   it('shows OpenAI API models by default while preserving all CLI providers', () => {
     const defaultProviders = getModelCatalogProviders()
     const defaultKeys = defaultProviders.map((provider) => provider.providerKey)

@@ -23,7 +23,7 @@ const API_PROVIDER_KEYS = new Set<ModelCatalogProviderKey>([
 function getDesktopEnabledApiProvidersFlag(): string | undefined {
   return typeof process === 'undefined'
     ? undefined
-    : process.env[DESKTOP_ENABLED_API_PROVIDERS_ENV]
+    : process.env.BITSENTRY_ENABLED_API_PROVIDERS
 }
 
 export function isApiProviderEnabled(
