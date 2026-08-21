@@ -104,6 +104,7 @@ export default defineConfig({
   renderer: {
     root: resolve(__dirname, 'src/renderer'),
     define: {
+      '__BITSENTRY_ENABLED_API_PROVIDERS__': JSON.stringify(process.env.BITSENTRY_ENABLED_API_PROVIDERS ?? ''),
       'process.env.BITSENTRY_ENABLED_API_PROVIDERS': JSON.stringify(process.env.BITSENTRY_ENABLED_API_PROVIDERS ?? ''),
       'import.meta.env.VITE_POSTHOG_KEY': JSON.stringify(process.env.BITSENTRY_POSTHOG_KEY ?? ''),
       'import.meta.env.VITE_POSTHOG_HOST': JSON.stringify(

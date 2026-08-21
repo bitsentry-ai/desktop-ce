@@ -11,6 +11,8 @@ export type ProviderType = 'api' | 'cli'
 export const DESKTOP_ENABLED_API_PROVIDERS_ENV = 'BITSENTRY_ENABLED_API_PROVIDERS'
 export const DEFAULT_DESKTOP_ENABLED_API_PROVIDERS = ['openai'] as const
 
+declare const __BITSENTRY_ENABLED_API_PROVIDERS__: string | undefined
+
 const API_PROVIDER_KEYS = new Set<ModelCatalogProviderKey>([
   'groq',
   'kilocode',
@@ -21,9 +23,13 @@ const API_PROVIDER_KEYS = new Set<ModelCatalogProviderKey>([
 ])
 
 function getDesktopEnabledApiProvidersFlag(): string | undefined {
-  return typeof process === 'undefined'
-    ? undefined
-    : process.env.BITSENTRY_ENABLED_API_PROVIDERS
+  if (typeof __BITSENTRY_ENABLED_API_PROVIDERS__ !== 'undefined') {
+    return __BITSENTRY_ENABLED_API_PROVIDERS__
+  }
+  if (typeof process !== 'undefined') {
+    return process.env.BITSENTRY_ENABLED_API_PROVIDERS
+  }
+  return undefined
 }
 
 export function isApiProviderEnabled(

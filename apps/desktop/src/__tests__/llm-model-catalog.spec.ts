@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import type { SavedProviderConfig } from '@bitsentry-ce/components/chat/types'
 import enAUCommon from '../../../../packages/i18n/src/locales/en-AU/common.json'
 import enGBCommon from '../../../../packages/i18n/src/locales/en-GB/common.json'
@@ -70,12 +70,35 @@ function getCliEffortLabelKeys(providerKey: (typeof cliProviders)[number]): stri
 }
 
 describe('local model catalog selection', () => {
-  it('reads the packaged API provider flag from the Vite-replaced expression', () => {
+  it('reads the packaged API provider flag from the renderer define token', () => {
+    vi.stubGlobal('__BITSENTRY_ENABLED_API_PROVIDERS__', 'openai,anthropic')
+
+    expect(isApiProviderEnabled('anthropic')).toBe(true)
+    vi.unstubAllGlobals()
+  })
+
+  it('reads the runtime API provider flag in Node', () => {
     const previousValue = process.env.BITSENTRY_ENABLED_API_PROVIDERS
     process.env.BITSENTRY_ENABLED_API_PROVIDERS = 'openai,anthropic'
 
     try {
       expect(isApiProviderEnabled('anthropic')).toBe(true)
+    } finally {
+      if (previousValue === undefined) {
+        delete process.env.BITSENTRY_ENABLED_API_PROVIDERS
+      } else {
+        process.env.BITSENTRY_ENABLED_API_PROVIDERS = previousValue
+      }
+    }
+  })
+
+  it('defaults to OpenAI when no renderer token or runtime flag is set', () => {
+    const previousValue = process.env.BITSENTRY_ENABLED_API_PROVIDERS
+    delete process.env.BITSENTRY_ENABLED_API_PROVIDERS
+
+    try {
+      expect(isApiProviderEnabled('openai')).toBe(true)
+      expect(isApiProviderEnabled('anthropic')).toBe(false)
     } finally {
       if (previousValue === undefined) {
         delete process.env.BITSENTRY_ENABLED_API_PROVIDERS
