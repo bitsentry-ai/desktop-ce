@@ -119,9 +119,11 @@ describe("DesktopStateBootstrap", () => {
       </DesktopStateBootstrap>,
     );
     await waitFor(() => expect(screen.getByText("workspace-ready")).toBeTruthy());
-    expect(warn).toHaveBeenCalledWith(
-      "[desktop-state] Runbook change bridge is unavailable; using non-destructive mirror sync only.",
-    );
+    await waitFor(() => {
+      expect(warn).toHaveBeenCalledWith(
+        "[desktop-state] Runbook change bridge is unavailable; using non-destructive mirror sync only.",
+      );
+    });
 
     vi.useFakeTimers();
     await act(async () => {

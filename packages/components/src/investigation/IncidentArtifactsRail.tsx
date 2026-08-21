@@ -18,6 +18,7 @@ import {
 import { MarkdownContent } from "../markdown";
 import { cn } from "../lib/utils";
 import { formatJsonBlockForDisplay } from "../lib/jsonDisplay";
+import { StructuredOutputDisplay } from "../runbook/StructuredOutputDisplay";
 import type {
   RunbookActionType,
   RunbookExecutionRecord,
@@ -1241,6 +1242,10 @@ function ArtifactDetails({
             <OutputContent
               value={selectedOutput}
               emptyMessage={t("common.incidentArtifactsRail.empty.output")}
+            />
+            <StructuredOutputDisplay
+              metadata={selectedStep?.metadata}
+              structuredOutput={selectedStep?.structuredOutput}
             />
           </div>
         </div>
