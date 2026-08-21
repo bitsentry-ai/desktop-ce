@@ -8,6 +8,43 @@ export type ModelReasoningOption = 'none' | 'minimal' | 'low' | 'medium' | 'high
 /** Provider type: 'api' for cloud LLMs, 'cli' for local CLI agents */
 export type ProviderType = 'api' | 'cli'
 
+export const DESKTOP_ENABLED_API_PROVIDERS_ENV = 'BITSENTRY_ENABLED_API_PROVIDERS'
+export const DEFAULT_DESKTOP_ENABLED_API_PROVIDERS = ['openai'] as const
+
+const API_PROVIDER_KEYS = new Set<ModelCatalogProviderKey>([
+  'groq',
+  'kilocode',
+  'openai',
+  'anthropic',
+  'gemini',
+  'openrouter',
+])
+
+function getDesktopEnabledApiProvidersFlag(): string | undefined {
+  return typeof process === 'undefined'
+    ? undefined
+    : process.env[DESKTOP_ENABLED_API_PROVIDERS_ENV]
+}
+
+export function isApiProviderEnabled(
+  providerKey: ModelCatalogProviderKey,
+  rawValue: string | undefined = getDesktopEnabledApiProvidersFlag(),
+): boolean {
+  if (!API_PROVIDER_KEYS.has(providerKey)) return true
+
+  const configured = (rawValue ?? '')
+    .split(',')
+    .map((value) => value.trim().toLowerCase())
+    .filter((value): value is ModelCatalogProviderKey =>
+      API_PROVIDER_KEYS.has(value as ModelCatalogProviderKey),
+    )
+
+  const enabled: readonly ModelCatalogProviderKey[] = configured.length === 0
+    ? DEFAULT_DESKTOP_ENABLED_API_PROVIDERS
+    : [...new Set(configured)]
+  return enabled.includes(providerKey)
+}
+
 // ---------------------------------------------------------------------------
 // Composer option descriptors (per-model toolbar capability declarations)
 // ---------------------------------------------------------------------------
@@ -324,8 +361,12 @@ export function filterSelectableModelIds(
   return filtered
 }
 
-export function getModelCatalogProviders(): ProviderModelCatalogEntry[] {
-  return catalog.providers
+export function getModelCatalogProviders(
+  enabledApiProviders?: string,
+): ProviderModelCatalogEntry[] {
+  return catalog.providers.filter((provider) =>
+    isApiProviderEnabled(provider.providerKey, enabledApiProviders),
+  )
 }
 
 export function getProviderModelCatalog(

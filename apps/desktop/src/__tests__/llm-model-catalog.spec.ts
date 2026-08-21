@@ -15,6 +15,7 @@ import {
   getModelCapability,
   getModelDisplayName,
   getProviderCatalogModels,
+  getModelCatalogProviders,
   filterSelectableModelIds,
   resolveCatalogModelRuntimeSelection,
 } from '@bitsentry-ce/components/llm/modelCatalog'
@@ -68,6 +69,30 @@ function getCliEffortLabelKeys(providerKey: (typeof cliProviders)[number]): stri
 }
 
 describe('local model catalog selection', () => {
+  it('shows OpenAI API models by default while preserving all CLI providers', () => {
+    const defaultProviders = getModelCatalogProviders()
+    const defaultKeys = defaultProviders.map((provider) => provider.providerKey)
+
+    expect(defaultKeys).toContain('openai')
+    expect(defaultKeys).not.toContain('anthropic')
+    expect(defaultKeys).toEqual(expect.arrayContaining([...cliProviders]))
+
+    const restoredProviders = getModelCatalogProviders(
+      'openai,anthropic,gemini,groq,kilocode,openrouter',
+    )
+    expect(restoredProviders.map((provider) => provider.providerKey)).toEqual(
+      expect.arrayContaining([
+        'openai',
+        'anthropic',
+        'gemini',
+        'groq',
+        'kilocode',
+        'openrouter',
+        ...cliProviders,
+      ]),
+    )
+  })
+
   it('localizes every CLI effort label in the catalog and fallback descriptors', async () => {
     const labelKeys = new Set(cliProviders.flatMap(getCliEffortLabelKeys))
 
@@ -506,6 +531,7 @@ describe('local model catalog selection', () => {
     const records = await buildDesktopLocalProviderRecords({
       localAiProvider: provider,
       primaryProviderKey: 'codex',
+      normalizeModel: (_providerKey, model) => model,
       readModelSetting: async () => 'gpt-5.6-terra',
       readAvailableModels: async () => availableModels,
       resolveAvailableModels: async () => [],
@@ -527,6 +553,7 @@ describe('local model catalog selection', () => {
         listModels: async () => [],
       },
       primaryProviderKey: 'codex',
+      normalizeModel: (_providerKey, model) => model,
       readModelSetting: async () => 'gpt-5.6-terra',
       readAvailableModels: async () => ['gpt-5.6-sol', 'gpt-5.6-terra'],
       resolveAvailableModels: async (providerKey) => {
