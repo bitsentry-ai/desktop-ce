@@ -14,6 +14,7 @@ import type {
   GlobalVariableInput,
   GlobalVariablePatch,
   LLMProviderDto,
+  LLMProviderListResponse,
   LogLevelThreshold,
   RunbookActionRecord,
   RunbookExportArtifactV1,
@@ -409,7 +410,7 @@ export function createDesktopLocalBitsentryServices({
     plugins: pluginsService,
 
     llmProviders: {
-      async listProviders(): Promise<LLMProviderDto[]> {
+      async listProviders(): Promise<LLMProviderListResponse> {
         const providers = await getDesktopBridge().llm.getProviders()
         const displayNames: Record<string, string> = {
           groq: 'Groq',
@@ -465,7 +466,10 @@ export function createDesktopLocalBitsentryServices({
 
         // CLI providers (Claude Code, Codex) are only available in the runbook editor
         // via the IPC getProviders handler, not in shared surfaces like incident chat.
-        return apiProviders
+        return {
+          providers: apiProviders,
+          enabledProviderKeys: apiProviders.map((provider) => provider.providerKey),
+        }
       },
       saveProvider() {
         return Promise.reject(new Error('LLM provider updates are handled in desktop settings.'))

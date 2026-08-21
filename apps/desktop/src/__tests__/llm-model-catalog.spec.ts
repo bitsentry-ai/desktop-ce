@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import type { SavedProviderConfig } from '@bitsentry-ce/components/chat/types'
 import enAUCommon from '../../../../packages/i18n/src/locales/en-AU/common.json'
 import enGBCommon from '../../../../packages/i18n/src/locales/en-GB/common.json'
@@ -15,6 +15,8 @@ import {
   getModelCapability,
   getModelDisplayName,
   getProviderCatalogModels,
+  getModelCatalogProviders,
+  isApiProviderEnabled,
   filterSelectableModelIds,
   resolveCatalogModelRuntimeSelection,
 } from '@bitsentry-ce/components/llm/modelCatalog'
@@ -68,6 +70,87 @@ function getCliEffortLabelKeys(providerKey: (typeof cliProviders)[number]): stri
 }
 
 describe('local model catalog selection', () => {
+  it('reads the packaged API provider flag from the renderer define token', () => {
+    vi.stubGlobal('__BITSENTRY_ENABLED_API_PROVIDERS__', 'openai,anthropic')
+
+    expect(isApiProviderEnabled('anthropic')).toBe(true)
+    vi.unstubAllGlobals()
+  })
+
+  it('reads the runtime API provider flag in Node', () => {
+    const previousValue = process.env.BITSENTRY_ENABLED_API_PROVIDERS
+    process.env.BITSENTRY_ENABLED_API_PROVIDERS = 'openai,anthropic'
+
+    try {
+      expect(isApiProviderEnabled('anthropic')).toBe(true)
+    } finally {
+      if (previousValue === undefined) {
+        delete process.env.BITSENTRY_ENABLED_API_PROVIDERS
+      } else {
+        process.env.BITSENTRY_ENABLED_API_PROVIDERS = previousValue
+      }
+    }
+  })
+
+  it('defaults to OpenAI when no renderer token or runtime flag is set', () => {
+    const previousValue = process.env.BITSENTRY_ENABLED_API_PROVIDERS
+    delete process.env.BITSENTRY_ENABLED_API_PROVIDERS
+
+    try {
+      expect(isApiProviderEnabled('openai')).toBe(true)
+      expect(isApiProviderEnabled('anthropic')).toBe(false)
+    } finally {
+      if (previousValue === undefined) {
+        delete process.env.BITSENTRY_ENABLED_API_PROVIDERS
+      } else {
+        process.env.BITSENTRY_ENABLED_API_PROVIDERS = previousValue
+      }
+    }
+  })
+
+  it('shows OpenAI API models by default while preserving all CLI providers', () => {
+    const defaultProviders = getModelCatalogProviders()
+    const defaultKeys = defaultProviders.map((provider) => provider.providerKey)
+
+    expect(defaultKeys).toContain('openai')
+    expect(defaultKeys).not.toContain('anthropic')
+    expect(defaultKeys).toEqual(expect.arrayContaining([...cliProviders]))
+
+    const restoredProviders = getModelCatalogProviders(
+      'openai,anthropic,gemini,groq,kilocode,openrouter',
+    )
+    expect(restoredProviders.map((provider) => provider.providerKey)).toEqual(
+      expect.arrayContaining([
+        'openai',
+        'anthropic',
+        'gemini',
+        'groq',
+        'kilocode',
+        'openrouter',
+        ...cliProviders,
+      ]),
+    )
+  })
+
+  it('hides frozen models while keeping their catalog records resolvable', () => {
+    expect(getCatalogModelIds('openai')).toEqual([
+      'gpt-5.6-sol',
+      'gpt-5.6-terra',
+      'gpt-5.6-luna',
+    ])
+    expect(getCatalogModel('openai', 'gpt-oss-120b')).toBeDefined()
+    expect(getCatalogModelIds('groq')).not.toEqual(
+      expect.arrayContaining(['openai/gpt-oss-120b', 'openai/gpt-oss-20b']),
+    )
+    expect(getCatalogModelIds('opencode')).not.toEqual(
+      expect.arrayContaining([
+        'openrouter/openai/gpt-5.6-sol-pro',
+        'openrouter/openai/gpt-5.6-terra-pro',
+        'openrouter/openai/gpt-5.6-luna-pro',
+      ]),
+    )
+  })
+
   it('localizes every CLI effort label in the catalog and fallback descriptors', async () => {
     const labelKeys = new Set(cliProviders.flatMap(getCliEffortLabelKeys))
 
@@ -180,23 +263,11 @@ describe('local model catalog selection', () => {
           tiers: ['none', 'low', 'medium', 'high', 'xhigh', 'max'],
           default: 'medium',
         },
-        'openrouter/openai/gpt-5.6-luna-pro': {
-          tiers: ['none', 'low', 'medium', 'high', 'xhigh', 'max'],
-          default: 'medium',
-        },
         'openrouter/openai/gpt-5.6-sol': {
           tiers: ['none', 'low', 'medium', 'high', 'xhigh', 'max'],
           default: 'medium',
         },
-        'openrouter/openai/gpt-5.6-sol-pro': {
-          tiers: ['none', 'low', 'medium', 'high', 'xhigh', 'max'],
-          default: 'medium',
-        },
         'openrouter/openai/gpt-5.6-terra': {
-          tiers: ['none', 'low', 'medium', 'high', 'xhigh', 'max'],
-          default: 'medium',
-        },
-        'openrouter/openai/gpt-5.6-terra-pro': {
           tiers: ['none', 'low', 'medium', 'high', 'xhigh', 'max'],
           default: 'medium',
         },
@@ -506,6 +577,7 @@ describe('local model catalog selection', () => {
     const records = await buildDesktopLocalProviderRecords({
       localAiProvider: provider,
       primaryProviderKey: 'codex',
+      normalizeModel: (_providerKey, model) => model,
       readModelSetting: async () => 'gpt-5.6-terra',
       readAvailableModels: async () => availableModels,
       resolveAvailableModels: async () => [],
@@ -527,6 +599,7 @@ describe('local model catalog selection', () => {
         listModels: async () => [],
       },
       primaryProviderKey: 'codex',
+      normalizeModel: (_providerKey, model) => model,
       readModelSetting: async () => 'gpt-5.6-terra',
       readAvailableModels: async () => ['gpt-5.6-sol', 'gpt-5.6-terra'],
       resolveAvailableModels: async (providerKey) => {

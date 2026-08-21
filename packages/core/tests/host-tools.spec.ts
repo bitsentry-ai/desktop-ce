@@ -36,7 +36,7 @@ function makeExecution(overrides: Partial<RunbookExecutionRecord> = {}): Runbook
   }
 }
 
-function createContext(): HostToolContext {
+function createContext(enabledApiProviders?: string): HostToolContext {
   return {
     gateway: {
       listExecutable: vi.fn(),
@@ -49,12 +49,17 @@ function createContext(): HostToolContext {
       cancel: vi.fn(),
     },
     session: { id: 'session-1' },
+    enabledApiProviders,
   }
 }
 
 describe('host tools', () => {
   it('lists canonical model IDs and display names for runbook authoring', async () => {
-    const result = await executeHostTool(createContext(), 'list_models', {})
+    const result = await executeHostTool(
+      createContext('openai,anthropic,gemini,groq,kilocode,openrouter'),
+      'list_models',
+      {},
+    )
     const catalog = JSON.parse(result?.output ?? '') as {
       source: string
       providers: Array<{ providerKey: string; models: Array<{

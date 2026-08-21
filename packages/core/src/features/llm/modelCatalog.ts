@@ -8,6 +8,49 @@ export type ModelReasoningOption = 'none' | 'minimal' | 'low' | 'medium' | 'high
 /** Provider type: 'api' for cloud LLMs, 'cli' for local CLI agents */
 export type ProviderType = 'api' | 'cli'
 
+export const DESKTOP_ENABLED_API_PROVIDERS_ENV = 'BITSENTRY_ENABLED_API_PROVIDERS'
+export const DEFAULT_DESKTOP_ENABLED_API_PROVIDERS = ['openai'] as const
+
+declare const __BITSENTRY_ENABLED_API_PROVIDERS__: string | undefined
+
+const API_PROVIDER_KEYS = new Set<ModelCatalogProviderKey>([
+  'groq',
+  'kilocode',
+  'openai',
+  'anthropic',
+  'gemini',
+  'openrouter',
+])
+
+function getDesktopEnabledApiProvidersFlag(): string | undefined {
+  if (typeof __BITSENTRY_ENABLED_API_PROVIDERS__ !== 'undefined') {
+    return __BITSENTRY_ENABLED_API_PROVIDERS__
+  }
+  if (typeof process !== 'undefined') {
+    return process.env.BITSENTRY_ENABLED_API_PROVIDERS
+  }
+  return undefined
+}
+
+export function isApiProviderEnabled(
+  providerKey: ModelCatalogProviderKey,
+  rawValue: string | undefined = getDesktopEnabledApiProvidersFlag(),
+): boolean {
+  if (!API_PROVIDER_KEYS.has(providerKey)) return true
+
+  const configured = (rawValue ?? '')
+    .split(',')
+    .map((value) => value.trim().toLowerCase())
+    .filter((value): value is ModelCatalogProviderKey =>
+      API_PROVIDER_KEYS.has(value as ModelCatalogProviderKey),
+    )
+
+  const enabled: readonly ModelCatalogProviderKey[] = configured.length === 0
+    ? DEFAULT_DESKTOP_ENABLED_API_PROVIDERS
+    : [...new Set(configured)]
+  return enabled.includes(providerKey)
+}
+
 // ---------------------------------------------------------------------------
 // Composer option descriptors (per-model toolbar capability declarations)
 // ---------------------------------------------------------------------------
@@ -189,6 +232,26 @@ const HIDDEN_MODEL_IDS_BY_PROVIDER: Partial<Record<
   ModelCatalogProviderKey,
   ReadonlySet<string>
 >> = {
+  // Keep legacy IDs resolvable for saved settings, but never show them in the picker.
+  openai: new Set(
+    catalog.providers
+      .find((provider) => provider.providerKey === 'openai')
+      ?.models
+      .map((model) => model.id)
+      .filter((modelId) => ![
+        'gpt-5.6-sol',
+        'gpt-5.6-terra',
+        'gpt-5.6-luna',
+      ].includes(modelId))
+      ?? [],
+  ),
+  groq: new Set(['openai/gpt-oss-120b', 'openai/gpt-oss-20b']),
+  openrouter: new Set(['openai/gpt-oss-120b', 'openai/gpt-oss-20b']),
+  opencode: new Set([
+    'openrouter/openai/gpt-5.6-sol-pro',
+    'openrouter/openai/gpt-5.6-terra-pro',
+    'openrouter/openai/gpt-5.6-luna-pro',
+  ]),
   // These IDs are rejected by Codex when authenticated with a ChatGPT account.
   // Keep the raw catalog data for migration/display compatibility, but never
   // offer them as selectable models.
@@ -324,8 +387,12 @@ export function filterSelectableModelIds(
   return filtered
 }
 
-export function getModelCatalogProviders(): ProviderModelCatalogEntry[] {
-  return catalog.providers
+export function getModelCatalogProviders(
+  enabledApiProviders?: string,
+): ProviderModelCatalogEntry[] {
+  return catalog.providers.filter((provider) =>
+    isApiProviderEnabled(provider.providerKey, enabledApiProviders),
+  )
 }
 
 export function getProviderModelCatalog(

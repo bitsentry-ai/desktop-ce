@@ -195,6 +195,7 @@ export interface HostToolContext {
   rememberExecution?: (session: AgentSessionRef, execution: RunbookExecutionRecord) => void
   listAuthorableRunbooks?: () => Promise<RunbookRecord[]>
   pluginRuntime?: Pick<DesktopPluginRuntimeService, 'listPlugins'>
+  enabledApiProviders?: string
   onToolEvent?: (event: HostToolEvent) => void
 }
 
@@ -542,11 +543,11 @@ async function listPlugins(context: HostToolContext): Promise<ToolResult> {
   }
 }
 
-async function listModels(): Promise<ToolResult> {
+async function listModels(context: HostToolContext): Promise<ToolResult> {
   return {
     output: JSON.stringify({
       source: 'static_catalog',
-      providers: getModelCatalogProviders().map((provider) => {
+      providers: getModelCatalogProviders(context.enabledApiProviders).map((provider) => {
         const selectableModelIds = new Set(
           filterSelectableModelIds(
             provider.providerKey,
@@ -751,7 +752,7 @@ export const hostTools = [
     name: 'list_models',
     description: 'List canonical model IDs and display names available for LLM runbook actions from the static catalog. Settings may also show saved or discovered provider models; use a catalog modelId or exact display name when proposing or editing a runbook.',
     argsSchema: listModelsHostToolSchema,
-    handler: async () => await listModels(),
+    handler: async (context: HostToolContext) => await listModels(context),
   },
   {
     name: 'execute_runbook',

@@ -25,6 +25,7 @@ export default defineConfig({
     define: {
       'process.env.BITSENTRY_SENTRY_DSN': JSON.stringify(process.env.BITSENTRY_SENTRY_DSN ?? ''),
       'process.env.BITSENTRY_RELEASE_CHANNEL': JSON.stringify(process.env.BITSENTRY_RELEASE_CHANNEL ?? 'stable'),
+      'process.env.BITSENTRY_ENABLED_API_PROVIDERS': JSON.stringify(process.env.BITSENTRY_ENABLED_API_PROVIDERS ?? ''),
       'process.env.BITSENTRY_BUILD_GIT_SHA': JSON.stringify(buildGitSha),
     },
     build: {
@@ -103,6 +104,8 @@ export default defineConfig({
   renderer: {
     root: resolve(__dirname, 'src/renderer'),
     define: {
+      '__BITSENTRY_ENABLED_API_PROVIDERS__': JSON.stringify(process.env.BITSENTRY_ENABLED_API_PROVIDERS ?? ''),
+      'process.env.BITSENTRY_ENABLED_API_PROVIDERS': JSON.stringify(process.env.BITSENTRY_ENABLED_API_PROVIDERS ?? ''),
       'import.meta.env.VITE_POSTHOG_KEY': JSON.stringify(process.env.BITSENTRY_POSTHOG_KEY ?? ''),
       'import.meta.env.VITE_POSTHOG_HOST': JSON.stringify(
         process.env.BITSENTRY_POSTHOG_HOST ?? 'https://us.i.posthog.com',
