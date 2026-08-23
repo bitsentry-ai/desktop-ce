@@ -5,6 +5,7 @@ import {
   createRunbookEditProposal,
   rejectRunbookAuthoringProposal,
   requestRunbookAuthoringRevision,
+  RunbookProposalValidationError,
 } from "../src/features/runbooks";
 import { validateRunbook } from "../src/features/runbooks/authoring";
 import type { RunbookRecord } from "../src/features/runbooks/desktop-runbook.types";
@@ -62,6 +63,91 @@ function makeEditProposal() {
 }
 
 describe("runbook authoring", () => {
+  const findings = [{ "vulnerability.id": "CVE-2024-0727" }];
+
+  function findingsSummaryAction() {
+    return {
+      id: "action-summary",
+      type: "llm" as const,
+      title: "Summarize findings",
+      prompt: "Summarize {{findings}}.",
+      llmModel: "gpt-5.6-terra",
+      parameters: [{ id: "findings", key: "findings", required: true }],
+    };
+  }
+
+  it("rejects a create proposal that sends findings only to an LLM", () => {
+    expect(() => createRunbookCreationProposal({
+      prompt: "Create a CVE summary runbook.",
+      normalizedFindings: findings,
+      draftRunbook: {
+        title: "CVE summary",
+        description: "Summarize attached CVE findings.",
+        actions: [findingsSummaryAction()],
+      },
+    })).toThrowError(new RunbookProposalValidationError(
+      "CVE findings require the linux-cve-status/evaluate_remediation plugin before an LLM summary. Revise the runbook to add the plugin and then summarize its output.",
+    ));
+  });
+
+  it("rejects an edit proposal that sends findings only to an LLM", () => {
+    expect(() => createRunbookEditProposal({
+      prompt: "Add a CVE summary step.",
+      normalizedFindings: findings,
+      targetRunbook: makeBaseRunbook(),
+      operations: [{
+        id: "op-summary",
+        type: "add_action",
+        rationale: "Summarize the attached findings.",
+        action: findingsSummaryAction(),
+      }],
+    })).toThrowError(RunbookProposalValidationError);
+  });
+
+  it("accepts a plugin evaluation followed by an LLM summary", () => {
+    const proposal = createRunbookCreationProposal({
+      prompt: "Create a CVE analysis runbook.",
+      normalizedFindings: findings,
+      draftRunbook: {
+        title: "CVE analysis",
+        description: "Evaluate findings and summarize the result.",
+        actions: [
+          {
+            id: "action-plugin",
+            type: "plugin",
+            title: "Evaluate CVE remediation",
+            pluginId: "linux-cve-status",
+            pluginActionId: "evaluate_remediation",
+            pluginInput: "{{findings}}",
+            parameters: [{ id: "findings", key: "findings", required: true }],
+          },
+          findingsSummaryAction(),
+        ],
+      },
+    });
+
+    expect(proposal.status).toBe("pending_approval");
+  });
+
+  it("allows an LLM-only runbook without findings", () => {
+    const proposal = createRunbookCreationProposal({
+      prompt: "Create a text summary runbook.",
+      draftRunbook: {
+        title: "Text summary",
+        description: "Summarize supplied text.",
+        actions: [{
+          id: "action-summary",
+          type: "llm",
+          title: "Summarize text",
+          prompt: "Summarize the supplied text.",
+          llmModel: "gpt-5.6-terra",
+        }],
+      },
+    });
+
+    expect(proposal.status).toBe("pending_approval");
+  });
+
   it("creates a valid, non-mutating edit proposal with shell risks", () => {
     const { baseRunbook, proposal } = makeEditProposal();
 

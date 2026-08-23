@@ -102,6 +102,19 @@ export type RunbookAuthoringProposal =
   | RunbookEditAuthoringProposal
   | RunbookCreateAuthoringProposal;
 
+export const CVE_FINDINGS_PLUGIN_ID = "linux-cve-status";
+export const CVE_FINDINGS_PLUGIN_ACTION_ID = "evaluate_remediation";
+export const CVE_FINDINGS_PARAMETER_KEY = "findings";
+
+export class RunbookProposalValidationError extends Error {
+  readonly code = "RUNBOOK_PROPOSAL_VALIDATION" as const;
+
+  constructor(message: string) {
+    super(message);
+    this.name = "RunbookProposalValidationError";
+  }
+}
+
 export interface CreateRunbookEditProposalInput {
   id?: string;
   incidentThreadId?: string;
@@ -194,6 +207,54 @@ const RUNBOOK_TEMPLATE_FIELDS = [
   "pluginAuth",
   "query",
 ] as const;
+
+function actionUsesFindings(action: RunbookActionRecord): boolean {
+  if (
+    action.parameters?.some(
+      (parameter) =>
+        normalizeString(parameter.key) === CVE_FINDINGS_PARAMETER_KEY,
+    ) === true
+  ) {
+    return true;
+  }
+
+  const values = RUNBOOK_TEMPLATE_FIELDS.map((field) => action[field]);
+  values.push(
+    ...(action.headers?.flatMap((header) => [header.key, header.value]) ?? []),
+  );
+  return values.some(
+    (value) =>
+      typeof value === "string" &&
+      /\{\{\s*findings\s*\}\}/.test(value),
+  );
+}
+
+function hasCveFindingsPlugin(actions: RunbookActionRecord[]): boolean {
+  return actions.some(
+    (action) =>
+      action.type === "plugin" &&
+      normalizeString(action.pluginId) === CVE_FINDINGS_PLUGIN_ID &&
+      normalizeString(action.pluginActionId) === CVE_FINDINGS_PLUGIN_ACTION_ID,
+  );
+}
+
+function assertCveFindingsPluginRequirement(
+  actions: RunbookActionRecord[],
+  normalizedFindings: unknown[] | undefined,
+): void {
+  if (
+    normalizedFindings === undefined ||
+    normalizedFindings.length === 0 ||
+    !actions.some(actionUsesFindings) ||
+    hasCveFindingsPlugin(actions)
+  ) {
+    return;
+  }
+
+  throw new RunbookProposalValidationError(
+    "CVE findings require the linux-cve-status/evaluate_remediation plugin before an LLM summary. Revise the runbook to add the plugin and then summarize its output.",
+  );
+}
 
 export function getUnknownRunbookTemplatePlaceholders(
   action: RunbookTemplateAction,
@@ -767,6 +828,10 @@ export function createRunbookEditProposal(
   const proposedRunbook = applyOperations(input.targetRunbook, input.operations);
   proposedRunbook.revisionNumber = input.targetRunbook.revisionNumber + 1;
   proposedRunbook.updatedAt = createdAt;
+  assertCveFindingsPluginRequirement(
+    proposedRunbook.actions,
+    input.normalizedFindings,
+  );
 
   return {
     id: input.id ?? createAuthoringId(),
@@ -807,6 +872,10 @@ export function createRunbookCreationProposal(
     createdAt: input.draftRunbook.createdAt ?? createdAt,
     updatedAt: input.draftRunbook.updatedAt ?? createdAt,
   };
+  assertCveFindingsPluginRequirement(
+    proposedRunbook.actions,
+    input.normalizedFindings,
+  );
 
   const creationOperation: RunbookAuthoringOperationDiff = {
     operationId: "create-runbook",
