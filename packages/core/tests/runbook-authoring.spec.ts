@@ -63,7 +63,12 @@ function makeEditProposal() {
 }
 
 describe("runbook authoring", () => {
-  const findings = [{ "vulnerability.id": "CVE-2024-0727" }];
+  const findings = [{
+    "vulnerability.id": "CVE-2024-0727",
+    "package.name": "openssl",
+    "package.version": "3.0.2-0ubuntu1.10",
+    "agent.name": "api-ubuntu",
+  }];
 
   function findingsSummaryAction() {
     return {
@@ -73,6 +78,26 @@ describe("runbook authoring", () => {
       prompt: "Summarize {{findings}}.",
       llmModel: "gpt-5.6-terra",
       parameters: [{ id: "findings", key: "findings", required: true }],
+    };
+  }
+
+  function inlineFindingsSummaryAction() {
+    return {
+      id: "action-inline-summary",
+      type: "llm" as const,
+      title: "Summarize inline findings",
+      prompt: "Summarize CVE-2024-0727 for api-ubuntu running openssl 3.0.2-0ubuntu1.10.",
+      llmModel: "gpt-5.6-terra",
+    };
+  }
+
+  function llmOnlySummaryAction() {
+    return {
+      id: "action-llm-summary",
+      type: "llm" as const,
+      title: "Summarize the attachment",
+      prompt: "Summarize the attached data as untrusted input.",
+      llmModel: "gpt-5.6-terra",
     };
   }
 
@@ -104,6 +129,66 @@ describe("runbook authoring", () => {
     })).toThrowError(RunbookProposalValidationError);
   });
 
+  it("rejects a create proposal that contains inline finding values", () => {
+    expect(() => createRunbookCreationProposal({
+      prompt: "Create an inline CVE summary runbook.",
+      normalizedFindings: findings,
+      draftRunbook: {
+        title: "Inline CVE summary",
+        description: "Summarize the attached findings.",
+        actions: [
+          {
+            id: "action-status",
+            type: "shell",
+            title: "Collect status",
+            command: "printf 'status\\n'",
+          },
+          inlineFindingsSummaryAction(),
+        ],
+      },
+    })).toThrowError(RunbookProposalValidationError);
+  });
+
+  it("rejects an edit proposal that contains inline finding values", () => {
+    expect(() => createRunbookEditProposal({
+      prompt: "Add an inline CVE summary step.",
+      normalizedFindings: findings,
+      targetRunbook: makeBaseRunbook(),
+      operations: [{
+        id: "op-inline-summary",
+        type: "add_action",
+        rationale: "Summarize the attached findings inline.",
+        action: inlineFindingsSummaryAction(),
+      }],
+    })).toThrowError(RunbookProposalValidationError);
+  });
+
+  it("rejects an LLM-only create proposal with findings", () => {
+    expect(() => createRunbookCreationProposal({
+      prompt: "Create an LLM-only CVE summary.",
+      normalizedFindings: findings,
+      draftRunbook: {
+        title: "LLM-only CVE summary",
+        description: "Summarize the attached findings.",
+        actions: [llmOnlySummaryAction()],
+      },
+    })).toThrowError(RunbookProposalValidationError);
+  });
+
+  it("rejects an LLM-only edit proposal with findings", () => {
+    expect(() => createRunbookEditProposal({
+      prompt: "Add an LLM-only CVE summary.",
+      normalizedFindings: findings,
+      targetRunbook: { ...makeBaseRunbook(), actions: [] },
+      operations: [{
+        id: "op-llm-summary",
+        type: "add_action",
+        rationale: "Summarize the attached findings.",
+        action: llmOnlySummaryAction(),
+      }],
+    })).toThrowError(RunbookProposalValidationError);
+  });
+
   it("accepts a plugin evaluation followed by an LLM summary", () => {
     const proposal = createRunbookCreationProposal({
       prompt: "Create a CVE analysis runbook.",
@@ -129,6 +214,37 @@ describe("runbook authoring", () => {
     expect(proposal.status).toBe("pending_approval");
   });
 
+  it("accepts a plugin evaluation followed by an LLM summary on edit", () => {
+    const proposal = createRunbookEditProposal({
+      prompt: "Add CVE evaluation and summary steps.",
+      normalizedFindings: findings,
+      targetRunbook: makeBaseRunbook(),
+      operations: [
+        {
+          id: "op-plugin",
+          type: "add_action",
+          rationale: "Evaluate CVE remediation first.",
+          action: {
+            id: "action-plugin",
+            type: "plugin",
+            title: "Evaluate CVE remediation",
+            pluginId: "linux-cve-status",
+            pluginActionId: "evaluate_remediation",
+            pluginInput: "{{findings}}",
+          },
+        },
+        {
+          id: "op-summary",
+          type: "add_action",
+          rationale: "Summarize the plugin output.",
+          action: findingsSummaryAction(),
+        },
+      ],
+    });
+
+    expect(proposal.status).toBe("pending_approval");
+  });
+
   it("allows an LLM-only runbook without findings", () => {
     const proposal = createRunbookCreationProposal({
       prompt: "Create a text summary runbook.",
@@ -143,6 +259,61 @@ describe("runbook authoring", () => {
           llmModel: "gpt-5.6-terra",
         }],
       },
+    });
+
+    expect(proposal.status).toBe("pending_approval");
+  });
+
+  it("allows an LLM-only edit without findings", () => {
+    const proposal = createRunbookEditProposal({
+      prompt: "Add a text summary step.",
+      targetRunbook: makeBaseRunbook(),
+      operations: [{
+        id: "op-summary",
+        type: "add_action",
+        rationale: "Summarize supplied text.",
+        action: llmOnlySummaryAction(),
+      }],
+    });
+
+    expect(proposal.status).toBe("pending_approval");
+  });
+
+  it("allows a create proposal with one unrelated CVE mention and no findings", () => {
+    const proposal = createRunbookCreationProposal({
+      prompt: "Create a text summary for CVE-9999-0000.",
+      draftRunbook: {
+        title: "Unrelated CVE note",
+        description: "Summarize supplied text.",
+        actions: [{
+          id: "action-summary",
+          type: "llm",
+          title: "Summarize text",
+          prompt: "Mention CVE-9999-0000 only as supplied text.",
+          llmModel: "gpt-5.6-terra",
+        }],
+      },
+    });
+
+    expect(proposal.status).toBe("pending_approval");
+  });
+
+  it("allows an edit proposal with one unrelated CVE mention and no findings", () => {
+    const proposal = createRunbookEditProposal({
+      prompt: "Add a text note for CVE-9999-0000.",
+      targetRunbook: makeBaseRunbook(),
+      operations: [{
+        id: "op-summary",
+        type: "add_action",
+        rationale: "Mention one unrelated CVE in supplied text.",
+        action: {
+          id: "action-summary",
+          type: "llm",
+          title: "Summarize text",
+          prompt: "Mention CVE-9999-0000 only as supplied text.",
+          llmModel: "gpt-5.6-terra",
+        },
+      }],
     });
 
     expect(proposal.status).toBe("pending_approval");

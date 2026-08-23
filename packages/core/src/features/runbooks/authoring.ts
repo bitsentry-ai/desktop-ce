@@ -208,6 +208,19 @@ const RUNBOOK_TEMPLATE_FIELDS = [
   "query",
 ] as const;
 
+const DATA_FETCHING_ACTION_TYPES = new Set<RunbookActionType>([
+  "shell",
+  "http",
+  "plugin",
+  "external_source",
+  "data_source_query",
+  "telemetry_existing_entry",
+  "telemetry_ingest",
+  "diagnosis_diagnose",
+  "diagnosis_verify",
+  "diagnosis_recommend",
+]);
+
 function actionUsesFindings(action: RunbookActionRecord): boolean {
   if (
     action.parameters?.some(
@@ -229,6 +242,78 @@ function actionUsesFindings(action: RunbookActionRecord): boolean {
   );
 }
 
+function collectFindingValues(
+  value: unknown,
+  values = new Set<string>(),
+): Set<string> {
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase();
+    if (normalized.length >= 4) {
+      values.add(normalized);
+    }
+    return values;
+  }
+
+  if (Array.isArray(value)) {
+    value.forEach((item) => collectFindingValues(item, values));
+    return values;
+  }
+
+  if (value !== null && typeof value === "object") {
+    Object.values(value).forEach((item) => collectFindingValues(item, values));
+  }
+
+  return values;
+}
+
+function actionTextContainsFindingValues(
+  action: RunbookActionRecord,
+  findingValues: Set<string>,
+): boolean {
+  const actionText = [
+    action.prompt,
+    action.command,
+    action.body,
+    action.pluginInput,
+  ]
+    .filter((value): value is string => typeof value === "string")
+    .join("\n")
+    .toLowerCase();
+
+  let matchedValues = 0;
+  for (const findingValue of findingValues) {
+    if (actionText.includes(findingValue)) {
+      matchedValues += 1;
+      if (matchedValues >= 2) {
+        return true;
+      }
+    }
+  }
+
+  return false;
+}
+
+function consumesFindings(
+  actions: RunbookActionRecord[],
+  normalizedFindings: unknown[],
+): boolean {
+  if (actions.some(actionUsesFindings)) {
+    return true;
+  }
+
+  if (
+    actions.length > 0 &&
+    !actions.some((action) => DATA_FETCHING_ACTION_TYPES.has(action.type))
+  ) {
+    return true;
+  }
+
+  const findingValues = collectFindingValues(normalizedFindings);
+  return actions.some((action) =>
+    actionTextContainsFindingValues(action, findingValues),
+  );
+}
+
 function hasCveFindingsPlugin(actions: RunbookActionRecord[]): boolean {
   return actions.some(
     (action) =>
@@ -245,7 +330,7 @@ function assertCveFindingsPluginRequirement(
   if (
     normalizedFindings === undefined ||
     normalizedFindings.length === 0 ||
-    !actions.some(actionUsesFindings) ||
+    !consumesFindings(actions, normalizedFindings) ||
     hasCveFindingsPlugin(actions)
   ) {
     return;
