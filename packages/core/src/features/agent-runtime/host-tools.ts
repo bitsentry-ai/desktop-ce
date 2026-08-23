@@ -15,6 +15,7 @@ import {
   createRunbookEditProposal,
   getUnknownRunbookTemplatePlaceholders,
   validatePluginAuthContracts,
+  RunbookProposalValidationError,
   type RunbookAuthoringOperation,
   type RunbookAuthoringProposal,
 } from '../runbooks/authoring'
@@ -854,7 +855,9 @@ export async function executeHostTool(
     return result
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
-    const result = structuredToolError('HOST_TOOL_EXECUTION_FAILED', message, { toolName: tool.name })
+    const result = error instanceof RunbookProposalValidationError
+      ? structuredToolError(error.code, message, { toolName: tool.name })
+      : structuredToolError('HOST_TOOL_EXECUTION_FAILED', message, { toolName: tool.name })
     emitHostToolEvent(context, {
       type: 'failed',
       toolCallId,

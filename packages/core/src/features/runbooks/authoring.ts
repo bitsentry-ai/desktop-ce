@@ -102,6 +102,19 @@ export type RunbookAuthoringProposal =
   | RunbookEditAuthoringProposal
   | RunbookCreateAuthoringProposal;
 
+export const CVE_FINDINGS_PLUGIN_ID = "linux-cve-status";
+export const CVE_FINDINGS_PLUGIN_ACTION_ID = "evaluate_remediation";
+export const CVE_FINDINGS_PARAMETER_KEY = "findings";
+
+export class RunbookProposalValidationError extends Error {
+  readonly code = "RUNBOOK_PROPOSAL_VALIDATION" as const;
+
+  constructor(message: string) {
+    super(message);
+    this.name = "RunbookProposalValidationError";
+  }
+}
+
 export interface CreateRunbookEditProposalInput {
   id?: string;
   incidentThreadId?: string;
@@ -194,6 +207,139 @@ const RUNBOOK_TEMPLATE_FIELDS = [
   "pluginAuth",
   "query",
 ] as const;
+
+const DATA_FETCHING_ACTION_TYPES = new Set<RunbookActionType>([
+  "shell",
+  "http",
+  "plugin",
+  "external_source",
+  "data_source_query",
+  "telemetry_existing_entry",
+  "telemetry_ingest",
+  "diagnosis_diagnose",
+  "diagnosis_verify",
+  "diagnosis_recommend",
+]);
+
+function actionUsesFindings(action: RunbookActionRecord): boolean {
+  if (
+    action.parameters?.some(
+      (parameter) =>
+        normalizeString(parameter.key) === CVE_FINDINGS_PARAMETER_KEY,
+    ) === true
+  ) {
+    return true;
+  }
+
+  const values = RUNBOOK_TEMPLATE_FIELDS.map((field) => action[field]);
+  values.push(
+    ...(action.headers?.flatMap((header) => [header.key, header.value]) ?? []),
+  );
+  return values.some(
+    (value) =>
+      typeof value === "string" &&
+      /\{\{\s*findings\s*\}\}/.test(value),
+  );
+}
+
+function collectFindingValues(
+  value: unknown,
+  values = new Set<string>(),
+): Set<string> {
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase();
+    if (normalized.length >= 4) {
+      values.add(normalized);
+    }
+    return values;
+  }
+
+  if (Array.isArray(value)) {
+    value.forEach((item) => collectFindingValues(item, values));
+    return values;
+  }
+
+  if (value !== null && typeof value === "object") {
+    Object.values(value).forEach((item) => collectFindingValues(item, values));
+  }
+
+  return values;
+}
+
+function actionTextContainsFindingValues(
+  action: RunbookActionRecord,
+  findingValues: Set<string>,
+): boolean {
+  const actionText = [
+    action.prompt,
+    action.command,
+    action.body,
+    action.pluginInput,
+  ]
+    .filter((value): value is string => typeof value === "string")
+    .join("\n")
+    .toLowerCase();
+
+  let matchedValues = 0;
+  for (const findingValue of findingValues) {
+    if (actionText.includes(findingValue)) {
+      matchedValues += 1;
+      if (matchedValues >= 2) {
+        return true;
+      }
+    }
+  }
+
+  return false;
+}
+
+function consumesFindings(
+  actions: RunbookActionRecord[],
+  normalizedFindings: unknown[],
+): boolean {
+  if (actions.some(actionUsesFindings)) {
+    return true;
+  }
+
+  if (
+    actions.length > 0 &&
+    !actions.some((action) => DATA_FETCHING_ACTION_TYPES.has(action.type))
+  ) {
+    return true;
+  }
+
+  const findingValues = collectFindingValues(normalizedFindings);
+  return actions.some((action) =>
+    actionTextContainsFindingValues(action, findingValues),
+  );
+}
+
+function hasCveFindingsPlugin(actions: RunbookActionRecord[]): boolean {
+  return actions.some(
+    (action) =>
+      action.type === "plugin" &&
+      normalizeString(action.pluginId) === CVE_FINDINGS_PLUGIN_ID &&
+      normalizeString(action.pluginActionId) === CVE_FINDINGS_PLUGIN_ACTION_ID,
+  );
+}
+
+function assertCveFindingsPluginRequirement(
+  actions: RunbookActionRecord[],
+  normalizedFindings: unknown[] | undefined,
+): void {
+  if (
+    normalizedFindings === undefined ||
+    normalizedFindings.length === 0 ||
+    !consumesFindings(actions, normalizedFindings) ||
+    hasCveFindingsPlugin(actions)
+  ) {
+    return;
+  }
+
+  throw new RunbookProposalValidationError(
+    "CVE findings require the linux-cve-status/evaluate_remediation plugin before an LLM summary. Revise the runbook to add the plugin and then summarize its output.",
+  );
+}
 
 export function getUnknownRunbookTemplatePlaceholders(
   action: RunbookTemplateAction,
@@ -767,6 +913,10 @@ export function createRunbookEditProposal(
   const proposedRunbook = applyOperations(input.targetRunbook, input.operations);
   proposedRunbook.revisionNumber = input.targetRunbook.revisionNumber + 1;
   proposedRunbook.updatedAt = createdAt;
+  assertCveFindingsPluginRequirement(
+    proposedRunbook.actions,
+    input.normalizedFindings,
+  );
 
   return {
     id: input.id ?? createAuthoringId(),
@@ -807,6 +957,10 @@ export function createRunbookCreationProposal(
     createdAt: input.draftRunbook.createdAt ?? createdAt,
     updatedAt: input.draftRunbook.updatedAt ?? createdAt,
   };
+  assertCveFindingsPluginRequirement(
+    proposedRunbook.actions,
+    input.normalizedFindings,
+  );
 
   const creationOperation: RunbookAuthoringOperationDiff = {
     operationId: "create-runbook",
