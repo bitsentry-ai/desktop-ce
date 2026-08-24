@@ -114,8 +114,10 @@ function validatePluginActionProposal(action: RunbookActionProposal, context: z.
 function validateRunbookTemplatePlaceholders(
   action: RunbookActionProposal,
   context: z.RefinementCtx,
+  options: { allowLegacyStepOutputPlaceholder?: boolean } = {},
 ): void {
   for (const placeholder of getUnknownRunbookTemplatePlaceholders(action)) {
+    if (options.allowLegacyStepOutputPlaceholder === true && placeholder.key.endsWith('.output')) continue
     context.addIssue({
       code: "custom",
       path: placeholder.path,
@@ -124,16 +126,21 @@ function validateRunbookTemplatePlaceholders(
   }
 }
 
-const runbookActionProposalSchema = runbookActionProposalBaseSchema.superRefine((action, context) => {
-  if (action.type === 'llm') validateLlmActionProposal(action, context)
-  if (action.type === 'external_source') validateExternalSourceActionProposal(action, context)
-  if (action.type === 'plugin') validatePluginActionProposal(action, context)
-  validateRunbookTemplatePlaceholders(action, context)
-})
+function createRunbookActionProposalSchema(options: { allowLegacyStepOutputPlaceholder?: boolean } = {}) {
+  return runbookActionProposalBaseSchema.superRefine((action, context) => {
+    if (action.type === 'llm') validateLlmActionProposal(action, context)
+    if (action.type === 'external_source') validateExternalSourceActionProposal(action, context)
+    if (action.type === 'plugin') validatePluginActionProposal(action, context)
+    validateRunbookTemplatePlaceholders(action, context, options)
+  })
+}
+
+const runbookActionProposalSchema = createRunbookActionProposalSchema()
+const runbookEditActionProposalSchema = createRunbookActionProposalSchema({ allowLegacyStepOutputPlaceholder: true })
 const runbookAuthoringOperationSchema = z.object({
   id: z.string().min(1), type: z.enum(['update_metadata', 'add_action', 'update_action', 'delete_action', 'reorder_actions']), rationale: z.string().min(1),
   metadata: z.object({ title: z.string().optional(), description: z.string().optional(), idleTimeout: idleTimeoutSchema.optional() }).strict().optional(),
-  action: runbookActionProposalSchema.optional(), actionId: z.string().min(1).optional(), insertAfterActionId: z.string().min(1).nullable().optional(), actionIdsInOrder: z.array(z.string().min(1)).optional(),
+  action: runbookEditActionProposalSchema.optional(), actionId: z.string().min(1).optional(), insertAfterActionId: z.string().min(1).nullable().optional(), actionIdsInOrder: z.array(z.string().min(1)).optional(),
 }).strict()
 export const proposeRunbookEditHostToolSchema = z.object({ runbookId: z.string().min(1).optional(), runbookTitle: z.string().min(1).optional(), prompt: z.string().min(1), operations: z.array(runbookAuthoringOperationSchema).min(1) }).strict()
 const runbookCreateHostToolBaseSchema = z.object({ prompt: z.string().min(1), draftRunbook: z.object({ title: z.string().min(1), description: z.string().default(''), idleTimeout: idleTimeoutSchema.optional(), actions: z.array(runbookActionProposalSchema).min(1) }).strict() }).strict()

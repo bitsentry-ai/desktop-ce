@@ -788,4 +788,39 @@ describe('host tools', () => {
     expect(firstLookupAfterTimeout?.error).toBeUndefined()
     expect(secondWait?.error).toBeUndefined()
   })
+
+  it('normalizes a legacy action-output placeholder in an edit proposal', async () => {
+    const context = createContext()
+    context.listAuthorableRunbooks = vi.fn().mockResolvedValue([makeRunbook({
+      actions: [{
+        id: 'evaluate-cve-remediation',
+        type: 'plugin',
+        title: 'Evaluate CVE remediation',
+        pluginId: 'linux-cve-status',
+        pluginActionId: 'evaluate_remediation',
+      }],
+    })])
+
+    const result = await executeHostTool(context, 'propose_runbook_edit', {
+      runbookId: 'rb-sentry',
+      prompt: 'Add a summary action.',
+      operations: [{
+        id: 'op-summary',
+        type: 'add_action',
+        rationale: 'Summarize the evaluator output.',
+        action: {
+          id: 'summarize-cve-remediation',
+          type: 'llm',
+          title: 'Summarize CVE remediation',
+          prompt: 'Summarize {{evaluate-cve-remediation.output}}.',
+          llmModel: 'gpt-5.6-terra',
+        },
+      }],
+    })
+
+    expect(result?.error).toBeUndefined()
+    expect(context.session.runbookAuthoringProposals?.[0]?.operations[0]?.action?.prompt).toBe(
+      'Summarize ${steps.0.output}.',
+    )
+  })
 })

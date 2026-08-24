@@ -452,29 +452,57 @@ export function normalizeStepOutputPlaceholders(
   const actionIndexes = new Map(
     actions.map((action, index) => [normalizeString(action.id), index] as const),
   );
-  const outputReferencePattern = /\{\{\s*([a-zA-Z0-9_.-]+)\.output\s*\}\}/g;
-  const fields = RUNBOOK_TEMPLATE_FIELDS;
+  return actions.map((action) => normalizeActionStepOutputPlaceholders(action, actionIndexes));
+}
 
-  const normalizeValue = (value: string | undefined, actionIndex: number): string | undefined =>
+function normalizeActionStepOutputPlaceholders(
+  action: RunbookActionRecord,
+  actionIndexes: Map<string, number>,
+): RunbookActionRecord {
+  const actionIndex = actionIndexes.get(normalizeString(action.id));
+  if (actionIndex === undefined) return cloneAction(action);
+
+  const declaredParameterKeys = new Set(
+    action.parameters
+      ?.map((parameter) => normalizeString(parameter.key))
+      .filter((key) => key.length > 0),
+  );
+  const outputReferencePattern = /\{\{\s*([a-zA-Z0-9_.-]+)\.output\s*\}\}/g;
+  const normalizeValue = (value: string | undefined): string | undefined =>
     value?.replace(outputReferencePattern, (match, actionId: string) => {
+      if (declaredParameterKeys.has(`${actionId}.output`)) return match;
       const referencedIndex = actionIndexes.get(actionId);
-      if (referencedIndex === undefined || referencedIndex >= actionIndex) {
-        return match;
-      }
+      if (referencedIndex === undefined || referencedIndex >= actionIndex) return match;
       return `\${steps.${String(referencedIndex)}.output}`;
     });
 
-  return actions.map((action, actionIndex) => {
-    const normalized = cloneAction(action);
-    if (action.logFilter === undefined) delete normalized.logFilter;
-    if (action.telemetryConfig === undefined) delete normalized.telemetryConfig;
-    for (const field of fields) {
-      normalized[field] = normalizeValue(normalized[field], actionIndex);
+  const normalized = cloneAction(action);
+  if (action.logFilter === undefined) delete normalized.logFilter;
+  if (action.telemetryConfig === undefined) delete normalized.telemetryConfig;
+  for (const field of RUNBOOK_TEMPLATE_FIELDS) {
+    normalized[field] = normalizeValue(normalized[field]);
+  }
+  normalized.headers = normalized.headers?.map((header) => ({
+    key: normalizeValue(header.key) ?? header.key,
+    value: normalizeValue(header.value) ?? header.value,
+  }));
+  return normalized;
+}
+
+function normalizeEditOperations(
+  targetRunbook: RunbookRecord,
+  operations: RunbookAuthoringOperation[],
+): RunbookAuthoringOperation[] {
+  const rawProposedRunbook = applyOperations(targetRunbook, operations);
+  const actionIndexes = new Map(
+    rawProposedRunbook.actions.map((action, index) => [normalizeString(action.id), index] as const),
+  );
+
+  return operations.map((operation) => {
+    const normalized = cloneOperation(operation);
+    if (operation.action !== undefined) {
+      normalized.action = normalizeActionStepOutputPlaceholders(operation.action, actionIndexes);
     }
-    normalized.headers = normalized.headers?.map((header) => ({
-      key: normalizeValue(header.key, actionIndex) ?? header.key,
-      value: normalizeValue(header.value, actionIndex) ?? header.value,
-    }));
     return normalized;
   });
 }
@@ -953,7 +981,9 @@ export function createRunbookEditProposal(
   input: CreateRunbookEditProposalInput,
 ): RunbookEditAuthoringProposal {
   const createdAt = nowIso(input.now);
-  const proposedRunbook = applyOperations(input.targetRunbook, input.operations);
+  const normalizedOperations = normalizeEditOperations(input.targetRunbook, input.operations);
+  const proposedRunbook = applyOperations(input.targetRunbook, normalizedOperations);
+  proposedRunbook.actions = normalizeStepOutputPlaceholders(proposedRunbook.actions);
   proposedRunbook.revisionNumber = input.targetRunbook.revisionNumber + 1;
   proposedRunbook.updatedAt = createdAt;
   assertCveFindingsPluginRequirement(
@@ -975,12 +1005,12 @@ export function createRunbookEditProposal(
     targetRunbookId: input.targetRunbook.id,
     targetRevisionNumber: input.targetRunbook.revisionNumber,
     targetRevisionHash: getRunbookAuthoringRevisionHash(input.targetRunbook),
-    operations: input.operations.map((operation) => cloneOperation(operation)),
+    operations: normalizedOperations,
     originalRunbook: cloneRunbook(input.targetRunbook),
     proposedRunbook,
     operationDiffs: buildSequentialOperationDiffs(
       input.targetRunbook,
-      input.operations,
+      normalizedOperations,
     ),
     validation: validateRunbook(proposedRunbook),
   };
