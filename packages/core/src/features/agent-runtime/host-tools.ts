@@ -136,6 +136,10 @@ function createRunbookActionProposalSchema(options: { allowLegacyStepOutputPlace
 }
 
 const runbookActionProposalSchema = createRunbookActionProposalSchema()
+const runbookProviderActionProposalSchema = createRunbookActionProposalSchema({ allowLegacyStepOutputPlaceholder: true })
+function createRunbookCreateHostToolSchema(actionSchema: typeof runbookActionProposalSchema) {
+  return z.object({ prompt: z.string().min(1), draftRunbook: z.object({ title: z.string().min(1), description: z.string().default(''), idleTimeout: idleTimeoutSchema.optional(), actions: z.array(actionSchema).min(1) }).strict() }).strict()
+}
 const runbookEditActionProposalSchema = createRunbookActionProposalSchema({ allowLegacyStepOutputPlaceholder: true })
 const runbookAuthoringOperationSchema = z.object({
   id: z.string().min(1), type: z.enum(['update_metadata', 'add_action', 'update_action', 'delete_action', 'reorder_actions']), rationale: z.string().min(1),
@@ -143,7 +147,8 @@ const runbookAuthoringOperationSchema = z.object({
   action: runbookEditActionProposalSchema.optional(), actionId: z.string().min(1).optional(), insertAfterActionId: z.string().min(1).nullable().optional(), actionIdsInOrder: z.array(z.string().min(1)).optional(),
 }).strict()
 export const proposeRunbookEditHostToolSchema = z.object({ runbookId: z.string().min(1).optional(), runbookTitle: z.string().min(1).optional(), prompt: z.string().min(1), operations: z.array(runbookAuthoringOperationSchema).min(1) }).strict()
-const runbookCreateHostToolBaseSchema = z.object({ prompt: z.string().min(1), draftRunbook: z.object({ title: z.string().min(1), description: z.string().default(''), idleTimeout: idleTimeoutSchema.optional(), actions: z.array(runbookActionProposalSchema).min(1) }).strict() }).strict()
+const runbookCreateHostToolBaseSchema = createRunbookCreateHostToolSchema(runbookActionProposalSchema)
+const runbookCreateHostToolProviderSchema = createRunbookCreateHostToolSchema(runbookProviderActionProposalSchema)
 
 function isObjectRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -260,6 +265,7 @@ export interface HostToolSpec<Args> {
   name: HostToolName
   description: string
   argsSchema: z.ZodObject<z.ZodRawShape>
+  providerArgsSchema?: z.ZodObject<z.ZodRawShape>
   handler(context: HostToolContext, args: Args): Promise<ToolResult>
 }
 
@@ -833,6 +839,7 @@ export const hostTools = [
     name: 'propose_runbook_create',
     description: 'Create a pending, non-mutating proposal for a new runbook draft. This never saves changes. For CVE findings, include linux-cve-status/evaluate_remediation before an LLM summary. Use declared {{parameter}} values for inputs; use ${steps.<index>.output} for a prior action result, not {{action-id.output}}.',
     argsSchema: proposeRunbookCreateHostToolSchema,
+    providerArgsSchema: runbookCreateHostToolProviderSchema,
     handler: async (context: HostToolContext, args: ProposeRunbookCreateHostToolInput) => await proposeRunbookCreate(context, args),
   },
 ] as const satisfies readonly HostToolSpec<unknown>[]

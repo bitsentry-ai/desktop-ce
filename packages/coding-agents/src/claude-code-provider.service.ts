@@ -154,7 +154,7 @@ async function createClaudeHostMcpServer(context: HostToolContext): Promise<unkn
   const tools = hostTools.tools.map((hostTool) => sdk.tool(
     hostTool.name,
     hostTool.description,
-    hostTool.argsSchema.shape,
+    hostTools.inputSchemaFor(hostTool).shape,
     async (args) => await hostTools.call(hostTool.name, args),
   ))
   log.info('[claude-code-provider] configured host tools', {

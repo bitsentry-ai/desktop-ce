@@ -411,6 +411,42 @@ describe("runbook authoring", () => {
     );
   });
 
+  it("preserves original output identities when an ordering change is not approved", () => {
+    const proposal = createRunbookEditProposal({
+      prompt: "Reorder the checks and update the title.",
+      targetRunbook: {
+        ...makeBaseRunbook(),
+        actions: [
+          { id: "producer", type: "shell", title: "Produce evidence", command: "printf evidence" },
+          { id: "other", type: "shell", title: "Collect other evidence", command: "printf other" },
+          { id: "summary", type: "llm", title: "Summarize evidence", prompt: "Summarize ${steps.0.output}.", llmModel: "gpt-5.6-terra" },
+        ],
+      },
+      operations: [
+        {
+          id: "op-reorder",
+          type: "reorder_actions",
+          rationale: "Run the other check first.",
+          actionIdsInOrder: ["other", "producer", "summary"],
+        },
+        {
+          id: "op-title",
+          type: "update_metadata",
+          rationale: "Clarify the runbook title.",
+          metadata: { title: "Reordered evidence checks" },
+        },
+      ],
+    });
+
+    const approved = approveRunbookAuthoringProposal({
+      proposal,
+      approvedOperationIds: ["op-title"],
+      now: "2026-07-06T00:00:00.000Z",
+    });
+
+    expect(approved.runbook.actions[2]?.prompt).toBe("Summarize ${steps.0.output}.");
+  });
+
   it("rejects an unresolved legacy output alias in an edit proposal", () => {
     expect(() => createRunbookEditProposal({
       prompt: "Add a summary step.",

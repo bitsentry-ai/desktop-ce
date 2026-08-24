@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { randomUUID } from 'crypto'
 import {
   executeHostTool,
+  getHostTool,
   type HostToolContext,
 } from '../src/features/agent-runtime'
 import type { DesktopPluginDescriptor } from '../src/features/plugins'
@@ -232,6 +233,27 @@ describe('host tools', () => {
     expect(context.session.runbookAuthoringProposals?.[0]?.proposedRunbook.actions[1]?.prompt).toBe(
       'Summarize ${steps.0.output}.',
     )
+  })
+
+  it('allows provider schemas to pass legacy output aliases to runtime normalization', () => {
+    const tool = getHostTool('propose_runbook_create')
+    const input = {
+      prompt: 'Create a summary runbook.',
+      draftRunbook: {
+        title: 'Summary',
+        description: 'Summarize evidence.',
+        actions: [{
+          id: 'summary',
+          type: 'llm' as const,
+          title: 'Summarize',
+          prompt: 'Summarize {{producer.output}}.',
+          llmModel: 'gpt-5.6-terra',
+        }],
+      },
+    }
+
+    expect(tool?.argsSchema.safeParse(input).success).toBe(false)
+    expect(tool?.providerArgsSchema?.safeParse(input).success).toBe(true)
   })
 
   it('accepts a declared runbook placeholder in a proposal', async () => {

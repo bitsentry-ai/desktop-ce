@@ -492,17 +492,23 @@ function normalizeActionStepOutputPlaceholders(
 function reconcileStepOutputPlaceholders(
   actions: RunbookActionRecord[],
   referenceActions: RunbookActionRecord[],
+  originalActions: RunbookActionRecord[],
+  updatedActionIds: ReadonlySet<string>,
 ): RunbookActionRecord[] {
   const referenceActionIds = referenceActions.map((action) => normalizeString(action.id));
+  const originalActionIds = originalActions.map((action) => normalizeString(action.id));
   const actionIndexes = new Map(
     actions.map((action, index) => [normalizeString(action.id), index] as const),
   );
   const outputReferencePattern = /\$\{steps\.(\d+)\.output\}/g;
 
   return actions.map((action, actionIndex) => {
+    const actionIds = updatedActionIds.has(normalizeString(action.id))
+      ? referenceActionIds
+      : originalActionIds;
     const normalizeValue = (value: string | undefined): string | undefined =>
       value?.replace(outputReferencePattern, (match, referenceIndexText: string) => {
-        const referenceId = referenceActionIds[Number(referenceIndexText)];
+        const referenceId = actionIds[Number(referenceIndexText)];
         const referencedIndex = referenceId === undefined ? undefined : actionIndexes.get(referenceId);
         if (referencedIndex === undefined) {
           throw new RunbookProposalValidationError(
@@ -1166,9 +1172,19 @@ export function approveRunbookAuthoringProposal(
     input.proposal.originalRunbook,
     selectedOperations,
   );
+  const updatedActionIds = new Set(
+    selectedOperations.flatMap((operation) => {
+      if (operation.type === "add_action" || operation.type === "update_action") {
+        return [operation.action?.id, operation.actionId];
+      }
+      return [];
+    }).filter((actionId): actionId is string => actionId !== undefined),
+  );
   runbook.actions = reconcileStepOutputPlaceholders(
     runbook.actions,
     input.proposal.proposedRunbook.actions,
+    input.proposal.originalRunbook.actions,
+    updatedActionIds,
   );
   runbook.revisionNumber = input.proposal.targetRevisionNumber + 1;
   runbook.updatedAt = updatedAt;
