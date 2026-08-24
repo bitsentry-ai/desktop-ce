@@ -200,6 +200,40 @@ describe('host tools', () => {
     expect(context.session.runbookAuthoringProposals).toBeUndefined()
   })
 
+  it('normalizes a legacy action-output placeholder in a create proposal', async () => {
+    const context = createContext()
+    const result = await executeHostTool(context, 'propose_runbook_create', {
+      prompt: 'Create a CVE analysis runbook.',
+      draftRunbook: {
+        title: 'CVE analysis',
+        description: 'Evaluate findings and summarize the result.',
+        actions: [
+          {
+            id: 'evaluate-cve-remediation',
+            type: 'plugin',
+            title: 'Evaluate CVE remediation',
+            pluginId: 'linux-cve-status',
+            pluginActionId: 'evaluate_remediation',
+            pluginInput: '{{findings}}',
+            parameters: [{ id: 'findings', key: 'findings', required: true }],
+          },
+          {
+            id: 'summarize-cve-remediation',
+            type: 'llm',
+            title: 'Summarize CVE remediation',
+            prompt: 'Summarize {{evaluate-cve-remediation.output}}.',
+            llmModel: 'gpt-5.6-terra',
+          },
+        ],
+      },
+    })
+
+    expect(result?.error).toBeUndefined()
+    expect(context.session.runbookAuthoringProposals?.[0]?.proposedRunbook.actions[1]?.prompt).toBe(
+      'Summarize ${steps.0.output}.',
+    )
+  })
+
   it('accepts a declared runbook placeholder in a proposal', async () => {
     const context = createContext()
     const result = await executeHostTool(context, 'propose_runbook_create', {

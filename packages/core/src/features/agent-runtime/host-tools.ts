@@ -15,6 +15,7 @@ import {
   createRunbookEditProposal,
   formatUnknownRunbookTemplatePlaceholderMessage,
   getUnknownRunbookTemplatePlaceholders,
+  normalizeStepOutputPlaceholders,
   validatePluginAuthContracts,
   RunbookProposalValidationError,
   type RunbookAuthoringOperation,
@@ -135,7 +136,27 @@ const runbookAuthoringOperationSchema = z.object({
   action: runbookActionProposalSchema.optional(), actionId: z.string().min(1).optional(), insertAfterActionId: z.string().min(1).nullable().optional(), actionIdsInOrder: z.array(z.string().min(1)).optional(),
 }).strict()
 export const proposeRunbookEditHostToolSchema = z.object({ runbookId: z.string().min(1).optional(), runbookTitle: z.string().min(1).optional(), prompt: z.string().min(1), operations: z.array(runbookAuthoringOperationSchema).min(1) }).strict()
-export const proposeRunbookCreateHostToolSchema = z.object({ prompt: z.string().min(1), draftRunbook: z.object({ title: z.string().min(1), description: z.string().default(''), idleTimeout: idleTimeoutSchema.optional(), actions: z.array(runbookActionProposalSchema).min(1) }).strict() }).strict()
+const runbookCreateHostToolBaseSchema = z.object({ prompt: z.string().min(1), draftRunbook: z.object({ title: z.string().min(1), description: z.string().default(''), idleTimeout: idleTimeoutSchema.optional(), actions: z.array(runbookActionProposalSchema).min(1) }).strict() }).strict()
+
+function isObjectRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function normalizeCreateRunbookActionOutputPlaceholders(input: unknown): unknown {
+  if (!isObjectRecord(input) || !isObjectRecord(input.draftRunbook)) return input
+  const actions = input.draftRunbook.actions
+  if (!Array.isArray(actions) || !actions.every(isObjectRecord)) return input
+
+  return {
+    ...input,
+    draftRunbook: {
+      ...input.draftRunbook,
+      actions: normalizeStepOutputPlaceholders(actions as unknown as RunbookActionRecord[]),
+    },
+  }
+}
+
+export const proposeRunbookCreateHostToolSchema = runbookCreateHostToolBaseSchema
 
 export const RUNBOOK_COMPLETION_WAIT_TIMEOUT_MS = 30_000
 export const RUNBOOK_COMPLETION_WAIT_SECONDS = RUNBOOK_COMPLETION_WAIT_TIMEOUT_MS / 1_000
@@ -829,7 +850,11 @@ export async function executeHostTool(
     timestamp: startedAt,
   })
 
-  const parsed = tool.argsSchema.safeParse(normalizedArgs)
+  const argsForValidation =
+    tool.name === 'propose_runbook_create'
+      ? normalizeCreateRunbookActionOutputPlaceholders(normalizedArgs)
+      : normalizedArgs
+  const parsed = tool.argsSchema.safeParse(argsForValidation)
   if (!parsed.success) {
     const result = createValidationError(tool.name, parsed.error)
     emitHostToolEvent(context, {

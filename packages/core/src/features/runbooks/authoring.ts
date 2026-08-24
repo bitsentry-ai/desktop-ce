@@ -446,7 +446,7 @@ function cloneAction(action: RunbookActionRecord): RunbookActionRecord {
   };
 }
 
-function normalizeStepOutputPlaceholders(
+export function normalizeStepOutputPlaceholders(
   actions: RunbookActionRecord[],
 ): RunbookActionRecord[] {
   const actionIndexes = new Map(
@@ -466,6 +466,8 @@ function normalizeStepOutputPlaceholders(
 
   return actions.map((action, actionIndex) => {
     const normalized = cloneAction(action);
+    if (action.logFilter === undefined) delete normalized.logFilter;
+    if (action.telemetryConfig === undefined) delete normalized.telemetryConfig;
     for (const field of fields) {
       normalized[field] = normalizeValue(normalized[field], actionIndex);
     }
