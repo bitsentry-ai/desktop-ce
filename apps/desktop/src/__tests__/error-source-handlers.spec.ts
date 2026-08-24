@@ -119,12 +119,18 @@ function buildPostHogPersistedSetup(
   }
 
   const accessToken = readString(setupValues.authToken);
+  const refreshToken = readString(setupValues.refreshToken);
   let accessTokenRef: string | undefined;
+  let refreshTokenRef: string | undefined;
   if (accessToken.length > 0) {
     accessTokenRef = accessToken;
   }
+  if (refreshToken.length > 0) {
+    refreshTokenRef = refreshToken;
+  }
   return {
     accessTokenRef,
+    refreshTokenRef,
     configuration,
   };
 }
@@ -629,6 +635,44 @@ describe("desktop error source handlers", () => {
     });
   });
 
+  it("stores created source tokens outside the SQLite row", async () => {
+    const runtime = new TestPluginRuntimeService([
+      createPostHogPluginDescriptor(),
+    ]);
+    const { db, create } = createTestDb();
+    const credentialsStore = {
+      get: vi.fn(),
+      set: vi.fn().mockResolvedValue(undefined),
+      clear: vi.fn().mockResolvedValue(undefined),
+    };
+    const oauthBindings = createDesktopOauthManagerBindings();
+    const handlers = createDesktopErrorSourcesHandlers(db, {
+      OauthManagerService: oauthBindings.OauthManagerService,
+      pluginRuntime: runtime,
+      credentialsStore,
+    });
+
+    await handlers["errorSources:create"]?.({
+      pluginId: "posthog",
+      sourceType: "posthog",
+      name: "Protected PostHog",
+      setupValues: { authToken: "phx-token" },
+    });
+
+    expect(credentialsStore.set).toHaveBeenCalledWith(expect.any(String), {
+      accessToken: "phx-token",
+      refreshToken: null,
+    });
+    expect(create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          accessTokenRef: null,
+          refreshTokenRef: null,
+        }),
+      }),
+    );
+  });
+
   it("rejects source creation without a matching code plugin", async () => {
     const runtime = new TestPluginRuntimeService([]);
     const { db, create } = createTestDb();
@@ -727,6 +771,47 @@ describe("desktop error source handlers", () => {
       expiresAt: null,
       grantedScopes: "[]",
     });
+  });
+
+  it("stores refresh-only setup in encrypted storage without persisting the token in SQLite", async () => {
+    const runtime = new TestPluginRuntimeService([
+      createPostHogPluginDescriptor(),
+    ]);
+    const { db, update } = createTestDb();
+    const credentialsStore = {
+      get: vi.fn().mockResolvedValue({
+        accessToken: "existing-access-token",
+        refreshToken: "existing-refresh-token",
+      }),
+      set: vi.fn().mockResolvedValue(undefined),
+      clear: vi.fn().mockResolvedValue(undefined),
+    };
+    const oauthBindings = createDesktopOauthManagerBindings();
+    const handlers = createDesktopErrorSourcesHandlers(db, {
+      OauthManagerService: oauthBindings.OauthManagerService,
+      pluginRuntime: runtime,
+      credentialsStore,
+    });
+
+    await expect(
+      handlers["errorSources:update"]?.({
+        id: "source-1",
+        setupValues: {
+          refreshToken: "new-refresh-token",
+        },
+      }),
+    ).resolves.toMatchObject({
+      sourceType: "posthog",
+    });
+
+    expect(credentialsStore.get).toHaveBeenCalledWith("source-1");
+    expect(credentialsStore.set).toHaveBeenCalledWith("source-1", {
+      accessToken: "existing-access-token",
+      refreshToken: "new-refresh-token",
+    });
+    const updateCall = update.mock.calls[0]?.[0];
+    expect(updateCall?.data.accessTokenRef).toBeUndefined();
+    expect(updateCall?.data.refreshTokenRef).toBeNull();
   });
 
   it("clears stale plugin setup configuration fields on update", async () => {

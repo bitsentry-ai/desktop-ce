@@ -37,7 +37,14 @@ function createDb(overrides?: Partial<Record<string, unknown>>) {
   };
 }
 
-function createStore(dbOverrides?: Partial<Record<string, unknown>>) {
+function createStore(
+  dbOverrides?: Partial<Record<string, unknown>>,
+  errorSourceCredentialsStore?: {
+    get: (sourceId: string) => Promise<{ accessToken: string | null; refreshToken: string | null }>;
+    set: (sourceId: string, credentials: { accessToken: string | null; refreshToken: string | null }) => Promise<void>;
+    clear: (sourceId: string) => Promise<void>;
+  },
+) {
   const db = createDb(dbOverrides);
   const globalVariablesService = {
     list: vi.fn(() => []),
@@ -45,9 +52,90 @@ function createStore(dbOverrides?: Partial<Record<string, unknown>>) {
 
   return {
     db,
-    store: new RunbookStore(db as never, globalVariablesService as never),
+    store: new RunbookStore(
+      db as never,
+      globalVariablesService as never,
+      errorSourceCredentialsStore,
+    ),
   };
 }
+
+describe("RunbookStore exportRunbooks", () => {
+  it("exports redacted credential metadata from encrypted storage", async () => {
+    const credentialsStore = {
+      get: vi.fn().mockResolvedValue({
+        accessToken: "stored-access-token",
+        refreshToken: "stored-refresh-token",
+      }),
+      set: vi.fn().mockResolvedValue(undefined),
+      clear: vi.fn().mockResolvedValue(undefined),
+    };
+    const source = {
+      id: "source-1",
+      sourceType: "sentry",
+      name: "Sentry",
+      accessTokenRef: null,
+      refreshTokenRef: null,
+      expiresAt: null,
+      grantedScopes: JSON.stringify([]),
+      configuration: JSON.stringify({ organization: "bitsentry" }),
+      logLevelThreshold: "error",
+      additionalMetadata: JSON.stringify({ pluginId: "sentry" }),
+      syncEnabled: true,
+      autoDiagnosisEnabled: false,
+      lastSyncAt: null,
+      lastSyncStatus: null,
+      lastSyncError: null,
+      createdAt: "2026-05-31T00:00:00.000Z",
+      updatedAt: "2026-05-31T00:00:00.000Z",
+    };
+    const { store } = createStore(
+      {
+        runbook: {
+          findUnique: vi.fn(() => ({
+            id: "runbook-1",
+            title: "Sentry triage",
+            description: "",
+            revisionNumber: 1,
+            createdAt: "2026-05-31T00:00:00.000Z",
+            updatedAt: "2026-05-31T00:00:00.000Z",
+          })),
+        },
+        runbookAction: {
+          findMany: vi.fn(() => [
+            {
+              id: "action-1",
+              runbookId: "runbook-1",
+              sortOrder: 0,
+              type: "external_source",
+              title: "Query Sentry",
+              query: "is:unresolved",
+              sourceId: "source-1",
+            },
+          ]),
+        },
+        errorSource: {
+          findUnique: vi.fn(() => source),
+        },
+      },
+      credentialsStore,
+    );
+
+    const artifact = await store.exportRunbooks({ ids: ["runbook-1"] });
+    const exportedSource = artifact.externalSources?.[0];
+
+    expect(exportedSource).toMatchObject({
+      ref: "sentry",
+      credentialsRedacted: true,
+      credentials: {
+        authToken: "",
+        refreshToken: "",
+      },
+    });
+    expect(JSON.stringify(artifact)).not.toContain("stored-access-token");
+    expect(JSON.stringify(artifact)).not.toContain("stored-refresh-token");
+  });
+});
 
 describe("RunbookStore importRunbooks", () => {
   it("imports a duplicate copy when actions match an existing runbook by fingerprint", async () => {
@@ -545,6 +633,54 @@ describe("RunbookStore importRunbooks", () => {
     });
   });
 
+  it("stores imported external-source credentials outside the SQLite row", async () => {
+    const credentialsStore = {
+      get: vi.fn(),
+      set: vi.fn().mockResolvedValue(undefined),
+      clear: vi.fn().mockResolvedValue(undefined),
+    };
+    const { store, db } = createStore(undefined, credentialsStore);
+    const artifact: DesktopRunbookExportArtifactV1 = {
+      format: "bitsentry.runbooks.export",
+      version: 1,
+      exportedAt: "2026-05-31T00:00:00.000Z",
+      runbooks: [
+        {
+          title: "Query imported Sentry source",
+          actions: [
+            {
+              type: "external_source",
+              title: "Query Sentry",
+              query: "is:unresolved",
+              sourceRef: "jagad",
+            },
+          ],
+        },
+      ],
+      externalSources: [
+        {
+          ref: "jagad",
+          sourceType: "sentry",
+          name: "Jagad Sentry",
+          configuration: {},
+          credentials: { authToken: "import-token" },
+        },
+      ],
+    };
+
+    await store.importRunbooks({ artifact, options: { dryRun: false } });
+
+    expect(credentialsStore.set).toHaveBeenCalledWith(expect.any(String), {
+      accessToken: "import-token",
+      refreshToken: null,
+    });
+    const [createSourceCall] = db.errorSource.create.mock.calls;
+    expect(createSourceCall[0].data).toMatchObject({
+      accessTokenRef: null,
+      refreshTokenRef: null,
+    });
+  });
+
   it("rejects external source actions that omit sourceRef", async () => {
     const { store } = createStore();
     const artifact: DesktopRunbookExportArtifactV1 = {
@@ -591,6 +727,67 @@ describe("RunbookStore importRunbooks", () => {
 });
 
 describe("Runbook import handlers", () => {
+  it("passes encrypted credential storage to the IPC import store", async () => {
+    const db = createDb();
+    const credentialsStore = {
+      get: vi.fn(),
+      set: vi.fn().mockResolvedValue(undefined),
+      clear: vi.fn().mockResolvedValue(undefined),
+    };
+    const handlers = createRunbookHandlers(
+      db as never,
+      {
+        executionService: {} as never,
+        globalVariablesService: { list: vi.fn(() => []) } as never,
+        errorSourceCredentialsStore: credentialsStore,
+      },
+      { edition: "ce" },
+    );
+
+    await handlers["runbooks:import"]({
+      artifact: {
+        format: "bitsentry.runbooks.export",
+        version: 1,
+        exportedAt: "2026-06-15T00:00:00.000Z",
+        runbooks: [
+          {
+            title: "Imported Sentry triage",
+            actions: [
+              {
+                type: "external_source",
+                title: "Query Sentry",
+                query: "is:unresolved",
+                sourceRef: "sentry",
+                sourceType: "sentry",
+              },
+            ],
+          },
+        ],
+        externalSources: [
+          {
+            ref: "sentry",
+            sourceType: "sentry",
+            name: "Sentry",
+            configuration: {},
+            credentials: { authToken: "imported-token" },
+          },
+        ],
+      },
+      options: { dryRun: false },
+    });
+
+    expect(credentialsStore.set).toHaveBeenCalledWith(expect.any(String), {
+      accessToken: "imported-token",
+      refreshToken: null,
+    });
+    const createCall = (db.errorSource.create as ReturnType<typeof vi.fn>).mock
+      .calls[0]?.[0];
+    expect(createCall?.data).toMatchObject({
+      accessTokenRef: null,
+      refreshTokenRef: null,
+    });
+  });
+
   it("starts GUI executions through the runbook gateway", async () => {
     const db = createDb({
       auditLog: { create: vi.fn(() => undefined) },

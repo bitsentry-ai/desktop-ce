@@ -17,6 +17,10 @@ import {
   resolveErrorSourceProviderActionId,
 } from "./desktop-plugin-error-source-actions";
 import { refreshSourceAccessToken } from "./desktop-oauth-token-refresher";
+import {
+  resolveErrorSourceCredentials,
+  type ErrorSourceCredentialsStore,
+} from "./desktop-error-source-credentials";
 
 export interface ExternalSourceRunbookQueryInput {
   sourceId: string;
@@ -305,13 +309,14 @@ async function executeCustomPluginQuery(args: {
   limit: number;
   sourcesRepository: DesktopExternalSourceSourcesRepository;
   pluginRuntime: DesktopPluginRuntimeService;
+  credentialsStore?: ErrorSourceCredentialsStore;
   signal?: AbortSignal;
 }): Promise<{
   output?: string;
   issues?: unknown[];
   hasMore?: boolean;
 }> {
-  const { source, query, limit, sourcesRepository, pluginRuntime, signal } =
+  const { source, query, limit, sourcesRepository, pluginRuntime, credentialsStore, signal } =
     args;
   const pluginId = readSourcePluginId(source);
   const plugin = pluginRuntime.getPlugin(pluginId);
@@ -326,6 +331,7 @@ async function executeCustomPluginQuery(args: {
     source,
     sourcesRepository,
     pluginRuntime,
+    credentialsStore,
     signal,
   });
   const refreshedSource = { ...source, accessTokenRef };
@@ -405,12 +411,17 @@ export class ExternalSourceRunbookQueryService
     private readonly sourcesRepository: DesktopExternalSourceSourcesRepository,
     private readonly options?: { defaultLimit?: number },
     private readonly pluginRuntime: DesktopPluginRuntimeService = createDesktopNodePluginRuntimeService(),
+    private readonly credentialsStore?: ErrorSourceCredentialsStore,
   ) {}
 
   async execute(input: ExternalSourceRunbookQueryInput): Promise<string> {
     const { sourceId, query } = readQueryInput(input);
 
-    const source = await this.sourcesRepository.findById(sourceId);
+    const storedSource = await this.sourcesRepository.findById(sourceId);
+    const source =
+      storedSource === null
+        ? null
+        : await resolveErrorSourceCredentials(storedSource, this.credentialsStore);
     if (source === null) {
       throw new Error(`Selected external source ${sourceId} was not found`);
     }
@@ -423,6 +434,7 @@ export class ExternalSourceRunbookQueryService
       limit,
       sourcesRepository: this.sourcesRepository,
       pluginRuntime: this.pluginRuntime,
+      credentialsStore: this.credentialsStore,
       signal: input.signal,
     });
     if (typeof customQuery.output === "string" && customQuery.output.length > 0) {

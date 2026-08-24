@@ -90,6 +90,7 @@ import {
 import { getAutoUpdaterEnablement } from '@bitsentry-ce/core/features/updater/desktop-updater-policy'
 import { startAutoUpdater } from '@bitsentry-ce/desktop-cli/runtime/desktop-updater'
 import { LocalPluginCredentialsStore } from '@bitsentry-ce/desktop-cli/runtime/plugin-credentials-store'
+import { ErrorSourceCredentialsStore, migrateLegacyErrorSourceCredentials } from './error-source-credentials-store'
 import { LocalRunbookExecutionHost } from '@bitsentry-ce/desktop-cli/runtime/local-runbook-execution-host'
 import { DesktopShutdownCoordinator } from './shutdown-coordinator'
 import { formatDesktopStartupFingerprint } from './startup-fingerprint'
@@ -481,6 +482,8 @@ app
       services = await composeServices(db)
       const desktopServices = services
       const userDataPath = app.getPath('userData')
+      const errorSourceCredentialsStore = new ErrorSourceCredentialsStore(userDataPath)
+      await migrateLegacyErrorSourceCredentials(db, errorSourceCredentialsStore)
       const pluginCredentialsStore = new LocalPluginCredentialsStore(userDataPath)
       const pluginRuntime = createDesktopNodePluginRuntimeService(
         [path.join(userDataPath, 'plugins')],
@@ -492,6 +495,7 @@ app
         createDesktopErrorSourcesHandlers(db, {
           OauthManagerService,
           pluginRuntime,
+          credentialsStore: errorSourceCredentialsStore,
         }),
       )
       dispatcher.registerAll(
@@ -500,11 +504,16 @@ app
       dispatcher.registerAll(createDesktopSettingsHandlers(desktopServices.settingsUseCases))
       const agentLlmAdapter = createDesktopAgentLlmAdapter(db)
       const globalVariablesService = new DesktopGlobalVariablesService(db)
-      const runbookStore = new RunbookStore(db, globalVariablesService)
+      const runbookStore = new RunbookStore(
+        db,
+        globalVariablesService,
+        errorSourceCredentialsStore,
+      )
       const externalSourceRunbookQueryService = new ExternalSourceRunbookQueryService(
         new SqliteErrorSourcesRepositoryAdapter(db),
         undefined,
         pluginRuntime,
+        errorSourceCredentialsStore,
       )
       const runbookResultStore = new SqliteRunbookResultStore(db)
       // Best-effort startup maintenance: never let recovery of a stale runbook
@@ -545,6 +554,7 @@ app
       const runbookHandlers = createRunbookHandlers(db, {
         executionService: runbookExecutionService,
         globalVariablesService,
+        errorSourceCredentialsStore,
         onRunbooksChanged: publishRunbooksChanged,
       }, { edition: 'ce', runbookGateway })
       dispatcher.registerAll(runbookHandlers)

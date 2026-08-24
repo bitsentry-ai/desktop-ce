@@ -11,6 +11,7 @@ import {
   type RunbookTriggerContext,
 } from "./desktop-runbook.types";
 import type { RunbookGateway } from './runbook.gateway'
+import type { ErrorSourceCredentialsStore } from "../error-sources/desktop-error-source-credentials";
 import { runbookExportArtifactV1Schema } from "./export.schemas";
 import type { z } from "zod";
 
@@ -97,6 +98,7 @@ export interface DesktopRunbookHandlerDependencies {
   /** Transitional fallback for runtimes that have not yet adopted the gateway. */
   runbookGateway?: RunbookGateway;
   globalVariablesService: DesktopRunbookHandlerGlobalVariablesService;
+  errorSourceCredentialsStore?: ErrorSourceCredentialsStore;
   artifactIo: DesktopRunbookArtifactIo;
   fileSystem: DesktopRunbookHandlerFileSystem;
   trustedRunbookPaths: DesktopRunbookTrustedPathRuntime;
@@ -374,13 +376,18 @@ export function createDesktopRunbookHandlers(
     onRunbooksChanged,
     runbookGateway,
     globalVariablesService,
+    errorSourceCredentialsStore,
     artifactIo,
     fileSystem,
     trustedRunbookPaths,
     logger,
   } = dependencies;
   const edition = options?.edition ?? "pro";
-  const store = new DesktopRunbookStore(db, globalVariablesService);
+  const store = new DesktopRunbookStore(
+    db,
+    globalVariablesService,
+    errorSourceCredentialsStore,
+  );
 
   const readValidatedRunbookImportArtifact = (
     raw: string,

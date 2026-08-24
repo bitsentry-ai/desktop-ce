@@ -125,7 +125,7 @@ export class SqliteErrorSourcesRepositoryAdapter {
 
   private toCreateData(input: CreateErrorSourceInput): Record<string, unknown> {
     return {
-      id: randomUUID(),
+      id: input.id ?? randomUUID(),
       sourceType: input.sourceType,
       name: input.name,
       accessTokenRef: sqliteNullableValue(input.accessTokenRef),

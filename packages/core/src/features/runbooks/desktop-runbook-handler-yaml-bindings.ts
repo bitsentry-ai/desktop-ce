@@ -12,6 +12,7 @@ import type {
 import type { RunbookGateway } from './runbook.gateway'
 import type { DesktopGlobalVariablesService } from "./desktop-global-variables-service";
 import type { RunbookExecutionService } from "./desktop-runbook-execution.service";
+import type { ErrorSourceCredentialsStore } from "../error-sources/desktop-error-source-credentials";
 
 const runbookHandlerBindings = createDesktopRunbookHandlerBindings({
   parseRunbookArtifactFile,
@@ -23,6 +24,7 @@ export function createDesktopYamlRunbookHandlers(
   dependencies: {
     executionService: RunbookExecutionService;
     globalVariablesService: DesktopGlobalVariablesService;
+    errorSourceCredentialsStore?: ErrorSourceCredentialsStore;
     onRunbooksChanged?: () => void;
   },
   options?: {
