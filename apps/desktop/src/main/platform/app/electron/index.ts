@@ -554,6 +554,7 @@ app
       const runbookHandlers = createRunbookHandlers(db, {
         executionService: runbookExecutionService,
         globalVariablesService,
+        errorSourceCredentialsStore,
         onRunbooksChanged: publishRunbooksChanged,
       }, { edition: 'ce', runbookGateway })
       dispatcher.registerAll(runbookHandlers)

@@ -1765,7 +1765,7 @@ export class DesktopRunbookStore {
     if (includeGlobals) {
       globals = await this.buildExportGlobals(exportedRunbooks);
     }
-    const externalSources = this.buildExportExternalSources(
+    const externalSources = await this.buildExportExternalSources(
       referencedSourcesById,
       sourceRefsById,
     );
@@ -2281,17 +2281,23 @@ export class DesktopRunbookStore {
       Awaited<ReturnType<SqliteErrorSourcesRepositoryAdapter["findById"]>>
     >,
     sourceRefsById: Map<string, string>,
-  ): NonNullable<DesktopRunbookExportArtifactV1["externalSources"]> {
-    return [...sourcesById.values()]
+  ): Promise<NonNullable<DesktopRunbookExportArtifactV1["externalSources"]>> {
+    return Promise.all([...sourcesById.values()]
       .filter((source): source is NonNullable<typeof source> => source !== null)
 
-      .map((source) => {
+      .map(async (source) => {
         const accessTokenRef = source.accessTokenRef?.trim();
         const refreshTokenRef = source.refreshTokenRef?.trim();
+        const encryptedCredentials =
+          this.errorSourceCredentialsStore === undefined
+            ? { accessToken: null, refreshToken: null }
+            : await this.errorSourceCredentialsStore.get(source.id);
         const hasAccessTokenRef =
-          accessTokenRef !== undefined && accessTokenRef.length > 0;
+          (accessTokenRef !== undefined && accessTokenRef.length > 0) ||
+          (encryptedCredentials.accessToken?.trim().length ?? 0) > 0;
         const hasRefreshTokenRef =
-          refreshTokenRef !== undefined && refreshTokenRef.length > 0;
+          (refreshTokenRef !== undefined && refreshTokenRef.length > 0) ||
+          (encryptedCredentials.refreshToken?.trim().length ?? 0) > 0;
         const pluginId = readExternalSourcePluginId(source.additionalMetadata);
         const exportedSource: NonNullable<
           DesktopRunbookExportArtifactV1["externalSources"]
@@ -2333,7 +2339,7 @@ export class DesktopRunbookStore {
         }
 
         return exportedSource;
-      });
+      }));
   }
 
   private async importExternalSourcesFromArtifact(

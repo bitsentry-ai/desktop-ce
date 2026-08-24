@@ -85,4 +85,44 @@ describe("ErrorSourceCredentialsStore", () => {
     expect(encryptedFile).not.toContain("token-that-must-not-remain-in-sqlite");
     expect(encryptedFile).not.toContain("refresh-token-that-must-not-remain-in-sqlite");
   });
+
+  it("serializes concurrent credential writes", async () => {
+    const directory = await mkdtemp(path.join(tmpdir(), "bitsentry-error-source-"));
+    temporaryDirectories.push(directory);
+    const credentialsStore = new ErrorSourceCredentialsStore(directory);
+
+    await Promise.all([
+      credentialsStore.set("source-1", {
+        accessToken: "access-1",
+        refreshToken: null,
+      }),
+      credentialsStore.set("source-2", {
+        accessToken: "access-2",
+        refreshToken: null,
+      }),
+    ]);
+
+    await expect(credentialsStore.get("source-1")).resolves.toEqual({
+      accessToken: "access-1",
+      refreshToken: null,
+    });
+    await expect(credentialsStore.get("source-2")).resolves.toEqual({
+      accessToken: "access-2",
+      refreshToken: null,
+    });
+  });
+
+  it("fails migration when SQLite cleanup does not succeed", async () => {
+    const directory = await mkdtemp(path.join(tmpdir(), "bitsentry-error-source-"));
+    temporaryDirectories.push(directory);
+    const { db, update } = createDb();
+    update.mockResolvedValueOnce(null);
+    const credentialsStore = new ErrorSourceCredentialsStore(directory);
+
+    await expect(
+      migrateLegacyErrorSourceCredentials(db, credentialsStore),
+    ).rejects.toThrow(
+      "Failed to clear legacy credentials from SQLite for source source-1",
+    );
+  });
 });

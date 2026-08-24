@@ -615,7 +615,7 @@ function buildUpdatedErrorSourceConfiguration(input: {
 function buildTokenMetadataUpdate(
   persistedSetup: DesktopPluginPersistedDataSourceSetup,
 ): {
-  tokenReplacement: boolean;
+  credentialUpdate: boolean;
   tokenMetadataUpdate: {
     refreshTokenRef?: string | null;
     expiresAt?: string | null;
@@ -623,6 +623,8 @@ function buildTokenMetadataUpdate(
   };
 } {
   const tokenReplacement = persistedSetup.accessTokenRef !== undefined;
+  const credentialUpdate =
+    tokenReplacement || persistedSetup.refreshTokenRef !== undefined;
   const tokenMetadataUpdate: {
     refreshTokenRef?: string | null;
     expiresAt?: string | null;
@@ -643,7 +645,7 @@ function buildTokenMetadataUpdate(
   } else if (tokenReplacement) {
     tokenMetadataUpdate.grantedScopes = [];
   }
-  return { tokenReplacement, tokenMetadataUpdate };
+  return { credentialUpdate, tokenMetadataUpdate };
 }
 
 async function buildPluginAuthFromSource(
@@ -1057,13 +1059,23 @@ export function createDesktopErrorSourcesHandlers(
         pluginId,
         persistedSetup,
       });
-      const { tokenReplacement, tokenMetadataUpdate } =
+      const { credentialUpdate, tokenMetadataUpdate } =
         buildTokenMetadataUpdate(persistedSetup);
 
-      if (tokenReplacement && credentialsStore !== undefined) {
+      if (credentialUpdate && credentialsStore !== undefined) {
+        const existingCredentials =
+          persistedSetup.accessTokenRef === undefined
+            ? await credentialsStore.get(existing.id)
+            : { accessToken: null, refreshToken: null };
         await credentialsStore.set(existing.id, {
-          accessToken: nullableNonEmptyString(persistedSetup.accessTokenRef ?? ""),
-          refreshToken: persistedSetup.refreshTokenRef ?? null,
+          accessToken:
+            persistedSetup.accessTokenRef === undefined
+              ? existingCredentials.accessToken
+              : nullableNonEmptyString(persistedSetup.accessTokenRef ?? ""),
+          refreshToken:
+            persistedSetup.refreshTokenRef === undefined
+              ? null
+              : nullableNonEmptyString(persistedSetup.refreshTokenRef ?? ""),
         });
         tokenMetadataUpdate.refreshTokenRef = null;
       }

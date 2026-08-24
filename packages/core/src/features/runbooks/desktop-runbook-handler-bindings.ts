@@ -16,7 +16,10 @@ import {
 
 type SharedDesktopRunbookHandlerDependencies = Pick<
   DesktopRunbookHandlerDependencies,
-  "executionService" | "globalVariablesService" | "onRunbooksChanged"
+  | "executionService"
+  | "globalVariablesService"
+  | "onRunbooksChanged"
+  | "errorSourceCredentialsStore"
 >;
 
 export function createDesktopRunbookHandlerBindings(

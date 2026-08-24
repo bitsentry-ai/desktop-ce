@@ -55,9 +55,24 @@ function assertEncryptionAvailable(): void {
 
 export class ErrorSourceCredentialsStore implements ErrorSourceCredentialsStoreContract {
   private readonly storePath: string;
+  private writeQueue: Promise<void> = Promise.resolve();
 
   constructor(userDataPath: string) {
     this.storePath = path.join(userDataPath, "auth", "error-sources.json");
+  }
+
+  private async withSerializedWrite<T>(operation: () => Promise<T>): Promise<T> {
+    const previous = this.writeQueue;
+    let release!: () => void;
+    this.writeQueue = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await previous;
+    try {
+      return await operation();
+    } finally {
+      release();
+    }
   }
 
   async get(sourceId: string): Promise<ErrorSourceCredentials> {
@@ -77,22 +92,26 @@ export class ErrorSourceCredentialsStore implements ErrorSourceCredentialsStoreC
 
   async set(sourceId: string, credentials: ErrorSourceCredentials): Promise<void> {
     assertEncryptionAvailable();
-    const store = await readStore(this.storePath);
-    if (credentials.accessToken === null && credentials.refreshToken === null) {
-      store.sources = removeCredential(store.sources, sourceId);
-    } else {
-      store.sources[sourceId] = {
-        encryptedValue: safeStorage.encryptString(JSON.stringify(credentials)).toString("base64"),
-      };
-    }
-    await writeStore(this.storePath, store);
+    await this.withSerializedWrite(async () => {
+      const store = await readStore(this.storePath);
+      if (credentials.accessToken === null && credentials.refreshToken === null) {
+        store.sources = removeCredential(store.sources, sourceId);
+      } else {
+        store.sources[sourceId] = {
+          encryptedValue: safeStorage.encryptString(JSON.stringify(credentials)).toString("base64"),
+        };
+      }
+      await writeStore(this.storePath, store);
+    });
   }
 
   async clear(sourceId: string): Promise<void> {
-    const store = await readStore(this.storePath);
-    if (store.sources[sourceId] === undefined) return;
-    store.sources = removeCredential(store.sources, sourceId);
-    await writeStore(this.storePath, store);
+    await this.withSerializedWrite(async () => {
+      const store = await readStore(this.storePath);
+      if (store.sources[sourceId] === undefined) return;
+      store.sources = removeCredential(store.sources, sourceId);
+      await writeStore(this.storePath, store);
+    });
   }
 }
 
@@ -107,10 +126,15 @@ export async function migrateLegacyErrorSourceCredentials(
       accessToken: source.accessTokenRef,
       refreshToken: source.refreshTokenRef,
     });
-    await repository.update({
+    const updated = await repository.update({
       id: source.id,
       accessTokenRef: null,
       refreshTokenRef: null,
     });
+    if (updated === null) {
+      throw new Error(
+        `Failed to clear legacy credentials from SQLite for source ${source.id}`,
+      );
+    }
   }
 }
