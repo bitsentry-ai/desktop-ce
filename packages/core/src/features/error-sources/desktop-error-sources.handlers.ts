@@ -570,6 +570,82 @@ function pluginSourceRecord(
   };
 }
 
+function buildUpdatedErrorSourceConfiguration(input: {
+  existingConfiguration: ErrorSource["configuration"];
+  payloadConfiguration?: Record<string, unknown>;
+  setupValues: Record<string, unknown> | null;
+  pluginRuntime: DesktopPluginRuntimeService;
+  pluginId: string;
+  persistedSetup: DesktopPluginPersistedDataSourceSetup;
+}): Record<string, unknown> {
+  let nextConfiguration: Record<string, unknown> = {
+    ...input.existingConfiguration,
+  };
+  if (input.payloadConfiguration !== undefined) {
+    nextConfiguration = {
+      ...nextConfiguration,
+      ...input.payloadConfiguration,
+    };
+  }
+  if (input.setupValues !== null) {
+    const configurationKeysToReset = new Set(
+      pluginSetupConfigurationKeysToReset(
+        input.pluginRuntime,
+        input.pluginId,
+        input.setupValues,
+      ),
+    );
+    if (configurationKeysToReset.size > 0) {
+      nextConfiguration = Object.fromEntries(
+        Object.entries(nextConfiguration).filter(
+          ([key]) => !configurationKeysToReset.has(key),
+        ),
+      );
+    }
+  }
+  if (Object.keys(input.persistedSetup.configuration).length > 0) {
+    nextConfiguration = {
+      ...nextConfiguration,
+      ...input.persistedSetup.configuration,
+    };
+  }
+  return nextConfiguration;
+}
+
+function buildTokenMetadataUpdate(
+  persistedSetup: DesktopPluginPersistedDataSourceSetup,
+): {
+  tokenReplacement: boolean;
+  tokenMetadataUpdate: {
+    refreshTokenRef?: string | null;
+    expiresAt?: string | null;
+    grantedScopes?: string[];
+  };
+} {
+  const tokenReplacement = persistedSetup.accessTokenRef !== undefined;
+  const tokenMetadataUpdate: {
+    refreshTokenRef?: string | null;
+    expiresAt?: string | null;
+    grantedScopes?: string[];
+  } = {};
+  if (persistedSetup.refreshTokenRef !== undefined) {
+    tokenMetadataUpdate.refreshTokenRef = persistedSetup.refreshTokenRef;
+  } else if (tokenReplacement) {
+    tokenMetadataUpdate.refreshTokenRef = null;
+  }
+  if (persistedSetup.expiresAt !== undefined) {
+    tokenMetadataUpdate.expiresAt = persistedSetup.expiresAt;
+  } else if (tokenReplacement) {
+    tokenMetadataUpdate.expiresAt = null;
+  }
+  if (persistedSetup.grantedScopes !== undefined) {
+    tokenMetadataUpdate.grantedScopes = persistedSetup.grantedScopes;
+  } else if (tokenReplacement) {
+    tokenMetadataUpdate.grantedScopes = [];
+  }
+  return { tokenReplacement, tokenMetadataUpdate };
+}
+
 async function buildPluginAuthFromSource(
   source: ErrorSource,
   pluginRuntime: DesktopPluginRuntimeService,
@@ -973,58 +1049,16 @@ export function createDesktopErrorSourcesHandlers(
         );
       }
 
-      let nextConfiguration: Record<string, unknown> = {
-        ...existing.configuration,
-      };
-      if (payload.configuration !== undefined) {
-        nextConfiguration = {
-          ...nextConfiguration,
-          ...payload.configuration,
-        };
-      }
-      if (setupValues !== null) {
-        const configurationKeysToReset = new Set(
-          pluginSetupConfigurationKeysToReset(
-            pluginRuntime,
-            pluginId,
-            setupValues,
-          ),
-        );
-        if (configurationKeysToReset.size > 0) {
-          nextConfiguration = Object.fromEntries(
-            Object.entries(nextConfiguration).filter(
-              ([key]) => !configurationKeysToReset.has(key),
-            ),
-          );
-        }
-      }
-      if (Object.keys(persistedSetup.configuration).length > 0) {
-        nextConfiguration = {
-          ...nextConfiguration,
-          ...persistedSetup.configuration,
-        };
-      }
-      const tokenReplacement = persistedSetup.accessTokenRef !== undefined;
-      const tokenMetadataUpdate: {
-        refreshTokenRef?: string | null;
-        expiresAt?: string | null;
-        grantedScopes?: string[];
-      } = {};
-      if (persistedSetup.refreshTokenRef !== undefined) {
-        tokenMetadataUpdate.refreshTokenRef = persistedSetup.refreshTokenRef;
-      } else if (tokenReplacement) {
-        tokenMetadataUpdate.refreshTokenRef = null;
-      }
-      if (persistedSetup.expiresAt !== undefined) {
-        tokenMetadataUpdate.expiresAt = persistedSetup.expiresAt;
-      } else if (tokenReplacement) {
-        tokenMetadataUpdate.expiresAt = null;
-      }
-      if (persistedSetup.grantedScopes !== undefined) {
-        tokenMetadataUpdate.grantedScopes = persistedSetup.grantedScopes;
-      } else if (tokenReplacement) {
-        tokenMetadataUpdate.grantedScopes = [];
-      }
+      const nextConfiguration = buildUpdatedErrorSourceConfiguration({
+        existingConfiguration: existing.configuration,
+        payloadConfiguration: payload.configuration,
+        setupValues,
+        pluginRuntime,
+        pluginId,
+        persistedSetup,
+      });
+      const { tokenReplacement, tokenMetadataUpdate } =
+        buildTokenMetadataUpdate(persistedSetup);
 
       if (tokenReplacement && credentialsStore !== undefined) {
         await credentialsStore.set(existing.id, {

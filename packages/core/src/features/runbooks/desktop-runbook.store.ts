@@ -45,6 +45,12 @@ import type {
 type DesktopRunbookActionRecord = RunbookActionRecord<TelemetryActionConfig>;
 type DesktopRunbookRecord = RunbookRecord<TelemetryActionConfig>;
 type DesktopRunbookContext = RunbookContextV1<TelemetryActionConfig>;
+type DesktopExternalSourceExport = NonNullable<
+  DesktopRunbookExportArtifactV1["externalSources"]
+>[number];
+type DesktopErrorSource = Awaited<
+  ReturnType<SqliteErrorSourcesRepositoryAdapter["findMany"]>
+>[number];
 
 export interface DesktopRunbookStoreDatabase extends ErrorSourceDatabase {
   runbook: {
@@ -2363,102 +2369,124 @@ export class DesktopRunbookStore {
     const sourceFingerprintByRef = new Map<string, string>();
 
     for (const externalSource of externalSources) {
-      const sanitizedConfiguration = sanitizeExportedErrorSourceConfiguration(
-        externalSource.configuration,
+      const result = await this.importExternalSourceFromArtifact(
+        externalSource,
+        options ?? {},
+        existingBySignature,
       );
-      const fingerprint = buildExternalSourceFingerprint(
-        externalSource.sourceType,
-        sanitizedConfiguration,
-        externalSource.pluginId,
-      );
-      const existing = existingBySignature.get(fingerprint);
-      sourceFingerprintByRef.set(externalSource.ref, fingerprint);
-
-      if (existing !== undefined) {
-        sourceIdByRef.set(externalSource.ref, existing.id);
-        continue;
+      sourceIdByRef.set(externalSource.ref, result.sourceId);
+      sourceFingerprintByRef.set(externalSource.ref, result.fingerprint);
+      if (result.warning !== undefined) {
+        warnings.push(result.warning);
       }
-
-      const credentials = normalizeExportedExternalSourceCredentials(
-        externalSource.credentials,
-      );
-
-      if (options?.dryRun === true) {
-        sourceIdByRef.set(externalSource.ref, externalSource.ref);
-        existingBySignature.set(fingerprint, {
-          id: externalSource.ref,
-          sourceType: externalSource.sourceType,
-          name: externalSource.name,
-          accessTokenRef: credentials.authToken ?? null,
-          refreshTokenRef: credentials.refreshToken ?? null,
-          expiresAt: credentials.expiresAt ?? null,
-          grantedScopes: credentials.grantedScopes ?? [],
-          configuration: sanitizedConfiguration,
-          logLevelThreshold: externalSource.logLevelThreshold ?? "error",
-          additionalMetadata: buildExternalSourceAdditionalMetadata(
-            externalSource.pluginId,
-          ),
-          syncEnabled: externalSource.syncEnabled ?? true,
-          autoDiagnosisEnabled: externalSource.autoDiagnosisEnabled ?? false,
-          lastSyncAt: null,
-          lastSyncStatus: null,
-          lastSyncError: null,
-          createdAt: new Date(0).toISOString(),
-          updatedAt: new Date(0).toISOString(),
-        });
-        warnings.push(
-          `Would create external source "${externalSource.name}" from the YAML credentials.`,
-        );
-        continue;
-      }
-
-      const hasCredentials =
-        credentials.authToken !== undefined ||
-        credentials.refreshToken !== undefined;
-      if (hasCredentials && this.errorSourceCredentialsStore === undefined) {
-        throw new Error(
-          "Importing external-source credentials requires encrypted credential storage.",
-        );
-      }
-      const sourceId = hasCredentials ? randomUUID() : undefined;
-      if (sourceId !== undefined) {
-        await this.errorSourceCredentialsStore?.set(sourceId, {
-          accessToken: credentials.authToken ?? null,
-          refreshToken: credentials.refreshToken ?? null,
-        });
-      }
-      let created;
-      try {
-        created = await this.errorSourcesRepository.create({
-          id: sourceId,
-          sourceType: externalSource.sourceType,
-          name: externalSource.name,
-          accessTokenRef: null,
-          refreshTokenRef: null,
-          expiresAt: credentials.expiresAt ?? null,
-          grantedScopes: credentials.grantedScopes ?? [],
-          configuration: sanitizedConfiguration,
-          logLevelThreshold: externalSource.logLevelThreshold,
-          additionalMetadata: buildExternalSourceAdditionalMetadata(
-            externalSource.pluginId,
-          ),
-          syncEnabled: externalSource.syncEnabled,
-          autoDiagnosisEnabled: externalSource.autoDiagnosisEnabled,
-        });
-      } catch (error) {
-        if (sourceId !== undefined) {
-          await this.errorSourceCredentialsStore?.clear(sourceId);
-        }
-        throw error;
-      }
-      sourceIdByRef.set(externalSource.ref, created.id);
-      existingBySignature.set(fingerprint, created);
     }
 
     return {
       sourceIdByRef,
       sourceFingerprintByRef,
       warnings,
+    };
+  }
+
+  private async importExternalSourceFromArtifact(
+    externalSource: DesktopExternalSourceExport,
+    options: { dryRun?: boolean },
+    existingBySignature: Map<string, DesktopErrorSource>,
+  ): Promise<{
+    sourceId: string;
+    fingerprint: string;
+    warning?: string;
+  }> {
+    const sanitizedConfiguration = sanitizeExportedErrorSourceConfiguration(
+      externalSource.configuration,
+    );
+    const fingerprint = buildExternalSourceFingerprint(
+      externalSource.sourceType,
+      sanitizedConfiguration,
+      externalSource.pluginId,
+    );
+    const existing = existingBySignature.get(fingerprint);
+    if (existing !== undefined) {
+      return { sourceId: existing.id, fingerprint };
+    }
+
+    const credentials = normalizeExportedExternalSourceCredentials(
+      externalSource.credentials,
+    );
+
+    if (options.dryRun === true) {
+      const dryRunSource: DesktopErrorSource = {
+        id: externalSource.ref,
+        sourceType: externalSource.sourceType,
+        name: externalSource.name,
+        accessTokenRef: credentials.authToken ?? null,
+        refreshTokenRef: credentials.refreshToken ?? null,
+        expiresAt: credentials.expiresAt ?? null,
+        grantedScopes: credentials.grantedScopes ?? [],
+        configuration: sanitizedConfiguration,
+        logLevelThreshold: externalSource.logLevelThreshold ?? "error",
+        additionalMetadata: buildExternalSourceAdditionalMetadata(
+          externalSource.pluginId,
+        ),
+        syncEnabled: externalSource.syncEnabled ?? true,
+        autoDiagnosisEnabled: externalSource.autoDiagnosisEnabled ?? false,
+        lastSyncAt: null,
+        lastSyncStatus: null,
+        lastSyncError: null,
+        createdAt: new Date(0).toISOString(),
+        updatedAt: new Date(0).toISOString(),
+      };
+      existingBySignature.set(fingerprint, dryRunSource);
+      return {
+        sourceId: externalSource.ref,
+        fingerprint,
+        warning: `Would create external source "${externalSource.name}" from the YAML credentials.`,
+      };
+    }
+
+    const hasCredentials =
+      credentials.authToken !== undefined ||
+      credentials.refreshToken !== undefined;
+    if (hasCredentials && this.errorSourceCredentialsStore === undefined) {
+      throw new Error(
+        "Importing external-source credentials requires encrypted credential storage.",
+      );
+    }
+    const sourceId = hasCredentials ? randomUUID() : undefined;
+    if (sourceId !== undefined) {
+      await this.errorSourceCredentialsStore?.set(sourceId, {
+        accessToken: credentials.authToken ?? null,
+        refreshToken: credentials.refreshToken ?? null,
+      });
+    }
+    let created;
+    try {
+      created = await this.errorSourcesRepository.create({
+        id: sourceId,
+        sourceType: externalSource.sourceType,
+        name: externalSource.name,
+        accessTokenRef: null,
+        refreshTokenRef: null,
+        expiresAt: credentials.expiresAt ?? null,
+        grantedScopes: credentials.grantedScopes ?? [],
+        configuration: sanitizedConfiguration,
+        logLevelThreshold: externalSource.logLevelThreshold,
+        additionalMetadata: buildExternalSourceAdditionalMetadata(
+          externalSource.pluginId,
+        ),
+        syncEnabled: externalSource.syncEnabled,
+        autoDiagnosisEnabled: externalSource.autoDiagnosisEnabled,
+      });
+    } catch (error) {
+      if (sourceId !== undefined) {
+        await this.errorSourceCredentialsStore?.clear(sourceId);
+      }
+      throw error;
+    }
+    existingBySignature.set(fingerprint, created);
+    return {
+      sourceId: created.id,
+      fingerprint,
     };
   }
 

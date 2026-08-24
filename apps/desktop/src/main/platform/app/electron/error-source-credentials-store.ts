@@ -12,6 +12,15 @@ import type { DbClient } from "@bitsentry-ce/core/features/desktop/desktop-datab
 type StoredCredential = { encryptedValue: string };
 type CredentialsFile = { version: 1; sources: Record<string, StoredCredential> };
 
+function removeCredential(
+  sources: Record<string, StoredCredential>,
+  sourceId: string,
+): Record<string, StoredCredential> {
+  return Object.fromEntries(
+    Object.entries(sources).filter(([key]) => key !== sourceId),
+  );
+}
+
 function emptyStore(): CredentialsFile {
   return { version: 1, sources: {} };
 }
@@ -70,7 +79,7 @@ export class ErrorSourceCredentialsStore implements ErrorSourceCredentialsStoreC
     assertEncryptionAvailable();
     const store = await readStore(this.storePath);
     if (credentials.accessToken === null && credentials.refreshToken === null) {
-      delete store.sources[sourceId];
+      store.sources = removeCredential(store.sources, sourceId);
     } else {
       store.sources[sourceId] = {
         encryptedValue: safeStorage.encryptString(JSON.stringify(credentials)).toString("base64"),
@@ -82,7 +91,7 @@ export class ErrorSourceCredentialsStore implements ErrorSourceCredentialsStoreC
   async clear(sourceId: string): Promise<void> {
     const store = await readStore(this.storePath);
     if (store.sources[sourceId] === undefined) return;
-    delete store.sources[sourceId];
+    store.sources = removeCredential(store.sources, sourceId);
     await writeStore(this.storePath, store);
   }
 }
