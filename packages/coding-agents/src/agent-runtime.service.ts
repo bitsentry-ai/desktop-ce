@@ -2240,6 +2240,7 @@ export class AgentRuntimeService {
           type: 'final',
           timestamp: new Date().toISOString(),
           response,
+          llm: session.llmSelection,
           tokenUsage: turnTokenUsage,
         })
       }
