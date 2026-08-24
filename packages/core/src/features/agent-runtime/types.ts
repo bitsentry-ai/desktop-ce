@@ -221,6 +221,7 @@ export interface ToolEndEvent extends AgentEvent {
 export interface FinalEvent extends AgentEvent {
   type: 'final'
   response: string
+  llm?: AgentLlmSelection
   tokenUsage?: {
     inputTokens: number
     outputTokens: number

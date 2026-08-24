@@ -23,14 +23,15 @@ vi.mock('../../../../packages/components/src/services/desktop-api', () => ({
 
 vi.mock('@bitsentry-ce/i18n', () => ({
   useTranslation: () => ({
-    t: (key: string) => ({
+    t: (key: string, options?: { provider?: string }) => ({
       'common.modelPicker.modelsUnavailable': 'Unable to load models',
       'common.modelPicker.noModelsFound': 'No models found',
       'common.modelPicker.searchModels': 'Search models...',
       'common.modelPicker.addToFavorites': 'Add to favorites',
       'common.modelPicker.removeFromFavorites': 'Remove from favorites',
+      'common.modelPicker.providerLockedDuringActiveConversation': 'Provider locked to {{provider}} during active conversation',
       'common.incidents.selectModel': 'Select model',
-    }[key] ?? key),
+    }[key] ?? key).replace('{{provider}}', options?.provider ?? ''),
   }),
 }))
 
@@ -159,5 +160,38 @@ describe('ModelPicker live API models', () => {
     renderPicker()
 
     expect(await screen.findByText('Unable to load models')).toBeTruthy()
+  })
+
+  it('shows the provider lock reason and refuses another provider during an active conversation', () => {
+    const onSelectProvider = vi.fn()
+    const onSelectModel = vi.fn()
+
+    render(
+      <ModelPicker
+        selectedProviderKey="anthropic"
+        selectedModelId="claude-opus-4-7"
+        onSelectProvider={onSelectProvider}
+        onSelectModel={onSelectModel}
+        configuredProviderKeys={["anthropic", "openai"]}
+        providerConfigs={{
+          anthropic: createProviderConfig(),
+          openai: createProviderConfig({
+            baseUrl: 'https://api.openai.com',
+            model: 'gpt-5.6-terra',
+          }),
+        }}
+        threadStatus="completed"
+      />,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Claude Opus 4.7' }))
+
+    expect(screen.getByText('Provider locked to Anthropic during active conversation')).toBeTruthy()
+
+    const openAiProvider = screen.getByTitle('OpenAI')
+    expect((openAiProvider as HTMLButtonElement).disabled).toBe(true)
+    fireEvent.click(openAiProvider)
+    expect(onSelectProvider).not.toHaveBeenCalled()
+    expect(onSelectModel).not.toHaveBeenCalled()
   })
 })

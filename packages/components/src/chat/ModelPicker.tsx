@@ -474,6 +474,15 @@ export function ModelPicker({
             {/* Provider name header */}
             {panelHeader}
 
+            {isProviderLocked && triggerTitle !== undefined && (
+              <div
+                role="status"
+                className="border-b border-border/60 px-3 py-2 text-[11px] text-muted-foreground"
+              >
+                {triggerTitle}
+              </div>
+            )}
+
             {/* Search */}
             <div className="relative px-3 pt-2 pb-1">
               <Search size={12} className="absolute left-5 top-1/2 -translate-y-1/2 mt-0.5 text-muted-foreground/50" />
