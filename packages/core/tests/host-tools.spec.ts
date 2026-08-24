@@ -823,4 +823,59 @@ describe('host tools', () => {
       'Summarize ${steps.0.output}.',
     )
   })
+
+  it.each([
+    { prompt: 42 },
+    { headers: 'bad' },
+  ])('returns a validation error for malformed create action input: %o', async (invalidFields) => {
+    const context = createContext()
+    const result = await executeHostTool(context, 'propose_runbook_create', {
+      prompt: 'Create a malformed runbook.',
+      draftRunbook: {
+        title: 'Malformed runbook',
+        description: '',
+        actions: [{
+          id: 'step-summary',
+          type: 'llm',
+          title: 'Summarize',
+          llmModel: 'gpt-5.6-terra',
+          ...invalidFields,
+        }],
+      },
+    })
+
+    expect(JSON.parse(result?.error ?? '')).toMatchObject({
+      code: 'INVALID_TOOL_ARGUMENTS',
+      toolName: 'propose_runbook_create',
+    })
+    expect(context.session.runbookAuthoringProposals).toBeUndefined()
+  })
+
+  it('rejects an unresolved legacy output alias in an edit proposal', async () => {
+    const context = createContext()
+    context.listAuthorableRunbooks = vi.fn().mockResolvedValue([makeRunbook()])
+
+    const result = await executeHostTool(context, 'propose_runbook_edit', {
+      runbookId: 'rb-sentry',
+      prompt: 'Add a summary action.',
+      operations: [{
+        id: 'op-summary',
+        type: 'add_action',
+        rationale: 'Summarize a missing producer.',
+        action: {
+          id: 'summarize-missing-output',
+          type: 'llm',
+          title: 'Summarize missing output',
+          prompt: 'Summarize {{missing.output}}.',
+          llmModel: 'gpt-5.6-terra',
+        },
+      }],
+    })
+
+    expect(JSON.parse(result?.error ?? '')).toMatchObject({
+      code: 'RUNBOOK_PROPOSAL_VALIDATION',
+      toolName: 'propose_runbook_edit',
+    })
+    expect(context.session.runbookAuthoringProposals).toBeUndefined()
+  })
 })

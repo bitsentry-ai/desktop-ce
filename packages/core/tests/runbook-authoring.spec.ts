@@ -356,6 +356,80 @@ describe("runbook authoring", () => {
     );
   });
 
+  it("reconciles output indexes when only a subset of edit operations is approved", () => {
+    const proposal = createRunbookEditProposal({
+      prompt: "Reorder the checks and add a summary.",
+      targetRunbook: {
+        ...makeBaseRunbook(),
+        actions: [
+          {
+            id: "producer",
+            type: "shell",
+            title: "Produce evidence",
+            command: "printf evidence",
+          },
+          {
+            id: "other",
+            type: "shell",
+            title: "Collect other evidence",
+            command: "printf other",
+          },
+        ],
+      },
+      operations: [
+        {
+          id: "op-reorder",
+          type: "reorder_actions",
+          rationale: "Run the other check first.",
+          actionIdsInOrder: ["other", "producer"],
+        },
+        {
+          id: "op-summary",
+          type: "add_action",
+          rationale: "Summarize the producer output.",
+          action: {
+            id: "summary",
+            type: "llm",
+            title: "Summarize evidence",
+            prompt: "Summarize {{producer.output}}.",
+            llmModel: "gpt-5.6-terra",
+          },
+        },
+      ],
+    });
+
+    expect(proposal.proposedRunbook.actions[2]?.prompt).toBe(
+      "Summarize ${steps.1.output}.",
+    );
+    const approved = approveRunbookAuthoringProposal({
+      proposal,
+      approvedOperationIds: ["op-summary"],
+      now: "2026-07-06T00:00:00.000Z",
+    });
+    expect(approved.runbook.actions[2]?.prompt).toBe(
+      "Summarize ${steps.0.output}.",
+    );
+  });
+
+  it("rejects an unresolved legacy output alias in an edit proposal", () => {
+    expect(() => createRunbookEditProposal({
+      prompt: "Add a summary step.",
+      targetRunbook: makeBaseRunbook(),
+      operations: [{
+        id: "op-summary",
+        type: "add_action",
+        rationale: "Summarize a missing producer.",
+        action: {
+          id: "summary",
+          type: "llm",
+          title: "Summarize evidence",
+          prompt: "Summarize {{missing.output}}.",
+          llmModel: "gpt-5.6-terra",
+        },
+      }],
+    })).toThrowError(RunbookProposalValidationError);
+  });
+
   it("allows an LLM-only runbook without findings", () => {
     const proposal = createRunbookCreationProposal({
       prompt: "Create a text summary runbook.",

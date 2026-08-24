@@ -149,10 +149,37 @@ function isObjectRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
+function isSafeToNormalizeRunbookAction(value: unknown): value is RunbookActionRecord {
+  if (!isObjectRecord(value)) return false
+
+  for (const field of ['command', 'prompt', 'url', 'body', 'pluginInput', 'pluginAuth', 'query']) {
+    if (value[field] !== undefined && typeof value[field] !== 'string') return false
+  }
+
+  if (value.headers !== undefined && (
+    !Array.isArray(value.headers) ||
+    !value.headers.every((header) =>
+      isObjectRecord(header) &&
+      typeof header.key === 'string' &&
+      typeof header.value === 'string',
+    )
+  )) return false
+
+  if (value.parameters !== undefined && (
+    !Array.isArray(value.parameters) ||
+    !value.parameters.every((parameter) =>
+      isObjectRecord(parameter) &&
+      (parameter.key === undefined || typeof parameter.key === 'string'),
+    )
+  )) return false
+
+  return true
+}
+
 function normalizeCreateRunbookActionOutputPlaceholders(input: unknown): unknown {
   if (!isObjectRecord(input) || !isObjectRecord(input.draftRunbook)) return input
   const actions = input.draftRunbook.actions
-  if (!Array.isArray(actions) || !actions.every(isObjectRecord)) return input
+  if (!Array.isArray(actions) || !actions.every(isSafeToNormalizeRunbookAction)) return input
 
   return {
     ...input,

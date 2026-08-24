@@ -489,6 +489,48 @@ function normalizeActionStepOutputPlaceholders(
   return normalized;
 }
 
+function reconcileStepOutputPlaceholders(
+  actions: RunbookActionRecord[],
+  referenceActions: RunbookActionRecord[],
+): RunbookActionRecord[] {
+  const referenceActionIds = referenceActions.map((action) => normalizeString(action.id));
+  const actionIndexes = new Map(
+    actions.map((action, index) => [normalizeString(action.id), index] as const),
+  );
+  const outputReferencePattern = /\$\{steps\.(\d+)\.output\}/g;
+
+  return actions.map((action, actionIndex) => {
+    const normalizeValue = (value: string | undefined): string | undefined =>
+      value?.replace(outputReferencePattern, (match, referenceIndexText: string) => {
+        const referenceId = referenceActionIds[Number(referenceIndexText)];
+        const referencedIndex = referenceId === undefined ? undefined : actionIndexes.get(referenceId);
+        if (referencedIndex === undefined) {
+          throw new RunbookProposalValidationError(
+            `Approved runbook operations leave action "${action.title}" with an output reference to an unapproved step.`,
+          );
+        }
+        if (referencedIndex >= actionIndex) {
+          throw new RunbookProposalValidationError(
+            `Approved runbook operations place action "${action.title}" before its output-producing step.`,
+          );
+        }
+        return `\${steps.${String(referencedIndex)}.output}`;
+      });
+
+    const normalized = cloneAction(action);
+    if (action.logFilter === undefined) delete normalized.logFilter;
+    if (action.telemetryConfig === undefined) delete normalized.telemetryConfig;
+    for (const field of RUNBOOK_TEMPLATE_FIELDS) {
+      normalized[field] = normalizeValue(normalized[field]);
+    }
+    normalized.headers = normalized.headers?.map((header) => ({
+      key: normalizeValue(header.key) ?? header.key,
+      value: normalizeValue(header.value) ?? header.value,
+    }));
+    return normalized;
+  });
+}
+
 function normalizeEditOperations(
   targetRunbook: RunbookRecord,
   operations: RunbookAuthoringOperation[],
@@ -984,6 +1026,17 @@ export function createRunbookEditProposal(
   const normalizedOperations = normalizeEditOperations(input.targetRunbook, input.operations);
   const proposedRunbook = applyOperations(input.targetRunbook, normalizedOperations);
   proposedRunbook.actions = normalizeStepOutputPlaceholders(proposedRunbook.actions);
+  const unresolvedOutputPlaceholder = proposedRunbook.actions.flatMap((action) =>
+    getUnknownRunbookTemplatePlaceholders(action)
+      .filter((placeholder) => placeholder.key.endsWith(".output"))
+      .map((placeholder) => ({ action, placeholder })),
+  )[0];
+  if (unresolvedOutputPlaceholder !== undefined) {
+    const { action, placeholder } = unresolvedOutputPlaceholder;
+    throw new RunbookProposalValidationError(
+      `Edit action "${action.title}" contains unresolved output placeholder "{{${placeholder.key}}}". Use a prior action output or declare the parameter.`,
+    );
+  }
   proposedRunbook.revisionNumber = input.targetRunbook.revisionNumber + 1;
   proposedRunbook.updatedAt = createdAt;
   assertCveFindingsPluginRequirement(
@@ -1112,6 +1165,10 @@ export function approveRunbookAuthoringProposal(
   const runbook = applyOperations(
     input.proposal.originalRunbook,
     selectedOperations,
+  );
+  runbook.actions = reconcileStepOutputPlaceholders(
+    runbook.actions,
+    input.proposal.proposedRunbook.actions,
   );
   runbook.revisionNumber = input.proposal.targetRevisionNumber + 1;
   runbook.updatedAt = updatedAt;
