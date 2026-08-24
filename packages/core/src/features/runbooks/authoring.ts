@@ -115,6 +115,16 @@ export class RunbookProposalValidationError extends Error {
   }
 }
 
+export function formatUnknownRunbookTemplatePlaceholderMessage(
+  key: string,
+): string {
+  if (key.endsWith(".output")) {
+    return `Unknown runbook placeholder "{{${key}}}". Double-brace placeholders are only for declared action parameters. Use \${steps.<index>.output} for a prior step result, or declare a parameter.`;
+  }
+
+  return `Unknown runbook placeholder "{{${key}}}". Declare it as an action parameter.`;
+}
+
 export interface CreateRunbookEditProposalInput {
   id?: string;
   incidentThreadId?: string;
@@ -337,7 +347,7 @@ function assertCveFindingsPluginRequirement(
   }
 
   throw new RunbookProposalValidationError(
-    "CVE findings require the linux-cve-status/evaluate_remediation plugin before an LLM summary. Revise the runbook to add the plugin and then summarize its output.",
+    "CVE findings require the linux-cve-status/evaluate_remediation plugin before an LLM summary. Call list_plugins first, add that evaluator action, pass normalized findings through a declared findings parameter, and then summarize the evaluator output.",
   );
 }
 
@@ -434,6 +444,37 @@ function cloneAction(action: RunbookActionRecord): RunbookActionRecord {
         ? undefined
         : JSON.parse(JSON.stringify(action.telemetryConfig)),
   };
+}
+
+function normalizeStepOutputPlaceholders(
+  actions: RunbookActionRecord[],
+): RunbookActionRecord[] {
+  const actionIndexes = new Map(
+    actions.map((action, index) => [normalizeString(action.id), index] as const),
+  );
+  const outputReferencePattern = /\{\{\s*([a-zA-Z0-9_.-]+)\.output\s*\}\}/g;
+  const fields = RUNBOOK_TEMPLATE_FIELDS;
+
+  const normalizeValue = (value: string | undefined, actionIndex: number): string | undefined =>
+    value?.replace(outputReferencePattern, (match, actionId: string) => {
+      const referencedIndex = actionIndexes.get(actionId);
+      if (referencedIndex === undefined || referencedIndex >= actionIndex) {
+        return match;
+      }
+      return `\${steps.${String(referencedIndex)}.output}`;
+    });
+
+  return actions.map((action, actionIndex) => {
+    const normalized = cloneAction(action);
+    for (const field of fields) {
+      normalized[field] = normalizeValue(normalized[field], actionIndex);
+    }
+    normalized.headers = normalized.headers?.map((header) => ({
+      key: normalizeValue(header.key, actionIndex) ?? header.key,
+      value: normalizeValue(header.value, actionIndex) ?? header.value,
+    }));
+    return normalized;
+  });
 }
 
 function normalizeString(value: string | undefined): string {
@@ -580,7 +621,7 @@ function validateRunbookActionIdentity(
 function validateRunbookActionFields(action: RunbookActionRecord, errors: string[]): void {
   for (const placeholder of getUnknownRunbookTemplatePlaceholders(action)) {
     errors.push(
-      `Action "${action.title}" references unknown placeholder "{{${placeholder.key}}}" in ${placeholder.field}. Declare it as an action parameter.`,
+      `Action "${action.title}" references ${formatUnknownRunbookTemplatePlaceholderMessage(placeholder.key)} in ${placeholder.field}.`,
     );
   }
 
@@ -953,7 +994,7 @@ export function createRunbookCreationProposal(
     description: input.draftRunbook.description,
     idleTimeout: input.draftRunbook.idleTimeout,
     revisionNumber: input.draftRunbook.revisionNumber ?? 1,
-    actions: input.draftRunbook.actions.map((action) => cloneAction(action)),
+    actions: normalizeStepOutputPlaceholders(input.draftRunbook.actions),
     createdAt: input.draftRunbook.createdAt ?? createdAt,
     updatedAt: input.draftRunbook.updatedAt ?? createdAt,
   };

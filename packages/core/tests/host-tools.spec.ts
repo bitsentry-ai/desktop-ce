@@ -192,7 +192,10 @@ describe('host tools', () => {
     expect(JSON.parse(result?.error ?? '')).toMatchObject({
       code: 'INVALID_TOOL_ARGUMENTS',
       toolName: 'propose_runbook_create',
-      issues: [{ path: 'draftRunbook.actions.0.prompt' }],
+      issues: [{
+        path: 'draftRunbook.actions.0.prompt',
+        message: expect.stringContaining('Use ${steps.<index>.output}'),
+      }],
     })
     expect(context.session.runbookAuthoringProposals).toBeUndefined()
   })

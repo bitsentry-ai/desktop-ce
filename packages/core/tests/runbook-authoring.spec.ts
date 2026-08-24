@@ -111,7 +111,7 @@ describe("runbook authoring", () => {
         actions: [findingsSummaryAction()],
       },
     })).toThrowError(new RunbookProposalValidationError(
-      "CVE findings require the linux-cve-status/evaluate_remediation plugin before an LLM summary. Revise the runbook to add the plugin and then summarize its output.",
+      "CVE findings require the linux-cve-status/evaluate_remediation plugin before an LLM summary. Call list_plugins first, add that evaluator action, pass normalized findings through a declared findings parameter, and then summarize the evaluator output.",
     ));
   });
 
@@ -212,6 +212,39 @@ describe("runbook authoring", () => {
     });
 
     expect(proposal.status).toBe("pending_approval");
+  });
+
+  it("normalizes a legacy action-id output placeholder", () => {
+    const proposal = createRunbookCreationProposal({
+      prompt: "Create a CVE analysis runbook.",
+      draftRunbook: {
+        title: "CVE analysis",
+        description: "Evaluate findings and summarize the result.",
+        actions: [
+          {
+            id: "evaluate-cve-remediation",
+            type: "plugin",
+            title: "Evaluate CVE remediation",
+            pluginId: "linux-cve-status",
+            pluginActionId: "evaluate_remediation",
+            pluginInput: "{{findings}}",
+            parameters: [{ id: "findings", key: "findings", required: true }],
+          },
+          {
+            id: "summarize-cve-remediation",
+            type: "llm",
+            title: "Summarize CVE remediation",
+            prompt: "Summarize {{evaluate-cve-remediation.output}}.",
+            llmModel: "gpt-5.6-terra",
+          },
+        ],
+      },
+    });
+
+    expect(proposal.proposedRunbook.actions[1]?.prompt).toBe(
+      "Summarize ${steps.0.output}.",
+    );
+    expect(proposal.validation.valid).toBe(true);
   });
 
   it("accepts a plugin evaluation followed by an LLM summary on edit", () => {

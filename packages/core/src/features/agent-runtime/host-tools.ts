@@ -13,6 +13,7 @@ import type { RunbookGateway } from '../runbooks/runbook.gateway'
 import {
   createRunbookCreationProposal,
   createRunbookEditProposal,
+  formatUnknownRunbookTemplatePlaceholderMessage,
   getUnknownRunbookTemplatePlaceholders,
   validatePluginAuthContracts,
   RunbookProposalValidationError,
@@ -117,7 +118,7 @@ function validateRunbookTemplatePlaceholders(
     context.addIssue({
       code: "custom",
       path: placeholder.path,
-      message: `Unknown runbook placeholder "{{${placeholder.key}}}". Declare it as an action parameter.`,
+      message: formatUnknownRunbookTemplatePlaceholderMessage(placeholder.key),
     });
   }
 }
@@ -745,7 +746,7 @@ export const hostTools = [
   },
   {
     name: 'list_plugins',
-    description: 'List installed plugins, their action IDs, input JSON schemas, and auth field contracts. Use the exact auth field keys returned here when constructing pluginAuth. Auth values and secrets are never returned.',
+    description: 'List installed plugins, their action IDs, input JSON schemas, and auth field contracts. For CVE findings, call this before proposing a runbook and use linux-cve-status/evaluate_remediation before any LLM summary. Use the exact auth field keys returned here when constructing pluginAuth. Auth values and secrets are never returned.',
     argsSchema: listPluginsHostToolSchema,
     handler: async (context: HostToolContext) => await listPlugins(context),
   },
@@ -769,13 +770,13 @@ export const hostTools = [
   },
   {
     name: 'propose_runbook_edit',
-    description: 'Create a pending, non-mutating runbook edit proposal for user approval. This never saves changes.',
+    description: 'Create a pending, non-mutating runbook edit proposal for user approval. This never saves changes. Use declared {{parameter}} values for inputs; use ${steps.<index>.output} for a prior action result, not {{action-id.output}}.',
     argsSchema: proposeRunbookEditHostToolSchema,
     handler: async (context: HostToolContext, args: ProposeRunbookEditHostToolInput) => await proposeRunbookEdit(context, args),
   },
   {
     name: 'propose_runbook_create',
-    description: 'Create a pending, non-mutating proposal for a new runbook draft. This never saves changes.',
+    description: 'Create a pending, non-mutating proposal for a new runbook draft. This never saves changes. For CVE findings, include linux-cve-status/evaluate_remediation before an LLM summary. Use declared {{parameter}} values for inputs; use ${steps.<index>.output} for a prior action result, not {{action-id.output}}.',
     argsSchema: proposeRunbookCreateHostToolSchema,
     handler: async (context: HostToolContext, args: ProposeRunbookCreateHostToolInput) => await proposeRunbookCreate(context, args),
   },
