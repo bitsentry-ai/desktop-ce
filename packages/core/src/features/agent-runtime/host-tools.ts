@@ -13,7 +13,9 @@ import type { RunbookGateway } from '../runbooks/runbook.gateway'
 import {
   createRunbookCreationProposal,
   createRunbookEditProposal,
+  formatUnknownRunbookTemplatePlaceholderMessage,
   getUnknownRunbookTemplatePlaceholders,
+  normalizeStepOutputPlaceholders,
   validatePluginAuthContracts,
   RunbookProposalValidationError,
   type RunbookAuthoringOperation,
@@ -112,29 +114,88 @@ function validatePluginActionProposal(action: RunbookActionProposal, context: z.
 function validateRunbookTemplatePlaceholders(
   action: RunbookActionProposal,
   context: z.RefinementCtx,
+  options: { allowLegacyStepOutputPlaceholder?: boolean } = {},
 ): void {
   for (const placeholder of getUnknownRunbookTemplatePlaceholders(action)) {
+    if (options.allowLegacyStepOutputPlaceholder === true && placeholder.key.endsWith('.output')) continue
     context.addIssue({
       code: "custom",
       path: placeholder.path,
-      message: `Unknown runbook placeholder "{{${placeholder.key}}}". Declare it as an action parameter.`,
+      message: formatUnknownRunbookTemplatePlaceholderMessage(placeholder.key),
     });
   }
 }
 
-const runbookActionProposalSchema = runbookActionProposalBaseSchema.superRefine((action, context) => {
-  if (action.type === 'llm') validateLlmActionProposal(action, context)
-  if (action.type === 'external_source') validateExternalSourceActionProposal(action, context)
-  if (action.type === 'plugin') validatePluginActionProposal(action, context)
-  validateRunbookTemplatePlaceholders(action, context)
-})
+function createRunbookActionProposalSchema(options: { allowLegacyStepOutputPlaceholder?: boolean } = {}) {
+  return runbookActionProposalBaseSchema.superRefine((action, context) => {
+    if (action.type === 'llm') validateLlmActionProposal(action, context)
+    if (action.type === 'external_source') validateExternalSourceActionProposal(action, context)
+    if (action.type === 'plugin') validatePluginActionProposal(action, context)
+    validateRunbookTemplatePlaceholders(action, context, options)
+  })
+}
+
+const runbookActionProposalSchema = createRunbookActionProposalSchema()
+const runbookProviderActionProposalSchema = createRunbookActionProposalSchema({ allowLegacyStepOutputPlaceholder: true })
+function createRunbookCreateHostToolSchema(actionSchema: typeof runbookActionProposalSchema) {
+  return z.object({ prompt: z.string().min(1), draftRunbook: z.object({ title: z.string().min(1), description: z.string().default(''), idleTimeout: idleTimeoutSchema.optional(), actions: z.array(actionSchema).min(1) }).strict() }).strict()
+}
+const runbookEditActionProposalSchema = createRunbookActionProposalSchema({ allowLegacyStepOutputPlaceholder: true })
 const runbookAuthoringOperationSchema = z.object({
   id: z.string().min(1), type: z.enum(['update_metadata', 'add_action', 'update_action', 'delete_action', 'reorder_actions']), rationale: z.string().min(1),
   metadata: z.object({ title: z.string().optional(), description: z.string().optional(), idleTimeout: idleTimeoutSchema.optional() }).strict().optional(),
-  action: runbookActionProposalSchema.optional(), actionId: z.string().min(1).optional(), insertAfterActionId: z.string().min(1).nullable().optional(), actionIdsInOrder: z.array(z.string().min(1)).optional(),
+  action: runbookEditActionProposalSchema.optional(), actionId: z.string().min(1).optional(), insertAfterActionId: z.string().min(1).nullable().optional(), actionIdsInOrder: z.array(z.string().min(1)).optional(),
 }).strict()
 export const proposeRunbookEditHostToolSchema = z.object({ runbookId: z.string().min(1).optional(), runbookTitle: z.string().min(1).optional(), prompt: z.string().min(1), operations: z.array(runbookAuthoringOperationSchema).min(1) }).strict()
-export const proposeRunbookCreateHostToolSchema = z.object({ prompt: z.string().min(1), draftRunbook: z.object({ title: z.string().min(1), description: z.string().default(''), idleTimeout: idleTimeoutSchema.optional(), actions: z.array(runbookActionProposalSchema).min(1) }).strict() }).strict()
+const runbookCreateHostToolBaseSchema = createRunbookCreateHostToolSchema(runbookActionProposalSchema)
+const runbookCreateHostToolProviderSchema = createRunbookCreateHostToolSchema(runbookProviderActionProposalSchema)
+
+function isObjectRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function isSafeToNormalizeRunbookAction(value: unknown): value is RunbookActionRecord {
+  if (!isObjectRecord(value)) return false
+
+  for (const field of ['command', 'prompt', 'url', 'body', 'pluginInput', 'pluginAuth', 'query']) {
+    if (value[field] !== undefined && typeof value[field] !== 'string') return false
+  }
+
+  if (value.headers !== undefined && (
+    !Array.isArray(value.headers) ||
+    !value.headers.every((header) =>
+      isObjectRecord(header) &&
+      typeof header.key === 'string' &&
+      typeof header.value === 'string',
+    )
+  )) return false
+
+  if (value.parameters !== undefined && (
+    !Array.isArray(value.parameters) ||
+    !value.parameters.every((parameter) =>
+      isObjectRecord(parameter) &&
+      (parameter.key === undefined || typeof parameter.key === 'string'),
+    )
+  )) return false
+
+  return true
+}
+
+function normalizeCreateRunbookActionOutputPlaceholders(input: unknown): unknown {
+  if (!isObjectRecord(input) || !isObjectRecord(input.draftRunbook)) return input
+  const actions = input.draftRunbook.actions
+  if (!Array.isArray(actions) || !actions.every(isSafeToNormalizeRunbookAction)) return input
+
+  return {
+    ...input,
+    draftRunbook: {
+      ...input.draftRunbook,
+      actions: normalizeStepOutputPlaceholders(actions as unknown as RunbookActionRecord[]),
+    },
+  }
+}
+
+export const proposeRunbookCreateHostToolSchema = runbookCreateHostToolBaseSchema
 
 export const RUNBOOK_COMPLETION_WAIT_TIMEOUT_MS = 30_000
 export const RUNBOOK_COMPLETION_WAIT_SECONDS = RUNBOOK_COMPLETION_WAIT_TIMEOUT_MS / 1_000
@@ -204,6 +265,7 @@ export interface HostToolSpec<Args> {
   name: HostToolName
   description: string
   argsSchema: z.ZodObject<z.ZodRawShape>
+  providerArgsSchema?: z.ZodObject<z.ZodRawShape>
   handler(context: HostToolContext, args: Args): Promise<ToolResult>
 }
 
@@ -745,7 +807,7 @@ export const hostTools = [
   },
   {
     name: 'list_plugins',
-    description: 'List installed plugins, their action IDs, input JSON schemas, and auth field contracts. Use the exact auth field keys returned here when constructing pluginAuth. Auth values and secrets are never returned.',
+    description: 'List installed plugins, their action IDs, input JSON schemas, and auth field contracts. For CVE findings, call this before proposing a runbook and use linux-cve-status/evaluate_remediation before any LLM summary. Use the exact auth field keys returned here when constructing pluginAuth. Auth values and secrets are never returned.',
     argsSchema: listPluginsHostToolSchema,
     handler: async (context: HostToolContext) => await listPlugins(context),
   },
@@ -769,14 +831,15 @@ export const hostTools = [
   },
   {
     name: 'propose_runbook_edit',
-    description: 'Create a pending, non-mutating runbook edit proposal for user approval. This never saves changes.',
+    description: 'Create a pending, non-mutating runbook edit proposal for user approval. This never saves changes. Use declared {{parameter}} values for inputs; use ${steps.<index>.output} for a prior action result, not {{action-id.output}}.',
     argsSchema: proposeRunbookEditHostToolSchema,
     handler: async (context: HostToolContext, args: ProposeRunbookEditHostToolInput) => await proposeRunbookEdit(context, args),
   },
   {
     name: 'propose_runbook_create',
-    description: 'Create a pending, non-mutating proposal for a new runbook draft. This never saves changes.',
+    description: 'Create a pending, non-mutating proposal for a new runbook draft. This never saves changes. For CVE findings, include linux-cve-status/evaluate_remediation before an LLM summary. Use declared {{parameter}} values for inputs; use ${steps.<index>.output} for a prior action result, not {{action-id.output}}.',
     argsSchema: proposeRunbookCreateHostToolSchema,
+    providerArgsSchema: runbookCreateHostToolProviderSchema,
     handler: async (context: HostToolContext, args: ProposeRunbookCreateHostToolInput) => await proposeRunbookCreate(context, args),
   },
 ] as const satisfies readonly HostToolSpec<unknown>[]
@@ -828,7 +891,11 @@ export async function executeHostTool(
     timestamp: startedAt,
   })
 
-  const parsed = tool.argsSchema.safeParse(normalizedArgs)
+  const argsForValidation =
+    tool.name === 'propose_runbook_create'
+      ? normalizeCreateRunbookActionOutputPlaceholders(normalizedArgs)
+      : normalizedArgs
+  const parsed = tool.argsSchema.safeParse(argsForValidation)
   if (!parsed.success) {
     const result = createValidationError(tool.name, parsed.error)
     emitHostToolEvent(context, {

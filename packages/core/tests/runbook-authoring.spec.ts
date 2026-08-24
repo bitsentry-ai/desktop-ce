@@ -111,7 +111,7 @@ describe("runbook authoring", () => {
         actions: [findingsSummaryAction()],
       },
     })).toThrowError(new RunbookProposalValidationError(
-      "CVE findings require the linux-cve-status/evaluate_remediation plugin before an LLM summary. Revise the runbook to add the plugin and then summarize its output.",
+      "CVE findings require the linux-cve-status/evaluate_remediation plugin before an LLM summary. Call list_plugins first, add that evaluator action, pass normalized findings through a declared findings parameter, and then summarize the evaluator output.",
     ));
   });
 
@@ -214,6 +214,70 @@ describe("runbook authoring", () => {
     expect(proposal.status).toBe("pending_approval");
   });
 
+  it("normalizes a legacy action-id output placeholder", () => {
+    const proposal = createRunbookCreationProposal({
+      prompt: "Create a CVE analysis runbook.",
+      draftRunbook: {
+        title: "CVE analysis",
+        description: "Evaluate findings and summarize the result.",
+        actions: [
+          {
+            id: "evaluate-cve-remediation",
+            type: "plugin",
+            title: "Evaluate CVE remediation",
+            pluginId: "linux-cve-status",
+            pluginActionId: "evaluate_remediation",
+            pluginInput: "{{findings}}",
+            parameters: [{ id: "findings", key: "findings", required: true }],
+          },
+          {
+            id: "summarize-cve-remediation",
+            type: "llm",
+            title: "Summarize CVE remediation",
+            prompt: "Summarize {{evaluate-cve-remediation.output}}.",
+            llmModel: "gpt-5.6-terra",
+          },
+        ],
+      },
+    });
+
+    expect(proposal.proposedRunbook.actions[1]?.prompt).toBe(
+      "Summarize ${steps.0.output}.",
+    );
+    expect(proposal.validation.valid).toBe(true);
+  });
+
+  it("preserves a declared dotted parameter that looks like an action output", () => {
+    const proposal = createRunbookCreationProposal({
+      prompt: "Create a parameterized summary runbook.",
+      draftRunbook: {
+        title: "Parameterized summary",
+        description: "Use the supplied value.",
+        actions: [
+          {
+            id: "service",
+            type: "shell",
+            title: "Check service",
+            command: "systemctl status api",
+          },
+          {
+            id: "summary",
+            type: "llm",
+            title: "Summarize service",
+            prompt: "Summarize {{service.output}}.",
+            llmModel: "gpt-5.6-terra",
+            parameters: [{ id: "service-output", key: "service.output", required: true }],
+          },
+        ],
+      },
+    });
+
+    expect(proposal.proposedRunbook.actions[1]?.prompt).toBe(
+      "Summarize {{service.output}}.",
+    );
+    expect(proposal.validation.valid).toBe(true);
+  });
+
   it("accepts a plugin evaluation followed by an LLM summary on edit", () => {
     const proposal = createRunbookEditProposal({
       prompt: "Add CVE evaluation and summary steps.",
@@ -243,6 +307,163 @@ describe("runbook authoring", () => {
     });
 
     expect(proposal.status).toBe("pending_approval");
+  });
+
+  it("normalizes legacy action output placeholders in edit operations", () => {
+    const proposal = createRunbookEditProposal({
+      prompt: "Add CVE evaluation and summary steps.",
+      normalizedFindings: findings,
+      targetRunbook: makeBaseRunbook(),
+      operations: [
+        {
+          id: "op-plugin",
+          type: "add_action",
+          rationale: "Evaluate CVE remediation first.",
+          action: {
+            id: "action-plugin",
+            type: "plugin",
+            title: "Evaluate CVE remediation",
+            pluginId: "linux-cve-status",
+            pluginActionId: "evaluate_remediation",
+            pluginInput: "{{findings}}",
+            parameters: [{ id: "findings", key: "findings", required: true }],
+          },
+        },
+        {
+          id: "op-summary",
+          type: "add_action",
+          rationale: "Summarize the plugin output.",
+          action: {
+            id: "action-summary",
+            type: "llm",
+            title: "Summarize CVE remediation",
+            prompt: "Summarize {{action-plugin.output}}.",
+            llmModel: "gpt-5.6-terra",
+          },
+        },
+      ],
+    });
+
+    expect(proposal.operations[1]?.action?.prompt).toBe(
+      "Summarize ${steps.1.output}.",
+    );
+    expect(proposal.proposedRunbook.actions[2]?.prompt).toBe(
+      "Summarize ${steps.1.output}.",
+    );
+    const approved = approveRunbookAuthoringProposal({ proposal, now: "2026-07-06T00:00:00.000Z" });
+    expect(approved.runbook.actions[2]?.prompt).toBe(
+      "Summarize ${steps.1.output}.",
+    );
+  });
+
+  it("reconciles output indexes when only a subset of edit operations is approved", () => {
+    const proposal = createRunbookEditProposal({
+      prompt: "Reorder the checks and add a summary.",
+      targetRunbook: {
+        ...makeBaseRunbook(),
+        actions: [
+          {
+            id: "producer",
+            type: "shell",
+            title: "Produce evidence",
+            command: "printf evidence",
+          },
+          {
+            id: "other",
+            type: "shell",
+            title: "Collect other evidence",
+            command: "printf other",
+          },
+        ],
+      },
+      operations: [
+        {
+          id: "op-reorder",
+          type: "reorder_actions",
+          rationale: "Run the other check first.",
+          actionIdsInOrder: ["other", "producer"],
+        },
+        {
+          id: "op-summary",
+          type: "add_action",
+          rationale: "Summarize the producer output.",
+          action: {
+            id: "summary",
+            type: "llm",
+            title: "Summarize evidence",
+            prompt: "Summarize {{producer.output}}.",
+            llmModel: "gpt-5.6-terra",
+          },
+        },
+      ],
+    });
+
+    expect(proposal.proposedRunbook.actions[2]?.prompt).toBe(
+      "Summarize ${steps.1.output}.",
+    );
+    const approved = approveRunbookAuthoringProposal({
+      proposal,
+      approvedOperationIds: ["op-summary"],
+      now: "2026-07-06T00:00:00.000Z",
+    });
+    expect(approved.runbook.actions[2]?.prompt).toBe(
+      "Summarize ${steps.0.output}.",
+    );
+  });
+
+  it("preserves original output identities when an ordering change is not approved", () => {
+    const proposal = createRunbookEditProposal({
+      prompt: "Reorder the checks and update the title.",
+      targetRunbook: {
+        ...makeBaseRunbook(),
+        actions: [
+          { id: "producer", type: "shell", title: "Produce evidence", command: "printf evidence" },
+          { id: "other", type: "shell", title: "Collect other evidence", command: "printf other" },
+          { id: "summary", type: "llm", title: "Summarize evidence", prompt: "Summarize ${steps.0.output}.", llmModel: "gpt-5.6-terra" },
+        ],
+      },
+      operations: [
+        {
+          id: "op-reorder",
+          type: "reorder_actions",
+          rationale: "Run the other check first.",
+          actionIdsInOrder: ["other", "producer", "summary"],
+        },
+        {
+          id: "op-title",
+          type: "update_metadata",
+          rationale: "Clarify the runbook title.",
+          metadata: { title: "Reordered evidence checks" },
+        },
+      ],
+    });
+
+    const approved = approveRunbookAuthoringProposal({
+      proposal,
+      approvedOperationIds: ["op-title"],
+      now: "2026-07-06T00:00:00.000Z",
+    });
+
+    expect(approved.runbook.actions[2]?.prompt).toBe("Summarize ${steps.0.output}.");
+  });
+
+  it("rejects an unresolved legacy output alias in an edit proposal", () => {
+    expect(() => createRunbookEditProposal({
+      prompt: "Add a summary step.",
+      targetRunbook: makeBaseRunbook(),
+      operations: [{
+        id: "op-summary",
+        type: "add_action",
+        rationale: "Summarize a missing producer.",
+        action: {
+          id: "summary",
+          type: "llm",
+          title: "Summarize evidence",
+          prompt: "Summarize {{missing.output}}.",
+          llmModel: "gpt-5.6-terra",
+        },
+      }],
+    })).toThrowError(RunbookProposalValidationError);
   });
 
   it("allows an LLM-only runbook without findings", () => {

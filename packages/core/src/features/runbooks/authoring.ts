@@ -115,6 +115,16 @@ export class RunbookProposalValidationError extends Error {
   }
 }
 
+export function formatUnknownRunbookTemplatePlaceholderMessage(
+  key: string,
+): string {
+  if (key.endsWith(".output")) {
+    return `Unknown runbook placeholder "{{${key}}}". Double-brace placeholders are only for declared action parameters. Use \${steps.<index>.output} for a prior step result, or declare a parameter.`;
+  }
+
+  return `Unknown runbook placeholder "{{${key}}}". Declare it as an action parameter.`;
+}
+
 export interface CreateRunbookEditProposalInput {
   id?: string;
   incidentThreadId?: string;
@@ -337,7 +347,7 @@ function assertCveFindingsPluginRequirement(
   }
 
   throw new RunbookProposalValidationError(
-    "CVE findings require the linux-cve-status/evaluate_remediation plugin before an LLM summary. Revise the runbook to add the plugin and then summarize its output.",
+    "CVE findings require the linux-cve-status/evaluate_remediation plugin before an LLM summary. Call list_plugins first, add that evaluator action, pass normalized findings through a declared findings parameter, and then summarize the evaluator output.",
   );
 }
 
@@ -434,6 +444,115 @@ function cloneAction(action: RunbookActionRecord): RunbookActionRecord {
         ? undefined
         : JSON.parse(JSON.stringify(action.telemetryConfig)),
   };
+}
+
+export function normalizeStepOutputPlaceholders(
+  actions: RunbookActionRecord[],
+): RunbookActionRecord[] {
+  const actionIndexes = new Map(
+    actions.map((action, index) => [normalizeString(action.id), index] as const),
+  );
+  return actions.map((action) => normalizeActionStepOutputPlaceholders(action, actionIndexes));
+}
+
+function normalizeActionStepOutputPlaceholders(
+  action: RunbookActionRecord,
+  actionIndexes: Map<string, number>,
+): RunbookActionRecord {
+  const actionIndex = actionIndexes.get(normalizeString(action.id));
+  if (actionIndex === undefined) return cloneAction(action);
+
+  const declaredParameterKeys = new Set(
+    action.parameters
+      ?.map((parameter) => normalizeString(parameter.key))
+      .filter((key) => key.length > 0),
+  );
+  const outputReferencePattern = /\{\{\s*([a-zA-Z0-9_.-]+)\.output\s*\}\}/g;
+  const normalizeValue = (value: string | undefined): string | undefined =>
+    value?.replace(outputReferencePattern, (match, actionId: string) => {
+      if (declaredParameterKeys.has(`${actionId}.output`)) return match;
+      const referencedIndex = actionIndexes.get(actionId);
+      if (referencedIndex === undefined || referencedIndex >= actionIndex) return match;
+      return `\${steps.${String(referencedIndex)}.output}`;
+    });
+
+  const normalized = cloneAction(action);
+  if (action.logFilter === undefined) delete normalized.logFilter;
+  if (action.telemetryConfig === undefined) delete normalized.telemetryConfig;
+  for (const field of RUNBOOK_TEMPLATE_FIELDS) {
+    normalized[field] = normalizeValue(normalized[field]);
+  }
+  normalized.headers = normalized.headers?.map((header) => ({
+    key: normalizeValue(header.key) ?? header.key,
+    value: normalizeValue(header.value) ?? header.value,
+  }));
+  return normalized;
+}
+
+function reconcileStepOutputPlaceholders(
+  actions: RunbookActionRecord[],
+  referenceActions: RunbookActionRecord[],
+  originalActions: RunbookActionRecord[],
+  updatedActionIds: ReadonlySet<string>,
+): RunbookActionRecord[] {
+  const referenceActionIds = referenceActions.map((action) => normalizeString(action.id));
+  const originalActionIds = originalActions.map((action) => normalizeString(action.id));
+  const actionIndexes = new Map(
+    actions.map((action, index) => [normalizeString(action.id), index] as const),
+  );
+  const outputReferencePattern = /\$\{steps\.(\d+)\.output\}/g;
+
+  return actions.map((action, actionIndex) => {
+    const actionIds = updatedActionIds.has(normalizeString(action.id))
+      ? referenceActionIds
+      : originalActionIds;
+    const normalizeValue = (value: string | undefined): string | undefined =>
+      value?.replace(outputReferencePattern, (match, referenceIndexText: string) => {
+        const referenceId = actionIds[Number(referenceIndexText)];
+        const referencedIndex = referenceId === undefined ? undefined : actionIndexes.get(referenceId);
+        if (referencedIndex === undefined) {
+          throw new RunbookProposalValidationError(
+            `Approved runbook operations leave action "${action.title}" with an output reference to an unapproved step.`,
+          );
+        }
+        if (referencedIndex >= actionIndex) {
+          throw new RunbookProposalValidationError(
+            `Approved runbook operations place action "${action.title}" before its output-producing step.`,
+          );
+        }
+        return `\${steps.${String(referencedIndex)}.output}`;
+      });
+
+    const normalized = cloneAction(action);
+    if (action.logFilter === undefined) delete normalized.logFilter;
+    if (action.telemetryConfig === undefined) delete normalized.telemetryConfig;
+    for (const field of RUNBOOK_TEMPLATE_FIELDS) {
+      normalized[field] = normalizeValue(normalized[field]);
+    }
+    normalized.headers = normalized.headers?.map((header) => ({
+      key: normalizeValue(header.key) ?? header.key,
+      value: normalizeValue(header.value) ?? header.value,
+    }));
+    return normalized;
+  });
+}
+
+function normalizeEditOperations(
+  targetRunbook: RunbookRecord,
+  operations: RunbookAuthoringOperation[],
+): RunbookAuthoringOperation[] {
+  const rawProposedRunbook = applyOperations(targetRunbook, operations);
+  const actionIndexes = new Map(
+    rawProposedRunbook.actions.map((action, index) => [normalizeString(action.id), index] as const),
+  );
+
+  return operations.map((operation) => {
+    const normalized = cloneOperation(operation);
+    if (operation.action !== undefined) {
+      normalized.action = normalizeActionStepOutputPlaceholders(operation.action, actionIndexes);
+    }
+    return normalized;
+  });
 }
 
 function normalizeString(value: string | undefined): string {
@@ -580,7 +699,7 @@ function validateRunbookActionIdentity(
 function validateRunbookActionFields(action: RunbookActionRecord, errors: string[]): void {
   for (const placeholder of getUnknownRunbookTemplatePlaceholders(action)) {
     errors.push(
-      `Action "${action.title}" references unknown placeholder "{{${placeholder.key}}}" in ${placeholder.field}. Declare it as an action parameter.`,
+      `Action "${action.title}" references ${formatUnknownRunbookTemplatePlaceholderMessage(placeholder.key)} in ${placeholder.field}.`,
     );
   }
 
@@ -910,7 +1029,20 @@ export function createRunbookEditProposal(
   input: CreateRunbookEditProposalInput,
 ): RunbookEditAuthoringProposal {
   const createdAt = nowIso(input.now);
-  const proposedRunbook = applyOperations(input.targetRunbook, input.operations);
+  const normalizedOperations = normalizeEditOperations(input.targetRunbook, input.operations);
+  const proposedRunbook = applyOperations(input.targetRunbook, normalizedOperations);
+  proposedRunbook.actions = normalizeStepOutputPlaceholders(proposedRunbook.actions);
+  const unresolvedOutputPlaceholder = proposedRunbook.actions.flatMap((action) =>
+    getUnknownRunbookTemplatePlaceholders(action)
+      .filter((placeholder) => placeholder.key.endsWith(".output"))
+      .map((placeholder) => ({ action, placeholder })),
+  )[0];
+  if (unresolvedOutputPlaceholder !== undefined) {
+    const { action, placeholder } = unresolvedOutputPlaceholder;
+    throw new RunbookProposalValidationError(
+      `Edit action "${action.title}" contains unresolved output placeholder "{{${placeholder.key}}}". Use a prior action output or declare the parameter.`,
+    );
+  }
   proposedRunbook.revisionNumber = input.targetRunbook.revisionNumber + 1;
   proposedRunbook.updatedAt = createdAt;
   assertCveFindingsPluginRequirement(
@@ -932,12 +1064,12 @@ export function createRunbookEditProposal(
     targetRunbookId: input.targetRunbook.id,
     targetRevisionNumber: input.targetRunbook.revisionNumber,
     targetRevisionHash: getRunbookAuthoringRevisionHash(input.targetRunbook),
-    operations: input.operations.map((operation) => cloneOperation(operation)),
+    operations: normalizedOperations,
     originalRunbook: cloneRunbook(input.targetRunbook),
     proposedRunbook,
     operationDiffs: buildSequentialOperationDiffs(
       input.targetRunbook,
-      input.operations,
+      normalizedOperations,
     ),
     validation: validateRunbook(proposedRunbook),
   };
@@ -953,7 +1085,7 @@ export function createRunbookCreationProposal(
     description: input.draftRunbook.description,
     idleTimeout: input.draftRunbook.idleTimeout,
     revisionNumber: input.draftRunbook.revisionNumber ?? 1,
-    actions: input.draftRunbook.actions.map((action) => cloneAction(action)),
+    actions: normalizeStepOutputPlaceholders(input.draftRunbook.actions),
     createdAt: input.draftRunbook.createdAt ?? createdAt,
     updatedAt: input.draftRunbook.updatedAt ?? createdAt,
   };
@@ -1039,6 +1171,20 @@ export function approveRunbookAuthoringProposal(
   const runbook = applyOperations(
     input.proposal.originalRunbook,
     selectedOperations,
+  );
+  const updatedActionIds = new Set(
+    selectedOperations.flatMap((operation) => {
+      if (operation.type === "add_action" || operation.type === "update_action") {
+        return [operation.action?.id, operation.actionId];
+      }
+      return [];
+    }).filter((actionId): actionId is string => actionId !== undefined),
+  );
+  runbook.actions = reconcileStepOutputPlaceholders(
+    runbook.actions,
+    input.proposal.proposedRunbook.actions,
+    input.proposal.originalRunbook.actions,
+    updatedActionIds,
   );
   runbook.revisionNumber = input.proposal.targetRevisionNumber + 1;
   runbook.updatedAt = updatedAt;

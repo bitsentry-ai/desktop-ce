@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { randomUUID } from 'crypto'
 import {
   executeHostTool,
+  getHostTool,
   type HostToolContext,
 } from '../src/features/agent-runtime'
 import type { DesktopPluginDescriptor } from '../src/features/plugins'
@@ -192,9 +193,67 @@ describe('host tools', () => {
     expect(JSON.parse(result?.error ?? '')).toMatchObject({
       code: 'INVALID_TOOL_ARGUMENTS',
       toolName: 'propose_runbook_create',
-      issues: [{ path: 'draftRunbook.actions.0.prompt' }],
+      issues: [{
+        path: 'draftRunbook.actions.0.prompt',
+        message: expect.stringContaining('Use ${steps.<index>.output}'),
+      }],
     })
     expect(context.session.runbookAuthoringProposals).toBeUndefined()
+  })
+
+  it('normalizes a legacy action-output placeholder in a create proposal', async () => {
+    const context = createContext()
+    const result = await executeHostTool(context, 'propose_runbook_create', {
+      prompt: 'Create a CVE analysis runbook.',
+      draftRunbook: {
+        title: 'CVE analysis',
+        description: 'Evaluate findings and summarize the result.',
+        actions: [
+          {
+            id: 'evaluate-cve-remediation',
+            type: 'plugin',
+            title: 'Evaluate CVE remediation',
+            pluginId: 'linux-cve-status',
+            pluginActionId: 'evaluate_remediation',
+            pluginInput: '{{findings}}',
+            parameters: [{ id: 'findings', key: 'findings', required: true }],
+          },
+          {
+            id: 'summarize-cve-remediation',
+            type: 'llm',
+            title: 'Summarize CVE remediation',
+            prompt: 'Summarize {{evaluate-cve-remediation.output}}.',
+            llmModel: 'gpt-5.6-terra',
+          },
+        ],
+      },
+    })
+
+    expect(result?.error).toBeUndefined()
+    expect(context.session.runbookAuthoringProposals?.[0]?.proposedRunbook.actions[1]?.prompt).toBe(
+      'Summarize ${steps.0.output}.',
+    )
+  })
+
+  it('allows provider schemas to pass legacy output aliases to runtime normalization', () => {
+    const tool = getHostTool('propose_runbook_create')
+    const input = {
+      prompt: 'Create a summary runbook.',
+      draftRunbook: {
+        title: 'Summary',
+        description: 'Summarize evidence.',
+        actions: [{
+          id: 'summary',
+          type: 'llm' as const,
+          title: 'Summarize',
+          prompt: 'Summarize {{producer.output}}.',
+          llmModel: 'gpt-5.6-terra',
+        }],
+      },
+    }
+
+    expect(tool?.argsSchema.safeParse(input).success).toBe(false)
+    expect(tool?.providerArgsSchema?.safeParse(input).success).toBe(true)
   })
 
   it('accepts a declared runbook placeholder in a proposal', async () => {
@@ -750,5 +809,95 @@ describe('host tools', () => {
 
     expect(firstLookupAfterTimeout?.error).toBeUndefined()
     expect(secondWait?.error).toBeUndefined()
+  })
+
+  it('normalizes a legacy action-output placeholder in an edit proposal', async () => {
+    const context = createContext()
+    context.listAuthorableRunbooks = vi.fn().mockResolvedValue([makeRunbook({
+      actions: [{
+        id: 'evaluate-cve-remediation',
+        type: 'plugin',
+        title: 'Evaluate CVE remediation',
+        pluginId: 'linux-cve-status',
+        pluginActionId: 'evaluate_remediation',
+      }],
+    })])
+
+    const result = await executeHostTool(context, 'propose_runbook_edit', {
+      runbookId: 'rb-sentry',
+      prompt: 'Add a summary action.',
+      operations: [{
+        id: 'op-summary',
+        type: 'add_action',
+        rationale: 'Summarize the evaluator output.',
+        action: {
+          id: 'summarize-cve-remediation',
+          type: 'llm',
+          title: 'Summarize CVE remediation',
+          prompt: 'Summarize {{evaluate-cve-remediation.output}}.',
+          llmModel: 'gpt-5.6-terra',
+        },
+      }],
+    })
+
+    expect(result?.error).toBeUndefined()
+    expect(context.session.runbookAuthoringProposals?.[0]?.operations[0]?.action?.prompt).toBe(
+      'Summarize ${steps.0.output}.',
+    )
+  })
+
+  it.each([
+    { prompt: 42 },
+    { headers: 'bad' },
+  ])('returns a validation error for malformed create action input: %o', async (invalidFields) => {
+    const context = createContext()
+    const result = await executeHostTool(context, 'propose_runbook_create', {
+      prompt: 'Create a malformed runbook.',
+      draftRunbook: {
+        title: 'Malformed runbook',
+        description: '',
+        actions: [{
+          id: 'step-summary',
+          type: 'llm',
+          title: 'Summarize',
+          llmModel: 'gpt-5.6-terra',
+          ...invalidFields,
+        }],
+      },
+    })
+
+    expect(JSON.parse(result?.error ?? '')).toMatchObject({
+      code: 'INVALID_TOOL_ARGUMENTS',
+      toolName: 'propose_runbook_create',
+    })
+    expect(context.session.runbookAuthoringProposals).toBeUndefined()
+  })
+
+  it('rejects an unresolved legacy output alias in an edit proposal', async () => {
+    const context = createContext()
+    context.listAuthorableRunbooks = vi.fn().mockResolvedValue([makeRunbook()])
+
+    const result = await executeHostTool(context, 'propose_runbook_edit', {
+      runbookId: 'rb-sentry',
+      prompt: 'Add a summary action.',
+      operations: [{
+        id: 'op-summary',
+        type: 'add_action',
+        rationale: 'Summarize a missing producer.',
+        action: {
+          id: 'summarize-missing-output',
+          type: 'llm',
+          title: 'Summarize missing output',
+          prompt: 'Summarize {{missing.output}}.',
+          llmModel: 'gpt-5.6-terra',
+        },
+      }],
+    })
+
+    expect(JSON.parse(result?.error ?? '')).toMatchObject({
+      code: 'RUNBOOK_PROPOSAL_VALIDATION',
+      toolName: 'propose_runbook_edit',
+    })
+    expect(context.session.runbookAuthoringProposals).toBeUndefined()
   })
 })

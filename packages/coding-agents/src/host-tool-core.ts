@@ -16,7 +16,7 @@ export type HostToolDefinition = HostToolSpec<unknown>
 
 export interface HostToolCore {
   readonly tools: readonly HostToolDefinition[]
-  inputSchemaFor(tool: HostToolDefinition): z.ZodType
+  inputSchemaFor(tool: HostToolDefinition): z.ZodObject<z.ZodRawShape>
   call(name: string, args: unknown): Promise<HostToolCallResult>
 }
 
@@ -28,9 +28,10 @@ export function createHostToolCore(
   const contextIdSchema = z.string().min(1).describe(
     'Omit contextId. The BitSentry MCP shim injects the scoped context handle automatically.',
   )
-  const inputSchemaFor = (tool: HostToolDefinition): z.ZodType => {
-    if (contextId === undefined) return tool.argsSchema
-    return tool.argsSchema.extend({
+  const inputSchemaFor = (tool: HostToolDefinition): z.ZodObject<z.ZodRawShape> => {
+    const schema = tool.providerArgsSchema ?? tool.argsSchema
+    if (contextId === undefined) return schema
+    return schema.extend({
       contextId: contextIdSchema.optional(),
     })
   }
