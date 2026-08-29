@@ -375,6 +375,11 @@ export interface DesktopBitsentryBridge<
       proposalId: string;
       requestedEdit: string;
     }) => Promise<import("./contracts").RunbookAuthoringProposalDecisionResult>;
+    restoreRunbookAuthoringProposal: (input: {
+      sessionId?: string;
+      incidentThreadId?: string;
+      proposalId: string;
+    }) => Promise<import("./contracts").RunbookAuthoringProposalDecisionResult>;
     onEvent: (
       callback: (
         event: DesktopAgentEventEnvelope<TAgentEvent, TAgentSnapshot>,

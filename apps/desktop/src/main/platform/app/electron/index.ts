@@ -73,6 +73,7 @@ import {
 import type { LocalAiProviderKey } from '@bitsentry-ce/coding-agents'
 import { ExternalSourceRunbookQueryService } from '@bitsentry-ce/core/features/error-sources'
 import { SqliteRunbookResultStore } from '@bitsentry-ce/core/features/runbooks/desktop-runbook-result.store'
+import { SqliteRunbookAuthoringProposalStore } from '@bitsentry-ce/core/features/runbooks'
 import { SqliteErrorSourcesRepositoryAdapter } from '@bitsentry-ce/core/features/error-sources/desktop-sqlite-error-sources.adapter'
 import { createDesktopErrorSourcesHandlers } from '@bitsentry-ce/core/features/error-sources/desktop-error-sources.handlers'
 import { AgentRuntimeService } from '@bitsentry-ce/desktop-cli/runtime/desktop-agent-runtime'
@@ -616,6 +617,7 @@ app
           runbookStore,
           onRunbooksChanged: publishRunbooksChanged,
           pluginRuntime,
+          authoringProposalStore: new SqliteRunbookAuthoringProposalStore(db),
           windowGetter: () => desktopShell.mainWindow,
         },
         { AgentRuntimeService },
@@ -634,6 +636,7 @@ app
         'agent:approveRunbookAuthoringProposal',
         'agent:rejectRunbookAuthoringProposal',
         'agent:requestRunbookAuthoringRevision',
+        'agent:restoreRunbookAuthoringProposal',
         'runbooks:execute',
         'runbooks:getExecution',
         'runbooks:cancelExecution',

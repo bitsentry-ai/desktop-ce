@@ -14,6 +14,8 @@ import IncidentArtifactsRail from "@bitsentry-ce/components/investigation/Incide
 import { BitsentryServicesProvider } from "@bitsentry-ce/components/services/context";
 import type {
   BitsentryServicePorts,
+  AgentServicePort,
+  RunbookAuthoringProposalReview,
   RunbookExecutionRecord,
   RunbookExecutionStepStatus,
   RunbookExecutionStatus,
@@ -204,9 +206,13 @@ function writeStoredArtifacts(
   );
 }
 
-function renderRail() {
+function renderRail(options: {
+  agent?: AgentServicePort;
+  messages?: React.ComponentProps<typeof IncidentArtifactsRail>["messages"];
+} = {}) {
   const services: BitsentryServicePorts = {
     runbooks: createRunbookServices(),
+    agent: options.agent,
   };
 
   render(
@@ -214,7 +220,7 @@ function renderRail() {
       <IncidentArtifactsRail
         isOpen
         onClose={() => {}}
-        messages={[]}
+        messages={options.messages ?? []}
         incidentId={INCIDENT_ID}
       />
     </BitsentryServicesProvider>,
@@ -260,6 +266,89 @@ afterEach(() => {
 });
 
 describe("IncidentArtifactsRail", () => {
+  it("shows proposal versions and restores an earlier artifact as a new latest version", async () => {
+    const proposal = (
+      proposalId: string,
+      artifactVersion: number,
+      isLatest: boolean,
+    ): RunbookAuthoringProposalReview => ({
+      proposalId,
+      artifactId: "artifact-1",
+      artifactVersion,
+      parentProposalId: artifactVersion === 1 ? undefined : "proposal-v1",
+      isLatest,
+      status: "pending_approval",
+      approvalRequired: true,
+      saved: false,
+      kind: "create_new_runbook",
+      incidentThreadId: INCIDENT_ID,
+      proposedRunbook: {
+        id: "draft-runbook",
+        title: `API triage v${artifactVersion}`,
+        description: "Collect API health evidence.",
+        revisionNumber: 1,
+        actionCount: 1,
+        actions: [{ id: "health", type: "http", title: "Check health" }],
+      },
+      validation: { valid: true, errors: [], warnings: [] },
+      operationDiffs: [{
+        operationId: "create-runbook",
+        type: "create_runbook",
+        rationale: "Create the runbook.",
+        riskLabels: [],
+        before: null,
+        after: {},
+      }],
+      nextStep: "Review the proposal.",
+    });
+    const v1 = proposal("proposal-v1", 1, false);
+    const v2 = proposal("proposal-v2", 2, true);
+    const v3 = {
+      ...proposal("proposal-v3", 3, true),
+      restoredFromProposalId: v1.proposalId,
+    };
+    const listRunbookAuthoringProposals = vi
+      .fn()
+      .mockResolvedValueOnce([v1, v2])
+      .mockResolvedValue([v1, { ...v2, isLatest: false }, v3]);
+    const restoreRunbookAuthoringProposal = vi.fn().mockResolvedValue({
+      proposal: v3,
+    });
+    const agent = {
+      listRunbookAuthoringProposals,
+      restoreRunbookAuthoringProposal,
+    } as unknown as AgentServicePort;
+
+    renderRail({
+      agent,
+      messages: [{
+        kind: "agent",
+        toolCalls: [{
+          toolCallId: "proposal-tool-v2",
+          toolName: "propose_runbook_create",
+          state: "done",
+          output: JSON.stringify(v2),
+        }],
+      }],
+    });
+
+    expect((await screen.findAllByText("API triage v2")).length).toBeGreaterThan(0);
+    fireEvent.change(screen.getByLabelText("Artifact version"), {
+      target: { value: v1.proposalId },
+    });
+    expect(await screen.findByText("API triage v1")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Restore" }));
+
+    await waitFor(() => {
+      expect(restoreRunbookAuthoringProposal).toHaveBeenCalledWith({
+        sessionId: undefined,
+        incidentThreadId: INCIDENT_ID,
+        proposalId: v1.proposalId,
+      });
+    });
+    expect((await screen.findAllByText("API triage v3")).length).toBeGreaterThan(0);
+  });
+
   it("refreshes current incident results and selects a successful retry", async () => {
     const failedExecution = execution(
       ids.failedExecution,

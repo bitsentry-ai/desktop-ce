@@ -163,6 +163,7 @@ const TRACKED_IPC_ACTIONS: readonly DesktopRpcChannel[] = [
   "agent:approveRunbookAuthoringProposal",
   "agent:rejectRunbookAuthoringProposal",
   "agent:requestRunbookAuthoringRevision",
+  "agent:restoreRunbookAuthoringProposal",
   "errorSources:triggerSync",
   "settings:updateGeneral",
   "settings:updateSecurity",

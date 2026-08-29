@@ -48,6 +48,7 @@ export const DESKTOP_RPC_CHANNELS = [
   'agent:approveRunbookAuthoringProposal',
   'agent:rejectRunbookAuthoringProposal',
   'agent:requestRunbookAuthoringRevision',
+  'agent:restoreRunbookAuthoringProposal',
   'runbooks:list',
   'runbooks:get',
   'runbooks:create',

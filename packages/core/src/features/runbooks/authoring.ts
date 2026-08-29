@@ -68,6 +68,10 @@ export interface RunbookAuthoringValidationResult {
 
 export interface RunbookAuthoringBaseProposal {
   id: string;
+  artifactId: string;
+  artifactVersion: number;
+  parentProposalId?: string;
+  restoredFromProposalId?: string;
   kind: RunbookAuthoringProposalKind;
   status: RunbookAuthoringProposalStatus;
   incidentThreadId?: string;
@@ -127,6 +131,10 @@ export function formatUnknownRunbookTemplatePlaceholderMessage(
 
 export interface CreateRunbookEditProposalInput {
   id?: string;
+  artifactId?: string;
+  artifactVersion?: number;
+  parentProposalId?: string;
+  restoredFromProposalId?: string;
   incidentThreadId?: string;
   prompt: string;
   targetRunbook: RunbookRecord;
@@ -139,6 +147,10 @@ export interface CreateRunbookEditProposalInput {
 
 export interface CreateRunbookCreationProposalInput {
   id?: string;
+  artifactId?: string;
+  artifactVersion?: number;
+  parentProposalId?: string;
+  restoredFromProposalId?: string;
   incidentThreadId?: string;
   prompt: string;
   draftRunbook: Omit<
@@ -184,6 +196,13 @@ export interface RunbookAuthoringDecisionResult {
   proposal: RunbookAuthoringProposal;
   reason?: string;
   requestedEdit?: string;
+}
+
+export interface RestoreRunbookAuthoringProposalInput {
+  proposal: RunbookAuthoringProposal;
+  latestProposal: RunbookAuthoringProposal;
+  id?: string;
+  now?: string;
 }
 
 type MutableRunbook = RunbookRecord & {
@@ -1050,8 +1069,13 @@ export function createRunbookEditProposal(
     input.normalizedFindings,
   );
 
+  const id = input.id ?? createAuthoringId();
   return {
-    id: input.id ?? createAuthoringId(),
+    id,
+    artifactId: input.artifactId ?? id,
+    artifactVersion: input.artifactVersion ?? 1,
+    parentProposalId: input.parentProposalId,
+    restoredFromProposalId: input.restoredFromProposalId,
     kind: "edit_existing_runbook",
     status: "pending_approval",
     incidentThreadId: input.incidentThreadId,
@@ -1107,8 +1131,13 @@ export function createRunbookCreationProposal(
     after: proposedRunbook,
   };
 
+  const id = input.id ?? createAuthoringId();
   return {
-    id: input.id ?? createAuthoringId(),
+    id,
+    artifactId: input.artifactId ?? id,
+    artifactVersion: input.artifactVersion ?? 1,
+    parentProposalId: input.parentProposalId,
+    restoredFromProposalId: input.restoredFromProposalId,
     kind: "create_new_runbook",
     status: "pending_approval",
     incidentThreadId: input.incidentThreadId,
@@ -1231,5 +1260,63 @@ export function requestRunbookAuthoringRevision(
       nowIso(input.now),
     ),
     requestedEdit: input.requestedEdit,
+  };
+}
+
+function cloneProposalForRestore(
+  proposal: RunbookAuthoringProposal,
+): RunbookAuthoringProposal {
+  if (proposal.kind === "create_new_runbook") {
+    return {
+      ...proposal,
+      proposedRunbook: cloneRunbook(proposal.proposedRunbook),
+      operationDiffs: proposal.operationDiffs.map((diff) => ({ ...diff })),
+      validation: {
+        ...proposal.validation,
+        errors: proposal.validation.errors.slice(),
+        warnings: proposal.validation.warnings.slice(),
+      },
+      normalizedFindings: proposal.normalizedFindings?.slice(),
+    };
+  }
+
+  return {
+    ...proposal,
+    operations: proposal.operations.map(cloneOperation),
+    originalRunbook: cloneRunbook(proposal.originalRunbook),
+    proposedRunbook: cloneRunbook(proposal.proposedRunbook),
+    operationDiffs: proposal.operationDiffs.map((diff) => ({ ...diff })),
+    validation: {
+      ...proposal.validation,
+      errors: proposal.validation.errors.slice(),
+      warnings: proposal.validation.warnings.slice(),
+    },
+    normalizedFindings: proposal.normalizedFindings?.slice(),
+  };
+}
+
+export function restoreRunbookAuthoringProposal(
+  input: RestoreRunbookAuthoringProposalInput,
+): RunbookAuthoringProposal {
+  const artifactId = input.proposal.artifactId ?? input.proposal.id;
+  const latestArtifactId =
+    input.latestProposal.artifactId ?? input.latestProposal.id;
+  if (artifactId !== latestArtifactId) {
+    throw new Error("A proposal can only be restored within its artifact history.");
+  }
+
+  const restored = cloneProposalForRestore(input.proposal);
+  const restoredAt = nowIso(input.now);
+  return {
+    ...restored,
+    id: input.id ?? createAuthoringId(),
+    artifactId,
+    artifactVersion:
+      (input.latestProposal.artifactVersion ?? 1) + 1,
+    parentProposalId: input.latestProposal.id,
+    restoredFromProposalId: input.proposal.id,
+    status: "pending_approval",
+    createdAt: restoredAt,
+    updatedAt: restoredAt,
   };
 }

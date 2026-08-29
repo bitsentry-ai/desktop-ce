@@ -34,7 +34,7 @@ export function buildRunbookOnlyScope(options: RunbookOnlyScopeOptions = {}): st
     'If a runbook tool call fails or appears missing, call list_runbooks once to verify availability before concluding anything; if that also fails, report that runbook tools are unreachable in this session.',
   ]
   if (options.includeProposalInstructions === true) {
-    instructions.splice(7, 0, 'When revising a create-kind proposal, use propose_runbook_create because the draft was never saved; when revising an edit-kind proposal, use propose_runbook_edit against the same target runbook.')
+    instructions.splice(7, 0, 'When revising a create-kind proposal, use propose_runbook_create because the draft was never saved; when revising an edit-kind proposal, use propose_runbook_edit against the same target runbook. Pass the proposalId being revised as parentProposalId so the artifact version history remains connected.')
   }
   if (options.includeParameterInstructions === true) {
     instructions.push('If list_runbooks shows required parameters, supply them before starting that runbook; user-provided values override defaults.')

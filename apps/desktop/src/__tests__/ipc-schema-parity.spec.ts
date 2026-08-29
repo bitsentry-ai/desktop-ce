@@ -69,6 +69,7 @@ function makeValidPayloads(): Record<DesktopRpcChannel, unknown> {
       proposalId: UUID,
       requestedEdit: 'Include a verification step before restarting the service.',
     },
+    'agent:restoreRunbookAuthoringProposal': { proposalId: UUID },
     'runbooks:get': { id: 'runbook-1' },
     'runbooks:create': { id: UUID, title: 'Inspect logs' },
     'runbooks:updateMeta': { id: 'runbook-1' },

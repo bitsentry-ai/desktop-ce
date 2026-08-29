@@ -55,6 +55,54 @@ function createContext(enabledApiProviders?: string): HostToolContext {
 }
 
 describe('host tools', () => {
+  it('links conversational runbook proposals into persisted artifact versions', async () => {
+    const context = createContext()
+    const saveRunbookAuthoringProposal = vi.fn().mockResolvedValue(undefined)
+    context.saveRunbookAuthoringProposal = saveRunbookAuthoringProposal
+
+    await executeHostTool(context, 'propose_runbook_create', {
+      prompt: 'Create a health check runbook.',
+      draftRunbook: {
+        title: 'Health check',
+        description: 'Check the API.',
+        actions: [{
+          id: 'health',
+          type: 'http',
+          title: 'Check health',
+          url: 'https://example.test/health',
+          method: 'GET',
+        }],
+      },
+    })
+    const first = context.session.runbookAuthoringProposals?.[0]
+    expect(first).toMatchObject({ artifactVersion: 1 })
+
+    const result = await executeHostTool(context, 'propose_runbook_create', {
+      parentProposalId: first?.id,
+      prompt: 'Also check readiness.',
+      draftRunbook: {
+        title: 'Health and readiness check',
+        description: 'Check the API health and readiness endpoints.',
+        actions: [{
+          id: 'ready',
+          type: 'http',
+          title: 'Check readiness',
+          url: 'https://example.test/ready',
+          method: 'GET',
+        }],
+      },
+    })
+    const second = context.session.runbookAuthoringProposals?.[1]
+
+    expect(result?.error).toBeUndefined()
+    expect(second).toMatchObject({
+      artifactId: first?.artifactId,
+      artifactVersion: 2,
+      parentProposalId: first?.id,
+    })
+    expect(saveRunbookAuthoringProposal).toHaveBeenCalledTimes(2)
+  })
+
   it('lists canonical model IDs and display names for runbook authoring', async () => {
     const result = await executeHostTool(
       createContext('openai,anthropic,gemini,groq,kilocode,openrouter'),

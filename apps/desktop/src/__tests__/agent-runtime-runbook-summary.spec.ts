@@ -170,7 +170,7 @@ async function createPendingRunbookAuthoringProposal(
   return {
     service,
     sessionId,
-    proposalId: service.listRunbookAuthoringProposals({ sessionId })[0]!.proposalId,
+    proposalId: (await service.listRunbookAuthoringProposals({ sessionId }))[0]!.proposalId,
   }
 }
 
@@ -659,7 +659,7 @@ describe('AgentRuntimeService runbook outcomes', () => {
     const service = createRuntime({ llmAdapter, runbookStore: store as unknown as { list(): Promise<RunbookRecord[]> }, runbookExecutionService })
     const sessionId = await service.start({ prompt: `Create ${title}.`, incidentThreadId: `incident-${randomUUID()}` })
     await waitForCondition(() => service.getStatus(sessionId).state === 'COMPLETED')
-    const proposal = service.listRunbookAuthoringProposals({ sessionId })[0]!
+    const proposal = (await service.listRunbookAuthoringProposals({ sessionId }))[0]!
 
     expect(proposal.nextStep).toContain('draft runbook id is provisional')
     expect(proposal.nextStep).toContain('list_runbooks or the approval notification')
@@ -690,7 +690,7 @@ describe('AgentRuntimeService runbook outcomes', () => {
     await waitForCondition(() => service.getStatus(sessionId).state === 'COMPLETED')
     expect(runbookStore.updateMeta).not.toHaveBeenCalled()
     expect(runbookStore.updateActions).not.toHaveBeenCalled()
-    const proposal = service.listRunbookAuthoringProposals({ sessionId })[0]
+    const proposal = (await service.listRunbookAuthoringProposals({ sessionId }))[0]
     expect(proposal).toMatchObject({ approvalRequired: true, saved: false, status: 'pending_approval', targetRunbookId: 'rb-logs' })
     runbookStore.list.mockResolvedValue([changedRunbook])
     await expect(service.approveRunbookAuthoringProposal({ sessionId, proposalId: proposal.proposalId })).rejects.toThrow('changed after the authoring proposal was created')
@@ -720,7 +720,7 @@ describe('AgentRuntimeService runbook outcomes', () => {
     const service = createRuntime({ llmAdapter, runbookStore, runbookExecutionService })
     const sessionId = await service.start({ prompt: 'Add an uptime check to the backend runbook.', incidentThreadId: 'incident-authoring' })
     await waitForCondition(() => service.getStatus(sessionId).state === 'COMPLETED')
-    const proposal = service.listRunbookAuthoringProposals({ sessionId })[0]
+    const proposal = (await service.listRunbookAuthoringProposals({ sessionId }))[0]
 
     await expect(service.approveRunbookAuthoringProposal({ sessionId, proposalId: proposal.proposalId })).rejects.toThrow('changed after the authoring proposal was created')
     expect(runbookStore.updateMeta).not.toHaveBeenCalled()
@@ -752,7 +752,7 @@ describe('AgentRuntimeService runbook outcomes', () => {
     })
     const sessionId = await service.start({ prompt: 'Update the backend runbook.', incidentThreadId: 'incident-authoring' })
     await waitForCondition(() => service.getStatus(sessionId).state === 'COMPLETED')
-    const proposal = service.listRunbookAuthoringProposals({ sessionId })[0]
+    const proposal = (await service.listRunbookAuthoringProposals({ sessionId }))[0]
 
     await expect(service.approveRunbookAuthoringProposal({ sessionId, proposalId: proposal.proposalId, approvedOperationIds: ['op-title'] })).resolves.toMatchObject({ savedRunbook: { title: 'Check backend logs and uptime', actions: [{ id: 'step-1' }] } })
     expect(runbookStore.updateActions).toHaveBeenCalledWith({
@@ -780,7 +780,7 @@ describe('AgentRuntimeService runbook outcomes', () => {
     const service = createRuntime({ llmAdapter, runbookStore, runbookExecutionService })
     const sessionId = await service.start({ prompt: 'Break the backend runbook.', incidentThreadId: 'incident-authoring' })
     await waitForCondition(() => service.getStatus(sessionId).state === 'COMPLETED')
-    const proposal = service.listRunbookAuthoringProposals({ sessionId })[0]
+    const proposal = (await service.listRunbookAuthoringProposals({ sessionId }))[0]
 
     await expect(service.approveRunbookAuthoringProposal({ sessionId, proposalId: proposal.proposalId })).rejects.toThrow('produce an invalid runbook')
     expect(runbookStore.create).not.toHaveBeenCalled()
@@ -808,7 +808,7 @@ describe('AgentRuntimeService runbook outcomes', () => {
     const service = createRuntime({ llmAdapter, runbookStore, runbookExecutionService })
     const sessionId = await service.start({ prompt: 'Create a status runbook.', incidentThreadId: 'incident-authoring' })
     await waitForCondition(() => service.getStatus(sessionId).state === 'COMPLETED')
-    const proposal = service.listRunbookAuthoringProposals({ sessionId })[0]
+    const proposal = (await service.listRunbookAuthoringProposals({ sessionId }))[0]
 
     await expect(service.approveRunbookAuthoringProposal({ sessionId, proposalId: proposal.proposalId })).rejects.toThrow('action persistence failed')
     expect(runbookStore.purge).toHaveBeenCalledWith({ id: createdShell.id })
@@ -867,7 +867,7 @@ describe('AgentRuntimeService runbook outcomes', () => {
     const service = createRuntime({ llmAdapter, runbookStore, runbookExecutionService })
     const sessionId = await service.start({ prompt: 'Create a status runbook.', incidentThreadId: 'incident-authoring' })
     await waitForCondition(() => service.getStatus(sessionId).state === 'COMPLETED')
-    const proposal = service.listRunbookAuthoringProposals({ sessionId })[0]
+    const proposal = (await service.listRunbookAuthoringProposals({ sessionId }))[0]
 
     const result = await service.approveRunbookAuthoringProposal({ sessionId, proposalId: proposal.proposalId })
     const saved = result.savedRunbook
@@ -905,7 +905,7 @@ describe('AgentRuntimeService runbook outcomes', () => {
     const service = createRuntime({ llmAdapter, runbookStore, runbookExecutionService })
     const sessionId = await service.start({ prompt: 'Create a status runbook.', incidentThreadId: 'incident-authoring' })
     await waitForCondition(() => service.getStatus(sessionId).state === 'COMPLETED')
-    const proposal = service.listRunbookAuthoringProposals({ sessionId })[0]
+    const proposal = (await service.listRunbookAuthoringProposals({ sessionId }))[0]
 
     await expect(service.approveRunbookAuthoringProposal({ sessionId, proposalId: proposal.proposalId })).resolves.toMatchObject({
       savedRunbook: { id: 'rb-new', idleTimeout: 30 },

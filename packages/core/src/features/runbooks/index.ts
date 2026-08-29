@@ -13,3 +13,4 @@ export * from './runbook.gateway';
 export * from './export.schemas';
 export * from './import-export';
 export * from './authoring';
+export * from './desktop-runbook-authoring-proposal.store';

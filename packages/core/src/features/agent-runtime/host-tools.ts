@@ -138,7 +138,11 @@ function createRunbookActionProposalSchema(options: { allowLegacyStepOutputPlace
 const runbookActionProposalSchema = createRunbookActionProposalSchema()
 const runbookProviderActionProposalSchema = createRunbookActionProposalSchema({ allowLegacyStepOutputPlaceholder: true })
 function createRunbookCreateHostToolSchema(actionSchema: typeof runbookActionProposalSchema) {
-  return z.object({ prompt: z.string().min(1), draftRunbook: z.object({ title: z.string().min(1), description: z.string().default(''), idleTimeout: idleTimeoutSchema.optional(), actions: z.array(actionSchema).min(1) }).strict() }).strict()
+  return z.object({
+    prompt: z.string().min(1),
+    parentProposalId: z.string().min(1).optional(),
+    draftRunbook: z.object({ title: z.string().min(1), description: z.string().default(''), idleTimeout: idleTimeoutSchema.optional(), actions: z.array(actionSchema).min(1) }).strict(),
+  }).strict()
 }
 const runbookEditActionProposalSchema = createRunbookActionProposalSchema({ allowLegacyStepOutputPlaceholder: true })
 const runbookAuthoringOperationSchema = z.object({
@@ -146,7 +150,13 @@ const runbookAuthoringOperationSchema = z.object({
   metadata: z.object({ title: z.string().optional(), description: z.string().optional(), idleTimeout: idleTimeoutSchema.optional() }).strict().optional(),
   action: runbookEditActionProposalSchema.optional(), actionId: z.string().min(1).optional(), insertAfterActionId: z.string().min(1).nullable().optional(), actionIdsInOrder: z.array(z.string().min(1)).optional(),
 }).strict()
-export const proposeRunbookEditHostToolSchema = z.object({ runbookId: z.string().min(1).optional(), runbookTitle: z.string().min(1).optional(), prompt: z.string().min(1), operations: z.array(runbookAuthoringOperationSchema).min(1) }).strict()
+export const proposeRunbookEditHostToolSchema = z.object({
+  runbookId: z.string().min(1).optional(),
+  runbookTitle: z.string().min(1).optional(),
+  prompt: z.string().min(1),
+  parentProposalId: z.string().min(1).optional(),
+  operations: z.array(runbookAuthoringOperationSchema).min(1),
+}).strict()
 const runbookCreateHostToolBaseSchema = createRunbookCreateHostToolSchema(runbookActionProposalSchema)
 const runbookCreateHostToolProviderSchema = createRunbookCreateHostToolSchema(runbookProviderActionProposalSchema)
 
@@ -256,6 +266,9 @@ export interface HostToolContext {
   summarizeExecution?: (execution: RunbookExecutionRecord) => Record<string, unknown>
   rememberExecution?: (session: AgentSessionRef, execution: RunbookExecutionRecord) => void
   listAuthorableRunbooks?: () => Promise<RunbookRecord[]>
+  saveRunbookAuthoringProposal?: (
+    proposal: RunbookAuthoringProposal,
+  ) => Promise<void>
   pluginRuntime?: Pick<DesktopPluginRuntimeService, 'listPlugins'>
   enabledApiProviders?: string
   onToolEvent?: (event: HostToolEvent) => void
@@ -770,6 +783,10 @@ function describeRunbookCandidates(runbooks: RunbookRecord[]): string {
 function summarizeAuthoringProposal(proposal: RunbookAuthoringProposal): Record<string, unknown> {
   return {
     status: proposal.status, approvalRequired: true, saved: false, proposalId: proposal.id, kind: proposal.kind,
+    artifactId: proposal.artifactId,
+    artifactVersion: proposal.artifactVersion,
+    parentProposalId: proposal.parentProposalId,
+    restoredFromProposalId: proposal.restoredFromProposalId,
     incidentThreadId: proposal.incidentThreadId,
     sourceAttachmentId: proposal.sourceAttachmentId,
     sourceMessageId: proposal.sourceMessageId,
@@ -782,19 +799,63 @@ function summarizeAuthoringProposal(proposal: RunbookAuthoringProposal): Record<
   }
 }
 
+function resolveProposalLineage(
+  session: AgentSessionRef,
+  kind: RunbookAuthoringProposal['kind'],
+  parentProposalId: string | undefined,
+  targetRunbookId?: string,
+): Pick<RunbookAuthoringProposal, 'artifactId' | 'artifactVersion' | 'parentProposalId'> | undefined {
+  const proposals = session.runbookAuthoringProposals ?? []
+  const compatible = proposals.filter((proposal) =>
+    proposal.kind === kind &&
+    (kind !== 'edit_existing_runbook' ||
+      (proposal.kind === 'edit_existing_runbook' && proposal.targetRunbookId === targetRunbookId)),
+  )
+  const parent = parentProposalId === undefined
+    ? compatible[compatible.length - 1]
+    : proposals.find((proposal) => proposal.id === parentProposalId)
+
+  if (parent === undefined) {
+    if (parentProposalId !== undefined) {
+      throw new Error(`Runbook authoring parent proposal not found: ${parentProposalId}`)
+    }
+    return undefined
+  }
+  if (!compatible.includes(parent)) {
+    throw new Error('Runbook authoring revisions must keep the same proposal kind and target runbook.')
+  }
+
+  const artifactId = parent.artifactId ?? parent.id
+  const latestVersion = Math.max(
+    ...proposals
+      .filter((proposal) => (proposal.artifactId ?? proposal.id) === artifactId)
+      .map((proposal) => proposal.artifactVersion ?? 1),
+  )
+  return {
+    artifactId,
+    artifactVersion: latestVersion + 1,
+    parentProposalId: parent.id,
+  }
+}
+
 async function proposeRunbookEdit(context: HostToolContext, input: ProposeRunbookEditHostToolInput): Promise<ToolResult> {
-  const proposal = createRunbookEditProposal({ incidentThreadId: context.session.incidentThreadId, prompt: input.prompt, targetRunbook: await resolveAuthorableRunbookReference(context, input), operations: input.operations.map((operation) => ({ ...operation, action: operation.action as RunbookActionRecord | undefined })) as RunbookAuthoringOperation[], sourceAttachmentId: context.session.sourceAttachmentId, sourceMessageId: context.session.sourceMessageId, normalizedFindings: context.session.normalizedFindings })
+  const targetRunbook = await resolveAuthorableRunbookReference(context, input)
+  const lineage = resolveProposalLineage(context.session, 'edit_existing_runbook', input.parentProposalId, targetRunbook.id)
+  const proposal = createRunbookEditProposal({ ...lineage, incidentThreadId: context.session.incidentThreadId, prompt: input.prompt, targetRunbook, operations: input.operations.map((operation) => ({ ...operation, action: operation.action as RunbookActionRecord | undefined })) as RunbookAuthoringOperation[], sourceAttachmentId: context.session.sourceAttachmentId, sourceMessageId: context.session.sourceMessageId, normalizedFindings: context.session.normalizedFindings })
   applyPluginAuthValidation(proposal, context)
   context.session.runbookAuthoringProposals ??= []
   context.session.runbookAuthoringProposals.push(proposal)
+  await context.saveRunbookAuthoringProposal?.(proposal)
   return { output: JSON.stringify(summarizeAuthoringProposal(proposal), null, 2) }
 }
 
 async function proposeRunbookCreate(context: HostToolContext, input: ProposeRunbookCreateHostToolInput): Promise<ToolResult> {
-  const proposal = createRunbookCreationProposal({ incidentThreadId: context.session.incidentThreadId, prompt: input.prompt, draftRunbook: { ...input.draftRunbook, actions: input.draftRunbook.actions as RunbookActionRecord[] }, sourceAttachmentId: context.session.sourceAttachmentId, sourceMessageId: context.session.sourceMessageId, normalizedFindings: context.session.normalizedFindings })
+  const lineage = resolveProposalLineage(context.session, 'create_new_runbook', input.parentProposalId)
+  const proposal = createRunbookCreationProposal({ ...lineage, incidentThreadId: context.session.incidentThreadId, prompt: input.prompt, draftRunbook: { ...input.draftRunbook, actions: input.draftRunbook.actions as RunbookActionRecord[] }, sourceAttachmentId: context.session.sourceAttachmentId, sourceMessageId: context.session.sourceMessageId, normalizedFindings: context.session.normalizedFindings })
   applyPluginAuthValidation(proposal, context)
   context.session.runbookAuthoringProposals ??= []
   context.session.runbookAuthoringProposals.push(proposal)
+  await context.saveRunbookAuthoringProposal?.(proposal)
   return { output: JSON.stringify(summarizeAuthoringProposal(proposal), null, 2) }
 }
 
