@@ -44,6 +44,12 @@ import {
 } from "../ui/alert-dialog";
 import { useFormatters, useTranslation } from "@bitsentry-ce/i18n";
 import { useNavbarSubNavigation } from "./navigation-context";
+import {
+  loadRunbookNavItems,
+  readLocalRunbookNavItems,
+  writeLocalRunbookNavItems,
+  type RunbookNavItem,
+} from "./runbook-nav";
 
 function getLatestDiagnosisState(record: DiagnosisRecord): string {
   if (record.state_history.length === 0) return "pending";
@@ -178,12 +184,6 @@ type ResultNavItem = {
   status: string;
   startedAt: string;
   completedAt?: string;
-};
-
-type RunbookNavItem = {
-  id: string;
-  title: string;
-  actions: unknown[];
 };
 
 function IncidentSubNavigation({
@@ -414,39 +414,6 @@ function normalizeResultNavItems(items: unknown[]): ResultNavItem[] {
       };
     })
     .filter((item): item is ResultNavItem => item !== null);
-}
-
-function normalizeRunbookNavItems(items: unknown[]): RunbookNavItem[] {
-  return items
-    .map((item): RunbookNavItem | null => {
-      if (!isRecord(item)) return null;
-      if (typeof item.id !== "string" || item.id.length === 0) return null;
-
-      let title = "Untitled Runbook";
-      if (typeof item.title === "string" && item.title.trim().length > 0) {
-        title = item.title.trim();
-      }
-
-      let actions: unknown[] = [];
-      if (Array.isArray(item.actions)) {
-        actions = item.actions;
-      }
-
-      return { id: item.id, title, actions };
-    })
-    .filter((item): item is RunbookNavItem => item !== null);
-}
-
-function readLocalRunbookNavItems(): RunbookNavItem[] {
-  try {
-    const raw = localStorage.getItem("bitsentry_runbooks");
-    if (raw === null) return [];
-    const parsed: unknown = JSON.parse(raw);
-    if (!Array.isArray(parsed)) return [];
-    return normalizeRunbookNavItems(parsed);
-  } catch {
-    return [];
-  }
 }
 
 function archiveIncidentRecord(
@@ -746,7 +713,7 @@ const Navbar = ({
       await runbooks.delete(runbookToDelete.id);
       const nextRunbooks = await runbooks.list();
 
-      localStorage.setItem("bitsentry_runbooks", JSON.stringify(nextRunbooks));
+      writeLocalRunbookNavItems(nextRunbooks);
       setRunbookItems(nextRunbooks);
 
       const currentId = new URLSearchParams(location.search).get("id");
@@ -855,8 +822,20 @@ const Navbar = ({
 
   React.useEffect(() => {
     if (!openAccordions.has("/runbooks")) return;
-    setRunbookItems(readLocalRunbookNavItems());
-  }, [openAccordions, currentPath]);
+    let cancelled = false;
+
+    const load = async () => {
+      const items = await loadRunbookNavItems(runbooks);
+      if (!cancelled) {
+        setRunbookItems(items);
+      }
+    };
+
+    void load();
+    return () => {
+      cancelled = true;
+    };
+  }, [currentPath, openAccordions, runbooks, user?.email, user?.id]);
 
   React.useEffect(() => {
     const reload = () => {
