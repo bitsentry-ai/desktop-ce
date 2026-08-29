@@ -1,6 +1,6 @@
 import type { RunbookAuthoringProposal } from './authoring'
 
-interface ProposalRow {
+interface ProposalRow extends Record<string, unknown> {
   id: string
   incidentThreadId: string
   artifactId: string
