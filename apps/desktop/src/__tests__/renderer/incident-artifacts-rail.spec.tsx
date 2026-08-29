@@ -88,6 +88,11 @@ vi.mock("@bitsentry-ce/i18n", () => ({
   }),
 }));
 
+Object.defineProperty(HTMLElement.prototype, "scrollIntoView", {
+  configurable: true,
+  value: vi.fn(),
+});
+
 function stepStatusFor(status: RunbookExecutionStatus): RunbookExecutionStepStatus {
   if (status === "queued") {
     return "pending";
@@ -360,9 +365,10 @@ describe("IncidentArtifactsRail", () => {
     });
 
     expect((await screen.findAllByText("API triage v2")).length).toBeGreaterThan(0);
-    fireEvent.change(screen.getByLabelText("Artifact version"), {
-      target: { value: v1.proposalId },
+    fireEvent.keyDown(screen.getByLabelText("Artifact version"), {
+      key: "ArrowDown",
     });
+    fireEvent.click(await screen.findByRole("option", { name: "v1" }));
     expect(await screen.findByText("API triage v1")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Restore" }));
 
