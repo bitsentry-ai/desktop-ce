@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   approveRunbookAuthoringProposal,
   createRunbookCreationProposal,
+  createRunbookCreationRevisionProposal,
   createRunbookEditProposal,
   rejectRunbookAuthoringProposal,
   requestRunbookAuthoringRevision,
@@ -695,6 +696,63 @@ describe("runbook authoring", () => {
       status: "pending_approval",
     });
     expect(second).toMatchObject({ artifactVersion: 2 });
+  });
+
+  it("applies selected operations when approving a create artifact revision", () => {
+    const first = createRunbookCreationProposal({
+      id: "proposal-create-v1",
+      incidentThreadId: "incident-1",
+      prompt: "Create the first runbook.",
+      draftRunbook: {
+        title: "Health check",
+        description: "Check the API.",
+        actions: [{
+          id: "health",
+          type: "http",
+          title: "Check health",
+          url: "https://example.test/health",
+          method: "GET",
+        }],
+      },
+    });
+    const revision = createRunbookCreationRevisionProposal({
+      id: "proposal-create-v2",
+      artifactId: first.artifactId,
+      artifactVersion: 2,
+      parentProposalId: first.id,
+      incidentThreadId: "incident-1",
+      prompt: "Also check readiness.",
+      targetRunbook: first.proposedRunbook,
+      operations: [{
+        id: "operation-readiness",
+        type: "add_action",
+        rationale: "Check readiness before investigating the service.",
+        action: {
+          id: "readiness",
+          type: "http",
+          title: "Check readiness",
+          url: "https://example.test/ready",
+          method: "GET",
+        },
+      }],
+    });
+
+    const approval = approveRunbookAuthoringProposal({
+      proposal: revision,
+      approvedOperationIds: ["operation-readiness"],
+    });
+
+    expect(revision).toMatchObject({
+      kind: "create_new_runbook",
+      artifactId: first.artifactId,
+      artifactVersion: 2,
+      operationDiffs: [{ operationId: "operation-readiness" }],
+    });
+    expect(approval.approvedOperationIds).toEqual(["operation-readiness"]);
+    expect(approval.runbook.actions).toEqual([
+      expect.objectContaining({ id: "health" }),
+      expect.objectContaining({ id: "readiness" }),
+    ]);
   });
 
   it("creates a shell-risk proposal and returns it for saving only after approval", () => {

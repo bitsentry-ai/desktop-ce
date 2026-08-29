@@ -100,6 +100,8 @@ export interface RunbookCreateAuthoringProposal
   extends RunbookAuthoringBaseProposal {
   kind: "create_new_runbook";
   proposedRunbook: RunbookRecord;
+  operations?: RunbookAuthoringOperation[];
+  originalRunbook?: RunbookRecord;
 }
 
 export type RunbookAuthoringProposal =
@@ -1099,6 +1101,38 @@ export function createRunbookEditProposal(
   };
 }
 
+export function createRunbookCreationRevisionProposal(
+  input: CreateRunbookEditProposalInput,
+): RunbookCreateAuthoringProposal {
+  const editProposal = createRunbookEditProposal(input);
+  const proposedRunbook = {
+    ...editProposal.proposedRunbook,
+    revisionNumber: editProposal.originalRunbook.revisionNumber,
+  };
+
+  return {
+    id: editProposal.id,
+    artifactId: editProposal.artifactId,
+    artifactVersion: editProposal.artifactVersion,
+    parentProposalId: editProposal.parentProposalId,
+    restoredFromProposalId: editProposal.restoredFromProposalId,
+    kind: "create_new_runbook",
+    status: editProposal.status,
+    incidentThreadId: editProposal.incidentThreadId,
+    sourceAttachmentId: editProposal.sourceAttachmentId,
+    sourceMessageId: editProposal.sourceMessageId,
+    normalizedFindings: editProposal.normalizedFindings,
+    prompt: editProposal.prompt,
+    createdAt: editProposal.createdAt,
+    updatedAt: editProposal.updatedAt,
+    proposedRunbook,
+    operations: editProposal.operations,
+    originalRunbook: editProposal.originalRunbook,
+    operationDiffs: editProposal.operationDiffs,
+    validation: editProposal.validation,
+  };
+}
+
 export function createRunbookCreationProposal(
   input: CreateRunbookCreationProposalInput,
 ): RunbookCreateAuthoringProposal {
@@ -1164,6 +1198,65 @@ export function approveRunbookAuthoringProposal(
   if (input.proposal.kind === "create_new_runbook") {
     if (!input.proposal.validation.valid) {
       throw new Error("Invalid runbook creation proposals cannot be approved.");
+    }
+
+    if (
+      input.proposal.operations !== undefined &&
+      input.proposal.originalRunbook !== undefined
+    ) {
+      const allOperationIds = input.proposal.operationDiffs.map(
+        (diff) => diff.operationId,
+      );
+      const approvedOperationIds =
+        input.approvedOperationIds === undefined
+          ? allOperationIds
+          : input.approvedOperationIds;
+      const approvedOperationIdSet = new Set(approvedOperationIds);
+      const selectedOperations = input.proposal.operations.filter((operation) =>
+        approvedOperationIdSet.has(operation.id),
+      );
+
+      if (selectedOperations.length !== approvedOperationIdSet.size) {
+        throw new Error("Approval references an unknown runbook authoring operation.");
+      }
+      if (selectedOperations.length === 0) {
+        throw new Error("At least one runbook authoring operation must be approved.");
+      }
+
+      const runbook = applyOperations(
+        input.proposal.originalRunbook,
+        selectedOperations,
+      );
+      const updatedActionIds = new Set(
+        selectedOperations.flatMap((operation) => {
+          if (operation.type === "add_action" || operation.type === "update_action") {
+            return [operation.action?.id, operation.actionId];
+          }
+          return [];
+        }).filter((actionId): actionId is string => actionId !== undefined),
+      );
+      runbook.actions = reconcileStepOutputPlaceholders(
+        runbook.actions,
+        input.proposal.proposedRunbook.actions,
+        input.proposal.originalRunbook.actions,
+        updatedActionIds,
+      );
+      runbook.revisionNumber = input.proposal.originalRunbook.revisionNumber;
+      runbook.updatedAt = updatedAt;
+      const validation = validateRunbook(runbook);
+      if (!validation.valid) {
+        throw new Error(
+          `Approved runbook authoring operations produce an invalid runbook: ${validation.errors.join(
+            " ",
+          )}`,
+        );
+      }
+
+      return {
+        proposal: normalizeProposalStatus(input.proposal, "approved", updatedAt),
+        approvedOperationIds,
+        runbook,
+      };
     }
 
     const runbook = cloneRunbook(input.proposal.proposedRunbook);
@@ -1270,6 +1363,11 @@ function cloneProposalForRestore(
     return {
       ...proposal,
       proposedRunbook: cloneRunbook(proposal.proposedRunbook),
+      operations: proposal.operations?.map(cloneOperation),
+      originalRunbook:
+        proposal.originalRunbook === undefined
+          ? undefined
+          : cloneRunbook(proposal.originalRunbook),
       operationDiffs: proposal.operationDiffs.map((diff) => ({ ...diff })),
       validation: {
         ...proposal.validation,

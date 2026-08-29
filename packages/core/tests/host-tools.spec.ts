@@ -103,6 +103,61 @@ describe('host tools', () => {
     expect(saveRunbookAuthoringProposal).toHaveBeenCalledTimes(2)
   })
 
+  it('continues a pending create artifact when revising with only its proposal id', async () => {
+    const context = createContext()
+    context.listAuthorableRunbooks = vi.fn().mockResolvedValue([])
+
+    const firstResult = await executeHostTool(context, 'propose_runbook_create', {
+      prompt: 'Create a health check runbook.',
+      draftRunbook: {
+        title: 'Health check',
+        description: 'Check the API without making changes.',
+        actions: [{
+          id: 'health',
+          type: 'http',
+          title: 'Check health',
+          url: 'https://example.test/health',
+          method: 'GET',
+        }],
+      },
+    })
+    const first = context.session.runbookAuthoringProposals?.[0]
+    expect(firstResult?.error).toBeUndefined()
+    expect(first).toMatchObject({ kind: 'create_new_runbook', artifactVersion: 1 })
+
+    const result = await executeHostTool(context, 'propose_runbook_edit', {
+      parentProposalId: first?.id,
+      prompt: 'Also check readiness.',
+      operations: [{
+        id: 'op-readiness',
+        type: 'add_action',
+        rationale: 'Check readiness before investigating the service.',
+        action: {
+          id: 'readiness',
+          type: 'http',
+          title: 'Check readiness',
+          url: 'https://example.test/ready',
+          method: 'GET',
+        },
+      }],
+    })
+    const second = context.session.runbookAuthoringProposals?.[1]
+
+    expect(result?.error).toBeUndefined()
+    expect(second).toMatchObject({
+      kind: 'create_new_runbook',
+      artifactId: first?.artifactId,
+      artifactVersion: 2,
+      parentProposalId: first?.id,
+      proposedRunbook: {
+        actions: expect.arrayContaining([
+          expect.objectContaining({ id: 'health' }),
+          expect.objectContaining({ id: 'readiness' }),
+        ]),
+      },
+    })
+  })
+
   it.each([
     'initial-cve-2024-0727-remediation-draft',
     '00000000-0000-0000-0000-000000000000',
