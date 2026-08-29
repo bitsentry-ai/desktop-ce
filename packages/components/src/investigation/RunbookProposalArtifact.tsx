@@ -163,7 +163,7 @@ export default function RunbookProposalArtifact({
   ];
 
   return (
-    <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-2xl border border-border bg-background">
+    <div className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden rounded-2xl border border-border bg-background">
       <div className="flex items-center gap-2 border-b border-border px-4 py-3">
         <select
           aria-label={t("common.incidentArtifactsRail.proposal.artifactVersion")}
@@ -207,7 +207,7 @@ export default function RunbookProposalArtifact({
         )}
       </div>
 
-      <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-4 py-4">
+      <div className="min-h-0 min-w-0 flex-1 space-y-5 overflow-y-auto px-4 py-4">
         <div>
           <div className="text-lg font-semibold text-foreground">
             {selectedProposal.proposedRunbook.title}
@@ -268,11 +268,11 @@ export default function RunbookProposalArtifact({
           </div>
         )}
 
-        <details className="rounded-xl border border-border">
+        <details className="min-w-0 w-full rounded-xl border border-border">
           <summary className="cursor-pointer px-3 py-2 text-xs font-medium">
             {t("common.incidentArtifactsRail.proposal.rawJson")}
           </summary>
-          <pre className="max-h-72 overflow-auto border-t border-border p-3 text-[11px] leading-relaxed">
+          <pre className="min-w-0 max-w-full max-h-72 overflow-x-hidden overflow-y-auto border-t border-border p-3 text-[11px] leading-relaxed whitespace-pre-wrap break-all">
             {JSON.stringify(selectedProposal, null, 2)}
           </pre>
         </details>
