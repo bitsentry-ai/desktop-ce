@@ -6,6 +6,13 @@ import type {
   AgentServicePort,
   RunbookAuthoringProposalReview,
 } from "../services/contracts";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "../ui/select";
 
 function messageForError(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -69,7 +76,7 @@ export function RunbookProposalListItem({
           : "border-border bg-background hover:bg-muted/40"
       }`}
     >
-      <div className="flex items-start justify-between gap-3">
+      <div className="flex items-center justify-between gap-3">
         <div className="min-w-0">
           <div className="truncate text-sm font-semibold text-foreground">
             {proposal.proposedRunbook.title}
@@ -83,7 +90,7 @@ export function RunbookProposalListItem({
               : ""}
           </div>
         </div>
-        <span className="rounded-full border border-border px-2 py-0.5 text-[10px] capitalize text-muted-foreground">
+        <span className="inline-flex shrink-0 items-center justify-center whitespace-nowrap rounded-full border border-border px-2 py-0.5 text-center text-[10px] capitalize text-muted-foreground">
           {statusLabel(proposal.status)}
         </span>
       </div>
@@ -165,23 +172,29 @@ export default function RunbookProposalArtifact({
   return (
     <div className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden rounded-2xl border border-border bg-background">
       <div className="flex items-center gap-2 border-b border-border px-4 py-3">
-        <select
-          aria-label={t("common.incidentArtifactsRail.proposal.artifactVersion")}
+        <Select
           value={selectedProposal.proposalId}
-          onChange={(event) => onSelect(event.target.value)}
-          className="rounded-lg border border-border bg-muted/30 px-2 py-1 text-xs font-medium"
+          onValueChange={onSelect}
         >
-          {history.map((proposal) => (
-            <option key={proposal.proposalId} value={proposal.proposalId}>
-              {t("common.incidentArtifactsRail.proposal.versionOption", {
-                version: proposal.artifactVersion,
-              })}
-              {proposal.isLatest
-                ? t("common.incidentArtifactsRail.proposal.latestSuffix")
-                : ""}
-            </option>
-          ))}
-        </select>
+          <SelectTrigger
+            aria-label={t("common.incidentArtifactsRail.proposal.artifactVersion")}
+            className="h-8 w-auto max-w-full shrink-0 rounded-lg border-border bg-muted/30 px-2 py-1 text-xs font-medium"
+          >
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {history.map((proposal) => (
+              <SelectItem key={proposal.proposalId} value={proposal.proposalId}>
+                {t("common.incidentArtifactsRail.proposal.versionOption", {
+                  version: proposal.artifactVersion,
+                })}
+                {proposal.isLatest
+                  ? t("common.incidentArtifactsRail.proposal.latestSuffix")
+                  : ""}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
         <div className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
           {selectedProposal.kind === "create_new_runbook"
             ? t("common.incidentArtifactsRail.proposal.newRunbook")
