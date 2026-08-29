@@ -95,6 +95,12 @@ describe('host tools', () => {
     const second = context.session.runbookAuthoringProposals?.[1]
 
     expect(result?.error).toBeUndefined()
+    const summary = JSON.parse(result?.output ?? '') as {
+      artifactVersion: number
+      proposedRunbook: Record<string, unknown>
+    }
+    expect(summary.artifactVersion).toBe(2)
+    expect(summary.proposedRunbook).not.toHaveProperty('revisionNumber')
     expect(second).toMatchObject({
       artifactId: first?.artifactId,
       artifactVersion: 2,
