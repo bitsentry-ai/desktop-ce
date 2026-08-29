@@ -1187,109 +1187,47 @@ export function createRunbookCreationProposal(
   };
 }
 
-export function approveRunbookAuthoringProposal(
-  input: RunbookAuthoringApprovalInput,
-): RunbookAuthoringApprovalResult {
-  if (input.proposal.status !== "pending_approval") {
-    throw new Error("Only pending runbook authoring proposals can be approved.");
-  }
+type RunbookOperationApprovalProposal = {
+  operationDiffs: RunbookAuthoringOperationDiff[];
+  operations: RunbookAuthoringOperation[];
+  originalRunbook: RunbookRecord;
+  proposedRunbook: RunbookRecord;
+};
 
-  const updatedAt = nowIso(input.now);
-  if (input.proposal.kind === "create_new_runbook") {
-    if (!input.proposal.validation.valid) {
-      throw new Error("Invalid runbook creation proposals cannot be approved.");
-    }
-
-    if (
-      input.proposal.operations !== undefined &&
-      input.proposal.originalRunbook !== undefined
-    ) {
-      const allOperationIds = input.proposal.operationDiffs.map(
-        (diff) => diff.operationId,
-      );
-      const approvedOperationIds =
-        input.approvedOperationIds === undefined
-          ? allOperationIds
-          : input.approvedOperationIds;
-      const approvedOperationIdSet = new Set(approvedOperationIds);
-      const selectedOperations = input.proposal.operations.filter((operation) =>
-        approvedOperationIdSet.has(operation.id),
-      );
-
-      if (selectedOperations.length !== approvedOperationIdSet.size) {
-        throw new Error("Approval references an unknown runbook authoring operation.");
-      }
-      if (selectedOperations.length === 0) {
-        throw new Error("At least one runbook authoring operation must be approved.");
-      }
-
-      const runbook = applyOperations(
-        input.proposal.originalRunbook,
-        selectedOperations,
-      );
-      const updatedActionIds = new Set(
-        selectedOperations.flatMap((operation) => {
-          if (operation.type === "add_action" || operation.type === "update_action") {
-            return [operation.action?.id, operation.actionId];
-          }
-          return [];
-        }).filter((actionId): actionId is string => actionId !== undefined),
-      );
-      runbook.actions = reconcileStepOutputPlaceholders(
-        runbook.actions,
-        input.proposal.proposedRunbook.actions,
-        input.proposal.originalRunbook.actions,
-        updatedActionIds,
-      );
-      runbook.revisionNumber = input.proposal.originalRunbook.revisionNumber;
-      runbook.updatedAt = updatedAt;
-      const validation = validateRunbook(runbook);
-      if (!validation.valid) {
-        throw new Error(
-          `Approved runbook authoring operations produce an invalid runbook: ${validation.errors.join(
-            " ",
-          )}`,
-        );
-      }
-
-      return {
-        proposal: normalizeProposalStatus(input.proposal, "approved", updatedAt),
-        approvedOperationIds,
-        runbook,
-      };
-    }
-
-    const runbook = cloneRunbook(input.proposal.proposedRunbook);
-    runbook.createdAt = updatedAt;
-    runbook.updatedAt = updatedAt;
-
-    return {
-      proposal: normalizeProposalStatus(input.proposal, "approved", updatedAt),
-      approvedOperationIds: ["create-runbook"],
-      runbook,
-    };
-  }
-
-  const allOperationIds = input.proposal.operationDiffs.map(
-    (diff) => diff.operationId,
-  );
-  const approvedOperationIds =
-    input.approvedOperationIds === undefined
-      ? allOperationIds
-      : input.approvedOperationIds;
-  const approvedOperationIdSet = new Set(approvedOperationIds);
-  const selectedOperations = input.proposal.operations.filter((operation) =>
-    approvedOperationIdSet.has(operation.id),
+function selectApprovedOperations(
+  proposal: RunbookOperationApprovalProposal,
+  approvedOperationIds: string[] | undefined,
+): { approvedOperationIds: string[]; selectedOperations: RunbookAuthoringOperation[] } {
+  const allOperationIds = proposal.operationDiffs.map((diff) => diff.operationId);
+  const selectedOperationIds = approvedOperationIds ?? allOperationIds;
+  const selectedOperationIdSet = new Set(selectedOperationIds);
+  const selectedOperations = proposal.operations.filter((operation) =>
+    selectedOperationIdSet.has(operation.id),
   );
 
-  if (selectedOperations.length !== approvedOperationIdSet.size) {
+  if (selectedOperations.length !== selectedOperationIdSet.size) {
     throw new Error("Approval references an unknown runbook authoring operation.");
   }
-
   if (selectedOperations.length === 0) {
     throw new Error("At least one runbook authoring operation must be approved.");
   }
 
+  return {
+    approvedOperationIds: selectedOperationIds,
+    selectedOperations,
+  };
+}
+
+function applyApprovedOperations(input: {
+  proposal: RunbookOperationApprovalProposal;
+  approvedOperationIds: string[] | undefined;
+  revisionNumber: number;
+  updatedAt: string;
+}): { approvedOperationIds: string[]; runbook: RunbookRecord } {
+  const { approvedOperationIds, selectedOperations } = selectApprovedOperations(
+    input.proposal,
+    input.approvedOperationIds,
+  );
   const runbook = applyOperations(
     input.proposal.originalRunbook,
     selectedOperations,
@@ -1308,8 +1246,8 @@ export function approveRunbookAuthoringProposal(
     input.proposal.originalRunbook.actions,
     updatedActionIds,
   );
-  runbook.revisionNumber = input.proposal.targetRevisionNumber + 1;
-  runbook.updatedAt = updatedAt;
+  runbook.revisionNumber = input.revisionNumber;
+  runbook.updatedAt = input.updatedAt;
   const validation = validateRunbook(runbook);
   if (!validation.valid) {
     throw new Error(
@@ -1319,10 +1257,60 @@ export function approveRunbookAuthoringProposal(
     );
   }
 
+  return { approvedOperationIds, runbook };
+}
+
+export function approveRunbookAuthoringProposal(
+  input: RunbookAuthoringApprovalInput,
+): RunbookAuthoringApprovalResult {
+  if (input.proposal.status !== "pending_approval") {
+    throw new Error("Only pending runbook authoring proposals can be approved.");
+  }
+
+  const updatedAt = nowIso(input.now);
+  if (input.proposal.kind === "create_new_runbook") {
+    if (!input.proposal.validation.valid) {
+      throw new Error("Invalid runbook creation proposals cannot be approved.");
+    }
+
+    if (
+      input.proposal.operations !== undefined &&
+      input.proposal.originalRunbook !== undefined
+    ) {
+      const result = applyApprovedOperations({
+        proposal: input.proposal,
+        approvedOperationIds: input.approvedOperationIds,
+        revisionNumber: input.proposal.originalRunbook.revisionNumber,
+        updatedAt,
+      });
+
+      return {
+        proposal: normalizeProposalStatus(input.proposal, "approved", updatedAt),
+        ...result,
+      };
+    }
+
+    const runbook = cloneRunbook(input.proposal.proposedRunbook);
+    runbook.createdAt = updatedAt;
+    runbook.updatedAt = updatedAt;
+
+    return {
+      proposal: normalizeProposalStatus(input.proposal, "approved", updatedAt),
+      approvedOperationIds: ["create-runbook"],
+      runbook,
+    };
+  }
+
+  const result = applyApprovedOperations({
+    proposal: input.proposal,
+    approvedOperationIds: input.approvedOperationIds,
+    revisionNumber: input.proposal.targetRevisionNumber + 1,
+    updatedAt,
+  });
+
   return {
     proposal: normalizeProposalStatus(input.proposal, "approved", updatedAt),
-    approvedOperationIds,
-    runbook,
+    ...result,
   };
 }
 
