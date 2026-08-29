@@ -1277,10 +1277,16 @@ export function approveRunbookAuthoringProposal(
       input.proposal.operations !== undefined &&
       input.proposal.originalRunbook !== undefined
     ) {
+      const operationApprovalProposal: RunbookOperationApprovalProposal = {
+        operationDiffs: input.proposal.operationDiffs,
+        operations: input.proposal.operations,
+        originalRunbook: input.proposal.originalRunbook,
+        proposedRunbook: input.proposal.proposedRunbook,
+      };
       const result = applyApprovedOperations({
-        proposal: input.proposal,
+        proposal: operationApprovalProposal,
         approvedOperationIds: input.approvedOperationIds,
-        revisionNumber: input.proposal.originalRunbook.revisionNumber,
+        revisionNumber: operationApprovalProposal.originalRunbook.revisionNumber,
         updatedAt,
       });
 
