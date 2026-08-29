@@ -1722,7 +1722,9 @@ export default function IncidentArtifactsRail({
             <ArtifactDetails artifact={selectedArtifact} />
           ) : agent === undefined ? (
             <div className="rounded-2xl border border-border p-4 text-sm text-muted-foreground">
-              Runbook proposal actions are unavailable in this client.
+              {t(
+                "common.incidentArtifactsRail.proposal.actionsUnavailableInClient",
+              )}
             </div>
           ) : (
             <RunbookProposalArtifact

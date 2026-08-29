@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { AlertCircle, Check, RotateCcw, X } from "lucide-react";
+import { useTranslation } from "@bitsentry-ce/i18n";
 
 import type {
   AgentServicePort,
@@ -25,6 +26,8 @@ function RunbookProposalOperation({
   disabled: boolean;
   onToggle: () => void;
 }) {
+  const { t } = useTranslation();
+
   return (
     <label className="flex gap-2 rounded-xl border border-border px-3 py-2">
       <input
@@ -32,7 +35,9 @@ function RunbookProposalOperation({
         checked={checked}
         disabled={disabled}
         onChange={onToggle}
-        aria-label={`Approve ${diff.type}`}
+        aria-label={t("common.incidentArtifactsRail.proposal.approveOperation", {
+          type: diff.type,
+        })}
         className="mt-1"
       />
       <span className="min-w-0">
@@ -52,6 +57,8 @@ export function RunbookProposalListItem({
   isSelected: boolean;
   onSelect: () => void;
 }) {
+  const { t } = useTranslation();
+
   return (
     <button
       type="button"
@@ -68,8 +75,12 @@ export function RunbookProposalListItem({
             {proposal.proposedRunbook.title}
           </div>
           <div className="mt-1 text-xs text-muted-foreground">
-            Runbook proposal · v{proposal.artifactVersion}
-            {proposal.isLatest ? " · Latest" : ""}
+            {t("common.incidentArtifactsRail.proposal.versionSummary", {
+              version: proposal.artifactVersion,
+            })}
+            {proposal.isLatest
+              ? t("common.incidentArtifactsRail.proposal.latestSuffix")
+              : ""}
           </div>
         </div>
         <span className="rounded-full border border-border px-2 py-0.5 text-[10px] capitalize text-muted-foreground">
@@ -99,6 +110,7 @@ export default function RunbookProposalArtifact({
   onRefresh: () => Promise<void>;
   onRevisionRequested?: (requestedEdit: string) => void;
 }) {
+  const { t } = useTranslation();
   const [selectedOperationIds, setSelectedOperationIds] = useState<string[]>([]);
   const [revisionDraft, setRevisionDraft] = useState("");
   const [busy, setBusy] = useState(false);
@@ -154,21 +166,26 @@ export default function RunbookProposalArtifact({
     <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-2xl border border-border bg-background">
       <div className="flex items-center gap-2 border-b border-border px-4 py-3">
         <select
-          aria-label="Artifact version"
+          aria-label={t("common.incidentArtifactsRail.proposal.artifactVersion")}
           value={selectedProposal.proposalId}
           onChange={(event) => onSelect(event.target.value)}
           className="rounded-lg border border-border bg-muted/30 px-2 py-1 text-xs font-medium"
         >
           {history.map((proposal) => (
             <option key={proposal.proposalId} value={proposal.proposalId}>
-              v{proposal.artifactVersion}{proposal.isLatest ? " · Latest" : ""}
+              {t("common.incidentArtifactsRail.proposal.versionOption", {
+                version: proposal.artifactVersion,
+              })}
+              {proposal.isLatest
+                ? t("common.incidentArtifactsRail.proposal.latestSuffix")
+                : ""}
             </option>
           ))}
         </select>
         <div className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
           {selectedProposal.kind === "create_new_runbook"
-            ? "New runbook"
-            : "Runbook update"}
+            ? t("common.incidentArtifactsRail.proposal.newRunbook")
+            : t("common.incidentArtifactsRail.proposal.runbookUpdate")}
         </div>
         {!selectedProposal.isLatest && (
           <button
@@ -184,7 +201,8 @@ export default function RunbookProposalArtifact({
             })}
             className="inline-flex items-center gap-1 rounded-lg border border-border px-2 py-1 text-xs hover:bg-muted disabled:opacity-50"
           >
-            <RotateCcw size={12} /> Restore
+            <RotateCcw size={12} />
+            {t("common.incidentArtifactsRail.proposal.restore")}
           </button>
         )}
       </div>
@@ -195,13 +213,14 @@ export default function RunbookProposalArtifact({
             {selectedProposal.proposedRunbook.title}
           </div>
           <p className="mt-1 text-sm text-muted-foreground">
-            {selectedProposal.proposedRunbook.description || "No description."}
+            {selectedProposal.proposedRunbook.description ||
+              t("common.incidentArtifactsRail.proposal.noDescription")}
           </p>
         </div>
 
         <div>
           <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-            Steps
+            {t("common.incidentArtifactsRail.proposal.steps")}
           </div>
           <div className="space-y-2">
             {selectedProposal.proposedRunbook.actions.map((action, index) => (
@@ -215,7 +234,7 @@ export default function RunbookProposalArtifact({
 
         <div>
           <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-            Proposed changes
+            {t("common.incidentArtifactsRail.proposal.proposedChanges")}
           </div>
           <div className="space-y-2">
             {selectedProposal.operationDiffs.map((diff) => (
@@ -233,9 +252,16 @@ export default function RunbookProposalArtifact({
         {(riskLabels.length > 0 || !selectedProposal.validation.valid) && (
           <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-xs">
             <div className="flex items-center gap-1.5 font-medium text-amber-700 dark:text-amber-300">
-              <AlertCircle size={13} /> Review notes
+              <AlertCircle size={13} />
+              {t("common.incidentArtifactsRail.proposal.reviewNotes")}
             </div>
-            {riskLabels.length > 0 && <div className="mt-1">Risks: {riskLabels.join(", ")}</div>}
+            {riskLabels.length > 0 && (
+              <div className="mt-1">
+                {t("common.incidentArtifactsRail.proposal.risks", {
+                  risks: riskLabels.join(", "),
+                })}
+              </div>
+            )}
             {selectedProposal.validation.errors.map((validationError) => (
               <div key={validationError} className="mt-1">{validationError}</div>
             ))}
@@ -243,7 +269,9 @@ export default function RunbookProposalArtifact({
         )}
 
         <details className="rounded-xl border border-border">
-          <summary className="cursor-pointer px-3 py-2 text-xs font-medium">Raw JSON</summary>
+          <summary className="cursor-pointer px-3 py-2 text-xs font-medium">
+            {t("common.incidentArtifactsRail.proposal.rawJson")}
+          </summary>
           <pre className="max-h-72 overflow-auto border-t border-border p-3 text-[11px] leading-relaxed">
             {JSON.stringify(selectedProposal, null, 2)}
           </pre>
@@ -254,7 +282,9 @@ export default function RunbookProposalArtifact({
             <textarea
               value={revisionDraft}
               onChange={(event) => setRevisionDraft(event.target.value)}
-              placeholder="Describe what the agent should revise…"
+              placeholder={t(
+                "common.incidentArtifactsRail.proposal.revisionPlaceholder",
+              )}
               className="min-h-20 w-full resize-y rounded-xl border border-border bg-background px-3 py-2 text-sm"
             />
             <div className="flex flex-wrap gap-2">
@@ -273,7 +303,8 @@ export default function RunbookProposalArtifact({
                 })}
                 className="inline-flex items-center gap-1 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white disabled:opacity-50"
               >
-                <Check size={13} /> Approve
+                <Check size={13} />
+                {t("common.incidentArtifactsRail.proposal.approve")}
               </button>
               <button
                 type="button"
@@ -292,7 +323,7 @@ export default function RunbookProposalArtifact({
                 })}
                 className="rounded-lg border border-border px-3 py-1.5 text-xs font-medium hover:bg-muted disabled:opacity-50"
               >
-                Revise in chat
+                {t("common.incidentArtifactsRail.proposal.reviseInChat")}
               </button>
               <button
                 type="button"
@@ -307,7 +338,8 @@ export default function RunbookProposalArtifact({
                 })}
                 className="inline-flex items-center gap-1 rounded-lg border border-red-500/30 px-3 py-1.5 text-xs font-medium text-red-600 hover:bg-red-500/5 disabled:opacity-50"
               >
-                <X size={13} /> Reject
+                <X size={13} />
+                {t("common.incidentArtifactsRail.proposal.reject")}
               </button>
             </div>
           </div>
