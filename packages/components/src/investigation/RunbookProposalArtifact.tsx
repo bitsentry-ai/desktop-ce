@@ -14,6 +14,35 @@ function statusLabel(status: RunbookAuthoringProposalReview["status"]): string {
   return status.replaceAll("_", " ");
 }
 
+function RunbookProposalOperation({
+  diff,
+  checked,
+  disabled,
+  onToggle,
+}: {
+  diff: RunbookAuthoringProposalReview["operationDiffs"][number];
+  checked: boolean;
+  disabled: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <label className="flex gap-2 rounded-xl border border-border px-3 py-2">
+      <input
+        type="checkbox"
+        checked={checked}
+        disabled={disabled}
+        onChange={onToggle}
+        aria-label={`Approve ${diff.type}`}
+        className="mt-1"
+      />
+      <span className="min-w-0">
+        <span className="block text-sm font-medium">{diff.rationale}</span>
+        <span className="block text-xs text-muted-foreground">{diff.type}</span>
+      </span>
+    </label>
+  );
+}
+
 export function RunbookProposalListItem({
   proposal,
   isSelected,
@@ -108,6 +137,13 @@ export default function RunbookProposalArtifact({
   const canDecide =
     selectedProposal.isLatest &&
     selectedProposal.status === "pending_approval";
+  const toggleOperation = (operationId: string) => {
+    setSelectedOperationIds((current) =>
+      current.includes(operationId)
+        ? current.filter((id) => id !== operationId)
+        : [...current, operationId],
+    );
+  };
   const riskLabels = [
     ...new Set(
       selectedProposal.operationDiffs.flatMap((diff) => diff.riskLabels),
@@ -182,29 +218,15 @@ export default function RunbookProposalArtifact({
             Proposed changes
           </div>
           <div className="space-y-2">
-            {selectedProposal.operationDiffs.map((diff) => {
-              const checked = selectedOperationIds.includes(diff.operationId);
-              return (
-                <label key={diff.operationId} className="flex gap-2 rounded-xl border border-border px-3 py-2">
-                  <input
-                    type="checkbox"
-                    checked={checked}
-                    disabled={!canDecide || selectedProposal.kind === "create_new_runbook"}
-                    onChange={() => setSelectedOperationIds((current) =>
-                      checked
-                        ? current.filter((id) => id !== diff.operationId)
-                        : [...current, diff.operationId],
-                    )}
-                    aria-label={`Approve ${diff.type}`}
-                    className="mt-1"
-                  />
-                  <span className="min-w-0">
-                    <span className="block text-sm font-medium">{diff.rationale}</span>
-                    <span className="block text-xs text-muted-foreground">{diff.type}</span>
-                  </span>
-                </label>
-              );
-            })}
+            {selectedProposal.operationDiffs.map((diff) => (
+              <RunbookProposalOperation
+                key={diff.operationId}
+                diff={diff}
+                checked={selectedOperationIds.includes(diff.operationId)}
+                disabled={!canDecide || selectedProposal.kind === "create_new_runbook"}
+                onToggle={() => toggleOperation(diff.operationId)}
+              />
+            ))}
           </div>
         </div>
 
