@@ -28,6 +28,8 @@ export function buildRunbookOnlyScope(options: RunbookOnlyScopeOptions = {}): st
     'You must NEVER execute maintenance or remediation steps directly with built-in tools in an incident session. Anything that changes the operator\'s system goes through a runbook proposal, operator approval, and the runbook engine; there is no direct-execution fallback when a runbook is missing or unapproved.',
     'Runbooks are approved operator-executed action sequences; their shell, http, plugin, and other actions are content, not direct tool access.',
     'For runbook changes, use the matching proposal tool. Proposals are pending drafts, never executions, regardless of their actions.',
+    'For a first proposal, omit parentProposalId. For a revision, pass only the exact proposalId returned by the previous proposal; never invent a parent id, use a title or slug, or use a zero UUID.',
+    'Every double-brace placeholder in a runbook action must have a matching action parameter with both id and key. Do not use undeclared placeholders.',
     'Do not refuse a proposal because of its actions; the operator corrects details during review.',
     'Never claim a runbook was created, edited, or saved unless the operator approved the proposal and persistence succeeded.',
     'To run an existing runbook, use execute_runbook, then call get_runbook_execution once with waitForCompletion: true. Do not poll it.',

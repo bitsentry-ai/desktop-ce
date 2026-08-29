@@ -103,6 +103,65 @@ describe('host tools', () => {
     expect(saveRunbookAuthoringProposal).toHaveBeenCalledTimes(2)
   })
 
+  it.each([
+    'initial-cve-2024-0727-remediation-draft',
+    '00000000-0000-0000-0000-000000000000',
+  ])('creates a root proposal when an initial create retry has a missing parent id: %s', async (parentProposalId) => {
+    const context = createContext()
+
+    const result = await executeHostTool(context, 'propose_runbook_create', {
+      parentProposalId,
+      prompt: 'Create a read-only runbook to investigate high disk usage.',
+      draftRunbook: {
+        title: 'Investigate high disk usage',
+        description: 'Collect disk and process information without making changes.',
+        actions: [{
+          id: 'check-disk',
+          type: 'shell',
+          title: 'Check disk usage',
+          command: 'ssh -- "{{host}}" "df -hT; df -ih"',
+          parameters: [{ id: 'host', key: 'host', required: true }],
+        }],
+      },
+    })
+
+    expect(result?.error).toBeUndefined()
+    expect(JSON.parse(result?.output ?? '')).toMatchObject({
+      status: 'pending_approval',
+      artifactVersion: 1,
+    })
+    expect(JSON.parse(result?.output ?? '')).not.toHaveProperty('parentProposalId')
+    expect(context.session.runbookAuthoringProposals?.[0]).toMatchObject({
+      artifactVersion: 1,
+      artifactId: context.session.runbookAuthoringProposals?.[0]?.id,
+    })
+    expect(context.session.runbookAuthoringProposals?.[0]?.parentProposalId).toBeUndefined()
+  })
+
+  it('derives a parameter id when a create draft only declares its parameter key', async () => {
+    const context = createContext()
+
+    const result = await executeHostTool(context, 'propose_runbook_create', {
+      prompt: 'Create a read-only runbook to investigate high disk usage.',
+      draftRunbook: {
+        title: 'Investigate high disk usage',
+        description: 'Collect disk information without making changes.',
+        actions: [{
+          id: 'check-disk',
+          type: 'shell',
+          title: 'Check disk usage',
+          command: 'ssh -- "{{host}}" "df -hT; df -ih"',
+          parameters: [{ key: 'host', label: 'SSH target', required: true }],
+        }],
+      },
+    })
+
+    expect(result?.error).toBeUndefined()
+    expect(context.session.runbookAuthoringProposals?.[0]?.proposedRunbook.actions[0]?.parameters).toEqual([
+      { id: 'host', key: 'host', label: 'SSH target', required: true },
+    ])
+  })
+
   it('lists canonical model IDs and display names for runbook authoring', async () => {
     const result = await executeHostTool(
       createContext('openai,anthropic,gemini,groq,kilocode,openrouter'),

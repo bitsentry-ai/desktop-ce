@@ -196,11 +196,26 @@ function normalizeCreateRunbookActionOutputPlaceholders(input: unknown): unknown
   const actions = input.draftRunbook.actions
   if (!Array.isArray(actions) || !actions.every(isSafeToNormalizeRunbookAction)) return input
 
+  const actionsWithParameterIds = actions.map((action) => ({
+    ...action,
+    parameters: action.parameters?.map((parameter) => {
+      if (parameter.id !== undefined && (
+        typeof parameter.id !== 'string' ||
+        parameter.id.trim().length > 0
+      )) return parameter
+
+      const parameterKey = typeof parameter.key === 'string' ? parameter.key.trim() : ''
+      return parameterKey.length > 0
+        ? { ...parameter, id: parameterKey }
+        : parameter
+    }),
+  }))
+
   return {
     ...input,
     draftRunbook: {
       ...input.draftRunbook,
-      actions: normalizeStepOutputPlaceholders(actions as unknown as RunbookActionRecord[]),
+      actions: normalizeStepOutputPlaceholders(actionsWithParameterIds as unknown as RunbookActionRecord[]),
     },
   }
 }
@@ -816,9 +831,13 @@ function resolveProposalLineage(
     : proposals.find((proposal) => proposal.id === parentProposalId)
 
   if (parent === undefined) {
-    if (parentProposalId !== undefined) {
+    if (parentProposalId !== undefined && (kind !== 'create_new_runbook' || compatible.length > 0)) {
       throw new Error(`Runbook authoring parent proposal not found: ${parentProposalId}`)
     }
+    // A model may retry the first proposal after a malformed tool call and
+    // invent a parent id from the draft title or a placeholder UUID. There is
+    // no create artifact lineage to preserve when no compatible proposal
+    // exists; start a clean v1 instead of persisting a bogus parent reference.
     return undefined
   }
   if (!compatible.includes(parent)) {
@@ -892,13 +911,13 @@ export const hostTools = [
   },
   {
     name: 'propose_runbook_edit',
-    description: 'Create a pending, non-mutating runbook edit proposal for user approval. This never saves changes. Use declared {{parameter}} values for inputs; use ${steps.<index>.output} for a prior action result, not {{action-id.output}}.',
+    description: 'Create a pending, non-mutating runbook edit proposal for user approval. This never saves changes. For a first proposal, omit parentProposalId; for a revision, pass only the exact proposalId returned by the previous proposal. Never invent a parent id, use a title or slug, or use a zero UUID. Every {{parameter}} placeholder must have a matching action parameter with both id and key. Use ${steps.<index>.output} for a prior action result, not {{action-id.output}}.',
     argsSchema: proposeRunbookEditHostToolSchema,
     handler: async (context: HostToolContext, args: ProposeRunbookEditHostToolInput) => await proposeRunbookEdit(context, args),
   },
   {
     name: 'propose_runbook_create',
-    description: 'Create a pending, non-mutating proposal for a new runbook draft. This never saves changes. For CVE findings, include linux-cve-status/evaluate_remediation before an LLM summary. Use declared {{parameter}} values for inputs; use ${steps.<index>.output} for a prior action result, not {{action-id.output}}.',
+    description: 'Create a pending, non-mutating proposal for a new runbook draft. This never saves changes. For a first proposal, omit parentProposalId; for a revision, pass only the exact proposalId returned by the previous proposal. Never invent a parent id, use a title or slug, or use a zero UUID. Every {{parameter}} placeholder must have a matching action parameter with both id and key. For CVE findings, include linux-cve-status/evaluate_remediation before an LLM summary. Use ${steps.<index>.output} for a prior action result, not {{action-id.output}}.',
     argsSchema: proposeRunbookCreateHostToolSchema,
     providerArgsSchema: runbookCreateHostToolProviderSchema,
     handler: async (context: HostToolContext, args: ProposeRunbookCreateHostToolInput) => await proposeRunbookCreate(context, args),
