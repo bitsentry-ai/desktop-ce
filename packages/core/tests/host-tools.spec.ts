@@ -109,6 +109,74 @@ describe('host tools', () => {
     expect(saveRunbookAuthoringProposal).toHaveBeenCalledTimes(2)
   })
 
+  it('summarizes the latest artifact version, status, and actions through v5', async () => {
+    const context = createContext()
+    const saveRunbookAuthoringProposal = vi.fn().mockResolvedValue(undefined)
+    context.saveRunbookAuthoringProposal = saveRunbookAuthoringProposal
+    let parentProposalId: string | undefined
+    type ProposalSummary = {
+      artifactVersion?: number
+      status?: string
+      proposedRunbook?: Record<string, unknown>
+      nextStep?: string
+    }
+    let latestSummary: ProposalSummary | undefined
+
+    for (let version = 1; version <= 5; version += 1) {
+      const actions = version === 5
+        ? [
+            {
+              id: 'check-disk',
+              type: 'shell',
+              title: 'Check disk usage',
+              command: 'df -h',
+            },
+            {
+              id: 'check-mounted-filesystems',
+              type: 'shell',
+              title: 'Check mounted filesystems',
+              command: 'findmnt -r',
+            },
+          ]
+        : [{
+            id: `check-disk-${version}`,
+            type: 'shell',
+            title: `Check disk usage v${version}`,
+            command: 'df -h',
+          }]
+      const result = await executeHostTool(context, 'propose_runbook_create', {
+        ...(parentProposalId === undefined ? {} : { parentProposalId }),
+        prompt: `Create artifact version ${version}.`,
+        draftRunbook: {
+          title: 'Disk usage investigation',
+          description: 'Inspect disk usage without changing system state.',
+          actions,
+        },
+      })
+
+      expect(result?.error).toBeUndefined()
+      latestSummary = JSON.parse(result?.output ?? '') as ProposalSummary
+      parentProposalId = context.session.runbookAuthoringProposals?.at(-1)?.id
+    }
+
+    expect(latestSummary).toMatchObject({
+      artifactVersion: 5,
+      status: 'pending_approval',
+      proposedRunbook: {
+        actionCount: 2,
+        actions: [
+          { id: 'check-disk', type: 'shell', title: 'Check disk usage' },
+          { id: 'check-mounted-filesystems', type: 'shell', title: 'Check mounted filesystems' },
+        ],
+      },
+    })
+    expect(latestSummary?.proposedRunbook).not.toHaveProperty('revisionNumber')
+    expect(latestSummary?.nextStep).toContain('Report artifactVersion as the version.')
+    expect(latestSummary?.nextStep).toContain('Do not report revisionNumber; it is the saved runbook revision.')
+    expect(context.session.runbookAuthoringProposals).toHaveLength(5)
+    expect(saveRunbookAuthoringProposal).toHaveBeenCalledTimes(5)
+  })
+
   it('continues a pending create artifact when revising with only its proposal id', async () => {
     const context = createContext()
     context.listAuthorableRunbooks = vi.fn().mockResolvedValue([])
