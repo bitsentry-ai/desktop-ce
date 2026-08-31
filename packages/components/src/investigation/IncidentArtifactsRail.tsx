@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertCircle,
   ArrowRight,
@@ -24,9 +24,13 @@ import type {
   RunbookExecutionRecord,
   RunbookExecutionStatus,
   RunbookExecutionStepRecord,
+  RunbookAuthoringProposalReview,
 } from "../services/contracts";
 import { useBitsentryServices } from "../services/context";
 import { useTranslation } from "@bitsentry-ce/i18n";
+import RunbookProposalArtifact, {
+  RunbookProposalListItem,
+} from "./RunbookProposalArtifact";
 
 type IncidentArtifactsToolCallState = "running" | "done" | "failed";
 
@@ -42,6 +46,51 @@ export interface IncidentArtifactsToolCall {
 export interface IncidentArtifactsMessage {
   kind: "user" | "agent";
   toolCalls?: IncidentArtifactsToolCall[];
+}
+
+function collectRunbookProposalArtifacts(
+  messages: IncidentArtifactsMessage[],
+): RunbookAuthoringProposalReview[] {
+  const proposals = messages.flatMap((message) =>
+    (message.toolCalls ?? []).flatMap((toolCall) => {
+      if (
+        toolCall.state !== "done" ||
+        (toolCall.toolName !== "propose_runbook_create" &&
+          toolCall.toolName !== "propose_runbook_edit") ||
+        typeof toolCall.output !== "string"
+      ) return [];
+      const parsed = safeParseJson(toolCall.output) as Partial<RunbookAuthoringProposalReview> | null;
+      if (
+        parsed === null ||
+        typeof parsed.proposalId !== "string" ||
+        parsed.proposedRunbook === undefined ||
+        !Array.isArray(parsed.operationDiffs)
+      ) return [];
+      return [{
+        ...parsed,
+        artifactId: parsed.artifactId ?? parsed.proposalId,
+        artifactVersion: parsed.artifactVersion ?? 1,
+        isLatest: parsed.isLatest ?? true,
+      } as RunbookAuthoringProposalReview];
+    }),
+  );
+  return [...new Map(proposals.map((proposal) => [proposal.proposalId, proposal])).values()];
+}
+
+function markLatestRunbookProposalArtifacts(
+  proposals: RunbookAuthoringProposalReview[],
+): RunbookAuthoringProposalReview[] {
+  const latestByArtifact = new Map<string, number>();
+  proposals.forEach((proposal) => {
+    latestByArtifact.set(
+      proposal.artifactId,
+      Math.max(latestByArtifact.get(proposal.artifactId) ?? 0, proposal.artifactVersion),
+    );
+  });
+  return proposals.map((proposal) => ({
+    ...proposal,
+    isLatest: proposal.artifactVersion === latestByArtifact.get(proposal.artifactId),
+  }));
 }
 
 interface IncidentArtifactReference {
@@ -975,6 +1024,9 @@ export function countIncidentArtifacts(
   for (const reference of mergedReferences) {
     keys.add(runbookIdentityKey(reference));
   }
+  for (const proposal of collectRunbookProposalArtifacts(messages)) {
+    keys.add(`proposal:${proposal.artifactId}`);
+  }
 
   return keys.size;
 }
@@ -1259,14 +1311,18 @@ export default function IncidentArtifactsRail({
   onClose,
   messages,
   incidentId,
+  sessionId,
+  onRevisionRequested,
 }: {
   isOpen: boolean;
   onClose: () => void;
   messages: IncidentArtifactsMessage[];
   incidentId?: string | null;
+  sessionId?: string | null;
+  onRevisionRequested?: (requestedEdit: string) => void;
 }) {
   const { t } = useTranslation();
-  const { runbooks } = useBitsentryServices();
+  const { runbooks, agent } = useBitsentryServices();
   const [executionMap, setExecutionMap] = useState<
     Record<string, RunbookExecutionRecord>
   >({});
@@ -1275,7 +1331,88 @@ export default function IncidentArtifactsRail({
     Record<string, StoredResultTraceMemory>
   >({});
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
+  const [liveProposals, setLiveProposals] = useState<RunbookAuthoringProposalReview[]>([]);
+  const [selectedProposalId, setSelectedProposalId] = useState<string | null>(null);
+  const [showProposalDetails, setShowProposalDetails] = useState(true);
   const previousArtifactKeysRef = useRef<string>("");
+  const previousProposalCountRef = useRef(0);
+  const viewingProposalHistoryRef = useRef(false);
+  const proposalRefreshRequestRef = useRef(0);
+  const currentIncidentIdRef = useRef(incidentId);
+
+  const messageProposals = useMemo(
+    () => collectRunbookProposalArtifacts(messages),
+    [messages],
+  );
+  const proposals = useMemo(
+    () => markLatestRunbookProposalArtifacts([
+      ...new Map(
+        [...messageProposals, ...liveProposals].map((proposal) => [proposal.proposalId, proposal]),
+      ).values(),
+    ]).sort((left, right) => right.artifactVersion - left.artifactVersion),
+    [liveProposals, messageProposals],
+  );
+
+  const refreshProposals = useCallback(async () => {
+    if (agent === undefined || incidentId === undefined || incidentId === null || incidentId.length === 0) return;
+    const requestId = proposalRefreshRequestRef.current + 1;
+    proposalRefreshRequestRef.current = requestId;
+    const requestedIncidentId = incidentId;
+    try {
+      const nextProposals = await agent.listRunbookAuthoringProposals({
+        sessionId: sessionId ?? undefined,
+        incidentThreadId: incidentId,
+      });
+      if (
+        proposalRefreshRequestRef.current !== requestId ||
+        currentIncidentIdRef.current !== requestedIncidentId
+      ) {
+        return;
+      }
+      setLiveProposals(nextProposals);
+    } catch {
+      // Message summaries still keep the artifact view available while a
+      // just-finished agent session is settling.
+    }
+  }, [agent, incidentId, sessionId]);
+
+  useEffect(() => {
+    currentIncidentIdRef.current = incidentId;
+    proposalRefreshRequestRef.current += 1;
+    setLiveProposals([]);
+    setSelectedProposalId(null);
+    setShowProposalDetails(false);
+    previousProposalCountRef.current = 0;
+    viewingProposalHistoryRef.current = false;
+  }, [incidentId]);
+
+  useEffect(() => {
+    void refreshProposals();
+  }, [messages, refreshProposals]);
+
+  useEffect(() => {
+    const proposalCountIncreased = proposals.length > previousProposalCountRef.current;
+    previousProposalCountRef.current = proposals.length;
+    if (proposals.length === 0) {
+      setSelectedProposalId(null);
+      viewingProposalHistoryRef.current = false;
+      setShowProposalDetails(false);
+      return;
+    }
+    if (proposalCountIncreased) setShowProposalDetails(true);
+    if (!showProposalDetails && !proposalCountIncreased) return;
+    const selected = proposals.find((proposal) => proposal.proposalId === selectedProposalId);
+    if (selected === undefined || !viewingProposalHistoryRef.current) {
+      const latest = selected === undefined
+        ? proposals.find((proposal) => proposal.isLatest) ?? proposals[0]
+        : proposals.find(
+            (proposal) =>
+              proposal.artifactId === selected.artifactId && proposal.isLatest,
+          ) ?? selected;
+      setSelectedProposalId(latest.proposalId);
+      viewingProposalHistoryRef.current = false;
+    }
+  }, [proposals, selectedProposalId, showProposalDetails]);
 
   useEffect(() => {
     const refreshStoredRunbookArtifacts = () => {
@@ -1524,6 +1661,9 @@ export default function IncidentArtifactsRail({
 
   const selectedArtifact =
     artifacts.find((artifact) => artifact.key === selectedKey) ?? null;
+  const latestProposals = proposals.filter((proposal) => proposal.isLatest);
+  const selectedProposal =
+    proposals.find((proposal) => proposal.proposalId === selectedProposalId) ?? null;
   let railTransformClass = "translate-x-full";
   if (isOpen) {
     railTransformClass = "translate-x-0";
@@ -1547,7 +1687,7 @@ export default function IncidentArtifactsRail({
           </div>
           <div className="text-xs text-muted-foreground">
             {t("common.incidentArtifactsRail.runbookExecutionCount", {
-              count: artifacts.length,
+              count: artifacts.length + latestProposals.length,
             })}
           </div>
         </div>
@@ -1567,16 +1707,33 @@ export default function IncidentArtifactsRail({
           className="min-h-0 overflow-y-auto px-4 py-4"
         >
           <div className="space-y-2">
+            {latestProposals.map((proposal) => (
+              <RunbookProposalListItem
+                key={proposal.artifactId}
+                proposal={proposal}
+                isSelected={selectedProposal?.artifactId === proposal.artifactId}
+                onSelect={() => {
+                  setSelectedProposalId(proposal.proposalId);
+                  viewingProposalHistoryRef.current = false;
+                  setShowProposalDetails(true);
+                }}
+              />
+            ))}
             {artifacts.map((artifact) => (
               <ArtifactListItem
                 key={artifact.key}
                 artifact={artifact}
                 isSelected={artifact.key === selectedKey}
-                onSelect={() => { setSelectedKey(artifact.key); }}
+                onSelect={() => {
+                  setSelectedKey(artifact.key);
+                  setSelectedProposalId(null);
+                  viewingProposalHistoryRef.current = false;
+                  setShowProposalDetails(false);
+                }}
               />
             ))}
 
-            {artifacts.length === 0 && (
+            {artifacts.length === 0 && latestProposals.length === 0 && (
               <div className="rounded-2xl border border-dashed border-border/70 bg-muted/10 px-4 py-5 text-sm text-muted-foreground">
                 {t("common.incidentArtifactsRail.whenTheIncidentAgentExecutes")}
               </div>
@@ -1588,7 +1745,31 @@ export default function IncidentArtifactsRail({
           data-tour="incidents-artifacts-detail"
           className="min-h-0 px-4 pb-4"
         >
-          <ArtifactDetails artifact={selectedArtifact} />
+          {!showProposalDetails || selectedProposal === null ? (
+            <ArtifactDetails artifact={selectedArtifact} />
+          ) : agent === undefined ? (
+            <div className="rounded-2xl border border-border p-4 text-sm text-muted-foreground">
+              {t(
+                "common.incidentArtifactsRail.proposal.actionsUnavailableInClient",
+              )}
+            </div>
+          ) : (
+            <RunbookProposalArtifact
+              agent={agent}
+              incidentId={incidentId ?? ""}
+              sessionId={sessionId ?? undefined}
+              proposals={proposals}
+              selectedProposal={selectedProposal}
+              onSelect={(proposalId) => {
+                const proposal = proposals.find((candidate) => candidate.proposalId === proposalId);
+                setSelectedProposalId(proposalId);
+                viewingProposalHistoryRef.current = proposal?.isLatest === false;
+                setShowProposalDetails(true);
+              }}
+              onRefresh={refreshProposals}
+              onRevisionRequested={onRevisionRequested}
+            />
+          )}
         </div>
       </div>
     </aside>

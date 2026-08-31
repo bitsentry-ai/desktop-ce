@@ -1329,6 +1329,23 @@ async function runMigrations(): Promise<void> {
       CREATE INDEX IF NOT EXISTS "IncidentMessage_threadId_sortOrder_idx" ON "IncidentMessage"("threadId", "sortOrder")
     `)
     await getDb().$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS "RunbookAuthoringProposal" (
+        "id" TEXT NOT NULL PRIMARY KEY,
+        "incidentThreadId" TEXT NOT NULL,
+        "artifactId" TEXT NOT NULL,
+        "artifactVersion" INTEGER NOT NULL,
+        "proposalJson" TEXT NOT NULL,
+        "createdAt" DATETIME NOT NULL,
+        "updatedAt" DATETIME NOT NULL
+      )
+    `)
+    await getDb().$executeRawUnsafe(`
+      CREATE UNIQUE INDEX IF NOT EXISTS "RunbookAuthoringProposal_artifactId_artifactVersion_key" ON "RunbookAuthoringProposal"("artifactId", "artifactVersion")
+    `)
+    await getDb().$executeRawUnsafe(`
+      CREATE INDEX IF NOT EXISTS "RunbookAuthoringProposal_incidentThreadId_idx" ON "RunbookAuthoringProposal"("incidentThreadId")
+    `)
+    await getDb().$executeRawUnsafe(`
       CREATE TABLE IF NOT EXISTS "GlobalVariable" (
         "id" TEXT NOT NULL PRIMARY KEY,
         "key" TEXT NOT NULL,

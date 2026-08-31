@@ -22,6 +22,8 @@ import type {
   RunbookParameterValues,
   RunbookRecord,
 } from '@bitsentry-ce/core/features/runbooks/desktop-runbook-ce.types'
+import type { RunbookAuthoringProposal } from '@bitsentry-ce/core/features/runbooks/authoring'
+import type { RunbookAuthoringProposalPersistence } from '@bitsentry-ce/core/features/runbooks'
 import { executeHostTool } from '@bitsentry-ce/core/features/agent-runtime'
 import { DbClient } from '@bitsentry-ce/core/features/desktop/desktop-database-client'
 import { DesktopRunbookStore } from '@bitsentry-ce/core/features/runbooks/desktop-runbook.store'
@@ -170,7 +172,7 @@ async function createPendingRunbookAuthoringProposal(
   return {
     service,
     sessionId,
-    proposalId: service.listRunbookAuthoringProposals({ sessionId })[0]!.proposalId,
+    proposalId: (await service.listRunbookAuthoringProposals({ sessionId }))[0]!.proposalId,
   }
 }
 
@@ -325,6 +327,7 @@ function createRuntime(options: {
   runbookExecutionService?: TestRunbookExecutionService
   sentEvents?: AgentRuntimeEventPayload[]
   onRunbooksChanged?: () => void
+  authoringProposalStore?: RunbookAuthoringProposalPersistence
 }): AgentRuntimeService {
   const windowGetter = () => {
     if (options.sentEvents === undefined) {
@@ -413,6 +416,8 @@ function createRuntime(options: {
     undefined,
     options.runbookStore as AgentRuntimeRunbookStore | undefined,
     options.onRunbooksChanged,
+    undefined,
+    options.authoringProposalStore,
   )
 }
 
@@ -659,7 +664,7 @@ describe('AgentRuntimeService runbook outcomes', () => {
     const service = createRuntime({ llmAdapter, runbookStore: store as unknown as { list(): Promise<RunbookRecord[]> }, runbookExecutionService })
     const sessionId = await service.start({ prompt: `Create ${title}.`, incidentThreadId: `incident-${randomUUID()}` })
     await waitForCondition(() => service.getStatus(sessionId).state === 'COMPLETED')
-    const proposal = service.listRunbookAuthoringProposals({ sessionId })[0]!
+    const proposal = (await service.listRunbookAuthoringProposals({ sessionId }))[0]!
 
     expect(proposal.nextStep).toContain('draft runbook id is provisional')
     expect(proposal.nextStep).toContain('list_runbooks or the approval notification')
@@ -690,7 +695,7 @@ describe('AgentRuntimeService runbook outcomes', () => {
     await waitForCondition(() => service.getStatus(sessionId).state === 'COMPLETED')
     expect(runbookStore.updateMeta).not.toHaveBeenCalled()
     expect(runbookStore.updateActions).not.toHaveBeenCalled()
-    const proposal = service.listRunbookAuthoringProposals({ sessionId })[0]
+    const proposal = (await service.listRunbookAuthoringProposals({ sessionId }))[0]
     expect(proposal).toMatchObject({ approvalRequired: true, saved: false, status: 'pending_approval', targetRunbookId: 'rb-logs' })
     runbookStore.list.mockResolvedValue([changedRunbook])
     await expect(service.approveRunbookAuthoringProposal({ sessionId, proposalId: proposal.proposalId })).rejects.toThrow('changed after the authoring proposal was created')
@@ -720,7 +725,7 @@ describe('AgentRuntimeService runbook outcomes', () => {
     const service = createRuntime({ llmAdapter, runbookStore, runbookExecutionService })
     const sessionId = await service.start({ prompt: 'Add an uptime check to the backend runbook.', incidentThreadId: 'incident-authoring' })
     await waitForCondition(() => service.getStatus(sessionId).state === 'COMPLETED')
-    const proposal = service.listRunbookAuthoringProposals({ sessionId })[0]
+    const proposal = (await service.listRunbookAuthoringProposals({ sessionId }))[0]
 
     await expect(service.approveRunbookAuthoringProposal({ sessionId, proposalId: proposal.proposalId })).rejects.toThrow('changed after the authoring proposal was created')
     expect(runbookStore.updateMeta).not.toHaveBeenCalled()
@@ -752,7 +757,7 @@ describe('AgentRuntimeService runbook outcomes', () => {
     })
     const sessionId = await service.start({ prompt: 'Update the backend runbook.', incidentThreadId: 'incident-authoring' })
     await waitForCondition(() => service.getStatus(sessionId).state === 'COMPLETED')
-    const proposal = service.listRunbookAuthoringProposals({ sessionId })[0]
+    const proposal = (await service.listRunbookAuthoringProposals({ sessionId }))[0]
 
     await expect(service.approveRunbookAuthoringProposal({ sessionId, proposalId: proposal.proposalId, approvedOperationIds: ['op-title'] })).resolves.toMatchObject({ savedRunbook: { title: 'Check backend logs and uptime', actions: [{ id: 'step-1' }] } })
     expect(runbookStore.updateActions).toHaveBeenCalledWith({
@@ -780,7 +785,7 @@ describe('AgentRuntimeService runbook outcomes', () => {
     const service = createRuntime({ llmAdapter, runbookStore, runbookExecutionService })
     const sessionId = await service.start({ prompt: 'Break the backend runbook.', incidentThreadId: 'incident-authoring' })
     await waitForCondition(() => service.getStatus(sessionId).state === 'COMPLETED')
-    const proposal = service.listRunbookAuthoringProposals({ sessionId })[0]
+    const proposal = (await service.listRunbookAuthoringProposals({ sessionId }))[0]
 
     await expect(service.approveRunbookAuthoringProposal({ sessionId, proposalId: proposal.proposalId })).rejects.toThrow('produce an invalid runbook')
     expect(runbookStore.create).not.toHaveBeenCalled()
@@ -808,7 +813,7 @@ describe('AgentRuntimeService runbook outcomes', () => {
     const service = createRuntime({ llmAdapter, runbookStore, runbookExecutionService })
     const sessionId = await service.start({ prompt: 'Create a status runbook.', incidentThreadId: 'incident-authoring' })
     await waitForCondition(() => service.getStatus(sessionId).state === 'COMPLETED')
-    const proposal = service.listRunbookAuthoringProposals({ sessionId })[0]
+    const proposal = (await service.listRunbookAuthoringProposals({ sessionId }))[0]
 
     await expect(service.approveRunbookAuthoringProposal({ sessionId, proposalId: proposal.proposalId })).rejects.toThrow('action persistence failed')
     expect(runbookStore.purge).toHaveBeenCalledWith({ id: createdShell.id })
@@ -867,7 +872,7 @@ describe('AgentRuntimeService runbook outcomes', () => {
     const service = createRuntime({ llmAdapter, runbookStore, runbookExecutionService })
     const sessionId = await service.start({ prompt: 'Create a status runbook.', incidentThreadId: 'incident-authoring' })
     await waitForCondition(() => service.getStatus(sessionId).state === 'COMPLETED')
-    const proposal = service.listRunbookAuthoringProposals({ sessionId })[0]
+    const proposal = (await service.listRunbookAuthoringProposals({ sessionId }))[0]
 
     const result = await service.approveRunbookAuthoringProposal({ sessionId, proposalId: proposal.proposalId })
     const saved = result.savedRunbook
@@ -905,7 +910,7 @@ describe('AgentRuntimeService runbook outcomes', () => {
     const service = createRuntime({ llmAdapter, runbookStore, runbookExecutionService })
     const sessionId = await service.start({ prompt: 'Create a status runbook.', incidentThreadId: 'incident-authoring' })
     await waitForCondition(() => service.getStatus(sessionId).state === 'COMPLETED')
-    const proposal = service.listRunbookAuthoringProposals({ sessionId })[0]
+    const proposal = (await service.listRunbookAuthoringProposals({ sessionId }))[0]
 
     await expect(service.approveRunbookAuthoringProposal({ sessionId, proposalId: proposal.proposalId })).resolves.toMatchObject({
       savedRunbook: { id: 'rb-new', idleTimeout: 30 },
@@ -3424,6 +3429,46 @@ describe('AgentRuntimeService runbook outcomes', () => {
     )
 
     service.cancel(sessionId)
+  })
+
+  it('rechecks the incident session after loading persisted proposals', async () => {
+    let resolvePersistedProposals: ((proposals: RunbookAuthoringProposal[]) => void) | undefined
+    const persistedProposals = new Promise<RunbookAuthoringProposal[]>((resolve) => {
+      resolvePersistedProposals = resolve
+    })
+    const listPersistedProposals = vi.fn().mockReturnValue(persistedProposals)
+    const authoringProposalStore: RunbookAuthoringProposalPersistence = {
+      list: listPersistedProposals,
+      save: vi.fn().mockResolvedValue(undefined),
+    }
+    const llmAdapter = {
+      chatWithTools: vi.fn().mockReturnValue(new Promise<never>(() => {})),
+    }
+    const service = createRuntime({ llmAdapter, authoringProposalStore })
+    const firstStart = service.start({
+      prompt: 'Start investigating the first request.',
+      incidentThreadId: 'incident-start-race',
+    })
+    const secondStart = service.start({
+      prompt: 'Start investigating the second request.',
+      incidentThreadId: 'incident-start-race',
+    })
+
+    await waitForCondition(() => listPersistedProposals.mock.calls.length === 2)
+    resolvePersistedProposals?.([])
+
+    const results = await Promise.allSettled([firstStart, secondStart])
+    const fulfilled = results.filter(
+      (result): result is PromiseFulfilledResult<string> => result.status === 'fulfilled',
+    )
+    const rejected = results.filter((result) => result.status === 'rejected')
+    expect(fulfilled).toHaveLength(1)
+    expect(rejected).toHaveLength(1)
+    expect(rejected[0]?.reason).toMatchObject({
+      message: 'An agent session is already running for this incident. Wait for it to finish or cancel it before starting another response.',
+    })
+
+    service.cancel(fulfilled[0]!.value)
   })
 
   it('delivers a follow-up queued while an incident turn is active', async () => {

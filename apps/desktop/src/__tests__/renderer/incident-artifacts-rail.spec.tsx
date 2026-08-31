@@ -14,6 +14,8 @@ import IncidentArtifactsRail from "@bitsentry-ce/components/investigation/Incide
 import { BitsentryServicesProvider } from "@bitsentry-ce/components/services/context";
 import type {
   BitsentryServicePorts,
+  AgentServicePort,
+  RunbookAuthoringProposalReview,
   RunbookExecutionRecord,
   RunbookExecutionStepStatus,
   RunbookExecutionStatus,
@@ -27,6 +29,33 @@ vi.mock("@bitsentry-ce/i18n", () => ({
           "{{count}} runbook execution",
         "common.incidentArtifactsRail.runbookExecutionCount_other":
           "{{count}} runbook executions",
+        "common.incidentArtifactsRail.proposal.actionsUnavailableInClient":
+          "Runbook proposal actions are unavailable in this client.",
+        "common.incidentArtifactsRail.proposal.approve": "Approve",
+        "common.incidentArtifactsRail.proposal.approveOperation":
+          "Approve {{type}}",
+        "common.incidentArtifactsRail.proposal.artifactVersion":
+          "Artifact version",
+        "common.incidentArtifactsRail.proposal.latestSuffix": " · Latest",
+        "common.incidentArtifactsRail.proposal.newRunbook": "New runbook",
+        "common.incidentArtifactsRail.proposal.noDescription":
+          "No description.",
+        "common.incidentArtifactsRail.proposal.proposedChanges":
+          "Proposed changes",
+        "common.incidentArtifactsRail.proposal.rawJson": "Raw JSON",
+        "common.incidentArtifactsRail.proposal.reject": "Reject",
+        "common.incidentArtifactsRail.proposal.restore": "Restore",
+        "common.incidentArtifactsRail.proposal.reviewNotes": "Review notes",
+        "common.incidentArtifactsRail.proposal.reviseInChat": "Revise in chat",
+        "common.incidentArtifactsRail.proposal.revisionPlaceholder":
+          "Describe what the agent should revise…",
+        "common.incidentArtifactsRail.proposal.risks": "Risks: {{risks}}",
+        "common.incidentArtifactsRail.proposal.runbookUpdate":
+          "Runbook update",
+        "common.incidentArtifactsRail.proposal.steps": "Steps",
+        "common.incidentArtifactsRail.proposal.versionOption": "v{{version}}",
+        "common.incidentArtifactsRail.proposal.versionSummary":
+          "Runbook proposal · v{{version}}",
         "common.incidentArtifactsRail.status.completed": "Completed",
         "common.incidentArtifactsRail.status.failed": "Failed",
         "common.incidentArtifactsRail.stepStatus.completed": "Completed",
@@ -58,6 +87,11 @@ vi.mock("@bitsentry-ce/i18n", () => ({
     },
   }),
 }));
+
+Object.defineProperty(HTMLElement.prototype, "scrollIntoView", {
+  configurable: true,
+  value: vi.fn(),
+});
 
 function stepStatusFor(status: RunbookExecutionStatus): RunbookExecutionStepStatus {
   if (status === "queued") {
@@ -204,23 +238,28 @@ function writeStoredArtifacts(
   );
 }
 
-function renderRail() {
+function renderRail(options: {
+  agent?: AgentServicePort;
+  messages?: React.ComponentProps<typeof IncidentArtifactsRail>["messages"];
+  incidentId?: string;
+} = {}) {
   const services: BitsentryServicePorts = {
     runbooks: createRunbookServices(),
+    agent: options.agent,
   };
 
-  render(
+  const view = render(
     <BitsentryServicesProvider services={services}>
       <IncidentArtifactsRail
         isOpen
         onClose={() => {}}
-        messages={[]}
-        incidentId={INCIDENT_ID}
+        messages={options.messages ?? []}
+        incidentId={options.incidentId ?? INCIDENT_ID}
       />
     </BitsentryServicesProvider>,
   );
 
-  return services;
+  return { ...view, services };
 }
 
 function artifactButtonWithText(text: string): HTMLElement {
@@ -260,6 +299,288 @@ afterEach(() => {
 });
 
 describe("IncidentArtifactsRail", () => {
+  it("shows proposal versions and restores an earlier artifact as a new latest version", async () => {
+    const proposal = (
+      proposalId: string,
+      artifactVersion: number,
+      isLatest: boolean,
+    ): RunbookAuthoringProposalReview => ({
+      proposalId,
+      artifactId: "artifact-1",
+      artifactVersion,
+      parentProposalId: artifactVersion === 1 ? undefined : "proposal-v1",
+      isLatest,
+      status: "pending_approval",
+      approvalRequired: true,
+      saved: false,
+      supportsOperationApproval: false,
+      kind: "create_new_runbook",
+      incidentThreadId: INCIDENT_ID,
+      proposedRunbook: {
+        id: "draft-runbook",
+        title: `API triage v${artifactVersion}`,
+        description: "Collect API health evidence.",
+        revisionNumber: 1,
+        actionCount: 1,
+        actions: [{ id: "health", type: "http", title: "Check health" }],
+      },
+      validation: { valid: true, errors: [], warnings: [] },
+      operationDiffs: [{
+        operationId: "create-runbook",
+        type: "create_runbook",
+        rationale: "Create the runbook.",
+        riskLabels: [],
+        before: null,
+        after: {},
+      }],
+      nextStep: "Review the proposal.",
+    });
+    const v1 = proposal("proposal-v1", 1, false);
+    const v2 = proposal("proposal-v2", 2, true);
+    const v3 = {
+      ...proposal("proposal-v3", 3, true),
+      restoredFromProposalId: v1.proposalId,
+    };
+    const listRunbookAuthoringProposals = vi
+      .fn()
+      .mockResolvedValueOnce([v1, v2])
+      .mockResolvedValue([v1, { ...v2, isLatest: false }, v3]);
+    const restoreRunbookAuthoringProposal = vi.fn().mockResolvedValue({
+      proposal: v3,
+    });
+    const agent = {
+      listRunbookAuthoringProposals,
+      restoreRunbookAuthoringProposal,
+    } as unknown as AgentServicePort;
+
+    renderRail({
+      agent,
+      messages: [{
+        kind: "agent",
+        toolCalls: [{
+          toolCallId: "proposal-tool-v2",
+          toolName: "propose_runbook_create",
+          state: "done",
+          output: JSON.stringify(v2),
+        }],
+      }],
+    });
+
+    expect((await screen.findAllByText("API triage v2")).length).toBeGreaterThan(0);
+    fireEvent.click(screen.getByLabelText("Artifact version"));
+    fireEvent.click(await screen.findByRole("option", { name: "v1" }));
+    expect(await screen.findByText("API triage v1")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Restore" }));
+
+    await waitFor(() => {
+      expect(restoreRunbookAuthoringProposal).toHaveBeenCalledWith({
+        sessionId: undefined,
+        incidentThreadId: INCIDENT_ID,
+        proposalId: v1.proposalId,
+      });
+    });
+    expect((await screen.findAllByText("API triage v3")).length).toBeGreaterThan(0);
+  });
+
+  it("keeps the selected artifact when another artifact is also latest", async () => {
+    const proposal = (
+      proposalId: string,
+      artifactId: string,
+      title: string,
+    ): RunbookAuthoringProposalReview => ({
+      proposalId,
+      artifactId,
+      artifactVersion: 1,
+      isLatest: true,
+      status: "pending_approval",
+      approvalRequired: true,
+      saved: false,
+      supportsOperationApproval: false,
+      kind: "create_new_runbook",
+      incidentThreadId: INCIDENT_ID,
+      proposedRunbook: {
+        id: `${artifactId}-draft`,
+        title,
+        description: `${title} description`,
+        revisionNumber: 0,
+        actionCount: 1,
+        actions: [{ id: `${artifactId}-action`, type: "shell", title: "Check status" }],
+      },
+      validation: { valid: true, errors: [], warnings: [] },
+      operationDiffs: [{
+        operationId: `${artifactId}-operation`,
+        type: "create_runbook",
+        rationale: `Create ${title}.`,
+        riskLabels: [],
+        before: null,
+        after: {},
+      }],
+      nextStep: "Review the proposal.",
+    });
+    const alpha = proposal("proposal-alpha", "artifact-alpha", "Alpha runbook");
+    const beta = proposal("proposal-beta", "artifact-beta", "Beta runbook");
+    const agent = {
+      listRunbookAuthoringProposals: vi.fn().mockResolvedValue([alpha, beta]),
+    } as unknown as AgentServicePort;
+
+    renderRail({ agent });
+
+    expect(await screen.findByText("Alpha runbook")).toBeTruthy();
+    fireEvent.click(artifactButtonWithText("Beta runbook"));
+
+    await waitFor(() => {
+      expect(detailPane().textContent).toContain("Beta runbook");
+    });
+  });
+
+  it("sends selected operation ids for a create-kind revision", async () => {
+    const proposal: RunbookAuthoringProposalReview = {
+      proposalId: "proposal-create-revision",
+      artifactId: "artifact-create-revision",
+      artifactVersion: 2,
+      parentProposalId: "proposal-create-v1",
+      isLatest: true,
+      status: "pending_approval",
+      approvalRequired: true,
+      saved: false,
+      supportsOperationApproval: true,
+      kind: "create_new_runbook",
+      incidentThreadId: INCIDENT_ID,
+      proposedRunbook: {
+        id: "create-revision-draft",
+        title: "Create revision",
+        description: "A revised create proposal.",
+        revisionNumber: 0,
+        actionCount: 1,
+        actions: [{ id: "status", type: "shell", title: "Check status" }],
+      },
+      validation: { valid: true, errors: [], warnings: [] },
+      operationDiffs: [
+        {
+          operationId: "keep-operation",
+          type: "update_metadata",
+          rationale: "Keep the requested metadata.",
+          riskLabels: [],
+          before: null,
+          after: {},
+        },
+        {
+          operationId: "add-operation",
+          type: "add_action",
+          rationale: "Add the requested read-only check.",
+          riskLabels: [],
+          before: null,
+          after: {},
+        },
+      ],
+      nextStep: "Review the proposal.",
+    };
+    const approveRunbookAuthoringProposal = vi.fn().mockResolvedValue({
+      proposal,
+    });
+    const agent = {
+      listRunbookAuthoringProposals: vi.fn().mockResolvedValue([proposal]),
+      approveRunbookAuthoringProposal,
+    } as unknown as AgentServicePort;
+
+    renderRail({ agent });
+
+    const checkboxes = await screen.findAllByRole("checkbox");
+    expect(checkboxes).toHaveLength(2);
+    expect((checkboxes[0] as HTMLInputElement).disabled).toBe(false);
+    fireEvent.click(checkboxes[0]!);
+    fireEvent.click(await screen.findByRole("button", { name: "Approve" }));
+
+    await waitFor(() => {
+      expect(approveRunbookAuthoringProposal).toHaveBeenCalledWith({
+        sessionId: undefined,
+        incidentThreadId: INCIDENT_ID,
+        proposalId: proposal.proposalId,
+        approvedOperationIds: ["add-operation"],
+      });
+    });
+  });
+
+  it("clears old proposals and ignores a stale refresh after an incident switch", async () => {
+    let resolveFirst: ((proposals: RunbookAuthoringProposalReview[]) => void) | undefined;
+    let resolveSecond: ((proposals: RunbookAuthoringProposalReview[]) => void) | undefined;
+    const alpha: RunbookAuthoringProposalReview = {
+      proposalId: "proposal-switch-alpha",
+      artifactId: "artifact-switch-alpha",
+      artifactVersion: 1,
+      isLatest: true,
+      status: "pending_approval",
+      approvalRequired: true,
+      saved: false,
+      supportsOperationApproval: false,
+      kind: "create_new_runbook",
+      incidentThreadId: INCIDENT_ID,
+      proposedRunbook: {
+        id: "switch-alpha-draft",
+        title: "Alpha incident runbook",
+        description: "Alpha",
+        revisionNumber: 0,
+        actionCount: 0,
+        actions: [],
+      },
+      validation: { valid: true, errors: [], warnings: [] },
+      operationDiffs: [],
+      nextStep: "Review the proposal.",
+    };
+    const beta = {
+      ...alpha,
+      proposalId: "proposal-switch-beta",
+      artifactId: "artifact-switch-beta",
+      incidentThreadId: OTHER_INCIDENT_ID,
+      proposedRunbook: {
+        ...alpha.proposedRunbook,
+        id: "switch-beta-draft",
+        title: "Beta incident runbook",
+      },
+    };
+    const listRunbookAuthoringProposals = vi.fn(({ incidentThreadId }: { incidentThreadId?: string }) => {
+      if (incidentThreadId === OTHER_INCIDENT_ID) {
+        return new Promise<RunbookAuthoringProposalReview[]>((resolve) => {
+          resolveSecond = resolve;
+        });
+      }
+      return new Promise<RunbookAuthoringProposalReview[]>((resolve) => {
+        resolveFirst = resolve;
+      });
+    });
+    const agent = { listRunbookAuthoringProposals } as unknown as AgentServicePort;
+    const rail = renderRail({ agent });
+
+    await waitFor(() => {
+      expect(listRunbookAuthoringProposals).toHaveBeenCalledWith({
+        sessionId: undefined,
+        incidentThreadId: INCIDENT_ID,
+      });
+    });
+    rail.rerender(
+      <BitsentryServicesProvider services={rail.services}>
+        <IncidentArtifactsRail
+          isOpen
+          onClose={() => {}}
+          messages={[]}
+          incidentId={OTHER_INCIDENT_ID}
+        />
+      </BitsentryServicesProvider>,
+    );
+    await waitFor(() => {
+      expect(listRunbookAuthoringProposals).toHaveBeenCalledWith({
+        sessionId: undefined,
+        incidentThreadId: OTHER_INCIDENT_ID,
+      });
+    });
+
+    resolveSecond?.([beta]);
+    expect(await screen.findByText("Beta incident runbook")).toBeTruthy();
+    resolveFirst?.([alpha]);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(screen.queryByText("Alpha incident runbook")).toBeNull();
+  });
+
   it("refreshes current incident results and selects a successful retry", async () => {
     const failedExecution = execution(
       ids.failedExecution,

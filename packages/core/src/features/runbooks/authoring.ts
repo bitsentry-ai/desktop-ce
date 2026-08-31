@@ -68,6 +68,10 @@ export interface RunbookAuthoringValidationResult {
 
 export interface RunbookAuthoringBaseProposal {
   id: string;
+  artifactId: string;
+  artifactVersion: number;
+  parentProposalId?: string;
+  restoredFromProposalId?: string;
   kind: RunbookAuthoringProposalKind;
   status: RunbookAuthoringProposalStatus;
   incidentThreadId?: string;
@@ -96,6 +100,8 @@ export interface RunbookCreateAuthoringProposal
   extends RunbookAuthoringBaseProposal {
   kind: "create_new_runbook";
   proposedRunbook: RunbookRecord;
+  operations?: RunbookAuthoringOperation[];
+  originalRunbook?: RunbookRecord;
 }
 
 export type RunbookAuthoringProposal =
@@ -127,6 +133,10 @@ export function formatUnknownRunbookTemplatePlaceholderMessage(
 
 export interface CreateRunbookEditProposalInput {
   id?: string;
+  artifactId?: string;
+  artifactVersion?: number;
+  parentProposalId?: string;
+  restoredFromProposalId?: string;
   incidentThreadId?: string;
   prompt: string;
   targetRunbook: RunbookRecord;
@@ -139,6 +149,10 @@ export interface CreateRunbookEditProposalInput {
 
 export interface CreateRunbookCreationProposalInput {
   id?: string;
+  artifactId?: string;
+  artifactVersion?: number;
+  parentProposalId?: string;
+  restoredFromProposalId?: string;
   incidentThreadId?: string;
   prompt: string;
   draftRunbook: Omit<
@@ -184,6 +198,13 @@ export interface RunbookAuthoringDecisionResult {
   proposal: RunbookAuthoringProposal;
   reason?: string;
   requestedEdit?: string;
+}
+
+export interface RestoreRunbookAuthoringProposalInput {
+  proposal: RunbookAuthoringProposal;
+  latestProposal: RunbookAuthoringProposal;
+  id?: string;
+  now?: string;
 }
 
 type MutableRunbook = RunbookRecord & {
@@ -1050,8 +1071,13 @@ export function createRunbookEditProposal(
     input.normalizedFindings,
   );
 
+  const id = input.id ?? createAuthoringId();
   return {
-    id: input.id ?? createAuthoringId(),
+    id,
+    artifactId: input.artifactId ?? id,
+    artifactVersion: input.artifactVersion ?? 1,
+    parentProposalId: input.parentProposalId,
+    restoredFromProposalId: input.restoredFromProposalId,
     kind: "edit_existing_runbook",
     status: "pending_approval",
     incidentThreadId: input.incidentThreadId,
@@ -1072,6 +1098,38 @@ export function createRunbookEditProposal(
       normalizedOperations,
     ),
     validation: validateRunbook(proposedRunbook),
+  };
+}
+
+export function createRunbookCreationRevisionProposal(
+  input: CreateRunbookEditProposalInput,
+): RunbookCreateAuthoringProposal {
+  const editProposal = createRunbookEditProposal(input);
+  const proposedRunbook = {
+    ...editProposal.proposedRunbook,
+    revisionNumber: editProposal.originalRunbook.revisionNumber,
+  };
+
+  return {
+    id: editProposal.id,
+    artifactId: editProposal.artifactId,
+    artifactVersion: editProposal.artifactVersion,
+    parentProposalId: editProposal.parentProposalId,
+    restoredFromProposalId: editProposal.restoredFromProposalId,
+    kind: "create_new_runbook",
+    status: editProposal.status,
+    incidentThreadId: editProposal.incidentThreadId,
+    sourceAttachmentId: editProposal.sourceAttachmentId,
+    sourceMessageId: editProposal.sourceMessageId,
+    normalizedFindings: editProposal.normalizedFindings,
+    prompt: editProposal.prompt,
+    createdAt: editProposal.createdAt,
+    updatedAt: editProposal.updatedAt,
+    proposedRunbook,
+    operations: editProposal.operations,
+    originalRunbook: editProposal.originalRunbook,
+    operationDiffs: editProposal.operationDiffs,
+    validation: editProposal.validation,
   };
 }
 
@@ -1107,8 +1165,13 @@ export function createRunbookCreationProposal(
     after: proposedRunbook,
   };
 
+  const id = input.id ?? createAuthoringId();
   return {
-    id: input.id ?? createAuthoringId(),
+    id,
+    artifactId: input.artifactId ?? id,
+    artifactVersion: input.artifactVersion ?? 1,
+    parentProposalId: input.parentProposalId,
+    restoredFromProposalId: input.restoredFromProposalId,
     kind: "create_new_runbook",
     status: "pending_approval",
     incidentThreadId: input.incidentThreadId,
@@ -1124,50 +1187,47 @@ export function createRunbookCreationProposal(
   };
 }
 
-export function approveRunbookAuthoringProposal(
-  input: RunbookAuthoringApprovalInput,
-): RunbookAuthoringApprovalResult {
-  if (input.proposal.status !== "pending_approval") {
-    throw new Error("Only pending runbook authoring proposals can be approved.");
-  }
+type RunbookOperationApprovalProposal = {
+  operationDiffs: RunbookAuthoringOperationDiff[];
+  operations: RunbookAuthoringOperation[];
+  originalRunbook: RunbookRecord;
+  proposedRunbook: RunbookRecord;
+};
 
-  const updatedAt = nowIso(input.now);
-  if (input.proposal.kind === "create_new_runbook") {
-    if (!input.proposal.validation.valid) {
-      throw new Error("Invalid runbook creation proposals cannot be approved.");
-    }
-
-    const runbook = cloneRunbook(input.proposal.proposedRunbook);
-    runbook.createdAt = updatedAt;
-    runbook.updatedAt = updatedAt;
-
-    return {
-      proposal: normalizeProposalStatus(input.proposal, "approved", updatedAt),
-      approvedOperationIds: ["create-runbook"],
-      runbook,
-    };
-  }
-
-  const allOperationIds = input.proposal.operationDiffs.map(
-    (diff) => diff.operationId,
-  );
-  const approvedOperationIds =
-    input.approvedOperationIds === undefined
-      ? allOperationIds
-      : input.approvedOperationIds;
-  const approvedOperationIdSet = new Set(approvedOperationIds);
-  const selectedOperations = input.proposal.operations.filter((operation) =>
-    approvedOperationIdSet.has(operation.id),
+function selectApprovedOperations(
+  proposal: RunbookOperationApprovalProposal,
+  approvedOperationIds: string[] | undefined,
+): { approvedOperationIds: string[]; selectedOperations: RunbookAuthoringOperation[] } {
+  const allOperationIds = proposal.operationDiffs.map((diff) => diff.operationId);
+  const selectedOperationIds = approvedOperationIds ?? allOperationIds;
+  const selectedOperationIdSet = new Set(selectedOperationIds);
+  const selectedOperations = proposal.operations.filter((operation) =>
+    selectedOperationIdSet.has(operation.id),
   );
 
-  if (selectedOperations.length !== approvedOperationIdSet.size) {
+  if (selectedOperations.length !== selectedOperationIdSet.size) {
     throw new Error("Approval references an unknown runbook authoring operation.");
   }
-
   if (selectedOperations.length === 0) {
     throw new Error("At least one runbook authoring operation must be approved.");
   }
 
+  return {
+    approvedOperationIds: selectedOperationIds,
+    selectedOperations,
+  };
+}
+
+function applyApprovedOperations(input: {
+  proposal: RunbookOperationApprovalProposal;
+  approvedOperationIds: string[] | undefined;
+  revisionNumber: number;
+  updatedAt: string;
+}): { approvedOperationIds: string[]; runbook: RunbookRecord } {
+  const { approvedOperationIds, selectedOperations } = selectApprovedOperations(
+    input.proposal,
+    input.approvedOperationIds,
+  );
   const runbook = applyOperations(
     input.proposal.originalRunbook,
     selectedOperations,
@@ -1186,8 +1246,8 @@ export function approveRunbookAuthoringProposal(
     input.proposal.originalRunbook.actions,
     updatedActionIds,
   );
-  runbook.revisionNumber = input.proposal.targetRevisionNumber + 1;
-  runbook.updatedAt = updatedAt;
+  runbook.revisionNumber = input.revisionNumber;
+  runbook.updatedAt = input.updatedAt;
   const validation = validateRunbook(runbook);
   if (!validation.valid) {
     throw new Error(
@@ -1197,10 +1257,66 @@ export function approveRunbookAuthoringProposal(
     );
   }
 
+  return { approvedOperationIds, runbook };
+}
+
+export function approveRunbookAuthoringProposal(
+  input: RunbookAuthoringApprovalInput,
+): RunbookAuthoringApprovalResult {
+  if (input.proposal.status !== "pending_approval") {
+    throw new Error("Only pending runbook authoring proposals can be approved.");
+  }
+
+  const updatedAt = nowIso(input.now);
+  if (input.proposal.kind === "create_new_runbook") {
+    if (!input.proposal.validation.valid) {
+      throw new Error("Invalid runbook creation proposals cannot be approved.");
+    }
+
+    if (
+      input.proposal.operations !== undefined &&
+      input.proposal.originalRunbook !== undefined
+    ) {
+      const operationApprovalProposal: RunbookOperationApprovalProposal = {
+        operationDiffs: input.proposal.operationDiffs,
+        operations: input.proposal.operations,
+        originalRunbook: input.proposal.originalRunbook,
+        proposedRunbook: input.proposal.proposedRunbook,
+      };
+      const result = applyApprovedOperations({
+        proposal: operationApprovalProposal,
+        approvedOperationIds: input.approvedOperationIds,
+        revisionNumber: operationApprovalProposal.originalRunbook.revisionNumber,
+        updatedAt,
+      });
+
+      return {
+        proposal: normalizeProposalStatus(input.proposal, "approved", updatedAt),
+        ...result,
+      };
+    }
+
+    const runbook = cloneRunbook(input.proposal.proposedRunbook);
+    runbook.createdAt = updatedAt;
+    runbook.updatedAt = updatedAt;
+
+    return {
+      proposal: normalizeProposalStatus(input.proposal, "approved", updatedAt),
+      approvedOperationIds: ["create-runbook"],
+      runbook,
+    };
+  }
+
+  const result = applyApprovedOperations({
+    proposal: input.proposal,
+    approvedOperationIds: input.approvedOperationIds,
+    revisionNumber: input.proposal.targetRevisionNumber + 1,
+    updatedAt,
+  });
+
   return {
     proposal: normalizeProposalStatus(input.proposal, "approved", updatedAt),
-    approvedOperationIds,
-    runbook,
+    ...result,
   };
 }
 
@@ -1231,5 +1347,68 @@ export function requestRunbookAuthoringRevision(
       nowIso(input.now),
     ),
     requestedEdit: input.requestedEdit,
+  };
+}
+
+function cloneProposalForRestore(
+  proposal: RunbookAuthoringProposal,
+): RunbookAuthoringProposal {
+  if (proposal.kind === "create_new_runbook") {
+    return {
+      ...proposal,
+      proposedRunbook: cloneRunbook(proposal.proposedRunbook),
+      operations: proposal.operations?.map(cloneOperation),
+      originalRunbook:
+        proposal.originalRunbook === undefined
+          ? undefined
+          : cloneRunbook(proposal.originalRunbook),
+      operationDiffs: proposal.operationDiffs.map((diff) => ({ ...diff })),
+      validation: {
+        ...proposal.validation,
+        errors: proposal.validation.errors.slice(),
+        warnings: proposal.validation.warnings.slice(),
+      },
+      normalizedFindings: proposal.normalizedFindings?.slice(),
+    };
+  }
+
+  return {
+    ...proposal,
+    operations: proposal.operations.map(cloneOperation),
+    originalRunbook: cloneRunbook(proposal.originalRunbook),
+    proposedRunbook: cloneRunbook(proposal.proposedRunbook),
+    operationDiffs: proposal.operationDiffs.map((diff) => ({ ...diff })),
+    validation: {
+      ...proposal.validation,
+      errors: proposal.validation.errors.slice(),
+      warnings: proposal.validation.warnings.slice(),
+    },
+    normalizedFindings: proposal.normalizedFindings?.slice(),
+  };
+}
+
+export function restoreRunbookAuthoringProposal(
+  input: RestoreRunbookAuthoringProposalInput,
+): RunbookAuthoringProposal {
+  const artifactId = input.proposal.artifactId ?? input.proposal.id;
+  const latestArtifactId =
+    input.latestProposal.artifactId ?? input.latestProposal.id;
+  if (artifactId !== latestArtifactId) {
+    throw new Error("A proposal can only be restored within its artifact history.");
+  }
+
+  const restored = cloneProposalForRestore(input.proposal);
+  const restoredAt = nowIso(input.now);
+  return {
+    ...restored,
+    id: input.id ?? createAuthoringId(),
+    artifactId,
+    artifactVersion:
+      (input.latestProposal.artifactVersion ?? 1) + 1,
+    parentProposalId: input.latestProposal.id,
+    restoredFromProposalId: input.proposal.id,
+    status: "pending_approval",
+    createdAt: restoredAt,
+    updatedAt: restoredAt,
   };
 }

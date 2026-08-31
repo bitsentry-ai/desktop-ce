@@ -97,6 +97,11 @@ type DesktopLocalBridge = {
       proposalId: string
       requestedEdit: string
     }) => Promise<RunbookAuthoringProposalDecisionResult>
+    restoreRunbookAuthoringProposal: (input: {
+      sessionId?: string
+      incidentThreadId?: string
+      proposalId: string
+    }) => Promise<RunbookAuthoringProposalDecisionResult>
     onEvent: (
       handler: (data: {
         sessionId: string
@@ -669,6 +674,11 @@ export function createDesktopLocalBitsentryServices({
         proposalId: string
         requestedEdit: string
       }) => getDesktopBridge().agent.requestRunbookAuthoringRevision(input),
+      restoreRunbookAuthoringProposal: (input: {
+        sessionId?: string
+        incidentThreadId?: string
+        proposalId: string
+      }) => getDesktopBridge().agent.restoreRunbookAuthoringProposal(input),
       onEvent: (
         handler: (data: {
           sessionId: string

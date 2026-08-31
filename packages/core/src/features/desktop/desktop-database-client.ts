@@ -482,6 +482,16 @@ const incidentMessageTable = sqliteTable('IncidentMessage', {
   updatedAt: text('updatedAt').notNull(),
 })
 
+const runbookAuthoringProposalTable = sqliteTable('RunbookAuthoringProposal', {
+  id: text('id').primaryKey(),
+  incidentThreadId: text('incidentThreadId').notNull(),
+  artifactId: text('artifactId').notNull(),
+  artifactVersion: integer('artifactVersion').notNull(),
+  proposalJson: text('proposalJson').notNull(),
+  createdAt: text('createdAt').notNull(),
+  updatedAt: text('updatedAt').notNull(),
+})
+
 const globalVariableTable = sqliteTable('GlobalVariable', {
   id: text('id').primaryKey(),
   key: text('key').notNull(),
@@ -679,6 +689,7 @@ const modelTables = {
   jobSchedule: jobScheduleTable,
   incidentThread: incidentThreadTable,
   incidentMessage: incidentMessageTable,
+  runbookAuthoringProposal: runbookAuthoringProposalTable,
   globalVariable: globalVariableTable,
   runbook: runbookTable,
   runbookAction: runbookActionTable,
@@ -955,6 +966,7 @@ const modelColumns: Record<ModelName, Record<string, AnySQLiteColumn>> = {
   jobSchedule: getTableColumns(jobScheduleTable),
   incidentThread: getTableColumns(incidentThreadTable),
   incidentMessage: getTableColumns(incidentMessageTable),
+  runbookAuthoringProposal: getTableColumns(runbookAuthoringProposalTable),
   globalVariable: getTableColumns(globalVariableTable),
   runbook: getTableColumns(runbookTable),
   runbookAction: getTableColumns(runbookActionTable),
@@ -1004,6 +1016,7 @@ const dateColumnsByModel: Record<ModelName, Set<string>> = {
   jobSchedule: new Set(['lastRunAt', 'nextRunAt', 'createdAt', 'updatedAt']),
   incidentThread: new Set(['createdAt', 'updatedAt', 'archivedAt', 'deletedAt']),
   incidentMessage: new Set(['createdAt', 'updatedAt']),
+  runbookAuthoringProposal: new Set(['createdAt', 'updatedAt']),
   globalVariable: new Set(['createdAt', 'updatedAt']),
   runbook: new Set(['createdAt', 'updatedAt', 'deletedAt']),
   runbookAction: new Set(['createdAt', 'updatedAt']),
@@ -1053,6 +1066,7 @@ const booleanColumnsByModel: Record<ModelName, Set<string>> = {
   jobSchedule: new Set(['enabled']),
   incidentThread: new Set(),
   incidentMessage: new Set(),
+  runbookAuthoringProposal: new Set(),
   globalVariable: new Set(['secure']),
   runbook: new Set(),
   runbookAction: new Set(),
@@ -1121,6 +1135,7 @@ export class DbClient {
   readonly jobSchedule = this.createDelegate('jobSchedule')
   readonly incidentThread = this.createDelegate('incidentThread')
   readonly incidentMessage = this.createDelegate('incidentMessage')
+  readonly runbookAuthoringProposal = this.createDelegate('runbookAuthoringProposal')
   readonly globalVariable = this.createDelegate('globalVariable')
   readonly runbook = this.createDelegate('runbook')
   readonly runbookAction = this.createDelegate('runbookAction')

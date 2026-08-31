@@ -14,6 +14,7 @@ import type {
 } from '@bitsentry-ce/core/features/agent-runtime/types'
 import type { DesktopPluginRuntimeService } from '@bitsentry-ce/core/features/plugins'
 import type { RunbookContextV1 } from '@bitsentry-ce/core/features/runbooks/desktop-runbook.types'
+import type { RunbookAuthoringProposalPersistence } from '@bitsentry-ce/core/features/runbooks'
 import type {
   AgentRuntimeLlmAdapter,
   AgentRuntimeRunbookGateway,
@@ -30,10 +31,11 @@ export interface AgentRuntimeSessionController {
   destroy(): void
   getStatus(sessionId: string): AgentSessionStatus
   getSnapshot(sessionId: string): AgentThreadSnapshot
-  listRunbookAuthoringProposals(input: { sessionId?: string; incidentThreadId?: string }): RunbookAuthoringProposalReview[]
+  listRunbookAuthoringProposals(input: { sessionId?: string; incidentThreadId?: string }): Promise<RunbookAuthoringProposalReview[]>
   approveRunbookAuthoringProposal(input: { sessionId?: string; incidentThreadId?: string; proposalId: string; approvedOperationIds?: string[] }): Promise<RunbookAuthoringProposalDecisionResult>
-  rejectRunbookAuthoringProposal(input: { sessionId?: string; incidentThreadId?: string; proposalId: string; reason?: string }): RunbookAuthoringProposalDecisionResult
-  requestRunbookAuthoringRevision(input: { sessionId?: string; incidentThreadId?: string; proposalId: string; requestedEdit: string }): RunbookAuthoringProposalDecisionResult
+  rejectRunbookAuthoringProposal(input: { sessionId?: string; incidentThreadId?: string; proposalId: string; reason?: string }): Promise<RunbookAuthoringProposalDecisionResult>
+  requestRunbookAuthoringRevision(input: { sessionId?: string; incidentThreadId?: string; proposalId: string; requestedEdit: string }): Promise<RunbookAuthoringProposalDecisionResult>
+  restoreRunbookAuthoringProposal(input: { sessionId?: string; incidentThreadId?: string; proposalId: string }): Promise<RunbookAuthoringProposalDecisionResult>
 }
 
 export interface AgentHandlerDependencies {
@@ -47,6 +49,7 @@ export interface AgentServiceDependencies {
   runbookStore?: AgentRuntimeRunbookStore
   onRunbooksChanged?: () => void
   pluginRuntime?: DesktopPluginRuntimeService
+  authoringProposalStore?: RunbookAuthoringProposalPersistence
   windowGetter: () => AgentRuntimeWindow | null
 }
 
@@ -57,13 +60,14 @@ export type AgentRuntimeServiceClass = new (
   runbookStore?: AgentRuntimeRunbookStore,
   onRunbooksChanged?: () => void,
   pluginRuntime?: DesktopPluginRuntimeService,
+  authoringProposalStore?: RunbookAuthoringProposalPersistence,
 ) => AgentRuntimeSessionController
 
 export function createDesktopAgentService(
   dependencies: AgentServiceDependencies,
   services: { AgentRuntimeService: AgentRuntimeServiceClass },
 ): AgentRuntimeSessionController {
-  const { llmAdapter, runbookGateway, runbookStore, onRunbooksChanged, pluginRuntime, windowGetter } = dependencies
+  const { llmAdapter, runbookGateway, runbookStore, onRunbooksChanged, pluginRuntime, authoringProposalStore, windowGetter } = dependencies
   return new services.AgentRuntimeService(
     windowGetter,
     llmAdapter,
@@ -71,6 +75,7 @@ export function createDesktopAgentService(
     runbookStore,
     onRunbooksChanged,
     pluginRuntime,
+    authoringProposalStore,
   )
 }
 
@@ -158,10 +163,11 @@ export function createDesktopAgentHandlers(
         throw error
       }
     },
-    'agent:listRunbookAuthoringProposals': (payload: unknown): Promise<RunbookAuthoringProposalReview[]> => Promise.resolve(agentRuntime.listRunbookAuthoringProposals(payload as { sessionId?: string; incidentThreadId?: string })),
+    'agent:listRunbookAuthoringProposals': (payload: unknown): Promise<RunbookAuthoringProposalReview[]> => agentRuntime.listRunbookAuthoringProposals(payload as { sessionId?: string; incidentThreadId?: string }),
     'agent:approveRunbookAuthoringProposal': (payload: unknown): Promise<RunbookAuthoringProposalDecisionResult> => agentRuntime.approveRunbookAuthoringProposal(payload as { sessionId?: string; incidentThreadId?: string; proposalId: string; approvedOperationIds?: string[] }),
-    'agent:rejectRunbookAuthoringProposal': (payload: unknown): Promise<RunbookAuthoringProposalDecisionResult> => Promise.resolve(agentRuntime.rejectRunbookAuthoringProposal(payload as { sessionId?: string; incidentThreadId?: string; proposalId: string; reason?: string })),
-    'agent:requestRunbookAuthoringRevision': (payload: unknown): Promise<RunbookAuthoringProposalDecisionResult> => Promise.resolve(agentRuntime.requestRunbookAuthoringRevision(payload as { sessionId?: string; incidentThreadId?: string; proposalId: string; requestedEdit: string })),
+    'agent:rejectRunbookAuthoringProposal': (payload: unknown): Promise<RunbookAuthoringProposalDecisionResult> => agentRuntime.rejectRunbookAuthoringProposal(payload as { sessionId?: string; incidentThreadId?: string; proposalId: string; reason?: string }),
+    'agent:requestRunbookAuthoringRevision': (payload: unknown): Promise<RunbookAuthoringProposalDecisionResult> => agentRuntime.requestRunbookAuthoringRevision(payload as { sessionId?: string; incidentThreadId?: string; proposalId: string; requestedEdit: string }),
+    'agent:restoreRunbookAuthoringProposal': (payload: unknown): Promise<RunbookAuthoringProposalDecisionResult> => agentRuntime.restoreRunbookAuthoringProposal(payload as { sessionId?: string; incidentThreadId?: string; proposalId: string }),
   }
 }
 

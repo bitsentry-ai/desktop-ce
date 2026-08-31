@@ -55,6 +55,242 @@ function createContext(enabledApiProviders?: string): HostToolContext {
 }
 
 describe('host tools', () => {
+  it('links conversational runbook proposals into persisted artifact versions', async () => {
+    const context = createContext()
+    const saveRunbookAuthoringProposal = vi.fn().mockResolvedValue(undefined)
+    context.saveRunbookAuthoringProposal = saveRunbookAuthoringProposal
+
+    await executeHostTool(context, 'propose_runbook_create', {
+      prompt: 'Create a health check runbook.',
+      draftRunbook: {
+        title: 'Health check',
+        description: 'Check the API.',
+        actions: [{
+          id: 'health',
+          type: 'http',
+          title: 'Check health',
+          url: 'https://example.test/health',
+          method: 'GET',
+        }],
+      },
+    })
+    const first = context.session.runbookAuthoringProposals?.[0]
+    expect(first).toMatchObject({ artifactVersion: 1 })
+
+    const result = await executeHostTool(context, 'propose_runbook_create', {
+      parentProposalId: first?.id,
+      prompt: 'Also check readiness.',
+      draftRunbook: {
+        title: 'Health and readiness check',
+        description: 'Check the API health and readiness endpoints.',
+        actions: [{
+          id: 'ready',
+          type: 'http',
+          title: 'Check readiness',
+          url: 'https://example.test/ready',
+          method: 'GET',
+        }],
+      },
+    })
+    const second = context.session.runbookAuthoringProposals?.[1]
+
+    expect(result?.error).toBeUndefined()
+    const summary = JSON.parse(result?.output ?? '') as {
+      artifactVersion: number
+      proposedRunbook: Record<string, unknown>
+    }
+    expect(summary.artifactVersion).toBe(2)
+    expect(summary.proposedRunbook).not.toHaveProperty('revisionNumber')
+    expect(second).toMatchObject({
+      artifactId: first?.artifactId,
+      artifactVersion: 2,
+      parentProposalId: first?.id,
+    })
+    expect(saveRunbookAuthoringProposal).toHaveBeenCalledTimes(2)
+  })
+
+  it('summarizes the latest artifact version, status, and actions through v5', async () => {
+    const context = createContext()
+    const saveRunbookAuthoringProposal = vi.fn().mockResolvedValue(undefined)
+    context.saveRunbookAuthoringProposal = saveRunbookAuthoringProposal
+    let parentProposalId: string | undefined
+    type ProposalSummary = {
+      artifactVersion?: number
+      status?: string
+      proposedRunbook?: Record<string, unknown>
+      nextStep?: string
+    }
+    let latestSummary: ProposalSummary | undefined
+
+    for (let version = 1; version <= 5; version += 1) {
+      const actions = version === 5
+        ? [
+            {
+              id: 'check-disk',
+              type: 'shell',
+              title: 'Check disk usage',
+              command: 'df -h',
+            },
+            {
+              id: 'check-mounted-filesystems',
+              type: 'shell',
+              title: 'Check mounted filesystems',
+              command: 'findmnt -r',
+            },
+          ]
+        : [{
+            id: `check-disk-${version}`,
+            type: 'shell',
+            title: `Check disk usage v${version}`,
+            command: 'df -h',
+          }]
+      const result = await executeHostTool(context, 'propose_runbook_create', {
+        ...(parentProposalId === undefined ? {} : { parentProposalId }),
+        prompt: `Create artifact version ${version}.`,
+        draftRunbook: {
+          title: 'Disk usage investigation',
+          description: 'Inspect disk usage without changing system state.',
+          actions,
+        },
+      })
+
+      expect(result?.error).toBeUndefined()
+      latestSummary = JSON.parse(result?.output ?? '') as ProposalSummary
+      parentProposalId = context.session.runbookAuthoringProposals?.at(-1)?.id
+    }
+
+    expect(latestSummary).toMatchObject({
+      artifactVersion: 5,
+      status: 'pending_approval',
+      proposedRunbook: {
+        actionCount: 2,
+        actions: [
+          { id: 'check-disk', type: 'shell', title: 'Check disk usage' },
+          { id: 'check-mounted-filesystems', type: 'shell', title: 'Check mounted filesystems' },
+        ],
+      },
+    })
+    expect(latestSummary?.proposedRunbook).not.toHaveProperty('revisionNumber')
+    expect(latestSummary?.nextStep).toContain('Report artifactVersion as the version.')
+    expect(latestSummary?.nextStep).toContain('Do not report revisionNumber; it is the saved runbook revision.')
+    expect(context.session.runbookAuthoringProposals).toHaveLength(5)
+    expect(saveRunbookAuthoringProposal).toHaveBeenCalledTimes(5)
+  })
+
+  it('continues a pending create artifact when revising with only its proposal id', async () => {
+    const context = createContext()
+    context.listAuthorableRunbooks = vi.fn().mockResolvedValue([])
+
+    const firstResult = await executeHostTool(context, 'propose_runbook_create', {
+      prompt: 'Create a health check runbook.',
+      draftRunbook: {
+        title: 'Health check',
+        description: 'Check the API without making changes.',
+        actions: [{
+          id: 'health',
+          type: 'http',
+          title: 'Check health',
+          url: 'https://example.test/health',
+          method: 'GET',
+        }],
+      },
+    })
+    const first = context.session.runbookAuthoringProposals?.[0]
+    expect(firstResult?.error).toBeUndefined()
+    expect(first).toMatchObject({ kind: 'create_new_runbook', artifactVersion: 1 })
+
+    const result = await executeHostTool(context, 'propose_runbook_edit', {
+      parentProposalId: first?.id,
+      prompt: 'Also check readiness.',
+      operations: [{
+        id: 'op-readiness',
+        type: 'add_action',
+        rationale: 'Check readiness before investigating the service.',
+        action: {
+          id: 'readiness',
+          type: 'http',
+          title: 'Check readiness',
+          url: 'https://example.test/ready',
+          method: 'GET',
+        },
+      }],
+    })
+    const second = context.session.runbookAuthoringProposals?.[1]
+
+    expect(result?.error).toBeUndefined()
+    expect(second).toMatchObject({
+      kind: 'create_new_runbook',
+      artifactId: first?.artifactId,
+      artifactVersion: 2,
+      parentProposalId: first?.id,
+      proposedRunbook: {
+        actions: expect.arrayContaining([
+          expect.objectContaining({ id: 'health' }),
+          expect.objectContaining({ id: 'readiness' }),
+        ]),
+      },
+    })
+  })
+
+  it.each([
+    'initial-cve-2024-0727-remediation-draft',
+    '00000000-0000-0000-0000-000000000000',
+  ])('creates a root proposal when an initial create retry has a missing parent id: %s', async (parentProposalId) => {
+    const context = createContext()
+
+    const result = await executeHostTool(context, 'propose_runbook_create', {
+      parentProposalId,
+      prompt: 'Create a read-only runbook to investigate high disk usage.',
+      draftRunbook: {
+        title: 'Investigate high disk usage',
+        description: 'Collect disk and process information without making changes.',
+        actions: [{
+          id: 'check-disk',
+          type: 'shell',
+          title: 'Check disk usage',
+          command: 'ssh -- "{{host}}" "df -hT; df -ih"',
+          parameters: [{ id: 'host', key: 'host', required: true }],
+        }],
+      },
+    })
+
+    expect(result?.error).toBeUndefined()
+    expect(JSON.parse(result?.output ?? '')).toMatchObject({
+      status: 'pending_approval',
+      artifactVersion: 1,
+    })
+    expect(JSON.parse(result?.output ?? '')).not.toHaveProperty('parentProposalId')
+    expect(context.session.runbookAuthoringProposals?.[0]).toMatchObject({
+      artifactVersion: 1,
+      artifactId: context.session.runbookAuthoringProposals?.[0]?.id,
+    })
+    expect(context.session.runbookAuthoringProposals?.[0]?.parentProposalId).toBeUndefined()
+  })
+
+  it('derives a parameter id when a create draft only declares its parameter key', async () => {
+    const context = createContext()
+
+    const result = await executeHostTool(context, 'propose_runbook_create', {
+      prompt: 'Create a read-only runbook to investigate high disk usage.',
+      draftRunbook: {
+        title: 'Investigate high disk usage',
+        description: 'Collect disk information without making changes.',
+        actions: [{
+          id: 'check-disk',
+          type: 'shell',
+          title: 'Check disk usage',
+          command: 'ssh -- "{{host}}" "df -hT; df -ih"',
+          parameters: [{ key: 'host', label: 'SSH target', required: true }],
+        }],
+      },
+    })
+
+    expect(result?.error).toBeUndefined()
+    expect(context.session.runbookAuthoringProposals?.[0]?.proposedRunbook.actions[0]?.parameters).toEqual([
+      { id: 'host', key: 'host', label: 'SSH target', required: true },
+    ])
+  })
+
   it('lists canonical model IDs and display names for runbook authoring', async () => {
     const result = await executeHostTool(
       createContext('openai,anthropic,gemini,groq,kilocode,openrouter'),

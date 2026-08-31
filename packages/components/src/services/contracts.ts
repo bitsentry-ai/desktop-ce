@@ -682,10 +682,16 @@ export interface RunbookAuthoringProposalReview {
   approvalRequired: boolean;
   saved: boolean;
   proposalId: string;
+  artifactId: string;
+  artifactVersion: number;
+  parentProposalId?: string;
+  restoredFromProposalId?: string;
+  isLatest: boolean;
   kind: RunbookAuthoringProposalKind;
   incidentThreadId?: string;
   targetRunbookId?: string;
   targetRevisionNumber?: number;
+  supportsOperationApproval: boolean;
   proposedRunbook: {
     id: string;
     title: string;
@@ -1257,6 +1263,11 @@ export interface AgentServicePort {
     incidentThreadId?: string;
     proposalId: string;
     requestedEdit: string;
+  }): Promise<RunbookAuthoringProposalDecisionResult>;
+  restoreRunbookAuthoringProposal(input: {
+    sessionId?: string;
+    incidentThreadId?: string;
+    proposalId: string;
   }): Promise<RunbookAuthoringProposalDecisionResult>;
   onEvent(
     handler: (data: {

@@ -12,6 +12,7 @@ import { MAX_RUNBOOK_IDLE_TIMEOUT_MINUTES } from '../runbooks/desktop-runbook.ty
 import type { RunbookGateway } from '../runbooks/runbook.gateway'
 import {
   createRunbookCreationProposal,
+  createRunbookCreationRevisionProposal,
   createRunbookEditProposal,
   formatUnknownRunbookTemplatePlaceholderMessage,
   getUnknownRunbookTemplatePlaceholders,
@@ -138,7 +139,11 @@ function createRunbookActionProposalSchema(options: { allowLegacyStepOutputPlace
 const runbookActionProposalSchema = createRunbookActionProposalSchema()
 const runbookProviderActionProposalSchema = createRunbookActionProposalSchema({ allowLegacyStepOutputPlaceholder: true })
 function createRunbookCreateHostToolSchema(actionSchema: typeof runbookActionProposalSchema) {
-  return z.object({ prompt: z.string().min(1), draftRunbook: z.object({ title: z.string().min(1), description: z.string().default(''), idleTimeout: idleTimeoutSchema.optional(), actions: z.array(actionSchema).min(1) }).strict() }).strict()
+  return z.object({
+    prompt: z.string().min(1),
+    parentProposalId: z.string().min(1).optional(),
+    draftRunbook: z.object({ title: z.string().min(1), description: z.string().default(''), idleTimeout: idleTimeoutSchema.optional(), actions: z.array(actionSchema).min(1) }).strict(),
+  }).strict()
 }
 const runbookEditActionProposalSchema = createRunbookActionProposalSchema({ allowLegacyStepOutputPlaceholder: true })
 const runbookAuthoringOperationSchema = z.object({
@@ -146,7 +151,13 @@ const runbookAuthoringOperationSchema = z.object({
   metadata: z.object({ title: z.string().optional(), description: z.string().optional(), idleTimeout: idleTimeoutSchema.optional() }).strict().optional(),
   action: runbookEditActionProposalSchema.optional(), actionId: z.string().min(1).optional(), insertAfterActionId: z.string().min(1).nullable().optional(), actionIdsInOrder: z.array(z.string().min(1)).optional(),
 }).strict()
-export const proposeRunbookEditHostToolSchema = z.object({ runbookId: z.string().min(1).optional(), runbookTitle: z.string().min(1).optional(), prompt: z.string().min(1), operations: z.array(runbookAuthoringOperationSchema).min(1) }).strict()
+export const proposeRunbookEditHostToolSchema = z.object({
+  runbookId: z.string().min(1).optional(),
+  runbookTitle: z.string().min(1).optional(),
+  prompt: z.string().min(1),
+  parentProposalId: z.string().min(1).optional(),
+  operations: z.array(runbookAuthoringOperationSchema).min(1),
+}).strict()
 const runbookCreateHostToolBaseSchema = createRunbookCreateHostToolSchema(runbookActionProposalSchema)
 const runbookCreateHostToolProviderSchema = createRunbookCreateHostToolSchema(runbookProviderActionProposalSchema)
 
@@ -186,11 +197,26 @@ function normalizeCreateRunbookActionOutputPlaceholders(input: unknown): unknown
   const actions = input.draftRunbook.actions
   if (!Array.isArray(actions) || !actions.every(isSafeToNormalizeRunbookAction)) return input
 
+  const actionsWithParameterIds = actions.map((action) => ({
+    ...action,
+    parameters: action.parameters?.map((parameter) => {
+      if (parameter.id !== undefined && (
+        typeof parameter.id !== 'string' ||
+        parameter.id.trim().length > 0
+      )) return parameter
+
+      const parameterKey = typeof parameter.key === 'string' ? parameter.key.trim() : ''
+      return parameterKey.length > 0
+        ? { ...parameter, id: parameterKey }
+        : parameter
+    }),
+  }))
+
   return {
     ...input,
     draftRunbook: {
       ...input.draftRunbook,
-      actions: normalizeStepOutputPlaceholders(actions as unknown as RunbookActionRecord[]),
+      actions: normalizeStepOutputPlaceholders(actionsWithParameterIds as unknown as RunbookActionRecord[]),
     },
   }
 }
@@ -256,6 +282,9 @@ export interface HostToolContext {
   summarizeExecution?: (execution: RunbookExecutionRecord) => Record<string, unknown>
   rememberExecution?: (session: AgentSessionRef, execution: RunbookExecutionRecord) => void
   listAuthorableRunbooks?: () => Promise<RunbookRecord[]>
+  saveRunbookAuthoringProposal?: (
+    proposal: RunbookAuthoringProposal,
+  ) => Promise<void>
   pluginRuntime?: Pick<DesktopPluginRuntimeService, 'listPlugins'>
   enabledApiProviders?: string
   onToolEvent?: (event: HostToolEvent) => void
@@ -763,6 +792,29 @@ async function resolveAuthorableRunbookReference(context: HostToolContext, input
   throw new Error('propose_runbook_edit requires runbookId or runbookTitle when there is no active runbook context')
 }
 
+function findUnpersistedCreateProposal(
+  session: AgentSessionRef,
+  parentProposalId: string | undefined,
+): Extract<RunbookAuthoringProposal, { kind: 'create_new_runbook' }> | undefined {
+  const normalizedParentProposalId = parentProposalId?.trim()
+  if (normalizedParentProposalId === undefined || normalizedParentProposalId.length === 0) {
+    return undefined
+  }
+
+  const proposal = (session.runbookAuthoringProposals ?? []).find(
+    (candidate) => candidate.id === normalizedParentProposalId,
+  )
+  if (
+    proposal?.kind !== 'create_new_runbook' ||
+    proposal.status === 'approved' ||
+    proposal.status === 'rejected'
+  ) {
+    return undefined
+  }
+
+  return proposal
+}
+
 function describeRunbookCandidates(runbooks: RunbookRecord[]): string {
   return runbooks.map((runbook) => `${runbook.id} (${runbook.title})`).join(', ')
 }
@@ -770,31 +822,126 @@ function describeRunbookCandidates(runbooks: RunbookRecord[]): string {
 function summarizeAuthoringProposal(proposal: RunbookAuthoringProposal): Record<string, unknown> {
   return {
     status: proposal.status, approvalRequired: true, saved: false, proposalId: proposal.id, kind: proposal.kind,
+    artifactId: proposal.artifactId,
+    artifactVersion: proposal.artifactVersion,
+    parentProposalId: proposal.parentProposalId,
+    restoredFromProposalId: proposal.restoredFromProposalId,
     incidentThreadId: proposal.incidentThreadId,
     sourceAttachmentId: proposal.sourceAttachmentId,
     sourceMessageId: proposal.sourceMessageId,
     normalizedFindings: proposal.normalizedFindings,
     targetRunbookId: proposal.kind === 'edit_existing_runbook' ? proposal.targetRunbookId : undefined,
     targetRevisionNumber: proposal.kind === 'edit_existing_runbook' ? proposal.targetRevisionNumber : undefined,
-    proposedRunbook: { id: proposal.proposedRunbook.id, title: proposal.proposedRunbook.title, description: proposal.proposedRunbook.description, revisionNumber: proposal.proposedRunbook.revisionNumber, actionCount: proposal.proposedRunbook.actions.length, actions: proposal.proposedRunbook.actions.map((action) => ({ id: action.id, type: action.type, title: action.title })) },
+    supportsOperationApproval: proposal.operations !== undefined && proposal.originalRunbook !== undefined,
+    proposedRunbook: { id: proposal.proposedRunbook.id, title: proposal.proposedRunbook.title, description: proposal.proposedRunbook.description, ...(proposal.kind === 'edit_existing_runbook' ? { revisionNumber: proposal.proposedRunbook.revisionNumber } : {}), actionCount: proposal.proposedRunbook.actions.length, actions: proposal.proposedRunbook.actions.map((action) => ({ id: action.id, type: action.type, title: action.title })) },
     validation: proposal.validation, operationDiffs: proposal.operationDiffs,
-    nextStep: 'Show this proposal to the operator. Do not claim it was saved; it requires explicit approve, deny, or revise action.',
+    nextStep: 'Show this proposal to the operator. Do not claim it was saved; it requires explicit approve, deny, or revise action. Report artifactVersion as the version. Do not report revisionNumber; it is the saved runbook revision.',
+  }
+}
+
+function resolveProposalLineage(
+  session: AgentSessionRef,
+  kind: RunbookAuthoringProposal['kind'],
+  parentProposalId: string | undefined,
+  targetRunbookId?: string,
+): Pick<RunbookAuthoringProposal, 'artifactId' | 'artifactVersion' | 'parentProposalId'> | undefined {
+  const proposals = session.runbookAuthoringProposals ?? []
+  const compatible = proposals.filter((proposal) =>
+    proposal.kind === kind &&
+    (kind !== 'edit_existing_runbook' ||
+      (proposal.kind === 'edit_existing_runbook' && proposal.targetRunbookId === targetRunbookId)),
+  )
+  const parent = parentProposalId === undefined
+    ? compatible[compatible.length - 1]
+    : proposals.find((proposal) => proposal.id === parentProposalId)
+
+  if (parent === undefined) {
+    if (parentProposalId !== undefined && (kind !== 'create_new_runbook' || compatible.length > 0)) {
+      throw new Error(`Runbook authoring parent proposal not found: ${parentProposalId}`)
+    }
+    // A model may retry the first proposal after a malformed tool call and
+    // invent a parent id from the draft title or a placeholder UUID. There is
+    // no create artifact lineage to preserve when no compatible proposal
+    // exists; start a clean v1 instead of persisting a bogus parent reference.
+    return undefined
+  }
+  if (!compatible.includes(parent)) {
+    throw new Error('Runbook authoring revisions must keep the same proposal kind and target runbook.')
+  }
+
+  const artifactId = parent.artifactId ?? parent.id
+  const latestVersion = Math.max(
+    ...proposals
+      .filter((proposal) => (proposal.artifactId ?? proposal.id) === artifactId)
+      .map((proposal) => proposal.artifactVersion ?? 1),
+  )
+  return {
+    artifactId,
+    artifactVersion: latestVersion + 1,
+    parentProposalId: parent.id,
   }
 }
 
 async function proposeRunbookEdit(context: HostToolContext, input: ProposeRunbookEditHostToolInput): Promise<ToolResult> {
-  const proposal = createRunbookEditProposal({ incidentThreadId: context.session.incidentThreadId, prompt: input.prompt, targetRunbook: await resolveAuthorableRunbookReference(context, input), operations: input.operations.map((operation) => ({ ...operation, action: operation.action as RunbookActionRecord | undefined })) as RunbookAuthoringOperation[], sourceAttachmentId: context.session.sourceAttachmentId, sourceMessageId: context.session.sourceMessageId, normalizedFindings: context.session.normalizedFindings })
+  const operations = input.operations.map((operation) => ({
+    ...operation,
+    action: operation.action as RunbookActionRecord | undefined,
+  })) as RunbookAuthoringOperation[]
+  const unpersistedCreate = findUnpersistedCreateProposal(
+    context.session,
+    input.parentProposalId,
+  )
+  let proposal: RunbookAuthoringProposal
+
+  if (unpersistedCreate !== undefined) {
+    const lineage = resolveProposalLineage(
+      context.session,
+      'create_new_runbook',
+      unpersistedCreate.id,
+    )
+    proposal = createRunbookCreationRevisionProposal({
+      ...lineage,
+      incidentThreadId: context.session.incidentThreadId,
+      prompt: input.prompt,
+      targetRunbook: unpersistedCreate.proposedRunbook,
+      operations,
+      sourceAttachmentId: context.session.sourceAttachmentId,
+      sourceMessageId: context.session.sourceMessageId,
+      normalizedFindings: context.session.normalizedFindings,
+    })
+  } else {
+    const targetRunbook = await resolveAuthorableRunbookReference(context, input)
+    const lineage = resolveProposalLineage(
+      context.session,
+      'edit_existing_runbook',
+      input.parentProposalId,
+      targetRunbook.id,
+    )
+    proposal = createRunbookEditProposal({
+      ...lineage,
+      incidentThreadId: context.session.incidentThreadId,
+      prompt: input.prompt,
+      targetRunbook,
+      operations,
+      sourceAttachmentId: context.session.sourceAttachmentId,
+      sourceMessageId: context.session.sourceMessageId,
+      normalizedFindings: context.session.normalizedFindings,
+    })
+  }
   applyPluginAuthValidation(proposal, context)
   context.session.runbookAuthoringProposals ??= []
   context.session.runbookAuthoringProposals.push(proposal)
+  await context.saveRunbookAuthoringProposal?.(proposal)
   return { output: JSON.stringify(summarizeAuthoringProposal(proposal), null, 2) }
 }
 
 async function proposeRunbookCreate(context: HostToolContext, input: ProposeRunbookCreateHostToolInput): Promise<ToolResult> {
-  const proposal = createRunbookCreationProposal({ incidentThreadId: context.session.incidentThreadId, prompt: input.prompt, draftRunbook: { ...input.draftRunbook, actions: input.draftRunbook.actions as RunbookActionRecord[] }, sourceAttachmentId: context.session.sourceAttachmentId, sourceMessageId: context.session.sourceMessageId, normalizedFindings: context.session.normalizedFindings })
+  const lineage = resolveProposalLineage(context.session, 'create_new_runbook', input.parentProposalId)
+  const proposal = createRunbookCreationProposal({ ...lineage, incidentThreadId: context.session.incidentThreadId, prompt: input.prompt, draftRunbook: { ...input.draftRunbook, actions: input.draftRunbook.actions as RunbookActionRecord[] }, sourceAttachmentId: context.session.sourceAttachmentId, sourceMessageId: context.session.sourceMessageId, normalizedFindings: context.session.normalizedFindings })
   applyPluginAuthValidation(proposal, context)
   context.session.runbookAuthoringProposals ??= []
   context.session.runbookAuthoringProposals.push(proposal)
+  await context.saveRunbookAuthoringProposal?.(proposal)
   return { output: JSON.stringify(summarizeAuthoringProposal(proposal), null, 2) }
 }
 
@@ -831,13 +978,13 @@ export const hostTools = [
   },
   {
     name: 'propose_runbook_edit',
-    description: 'Create a pending, non-mutating runbook edit proposal for user approval. This never saves changes. Use declared {{parameter}} values for inputs; use ${steps.<index>.output} for a prior action result, not {{action-id.output}}.',
+    description: 'Create a pending, non-mutating runbook edit proposal for user approval. This never saves changes. For a first proposal, omit parentProposalId; for a revision, pass only the exact proposalId returned by the previous proposal. Never invent a parent id, use a title or slug, or use a zero UUID. Every {{parameter}} placeholder must have a matching action parameter with both id and key. Use ${steps.<index>.output} for a prior action result, not {{action-id.output}}.',
     argsSchema: proposeRunbookEditHostToolSchema,
     handler: async (context: HostToolContext, args: ProposeRunbookEditHostToolInput) => await proposeRunbookEdit(context, args),
   },
   {
     name: 'propose_runbook_create',
-    description: 'Create a pending, non-mutating proposal for a new runbook draft. This never saves changes. For CVE findings, include linux-cve-status/evaluate_remediation before an LLM summary. Use declared {{parameter}} values for inputs; use ${steps.<index>.output} for a prior action result, not {{action-id.output}}.',
+    description: 'Create a pending, non-mutating proposal for a new runbook draft. This never saves changes. For a first proposal, omit parentProposalId; for a revision, pass only the exact proposalId returned by the previous proposal. Never invent a parent id, use a title or slug, or use a zero UUID. Every {{parameter}} placeholder must have a matching action parameter with both id and key. For CVE findings, include linux-cve-status/evaluate_remediation before an LLM summary. Use ${steps.<index>.output} for a prior action result, not {{action-id.output}}.',
     argsSchema: proposeRunbookCreateHostToolSchema,
     providerArgsSchema: runbookCreateHostToolProviderSchema,
     handler: async (context: HostToolContext, args: ProposeRunbookCreateHostToolInput) => await proposeRunbookCreate(context, args),

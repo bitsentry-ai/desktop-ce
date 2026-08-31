@@ -470,6 +470,11 @@ export function createDesktopIpcPayloadValidator(
       proposalId: z.uuid(),
       requestedEdit: z.string().min(1).max(10000),
     }),
+    "agent:restoreRunbookAuthoringProposal": z.object({
+      sessionId: z.uuid().optional(),
+      incidentThreadId: z.string().min(1).optional(),
+      proposalId: z.uuid(),
+    }),
     "dialog:showSaveDialog": z
       .object({
         defaultPath: z.string().min(1).optional(),

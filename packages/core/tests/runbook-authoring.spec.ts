@@ -2,9 +2,11 @@ import { describe, expect, it } from "vitest";
 import {
   approveRunbookAuthoringProposal,
   createRunbookCreationProposal,
+  createRunbookCreationRevisionProposal,
   createRunbookEditProposal,
   rejectRunbookAuthoringProposal,
   requestRunbookAuthoringRevision,
+  restoreRunbookAuthoringProposal,
   RunbookProposalValidationError,
 } from "../src/features/runbooks";
 import { validateRunbook } from "../src/features/runbooks/authoring";
@@ -609,6 +611,148 @@ describe("runbook authoring", () => {
       proposal: { status: "revision_requested" },
       requestedEdit: "Suggest a read-only journalctl action instead.",
     });
+  });
+
+  it("tracks artifact versions separately from saved runbook revisions", () => {
+    const first = createRunbookCreationProposal({
+      id: "proposal-v1",
+      prompt: "Create an API health runbook.",
+      now: "2026-07-05T00:00:00.000Z",
+      draftRunbook: {
+        title: "API health",
+        description: "Check API health.",
+        revisionNumber: 7,
+        actions: [{
+          id: "health",
+          type: "http",
+          title: "Check health endpoint",
+          url: "https://example.test/health",
+          method: "GET",
+        }],
+      },
+    });
+    const second = createRunbookCreationProposal({
+      id: "proposal-v2",
+      artifactId: first.artifactId,
+      artifactVersion: 2,
+      parentProposalId: first.id,
+      prompt: "Also check readiness.",
+      now: "2026-07-05T00:01:00.000Z",
+      draftRunbook: {
+        ...first.proposedRunbook,
+        actions: first.proposedRunbook.actions,
+      },
+    });
+
+    expect(first).toMatchObject({
+      artifactId: "proposal-v1",
+      artifactVersion: 1,
+      proposedRunbook: { revisionNumber: 7 },
+    });
+    expect(second).toMatchObject({
+      artifactId: "proposal-v1",
+      artifactVersion: 2,
+      parentProposalId: "proposal-v1",
+      proposedRunbook: { revisionNumber: 7 },
+    });
+  });
+
+  it("restores an earlier artifact as a new latest version without mutating history", () => {
+    const first = makeEditProposal().proposal;
+    const second = createRunbookEditProposal({
+      id: "proposal-edit-v2",
+      artifactId: first.artifactId,
+      artifactVersion: 2,
+      parentProposalId: first.id,
+      prompt: "Use a safer title.",
+      targetRunbook: makeBaseRunbook(),
+      now: "2026-07-05T00:01:00.000Z",
+      operations: [{
+        id: "op-title-v2",
+        type: "update_metadata",
+        rationale: "Use the safer title.",
+        metadata: { title: "Investigate API health" },
+      }],
+    });
+
+    const restored = restoreRunbookAuthoringProposal({
+      proposal: first,
+      latestProposal: second,
+      id: "proposal-edit-v3",
+      now: "2026-07-05T00:02:00.000Z",
+    });
+
+    expect(restored).toMatchObject({
+      id: "proposal-edit-v3",
+      artifactId: first.artifactId,
+      artifactVersion: 3,
+      parentProposalId: second.id,
+      restoredFromProposalId: first.id,
+      status: "pending_approval",
+      proposedRunbook: { title: first.proposedRunbook.title },
+    });
+    expect(first).toMatchObject({
+      artifactVersion: 1,
+      status: "pending_approval",
+    });
+    expect(second).toMatchObject({ artifactVersion: 2 });
+  });
+
+  it("applies selected operations when approving a create artifact revision", () => {
+    const first = createRunbookCreationProposal({
+      id: "proposal-create-v1",
+      incidentThreadId: "incident-1",
+      prompt: "Create the first runbook.",
+      draftRunbook: {
+        title: "Health check",
+        description: "Check the API.",
+        actions: [{
+          id: "health",
+          type: "http",
+          title: "Check health",
+          url: "https://example.test/health",
+          method: "GET",
+        }],
+      },
+    });
+    const revision = createRunbookCreationRevisionProposal({
+      id: "proposal-create-v2",
+      artifactId: first.artifactId,
+      artifactVersion: 2,
+      parentProposalId: first.id,
+      incidentThreadId: "incident-1",
+      prompt: "Also check readiness.",
+      targetRunbook: first.proposedRunbook,
+      operations: [{
+        id: "operation-readiness",
+        type: "add_action",
+        rationale: "Check readiness before investigating the service.",
+        action: {
+          id: "readiness",
+          type: "http",
+          title: "Check readiness",
+          url: "https://example.test/ready",
+          method: "GET",
+        },
+      }],
+    });
+
+    const approval = approveRunbookAuthoringProposal({
+      proposal: revision,
+      approvedOperationIds: ["operation-readiness"],
+    });
+
+    expect(revision).toMatchObject({
+      kind: "create_new_runbook",
+      artifactId: first.artifactId,
+      artifactVersion: 2,
+      operationDiffs: [{ operationId: "operation-readiness" }],
+    });
+    expect(approval.approvedOperationIds).toEqual(["operation-readiness"]);
+    expect(approval.runbook.actions).toEqual([
+      expect.objectContaining({ id: "health" }),
+      expect.objectContaining({ id: "readiness" }),
+    ]);
   });
 
   it("creates a shell-risk proposal and returns it for saving only after approval", () => {

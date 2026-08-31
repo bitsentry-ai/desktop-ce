@@ -3065,15 +3065,6 @@ export default function IncidentsPage() {
                         msg={msg}
                         providerKey={selectedProviderKey}
                       />
-                      <RunbookAuthoringProposalCards
-                        agent={agent}
-                        incidentId={activeIncident.id}
-                        sessionId={activeSessionId}
-                        message={msg}
-                        onRevisionRequested={(requestedEdit) => {
-                          setPrompt(requestedEdit);
-                        }}
-                      />
                     </div>
                   ))}
                 <div ref={messagesEndRef} />
@@ -3197,6 +3188,8 @@ export default function IncidentsPage() {
             onClose={() => { setArtifactsOpen(false); }}
             messages={messages}
             incidentId={activeId}
+            sessionId={activeSessionId}
+            onRevisionRequested={setPrompt}
           />
         </div>
       </div>

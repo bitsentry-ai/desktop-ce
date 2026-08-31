@@ -365,6 +365,13 @@ function createAgentBridge(bridge: DesktopPreloadBridgePort) {
     }): Promise<unknown> => {
       return bridge.invoke('agent:requestRunbookAuthoringRevision', input)
     },
+    restoreRunbookAuthoringProposal: async (input: {
+      sessionId?: string
+      incidentThreadId?: string
+      proposalId: string
+    }): Promise<unknown> => {
+      return bridge.invoke('agent:restoreRunbookAuthoringProposal', input)
+    },
     onEvent: (
       callback: (event: {
         sessionId: string
