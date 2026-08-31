@@ -801,9 +801,7 @@ function findUnpersistedCreateProposal(
     return undefined
   }
 
-  const proposal = (session.runbookAuthoringProposals ?? []).find(
-    (candidate) => candidate.id === normalizedParentProposalId,
-  )
+  const proposal = findCreateProposal(session, normalizedParentProposalId)
   if (
     proposal?.kind !== 'create_new_runbook' ||
     proposal.status === 'approved' ||
@@ -813,6 +811,21 @@ function findUnpersistedCreateProposal(
   }
 
   return proposal
+}
+
+function findCreateProposal(
+  session: AgentSessionRef,
+  proposalId: string | undefined,
+): Extract<RunbookAuthoringProposal, { kind: 'create_new_runbook' }> | undefined {
+  const normalizedProposalId = proposalId?.trim()
+  if (normalizedProposalId === undefined || normalizedProposalId.length === 0) {
+    return undefined
+  }
+
+  const proposal = (session.runbookAuthoringProposals ?? []).find(
+    (candidate) => candidate.id === normalizedProposalId,
+  )
+  return proposal?.kind === 'create_new_runbook' ? proposal : undefined
 }
 
 function describeRunbookCandidates(runbooks: RunbookRecord[]): string {
@@ -937,7 +950,8 @@ async function proposeRunbookEdit(context: HostToolContext, input: ProposeRunboo
 
 async function proposeRunbookCreate(context: HostToolContext, input: ProposeRunbookCreateHostToolInput): Promise<ToolResult> {
   const lineage = resolveProposalLineage(context.session, 'create_new_runbook', input.parentProposalId)
-  const proposal = createRunbookCreationProposal({ ...lineage, incidentThreadId: context.session.incidentThreadId, prompt: input.prompt, draftRunbook: { ...input.draftRunbook, actions: input.draftRunbook.actions as RunbookActionRecord[] }, sourceAttachmentId: context.session.sourceAttachmentId, sourceMessageId: context.session.sourceMessageId, normalizedFindings: context.session.normalizedFindings })
+  const parentProposal = findCreateProposal(context.session, lineage?.parentProposalId)
+  const proposal = createRunbookCreationProposal({ ...lineage, parentRunbook: parentProposal?.proposedRunbook, incidentThreadId: context.session.incidentThreadId, prompt: input.prompt, draftRunbook: { ...input.draftRunbook, actions: input.draftRunbook.actions as RunbookActionRecord[] }, sourceAttachmentId: context.session.sourceAttachmentId, sourceMessageId: context.session.sourceMessageId, normalizedFindings: context.session.normalizedFindings })
   applyPluginAuthValidation(proposal, context)
   context.session.runbookAuthoringProposals ??= []
   context.session.runbookAuthoringProposals.push(proposal)

@@ -657,6 +657,57 @@ describe("runbook authoring", () => {
     });
   });
 
+  it("shows a warning when a draft revision removes a parent action", () => {
+    const parent = createRunbookCreationProposal({
+      id: "proposal-draft-v1",
+      prompt: "Create a disk investigation runbook.",
+      draftRunbook: {
+        title: "Disk investigation",
+        description: "Collect read-only disk evidence.",
+        actions: [
+          {
+            id: "disk-usage",
+            type: "shell",
+            title: "Check disk usage",
+            command: "df -h",
+          },
+          {
+            id: "mounted-filesystems",
+            type: "shell",
+            title: "Check mounted filesystems",
+            command: "findmnt -r",
+          },
+        ],
+      },
+    });
+    const revision = createRunbookCreationProposal({
+      id: "proposal-draft-v2",
+      artifactId: parent.artifactId,
+      artifactVersion: 2,
+      parentProposalId: parent.id,
+      parentRunbook: parent.proposedRunbook,
+      prompt: "Keep only the disk usage check.",
+      draftRunbook: {
+        ...parent.proposedRunbook,
+        actions: [parent.proposedRunbook.actions[0]],
+      },
+    });
+
+    expect(revision.operationDiffs).toEqual([
+      expect.objectContaining({
+        operationId: "delete-action-mounted-filesystems",
+        type: "delete_action",
+        rationale:
+          'Warning: action "Check mounted filesystems" was removed from the parent draft.',
+        before: expect.objectContaining({ id: "mounted-filesystems" }),
+        after: null,
+      }),
+    ]);
+    expect(revision.validation.warnings).toContain(
+      'Warning: action "Check mounted filesystems" was removed from the parent draft.',
+    );
+  });
+
   it("restores an earlier artifact as a new latest version without mutating history", () => {
     const first = makeEditProposal().proposal;
     const second = createRunbookEditProposal({

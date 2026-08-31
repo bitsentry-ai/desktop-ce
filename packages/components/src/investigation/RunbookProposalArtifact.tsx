@@ -157,9 +157,9 @@ export default function RunbookProposalArtifact({
     selectedProposal.isLatest &&
     selectedProposal.status === "pending_approval";
   const supportsOperationApproval =
-    selectedProposal.supportsOperationApproval === true ||
-    selectedProposal.kind === "edit_existing_runbook" ||
-    selectedProposal.parentProposalId !== undefined;
+    selectedProposal.supportsOperationApproval ??
+    (selectedProposal.kind === "edit_existing_runbook" ||
+      selectedProposal.parentProposalId !== undefined);
   const toggleOperation = (operationId: string) => {
     setSelectedOperationIds((current) =>
       current.includes(operationId)
