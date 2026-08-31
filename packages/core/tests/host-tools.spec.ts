@@ -97,9 +97,21 @@ describe('host tools', () => {
     expect(result?.error).toBeUndefined()
     const summary = JSON.parse(result?.output ?? '') as {
       artifactVersion: number
+      supportsOperationApproval: boolean
       proposedRunbook: Record<string, unknown>
+      operationDiffs: Array<Record<string, unknown>>
     }
     expect(summary.artifactVersion).toBe(2)
+    expect(summary.supportsOperationApproval).toBe(false)
+    expect(summary.operationDiffs).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        operationId: 'delete-action-health',
+        type: 'delete_action',
+        rationale: 'Warning: action "Check health" was removed from the parent draft.',
+        before: expect.objectContaining({ id: 'health' }),
+        after: null,
+      }),
+    ]))
     expect(summary.proposedRunbook).not.toHaveProperty('revisionNumber')
     expect(second).toMatchObject({
       artifactId: first?.artifactId,

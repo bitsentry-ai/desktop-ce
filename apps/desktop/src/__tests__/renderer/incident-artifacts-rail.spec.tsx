@@ -501,6 +501,50 @@ describe("IncidentArtifactsRail", () => {
     });
   });
 
+  it("renders validation warnings for a runbook proposal", async () => {
+    const warning =
+      'Warning: action "Removed check" was removed from the parent draft.';
+    const proposal: RunbookAuthoringProposalReview = {
+      proposalId: "proposal-with-warning",
+      artifactId: "artifact-with-warning",
+      artifactVersion: 2,
+      parentProposalId: "proposal-with-warning-v1",
+      isLatest: true,
+      status: "pending_approval",
+      approvalRequired: true,
+      saved: false,
+      supportsOperationApproval: false,
+      kind: "create_new_runbook",
+      incidentThreadId: INCIDENT_ID,
+      proposedRunbook: {
+        id: "warning-draft",
+        title: "Warning runbook",
+        description: "A runbook with a validation warning.",
+        revisionNumber: 0,
+        actionCount: 1,
+        actions: [{ id: "kept", type: "shell", title: "Keep this check" }],
+      },
+      validation: { valid: true, errors: [], warnings: [warning] },
+      operationDiffs: [{
+        operationId: "remove-check",
+        type: "delete_action",
+        rationale: "Delete the removed check.",
+        riskLabels: ["shell"],
+        before: {},
+        after: null,
+      }],
+      nextStep: "Review the proposal.",
+    };
+    const agent = {
+      listRunbookAuthoringProposals: vi.fn().mockResolvedValue([proposal]),
+    } as unknown as AgentServicePort;
+
+    renderRail({ agent });
+
+    expect(await screen.findByText("Warning runbook")).toBeTruthy();
+    expect(screen.getByText(warning)).toBeTruthy();
+  });
+
   it("clears old proposals and ignores a stale refresh after an incident switch", async () => {
     let resolveFirst: ((proposals: RunbookAuthoringProposalReview[]) => void) | undefined;
     let resolveSecond: ((proposals: RunbookAuthoringProposalReview[]) => void) | undefined;

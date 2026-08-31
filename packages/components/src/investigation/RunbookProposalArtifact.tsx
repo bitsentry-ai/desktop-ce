@@ -157,9 +157,9 @@ export default function RunbookProposalArtifact({
     selectedProposal.isLatest &&
     selectedProposal.status === "pending_approval";
   const supportsOperationApproval =
-    selectedProposal.supportsOperationApproval === true ||
-    selectedProposal.kind === "edit_existing_runbook" ||
-    selectedProposal.parentProposalId !== undefined;
+    selectedProposal.supportsOperationApproval ??
+    (selectedProposal.kind === "edit_existing_runbook" ||
+      selectedProposal.parentProposalId !== undefined);
   const toggleOperation = (operationId: string) => {
     setSelectedOperationIds((current) =>
       current.includes(operationId)
@@ -266,7 +266,9 @@ export default function RunbookProposalArtifact({
           </div>
         </div>
 
-        {(riskLabels.length > 0 || !selectedProposal.validation.valid) && (
+        {(riskLabels.length > 0 ||
+          !selectedProposal.validation.valid ||
+          selectedProposal.validation.warnings.length > 0) && (
           <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-xs">
             <div className="flex items-center gap-1.5 font-medium text-amber-700 dark:text-amber-300">
               <AlertCircle size={13} />
@@ -281,6 +283,9 @@ export default function RunbookProposalArtifact({
             )}
             {selectedProposal.validation.errors.map((validationError) => (
               <div key={validationError} className="mt-1">{validationError}</div>
+            ))}
+            {selectedProposal.validation.warnings.map((warning) => (
+              <div key={warning} className="mt-1">{warning}</div>
             ))}
           </div>
         )}

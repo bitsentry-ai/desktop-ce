@@ -152,6 +152,7 @@ export interface CreateRunbookCreationProposalInput {
   artifactId?: string;
   artifactVersion?: number;
   parentProposalId?: string;
+  parentRunbook?: RunbookRecord;
   restoredFromProposalId?: string;
   incidentThreadId?: string;
   prompt: string;
@@ -675,6 +676,86 @@ function getActionRiskLabels(
   return [...labels].sort();
 }
 
+function removedDraftActionWarning(action: RunbookActionRecord): string {
+  return `Warning: action "${action.title}" was removed from the parent draft.`;
+}
+
+function getRemovedDraftActionWarnings(
+  parentRunbook: RunbookRecord,
+  proposedRunbook: RunbookRecord,
+): string[] {
+  const proposedActionIds = new Set(
+    proposedRunbook.actions.map((action) => normalizeString(action.id)),
+  );
+
+  return parentRunbook.actions
+    .filter((action) => !proposedActionIds.has(normalizeString(action.id)))
+    .map(removedDraftActionWarning);
+}
+
+function buildDraftActionDiffs(
+  parentRunbook: RunbookRecord,
+  proposedRunbook: RunbookRecord,
+): {
+  operationDiffs: RunbookAuthoringOperationDiff[];
+  warnings: string[];
+} {
+  const parentActions = new Map(
+    parentRunbook.actions.map((action) => [normalizeString(action.id), action] as const),
+  );
+  const proposedActions = new Map(
+    proposedRunbook.actions.map((action) => [normalizeString(action.id), action] as const),
+  );
+  const operationDiffs: RunbookAuthoringOperationDiff[] = [];
+  const warnings = getRemovedDraftActionWarnings(parentRunbook, proposedRunbook);
+
+  for (const action of proposedRunbook.actions) {
+    const parentAction = parentActions.get(normalizeString(action.id));
+    if (parentAction === undefined) {
+      operationDiffs.push({
+        operationId: `add-action-${action.id}`,
+        type: "add_action",
+        rationale: `Add action "${action.title}" to the draft.`,
+        riskLabels: getActionRiskLabels(action),
+        before: null,
+        after: cloneAction(action),
+      });
+      continue;
+    }
+
+    if (stableSerialize(parentAction) === stableSerialize(action)) continue;
+
+    operationDiffs.push({
+      operationId: `update-action-${action.id}`,
+      type: "update_action",
+      rationale: `Update action "${action.title}" in the draft.`,
+      riskLabels: [
+        ...new Set([
+          ...getActionRiskLabels(parentAction),
+          ...getActionRiskLabels(action),
+        ]),
+      ].sort(),
+      before: cloneAction(parentAction),
+      after: cloneAction(action),
+    });
+  }
+
+  for (const action of parentRunbook.actions) {
+    if (proposedActions.has(normalizeString(action.id))) continue;
+
+    operationDiffs.push({
+      operationId: `delete-action-${action.id}`,
+      type: "delete_action",
+      rationale: removedDraftActionWarning(action),
+      riskLabels: getActionRiskLabels(action),
+      before: cloneAction(action),
+      after: null,
+    });
+  }
+
+  return { operationDiffs, warnings };
+}
+
 function getOperationRiskLabels(
   operation: RunbookAuthoringOperation,
 ): RunbookAuthoringRiskLabel[] {
@@ -1109,6 +1190,13 @@ export function createRunbookCreationRevisionProposal(
     ...editProposal.proposedRunbook,
     revisionNumber: editProposal.originalRunbook.revisionNumber,
   };
+  const validation = {
+    ...editProposal.validation,
+    warnings: [
+      ...editProposal.validation.warnings,
+      ...getRemovedDraftActionWarnings(input.targetRunbook, proposedRunbook),
+    ],
+  };
 
   return {
     id: editProposal.id,
@@ -1129,7 +1217,7 @@ export function createRunbookCreationRevisionProposal(
     operations: editProposal.operations,
     originalRunbook: editProposal.originalRunbook,
     operationDiffs: editProposal.operationDiffs,
-    validation: editProposal.validation,
+    validation,
   };
 }
 
@@ -1151,6 +1239,15 @@ export function createRunbookCreationProposal(
     proposedRunbook.actions,
     input.normalizedFindings,
   );
+
+  const draftDiffs =
+    input.parentRunbook === undefined
+      ? undefined
+      : buildDraftActionDiffs(input.parentRunbook, proposedRunbook);
+  const validation = validateRunbook(proposedRunbook);
+  if (draftDiffs !== undefined) {
+    validation.warnings.push(...draftDiffs.warnings);
+  }
 
   const creationOperation: RunbookAuthoringOperationDiff = {
     operationId: "create-runbook",
@@ -1182,8 +1279,8 @@ export function createRunbookCreationProposal(
     createdAt,
     updatedAt: createdAt,
     proposedRunbook,
-    operationDiffs: [creationOperation],
-    validation: validateRunbook(proposedRunbook),
+    operationDiffs: draftDiffs?.operationDiffs ?? [creationOperation],
+    validation,
   };
 }
 
