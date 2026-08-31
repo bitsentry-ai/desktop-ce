@@ -676,6 +676,23 @@ function getActionRiskLabels(
   return [...labels].sort();
 }
 
+function removedDraftActionWarning(action: RunbookActionRecord): string {
+  return `Warning: action "${action.title}" was removed from the parent draft.`;
+}
+
+function getRemovedDraftActionWarnings(
+  parentRunbook: RunbookRecord,
+  proposedRunbook: RunbookRecord,
+): string[] {
+  const proposedActionIds = new Set(
+    proposedRunbook.actions.map((action) => normalizeString(action.id)),
+  );
+
+  return parentRunbook.actions
+    .filter((action) => !proposedActionIds.has(normalizeString(action.id)))
+    .map(removedDraftActionWarning);
+}
+
 function buildDraftActionDiffs(
   parentRunbook: RunbookRecord,
   proposedRunbook: RunbookRecord,
@@ -690,7 +707,7 @@ function buildDraftActionDiffs(
     proposedRunbook.actions.map((action) => [normalizeString(action.id), action] as const),
   );
   const operationDiffs: RunbookAuthoringOperationDiff[] = [];
-  const warnings: string[] = [];
+  const warnings = getRemovedDraftActionWarnings(parentRunbook, proposedRunbook);
 
   for (const action of proposedRunbook.actions) {
     const parentAction = parentActions.get(normalizeString(action.id));
@@ -726,17 +743,14 @@ function buildDraftActionDiffs(
   for (const action of parentRunbook.actions) {
     if (proposedActions.has(normalizeString(action.id))) continue;
 
-    const warning =
-      `Warning: action "${action.title}" was removed from the parent draft.`;
     operationDiffs.push({
       operationId: `delete-action-${action.id}`,
       type: "delete_action",
-      rationale: warning,
+      rationale: removedDraftActionWarning(action),
       riskLabels: getActionRiskLabels(action),
       before: cloneAction(action),
       after: null,
     });
-    warnings.push(warning);
   }
 
   return { operationDiffs, warnings };
@@ -1176,6 +1190,13 @@ export function createRunbookCreationRevisionProposal(
     ...editProposal.proposedRunbook,
     revisionNumber: editProposal.originalRunbook.revisionNumber,
   };
+  const validation = {
+    ...editProposal.validation,
+    warnings: [
+      ...editProposal.validation.warnings,
+      ...getRemovedDraftActionWarnings(input.targetRunbook, proposedRunbook),
+    ],
+  };
 
   return {
     id: editProposal.id,
@@ -1196,7 +1217,7 @@ export function createRunbookCreationRevisionProposal(
     operations: editProposal.operations,
     originalRunbook: editProposal.originalRunbook,
     operationDiffs: editProposal.operationDiffs,
-    validation: editProposal.validation,
+    validation,
   };
 }
 

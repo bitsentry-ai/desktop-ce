@@ -708,6 +708,49 @@ describe("runbook authoring", () => {
     );
   });
 
+  it("shows a warning when a create-kind revision removes a parent action", () => {
+    const parent = createRunbookCreationProposal({
+      id: "proposal-create-warning-v1",
+      prompt: "Create a disk investigation runbook.",
+      draftRunbook: {
+        title: "Disk investigation",
+        description: "Collect read-only disk evidence.",
+        actions: [
+          {
+            id: "disk-usage",
+            type: "shell",
+            title: "Check disk usage",
+            command: "df -h",
+          },
+          {
+            id: "top-processes",
+            type: "shell",
+            title: "List top processes",
+            command: "ps aux",
+          },
+        ],
+      },
+    });
+    const revision = createRunbookCreationRevisionProposal({
+      id: "proposal-create-warning-v2",
+      artifactId: parent.artifactId,
+      artifactVersion: 2,
+      parentProposalId: parent.id,
+      prompt: "Remove the process check.",
+      targetRunbook: parent.proposedRunbook,
+      operations: [{
+        id: "remove-top-processes",
+        type: "delete_action",
+        rationale: "Remove the process check.",
+        actionId: "top-processes",
+      }],
+    });
+
+    expect(revision.validation.warnings).toContain(
+      'Warning: action "List top processes" was removed from the parent draft.',
+    );
+  });
+
   it("restores an earlier artifact as a new latest version without mutating history", () => {
     const first = makeEditProposal().proposal;
     const second = createRunbookEditProposal({
