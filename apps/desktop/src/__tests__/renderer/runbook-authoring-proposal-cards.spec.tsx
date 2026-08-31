@@ -57,6 +57,7 @@ function makeProposal(
       actionCount: 1,
       actions: [{ id: "step-1", type: "shell", title: "Check status" }],
     },
+    supportsOperationApproval: false,
     validation: { valid: true, errors: [], warnings: [] },
     operationDiffs: [
       {

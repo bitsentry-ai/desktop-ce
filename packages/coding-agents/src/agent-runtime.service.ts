@@ -92,7 +92,7 @@ export interface AgentRuntimeWindow {
 export type AgentRuntimeLlmAdapter = Pick<AgentLlmAdapterService, 'chatWithTools'>
 export type AgentRuntimeRunbookGateway = RunbookGateway
 export interface AgentRuntimeRunbookStore { list(): Promise<RunbookRecord[]>; create(payload: Record<string, unknown>): Promise<RunbookRecord>; getIncludingDeleted(id: string): Promise<{ runbook: RunbookRecord; deletedAt: string | null } | null>; updateMeta(payload: Record<string, unknown>): Promise<RunbookRecord | null>; updateActions(payload: Record<string, unknown>): Promise<RunbookRecord | null>; remove(payload: Record<string, unknown>): Promise<unknown>; purge(payload: Record<string, unknown>): Promise<unknown> }
-export interface RunbookAuthoringProposalReview { status: RunbookAuthoringProposal['status']; approvalRequired: true; saved: boolean; proposalId: string; artifactId: string; artifactVersion: number; parentProposalId?: string; restoredFromProposalId?: string; isLatest: boolean; kind: RunbookAuthoringProposal['kind']; incidentThreadId?: string; targetRunbookId?: string; targetRevisionNumber?: number; proposedRunbook: { id: string; title: string; description: string; revisionNumber: number; actionCount: number; actions: Array<{ id: string; type: string; title: string }> }; validation: RunbookAuthoringProposal['validation']; operationDiffs: RunbookAuthoringProposal['operationDiffs']; nextStep: string }
+export interface RunbookAuthoringProposalReview { status: RunbookAuthoringProposal['status']; approvalRequired: true; saved: boolean; proposalId: string; artifactId: string; artifactVersion: number; parentProposalId?: string; restoredFromProposalId?: string; isLatest: boolean; kind: RunbookAuthoringProposal['kind']; incidentThreadId?: string; targetRunbookId?: string; targetRevisionNumber?: number; supportsOperationApproval: boolean; proposedRunbook: { id: string; title: string; description: string; revisionNumber: number; actionCount: number; actions: Array<{ id: string; type: string; title: string }> }; validation: RunbookAuthoringProposal['validation']; operationDiffs: RunbookAuthoringProposal['operationDiffs']; nextStep: string }
 export interface RunbookAuthoringProposalDecisionResult { proposal: RunbookAuthoringProposalReview; savedRunbook?: RunbookRecord; approvedOperationIds?: string[]; reason?: string; requestedEdit?: string }
 
 export interface AgentRuntimeDebugHooks {
@@ -1763,20 +1763,34 @@ export class AgentRuntimeService {
    * @returns Session ID (returned immediately, before loop completes)
    */
   async start(input: AgentStartInput): Promise<string> {
-    if (input.incidentThreadId !== undefined && input.incidentThreadId.length > 0) {
-      const existingIncidentSession = this.findActiveIncidentSession(input.incidentThreadId)
+    const incidentThreadId = input.incidentThreadId
+    const rejectIfIncidentSessionActive = () => {
+      if (incidentThreadId === undefined || incidentThreadId.length === 0) {
+        return
+      }
+
+      const existingIncidentSession = this.findActiveIncidentSession(incidentThreadId)
       if (existingIncidentSession !== null) {
-        return Promise.reject(
-          new Error(
-            'An agent session is already running for this incident. Wait for it to finish or cancel it before starting another response.',
-          ),
+        throw new Error(
+          'An agent session is already running for this incident. Wait for it to finish or cancel it before starting another response.',
         )
       }
+    }
+
+    try {
+      rejectIfIncidentSessionActive()
+    } catch (error) {
+      return Promise.reject(error)
     }
 
     const persistedProposals = input.incidentThreadId === undefined
       ? []
       : await this.authoringProposalStore?.list(input.incidentThreadId) ?? []
+    try {
+      rejectIfIncidentSessionActive()
+    } catch (error) {
+      return Promise.reject(error)
+    }
     const sessionId = randomUUID()
     const timeoutMs = input.timeoutMs ?? DEFAULT_AGENT_SESSION_TIMEOUT_MS // 5 minutes for thinking models
     const startedAt = new Date()
@@ -3362,7 +3376,7 @@ export class AgentRuntimeService {
   }
 
   private summarizeRunbookAuthoringProposal(proposal: RunbookAuthoringProposal, isLatest = true): RunbookAuthoringProposalReview {
-    return { status: proposal.status, approvalRequired: true, saved: proposal.status === 'approved', proposalId: proposal.id, artifactId: proposal.artifactId ?? proposal.id, artifactVersion: proposal.artifactVersion ?? 1, parentProposalId: proposal.parentProposalId, restoredFromProposalId: proposal.restoredFromProposalId, isLatest, kind: proposal.kind, incidentThreadId: proposal.incidentThreadId, targetRunbookId: proposal.kind === 'edit_existing_runbook' ? proposal.targetRunbookId : undefined, targetRevisionNumber: proposal.kind === 'edit_existing_runbook' ? proposal.targetRevisionNumber : undefined, proposedRunbook: { id: proposal.proposedRunbook.id, title: proposal.proposedRunbook.title, description: proposal.proposedRunbook.description, revisionNumber: proposal.proposedRunbook.revisionNumber, actionCount: proposal.proposedRunbook.actions.length, actions: proposal.proposedRunbook.actions.map((action) => ({ id: action.id, type: action.type, title: action.title })) }, validation: proposal.validation, operationDiffs: proposal.operationDiffs, nextStep: 'Show this proposal to the operator. The draft runbook id is provisional and the saved id may differ; execute only with an id from list_runbooks or the approval notification.' }
+    return { status: proposal.status, approvalRequired: true, saved: proposal.status === 'approved', proposalId: proposal.id, artifactId: proposal.artifactId ?? proposal.id, artifactVersion: proposal.artifactVersion ?? 1, parentProposalId: proposal.parentProposalId, restoredFromProposalId: proposal.restoredFromProposalId, isLatest, kind: proposal.kind, incidentThreadId: proposal.incidentThreadId, targetRunbookId: proposal.kind === 'edit_existing_runbook' ? proposal.targetRunbookId : undefined, targetRevisionNumber: proposal.kind === 'edit_existing_runbook' ? proposal.targetRevisionNumber : undefined, supportsOperationApproval: proposal.operations !== undefined && proposal.originalRunbook !== undefined, proposedRunbook: { id: proposal.proposedRunbook.id, title: proposal.proposedRunbook.title, description: proposal.proposedRunbook.description, revisionNumber: proposal.proposedRunbook.revisionNumber, actionCount: proposal.proposedRunbook.actions.length, actions: proposal.proposedRunbook.actions.map((action) => ({ id: action.id, type: action.type, title: action.title })) }, validation: proposal.validation, operationDiffs: proposal.operationDiffs, nextStep: 'Show this proposal to the operator. The draft runbook id is provisional and the saved id may differ; execute only with an id from list_runbooks or the approval notification.' }
   }
 
   private shouldDeferRunbookLookupInBatch(

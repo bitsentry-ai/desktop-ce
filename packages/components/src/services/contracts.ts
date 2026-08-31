@@ -691,6 +691,7 @@ export interface RunbookAuthoringProposalReview {
   incidentThreadId?: string;
   targetRunbookId?: string;
   targetRevisionNumber?: number;
+  supportsOperationApproval: boolean;
   proposedRunbook: {
     id: string;
     title: string;

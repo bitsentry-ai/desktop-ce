@@ -156,6 +156,8 @@ export default function RunbookProposalArtifact({
   const canDecide =
     selectedProposal.isLatest &&
     selectedProposal.status === "pending_approval";
+  const supportsOperationApproval =
+    selectedProposal.supportsOperationApproval === true;
   const toggleOperation = (operationId: string) => {
     setSelectedOperationIds((current) =>
       current.includes(operationId)
@@ -255,7 +257,7 @@ export default function RunbookProposalArtifact({
                 key={diff.operationId}
                 diff={diff}
                 checked={selectedOperationIds.includes(diff.operationId)}
-                disabled={!canDecide || selectedProposal.kind === "create_new_runbook"}
+                disabled={!canDecide || !supportsOperationApproval}
                 onToggle={() => toggleOperation(diff.operationId)}
               />
             ))}
@@ -303,13 +305,13 @@ export default function RunbookProposalArtifact({
             <div className="flex flex-wrap gap-2">
               <button
                 type="button"
-                disabled={busy || (selectedProposal.kind === "edit_existing_runbook" && selectedOperationIds.length === 0)}
+                disabled={busy || (supportsOperationApproval && selectedOperationIds.length === 0)}
                 onClick={() => void runDecision(async () => {
                   await agent.approveRunbookAuthoringProposal({
                     sessionId,
                     incidentThreadId: incidentId,
                     proposalId: selectedProposal.proposalId,
-                    approvedOperationIds: selectedProposal.kind === "edit_existing_runbook"
+                    approvedOperationIds: supportsOperationApproval
                       ? selectedOperationIds
                       : undefined,
                   });

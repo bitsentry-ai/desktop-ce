@@ -1337,6 +1337,8 @@ export default function IncidentArtifactsRail({
   const previousArtifactKeysRef = useRef<string>("");
   const previousProposalCountRef = useRef(0);
   const viewingProposalHistoryRef = useRef(false);
+  const proposalRefreshRequestRef = useRef(0);
+  const currentIncidentIdRef = useRef(incidentId);
 
   const messageProposals = useMemo(
     () => collectRunbookProposalArtifacts(messages),
@@ -1353,16 +1355,36 @@ export default function IncidentArtifactsRail({
 
   const refreshProposals = useCallback(async () => {
     if (agent === undefined || incidentId === undefined || incidentId === null || incidentId.length === 0) return;
+    const requestId = proposalRefreshRequestRef.current + 1;
+    proposalRefreshRequestRef.current = requestId;
+    const requestedIncidentId = incidentId;
     try {
-      setLiveProposals(await agent.listRunbookAuthoringProposals({
+      const nextProposals = await agent.listRunbookAuthoringProposals({
         sessionId: sessionId ?? undefined,
         incidentThreadId: incidentId,
-      }));
+      });
+      if (
+        proposalRefreshRequestRef.current !== requestId ||
+        currentIncidentIdRef.current !== requestedIncidentId
+      ) {
+        return;
+      }
+      setLiveProposals(nextProposals);
     } catch {
       // Message summaries still keep the artifact view available while a
       // just-finished agent session is settling.
     }
   }, [agent, incidentId, sessionId]);
+
+  useEffect(() => {
+    currentIncidentIdRef.current = incidentId;
+    proposalRefreshRequestRef.current += 1;
+    setLiveProposals([]);
+    setSelectedProposalId(null);
+    setShowProposalDetails(false);
+    previousProposalCountRef.current = 0;
+    viewingProposalHistoryRef.current = false;
+  }, [incidentId]);
 
   useEffect(() => {
     void refreshProposals();
@@ -1381,7 +1403,12 @@ export default function IncidentArtifactsRail({
     if (!showProposalDetails && !proposalCountIncreased) return;
     const selected = proposals.find((proposal) => proposal.proposalId === selectedProposalId);
     if (selected === undefined || !viewingProposalHistoryRef.current) {
-      const latest = proposals.find((proposal) => proposal.isLatest) ?? proposals[0];
+      const latest = selected === undefined
+        ? proposals.find((proposal) => proposal.isLatest) ?? proposals[0]
+        : proposals.find(
+            (proposal) =>
+              proposal.artifactId === selected.artifactId && proposal.isLatest,
+          ) ?? selected;
       setSelectedProposalId(latest.proposalId);
       viewingProposalHistoryRef.current = false;
     }
