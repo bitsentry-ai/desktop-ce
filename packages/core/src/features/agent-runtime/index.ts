@@ -39,6 +39,7 @@ export type {
   AgentEventType,
   AgentErrorCode,
   AgentEvent,
+  SandboxTokenBudgetMetadata,
   AssistantDeltaEvent,
   TokenUsageEvent,
   ThinkingStartEvent,

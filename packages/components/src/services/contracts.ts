@@ -3,6 +3,7 @@ import type {
   AgentThreadSnapshot,
   InteractionMode,
 } from "../chat/types";
+import type { SandboxTokenBudgetMetadata } from "@bitsentry-ce/core/features/agent-runtime";
 import type {
   AllSettingsDto,
   AuditLog,
@@ -1092,6 +1093,7 @@ export type AgentEvent =
         outputTokens: number;
         contextTokens?: number;
         contextLimit?: number;
+        sandboxTokenBudget?: SandboxTokenBudgetMetadata;
       };
     }
   | { type: "thinking_start"; timestamp: string }

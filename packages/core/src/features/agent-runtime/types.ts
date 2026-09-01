@@ -54,6 +54,33 @@ export interface AssistantDeltaEvent extends AgentEvent {
   kind?: 'text' | 'command_output'
 }
 
+export interface SandboxTokenBudgetMetadata {
+  estimatedTokens: number
+  estimatedRequestTokens: number
+  estimatedTotalTokens: number
+  limit: number
+  inputLimit: number
+  outputBudget: number
+  toolReserve: number
+  safetyMargin: number
+  reserves: {
+    outputBudget: number
+    toolReserve: number
+    safetyMargin: number
+  }
+  decision: 'sent' | 'compacted' | 'rejected'
+  reason: string
+  providerOutputCeiling?: number
+  costThreshold?: number
+  accountRequestCeiling?: number
+  compacted: boolean
+  droppedMessageCount: number
+  droppedToolCallReferences: Array<{
+    id: string
+    name: string
+  }>
+}
+
 export interface TokenUsageEvent extends AgentEvent {
   type: 'token_usage'
   tokenUsage: {
@@ -61,6 +88,7 @@ export interface TokenUsageEvent extends AgentEvent {
     outputTokens: number
     contextTokens?: number
     contextLimit?: number
+    sandboxTokenBudget?: SandboxTokenBudgetMetadata
   }
 }
 
@@ -142,6 +170,7 @@ export interface AgentThreadTokenUsage {
   outputTokens: number
   contextTokens?: number
   contextLimit?: number
+  sandboxTokenBudget?: SandboxTokenBudgetMetadata
 }
 
 export interface AgentIteration {

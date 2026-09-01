@@ -17,6 +17,7 @@ import {
   type ReactNode,
 } from "react";
 import type {
+  AgentThreadTokenUsage,
   ComposerAttachment,
   SavedProviderConfig,
   ThreadStatus,
@@ -93,12 +94,7 @@ export interface ComposerProps {
   // Show a fallback while the agent snapshot has not created a ChatBubble yet.
   showThreadWaitingIndicator?: boolean;
   // Cumulative token usage for the current session (from final events)
-  tokenUsage?: {
-    inputTokens: number;
-    outputTokens: number;
-    contextTokens?: number;
-    contextLimit?: number;
-  };
+  tokenUsage?: AgentThreadTokenUsage;
   // Controlled access level (managed by parent so it persists per-incident)
   accessLevel?: AccessLevel;
   onAccessLevelChange?: (level: AccessLevel) => void;
@@ -293,6 +289,7 @@ export function Composer({
         outputTokens={tokenUsage?.outputTokens ?? 0}
         contextTokens={tokenUsage?.contextTokens}
         contextLimit={tokenUsage?.contextLimit ?? contextWindowLimit}
+        providerDisplayName={selectedModelCapability?.displayName}
         usageUnavailable={tokenUsage === undefined && contextWindowLimit !== undefined}
       />
     );
