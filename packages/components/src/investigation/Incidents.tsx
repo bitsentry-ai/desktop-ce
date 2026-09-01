@@ -420,6 +420,12 @@ function normalizeIncidentTokenUsageMap(
     ) {
       entry.contextLimit = usage.contextLimit;
     }
+    const rawBudget = usage.sandboxTokenBudget;
+    if (asRecord(rawBudget) !== null) {
+      entry.sandboxTokenBudget = rawBudget as NonNullable<
+        AgentThreadTokenUsage["sandboxTokenBudget"]
+      >;
+    }
 
     normalized[incidentId] = entry;
   }

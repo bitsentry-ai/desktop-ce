@@ -3,6 +3,8 @@
  * Extracted from packages/components/src/investigation/Incidents.tsx
  */
 
+import type { SandboxTokenBudgetMetadata } from "@bitsentry-ce/core/features/agent-runtime";
+
 export type AgentSessionState =
   | "IDLE"
   | "RUNNING"
@@ -50,6 +52,7 @@ export interface AgentThreadTokenUsage {
   outputTokens: number;
   contextTokens?: number;
   contextLimit?: number;
+  sandboxTokenBudget?: SandboxTokenBudgetMetadata;
 }
 
 export type AgentErrorCode = "NO_LLM_PROVIDER_CONFIGURED";
