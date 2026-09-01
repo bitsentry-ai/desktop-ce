@@ -128,7 +128,7 @@ export function ContextIndicator({
               fill="none"
               stroke="currentColor"
               strokeWidth="4"
-              className="text-muted/25"
+              className="text-muted-foreground/30"
             />
             {showMeter && (
               <circle
