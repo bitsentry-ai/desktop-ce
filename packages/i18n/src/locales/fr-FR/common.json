@@ -158,6 +158,8 @@
   "common.contextIndicator.contextWindowProgressLabel": "Utilisation de la fenêtre de contexte : {{percentage}} % ({{used}} sur {{limit}} tokens)",
   "common.contextIndicator.contextWindowUsage": "{{percentage}} % · {{used}}/{{limit}}",
   "common.contextIndicator.inputOutput": "Entrée : {{input}} tokens · Sortie : {{output}} tokens",
+  "common.contextIndicator.totalProcessed": "Total traité",
+  "common.contextIndicator.totalProcessedSummary": "Total traité : {{total}} tokens",
   "common.contextIndicator.automaticCompaction": "Le contexte de {{provider}} est compacté automatiquement lorsque nécessaire.",
   "common.contextIndicator.defaultProvider": "ce modèle",
   "common.dataPolicySettingsSection.disabled": "Désactivé",

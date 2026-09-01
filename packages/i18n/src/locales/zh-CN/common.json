@@ -158,6 +158,8 @@
   "common.contextIndicator.contextWindowProgressLabel": "上下文窗口用量：{{percentage}}%（{{used}} / {{limit}} 个 token）",
   "common.contextIndicator.contextWindowUsage": "{{percentage}}% · {{used}}/{{limit}}",
   "common.contextIndicator.inputOutput": "输入：{{input}} 个 token · 输出：{{output}} 个 token",
+  "common.contextIndicator.totalProcessed": "已处理总量",
+  "common.contextIndicator.totalProcessedSummary": "已处理总量：{{total}} 个 token",
   "common.contextIndicator.automaticCompaction": "{{provider}} 的上下文会在需要时自动压缩。",
   "common.contextIndicator.defaultProvider": "此模型",
   "common.dataPolicySettingsSection.disabled": "已禁用",

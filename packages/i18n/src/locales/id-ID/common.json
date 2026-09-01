@@ -158,6 +158,8 @@
   "common.contextIndicator.contextWindowProgressLabel": "Penggunaan jendela konteks: {{percentage}}% ({{used}} dari {{limit}} token)",
   "common.contextIndicator.contextWindowUsage": "{{percentage}}% · {{used}}/{{limit}}",
   "common.contextIndicator.inputOutput": "Input: {{input}} token · Output: {{output}} token",
+  "common.contextIndicator.totalProcessed": "Total diproses",
+  "common.contextIndicator.totalProcessedSummary": "Total diproses: {{total}} token",
   "common.contextIndicator.automaticCompaction": "Konteks untuk {{provider}} dikompaksi otomatis saat diperlukan.",
   "common.contextIndicator.defaultProvider": "model ini",
   "common.dataPolicySettingsSection.disabled": "Dinonaktifkan",
