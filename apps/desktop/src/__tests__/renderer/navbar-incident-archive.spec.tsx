@@ -69,15 +69,19 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
+function renderNavbar(path: string) {
+  return render(
+    <BitsentryServicesProvider services={createServices()}>
+      <MemoryRouter initialEntries={[path]}>
+        <Navbar />
+      </MemoryRouter>
+    </BitsentryServicesProvider>,
+  );
+}
+
 describe("Navbar incident archive synchronization", () => {
   it("persists the web archive before broadcasting the update", async () => {
-    render(
-      <BitsentryServicesProvider services={createServices()}>
-        <MemoryRouter initialEntries={["/incidents"]}>
-          <Navbar />
-        </MemoryRouter>
-      </BitsentryServicesProvider>,
-    );
+    renderNavbar("/incidents");
 
     fireEvent.click(await screen.findByTitle("Archive incident"));
 
@@ -85,6 +89,19 @@ describe("Navbar incident archive synchronization", () => {
       expect(JSON.parse(localStorage.getItem("bitsentry_incidents") ?? "[]"))
         .toMatchObject([{ id: "incident-1", archived: true }]);
       expect(screen.queryByText("Archived after click")).toBeNull();
+    });
+  });
+
+  it("removes the archived incident from the navbar on another page", async () => {
+    renderNavbar("/runbooks");
+
+    fireEvent.click(screen.getByRole("link", { name: "Incidents" }));
+    fireEvent.click(await screen.findByTitle("Archive incident"));
+
+    await waitFor(() => {
+      expect(screen.queryByText("Archived after click")).toBeNull();
+      expect(JSON.parse(localStorage.getItem("bitsentry_incidents") ?? "[]"))
+        .toMatchObject([{ id: "incident-1", archived: true }]);
     });
   });
 });
