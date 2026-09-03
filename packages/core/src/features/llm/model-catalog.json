@@ -493,7 +493,6 @@
         {
           "id": "gpt-oss-120b",
           "displayName": "GPT-OSS 120B",
-          "contextWindowTokens": 131072,
           "supportsImageInput": false,
           "supportsAudioInput": false,
           "supportsVideoInput": false,
@@ -506,7 +505,6 @@
         {
           "id": "gpt-oss-20b",
           "displayName": "GPT-OSS 20B",
-          "contextWindowTokens": 131072,
           "supportsImageInput": false,
           "supportsAudioInput": false,
           "supportsVideoInput": false,
@@ -1000,6 +998,7 @@
         {
           "id": "openai/gpt-oss-120b",
           "displayName": "GPT-OSS 120B",
+          "contextWindowTokens": 131072,
           "supportsImageInput": false,
           "supportsAudioInput": false,
           "supportsVideoInput": false,
@@ -1024,6 +1023,7 @@
         {
           "id": "openai/gpt-oss-20b",
           "displayName": "GPT-OSS 20B",
+          "contextWindowTokens": 131072,
           "supportsImageInput": false,
           "supportsAudioInput": false,
           "supportsVideoInput": false,
