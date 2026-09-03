@@ -542,7 +542,7 @@ describe("IncidentArtifactsRail", () => {
     renderRail({ agent });
 
     expect(await screen.findByText("Warning runbook")).toBeTruthy();
-    expect(screen.getByText(warning)).toBeTruthy();
+    expect(await screen.findByText(warning)).toBeTruthy();
   });
 
   it("clears old proposals and ignores a stale refresh after an incident switch", async () => {
