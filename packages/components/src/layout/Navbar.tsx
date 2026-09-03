@@ -765,6 +765,18 @@ const Navbar = ({
 
       if (services.incidents) {
         await services.incidents.archiveThread(incidentId);
+        const raw = localStorage.getItem("bitsentry_incidents");
+        let all: unknown[] = [];
+        if (raw !== null) {
+          const parsed: unknown = JSON.parse(raw);
+          if (Array.isArray(parsed)) {
+            all = parsed;
+          }
+        }
+        const updated = all.map((incident) =>
+          archiveIncidentRecord(incident, incidentId, archivedAt),
+        );
+        localStorage.setItem("bitsentry_incidents", JSON.stringify(updated));
         setInvestigationIncidents((prev) =>
           prev.map((incident) => {
             if (incident.id !== incidentId) return incident;
