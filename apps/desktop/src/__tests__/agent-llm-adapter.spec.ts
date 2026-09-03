@@ -347,6 +347,7 @@ describe('AgentLlmAdapterService', () => {
           }],
         },
       }],
+      usage: { prompt_tokens: 12, completion_tokens: 3 },
     }))))
 
     const response = await adapter.chatWithTools({
@@ -367,7 +368,69 @@ describe('AgentLlmAdapterService', () => {
         name: 'list_runbooks',
         args: {},
       }],
+      tokenUsage: {
+        inputTokens: 12,
+        outputTokens: 3,
+        contextTokens: 15,
+        contextLimit: 1_047_576,
+      },
     })
+  })
+
+  it('adds catalog context metadata to OpenAI streaming usage', async () => {
+    const adapter = createAdapter({
+      getApiKey: () => Promise.resolve('test-key'),
+    })
+    const sseBody = [
+      'data: {"choices":[{"delta":{"content":"Done"}}]}',
+      '',
+      'data: {"choices":[],"usage":{"prompt_tokens":120,"completion_tokens":24}}',
+      '',
+      'data: [DONE]',
+      '',
+    ].join('\n')
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(sseBody, {
+      headers: { 'content-type': 'text/event-stream' },
+    })))
+
+    const response = await adapter.chatWithTools({
+      messages: [{ role: 'user', content: 'Say hello' }],
+      signal: new AbortController().signal,
+      llm: { providerKey: 'openai', model: 'gpt-5.6-luna' },
+    })
+
+    expect(response).toMatchObject({
+      content: 'Done',
+      tokenUsage: {
+        inputTokens: 120,
+        outputTokens: 24,
+        contextTokens: 144,
+        contextLimit: 1_050_000,
+      },
+    })
+  })
+
+  it('keeps context totals when a cloud model is not in the catalog', async () => {
+    const adapter = createAdapter({
+      getApiKey: () => Promise.resolve('test-key'),
+    })
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      choices: [{ message: { content: 'Done' } }],
+      usage: { prompt_tokens: 9, completion_tokens: 4 },
+    }))))
+
+    const response = await adapter.chatWithTools({
+      messages: [{ role: 'user', content: 'Say hello' }],
+      signal: new AbortController().signal,
+      llm: { providerKey: 'openai', model: 'unlisted-model' },
+    })
+
+    expect(response.tokenUsage).toMatchObject({
+      inputTokens: 9,
+      outputTokens: 4,
+      contextTokens: 13,
+    })
+    expect(response.tokenUsage?.contextLimit).toBeUndefined()
   })
 
   it('serializes nested Gemini tool schemas in the provider wire format', async () => {
@@ -379,6 +442,7 @@ describe('AgentLlmAdapterService', () => {
       requestBody = JSON.parse(String(init?.body)) as Record<string, unknown>
       return Promise.resolve(new Response(JSON.stringify({
         candidates: [{ content: { parts: [{ text: 'Done' }] } }],
+        usageMetadata: { promptTokenCount: 7, candidatesTokenCount: 3 },
       })))
     }))
 
@@ -421,10 +485,16 @@ describe('AgentLlmAdapterService', () => {
       messages: [{ role: 'user', content: 'Use the tool.' }],
       tools: [{ name: 'record_values', description: 'Record values.', inputSchema }],
       signal: new AbortController().signal,
-      llm: { providerKey: 'gemini', model: 'gemini-2.5-flash' },
+      llm: { providerKey: 'gemini', model: 'gemini-3.5-flash' },
     })
 
     expect(response.content).toBe('Done')
+    expect(response.tokenUsage).toEqual({
+      inputTokens: 7,
+      outputTokens: 3,
+      contextTokens: 10,
+      contextLimit: 1_048_576,
+    })
     const tools = requestBody?.tools as Array<Record<string, unknown>> | undefined
     const declarations = tools?.[0]?.functionDeclarations as Array<Record<string, unknown>> | undefined
     const parameters = declarations?.[0]?.parameters as Record<string, unknown> | undefined
@@ -668,6 +738,12 @@ describe('AgentLlmAdapterService', () => {
         name: 'execute_shell_command',
         args: { command: 'pwd' },
       }],
+      tokenUsage: {
+        inputTokens: 4,
+        outputTokens: 3,
+        contextTokens: 7,
+        contextLimit: 1_050_000,
+      },
     })
   })
 
@@ -1122,10 +1198,11 @@ describe('AgentLlmAdapterService', () => {
       requestBody = JSON.parse(String(init?.body)) as Record<string, unknown>
       return Promise.resolve(new Response(JSON.stringify({
         content: [{ type: 'text', text: 'Done' }],
+        usage: { input_tokens: 6, output_tokens: 2 },
       })))
     }))
 
-    await adapter.chatWithTools({
+    const response = await adapter.chatWithTools({
       messages: [{ role: 'user', content: 'Solve this task' }],
       signal: new AbortController().signal,
       llm: {
@@ -1138,6 +1215,12 @@ describe('AgentLlmAdapterService', () => {
 
     expect(requestBody?.thinking).toBeUndefined()
     expect(requestBody?.output_config).toBeUndefined()
+    expect(response.tokenUsage).toEqual({
+      inputTokens: 6,
+      outputTokens: 2,
+      contextTokens: 8,
+      contextLimit: 1_000_000,
+    })
   })
 
   it('keeps a natural MCP CLI response independent of the supplied tool list', async () => {

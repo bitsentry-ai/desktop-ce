@@ -47,6 +47,7 @@
         {
           "id": "gpt-5.6-sol",
           "displayName": "GPT-5.6 Sol",
+          "contextWindowTokens": 1050000,
           "supportsImageInput": true,
           "supportsAudioInput": false,
           "supportsVideoInput": false,
@@ -85,6 +86,7 @@
         {
           "id": "gpt-5.6-terra",
           "displayName": "GPT-5.6 Terra",
+          "contextWindowTokens": 1050000,
           "supportsImageInput": true,
           "supportsAudioInput": false,
           "supportsVideoInput": false,
@@ -123,6 +125,7 @@
         {
           "id": "gpt-5.6-luna",
           "displayName": "GPT-5.6 Luna",
+          "contextWindowTokens": 1050000,
           "supportsImageInput": true,
           "supportsAudioInput": false,
           "supportsVideoInput": false,
@@ -417,6 +420,7 @@
         {
           "id": "gpt-4.1-mini",
           "displayName": "GPT-4.1 Mini",
+          "contextWindowTokens": 1047576,
           "supportsImageInput": true,
           "supportsAudioInput": false,
           "supportsVideoInput": false,
@@ -489,6 +493,7 @@
         {
           "id": "gpt-oss-120b",
           "displayName": "GPT-OSS 120B",
+          "contextWindowTokens": 131072,
           "supportsImageInput": false,
           "supportsAudioInput": false,
           "supportsVideoInput": false,
@@ -501,6 +506,7 @@
         {
           "id": "gpt-oss-20b",
           "displayName": "GPT-OSS 20B",
+          "contextWindowTokens": 131072,
           "supportsImageInput": false,
           "supportsAudioInput": false,
           "supportsVideoInput": false,
@@ -796,6 +802,7 @@
         {
           "id": "claude-sonnet-4-5",
           "displayName": "Claude Sonnet 4.5",
+          "contextWindowTokens": 200000,
           "supportsImageInput": true,
           "supportsAudioInput": false,
           "supportsVideoInput": false,
@@ -865,6 +872,7 @@
         {
           "id": "gemini-3.5-flash",
           "displayName": "Gemini 3.5 Flash",
+          "contextWindowTokens": 1048576,
           "supportsImageInput": true,
           "supportsAudioInput": true,
           "supportsVideoInput": true,
@@ -1219,6 +1227,7 @@
         {
           "id": "openai/gpt-4.1",
           "displayName": "GPT-4.1",
+          "contextWindowTokens": 1047576,
           "supportsImageInput": true,
           "supportsAudioInput": false,
           "supportsVideoInput": false,
@@ -1328,6 +1337,7 @@
         {
           "id": "openai/gpt-oss-120b",
           "displayName": "GPT-OSS 120B",
+          "contextWindowTokens": 131072,
           "supportsImageInput": false,
           "supportsAudioInput": false,
           "supportsVideoInput": false,

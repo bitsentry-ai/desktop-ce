@@ -324,6 +324,7 @@ describe('host tools', () => {
     expect(catalog.providers[0]?.models).toContainEqual({
       modelId: 'gpt-5.6-terra',
       displayName: 'GPT-5.6 Terra',
+      contextWindowTokens: 1_050_000,
     })
 
     const codex = catalog.providers.find((provider) => provider.providerKey === 'codex')

@@ -658,7 +658,8 @@ function getFallbackModelContextWindowLimit(
   model: ModelCatalogEntry | undefined,
 ): number | undefined {
   if (model === undefined) return undefined
-  return MODEL_CONTEXT_WINDOW_LIMIT_FALLBACKS[normalizeValue(model.id)]
+  return model.contextWindowTokens
+    ?? MODEL_CONTEXT_WINDOW_LIMIT_FALLBACKS[normalizeValue(model.id)]
 }
 
 export function getModelContextWindowLimit(

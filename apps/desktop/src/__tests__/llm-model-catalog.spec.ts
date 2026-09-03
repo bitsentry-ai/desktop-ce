@@ -13,6 +13,7 @@ import {
   getCatalogModelIds,
   getEffectiveComposerOptions,
   getModelCapability,
+  getModelContextWindowLimit,
   getModelDisplayName,
   getProviderCatalogModels,
   getModelCatalogProviders,
@@ -441,6 +442,16 @@ describe('local model catalog selection', () => {
         maxOutputTokens: 128_000,
       })
     }
+  })
+
+  it('uses catalog limits before legacy fallbacks and preserves CLI context choices', () => {
+    expect(getModelContextWindowLimit(getCatalogModel('openai', 'gpt-5.6-luna'), {})).toBe(1_050_000)
+    expect(getModelContextWindowLimit(getCatalogModel('codex', 'gpt-5.4'), {})).toBe(1_000_000)
+    expect(getModelContextWindowLimit(getCatalogModel('openai', 'unlisted-model'), {})).toBeUndefined()
+
+    const claudeCodeModel = getCatalogModel('claude_code', 'claude-opus-5')
+    expect(getModelContextWindowLimit(claudeCodeModel, { contextWindow: '300k' })).toBe(300_000)
+    expect(getModelContextWindowLimit(claudeCodeModel, { contextWindow: '1m' })).toBe(1_000_000)
   })
 
   it('does not expose Codex models rejected for ChatGPT accounts', () => {
