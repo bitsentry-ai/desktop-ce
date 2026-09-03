@@ -32,6 +32,7 @@ import {
   getCatalogModel,
   getCatalogModelIds,
   getComposerDefaultTraitValues,
+  getModelContextWindowLimit,
   resolveCatalogModel,
 } from '@bitsentry-ce/components/llm/modelCatalog'
 
@@ -756,6 +757,8 @@ function getEffortTrait(traitValues?: Record<string, string | boolean>): string 
 }
 
 function toTokenUsage(
+  providerKey: LlmProviderKey,
+  model: string,
   inputTokens: number | undefined,
   outputTokens: number | undefined,
 ): ChatResponse['tokenUsage'] {
@@ -763,9 +766,13 @@ function toTokenUsage(
     return undefined
   }
 
+  const normalizedOutputTokens = outputTokens ?? 0
+
   return {
     inputTokens,
-    outputTokens: outputTokens ?? 0,
+    outputTokens: normalizedOutputTokens,
+    contextTokens: inputTokens + normalizedOutputTokens,
+    contextLimit: getModelContextWindowLimit(getCatalogModel(providerKey, model), {}),
   }
 }
 
@@ -1442,10 +1449,10 @@ export class AgentLlmAdapterService {
     }
 
     if (response.body !== null && hasEventStreamContentType(response)) {
-      return this.readOpenAiStreamingResponse(response.body, onDelta)
+      return this.readOpenAiStreamingResponse(response.body, onDelta, input.providerKey, model)
     }
 
-    return this.readOpenAiCompletionResponse(response)
+    return this.readOpenAiCompletionResponse(response, input.providerKey, model)
   }
 
   private async chatOpenAiResponses(input: ChatWithToolsInput & {
@@ -1487,10 +1494,15 @@ export class AgentLlmAdapterService {
       throw new Error(formatProviderHttpError('LLM', response, body))
     }
 
-    return this.readOpenAiResponsesResponse(response)
+    return this.readOpenAiResponsesResponse(response, input.providerKey, model)
   }
 
-  private async readOpenAiStreamingResponse(body: ReadableStream<Uint8Array>, onDelta: OnDelta | undefined): Promise<ChatResponse> {
+  private async readOpenAiStreamingResponse(
+    body: ReadableStream<Uint8Array>,
+    onDelta: OnDelta | undefined,
+    providerKey: LlmProviderKey,
+    model: string,
+  ): Promise<ChatResponse> {
     const state: {
       content: string
       tokenUsage: ChatResponse['tokenUsage']
@@ -1498,7 +1510,7 @@ export class AgentLlmAdapterService {
     } = { content: '', tokenUsage: undefined, toolCallsByIndex: new Map() }
     for await (const event of iterateSseEvents(body)) {
       if (event.data === '[DONE]') break
-      this.applyOpenAiStreamEvent(event, state, onDelta)
+      this.applyOpenAiStreamEvent(event, state, onDelta, providerKey, model)
     }
     return {
       content: state.content,
@@ -1512,6 +1524,8 @@ export class AgentLlmAdapterService {
     event: SseEvent,
     state: { content: string; tokenUsage: ChatResponse['tokenUsage']; toolCallsByIndex: Map<number, OpenAiStreamingToolCallFragment> },
     onDelta: OnDelta | undefined,
+    providerKey: LlmProviderKey,
+    model: string,
   ): void {
     let chunk: OpenAiStreamingChunk
     try {
@@ -1521,7 +1535,12 @@ export class AgentLlmAdapterService {
     }
     const usage = chunk.usage
     if (usage?.prompt_tokens != null) {
-      state.tokenUsage = { inputTokens: usage.prompt_tokens, outputTokens: usage.completion_tokens ?? 0 }
+      state.tokenUsage = toTokenUsage(
+        providerKey,
+        model,
+        usage.prompt_tokens,
+        usage.completion_tokens,
+      )
     }
     for (const choice of chunk.choices ?? []) {
       this.applyOpenAiStreamDelta(choice.delta, state, onDelta)
@@ -1562,7 +1581,11 @@ export class AgentLlmAdapterService {
       })
   }
 
-  private async readOpenAiCompletionResponse(response: Response): Promise<ChatResponse> {
+  private async readOpenAiCompletionResponse(
+    response: Response,
+    providerKey: LlmProviderKey,
+    model: string,
+  ): Promise<ChatResponse> {
     const data = await response.json() as OpenAiCompletionPayload
 
     const message = data.choices?.[0]?.message
@@ -1586,11 +1609,15 @@ export class AgentLlmAdapterService {
       content: message.content ?? '',
       toolCalls,
       toolProtocol: 'native_function_calling',
-      tokenUsage: toTokenUsage(usage?.prompt_tokens, usage?.completion_tokens),
+      tokenUsage: toTokenUsage(providerKey, model, usage?.prompt_tokens, usage?.completion_tokens),
     }
   }
 
-  private async readOpenAiResponsesResponse(response: Response): Promise<ChatResponse> {
+  private async readOpenAiResponsesResponse(
+    response: Response,
+    providerKey: LlmProviderKey,
+    model: string,
+  ): Promise<ChatResponse> {
     const data = await response.json() as OpenAiResponsesPayload
     const output = data.output ?? []
     const toolCalls = output
@@ -1613,7 +1640,7 @@ export class AgentLlmAdapterService {
       content: outputText,
       toolCalls,
       toolProtocol: 'native_function_calling',
-      tokenUsage: toTokenUsage(data.usage?.input_tokens, data.usage?.output_tokens),
+      tokenUsage: toTokenUsage(providerKey, model, data.usage?.input_tokens, data.usage?.output_tokens),
     }
   }
 
@@ -1747,7 +1774,7 @@ export class AgentLlmAdapterService {
       content,
       toolCalls,
       toolProtocol: 'native_function_calling',
-      tokenUsage: toTokenUsage(usage?.input_tokens, usage?.output_tokens),
+      tokenUsage: toTokenUsage('anthropic', model, usage?.input_tokens, usage?.output_tokens),
     }
   }
 
@@ -1880,7 +1907,7 @@ export class AgentLlmAdapterService {
       content,
       toolCalls,
       toolProtocol: 'native_function_calling',
-      tokenUsage: toTokenUsage(meta?.promptTokenCount, meta?.candidatesTokenCount),
+      tokenUsage: toTokenUsage('gemini', model, meta?.promptTokenCount, meta?.candidatesTokenCount),
     }
   }
 
