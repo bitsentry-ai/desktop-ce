@@ -792,6 +792,48 @@ describe("runbook authoring", () => {
     expect(second).toMatchObject({ artifactVersion: 2 });
   });
 
+  it("restores an earlier edit past an approved latest without switching to create", () => {
+    const first = makeEditProposal().proposal;
+    const second = createRunbookEditProposal({
+      id: "proposal-edit-approved",
+      artifactId: first.artifactId,
+      artifactVersion: 2,
+      parentProposalId: first.id,
+      prompt: "Use a safer title.",
+      targetRunbook: makeBaseRunbook(),
+      now: "2026-07-05T00:01:00.000Z",
+      operations: [{
+        id: "op-title-approved",
+        type: "update_metadata",
+        rationale: "Use the safer title.",
+        metadata: { title: "Investigate API health" },
+      }],
+    });
+    const approvedLatest = approveRunbookAuthoringProposal({
+      proposal: second,
+      now: "2026-07-05T00:02:00.000Z",
+    }).proposal;
+
+    const restored = restoreRunbookAuthoringProposal({
+      proposal: first,
+      latestProposal: approvedLatest,
+      id: "proposal-edit-restored",
+      now: "2026-07-05T00:03:00.000Z",
+    });
+
+    expect(restored).toMatchObject({
+      kind: "edit_existing_runbook",
+      artifactId: first.artifactId,
+      artifactVersion: 3,
+      parentProposalId: approvedLatest.id,
+      restoredFromProposalId: first.id,
+      targetRunbookId: "runbook-existing",
+      status: "pending_approval",
+    });
+    const approval = approveRunbookAuthoringProposal({ proposal: restored });
+    expect(approval.runbook.id).toBe("runbook-existing");
+  });
+
   it("applies selected operations when approving a create artifact revision", () => {
     const first = createRunbookCreationProposal({
       id: "proposal-create-v1",

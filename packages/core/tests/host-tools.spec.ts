@@ -5,6 +5,7 @@ import {
   getHostTool,
   type HostToolContext,
 } from '../src/features/agent-runtime'
+import { approveRunbookAuthoringProposal } from '../src/features/runbooks'
 import type { DesktopPluginDescriptor } from '../src/features/plugins'
 import type {
   RunbookExecutionRecord,
@@ -239,6 +240,142 @@ describe('host tools', () => {
         actions: expect.arrayContaining([
           expect.objectContaining({ id: 'health' }),
           expect.objectContaining({ id: 'readiness' }),
+        ]),
+      },
+    })
+  })
+
+  it('starts a fresh edit artifact after an approved create and chains later edits', async () => {
+    const runbook = makeRunbook({
+      id: 'rb-saved',
+      revisionNumber: 1,
+      actions: [{
+        id: 'health',
+        type: 'http',
+        title: 'Check health',
+        url: 'https://example.test/health',
+        method: 'GET',
+      }],
+    })
+    const context = createContext()
+    context.session.runbookId = runbook.id
+    context.listAuthorableRunbooks = vi.fn().mockResolvedValue([runbook])
+
+    await executeHostTool(context, 'propose_runbook_create', {
+      prompt: 'Create a health check runbook.',
+      draftRunbook: {
+        title: 'Health check',
+        description: 'Check the API.',
+        actions: runbook.actions,
+      },
+    })
+    const createProposal = context.session.runbookAuthoringProposals?.[0]
+    if (createProposal === undefined) throw new Error('Expected create proposal')
+    const approvedCreate = approveRunbookAuthoringProposal({ proposal: createProposal }).proposal
+    context.session.runbookAuthoringProposals = [approvedCreate]
+
+    const firstEditResult = await executeHostTool(context, 'propose_runbook_edit', {
+      runbookId: runbook.id,
+      parentProposalId: approvedCreate.id,
+      prompt: 'Clarify the health check description.',
+      operations: [{
+        id: 'op-description',
+        type: 'update_metadata',
+        rationale: 'Explain what the health check verifies.',
+        metadata: { description: 'Check the API health endpoint.' },
+      }],
+    })
+    expect(firstEditResult?.error).toBeUndefined()
+    const firstEditSummary = JSON.parse(firstEditResult?.output ?? '') as Record<string, unknown>
+    expect(firstEditSummary).toMatchObject({
+      kind: 'edit_existing_runbook',
+      artifactVersion: 1,
+      targetRunbookId: runbook.id,
+    })
+    expect(firstEditSummary.artifactId).not.toBe(approvedCreate.artifactId)
+    expect(firstEditSummary).not.toHaveProperty('parentProposalId')
+
+    const firstEdit = context.session.runbookAuthoringProposals?.at(-1)
+    if (firstEdit === undefined) throw new Error('Expected first edit proposal')
+    const secondEditResult = await executeHostTool(context, 'propose_runbook_edit', {
+      runbookId: runbook.id,
+      parentProposalId: firstEdit.id,
+      prompt: 'Use a clearer runbook title.',
+      operations: [{
+        id: 'op-title',
+        type: 'update_metadata',
+        rationale: 'Make the runbook title more descriptive.',
+        metadata: { title: 'Check API health' },
+      }],
+    })
+    expect(secondEditResult?.error).toBeUndefined()
+    expect(JSON.parse(secondEditResult?.output ?? '')).toMatchObject({
+      kind: 'edit_existing_runbook',
+      artifactId: firstEdit.artifactId,
+      artifactVersion: 2,
+      parentProposalId: firstEdit.id,
+      targetRunbookId: runbook.id,
+    })
+  })
+
+  it.each(['new', 'none', '00000000-0000-0000-0000-000000000000'])('ignores an edit placeholder parent id: %s', async (parentProposalId) => {
+    const runbook = makeRunbook({
+      actions: [{
+        id: 'health',
+        type: 'http',
+        title: 'Check health',
+        url: 'https://example.test/health',
+        method: 'GET',
+      }],
+    })
+    const context = createContext()
+    context.listAuthorableRunbooks = vi.fn().mockResolvedValue([runbook])
+
+    const result = await executeHostTool(context, 'propose_runbook_edit', {
+      runbookId: runbook.id,
+      parentProposalId,
+      prompt: 'Clarify the health check description.',
+      operations: [{
+        id: 'op-description',
+        type: 'update_metadata',
+        rationale: 'Explain what the health check verifies.',
+        metadata: { description: 'Check the API health endpoint.' },
+      }],
+    })
+
+    expect(result?.error).toBeUndefined()
+    expect(JSON.parse(result?.output ?? '')).toMatchObject({
+      kind: 'edit_existing_runbook',
+      artifactVersion: 1,
+      targetRunbookId: runbook.id,
+    })
+  })
+
+  it('warns before approving a shell runbook in Safe Tools mode', async () => {
+    const context = createContext()
+    context.session.accessLevel = 'auto-accept-edits'
+
+    const result = await executeHostTool(context, 'propose_runbook_create', {
+      prompt: 'Create a read-only shell runbook.',
+      draftRunbook: {
+        title: 'Read host data',
+        description: 'Shape local read-only data.',
+        actions: [{
+          id: 'shape-data',
+          type: 'shell',
+          title: 'Shape data',
+          command: 'printf data | jq | sort',
+        }],
+      },
+    })
+
+    expect(result?.error).toBeUndefined()
+    expect(JSON.parse(result?.output ?? '')).toMatchObject({
+      validation: {
+        valid: true,
+        errors: [],
+        warnings: expect.arrayContaining([
+          'Safe Tools mode will refuse this runbook. Use an llm or plugin step for read-only data shaping.',
         ]),
       },
     })
