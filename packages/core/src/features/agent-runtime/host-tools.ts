@@ -34,6 +34,21 @@ import {
   resolveCatalogModelForProvider,
 } from '../llm/modelCatalog'
 
+const safeToolsShellWarning = 'Safe Tools mode will refuse this runbook. Use an llm or plugin step for read-only data shaping.'
+const editParentProposalPlaceholders = new Set([
+  'new',
+  'none',
+  '00000000-0000-0000-0000-000000000000',
+])
+
+function normalizeEditParentProposalId(parentProposalId: string | undefined): string | undefined {
+  const normalized = parentProposalId?.trim()
+  if (normalized === undefined || editParentProposalPlaceholders.has(normalized.toLowerCase())) {
+    return undefined
+  }
+  return normalized
+}
+
 export const listRunbooksHostToolSchema = z.object({}).strict()
 export const listPluginsHostToolSchema = z.object({}).strict()
 export const listModelsHostToolSchema = z.object({}).strict()
@@ -243,6 +258,7 @@ export interface AgentSessionRef {
   sourceMessageId?: string
   normalizedFindings?: unknown[]
   accessLevel?: 'auto-accept-edits' | 'full-access'
+  runbookId?: string
   runbookContext?: RunbookContext
   latestRunbookExecutionId?: string
   latestRunbookResultId?: string
@@ -683,6 +699,24 @@ function applyPluginAuthValidation(
   return proposal
 }
 
+function applySafeToolsWarning(
+  proposal: RunbookAuthoringProposal,
+  context: HostToolContext,
+): RunbookAuthoringProposal {
+  if (
+    context.session.accessLevel !== 'auto-accept-edits' ||
+    !proposal.proposedRunbook.actions.some((action) => action.type === 'shell')
+  ) {
+    return proposal
+  }
+
+  proposal.validation = {
+    ...proposal.validation,
+    warnings: [...proposal.validation.warnings, safeToolsShellWarning],
+  }
+  return proposal
+}
+
 async function executeRunbook(
   context: HostToolContext,
   input: ExecuteRunbookHostToolInput,
@@ -864,13 +898,28 @@ function resolveProposalLineage(
     (kind !== 'edit_existing_runbook' ||
       (proposal.kind === 'edit_existing_runbook' && proposal.targetRunbookId === targetRunbookId)),
   )
-  const parent = parentProposalId === undefined
+  const normalizedParentProposalId = kind === 'edit_existing_runbook'
+    ? normalizeEditParentProposalId(parentProposalId)
+    : parentProposalId
+  const referencedParent = normalizedParentProposalId === undefined
+    ? undefined
+    : proposals.find((proposal) => proposal.id === normalizedParentProposalId)
+  const activeRunbookId = session.runbookId ?? session.runbookContext?.id
+  const parentProposalIdForLineage =
+    kind === 'edit_existing_runbook' &&
+    referencedParent?.kind === 'create_new_runbook' &&
+    referencedParent.status === 'approved' &&
+    activeRunbookId !== undefined &&
+    activeRunbookId === targetRunbookId
+      ? undefined
+      : normalizedParentProposalId
+  const parent = parentProposalIdForLineage === undefined
     ? compatible[compatible.length - 1]
-    : proposals.find((proposal) => proposal.id === parentProposalId)
+    : referencedParent
 
   if (parent === undefined) {
-    if (parentProposalId !== undefined && (kind !== 'create_new_runbook' || compatible.length > 0)) {
-      throw new Error(`Runbook authoring parent proposal not found: ${parentProposalId}`)
+    if (parentProposalIdForLineage !== undefined && (kind !== 'create_new_runbook' || compatible.length > 0)) {
+      throw new Error(`Runbook authoring parent proposal not found: ${parentProposalIdForLineage}`)
     }
     // A model may retry the first proposal after a malformed tool call and
     // invent a parent id from the draft title or a placeholder UUID. There is
@@ -900,9 +949,10 @@ async function proposeRunbookEdit(context: HostToolContext, input: ProposeRunboo
     ...operation,
     action: operation.action as RunbookActionRecord | undefined,
   })) as RunbookAuthoringOperation[]
+  const parentProposalId = normalizeEditParentProposalId(input.parentProposalId)
   const unpersistedCreate = findUnpersistedCreateProposal(
     context.session,
-    input.parentProposalId,
+    parentProposalId,
   )
   let proposal: RunbookAuthoringProposal
 
@@ -927,7 +977,7 @@ async function proposeRunbookEdit(context: HostToolContext, input: ProposeRunboo
     const lineage = resolveProposalLineage(
       context.session,
       'edit_existing_runbook',
-      input.parentProposalId,
+      parentProposalId,
       targetRunbook.id,
     )
     proposal = createRunbookEditProposal({
@@ -942,6 +992,7 @@ async function proposeRunbookEdit(context: HostToolContext, input: ProposeRunboo
     })
   }
   applyPluginAuthValidation(proposal, context)
+  applySafeToolsWarning(proposal, context)
   context.session.runbookAuthoringProposals ??= []
   context.session.runbookAuthoringProposals.push(proposal)
   await context.saveRunbookAuthoringProposal?.(proposal)
@@ -953,6 +1004,7 @@ async function proposeRunbookCreate(context: HostToolContext, input: ProposeRunb
   const parentProposal = findCreateProposal(context.session, lineage?.parentProposalId)
   const proposal = createRunbookCreationProposal({ ...lineage, parentRunbook: parentProposal?.proposedRunbook, incidentThreadId: context.session.incidentThreadId, prompt: input.prompt, draftRunbook: { ...input.draftRunbook, actions: input.draftRunbook.actions as RunbookActionRecord[] }, sourceAttachmentId: context.session.sourceAttachmentId, sourceMessageId: context.session.sourceMessageId, normalizedFindings: context.session.normalizedFindings })
   applyPluginAuthValidation(proposal, context)
+  applySafeToolsWarning(proposal, context)
   context.session.runbookAuthoringProposals ??= []
   context.session.runbookAuthoringProposals.push(proposal)
   await context.saveRunbookAuthoringProposal?.(proposal)
@@ -992,13 +1044,13 @@ export const hostTools = [
   },
   {
     name: 'propose_runbook_edit',
-    description: 'Create a pending, non-mutating runbook edit proposal for user approval. This never saves changes. For a first proposal, omit parentProposalId; for a revision, pass only the exact proposalId returned by the previous proposal. Never invent a parent id, use a title or slug, or use a zero UUID. Every {{parameter}} placeholder must have a matching action parameter with both id and key. Use ${steps.<index>.output} for a prior action result, not {{action-id.output}}.',
+    description: 'Create a pending, non-mutating runbook edit proposal for user approval. This never saves changes. For a first proposal, omit parentProposalId; for a revision, pass only the exact proposalId returned by the previous proposal. An approved proposal is terminal. To change a saved runbook, omit parentProposalId on the first edit proposal. Never invent a parent id, use a title or slug, or use a zero UUID. Every {{parameter}} placeholder must have a matching action parameter with both id and key. Use ${steps.<index>.output} for a prior action result, not {{action-id.output}}.',
     argsSchema: proposeRunbookEditHostToolSchema,
     handler: async (context: HostToolContext, args: ProposeRunbookEditHostToolInput) => await proposeRunbookEdit(context, args),
   },
   {
     name: 'propose_runbook_create',
-    description: 'Create a pending, non-mutating proposal for a new runbook draft. This never saves changes. For a first proposal, omit parentProposalId; for a revision, pass only the exact proposalId returned by the previous proposal. Never invent a parent id, use a title or slug, or use a zero UUID. Every {{parameter}} placeholder must have a matching action parameter with both id and key. For CVE findings, include linux-cve-status/evaluate_remediation before an LLM summary. Use ${steps.<index>.output} for a prior action result, not {{action-id.output}}.',
+    description: 'Create a pending, non-mutating proposal for a new runbook draft. This never saves changes. For a first proposal, omit parentProposalId; for a revision, pass only the exact proposalId returned by the previous proposal. An approved proposal is terminal. To change a saved runbook, omit parentProposalId on the first edit proposal. Never invent a parent id, use a title or slug, or use a zero UUID. Every {{parameter}} placeholder must have a matching action parameter with both id and key. For CVE findings, include linux-cve-status/evaluate_remediation before an LLM summary. Use ${steps.<index>.output} for a prior action result, not {{action-id.output}}.',
     argsSchema: proposeRunbookCreateHostToolSchema,
     providerArgsSchema: runbookCreateHostToolProviderSchema,
     handler: async (context: HostToolContext, args: ProposeRunbookCreateHostToolInput) => await proposeRunbookCreate(context, args),
