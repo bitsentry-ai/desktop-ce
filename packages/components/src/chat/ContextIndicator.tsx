@@ -69,7 +69,7 @@ export function ContextIndicator({
     : 0;
   const progressPercentage = Math.min(Math.max(contextPercentage, 0), 100);
   const showMeter = hasContextLimit && !usageUnavailable;
-  const radius = 14;
+  const radius = 12;
   const circumference = 2 * Math.PI * radius;
   const strokeDashoffset =
     circumference - (progressPercentage / 100) * circumference;
@@ -107,7 +107,7 @@ export function ContextIndicator({
         <button
           type="button"
           className={cn(
-            "relative flex size-11 shrink-0 items-center justify-center rounded-full",
+            "relative flex size-8 shrink-0 items-center justify-center rounded-full",
             "bg-background/70 backdrop-blur-sm",
             "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
             className,
@@ -115,28 +115,28 @@ export function ContextIndicator({
           aria-label={ariaLabel}
         >
           <svg
-            width="44"
-            height="44"
-            viewBox="0 0 44 44"
+            width="32"
+            height="32"
+            viewBox="0 0 32 32"
             className="-rotate-90"
             aria-hidden="true"
           >
             <circle
-              cx="22"
-              cy="22"
+              cx="16"
+              cy="16"
               r={radius}
               fill="none"
               stroke="currentColor"
-              strokeWidth="4"
+              strokeWidth="3"
               className="text-muted-foreground/30"
             />
             {showMeter && (
               <circle
-                cx="22"
-                cy="22"
+                cx="16"
+                cy="16"
                 r={radius}
                 fill="none"
-                strokeWidth="4"
+                strokeWidth="3"
                 strokeDasharray={circumference}
                 strokeDashoffset={strokeDashoffset}
                 strokeLinecap="round"
