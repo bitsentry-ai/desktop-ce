@@ -400,7 +400,7 @@ export function Composer({
                   onClick={() => { setAttachMenuOpen((v) => !v); }}
                   disabled={isProcessing || isBlocked}
                   className={cn(
-                    "flex size-7 items-center justify-center rounded-full text-muted-foreground transition-colors",
+                    "flex size-8 items-center justify-center rounded-full text-muted-foreground transition-colors",
                     "hover:bg-accent hover:text-foreground/80 disabled:cursor-not-allowed disabled:opacity-50",
                     attachMenuOpen && "bg-accent text-foreground/80",
                   )}

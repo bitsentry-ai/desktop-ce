@@ -71,6 +71,12 @@ function getResultDotClass(status: string): string {
   return "bg-muted-foreground/30";
 }
 
+// Module-level so the accordion state survives Navbar remounts within a window.
+const navbarAccordionState: {
+  open: Set<string>;
+  autoOpenedPath: string | null;
+} = { open: new Set(), autoOpenedPath: null };
+
 const ACCORDION_PAGES = [
   "/app-settings",
   "/settings",
@@ -694,7 +700,12 @@ const Navbar = ({
   const subNavigation = useNavbarSubNavigation();
   const userRoleId = user?.role?.id;
 
-  const [openAccordions, setOpenAccordions] = useState<Set<string>>(new Set());
+  // Persist across remounts: pages such as Incidents render a separate
+  // DashboardLayout for list and detail views, so a nav click that also
+  // changes the view would otherwise remount the navbar and lose the toggle.
+  const [openAccordions, setOpenAccordions] = useState<Set<string>>(
+    () => new Set(navbarAccordionState.open),
+  );
 
   // ── Delete Runbook Dialog ─────────────────────────────────────────────────
   const [runbookToDelete, setRunbookToDelete] = React.useState<{
@@ -922,23 +933,28 @@ const Navbar = ({
 
   // ── Accordion helpers ─────────────────────────────────────────────────────
   const toggleAccordion = (key: string) => {
-    setOpenAccordions((prev) => {
-      const next = new Set(prev);
-      if (next.has(key)) {
-        next.delete(key);
-      } else {
-        next.add(key);
-      }
-      return next;
-    });
+    const next = new Set(navbarAccordionState.open);
+    if (next.has(key)) {
+      next.delete(key);
+    } else {
+      next.add(key);
+    }
+    navbarAccordionState.open = next;
+    setOpenAccordions(next);
   };
 
   React.useEffect(() => {
+    // Auto-open only when the path actually changes. A remount on the same
+    // path (for example closing an incident detail) must keep a user toggle.
+    if (navbarAccordionState.autoOpenedPath === currentPath) return;
+    navbarAccordionState.autoOpenedPath = currentPath;
     if (
       ACCORDION_PAGES.includes(currentPath) ||
       subNavigation[currentPath] !== undefined
     ) {
-      setOpenAccordions((prev) => new Set([...prev, currentPath]));
+      const next = new Set([...navbarAccordionState.open, currentPath]);
+      navbarAccordionState.open = next;
+      setOpenAccordions(next);
     }
   }, [currentPath, subNavigation]);
 

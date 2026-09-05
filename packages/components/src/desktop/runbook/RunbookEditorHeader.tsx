@@ -92,7 +92,8 @@ export function RunbookEditorHeader({
             onDescriptionChange(event.target.value);
           }}
           onBlur={onDescriptionBlur}
-          className="mt-0.5 w-full bg-transparent text-xs text-muted-foreground outline-none placeholder:text-muted-foreground/50"
+          title={runbook.description}
+          className="mt-0.5 w-full truncate bg-transparent text-xs text-muted-foreground outline-none placeholder:text-muted-foreground/50"
           placeholder={t("runbooks.runbook.addADescription")}
         />
       </div>
