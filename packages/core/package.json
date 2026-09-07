@@ -232,6 +232,10 @@
     "./*": {
       "types": "./dist/*.d.ts",
       "default": "./dist/*.js"
+    },
+    "./test/runbook-gateway-contract": {
+      "types": "./tests/runbook-gateway.contract.ts",
+      "default": "./tests/runbook-gateway.contract.ts"
     }
   },
   "scripts": {

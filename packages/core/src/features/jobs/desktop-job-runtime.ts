@@ -45,10 +45,7 @@ export interface UpsertScheduleOptions {
   catchUpWindowHours?: number
 }
 
-export type JobHandler = (
-  payload: unknown,
-  signal: AbortSignal,
-) => Promise<unknown>
+export type JobHandler = (payload: unknown, signal: AbortSignal) => Promise<unknown>
 
 const TICK_INTERVAL_MS = 2000
 const MAX_CONCURRENT = 2
@@ -256,14 +253,14 @@ export class DesktopJobRuntime {
     const controller = this.runningJobs.get(id)
     if (controller !== undefined) {
       controller.abort()
-      this.runningJobs.delete(id)
     }
 
-    const row = await this.db.jobRun.update({
-      where: { id },
+    await this.db.jobRun.updateMany({
+      where: { id, status: { in: ['queued', 'running'] } },
       data: { status: 'cancelled', completedAt: new Date() },
     })
-    return this.toDomain(row)
+    const row = await this.db.jobRun.findUnique({ where: { id } })
+    return row === null ? null : this.toDomain(row)
   }
 
   async retry(id: string): Promise<JobRunRecord | null> {
@@ -275,8 +272,8 @@ export class DesktopJobRuntime {
       return this.toDomain(job)
     }
 
-    const row = await this.db.jobRun.update({
-      where: { id },
+    await this.db.jobRun.updateMany({
+      where: { id, status, attempt: job.attempt },
       data: {
         status: 'queued',
         error: null,
@@ -287,7 +284,8 @@ export class DesktopJobRuntime {
         completedAt: null,
       },
     })
-    return this.toDomain(row)
+    const row = await this.db.jobRun.findUnique({ where: { id } })
+    return row === null ? null : this.toDomain(row)
   }
 
   async getStatus(id: string): Promise<JobRunRecord | null> {
@@ -334,8 +332,7 @@ export class DesktopJobRuntime {
         jobKey: options.jobKey,
         cronExpression: options.cronExpression,
         enabled: options.enabled ?? true,
-        catchUpWindowHours:
-          options.catchUpWindowHours ?? DEFAULT_CATCHUP_WINDOW_HOURS,
+        catchUpWindowHours: options.catchUpWindowHours ?? DEFAULT_CATCHUP_WINDOW_HOURS,
         lastRunAt: null,
         nextRunAt: null,
         createdAt: now,
@@ -344,8 +341,7 @@ export class DesktopJobRuntime {
       update: {
         cronExpression: options.cronExpression,
         enabled: options.enabled ?? true,
-        catchUpWindowHours:
-          options.catchUpWindowHours ?? DEFAULT_CATCHUP_WINDOW_HOURS,
+        catchUpWindowHours: options.catchUpWindowHours ?? DEFAULT_CATCHUP_WINDOW_HOURS,
         updatedAt: now,
       },
     })
@@ -357,7 +353,9 @@ export class DesktopJobRuntime {
   }
 
   async toggleSchedule(jobKey: string, enabled: boolean): Promise<JobScheduleRecord | null> {
-    const existing = await this.db.jobSchedule.findUnique({ where: { jobKey } })
+    const existing = await this.db.jobSchedule.findUnique({
+      where: { jobKey },
+    })
     if (existing === null) return null
     const row = await this.db.jobSchedule.update({
       where: { jobKey },
@@ -376,7 +374,9 @@ export class DesktopJobRuntime {
     })
     const count = result.count
     if (count > 0) {
-      this.dependencies.logger.info(`[jobs] Recovered ${String(count)} stale running job(s) to queued`)
+      this.dependencies.logger.info(
+        `[jobs] Recovered ${String(count)} stale running job(s) to queued`,
+      )
     }
     return count
   }
@@ -438,10 +438,7 @@ export class DesktopJobRuntime {
       const candidates = await this.db.jobRun.findMany({
         where: {
           status: 'queued',
-          OR: [
-            { scheduledAt: null },
-            { scheduledAt: { lte: now } },
-          ],
+          OR: [{ scheduledAt: null }, { scheduledAt: { lte: now } }],
         },
         orderBy: { createdAt: 'asc' },
         take: slotsAvailable,
@@ -449,7 +446,9 @@ export class DesktopJobRuntime {
 
       for (const candidate of candidates) {
         if (this.runningJobs.size >= MAX_CONCURRENT) break
-        void this.executeJob(candidate)
+        void this.executeJob(candidate).catch((error: unknown) => {
+          this.dependencies.logger.error('[jobs] Execution failed:', error)
+        })
       }
     } catch (error) {
       this.dependencies.logger.error('[jobs] Tick error:', error)
@@ -458,21 +457,28 @@ export class DesktopJobRuntime {
 
   private async executeJob(row: DesktopJobRuntimeRow): Promise<void> {
     const job = this.toExecutableJob(row)
-    const handler = this.handlers.get(job.type)
-    if (handler === undefined) {
-      await this.failMissingHandler(job)
-      return
-    }
-
-    await this.markJobRunning(job)
+    if (this.runningJobs.has(job.id)) return
     const controller = new AbortController()
     this.runningJobs.set(job.id, controller)
-    const timeout = setTimeout(() => {
-      controller.abort()
-    }, job.timeoutMs)
-
+    let timeout: ReturnType<typeof setTimeout> | undefined
     try {
+      const claimed = await this.markJobRunning(job)
+      if (!claimed) return
+      const handler = this.handlers.get(job.type)
+      if (handler === undefined) {
+        await this.failMissingHandler(job)
+        return
+      }
+      if (controller.signal.aborted) {
+        await this.failAbortedJob(job)
+        return
+      }
+      timeout = setTimeout(() => controller.abort(), job.timeoutMs)
       const result = await handler(job.payload, controller.signal)
+      if (controller.signal.aborted) {
+        await this.failAbortedJob(job)
+        return
+      }
       await this.completeJob(job, result)
     } catch (error: unknown) {
       await this.handleJobError(job, controller, error)
@@ -494,8 +500,8 @@ export class DesktopJobRuntime {
   }
 
   private async failMissingHandler(job: ExecutableJob): Promise<void> {
-    await this.db.jobRun.update({
-      where: { id: job.id },
+    await this.db.jobRun.updateMany({
+      where: { id: job.id, status: 'running', attempt: job.attempt },
       data: {
         status: 'failed',
         error: `No handler registered for job type: ${job.type}`,
@@ -504,16 +510,17 @@ export class DesktopJobRuntime {
     })
   }
 
-  private async markJobRunning(job: ExecutableJob): Promise<void> {
-    await this.db.jobRun.update({
-      where: { id: job.id },
+  private async markJobRunning(job: ExecutableJob): Promise<boolean> {
+    const claimed = await this.db.jobRun.updateMany({
+      where: { id: job.id, status: 'queued' },
       data: { status: 'running', attempt: job.attempt, startedAt: new Date() },
     })
+    return claimed.count === 1
   }
 
   private async completeJob(job: ExecutableJob, result: unknown): Promise<void> {
-    await this.db.jobRun.update({
-      where: { id: job.id },
+    await this.db.jobRun.updateMany({
+      where: { id: job.id, status: 'running', attempt: job.attempt },
       data: {
         status: 'completed',
         result: serializeNullableJson(result),
@@ -521,7 +528,9 @@ export class DesktopJobRuntime {
       },
     })
 
-    this.dependencies.logger.info(`[jobs] Job ${job.id} (${job.type}) completed on attempt ${String(job.attempt)}`)
+    this.dependencies.logger.info(
+      `[jobs] Job ${job.id} (${job.type}) completed on attempt ${String(job.attempt)}`,
+    )
   }
 
   private async handleJobError(
@@ -548,25 +557,22 @@ export class DesktopJobRuntime {
   }
 
   private async failAbortedJob(job: ExecutableJob): Promise<void> {
-    const current = await this.db.jobRun.findUnique({ where: { id: job.id } })
-    if (current !== null && (current.status as string) !== 'cancelled') {
-      await this.db.jobRun.update({
-        where: { id: job.id },
-        data: {
-          status: 'failed',
-          error: 'Job timed out',
-          completedAt: new Date(),
-        },
-      })
-    }
+    await this.db.jobRun.updateMany({
+      where: { id: job.id, status: 'running', attempt: job.attempt },
+      data: {
+        status: 'failed',
+        error: 'Job timed out',
+        completedAt: new Date(),
+      },
+    })
     this.dependencies.logger.warn(`[jobs] Job ${job.id} (${job.type}) aborted/timed out`)
   }
 
   private async requeueFailedJob(job: ExecutableJob, errorMessage: string): Promise<void> {
     const delayMs = retryDelayMs(job.attempt)
     const nextRun = new Date(Date.now() + delayMs)
-    await this.db.jobRun.update({
-      where: { id: job.id },
+    await this.db.jobRun.updateMany({
+      where: { id: job.id, status: 'running', attempt: job.attempt },
       data: {
         status: 'queued',
         error: errorMessage,
@@ -580,8 +586,8 @@ export class DesktopJobRuntime {
   }
 
   private async failExhaustedJob(job: ExecutableJob, errorMessage: string): Promise<void> {
-    await this.db.jobRun.update({
-      where: { id: job.id },
+    await this.db.jobRun.updateMany({
+      where: { id: job.id, status: 'running', attempt: job.attempt },
       data: {
         status: 'failed',
         error: errorMessage,
@@ -620,14 +626,14 @@ export class DesktopJobRuntime {
       return false
     }
 
-    this.dependencies.logger.warn(`[jobs] Skipping invalid cron expression for ${jobKey}: ${cronExpression}`)
+    this.dependencies.logger.warn(
+      `[jobs] Skipping invalid cron expression for ${jobKey}: ${cronExpression}`,
+    )
     return true
   }
 
   private scheduleCatchUpWindowMs(schedule: DesktopJobRuntimeRow): number {
-    const catchUpWindowHours = Number(
-      schedule.catchUpWindowHours ?? DEFAULT_CATCHUP_WINDOW_HOURS,
-    )
+    const catchUpWindowHours = Number(schedule.catchUpWindowHours ?? DEFAULT_CATCHUP_WINDOW_HOURS)
     return Math.max(1, catchUpWindowHours) * 60 * 60 * 1000
   }
 
@@ -635,7 +641,9 @@ export class DesktopJobRuntime {
     const jobKey = String(schedule.jobKey)
     const intervalMs = this.estimateCronIntervalMs(String(schedule.cronExpression))
     const lastRunAt = nullableDate(schedule.lastRunAt)
-    if (shouldCatchUpSchedule(lastRunAt, nowMs, intervalMs, this.scheduleCatchUpWindowMs(schedule))) {
+    if (
+      shouldCatchUpSchedule(lastRunAt, nowMs, intervalMs, this.scheduleCatchUpWindowMs(schedule))
+    ) {
       await this.enqueueScheduleRun(jobKey, 'catchup')
     }
   }
@@ -667,7 +675,9 @@ export class DesktopJobRuntime {
       where: { jobKey },
       data: {
         lastRunAt: new Date(),
-        nextRunAt: new Date(Date.now() + this.estimateCronIntervalMs(String(current.cronExpression))),
+        nextRunAt: new Date(
+          Date.now() + this.estimateCronIntervalMs(String(current.cronExpression)),
+        ),
       },
     })
   }
@@ -677,9 +687,7 @@ export class DesktopJobRuntime {
       where: { enabled: true },
     })
 
-    const enabledKeys = new Set(
-      schedules.map((schedule) => String(schedule.jobKey)),
-    )
+    const enabledKeys = new Set(schedules.map((schedule) => String(schedule.jobKey)))
     for (const [jobKey, task] of this.scheduledTasks) {
       if (!enabledKeys.has(jobKey)) {
         this.stopTask(task)
@@ -714,10 +722,7 @@ export class DesktopJobRuntime {
     this.catchUpComplete = true
   }
 
-  private async enqueueScheduleRun(
-    jobKey: string,
-    trigger: 'cron' | 'catchup',
-  ): Promise<void> {
+  private async enqueueScheduleRun(jobKey: string, trigger: 'cron' | 'catchup'): Promise<void> {
     if (await this.shouldSkipCurrentScheduleRun(jobKey)) {
       return
     }

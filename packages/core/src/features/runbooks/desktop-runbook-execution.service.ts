@@ -43,7 +43,10 @@ import type {
 } from "./desktop-runbook-result.store";
 import type { DesktopRunbookStore as RunbookStore } from "./desktop-runbook.store";
 import { collectRunbookGlobalReferences } from "./import-export";
-import { resolveCatalogModel, resolveCatalogModelForProvider } from "../llm/modelCatalog";
+import {
+  resolveCatalogModel,
+  resolveCatalogModelForProvider,
+} from "../llm/modelCatalog";
 import type { LogFilterConfig } from "./runbooks.schemas";
 import {
   DEFAULT_RUNBOOK_IDLE_TIMEOUT_MINUTES,
@@ -376,6 +379,7 @@ class RunbookExecutionSnapshotRejectedError extends Error {
 
 interface WaitForCompletionOptions {
   signal?: AbortSignal;
+  pollIntervalMs?: number;
   timeoutMs?: number;
 }
 
@@ -666,36 +670,7 @@ export class RunbookExecutionService {
         signal: callerSignal,
         timeoutMs,
         execute: (signal) =>
-          new Promise<RunbookExecutionRecord | null>((resolve, reject) => {
-            let unsubscribe: (() => void) | undefined;
-            const cleanup = () => {
-              signal.removeEventListener("abort", handleAbort);
-              unsubscribe?.();
-              unsubscribe = undefined;
-            };
-            const handleAbort = () => {
-              cleanup();
-              reject(new Error("Runbook wait cancelled"));
-            };
-
-            if (signal.aborted) {
-              handleAbort();
-              return;
-            }
-
-            unsubscribe = this.subscribe((payload) => {
-              if (
-                payload.executionId !== executionId ||
-                payload.execution.status === "running"
-              ) {
-                return;
-              }
-
-              cleanup();
-              resolve(cloneSharedExecutionSnapshot(payload.execution));
-            });
-            signal.addEventListener("abort", handleAbort, { once: true });
-          }),
+          this.observeCompletion(executionId, signal, options),
       });
     } catch (error) {
       if (error instanceof OrchestrationError && error.kind === "timeout") {
@@ -708,6 +683,70 @@ export class RunbookExecutionService {
     }
   }
 
+  private observeCompletion(
+    executionId: string,
+    signal: AbortSignal,
+    options: WaitForCompletionOptions | undefined,
+  ): Promise<RunbookExecutionRecord | null> {
+    return new Promise<RunbookExecutionRecord | null>((resolve, reject) => {
+      let unsubscribe: (() => void) | undefined;
+      let pollTimer: ReturnType<typeof setTimeout> | undefined;
+      let settled = false;
+      const cleanup = () => {
+        settled = true;
+        clearTimeout(pollTimer);
+        signal.removeEventListener("abort", handleAbort);
+        unsubscribe?.();
+        unsubscribe = undefined;
+      };
+      const handleAbort = () => {
+        cleanup();
+        reject(new Error("Runbook wait cancelled"));
+      };
+
+      if (signal.aborted) {
+        handleAbort();
+        return;
+      }
+
+      unsubscribe = this.subscribe((payload) => {
+        if (
+          payload.executionId !== executionId ||
+          payload.execution.status === "running"
+        ) {
+          return;
+        }
+
+        cleanup();
+        resolve(cloneSharedExecutionSnapshot(payload.execution));
+      });
+      signal.addEventListener("abort", handleAbort, { once: true });
+      // Recheck after subscribing and poll for runs owned by another process.
+      const checkSnapshot = () => {
+        void this.get(executionId).then(
+          (latest) => {
+            if (settled) return;
+            if (latest === null || latest.status !== "running") {
+              cleanup();
+              resolve(latest);
+              return;
+            }
+            pollTimer = setTimeout(
+              checkSnapshot,
+              options?.pollIntervalMs ?? 500,
+            );
+          },
+          (error: unknown) => {
+            if (settled) return;
+            cleanup();
+            reject(error);
+          },
+        );
+      };
+      checkSnapshot();
+    });
+  }
+
   async cancel(executionId: string): Promise<void> {
     const cancellationRequested =
       await this.resultStore.requestExecutionCancellation(executionId);
@@ -718,9 +757,8 @@ export class RunbookExecutionService {
       (session === undefined || session.snapshot.status !== "running")
     ) {
       await this.resultStore.markStaleRunningSessionsFailed();
-      const reconciled = await this.resultStore.getExecutionSnapshotByExecutionId(
-        executionId,
-      );
+      const reconciled =
+        await this.resultStore.getExecutionSnapshotByExecutionId(executionId);
       if (reconciled !== null && reconciled.status !== "running") {
         return;
       }
@@ -795,6 +833,7 @@ export class RunbookExecutionService {
       new Date().toISOString(),
     );
     await this.emitSnapshot(session);
+    if (await this.stopExecutionIfAborted(session)) return false;
 
     try {
       const result = await this.executeStep(
@@ -868,6 +907,7 @@ export class RunbookExecutionService {
   private async completeRunbookExecution(
     session: RunbookExecutionSession,
   ): Promise<void> {
+    if (await this.stopExecutionIfAborted(session)) return;
     const completedAt = new Date().toISOString();
     markSharedExecutionCompleted(session.snapshot, completedAt);
     this.stopIdleWatchdog(session);
@@ -1092,16 +1132,19 @@ export class RunbookExecutionService {
       signal: session.abortController.signal,
       timeoutMs: PLUGIN_ACTION_STEP_TIMEOUT_MS,
       execute: (signal) =>
-        this.pluginRuntime.executeAction({
-          pluginId,
-          actionId: pluginActionId,
-          auth: auth?.value ?? {},
-          input: input?.value ?? {},
-        }, {
-          signal,
-          deadlineAt,
-          executionId: session.snapshot.executionId,
-        }),
+        this.pluginRuntime.executeAction(
+          {
+            pluginId,
+            actionId: pluginActionId,
+            auth: auth?.value ?? {},
+            input: input?.value ?? {},
+          },
+          {
+            signal,
+            deadlineAt,
+            executionId: session.snapshot.executionId,
+          },
+        ),
     });
     this.recordActivity(session);
 
@@ -1172,6 +1215,7 @@ export class RunbookExecutionService {
   private async stopExecutionIfAborted(
     session: RunbookExecutionSession,
   ): Promise<boolean> {
+    if (session.snapshot.status !== "running") return true;
     if (!session.abortController.signal.aborted) {
       return false;
     }
@@ -1720,8 +1764,7 @@ export class RunbookExecutionService {
     // Without this it falls through to the tool-calling remote path, which a
     // local CLI provider cannot serve, and the step "succeeds" with no output.
     const providerKey =
-      input.providerKey ??
-      (await this.resolveDefaultProviderKey(input.model));
+      input.providerKey ?? (await this.resolveDefaultProviderKey(input.model));
 
     if (this.shouldUseDedicatedLocalAiExecution(providerKey)) {
       return this.executeLocalAiStep(
@@ -1767,15 +1810,20 @@ export class RunbookExecutionService {
     let model = llmModel?.value;
     let providerKey = action.llmProviderKey;
     if (model !== undefined && model.trim().length > 0) {
-      const resolved = providerKey === undefined
-        ? resolveCatalogModel(model)
-        : resolveCatalogModelForProvider(providerKey, model);
+      const resolved =
+        providerKey === undefined
+          ? resolveCatalogModel(model)
+          : resolveCatalogModelForProvider(providerKey, model);
       if (resolved === undefined && providerKey === undefined) {
         throw new Error(
           `Unknown LLM model "${model}". Use a model ID or display name from the catalog.`,
         );
       }
-      if (providerKey !== undefined && resolved !== undefined && providerKey !== resolved.providerKey) {
+      if (
+        providerKey !== undefined &&
+        resolved !== undefined &&
+        providerKey !== resolved.providerKey
+      ) {
         throw new Error(
           `LLM model "${model}" belongs to provider "${resolved.providerKey}", not "${providerKey}".`,
         );
@@ -2972,9 +3020,18 @@ export class RunbookExecutionService {
     snapshot: RunbookExecutionRecord,
   ): Promise<boolean> {
     // Resync so subsequent emits line up again; terminal store state wins.
-    const persisted = await this.resultStore.getExecutionSnapshotByResultId(session.resultId);
+    const persisted = await this.resultStore.getExecutionSnapshotByResultId(
+      session.resultId,
+    );
     if (persisted === null || persisted.status !== "running") {
-      if (snapshot.status !== "running") this.stopExecutionHeartbeat(session);
+      if (persisted !== null) {
+        session.snapshot = cloneSharedExecutionSnapshot(persisted);
+        session.abortController.abort();
+        this.stopIdleWatchdog(session);
+        this.stopExecutionHeartbeat(session);
+      } else if (snapshot.status !== "running") {
+        this.stopExecutionHeartbeat(session);
+      }
       return true;
     }
     session.snapshot.snapshotVersion = persisted.snapshotVersion ?? 0;

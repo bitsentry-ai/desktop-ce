@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { createDesktopRunbookGateway } from "../src/features/runbooks/desktop-runbook.gateway";
-import { describeRunbookGatewayContract } from './runbook-gateway.contract'
+import { describeRunbookGatewayContract } from "./runbook-gateway.contract";
 import type {
   RunbookContextV1,
   RunbookExecutionRecord,
@@ -43,7 +43,8 @@ function contextFor(runbook: RunbookRecord): RunbookContextV1 {
     summary: {
       purposeText: runbook.title,
       actionTypeCounts: {
-        shell: runbook.actions.filter((action) => action.type === "shell").length,
+        shell: runbook.actions.filter((action) => action.type === "shell")
+          .length,
         llm: 0,
         http: 0,
         plugin: 0,
@@ -154,7 +155,8 @@ class InMemoryExecutionService {
   async getByRequestKey(runbookId: string, requestKey: string) {
     const match = [...this.executions.values()].find(
       (entry) =>
-        entry.execution.runbookId === runbookId && entry.requestKey === requestKey,
+        entry.execution.runbookId === runbookId &&
+        entry.requestKey === requestKey,
     );
     return match === undefined
       ? null
@@ -187,7 +189,8 @@ describe("DesktopRunbookGateway", () => {
     const gateway = createDesktopRunbookGateway({
       store: {
         list: async () => runbooks,
-        exportContext: async ({ id }) => contextFor(runbooks.find((item) => item.id === id)!),
+        exportContext: async ({ id }) =>
+          contextFor(runbooks.find((item) => item.id === id)!),
         getRunbookOrThrow: async (id) => {
           const selected = runbooks.find((item) => item.id === id);
           if (selected === undefined) throw new Error("Runbook not found");
@@ -200,10 +203,12 @@ describe("DesktopRunbookGateway", () => {
     await expect(gateway.listExecutable()).resolves.toEqual([
       expect.objectContaining({ id: "check-api" }),
     ]);
-    await expect(gateway.getRunbookContext("check-api")).resolves.toMatchObject({
-      runbook: { id: "check-api", revisionNumber: 4 },
-      actions: [expect.objectContaining({ title: "Check service" })],
-    });
+    await expect(gateway.getRunbookContext("check-api")).resolves.toMatchObject(
+      {
+        runbook: { id: "check-api", revisionNumber: 4 },
+        actions: [expect.objectContaining({ title: "Check service" })],
+      },
+    );
 
     const accepted = await gateway.start({
       runbookId: "check-api",
@@ -292,7 +297,10 @@ describe("DesktopRunbookGateway", () => {
     const afterRestart = createDesktopRunbookGateway(dependencies);
     const events: Array<{ executionId: string; status: string }> = [];
     const unsubscribe = afterRestart.subscribe("incident-restart", (event) => {
-      events.push({ executionId: event.executionId, status: event.execution.status });
+      events.push({
+        executionId: event.executionId,
+        status: event.execution.status,
+      });
     });
     await Promise.resolve();
     const replay = await afterRestart.start(request);
@@ -309,7 +317,10 @@ describe("DesktopRunbookGateway", () => {
       resultId: accepted.resultId,
       deduplicated: true,
     });
-    expect(events).toContainEqual({ executionId: accepted.executionId, status: "running" });
+    expect(events).toContainEqual({
+      executionId: accepted.executionId,
+      status: "running",
+    });
   });
 
   it("rejects stale selections and malformed execution requests before a run starts", async () => {
@@ -343,9 +354,11 @@ describe("DesktopRunbookGateway", () => {
   });
 });
 
-describeRunbookGatewayContract('Desktop', () => {
-  const runbooks = [runbook('contract-runbook', 1, 7)];
-  const executionService = new InMemoryExecutionService({ 'contract-runbook': 7 });
+describeRunbookGatewayContract("Desktop", () => {
+  const runbooks = [runbook("contract-runbook", 1, 7)];
+  const executionService = new InMemoryExecutionService({
+    "contract-runbook": 7,
+  });
   const dependencies = {
     store: {
       list: async () => runbooks,
@@ -360,15 +373,52 @@ describeRunbookGatewayContract('Desktop', () => {
     gateway: createDesktopRunbookGateway(dependencies),
     recreateGateway: () => createDesktopRunbookGateway(dependencies),
     request: {
-      runbookId: 'contract-runbook',
-      requestKey: 'incident-contract:contract-runbook',
-      incidentId: 'incident-contract',
-      source: 'agent',
+      runbookId: "contract-runbook",
+      requestKey: "incident-contract:contract-runbook",
+      incidentId: "incident-contract",
+      source: "agent",
     },
     expectedRunbook: {
-      id: 'contract-runbook',
-      title: 'contract-runbook',
+      id: "contract-runbook",
+      title: "contract-runbook",
       revisionNumber: 7,
     },
   };
+});
+
+it("does not replay older history after receiving a live desktop execution", async () => {
+  const executionService = new InMemoryExecutionService();
+  let resolveHistory!: (
+    value: Awaited<
+      ReturnType<typeof executionService.getLatestWithResultForIncidentThread>
+    >,
+  ) => void;
+  executionService.getLatestWithResultForIncidentThread = () =>
+    new Promise((resolve) => {
+      resolveHistory = resolve;
+    });
+  const record = runbook("check-api", 1);
+  const gateway = createDesktopRunbookGateway({
+    store: {
+      list: async () => [record],
+      getRunbookOrThrow: async () => record,
+      exportContext: async () => contextFor(record),
+    },
+    executionService,
+  });
+  const events: string[] = [];
+  const unsubscribe = gateway.subscribe("incident-1", (event) => {
+    events.push(event.executionId);
+  });
+  const started = await executionService.start(record.id, {
+    incidentThreadId: "incident-1",
+  });
+  const latest = await executionService.get(started.executionId);
+  resolveHistory({
+    resultId: "old-result",
+    execution: { ...latest!, executionId: "old-execution" },
+  });
+  await Promise.resolve();
+  expect(events).toEqual([started.executionId]);
+  unsubscribe();
 });

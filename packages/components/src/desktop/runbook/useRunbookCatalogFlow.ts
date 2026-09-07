@@ -1,11 +1,16 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type Dispatch, type SetStateAction } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type Dispatch,
+  type SetStateAction,
+} from "react";
 
 import { preserveDraftActions } from "@bitsentry-ce/core";
 import type { DesktopRpcChannel, RunbookRecord } from "../../services";
-import {
-  getActiveEditingRunbook,
-  cloneRunbook,
-} from "./runbookRecordHelpers";
+import { getActiveEditingRunbook, cloneRunbook } from "./runbookRecordHelpers";
 import {
   readStoredRunbooks,
   replaceRunbookInList,
@@ -35,7 +40,9 @@ type UseRunbookCatalogFlowOptions = {
   activeId: string | null;
   ipcInvoke: DesktopIpcInvoke;
   captureDesktopAnalyticsEvent: CaptureDesktopAnalyticsEvent;
-  summarizeRunbookForTelemetry: (runbook: RunbookRecord) => Record<string, unknown>;
+  summarizeRunbookForTelemetry: (
+    runbook: RunbookRecord,
+  ) => Record<string, unknown>;
   navigateToRunbook: (runbookId: string) => void;
   navigateToRunbooks: () => void;
 };
@@ -66,8 +73,12 @@ export function useRunbookCatalogFlow({
   // Mirrors `runbooks` so callers can derive the next list without reading stale
   // state from an async callback, and without doing it inside a state updater.
   const runbooksRef = useRef<RunbookRecord[]>([]);
+  const activeIdRef = useRef(activeId);
+  activeIdRef.current = activeId;
   // Non-zero while this hook is dispatching, so it can skip its own broadcast.
   const selfDispatchDepthRef = useRef(0);
+  const libraryVersionRef = useRef(0);
+  const refreshSequenceRef = useRef(0);
 
   const syncRunbooksCache = useCallback((nextRunbooks: RunbookRecord[]) => {
     try {
@@ -77,6 +88,7 @@ export function useRunbookCatalogFlow({
 
   const commitRunbooks = useCallback(
     (nextRunbooks: RunbookRecord[]) => {
+      libraryVersionRef.current += 1;
       runbooksRef.current = nextRunbooks;
       setRunbooks(nextRunbooks);
       syncRunbooksCache(nextRunbooks);
@@ -98,20 +110,43 @@ export function useRunbookCatalogFlow({
   }, []);
 
   const refreshRunbooks = useCallback(async () => {
+    const sequence = ++refreshSequenceRef.current;
     setLoading(true);
     try {
-      const result = await ipcInvoke<RunbookRecord[]>("runbooks:list", {});
-      commitRunbooks(result);
-      return result;
+      while (sequence === refreshSequenceRef.current) {
+        const version = libraryVersionRef.current;
+        const result = await ipcInvoke<RunbookRecord[]>("runbooks:list", {});
+        if (sequence !== refreshSequenceRef.current) return runbooksRef.current;
+        // A save or delete during the read makes that response obsolete.
+        if (version !== libraryVersionRef.current) continue;
+        commitRunbooks(result);
+        return result;
+      }
+      return runbooksRef.current;
     } finally {
-      setLoading(false);
+      if (sequence === refreshSequenceRef.current) setLoading(false);
     }
   }, [commitRunbooks, ipcInvoke]);
 
   const replaceRunbook = useCallback(
     (updated: RunbookRecord, draftMode: DraftReconcileMode = "adopt") => {
+      const current = runbooksRef.current.find(
+        (runbook) => runbook.id === updated.id,
+      );
+      if (
+        current !== undefined &&
+        current.revisionNumber > updated.revisionNumber
+      )
+        return;
       commitRunbooks(replaceRunbookInList(runbooksRef.current, updated));
       setEditingRunbook((prev) => {
+        if (activeIdRef.current !== updated.id) return prev;
+        if (
+          prev !== null &&
+          prev.id === updated.id &&
+          prev.revisionNumber > updated.revisionNumber
+        )
+          return prev;
         if (draftMode === "preserve-actions") {
           return preserveDraftActions(prev, updated);
         }
@@ -160,16 +195,13 @@ export function useRunbookCatalogFlow({
         }
       } catch (error) {
         console.error("Failed to load runbooks:", error);
-        if (!cancelled) {
-          runbooksRef.current = [];
-          setRunbooks([]);
-        }
       }
     };
 
     void loadRunbooks();
     return () => {
       cancelled = true;
+      refreshSequenceRef.current += 1;
     };
   }, [refreshRunbooks]);
 
@@ -186,7 +218,7 @@ export function useRunbookCatalogFlow({
         typeof event.detail === "object" &&
         event.detail !== null &&
         "runbook" in event.detail
-          ? event.detail.runbook as RunbookRecord
+          ? (event.detail.runbook as RunbookRecord)
           : undefined;
       const nextRunbooks =
         updatedRunbook === undefined
@@ -202,7 +234,10 @@ export function useRunbookCatalogFlow({
       }
     };
 
-    window.addEventListener("bitsentry:runbooks-updated", handleRunbooksUpdated);
+    window.addEventListener(
+      "bitsentry:runbooks-updated",
+      handleRunbooksUpdated,
+    );
     return () => {
       window.removeEventListener(
         "bitsentry:runbooks-updated",
@@ -275,7 +310,10 @@ export function useRunbookCatalogFlow({
     activeEditingRunbook: RunbookRecord | null;
     activeRunbook: RunbookRecord | null;
     editingRunbook: RunbookRecord | null;
-    handleDeleteSuccess: (nextRunbooks: RunbookRecord[], nextRunbook: RunbookRecord | null) => void;
+    handleDeleteSuccess: (
+      nextRunbooks: RunbookRecord[],
+      nextRunbook: RunbookRecord | null,
+    ) => void;
     handleNew: () => Promise<void>;
     loading: boolean;
     refreshRunbooks: () => Promise<RunbookRecord[]>;
