@@ -54,6 +54,17 @@ function harness() {
 }
 
 describe("desktop job state races", () => {
+  it("does not requeue a job claimed while a retry request was awaiting its read", async () => {
+    const { row, runtime } = harness();
+    row.status = "failed";
+    const retry = runtime.retry("job-1");
+    row.status = "running";
+    row.attempt = 1;
+    await retry;
+    expect(row.status).toBe("running");
+    expect(row.attempt).toBe(1);
+  });
+
   it("keeps cancellation when a handler ignores abort and returns successfully", async () => {
     const { row, runtime, execute } = harness();
     let finish!: (result: unknown) => void;

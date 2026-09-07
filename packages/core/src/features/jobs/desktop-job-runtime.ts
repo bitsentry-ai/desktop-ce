@@ -275,8 +275,8 @@ export class DesktopJobRuntime {
       return this.toDomain(job)
     }
 
-    const row = await this.db.jobRun.update({
-      where: { id },
+    await this.db.jobRun.updateMany({
+      where: { id, status, attempt: job.attempt },
       data: {
         status: 'queued',
         error: null,
@@ -287,7 +287,8 @@ export class DesktopJobRuntime {
         completedAt: null,
       },
     })
-    return this.toDomain(row)
+    const row = await this.db.jobRun.findUnique({ where: { id } })
+    return row === null ? null : this.toDomain(row)
   }
 
   async getStatus(id: string): Promise<JobRunRecord | null> {
