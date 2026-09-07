@@ -70,6 +70,8 @@ export function useRunbookCatalogFlow({
   activeIdRef.current = activeId;
   // Non-zero while this hook is dispatching, so it can skip its own broadcast.
   const selfDispatchDepthRef = useRef(0);
+  const libraryVersionRef = useRef(0);
+  const refreshSequenceRef = useRef(0);
 
   const syncRunbooksCache = useCallback((nextRunbooks: RunbookRecord[]) => {
     try {
@@ -79,6 +81,7 @@ export function useRunbookCatalogFlow({
 
   const commitRunbooks = useCallback(
     (nextRunbooks: RunbookRecord[]) => {
+      libraryVersionRef.current += 1;
       runbooksRef.current = nextRunbooks;
       setRunbooks(nextRunbooks);
       syncRunbooksCache(nextRunbooks);
@@ -100,13 +103,21 @@ export function useRunbookCatalogFlow({
   }, []);
 
   const refreshRunbooks = useCallback(async () => {
+    const sequence = ++refreshSequenceRef.current;
     setLoading(true);
     try {
-      const result = await ipcInvoke<RunbookRecord[]>("runbooks:list", {});
-      commitRunbooks(result);
-      return result;
+      while (sequence === refreshSequenceRef.current) {
+        const version = libraryVersionRef.current;
+        const result = await ipcInvoke<RunbookRecord[]>("runbooks:list", {});
+        if (sequence !== refreshSequenceRef.current) return runbooksRef.current;
+        // A save or delete during the read makes that response obsolete.
+        if (version !== libraryVersionRef.current) continue;
+        commitRunbooks(result);
+        return result;
+      }
+      return runbooksRef.current;
     } finally {
-      setLoading(false);
+      if (sequence === refreshSequenceRef.current) setLoading(false);
     }
   }, [commitRunbooks, ipcInvoke]);
 
