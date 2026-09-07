@@ -256,7 +256,6 @@ export class DesktopJobRuntime {
     const controller = this.runningJobs.get(id)
     if (controller !== undefined) {
       controller.abort()
-      this.runningJobs.delete(id)
     }
 
     const row = await this.db.jobRun.update({
