@@ -470,8 +470,16 @@ export class DesktopJobRuntime {
         await this.failMissingHandler(job)
         return
       }
+      if (controller.signal.aborted) {
+        await this.failAbortedJob(job)
+        return
+      }
       timeout = setTimeout(() => controller.abort(), job.timeoutMs)
       const result = await handler(job.payload, controller.signal)
+      if (controller.signal.aborted) {
+        await this.failAbortedJob(job)
+        return
+      }
       await this.completeJob(job, result)
     } catch (error: unknown) {
       await this.handleJobError(job, controller, error)
