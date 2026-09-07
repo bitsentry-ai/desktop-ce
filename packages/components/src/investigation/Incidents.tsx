@@ -3053,7 +3053,7 @@ export default function IncidentsPage() {
               <div
                 ref={scrollContainerRef}
                 className={cn(
-                  "absolute inset-0 overflow-y-auto px-6 pb-6 space-y-5 page-enter",
+                  "absolute inset-0 overflow-y-auto overflow-x-hidden px-6 pb-6 space-y-5 page-enter",
                   messagesTopPaddingClass,
                 )}
               >
