@@ -47,6 +47,9 @@ function makeProposal(
     approvalRequired: true,
     saved: false,
     proposalId: "proposal-1",
+    artifactId: "artifact-1",
+    artifactVersion: 1,
+    isLatest: true,
     kind: "create_new_runbook",
     incidentThreadId: "incident-1",
     proposedRunbook: {
@@ -105,6 +108,7 @@ function makeAgent(
     approveRunbookAuthoringProposal: vi.fn(),
     rejectRunbookAuthoringProposal: vi.fn(),
     requestRunbookAuthoringRevision: vi.fn(),
+    restoreRunbookAuthoringProposal: vi.fn(),
     onEvent: vi.fn(),
     ...overrides,
   };
