@@ -70,7 +70,7 @@ function UserChatBubble({ msg }: { msg: UserMessage }) {
       )
     : null;
   const textContent = msg.text.length > 0
-    ? <div className="whitespace-pre-wrap">{msg.text}</div>
+    ? <div className="whitespace-pre-wrap break-words">{msg.text}</div>
     : null;
 
   return (
