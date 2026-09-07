@@ -258,11 +258,12 @@ export class DesktopJobRuntime {
       controller.abort()
     }
 
-    const row = await this.db.jobRun.update({
-      where: { id },
+    await this.db.jobRun.updateMany({
+      where: { id, status: { in: ['queued', 'running'] } },
       data: { status: 'cancelled', completedAt: new Date() },
     })
-    return this.toDomain(row)
+    const row = await this.db.jobRun.findUnique({ where: { id } })
+    return row === null ? null : this.toDomain(row)
   }
 
   async retry(id: string): Promise<JobRunRecord | null> {
