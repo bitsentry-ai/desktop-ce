@@ -1,11 +1,16 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type Dispatch, type SetStateAction } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type Dispatch,
+  type SetStateAction,
+} from "react";
 
 import { preserveDraftActions } from "@bitsentry-ce/core";
 import type { DesktopRpcChannel, RunbookRecord } from "../../services";
-import {
-  getActiveEditingRunbook,
-  cloneRunbook,
-} from "./runbookRecordHelpers";
+import { getActiveEditingRunbook, cloneRunbook } from "./runbookRecordHelpers";
 import {
   readStoredRunbooks,
   replaceRunbookInList,
@@ -35,7 +40,9 @@ type UseRunbookCatalogFlowOptions = {
   activeId: string | null;
   ipcInvoke: DesktopIpcInvoke;
   captureDesktopAnalyticsEvent: CaptureDesktopAnalyticsEvent;
-  summarizeRunbookForTelemetry: (runbook: RunbookRecord) => Record<string, unknown>;
+  summarizeRunbookForTelemetry: (
+    runbook: RunbookRecord,
+  ) => Record<string, unknown>;
   navigateToRunbook: (runbookId: string) => void;
   navigateToRunbooks: () => void;
 };
@@ -188,10 +195,6 @@ export function useRunbookCatalogFlow({
         }
       } catch (error) {
         console.error("Failed to load runbooks:", error);
-        if (!cancelled) {
-          runbooksRef.current = [];
-          setRunbooks([]);
-        }
       }
     };
 
@@ -215,7 +218,7 @@ export function useRunbookCatalogFlow({
         typeof event.detail === "object" &&
         event.detail !== null &&
         "runbook" in event.detail
-          ? event.detail.runbook as RunbookRecord
+          ? (event.detail.runbook as RunbookRecord)
           : undefined;
       const nextRunbooks =
         updatedRunbook === undefined
@@ -231,7 +234,10 @@ export function useRunbookCatalogFlow({
       }
     };
 
-    window.addEventListener("bitsentry:runbooks-updated", handleRunbooksUpdated);
+    window.addEventListener(
+      "bitsentry:runbooks-updated",
+      handleRunbooksUpdated,
+    );
     return () => {
       window.removeEventListener(
         "bitsentry:runbooks-updated",
@@ -304,7 +310,10 @@ export function useRunbookCatalogFlow({
     activeEditingRunbook: RunbookRecord | null;
     activeRunbook: RunbookRecord | null;
     editingRunbook: RunbookRecord | null;
-    handleDeleteSuccess: (nextRunbooks: RunbookRecord[], nextRunbook: RunbookRecord | null) => void;
+    handleDeleteSuccess: (
+      nextRunbooks: RunbookRecord[],
+      nextRunbook: RunbookRecord | null,
+    ) => void;
     handleNew: () => Promise<void>;
     loading: boolean;
     refreshRunbooks: () => Promise<RunbookRecord[]>;
