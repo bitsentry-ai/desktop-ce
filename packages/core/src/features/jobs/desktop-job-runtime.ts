@@ -501,8 +501,8 @@ export class DesktopJobRuntime {
   }
 
   private async failMissingHandler(job: ExecutableJob): Promise<void> {
-    await this.db.jobRun.update({
-      where: { id: job.id },
+    await this.db.jobRun.updateMany({
+      where: { id: job.id, status: 'running', attempt: job.attempt },
       data: {
         status: 'failed',
         error: `No handler registered for job type: ${job.type}`,
@@ -520,8 +520,8 @@ export class DesktopJobRuntime {
   }
 
   private async completeJob(job: ExecutableJob, result: unknown): Promise<void> {
-    await this.db.jobRun.update({
-      where: { id: job.id },
+    await this.db.jobRun.updateMany({
+      where: { id: job.id, status: 'running', attempt: job.attempt },
       data: {
         status: 'completed',
         result: serializeNullableJson(result),
@@ -529,7 +529,9 @@ export class DesktopJobRuntime {
       },
     })
 
-    this.dependencies.logger.info(`[jobs] Job ${job.id} (${job.type}) completed on attempt ${String(job.attempt)}`)
+    this.dependencies.logger.info(
+      `[jobs] Job ${job.id} (${job.type}) completed on attempt ${String(job.attempt)}`,
+    )
   }
 
   private async handleJobError(
@@ -556,25 +558,22 @@ export class DesktopJobRuntime {
   }
 
   private async failAbortedJob(job: ExecutableJob): Promise<void> {
-    const current = await this.db.jobRun.findUnique({ where: { id: job.id } })
-    if (current !== null && (current.status as string) !== 'cancelled') {
-      await this.db.jobRun.update({
-        where: { id: job.id },
-        data: {
-          status: 'failed',
-          error: 'Job timed out',
-          completedAt: new Date(),
-        },
-      })
-    }
+    await this.db.jobRun.updateMany({
+      where: { id: job.id, status: 'running', attempt: job.attempt },
+      data: {
+        status: 'failed',
+        error: 'Job timed out',
+        completedAt: new Date(),
+      },
+    })
     this.dependencies.logger.warn(`[jobs] Job ${job.id} (${job.type}) aborted/timed out`)
   }
 
   private async requeueFailedJob(job: ExecutableJob, errorMessage: string): Promise<void> {
     const delayMs = retryDelayMs(job.attempt)
     const nextRun = new Date(Date.now() + delayMs)
-    await this.db.jobRun.update({
-      where: { id: job.id },
+    await this.db.jobRun.updateMany({
+      where: { id: job.id, status: 'running', attempt: job.attempt },
       data: {
         status: 'queued',
         error: errorMessage,
@@ -588,8 +587,8 @@ export class DesktopJobRuntime {
   }
 
   private async failExhaustedJob(job: ExecutableJob, errorMessage: string): Promise<void> {
-    await this.db.jobRun.update({
-      where: { id: job.id },
+    await this.db.jobRun.updateMany({
+      where: { id: job.id, status: 'running', attempt: job.attempt },
       data: {
         status: 'failed',
         error: errorMessage,
