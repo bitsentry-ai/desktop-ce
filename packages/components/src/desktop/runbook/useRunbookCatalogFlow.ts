@@ -112,9 +112,23 @@ export function useRunbookCatalogFlow({
 
   const replaceRunbook = useCallback(
     (updated: RunbookRecord, draftMode: DraftReconcileMode = "adopt") => {
+      const current = runbooksRef.current.find(
+        (runbook) => runbook.id === updated.id,
+      );
+      if (
+        current !== undefined &&
+        current.revisionNumber > updated.revisionNumber
+      )
+        return;
       commitRunbooks(replaceRunbookInList(runbooksRef.current, updated));
       setEditingRunbook((prev) => {
         if (activeIdRef.current !== updated.id) return prev;
+        if (
+          prev !== null &&
+          prev.id === updated.id &&
+          prev.revisionNumber > updated.revisionNumber
+        )
+          return prev;
         if (draftMode === "preserve-actions") {
           return preserveDraftActions(prev, updated);
         }

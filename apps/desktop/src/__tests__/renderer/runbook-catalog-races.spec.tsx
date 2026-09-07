@@ -45,4 +45,31 @@ describe("runbook catalog save races", () => {
       "Saved first",
     );
   });
+
+  it("ignores an older save response for the same runbook", async () => {
+    const { result } = renderHook(() =>
+      useRunbookCatalogFlow({ ...options, activeId: "a" }),
+    );
+    await act(async () => {
+      await Promise.resolve();
+    });
+    act(() => {
+      result.current.replaceRunbook({
+        ...first,
+        revisionNumber: 3,
+        title: "Newest",
+      });
+    });
+    act(() => {
+      result.current.replaceRunbook({
+        ...first,
+        revisionNumber: 2,
+        title: "Old",
+      });
+    });
+    expect(result.current.editingRunbook?.title).toBe("Newest");
+    expect(
+      result.current.runbooks.find((item) => item.id === "a")?.revisionNumber,
+    ).toBe(3);
+  });
 });
