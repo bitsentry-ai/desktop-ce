@@ -98,7 +98,7 @@ export function ContextIndicator({
           used: formatCompact(total),
           limit: formatCompact(contextLimit),
         })
-    : t("common.contextIndicator.totalProcessedSummary", {
+    : t("common.contextIndicator.lastRequestSummary", {
         total: formatVerbose(totalProcessed),
       });
   const progressLabel = hasContextLimit
@@ -204,7 +204,7 @@ export function ContextIndicator({
           {totalProcessed > 0 && (
             <div className="mt-3 flex items-baseline justify-between gap-4 text-sm">
               <span className="text-muted-foreground">
-                {t("common.contextIndicator.totalProcessed")}
+                {t("common.contextIndicator.lastRequest")}
               </span>
               <span className="font-medium tabular-nums">
                 {formatCompact(totalProcessed)}
