@@ -48,6 +48,8 @@ export interface StreamDeltaRecord {
 }
 
 export interface AgentThreadTokenUsage {
+  kind?: "estimate" | "actual";
+  observedAt?: string;
   inputTokens: number;
   outputTokens: number;
   contextTokens?: number;

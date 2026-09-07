@@ -84,6 +84,8 @@ export interface SandboxTokenBudgetMetadata {
 export interface TokenUsageEvent extends AgentEvent {
   type: 'token_usage'
   tokenUsage: {
+    kind?: 'estimate' | 'actual'
+    observedAt?: string
     inputTokens: number
     outputTokens: number
     contextTokens?: number
@@ -166,6 +168,8 @@ export interface StreamDeltaRecord {
 }
 
 export interface AgentThreadTokenUsage {
+  kind?: 'estimate' | 'actual'
+  observedAt?: string
   inputTokens: number
   outputTokens: number
   contextTokens?: number

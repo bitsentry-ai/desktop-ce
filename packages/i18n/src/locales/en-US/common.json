@@ -160,7 +160,7 @@
   "common.contextIndicator.inputOutput": "Input: {{input}} tokens · Output: {{output}} tokens",
   "common.contextIndicator.totalProcessed": "Total processed",
   "common.contextIndicator.totalProcessedSummary": "Total processed: {{total}} tokens",
-  "common.contextIndicator.automaticCompaction": "Context for {{provider}} compacts automatically when needed.",
+  "common.contextIndicator.automaticCompaction": "Context for {{provider}} is compacted when the estimated request reaches {{threshold}} tokens.",
   "common.contextIndicator.defaultProvider": "this model",
   "common.dataPolicySettingsSection.disabled": "Disabled",
   "common.dataPolicySettingsSection.enabled": "Enabled",

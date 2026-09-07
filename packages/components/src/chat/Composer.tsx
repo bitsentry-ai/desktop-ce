@@ -282,15 +282,18 @@ export function Composer({
   }
 
   let contextIndicator: ReactNode = null;
+  const actualUsage = tokenUsage?.kind === "estimate" ? undefined : tokenUsage;
   if (tokenUsage !== undefined || contextWindowLimit !== undefined) {
     contextIndicator = (
       <ContextIndicator
-        inputTokens={tokenUsage?.inputTokens ?? 0}
-        outputTokens={tokenUsage?.outputTokens ?? 0}
-        contextTokens={tokenUsage?.contextTokens}
+        inputTokens={actualUsage?.inputTokens ?? 0}
+        outputTokens={actualUsage?.outputTokens ?? 0}
+        contextTokens={actualUsage?.contextTokens}
         contextLimit={tokenUsage?.contextLimit ?? contextWindowLimit}
+        kind={tokenUsage?.kind}
+        sandboxTokenBudget={tokenUsage?.sandboxTokenBudget}
         providerDisplayName={selectedModelCapability?.displayName}
-        usageUnavailable={tokenUsage === undefined && contextWindowLimit !== undefined}
+        usageUnavailable={actualUsage === undefined}
       />
     );
   }

@@ -160,7 +160,7 @@
   "common.contextIndicator.inputOutput": "Entrée : {{input}} tokens · Sortie : {{output}} tokens",
   "common.contextIndicator.totalProcessed": "Total traité",
   "common.contextIndicator.totalProcessedSummary": "Total traité : {{total}} tokens",
-  "common.contextIndicator.automaticCompaction": "Le contexte de {{provider}} est compacté automatiquement lorsque nécessaire.",
+  "common.contextIndicator.automaticCompaction": "Le contexte de {{provider}} est compacté lorsque la requête estimée atteint {{threshold}} tokens.",
   "common.contextIndicator.defaultProvider": "ce modèle",
   "common.dataPolicySettingsSection.disabled": "Désactivé",
   "common.dataPolicySettingsSection.enabled": "Activé",

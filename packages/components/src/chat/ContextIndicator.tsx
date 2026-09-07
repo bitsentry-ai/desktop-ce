@@ -1,8 +1,11 @@
 import * as HoverCard from "@radix-ui/react-hover-card";
 import { useTranslation } from "@bitsentry-ce/i18n";
 import { cn } from "../lib/utils";
+import type { SandboxTokenBudgetMetadata } from "@bitsentry-ce/core/features/agent-runtime";
 
 interface ContextIndicatorProps {
+  kind?: "estimate" | "actual";
+  sandboxTokenBudget?: SandboxTokenBudgetMetadata;
   inputTokens: number;
   outputTokens: number;
   contextTokens?: number;
@@ -49,15 +52,25 @@ function getMeterClasses(
 }
 
 export function ContextIndicator({
+  kind,
+  sandboxTokenBudget,
   inputTokens,
   outputTokens,
   contextTokens,
   contextLimit,
   providerDisplayName,
-  usageUnavailable = false,
+  usageUnavailable: unavailable = false,
   className,
 }: ContextIndicatorProps) {
   const { t } = useTranslation();
+  const usageUnavailable = unavailable || kind === "estimate";
+  const compactionThreshold = sandboxTokenBudget === undefined
+    ? undefined
+    : Math.min(
+        sandboxTokenBudget.inputLimit,
+        sandboxTokenBudget.costThreshold ?? Infinity,
+        sandboxTokenBudget.accountRequestCeiling ?? Infinity,
+      );
   const totalProcessed = inputTokens + outputTokens;
   const total = contextTokens ?? totalProcessed;
   const hasContextLimit = contextLimit !== undefined && contextLimit > 0;
@@ -198,9 +211,14 @@ export function ContextIndicator({
               </span>
             </div>
           )}
-          <p className="mt-3 text-sm leading-5 text-muted-foreground">
-            {t("common.contextIndicator.automaticCompaction", { provider })}
-          </p>
+          {compactionThreshold !== undefined && (
+            <p className="mt-3 text-sm leading-5 text-muted-foreground">
+              {t("common.contextIndicator.automaticCompaction", {
+                provider,
+                threshold: formatVerbose(compactionThreshold),
+              })}
+            </p>
+          )}
         </HoverCard.Content>
       </HoverCard.Portal>
     </HoverCard.Root>

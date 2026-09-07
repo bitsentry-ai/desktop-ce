@@ -160,7 +160,7 @@
   "common.contextIndicator.inputOutput": "Input: {{input}} token · Output: {{output}} token",
   "common.contextIndicator.totalProcessed": "Total diproses",
   "common.contextIndicator.totalProcessedSummary": "Total diproses: {{total}} token",
-  "common.contextIndicator.automaticCompaction": "Konteks untuk {{provider}} dikompaksi otomatis saat diperlukan.",
+  "common.contextIndicator.automaticCompaction": "Konteks untuk {{provider}} dikompaksi saat estimasi permintaan mencapai {{threshold}} token.",
   "common.contextIndicator.defaultProvider": "model ini",
   "common.dataPolicySettingsSection.disabled": "Dinonaktifkan",
   "common.dataPolicySettingsSection.enabled": "Diaktifkan",
