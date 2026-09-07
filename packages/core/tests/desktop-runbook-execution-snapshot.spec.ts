@@ -87,7 +87,7 @@ class FakeResultStore implements RunbookResultPersistence {
     if (this.snapshot.status === "running" && this.nextTerminalStatus !== null) {
       this.snapshot.status = this.nextTerminalStatus;
       this.snapshot.completedAt = "2026-08-03T00:05:00.000Z";
-      this.snapshot.errorMessage = "Execution finalized by another owner.";
+      this.snapshot.completionReason = "app_shutdown";
       this.nextTerminalStatus = null;
     }
     return "accepted";
@@ -282,7 +282,7 @@ describe("RunbookExecutionService snapshot persistence", () => {
     expect(store.snapshot).toMatchObject({
       executionId: started.executionId,
       status: "failed",
-      errorMessage: "Execution finalized by another owner.",
+      completionReason: "app_shutdown",
     });
     expect(store.writes.at(-1)?.status).toBe("running");
     expect(store.completedControls).toEqual([]);
