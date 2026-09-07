@@ -198,6 +198,7 @@ export function useRunbookCatalogFlow({
     void loadRunbooks();
     return () => {
       cancelled = true;
+      refreshSequenceRef.current += 1;
     };
   }, [refreshRunbooks]);
 

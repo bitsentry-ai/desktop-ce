@@ -609,6 +609,8 @@ export function DesktopStateBootstrap({
 
   useEffect(() => {
     if (!ready) return;
+    let active = true;
+    let refreshSequence = 0;
 
     const handleRunbooksUpdated = () => {
       scheduleDesktopStateSync(runbookTimerRef, hydrateInProgressRef, syncFns.syncRunbooks);
@@ -640,13 +642,14 @@ export function DesktopStateBootstrap({
       },
     );
     const unsubscribeRunbookChanges = subscribeToRunbookChangeEvents(() => {
+      const sequence = ++refreshSequence;
       void (async () => {
         try {
           const snapshot = await ipcInvoke<DesktopProductStateSnapshot>(
             "desktopState:bootstrap",
             readLocalSnapshot(),
           );
-          if (hydrateInProgressRef.current) return;
+          if (!active || sequence !== refreshSequence || hydrateInProgressRef.current) return;
 
           const localSnapshot = readLocalSnapshot();
           writeLocalSnapshot({
@@ -665,6 +668,7 @@ export function DesktopStateBootstrap({
     });
 
     return () => {
+      active = false;
       window.removeEventListener(
         "bitsentry:runbooks-updated",
         handleRunbooksUpdated,
