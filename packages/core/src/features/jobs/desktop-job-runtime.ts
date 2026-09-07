@@ -45,10 +45,7 @@ export interface UpsertScheduleOptions {
   catchUpWindowHours?: number
 }
 
-export type JobHandler = (
-  payload: unknown,
-  signal: AbortSignal,
-) => Promise<unknown>
+export type JobHandler = (payload: unknown, signal: AbortSignal) => Promise<unknown>
 
 const TICK_INTERVAL_MS = 2000
 const MAX_CONCURRENT = 2
@@ -335,8 +332,7 @@ export class DesktopJobRuntime {
         jobKey: options.jobKey,
         cronExpression: options.cronExpression,
         enabled: options.enabled ?? true,
-        catchUpWindowHours:
-          options.catchUpWindowHours ?? DEFAULT_CATCHUP_WINDOW_HOURS,
+        catchUpWindowHours: options.catchUpWindowHours ?? DEFAULT_CATCHUP_WINDOW_HOURS,
         lastRunAt: null,
         nextRunAt: null,
         createdAt: now,
@@ -345,8 +341,7 @@ export class DesktopJobRuntime {
       update: {
         cronExpression: options.cronExpression,
         enabled: options.enabled ?? true,
-        catchUpWindowHours:
-          options.catchUpWindowHours ?? DEFAULT_CATCHUP_WINDOW_HOURS,
+        catchUpWindowHours: options.catchUpWindowHours ?? DEFAULT_CATCHUP_WINDOW_HOURS,
         updatedAt: now,
       },
     })
@@ -358,7 +353,9 @@ export class DesktopJobRuntime {
   }
 
   async toggleSchedule(jobKey: string, enabled: boolean): Promise<JobScheduleRecord | null> {
-    const existing = await this.db.jobSchedule.findUnique({ where: { jobKey } })
+    const existing = await this.db.jobSchedule.findUnique({
+      where: { jobKey },
+    })
     if (existing === null) return null
     const row = await this.db.jobSchedule.update({
       where: { jobKey },
@@ -377,7 +374,9 @@ export class DesktopJobRuntime {
     })
     const count = result.count
     if (count > 0) {
-      this.dependencies.logger.info(`[jobs] Recovered ${String(count)} stale running job(s) to queued`)
+      this.dependencies.logger.info(
+        `[jobs] Recovered ${String(count)} stale running job(s) to queued`,
+      )
     }
     return count
   }
@@ -439,10 +438,7 @@ export class DesktopJobRuntime {
       const candidates = await this.db.jobRun.findMany({
         where: {
           status: 'queued',
-          OR: [
-            { scheduledAt: null },
-            { scheduledAt: { lte: now } },
-          ],
+          OR: [{ scheduledAt: null }, { scheduledAt: { lte: now } }],
         },
         orderBy: { createdAt: 'asc' },
         take: slotsAvailable,
@@ -450,7 +446,9 @@ export class DesktopJobRuntime {
 
       for (const candidate of candidates) {
         if (this.runningJobs.size >= MAX_CONCURRENT) break
-        void this.executeJob(candidate)
+        void this.executeJob(candidate).catch((error: unknown) => {
+          this.dependencies.logger.error('[jobs] Execution failed:', error)
+        })
       }
     } catch (error) {
       this.dependencies.logger.error('[jobs] Tick error:', error)
@@ -628,14 +626,14 @@ export class DesktopJobRuntime {
       return false
     }
 
-    this.dependencies.logger.warn(`[jobs] Skipping invalid cron expression for ${jobKey}: ${cronExpression}`)
+    this.dependencies.logger.warn(
+      `[jobs] Skipping invalid cron expression for ${jobKey}: ${cronExpression}`,
+    )
     return true
   }
 
   private scheduleCatchUpWindowMs(schedule: DesktopJobRuntimeRow): number {
-    const catchUpWindowHours = Number(
-      schedule.catchUpWindowHours ?? DEFAULT_CATCHUP_WINDOW_HOURS,
-    )
+    const catchUpWindowHours = Number(schedule.catchUpWindowHours ?? DEFAULT_CATCHUP_WINDOW_HOURS)
     return Math.max(1, catchUpWindowHours) * 60 * 60 * 1000
   }
 
@@ -643,7 +641,9 @@ export class DesktopJobRuntime {
     const jobKey = String(schedule.jobKey)
     const intervalMs = this.estimateCronIntervalMs(String(schedule.cronExpression))
     const lastRunAt = nullableDate(schedule.lastRunAt)
-    if (shouldCatchUpSchedule(lastRunAt, nowMs, intervalMs, this.scheduleCatchUpWindowMs(schedule))) {
+    if (
+      shouldCatchUpSchedule(lastRunAt, nowMs, intervalMs, this.scheduleCatchUpWindowMs(schedule))
+    ) {
       await this.enqueueScheduleRun(jobKey, 'catchup')
     }
   }
@@ -675,7 +675,9 @@ export class DesktopJobRuntime {
       where: { jobKey },
       data: {
         lastRunAt: new Date(),
-        nextRunAt: new Date(Date.now() + this.estimateCronIntervalMs(String(current.cronExpression))),
+        nextRunAt: new Date(
+          Date.now() + this.estimateCronIntervalMs(String(current.cronExpression)),
+        ),
       },
     })
   }
@@ -685,9 +687,7 @@ export class DesktopJobRuntime {
       where: { enabled: true },
     })
 
-    const enabledKeys = new Set(
-      schedules.map((schedule) => String(schedule.jobKey)),
-    )
+    const enabledKeys = new Set(schedules.map((schedule) => String(schedule.jobKey)))
     for (const [jobKey, task] of this.scheduledTasks) {
       if (!enabledKeys.has(jobKey)) {
         this.stopTask(task)
@@ -722,10 +722,7 @@ export class DesktopJobRuntime {
     this.catchUpComplete = true
   }
 
-  private async enqueueScheduleRun(
-    jobKey: string,
-    trigger: 'cron' | 'catchup',
-  ): Promise<void> {
+  private async enqueueScheduleRun(jobKey: string, trigger: 'cron' | 'catchup'): Promise<void> {
     if (await this.shouldSkipCurrentScheduleRun(jobKey)) {
       return
     }
