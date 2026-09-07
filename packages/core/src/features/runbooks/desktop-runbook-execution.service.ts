@@ -376,6 +376,7 @@ class RunbookExecutionSnapshotRejectedError extends Error {
 
 interface WaitForCompletionOptions {
   signal?: AbortSignal;
+  pollIntervalMs?: number;
   timeoutMs?: number;
 }
 
@@ -666,36 +667,7 @@ export class RunbookExecutionService {
         signal: callerSignal,
         timeoutMs,
         execute: (signal) =>
-          new Promise<RunbookExecutionRecord | null>((resolve, reject) => {
-            let unsubscribe: (() => void) | undefined;
-            const cleanup = () => {
-              signal.removeEventListener("abort", handleAbort);
-              unsubscribe?.();
-              unsubscribe = undefined;
-            };
-            const handleAbort = () => {
-              cleanup();
-              reject(new Error("Runbook wait cancelled"));
-            };
-
-            if (signal.aborted) {
-              handleAbort();
-              return;
-            }
-
-            unsubscribe = this.subscribe((payload) => {
-              if (
-                payload.executionId !== executionId ||
-                payload.execution.status === "running"
-              ) {
-                return;
-              }
-
-              cleanup();
-              resolve(cloneSharedExecutionSnapshot(payload.execution));
-            });
-            signal.addEventListener("abort", handleAbort, { once: true });
-          }),
+          this.observeCompletion(executionId, signal, options),
       });
     } catch (error) {
       if (error instanceof OrchestrationError && error.kind === "timeout") {
@@ -706,6 +678,70 @@ export class RunbookExecutionService {
       }
       throw error;
     }
+  }
+
+  private observeCompletion(
+    executionId: string,
+    signal: AbortSignal,
+    options: WaitForCompletionOptions | undefined,
+  ): Promise<RunbookExecutionRecord | null> {
+    return new Promise<RunbookExecutionRecord | null>((resolve, reject) => {
+      let unsubscribe: (() => void) | undefined;
+      let pollTimer: ReturnType<typeof setTimeout> | undefined;
+      let settled = false;
+      const cleanup = () => {
+        settled = true;
+        clearTimeout(pollTimer);
+        signal.removeEventListener("abort", handleAbort);
+        unsubscribe?.();
+        unsubscribe = undefined;
+      };
+      const handleAbort = () => {
+        cleanup();
+        reject(new Error("Runbook wait cancelled"));
+      };
+
+      if (signal.aborted) {
+        handleAbort();
+        return;
+      }
+
+      unsubscribe = this.subscribe((payload) => {
+        if (
+          payload.executionId !== executionId ||
+          payload.execution.status === "running"
+        ) {
+          return;
+        }
+
+        cleanup();
+        resolve(cloneSharedExecutionSnapshot(payload.execution));
+      });
+      signal.addEventListener("abort", handleAbort, { once: true });
+      // Recheck after subscribing and poll for runs owned by another process.
+      const checkSnapshot = () => {
+        void this.get(executionId).then(
+          (latest) => {
+            if (settled) return;
+            if (latest === null || latest.status !== "running") {
+              cleanup();
+              resolve(latest);
+              return;
+            }
+            pollTimer = setTimeout(
+              checkSnapshot,
+              options?.pollIntervalMs ?? 500,
+            );
+          },
+          (error: unknown) => {
+            if (settled) return;
+            cleanup();
+            reject(error);
+          },
+        );
+      };
+      checkSnapshot();
+    });
   }
 
   async cancel(executionId: string): Promise<void> {
