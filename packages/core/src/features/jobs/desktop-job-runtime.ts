@@ -458,20 +458,19 @@ export class DesktopJobRuntime {
 
   private async executeJob(row: DesktopJobRuntimeRow): Promise<void> {
     const job = this.toExecutableJob(row)
-    const handler = this.handlers.get(job.type)
-    if (handler === undefined) {
-      await this.failMissingHandler(job)
-      return
-    }
-
-    await this.markJobRunning(job)
+    if (this.runningJobs.has(job.id)) return
     const controller = new AbortController()
     this.runningJobs.set(job.id, controller)
-    const timeout = setTimeout(() => {
-      controller.abort()
-    }, job.timeoutMs)
-
+    let timeout: ReturnType<typeof setTimeout> | undefined
     try {
+      const claimed = await this.markJobRunning(job)
+      if (!claimed) return
+      const handler = this.handlers.get(job.type)
+      if (handler === undefined) {
+        await this.failMissingHandler(job)
+        return
+      }
+      timeout = setTimeout(() => controller.abort(), job.timeoutMs)
       const result = await handler(job.payload, controller.signal)
       await this.completeJob(job, result)
     } catch (error: unknown) {
@@ -504,11 +503,12 @@ export class DesktopJobRuntime {
     })
   }
 
-  private async markJobRunning(job: ExecutableJob): Promise<void> {
-    await this.db.jobRun.update({
-      where: { id: job.id },
+  private async markJobRunning(job: ExecutableJob): Promise<boolean> {
+    const claimed = await this.db.jobRun.updateMany({
+      where: { id: job.id, status: 'queued' },
       data: { status: 'running', attempt: job.attempt, startedAt: new Date() },
     })
+    return claimed.count === 1
   }
 
   private async completeJob(job: ExecutableJob, result: unknown): Promise<void> {
