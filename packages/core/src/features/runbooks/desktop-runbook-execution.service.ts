@@ -3008,9 +3008,18 @@ export class RunbookExecutionService {
     snapshot: RunbookExecutionRecord,
   ): Promise<boolean> {
     // Resync so subsequent emits line up again; terminal store state wins.
-    const persisted = await this.resultStore.getExecutionSnapshotByResultId(session.resultId);
+    const persisted = await this.resultStore.getExecutionSnapshotByResultId(
+      session.resultId,
+    );
     if (persisted === null || persisted.status !== "running") {
-      if (snapshot.status !== "running") this.stopExecutionHeartbeat(session);
+      if (persisted !== null) {
+        session.snapshot = cloneSharedExecutionSnapshot(persisted);
+        session.abortController.abort();
+        this.stopIdleWatchdog(session);
+        this.stopExecutionHeartbeat(session);
+      } else if (snapshot.status !== "running") {
+        this.stopExecutionHeartbeat(session);
+      }
       return true;
     }
     session.snapshot.snapshotVersion = persisted.snapshotVersion ?? 0;
