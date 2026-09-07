@@ -81,7 +81,9 @@ export function useRunbookPersistenceFlow({
         replaceRunbook(updated);
       } catch (error) {
         console.error("Failed to update runbook metadata:", error);
-        setEditingRunbook(cloneRunbook(activeRunbook));
+        setEditingRunbook((current) =>
+          current === editingRunbook ? cloneRunbook(activeRunbook) : current,
+        );
         toast({
           variant: "destructive",
           title: t("runbooks.runbook.saveFailed"),
