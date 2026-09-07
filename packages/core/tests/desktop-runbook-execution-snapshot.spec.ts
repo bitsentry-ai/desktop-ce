@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import {
   type LocalAiExecutionResult,
@@ -80,11 +80,17 @@ class FakeResultStore implements RunbookResultPersistence {
       expectedSnapshotVersion: input.expectedSnapshotVersion,
       status: input.snapshot.status,
     });
-    if (this.snapshot.status === "running" && this.nextSnapshotVersion !== null) {
+    if (
+      this.snapshot.status === "running" &&
+      this.nextSnapshotVersion !== null
+    ) {
       this.snapshot.snapshotVersion = this.nextSnapshotVersion;
       this.nextSnapshotVersion = null;
     }
-    if (this.snapshot.status === "running" && this.nextTerminalStatus !== null) {
+    if (
+      this.snapshot.status === "running" &&
+      this.nextTerminalStatus !== null
+    ) {
       this.snapshot.status = this.nextTerminalStatus;
       this.snapshot.completedAt = "2026-08-03T00:05:00.000Z";
       this.snapshot.completionReason = "app_shutdown";
@@ -255,7 +261,9 @@ describe("RunbookExecutionService snapshot persistence", () => {
       snapshotVersion: 10,
       status: "completed",
     });
-    expect(store.writes.map((write) => write.expectedSnapshotVersion)).toContain(9);
+    expect(
+      store.writes.map((write) => write.expectedSnapshotVersion),
+    ).toContain(9);
     expect(store.writes.at(-1)?.status).toBe("completed");
     await service.destroy();
   });
@@ -278,7 +286,7 @@ describe("RunbookExecutionService snapshot persistence", () => {
 
     await expect(
       service.waitForCompletion(started.executionId, { timeoutMs: 10 }),
-    ).resolves.toMatchObject({ status: "completed" });
+    ).resolves.toMatchObject({ status: "failed" });
     expect(store.snapshot).toMatchObject({
       executionId: started.executionId,
       status: "failed",
@@ -288,4 +296,55 @@ describe("RunbookExecutionService snapshot persistence", () => {
     expect(store.completedControls).toEqual([]);
     await service.destroy();
   });
+});
+
+describe("completion subscription races", () => {
+  it("rechecks durable state after subscribing so a just-finished run cannot strand the waiter", async () => {
+    const { service } = createHarness();
+    const running: RunbookExecutionRecord = {
+      source: "manual",
+      executionId: "racing-execution",
+      runbookId: "runbook-1",
+      runbookTitle: "Race",
+      status: "running",
+      startedAt: "2026-09-06T00:00:00.000Z",
+      steps: [],
+    };
+    const completed = { ...running, status: "completed" as const };
+    const get = vi
+      .spyOn(service, "get")
+      .mockResolvedValueOnce(running)
+      .mockResolvedValueOnce(completed);
+    const unsubscribe = vi.fn();
+    const subscribe = vi
+      .spyOn(service, "subscribe")
+      .mockReturnValue(unsubscribe);
+    try {
+      await expect(
+        service.waitForCompletion(running.executionId),
+      ).resolves.toEqual(completed);
+      expect(get).toHaveBeenCalledTimes(2);
+      expect(subscribe).toHaveBeenCalledOnce();
+      expect(unsubscribe).toHaveBeenCalledOnce();
+    } finally {
+      get.mockRestore();
+      subscribe.mockRestore();
+      await service.destroy();
+    }
+  });
+});
+
+it("does not execute another action after observing another owner's terminal state", async () => {
+  const execute = vi.fn(async () => ({
+    output: "should not execute",
+    exitCode: 0,
+  }));
+  const { service, store, runbook } = createHarness({ execute });
+  store.finalizeAfterNextRunningWrite("failed");
+  const started = await service.start(runbook.id);
+  await expect(
+    service.waitForCompletion(started.executionId, { timeoutMs: 100 }),
+  ).resolves.toMatchObject({ status: "failed" });
+  expect(execute).not.toHaveBeenCalled();
+  await service.destroy();
 });
