@@ -408,6 +408,9 @@ function normalizeIncidentTokenUsageMap(
       inputTokens: usage.inputTokens,
       outputTokens: usage.outputTokens,
     };
+    if (usage.kind === "actual" || usage.kind === "estimate") {
+      entry.kind = usage.kind;
+    }
     if (
       typeof usage.contextTokens === "number" &&
       Number.isFinite(usage.contextTokens)
@@ -437,6 +440,9 @@ export function updateIncidentTokenUsage(
   incidentId: string,
   tokenUsage: AgentThreadTokenUsage,
 ): Record<string, AgentThreadTokenUsage> {
+  if (tokenUsage.kind === "estimate" && tokenUsageByIncident[incidentId] !== undefined) {
+    return tokenUsageByIncident;
+  }
   return { ...tokenUsageByIncident, [incidentId]: tokenUsage };
 }
 
@@ -2217,7 +2223,9 @@ export default function IncidentsPage() {
         const tokenUsage = snapshot.tokenUsage;
         setTokenUsageByIncident((prev) => updateIncidentTokenUsage(prev, incidentId, tokenUsage));
         if (incidentId === activeId) {
-          setSessionTokenUsage(tokenUsage);
+          setSessionTokenUsage((current) =>
+            tokenUsage.kind === "estimate" ? current ?? tokenUsage : tokenUsage,
+          );
         }
       }
 

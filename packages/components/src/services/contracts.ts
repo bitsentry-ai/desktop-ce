@@ -1,6 +1,7 @@
 import type {
   AccessLevel,
   AgentThreadSnapshot,
+  AgentThreadTokenUsage,
   InteractionMode,
 } from "../chat/types";
 import type { SandboxTokenBudgetMetadata } from "@bitsentry-ce/core/features/agent-runtime";
@@ -1089,6 +1090,8 @@ export type AgentEvent =
       type: "token_usage";
       timestamp: string;
       tokenUsage: {
+        kind?: "estimate" | "actual";
+        observedAt?: string;
         inputTokens: number;
         outputTokens: number;
         contextTokens?: number;
@@ -1449,6 +1452,7 @@ export interface IncidentToolCall {
 }
 
 export interface IncidentThreadDto {
+  tokenUsage?: AgentThreadTokenUsage | null;
   id: string;
   title: string;
   prompt: string;
