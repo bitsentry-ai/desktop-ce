@@ -66,6 +66,8 @@ export function useRunbookCatalogFlow({
   // Mirrors `runbooks` so callers can derive the next list without reading stale
   // state from an async callback, and without doing it inside a state updater.
   const runbooksRef = useRef<RunbookRecord[]>([]);
+  const activeIdRef = useRef(activeId);
+  activeIdRef.current = activeId;
   // Non-zero while this hook is dispatching, so it can skip its own broadcast.
   const selfDispatchDepthRef = useRef(0);
 
@@ -112,6 +114,7 @@ export function useRunbookCatalogFlow({
     (updated: RunbookRecord, draftMode: DraftReconcileMode = "adopt") => {
       commitRunbooks(replaceRunbookInList(runbooksRef.current, updated));
       setEditingRunbook((prev) => {
+        if (activeIdRef.current !== updated.id) return prev;
         if (draftMode === "preserve-actions") {
           return preserveDraftActions(prev, updated);
         }
