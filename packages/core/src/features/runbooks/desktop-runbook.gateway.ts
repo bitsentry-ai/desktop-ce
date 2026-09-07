@@ -14,7 +14,7 @@ import {
   type RunbookExecutionResult,
   type RunbookReference,
 } from "./desktop-runbook.gateway.schemas";
-import type { RunbookGateway } from './runbook.gateway'
+import type { RunbookGateway } from "./runbook.gateway";
 
 const executionReferenceSchema = z.string().trim().min(1);
 const incidentIdSchema = z.string().trim().min(1);
@@ -158,7 +158,10 @@ export function createDesktopRunbookGateway(
         request.runbookId,
         request.requestKey,
       );
-      if (previous !== null && isReusableExecution(previous.execution, Date.now())) {
+      if (
+        previous !== null &&
+        isReusableExecution(previous.execution, Date.now())
+      ) {
         return toExecutionResult({
           resultId: previous.resultId,
           execution: previous.execution,
@@ -194,7 +197,9 @@ export function createDesktopRunbookGateway(
       });
       const execution = await executionService.get(started.executionId);
       if (execution === null) {
-        throw new Error(`Runbook execution '${started.executionId}' was not persisted`);
+        throw new Error(
+          `Runbook execution '${started.executionId}' was not persisted`,
+        );
       }
 
       return toExecutionResult({
@@ -219,7 +224,9 @@ export function createDesktopRunbookGateway(
       return runbooks.filter((runbook) => runbook.actions.length > 0);
     },
     getRunbookContext(runbookId) {
-      return store.exportContext({ id: executionReferenceSchema.parse(runbookId) });
+      return store.exportContext({
+        id: executionReferenceSchema.parse(runbookId),
+      });
     },
     start,
     get(executionId) {
@@ -239,8 +246,10 @@ export function createDesktopRunbookGateway(
     subscribe(incidentId, listener) {
       const validatedIncidentId = incidentIdSchema.parse(incidentId);
       let active = true;
+      let receivedLiveEvent = false;
       const publish = (event: ExecutionServiceEvent) => {
         if (active && event.incidentThreadId === validatedIncidentId) {
+          receivedLiveEvent = true;
           listener(toExecutionEvent(event));
         }
       };
@@ -251,7 +260,7 @@ export function createDesktopRunbookGateway(
       void executionService
         .getLatestWithResultForIncidentThread(validatedIncidentId)
         .then((latest) => {
-          if (active && latest !== null) {
+          if (active && !receivedLiveEvent && latest !== null) {
             listener(
               toExecutionEvent({
                 resultId: latest.resultId,
@@ -273,7 +282,9 @@ export function createDesktopRunbookGateway(
       };
     },
     cancel(executionId) {
-      return executionService.cancel(executionReferenceSchema.parse(executionId));
+      return executionService.cancel(
+        executionReferenceSchema.parse(executionId),
+      );
     },
   };
 }
