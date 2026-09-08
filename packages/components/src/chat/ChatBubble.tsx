@@ -216,9 +216,11 @@ function AssistantWaitingIndicator({
 export const ChatBubble = memo(function ChatBubble({
   msg,
   providerKey,
+  collapsedJsonLabel,
 }: {
   msg: ChatMessage;
   providerKey?: string | null;
+  collapsedJsonLabel?: string;
 }) {
   const { t } = useTranslation();
   const [nowMs, setNowMs] = useState(() => Date.now());
@@ -372,6 +374,7 @@ export const ChatBubble = memo(function ChatBubble({
                     <MarkdownContent
                       content={visibleText}
                       paragraphizeSoftBreaks
+                      collapsedJsonLabel={collapsedJsonLabel}
                     />
                   </div>
                 )}
@@ -402,6 +405,7 @@ export const ChatBubble = memo(function ChatBubble({
               <MarkdownContent
                 content={msg.finalText}
                 paragraphizeSoftBreaks
+                collapsedJsonLabel={collapsedJsonLabel}
               />
             </div>
           )}

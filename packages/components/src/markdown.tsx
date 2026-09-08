@@ -22,6 +22,7 @@ export interface MarkdownContentProps {
   content: string;
   className?: string;
   paragraphizeSoftBreaks?: boolean;
+  collapsedJsonLabel?: string;
 }
 
 export function normalizeMarkdownContent(content: string): string {
@@ -254,6 +255,7 @@ export const MarkdownContent = memo(function MarkdownContent({
   content,
   className,
   paragraphizeSoftBreaks = false,
+  collapsedJsonLabel,
 }: MarkdownContentProps) {
   const { t } = useTranslation();
   const normalizedContent = useMemo(() => {
@@ -285,10 +287,23 @@ export const MarkdownContent = memo(function MarkdownContent({
           ),
           pre: ({ children, ...props }: ComponentPropsWithoutRef<"pre">) => {
             const code = getCodeText(children);
-            return (
+            const block = (
               <MarkdownCodeBlock code={code}>
                 <pre {...props}>{children}</pre>
               </MarkdownCodeBlock>
+            );
+            const child = Children.toArray(children)[0];
+            const isJson =
+              isValidElement<{ className?: string }>(child) &&
+              child.props.className?.split(" ").includes("language-json");
+            if (!collapsedJsonLabel || !isJson) return block;
+            return (
+              <details className="my-3 min-w-0 rounded-lg border border-border bg-muted/30 p-3">
+                <summary className="cursor-pointer text-sm font-medium text-muted-foreground">
+                  {collapsedJsonLabel}
+                </summary>
+                {block}
+              </details>
             );
           },
           table: ({ children, node: _node, ref: _ref, ...props }) => (
