@@ -1,4 +1,4 @@
-import { mkdtemp, readFile } from 'fs/promises'
+import { mkdtemp, readFile, writeFile } from 'fs/promises'
 import os from 'os'
 import path from 'path'
 import type { CliJson } from './cli-test-helpers.js'
@@ -192,7 +192,21 @@ async function importSmokeRunbooks(
         command: await context.createNodeCommand(
           tempRoot,
           'slow-timeout',
-          "setTimeout(() => { console.log('timeout-finished') }, 2500)\n",
+          [
+            "const { existsSync } = require('node:fs')",
+            'const releaseFile = process.argv[2]',
+            'const watchdog = setTimeout(() => {',
+            "  console.error('Timeout fixture was not released')",
+            '  process.exit(1)',
+            '}, 60_000)',
+            'const poll = setInterval(() => {',
+            '  if (!existsSync(releaseFile)) return',
+            '  clearInterval(poll)',
+            '  clearTimeout(watchdog)',
+            "  console.log('timeout-finished')",
+            '}, 50)',
+          ].join('\n'),
+          [path.join(tempRoot, 'timeout-release')],
         ),
       }],
     },
@@ -335,16 +349,24 @@ async function assertTimedOutExecution(
   context: CliTestContext,
   userDataDir: string,
   runbookId: string,
+  tempRoot: string,
 ): Promise<void> {
-  const timedOut = await context.runCliJson(userDataDir, [
-    'runbooks',
-    'execute',
-    '--runbook-id',
-    runbookId,
-    '--wait',
-    '--timeout-ms',
-    '250',
-  ])
+  // Keep the execution running until the CLI has returned its timeout snapshot.
+  // A fixed sleep can finish before the wait starts on slower CI runners.
+  let timedOut: unknown
+  try {
+    timedOut = await context.runCliJson(userDataDir, [
+      'runbooks',
+      'execute',
+      '--runbook-id',
+      runbookId,
+      '--wait',
+      '--timeout-ms',
+      '250',
+    ])
+  } finally {
+    await writeFile(path.join(tempRoot, 'timeout-release'), '')
+  }
   const timedOutPayload = asCliJson(timedOut, 'Timed-out wait response')
   const timedOutExecutionId = getRequiredStringField(
     timedOutPayload,
@@ -558,7 +580,7 @@ export async function runCliSmokeTest(desktopDir: string): Promise<void> {
     await assertExportWorks(context, userDataDir, tempRoot, runbookIds)
     await assertForegroundExecution(context, userDataDir, runbookIds.fastRunbookId)
     await assertParameterizedExecution(context, userDataDir, runbookIds.parameterizedRunbookId)
-    await assertTimedOutExecution(context, userDataDir, runbookIds.timeoutRunbookId)
+    await assertTimedOutExecution(context, userDataDir, runbookIds.timeoutRunbookId, tempRoot)
     await assertEnvironmentSanitizedExecution(context, userDataDir, runbookIds.envSanitizedRunbookId)
     await assertDetachedExecutionFlow(context, userDataDir, runbookIds)
     await deleteImportedRunbooks(context, userDataDir, runbookIds)
