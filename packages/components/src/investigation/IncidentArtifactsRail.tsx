@@ -10,7 +10,6 @@ import {
   Loader2,
   Puzzle,
   ScanSearch,
-  ShieldCheck,
   Terminal,
   X,
 } from "lucide-react";
