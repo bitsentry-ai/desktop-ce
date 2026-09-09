@@ -1,6 +1,7 @@
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
+import net from 'node:net'
 
 import {
   createLocalRunbookExecutionClient,
@@ -66,6 +67,54 @@ describe('local runbook execution host', () => {
     temporaryDirectories.push(directory)
     return directory
   }
+
+  it.each(['getExecution', 'executeRunbook'] as const)(
+    'settles a disconnected %s request and only retries reads',
+    async (method) => {
+      const userDataPath = await createUserDataDirectory()
+      const endpoint = process.platform === 'win32'
+        ? `\\\\.\\pipe\\bitsentry-disconnect-${path.basename(userDataPath)}`
+        : path.join(userDataPath, 'host.sock')
+      let requests = 0
+      const server = net.createServer((socket) => {
+        socket.once('data', (data) => {
+          const request = JSON.parse(data.toString()) as { id: string; method: string }
+          if (request.method === method) {
+            requests += 1
+            if (requests === 1) {
+              // EOF before a complete response must not leave the request pending.
+              socket.end('{')
+              return
+            }
+          }
+          socket.end(`${JSON.stringify({ id: request.id, result: { status: 'completed' } })}\n`)
+        })
+      })
+      await new Promise<void>((resolve) => server.listen(endpoint, resolve))
+      await writeFile(path.join(userDataPath, 'runbook-execution-host.json'), JSON.stringify({
+        version: 1, endpoint, token: 'test-capability',
+      }))
+      const client = await createLocalRunbookExecutionClient({
+        userDataPath,
+        createHeadlessRuntime: async () => createRuntime('unexpected'),
+      })
+      try {
+        if (method === 'getExecution') {
+          await expect(client.getExecution('execution')).resolves.toEqual({ status: 'completed' })
+          expect(requests).toBe(2)
+        } else {
+          await expect(client.executeRunbook({ runbookId: 'runbook' })).rejects.toThrow(
+            'Local runbook host closed the connection before responding.',
+          )
+          expect(requests).toBe(1)
+        }
+      } finally {
+        await client.destroy()
+        await new Promise<void>((resolve) => server.close(() => resolve()))
+      }
+    },
+    2_000,
+  )
 
   it('routes CLI calls to the running desktop host without constructing a second runtime', async () => {
     const userDataPath = await createUserDataDirectory()

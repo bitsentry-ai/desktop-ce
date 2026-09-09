@@ -621,7 +621,10 @@ async function requestHost(
     const socket = net.createConnection(metadata.endpoint)
     let buffer = ''
     let requestWasSent = false
+    let settled = false
     const fail = (error: unknown): void => {
+      if (settled) return
+      settled = true
       socket.destroy()
       if (error instanceof Error) {
         Object.assign(error as HostConnectionError, { requestWasSent })
@@ -635,6 +638,12 @@ async function requestHost(
     socket.setEncoding('utf-8')
     socket.setTimeout(CONNECTION_TIMEOUT_MS, () => fail(new Error('Timed out connecting to the local runbook host.')))
     socket.once('error', fail)
+    socket.once('close', () => {
+      fail(Object.assign(
+        new Error('Local runbook host closed the connection before responding.'),
+        { code: 'ECONNRESET' },
+      ))
+    })
     socket.on('data', (chunk: string) => {
       buffer += chunk
       if (Buffer.byteLength(buffer) > MAX_PROTOCOL_LINE_BYTES) {
@@ -647,6 +656,7 @@ async function requestHost(
         const response = JSON.parse(buffer.slice(0, newline)) as HostResponse
         if (response.id !== id) throw new Error('Local runbook host response id mismatch.')
         if (response.error !== undefined) throw new Error(response.error)
+        settled = true
         socket.end()
         resolve(response.result)
       } catch (error) {
