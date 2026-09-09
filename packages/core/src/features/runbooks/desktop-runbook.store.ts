@@ -1,3 +1,4 @@
+import { legacyDiagnosisStage } from "./runbooks.schemas";
 import { randomUUID } from "crypto";
 import {
   SqliteErrorSourcesRepositoryAdapter,
@@ -980,6 +981,9 @@ function sanitizeRunbookAction(
 }
 
 function assertValidAction(action: DesktopRunbookActionRecord): void {
+  if (action.type === "diagnosis" && action.telemetryConfig?.stage === undefined) {
+    throw new Error("Diagnosis actions require a stage");
+  }
   if (action.title.trim().length === 0) {
     throw new Error("Runbook action title is required");
   }
@@ -1043,6 +1047,12 @@ function parseIncomingRunbookAction(
 }
 
 function toRunbookAction(raw: Record<string, unknown>): DesktopRunbookActionRecord {
+  const stage = legacyDiagnosisStage(raw.type);
+  if (stage !== undefined) {
+    raw = { ...raw, type: "diagnosis", body: undefined, telemetryConfig: {
+      ...parseTelemetryConfig("diagnosis", raw.body ?? raw.telemetryConfig), stage,
+    } };
+  }
   const type = normalizeRunbookActionType(raw.type);
   const isPluginAction = type === "plugin";
   let url = asOptionalString(raw.url);

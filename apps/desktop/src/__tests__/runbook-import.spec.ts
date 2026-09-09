@@ -874,3 +874,27 @@ describe("Runbook import handlers", () => {
     );
   });
 });
+
+
+it.each(["diagnose", "verify", "recommend"] as const)("loads persisted legacy %s actions without losing config", async (stage) => {
+  const { store } = createStore({
+    runbook: { findUnique: vi.fn(() => ({ id: "legacy", title: "Legacy" })) },
+    runbookAction: { findMany: vi.fn(() => [{
+      id: "action", type: `diagnosis_${stage}`, title: "Legacy action",
+      body: JSON.stringify({ telemetryEntryIds: [42], sourceId: "source-1" }),
+    }]) },
+  });
+  const loaded = await store.getRunbookOrThrow("legacy");
+  expect(loaded.actions[0]).toMatchObject({
+    type: "diagnosis", telemetryConfig: { stage, telemetryEntryIds: [42], sourceId: "source-1" },
+  });
+});
+
+it("rejects stage-less canonical diagnosis in both store write paths before writes", async () => {
+  const { store, db } = createStore({ runbook: { findUnique: vi.fn(() => ({ id: "runbook", title: "Runbook" })) } });
+  const action = { id: "action", type: "diagnosis", title: "Incomplete" };
+  await expect(store.saveAction({ runbookId: "runbook", action })).rejects.toThrow("require a stage");
+  await expect(store.updateActions({ runbookId: "runbook", actions: [action] })).rejects.toThrow("require a stage");
+  expect(db.runbookAction.create).not.toHaveBeenCalled();
+  expect(db.runbookAction.deleteMany).not.toHaveBeenCalled();
+});

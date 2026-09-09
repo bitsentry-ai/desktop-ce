@@ -212,7 +212,14 @@ export function createDesktopIpcPayloadValidator(
         logFilter: config.logFilterConfigSchema.optional(),
       }),
       telemetryActionSchema,
-    ]);
+    ]).superRefine((action, ctx) => {
+      if (action.type !== "diagnosis") return;
+      const config = "telemetryConfig" in action ? action.telemetryConfig : undefined;
+      const stage = config !== null && typeof config === "object" && "stage" in config ? config.stage : undefined;
+      if (stage !== "diagnose" && stage !== "verify" && stage !== "recommend") {
+        ctx.addIssue({ code: "custom", path: ["telemetryConfig", "stage"], message: "Diagnosis actions require a stage" });
+      }
+    });
   }
 
   const desktopRunbookActionSchema = createDesktopRunbookActionSchema(

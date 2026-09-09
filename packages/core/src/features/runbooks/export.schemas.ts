@@ -81,7 +81,10 @@ export const exportedRunbookActionV1Schema = z.preprocess((value) => {
   const config = action.telemetryConfig;
   if (config !== undefined && (config === null || typeof config !== "object" || Array.isArray(config))) return value;
   return { ...action, type: "diagnosis", telemetryConfig: { ...config as object, stage } };
-}, canonicalExportedRunbookActionV1Schema);
+}, canonicalExportedRunbookActionV1Schema.refine(
+  (action) => action.type !== "diagnosis" || action.telemetryConfig?.stage !== undefined,
+  { message: "Diagnosis actions require a stage", path: ["telemetryConfig", "stage"] },
+));
 
 export const exportedRunbookV1Schema = z.object({
   id: z.string().optional(),

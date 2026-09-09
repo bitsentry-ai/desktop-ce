@@ -2,6 +2,13 @@ import { z } from "zod";
 import { errorSourceTypeSchema } from "../error-sources/error-sources.schemas";
 import { globalVariableKeySchema } from "./globals.schemas";
 
+export function legacyDiagnosisStage(type: unknown): "diagnose" | "verify" | "recommend" | undefined {
+  if (type === "diagnosis_diagnose") return "diagnose";
+  if (type === "diagnosis_verify") return "verify";
+  if (type === "diagnosis_recommend") return "recommend";
+  return undefined;
+}
+
 // Action type enums
 export const runbookActionTypeSchema = z.enum([
   "shell",
