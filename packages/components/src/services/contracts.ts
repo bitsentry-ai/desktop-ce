@@ -612,6 +612,7 @@ export interface RunbookTriggerContext {
 }
 
 export interface TelemetryActionConfig {
+  stage?: "diagnose" | "verify" | "recommend";
   needId?: string;
   needLabel?: string;
   sourceId?: string;
