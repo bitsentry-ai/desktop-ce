@@ -1473,6 +1473,9 @@ export class AgentLlmAdapterService {
         name: tool.name,
         description: tool.description,
         parameters: tool.inputSchema,
+        // Preserve optional fields; Responses otherwise attempts strict normalization.
+        // Tool handlers validate arguments before executing them.
+        strict: false,
       })),
       reasoning: { effort: reasoningEffort },
       max_output_tokens: 4096,

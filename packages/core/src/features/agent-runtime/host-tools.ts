@@ -36,18 +36,24 @@ import {
 
 const safeToolsShellWarning = 'Safe Tools mode will refuse this runbook. Use an llm or plugin step for read-only data shaping.'
 const editParentProposalPlaceholders = new Set([
+  '',
+  '.',
   'new',
   'none',
   '00000000-0000-0000-0000-000000000000',
 ])
 
-function normalizeEditParentProposalId(parentProposalId: string | undefined): string | undefined {
+function normalizeEditParentProposalId(parentProposalId: string | null | undefined): string | undefined {
   const normalized = parentProposalId?.trim()
   if (normalized === undefined || editParentProposalPlaceholders.has(normalized.toLowerCase())) {
     return undefined
   }
   return normalized
 }
+
+const authoringParentProposalIdSchema = z.string().nullish().describe(
+  'Exact proposalId only when revising a pending proposal. For a new proposal, omit this field or pass null. Never pass the saved runbook ID here.',
+)
 
 export const listRunbooksHostToolSchema = z.object({}).strict()
 export const listPluginsHostToolSchema = z.object({}).strict()
@@ -156,7 +162,7 @@ const runbookProviderActionProposalSchema = createRunbookActionProposalSchema({ 
 function createRunbookCreateHostToolSchema(actionSchema: typeof runbookActionProposalSchema) {
   return z.object({
     prompt: z.string().min(1),
-    parentProposalId: z.string().min(1).optional(),
+    parentProposalId: authoringParentProposalIdSchema,
     draftRunbook: z.object({ title: z.string().min(1), description: z.string().default(''), idleTimeout: idleTimeoutSchema.optional(), actions: z.array(actionSchema).min(1) }).strict(),
   }).strict()
 }
@@ -167,10 +173,10 @@ const runbookAuthoringOperationSchema = z.object({
   action: runbookEditActionProposalSchema.optional(), actionId: z.string().min(1).optional(), insertAfterActionId: z.string().min(1).nullable().optional(), actionIdsInOrder: z.array(z.string().min(1)).optional(),
 }).strict()
 export const proposeRunbookEditHostToolSchema = z.object({
-  runbookId: z.string().min(1).optional(),
+  runbookId: z.string().min(1).describe('Saved runbook ID returned by list_runbooks. This is not a proposal ID or draft artifact ID.').optional(),
   runbookTitle: z.string().min(1).optional(),
   prompt: z.string().min(1),
-  parentProposalId: z.string().min(1).optional(),
+  parentProposalId: authoringParentProposalIdSchema,
   operations: z.array(runbookAuthoringOperationSchema).min(1),
 }).strict()
 const runbookCreateHostToolBaseSchema = createRunbookCreateHostToolSchema(runbookActionProposalSchema)
@@ -821,6 +827,9 @@ async function resolveAuthorableRunbookReference(context: HostToolContext, input
     const titleMatch = resolveRunbookByTitle(runbooks, runbookTitle)
     if (titleMatch !== null) return titleMatch
   }
+  if (runbookId || runbookTitle) {
+    throw new Error('Runbook to edit was not found. Call list_runbooks and pass the saved runbook id as runbookId; omit parentProposalId for a new edit proposal.')
+  }
   const active = findRunbookById(runbooks, context.session.runbookContext?.id)
   if (active !== undefined) return active
   throw new Error('propose_runbook_edit requires runbookId or runbookTitle when there is no active runbook context')
@@ -904,22 +913,24 @@ function resolveProposalLineage(
   const referencedParent = normalizedParentProposalId === undefined
     ? undefined
     : proposals.find((proposal) => proposal.id === normalizedParentProposalId)
-  const activeRunbookId = session.runbookId ?? session.runbookContext?.id
+  // The target has already been resolved from saved, authorable runbooks.
+  // Approval may assign a different ID from the draft, and callers such as
+  // the Dashboard worker do not supply an active runbook in the host session.
   const parentProposalIdForLineage =
     kind === 'edit_existing_runbook' &&
-    referencedParent?.kind === 'create_new_runbook' &&
-    referencedParent.status === 'approved' &&
-    activeRunbookId !== undefined &&
-    activeRunbookId === targetRunbookId
+    (normalizedParentProposalId === targetRunbookId ||
+      (referencedParent?.kind === 'create_new_runbook' &&
+        referencedParent.status === 'approved'))
       ? undefined
       : normalizedParentProposalId
+  const pendingCompatible = compatible.filter((proposal) => proposal.status !== 'approved' && proposal.status !== 'rejected')
   const parent = parentProposalIdForLineage === undefined
-    ? compatible[compatible.length - 1]
+    ? pendingCompatible[pendingCompatible.length - 1]
     : referencedParent
 
   if (parent === undefined) {
     if (parentProposalIdForLineage !== undefined && (kind !== 'create_new_runbook' || compatible.length > 0)) {
-      throw new Error(`Runbook authoring parent proposal not found: ${parentProposalIdForLineage}`)
+      throw new Error(`Runbook authoring parent proposal not found: ${parentProposalIdForLineage}. To edit a saved runbook, pass its id as runbookId and omit parentProposalId. Use parentProposalId only to revise a pending proposal.`)
     }
     // A model may retry the first proposal after a malformed tool call and
     // invent a parent id from the draft title or a placeholder UUID. There is
@@ -1000,7 +1011,7 @@ async function proposeRunbookEdit(context: HostToolContext, input: ProposeRunboo
 }
 
 async function proposeRunbookCreate(context: HostToolContext, input: ProposeRunbookCreateHostToolInput): Promise<ToolResult> {
-  const lineage = resolveProposalLineage(context.session, 'create_new_runbook', input.parentProposalId)
+  const lineage = resolveProposalLineage(context.session, 'create_new_runbook', normalizeEditParentProposalId(input.parentProposalId))
   const parentProposal = findCreateProposal(context.session, lineage?.parentProposalId)
   const proposal = createRunbookCreationProposal({ ...lineage, parentRunbook: parentProposal?.proposedRunbook, incidentThreadId: context.session.incidentThreadId, prompt: input.prompt, draftRunbook: { ...input.draftRunbook, actions: input.draftRunbook.actions as RunbookActionRecord[] }, sourceAttachmentId: context.session.sourceAttachmentId, sourceMessageId: context.session.sourceMessageId, normalizedFindings: context.session.normalizedFindings })
   applyPluginAuthValidation(proposal, context)

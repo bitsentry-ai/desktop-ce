@@ -727,6 +727,7 @@ describe('AgentLlmAdapterService', () => {
       tools: [{
         type: 'function',
         name: 'execute_shell_command',
+        strict: false,
       }],
     })
     expect(requests[0]?.body.reasoning_effort).toBeUndefined()

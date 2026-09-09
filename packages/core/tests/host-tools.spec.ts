@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { randomUUID } from 'crypto'
+import { z } from 'zod'
 import {
   executeHostTool,
   getHostTool,
@@ -245,7 +246,12 @@ describe('host tools', () => {
     })
   })
 
-  it('starts a fresh edit artifact after an approved create and chains later edits', async () => {
+  it.each([
+    { activeRunbookId: 'rb-saved', parentReference: 'proposal' },
+    { activeRunbookId: undefined, parentReference: 'proposal' },
+    { activeRunbookId: 'rb-previous-analysis', parentReference: 'proposal' },
+    { activeRunbookId: undefined, parentReference: 'saved-runbook' },
+  ])('starts a fresh edit after approval and chains later edits (%j)', async ({ activeRunbookId, parentReference }) => {
     const runbook = makeRunbook({
       id: 'rb-saved',
       revisionNumber: 1,
@@ -258,7 +264,7 @@ describe('host tools', () => {
       }],
     })
     const context = createContext()
-    context.session.runbookId = runbook.id
+    context.session.runbookId = activeRunbookId
     context.listAuthorableRunbooks = vi.fn().mockResolvedValue([runbook])
 
     await executeHostTool(context, 'propose_runbook_create', {
@@ -273,10 +279,11 @@ describe('host tools', () => {
     if (createProposal === undefined) throw new Error('Expected create proposal')
     const approvedCreate = approveRunbookAuthoringProposal({ proposal: createProposal }).proposal
     context.session.runbookAuthoringProposals = [approvedCreate]
+    expect(approvedCreate.proposedRunbook.id).not.toBe(runbook.id)
 
     const firstEditResult = await executeHostTool(context, 'propose_runbook_edit', {
       runbookId: runbook.id,
-      parentProposalId: approvedCreate.id,
+      parentProposalId: parentReference === 'proposal' ? approvedCreate.id : runbook.id,
       prompt: 'Clarify the health check description.',
       operations: [{
         id: 'op-description',
@@ -316,9 +323,59 @@ describe('host tools', () => {
       parentProposalId: firstEdit.id,
       targetRunbookId: runbook.id,
     })
+    expect(context.gateway.start).not.toHaveBeenCalled()
   })
 
-  it.each(['new', 'none', '00000000-0000-0000-0000-000000000000'])('ignores an edit placeholder parent id: %s', async (parentProposalId) => {
+  it('does not substitute the active runbook for an unknown explicit edit target', async () => {
+    const runbook = makeRunbook()
+    const context = createContext()
+    context.session.runbookContext = runbook
+    context.listAuthorableRunbooks = vi.fn().mockResolvedValue([runbook])
+
+    const result = await executeHostTool(context, 'propose_runbook_edit', {
+      runbookId: 'unknown-draft-id',
+      prompt: 'Clarify the description.',
+      operations: [{
+        id: 'op-description',
+        type: 'update_metadata',
+        rationale: 'Make the description readable.',
+        metadata: { description: 'A clearer description.' },
+      }],
+    })
+
+    expect(result?.error).toContain('Call list_runbooks')
+    expect(context.session.runbookAuthoringProposals).toBeUndefined()
+    expect(context.gateway.start).not.toHaveBeenCalled()
+  })
+
+  it.each(['approved', 'rejected'] as const)('starts a new edit artifact after a %s edit', async (status) => {
+    const runbook = makeRunbook()
+    const context = createContext()
+    context.listAuthorableRunbooks = vi.fn().mockResolvedValue([runbook])
+    const input = {
+      runbookId: runbook.id,
+      prompt: 'Clarify the description.',
+      operations: [{
+        id: 'op-description',
+        type: 'update_metadata',
+        rationale: 'Make the description readable.',
+        metadata: { description: 'A clearer description.' },
+      }],
+    }
+    await executeHostTool(context, 'propose_runbook_edit', input)
+    const previous = context.session.runbookAuthoringProposals?.[0]
+    if (previous === undefined) throw new Error('Expected edit proposal')
+    context.session.runbookAuthoringProposals = [{ ...previous, status }]
+
+    const result = await executeHostTool(context, 'propose_runbook_edit', input)
+    expect(result?.error).toBeUndefined()
+    const summary = JSON.parse(result?.output ?? '') as Record<string, unknown>
+    expect(summary).toMatchObject({ artifactVersion: 1, targetRunbookId: runbook.id })
+    expect(summary.artifactId).not.toBe(previous.artifactId)
+    expect(summary).not.toHaveProperty('parentProposalId')
+  })
+
+  it.each([undefined, null, '', '   ', '.', ' . ', 'new', 'none', '00000000-0000-0000-0000-000000000000'])('ignores an edit placeholder parent id: %s', async (parentProposalId) => {
     const runbook = makeRunbook({
       actions: [{
         id: 'health',
@@ -348,6 +405,17 @@ describe('host tools', () => {
       kind: 'edit_existing_runbook',
       artifactVersion: 1,
       targetRunbookId: runbook.id,
+    })
+    expect(JSON.parse(result?.output ?? '')).not.toHaveProperty('parentProposalId')
+  })
+
+  it.each(['propose_runbook_create', 'propose_runbook_edit'])('exposes an optional nullable parent for %s', (toolName) => {
+    const tool = getHostTool(toolName)
+    if (tool === undefined) throw new Error('Expected authoring tool')
+    const schema = z.toJSONSchema(tool.providerArgsSchema ?? tool.argsSchema)
+    expect(schema.required).not.toContain('parentProposalId')
+    expect(schema.properties?.parentProposalId).toMatchObject({
+      anyOf: [{ type: 'string' }, { type: 'null' }],
     })
   })
 
@@ -382,6 +450,10 @@ describe('host tools', () => {
   })
 
   it.each([
+    null,
+    '',
+    '   ',
+    '.',
     'initial-cve-2024-0727-remediation-draft',
     '00000000-0000-0000-0000-000000000000',
   ])('creates a root proposal when an initial create retry has a missing parent id: %s', async (parentProposalId) => {
