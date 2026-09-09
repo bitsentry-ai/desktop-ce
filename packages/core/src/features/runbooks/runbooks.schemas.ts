@@ -12,9 +12,7 @@ export const runbookActionTypeSchema = z.enum([
   "telemetry_existing_entry",
   "data_source_query",
   "telemetry_ingest",
-  "diagnosis_diagnose",
-  "diagnosis_verify",
-  "diagnosis_recommend",
+  "diagnosis",
 ]);
 
 export const runbookHttpMethodSchema = z.enum([
@@ -167,7 +165,10 @@ export const runbookTriggerContextSchema = z.object({
   incidentThreadId: z.string().trim().min(1).optional(),
 });
 
+export const diagnosisStageSchema = z.enum(["diagnose", "verify", "recommend"]);
+
 export const telemetryActionConfigSchema = z.object({
+  stage: diagnosisStageSchema.optional(),
   needId: z.string().trim().min(1).optional(),
   needLabel: z.string().trim().min(1).optional(),
   sourceId: z.string().trim().min(1).optional(),
@@ -188,6 +189,7 @@ export const telemetryActionConfigSchema = z.object({
 });
 
 export const telemetryActionConfigWithCliSchema = z.object({
+  stage: diagnosisStageSchema.optional(),
   needId: z.string().trim().min(1).optional(),
   needLabel: z.string().trim().min(1).optional(),
   sourceId: z.string().trim().min(1).optional(),

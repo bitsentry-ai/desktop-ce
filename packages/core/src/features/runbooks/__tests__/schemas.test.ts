@@ -1,3 +1,5 @@
+import { exportedRunbookActionV1Schema } from "../export.schemas";
+import { runbookActionTypeSchema } from "../runbooks.schemas";
 import {
   applyRunbookLogFilter,
   collectRunbookGlobalReferences,
@@ -262,9 +264,7 @@ const exportedContextResult = exportRunbookContextOutputSchema.safeParse({
       telemetry_existing_entry: 0,
       data_source_query: 0,
       telemetry_ingest: 0,
-      diagnosis_diagnose: 0,
-      diagnosis_verify: 0,
-      diagnosis_recommend: 0,
+      diagnosis: 0,
     },
     orderedActionTitles: ["Echo env", "List GitHub issues"],
   },
@@ -374,9 +374,7 @@ const workerContextResult =
           telemetry_existing_entry: 0,
           data_source_query: 0,
           telemetry_ingest: 0,
-          diagnosis_diagnose: 0,
-          diagnosis_verify: 0,
-          diagnosis_recommend: 0,
+          diagnosis: 0,
         },
         orderedActionTitles: ["Echo env", "List GitHub issues"],
       },
@@ -548,4 +546,20 @@ assert(
   "duplicate title helper should create deterministic imported suffixes",
 );
 expect(importedTitle).toBe("Count connections (imported 2)");
+});
+
+
+it.each(["diagnose", "verify", "recommend"] as const)("imports legacy diagnosis_%s without losing its stage or IDs", (stage) => {
+  const imported = exportedRunbookActionV1Schema.parse({
+    type: `diagnosis_${stage}`, title: "Legacy diagnosis", telemetryConfig: { telemetryEntryIds: [42] },
+  });
+  expect(imported.type).toBe("diagnosis");
+  expect(imported.telemetryConfig).toEqual({ stage, telemetryEntryIds: [42] });
+  expect(exportedRunbookActionV1Schema.parse(imported)).toEqual(imported);
+  expect(runbookActionTypeSchema.safeParse(`diagnosis_${stage}`).success).toBe(false);
+});
+
+it("exposes nine canonical action types and rejects invalid diagnosis stages", () => {
+  expect(runbookActionTypeSchema.options).toHaveLength(9);
+  expect(exportedRunbookActionV1Schema.safeParse({ type: "diagnosis", title: "Invalid", telemetryConfig: { stage: "unknown" } }).success).toBe(false);
 });

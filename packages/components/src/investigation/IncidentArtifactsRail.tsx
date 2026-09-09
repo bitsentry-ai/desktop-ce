@@ -241,12 +241,8 @@ function actionIcon(type: RunbookActionType) {
       return Database;
     case "telemetry_ingest":
       return Loader2;
-    case "diagnosis_diagnose":
+    case "diagnosis":
       return ScanSearch;
-    case "diagnosis_verify":
-      return ShieldCheck;
-    case "diagnosis_recommend":
-      return FileText;
     default:
       return AlertCircle;
   }
@@ -272,12 +268,8 @@ function actionTypeLabel(t: TranslationFn, type: RunbookActionType): string {
       return t("common.incidentArtifactsRail.actionType.data_source_query");
     case "telemetry_ingest":
       return t("common.incidentArtifactsRail.actionType.telemetry_ingest");
-    case "diagnosis_diagnose":
+    case "diagnosis":
       return t("common.incidentArtifactsRail.actionType.diagnosis_diagnose");
-    case "diagnosis_verify":
-      return t("common.incidentArtifactsRail.actionType.diagnosis_verify");
-    case "diagnosis_recommend":
-      return t("common.incidentArtifactsRail.actionType.diagnosis_recommend");
   }
 }
 

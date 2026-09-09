@@ -28,9 +28,7 @@ const DESKTOP_CE_TELEMETRY_ACTION_TYPES = [
 
 const DESKTOP_PRO_TELEMETRY_ACTION_TYPES = [
   ...DESKTOP_CE_TELEMETRY_ACTION_TYPES,
-  "diagnosis_diagnose",
-  "diagnosis_verify",
-  "diagnosis_recommend",
+  "diagnosis",
 ] as const satisfies DesktopIpcEnumValues;
 
 export interface DesktopIpcPayloadSchemaConfig {

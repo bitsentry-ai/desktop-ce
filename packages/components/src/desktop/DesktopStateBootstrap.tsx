@@ -54,9 +54,7 @@ type RunbookExecutionActionType =
   | "telemetry_existing_entry"
   | "data_source_query"
   | "telemetry_ingest"
-  | "diagnosis_diagnose"
-  | "diagnosis_verify"
-  | "diagnosis_recommend";
+  | "diagnosis";
 
 type RunbookExecutionStatus = "running" | "completed" | "failed" | "cancelled";
 type RunbookExecutionStepStatus =

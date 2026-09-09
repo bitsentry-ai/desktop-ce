@@ -449,9 +449,7 @@ function normalizeRunbookActionFingerprint(
     case "telemetry_existing_entry":
     case "data_source_query":
     case "telemetry_ingest":
-    case "diagnosis_diagnose":
-    case "diagnosis_verify":
-    case "diagnosis_recommend": {
+    case "diagnosis": {
       return buildTelemetryActionFingerprint(action, shared);
     }
     default:
@@ -657,9 +655,7 @@ function isTelemetryActionType(type: RunbookActionType): boolean {
     type === "telemetry_existing_entry" ||
     type === "data_source_query" ||
     type === "telemetry_ingest" ||
-    type === "diagnosis_diagnose" ||
-    type === "diagnosis_verify" ||
-    type === "diagnosis_recommend"
+    type === "diagnosis"
   );
 }
 
@@ -723,6 +719,7 @@ function copyTelemetryValidatedFields(
   config: Record<string, unknown>,
   normalized: TelemetryActionConfig,
 ): void {
+  if (config.stage === "diagnose" || config.stage === "verify" || config.stage === "recommend") normalized.stage = config.stage;
   const sourceType = errorSourceTypeSchema.safeParse(config.sourceType);
   if (sourceType.success) normalized.sourceType = sourceType.data;
   const queryMode = telemetryQueryModeSchema.safeParse(config.queryMode);
@@ -833,9 +830,7 @@ function createEmptyActionTypeCounts(): DesktopRunbookContext["summary"]["action
     telemetry_existing_entry: 0,
     data_source_query: 0,
     telemetry_ingest: 0,
-    diagnosis_diagnose: 0,
-    diagnosis_verify: 0,
-    diagnosis_recommend: 0,
+    diagnosis: 0,
   };
 }
 
@@ -975,9 +970,7 @@ function sanitizeRunbookAction(
     case "telemetry_existing_entry":
     case "data_source_query":
     case "telemetry_ingest":
-    case "diagnosis_diagnose":
-    case "diagnosis_verify":
-    case "diagnosis_recommend":
+    case "diagnosis":
       return sanitizeTelemetryRunbookAction(sanitized, action);
     default:
       throw new Error(
@@ -1155,9 +1148,7 @@ function actionPayload(action: DesktopRunbookActionRecord): RunbookActionPayload
     case "telemetry_existing_entry":
     case "data_source_query":
     case "telemetry_ingest":
-    case "diagnosis_diagnose":
-    case "diagnosis_verify":
-    case "diagnosis_recommend":
+    case "diagnosis":
       if (action.telemetryConfig !== undefined) payload.telemetryConfig = action.telemetryConfig;
       return payload;
     default:

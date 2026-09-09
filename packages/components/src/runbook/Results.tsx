@@ -321,12 +321,8 @@ function typeIcon(type: RunbookActionType) {
       return Database;
     case "telemetry_ingest":
       return Loader2;
-    case "diagnosis_diagnose":
+    case "diagnosis":
       return ScanSearch;
-    case "diagnosis_verify":
-      return ShieldCheck;
-    case "diagnosis_recommend":
-      return FileText;
     default:
       return AlertCircle;
   }

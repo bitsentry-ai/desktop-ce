@@ -384,9 +384,7 @@ export type RunbookActionType =
   | 'telemetry_existing_entry'
   | 'data_source_query'
   | 'telemetry_ingest'
-  | 'diagnosis_diagnose'
-  | 'diagnosis_verify'
-  | 'diagnosis_recommend'
+  | 'diagnosis'
 
 /**
  * Runbook action (mirrors renderer RunbookAction).

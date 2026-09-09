@@ -1,3 +1,4 @@
+import { telemetryActionConfigWithCliSchema } from "./runbooks.schemas";
 import type {
   RunbookActionParameter,
   RunbookActionRecord,
@@ -248,9 +249,7 @@ const DATA_FETCHING_ACTION_TYPES = new Set<RunbookActionType>([
   "data_source_query",
   "telemetry_existing_entry",
   "telemetry_ingest",
-  "diagnosis_diagnose",
-  "diagnosis_verify",
-  "diagnosis_recommend",
+  "diagnosis",
 ]);
 
 function actionUsesFindings(action: RunbookActionRecord): boolean {
@@ -628,9 +627,7 @@ function actionTypeRiskLabels(
     case "llm":
       return ["local_ai"];
     case "telemetry_ingest":
-    case "diagnosis_diagnose":
-    case "diagnosis_verify":
-    case "diagnosis_recommend":
+    case "diagnosis":
     case "telemetry_existing_entry":
       return [];
     default:
@@ -806,6 +803,9 @@ function validateRunbookActionFields(action: RunbookActionRecord, errors: string
   }
 
   switch (action.type) {
+    case "diagnosis":
+      if (!telemetryActionConfigWithCliSchema.safeParse(action.telemetryConfig).data?.stage) errors.push(`Diagnosis action "${action.title}" requires a stage.`);
+      return;
     case "shell":
       validateRequiredActionField(action.command, `Shell action "${action.title}" is missing a command.`, errors);
       return;

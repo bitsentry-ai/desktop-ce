@@ -2508,9 +2508,7 @@ export class RunbookExecutionService {
       telemetry_existing_entry: 0,
       data_source_query: 0,
       telemetry_ingest: 0,
-      diagnosis_diagnose: 0,
-      diagnosis_verify: 0,
-      diagnosis_recommend: 0,
+      diagnosis: 0,
     };
 
     for (const action of runbook.actions) {

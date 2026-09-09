@@ -1,3 +1,4 @@
+import { telemetryActionConfigWithCliSchema } from "../runbooks/runbooks.schemas";
 import { z } from 'zod'
 import type { RunbookContext, ToolResult } from './types'
 import type {
@@ -79,8 +80,9 @@ export const getRunbookExecutionHostToolSchema = z.object({
 }).strict()
 
 const runbookActionProposalBaseSchema = z.object({
+  telemetryConfig: telemetryActionConfigWithCliSchema.optional(),
   id: z.string().min(1),
-  type: z.enum(['shell', 'llm', 'http', 'plugin', 'external_source', 'telemetry_existing_entry', 'data_source_query', 'telemetry_ingest', 'diagnosis_diagnose', 'diagnosis_verify', 'diagnosis_recommend']),
+  type: z.enum(['shell', 'llm', 'http', 'plugin', 'external_source', 'telemetry_existing_entry', 'data_source_query', 'telemetry_ingest', 'diagnosis']),
   title: z.string().min(1), command: z.string().optional(), prompt: z.string().optional(),
   llmProviderKey: z.enum(['groq', 'kilocode', 'openai', 'anthropic', 'gemini', 'openrouter', 'claude_code', 'codex', 'opencode', 'cursor']).optional(),
   llmModel: z.string().optional(), url: z.string().optional(), method: z.enum(['GET', 'POST', 'PUT', 'PATCH', 'DELETE']).optional(),
@@ -151,6 +153,7 @@ function validateRunbookTemplatePlaceholders(
 function createRunbookActionProposalSchema(options: { allowLegacyStepOutputPlaceholder?: boolean } = {}) {
   return runbookActionProposalBaseSchema.superRefine((action, context) => {
     if (action.type === 'llm') validateLlmActionProposal(action, context)
+    if (action.type === 'diagnosis' && action.telemetryConfig?.stage === undefined) context.addIssue({ code: 'custom', path: ['telemetryConfig', 'stage'], message: 'Diagnosis actions require a stage.' })
     if (action.type === 'external_source') validateExternalSourceActionProposal(action, context)
     if (action.type === 'plugin') validatePluginActionProposal(action, context)
     validateRunbookTemplatePlaceholders(action, context, options)
