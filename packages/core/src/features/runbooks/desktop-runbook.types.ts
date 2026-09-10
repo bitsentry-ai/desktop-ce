@@ -1,3 +1,4 @@
+import { legacyDiagnosisStage } from "./runbooks.schemas";
 import type {
   LogFilterConfig,
 } from "./runbooks.schemas";
@@ -14,9 +15,7 @@ export type RunbookActionType =
   | "telemetry_existing_entry"
   | "data_source_query"
   | "telemetry_ingest"
-  | "diagnosis_diagnose"
-  | "diagnosis_verify"
-  | "diagnosis_recommend";
+  | "diagnosis";
 export type LegacyRunbookActionType = RunbookActionType | "ai";
 export type RunbookHttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
 export type RunbookLlmProviderKey =
@@ -516,9 +515,7 @@ const RUNBOOK_ACTION_TYPE_VALUES = [
   "telemetry_existing_entry",
   "data_source_query",
   "telemetry_ingest",
-  "diagnosis_diagnose",
-  "diagnosis_verify",
-  "diagnosis_recommend",
+  "diagnosis",
 ] as const satisfies readonly RunbookActionType[];
 const RUNBOOK_ACTION_TYPES = new Set<string>(RUNBOOK_ACTION_TYPE_VALUES);
 
@@ -552,6 +549,7 @@ export function normalizeRunbookActionType(
 
   const raw = value.trim().toLowerCase();
   if (raw === "ai") return "llm";
+  if (legacyDiagnosisStage(raw) !== undefined) return "diagnosis";
   const parsed = parseRunbookActionType(raw);
   if (parsed !== undefined) {
     return parsed;

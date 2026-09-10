@@ -551,9 +551,7 @@ export type RunbookActionType =
   | "telemetry_existing_entry"
   | "data_source_query"
   | "telemetry_ingest"
-  | "diagnosis_diagnose"
-  | "diagnosis_verify"
-  | "diagnosis_recommend";
+  | "diagnosis";
 export type RunbookHttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
 export type RunbookLlmProviderKey =
   | "groq"
@@ -614,6 +612,7 @@ export interface RunbookTriggerContext {
 }
 
 export interface TelemetryActionConfig {
+  stage?: "diagnose" | "verify" | "recommend";
   needId?: string;
   needLabel?: string;
   sourceId?: string;

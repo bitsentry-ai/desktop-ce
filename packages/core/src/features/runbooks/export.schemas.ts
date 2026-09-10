@@ -40,7 +40,7 @@ export const exportedRunbookActionParameterV1Schema = z
     }
   });
 
-export const exportedRunbookActionV1Schema = z.object({
+const canonicalExportedRunbookActionV1Schema = z.object({
   id: z.string().optional(),
   type: runbookActionTypeSchema,
   title: z.string(),
@@ -66,6 +66,25 @@ export const exportedRunbookActionV1Schema = z.object({
   logFilter: logFilterConfigSchema.optional(),
   telemetryConfig: telemetryActionConfigWithCliSchema.optional(),
 });
+
+// Only import accepts historical action names; authored actions use diagnosis + stage.
+export const exportedRunbookActionV1Schema = z.preprocess((value) => {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) return value;
+  const action = value as Record<string, unknown>;
+  const stages: Record<string, string> = {
+    diagnosis_diagnose: "diagnose",
+    diagnosis_verify: "verify",
+    diagnosis_recommend: "recommend",
+  };
+  const stage = typeof action.type === "string" ? stages[action.type] : undefined;
+  if (stage === undefined) return value;
+  const config = action.telemetryConfig;
+  if (config !== undefined && (config === null || typeof config !== "object" || Array.isArray(config))) return value;
+  return { ...action, type: "diagnosis", telemetryConfig: { ...config as object, stage } };
+}, canonicalExportedRunbookActionV1Schema.refine(
+  (action) => action.type !== "diagnosis" || action.telemetryConfig?.stage !== undefined,
+  { message: "Diagnosis actions require a stage", path: ["telemetryConfig", "stage"] },
+));
 
 export const exportedRunbookV1Schema = z.object({
   id: z.string().optional(),

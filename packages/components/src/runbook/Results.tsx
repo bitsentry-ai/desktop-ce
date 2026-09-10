@@ -303,7 +303,11 @@ function entrypointLabel(execution: RunbookExecutionRecord | null | undefined) {
   }
 }
 
-function typeIcon(type: RunbookActionType) {
+function typeIcon(type: RunbookActionType, stage: unknown) {
+  if (type === "diagnosis") {
+    if (stage === "verify" || stage === "Verifying Diagnosis") return ShieldCheck;
+    if (stage === "recommend" || stage === "Generating Recommendation") return FileText;
+  }
   switch (type) {
     case "shell":
       return Terminal;
@@ -321,12 +325,8 @@ function typeIcon(type: RunbookActionType) {
       return Database;
     case "telemetry_ingest":
       return Loader2;
-    case "diagnosis_diagnose":
+    case "diagnosis":
       return ScanSearch;
-    case "diagnosis_verify":
-      return ShieldCheck;
-    case "diagnosis_recommend":
-      return FileText;
     default:
       return AlertCircle;
   }
@@ -623,7 +623,7 @@ function StepsPanel({
       </div>
       <div className="flex-1 space-y-2 overflow-y-auto px-4 py-4">
         {execution?.steps.map((step) => {
-          const Icon = typeIcon(step.type);
+          const Icon = typeIcon(step.type, step.metadata?.stage ?? step.metadata?.currentActionLabel);
           const stepKey = stepSelectionKey(step);
           const isSelected = selectedStepKey === stepKey;
           let stepClassName = "border-border bg-muted/10 hover:bg-muted/20";
