@@ -306,17 +306,19 @@ export function Composer({
           {t("common.incidents.aiIsResponding")}
         </div>
       )}
-      <input
-        ref={imageInputRef}
-        type="file"
-        accept="image/*"
-        multiple
-        className="hidden"
-        onChange={(event) => {
-          onImageFilesSelected(event.target.files);
-          event.currentTarget.value = "";
-        }}
-      />
+      {composerSupportsPhotos && (
+        <input
+          ref={imageInputRef}
+          type="file"
+          accept="image/*"
+          multiple
+          className="hidden"
+          onChange={(event) => {
+            onImageFilesSelected(event.target.files);
+            event.currentTarget.value = "";
+          }}
+        />
+      )}
       <input
         ref={fileInputRef}
         type="file"
@@ -373,12 +375,14 @@ export function Composer({
                     <span className="min-w-0 truncate text-xs font-medium text-foreground">
                       {image.name}
                     </span>
-                    <span className="shrink-0 text-[11px] tabular-nums text-muted-foreground">
-                      {t("common.incidents.attachmentRows", {
-                        rowCount: image.rowCount,
-                        totalRowCount: image.totalRowCount,
-                      })}
-                    </span>
+                    {image.type === "csv" && (
+                      <span className="shrink-0 text-[11px] tabular-nums text-muted-foreground">
+                        {t("common.incidents.attachmentRows", {
+                          rowCount: image.rowCount,
+                          totalRowCount: image.totalRowCount,
+                        })}
+                      </span>
+                    )}
                     <button
                       type="button"
                       onClick={() => { onRemoveImage(image.id); }}

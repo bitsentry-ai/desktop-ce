@@ -131,9 +131,29 @@ export interface ComposerCsvAttachment {
   totalRowCount: number;
 }
 
+export type ComposerTextAttachmentMimeType =
+  | "text/plain"
+  | "text/yaml"
+  | "text/x-yaml"
+  | "application/yaml"
+  | "application/x-yaml"
+  | "text/markdown"
+  | "text/x-markdown"
+  | "application/json";
+
+export interface ComposerTextAttachment {
+  id: string;
+  type: "text";
+  name: string;
+  mimeType: ComposerTextAttachmentMimeType;
+  sizeBytes: number;
+  text: string;
+}
+
 export type ComposerAttachment =
   | ComposerImageAttachment
-  | ComposerCsvAttachment;
+  | ComposerCsvAttachment
+  | ComposerTextAttachment;
 
 // ---------------------------------------------------------------------------
 // Access Level

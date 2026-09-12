@@ -57,12 +57,14 @@ function UserChatBubble({ msg }: { msg: UserMessage }) {
                 <span className="min-w-0 truncate text-xs font-medium">
                   {attachment.name}
                 </span>
-                <span className="ml-auto shrink-0 text-[11px] tabular-nums text-muted-foreground">
-                  {t("common.incidents.attachmentRows", {
-                    rowCount: attachment.rowCount,
-                    totalRowCount: attachment.totalRowCount,
-                  })}
-                </span>
+                {attachment.type === "csv" && (
+                  <span className="ml-auto shrink-0 text-[11px] tabular-nums text-muted-foreground">
+                    {t("common.incidents.attachmentRows", {
+                      rowCount: attachment.rowCount,
+                      totalRowCount: attachment.totalRowCount,
+                    })}
+                  </span>
+                )}
               </div>
             ),
           )}

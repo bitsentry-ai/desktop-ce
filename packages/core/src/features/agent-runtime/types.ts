@@ -141,7 +141,29 @@ export interface AgentChatCsvAttachment {
   totalRowCount: number
 }
 
-export type AgentChatAttachment = AgentChatImageAttachment | AgentChatCsvAttachment
+export type AgentChatTextAttachmentMimeType =
+  | 'text/plain'
+  | 'text/yaml'
+  | 'text/x-yaml'
+  | 'application/yaml'
+  | 'application/x-yaml'
+  | 'text/markdown'
+  | 'text/x-markdown'
+  | 'application/json'
+
+export interface AgentChatTextAttachment {
+  id: string
+  type: 'text'
+  name: string
+  mimeType: AgentChatTextAttachmentMimeType
+  sizeBytes: number
+  text: string
+}
+
+export type AgentChatAttachment =
+  | AgentChatImageAttachment
+  | AgentChatCsvAttachment
+  | AgentChatTextAttachment
 
 export type AgentProviderKey = 'groq' | 'kilocode' | 'openai' | 'anthropic' | 'gemini' | 'openrouter' | 'claude_code' | 'codex' | 'opencode' | 'cursor'
 

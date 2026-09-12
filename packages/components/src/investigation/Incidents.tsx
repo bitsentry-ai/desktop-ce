@@ -56,7 +56,8 @@ import type {
   AgentThreadSnapshot,
   AgentThreadTokenUsage,
   ChatMessage,
-  ComposerImageAttachment,
+  ComposerAttachment,
+  ComposerTextAttachmentMimeType,
   InteractionMode,
   SavedProviderConfig,
   StreamDeltaRecord,
@@ -123,7 +124,7 @@ function canSendIncidentMessage(
 type IncidentAgentRequestBase = {
   text: string;
   sessionId: string | null;
-  attachments: ComposerImageAttachment[];
+  attachments: ComposerAttachment[];
   llm: AgentLlmSelection;
   incidentThreadId: string;
   accessLevel?: AccessLevel;
@@ -518,39 +519,75 @@ function normalizeStreamDeltas(value: unknown): StreamDeltaRecord[] {
     .filter((delta): delta is StreamDeltaRecord => delta !== null);
 }
 
+function isSupportedTextAttachmentMimeType(
+  value: string,
+): value is ComposerTextAttachmentMimeType {
+  return (
+    value === "text/plain" ||
+    value === "text/yaml" ||
+    value === "text/x-yaml" ||
+    value === "application/yaml" ||
+    value === "application/x-yaml" ||
+    value === "text/markdown" ||
+    value === "text/x-markdown" ||
+    value === "application/json"
+  );
+}
+
 function normalizeComposerAttachments(
   value: unknown,
-): ComposerImageAttachment[] | undefined {
+): ComposerAttachment[] | undefined {
   if (!Array.isArray(value)) return undefined;
   const attachments = value
-    .map((attachment): ComposerImageAttachment | null => {
+    .map((attachment): ComposerAttachment | null => {
       const record = asRecord(attachment);
       if (record === null) return null;
       const id = getString(record, "id");
       const name = getString(record, "name");
       const mimeType = getString(record, "mimeType");
-      const dataUrl = getString(record, "dataUrl");
       if (
         id === undefined ||
         name === undefined ||
         mimeType === undefined ||
-        dataUrl === undefined ||
-        record.type !== "image" ||
         typeof record.sizeBytes !== "number"
       ) {
         return null;
       }
-      return {
-        id,
-        type: "image",
-        name,
-        mimeType,
-        sizeBytes: record.sizeBytes,
-        dataUrl,
-      };
+      if (record.type === "image") {
+        const dataUrl = getString(record, "dataUrl");
+        if (dataUrl === undefined) return null;
+        return { id, type: "image", name, mimeType, sizeBytes: record.sizeBytes, dataUrl };
+      }
+      if (record.type === "csv") {
+        const text = getString(record, "text");
+        if (
+          mimeType !== "text/csv" ||
+          text === undefined ||
+          typeof record.rowCount !== "number" ||
+          typeof record.totalRowCount !== "number"
+        ) {
+          return null;
+        }
+        return {
+          id,
+          type: "csv",
+          name,
+          mimeType,
+          sizeBytes: record.sizeBytes,
+          text,
+          rowCount: record.rowCount,
+          totalRowCount: record.totalRowCount,
+        };
+      }
+      if (record.type === "text" && isSupportedTextAttachmentMimeType(mimeType)) {
+        const text = getString(record, "text");
+        if (text === undefined) return null;
+        return { id, type: "text", name, mimeType, sizeBytes: record.sizeBytes, text };
+      }
+      return null;
     })
     .filter(
-      (attachment): attachment is ComposerImageAttachment => attachment !== null,
+      (attachment): attachment is ComposerAttachment => attachment !== null,
     );
   if (attachments.length === 0) return undefined;
   return attachments;
@@ -1595,9 +1632,7 @@ export default function IncidentsPage() {
   // Managed here (not in Composer) so it can be saved/restored per chat.
   const [selectedAccessLevel, setSelectedAccessLevel] = useState<AccessLevel>("auto-accept-edits");
   const [thinkingEnabled, setThinkingEnabled] = useState(false);
-  const [composerImages, setComposerImages] = useState<
-    ComposerImageAttachment[]
-  >([]);
+  const [composerImages, setComposerImages] = useState<ComposerAttachment[]>([]);
   const [tokenUsageByIncident, setTokenUsageByIncident] = useState<
     Record<string, AgentThreadTokenUsage>
   >(() => loadIncidentTokenUsage());
