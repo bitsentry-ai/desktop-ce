@@ -41,12 +41,48 @@ interface MarkdownFence {
   marker: string;
   length: number;
   closingIndent: number;
+  blockquoteDepth: number;
+}
+
+interface MarkdownBlockquoteContent {
+  text: string;
+  depth: number;
 }
 
 function skipUpToThreeSpaces(line: string): number {
   let index = 0;
   while (index < 3 && line[index] === " ") index += 1;
   return index;
+}
+
+function readBlockquoteContent(line: string): MarkdownBlockquoteContent {
+  let index = skipUpToThreeSpaces(line);
+  let depth = 0;
+  while (line[index] === ">") {
+    depth += 1;
+    index += 1;
+    if (line[index] === " " || line[index] === "\t") index += 1;
+  }
+  return { text: line.slice(index), depth };
+}
+
+function getIndentColumns(line: string): number {
+  let columns = 0;
+  for (let index = 0; index < line.length; index += 1) {
+    if (line[index] === " ") {
+      columns += 1;
+    } else if (line[index] === "\t") {
+      columns += 4 - (columns % 4);
+    } else {
+      break;
+    }
+  }
+  return columns;
+}
+
+function isIndentedCodeLine(line: string): boolean {
+  const content = readBlockquoteContent(line).text;
+  return content.trim().length > 0 && getIndentColumns(content) >= 4;
 }
 
 function readFenceAt(line: string, index: number): MarkdownFence | undefined {
@@ -57,7 +93,12 @@ function readFenceAt(line: string, index: number): MarkdownFence | undefined {
   if (end - index < 3 || (marker === "`" && line.slice(end).includes("`"))) {
     return undefined;
   }
-  return { marker, length: end - index, closingIndent: 3 };
+  return {
+    marker,
+    length: end - index,
+    closingIndent: 3,
+    blockquoteDepth: 0,
+  };
 }
 
 function readListContentStart(line: string, index: number): number | undefined {
@@ -76,22 +117,31 @@ function readListContentStart(line: string, index: number): number | undefined {
 }
 
 function readFenceOpening(line: string): MarkdownFence | undefined {
-  const contentStart = skipUpToThreeSpaces(line);
-  const directFence = readFenceAt(line, contentStart);
-  if (directFence !== undefined) return { ...directFence, closingIndent: 3 };
-  const listContentStart = readListContentStart(line, contentStart);
+  const { text, depth } = readBlockquoteContent(line);
+  const contentStart = skipUpToThreeSpaces(text);
+  const directFence = readFenceAt(text, contentStart);
+  if (directFence !== undefined) {
+    return { ...directFence, closingIndent: 3, blockquoteDepth: depth };
+  }
+  const listContentStart = readListContentStart(text, contentStart);
   if (listContentStart === undefined) return undefined;
-  const listFence = readFenceAt(line, listContentStart);
+  const listFence = readFenceAt(text, listContentStart);
   return listFence === undefined
     ? undefined
-    : { ...listFence, closingIndent: listContentStart + 3 };
+    : {
+        ...listFence,
+        closingIndent: listContentStart + 3,
+        blockquoteDepth: depth,
+      };
 }
 
 function isFenceClosing(line: string, fence: MarkdownFence): boolean {
+  const { text, depth } = readBlockquoteContent(line);
+  if (depth !== fence.blockquoteDepth) return false;
   let markerStart = 0;
-  while (line[markerStart] === " ") markerStart += 1;
+  while (text[markerStart] === " ") markerStart += 1;
   if (markerStart > fence.closingIndent) return false;
-  const closingFence = readFenceAt(line, markerStart);
+  const closingFence = readFenceAt(text, markerStart);
   if (
     closingFence === undefined ||
     closingFence.marker !== fence.marker ||
@@ -99,21 +149,16 @@ function isFenceClosing(line: string, fence: MarkdownFence): boolean {
   ) {
     return false;
   }
-  return line
+  return text
     .slice(markerStart + closingFence.length)
     .split("")
     .every((character) => character === " " || character === "\t");
 }
 
 function isMarkdownTableDelimiter(line: string): boolean {
-  if (/^ {4}/.test(line)) return false;
-  let content = line.slice(skipUpToThreeSpaces(line));
-  while (content.startsWith(">")) content = content.slice(1).trimStart();
-  content = content.trim();
-  if (!content.includes("|")) return false;
-  if (content.startsWith("|")) content = content.slice(1);
-  if (content.endsWith("|")) content = content.slice(0, -1);
-  const cells = content.split("|");
+  const content = readBlockquoteContent(line).text;
+  if (getIndentColumns(content) >= 4) return false;
+  const cells = splitMarkdownTableCells(content);
   return (
     cells.length >= 2 &&
     cells.every((cell) => /^:?-+:?$/.test(cell.trim()))
@@ -125,16 +170,20 @@ function getProtectedMarkdownLines(lines: string[]): Set<number> {
   let fence: MarkdownFence | undefined;
   lines.forEach((line, index) => {
     if (fence !== undefined) {
-      protectedLines.add(index);
-      if (isFenceClosing(line, fence)) fence = undefined;
-      return;
+      const { depth } = readBlockquoteContent(line);
+      if (depth >= fence.blockquoteDepth) {
+        protectedLines.add(index);
+        if (isFenceClosing(line, fence)) fence = undefined;
+        return;
+      }
+      fence = undefined;
     }
 
     const opening = readFenceOpening(line);
     if (opening !== undefined) {
       fence = opening;
       protectedLines.add(index);
-    } else if (/^ {4}/.test(line)) {
+    } else if (isIndentedCodeLine(line)) {
       protectedLines.add(index);
     }
   });
@@ -142,17 +191,39 @@ function getProtectedMarkdownLines(lines: string[]): Set<number> {
 }
 
 function hasTableSeparator(line: string): boolean {
-  line = line.slice(skipUpToThreeSpaces(line));
-  while (line.startsWith(">")) line = line.slice(1).trimStart();
+  line = readBlockquoteContent(line).text;
+  for (let index = 0; index < line.length; ) {
+    if (line[index] === "\\" && index + 1 < line.length) {
+      index += 2;
+      continue;
+    }
+    if (line[index] === "|") return true;
+    index += 1;
+  }
+  return false;
+}
+
+function hasPipeOutsideCodeSpan(line: string): boolean {
+  line = readBlockquoteContent(line).text;
   let codeDelimiterLength = 0;
   for (let index = 0; index < line.length; ) {
-    if (line[index] === "\\" && codeDelimiterLength === 0 && index + 1 < line.length) {
+    if (line[index] === "\\" && index + 1 < line.length) {
       index += 2;
       continue;
     }
     const delimiter = readBacktickDelimiter(line, index);
     if (delimiter !== undefined) {
-      codeDelimiterLength = toggleCodeDelimiter(codeDelimiterLength, delimiter.length);
+      if (
+        codeDelimiterLength === 0 &&
+        !hasMatchingCodeDelimiter(line, index, delimiter)
+      ) {
+        index += delimiter.length;
+        continue;
+      }
+      codeDelimiterLength = toggleCodeDelimiter(
+        codeDelimiterLength,
+        delimiter.length,
+      );
       index += delimiter.length;
       continue;
     }
@@ -162,8 +233,37 @@ function hasTableSeparator(line: string): boolean {
   return false;
 }
 
-function getMarkdownTableLines(lines: string[], protectedLines: Set<number>): Set<number> {
+function splitMarkdownTableCells(line: string): string[] {
+  const cells: string[] = [];
+  let start = 0;
+  for (let index = 0; index < line.length; ) {
+    if (line[index] === "\\" && index + 1 < line.length) {
+      index += 2;
+      continue;
+    }
+    if (line[index] === "|") {
+      cells.push(line.slice(start, index));
+      start = index + 1;
+    }
+    index += 1;
+  }
+  cells.push(line.slice(start));
+  if (cells[0]?.trim() === "") cells.shift();
+  if (cells[cells.length - 1]?.trim() === "") cells.pop();
+  return cells;
+}
+
+interface MarkdownTableLineInfo {
+  lines: Set<number>;
+  codeOnlyHeaderLines: Set<number>;
+}
+
+function getMarkdownTableLines(
+  lines: string[],
+  protectedLines: Set<number>,
+): MarkdownTableLineInfo {
   const tableLines = new Set<number>();
+  const codeOnlyHeaderLines = new Set<number>();
   let index = 1;
   while (index < lines.length) {
     if (
@@ -176,13 +276,35 @@ function getMarkdownTableLines(lines: string[], protectedLines: Set<number>): Se
       continue;
     }
 
+    const headerContent = readBlockquoteContent(lines[index - 1]);
+    const delimiterContent = readBlockquoteContent(lines[index]);
+    const headerCells = splitMarkdownTableCells(headerContent.text.trim());
+    const delimiterCells = splitMarkdownTableCells(delimiterContent.text.trim());
+    if (
+      headerContent.depth !== delimiterContent.depth ||
+      headerCells.length !== delimiterCells.length
+    ) {
+      index += 1;
+      continue;
+    }
+
     tableLines.add(index - 1);
     tableLines.add(index);
+    if (!hasPipeOutsideCodeSpan(headerContent.text)) {
+      codeOnlyHeaderLines.add(index - 1);
+    }
     let row = index + 1;
     for (; row < lines.length; row += 1) {
+      const rowContent = readBlockquoteContent(lines[row]);
       if (
         protectedLines.has(row) ||
         lines[row].trim() === "" ||
+        rowContent.depth !== headerContent.depth ||
+        (isMarkdownStructuralLine(lines[row]) &&
+          !(
+            headerContent.depth > 0 &&
+            !isMarkdownStructuralLine(rowContent.text)
+          )) ||
         !hasTableSeparator(lines[row])
       ) {
         break;
@@ -191,20 +313,38 @@ function getMarkdownTableLines(lines: string[], protectedLines: Set<number>): Se
     }
     index = row;
   }
-  return tableLines;
+  return { lines: tableLines, codeOnlyHeaderLines };
 }
 
-function escapeInlineCodePipesInTableRow(line: string): string {
+function escapeInlineCodePipesInTableRow(
+  line: string,
+  preserveCodePipes = false,
+): string {
   let result = "";
   let codeDelimiterLength = 0;
   for (let index = 0; index < line.length; ) {
-    if (line[index] === "\\" && codeDelimiterLength === 0 && index + 1 < line.length) {
-      result += line.slice(index, index + 2);
-      index += 2;
-      continue;
+    if (line[index] === "\\" && index + 1 < line.length) {
+      if (codeDelimiterLength > 0 && line[index + 1] === "|") {
+        result += "\\|";
+        index += 2;
+        continue;
+      }
+      if (codeDelimiterLength === 0) {
+        result += line.slice(index, index + 2);
+        index += 2;
+        continue;
+      }
     }
     const delimiter = readBacktickDelimiter(line, index);
     if (delimiter !== undefined) {
+      if (
+        codeDelimiterLength === 0 &&
+        !hasMatchingCodeDelimiter(line, index, delimiter)
+      ) {
+        result += delimiter;
+        index += delimiter.length;
+        continue;
+      }
       codeDelimiterLength = toggleCodeDelimiter(
         codeDelimiterLength,
         delimiter.length,
@@ -213,11 +353,29 @@ function escapeInlineCodePipesInTableRow(line: string): string {
       index += delimiter.length;
       continue;
     }
-    if (line[index] === "|" && codeDelimiterLength > 0) result += "\\|";
-    else result += line[index];
+    if (line[index] === "|" && codeDelimiterLength > 0 && !preserveCodePipes) {
+      result += "\\|";
+    } else result += line[index];
     index += 1;
   }
   return result;
+}
+
+function hasMatchingCodeDelimiter(
+  line: string,
+  openingIndex: number,
+  openingDelimiter: string,
+): boolean {
+  for (let index = openingIndex + openingDelimiter.length; index < line.length; ) {
+    const delimiter = readBacktickDelimiter(line, index);
+    if (delimiter !== undefined) {
+      if (delimiter === openingDelimiter) return true;
+      index += delimiter.length;
+      continue;
+    }
+    index += 1;
+  }
+  return false;
 }
 
 export function normalizeMarkdownContent(content: string): string {
@@ -226,10 +384,15 @@ export function normalizeMarkdownContent(content: string): string {
     .replace(HTML_BREAK_TAG_REGEX, "\n")
     .split("\n");
   const protectedLines = getProtectedMarkdownLines(lines);
-  const tableLines = getMarkdownTableLines(lines, protectedLines);
+  const tableInfo = getMarkdownTableLines(lines, protectedLines);
   return lines
     .map((line, index) =>
-      tableLines.has(index) ? escapeInlineCodePipesInTableRow(line) : line,
+      tableInfo.lines.has(index)
+        ? escapeInlineCodePipesInTableRow(
+            line,
+            tableInfo.codeOnlyHeaderLines.has(index),
+          )
+        : line,
     )
     .join("\n");
 }
@@ -238,15 +401,13 @@ const MARKDOWN_HEADING_LINE_REGEX = /^\s{0,3}#{1,6}\s/;
 const MARKDOWN_QUOTE_LINE_REGEX = /^\s{0,3}>\s?/;
 const MARKDOWN_BULLET_LINE_REGEX = /^\s*[-*+]\s+/;
 const MARKDOWN_ORDERED_LIST_LINE_REGEX = /^\s*\d+\.\s+/;
-const MARKDOWN_INDENTED_CODE_LINE_REGEX = /^\s{4,}\S/;
-
 function isMarkdownStructuralLine(line: string): boolean {
   return readFenceOpening(line) !== undefined ||
     MARKDOWN_HEADING_LINE_REGEX.test(line) ||
     MARKDOWN_QUOTE_LINE_REGEX.test(line) ||
     MARKDOWN_BULLET_LINE_REGEX.test(line) ||
     MARKDOWN_ORDERED_LIST_LINE_REGEX.test(line) ||
-    MARKDOWN_INDENTED_CODE_LINE_REGEX.test(line);
+    isIndentedCodeLine(line);
 }
 
 export function paragraphizePlainTextSoftBreaks(content: string): string {
@@ -258,7 +419,7 @@ export function paragraphizePlainTextSoftBreaks(content: string): string {
 
   if (
     lines.some(isMarkdownStructuralLine) ||
-    getMarkdownTableLines(lines, protectedLines).size > 0 ||
+    getMarkdownTableLines(lines, protectedLines).lines.size > 0 ||
     lines.filter((line) => line.trim().length > 0).length < 2
   ) {
     return normalized;

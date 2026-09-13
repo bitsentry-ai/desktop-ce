@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { ChatBubble, getCopyableMarkdown } from '@bitsentry-ce/components/chat/ChatBubble'
 import type { ChatMessage } from '@bitsentry-ce/components/chat/types'
-import { getCodeText } from '@bitsentry-ce/components/markdown'
+import { getCodeText, normalizeMarkdownContent } from '@bitsentry-ce/components/markdown'
 import { TooltipProvider } from '@bitsentry-ce/components/ui/tooltip'
 
 vi.mock('@bitsentry-ce/i18n', () => ({
@@ -267,6 +267,116 @@ describe('incident response copy and markdown extraction', () => {
     expect(cells[1].textContent).toEqual('Passed')
   })
 
+  it('recognizes table headers with only inline-code pipes', () => {
+    const content = ['`Name|Kind`', '--- | ---', '`value|kind` | stable'].join('\n')
+
+    render(
+      <TooltipProvider>
+        <ChatBubble
+          msg={makeAgentMessage({
+            iterations: [],
+            finalText: content,
+            status: 'done',
+          })}
+        />
+      </TooltipProvider>,
+    )
+
+    const cells = within(screen.getAllByRole('row')[1]).getAllByRole('cell')
+    expect(cells).toHaveLength(2)
+    expect(cells[0].textContent).toEqual('value|kind')
+    expect(cells[1].textContent).toEqual('stable')
+  })
+
+  it('protects fenced code nested in blockquotes', () => {
+    render(
+      <TooltipProvider>
+        <ChatBubble
+          msg={makeAgentMessage({
+            iterations: [],
+            finalText: [
+              '> ```text',
+              '> | `a|b` |',
+              '> ```',
+              '',
+              '| Command | Result |',
+              '| --- | --- |',
+              '| `check || true` | Passed |',
+            ].join('\n'),
+            status: 'done',
+          })}
+        />
+      </TooltipProvider>,
+    )
+
+    expect(screen.getByText('| `a|b` |').textContent).toContain('| `a|b` |')
+    expect(screen.getAllByRole('row')).toHaveLength(2)
+  })
+
+  it('protects tab-indented code blocks', () => {
+    render(
+      <TooltipProvider>
+        <ChatBubble
+          msg={makeAgentMessage({
+            iterations: [],
+            finalText: ['\t| `a|b` |', '\t--- | ---', '\t| `c|d` |'].join('\n'),
+            status: 'done',
+          })}
+        />
+      </TooltipProvider>,
+    )
+
+    expect(screen.queryAllByRole('row')).toHaveLength(0)
+    expect(screen.getByText(/\| `c\|d` \|/).textContent).toContain('| `c|d` |')
+  })
+
+  it('stops a table before a following blockquote', () => {
+    render(
+      <TooltipProvider>
+        <ChatBubble
+          msg={makeAgentMessage({
+            iterations: [],
+            finalText: [
+              '| Command | Result |',
+              '| --- | --- |',
+              '| `ok|v` | Passed |',
+              '> `x|y` | text',
+            ].join('\n'),
+            status: 'done',
+          })}
+        />
+      </TooltipProvider>,
+    )
+
+    expect(screen.getAllByRole('row')).toHaveLength(2)
+    expect(screen.getByText('x|y').textContent).toEqual('x|y')
+  })
+
+  it('does not normalize tables with mismatched header columns', () => {
+    const content = [
+      '| A | B | C |',
+      '| --- | --- |',
+      '| `x|y` | z |',
+    ].join('\n')
+
+    expect(normalizeMarkdownContent(content)).toEqual(content)
+  })
+
+  it('does not enter an unmatched inline-code span', () => {
+    const content = [
+      '| Command | Result |',
+      '| --- | --- |',
+      '| `unclosed | Passed |',
+    ].join('\n')
+
+    expect(normalizeMarkdownContent(content)).toEqual(content)
+  })
+
+  it('preserves already escaped pipes inside inline code', () => {
+    const content = ['| Command | Result |', '| --- | --- |', '| `a\\|b` | Passed |'].join('\n')
+
+    expect(normalizeMarkdownContent(content)).toEqual(content)
+  })
 
   it('copies the same complete multi-iteration content rendered in the chat', () => {
     const message = makeAgentMessage()
