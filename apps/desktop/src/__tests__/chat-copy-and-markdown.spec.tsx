@@ -120,6 +120,78 @@ describe('incident response copy and markdown extraction', () => {
     expect(screen.getByText('| fenced || true |')).toBeTruthy()
   })
 
+  it('keeps code pipes in tables without outer pipes', () => {
+    render(
+      <TooltipProvider>
+        <ChatBubble
+          msg={makeAgentMessage({
+            iterations: [],
+            finalText: [
+              'Command | Result',
+              '--- | ---',
+              '`check || true` | Passed',
+              '`path\\` | Preserved',
+            ].join('\n'),
+            status: 'done',
+          })}
+        />
+      </TooltipProvider>,
+    )
+
+    const rows = screen.getAllByRole('row')
+    const commandCells = within(rows[1]).getAllByRole('cell')
+    const pathCells = within(rows[2]).getAllByRole('cell')
+    expect(commandCells).toHaveLength(2)
+    expect(commandCells[0].textContent).toEqual('check || true')
+    expect(commandCells[1].textContent).toEqual('Passed')
+    expect(pathCells).toHaveLength(2)
+    expect(pathCells[0].textContent).toEqual('path\\')
+    expect(pathCells[1].textContent).toEqual('Preserved')
+  })
+
+  it('does not rewrite pipe-shaped prose or indented code', () => {
+    render(
+      <TooltipProvider>
+        <ChatBubble
+          msg={makeAgentMessage({
+            iterations: [],
+            finalText: ['| use `a|b` |', '', '    | `c|d` |'].join('\n'),
+            status: 'done',
+          })}
+        />
+      </TooltipProvider>,
+    )
+
+    expect(screen.getByText('a|b').textContent).toEqual('a|b')
+    expect(screen.getByText('| `c|d` |').textContent).toEqual('| `c|d` |\n')
+  })
+
+  it('keeps table-like text inside valid fenced code blocks', () => {
+    render(
+      <TooltipProvider>
+        <ChatBubble
+          msg={makeAgentMessage({
+            iterations: [],
+            finalText: [
+              '~~~text',
+              '~~~not-a-close',
+              '| `a|b` |',
+              '~~~',
+              '',
+              '- ```text',
+              '  | `c|d` |',
+              '  ```',
+            ].join('\n'),
+            status: 'done',
+          })}
+        />
+      </TooltipProvider>,
+    )
+
+    expect(screen.getByText(/~~~not-a-close/).textContent).toContain('| `a|b` |')
+    expect(screen.getByText('| `c|d` |').textContent).toEqual('| `c|d` |\n')
+  })
+
 
   it('copies the same complete multi-iteration content rendered in the chat', () => {
     const message = makeAgentMessage()
