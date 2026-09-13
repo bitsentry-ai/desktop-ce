@@ -316,6 +316,56 @@ function getMarkdownTableLines(
   return { lines: tableLines, codeOnlyHeaderLines };
 }
 
+interface MarkdownEscapeResult {
+  replacement: string;
+  nextIndex: number;
+}
+
+function consumeEscapedCharacter(
+  line: string,
+  index: number,
+  codeDelimiterLength: number,
+): MarkdownEscapeResult | undefined {
+  if (line[index] !== "\\" || index + 1 >= line.length) return undefined;
+  if (codeDelimiterLength > 0 && line[index + 1] === "|") {
+    return { replacement: "\\|", nextIndex: index + 2 };
+  }
+  return codeDelimiterLength === 0
+    ? { replacement: line.slice(index, index + 2), nextIndex: index + 2 }
+    : undefined;
+}
+
+interface MarkdownDelimiterResult extends MarkdownEscapeResult {
+  codeDelimiterLength: number;
+}
+
+function consumeBacktickDelimiter(
+  line: string,
+  index: number,
+  codeDelimiterLength: number,
+): MarkdownDelimiterResult | undefined {
+  const delimiter = readBacktickDelimiter(line, index);
+  if (delimiter === undefined) return undefined;
+  if (
+    codeDelimiterLength === 0 &&
+    !hasMatchingCodeDelimiter(line, index, delimiter)
+  ) {
+    return {
+      replacement: delimiter,
+      nextIndex: index + delimiter.length,
+      codeDelimiterLength,
+    };
+  }
+  return {
+    replacement: delimiter,
+    nextIndex: index + delimiter.length,
+    codeDelimiterLength: toggleCodeDelimiter(
+      codeDelimiterLength,
+      delimiter.length,
+    ),
+  };
+}
+
 function escapeInlineCodePipesInTableRow(
   line: string,
   preserveCodePipes = false,
@@ -323,39 +373,31 @@ function escapeInlineCodePipesInTableRow(
   let result = "";
   let codeDelimiterLength = 0;
   for (let index = 0; index < line.length; ) {
-    if (line[index] === "\\" && index + 1 < line.length) {
-      if (codeDelimiterLength > 0 && line[index + 1] === "|") {
-        result += "\\|";
-        index += 2;
-        continue;
-      }
-      if (codeDelimiterLength === 0) {
-        result += line.slice(index, index + 2);
-        index += 2;
-        continue;
-      }
-    }
-    const delimiter = readBacktickDelimiter(line, index);
-    if (delimiter !== undefined) {
-      if (
-        codeDelimiterLength === 0 &&
-        !hasMatchingCodeDelimiter(line, index, delimiter)
-      ) {
-        result += delimiter;
-        index += delimiter.length;
-        continue;
-      }
-      codeDelimiterLength = toggleCodeDelimiter(
-        codeDelimiterLength,
-        delimiter.length,
-      );
-      result += delimiter;
-      index += delimiter.length;
+    const escaped = consumeEscapedCharacter(
+      line,
+      index,
+      codeDelimiterLength,
+    );
+    if (escaped !== undefined) {
+      result += escaped.replacement;
+      index = escaped.nextIndex;
       continue;
     }
-    if (line[index] === "|" && codeDelimiterLength > 0 && !preserveCodePipes) {
-      result += "\\|";
-    } else result += line[index];
+
+    const delimiter = consumeBacktickDelimiter(
+      line,
+      index,
+      codeDelimiterLength,
+    );
+    if (delimiter !== undefined) {
+      result += delimiter.replacement;
+      codeDelimiterLength = delimiter.codeDelimiterLength;
+      index = delimiter.nextIndex;
+      continue;
+    }
+
+    const isCodePipe = line[index] === "|" && codeDelimiterLength > 0;
+    result += isCodePipe && !preserveCodePipes ? "\\|" : line[index];
     index += 1;
   }
   return result;
