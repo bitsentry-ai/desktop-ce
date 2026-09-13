@@ -98,6 +98,9 @@ async function buildPluginArtifact(pluginDirectory) {
     format: "cjs",
     target: ["node22"],
     sourcemap: false,
+    // ssh2 can use this native module when present, but it is optional and is
+    // not shipped with standalone plugin artifacts.
+    external: ["cpu-features"],
     legalComments: "none",
     logLevel: "silent",
   });
