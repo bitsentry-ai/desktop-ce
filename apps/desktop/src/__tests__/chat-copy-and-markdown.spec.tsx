@@ -192,6 +192,81 @@ describe('incident response copy and markdown extraction', () => {
     expect(screen.getByText('| `c|d` |').textContent).toEqual('| `c|d` |\n')
   })
 
+  it('does not treat invalid backtick fences as code blocks', () => {
+    render(
+      <TooltipProvider>
+        <ChatBubble
+          msg={makeAgentMessage({
+            iterations: [],
+            finalText: [
+              '``` aa ```',
+              '',
+              '| Command | Result |',
+              '| --- | --- |',
+              '| `check || true` | Passed |',
+            ].join('\n'),
+            status: 'done',
+          })}
+        />
+      </TooltipProvider>,
+    )
+
+    const cells = within(screen.getAllByRole('row')[1]).getAllByRole('cell')
+    expect(cells).toHaveLength(2)
+    expect(cells[0].textContent).toEqual('check || true')
+    expect(cells[1].textContent).toEqual('Passed')
+  })
+
+  it('closes list-nested fences at their content indentation', () => {
+    render(
+      <TooltipProvider>
+        <ChatBubble
+          msg={makeAgentMessage({
+            iterations: [],
+            finalText: [
+              '-   ```text',
+              '    | `a|b` |',
+              '    ```',
+              '',
+              '| Command | Result |',
+              '| --- | --- |',
+              '| `check || true` | Passed |',
+            ].join('\n'),
+            status: 'done',
+          })}
+        />
+      </TooltipProvider>,
+    )
+
+    const cells = within(screen.getAllByRole('row')[1]).getAllByRole('cell')
+    expect(cells).toHaveLength(2)
+    expect(cells[0].textContent).toEqual('check || true')
+    expect(cells[1].textContent).toEqual('Passed')
+  })
+
+  it('keeps inline code pipes inside a quoted markdown table cell', () => {
+    render(
+      <TooltipProvider>
+        <ChatBubble
+          msg={makeAgentMessage({
+            iterations: [],
+            finalText: [
+              '> Command | Result',
+              '> --- | ---',
+              '> `check || true` | Passed',
+            ].join('\n'),
+            status: 'done',
+          })}
+        />
+      </TooltipProvider>,
+    )
+
+    const cells = within(screen.getAllByRole('row')[1]).getAllByRole('cell')
+    expect(cells).toHaveLength(2)
+    expect(cells[0].textContent).toEqual('check || true')
+    expect(cells[1].textContent).toEqual('Passed')
+  })
+
 
   it('copies the same complete multi-iteration content rendered in the chat', () => {
     const message = makeAgentMessage()

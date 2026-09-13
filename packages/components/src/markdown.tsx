@@ -40,6 +40,7 @@ function toggleCodeDelimiter(current: number, next: number): number {
 interface MarkdownFence {
   marker: string;
   length: number;
+  closingIndent: number;
 }
 
 function skipUpToThreeSpaces(line: string): number {
@@ -53,7 +54,10 @@ function readFenceAt(line: string, index: number): MarkdownFence | undefined {
   if (marker !== "`" && marker !== "~") return undefined;
   let end = index;
   while (line[end] === marker) end += 1;
-  return end - index >= 3 ? { marker, length: end - index } : undefined;
+  if (end - index < 3 || (marker === "`" && line.slice(end).includes("`"))) {
+    return undefined;
+  }
+  return { marker, length: end - index, closingIndent: 3 };
 }
 
 function readListContentStart(line: string, index: number): number | undefined {
@@ -74,13 +78,19 @@ function readListContentStart(line: string, index: number): number | undefined {
 function readFenceOpening(line: string): MarkdownFence | undefined {
   const contentStart = skipUpToThreeSpaces(line);
   const directFence = readFenceAt(line, contentStart);
-  if (directFence !== undefined) return directFence;
+  if (directFence !== undefined) return { ...directFence, closingIndent: 3 };
   const listContentStart = readListContentStart(line, contentStart);
-  return listContentStart === undefined ? undefined : readFenceAt(line, listContentStart);
+  if (listContentStart === undefined) return undefined;
+  const listFence = readFenceAt(line, listContentStart);
+  return listFence === undefined
+    ? undefined
+    : { ...listFence, closingIndent: listContentStart + 3 };
 }
 
 function isFenceClosing(line: string, fence: MarkdownFence): boolean {
-  const markerStart = skipUpToThreeSpaces(line);
+  let markerStart = 0;
+  while (line[markerStart] === " ") markerStart += 1;
+  if (markerStart > fence.closingIndent) return false;
   const closingFence = readFenceAt(line, markerStart);
   if (
     closingFence === undefined ||
@@ -97,7 +107,9 @@ function isFenceClosing(line: string, fence: MarkdownFence): boolean {
 
 function isMarkdownTableDelimiter(line: string): boolean {
   if (/^ {4}/.test(line)) return false;
-  let content = line.trim();
+  let content = line.slice(skipUpToThreeSpaces(line));
+  while (content.startsWith(">")) content = content.slice(1).trimStart();
+  content = content.trim();
   if (!content.includes("|")) return false;
   if (content.startsWith("|")) content = content.slice(1);
   if (content.endsWith("|")) content = content.slice(0, -1);
@@ -130,6 +142,8 @@ function getProtectedMarkdownLines(lines: string[]): Set<number> {
 }
 
 function hasTableSeparator(line: string): boolean {
+  line = line.slice(skipUpToThreeSpaces(line));
+  while (line.startsWith(">")) line = line.slice(1).trimStart();
   let codeDelimiterLength = 0;
   for (let index = 0; index < line.length; ) {
     if (line[index] === "\\" && codeDelimiterLength === 0 && index + 1 < line.length) {
