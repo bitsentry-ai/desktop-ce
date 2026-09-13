@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { createElement } from 'react'
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { ChatBubble, getCopyableMarkdown } from '@bitsentry-ce/components/chat/ChatBubble'
@@ -91,6 +91,34 @@ describe('incident response copy and markdown extraction', () => {
     );
     expect(screen.getByText('{"value":1}').closest("details")).toBeNull();
   });
+
+  it('keeps inline code pipes inside one markdown table cell', () => {
+    render(
+      <TooltipProvider>
+        <ChatBubble
+          msg={makeAgentMessage({
+            iterations: [],
+            finalText: [
+              '| Check | Result |',
+              '| --- | --- |',
+              '| `check || true` | Passed |',
+              '',
+              '```sh',
+              '| fenced || true |',
+              '```',
+            ].join('\n'),
+            status: 'done',
+          })}
+        />
+      </TooltipProvider>,
+    )
+
+    const cells = within(screen.getAllByRole('row')[1]).getAllByRole('cell')
+    expect(cells).toHaveLength(2)
+    expect(cells[0].textContent).toEqual('check || true')
+    expect(cells[1].textContent).toEqual('Passed')
+    expect(screen.getByText('| fenced || true |')).toBeTruthy()
+  })
 
 
   it('copies the same complete multi-iteration content rendered in the chat', () => {

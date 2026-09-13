@@ -17,6 +17,7 @@ import { cn } from "./lib/utils";
 import { useTranslation } from "@bitsentry-ce/i18n";
 
 const HTML_BREAK_TAG_REGEX = /<br\s*\/?>/gi;
+const MARKDOWN_FENCE_REGEX = /^\s{0,3}(`{3,}|~{3,})/;
 
 export interface MarkdownContentProps {
   content: string;
@@ -25,8 +26,64 @@ export interface MarkdownContentProps {
   collapsedJsonLabel?: string;
 }
 
+function readBacktickDelimiter(line: string, index: number): string | undefined {
+  if (line[index] !== "`") return undefined;
+  let end = index + 1;
+  while (line[end] === "`") end += 1;
+  return line.slice(index, end);
+}
+
+function toggleCodeDelimiter(current: number, next: number): number {
+  if (current === 0) return next;
+  return current === next ? 0 : current;
+}
+
+function escapeInlineCodePipesInTableRow(line: string): string {
+  if (!/^\s*\|.*\|\s*$/.test(line)) return line;
+  let result = "";
+  let codeDelimiterLength = 0;
+  for (let index = 0; index < line.length; ) {
+    if (line[index] === "\\" && index + 1 < line.length) {
+      result += line.slice(index, index + 2);
+      index += 2;
+      continue;
+    }
+    const delimiter = readBacktickDelimiter(line, index);
+    if (delimiter !== undefined) {
+      codeDelimiterLength = toggleCodeDelimiter(
+        codeDelimiterLength,
+        delimiter.length,
+      );
+      result += delimiter;
+      index += delimiter.length;
+      continue;
+    }
+    if (line[index] === "|" && codeDelimiterLength > 0) result += "\\|";
+    else result += line[index];
+    index += 1;
+  }
+  return result;
+}
+
 export function normalizeMarkdownContent(content: string): string {
-  return content.replace(/\r\n/g, "\n").replace(HTML_BREAK_TAG_REGEX, "\n");
+  const lines = content
+    .replace(/\r\n/g, "\n")
+    .replace(HTML_BREAK_TAG_REGEX, "\n")
+    .split("\n");
+  let fence: { marker: string; length: number } | undefined;
+  return lines
+    .map((line) => {
+      const match = MARKDOWN_FENCE_REGEX.exec(line);
+      if (match) {
+        const marker = match[1][0];
+        if (fence === undefined) fence = { marker, length: match[1].length };
+        else if (marker === fence.marker && match[1].length >= fence.length)
+          fence = undefined;
+        return line;
+      }
+      return fence === undefined ? escapeInlineCodePipesInTableRow(line) : line;
+    })
+    .join("\n");
 }
 
 const MARKDOWN_FENCE_LINE_REGEX = /^\s{0,3}(```|~~~)/;
