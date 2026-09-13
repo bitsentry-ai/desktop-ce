@@ -164,19 +164,22 @@ function hasTableSeparator(line: string): boolean {
 
 function getMarkdownTableLines(lines: string[], protectedLines: Set<number>): Set<number> {
   const tableLines = new Set<number>();
-  for (let index = 1; index < lines.length; index += 1) {
+  let index = 1;
+  while (index < lines.length) {
     if (
       protectedLines.has(index) ||
       protectedLines.has(index - 1) ||
       !isMarkdownTableDelimiter(lines[index]) ||
       !hasTableSeparator(lines[index - 1])
     ) {
+      index += 1;
       continue;
     }
 
     tableLines.add(index - 1);
     tableLines.add(index);
-    for (let row = index + 1; row < lines.length; row += 1) {
+    let row = index + 1;
+    for (; row < lines.length; row += 1) {
       if (
         protectedLines.has(row) ||
         lines[row].trim() === "" ||
@@ -186,6 +189,7 @@ function getMarkdownTableLines(lines: string[], protectedLines: Set<number>): Se
       }
       tableLines.add(row);
     }
+    index = row;
   }
   return tableLines;
 }
