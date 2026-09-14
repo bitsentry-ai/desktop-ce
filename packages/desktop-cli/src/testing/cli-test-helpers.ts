@@ -9,6 +9,12 @@ export type CliValue = CliJson | Array<unknown>
 
 const RETRIABLE_CLEANUP_ERRORS = new Set(['EBUSY', 'ENOTEMPTY', 'EPERM'])
 
+function isTransientRunbookSocketError(error: unknown): boolean {
+  return error instanceof Error &&
+    error.message.includes('connect ENOENT') &&
+    error.message.includes('bitsentry-ce-runbooks-')
+}
+
 export interface ExportedRunbookActionParameter {
   key: string
   label?: string
@@ -287,12 +293,19 @@ export function createCliTestContext(desktopDir: string) {
     ): Promise<CliJson> {
       const deadline = Date.now() + timeoutMs
       while (Date.now() < deadline) {
-        const execution = await this.runCliJson(userDataDir, [
-          'runbooks',
-          'get-execution',
-          '--execution-id',
-          executionId,
-        ])
+        let execution: CliValue
+        try {
+          execution = await this.runCliJson(userDataDir, [
+            'runbooks',
+            'get-execution',
+            '--execution-id',
+            executionId,
+          ])
+        } catch (error) {
+          if (!isTransientRunbookSocketError(error)) throw error
+          await this.sleep(waitPollMs)
+          continue
+        }
         if (Array.isArray(execution)) {
           throw new Error(`Execution lookup did not return an object for ${executionId}`)
         }
