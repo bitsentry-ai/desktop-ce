@@ -25,26 +25,457 @@ export interface MarkdownContentProps {
   collapsedJsonLabel?: string;
 }
 
-export function normalizeMarkdownContent(content: string): string {
-  return content.replace(/\r\n/g, "\n").replace(HTML_BREAK_TAG_REGEX, "\n");
+function readBacktickDelimiter(line: string, index: number): string | undefined {
+  if (line[index] !== "`") return undefined;
+  let end = index + 1;
+  while (line[end] === "`") end += 1;
+  return line.slice(index, end);
 }
 
-const MARKDOWN_FENCE_LINE_REGEX = /^\s{0,3}(```|~~~)/;
+function toggleCodeDelimiter(current: number, next: number): number {
+  if (current === 0) return next;
+  return current === next ? 0 : current;
+}
+
+interface MarkdownFence {
+  marker: string;
+  length: number;
+  closingIndent: number;
+  blockquoteDepth: number;
+}
+
+interface MarkdownBlockquoteContent {
+  text: string;
+  depth: number;
+}
+
+function skipUpToThreeSpaces(line: string): number {
+  let index = 0;
+  while (index < 3 && line[index] === " ") index += 1;
+  return index;
+}
+
+function readBlockquoteContent(line: string): MarkdownBlockquoteContent {
+  let index = skipUpToThreeSpaces(line);
+  let depth = 0;
+  while (line[index] === ">") {
+    depth += 1;
+    index += 1;
+    if (line[index] === " " || line[index] === "\t") index += 1;
+  }
+  return { text: line.slice(index), depth };
+}
+
+function getIndentColumns(line: string): number {
+  let columns = 0;
+  for (let index = 0; index < line.length; index += 1) {
+    if (line[index] === " ") {
+      columns += 1;
+    } else if (line[index] === "\t") {
+      columns += 4 - (columns % 4);
+    } else {
+      break;
+    }
+  }
+  return columns;
+}
+
+function isIndentedCodeLine(line: string): boolean {
+  const content = readBlockquoteContent(line).text;
+  return content.trim().length > 0 && getIndentColumns(content) >= 4;
+}
+
+function readFenceAt(line: string, index: number): MarkdownFence | undefined {
+  const marker = line[index];
+  if (marker !== "`" && marker !== "~") return undefined;
+  let end = index;
+  while (line[end] === marker) end += 1;
+  if (end - index < 3 || (marker === "`" && line.slice(end).includes("`"))) {
+    return undefined;
+  }
+  return {
+    marker,
+    length: end - index,
+    closingIndent: 3,
+    blockquoteDepth: 0,
+  };
+}
+
+function readListContentStart(line: string, index: number): number | undefined {
+  if (["-", "+", "*"].includes(line[index] ?? "")) index += 1;
+  else {
+    const digitStart = index;
+    while (/\d/.test(line[index] ?? "")) index += 1;
+    if (index === digitStart || (line[index] !== "." && line[index] !== ")")) {
+      return undefined;
+    }
+    index += 1;
+  }
+  if (line[index] !== " " && line[index] !== "\t") return undefined;
+  while (line[index] === " " || line[index] === "\t") index += 1;
+  return index;
+}
+
+function readFenceOpening(line: string): MarkdownFence | undefined {
+  const { text, depth } = readBlockquoteContent(line);
+  const contentStart = skipUpToThreeSpaces(text);
+  const directFence = readFenceAt(text, contentStart);
+  if (directFence !== undefined) {
+    return { ...directFence, closingIndent: 3, blockquoteDepth: depth };
+  }
+  const listContentStart = readListContentStart(text, contentStart);
+  if (listContentStart === undefined) return undefined;
+  const listFence = readFenceAt(text, listContentStart);
+  return listFence === undefined
+    ? undefined
+    : {
+        ...listFence,
+        closingIndent: listContentStart + 3,
+        blockquoteDepth: depth,
+      };
+}
+
+function isFenceClosing(line: string, fence: MarkdownFence): boolean {
+  const { text, depth } = readBlockquoteContent(line);
+  if (depth !== fence.blockquoteDepth) return false;
+  let markerStart = 0;
+  while (text[markerStart] === " ") markerStart += 1;
+  if (markerStart > fence.closingIndent) return false;
+  const closingFence = readFenceAt(text, markerStart);
+  if (
+    closingFence === undefined ||
+    closingFence.marker !== fence.marker ||
+    closingFence.length < fence.length
+  ) {
+    return false;
+  }
+  return text
+    .slice(markerStart + closingFence.length)
+    .split("")
+    .every((character) => character === " " || character === "\t");
+}
+
+function isMarkdownTableDelimiter(line: string): boolean {
+  const content = readBlockquoteContent(line).text;
+  if (getIndentColumns(content) >= 4) return false;
+  const cells = splitMarkdownTableCells(content);
+  return (
+    cells.length >= 1 &&
+    cells.every((cell) => /^:?-+:?$/.test(cell.trim()))
+  );
+}
+
+function getProtectedMarkdownLines(lines: string[]): Set<number> {
+  const protectedLines = new Set<number>();
+  let fence: MarkdownFence | undefined;
+  lines.forEach((line, index) => {
+    if (fence !== undefined) {
+      const { depth } = readBlockquoteContent(line);
+      if (depth >= fence.blockquoteDepth) {
+        protectedLines.add(index);
+        if (isFenceClosing(line, fence)) fence = undefined;
+        return;
+      }
+      fence = undefined;
+    }
+
+    const opening = readFenceOpening(line);
+    if (opening !== undefined) {
+      fence = opening;
+      protectedLines.add(index);
+    } else if (isIndentedCodeLine(line)) {
+      protectedLines.add(index);
+    }
+  });
+  return protectedLines;
+}
+
+function hasTableSeparator(line: string): boolean {
+  line = readBlockquoteContent(line).text;
+  for (let index = 0; index < line.length; ) {
+    if (line[index] === "\\" && index + 1 < line.length) {
+      index += 2;
+      continue;
+    }
+    if (line[index] === "|") return true;
+    index += 1;
+  }
+  return false;
+}
+
+function hasPipeOutsideCodeSpan(line: string): boolean {
+  line = readBlockquoteContent(line).text;
+  let codeDelimiterLength = 0;
+  for (let index = 0; index < line.length; ) {
+    if (line[index] === "\\" && index + 1 < line.length) {
+      index += 2;
+      continue;
+    }
+    const delimiter = readBacktickDelimiter(line, index);
+    if (delimiter !== undefined) {
+      if (
+        codeDelimiterLength === 0 &&
+        !hasMatchingCodeDelimiter(line, index, delimiter)
+      ) {
+        index += delimiter.length;
+        continue;
+      }
+      codeDelimiterLength = toggleCodeDelimiter(
+        codeDelimiterLength,
+        delimiter.length,
+      );
+      index += delimiter.length;
+      continue;
+    }
+    if (line[index] === "|" && codeDelimiterLength === 0) return true;
+    index += 1;
+  }
+  return false;
+}
+
+function splitMarkdownTableCells(
+  line: string,
+  includeCodePipes = false,
+): string[] {
+  const cells: string[] = [];
+  let start = 0;
+  let codeDelimiterLength = 0;
+  for (let index = 0; index < line.length; ) {
+    if (line[index] === "\\" && index + 1 < line.length) {
+      index += 2;
+      continue;
+    }
+    const delimiter = readBacktickDelimiter(line, index);
+    if (delimiter !== undefined) {
+      if (
+        codeDelimiterLength === 0 &&
+        !hasMatchingCodeDelimiter(line, index, delimiter)
+      ) {
+        index += delimiter.length;
+        continue;
+      }
+      codeDelimiterLength = toggleCodeDelimiter(
+        codeDelimiterLength,
+        delimiter.length,
+      );
+      index += delimiter.length;
+      continue;
+    }
+    if (
+      line[index] === "|" &&
+      (codeDelimiterLength === 0 || includeCodePipes)
+    ) {
+      cells.push(line.slice(start, index));
+      start = index + 1;
+    }
+    index += 1;
+  }
+  cells.push(line.slice(start));
+  if (cells[0]?.trim() === "") cells.shift();
+  if (cells[cells.length - 1]?.trim() === "") cells.pop();
+  return cells;
+}
+
+interface MarkdownTableLineInfo {
+  lines: Set<number>;
+  codeOnlyHeaderLines: Set<number>;
+}
+
+function getMarkdownTableLines(
+  lines: string[],
+  protectedLines: Set<number>,
+): MarkdownTableLineInfo {
+  const tableLines = new Set<number>();
+  const codeOnlyHeaderLines = new Set<number>();
+  let index = 1;
+  while (index < lines.length) {
+    if (
+      protectedLines.has(index) ||
+      protectedLines.has(index - 1) ||
+      !isMarkdownTableDelimiter(lines[index]) ||
+      !hasTableSeparator(lines[index - 1])
+    ) {
+      index += 1;
+      continue;
+    }
+
+    const headerContent = readBlockquoteContent(lines[index - 1]);
+    const delimiterContent = readBlockquoteContent(lines[index]);
+    const headerCells = splitMarkdownTableCells(
+      headerContent.text.trim(),
+      !hasPipeOutsideCodeSpan(headerContent.text),
+    );
+    const delimiterCells = splitMarkdownTableCells(delimiterContent.text.trim());
+    if (
+      headerContent.depth !== delimiterContent.depth ||
+      headerCells.length !== delimiterCells.length
+    ) {
+      index += 1;
+      continue;
+    }
+
+    tableLines.add(index - 1);
+    tableLines.add(index);
+    if (!hasPipeOutsideCodeSpan(headerContent.text)) {
+      codeOnlyHeaderLines.add(index - 1);
+    }
+    let row = index + 1;
+    for (; row < lines.length; row += 1) {
+      const rowContent = readBlockquoteContent(lines[row]);
+      if (
+        protectedLines.has(row) ||
+        lines[row].trim() === "" ||
+        rowContent.depth !== headerContent.depth ||
+        (isMarkdownStructuralLine(lines[row]) &&
+          !(
+            headerContent.depth > 0 &&
+            !isMarkdownStructuralLine(rowContent.text)
+          )) ||
+        !hasTableSeparator(lines[row])
+      ) {
+        break;
+      }
+      tableLines.add(row);
+    }
+    index = row;
+  }
+  return { lines: tableLines, codeOnlyHeaderLines };
+}
+
+interface MarkdownEscapeResult {
+  replacement: string;
+  nextIndex: number;
+}
+
+function consumeEscapedCharacter(
+  line: string,
+  index: number,
+  codeDelimiterLength: number,
+): MarkdownEscapeResult | undefined {
+  if (line[index] !== "\\" || index + 1 >= line.length) return undefined;
+  if (codeDelimiterLength > 0 && line[index + 1] === "|") {
+    return { replacement: "\\|", nextIndex: index + 2 };
+  }
+  return codeDelimiterLength === 0
+    ? { replacement: line.slice(index, index + 2), nextIndex: index + 2 }
+    : undefined;
+}
+
+interface MarkdownDelimiterResult extends MarkdownEscapeResult {
+  codeDelimiterLength: number;
+}
+
+function consumeBacktickDelimiter(
+  line: string,
+  index: number,
+  codeDelimiterLength: number,
+): MarkdownDelimiterResult | undefined {
+  const delimiter = readBacktickDelimiter(line, index);
+  if (delimiter === undefined) return undefined;
+  if (
+    codeDelimiterLength === 0 &&
+    !hasMatchingCodeDelimiter(line, index, delimiter)
+  ) {
+    return {
+      replacement: delimiter,
+      nextIndex: index + delimiter.length,
+      codeDelimiterLength,
+    };
+  }
+  return {
+    replacement: delimiter,
+    nextIndex: index + delimiter.length,
+    codeDelimiterLength: toggleCodeDelimiter(
+      codeDelimiterLength,
+      delimiter.length,
+    ),
+  };
+}
+
+function escapeInlineCodePipesInTableRow(
+  line: string,
+  preserveCodePipes = false,
+): string {
+  let result = "";
+  let codeDelimiterLength = 0;
+  for (let index = 0; index < line.length; ) {
+    const escaped = consumeEscapedCharacter(
+      line,
+      index,
+      codeDelimiterLength,
+    );
+    if (escaped !== undefined) {
+      result += escaped.replacement;
+      index = escaped.nextIndex;
+      continue;
+    }
+
+    const delimiter = consumeBacktickDelimiter(
+      line,
+      index,
+      codeDelimiterLength,
+    );
+    if (delimiter !== undefined) {
+      result += delimiter.replacement;
+      codeDelimiterLength = delimiter.codeDelimiterLength;
+      index = delimiter.nextIndex;
+      continue;
+    }
+
+    const isCodePipe = line[index] === "|" && codeDelimiterLength > 0;
+    result += isCodePipe && !preserveCodePipes ? "\\|" : line[index];
+    index += 1;
+  }
+  return result;
+}
+
+function hasMatchingCodeDelimiter(
+  line: string,
+  openingIndex: number,
+  openingDelimiter: string,
+): boolean {
+  for (let index = openingIndex + openingDelimiter.length; index < line.length; ) {
+    const delimiter = readBacktickDelimiter(line, index);
+    if (delimiter !== undefined) {
+      if (delimiter === openingDelimiter) return true;
+      index += delimiter.length;
+      continue;
+    }
+    index += 1;
+  }
+  return false;
+}
+
+export function normalizeMarkdownContent(content: string): string {
+  const lines = content
+    .replace(/\r\n/g, "\n")
+    .replace(HTML_BREAK_TAG_REGEX, "\n")
+    .split("\n");
+  const protectedLines = getProtectedMarkdownLines(lines);
+  const tableInfo = getMarkdownTableLines(lines, protectedLines);
+  return lines
+    .map((line, index) =>
+      tableInfo.lines.has(index)
+        ? escapeInlineCodePipesInTableRow(
+            line,
+            tableInfo.codeOnlyHeaderLines.has(index),
+          )
+        : line,
+    )
+    .join("\n");
+}
+
 const MARKDOWN_HEADING_LINE_REGEX = /^\s{0,3}#{1,6}\s/;
 const MARKDOWN_QUOTE_LINE_REGEX = /^\s{0,3}>\s?/;
 const MARKDOWN_BULLET_LINE_REGEX = /^\s*[-*+]\s+/;
 const MARKDOWN_ORDERED_LIST_LINE_REGEX = /^\s*\d+\.\s+/;
-const MARKDOWN_TABLE_LINE_REGEX = /^\s*\|.*\|\s*$/;
-const MARKDOWN_INDENTED_CODE_LINE_REGEX = /^\s{4,}\S/;
-
 function isMarkdownStructuralLine(line: string): boolean {
-  return MARKDOWN_FENCE_LINE_REGEX.test(line) ||
+  return readFenceOpening(line) !== undefined ||
     MARKDOWN_HEADING_LINE_REGEX.test(line) ||
     MARKDOWN_QUOTE_LINE_REGEX.test(line) ||
     MARKDOWN_BULLET_LINE_REGEX.test(line) ||
     MARKDOWN_ORDERED_LIST_LINE_REGEX.test(line) ||
-    MARKDOWN_TABLE_LINE_REGEX.test(line) ||
-    MARKDOWN_INDENTED_CODE_LINE_REGEX.test(line);
+    isIndentedCodeLine(line);
 }
 
 export function paragraphizePlainTextSoftBreaks(content: string): string {
@@ -52,9 +483,11 @@ export function paragraphizePlainTextSoftBreaks(content: string): string {
     .replace(/\r\n/g, "\n")
     .replace(HTML_BREAK_TAG_REGEX, "\n");
   const lines = normalized.split("\n");
+  const protectedLines = getProtectedMarkdownLines(lines);
 
   if (
     lines.some(isMarkdownStructuralLine) ||
+    getMarkdownTableLines(lines, protectedLines).lines.size > 0 ||
     lines.filter((line) => line.trim().length > 0).length < 2
   ) {
     return normalized;

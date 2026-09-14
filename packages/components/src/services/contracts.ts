@@ -2,6 +2,7 @@ import type {
   AccessLevel,
   AgentThreadSnapshot,
   AgentThreadTokenUsage,
+  ComposerTextAttachmentMimeType,
   InteractionMode,
 } from "../chat/types";
 import type { SandboxTokenBudgetMetadata } from "@bitsentry-ce/core/features/agent-runtime";
@@ -1165,9 +1166,19 @@ export interface AgentChatCsvAttachment {
   totalRowCount: number;
 }
 
+export interface AgentChatTextAttachment {
+  id: string;
+  type: "text";
+  name: string;
+  mimeType: ComposerTextAttachmentMimeType;
+  sizeBytes: number;
+  text: string;
+}
+
 export type AgentChatAttachment =
   | AgentChatImageAttachment
-  | AgentChatCsvAttachment;
+  | AgentChatCsvAttachment
+  | AgentChatTextAttachment;
 
 export interface AgentLlmSelection {
   providerKey?:
@@ -1414,7 +1425,7 @@ export type IncidentMessageStatus =
   | "complete"
   | "error";
 
-export type IncidentAttachmentType = "image" | "csv";
+export type IncidentAttachmentType = "image" | "csv" | "text";
 
 export interface IncidentImageAttachment {
   id: string;
@@ -1436,9 +1447,19 @@ export interface IncidentCsvAttachment {
   totalRowCount: number;
 }
 
+export interface IncidentTextAttachment {
+  id: string;
+  type: "text";
+  name: string;
+  mimeType: ComposerTextAttachmentMimeType;
+  sizeBytes: number;
+  text: string;
+}
+
 export type IncidentAttachment =
   | IncidentImageAttachment
-  | IncidentCsvAttachment;
+  | IncidentCsvAttachment
+  | IncidentTextAttachment;
 
 export interface IncidentToolCall {
   toolCallId: string;

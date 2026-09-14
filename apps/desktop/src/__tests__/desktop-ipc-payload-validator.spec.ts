@@ -17,6 +17,64 @@ function createValidator() {
 }
 
 describe('desktop IPC payload validation', () => {
+  it.each([
+    [
+      'agent:start',
+      'prompt',
+      {
+        id: 'text-1',
+        type: 'text',
+        name: 'notes.md',
+        mimeType: 'text/markdown',
+        sizeBytes: 12,
+        text: '# Notes',
+      },
+    ],
+    [
+      'agent:send',
+      'message',
+      {
+        id: 'csv-1',
+        type: 'csv',
+        name: 'findings.csv',
+        mimeType: 'text/csv',
+        sizeBytes: 18,
+        text: 'id,status\n1,open',
+        rowCount: 1,
+        totalRowCount: 1,
+      },
+    ],
+  ] as const)('accepts %s text-based attachments', (channel, textField, attachment) => {
+    const validate = createValidator()
+
+    expect(
+      validate(channel, {
+        [textField]: 'Inspect the attachment',
+        attachments: [attachment],
+      }),
+    ).toMatchObject({ attachments: [attachment] })
+  })
+
+  it('rejects unsupported text attachment MIME types', () => {
+    const validate = createValidator()
+
+    expect(() =>
+      validate('agent:start', {
+        prompt: 'Inspect the attachment',
+        attachments: [
+          {
+            id: 'text-1',
+            type: 'text',
+            name: 'script.sh',
+            mimeType: 'application/x-sh',
+            sizeBytes: 12,
+            text: 'echo unsafe',
+          },
+        ],
+      }),
+    ).toThrow()
+  })
+
   it('accepts first-party plugin source types for error source probes', () => {
     const validate = createValidator()
 
