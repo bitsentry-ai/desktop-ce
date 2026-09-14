@@ -32,6 +32,24 @@ function readBacktickDelimiter(line: string, index: number): string | undefined 
   return line.slice(index, end);
 }
 
+function getLastBacktickDelimiterIndexes(line: string): Map<number, number> {
+  const lastIndexes = new Map<number, number>();
+  for (let index = 0; index < line.length; ) {
+    if (line[index] === "\\" && index + 1 < line.length) {
+      index += 2;
+      continue;
+    }
+    const delimiter = readBacktickDelimiter(line, index);
+    if (delimiter === undefined) {
+      index += 1;
+      continue;
+    }
+    lastIndexes.set(delimiter.length, index);
+    index += delimiter.length;
+  }
+  return lastIndexes;
+}
+
 function toggleCodeDelimiter(current: number, next: number): number {
   if (current === 0) return next;
   return current === next ? 0 : current;
@@ -220,6 +238,7 @@ function hasTableSeparator(line: string): boolean {
 
 function hasPipeOutsideCodeSpan(line: string): boolean {
   line = readBlockquoteContent(line).text;
+  const lastDelimiterIndexes = getLastBacktickDelimiterIndexes(line);
   let codeDelimiterLength = 0;
   for (let index = 0; index < line.length; ) {
     if (line[index] === "\\" && index + 1 < line.length) {
@@ -230,7 +249,7 @@ function hasPipeOutsideCodeSpan(line: string): boolean {
     if (delimiter !== undefined) {
       if (
         codeDelimiterLength === 0 &&
-        !hasMatchingCodeDelimiter(line, index, delimiter)
+        !hasMatchingCodeDelimiter(lastDelimiterIndexes, index, delimiter)
       ) {
         index += delimiter.length;
         continue;
@@ -250,6 +269,7 @@ function hasPipeOutsideCodeSpan(line: string): boolean {
 
 function splitMarkdownTableCells(line: string): string[] {
   const cells: string[] = [];
+  const lastDelimiterIndexes = getLastBacktickDelimiterIndexes(line);
   let start = 0;
   let codeDelimiterLength = 0;
   for (let index = 0; index < line.length; ) {
@@ -261,7 +281,7 @@ function splitMarkdownTableCells(line: string): string[] {
     if (delimiter !== undefined) {
       if (
         codeDelimiterLength === 0 &&
-        !hasMatchingCodeDelimiter(line, index, delimiter)
+        !hasMatchingCodeDelimiter(lastDelimiterIndexes, index, delimiter)
       ) {
         index += delimiter.length;
         continue;
@@ -378,12 +398,13 @@ function consumeBacktickDelimiter(
   line: string,
   index: number,
   codeDelimiterLength: number,
+  lastDelimiterIndexes: Map<number, number>,
 ): MarkdownDelimiterResult | undefined {
   const delimiter = readBacktickDelimiter(line, index);
   if (delimiter === undefined) return undefined;
   if (
     codeDelimiterLength === 0 &&
-    !hasMatchingCodeDelimiter(line, index, delimiter)
+    !hasMatchingCodeDelimiter(lastDelimiterIndexes, index, delimiter)
   ) {
     return {
       replacement: delimiter,
@@ -407,6 +428,7 @@ function escapeInlineCodePipesInTableRow(
 ): string {
   let result = "";
   let codeDelimiterLength = 0;
+  const lastDelimiterIndexes = getLastBacktickDelimiterIndexes(line);
   for (let index = 0; index < line.length; ) {
     const escaped = consumeEscapedCharacter(
       line,
@@ -423,6 +445,7 @@ function escapeInlineCodePipesInTableRow(
       line,
       index,
       codeDelimiterLength,
+      lastDelimiterIndexes,
     );
     if (delimiter !== undefined) {
       result += delimiter.replacement;
@@ -439,20 +462,11 @@ function escapeInlineCodePipesInTableRow(
 }
 
 function hasMatchingCodeDelimiter(
-  line: string,
+  lastDelimiterIndexes: Map<number, number>,
   openingIndex: number,
   openingDelimiter: string,
 ): boolean {
-  for (let index = openingIndex + openingDelimiter.length; index < line.length; ) {
-    const delimiter = readBacktickDelimiter(line, index);
-    if (delimiter !== undefined) {
-      if (delimiter === openingDelimiter) return true;
-      index += delimiter.length;
-      continue;
-    }
-    index += 1;
-  }
-  return false;
+  return (lastDelimiterIndexes.get(openingDelimiter.length) ?? -1) > openingIndex;
 }
 
 export function normalizeMarkdownContent(content: string): string {
