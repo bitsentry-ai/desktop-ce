@@ -15,6 +15,7 @@
   "incidents.remediation.reject": "Reject",
   "incidents.remediation.runApproved": "Run approved remediation",
   "incidents.remediation.sshHost": "SSH host",
+  "incidents.remediation.sshHostKeySha256": "SSH host key SHA-256 fingerprint",
   "incidents.remediation.sshPort": "SSH port",
   "incidents.remediation.sshUser": "SSH user",
   "incidents.remediation.title": "CVE remediation",

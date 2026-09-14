@@ -15,6 +15,7 @@
   "incidents.remediation.reject": "Tolak",
   "incidents.remediation.runApproved": "Jalankan remediasi yang disetujui",
   "incidents.remediation.sshHost": "Host SSH",
+  "incidents.remediation.sshHostKeySha256": "Sidik jari SHA-256 kunci host SSH",
   "incidents.remediation.sshPort": "Port SSH",
   "incidents.remediation.sshUser": "Pengguna SSH",
   "incidents.remediation.title": "Remediasi CVE",

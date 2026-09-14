@@ -15,6 +15,7 @@
   "incidents.remediation.reject": "Rejeter",
   "incidents.remediation.runApproved": "Exécuter la remédiation approuvée",
   "incidents.remediation.sshHost": "Hôte SSH",
+  "incidents.remediation.sshHostKeySha256": "Empreinte SHA-256 de la clé d’hôte SSH",
   "incidents.remediation.sshPort": "Port SSH",
   "incidents.remediation.sshUser": "Utilisateur SSH",
   "incidents.remediation.title": "Remédiation CVE",

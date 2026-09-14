@@ -15,6 +15,7 @@
   "incidents.remediation.reject": "拒绝",
   "incidents.remediation.runApproved": "运行已批准的修复",
   "incidents.remediation.sshHost": "SSH 主机",
+  "incidents.remediation.sshHostKeySha256": "SSH 主机密钥 SHA-256 指纹",
   "incidents.remediation.sshPort": "SSH 端口",
   "incidents.remediation.sshUser": "SSH 用户",
   "incidents.remediation.title": "CVE 修复",
