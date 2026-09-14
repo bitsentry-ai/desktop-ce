@@ -348,6 +348,17 @@ describe('incident response copy and markdown extraction', () => {
     expect(normalizeMarkdownContent(content)).toContain('| `x\\|y` | Passed |')
   })
 
+  it('uses display columns for tab-indented list fences', () => {
+    const content = [
+      '-\t```text',
+      '  | Command | Result |',
+      '  | --- | --- |',
+      '  | `x|y` | Passed |',
+    ].join('\n')
+
+    expect(normalizeMarkdownContent(content)).toContain('  | `x\\|y` | Passed |')
+  })
+
   it('stops a table before a parenthesized ordered-list item', () => {
     const content = [
       'Command | Result',

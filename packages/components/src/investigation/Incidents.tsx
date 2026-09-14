@@ -2553,14 +2553,14 @@ export default function IncidentsPage() {
       const acceptedFiles = Array.from(files)
         .filter(
           (file) =>
-            file.type.startsWith("image/") ||
-            getTextAttachmentMimeType(file) !== undefined,
+            file.size <= 3 * 1024 * 1024 &&
+            (file.type.startsWith("image/") ||
+              getTextAttachmentMimeType(file) !== undefined),
         )
         .slice(0, Math.max(0, 4 - composerImages.length));
 
       const nextAttachments = await Promise.all(
         acceptedFiles
-          .filter((file) => file.size <= 3 * 1024 * 1024)
           .map(async (file): Promise<ComposerAttachment | null> => {
             const id = crypto.randomUUID();
             const name = file.name || "attachment";

@@ -151,7 +151,9 @@ function readFenceOpening(line: string): MarkdownFence | undefined {
         ...listFence,
         closingIndent: listContentStart + 3,
         blockquoteDepth: depth,
-        listContentIndent: listContentStart,
+        listContentIndent: getIndentColumns(
+          text.slice(0, listContentStart).replace(/[^\t ]/g, " "),
+        ),
       };
 }
 
