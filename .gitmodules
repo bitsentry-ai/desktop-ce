@@ -25,3 +25,7 @@
 	path = packages/plugins/linux-cve-status
 	url = git@github.com:bitsentry-ai/bitsentry-plugin-linux-cve-status.git
 	branch = main
+[submodule "packages/plugins/linux-cve-remediate"]
+	path = packages/plugins/linux-cve-remediate
+	url = git@github.com:bitsentry-ai/bitsentry-plugin-linux-cve-remediate.git
+	branch = main
