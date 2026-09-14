@@ -376,6 +376,45 @@ describe('incident response copy and markdown extraction', () => {
     expect(normalizeMarkdownContent(content)).toEqual(content)
   })
 
+  it('normalizes inline-code pipes in a table nested in a list', () => {
+    render(
+      <TooltipProvider>
+        <ChatBubble
+          msg={makeAgentMessage({
+            iterations: [],
+            finalText: [
+              '- Command | Result',
+              '  --- | ---',
+              '  `x|y` | Passed',
+            ].join('\n'),
+            status: 'done',
+          })}
+        />
+      </TooltipProvider>,
+    )
+
+    const cells = within(screen.getAllByRole('row')[1]).getAllByRole('cell')
+    expect(cells).toHaveLength(2)
+    expect(cells[0].textContent).toEqual('x|y')
+  })
+
+  it('stops a table before a block-level HTML line', () => {
+    const htmlLine = '<div>| `a|b` |</div>'
+    const content = ['A | B', '--- | ---', 'value | stable', htmlLine].join('\n')
+
+    expect(normalizeMarkdownContent(content).split('\n').at(-1)).toEqual(htmlLine)
+  })
+
+  it('treats backslashes as literal inside code spans', () => {
+    const content = [
+      '| `a\\`b|c` | D |',
+      '| --- | --- | --- |',
+      '| `x|y` | stable | value |',
+    ].join('\n')
+
+    expect(normalizeMarkdownContent(content)).toContain('| `x\\|y` | stable | value |')
+  })
+
   it('protects fenced code nested in blockquotes', () => {
     render(
       <TooltipProvider>

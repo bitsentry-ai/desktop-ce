@@ -35,10 +35,6 @@ function readBacktickDelimiter(line: string, index: number): string | undefined 
 function getLastBacktickDelimiterIndexes(line: string): Map<number, number> {
   const lastIndexes = new Map<number, number>();
   for (let index = 0; index < line.length; ) {
-    if (line[index] === "\\" && index + 1 < line.length) {
-      index += 2;
-      continue;
-    }
     const delimiter = readBacktickDelimiter(line, index);
     if (delimiter === undefined) {
       index += 1;
@@ -241,7 +237,11 @@ function hasPipeOutsideCodeSpan(line: string): boolean {
   const lastDelimiterIndexes = getLastBacktickDelimiterIndexes(line);
   let codeDelimiterLength = 0;
   for (let index = 0; index < line.length; ) {
-    if (line[index] === "\\" && index + 1 < line.length) {
+    if (
+      codeDelimiterLength === 0 &&
+      line[index] === "\\" &&
+      index + 1 < line.length
+    ) {
       index += 2;
       continue;
     }
@@ -273,7 +273,11 @@ function splitMarkdownTableCells(line: string): string[] {
   let start = 0;
   let codeDelimiterLength = 0;
   for (let index = 0; index < line.length; ) {
-    if (line[index] === "\\" && index + 1 < line.length) {
+    if (
+      codeDelimiterLength === 0 &&
+      line[index] === "\\" &&
+      index + 1 < line.length
+    ) {
       index += 2;
       continue;
     }
@@ -313,6 +317,16 @@ interface MarkdownTableLineInfo {
   codeOnlyHeaderLines: Set<number>;
 }
 
+function readMarkdownTableHeaderText(content: string): string {
+  const listContentStart = readListContentStart(
+    content,
+    skipUpToThreeSpaces(content),
+  );
+  return listContentStart === undefined
+    ? content
+    : content.slice(listContentStart);
+}
+
 function getMarkdownTableLines(
   lines: string[],
   protectedLines: Set<number>,
@@ -333,7 +347,8 @@ function getMarkdownTableLines(
 
     const headerContent = readBlockquoteContent(lines[index - 1]);
     const delimiterContent = readBlockquoteContent(lines[index]);
-    const headerCells = splitMarkdownTableCells(headerContent.text.trim());
+    const headerText = readMarkdownTableHeaderText(headerContent.text);
+    const headerCells = splitMarkdownTableCells(headerText.trim());
     const delimiterCells = splitMarkdownTableCells(delimiterContent.text.trim());
     if (
       headerContent.depth !== delimiterContent.depth ||
@@ -345,7 +360,7 @@ function getMarkdownTableLines(
 
     tableLines.add(index - 1);
     tableLines.add(index);
-    if (!hasPipeOutsideCodeSpan(headerContent.text)) {
+    if (!hasPipeOutsideCodeSpan(headerText)) {
       codeOnlyHeaderLines.add(index - 1);
     }
     let row = index + 1;
@@ -492,12 +507,22 @@ const MARKDOWN_HEADING_LINE_REGEX = /^\s{0,3}#{1,6}\s/;
 const MARKDOWN_QUOTE_LINE_REGEX = /^\s{0,3}>\s?/;
 const MARKDOWN_BULLET_LINE_REGEX = /^\s*[-*+]\s+/;
 const MARKDOWN_ORDERED_LIST_LINE_REGEX = /^\s*\d+[.)]\s+/;
+const MARKDOWN_HTML_BLOCK_TAGS = new Set(
+  "address article aside blockquote body caption center col colgroup dd details dialog dir div dl dt fieldset figcaption figure footer form frame frameset h1 h2 h3 h4 h5 h6 head header hr html iframe legend li link main menu nav noframes ol p pre script search section style summary table tbody td tfoot th thead title tr track ul".split(" "),
+);
+
+function isMarkdownHtmlBlockLine(line: string): boolean {
+  const match = /^\s{0,3}<\/?([a-z][a-z0-9-]*)(?:\s|\/?>)/i.exec(line);
+  return match !== null && MARKDOWN_HTML_BLOCK_TAGS.has(match[1].toLowerCase());
+}
+
 function isMarkdownStructuralLine(line: string): boolean {
   return readFenceOpening(line) !== undefined ||
     MARKDOWN_HEADING_LINE_REGEX.test(line) ||
     MARKDOWN_QUOTE_LINE_REGEX.test(line) ||
     MARKDOWN_BULLET_LINE_REGEX.test(line) ||
     MARKDOWN_ORDERED_LIST_LINE_REGEX.test(line) ||
+    isMarkdownHtmlBlockLine(line) ||
     isIndentedCodeLine(line);
 }
 
