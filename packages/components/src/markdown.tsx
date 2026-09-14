@@ -42,6 +42,7 @@ interface MarkdownFence {
   length: number;
   closingIndent: number;
   blockquoteDepth: number;
+  listContentIndent?: number;
 }
 
 interface MarkdownBlockquoteContent {
@@ -81,7 +82,11 @@ function getIndentColumns(line: string): number {
 }
 
 function isIndentedCodeLine(line: string): boolean {
-  const content = readBlockquoteContent(line).text;
+  const blockquoteStart = skipUpToThreeSpaces(line);
+  const content =
+    line[blockquoteStart] === ">"
+      ? readBlockquoteContent(line).text
+      : line;
   return content.trim().length > 0 && getIndentColumns(content) >= 4;
 }
 
@@ -105,7 +110,7 @@ function readListContentStart(line: string, index: number): number | undefined {
   if (["-", "+", "*"].includes(line[index] ?? "")) index += 1;
   else {
     const digitStart = index;
-    while (/\d/.test(line[index] ?? "")) index += 1;
+    while (index - digitStart < 9 && /\d/.test(line[index] ?? "")) index += 1;
     if (index === digitStart || (line[index] !== "." && line[index] !== ")")) {
       return undefined;
     }
@@ -132,6 +137,7 @@ function readFenceOpening(line: string): MarkdownFence | undefined {
         ...listFence,
         closingIndent: listContentStart + 3,
         blockquoteDepth: depth,
+        listContentIndent: listContentStart,
       };
 }
 
@@ -170,8 +176,17 @@ function getProtectedMarkdownLines(lines: string[]): Set<number> {
   let fence: MarkdownFence | undefined;
   lines.forEach((line, index) => {
     if (fence !== undefined) {
-      const { depth } = readBlockquoteContent(line);
-      if (depth >= fence.blockquoteDepth) {
+      const { text, depth } = readBlockquoteContent(line);
+      const containerText = depth === 0 ? line : text;
+      if (
+        depth === fence.blockquoteDepth &&
+        fence.listContentIndent !== undefined &&
+        containerText.trim().length > 0 &&
+        getIndentColumns(containerText) < fence.listContentIndent
+      ) {
+        fence = undefined;
+      }
+      if (fence !== undefined && depth >= fence.blockquoteDepth) {
         protectedLines.add(index);
         if (isFenceClosing(line, fence)) fence = undefined;
         return;
@@ -233,10 +248,7 @@ function hasPipeOutsideCodeSpan(line: string): boolean {
   return false;
 }
 
-function splitMarkdownTableCells(
-  line: string,
-  includeCodePipes = false,
-): string[] {
+function splitMarkdownTableCells(line: string): string[] {
   const cells: string[] = [];
   let start = 0;
   let codeDelimiterLength = 0;
@@ -263,7 +275,7 @@ function splitMarkdownTableCells(
     }
     if (
       line[index] === "|" &&
-      (codeDelimiterLength === 0 || includeCodePipes)
+      codeDelimiterLength === 0
     ) {
       cells.push(line.slice(start, index));
       start = index + 1;
@@ -301,10 +313,7 @@ function getMarkdownTableLines(
 
     const headerContent = readBlockquoteContent(lines[index - 1]);
     const delimiterContent = readBlockquoteContent(lines[index]);
-    const headerCells = splitMarkdownTableCells(
-      headerContent.text.trim(),
-      !hasPipeOutsideCodeSpan(headerContent.text),
-    );
+    const headerCells = splitMarkdownTableCells(headerContent.text.trim());
     const delimiterCells = splitMarkdownTableCells(delimiterContent.text.trim());
     if (
       headerContent.depth !== delimiterContent.depth ||
@@ -468,7 +477,7 @@ export function normalizeMarkdownContent(content: string): string {
 const MARKDOWN_HEADING_LINE_REGEX = /^\s{0,3}#{1,6}\s/;
 const MARKDOWN_QUOTE_LINE_REGEX = /^\s{0,3}>\s?/;
 const MARKDOWN_BULLET_LINE_REGEX = /^\s*[-*+]\s+/;
-const MARKDOWN_ORDERED_LIST_LINE_REGEX = /^\s*\d+\.\s+/;
+const MARKDOWN_ORDERED_LIST_LINE_REGEX = /^\s*\d+[.)]\s+/;
 function isMarkdownStructuralLine(line: string): boolean {
   return readFenceOpening(line) !== undefined ||
     MARKDOWN_HEADING_LINE_REGEX.test(line) ||

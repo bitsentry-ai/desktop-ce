@@ -39,6 +39,37 @@ function getLlmRequest(adapter: AgentRuntimeLlmAdapter, callIndex: number): LlmC
 }
 
 describe('AgentRuntimeService model switching', () => {
+  it('marks CSV attachment content as untrusted before sending it to the model', async () => {
+    const adapter: AgentRuntimeLlmAdapter = {
+      chatWithTools: vi.fn().mockResolvedValue({ content: 'done', toolCalls: [] }),
+    }
+    const service = createRuntime(adapter)
+
+    const sessionId = await service.start({
+      prompt: 'Inspect this file',
+      attachments: [{
+        id: 'csv-1',
+        type: 'csv',
+        name: 'findings.csv',
+        mimeType: 'text/csv',
+        sizeBytes: 24,
+        text: 'id,status\n1,open',
+        rowCount: 1,
+        totalRowCount: 1,
+      }],
+      llm: { providerKey: 'anthropic', model: 'model-a' },
+    })
+    await waitForCondition(() => service.getStatus(sessionId).state === 'COMPLETED')
+
+    const userMessage = getLlmRequest(adapter, 0).messages.find(({ role }) => role === 'user')
+    expect(userMessage?.content).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        type: 'text',
+        text: expect.stringContaining('--- BEGIN UNTRUSTED TEXT ---'),
+      }),
+    ]))
+  })
+
   it('uses the new same-provider model on the second turn', async () => {
     const adapter: AgentRuntimeLlmAdapter = {
       chatWithTools: vi.fn().mockResolvedValue({ content: 'done', toolCalls: [] }),

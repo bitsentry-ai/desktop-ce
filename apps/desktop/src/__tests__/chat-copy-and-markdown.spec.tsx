@@ -267,25 +267,10 @@ describe('incident response copy and markdown extraction', () => {
     expect(cells[1].textContent).toEqual('Passed')
   })
 
-  it('recognizes table headers with only inline-code pipes', () => {
+  it('does not use an inline-code pipe as a header separator', () => {
     const content = ['`Name|Kind`', '--- | ---', '`value|kind` | stable'].join('\n')
 
-    render(
-      <TooltipProvider>
-        <ChatBubble
-          msg={makeAgentMessage({
-            iterations: [],
-            finalText: content,
-            status: 'done',
-          })}
-        />
-      </TooltipProvider>,
-    )
-
-    const cells = within(screen.getAllByRole('row')[1]).getAllByRole('cell')
-    expect(cells).toHaveLength(2)
-    expect(cells[0].textContent).toEqual('value|kind')
-    expect(cells[1].textContent).toEqual('stable')
+    expect(normalizeMarkdownContent(content)).toEqual(content)
   })
 
   it('keeps inline-code pipes in mixed table headers out of the column count', () => {
@@ -331,6 +316,64 @@ describe('incident response copy and markdown extraction', () => {
     const cells = within(screen.getAllByRole('row')[1]).getAllByRole('cell')
     expect(cells).toHaveLength(1)
     expect(cells[0].textContent).toEqual('check || true')
+  })
+
+  it('normalizes inline-code pipes in a one-column table header', () => {
+    render(
+      <TooltipProvider>
+        <ChatBubble
+          msg={makeAgentMessage({
+            iterations: [],
+            finalText: ['| `A|B` |', '| --- |', '| value |'].join('\n'),
+            status: 'done',
+          })}
+        />
+      </TooltipProvider>,
+    )
+
+    expect(within(screen.getAllByRole('row')[0]).getAllByRole('columnheader')).toHaveLength(1)
+    expect(screen.getByText('A|B').textContent).toEqual('A|B')
+  })
+
+  it('ends an unclosed list fence before a dedented table', () => {
+    const content = [
+      '- ```text',
+      '  protected',
+      '',
+      '| Command | Result |',
+      '| --- | --- |',
+      '| `x|y` | Passed |',
+    ].join('\n')
+
+    expect(normalizeMarkdownContent(content)).toContain('| `x\\|y` | Passed |')
+  })
+
+  it('stops a table before a parenthesized ordered-list item', () => {
+    const content = [
+      'Command | Result',
+      '--- | ---',
+      '`ok|v` | Passed',
+      '1) `x|y` | text',
+    ].join('\n')
+
+    expect(normalizeMarkdownContent(content)).toContain('1) `x|y` | text')
+  })
+
+  it('does not treat ten-digit markers as list-nested fences', () => {
+    const content = [
+      '1234567890. ```text',
+      '| Command | Result |',
+      '| --- | --- |',
+      '| `x|y` | Passed |',
+    ].join('\n')
+
+    expect(normalizeMarkdownContent(content)).toContain('| `x\\|y` | Passed |')
+  })
+
+  it('preserves four-space-indented code lines', () => {
+    const content = ['    | `a|b` |', '    | --- |', '    | `c|d` |'].join('\n')
+
+    expect(normalizeMarkdownContent(content)).toEqual(content)
   })
 
   it('protects fenced code nested in blockquotes', () => {
