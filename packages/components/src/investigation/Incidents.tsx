@@ -56,7 +56,8 @@ import type {
   AgentThreadSnapshot,
   AgentThreadTokenUsage,
   ChatMessage,
-  ComposerImageAttachment,
+  ComposerAttachment,
+  ComposerTextAttachmentMimeType,
   InteractionMode,
   SavedProviderConfig,
   StreamDeltaRecord,
@@ -123,7 +124,7 @@ function canSendIncidentMessage(
 type IncidentAgentRequestBase = {
   text: string;
   sessionId: string | null;
-  attachments: ComposerImageAttachment[];
+  attachments: ComposerAttachment[];
   llm: AgentLlmSelection;
   incidentThreadId: string;
   accessLevel?: AccessLevel;
@@ -518,39 +519,75 @@ function normalizeStreamDeltas(value: unknown): StreamDeltaRecord[] {
     .filter((delta): delta is StreamDeltaRecord => delta !== null);
 }
 
+function isSupportedTextAttachmentMimeType(
+  value: string,
+): value is ComposerTextAttachmentMimeType {
+  return (
+    value === "text/plain" ||
+    value === "text/yaml" ||
+    value === "text/x-yaml" ||
+    value === "application/yaml" ||
+    value === "application/x-yaml" ||
+    value === "text/markdown" ||
+    value === "text/x-markdown" ||
+    value === "application/json"
+  );
+}
+
 function normalizeComposerAttachments(
   value: unknown,
-): ComposerImageAttachment[] | undefined {
+): ComposerAttachment[] | undefined {
   if (!Array.isArray(value)) return undefined;
   const attachments = value
-    .map((attachment): ComposerImageAttachment | null => {
+    .map((attachment): ComposerAttachment | null => {
       const record = asRecord(attachment);
       if (record === null) return null;
       const id = getString(record, "id");
       const name = getString(record, "name");
       const mimeType = getString(record, "mimeType");
-      const dataUrl = getString(record, "dataUrl");
       if (
         id === undefined ||
         name === undefined ||
         mimeType === undefined ||
-        dataUrl === undefined ||
-        record.type !== "image" ||
         typeof record.sizeBytes !== "number"
       ) {
         return null;
       }
-      return {
-        id,
-        type: "image",
-        name,
-        mimeType,
-        sizeBytes: record.sizeBytes,
-        dataUrl,
-      };
+      if (record.type === "image") {
+        const dataUrl = getString(record, "dataUrl");
+        if (dataUrl === undefined) return null;
+        return { id, type: "image", name, mimeType, sizeBytes: record.sizeBytes, dataUrl };
+      }
+      if (record.type === "csv") {
+        const text = getString(record, "text");
+        if (
+          mimeType !== "text/csv" ||
+          text === undefined ||
+          typeof record.rowCount !== "number" ||
+          typeof record.totalRowCount !== "number"
+        ) {
+          return null;
+        }
+        return {
+          id,
+          type: "csv",
+          name,
+          mimeType,
+          sizeBytes: record.sizeBytes,
+          text,
+          rowCount: record.rowCount,
+          totalRowCount: record.totalRowCount,
+        };
+      }
+      if (record.type === "text" && isSupportedTextAttachmentMimeType(mimeType)) {
+        const text = getString(record, "text");
+        if (text === undefined) return null;
+        return { id, type: "text", name, mimeType, sizeBytes: record.sizeBytes, text };
+      }
+      return null;
     })
     .filter(
-      (attachment): attachment is ComposerImageAttachment => attachment !== null,
+      (attachment): attachment is ComposerAttachment => attachment !== null,
     );
   if (attachments.length === 0) return undefined;
   return attachments;
@@ -871,6 +908,22 @@ function readFileAsDataUrl(file: File): Promise<string> {
     };
     reader.readAsDataURL(file);
   });
+}
+
+function getTextAttachmentMimeType(
+  file: File,
+): ComposerTextAttachmentMimeType | "text/csv" | undefined {
+  if (file.type === "text/csv" || file.name.toLowerCase().endsWith(".csv")) {
+    return "text/csv";
+  }
+  if (isSupportedTextAttachmentMimeType(file.type)) return file.type;
+
+  const extension = file.name.toLowerCase().split(".").pop();
+  if (extension === "md" || extension === "markdown") return "text/markdown";
+  if (extension === "json") return "application/json";
+  if (extension === "yaml" || extension === "yml") return "text/yaml";
+  if (extension === "txt") return "text/plain";
+  return undefined;
 }
 
 async function loadDesktopIncidentState(): Promise<{
@@ -1595,9 +1648,7 @@ export default function IncidentsPage() {
   // Managed here (not in Composer) so it can be saved/restored per chat.
   const [selectedAccessLevel, setSelectedAccessLevel] = useState<AccessLevel>("auto-accept-edits");
   const [thinkingEnabled, setThinkingEnabled] = useState(false);
-  const [composerImages, setComposerImages] = useState<
-    ComposerImageAttachment[]
-  >([]);
+  const [composerImages, setComposerImages] = useState<ComposerAttachment[]>([]);
   const [tokenUsageByIncident, setTokenUsageByIncident] = useState<
     Record<string, AgentThreadTokenUsage>
   >(() => loadIncidentTokenUsage());
@@ -1657,23 +1708,15 @@ export default function IncidentsPage() {
     },
     [selectedModelId, selectedProviderKey],
   );
-  const composerSupportsFiles = Boolean(
-    selectedModelCapability &&
-    (selectedModelCapability.supportsPdfInput ||
-      selectedModelCapability.supportsAudioInput ||
-      selectedModelCapability.supportsVideoInput),
-  );
+  const composerSupportsFiles = selectedModelCapability !== undefined;
   const composerFileAccept = useMemo(() => {
     if (selectedModelCapability === undefined) return "";
 
-    const acceptedTypes: string[] = [];
-    if (selectedModelCapability.supportsPdfInput)
-      acceptedTypes.push(".pdf,application/pdf");
-    if (selectedModelCapability.supportsAudioInput)
-      acceptedTypes.push("audio/*");
-    if (selectedModelCapability.supportsVideoInput)
-      acceptedTypes.push("video/*");
-    return acceptedTypes.join(",");
+    return [
+      ".csv", "text/csv", ".txt", "text/plain", ".md", ".markdown",
+      "text/markdown", ".json", "application/json", ".yaml", ".yml",
+      "text/yaml", "application/yaml",
+    ].join(",");
   }, [selectedModelCapability]);
 
   // For past incidents with no in-memory messages, show the original prompt + a note
@@ -2503,29 +2546,55 @@ export default function IncidentsPage() {
     fileInputRef.current?.click();
   }, [composerSupportsFiles]);
 
-  const handleImageFilesSelected = useCallback(
+  const handleAttachmentFilesSelected = useCallback(
     async (files: FileList | null) => {
       if (!files || files.length === 0) return;
 
       const acceptedFiles = Array.from(files)
-        .filter((file) => file.type.startsWith("image/"))
+        .filter(
+          (file) =>
+            file.size <= 3 * 1024 * 1024 &&
+            (file.type.startsWith("image/") ||
+              getTextAttachmentMimeType(file) !== undefined),
+        )
         .slice(0, Math.max(0, 4 - composerImages.length));
 
-      const nextImages = await Promise.all(
+      const nextAttachments = await Promise.all(
         acceptedFiles
-          .filter((file) => file.size <= 3 * 1024 * 1024)
-          .map(async (file) => ({
-            id: crypto.randomUUID(),
-            type: "image" as const,
-            name: file.name || "image",
-            mimeType: file.type || "image/png",
-            sizeBytes: file.size,
-            dataUrl: await readFileAsDataUrl(file),
-          })),
+          .map(async (file): Promise<ComposerAttachment | null> => {
+            const id = crypto.randomUUID();
+            const name = file.name || "attachment";
+            if (file.type.startsWith("image/")) {
+              return {
+                id,
+                type: "image",
+                name,
+                mimeType: file.type || "image/png",
+                sizeBytes: file.size,
+                dataUrl: await readFileAsDataUrl(file),
+              };
+            }
+
+            const mimeType = getTextAttachmentMimeType(file);
+            if (mimeType === undefined) return null;
+            const text = await file.text();
+            if (mimeType === "text/csv") {
+              const nonEmptyLines = text.split(/\r?\n/).filter((line) => line.length > 0);
+              const rowCount = Math.max(0, nonEmptyLines.length - 1);
+              return {
+                id, type: "csv", name, mimeType, sizeBytes: file.size, text,
+                rowCount, totalRowCount: rowCount,
+              };
+            }
+            return { id, type: "text", name, mimeType, sizeBytes: file.size, text };
+          }),
       );
 
-      if (nextImages.length === 0) return;
-      setComposerImages((prev) => [...prev, ...nextImages].slice(0, 4));
+      const attachments = nextAttachments.filter(
+        (attachment): attachment is ComposerAttachment => attachment !== null,
+      );
+      if (attachments.length === 0) return;
+      setComposerImages((prev) => [...prev, ...attachments].slice(0, 4));
     },
     [composerImages.length],
   );
@@ -2551,9 +2620,9 @@ export default function IncidentsPage() {
         transferable.items.add(file);
       }
 
-      await handleImageFilesSelected(transferable.files);
+      await handleAttachmentFilesSelected(transferable.files);
     },
-    [handleImageFilesSelected, selectedModelCapability],
+    [handleAttachmentFilesSelected, selectedModelCapability],
   );
 
   const handleRemoveComposerImage = useCallback((imageId: string) => {
@@ -3171,7 +3240,7 @@ export default function IncidentsPage() {
                 onPickImages={handlePickImages}
                 onPickFiles={handlePickFiles}
                 onImageFilesSelected={(files) => {
-                  void handleImageFilesSelected(files);
+                  void handleAttachmentFilesSelected(files);
                 }}
                 onPaste={(e) => {
                   void handleComposerPaste(e);

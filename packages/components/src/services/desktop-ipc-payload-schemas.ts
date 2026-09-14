@@ -237,14 +237,42 @@ export function createDesktopIpcPayloadValidator(
     })
     .optional();
 
-  const attachmentSchema = z.object({
+  const attachmentBase = {
     id: z.string().min(1),
-    type: z.literal("image"),
     name: z.string().min(1).max(255),
-    mimeType: z.string().regex(/^image\//i),
     sizeBytes: z.number().int().positive().max(3 * 1024 * 1024),
-    dataUrl: z.string().min(1).max(5 * 1024 * 1024),
-  });
+  };
+  const attachmentSchema = z.discriminatedUnion("type", [
+    z.object({
+      ...attachmentBase,
+      type: z.literal("image"),
+      mimeType: z.string().regex(/^image\//i),
+      dataUrl: z.string().min(1).max(5 * 1024 * 1024),
+    }),
+    z.object({
+      ...attachmentBase,
+      type: z.literal("csv"),
+      mimeType: z.literal("text/csv"),
+      text: z.string().max(3 * 1024 * 1024),
+      rowCount: z.number().int().nonnegative(),
+      totalRowCount: z.number().int().nonnegative(),
+    }),
+    z.object({
+      ...attachmentBase,
+      type: z.literal("text"),
+      mimeType: z.enum([
+        "text/plain",
+        "text/yaml",
+        "text/x-yaml",
+        "application/yaml",
+        "application/x-yaml",
+        "text/markdown",
+        "text/x-markdown",
+        "application/json",
+      ]),
+      text: z.string().max(3 * 1024 * 1024),
+    }),
+  ]);
 
   const runbookImportSchema = z.object({
     artifact: z.unknown(),
