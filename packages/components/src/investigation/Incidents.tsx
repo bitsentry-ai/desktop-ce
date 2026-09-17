@@ -1701,6 +1701,7 @@ export default function IncidentsPage() {
     () => listConfiguredProviderKeys(providerConfigs),
     [providerConfigs],
   );
+  const providerConfigCount = Object.keys(providerConfigs).length;
   const selectedModelCapability = useMemo<ModelCatalogEntry | undefined>(
     () => {
       if (selectedProviderKey === null) return;
@@ -2244,7 +2245,7 @@ export default function IncidentsPage() {
     activeId,
     configuredProviderKeys.length,
     discoveredModels,
-    Object.keys(providerConfigs).length,
+    providerConfigCount,
   ]);
 
   // Pre-populate prompt from ?prompt= URL param (e.g. launched from Runbook page)

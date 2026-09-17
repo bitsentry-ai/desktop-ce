@@ -758,7 +758,7 @@ const Navbar = ({
     return () => {
       cancelled = true;
     };
-  }, [currentPath, openAccordions, services.incidents]);
+  }, [currentPath, openAccordions, services]);
 
   React.useEffect(() => {
     const reload = () => {
