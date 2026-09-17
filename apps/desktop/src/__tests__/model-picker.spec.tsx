@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ModelPicker } from '@bitsentry-ce/components/chat/ModelPicker'
 import type { SavedProviderConfig } from '@bitsentry-ce/components/chat/types'
@@ -68,7 +68,7 @@ function renderPicker(config: SavedProviderConfig = createProviderConfig()): voi
 function SelectionHarness() {
   const [selectedModelId, setSelectedModelId] = useState('claude-opus-4-7')
   const discoveredModels = useDiscoveredModels()
-  const providerConfigs = { anthropic: createProviderConfig() }
+  const providerConfigs = useMemo(() => ({ anthropic: createProviderConfig() }), [])
 
   useEffect(() => {
     const options = getProviderModelOptionsWithDiscovery(
@@ -84,7 +84,7 @@ function SelectionHarness() {
       options,
     )
     if (nextModelId !== selectedModelId) setSelectedModelId(nextModelId)
-  }, [discoveredModels, selectedModelId])
+  }, [discoveredModels, providerConfigs, selectedModelId])
 
   return (
     <ModelPicker
