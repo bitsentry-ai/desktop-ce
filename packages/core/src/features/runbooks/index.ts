@@ -1,5 +1,7 @@
 export * from './runbooks.schemas';
 export * from './worker.contracts';
+export * from './credential-bindings.schemas';
+export * from './worker-v2.schemas';
 export * from './execution';
 export * from './resolver';
 export * from './redactor';
