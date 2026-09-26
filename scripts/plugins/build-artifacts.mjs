@@ -15,6 +15,9 @@ const workspaceRoot = path.resolve(
 const pluginPackagesRoot = path.join(workspaceRoot, "packages", "plugins");
 const artifactRoot = path.join(workspaceRoot, "build", "plugins");
 const tempArtifactRoot = path.join(artifactRoot, ".tmp");
+const { desktopCodePluginSchema } = require(
+  path.join(workspaceRoot, "packages/plugin-sdk/dist/index.js"),
+);
 
 function readExportedPlugin(moduleExports) {
   if (
@@ -107,7 +110,7 @@ async function buildPluginArtifact(pluginDirectory) {
 
   const modulePath = require.resolve(tempArtifactPath);
   Reflect.deleteProperty(require.cache, modulePath);
-  const plugin = readExportedPlugin(require(modulePath));
+  const plugin = desktopCodePluginSchema.parse(readExportedPlugin(require(modulePath)));
   const pluginId = readNonEmptyString(plugin?.id, "id");
   const description = readNonEmptyString(plugin?.description, "description");
   const artifactName = `${pluginId}.plugin.js`;

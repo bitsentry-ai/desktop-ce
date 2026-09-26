@@ -138,6 +138,9 @@ jobs:
           git config submodule.packages/electron-trpc.url https://github.com/bitsentry-ai/electron-trpc.git
           git config submodule.packages/plugin-sdk.url https://github.com/bitsentry-ai/-bitsentry-plugin-sdk.git
           git config submodule.packages/plugins/github.url https://github.com/bitsentry-ai/bitsentry-plugin-github.git
+          git config submodule.packages/plugins/itop.url https://github.com/bitsentry-ai/bitsentry-plugin-itop.git
+          git config submodule.packages/plugins/outline.url https://github.com/bitsentry-ai/bitsentry-plugin-outline.git
+          git config submodule.packages/plugins/linux-cve-remediate.url https://github.com/bitsentry-ai/bitsentry-plugin-linux-cve-remediate.git
           git config submodule.packages/plugins/linux-cve-status.url https://github.com/bitsentry-ai/bitsentry-plugin-linux-cve-status.git
           git config submodule.packages/plugins/posthog.url https://github.com/bitsentry-ai/bitsentry-plugin-posthog.git
           git config submodule.packages/plugins/sentry.url https://github.com/bitsentry-ai/bitsentry-plugin-sentry.git
@@ -146,6 +149,9 @@ jobs:
             packages/electron-trpc \
             packages/plugin-sdk \
             packages/plugins/github \
+            packages/plugins/itop \
+            packages/plugins/outline \
+            packages/plugins/linux-cve-remediate \
             packages/plugins/linux-cve-status \
             packages/plugins/posthog \
             packages/plugins/sentry \
@@ -235,6 +241,9 @@ jobs:
           git config submodule.packages/electron-trpc.url https://github.com/bitsentry-ai/electron-trpc.git
           git config submodule.packages/plugin-sdk.url https://github.com/bitsentry-ai/-bitsentry-plugin-sdk.git
           git config submodule.packages/plugins/github.url https://github.com/bitsentry-ai/bitsentry-plugin-github.git
+          git config submodule.packages/plugins/itop.url https://github.com/bitsentry-ai/bitsentry-plugin-itop.git
+          git config submodule.packages/plugins/outline.url https://github.com/bitsentry-ai/bitsentry-plugin-outline.git
+          git config submodule.packages/plugins/linux-cve-remediate.url https://github.com/bitsentry-ai/bitsentry-plugin-linux-cve-remediate.git
           git config submodule.packages/plugins/linux-cve-status.url https://github.com/bitsentry-ai/bitsentry-plugin-linux-cve-status.git
           git config submodule.packages/plugins/posthog.url https://github.com/bitsentry-ai/bitsentry-plugin-posthog.git
           git config submodule.packages/plugins/sentry.url https://github.com/bitsentry-ai/bitsentry-plugin-sentry.git
@@ -243,6 +252,9 @@ jobs:
             packages/electron-trpc \
             packages/plugin-sdk \
             packages/plugins/github \
+            packages/plugins/itop \
+            packages/plugins/outline \
+            packages/plugins/linux-cve-remediate \
             packages/plugins/linux-cve-status \
             packages/plugins/posthog \
             packages/plugins/sentry \

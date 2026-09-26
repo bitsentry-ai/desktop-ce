@@ -224,7 +224,10 @@ describe('DesktopPluginRuntimeService', () => {
     const artifactRoot = path.resolve(__dirname, '../../../build/plugins')
     const expectedPluginIds = [
       'github',
+      'itop',
+      'linux-cve-remediate',
       'linux-cve-status',
+      'outline',
       'posthog',
       'sentry',
       'wazuh',
