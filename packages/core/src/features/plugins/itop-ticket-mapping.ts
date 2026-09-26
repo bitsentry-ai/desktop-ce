@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-const identifier = z.string().regex(/^[A-Za-z][A-Za-z0-9_]*$/).max(100);
+const identifier = z.string().regex(/^[A-Za-z]\w*$/).max(100);
 export const ticketWriteOperationSchema = z.enum(["create", "acknowledge", "assign", "internal_log", "public_log", "resolve", "close"]);
 export const itopTicketMappingSchema = z.object({
   className: identifier,
