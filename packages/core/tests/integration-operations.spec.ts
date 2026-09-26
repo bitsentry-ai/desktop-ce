@@ -93,3 +93,20 @@ it('keeps reconciliation uncertain when a read returns a different resource', as
   await expect(service.reconcile('thread', proposal.id, true, true, 'expected')).rejects.toThrow('exact remote resource')
   expect((await service.list('thread'))[0].status).toBe('uncertain')
 })
+it('enforces ticket mappings again at the approval boundary for generic writes', async () => {
+  const { service, execute, runtime } = setup()
+  runtime.connection.pluginId = 'itop'
+  runtime.connection.ticketMapping = {
+    className: 'UserRequest', referenceField: 'ref', titleField: 'title', internalLogField: 'private_log', publicLogField: 'public_log',
+    fields: { title: 'title', caller: 'caller_id' }, defaults: {},
+    requiredFields: { create: ['title', 'caller'], acknowledge: [], assign: [], internal_log: [], public_log: [], resolve: [], close: [] }, stimuli: {},
+  }
+  runtime.plugin.id = 'itop'
+  runtime.plugin.actions = [{ id: 'create_object', title: 'Create', description: 'Create', riskLevel: 'write', fields: [{ key: 'class', label: 'Class', type: 'string', required: true }, { key: 'fields', label: 'Fields', type: 'json', required: true }] }]
+  const request = { connectionId: runtime.connection.id, actionId: 'create_object', input: { class: 'UserRequest', fields: { title: 'Outage' } } }
+  await expect(service.propose('thread', request)).rejects.toThrow('caller')
+  const proposal = await service.propose('thread', { ...request, input: { ...request.input, fields: { title: 'Outage', caller_id: 42 } } })
+  runtime.connection.ticketMapping.requiredFields.create.push('organization')
+  await expect(service.approve('thread', proposal.id, false)).rejects.toThrow('organization')
+  expect(execute).not.toHaveBeenCalled()
+})

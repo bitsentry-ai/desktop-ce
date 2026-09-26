@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { extractIntegrationResources } from "./integration-resources";
 import { buildPluginInputSchema } from "./desktop-plugin-registry";
+import type { ItopTicketMapping } from "./itop-ticket-mapping";
 import type { IntegrationConnection } from "./integration-connections";
 import type { DesktopPluginDescriptor, DesktopPluginExecutionResult } from "./plugins.types";
 
@@ -40,6 +41,7 @@ function classify(runtime: IntegrationWriteRuntime, request: IntegrationWriteReq
   const fields = z.record(z.string(), z.unknown()).parse(request.input.fields ?? {});
   if (runtime.plugin.id === "itop") {
     if (mapping === undefined || request.input.class !== mapping.className) throw new Error("Configure a matching ticket mapping before approving writes.");
+    validateTicketFields(mapping, request, fields);
     // Direct state changes bypass configured lifecycle semantics and are never approved.
     if ("status" in fields) throw new Error("Use a configured lifecycle operation to change ticket status.");
     if (request.actionId === "apply_stimulus" && !Object.values(mapping.stimuli).includes(String(request.input.stimulus))) throw new Error("This lifecycle transition is not configured.");
@@ -174,4 +176,25 @@ function remoteWriteOutcome(result: DesktopPluginExecutionResult): Pick<Integrat
   const rejected = [400, 401, 403, 404, 409, 422, 429].includes(result.status);
   const messages: Record<number, string> = { 401: "credentials_rejected", 403: "credentials_rejected", 409: "stale_resource" };
   return { status: rejected ? "failed" : "uncertain", result: result.data, message: messages[result.status] ?? (rejected ? "remote_rejected" : "uncertain") };
+}
+
+function validateTicketFields(mapping: ItopTicketMapping, request: IntegrationWriteRequest, fields: Record<string, unknown>) {
+  const operations: Array<keyof ItopTicketMapping["requiredFields"]> = [];
+  if (request.actionId === "create_object") operations.push("create");
+  for (const operation of ["acknowledge", "assign", "resolve", "close"] as const) {
+    if (request.actionId === "apply_stimulus" && request.input.stimulus === mapping.stimuli[operation]) operations.push(operation);
+  }
+  for (const [operation, field] of [["internal_log", mapping.internalLogField], ["public_log", mapping.publicLogField]] as const) {
+    if (field in fields) {
+      operations.push(operation);
+      z.object({ add_item: z.object({ message: z.string().trim().min(1), format: z.literal("text") }).strict() }).strict().parse(fields[field]);
+    }
+  }
+  const allowed = new Set([...Object.values(mapping.fields), mapping.internalLogField, mapping.publicLogField]);
+  if (Object.keys(fields).some((field) => !allowed.has(field))) throw new Error("Use only configured ticket field mappings.");
+  const missing = operations.flatMap((operation) => mapping.requiredFields[operation]).filter((key) => {
+    const value = fields[mapping.fields[key]];
+    return value === undefined || value === null || value === "";
+  });
+  if (missing.length) throw new Error(`Required ticket fields are missing: ${Array.from(new Set(missing)).join(", ")}`);
 }

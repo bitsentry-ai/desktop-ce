@@ -150,6 +150,11 @@ async function main() {
       entries.push(await buildPluginArtifact(pluginDirectory));
     }
 
+    for (const required of ["itop", "outline"]) {
+      if (!entries.some((entry) => entry.pluginId === required)) {
+        throw new Error(`Required chat plugin ${required} is missing; initialize its submodule before building.`);
+      }
+    }
     await writeFile(path.join(artifactRoot, "index.yaml"), renderIndex(entries));
 
     process.stdout.write(
