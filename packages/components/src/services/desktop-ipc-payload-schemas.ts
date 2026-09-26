@@ -291,6 +291,9 @@ export function createDesktopIpcPayloadValidator(
   });
 
   const schemaOverrides: Partial<Record<DesktopRpcChannel, z.ZodType>> = {
+    "plugins:listOperations": z.object({ threadId: z.string().min(1) }).strict(),
+    "plugins:approveOperation": z.object({ threadId: z.string().min(1), id: z.uuid(), closeRequested: z.boolean() }).strict(),
+    "plugins:cancelOperation": z.object({ threadId: z.string().min(1), id: z.uuid() }).strict(),
     "plugins:saveConnection": integrationConnectionInputSchema,
     "plugins:removeConnection": z.object({ id: z.uuid() }).strict(),
     "plugins:get": z.object({
