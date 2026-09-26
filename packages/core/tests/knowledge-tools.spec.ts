@@ -1,10 +1,19 @@
 import { describe, expect, it, vi } from 'vitest'
 import { draftOutlinePostmortem, readSelectedKnowledge, knowledgeReferences } from '../src/features/agent-runtime/knowledge-tools'
 import type { IntegrationActionInput } from '../src/features/agent-runtime/integration-tools'
+import { executeHostTool } from '../src/features/agent-runtime/host-tools'
 import type { HostToolContext } from '../src/features/agent-runtime/host-tools'
 import type { IntegrationResource } from '../src/features/plugins/integration-resources'
 const source: IntegrationResource = { threadId: 'thread', connectionId: '11111111-1111-4111-8111-111111111111', connectionName: 'Knowledge', resourceType: 'document', externalId: 'doc', title: 'Evidence', url: 'https://outline.example/doc/evidence', state: {}, observedAt: '2026-09-26T00:00:00.000Z', selected: true }
 describe('knowledge to runbook evidence boundaries', () => {
+  it('blocks model execution when the engineer selected knowledge sources', async () => {
+    const start = vi.fn()
+    const context = { session: { id: 'session', incidentThreadId: 'thread' }, integrationConnections: { listResources: async () => [source] }, gateway: { start, listExecutable: async () => [{ id: 'runbook', title: 'Check', description: '', actions: [] }] } } as unknown as HostToolContext
+    const result = await executeHostTool(context, 'execute_runbook', { runbookId: 'runbook' })
+    expect(result?.error).toContain('engineer review')
+    expect(start).not.toHaveBeenCalled()
+  })
+
   it('requires engineer-selected sources before retrieving knowledge', async () => {
     const executeRead = vi.fn()
     const context = { integrationConnections: { listResources: async () => [], executeRead } } as unknown as HostToolContext
