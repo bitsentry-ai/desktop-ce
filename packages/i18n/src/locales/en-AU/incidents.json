@@ -77,24 +77,20 @@
   "incidents.incidents.workingFor": "Working for",
   "incidents.incidents.workspaceTrigger": "Workspace trigger",
   "incidents.session.cancelledByUser": "Session cancelled by user",
-  "integrationWrites": {
-    "title": "Integration changes",
-    "error": "Could not load or apply this change. Refresh and inspect its status before trying again.",
-    "proposed": "Awaiting approval",
-    "executing": "Executing",
-    "succeeded": "Succeeded",
-    "failed": "Failed",
-    "uncertain": "Outcome uncertain",
-    "cancelled": "Cancelled",
-    "public": "Public or shared content: review the audience and exact content.",
-    "inspect": "Inspect the remote resource before retrying. This request may have completed.",
-    "closeRequest": "I explicitly request closing this ticket.",
-    "approve": "Approve this exact change",
-    "cancel": "Reject"
-  },
-  "integrationResources": {
-    "title": "Linked tickets and documents",
-    "error": "Could not refresh linked resources. Previously observed state may be stale.",
-    "observed": "Last observed:"
-  }
+  "incidents.integrationWrites.title": "Integration changes",
+  "incidents.integrationWrites.error": "Could not load or apply this change. Refresh and inspect its status before trying again.",
+  "incidents.integrationWrites.proposed": "Awaiting approval",
+  "incidents.integrationWrites.executing": "Executing",
+  "incidents.integrationWrites.succeeded": "Succeeded",
+  "incidents.integrationWrites.failed": "Failed",
+  "incidents.integrationWrites.uncertain": "Outcome uncertain",
+  "incidents.integrationWrites.cancelled": "Cancelled",
+  "incidents.integrationWrites.public": "Public or shared content: review the audience and exact content.",
+  "incidents.integrationWrites.inspect": "Inspect the remote resource before retrying. This request may have completed.",
+  "incidents.integrationWrites.closeRequest": "I explicitly request closing this ticket.",
+  "incidents.integrationWrites.approve": "Approve this exact change",
+  "incidents.integrationWrites.cancel": "Reject",
+  "incidents.integrationResources.title": "Linked tickets and documents",
+  "incidents.integrationResources.error": "Could not refresh linked resources. Previously observed state may be stale.",
+  "incidents.integrationResources.observed": "Last observed:"
 }

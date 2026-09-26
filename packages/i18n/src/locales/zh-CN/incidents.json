@@ -77,24 +77,20 @@
   "incidents.incidents.workingFor": "服务对象",
   "incidents.incidents.workspaceTrigger": "工作区触发器",
   "incidents.session.cancelledByUser": "会话已由用户取消",
-  "integrationWrites": {
-    "title": "集成更改",
-    "error": "无法加载或应用此更改。重试前请刷新并检查状态。",
-    "proposed": "等待批准",
-    "executing": "执行中",
-    "succeeded": "成功",
-    "failed": "失败",
-    "uncertain": "结果不确定",
-    "cancelled": "已取消",
-    "public": "公开或共享内容：请检查受众和确切内容。",
-    "inspect": "重试前请检查远程资源。此请求可能已经完成。",
-    "closeRequest": "我明确要求关闭此工单。",
-    "approve": "批准此确切更改",
-    "cancel": "拒绝"
-  },
-  "integrationResources": {
-    "title": "关联工单和文档",
-    "error": "无法刷新关联资源。之前观察到的状态可能已过时。",
-    "observed": "最后观察时间："
-  }
+  "incidents.integrationWrites.title": "集成更改",
+  "incidents.integrationWrites.error": "无法加载或应用此更改。重试前请刷新并检查状态。",
+  "incidents.integrationWrites.proposed": "等待批准",
+  "incidents.integrationWrites.executing": "执行中",
+  "incidents.integrationWrites.succeeded": "成功",
+  "incidents.integrationWrites.failed": "失败",
+  "incidents.integrationWrites.uncertain": "结果不确定",
+  "incidents.integrationWrites.cancelled": "已取消",
+  "incidents.integrationWrites.public": "公开或共享内容：请检查受众和确切内容。",
+  "incidents.integrationWrites.inspect": "重试前请检查远程资源。此请求可能已经完成。",
+  "incidents.integrationWrites.closeRequest": "我明确要求关闭此工单。",
+  "incidents.integrationWrites.approve": "批准此确切更改",
+  "incidents.integrationWrites.cancel": "拒绝",
+  "incidents.integrationResources.title": "关联工单和文档",
+  "incidents.integrationResources.error": "无法刷新关联资源。之前观察到的状态可能已过时。",
+  "incidents.integrationResources.observed": "最后观察时间："
 }
