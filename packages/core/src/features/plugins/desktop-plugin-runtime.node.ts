@@ -2,7 +2,7 @@ import { refreshLinkedIntegrationResource, type LinkedResourceInput, StoredInteg
 import { IntegrationOperationService } from "./integration-operations";
 import { StoredIntegrationOperations } from "./integration-operation-store";
 import { type IntegrationConnectionStorage, IntegrationConnectionStore } from "./integration-connection-store";
-import { describeIntegrationConnection, type IntegrationConnection, type IntegrationConnectionInput } from "./integration-connections";
+import { applyIntegrationDestinationPolicy, describeIntegrationConnection, type IntegrationConnection, type IntegrationConnectionInput } from "./integration-connections";
 import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
@@ -367,7 +367,7 @@ class DesktopNodePluginRuntimeService extends DesktopPluginRuntimeService {
       if (connection === undefined) throw new Error("Connection unavailable.");
       const plugin = this.getPlugin(connection.pluginId);
       if (plugin === null) throw new Error("Plugin unavailable.");
-      return { connection: describeIntegrationConnection(connection, plugin), plugin,
+      return { connection: this.applyDestinationPolicy(describeIntegrationConnection(connection, plugin)), plugin,
         execute: (request) => super.executeAction({ pluginId: connection.pluginId, actionId: request.actionId, input: request.input, auth: connection.auth, connectionConfig: connectionConfig(connection) }, { deadlineAt: Date.now() + 30_000 }),
         read: (request) => super.executeAction({ pluginId: connection.pluginId, actionId: request.actionId, input: request.input, auth: connection.auth, connectionConfig: connectionConfig(connection) }, { deadlineAt: Date.now() + 30_000 }, { requiredRiskLevel: "read" }),
       };
@@ -390,7 +390,14 @@ class DesktopNodePluginRuntimeService extends DesktopPluginRuntimeService {
 
   override async listIntegrationConnections(): Promise<IntegrationConnection[]> {
     return (await this.connections.list()).map((connection) =>
-      describeIntegrationConnection(connection, this.getPlugin(connection.pluginId)));
+      this.applyDestinationPolicy(describeIntegrationConnection(connection, this.getPlugin(connection.pluginId))));
+  }
+
+  private applyDestinationPolicy(connection: IntegrationConnection): IntegrationConnection {
+    return applyIntegrationDestinationPolicy(connection, {
+      itop: process.env.ITOP_ALLOWED_BASE_URLS,
+      outline: process.env.OUTLINE_ALLOWED_API_BASES,
+    });
   }
 
   override saveIntegrationConnection(input: IntegrationConnectionInput): Promise<void> {
@@ -410,11 +417,15 @@ class DesktopNodePluginRuntimeService extends DesktopPluginRuntimeService {
   ): Promise<DesktopPluginExecutionResult> {
     const connection = (await this.connections.list()).find((row) => row.id === request.connectionId);
     if (connection === undefined || !connection.enabled) throw new Error("Integration connection is missing or disabled.");
-    if (this.getPlugin(connection.pluginId)?.actions.find((row) => row.id === request.actionId)?.riskLevel !== "read") throw new Error("Writes require a stored, engineer-approved proposal.");
+    const plugin = this.getPlugin(connection.pluginId);
+    if (plugin === null || this.applyDestinationPolicy(describeIntegrationConnection(connection, plugin)).availability !== "configured") {
+      throw new Error("Integration destination is not allowed by host policy.");
+    }
+    if (plugin.actions.find((row) => row.id === request.actionId)?.riskLevel !== "read") throw new Error("Writes require a stored, engineer-approved proposal.");
     // Checked on the same record whose credentials run below, so the result cannot describe another endpoint.
     const expected = policy?.expectedConnection;
     if (expected !== undefined) {
-      const current = describeIntegrationConnection(connection, this.getPlugin(connection.pluginId));
+      const current = describeIntegrationConnection(connection, plugin);
       if (current.target !== expected.target || current.revision !== expected.revision) throw new Error("Connection changed. Retry the read.");
     }
     // Call the registry directly: never merge another instance's default auth.

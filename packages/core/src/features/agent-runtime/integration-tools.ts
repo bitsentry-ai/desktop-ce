@@ -69,6 +69,9 @@ export async function runIntegrationTool(
 ): Promise<ToolResult> {
   if (port === undefined) return error("INTEGRATION_UNAVAILABLE", "Integration connections are unavailable in this runtime.");
   const connection = (await port.list()).find((row) => row.id === request.connectionId);
+  if (connection?.availability === "destination_blocked") {
+    return error("DESTINATION_NOT_ALLOWED", "This destination is not allowed on this host. Ask the engineer to add the exact HTTPS endpoint to the host allowlist. Do not switch instances or try to bypass the allowlist. No write was attempted.");
+  }
   if (connection === undefined || connection.availability !== "configured") {
     return error("CONNECTION_UNAVAILABLE", "Select a configured connection using list_integration_connections. Ask the engineer to configure credentials or install the plugin if necessary.");
   }

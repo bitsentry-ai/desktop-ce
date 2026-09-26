@@ -100,22 +100,24 @@ export function IntegrationConnectionsSection({ service }: { service: Integratio
     // A stored credential stays when the field is left blank, so only a new connection must fill the required ones.
     const required = field.required === true && !(secret && editingId !== null);
     const value = values[field.key] ?? "";
-    if (field.type === "json" || field.type === "string_array") return <textarea value={value} required={required} disabled={busy} onChange={(event) => change(event.target.value)} className="mt-1 min-h-32 w-full rounded border bg-background p-2 font-mono text-xs" />;
-    if (field.type === "boolean" || field.enumValues) return <select value={value} required={required} disabled={busy} onChange={(event) => change(event.target.value)} className="ml-3 rounded border bg-background p-2"><option value="" />{(field.enumValues ?? ["true", "false"]).map((option) => <option key={option} value={option}>{option}</option>)}</select>;
-    return <Input type={secret && field.secret === true ? "password" : field.type === "number" ? "number" : "text"} autoComplete={secret ? "new-password" : "off"} value={value} required={required} disabled={busy} onChange={(event) => change(event.target.value)} />;
+    const targetLocked = !secret && editingId !== null && field.key === contract?.destinationField;
+    if (field.type === "json" || field.type === "string_array") return <textarea value={value} required={required} disabled={busy || targetLocked} onChange={(event) => change(event.target.value)} className="mt-1 min-h-32 w-full rounded border bg-background p-2 font-mono text-xs" />;
+    if (field.type === "boolean" || field.enumValues) return <select value={value} required={required} disabled={busy || targetLocked} onChange={(event) => change(event.target.value)} className="ml-3 rounded border bg-background p-2"><option value="" />{(field.enumValues ?? ["true", "false"]).map((option) => <option key={option} value={option}>{option}</option>)}</select>;
+    return <Input type={secret && field.secret === true ? "password" : field.type === "number" ? "number" : "text"} autoComplete={secret ? "new-password" : "off"} value={value} required={required} disabled={busy || targetLocked} onChange={(event) => change(event.target.value)} />;
   }
   return <section className="mb-6 space-y-4 rounded-md border border-border p-6">
     <h2 className="text-lg font-medium">{t("settings.integrationConnections.title")}</h2>
     <p className="text-sm text-muted-foreground">{t("settings.integrationConnections.description")}</p>
     {error !== null && <p role="alert" className="text-destructive">{error}</p>}
     <ul className="space-y-2">{rows.map((row) => <li key={row.id} className="flex items-center gap-3">
-      <span className="min-w-0 flex-1 break-all">{row.name} — {row.target}</span>
+      <span className="min-w-0 flex-1 break-all">{row.name} — {row.target}<span className="block text-xs text-muted-foreground">{t(`settings.integrationConnections.availability.${row.availability}`)}</span></span>
       <Button disabled={busy || !plugins.some((item) => item.id === row.pluginId)} variant="outline" onClick={() => {
         setEditingId(row.id); setName(row.name); setPluginId(row.pluginId); setAuth({}); setConnectionEnabled(row.enabled);
         setConfig(Object.fromEntries(Object.entries(row.config ?? {}).map(([key, value]) => [key, typeof value === "string" ? value : JSON.stringify(value, null, 2)])));
       }}>{t("settings.integrationConnections.edit")}</Button>
       <Button disabled={busy} variant="outline" onClick={() => { void remove(row.id); }}>{t("settings.integrationConnections.remove")}</Button>
     </li>)}</ul>
+    <p className="text-sm text-muted-foreground">{t("settings.integrationConnections.targetImmutable")}</p>
     <form onSubmit={(event) => { void save(event); }} className="grid gap-3">
       <label>{t("settings.integrationConnections.plugin")}
         <select value={pluginId} required disabled={busy || editingId !== null} onChange={(event) => { setPluginId(event.target.value); reset(); }} className="ml-3 rounded border bg-background p-2">
