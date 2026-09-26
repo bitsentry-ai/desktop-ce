@@ -1,3 +1,5 @@
+import { IntegrationConnectionStore } from "./integration-connection-store";
+import { describeIntegrationConnection, type IntegrationConnection, type IntegrationConnectionInput } from "./integration-connections";
 import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
@@ -251,11 +253,13 @@ function applyFieldDefaults(
 }
 
 class DesktopNodePluginRuntimeService extends DesktopPluginRuntimeService {
+  private readonly connections: IntegrationConnectionStore;
   constructor(
     private readonly storedAuthStore: DesktopPluginStoredAuthStore,
     private readonly localPluginDirectories: string[],
   ) {
     super(new DesktopPluginRegistry());
+    this.connections = new IntegrationConnectionStore(storedAuthStore);
     this.reloadRegistry();
   }
 
@@ -321,6 +325,29 @@ class DesktopNodePluginRuntimeService extends DesktopPluginRuntimeService {
       ...installResult,
       descriptor,
     });
+  }
+
+  override async listIntegrationConnections(): Promise<IntegrationConnection[]> {
+    return (await this.connections.list()).map((connection) =>
+      describeIntegrationConnection(connection, this.getPlugin(connection.pluginId)));
+  }
+
+  override saveIntegrationConnection(input: IntegrationConnectionInput): Promise<void> {
+    return this.connections.save(input);
+  }
+
+  override removeIntegrationConnection(id: string): Promise<void> {
+    return this.connections.remove(id);
+  }
+
+  override async executeIntegrationAction(
+    request: { connectionId: string; actionId: string; input: Record<string, unknown> },
+    operation?: DesktopPluginOperationContext,
+  ): Promise<DesktopPluginExecutionResult> {
+    const connection = (await this.connections.list()).find((row) => row.id === request.connectionId);
+    if (connection === undefined || !connection.enabled) throw new Error("Integration connection is missing or disabled.");
+    // Call the registry directly: never merge another instance's default auth.
+    return super.executeAction({ pluginId: connection.pluginId, actionId: request.actionId, input: request.input, auth: connection.auth }, operation);
   }
 
   override async executeAction(

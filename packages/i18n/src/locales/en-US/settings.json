@@ -235,5 +235,18 @@
   "settings.updateSettingsSection.updates": "Updates",
   "settings.updateSettingsSection.versionAvailableToDownload": "BitSentry Desktop {{version}} is available to download.",
   "settings.updateSettingsSection.versionReadyToInstall": "BitSentry Desktop {{version}} is ready to install.",
-  "settings.dataPolicy.policyManagedDescription": "Data handling and redaction controls are managed by platform policy and cannot be changed from settings."
+  "settings.dataPolicy.policyManagedDescription": "Data handling and redaction controls are managed by platform policy and cannot be changed from settings.",
+  "settings.integrationConnections.title": "Chat integration connections",
+  "settings.integrationConnections.description": "Name each iTop or Outline instance for chat. Credentials stay in this product. Saving does not test connectivity. Re-enter the token when editing.",
+  "settings.integrationConnections.plugin": "Integration",
+  "settings.integrationConnections.name": "Connection name",
+  "settings.integrationConnections.endpoint": "Instance or API URL",
+  "settings.integrationConnections.token": "API token",
+  "settings.integrationConnections.save": "Save connection",
+  "settings.integrationConnections.edit": "Edit",
+  "settings.integrationConnections.remove": "Remove",
+  "settings.integrationConnections.cancel": "Cancel",
+  "settings.integrationConnections.loadFailed": "Could not load connections. Reload to try again.",
+  "settings.integrationConnections.saveFailed": "Could not save the connection. Check the URL, credentials, and unique name.",
+  "settings.integrationConnections.removeFailed": "Could not remove the connection. Try again."
 }
