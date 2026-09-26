@@ -5,12 +5,13 @@ export const integrationResourceSchema = z.object({
   threadId: z.string().min(1), connectionId: z.uuid(), connectionName: z.string(),
   resourceType: z.enum(["ticket", "document"]), externalId: z.string().min(1).max(200),
   url: z.url(), title: z.string(), state: z.record(z.string(), z.union([z.string(), z.number(), z.boolean(), z.null()])),
-  observedAt: z.string(),
+  observedAt: z.string(), selected: z.boolean().optional(),
 });
 export type IntegrationResource = z.infer<typeof integrationResourceSchema>;
 export interface IntegrationResourceStore {
   list(threadId: string): Promise<IntegrationResource[]>;
   save(resources: IntegrationResource[]): Promise<void>;
+  select(threadId: string, connectionId: string, resourceType: string, externalId: string, selected: boolean): Promise<void>;
 }
 function record(value: unknown): Record<string, unknown> { return value !== null && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {}; }
 function text(value: unknown): string { return typeof value === "string" || typeof value === "number" ? String(value) : ""; }
@@ -47,7 +48,7 @@ export function extractIntegrationResources(threadId: string, connection: Pick<I
       url.search = new URLSearchParams({ operation: "details", class: className, id: externalId }).toString();
       const mapping = connection.ticketMapping;
       const state = Object.fromEntries(ticketStateKeys(mapping).filter((key) => isStateValue(fields[key])).map((key) => [key, fields[key]]));
-      return [integrationResourceSchema.parse({ ...common, resourceType: "ticket", externalId, url: url.toString(), title: shortText(fields[mapping?.titleField ?? "title"]) || shortText(fields[mapping?.referenceField ?? "ref"]) || externalId, state })];
+      return [integrationResourceSchema.parse({ ...common, resourceType: "ticket", externalId, url: url.toString(), title: shortText(fields[mapping?.titleField ?? "title"]) || shortText(fields[mapping?.referenceField ?? "ref"]) || externalId, state: { ...state, className } })];
     });
   }
   const rows = Array.isArray(data.data) ? data.data : [data.data];
@@ -64,6 +65,18 @@ export class StoredIntegrationResources implements IntegrationResourceStore {
   constructor(private readonly credentials: DesktopPluginStoredAuthStore) {}
   private async read() { const raw = (await this.credentials.get("bitsentry.integration-resources.v1")).resources; return z.array(integrationResourceSchema).parse(raw === undefined ? [] : JSON.parse(String(raw))); }
   async list(threadId: string) { await this.pending; return (await this.read()).filter((row) => row.threadId === threadId); }
+  /** Changes only `selected`, inside one serialized write, so a newer observation landing meanwhile is kept. */
+  async select(threadId: string, connectionId: string, resourceType: string, externalId: string, selected: boolean) {
+    const task = this.pending.then(async () => {
+      const rows = await this.read();
+      const row = rows.find((item) => item.threadId === threadId && item.connectionId === connectionId && item.resourceType === resourceType && item.externalId === externalId);
+      if (!row) throw new Error("Linked resource not found.");
+      row.selected = selected;
+      await this.credentials.set("bitsentry.integration-resources.v1", { resources: JSON.stringify(rows) });
+    });
+    this.pending = task.catch(() => {});
+    await task;
+  }
   async save(resources: IntegrationResource[]) {
     const task = this.pending.then(async () => {
       const rows = await this.read();
@@ -71,7 +84,7 @@ export class StoredIntegrationResources implements IntegrationResourceStore {
         const index = rows.findIndex((row) => row.threadId === resource.threadId && row.connectionId === resource.connectionId && row.resourceType === resource.resourceType && row.externalId === resource.externalId);
         if (index < 0) rows.push(resource);
         // Decided inside the serialized write, so a slow older observation cannot replace a newer one.
-        else if (Date.parse(resource.observedAt) >= Date.parse(rows[index]!.observedAt)) rows[index] = resource;
+        else if (Date.parse(resource.observedAt) >= Date.parse(rows[index]!.observedAt)) rows[index] = { ...resource, selected: resource.selected ?? rows[index]!.selected };
       }
       await this.credentials.set("bitsentry.integration-resources.v1", { resources: JSON.stringify(rows) });
     });

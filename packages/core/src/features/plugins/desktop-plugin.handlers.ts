@@ -184,6 +184,11 @@ export function createDesktopPluginHandlers(
   storedAuthStore: DesktopPluginStoredAuthStore = NOOP_DESKTOP_PLUGIN_STORED_AUTH_STORE,
 ): Record<string, (payload: unknown) => Promise<unknown>> {
   return {
+    "plugins:selectResource": async (payload) => {
+      const input = z.object({ threadId: z.string().min(1), connectionId: z.uuid(), resourceType: z.enum(["ticket", "document"]), externalId: z.string().min(1).max(200), selected: z.boolean() }).strict().parse(payload);
+      await service.getIntegrationResources().select(input.threadId, input.connectionId, input.resourceType, input.externalId, input.selected);
+      return { ok: true };
+    },
     "plugins:listResources": (payload) => service.refreshIntegrationResources(z.object({ threadId: z.string().min(1) }).strict().parse(payload).threadId),
     "plugins:renewOperation": (payload) => {
       const input = z.object({ threadId: z.string().min(1), id: z.uuid() }).strict().parse(payload);

@@ -33,6 +33,7 @@ export function buildRunbookOnlyScope(options: RunbookOnlyScopeOptions = {}): st
     'Every double-brace placeholder in a runbook action must have a matching action parameter with both id and key. Do not use undeclared placeholders.',
     'Do not refuse a proposal because of its actions; the operator corrects details during review.',
     'Never claim a runbook was created, edited, or saved unless the operator approved the proposal and persistence succeeded.',
+    'For a knowledge-to-runbook investigation, ask the engineer to select linked source cards, read them with get_selected_knowledge, and create a cited runbook proposal. The engineer reviews and starts knowledge-backed execution in the conversation panel. Inspect the actual execution result before using draft_outline_postmortem to propose an unpublished, reviewed Outline draft.',
     'To run an existing runbook, use execute_runbook, then call get_runbook_execution once with waitForCompletion: true. Do not poll it.',
     'If a runbook tool call fails or appears missing, call list_runbooks once to verify availability before concluding anything; if that also fails, report that runbook tools are unreachable in this session.',
   ]

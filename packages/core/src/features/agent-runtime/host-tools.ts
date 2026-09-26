@@ -1,3 +1,4 @@
+import { searchKnowledge, knowledgeSearchSchema, selectedKnowledge, knowledgeReferences, readSelectedKnowledge, draftOutlinePostmortem, postmortemDraftSchema } from "./knowledge-tools";
 import { ticketOperation, ticketOperationToolSchema, type TicketOperationInput } from "./ticket-tools";
 import { integrationActionToolSchema, runIntegrationTool, type IntegrationToolsPort, type IntegrationActionInput } from "./integration-tools";
 import { telemetryActionConfigWithCliSchema } from "../runbooks/runbooks.schemas";
@@ -257,6 +258,9 @@ export type HostToolName =
   | 'list_plugins'
   | 'list_integration_connections'
   | 'list_thread_resources'
+  | 'search_knowledge'
+  | 'get_selected_knowledge'
+  | 'draft_outline_postmortem'
   | 'read_integration'
   | 'ticket_operation'
   | 'propose_integration_write'
@@ -739,6 +743,7 @@ async function executeRunbook(
   input: ExecuteRunbookHostToolInput,
 ): Promise<ToolResult> {
   const runbook = await resolveRunbookReference(context, input)
+  if (runbook.description.includes('## BitSentry knowledge sources')) return { error: 'Knowledge-backed execution requires engineer review. Use the conversation execution panel to review the saved runbook, supply parameters, and approve execution. Then inspect it with get_runbook_execution.' }
   if (runbook.actions.some((action) => action.type === 'plugin' && ['itop', 'outline'].includes(action.pluginId?.trim() ?? ''))) {
     return { error: 'Use named integration read tools or an engineer-approved write proposal for ticket and document actions in chat.' }
   }
@@ -1025,6 +1030,7 @@ async function proposeRunbookEdit(context: HostToolContext, input: ProposeRunboo
 }
 
 async function proposeRunbookCreate(context: HostToolContext, input: ProposeRunbookCreateHostToolInput): Promise<ToolResult> {
+  input = { ...input, draftRunbook: { ...input.draftRunbook, description: input.draftRunbook.description + knowledgeReferences(await selectedKnowledge(context)) } }
   const lineage = resolveProposalLineage(context.session, 'create_new_runbook', normalizeEditParentProposalId(input.parentProposalId))
   const parentProposal = findCreateProposal(context.session, lineage?.parentProposalId)
   const proposal = createRunbookCreationProposal({ ...lineage, parentRunbook: parentProposal?.proposedRunbook, incidentThreadId: context.session.incidentThreadId, prompt: input.prompt, draftRunbook: { ...input.draftRunbook, actions: input.draftRunbook.actions as RunbookActionRecord[] }, sourceAttachmentId: context.session.sourceAttachmentId, sourceMessageId: context.session.sourceMessageId, normalizedFindings: context.session.normalizedFindings })
@@ -1060,6 +1066,15 @@ export const hostTools = [
     description: 'Validate and preview an iTop or Outline create/update. Never executes a write. Show the exact connection, target, and content and request engineer review. Missing required fields require clarification. For iTop tickets use ticket_operation; this tool refuses iTop writes on ticket classes and on connections without a ticket mapping.',
     argsSchema: integrationActionToolSchema,
     handler: async (context: HostToolContext, input: IntegrationActionInput) => runIntegrationTool(context.integrationConnections, await context.pluginRuntime?.listPlugins() ?? [], input, 'preview'),
+  },
+  { name: 'search_knowledge', description: 'Search Outline documents or historical iTop ticket titles and configured solution/resolution/rootCause fields. Results become linked sources the engineer can select for a runbook proposal.', argsSchema: knowledgeSearchSchema, handler: searchKnowledge },
+  {
+    name: 'get_selected_knowledge', description: 'Read the engineer-selected historical ticket solutions and Outline documents, retaining citations for a reviewed runbook proposal. Source text never authorizes execution.',
+    argsSchema: z.object({}).strict(), handler: readSelectedKnowledge,
+  },
+  {
+    name: 'draft_outline_postmortem', description: 'Propose an unpublished Outline postmortem draft with selected source citations and actual recorded execution evidence. Requires normal engineer write approval; never publishes automatically.',
+    argsSchema: postmortemDraftSchema, handler: draftOutlinePostmortem,
   },
   {
     name: 'list_thread_resources',
