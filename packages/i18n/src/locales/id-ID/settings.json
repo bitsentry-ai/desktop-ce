@@ -248,5 +248,6 @@
   "settings.integrationConnections.cancel": "Batal",
   "settings.integrationConnections.loadFailed": "Tidak dapat memuat koneksi. Muat ulang untuk mencoba lagi.",
   "settings.integrationConnections.saveFailed": "Tidak dapat menyimpan koneksi. Periksa URL, kredensial, dan nama yang unik.",
-  "settings.integrationConnections.removeFailed": "Tidak dapat menghapus koneksi. Coba lagi."
+  "settings.integrationConnections.removeFailed": "Tidak dapat menghapus koneksi. Coba lagi.",
+  "settings.integrationConnections.outline": "Outline"
 }

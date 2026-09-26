@@ -248,5 +248,6 @@
   "settings.integrationConnections.cancel": "Annuler",
   "settings.integrationConnections.loadFailed": "Impossible de charger les connexions. Rechargez la page pour réessayer.",
   "settings.integrationConnections.saveFailed": "Impossible d’enregistrer la connexion. Vérifiez l’URL, les identifiants et l’unicité du nom.",
-  "settings.integrationConnections.removeFailed": "Impossible de supprimer la connexion. Réessayez."
+  "settings.integrationConnections.removeFailed": "Impossible de supprimer la connexion. Réessayez.",
+  "settings.integrationConnections.outline": "Outline"
 }

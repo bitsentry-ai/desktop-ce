@@ -248,5 +248,6 @@
   "settings.integrationConnections.cancel": "取消",
   "settings.integrationConnections.loadFailed": "无法加载连接。请刷新后重试。",
   "settings.integrationConnections.saveFailed": "无法保存连接。请检查地址、凭据和名称是否唯一。",
-  "settings.integrationConnections.removeFailed": "无法删除连接。请重试。"
+  "settings.integrationConnections.removeFailed": "无法删除连接。请重试。",
+  "settings.integrationConnections.outline": "Outline"
 }
