@@ -286,6 +286,8 @@ export interface DesktopPluginExecutionPolicy {
 }
 
 export class DesktopPluginRuntimeService {
+  getIntegrationOperations(): import("./integration-operations").IntegrationOperationService { throw new Error("Write approvals are unavailable in this runtime."); }
+
   constructor(protected registry = new DesktopPluginRegistry()) {}
 
   async listIntegrationConnections(): Promise<IntegrationConnection[]> { return []; }

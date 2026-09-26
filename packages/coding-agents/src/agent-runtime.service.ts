@@ -3077,6 +3077,10 @@ export class AgentRuntimeService {
         this.authoringProposalStore?.save(proposal) ?? Promise.resolve(),
       pluginRuntime: this.pluginRuntime,
       integrationConnections: {
+        proposeWrite: async (request) => {
+          if (!session.incidentThreadId || this.pluginRuntime === undefined) throw new Error('An active conversation is required.');
+          return this.pluginRuntime.getIntegrationOperations().propose(session.incidentThreadId, request);
+        },
         list: () => this.pluginRuntime?.listIntegrationConnections() ?? Promise.resolve([]),
         executeRead: async (request) => {
           const pluginRuntime = this.pluginRuntime

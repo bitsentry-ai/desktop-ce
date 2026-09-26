@@ -15,6 +15,9 @@ function makeValidPayloads(): Record<DesktopRpcChannel, unknown> {
 
   Object.assign(payloads, {
     'plugins:get': { pluginId: 'sentry' },
+    'plugins:listOperations': { threadId: 'thread-1' },
+    'plugins:approveOperation': { threadId: 'thread-1', id: UUID, closeRequested: false },
+    'plugins:cancelOperation': { threadId: 'thread-1', id: UUID },
     'plugins:saveConnection': { id: UUID, name: 'Production', pluginId: 'itop', auth: { baseUrl: 'https://itop.example', authToken: 'example' } },
     'plugins:removeConnection': { id: UUID },
     'plugins:getStoredAuth': { pluginId: 'sentry' },
