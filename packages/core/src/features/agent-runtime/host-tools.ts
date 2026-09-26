@@ -1,4 +1,4 @@
-import type { IntegrationConnection } from "../plugins/integration-connections";
+import { integrationActionToolSchema, runIntegrationTool, type IntegrationToolsPort, type IntegrationActionInput } from "./integration-tools";
 import { telemetryActionConfigWithCliSchema } from "../runbooks/runbooks.schemas";
 import { z } from 'zod'
 import type { RunbookContext, ToolResult } from './types'
@@ -255,6 +255,8 @@ export type HostToolName =
   | 'list_runbooks'
   | 'list_plugins'
   | 'list_integration_connections'
+  | 'read_integration'
+  | 'propose_integration_write'
   | 'list_models'
   | 'execute_runbook'
   | 'get_runbook_execution'
@@ -294,7 +296,7 @@ export type HostToolEvent = {
 )
 
 export interface HostToolContext {
-  integrationConnections?: { list(): Promise<IntegrationConnection[]> };
+  integrationConnections?: IntegrationToolsPort;
   gateway: RunbookGateway
   session: AgentSessionRef
   buildRequestKey?: (
@@ -1034,6 +1036,18 @@ export const hostTools = [
     description: 'List available runbooks that can be executed for the incident.',
     argsSchema: listRunbooksHostToolSchema,
     handler: async (context: HostToolContext) => await listRunbooks(context),
+  },
+  {
+    name: 'read_integration',
+    description: 'Search/read iTop tickets or Outline documents through a configured named connection, without a saved runbook. Discover connection IDs with list_integration_connections and action fields with list_plugins. Read-only actions are enforced by the host.',
+    argsSchema: integrationActionToolSchema,
+    handler: async (context: HostToolContext, input: IntegrationActionInput) => runIntegrationTool(context.integrationConnections, await context.pluginRuntime?.listPlugins() ?? [], input, 'read'),
+  },
+  {
+    name: 'propose_integration_write',
+    description: 'Validate and preview an iTop or Outline create/update. Never executes a write. Show the exact connection, target, and content and request engineer review. Missing required fields require clarification.',
+    argsSchema: integrationActionToolSchema,
+    handler: async (context: HostToolContext, input: IntegrationActionInput) => runIntegrationTool(context.integrationConnections, await context.pluginRuntime?.listPlugins() ?? [], input, 'preview'),
   },
   {
     name: 'list_integration_connections',

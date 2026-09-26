@@ -3075,7 +3075,16 @@ export class AgentRuntimeService {
       saveRunbookAuthoringProposal: (proposal) =>
         this.authoringProposalStore?.save(proposal) ?? Promise.resolve(),
       pluginRuntime: this.pluginRuntime,
-      integrationConnections: { list: () => this.pluginRuntime?.listIntegrationConnections() ?? Promise.resolve([]) },
+      integrationConnections: {
+        list: () => this.pluginRuntime?.listIntegrationConnections() ?? Promise.resolve([]),
+        executeRead: async (request) => {
+          if (this.pluginRuntime === undefined) throw new Error('Plugin runtime is unavailable.');
+          const connection = (await this.pluginRuntime.listIntegrationConnections()).find((row) => row.id === request.connectionId);
+          const action = connection?.actions.find((row) => row.id === request.actionId);
+          if (action?.riskLevel !== 'read') throw new Error('Only read actions are allowed here.');
+          return this.pluginRuntime.executeIntegrationAction(request, { signal: session.abortController.signal, deadlineAt: Date.now() + 30_000 });
+        },
+      },
       ...(options.observeEvents
         ? { onToolEvent: (event: HostToolEvent) => this.observeHostToolEvent(session, event) }
         : {}),
