@@ -1,3 +1,4 @@
+import { itopTicketMappingSchema } from "@bitsentry-ce/core/features/plugins";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useTranslation } from "@bitsentry-ce/i18n";
 import type { IntegrationConnection, IntegrationConnectionInput } from "@bitsentry-ce/core/features/plugins";
@@ -23,6 +24,7 @@ export function IntegrationConnectionsSection({ service }: { service: Integratio
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [connectionEnabled, setConnectionEnabled] = useState(true);
+  const [ticketMappingText, setTicketMappingText] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
   const listRequestVersion = useRef(0);
   useEffect(() => {
@@ -53,11 +55,12 @@ export function IntegrationConnectionsSection({ service }: { service: Integratio
     try {
       await service.save({
         id: editingId ?? crypto.randomUUID(), name, pluginId, enabled: connectionEnabled,
+        ticketMapping: pluginId === "itop" && ticketMappingText.trim() ? itopTicketMappingSchema.parse(JSON.parse(ticketMappingText)) : undefined,
         auth: pluginId === "itop"
           ? authMode === "token" ? { baseUrl: endpoint, authToken: token } : { baseUrl: endpoint, username, password }
           : { apiBase: endpoint, accessToken: token },
       });
-      setToken(""); setUsername(""); setPassword(""); setName(""); setEndpoint(""); setEditingId(null); setAuthMode("token"); setConnectionEnabled(true);
+      setToken(""); setUsername(""); setPassword(""); setName(""); setEndpoint(""); setEditingId(null); setAuthMode("token"); setConnectionEnabled(true); setTicketMappingText("");
       await refreshRows();
     } catch { setError(t("settings.integrationConnections.saveFailed")); }
     finally { setBusy(false); }
@@ -69,7 +72,7 @@ export function IntegrationConnectionsSection({ service }: { service: Integratio
     try {
       await service.remove(id);
       if (editingId === id) {
-        setEditingId(null); setName(""); setEndpoint(""); setToken(""); setUsername(""); setPassword(""); setAuthMode("token"); setConnectionEnabled(true);
+        setEditingId(null); setName(""); setEndpoint(""); setToken(""); setUsername(""); setPassword(""); setAuthMode("token"); setConnectionEnabled(true); setTicketMappingText("");
       }
       await refreshRows();
     }
@@ -86,6 +89,7 @@ export function IntegrationConnectionsSection({ service }: { service: Integratio
       <Button disabled={busy} variant="outline" onClick={() => {
         setEditingId(row.id); setName(row.name); setPluginId(row.pluginId); setEndpoint(row.target);
         setAuthMode(row.pluginId === "itop" ? row.authMode : "token"); setToken(""); setUsername(""); setPassword(""); setConnectionEnabled(row.enabled);
+        setTicketMappingText(row.ticketMapping ? JSON.stringify(row.ticketMapping, null, 2) : "");
       }}>{t("settings.integrationConnections.edit")}</Button>
       <Button disabled={busy} variant="outline" onClick={() => { void remove(row.id); }}>{t("settings.integrationConnections.remove")}</Button>
     </li>)}</ul>
@@ -93,7 +97,7 @@ export function IntegrationConnectionsSection({ service }: { service: Integratio
       <label>{t("settings.integrationConnections.plugin")}
         <select value={pluginId} disabled={busy || editingId !== null} onChange={(event) => {
           setPluginId(event.target.value === "outline" ? "outline" : "itop"); setAuthMode("token");
-          setToken(""); setUsername(""); setPassword(""); setEndpoint("");
+          setToken(""); setUsername(""); setPassword(""); setEndpoint(""); setTicketMappingText("");
         }} className="ml-3 rounded border bg-background p-2">
           <option value="itop">iTop</option><option value="outline">{t("settings.integrationConnections.outline")}</option>
         </select>
@@ -116,9 +120,12 @@ export function IntegrationConnectionsSection({ service }: { service: Integratio
         <label>{t("settings.integrationConnections.username")}<Input autoComplete="username" value={username} required disabled={busy} onChange={(event) => { setUsername(event.target.value); }} /></label>
         <label>{t("settings.integrationConnections.password")}<Input type="password" autoComplete="new-password" value={password} required disabled={busy} onChange={(event) => { setPassword(event.target.value); }} /></label>
       </>}
+      {pluginId === "itop" && <label>{t("settings.integrationConnections.ticketMapping")}
+        <textarea value={ticketMappingText} disabled={busy} onChange={(event) => { setTicketMappingText(event.target.value); }} className="mt-1 min-h-40 w-full rounded border bg-background p-2 font-mono text-xs" />
+      </label>}
       <Button type="submit" disabled={busy}>{t("settings.integrationConnections.save")}</Button>
       {editingId !== null && <Button type="button" variant="outline" disabled={busy} onClick={() => {
-        setEditingId(null); setName(""); setEndpoint(""); setToken(""); setUsername(""); setPassword(""); setAuthMode("token"); setConnectionEnabled(true);
+        setEditingId(null); setName(""); setEndpoint(""); setToken(""); setUsername(""); setPassword(""); setAuthMode("token"); setConnectionEnabled(true); setTicketMappingText("");
       }}>{t("settings.integrationConnections.cancel")}</Button>}
     </form>
   </section>;

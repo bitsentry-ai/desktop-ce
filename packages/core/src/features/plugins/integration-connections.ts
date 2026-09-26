@@ -1,3 +1,4 @@
+import { itopTicketMappingSchema } from "./itop-ticket-mapping";
 import { z } from "zod";
 import type { DesktopPluginDescriptor } from "./plugins.types";
 
@@ -7,6 +8,7 @@ export const integrationConnectionInputSchema = z.object({
   name: z.string().trim().min(1).max(100),
   pluginId: integrationPluginIdSchema,
   enabled: z.boolean().default(true),
+  ticketMapping: itopTicketMappingSchema.optional(),
   auth: z.record(z.string(), z.string().max(16_384)),
 }).strict();
 export type IntegrationConnectionInput = z.infer<typeof integrationConnectionInputSchema>;
@@ -64,6 +66,7 @@ export function describeIntegrationConnection(
         Boolean(connection.auth.username?.trim() && connection.auth.password?.trim())
       ? "username_password"
       : "token",
+    ticketMapping: connection.ticketMapping,
     availability: !connection.enabled ? "disabled"
       : !target || !hasIntegrationCredentials(connection) ? "credentials_missing"
       : plugin == null ? "plugin_unavailable" : "configured",
