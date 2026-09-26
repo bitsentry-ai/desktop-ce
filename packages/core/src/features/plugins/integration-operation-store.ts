@@ -22,7 +22,7 @@ export class StoredIntegrationOperations implements IntegrationOperationStore {
     return task;
   }
   async create(operation: IntegrationOperation) { await this.update((rows) => { if (rows.some((row) => row.id === operation.id)) { throw new Error("Duplicate proposal."); } rows.push(operation); return true; }); }
-  transition(id: string, expected: IntegrationOperation["status"], patch: Pick<IntegrationOperation, "status" | "updatedAt"> & Partial<Pick<IntegrationOperation, "result" | "message">>) {
-    return this.update((rows) => { const index = rows.findIndex((row) => row.id === id && row.status === expected); if (index < 0) { return false; } rows[index] = integrationOperationSchema.parse({ ...rows[index], ...patch }); return true; });
+  transition(id: string, expected: IntegrationOperation["status"], patch: Pick<IntegrationOperation, "status" | "updatedAt"> & Partial<Pick<IntegrationOperation, "result" | "message">>, expectedUpdatedAt?: string) {
+    return this.update((rows) => { const index = rows.findIndex((row) => row.id === id && row.status === expected && (expectedUpdatedAt === undefined || row.updatedAt === expectedUpdatedAt)); if (index < 0) { return false; } rows[index] = integrationOperationSchema.parse({ ...rows[index], ...patch }); return true; });
   }
 }
