@@ -382,7 +382,7 @@ class DesktopNodePluginRuntimeService extends DesktopPluginRuntimeService {
       // The saved connection carries the ticket mapping the extractor needs; the operation only remembers name and target.
       const connection = saved.find((row) => row.id === operation.connectionId)
         ?? { id: operation.connectionId, name: operation.connectionName, pluginId: operation.pluginId, target: operation.target };
-      const resources = extractIntegrationResources(threadId, { id: connection.id, name: connection.name, pluginId: connection.pluginId, target: operation.target, ticketMapping: "ticketMapping" in connection ? connection.ticketMapping : undefined }, operation.result);
+      const resources = extractIntegrationResources(threadId, { id: connection.id, name: connection.name, pluginId: connection.pluginId, target: operation.target, ticketMapping: "ticketMapping" in connection ? connection.ticketMapping : undefined }, operation.result, typeof operation.input.class === "string" ? operation.input.class : undefined);
       await this.getIntegrationResources().save(resources.map((resource) => ({ ...resource, observedAt: operation.updatedAt })));
     }
     return this.getIntegrationResources().list(threadId);
