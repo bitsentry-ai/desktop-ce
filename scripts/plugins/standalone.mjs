@@ -11,14 +11,15 @@ if (!["build", "lint", "typecheck"].includes(operation)) {
   throw new Error("Usage: node scripts/plugins/standalone.mjs build|lint|typecheck");
 }
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
-const pnpm = process.platform === "win32" ? "pnpm.cmd" : "pnpm";
+const pnpmEntry = process.env.npm_execpath;
+if (!pnpmEntry) throw new Error("Run this script through pnpm.");
 for (const name of plugins) {
   const cwd = path.join(root, "packages/plugins", name);
   for (const args of [
     ["--ignore-workspace", "install", "--frozen-lockfile"],
     ["--ignore-workspace", "run", operation],
   ]) {
-    const result = spawnSync(pnpm, args, { cwd, stdio: "inherit" });
+    const result = spawnSync(process.execPath, [pnpmEntry, ...args], { cwd, stdio: "inherit" });
     if (result.error !== undefined) throw result.error;
     if (result.status !== 0) process.exit(result.status ?? 1);
   }
