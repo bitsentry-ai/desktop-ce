@@ -23,7 +23,6 @@ import {
   History,
   AlertTriangle,
   Ban,
-  BookOpen,
   Check,
   Archive,
   FileText,
@@ -38,7 +37,6 @@ import {
 } from "../ui/tooltip";
 import { useAgentService } from "../services/hooks";
 import { getDesktopApi } from "../services/desktop-api";
-import { hasValidRunbook } from "../runbook/runbookStorage";
 import {
   type ModelCatalogEntry,
   type ModelCatalogProviderKey,
@@ -1117,35 +1115,6 @@ function EditableTitle({
 }
 
 // ─── Warning banner ────────────────────────────────────────────────────────────
-
-function WarningBanner({
-  onNavigateToRunbook,
-}: {
-  onNavigateToRunbook: () => void;
-}) {
-  const { t } = useTranslation();
-  return (
-    <div className="mx-6 mt-4 flex items-center gap-3 rounded-lg border border-border bg-card px-4 py-3">
-      <AlertTriangle size={16} className="shrink-0 text-amber-500" />
-      <div className="flex-1 text-sm">
-        <span className="font-medium text-foreground">
-          {t("common.incidents.noValidRunbookFound")}
-        </span>
-        <span className="text-muted-foreground">
-          {" "}
-          {t("common.incidents.createARunbookWithAt")}
-        </span>
-      </div>
-      <button
-        onClick={onNavigateToRunbook}
-        className="flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground hover:border-border-hover transition-colors"
-      >
-        <BookOpen size={12} />
-        {t("common.incidents.openRunbooks")}
-      </button>
-    </div>
-  );
-}
 
 function ProviderBanner({
   onNavigateToSettings,
@@ -2798,7 +2767,6 @@ export default function IncidentsPage() {
   // ── Thread status for UI state machine ────────────────────────────────────────
   const threadStatus: ThreadStatus = useMemo(() => {
     if (activeIncident === null) return "idle";
-    if (!hasValidRunbook()) return "blocked_no_runbook";
     if (incidentState === "RUNNING") return "streaming";
     if (incidentState === "IDLE") return "ready";
     return incidentState.toLowerCase() as ThreadStatus;
@@ -2808,11 +2776,6 @@ export default function IncidentsPage() {
     selectedProviderKey !== null &&
     selectedModelId.length > 0;
   // ── Callbacks must be declared before early returns (React hooks rule) ──────
-
-  // Navigate to runbook page (handoff - no inline creation per spec)
-  const handleNavigateToRunbook = useCallback(() => {
-    void navigate("/runbooks");
-  }, [navigate]);
 
   const handleNavigateToSettings = useCallback(() => {
     let hash = "#coding-agents";
@@ -2828,7 +2791,7 @@ export default function IncidentsPage() {
 
   const isBlocked =
     activeIncident !== null &&
-    (threadStatus === "blocked_no_runbook" || !hasConfiguredProvider);
+    !hasConfiguredProvider;
   const isActiveProcessing = threadStatus === "streaming";
   let artifactsButtonClassName = "hover:bg-muted";
   if (artifactsOpen) {
@@ -3101,11 +3064,7 @@ export default function IncidentsPage() {
         </div>
 
         {/* Warning banner when blocked */}
-        {!isArchivedIncident && threadStatus === "blocked_no_runbook" && (
-          <WarningBanner onNavigateToRunbook={handleNavigateToRunbook} />
-        )}
         {!isArchivedIncident &&
-          threadStatus !== "blocked_no_runbook" &&
           providerConfigsLoaded &&
           !hasConfiguredProvider && (
             <ProviderBanner onNavigateToSettings={handleNavigateToSettings} />
