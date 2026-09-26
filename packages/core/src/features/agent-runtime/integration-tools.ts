@@ -11,6 +11,7 @@ export const integrationActionToolSchema = z.object({
 }).strict();
 export type IntegrationActionInput = z.infer<typeof integrationActionToolSchema>;
 export interface IntegrationToolsPort {
+  timeTracking?: Pick<import("../plugins/time-tracking-adapter").TimeTrackingAdapterRegistry, "capabilities">;
   list(): Promise<IntegrationConnection[]>;
   listResources?(): Promise<import("../plugins/integration-resources").IntegrationResource[]>;
   proposeWrite?(request: IntegrationActionInput): Promise<import("../plugins/integration-operations").IntegrationOperation>;
