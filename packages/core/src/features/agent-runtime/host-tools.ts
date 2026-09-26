@@ -258,6 +258,7 @@ export type HostToolName =
   | 'list_plugins'
   | 'list_integration_connections'
   | 'list_thread_resources'
+  | 'list_time_tracking_capabilities'
   | 'search_knowledge'
   | 'get_selected_knowledge'
   | 'draft_outline_postmortem'
@@ -1075,6 +1076,12 @@ export const hostTools = [
   {
     name: 'draft_outline_postmortem', description: 'Propose an unpublished Outline postmortem draft with selected source citations and actual recorded execution evidence. Requires normal engineer write approval; never publishes automatically.',
     argsSchema: postmortemDraftSchema, handler: draftOutlinePostmortem,
+  },
+  {
+    name: 'list_time_tracking_capabilities',
+    description: 'Inspect custom iTop timer adapter availability. No adapter is connected by default. Never claim a timer action executed when availability is not_connected; custom endpoints and authentication are supplied by a future runtime adapter.',
+    argsSchema: z.object({}).strict(),
+    handler: async (context) => ({ output: JSON.stringify(await Promise.all((await context.integrationConnections?.list() ?? []).filter((row) => row.pluginId === 'itop').map(async (row) => context.integrationConnections?.timeTracking?.capabilities(row.id) ?? { connectionId: row.id, availability: 'not_connected', actions: [], remoteIdempotency: 'unknown' }))) }),
   },
   {
     name: 'list_thread_resources',
