@@ -103,7 +103,7 @@ export class IntegrationOperationService {
       const request = recoveryRead(operation, externalId);
       if (runtime.plugin.actions.find((action) => action.id === request.actionId)?.riskLevel !== "read") throw new Error("Resource verification is unavailable.");
       const response = await runtime.execute(request);
-      if (!response.ok || !extractIntegrationResources(threadId, runtime.connection, response.data).some((row) => row.externalId === externalId && (operation.pluginId !== "itop" || row.state.className === operation.input.class))) throw new Error("The exact remote resource could not be verified. Keep this outcome uncertain.");
+      if (!response.ok || !extractIntegrationResources(threadId, runtime.connection, response.data, typeof operation.input.class === "string" ? operation.input.class : undefined).some((row) => row.externalId === externalId && (operation.pluginId !== "itop" || row.state.className === operation.input.class))) throw new Error("The exact remote resource could not be verified. Keep this outcome uncertain.");
       result = response.data;
     }
     await this.store.transition(id, "uncertain", { status: applied ? "reconciled" : "failed", result, message: applied ? "The engineer confirmed the change and the remote resource was read successfully." : "The engineer inspected the remote system and confirmed that this operation did not apply.", updatedAt: new Date().toISOString() });
