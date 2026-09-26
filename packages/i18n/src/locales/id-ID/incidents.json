@@ -91,5 +91,10 @@
     "closeRequest": "Saya secara eksplisit meminta penutupan tiket ini.",
     "approve": "Setujui perubahan persis ini",
     "cancel": "Tolak"
+  },
+  "integrationResources": {
+    "title": "Tiket dan dokumen tertaut",
+    "error": "Tidak dapat menyegarkan sumber daya tertaut. Status sebelumnya mungkin sudah usang.",
+    "observed": "Terakhir diamati:"
   }
 }

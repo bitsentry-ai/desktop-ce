@@ -91,5 +91,10 @@
     "closeRequest": "I explicitly request closing this ticket.",
     "approve": "Approve this exact change",
     "cancel": "Reject"
+  },
+  "integrationResources": {
+    "title": "Linked tickets and documents",
+    "error": "Could not refresh linked resources. Previously observed state may be stale.",
+    "observed": "Last observed:"
   }
 }
