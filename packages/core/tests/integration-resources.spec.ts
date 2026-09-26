@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest'
-import { extractIntegrationResources, StoredIntegrationResources } from '../src/features/plugins/integration-resources'
+import { describe, expect, it, vi } from 'vitest'
+import { extractIntegrationResources, refreshLinkedIntegrationResource, StoredIntegrationResources } from '../src/features/plugins/integration-resources'
 import type { DesktopPluginStoredAuthRecord } from '../src/features/plugins/desktop-plugin-auth-store'
 const connection = { id: '11111111-1111-4111-8111-111111111111', name: 'Production', pluginId: 'itop' as const, target: 'https://itop.example' }
 describe('thread integration resources', () => {
@@ -25,4 +25,18 @@ describe('thread integration resources', () => {
     await reloaded.save(rows)
     expect(await reloaded.list('thread')).toHaveLength(1)
   })
+})
+
+it('refreshes only an existing linked resource and preserves source selection', async () => {
+  const initial = extractIntegrationResources('thread', connection, { objects: { 'UserRequest::42': { class: 'UserRequest', key: '42', fields: { title: 'Old', status: 'new' } } } })[0]
+  const store = { list: async () => [{ ...initial, selected: true }], save: vi.fn() }
+  const runtime = {
+    connection: { ...connection, enabled: true, availability: 'configured' as const, actions: [] },
+    plugin: { id: 'itop', name: 'iTop', version: '1.0.0', description: 'Tickets', type: 'data_source' as const, auth: { fields: [] }, actions: [{ id: 'get_object', title: 'Read', description: 'Read', riskLevel: 'read' as const, fields: [] }] },
+    execute: vi.fn().mockResolvedValue({ ok: true, status: 200, data: { objects: { 'UserRequest::42': { class: 'UserRequest', key: '42', fields: { title: 'Current', status: 'assigned' } } } } }),
+  }
+  const input = { threadId: 'thread', connectionId: connection.id, resourceType: 'ticket' as const, externalId: '42' }
+  expect(await refreshLinkedIntegrationResource(input, store, runtime)).toMatchObject({ title: 'Current', state: { status: 'assigned' }, selected: true })
+  await expect(refreshLinkedIntegrationResource({ ...input, externalId: '43' }, store, runtime)).rejects.toThrow('unavailable')
+  expect(runtime.execute).toHaveBeenCalledTimes(1)
 })

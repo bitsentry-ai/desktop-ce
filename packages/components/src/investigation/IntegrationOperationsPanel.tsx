@@ -1,3 +1,4 @@
+import { integrationErrorKey } from "./integration-error";
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "@bitsentry-ce/i18n";
 import type { IntegrationOperation } from "@bitsentry-ce/core/features/plugins";
@@ -22,6 +23,7 @@ export function IntegrationOperationsPanel({ threadId, disabled, service }: { th
   const [rows, setRows] = useState<IntegrationOperation[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
   const [closeRequests, setCloseRequests] = useState<Record<string, boolean>>({});
   useEffect(() => {
     let active = true;
@@ -31,15 +33,16 @@ export function IntegrationOperationsPanel({ threadId, disabled, service }: { th
     return () => { active = false; clearInterval(timer); };
   }, [service, threadId]);
   async function act(row: IntegrationOperation, approve: boolean) {
-    setBusy(true); setError(false);
+    setBusy(true); setActionError(null);
     try {
       if (approve) await service.approve(threadId, row.id, closeRequests[row.id] === true);
       else await service.cancel(threadId, row.id);
       setRows(await service.list(threadId));
-    } catch { setError(true); } finally { setBusy(false); }
+    } catch (failure) { setActionError(integrationErrorKey(failure)); } finally { setBusy(false); }
   }
-  if (rows.length === 0 && !error) return null;
+  if (rows.length === 0 && !error && !actionError) return null;
   return <section className="max-h-80 shrink-0 overflow-y-auto border-b border-border p-3" aria-label={t("incidents.integrationWrites.title")}>
+    {actionError && <p role="alert">{t(actionError)}</p>}
     {error && <p role="alert">{t("incidents.integrationWrites.error")}</p>}
     {rows.map((row) => <details key={row.id} className="mb-2 rounded border border-border p-3" open={row.status === "proposed" || row.status === "uncertain"}>
       <summary>{row.connectionName} · {row.actionId} · {t(`incidents.integrationWrites.${row.status}`)}</summary>
@@ -48,6 +51,9 @@ export function IntegrationOperationsPanel({ threadId, disabled, service }: { th
       <pre className="max-h-48 overflow-auto whitespace-pre-wrap break-all text-xs">{JSON.stringify(row.input, null, 2)}</pre>
       {(row.status === "uncertain" || row.status === "executing") && <p>{t("incidents.integrationWrites.inspect")}</p>}
       {row.result !== undefined && <pre className="max-h-48 overflow-auto whitespace-pre-wrap text-xs">{JSON.stringify(row.result, null, 2)}</pre>}
+      {row.message === "credentials_rejected" && <p role="alert">{t("incidents.integrationRecovery.credentials")}</p>}
+      {row.message === "stale_resource" && <p role="alert">{t("incidents.integrationRecovery.stale")}</p>}
+      {row.message === "remote_rejected" && <p role="alert">{t("incidents.integrationRecovery.rejected")}</p>}
       <OperationRecoveryControls row={row} service={service} disabled={disabled || busy} onRefresh={async () => setRows(await service.list(threadId))} />
       {row.status === "proposed" && <div className="mt-2 flex flex-wrap items-center gap-2">
         {row.requiresCloseRequest && <label><input type="checkbox" checked={closeRequests[row.id] === true} disabled={disabled || busy} onChange={(event) => setCloseRequests((old) => ({ ...old, [row.id]: event.target.checked }))} /> {t("incidents.integrationWrites.closeRequest")}</label>}

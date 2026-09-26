@@ -250,5 +250,11 @@
   "settings.integrationConnections.saveFailed": "无法保存连接。请检查地址、凭据和名称是否唯一。",
   "settings.integrationConnections.removeFailed": "无法删除连接。请重试。",
   "settings.integrationConnections.outline": "Outline",
-  "settings.integrationConnections.ticketMapping": "工单字段与生命周期映射（可选 JSON）"
+  "settings.integrationConnections.ticketMapping": "工单字段与生命周期映射（可选 JSON）",
+  "settings.integrationConnections.availability.configured": "已配置",
+  "settings.integrationConnections.availability.disabled": "已禁用",
+  "settings.integrationConnections.availability.plugin_unavailable": "插件不可用",
+  "settings.integrationConnections.availability.credentials_missing": "缺少凭据",
+  "settings.integrationConnections.availability.destination_blocked": "目标被主机策略阻止",
+  "settings.integrationConnections.targetImmutable": "连接目标不可更改。其他实例请创建新连接；可在此更新凭据。"
 }

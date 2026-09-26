@@ -41,7 +41,7 @@ export function extractIntegrationResources(threadId: string, connection: Pick<I
     const row = record(value); const document = row.document === undefined ? row : record(row.document);
     const externalId = text(document.id); const url = safeUrl(document.url, connection.target);
     if (!externalId || !url) return [];
-    const state = Object.fromEntries(["updatedAt", "publishedAt", "archivedAt", "collectionId"].filter((key) => typeof document[key] === "string").map((key) => [key, document[key]]));
+    const state = Object.fromEntries(["updatedAt", "publishedAt", "archivedAt", "collectionId", "revision"].filter((key) => typeof document[key] === "string" || typeof document[key] === "number").map((key) => [key, document[key]]));
     return [integrationResourceSchema.parse({ ...common, resourceType: "document", externalId, url, title: text(document.title) || externalId, state })];
   });
 }
@@ -67,4 +67,23 @@ export class StoredIntegrationResources implements IntegrationResourceStore {
     this.pending = task.catch(() => {});
     await task;
   }
+}
+
+export const linkedResourceInputSchema = integrationResourceSchema.pick({ threadId: true, connectionId: true, resourceType: true, externalId: true }).strict();
+export type LinkedResourceInput = z.infer<typeof linkedResourceInputSchema>;
+export async function refreshLinkedIntegrationResource(input: LinkedResourceInput, store: Pick<IntegrationResourceStore, "list" | "save">, runtime: import("./integration-operations").IntegrationWriteRuntime): Promise<IntegrationResource> {
+  const resource = (await store.list(input.threadId)).find((row) => row.connectionId === input.connectionId && row.resourceType === input.resourceType && row.externalId === input.externalId);
+  if (!resource || runtime.connection.id !== input.connectionId || runtime.connection.availability !== "configured") throw new Error("Linked resource or connection is unavailable.");
+  const actionId = resource.resourceType === "ticket" ? "get_object" : "get_document";
+  if (runtime.plugin.actions.find((action) => action.id === actionId)?.riskLevel !== "read") throw new Error("Read capability is unavailable.");
+  const className = resource.state.className ?? runtime.connection.ticketMapping?.className;
+  if (resource.resourceType === "ticket" && typeof className !== "string") throw new Error("Ticket class is missing; read the exact ticket again.");
+  const request = { connectionId: input.connectionId, actionId, input: resource.resourceType === "ticket" ? { class: className, id: Number(input.externalId), outputFields: "*" } : { id: input.externalId } };
+  const result = await runtime.execute(request);
+  if (!result.ok) throw new Error(result.status === 401 || result.status === 403 ? "Connection credentials were rejected." : "Resource is unavailable; it may have been removed or access changed.");
+  const next = extractIntegrationResources(input.threadId, runtime.connection, result.data).find((row) => row.externalId === input.externalId && row.resourceType === input.resourceType);
+  if (!next) throw new Error("The remote response did not contain this exact resource.");
+  const updated = { ...next, selected: resource.selected };
+  await store.save([updated]);
+  return updated;
 }

@@ -1,8 +1,8 @@
-import { StoredIntegrationResources, extractIntegrationResources } from "./integration-resources";
+import { refreshLinkedIntegrationResource, type LinkedResourceInput, StoredIntegrationResources, extractIntegrationResources } from "./integration-resources";
 import { IntegrationOperationService } from "./integration-operations";
 import { StoredIntegrationOperations } from "./integration-operation-store";
 import { IntegrationConnectionStore } from "./integration-connection-store";
-import { describeIntegrationConnection, type IntegrationConnection, type IntegrationConnectionInput } from "./integration-connections";
+import { applyIntegrationDestinationPolicy, describeIntegrationConnection, type IntegrationConnection, type IntegrationConnectionInput } from "./integration-connections";
 import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
@@ -330,6 +330,12 @@ class DesktopNodePluginRuntimeService extends DesktopPluginRuntimeService {
     });
   }
 
+  override async refreshIntegrationResource(input: LinkedResourceInput) {
+    const connection = (await this.listIntegrationConnections()).find((row) => row.id === input.connectionId);
+    const plugin = connection ? this.getPlugin(connection.pluginId) : null;
+    if (!connection || !plugin) throw new Error("Connection or plugin is unavailable.");
+    return refreshLinkedIntegrationResource(input, this.getIntegrationResources(), { connection, plugin, execute: (request) => this.executeIntegrationAction(request, { deadlineAt: Date.now() + 30_000 }) });
+  }
   private resources?: StoredIntegrationResources;
   override getIntegrationResources() { this.resources ??= new StoredIntegrationResources(this.storedAuthStore); return this.resources; }
   private operations?: IntegrationOperationService;
@@ -340,7 +346,7 @@ class DesktopNodePluginRuntimeService extends DesktopPluginRuntimeService {
       if (connection === undefined) throw new Error("Connection unavailable.");
       const plugin = this.getPlugin(connection.pluginId);
       if (plugin === null) throw new Error("Plugin unavailable.");
-      return { connection: describeIntegrationConnection(connection, plugin), plugin,
+      return { connection: applyIntegrationDestinationPolicy(describeIntegrationConnection(connection, plugin), { itop: process.env.ITOP_ALLOWED_BASE_URLS, outline: process.env.OUTLINE_ALLOWED_API_BASES }), plugin,
         execute: (request) => super.executeAction({ pluginId: connection.pluginId, actionId: request.actionId, input: request.input, auth: connection.auth }, { deadlineAt: Date.now() + 30_000 }),
       };
     });
@@ -359,7 +365,7 @@ class DesktopNodePluginRuntimeService extends DesktopPluginRuntimeService {
 
   override async listIntegrationConnections(): Promise<IntegrationConnection[]> {
     return (await this.connections.list()).map((connection) =>
-      describeIntegrationConnection(connection, this.getPlugin(connection.pluginId)));
+      applyIntegrationDestinationPolicy(describeIntegrationConnection(connection, this.getPlugin(connection.pluginId)), { itop: process.env.ITOP_ALLOWED_BASE_URLS, outline: process.env.OUTLINE_ALLOWED_API_BASES }));
   }
 
   override saveIntegrationConnection(input: IntegrationConnectionInput): Promise<void> {
