@@ -90,7 +90,13 @@
     "inspect": "重试前请检查远程资源。此请求可能已经完成。",
     "closeRequest": "我明确要求关闭此工单。",
     "approve": "批准此确切更改",
-    "cancel": "拒绝"
+    "cancel": "拒绝",
+    "reconciled": "已远程确认",
+    "inspected": "我已检查远程系统并确认所选结果。",
+    "externalId": "已核实的外部资源 ID",
+    "confirmApplied": "确认已应用并验证资源",
+    "confirmNotApplied": "确认未应用任何更改",
+    "renew": "提议另一次相同更改"
   },
   "integrationResources": {
     "title": "关联工单和文档",

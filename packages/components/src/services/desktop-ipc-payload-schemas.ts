@@ -292,6 +292,8 @@ export function createDesktopIpcPayloadValidator(
 
   const schemaOverrides: Partial<Record<DesktopRpcChannel, z.ZodType>> = {
     "plugins:listResources": z.object({ threadId: z.string().min(1) }).strict(),
+    "plugins:renewOperation": z.object({ threadId: z.string().min(1), id: z.uuid() }).strict(),
+    "plugins:reconcileOperation": z.object({ threadId: z.string().min(1), id: z.uuid(), applied: z.boolean(), confirmed: z.boolean(), externalId: z.string().min(1).max(200).optional() }).strict(),
     "plugins:listOperations": z.object({ threadId: z.string().min(1) }).strict(),
     "plugins:approveOperation": z.object({ threadId: z.string().min(1), id: z.uuid(), closeRequested: z.boolean() }).strict(),
     "plugins:cancelOperation": z.object({ threadId: z.string().min(1), id: z.uuid() }).strict(),

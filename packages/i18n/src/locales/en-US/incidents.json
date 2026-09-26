@@ -90,7 +90,13 @@
     "inspect": "Inspect the remote resource before retrying. This request may have completed.",
     "closeRequest": "I explicitly request closing this ticket.",
     "approve": "Approve this exact change",
-    "cancel": "Reject"
+    "cancel": "Reject",
+    "reconciled": "Confirmed remotely",
+    "inspected": "I inspected the remote system and confirm the selected outcome.",
+    "externalId": "Verified external resource ID",
+    "confirmApplied": "Confirm applied and verify resource",
+    "confirmNotApplied": "Confirm no change was applied",
+    "renew": "Propose another identical change"
   },
   "integrationResources": {
     "title": "Linked tickets and documents",

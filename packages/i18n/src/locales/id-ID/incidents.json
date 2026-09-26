@@ -90,7 +90,13 @@
     "inspect": "Periksa sumber daya jarak jauh sebelum mencoba lagi. Permintaan ini mungkin sudah selesai.",
     "closeRequest": "Saya secara eksplisit meminta penutupan tiket ini.",
     "approve": "Setujui perubahan persis ini",
-    "cancel": "Tolak"
+    "cancel": "Tolak",
+    "reconciled": "Dikonfirmasi di sistem jarak jauh",
+    "inspected": "Saya telah memeriksa sistem jarak jauh dan mengonfirmasi hasil yang dipilih.",
+    "externalId": "ID sumber daya eksternal terverifikasi",
+    "confirmApplied": "Konfirmasi diterapkan dan verifikasi sumber daya",
+    "confirmNotApplied": "Konfirmasi tidak ada perubahan yang diterapkan",
+    "renew": "Usulkan perubahan identik lainnya"
   },
   "integrationResources": {
     "title": "Tiket dan dokumen tertaut",
