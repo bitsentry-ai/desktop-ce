@@ -35,6 +35,7 @@ export function KnowledgeExecutionPanel({ threadId, disabled }: { threadId: stri
       const values = z.record(z.string(), z.string()).parse(JSON.parse(parameters));
       const canonical = JSON.stringify([threadId, selected.id, selected.revisionNumber, Object.entries(values).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0)]);
       const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(canonical)));
+      // i18n-ignore-next-line -- Internal idempotency key prefix, never displayed.
       const requestKey = "knowledge:" + Array.from(digest, (byte) => byte.toString(16).padStart(2, "0")).join("");
       const result = await runbooks.execute({ runbookId: selected.id, expectedRevisionNumber: selected.revisionNumber, requestKey, incidentThreadId: threadId, parameterValues: values });
       setExecutionId(result.executionId); setApproved(false);
