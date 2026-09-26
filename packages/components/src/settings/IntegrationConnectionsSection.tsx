@@ -68,7 +68,7 @@ export function IntegrationConnectionsSection({ service }: { service: Integratio
         <select value={pluginId} disabled={busy || editingId !== null} onChange={(event) => {
           setPluginId(event.target.value === "outline" ? "outline" : "itop"); setToken(""); setEndpoint("");
         }} className="ml-3 rounded border bg-background p-2">
-          <option value="itop">iTop</option><option value="outline">Outline</option>
+          <option value="itop">iTop</option><option value="outline">{t("settings.integrationConnections.outline")}</option>
         </select>
       </label>
       <label>{t("settings.integrationConnections.name")}<Input value={name} maxLength={100} required disabled={busy} onChange={(event) => { setName(event.target.value); }} /></label>
