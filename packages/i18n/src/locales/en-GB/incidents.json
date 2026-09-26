@@ -111,5 +111,17 @@
     "parameters": "Parameter values (JSON object of strings)",
     "approveExecution": "I reviewed these exact steps and parameters and approve this execution.",
     "execute": "Execute reviewed runbook"
+  },
+  "deliveries": {
+    "title": "Webhook deliveries",
+    "error": "Could not load or reconcile this delivery. Inspect its current state before retrying.",
+    "processing": "Processing",
+    "succeeded": "Succeeded",
+    "failed": "Failed",
+    "uncertain": "Outcome uncertain",
+    "reconciled": "Confirmed remotely",
+    "retry": "Retry state synchronization",
+    "inspect": "Inspect iTop for the original event before confirming. Creation is never retried automatically.",
+    "reconcile": "Verify and link existing ticket"
   }
 }

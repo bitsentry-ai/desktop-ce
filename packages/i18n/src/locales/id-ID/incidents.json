@@ -111,5 +111,17 @@
     "parameters": "Nilai parameter (objek JSON berisi string)",
     "approveExecution": "Saya telah meninjau langkah dan parameter persis ini dan menyetujui eksekusinya.",
     "execute": "Jalankan runbook yang ditinjau"
+  },
+  "deliveries": {
+    "title": "Pengiriman webhook",
+    "error": "Tidak dapat memuat atau merekonsiliasi pengiriman. Periksa statusnya sebelum mencoba lagi.",
+    "processing": "Diproses",
+    "succeeded": "Berhasil",
+    "failed": "Gagal",
+    "uncertain": "Hasil belum pasti",
+    "reconciled": "Dikonfirmasi di sistem jarak jauh",
+    "retry": "Coba ulang sinkronisasi status",
+    "inspect": "Periksa iTop untuk peristiwa asli sebelum mengonfirmasi. Pembuatan tidak pernah dicoba ulang secara otomatis.",
+    "reconcile": "Verifikasi dan tautkan tiket yang ada"
   }
 }

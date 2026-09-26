@@ -111,5 +111,17 @@
     "parameters": "参数值（字符串 JSON 对象）",
     "approveExecution": "我已审查这些确切步骤和参数并批准此次执行。",
     "execute": "执行已审查的运行手册"
+  },
+  "deliveries": {
+    "title": "Webhook 投递",
+    "error": "无法加载或核对此投递。重试前请检查当前状态。",
+    "processing": "处理中",
+    "succeeded": "成功",
+    "failed": "失败",
+    "uncertain": "结果不确定",
+    "reconciled": "已远程确认",
+    "retry": "重试状态同步",
+    "inspect": "确认前请在 iTop 中检查原始事件。创建操作绝不会自动重试。",
+    "reconcile": "验证并关联现有工单"
   }
 }

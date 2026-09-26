@@ -111,5 +111,17 @@
     "parameters": "Valeurs des paramètres (objet JSON de chaînes)",
     "approveExecution": "J’ai vérifié ces étapes et paramètres exacts et autorise cette exécution.",
     "execute": "Exécuter le runbook vérifié"
+  },
+  "deliveries": {
+    "title": "Livraisons webhook",
+    "error": "Impossible de charger ou rapprocher cette livraison. Vérifiez son état avant de réessayer.",
+    "processing": "En cours",
+    "succeeded": "Réussi",
+    "failed": "Échec",
+    "uncertain": "Résultat incertain",
+    "reconciled": "Confirmé à distance",
+    "retry": "Réessayer la synchronisation",
+    "inspect": "Inspectez iTop pour l’événement initial avant de confirmer. La création n’est jamais réessayée automatiquement.",
+    "reconcile": "Vérifier et lier le ticket existant"
   }
 }
