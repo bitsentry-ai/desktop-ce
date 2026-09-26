@@ -346,6 +346,7 @@ export function createDesktopLocalBitsentryServices({
         artifactBase64,
       })
     },
+    listResources: (threadId: string) => ipcInvoke<import('@bitsentry-ce/core/features/plugins').IntegrationResource[]>('plugins:listResources', { threadId }),
     listOperations: (threadId: string) => ipcInvoke<import('@bitsentry-ce/core/features/plugins').IntegrationOperation[]>('plugins:listOperations', { threadId }),
     approveOperation: (threadId: string, id: string, closeRequested: boolean) => ipcInvoke('plugins:approveOperation', { threadId, id, closeRequested }),
     cancelOperation: (threadId: string, id: string) => ipcInvoke('plugins:cancelOperation', { threadId, id }),

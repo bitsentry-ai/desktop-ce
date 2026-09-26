@@ -106,5 +106,8 @@
   "incidents.integrationWrites.operation.internal_log": "Ajouter un journal privé",
   "incidents.integrationWrites.operation.public_log": "Ajouter un journal public",
   "incidents.integrationWrites.operation.resolve": "Résoudre le ticket",
-  "incidents.integrationWrites.operation.close": "Fermer le ticket"
+  "incidents.integrationWrites.operation.close": "Fermer le ticket",
+  "incidents.integrationResources.title": "Tickets et documents liés",
+  "incidents.integrationResources.error": "Impossible d’actualiser les ressources liées. Leur état peut être obsolète.",
+  "incidents.integrationResources.observed": "Dernière observation :"
 }

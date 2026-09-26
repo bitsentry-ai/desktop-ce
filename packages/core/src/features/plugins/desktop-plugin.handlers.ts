@@ -184,6 +184,7 @@ export function createDesktopPluginHandlers(
   storedAuthStore: DesktopPluginStoredAuthStore = NOOP_DESKTOP_PLUGIN_STORED_AUTH_STORE,
 ): Record<string, (payload: unknown) => Promise<unknown>> {
   return {
+    "plugins:listResources": (payload) => service.refreshIntegrationResources(z.object({ threadId: z.string().min(1) }).strict().parse(payload).threadId),
     "plugins:listOperations": (payload) => service.getIntegrationOperations().list(z.object({ threadId: z.string().min(1) }).parse(payload).threadId),
     "plugins:approveOperation": (payload) => {
       const input = z.object({ threadId: z.string().min(1), id: z.uuid(), closeRequested: z.boolean().default(false) }).strict().parse(payload);

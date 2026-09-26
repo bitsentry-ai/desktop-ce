@@ -1,3 +1,4 @@
+import { extractIntegrationResources } from "@bitsentry-ce/core/features/plugins";
 /**
  * Agent Runtime Service
  *
@@ -3077,6 +3078,7 @@ export class AgentRuntimeService {
         this.authoringProposalStore?.save(proposal) ?? Promise.resolve(),
       pluginRuntime: this.pluginRuntime,
       integrationConnections: {
+        listResources: () => session.incidentThreadId && this.pluginRuntime ? this.pluginRuntime.refreshIntegrationResources(session.incidentThreadId) : Promise.resolve([]),
         proposeWrite: async (request, meta) => {
           if (!session.incidentThreadId || this.pluginRuntime === undefined) throw new Error('An active conversation is required.');
           return this.pluginRuntime.getIntegrationOperations().propose(session.incidentThreadId, request, meta);
@@ -3090,12 +3092,21 @@ export class AgentRuntimeService {
           if (action?.riskLevel !== 'read') throw new Error('Only read actions are allowed here.');
           const deadlineAt = Date.now() + INTEGRATION_READ_TIMEOUT_MS
           // Race the plugin against the deadline: a plugin that ignores its signal must not hold the chat turn.
-          return runOrchestratedOperation({
+          const result = await runOrchestratedOperation({
             operation: 'Integration read',
             signal: session.abortController.signal,
             timeoutMs: INTEGRATION_READ_TIMEOUT_MS,
             execute: (signal) => pluginRuntime.executeIntegrationAction(request, { signal, deadlineAt }, { requiredRiskLevel: 'read', expectedConnection }),
           });
+          if (result.ok && connection && session.incidentThreadId) {
+            // Linking a resource is bookkeeping: if it fails, the read the engineer asked for still succeeded.
+            try {
+              await pluginRuntime.getIntegrationResources().save(extractIntegrationResources(session.incidentThreadId, connection, result.data));
+            } catch (error) {
+              log.warn('Could not retain integration resources', { error: error instanceof Error ? error.message : String(error) });
+            }
+          }
+          return result;
         },
       },
       ...(options.observeEvents

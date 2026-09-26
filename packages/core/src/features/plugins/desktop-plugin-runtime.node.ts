@@ -1,3 +1,4 @@
+import { StoredIntegrationResources, extractIntegrationResources } from "./integration-resources";
 import { IntegrationOperationService } from "./integration-operations";
 import { StoredIntegrationOperations } from "./integration-operation-store";
 import { IntegrationConnectionStore } from "./integration-connection-store";
@@ -330,6 +331,8 @@ class DesktopNodePluginRuntimeService extends DesktopPluginRuntimeService {
     });
   }
 
+  private resources?: StoredIntegrationResources;
+  override getIntegrationResources() { this.resources ??= new StoredIntegrationResources(this.storedAuthStore); return this.resources; }
   private operations?: IntegrationOperationService;
   override getIntegrationOperations(): IntegrationOperationService {
     if (this.storedAuthStore === NOOP_DESKTOP_PLUGIN_STORED_AUTH_STORE) throw new Error("Durable proposal storage is unavailable.");
@@ -344,6 +347,19 @@ class DesktopNodePluginRuntimeService extends DesktopPluginRuntimeService {
       };
     });
     return this.operations;
+  }
+
+  override async refreshIntegrationResources(threadId: string) {
+    const operations = await this.getIntegrationOperations().list(threadId);
+    const saved = await this.connections.list();
+    for (const operation of operations.filter((row) => row.status === "succeeded")) {
+      // The saved connection carries the ticket mapping the extractor needs; the operation only remembers name and target.
+      const connection = saved.find((row) => row.id === operation.connectionId)
+        ?? { id: operation.connectionId, name: operation.connectionName, pluginId: operation.pluginId === "itop" ? "itop" as const : "outline" as const, target: operation.target };
+      const resources = extractIntegrationResources(threadId, { id: connection.id, name: connection.name, pluginId: connection.pluginId, target: operation.target, ticketMapping: "ticketMapping" in connection ? connection.ticketMapping : undefined }, operation.result);
+      await this.getIntegrationResources().save(resources.map((resource) => ({ ...resource, observedAt: operation.updatedAt })));
+    }
+    return this.getIntegrationResources().list(threadId);
   }
 
   override async listIntegrationConnections(): Promise<IntegrationConnection[]> {

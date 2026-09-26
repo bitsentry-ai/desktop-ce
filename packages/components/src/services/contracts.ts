@@ -520,6 +520,7 @@ export interface PluginInstallSummary {
 }
 
 export interface PluginsServicePort {
+  listResources?(threadId: string): Promise<import("@bitsentry-ce/core/features/plugins").IntegrationResource[]>;
   listOperations?(threadId: string): Promise<import('@bitsentry-ce/core/features/plugins').IntegrationOperation[]>;
   approveOperation?(threadId: string, id: string, closeRequested: boolean): Promise<unknown>;
   cancelOperation?(threadId: string, id: string): Promise<unknown>;
