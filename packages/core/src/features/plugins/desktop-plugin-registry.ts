@@ -1,3 +1,4 @@
+import type { IntegrationConnection, IntegrationConnectionInput } from "./integration-connections";
 import { z, type ZodType } from "zod";
 
 import type {
@@ -282,6 +283,20 @@ export class DesktopPluginRegistry {
 
 export class DesktopPluginRuntimeService {
   constructor(protected registry = new DesktopPluginRegistry()) {}
+
+  async listIntegrationConnections(): Promise<IntegrationConnection[]> { return []; }
+
+  async saveIntegrationConnection(_input: IntegrationConnectionInput): Promise<void> {
+    throw new Error("Integration connection storage is not available in this runtime.");
+  }
+
+  async removeIntegrationConnection(_id: string): Promise<void> {
+    throw new Error("Integration connection storage is not available in this runtime.");
+  }
+
+  async executeIntegrationAction(_request: { connectionId: string; actionId: string; input: Record<string, unknown> }, _operation?: DesktopPluginOperationContext): Promise<DesktopPluginExecutionResult> {
+    throw new Error("Integration connection execution is not available in this runtime.");
+  }
 
   listPlugins(): DesktopPluginDescriptor[] {
     return this.registry.list();

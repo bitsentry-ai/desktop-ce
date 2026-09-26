@@ -235,5 +235,18 @@
   "settings.updateSettingsSection.updates": "Pembaruan",
   "settings.updateSettingsSection.versionAvailableToDownload": "BitSentry Desktop {{version}} tersedia untuk diunduh.",
   "settings.updateSettingsSection.versionReadyToInstall": "BitSentry Desktop {{version}} siap dipasang.",
-  "settings.dataPolicy.policyManagedDescription": "Kontrol penanganan dan redaksi data dikelola oleh kebijakan platform dan tidak dapat diubah dari pengaturan."
+  "settings.dataPolicy.policyManagedDescription": "Kontrol penanganan dan redaksi data dikelola oleh kebijakan platform dan tidak dapat diubah dari pengaturan.",
+  "settings.integrationConnections.title": "Koneksi integrasi chat",
+  "settings.integrationConnections.description": "Beri nama setiap instans iTop atau Outline untuk chat. Kredensial tetap berada dalam produk ini. Menyimpan tidak menguji konektivitas. Masukkan kembali token saat mengedit.",
+  "settings.integrationConnections.plugin": "Integrasi",
+  "settings.integrationConnections.name": "Nama koneksi",
+  "settings.integrationConnections.endpoint": "URL instans atau API",
+  "settings.integrationConnections.token": "Token API",
+  "settings.integrationConnections.save": "Simpan koneksi",
+  "settings.integrationConnections.edit": "Edit",
+  "settings.integrationConnections.remove": "Hapus",
+  "settings.integrationConnections.cancel": "Batal",
+  "settings.integrationConnections.loadFailed": "Tidak dapat memuat koneksi. Muat ulang untuk mencoba lagi.",
+  "settings.integrationConnections.saveFailed": "Tidak dapat menyimpan koneksi. Periksa URL, kredensial, dan nama yang unik.",
+  "settings.integrationConnections.removeFailed": "Tidak dapat menghapus koneksi. Coba lagi."
 }

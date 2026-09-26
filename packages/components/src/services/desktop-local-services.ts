@@ -1,3 +1,4 @@
+import type { IntegrationConnection, IntegrationConnectionInput } from "@bitsentry-ce/core/features/plugins";
 import type { AgentThreadSnapshot } from '../chat/types'
 import type {
   AuthSessionState,
@@ -345,6 +346,9 @@ export function createDesktopLocalBitsentryServices({
         artifactBase64,
       })
     },
+    listConnections: () => ipcInvoke<IntegrationConnection[]>('plugins:listConnections', {}),
+    saveConnection: (input: IntegrationConnectionInput) => ipcInvoke('plugins:saveConnection', input),
+    removeConnection: (id: string) => ipcInvoke('plugins:removeConnection', { id }),
     async getStoredAuth(pluginId: string): Promise<Record<string, unknown>> {
       return ipcInvoke<Record<string, unknown>>('plugins:getStoredAuth', { pluginId })
     },
