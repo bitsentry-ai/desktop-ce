@@ -77,19 +77,17 @@
   "incidents.incidents.workingFor": "Bekerja untuk",
   "incidents.incidents.workspaceTrigger": "Pemicu ruang kerja",
   "incidents.session.cancelledByUser": "Sesi dibatalkan oleh pengguna",
-  "integrationWrites": {
-    "title": "Perubahan integrasi",
-    "error": "Tidak dapat memuat atau menerapkan perubahan. Segarkan dan periksa statusnya sebelum mencoba lagi.",
-    "proposed": "Menunggu persetujuan",
-    "executing": "Sedang dijalankan",
-    "succeeded": "Berhasil",
-    "failed": "Gagal",
-    "uncertain": "Hasil belum pasti",
-    "cancelled": "Dibatalkan",
-    "public": "Konten publik atau bersama: periksa audiens dan konten persisnya.",
-    "inspect": "Periksa sumber daya jarak jauh sebelum mencoba lagi. Permintaan ini mungkin sudah selesai.",
-    "closeRequest": "Saya secara eksplisit meminta penutupan tiket ini.",
-    "approve": "Setujui perubahan persis ini",
-    "cancel": "Tolak"
-  }
+  "incidents.integrationWrites.title": "Perubahan integrasi",
+  "incidents.integrationWrites.error": "Tidak dapat memuat atau menerapkan perubahan. Segarkan dan periksa statusnya sebelum mencoba lagi.",
+  "incidents.integrationWrites.proposed": "Menunggu persetujuan",
+  "incidents.integrationWrites.executing": "Sedang dijalankan",
+  "incidents.integrationWrites.succeeded": "Berhasil",
+  "incidents.integrationWrites.failed": "Gagal",
+  "incidents.integrationWrites.uncertain": "Hasil belum pasti",
+  "incidents.integrationWrites.cancelled": "Dibatalkan",
+  "incidents.integrationWrites.public": "Konten publik atau bersama: periksa audiens dan konten persisnya.",
+  "incidents.integrationWrites.inspect": "Periksa sumber daya jarak jauh sebelum mencoba lagi. Permintaan ini mungkin sudah selesai.",
+  "incidents.integrationWrites.closeRequest": "Saya secara eksplisit meminta penutupan tiket ini.",
+  "incidents.integrationWrites.approve": "Setujui perubahan persis ini",
+  "incidents.integrationWrites.cancel": "Tolak"
 }
