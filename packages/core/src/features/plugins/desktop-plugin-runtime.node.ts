@@ -356,7 +356,7 @@ class DesktopNodePluginRuntimeService extends DesktopPluginRuntimeService {
   override async refreshIntegrationResources(threadId: string) {
     const operations = await this.getIntegrationOperations().list(threadId);
     for (const operation of operations.filter((row) => ["succeeded", "reconciled"].includes(row.status))) {
-      const resources = extractIntegrationResources(threadId, { id: operation.connectionId, name: operation.connectionName, pluginId: operation.pluginId === "itop" ? "itop" : "outline", target: operation.target }, operation.result);
+      const resources = extractIntegrationResources(threadId, { id: operation.connectionId, name: operation.connectionName, pluginId: operation.pluginId === "itop" ? "itop" : "outline", target: operation.target }, operation.result, typeof operation.input.class === "string" ? operation.input.class : undefined);
       const existing = await this.getIntegrationResources().list(threadId);
       await this.getIntegrationResources().save(resources.filter((resource) => !existing.some((row) => row.connectionId === resource.connectionId && row.resourceType === resource.resourceType && row.externalId === resource.externalId && row.observedAt >= operation.updatedAt)).map((resource) => ({ ...resource, observedAt: operation.updatedAt })));
     }
