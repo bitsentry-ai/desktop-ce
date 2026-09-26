@@ -102,5 +102,14 @@
     "title": "Linked tickets and documents",
     "error": "Could not refresh linked resources. Previously observed state may be stale.",
     "observed": "Last observed:"
+  },
+  "knowledge": {
+    "select": "Use as knowledge source",
+    "executeTitle": "Review and execute a saved runbook",
+    "executeError": "Execution was not confirmed. Check the recorded result and current runbook revision before retrying.",
+    "runbook": "Select a saved runbook",
+    "parameters": "Parameter values (JSON object of strings)",
+    "approveExecution": "I reviewed these exact steps and parameters and approve this execution.",
+    "execute": "Execute reviewed runbook"
   }
 }

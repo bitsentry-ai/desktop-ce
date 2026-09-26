@@ -102,5 +102,14 @@
     "title": "Tiket dan dokumen tertaut",
     "error": "Tidak dapat menyegarkan sumber daya tertaut. Status sebelumnya mungkin sudah usang.",
     "observed": "Terakhir diamati:"
+  },
+  "knowledge": {
+    "select": "Gunakan sebagai sumber pengetahuan",
+    "executeTitle": "Tinjau dan jalankan runbook tersimpan",
+    "executeError": "Eksekusi belum dikonfirmasi. Periksa hasil dan revisi runbook sebelum mencoba lagi.",
+    "runbook": "Pilih runbook tersimpan",
+    "parameters": "Nilai parameter (objek JSON berisi string)",
+    "approveExecution": "Saya telah meninjau langkah dan parameter persis ini dan menyetujui eksekusinya.",
+    "execute": "Jalankan runbook yang ditinjau"
   }
 }

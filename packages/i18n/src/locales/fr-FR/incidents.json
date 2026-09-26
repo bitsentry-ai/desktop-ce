@@ -102,5 +102,14 @@
     "title": "Tickets et documents liés",
     "error": "Impossible d’actualiser les ressources liées. Leur état peut être obsolète.",
     "observed": "Dernière observation :"
+  },
+  "knowledge": {
+    "select": "Utiliser comme source",
+    "executeTitle": "Vérifier et exécuter un runbook enregistré",
+    "executeError": "L’exécution n’a pas été confirmée. Vérifiez le résultat et la révision avant de réessayer.",
+    "runbook": "Choisir un runbook enregistré",
+    "parameters": "Valeurs des paramètres (objet JSON de chaînes)",
+    "approveExecution": "J’ai vérifié ces étapes et paramètres exacts et autorise cette exécution.",
+    "execute": "Exécuter le runbook vérifié"
   }
 }

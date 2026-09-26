@@ -102,5 +102,14 @@
     "title": "关联工单和文档",
     "error": "无法刷新关联资源。之前观察到的状态可能已过时。",
     "observed": "最后观察时间："
+  },
+  "knowledge": {
+    "select": "用作知识来源",
+    "executeTitle": "审查并执行已保存的运行手册",
+    "executeError": "执行尚未确认。重试前请检查记录结果和当前运行手册版本。",
+    "runbook": "选择已保存的运行手册",
+    "parameters": "参数值（字符串 JSON 对象）",
+    "approveExecution": "我已审查这些确切步骤和参数并批准此次执行。",
+    "execute": "执行已审查的运行手册"
   }
 }

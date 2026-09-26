@@ -547,6 +547,7 @@ export function createDesktopRunbookHandlers(
       ) {
         incidentThreadId = triggerContext.incidentThreadId;
       }
+      if (input.expectedRevisionNumber !== undefined && runbookGateway === undefined) throw new Error("Revision-checked execution is unavailable.");
       const result = runbookGateway === undefined
         ? await executionService.start(runbookId, {
             incidentThreadId,
@@ -556,6 +557,7 @@ export function createDesktopRunbookHandlers(
           })
         : await runbookGateway.start({
             runbookId,
+            expectedRevisionNumber: typeof input.expectedRevisionNumber === "number" ? input.expectedRevisionNumber : undefined,
             requestKey: asString(
               input.requestKey,
               `gui:${crypto.randomUUID()}`,
