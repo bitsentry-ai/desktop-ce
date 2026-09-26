@@ -520,6 +520,7 @@ export interface PluginInstallSummary {
 }
 
 export interface PluginsServicePort {
+  refreshResource?(resource: import("@bitsentry-ce/core/features/plugins").LinkedResourceInput): Promise<unknown>;
   selectResource?(resource: import("@bitsentry-ce/core/features/plugins").IntegrationResource, selected: boolean): Promise<unknown>;
   renewOperation?(threadId: string, id: string): Promise<unknown>;
   reconcileOperation?(threadId: string, id: string, applied: boolean, confirmed: boolean, externalId?: string): Promise<unknown>;

@@ -1,4 +1,4 @@
-import { StoredIntegrationResources, extractIntegrationResources } from "./integration-resources";
+import { refreshLinkedIntegrationResource, type LinkedResourceInput, StoredIntegrationResources, extractIntegrationResources } from "./integration-resources";
 import { IntegrationOperationService } from "./integration-operations";
 import { StoredIntegrationOperations } from "./integration-operation-store";
 import { IntegrationConnectionStore } from "./integration-connection-store";
@@ -331,6 +331,13 @@ class DesktopNodePluginRuntimeService extends DesktopPluginRuntimeService {
     });
   }
 
+  override async refreshIntegrationResource(input: LinkedResourceInput) {
+    const connection = (await this.listIntegrationConnections()).find((row) => row.id === input.connectionId);
+    const plugin = connection ? this.getPlugin(connection.pluginId) : null;
+    if (!connection || !plugin) throw new Error("Connection or plugin is unavailable.");
+    const read = (request: { connectionId: string; actionId: string; input: Record<string, unknown> }) => this.executeIntegrationAction(request, { deadlineAt: Date.now() + 30_000 }, { requiredRiskLevel: "read", expectedConnection: connection });
+    return refreshLinkedIntegrationResource(input, this.getIntegrationResources(), { connection, plugin, execute: read, read });
+  }
   private resources?: StoredIntegrationResources;
   override getIntegrationResources() { this.resources ??= new StoredIntegrationResources(this.storedAuthStore); return this.resources; }
   private operations?: IntegrationOperationService;

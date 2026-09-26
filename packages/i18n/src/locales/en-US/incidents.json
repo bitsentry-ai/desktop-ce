@@ -178,5 +178,16 @@
   "incidents.integrationRail.deliveries": "Deliveries",
   "incidents.integrationRail.deliveriesSubtitle": "{{total}} deliveries · {{attention}} to review",
   "incidents.integrationRail.attentionShort": "{{attention}} to review",
-  "incidents.integrationRail.noDeliveries": "When iTop reports a change or a ticket is created from a webhook, its delivery appears here."
+  "incidents.integrationRail.noDeliveries": "When iTop reports a change or a ticket is created from a webhook, its delivery appears here.",
+  "incidents.integrationRecovery.credentials": "Credentials were rejected. Update this connection in Settings, then refresh the resource.",
+  "incidents.integrationRecovery.stale": "The target or document revision changed. Refresh and review a new proposal before retrying.",
+  "incidents.integrationRecovery.unavailable": "The connection, plugin, or resource is unavailable. Restore access before continuing.",
+  "incidents.integrationRecovery.close": "Closing requires your explicit request.",
+  "incidents.integrationRecovery.rejected": "The remote system rejected this change. Review the required fields before proposing a corrected change.",
+  "incidents.integrationRecovery.refresh": "Refresh resource",
+  "incidents.integrationRecovery.staleCard": "This observation is older than five minutes. Refresh it before relying on its state.",
+  "incidents.integrationRecovery.deleted": "The remote resource was reported deleted. The historical link is retained.",
+  "incidents.integrationRecovery.cancelled": "The read was cancelled. No write was attempted. Retry when ready.",
+  "incidents.integrationRecovery.destinationBlocked": "This destination is not allowed on this host. Ask an administrator to add the exact HTTPS endpoint to the allowlist.",
+  "incidents.integrationRecovery.timeout": "The system did not respond in time. Check that it is reachable, then try again."
 }

@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest'
 const locales = ['en-US', 'en-GB', 'en-AU', 'fr-FR', 'zh-CN', 'id-ID']
 const load = (locale: string) => JSON.parse(readFileSync(resolve(process.cwd(), `../../packages/i18n/src/locales/${locale}/incidents.json`), 'utf8')) as Record<string, string>
 const placeholders = (text: string) => [...text.matchAll(/{{(\w+)}}/g)].map((match) => match[1]).sort()
-const cardKeys = (data: Record<string, string>) => Object.keys(data).filter((key) => key.startsWith('incidents.integrationResources.') || key.startsWith('incidents.integrationRail.') || key.startsWith('incidents.knowledge.') || key.startsWith('incidents.deliveries.'))
+const cardKeys = (data: Record<string, string>) => Object.keys(data).filter((key) => key.startsWith('incidents.integrationResources.') || key.startsWith('incidents.integrationRail.') || key.startsWith('incidents.knowledge.') || key.startsWith('incidents.deliveries.') || key.startsWith('incidents.integrationRecovery.'))
 
 describe('linked resource, integrations rail, delivery and knowledge execution labels', () => {
   const english = load('en-US')
@@ -31,7 +31,7 @@ describe('linked resource, integrations rail, delivery and knowledge execution l
   it('has no empty label', () => {
     for (const locale of locales) {
       for (const [key, value] of Object.entries(load(locale))) {
-        if (key.startsWith('incidents.integrationResources.') || key.startsWith('incidents.integrationRail.') || key.startsWith('incidents.knowledge.') || key.startsWith('incidents.deliveries.')) expect(value.trim(), `${locale} ${key}`).not.toBe('')
+        if (key.startsWith('incidents.integrationResources.') || key.startsWith('incidents.integrationRail.') || key.startsWith('incidents.knowledge.') || key.startsWith('incidents.deliveries.') || key.startsWith('incidents.integrationRecovery.')) expect(value.trim(), `${locale} ${key}`).not.toBe('')
       }
     }
   })

@@ -178,5 +178,16 @@
   "incidents.integrationRail.deliveries": "Livraisons",
   "incidents.integrationRail.deliveriesSubtitle": "{{total}} livraison(s) · {{attention}} à vérifier",
   "incidents.integrationRail.attentionShort": "{{attention}} à vérifier",
-  "incidents.integrationRail.noDeliveries": "Lorsqu’iTop signale une modification ou qu’un ticket est créé par webhook, sa livraison apparaît ici."
+  "incidents.integrationRail.noDeliveries": "Lorsqu’iTop signale une modification ou qu’un ticket est créé par webhook, sa livraison apparaît ici.",
+  "incidents.integrationRecovery.credentials": "Identifiants refusés. Mettez à jour la connexion dans les paramètres, puis actualisez la ressource.",
+  "incidents.integrationRecovery.stale": "La cible ou la révision a changé. Actualisez et vérifiez une nouvelle proposition.",
+  "incidents.integrationRecovery.unavailable": "Connexion, plugin ou ressource indisponible. Rétablissez l’accès.",
+  "incidents.integrationRecovery.close": "La clôture nécessite votre demande explicite.",
+  "incidents.integrationRecovery.rejected": "Le système distant a refusé cette modification. Vérifiez les champs requis.",
+  "incidents.integrationRecovery.refresh": "Actualiser la ressource",
+  "incidents.integrationRecovery.staleCard": "Cette observation date de plus de cinq minutes. Actualisez-la avant de vous y fier.",
+  "incidents.integrationRecovery.deleted": "La ressource distante a été signalée supprimée. Le lien historique est conservé.",
+  "incidents.integrationRecovery.cancelled": "La lecture a été annulée. Aucune écriture n’a été tentée. Réessayez quand vous êtes prêt.",
+  "incidents.integrationRecovery.destinationBlocked": "Cette destination n’est pas autorisée sur cet hôte. Demandez à un administrateur d’ajouter le point de terminaison HTTPS exact à la liste d’autorisation.",
+  "incidents.integrationRecovery.timeout": "Le système n’a pas répondu à temps. Vérifiez qu’il est joignable, puis réessayez."
 }

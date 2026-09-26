@@ -3099,11 +3099,12 @@ export class AgentRuntimeService {
             execute: (signal) => pluginRuntime.executeIntegrationAction(request, { signal, deadlineAt }, { requiredRiskLevel: 'read', expectedConnection }),
           });
           if (result.ok && connection && session.incidentThreadId && readOptions?.capture !== false) {
-            // Linking a resource is bookkeeping: if it fails, the read the engineer asked for still succeeded.
+            // Linking a resource is bookkeeping: if it fails, the read the engineer asked for still succeeded, and says so.
             try {
               await pluginRuntime.getIntegrationResources().save(extractIntegrationResources(session.incidentThreadId, connection, result.data));
             } catch (error) {
               log.warn('Could not retain integration resources', { error: error instanceof Error ? error.message : String(error) });
+              return { ...result, resourceWarning: true };
             }
           }
           return result;

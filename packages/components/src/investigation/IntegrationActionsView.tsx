@@ -18,6 +18,8 @@ const STATUS_VARIANTS: Record<IntegrationOperation["status"], StatusVariant> = {
   proposed: "warning", executing: "info", succeeded: "success", failed: "destructive", uncertain: "warning", cancelled: "secondary", reconciled: "secondary",
 };
 const MAX_REFUSAL_LENGTH = 300;
+/** What the remote system refused for, set when a write definitely did not apply. An unknown outcome never gets one. */
+const REFUSAL_KEYS: Record<string, string> = { credentials_rejected: "incidents.integrationRecovery.credentials", stale_resource: "incidents.integrationRecovery.stale", remote_rejected: "incidents.integrationRecovery.rejected" };
 const ITOP_FACT_KEYS = ["class", "id", "stimulus"] as const;
 const display = (value: unknown) => typeof value === "string" ? value : JSON.stringify(value);
 type Translate = ReturnType<typeof useTranslation>["t"];
@@ -109,6 +111,7 @@ function OperationDetails({ row, disabled, busy, refusal, closeRequested, onClos
             </li>)}
           </ul>}
       </div>
+      {row.status === "failed" && row.message !== undefined && REFUSAL_KEYS[row.message] !== undefined && <p role="alert" className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">{t(REFUSAL_KEYS[row.message]!)}</p>}
       {(row.status === "uncertain" || row.status === "executing") && <p className="text-sm text-muted-foreground">{row.message ?? t("incidents.integrationWrites.inspect")}</p>}
       <details className="text-xs">
         <summary className="cursor-pointer text-muted-foreground">{t("incidents.integrationWrites.details")}</summary>

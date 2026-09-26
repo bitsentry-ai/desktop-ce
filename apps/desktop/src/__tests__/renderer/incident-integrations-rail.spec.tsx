@@ -336,6 +336,88 @@ describe('webhook deliveries in the rail', () => {
   })
 })
 
+describe('recovering a linked resource from the rail', () => {
+  const recovery = (suffix: string) => `incidents.integrationRecovery.${suffix}`
+  const refreshButton = () => screen.getByRole('button', { name: recovery('refresh') })
+  function setup(refresh: NonNullable<IntegrationResourcesPort['refresh']>) {
+    const rows = { current: [ticket()] }
+    const port: IntegrationResourcesPort = { ...resourcesPort(rows), refresh }
+    render(<Host resources={port} />)
+    return { rows, port }
+  }
+
+  it('refreshes the card the engineer pressed and shows what the remote system reports now', async () => {
+    const rows = { current: [ticket()] }
+    const refresh = vi.fn(async () => { rows.current = [ticket({ state: { ref: 'R-000003', status: 'assigned', className: 'UserRequest' } })] })
+    render(<Host resources={{ ...resourcesPort(rows), refresh }} />)
+    fireEvent.click(await sourcesTrigger())
+    expect(screen.getByText('resolved')).toBeTruthy()
+
+    fireEvent.click(refreshButton())
+
+    expect(await screen.findByText('assigned')).toBeTruthy()
+    expect(screen.queryByRole('alert')).toBeNull()
+  })
+
+  it('warns that the remote resource was deleted and keeps the last known details on the card', async () => {
+    const rows = { current: [ticket()] }
+    const refresh = vi.fn(async () => { rows.current = [ticket({ state: { ref: 'R-000003', status: 'resolved', className: 'UserRequest', deleted: true } })] })
+    render(<Host resources={{ ...resourcesPort(rows), refresh }} />)
+    fireEvent.click(await sourcesTrigger())
+
+    fireEvent.click(refreshButton())
+
+    expect((await screen.findByRole('status')).textContent).toBe(recovery('deleted'))
+    const card = screen.getByRole('article', { name: 'Logon Failure - Unknown user or bad password' })
+    expect(within(card).getByText('R-000003 · UserRequest #3')).toBeTruthy()
+    expect(within(card).getByText('resolved')).toBeTruthy()
+  })
+
+  it.each([
+    ['a destination the host does not allow', new Error('Add the exact iTop baseUrl to ITOP_ALLOWED_BASE_URLS on the host'), 'destinationBlocked'],
+    ['an unavailable plugin', new Error('Connection or plugin is unavailable.'), 'unavailable'],
+    ['rejected credentials', new Error('Connection credentials were rejected.'), 'credentials'],
+    ['a cancellation', Object.assign(new Error('The operation was aborted'), { name: 'AbortError' }), 'cancelled'],
+  ])('tells %s apart from a generic failure', async (_name, failure, key) => {
+    setup(vi.fn(async () => { throw failure }))
+    fireEvent.click(await sourcesTrigger())
+
+    fireEvent.click(refreshButton())
+
+    expect((await screen.findByRole('alert')).textContent).toBe(recovery(key))
+  })
+
+  it('keeps an unrecognised failure generic', async () => {
+    setup(vi.fn(async () => { throw new Error('socket hang up') }))
+    fireEvent.click(await sourcesTrigger())
+
+    fireEvent.click(refreshButton())
+
+    expect((await screen.findByRole('alert')).textContent).toBe('incidents.integrationWrites.error')
+  })
+
+  it('clears the message once the next attempt works and leaves the card in place throughout', async () => {
+    const refresh = vi.fn().mockRejectedValueOnce(new Error('Connection credentials were rejected.')).mockResolvedValueOnce(undefined)
+    setup(refresh)
+    fireEvent.click(await sourcesTrigger())
+
+    fireEvent.click(refreshButton())
+    expect((await screen.findByRole('alert')).textContent).toBe(recovery('credentials'))
+    expect(screen.getByRole('article')).toBeTruthy()
+
+    fireEvent.click(refreshButton())
+    await waitFor(() => { expect(screen.queryByRole('alert')).toBeNull() })
+    expect(screen.getByRole('article')).toBeTruthy()
+  })
+
+  it('shows no refresh where the client cannot refresh', async () => {
+    render(<Host resources={resourcesPort({ current: [ticket()] })} />)
+    fireEvent.click(await sourcesTrigger())
+
+    expect(screen.queryByRole('button', { name: recovery('refresh') })).toBeNull()
+  })
+})
+
 const staleMessage = 'Connection changed. Create a new preview.'
 
 function memoryStore(): IntegrationOperationStore {

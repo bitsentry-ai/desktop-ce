@@ -4,6 +4,7 @@ import { useTranslation } from "@bitsentry-ce/i18n";
 import type { IntegrationOperation, IntegrationResource } from "@bitsentry-ce/core/features/plugins";
 import { cn } from "../lib/utils";
 import { useBitsentryServices } from "../services/context";
+import { integrationErrorKey } from "./integration-error";
 import { IntegrationActionsView, type IntegrationOperationsPort } from "./IntegrationActionsView";
 import { IntegrationDeliveriesView, needsReview, type IntegrationDelivery, type IntegrationDeliveriesPort } from "./IntegrationDeliveriesView";
 import { IntegrationSourcesView, type IntegrationResourcesPort } from "./IntegrationSourcesView";
@@ -95,7 +96,7 @@ export function useIntegrationsRailState({ incidentId, runbookRailOpen, closeRun
 export function useDesktopIntegrationPorts(): { resources?: IntegrationResourcesPort; operations?: IntegrationOperationsPort } {
   const { plugins } = useBitsentryServices();
   return useMemo(() => ({
-    resources: plugins?.listResources ? { list: plugins.listResources.bind(plugins), select: plugins.selectResource?.bind(plugins) } : undefined,
+    resources: plugins?.listResources ? { list: plugins.listResources.bind(plugins), select: plugins.selectResource?.bind(plugins), refresh: plugins.refreshResource?.bind(plugins) } : undefined,
     operations: plugins?.listOperations && plugins.approveOperation && plugins.cancelOperation ? {
       renew: plugins.renewOperation?.bind(plugins), reconcile: plugins.reconcileOperation?.bind(plugins),
       list: plugins.listOperations.bind(plugins), approve: plugins.approveOperation.bind(plugins), cancel: plugins.cancelOperation.bind(plugins),
@@ -172,6 +173,22 @@ function usePolledRows<T>(threadId: string, port: { list(threadId: string): Prom
   return { rows, failed, refresh, fail };
 }
 
+/** One source action at a time: a select or a refresh. A failure becomes the recovery message for its cause; the next attempt clears it. */
+function useSourceActions(resources: IntegrationResourcesPort | undefined, reload: () => Promise<void>) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const run = (action: () => Promise<unknown>) => {
+    setBusy(true);
+    setError(null);
+    void action().then(reload).catch((failure: unknown) => { setError(integrationErrorKey(failure)); }).finally(() => { setBusy(false); });
+  };
+  return {
+    busy, error,
+    select: resources?.select === undefined ? undefined : (resource: IntegrationResource, selected: boolean) => { run(() => resources.select!(resource, selected)); },
+    refresh: resources?.refresh === undefined ? undefined : (resource: IntegrationResource) => { run(() => resources.refresh!(resource)); },
+  };
+}
+
 function ViewTab({ id, panelId, active, label, count, pending, attention = 0, onSelect }: {
   id: string; panelId: string; active: boolean; label: string; count: number; pending: number; attention?: number; onSelect(): void;
 }) {
@@ -229,9 +246,7 @@ export default function IncidentIntegrationsRail({ isOpen, view, focusOnOpen = f
     if (aside.contains(document.activeElement)) returnFocusRef.current?.focus();
   }, [focusOnOpen, isOpen]);
 
-  const selectResource = resources?.select === undefined ? undefined : (resource: IntegrationResource, selected: boolean) => {
-    void resources.select!(resource, selected).then(sources.refresh).catch(sources.fail);
-  };
+  const sourceActions = useSourceActions(resources, sources.refresh);
   const tabId = (name: IntegrationsRailView) => `${baseId}-${name}-tab`;
   const panelId = (name: IntegrationsRailView) => `${baseId}-${name}-panel`;
   const handleKeyDown = (event: KeyboardEvent<HTMLElement>) => {
@@ -272,7 +287,7 @@ export default function IncidentIntegrationsRail({ isOpen, view, focusOnOpen = f
       {deliveries !== undefined && <ViewTab id={tabId("deliveries")} panelId={panelId("deliveries")} active={view === "deliveries"} label={t("incidents.integrationRail.deliveries")} count={summary.deliveryCount} pending={0} attention={summary.attentionCount} onSelect={() => { onViewChange("deliveries"); }} />}
     </div>
     <div role="tabpanel" id={panelId("sources")} aria-labelledby={tabId("sources")} className={cn("min-h-0 flex-1 overflow-y-auto px-4 py-4", view === "sources" ? "block" : "hidden")}>
-      <IntegrationSourcesView threadId={threadId} rows={sources.rows} failed={sources.failed} disabled={disabled} onSelect={selectResource} />
+      <IntegrationSourcesView threadId={threadId} rows={sources.rows} failed={sources.failed} disabled={disabled || sourceActions.busy} onSelect={sourceActions.select} onRefresh={sourceActions.refresh} actionError={sourceActions.error} />
     </div>
     <div role="tabpanel" id={panelId("actions")} aria-labelledby={tabId("actions")} className={cn("min-h-0 flex-1 flex-col", view === "actions" ? "flex" : "hidden")}>
       {operations === undefined

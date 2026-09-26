@@ -178,5 +178,16 @@
   "incidents.integrationRail.deliveries": "Pengiriman",
   "incidents.integrationRail.deliveriesSubtitle": "{{total}} pengiriman · {{attention}} perlu diperiksa",
   "incidents.integrationRail.attentionShort": "{{attention}} perlu diperiksa",
-  "incidents.integrationRail.noDeliveries": "Saat iTop melaporkan perubahan atau tiket dibuat lewat webhook, pengirimannya muncul di sini."
+  "incidents.integrationRail.noDeliveries": "Saat iTop melaporkan perubahan atau tiket dibuat lewat webhook, pengirimannya muncul di sini.",
+  "incidents.integrationRecovery.credentials": "Kredensial ditolak. Perbarui koneksi di Pengaturan, lalu segarkan sumber daya.",
+  "incidents.integrationRecovery.stale": "Target atau revisi dokumen berubah. Segarkan dan tinjau usulan baru.",
+  "incidents.integrationRecovery.unavailable": "Koneksi, plugin, atau sumber daya tidak tersedia. Pulihkan akses sebelum melanjutkan.",
+  "incidents.integrationRecovery.close": "Penutupan memerlukan permintaan eksplisit Anda.",
+  "incidents.integrationRecovery.rejected": "Sistem jarak jauh menolak perubahan. Tinjau bidang wajib sebelum mengusulkan perbaikan.",
+  "incidents.integrationRecovery.refresh": "Segarkan sumber daya",
+  "incidents.integrationRecovery.staleCard": "Pengamatan ini lebih dari lima menit. Segarkan sebelum mengandalkan statusnya.",
+  "incidents.integrationRecovery.deleted": "Sumber daya dilaporkan dihapus. Tautan historis dipertahankan.",
+  "incidents.integrationRecovery.cancelled": "Pembacaan dibatalkan. Tidak ada penulisan yang dicoba. Coba lagi saat siap.",
+  "incidents.integrationRecovery.destinationBlocked": "Tujuan ini tidak diizinkan di host ini. Minta administrator menambahkan endpoint HTTPS yang tepat ke daftar izin.",
+  "incidents.integrationRecovery.timeout": "Sistem tidak merespons tepat waktu. Pastikan dapat dijangkau, lalu coba lagi."
 }

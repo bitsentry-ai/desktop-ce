@@ -178,5 +178,16 @@
   "incidents.integrationRail.deliveries": "投递",
   "incidents.integrationRail.deliveriesSubtitle": "共 {{total}} 条投递 · {{attention}} 条待检查",
   "incidents.integrationRail.attentionShort": "{{attention}} 条待检查",
-  "incidents.integrationRail.noDeliveries": "当 iTop 报告变更或通过 webhook 创建工单时，其投递会显示在此处。"
+  "incidents.integrationRail.noDeliveries": "当 iTop 报告变更或通过 webhook 创建工单时，其投递会显示在此处。",
+  "incidents.integrationRecovery.credentials": "凭据被拒绝。请在设置中更新此连接，然后刷新资源。",
+  "incidents.integrationRecovery.stale": "目标或文档版本已更改。请刷新并审查新提议后再重试。",
+  "incidents.integrationRecovery.unavailable": "连接、插件或资源不可用。请恢复访问后再继续。",
+  "incidents.integrationRecovery.close": "关闭工单需要您的明确请求。",
+  "incidents.integrationRecovery.rejected": "远程系统拒绝了此更改。请检查必填字段后再提出修正。",
+  "incidents.integrationRecovery.refresh": "刷新资源",
+  "incidents.integrationRecovery.staleCard": "此观察已超过五分钟。依赖其状态前请刷新。",
+  "incidents.integrationRecovery.deleted": "远程资源已报告删除。历史链接已保留。",
+  "incidents.integrationRecovery.cancelled": "读取已取消，未尝试任何写入。准备好后请重试。",
+  "incidents.integrationRecovery.destinationBlocked": "此主机不允许该目标地址。请联系管理员将确切的 HTTPS 端点加入允许列表。",
+  "incidents.integrationRecovery.timeout": "系统未及时响应。请确认其可访问后重试。"
 }

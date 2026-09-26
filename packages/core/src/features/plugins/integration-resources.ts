@@ -56,7 +56,7 @@ export function extractIntegrationResources(threadId: string, connection: Pick<I
     const row = record(value); const document = row.document === undefined ? row : record(row.document);
     const externalId = text(document.id); const url = safeUrl(document.url, connection.target);
     if (!externalId || !url) return [];
-    const state = Object.fromEntries(["updatedAt", "publishedAt", "archivedAt", "collectionId"].filter((key) => typeof document[key] === "string").map((key) => [key, document[key]]));
+    const state = Object.fromEntries(["updatedAt", "publishedAt", "archivedAt", "collectionId", "revision"].filter((key) => typeof document[key] === "string" || typeof document[key] === "number").map((key) => [key, document[key]]));
     return [integrationResourceSchema.parse({ ...common, resourceType: "document", externalId, url, title: text(document.title) || externalId, state })];
   });
 }
@@ -91,4 +91,50 @@ export class StoredIntegrationResources implements IntegrationResourceStore {
     this.pending = task.catch(() => {});
     await task;
   }
+}
+
+export const linkedResourceInputSchema = integrationResourceSchema.pick({ threadId: true, connectionId: true, resourceType: true, externalId: true }).strict();
+export type LinkedResourceInput = z.infer<typeof linkedResourceInputSchema>;
+/**
+ * Reads the exact linked resource again. A card is only ever replaced by what the remote system returned for that same resource.
+ * When the remote system says the resource is gone, the last known data is kept and only marked as deleted, so nothing the
+ * engineer already saw or selected is lost.
+ */
+export async function refreshLinkedIntegrationResource(input: LinkedResourceInput, store: Pick<IntegrationResourceStore, "list" | "save">, runtime: import("./integration-operations").IntegrationWriteRuntime): Promise<IntegrationResource> {
+  const resource = (await store.list(input.threadId)).find((row) => row.connectionId === input.connectionId && row.resourceType === input.resourceType && row.externalId === input.externalId);
+  if (!resource || runtime.connection.id !== input.connectionId || runtime.connection.availability !== "configured") throw new Error("Linked resource or connection is unavailable.");
+  const actionId = resource.resourceType === "ticket" ? "get_object" : "get_document";
+  if (runtime.plugin.actions.find((action) => action.id === actionId)?.riskLevel !== "read") throw new Error("Read capability is unavailable.");
+  const className = resource.state.className ?? runtime.connection.ticketMapping?.className;
+  if (resource.resourceType === "ticket" && typeof className !== "string") throw new Error("Ticket class is missing; read the exact ticket again.");
+  const request = { connectionId: input.connectionId, actionId, input: resource.resourceType === "ticket" ? { class: className, id: Number(input.externalId), outputFields: "*" } : { id: input.externalId } };
+  const result = await runtime.read(request);
+  const markDeleted = async (): Promise<IntegrationResource> => {
+    const gone = { ...resource, state: { ...resource.state, deleted: true }, observedAt: new Date().toISOString() };
+    await store.save([gone]);
+    return gone;
+  };
+  if (!result.ok) {
+    if (result.status === 404) return markDeleted();
+    throw new Error(result.status === 401 || result.status === 403 ? "Connection credentials were rejected." : "Resource is unavailable; access may have changed. Refresh again when the connection is restored.");
+  }
+  const next = extractIntegrationResources(input.threadId, runtime.connection, result.data).find((row) => row.externalId === input.externalId && row.resourceType === input.resourceType);
+  // iTop answers a read of a missing object with success and no object.
+  if (!next) return markDeleted();
+  const updated = { ...next, selected: resource.selected };
+  await store.save([updated]);
+  return updated;
+}
+
+/** Whether a read answer names exactly this resource: the same ID, and for iTop the same ticket class. A different resource never verifies it. */
+export function readNamesResource(pluginId: string, data: unknown, externalId: string, className?: unknown): boolean {
+  const root = record(data);
+  if (pluginId === "itop") {
+    return Object.entries(record(root.objects)).some(([key, value]) => {
+      const object = record(value);
+      return text(object.key) === externalId && (className === undefined || (text(object.class) || key.split("::")[0]) === className);
+    });
+  }
+  const rows = Array.isArray(root.data) ? root.data : [root.data ?? root];
+  return rows.some((value) => { const row = record(value); return text((row.document === undefined ? row : record(row.document)).id) === externalId; });
 }
