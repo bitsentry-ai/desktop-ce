@@ -7,6 +7,7 @@ const CLI_WRAPPER_NODE_PATH_ENV = 'BITSENTRY_CLI_WRAPPER_NODE_PATH'
 export interface AfterPackContextLike {
   appOutDir: string
   electronPlatformName: ElectronPlatformName
+  arch?: number
   packager?: {
     appInfo?: {
       productFilename?: string
@@ -107,6 +108,7 @@ async function resolvePackageJsonPath(
 async function ensureCliRuntimeDependencies(
   nativeNodeModulesDir: string,
   projectRoot: string,
+  context: AfterPackContextLike,
 ): Promise<void> {
   await mkdir(nativeNodeModulesDir, { recursive: true })
 
@@ -114,6 +116,23 @@ async function ensureCliRuntimeDependencies(
   // their tiny JS helper deps can remain only in the source workspace tree.
   // Copy them alongside the unpacked native modules so the packaged CLI can
   // resolve runtime requires like better-sqlite3 -> bindings -> file-uri-to-path.
+  // electron-builder can omit transitive optional N-API packages. Copy the
+  // exact target binding explicitly; unpacking the loader alone is insufficient.
+  await copyResolvedPackage('@napi-rs/keyring', nativeNodeModulesDir, projectRoot)
+  const targetArch = context.arch === undefined ? process.arch :
+    ({ 0: 'ia32', 1: 'x64', 2: 'arm', 3: 'arm64', 4: 'universal' } as Record<number, string>)[context.arch]
+  if (targetArch === undefined) throw new Error('Unsupported keyring target architecture')
+  const architectures = targetArch === 'universal' ? ['x64', 'arm64'] : [targetArch]
+  for (const architecture of architectures) {
+    const suffix = context.electronPlatformName === 'linux' ? '-gnu' :
+      context.electronPlatformName === 'win32' ? '-msvc' : ''
+    await copyResolvedPackage(
+      `@napi-rs/keyring-${context.electronPlatformName}-${architecture}${suffix}`,
+      nativeNodeModulesDir,
+      projectRoot,
+    )
+  }
+
   for (const packageName of ['bindings', 'file-uri-to-path', 'node-addon-api']) {
     await copyResolvedPackage(packageName, nativeNodeModulesDir, projectRoot)
   }
@@ -163,7 +182,7 @@ async function createMacCliWrapper(
   const cliDir = path.join(resourcesDir, 'cli')
   const nativeNodeModulesDir = path.join(resourcesDir, 'app.asar.unpacked', 'node_modules')
   await cp(path.join(projectRoot, 'out', 'cli-bundle'), cliDir, { recursive: true })
-  await ensureCliRuntimeDependencies(nativeNodeModulesDir, projectRoot)
+  await ensureCliRuntimeDependencies(nativeNodeModulesDir, projectRoot, context)
   const cliEntry = path.join(cliDir, 'cli.js')
   const macBinary = path.join(appBundlePath, 'Contents', 'MacOS', appName)
   const relativeCliEntry = toPosixRelativePath(resourcesBinDir, cliEntry)
@@ -210,7 +229,7 @@ async function createLinuxCliWrapper(
   const cliDir = path.join(resourcesDir, 'cli')
   const nativeNodeModulesDir = path.join(resourcesDir, 'app.asar.unpacked', 'node_modules')
   await cp(path.join(projectRoot, 'out', 'cli-bundle'), cliDir, { recursive: true })
-  await ensureCliRuntimeDependencies(nativeNodeModulesDir, projectRoot)
+  await ensureCliRuntimeDependencies(nativeNodeModulesDir, projectRoot, context)
   const productNames = getProductNames(context)
   const candidates = [...productNames, 'AppRun']
     .map((name) => `"${name}"`)
@@ -278,7 +297,7 @@ async function createWindowsCliWrapper(
   const cliDir = path.join(resourcesDir, 'cli')
   const nativeNodeModulesDir = path.join(resourcesDir, 'app.asar.unpacked', 'node_modules')
   await cp(path.join(projectRoot, 'out', 'cli-bundle'), cliDir, { recursive: true })
-  await ensureCliRuntimeDependencies(nativeNodeModulesDir, projectRoot)
+  await ensureCliRuntimeDependencies(nativeNodeModulesDir, projectRoot, context)
   const productNames = getProductNames(context)
   const candidateAssignments = productNames
     .map((name) => {
