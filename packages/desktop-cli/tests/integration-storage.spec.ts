@@ -2,6 +2,7 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import { describe, expect, it } from 'vitest'
+import { createDesktopStateHandlers } from '@bitsentry-ce/core/features/desktop-state/desktop-state.handlers'
 import { DbClient } from '@bitsentry-ce/core/features/desktop/desktop-database-client'
 import { ensureIntegrationStorageSchema } from '../src/runtime/integration-storage-schema.js'
 import { DesktopIntegrationOperationStore } from '../src/runtime/integration-operation-store.js'
@@ -13,7 +14,17 @@ describe('generic SQLite integration storage', () => {
     const first = new DbClient(options)
     const second = new DbClient(options)
     try {
-      await first.$executeRawUnsafe('CREATE TABLE "IncidentThread" (id TEXT PRIMARY KEY, "deletedAt" TEXT)')
+      await first.$executeRawUnsafe(`
+        CREATE TABLE "IncidentThread" (id TEXT PRIMARY KEY, title TEXT, prompt TEXT, state TEXT, "sessionId" TEXT,
+          "createdAt" TEXT, "updatedAt" TEXT, "archivedAt" TEXT, "deletedAt" TEXT);
+        CREATE TABLE "IncidentMessage" (id TEXT PRIMARY KEY, "threadId" TEXT, "sortOrder" INTEGER, kind TEXT, text TEXT,
+          "streamText" TEXT, "toolCallsJson" TEXT, "finalText" TEXT, status TEXT, "errorMsg" TEXT, "createdAt" TEXT, "updatedAt" TEXT);
+      `)
+      const sync = createDesktopStateHandlers(first)['desktopState:syncIncidents']
+      if (sync === undefined) throw new Error('Missing incident sync handler')
+      const snapshot = { incidents: [{ id: 'thread', title: 'Thread', prompt: 'Investigate', state: 'completed', createdAt: new Date().toISOString() }],
+        incidentMessages: { thread: [{ kind: 'user', text: 'Preserved message' }] } }
+      await sync(snapshot)
       await ensureIntegrationStorageSchema(first)
       await ensureIntegrationStorageSchema(first)
       await first.$queryRaw(`INSERT INTO "IntegrationConnection"
@@ -22,8 +33,8 @@ describe('generic SQLite integration storage', () => {
       new Date().toISOString(), new Date().toISOString())
       const hash = 'a'.repeat(64)
       await first.$queryRaw(`INSERT INTO "IntegrationOperation"
-        (id,"connectionId","idempotencyKey","requestHash","requestCiphertext","pluginId","pluginVersion","actionId",target,"connectionName","connectionRevision","proposedBy","createdAt","updatedAt")
-        VALUES ('intent','instance','intent',?,'encrypted-request','example','1','create','https://example.test','Example',1,'local-user',?,?) RETURNING id`,
+        (id,"threadId","connectionId","idempotencyKey","requestHash","requestCiphertext","pluginId","pluginVersion","actionId",target,"connectionName","connectionRevision","proposedBy","createdAt","updatedAt")
+        VALUES ('intent','thread','instance','intent',?,'encrypted-request','example','1','create','https://example.test','Example',1,'local-user',?,?) RETURNING id`,
       hash, new Date().toISOString(), new Date().toISOString())
       const store = new DesktopIntegrationOperationStore(first, 'local-user')
       const competingStore = new DesktopIntegrationOperationStore(second, 'local-user')
@@ -46,6 +57,15 @@ describe('generic SQLite integration storage', () => {
       } finally {
         await reopened.$disconnect()
       }
+      await sync(snapshot)
+      await first.$executeRawUnsafe(`CREATE TRIGGER reject_message BEFORE INSERT ON "IncidentMessage"
+        BEGIN SELECT RAISE(ABORT, 'simulated snapshot write failure'); END;`)
+      await expect(sync(snapshot)).rejects.toThrow('simulated snapshot write failure')
+      expect(await first.$queryRaw('SELECT text FROM "IncidentMessage"')).toEqual([{ text: 'Preserved message' }])
+      await first.$executeRawUnsafe('DROP TRIGGER reject_message')
+      await sync({ incidents: [], incidentMessages: {} })
+      expect((await first.$queryRaw('SELECT "deletedAt" FROM "IncidentThread" WHERE id = ?', 'thread'))[0]?.deletedAt).toBeTruthy()
+      expect((await first.$queryRaw('SELECT "threadId" FROM "IntegrationOperation" WHERE id = ?', 'intent'))[0]?.threadId).toBe('thread')
       await expect(async () => {
         await first.$queryRaw('DELETE FROM "IntegrationConnection" WHERE id = ? RETURNING id', 'instance')
       }).rejects.toThrow()
