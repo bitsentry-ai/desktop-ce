@@ -111,7 +111,7 @@ it('enforces ticket mappings again at the approval boundary for generic writes',
   expect(execute).not.toHaveBeenCalled()
 })
 
-it('keeps a live execution leased and refuses reconciliation until it settles', async () => {
+it('keeps a live execution leased and preserves uncertainty after ownership is lost', async () => {
   vi.useFakeTimers()
   const { service, propose, execute, store } = setup()
   let finish!: (value: { ok: boolean; status: number; data: object }) => void
@@ -124,7 +124,8 @@ it('keeps a live execution leased and refuses reconciliation until it settles', 
     await store.transition(proposal.id, 'executing', { status: 'uncertain', updatedAt: new Date().toISOString() })
     await expect(service.reconcile('thread', proposal.id, false, true)).rejects.toThrow('still active')
     finish({ ok: true, status: 200, data: {} })
-    expect((await approval).status).toBe('succeeded')
+    expect((await approval).status).toBe('uncertain')
+    expect(execute).toHaveBeenCalledTimes(1)
   } finally { vi.useRealTimers() }
 })
 it('does not expire an execution using an observation made before its heartbeat', async () => {

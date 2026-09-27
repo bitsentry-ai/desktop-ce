@@ -227,6 +227,51 @@ export class LocalPluginCredentialsStore implements DesktopPluginStoredAuthStore
     return changed
   }
 
+  /** Hold the credential file lock across the one-time SQLite cutover. */
+  migrateIntegrationRecords(consume: (records: Record<string, DesktopPluginStoredAuthRecord>, cipher: {
+    seal(id: string, value: string): string;
+    saveAuth(id: string, values: DesktopPluginStoredAuthRecord): void;
+    flush(): Promise<void>;
+  }) => Promise<void>): Promise<void> {
+    return this.serial(async () => {
+      const store = await readStore(this.storePath)
+      if (!['bitsentry.integration-connections.v1', 'bitsentry.integration-resources.v1', 'bitsentry.integration-operations.v1'].some(key => Object.hasOwn(store.plugins, key))) return
+      const cipher = this.cipherFactory()
+      this.migrate(store, cipher)
+      const keys = ['bitsentry.integration-connections.v1', 'bitsentry.integration-resources.v1', 'bitsentry.integration-operations.v1', 'bitsentry.integration-sqlite-cutover.v1']
+      const records: Record<string, DesktopPluginStoredAuthRecord> = {}
+      for (const key of keys) records[key] = store.plugins[key] ? this.decode(store.plugins[key], cipher, key) : {}
+      await consume(records, {
+        seal: (id, value) => {
+          const encrypted = cipher.encrypt(value, `database:${id}`)
+          if (cipher.decrypt(encrypted, `database:${id}`) !== value) throw new Error('Payload encryption verification failed')
+          return encrypted
+        },
+        saveAuth: (id, values) => { store.plugins[id] = this.encrypt(values, cipher, id) },
+        flush: () => writeStore(this.storePath, store),
+      })
+      // Originals remain encrypted for backup verification; no legacy record is cleared here.
+      store.plugins['bitsentry.integration-sqlite-cutover.v1'] = this.encrypt({ completed: 'true' }, cipher, 'bitsentry.integration-sqlite-cutover.v1')
+      await writeStore(this.storePath, store)
+    })
+  }
+
+  /** Encrypt host database payloads using the same profile key and lock. */
+  sealPayload(recordId: string, value: string): Promise<string> {
+    return this.serial(async () => {
+      const store = await readStore(this.storePath)
+      const cipher = this.cipherFactory()
+      if (this.migrate(store, cipher)) await writeStore(this.storePath, store)
+      const encrypted = cipher.encrypt(value, `database:${recordId}`)
+      if (cipher.decrypt(encrypted, `database:${recordId}`) !== value) throw new Error('Payload encryption verification failed')
+      return encrypted
+    })
+  }
+
+  openPayload(recordId: string, value: string): Promise<string> {
+    return this.serial(async () => this.cipherFactory().decrypt(value, `database:${recordId}`))
+  }
+
   get(pluginId: string): Promise<DesktopPluginStoredAuthRecord> {
     return this.serial(async () => {
       const store = await readStore(this.storePath)
