@@ -1,3 +1,4 @@
+import { archiveRetiredDesktopData } from './retirement-archive.js'
 import log from 'electron-log'
 import { ensureIntegrationStorageSchema } from './integration-storage-schema.js'
 import { mkdir } from 'fs/promises'
@@ -11,7 +12,7 @@ import {
 import { getDatabasePath, getDatabaseUrl } from './database-paths.js'
 
 let db: DbClient | null = null
-const DATABASE_SCHEMA_VERSION = 18
+const DATABASE_SCHEMA_VERSION = 19
 
 export type DesktopDatabaseRuntimeSeeders = {
   seedDefaults(client: DbClient): Promise<void>
@@ -412,56 +413,6 @@ async function runMigrations(): Promise<void> {
   // lightweight by running idempotent SQL at app boot.
   try {
     await getDb().$executeRawUnsafe(`
-      CREATE TABLE IF NOT EXISTS "Role" (
-        "id" INTEGER NOT NULL PRIMARY KEY,
-        "name" TEXT
-      )
-    `)
-    await getDb().$executeRawUnsafe(`
-      CREATE TABLE IF NOT EXISTS "Status" (
-        "id" INTEGER NOT NULL PRIMARY KEY,
-        "name" TEXT
-      )
-    `)
-    await getDb().$executeRawUnsafe(`
-      CREATE TABLE IF NOT EXISTS "User" (
-        "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
-        "email" TEXT,
-        "password" TEXT,
-        "firstName" TEXT,
-        "lastName" TEXT,
-        "provider" TEXT NOT NULL DEFAULT 'email',
-        "roleId" INTEGER,
-        "statusId" INTEGER,
-        "lastLoginAt" DATETIME,
-        "totpSecret" TEXT,
-        "totpEnabled" BOOLEAN NOT NULL DEFAULT 0,
-        "totpBackupCodes" TEXT,
-        "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        "updatedAt" DATETIME NOT NULL,
-        "deletedAt" DATETIME,
-        CONSTRAINT "User_roleId_fkey" FOREIGN KEY ("roleId") REFERENCES "Role" ("id") ON DELETE SET NULL ON UPDATE CASCADE,
-        CONSTRAINT "User_statusId_fkey" FOREIGN KEY ("statusId") REFERENCES "Status" ("id") ON DELETE SET NULL ON UPDATE CASCADE
-      )
-    `)
-    await getDb().$executeRawUnsafe(`
-      CREATE UNIQUE INDEX IF NOT EXISTS "User_email_key" ON "User"("email")
-    `)
-    await getDb().$executeRawUnsafe(`
-      CREATE TABLE IF NOT EXISTS "Session" (
-        "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
-        "userId" INTEGER NOT NULL,
-        "hash" TEXT NOT NULL,
-        "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        "updatedAt" DATETIME NOT NULL,
-        "deletedAt" DATETIME,
-        CONSTRAINT "Session_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User" ("id") ON DELETE RESTRICT ON UPDATE CASCADE
-      )
-    `)
-    await getDb().$executeRawUnsafe(`
-      CREATE INDEX IF NOT EXISTS "Session_userId_idx" ON "Session"("userId")
-    `)
-    await getDb().$executeRawUnsafe(`
       CREATE TABLE IF NOT EXISTS "Setting" (
         "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
         "key" TEXT NOT NULL,
@@ -482,138 +433,6 @@ async function runMigrations(): Promise<void> {
     `)
 
     // Phase 3: Security operations tables
-    await getDb().$executeRawUnsafe(`
-      CREATE TABLE IF NOT EXISTS "Agent" (
-        "id" TEXT NOT NULL PRIMARY KEY,
-        "name" TEXT NOT NULL,
-        "description" TEXT,
-        "type" TEXT NOT NULL,
-        "status" TEXT NOT NULL DEFAULT 'OFFLINE',
-        "version" TEXT NOT NULL DEFAULT '1.0.0',
-        "hostname" TEXT,
-        "ipAddress" TEXT,
-        "operatingSystem" TEXT,
-        "configuration" TEXT,
-        "capabilities" TEXT NOT NULL DEFAULT '[]',
-        "lastHeartbeat" DATETIME,
-        "lastSeen" DATETIME,
-        "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        "updatedAt" DATETIME NOT NULL,
-        "deletedAt" DATETIME
-      )
-    `)
-    await getDb().$executeRawUnsafe(`
-      CREATE TABLE IF NOT EXISTS "AgentHealth" (
-        "id" TEXT NOT NULL PRIMARY KEY,
-        "agentId" TEXT NOT NULL,
-        "cpuUsage" REAL,
-        "memoryUsage" REAL,
-        "diskUsage" REAL,
-        "networkIn" REAL,
-        "networkOut" REAL,
-        "uptime" REAL,
-        "errors" TEXT,
-        "warnings" TEXT,
-        "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        "updatedAt" DATETIME NOT NULL,
-        CONSTRAINT "AgentHealth_agentId_fkey" FOREIGN KEY ("agentId") REFERENCES "Agent" ("id") ON DELETE CASCADE ON UPDATE CASCADE
-      )
-    `)
-    await getDb().$executeRawUnsafe(`
-      CREATE UNIQUE INDEX IF NOT EXISTS "AgentHealth_agentId_key" ON "AgentHealth"("agentId")
-    `)
-    await getDb().$executeRawUnsafe(`
-      CREATE TABLE IF NOT EXISTS "AgentTag" (
-        "id" TEXT NOT NULL PRIMARY KEY,
-        "agentId" TEXT NOT NULL,
-        "key" TEXT NOT NULL,
-        "value" TEXT NOT NULL,
-        "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        CONSTRAINT "AgentTag_agentId_fkey" FOREIGN KEY ("agentId") REFERENCES "Agent" ("id") ON DELETE CASCADE ON UPDATE CASCADE
-      )
-    `)
-    await getDb().$executeRawUnsafe(`
-      CREATE INDEX IF NOT EXISTS "AgentTag_agentId_idx" ON "AgentTag"("agentId")
-    `)
-    await getDb().$executeRawUnsafe(`
-      CREATE TABLE IF NOT EXISTS "Vulnerability" (
-        "id" TEXT NOT NULL PRIMARY KEY,
-        "title" TEXT NOT NULL,
-        "description" TEXT,
-        "severity" TEXT NOT NULL,
-        "status" TEXT NOT NULL DEFAULT 'OPEN',
-        "cvssScore" REAL,
-        "cveId" TEXT,
-        "source" TEXT,
-        "affectedAsset" TEXT,
-        "remediation" TEXT,
-        "assignedToId" INTEGER,
-        "falsePositiveJustification" TEXT,
-        "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        "updatedAt" DATETIME NOT NULL,
-        "deletedAt" DATETIME
-      )
-    `)
-    await getDb().$executeRawUnsafe(`
-      CREATE TABLE IF NOT EXISTS "VulnerabilityAgent" (
-        "id" TEXT NOT NULL PRIMARY KEY,
-        "vulnerabilityId" TEXT NOT NULL,
-        "agentId" TEXT NOT NULL,
-        CONSTRAINT "VulnerabilityAgent_vulnerabilityId_fkey" FOREIGN KEY ("vulnerabilityId") REFERENCES "Vulnerability" ("id") ON DELETE CASCADE ON UPDATE CASCADE
-      )
-    `)
-    await getDb().$executeRawUnsafe(`
-      CREATE UNIQUE INDEX IF NOT EXISTS "VulnerabilityAgent_vulnerabilityId_agentId_key" ON "VulnerabilityAgent"("vulnerabilityId", "agentId")
-    `)
-    await getDb().$executeRawUnsafe(`
-      CREATE INDEX IF NOT EXISTS "VulnerabilityAgent_agentId_idx" ON "VulnerabilityAgent"("agentId")
-    `)
-    await getDb().$executeRawUnsafe(`
-      CREATE TABLE IF NOT EXISTS "VulnerabilityTimeline" (
-        "id" TEXT NOT NULL PRIMARY KEY,
-        "vulnerabilityId" TEXT NOT NULL,
-        "action" TEXT NOT NULL,
-        "comment" TEXT,
-        "userId" INTEGER,
-        "oldStatus" TEXT,
-        "newStatus" TEXT,
-        "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        CONSTRAINT "VulnerabilityTimeline_vulnerabilityId_fkey" FOREIGN KEY ("vulnerabilityId") REFERENCES "Vulnerability" ("id") ON DELETE CASCADE ON UPDATE CASCADE
-      )
-    `)
-    await getDb().$executeRawUnsafe(`
-      CREATE INDEX IF NOT EXISTS "VulnerabilityTimeline_vulnerabilityId_idx" ON "VulnerabilityTimeline"("vulnerabilityId")
-    `)
-    await getDb().$executeRawUnsafe(`
-      CREATE TABLE IF NOT EXISTS "ThreatIntelligence" (
-        "id" TEXT NOT NULL PRIMARY KEY,
-        "source" TEXT NOT NULL,
-        "type" TEXT NOT NULL,
-        "severity" TEXT NOT NULL,
-        "title" TEXT NOT NULL,
-        "description" TEXT NOT NULL,
-        "mitre" TEXT,
-        "confidence" INTEGER,
-        "active" BOOLEAN NOT NULL DEFAULT 1,
-        "expiresAt" DATETIME,
-        "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        "updatedAt" DATETIME NOT NULL
-      )
-    `)
-    await getDb().$executeRawUnsafe(`
-      CREATE TABLE IF NOT EXISTS "ThreatIndicator" (
-        "id" TEXT NOT NULL PRIMARY KEY,
-        "threatId" TEXT NOT NULL,
-        "type" TEXT NOT NULL,
-        "value" TEXT NOT NULL,
-        "description" TEXT,
-        "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        CONSTRAINT "ThreatIndicator_threatId_fkey" FOREIGN KEY ("threatId") REFERENCES "ThreatIntelligence" ("id") ON DELETE CASCADE ON UPDATE CASCADE
-      )
-    `)
-    await getDb().$executeRawUnsafe(`
-      CREATE INDEX IF NOT EXISTS "ThreatIndicator_threatId_idx" ON "ThreatIndicator"("threatId")
-    `)
 
     // Phase 4: Extend Setting table with new columns (ALTER TABLE ADD COLUMN is safe to retry)
     const settingAlterColumns = [
@@ -632,36 +451,6 @@ async function runMigrations(): Promise<void> {
     }
 
     // Phase 4: Integration tables
-    await getDb().$executeRawUnsafe(`
-      CREATE TABLE IF NOT EXISTS "Integration" (
-        "id" TEXT NOT NULL PRIMARY KEY,
-        "name" TEXT NOT NULL,
-        "type" TEXT NOT NULL,
-        "status" TEXT NOT NULL DEFAULT 'INACTIVE',
-        "configuration" TEXT NOT NULL DEFAULT '{}',
-        "credentials" TEXT,
-        "lastSync" DATETIME,
-        "errors" TEXT,
-        "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        "updatedAt" DATETIME NOT NULL
-      )
-    `)
-    await getDb().$executeRawUnsafe(`
-      CREATE TABLE IF NOT EXISTS "IntegrationHealth" (
-        "id" TEXT NOT NULL PRIMARY KEY,
-        "integrationId" TEXT NOT NULL,
-        "status" TEXT NOT NULL DEFAULT 'unknown',
-        "responseTime" REAL,
-        "lastChecked" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        "errors" TEXT,
-        "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        "updatedAt" DATETIME NOT NULL,
-        CONSTRAINT "IntegrationHealth_integrationId_fkey" FOREIGN KEY ("integrationId") REFERENCES "Integration" ("id") ON DELETE CASCADE ON UPDATE CASCADE
-      )
-    `)
-    await getDb().$executeRawUnsafe(`
-      CREATE UNIQUE INDEX IF NOT EXISTS "IntegrationHealth_integrationId_key" ON "IntegrationHealth"("integrationId")
-    `)
 
     // Phase 5: Error source integration tables
     await getDb().$executeRawUnsafe(`
@@ -805,35 +594,6 @@ async function runMigrations(): Promise<void> {
     }
 
     // Phase 4: Ticket table
-    await getDb().$executeRawUnsafe(`
-      CREATE TABLE IF NOT EXISTS "Ticket" (
-        "id" TEXT NOT NULL PRIMARY KEY,
-        "title" TEXT NOT NULL,
-        "description" TEXT,
-        "status" TEXT NOT NULL DEFAULT 'NEW',
-        "priority" TEXT NOT NULL DEFAULT 'MEDIUM',
-        "externalTicketId" TEXT,
-        "externalTicketNumber" TEXT,
-        "ticketProvider" TEXT NOT NULL DEFAULT 'local',
-        "ticketUrl" TEXT,
-        "vulnerabilityId" TEXT,
-        "incidentId" TEXT,
-        "diagnosisId" INTEGER,
-        "automatic" BOOLEAN NOT NULL DEFAULT 0,
-        "resolutionType" TEXT,
-        "resolutionNotes" TEXT,
-        "lessonsLearned" TEXT,
-        "resolvedAt" DATETIME,
-        "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        "updatedAt" DATETIME NOT NULL
-      )
-    `)
-    await getDb().$executeRawUnsafe(`
-      CREATE INDEX IF NOT EXISTS "Ticket_vulnerabilityId_idx" ON "Ticket"("vulnerabilityId")
-    `)
-    await getDb().$executeRawUnsafe(`
-      CREATE INDEX IF NOT EXISTS "Ticket_status_idx" ON "Ticket"("status")
-    `)
 
     // Phase 5: JobRun table
     await getDb().$executeRawUnsafe(`
@@ -865,58 +625,8 @@ async function runMigrations(): Promise<void> {
     `)
 
     // Phase 5: Report table
-    await getDb().$executeRawUnsafe(`
-      CREATE TABLE IF NOT EXISTS "Report" (
-        "id" TEXT NOT NULL PRIMARY KEY,
-        "name" TEXT NOT NULL,
-        "type" TEXT NOT NULL,
-        "format" TEXT NOT NULL DEFAULT 'PDF',
-        "status" TEXT NOT NULL DEFAULT 'PENDING',
-        "parameters" TEXT,
-        "content" TEXT,
-        "filePath" TEXT,
-        "scheduledAt" DATETIME,
-        "completedAt" DATETIME,
-        "userId" INTEGER,
-        "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        "updatedAt" DATETIME NOT NULL
-      )
-    `)
-    await getDb().$executeRawUnsafe(`
-      CREATE INDEX IF NOT EXISTS "Report_status_idx" ON "Report"("status")
-    `)
-    await getDb().$executeRawUnsafe(`
-      CREATE INDEX IF NOT EXISTS "Report_type_idx" ON "Report"("type")
-    `)
-    await getDb().$executeRawUnsafe(`
-      CREATE INDEX IF NOT EXISTS "Report_userId_idx" ON "Report"("userId")
-    `)
 
     // Phase 5: Scan table
-    await getDb().$executeRawUnsafe(`
-      CREATE TABLE IF NOT EXISTS "Scan" (
-        "id" TEXT NOT NULL PRIMARY KEY,
-        "name" TEXT NOT NULL,
-        "type" TEXT NOT NULL,
-        "status" TEXT NOT NULL DEFAULT 'PENDING',
-        "target" TEXT,
-        "configuration" TEXT,
-        "results" TEXT,
-        "summary" TEXT,
-        "progress" INTEGER DEFAULT 0,
-        "startedAt" DATETIME,
-        "completedAt" DATETIME,
-        "jobRunId" TEXT,
-        "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        "updatedAt" DATETIME NOT NULL
-      )
-    `)
-    await getDb().$executeRawUnsafe(`
-      CREATE INDEX IF NOT EXISTS "Scan_status_idx" ON "Scan"("status")
-    `)
-    await getDb().$executeRawUnsafe(`
-      CREATE INDEX IF NOT EXISTS "Scan_jobRunId_idx" ON "Scan"("jobRunId")
-    `)
 
     // Gate 3: Telemetry + diagnosis + CVE persistence
     await getDb().$executeRawUnsafe(`
@@ -1019,37 +729,7 @@ async function runMigrations(): Promise<void> {
       CREATE INDEX IF NOT EXISTS "DiagnosisEntrySourceRef_lookup_idx" ON "DiagnosisEntrySourceRef"("sourceTableName", "sourceFieldName", "sourceKeyValue")
     `)
 
-    await getDb().$executeRawUnsafe(`
-      CREATE TABLE IF NOT EXISTS "CveEntry" (
-        "id" TEXT NOT NULL PRIMARY KEY,
-        "summary" TEXT,
-        "severity" TEXT,
-        "cvssScore" REAL,
-        "publishedAt" DATETIME,
-        "lastModifiedAt" DATETIME,
-        "references" TEXT,
-        "metadata" TEXT,
-        "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        "updatedAt" DATETIME NOT NULL
-      )
-    `)
-    await getDb().$executeRawUnsafe(`
-      CREATE INDEX IF NOT EXISTS "CveEntry_severity_idx" ON "CveEntry"("severity")
-    `)
 
-    await getDb().$executeRawUnsafe(`
-      CREATE TABLE IF NOT EXISTS "TelemetryCveLink" (
-        "id" TEXT NOT NULL PRIMARY KEY,
-        "telemetryEntryId" INTEGER NOT NULL,
-        "cveId" TEXT NOT NULL,
-        "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        CONSTRAINT "TelemetryCveLink_telemetryEntryId_fkey" FOREIGN KEY ("telemetryEntryId") REFERENCES "TelemetryEntry" ("id") ON DELETE CASCADE ON UPDATE CASCADE,
-        CONSTRAINT "TelemetryCveLink_cveId_fkey" FOREIGN KEY ("cveId") REFERENCES "CveEntry" ("id") ON DELETE CASCADE ON UPDATE CASCADE
-      )
-    `)
-    await getDb().$executeRawUnsafe(`
-      CREATE UNIQUE INDEX IF NOT EXISTS "TelemetryCveLink_telemetryEntryId_cveId_key" ON "TelemetryCveLink"("telemetryEntryId", "cveId")
-    `)
 
     // Gate 3: schedule registry base table (logic is implemented in Gate 5)
     await getDb().$executeRawUnsafe(`
@@ -1454,111 +1134,6 @@ async function runMigrations(): Promise<void> {
       CREATE INDEX IF NOT EXISTS "RunbookVersion_runbookId_idx" ON "RunbookVersion"("runbookId", "versionNumber" DESC)
     `)
     await getDb().$executeRawUnsafe(`
-      CREATE TABLE IF NOT EXISTS "DiagnosisSession" (
-        "id" TEXT NOT NULL PRIMARY KEY,
-        "runbookId" TEXT NOT NULL,
-        "runbookVersionId" TEXT,
-        "runbookTitle" TEXT NOT NULL,
-        "runbookRevisionNumber" INTEGER,
-        "runbookContextJson" TEXT,
-        "executionId" TEXT,
-        "executionSnapshotJson" TEXT,
-        "status" TEXT NOT NULL,
-        "startedAt" DATETIME NOT NULL,
-        "completedAt" DATETIME,
-        "prompt" TEXT NOT NULL,
-        "createdAt" DATETIME NOT NULL,
-        "updatedAt" DATETIME NOT NULL
-      )
-    `)
-    const diagnosisSessionColumns = await getTableColumns('DiagnosisSession')
-    if (!diagnosisSessionColumns.has('runbookRevisionNumber')) {
-      try {
-        await getDb().$executeRawUnsafe(`
-          ALTER TABLE "DiagnosisSession" ADD COLUMN "runbookRevisionNumber" INTEGER
-        `)
-      } catch (error) {
-        if (!isDuplicateColumnError(error)) throw error
-      }
-    }
-    if (!diagnosisSessionColumns.has('runbookContextJson')) {
-      try {
-        await getDb().$executeRawUnsafe(`
-          ALTER TABLE "DiagnosisSession" ADD COLUMN "runbookContextJson" TEXT
-        `)
-      } catch (error) {
-        if (!isDuplicateColumnError(error)) throw error
-      }
-    }
-    if (!diagnosisSessionColumns.has('executionId')) {
-      try {
-        await getDb().$executeRawUnsafe(`
-          ALTER TABLE "DiagnosisSession" ADD COLUMN "executionId" TEXT
-        `)
-      } catch (error) {
-        if (!isDuplicateColumnError(error)) throw error
-      }
-    }
-    if (!diagnosisSessionColumns.has('executionSnapshotJson')) {
-      try {
-        await getDb().$executeRawUnsafe(`
-          ALTER TABLE "DiagnosisSession" ADD COLUMN "executionSnapshotJson" TEXT
-        `)
-      } catch (error) {
-        if (!isDuplicateColumnError(error)) throw error
-      }
-    }
-    await getDb().$executeRawUnsafe(`
-      CREATE INDEX IF NOT EXISTS "DiagnosisSession_runbookId_idx" ON "DiagnosisSession"("runbookId", "startedAt" DESC)
-    `)
-    await getDb().$executeRawUnsafe(`
-      CREATE UNIQUE INDEX IF NOT EXISTS "DiagnosisSession_executionId_key" ON "DiagnosisSession"("executionId")
-    `)
-    await getDb().$executeRawUnsafe(`
-      CREATE TABLE IF NOT EXISTS "DiagnosisTraceEntry" (
-        "id" TEXT NOT NULL PRIMARY KEY,
-        "diagnosisSessionId" TEXT NOT NULL,
-        "content" TEXT NOT NULL,
-        "createdAt" DATETIME NOT NULL,
-        "updatedAt" DATETIME NOT NULL,
-        CONSTRAINT "DiagnosisTraceEntry_sessionId_fkey" FOREIGN KEY ("diagnosisSessionId") REFERENCES "DiagnosisSession" ("id") ON DELETE CASCADE ON UPDATE CASCADE
-      )
-    `)
-    await getDb().$executeRawUnsafe(`
-      CREATE UNIQUE INDEX IF NOT EXISTS "DiagnosisTraceEntry_session_key" ON "DiagnosisTraceEntry"("diagnosisSessionId")
-    `)
-    await getDb().$executeRawUnsafe(`
-      CREATE TABLE IF NOT EXISTS "DiagnosisToolRun" (
-        "id" TEXT NOT NULL PRIMARY KEY,
-        "diagnosisSessionId" TEXT NOT NULL,
-        "sortOrder" INTEGER NOT NULL,
-        "toolCallId" TEXT NOT NULL,
-        "toolName" TEXT NOT NULL,
-        "state" TEXT NOT NULL,
-        "output" TEXT,
-        "error" TEXT,
-        "createdAt" DATETIME NOT NULL,
-        "updatedAt" DATETIME NOT NULL,
-        CONSTRAINT "DiagnosisToolRun_sessionId_fkey" FOREIGN KEY ("diagnosisSessionId") REFERENCES "DiagnosisSession" ("id") ON DELETE CASCADE ON UPDATE CASCADE
-      )
-    `)
-    await getDb().$executeRawUnsafe(`
-      CREATE INDEX IF NOT EXISTS "DiagnosisToolRun_session_sortOrder_idx" ON "DiagnosisToolRun"("diagnosisSessionId", "sortOrder")
-    `)
-    await getDb().$executeRawUnsafe(`
-      CREATE TABLE IF NOT EXISTS "DiagnosisReport" (
-        "id" TEXT NOT NULL PRIMARY KEY,
-        "diagnosisSessionId" TEXT NOT NULL,
-        "content" TEXT NOT NULL,
-        "createdAt" DATETIME NOT NULL,
-        "updatedAt" DATETIME NOT NULL,
-        CONSTRAINT "DiagnosisReport_sessionId_fkey" FOREIGN KEY ("diagnosisSessionId") REFERENCES "DiagnosisSession" ("id") ON DELETE CASCADE ON UPDATE CASCADE
-      )
-    `)
-    await getDb().$executeRawUnsafe(`
-      CREATE UNIQUE INDEX IF NOT EXISTS "DiagnosisReport_session_key" ON "DiagnosisReport"("diagnosisSessionId")
-    `)
-    await getDb().$executeRawUnsafe(`
       CREATE TABLE IF NOT EXISTS "InvestigationSession" (
         "id" TEXT NOT NULL PRIMARY KEY,
         "runbookId" TEXT NOT NULL,
@@ -1704,20 +1279,6 @@ async function runMigrations(): Promise<void> {
     `)
     await getDb().$executeRawUnsafe(`
       CREATE UNIQUE INDEX IF NOT EXISTS "InvestigationReport_session_key" ON "InvestigationReport"("investigationSessionId")
-    `)
-    await getDb().$executeRawUnsafe(`
-      CREATE TABLE IF NOT EXISTS "ActivityEvent" (
-        "id" TEXT NOT NULL PRIMARY KEY,
-        "entityType" TEXT NOT NULL,
-        "entityId" TEXT NOT NULL,
-        "eventType" TEXT NOT NULL,
-        "payloadJson" TEXT,
-        "createdAt" DATETIME NOT NULL,
-        "updatedAt" DATETIME NOT NULL
-      )
-    `)
-    await getDb().$executeRawUnsafe(`
-      CREATE INDEX IF NOT EXISTS "ActivityEvent_entity_lookup_idx" ON "ActivityEvent"("entityType", "entityId", "createdAt" DESC)
     `)
     await getDb().$executeRawUnsafe(`
       CREATE TABLE IF NOT EXISTS "LegacyImportLedger" (
@@ -1881,6 +1442,8 @@ async function runMigrations(): Promise<void> {
     if (!appliedVersions.has(17)) {
       await markMigrationApplied(17, 'runbook_execution_event_journal')
     }
+    await getDb().retireLegacyTables(archiveRetiredDesktopData)
+    if (!appliedVersions.has(19)) await markMigrationApplied(19, 'remove_retired_persistence')
     await ensureIntegrationStorageSchema(getDb())
     if (!appliedVersions.has(18)) {
       await markMigrationApplied(18, 'generic_integration_storage')
