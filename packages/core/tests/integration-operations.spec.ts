@@ -87,7 +87,7 @@ describe('durable integration approval boundary', () => {
     expect(remote.documents).toEqual([{ id: 'remote-document', title: 'Exact approved title' }])
   })
 
-  it('does not allow reconciliation while the original write is still running', async () => {
+  it('does not allow reconciliation while the original write is still running, and keeps it uncertain after a late answer', async () => {
     const { service, propose, execute, runtime, store, remote } = setup()
     const reconnected = new IntegrationOperationService(store, async () => runtime)
     type ExecutionResult = Awaited<ReturnType<IntegrationWriteRuntime['execute']>>
@@ -111,7 +111,8 @@ describe('durable integration approval boundary', () => {
       expect(await service.list('thread')).toMatchObject([{ id: proposal.id, status: 'uncertain', message: expect.stringContaining('still running') }])
       await expect(reconnected.reconcile('thread', proposal.id, false, true)).rejects.toThrow(/still running/i)
       finishWrite({ ok: true, status: 200, data: { id: 'remote-document' } })
-      expect(await approval).toMatchObject({ status: 'succeeded' })
+      // Ownership was lost when the write was marked uncertain, so a late answer cannot turn it into a success.
+      expect(await approval).toMatchObject({ status: 'uncertain' })
       expect(remote.documents).toEqual([{ id: 'remote-document', title: 'Exact approved title' }])
     } finally {
       finishWrite({ ok: true, status: 200, data: { id: 'remote-document' } })
