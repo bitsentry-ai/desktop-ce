@@ -112,6 +112,7 @@ function loadPluginEntry(entryPath: string): LoadedDesktopCodePlugin {
   const plugin = pluginSdk.desktopCodePluginSchema.parse(
     readPluginExport(moduleExports),
   );
+  pluginSdk.assertPluginPersistenceContract(plugin);
   let referenceRepositoryPath = relativePluginRoot;
   if (plugin.referenceRepositoryPath !== undefined) {
     referenceRepositoryPath = plugin.referenceRepositoryPath;

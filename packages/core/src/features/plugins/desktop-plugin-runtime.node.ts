@@ -14,6 +14,7 @@ import type {
 } from "./plugins.types";
 import {
   desktopCodePluginSchema,
+  assertPluginPersistenceContract,
   desktopPluginInstallFromArtifactRequestSchema,
   desktopPluginInstallFromArtifactResultSchema,
 } from "./plugins.types";
@@ -94,6 +95,7 @@ async function installPluginFromArtifact(input: {
     }
 
     const parsedPlugin = desktopCodePluginSchema.parse(rawPlugin);
+    assertPluginPersistenceContract(parsedPlugin);
     const pluginId = readTrimmedString(parsedPlugin.id);
     if (pluginId === undefined) {
       throw new Error("Downloaded code plugin is missing a valid id.");
