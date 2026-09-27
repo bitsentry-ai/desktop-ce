@@ -1,4 +1,4 @@
-import { validatePluginConnectionConfig, validatePluginResourceState } from "@bitsentry/plugin-sdk";
+import { hasPluginCredentials, validatePluginConnectionConfig, validatePluginResourceState } from "@bitsentry/plugin-sdk";
 import type { IntegrationConnection, IntegrationConnectionInput } from "./integration-connections";
 import { z, type ZodType } from "zod";
 
@@ -445,6 +445,7 @@ export class DesktopPluginRuntimeService {
       }
     }
 
+    if (!hasPluginCredentials(plugin, request.auth)) throw new Error("Connection credentials are incomplete.");
     const config = request.connectionConfig === undefined ? undefined : this.registry.validateConnectionConfig(request.pluginId, request.connectionConfig.version, request.connectionConfig.value);
     return action.execute({
       config,

@@ -1,4 +1,4 @@
-import { requirePluginPersistence, validatePluginConnectionShape } from "@bitsentry/plugin-sdk";
+import { hasPluginCredentials, requirePluginPersistence, validatePluginConnectionShape } from "@bitsentry/plugin-sdk";
 import { itopTicketMappingSchema } from "./itop-ticket-mapping";
 import { z } from "zod";
 import type { DesktopPluginDescriptor } from "./plugins.types";
@@ -32,7 +32,7 @@ function validateVersionedConnection(connection: IntegrationConnectionInput, plu
     if (connection.target !== undefined && normalizeIntegrationTarget(connection.target) !== target) throw new Error("Connection destination does not match its configuration.");
     const fields = new Map(plugin.auth.fields.map((field) => [field.key, field]));
     if (Object.keys(connection.auth).some((key) => !fields.has(key))) throw new Error("Unknown credential field.");
-    if (plugin.auth.fields.some((field) => field.required && !connection.auth[field.key]?.trim())) throw new Error("Connection credentials are incomplete.");
+    if (!hasPluginCredentials(plugin, connection.auth)) throw new Error("Connection credentials are incomplete.");
     return { ...connection, config, target, ticketMapping: plugin.id !== "itop" || config.ticketMapping === undefined ? undefined : itopTicketMappingSchema.parse(config.ticketMapping) };
 }
 
@@ -57,7 +57,7 @@ export function validateIntegrationConnection(input: unknown, plugin?: DesktopPl
 }
 
 export function hasIntegrationCredentials(connection: IntegrationConnectionInput, plugin?: DesktopPluginDescriptor | null): boolean {
-  if (connection.config !== undefined) return plugin != null ? plugin.auth.fields.every((field) => !field.required || Boolean(connection.auth[field.key]?.trim())) : Object.values(connection.auth).some((value) => value.trim().length > 0);
+  if (connection.config !== undefined) return plugin != null ? hasPluginCredentials(plugin, connection.auth) : Object.values(connection.auth).some((value) => value.trim().length > 0);
   const present = (key: string) => (connection.auth[key]?.trim().length ?? 0) > 0;
   return connection.pluginId === "itop"
     ? present("baseUrl") && (present("authToken") || (present("username") && present("password")))

@@ -4,7 +4,7 @@ import type { DesktopPluginStoredAuthStore } from "./desktop-plugin-auth-store";
 export const integrationResourceSchema = z.object({
   threadId: z.string().min(1), connectionId: z.uuid(), connectionName: z.string(),
   resourceType: z.string().min(1).max(100), externalId: z.string().min(1).max(200),
-  url: z.url(), title: z.string(), state: z.record(z.string(), z.union([z.string(), z.number(), z.boolean(), z.null()])),
+  url: z.url(), title: z.string(), state: z.record(z.string(), z.unknown()),
   stateVersion: z.number().int().positive().optional(),
   observedAt: z.string(), selected: z.boolean().optional(),
 });
