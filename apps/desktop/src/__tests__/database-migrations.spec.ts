@@ -50,7 +50,6 @@ async function makeDatabaseDirectory(): Promise<{ directory: string; databasePat
 function configureNoopSeeders(): void {
   configureDesktopDatabaseRuntime({
     seedDefaults: vi.fn(async () => {}),
-    seedDemoData: vi.fn(async () => {}),
   })
 }
 
