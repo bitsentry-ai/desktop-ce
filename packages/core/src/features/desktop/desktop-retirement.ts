@@ -56,6 +56,9 @@ export async function retireDesktopTables(database: BetterSqlite3.Database, arch
     for (const table of selected) database.exec(`DROP TABLE ${quote(table.name)}`)
     if ((database.pragma('foreign_key_check') as unknown[]).length > 0) throw new Error('Retirement would leave invalid active references')
     database.exec('COMMIT')
-  } catch (error) { if (database.inTransaction) database.exec('ROLLBACK'); throw error }
+  } catch (error) {
+    if (database.inTransaction) { database.exec('ROLLBACK') }
+    throw error
+  }
   finally { database.pragma(`foreign_keys = ${foreignKeys === 1 ? 'ON' : 'OFF'}`) }
 }
