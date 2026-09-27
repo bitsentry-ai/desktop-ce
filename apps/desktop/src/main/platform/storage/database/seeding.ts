@@ -15,4 +15,3 @@ configureDesktopDatabaseRuntime(desktopDatabaseSeeders)
 export async function seedDefaults(client: DbClient): Promise<void> {
   await desktopDatabaseSeeders.seedDefaults(client)
 }
-
