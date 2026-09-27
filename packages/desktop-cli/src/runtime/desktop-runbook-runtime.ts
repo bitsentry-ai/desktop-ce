@@ -1,3 +1,4 @@
+import { createDesktopIntegrationStorage } from './sqlite-integration-storage.js'
 import {
   createDesktopEditionRunbookRuntimeBindings,
   createDesktopEditionRunbookRuntimeFactory,
@@ -77,9 +78,10 @@ export function createDesktopEditionRunbookRuntime(
     setRuntimeDefaultAppDataName(options.defaultAppDataName);
   }
 
+  let integrationDb: DesktopRunbookDatabase | undefined
   const bindings = createDesktopEditionRunbookRuntimeBindings({
     defaultStaleHeartbeatGraceMs: DEFAULT_RUNBOOK_EXECUTION_HEARTBEAT_GRACE_MS,
-    initializeDatabase: initializeRunbookDatabase,
+    async initializeDatabase() { integrationDb = await initializeRunbookDatabase(); return integrationDb },
     closeDatabase,
     setRuntimeUserDataPath(userDataPath: string) {
       options.setRuntimeUserDataPath(userDataPath);
@@ -99,9 +101,12 @@ export function createDesktopEditionRunbookRuntime(
     RunbookExecutionService: options.RunbookExecutionService,
     createPluginRuntime() {
       const userDataPath = getRuntimeUserDataPath();
+      const credentials = new LocalPluginCredentialsStore(userDataPath);
+      if (!integrationDb) throw new Error("Initialize the database before plugin runtime creation.");
       return createDesktopNodePluginRuntimeService(
         resolveDesktopPluginDirectories([path.join(userDataPath, "plugins")]),
-        new LocalPluginCredentialsStore(userDataPath),
+        credentials,
+        createDesktopIntegrationStorage(integrationDb, credentials),
       );
     },
     createRunbookHandlers: createRuntimeRunbookHandlers,

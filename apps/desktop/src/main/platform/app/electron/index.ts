@@ -1,3 +1,4 @@
+import { createDesktopIntegrationStorage } from '@bitsentry-ce/desktop-cli/runtime/sqlite-integration-storage'
 import { initSentryIfEnabled, closeSentry, setSentryEnabled, isSentryEnabled, hasSentryDsn, captureException } from '@bitsentry-ce/desktop-cli/runtime/desktop-sentry'
 import {
   getDesktopAnalyticsContext,
@@ -489,6 +490,7 @@ app
       const pluginRuntime = createDesktopNodePluginRuntimeService(
         [path.join(userDataPath, 'plugins')],
         pluginCredentialsStore,
+        createDesktopIntegrationStorage(db, pluginCredentialsStore),
       )
 
       // Register IPC handlers

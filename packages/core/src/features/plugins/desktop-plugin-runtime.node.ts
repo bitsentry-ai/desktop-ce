@@ -1,7 +1,7 @@
 import { refreshLinkedIntegrationResource, type LinkedResourceInput, StoredIntegrationResources, extractIntegrationResources } from "./integration-resources";
 import { IntegrationOperationService } from "./integration-operations";
 import { StoredIntegrationOperations } from "./integration-operation-store";
-import { IntegrationConnectionStore } from "./integration-connection-store";
+import { type IntegrationConnectionStorage, IntegrationConnectionStore } from "./integration-connection-store";
 import { describeIntegrationConnection, type IntegrationConnection, type IntegrationConnectionInput } from "./integration-connections";
 import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
@@ -263,14 +263,22 @@ function connectionConfig(connection: IntegrationConnectionInput) {
   return connection.config === undefined ? undefined : { version: connection.configVersion ?? 0, value: connection.config };
 }
 
+/** Where a host keeps connections, linked resources and write proposals. Without one, the credential-store records are used. */
+export interface DesktopIntegrationStorage {
+  connections: IntegrationConnectionStorage;
+  resources: import("./integration-resources").IntegrationResourceStore;
+  operations: import("./integration-operations").IntegrationOperationStore;
+}
+
 class DesktopNodePluginRuntimeService extends DesktopPluginRuntimeService {
-  private readonly connections: IntegrationConnectionStore;
+  private readonly connections: IntegrationConnectionStorage;
   constructor(
     private readonly storedAuthStore: DesktopPluginStoredAuthStore,
     private readonly localPluginDirectories: string[],
+    private readonly integrationStorage?: DesktopIntegrationStorage,
   ) {
     super(new DesktopPluginRegistry());
-    this.connections = new IntegrationConnectionStore(storedAuthStore);
+    this.connections = integrationStorage?.connections ?? new IntegrationConnectionStore(storedAuthStore);
     this.reloadRegistry();
   }
 
@@ -346,11 +354,15 @@ class DesktopNodePluginRuntimeService extends DesktopPluginRuntimeService {
     return refreshLinkedIntegrationResource(input, this.getIntegrationResources(), { connection, plugin, execute: read, read });
   }
   private resources?: StoredIntegrationResources;
-  override getIntegrationResources() { this.resources ??= new StoredIntegrationResources(this.storedAuthStore); return this.resources; }
+  override getIntegrationResources() {
+    if (this.integrationStorage !== undefined) return this.integrationStorage.resources;
+    this.resources ??= new StoredIntegrationResources(this.storedAuthStore);
+    return this.resources;
+  }
   private operations?: IntegrationOperationService;
   override getIntegrationOperations(): IntegrationOperationService {
-    if (this.storedAuthStore === NOOP_DESKTOP_PLUGIN_STORED_AUTH_STORE) throw new Error("Durable proposal storage is unavailable.");
-    this.operations ??= new IntegrationOperationService(new StoredIntegrationOperations(this.storedAuthStore), async (id) => {
+    if (this.integrationStorage === undefined && this.storedAuthStore === NOOP_DESKTOP_PLUGIN_STORED_AUTH_STORE) throw new Error("Durable proposal storage is unavailable.");
+    this.operations ??= new IntegrationOperationService(this.integrationStorage?.operations ?? new StoredIntegrationOperations(this.storedAuthStore), async (id) => {
       const connection = (await this.connections.list()).find((row) => row.id === id);
       if (connection === undefined) throw new Error("Connection unavailable.");
       const plugin = this.getPlugin(connection.pluginId);
@@ -436,9 +448,11 @@ class DesktopNodePluginRuntimeService extends DesktopPluginRuntimeService {
 export function createDesktopNodePluginRuntimeService(
   localPluginDirectories = defaultLocalPluginDirectories(),
   storedAuthStore: DesktopPluginStoredAuthStore = NOOP_DESKTOP_PLUGIN_STORED_AUTH_STORE,
+  integrationStorage?: DesktopIntegrationStorage,
 ): DesktopPluginRuntimeService {
   return new DesktopNodePluginRuntimeService(
     storedAuthStore,
     localPluginDirectories,
+    integrationStorage,
   );
 }

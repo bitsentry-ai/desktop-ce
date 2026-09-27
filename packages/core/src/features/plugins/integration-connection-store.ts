@@ -6,10 +6,17 @@ import { INTEGRATION_CONNECTIONS_STORE_KEY as STORE_KEY } from "./integration-st
 
 const connectionsSchema = z.array(integrationConnectionInputSchema).max(100);
 
+/** Where a host keeps connections. The revision changes on every save, so an approval notices an edit. */
+export interface IntegrationConnectionStorage {
+  list(): Promise<IntegrationConnectionInput[]>;
+  save(input: IntegrationConnectionInput, plugin?: DesktopPluginDescriptor | null): Promise<void>;
+  remove(id: string): Promise<void>;
+}
+
 const pendingWrites = new WeakMap<DesktopPluginStoredAuthStore, Promise<void>>();
 
 /** Uses the product's credential store, including its encryption and atomic writes. */
-export class IntegrationConnectionStore {
+export class IntegrationConnectionStore implements IntegrationConnectionStorage {
   constructor(private readonly credentials: DesktopPluginStoredAuthStore) {}
 
   async list(): Promise<IntegrationConnectionInput[]> {
