@@ -1,3 +1,6 @@
+import { linkedResourceInputSchema } from "./integration-resources";
+import { z } from "zod";
+import { integrationConnectionInputSchema } from "./integration-connections";
 import type {
   DesktopPluginExecutionRequest,
   DesktopPluginFieldType,
@@ -174,6 +177,40 @@ export function createDesktopPluginHandlers(
   storedAuthStore: DesktopPluginStoredAuthStore = NOOP_DESKTOP_PLUGIN_STORED_AUTH_STORE,
 ): Record<string, (payload: unknown) => Promise<unknown>> {
   return {
+    "plugins:selectResource": async (payload) => {
+      const input = z.object({ threadId: z.string().min(1), connectionId: z.uuid(), resourceType: z.string().min(1).max(100), externalId: z.string().min(1).max(200), selected: z.boolean() }).strict().parse(payload);
+      await service.getIntegrationResources().select(input.threadId, input.connectionId, input.resourceType, input.externalId, input.selected);
+      return { ok: true };
+    },
+    "plugins:refreshResource": (payload) => service.refreshIntegrationResource(linkedResourceInputSchema.parse(payload)),
+    "plugins:listResources": (payload) => service.refreshIntegrationResources(z.object({ threadId: z.string().min(1) }).strict().parse(payload).threadId),
+    "plugins:renewOperation": (payload) => {
+      const input = z.object({ threadId: z.string().min(1), id: z.uuid() }).strict().parse(payload);
+      return service.getIntegrationOperations().renew(input.threadId, input.id);
+    },
+    "plugins:reconcileOperation": (payload) => {
+      const input = z.object({ threadId: z.string().min(1), id: z.uuid(), applied: z.boolean(), confirmed: z.boolean(), externalId: z.string().min(1).max(200).optional() }).strict().parse(payload);
+      return service.getIntegrationOperations().reconcile(input.threadId, input.id, input.applied, input.confirmed, input.externalId);
+    },
+    "plugins:listOperations": (payload) => service.getIntegrationOperations().list(z.object({ threadId: z.string().min(1) }).parse(payload).threadId),
+    "plugins:approveOperation": (payload) => {
+      const input = z.object({ threadId: z.string().min(1), id: z.uuid(), closeRequested: z.boolean().default(false) }).strict().parse(payload);
+      return service.getIntegrationOperations().approve(input.threadId, input.id, input.closeRequested);
+    },
+    "plugins:cancelOperation": (payload) => {
+      const input = z.object({ threadId: z.string().min(1), id: z.uuid() }).strict().parse(payload);
+      return service.getIntegrationOperations().cancel(input.threadId, input.id);
+    },
+    "plugins:listConnections": () => service.listIntegrationConnections(),
+    "plugins:saveConnection": async (payload) => {
+      await service.saveIntegrationConnection(integrationConnectionInputSchema.parse(payload));
+      return { ok: true };
+    },
+    "plugins:removeConnection": async (payload) => {
+      const id = (payload as { id: string }).id;
+      await service.removeIntegrationConnection(id);
+      return { ok: true };
+    },
     "plugins:list": () => Promise.resolve({
       data: service.listPlugins(),
     }),

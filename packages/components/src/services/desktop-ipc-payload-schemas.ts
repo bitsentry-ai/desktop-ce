@@ -1,3 +1,4 @@
+import { integrationConnectionInputSchema } from "@bitsentry-ce/core/features/plugins";
 import { z } from "zod";
 import { DESKTOP_RPC_CHANNELS, type DesktopRpcChannel } from "./desktop-ipc-contract";
 
@@ -290,6 +291,16 @@ export function createDesktopIpcPayloadValidator(
   });
 
   const schemaOverrides: Partial<Record<DesktopRpcChannel, z.ZodType>> = {
+    "plugins:selectResource": z.object({ threadId: z.string().min(1), connectionId: z.uuid(), resourceType: z.string().min(1).max(100), externalId: z.string().min(1).max(200), selected: z.boolean() }).strict(),
+    "plugins:refreshResource": z.object({ threadId: z.string().min(1), connectionId: z.uuid(), resourceType: z.string().min(1).max(100), externalId: z.string().min(1).max(200) }).strict(),
+    "plugins:listResources": z.object({ threadId: z.string().min(1) }).strict(),
+    "plugins:renewOperation": z.object({ threadId: z.string().min(1), id: z.uuid() }).strict(),
+    "plugins:reconcileOperation": z.object({ threadId: z.string().min(1), id: z.uuid(), applied: z.boolean(), confirmed: z.boolean(), externalId: z.string().min(1).max(200).optional() }).strict(),
+    "plugins:listOperations": z.object({ threadId: z.string().min(1) }).strict(),
+    "plugins:approveOperation": z.object({ threadId: z.string().min(1), id: z.uuid(), closeRequested: z.boolean() }).strict(),
+    "plugins:cancelOperation": z.object({ threadId: z.string().min(1), id: z.uuid() }).strict(),
+    "plugins:saveConnection": integrationConnectionInputSchema,
+    "plugins:removeConnection": z.object({ id: z.uuid() }).strict(),
     "plugins:get": z.object({
       pluginId: z.string().min(1),
     }),
@@ -568,6 +579,8 @@ export function createDesktopIpcPayloadValidator(
     }),
     "runbooks:importFromFile": runbookImportFromFileSchema,
     "runbooks:execute": z.object({
+      expectedRevisionNumber: z.number().int().positive().optional(),
+      requestKey: z.string().min(1).max(200).optional(),
       runbookId: z.string().min(1),
       parameterValues: z.record(z.string(), z.string()).optional(),
       incidentThreadId: z.string().optional(),
@@ -592,6 +605,7 @@ export function createDesktopIpcPayloadValidator(
 
   const noPayloadChannels: DesktopRpcChannel[] = [
     "plugins:list",
+    "plugins:listConnections",
     "settings:getAll",
     "settings:getGeneral",
     "settings:getSecurity",
