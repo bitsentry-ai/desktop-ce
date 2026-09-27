@@ -8,6 +8,7 @@ import type { DesktopPluginDescriptor, DesktopPluginExecutionResult } from "./pl
 export const integrationOperationSchema = z.object({
   id: z.uuid(), threadId: z.string().min(1), connectionId: z.uuid(),
   connectionName: z.string(), target: z.string(), pluginId: z.string(), actionId: z.string(),
+  pluginVersion: z.string().optional(),
   input: z.record(z.string(), z.unknown()), publicUpdate: z.boolean(), requiresCloseRequest: z.boolean(),
   status: z.enum(["proposed", "executing", "succeeded", "failed", "uncertain", "cancelled", "reconciled"]),
   createdAt: z.string(), updatedAt: z.string(), result: z.unknown().optional(), message: z.string().optional(),
@@ -17,10 +18,18 @@ export type IntegrationWriteRequest = { connectionId: string; actionId: string; 
 export interface IntegrationOperationStore {
   list(threadId: string): Promise<IntegrationOperation[]>;
   get(id: string): Promise<IntegrationOperation | null>;
-  create(operation: IntegrationOperation): Promise<void>;
+  create(operation: IntegrationOperation, pluginVersion?: string, intentKey?: string, connectionRevision?: number): Promise<void>;
+  findByIntent?(connectionId: string, intentKey: string): Promise<IntegrationOperation | null>;
+  lease?: {
+    approveAndClaim(id: string): Promise<string | null>;
+    heartbeat(id: string, token: string): Promise<boolean>;
+    finish(id: string, token: string, patch: Pick<IntegrationOperation, "status" | "updatedAt"> & Partial<Pick<IntegrationOperation, "result" | "message">>): Promise<boolean>;
+    expire(): Promise<unknown>;
+  };
   transition(id: string, expected: IntegrationOperation["status"], patch: Pick<IntegrationOperation, "status" | "updatedAt"> & Partial<Pick<IntegrationOperation, "result" | "message">>, expectedUpdatedAt?: string): Promise<boolean>;
 }
 export interface IntegrationWriteRuntime {
+  connectionRevision?: number;
   connection: IntegrationConnection;
   plugin: DesktopPluginDescriptor;
   execute(request: IntegrationWriteRequest): Promise<DesktopPluginExecutionResult>;
@@ -57,6 +66,7 @@ export class IntegrationOperationService {
   private static readonly activeExecutions = new Set<string>();
   constructor(private readonly store: IntegrationOperationStore, private readonly resolve: (id: string) => Promise<IntegrationWriteRuntime>) {}
   async list(threadId: string) {
+    if (this.store.lease) { await this.store.lease.expire(); return this.store.list(threadId); }
     const rows = await this.store.list(threadId);
     for (const row of rows) {
       if (row.status === "executing" && Date.now() - Date.parse(row.updatedAt) > 120_000) {
@@ -74,17 +84,18 @@ export class IntegrationOperationService {
       const previous = (await this.store.list(threadId)).filter((row) => row.connectionId === request.connectionId && row.target === runtime.connection.target && row.actionId === request.actionId && JSON.stringify(canonical(row.input)) === JSON.stringify(canonical(input))).sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
       if (previous !== undefined) return previous;
     }
-    const id = await proposalId({ threadId, connectionId: request.connectionId, target: runtime.connection.target, actionId: request.actionId, input, renewalOf: renewalOf ?? null });
-    const existing = await this.store.get(id);
+    const intentKey = await proposalId({ threadId, connectionId: request.connectionId, target: runtime.connection.target, actionId: request.actionId, input, renewalOf: renewalOf ?? null });
+    const existing = this.store.findByIntent ? await this.store.findByIntent(request.connectionId, intentKey) : await this.store.get(intentKey);
     if (existing !== null) return existing;
+    const id = this.store.findByIntent ? crypto.randomUUID() : intentKey;
     const operation = integrationOperationSchema.parse({
       id, threadId, connectionId: runtime.connection.id,
       connectionName: runtime.connection.name, target: runtime.connection.target,
-      pluginId: runtime.plugin.id, actionId: request.actionId, input,
+      pluginId: runtime.plugin.id, pluginVersion: runtime.plugin.version, actionId: request.actionId, input,
       ...classify(runtime, { ...request, input }), status: "proposed", createdAt: now, updatedAt: now,
     });
-    try { await this.store.create(operation); }
-    catch (error) { const concurrent = await this.store.get(id); if (concurrent !== null) { return concurrent; } throw error; }
+    try { await this.store.create(operation, runtime.plugin.version, intentKey, runtime.connectionRevision); }
+    catch (error) { const concurrent = this.store.findByIntent ? await this.store.findByIntent(request.connectionId, intentKey) : await this.store.get(id); if (concurrent !== null) { return concurrent; } throw error; }
     return operation;
   }
 
@@ -132,25 +143,30 @@ export class IntegrationOperationService {
     if (operation.requiresCloseRequest && !closeRequested) throw new Error("Closing requires an explicit engineer request.");
     const runtime = await this.resolve(operation.connectionId);
     if (runtime.connection.target !== operation.target || runtime.plugin.id !== operation.pluginId) throw new Error("Connection changed. Create a new preview.");
+    if (operation.pluginVersion !== undefined && runtime.plugin.version !== operation.pluginVersion) throw new Error("Plugin changed. Create a new preview.");
     validateWrite(runtime, operation);
     const flags = classify(runtime, operation);
     if (flags.requiresCloseRequest !== operation.requiresCloseRequest || flags.publicUpdate !== operation.publicUpdate) throw new Error("Ticket mapping changed. Create a new preview.");
-    if (!await this.store.transition(id, "proposed", { status: "executing", updatedAt: new Date().toISOString() })) return this.owned(threadId, id);
+    const token = this.store.lease ? await this.store.lease.approveAndClaim(id) : null;
+    if (this.store.lease ? token === null : !await this.store.transition(id, "proposed", { status: "executing", updatedAt: new Date().toISOString() })) return this.owned(threadId, id);
+    const finish = (patch: Pick<IntegrationOperation, "status" | "updatedAt"> & Partial<Pick<IntegrationOperation, "result" | "message">>) =>
+      this.store.lease && token !== null ? this.store.lease.finish(id, token, patch) : this.store.transition(id, "executing", patch);
     IntegrationOperationService.activeExecutions.add(id);
     const heartbeat = setInterval(() => {
-      void this.store.transition(id, "executing", { status: "executing", updatedAt: new Date().toISOString() }).catch(() => {});
+      void (this.store.lease && token !== null ? this.store.lease.heartbeat(id, token) : this.store.transition(id, "executing", { status: "executing", updatedAt: new Date().toISOString() })).catch(() => {});
     }, 30_000);
     try {
       const result = await runtime.execute(operation);
-      const recorded = await this.store.transition(id, "executing", {
+      await finish({
         ...remoteWriteOutcome(result),
         updatedAt: new Date().toISOString(),
       });
-      if (!recorded && result.ok) await this.store.transition(id, "uncertain", { status: "succeeded", result: result.data, message: undefined, updatedAt: new Date().toISOString() });
+
     } catch {
-      await this.store.transition(id, "executing", { status: "uncertain", message: "The request was interrupted. The remote change may have completed; inspect it before retrying.", updatedAt: new Date().toISOString() });
+      await finish({ status: "uncertain", message: "The request was interrupted. The remote change may have completed; inspect it before retrying.", updatedAt: new Date().toISOString() });
     } finally {
       clearInterval(heartbeat);
+      await this.store.lease?.expire();
       IntegrationOperationService.activeExecutions.delete(id);
     }
     return this.owned(threadId, id);

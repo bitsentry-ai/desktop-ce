@@ -5,6 +5,12 @@ import { integrationConnectionInputSchema, validateIntegrationConnection, descri
 const STORE_KEY = "bitsentry.integration-connections.v1";
 const connectionsSchema = z.array(integrationConnectionInputSchema).max(100);
 
+export interface IntegrationConnectionStorage {
+  list(): Promise<(IntegrationConnectionInput & { revision?: number })[]>;
+  save(input: IntegrationConnectionInput, plugin?: import("./plugins.types").DesktopPluginDescriptor | null): Promise<void>;
+  remove(id: string): Promise<void>;
+}
+
 /** Uses the product's credential store, including its encryption and atomic writes. */
 export class IntegrationConnectionStore {
   private pending: Promise<unknown> = Promise.resolve();
