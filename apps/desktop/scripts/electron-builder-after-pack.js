@@ -6,6 +6,7 @@ module.exports = async function afterPack(context) {
   const payload = JSON.stringify({
     appOutDir: context.appOutDir,
     electronPlatformName: context.electronPlatformName,
+    arch: context.arch,
     packager: {
       appInfo: {
         productFilename: context.packager?.appInfo?.productFilename,
