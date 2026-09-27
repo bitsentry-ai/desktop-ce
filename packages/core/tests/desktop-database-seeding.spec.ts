@@ -8,18 +8,6 @@ import {
 function createClient() {
   const runbookActionUpdate = vi.fn(() => Promise.resolve({}));
   const client: DesktopDatabaseSeedClient = {
-    role: {
-      findUnique: vi.fn(() => Promise.resolve({ id: 1, name: "operator" })),
-      create: vi.fn(() => Promise.resolve({})),
-    },
-    status: {
-      findUnique: vi.fn(({ where }: { where: { id: number } }) => {
-        if (where.id === 1) return Promise.resolve({ id: 1, name: "active" });
-        if (where.id === 2) return Promise.resolve({ id: 2, name: "inactive" });
-        return Promise.resolve(null);
-      }),
-      create: vi.fn(() => Promise.resolve({})),
-    },
     setting: {
       findUnique: vi.fn(() => Promise.resolve(null)),
       create: vi.fn(() => Promise.resolve({})),
@@ -27,18 +15,6 @@ function createClient() {
       findMany: vi.fn(() => Promise.resolve([])),
       delete: vi.fn(() => Promise.resolve({})),
     },
-    agent: {
-      create: vi.fn(() => Promise.resolve({})),
-      count: vi.fn(() => Promise.resolve(1)),
-    },
-    agentHealth: { create: vi.fn(() => Promise.resolve({})) },
-    agentTag: { create: vi.fn(() => Promise.resolve({})) },
-    vulnerability: { create: vi.fn(() => Promise.resolve({})) },
-    vulnerabilityAgent: { create: vi.fn(() => Promise.resolve({})) },
-    vulnerabilityTimeline: { create: vi.fn(() => Promise.resolve({})) },
-    threatIntelligence: { create: vi.fn(() => Promise.resolve({})) },
-    threatIndicator: { create: vi.fn(() => Promise.resolve({})) },
-    auditLog: { create: vi.fn(() => Promise.resolve({})) },
     runbookAction: {
       findMany: vi.fn(() => Promise.resolve([
         {

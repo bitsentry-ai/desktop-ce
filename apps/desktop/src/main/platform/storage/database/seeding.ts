@@ -16,6 +16,3 @@ export async function seedDefaults(client: DbClient): Promise<void> {
   await desktopDatabaseSeeders.seedDefaults(client)
 }
 
-export async function seedDemoData(client: DbClient): Promise<void> {
-  await desktopDatabaseSeeders.seedDemoData(client)
-}
