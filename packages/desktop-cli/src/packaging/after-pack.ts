@@ -124,7 +124,8 @@ async function ensureCliRuntimeDependencies(
   if (targetArch === undefined) throw new Error('Unsupported keyring target architecture')
   const architectures = targetArch === 'universal' ? ['x64', 'arm64'] : [targetArch]
   for (const architecture of architectures) {
-    const suffix = context.electronPlatformName === 'linux' ? '-gnu' :
+    const suffix = context.electronPlatformName === 'linux' ?
+      architecture === 'arm' ? '-gnueabihf' : '-gnu' :
       context.electronPlatformName === 'win32' ? '-msvc' : ''
     await copyResolvedPackage(
       `@napi-rs/keyring-${context.electronPlatformName}-${architecture}${suffix}`,
