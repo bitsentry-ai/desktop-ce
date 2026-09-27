@@ -1182,6 +1182,14 @@ export class DbClient {
     return Promise.resolve(rows)
   }
 
+  /** Parameterized single-statement access for operational stores. */
+  $queryRaw<T extends Record<string, unknown> = Record<string, unknown>>(
+    statement: string,
+    ...parameters: (string | number | bigint | Buffer | null)[]
+  ): Promise<T[]> {
+    return Promise.resolve(this.sqlite.prepare(statement).all(...parameters) as T[])
+  }
+
   async $transaction<T>(operation: () => Promise<T>): Promise<T> {
     this.sqlite.exec('BEGIN IMMEDIATE')
     try {
