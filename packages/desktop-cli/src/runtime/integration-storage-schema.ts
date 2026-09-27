@@ -154,7 +154,11 @@ export async function ensureIntegrationStorageSchema(db: DbClient): Promise<void
     // can interleave unrelated work inside this migration transaction.
     await db.$executeRawUnsafe(`BEGIN IMMEDIATE; ${integrationStorageSchema} COMMIT;`)
   } catch (error) {
-    await db.$executeRawUnsafe('ROLLBACK').catch(() => undefined)
+    try {
+      await db.$executeRawUnsafe('ROLLBACK')
+    } catch {
+      // BEGIN may have failed before this connection opened a transaction.
+    }
     throw error
   }
 }
