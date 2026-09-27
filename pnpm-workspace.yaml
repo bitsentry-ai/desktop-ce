@@ -2,6 +2,9 @@ packages:
   - 'apps/*'
   - 'packages/*'
   - 'packages/plugins/*'
+  # These submodules install/build independently using their own lockfiles.
+  - '!packages/plugins/itop'
+  - '!packages/plugins/outline'
   - 'packages/electron-trpc/packages/*'
 overrides:
   '@anthropic-ai/sdk': 0.91.1

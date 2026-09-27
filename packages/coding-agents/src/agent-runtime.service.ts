@@ -1,3 +1,4 @@
+import { extractIntegrationResources } from "@bitsentry-ce/core/features/plugins";
 /**
  * Agent Runtime Service
  *
@@ -3075,6 +3076,24 @@ export class AgentRuntimeService {
       saveRunbookAuthoringProposal: (proposal) =>
         this.authoringProposalStore?.save(proposal) ?? Promise.resolve(),
       pluginRuntime: this.pluginRuntime,
+      integrationConnections: {
+        listResources: () => session.incidentThreadId && this.pluginRuntime ? this.pluginRuntime.refreshIntegrationResources(session.incidentThreadId) : Promise.resolve([]),
+        proposeWrite: async (request) => {
+          if (!session.incidentThreadId || this.pluginRuntime === undefined) throw new Error('An active conversation is required.');
+          return this.pluginRuntime.getIntegrationOperations().propose(session.incidentThreadId, request);
+        },
+        list: () => this.pluginRuntime?.listIntegrationConnections() ?? Promise.resolve([]),
+        executeRead: async (request) => {
+          if (this.pluginRuntime === undefined) throw new Error('Plugin runtime is unavailable.');
+          const connection = (await this.pluginRuntime.listIntegrationConnections()).find((row) => row.id === request.connectionId);
+          const action = connection?.actions.find((row) => row.id === request.actionId);
+          if (action?.riskLevel !== 'read') throw new Error('Only read actions are allowed here.');
+          const result = await this.pluginRuntime.executeIntegrationAction(request, { signal: session.abortController.signal, deadlineAt: Date.now() + 30_000 });
+          try { if (result.ok && connection && session.incidentThreadId) await this.pluginRuntime.getIntegrationResources().save(extractIntegrationResources(session.incidentThreadId, connection, result.data)); }
+          catch { return { ...result, resourceWarning: true }; }
+          return result;
+        },
+      },
       ...(options.observeEvents
         ? { onToolEvent: (event: HostToolEvent) => this.observeHostToolEvent(session, event) }
         : {}),

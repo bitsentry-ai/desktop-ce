@@ -1,3 +1,9 @@
+import { parseIntegrationDestinationPolicy } from "./integration-connections";
+import { refreshLinkedIntegrationResource, type LinkedResourceInput, StoredIntegrationResources, extractIntegrationResources } from "./integration-resources";
+import { IntegrationOperationService } from "./integration-operations";
+import { StoredIntegrationOperations } from "./integration-operation-store";
+import { IntegrationConnectionStore } from "./integration-connection-store";
+import { applyIntegrationDestinationPolicy, describeIntegrationConnection, type IntegrationConnection, type IntegrationConnectionInput } from "./integration-connections";
 import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
@@ -253,11 +259,13 @@ function applyFieldDefaults(
 }
 
 class DesktopNodePluginRuntimeService extends DesktopPluginRuntimeService {
+  private readonly connections: IntegrationConnectionStore;
   constructor(
     private readonly storedAuthStore: DesktopPluginStoredAuthStore,
     private readonly localPluginDirectories: string[],
   ) {
     super(new DesktopPluginRegistry());
+    this.connections = new IntegrationConnectionStore(storedAuthStore);
     this.reloadRegistry();
   }
 
@@ -323,6 +331,65 @@ class DesktopNodePluginRuntimeService extends DesktopPluginRuntimeService {
       ...installResult,
       descriptor,
     });
+  }
+
+  override async refreshIntegrationResource(input: LinkedResourceInput) {
+    const connection = (await this.listIntegrationConnections()).find((row) => row.id === input.connectionId);
+    const plugin = connection ? this.getPlugin(connection.pluginId) : null;
+    if (!connection || !plugin) throw new Error("Connection or plugin is unavailable.");
+    return refreshLinkedIntegrationResource(input, this.getIntegrationResources(), { connection, plugin, execute: (request) => this.executeIntegrationAction(request, { deadlineAt: Date.now() + 30_000 }) });
+  }
+  private resources?: StoredIntegrationResources;
+  override getIntegrationResources() { this.resources ??= new StoredIntegrationResources(this.storedAuthStore); return this.resources; }
+  private operations?: IntegrationOperationService;
+  override getIntegrationOperations(): IntegrationOperationService {
+    if (this.storedAuthStore === NOOP_DESKTOP_PLUGIN_STORED_AUTH_STORE) throw new Error("Durable proposal storage is unavailable.");
+    this.operations ??= new IntegrationOperationService(new StoredIntegrationOperations(this.storedAuthStore), async (id) => {
+      const connection = (await this.connections.list()).find((row) => row.id === id);
+      if (connection === undefined) throw new Error("Connection unavailable.");
+      const plugin = this.getPlugin(connection.pluginId);
+      if (plugin === null) throw new Error("Plugin unavailable.");
+      return { connection: applyIntegrationDestinationPolicy(describeIntegrationConnection(connection, plugin), { ...parseIntegrationDestinationPolicy(process.env.BITSENTRY_INTEGRATION_ALLOWED_TARGETS), itop: process.env.ITOP_ALLOWED_BASE_URLS, outline: process.env.OUTLINE_ALLOWED_API_BASES }), plugin,
+        execute: (request) => super.executeAction({ pluginId: connection.pluginId, actionId: request.actionId, input: request.input, auth: connection.auth, connectionConfig: connection.config === undefined ? undefined : { version: connection.configVersion ?? 0, value: connection.config } }, { deadlineAt: Date.now() + 30_000 }),
+      };
+    });
+    return this.operations;
+  }
+
+  override async refreshIntegrationResources(threadId: string) {
+    const operations = await this.getIntegrationOperations().list(threadId);
+    for (const operation of operations.filter((row) => ["succeeded", "reconciled"].includes(row.status))) {
+      const resources = extractIntegrationResources(threadId, { id: operation.connectionId, name: operation.connectionName, pluginId: operation.pluginId, target: operation.target }, operation.result, typeof operation.input.class === "string" ? operation.input.class : undefined);
+      const existing = await this.getIntegrationResources().list(threadId);
+      await this.getIntegrationResources().save(resources.filter((resource) => !existing.some((row) => row.connectionId === resource.connectionId && row.resourceType === resource.resourceType && row.externalId === resource.externalId && row.observedAt >= operation.updatedAt)).map((resource) => ({ ...resource, observedAt: operation.updatedAt })));
+    }
+    return this.getIntegrationResources().list(threadId);
+  }
+
+  override async listIntegrationConnections(): Promise<IntegrationConnection[]> {
+    return (await this.connections.list()).map((connection) =>
+      applyIntegrationDestinationPolicy(describeIntegrationConnection(connection, this.getPlugin(connection.pluginId)), { ...parseIntegrationDestinationPolicy(process.env.BITSENTRY_INTEGRATION_ALLOWED_TARGETS), itop: process.env.ITOP_ALLOWED_BASE_URLS, outline: process.env.OUTLINE_ALLOWED_API_BASES }));
+  }
+
+  override saveIntegrationConnection(input: IntegrationConnectionInput): Promise<void> {
+    if (input.config !== undefined) this.registry.validateConnectionConfig(input.pluginId, input.configVersion ?? 0, input.config);
+    return this.connections.save(input, this.getPlugin(input.pluginId));
+  }
+
+  override removeIntegrationConnection(id: string): Promise<void> {
+    return this.connections.remove(id);
+  }
+
+  override async executeIntegrationAction(
+    request: { connectionId: string; actionId: string; input: Record<string, unknown> },
+    operation?: DesktopPluginOperationContext,
+  ): Promise<DesktopPluginExecutionResult> {
+    const connection = (await this.connections.list()).find((row) => row.id === request.connectionId);
+    if (connection === undefined || !connection.enabled) throw new Error("Integration connection is missing or disabled.");
+    if ((await this.listIntegrationConnections()).find((row) => row.id === connection.id)?.availability !== "configured") throw new Error("Connection destination is unavailable.");
+    if (this.getPlugin(connection.pluginId)?.actions.find((row) => row.id === request.actionId)?.riskLevel !== "read") throw new Error("Writes require a stored, engineer-approved proposal.");
+    // Call the registry directly: never merge another instance's default auth.
+    return super.executeAction({ pluginId: connection.pluginId, actionId: request.actionId, input: request.input, auth: connection.auth, connectionConfig: connection.config === undefined ? undefined : { version: connection.configVersion ?? 0, value: connection.config } }, operation);
   }
 
   override async executeAction(

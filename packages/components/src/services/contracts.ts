@@ -1,3 +1,4 @@
+import type { IntegrationConnection, IntegrationConnectionInput } from "@bitsentry-ce/core/features/plugins";
 import type {
   AccessLevel,
   AgentThreadSnapshot,
@@ -478,6 +479,7 @@ export interface PluginDataSourceSetupField {
 }
 
 export interface PluginDescriptorMetadata {
+  persistence?: import("@bitsentry-ce/core/features/plugins").DesktopPluginPersistence;
   dataSource?: PluginDataSourceMetadata;
 }
 
@@ -519,6 +521,17 @@ export interface PluginInstallSummary {
 }
 
 export interface PluginsServicePort {
+  refreshResource?(resource: import("@bitsentry-ce/core/features/plugins").LinkedResourceInput): Promise<unknown>;
+  selectResource?(resource: import("@bitsentry-ce/core/features/plugins").IntegrationResource, selected: boolean): Promise<unknown>;
+  renewOperation?(threadId: string, id: string): Promise<unknown>;
+  reconcileOperation?(threadId: string, id: string, applied: boolean, confirmed: boolean, externalId?: string): Promise<unknown>;
+  listResources?(threadId: string): Promise<import("@bitsentry-ce/core/features/plugins").IntegrationResource[]>;
+  listOperations?(threadId: string): Promise<import('@bitsentry-ce/core/features/plugins').IntegrationOperation[]>;
+  approveOperation?(threadId: string, id: string, closeRequested: boolean): Promise<unknown>;
+  cancelOperation?(threadId: string, id: string): Promise<unknown>;
+  listConnections?(): Promise<IntegrationConnection[]>;
+  saveConnection?(input: IntegrationConnectionInput): Promise<unknown>;
+  removeConnection?(id: string): Promise<unknown>;
   list(): Promise<PluginDescriptor[]>;
   get(pluginId: string): Promise<PluginDescriptor | null>;
   listAvailable(
@@ -1036,6 +1049,8 @@ export interface RunbooksServicePort {
   listTelemetryNeeds(): Promise<TelemetryNeedOption[]>;
   execute(input: {
     runbookId: string;
+    expectedRevisionNumber?: number;
+    requestKey?: string;
     parameterValues?: RunbookParameterValues;
     incidentThreadId?: string;
     triggerContext?: RunbookTriggerContext;
