@@ -1,5 +1,7 @@
-import { mkdir, readFile, rename, rm, writeFile } from 'fs/promises'
+import { mkdir, open, readFile, rename, rm } from 'fs/promises'
+import { withCredentialFileLock } from './credential-file-lock.js'
 import { randomUUID } from 'node:crypto'
+import { keychainPluginCredentialCipher } from './keychain-plugin-cipher.js'
 import path from 'path'
 
 import type {
@@ -24,8 +26,9 @@ type PluginCredentialsFile = {
 const STORE_VERSION = 1 as const
 
 export interface PluginCredentialCipher {
-  encrypt(value: string): string
-  decrypt(value: string): string
+  format?: 'keyring-v1'
+  encrypt(value: string, recordId?: string): string
+  decrypt(value: string, recordId?: string): string
 }
 
 export function electronPluginCredentialCipher(): PluginCredentialCipher {
@@ -96,7 +99,7 @@ function cloneStoredAuthValue(
 function normalizeStoredAuthRecord(
   values: DesktopPluginStoredAuthRecord,
 ): DesktopPluginStoredAuthRecord {
-  const normalized: DesktopPluginStoredAuthRecord = {}
+  const normalized: DesktopPluginStoredAuthRecord = Object.create(null) as DesktopPluginStoredAuthRecord
 
   for (const [key, value] of Object.entries(values)) {
     const normalizedKey = key.trim()
@@ -119,7 +122,7 @@ function removePluginRecord(
   plugins: Record<string, PluginAuthRecord>,
   pluginId: string,
 ): Record<string, PluginAuthRecord> {
-  const next: Record<string, PluginAuthRecord> = {}
+  const next: Record<string, PluginAuthRecord> = Object.create(null) as Record<string, PluginAuthRecord>
 
   for (const [key, value] of Object.entries(plugins)) {
     if (key === pluginId) {
@@ -156,22 +159,24 @@ async function readStore(storePath: string): Promise<PluginCredentialsFile> {
 }
 
 async function writeStore(storePath: string, data: PluginCredentialsFile): Promise<void> {
-  await mkdir(path.dirname(storePath), { recursive: true })
-
-  const payload = JSON.stringify(data, null, 2)
+  await mkdir(path.dirname(storePath), { recursive: true, mode: 0o700 })
   const tempPath = `${storePath}.tmp-${randomUUID()}`
-  await writeFile(tempPath, payload, { encoding: 'utf-8', mode: 0o600 })
-
   try {
-    await rename(tempPath, storePath)
-  } catch (error) {
-    if (process.platform === 'win32') {
-      await rm(storePath, { force: true })
-      await rename(tempPath, storePath)
-      return
+    const file = await open(tempPath, 'wx', 0o600)
+    try {
+      await file.writeFile(JSON.stringify(data, null, 2), 'utf8')
+      await file.sync()
+    } finally {
+      await file.close()
     }
-
-    throw error
+    // Never unlink the original as a fallback: failed replacement preserves it.
+    await rename(tempPath, storePath)
+    if (process.platform !== 'win32') {
+      const directory = await open(path.dirname(storePath), 'r')
+      try { await directory.sync() } finally { await directory.close() }
+    }
+  } finally {
+    await rm(tempPath, { force: true })
   }
 }
 
@@ -179,19 +184,20 @@ export class LocalPluginCredentialsStore implements DesktopPluginStoredAuthStore
   private readonly storePath: string
   private queue: Promise<unknown> = Promise.resolve()
 
-  constructor(userDataPath?: string, private readonly cipherFactory: () => PluginCredentialCipher = electronPluginCredentialCipher) {
+  constructor(userDataPath?: string, private readonly cipherFactory: () => PluginCredentialCipher = () => keychainPluginCredentialCipher(userDataPath ?? getRuntimeUserDataPath(), electronPluginCredentialCipher)) {
     this.storePath = resolveStorePath(userDataPath)
   }
 
   private serial<T>(operation: () => Promise<T>): Promise<T> {
-    const result = this.queue.then(operation, operation)
+    const locked = () => withCredentialFileLock(this.storePath, operation)
+    const result = this.queue.then(locked, locked)
     this.queue = result.then(() => undefined, () => undefined)
     return result
   }
 
-  private decode(record: PluginAuthRecord, cipher: PluginCredentialCipher): DesktopPluginStoredAuthRecord {
+  private decode(record: PluginAuthRecord, cipher: PluginCredentialCipher, id: string): DesktopPluginStoredAuthRecord {
     try {
-      const raw: unknown = JSON.parse(cipher.decrypt(record.encryptedValues!))
+      const raw: unknown = JSON.parse(cipher.decrypt(record.encryptedValues!, id))
       if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) throw new Error('Invalid values')
       return normalizeStoredAuthRecord(raw as DesktopPluginStoredAuthRecord)
     } catch {
@@ -199,18 +205,23 @@ export class LocalPluginCredentialsStore implements DesktopPluginStoredAuthStore
     }
   }
 
-  private encrypt(values: DesktopPluginStoredAuthRecord, cipher: PluginCredentialCipher): PluginAuthRecord {
+  private encrypt(values: DesktopPluginStoredAuthRecord, cipher: PluginCredentialCipher, id: string): PluginAuthRecord {
     const serialized = JSON.stringify(values)
-    const encryptedValues = cipher.encrypt(serialized)
-    if (cipher.decrypt(encryptedValues) !== serialized) throw new Error('Credential encryption verification failed; no data was changed.')
+    const encryptedValues = cipher.encrypt(serialized, id)
+    if (cipher.decrypt(encryptedValues, id) !== serialized) throw new Error('Credential encryption verification failed; no data was changed.')
     return { encryptedValues, updatedAt: new Date().toISOString() }
   }
 
   private migrate(store: PluginCredentialsFile, cipher: PluginCredentialCipher): boolean {
+    // Verify all existing ciphertext before creating a replacement key or writing.
+    const values = new Map<string, DesktopPluginStoredAuthRecord>()
+    for (const [id, record] of Object.entries(store.plugins)) {
+      values.set(id, record.values === undefined ? this.decode(record, cipher, id) : normalizeStoredAuthRecord(record.values))
+    }
     let changed = false
     for (const [id, record] of Object.entries(store.plugins)) {
-      if (record.values === undefined) continue
-      store.plugins[id] = this.encrypt(normalizeStoredAuthRecord(record.values), cipher)
+      if (record.values === undefined && !(cipher.format === 'keyring-v1' && !record.encryptedValues?.startsWith('keyring:v1:'))) continue
+      store.plugins[id] = this.encrypt(values.get(id)!, cipher, id)
       changed = true
     }
     return changed
@@ -223,7 +234,7 @@ export class LocalPluginCredentialsStore implements DesktopPluginStoredAuthStore
       const cipher = this.cipherFactory()
       if (this.migrate(store, cipher)) await writeStore(this.storePath, store)
       const record = store.plugins[pluginId]
-      return record === undefined ? {} : this.decode(record, cipher)
+      return record === undefined ? {} : this.decode(record, cipher, pluginId)
     })
   }
 
@@ -236,7 +247,7 @@ export class LocalPluginCredentialsStore implements DesktopPluginStoredAuthStore
       if (Object.keys(normalized).length === 0) {
         store.plugins = removePluginRecord(store.plugins, pluginId)
       } else {
-        store.plugins[pluginId] = this.encrypt(normalized, cipher)
+        Object.defineProperty(store.plugins, pluginId, { value: this.encrypt(normalized, cipher, pluginId), enumerable: true, writable: true, configurable: true })
       }
       await writeStore(this.storePath, store)
       return { ...normalized }
@@ -246,7 +257,7 @@ export class LocalPluginCredentialsStore implements DesktopPluginStoredAuthStore
   clear(pluginId: string): Promise<void> {
     return this.serial(async () => {
       const store = await readStore(this.storePath)
-      if (store.plugins[pluginId] === undefined) return
+      if (!Object.hasOwn(store.plugins, pluginId)) return
       const cipher = this.cipherFactory()
       this.migrate(store, cipher)
       store.plugins = removePluginRecord(store.plugins, pluginId)

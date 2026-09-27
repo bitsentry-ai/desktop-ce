@@ -57,6 +57,7 @@
     "@bitsentry-ce/i18n": "workspace:*",
     "@dnd-kit/react": "^0.4.0",
     "@electron/notarize": "^3.1.1",
+    "@napi-rs/keyring": "2.1.0",
     "@sentry/electron": "7.13.0",
     "@sentry/react": "10.50.0",
     "@tanstack/query-core": "^5.90.21",
