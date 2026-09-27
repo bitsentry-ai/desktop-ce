@@ -16,7 +16,11 @@ Inside the monorepo, Desktop CE remains the tracked base for these desktop-share
 
 ## Setup
 
+Use the Node version in `.nvmrc` (22.23.3, bundling npm with patched `tar@7.5.22`).
+
 ```sh
+nvm install
+nvm use
 pnpm run setup
 ```
 

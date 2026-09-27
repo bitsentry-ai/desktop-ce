@@ -10,7 +10,8 @@
   },
   "pnpm": {
     "overrides": {
-      "typescript": "npm:@typescript/typescript6@^6.0.2"
+      "typescript": "npm:@typescript/typescript6@^6.0.2",
+      "tar": "7.5.22"
     }
   },
   "scripts": {
