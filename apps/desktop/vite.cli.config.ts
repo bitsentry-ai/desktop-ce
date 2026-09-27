@@ -7,7 +7,7 @@ const electronTrpcPackageRoot = resolve(
   '../../packages/electron-trpc/packages/electron-trpc',
 )
 const desktopRequire = createRequire(resolve(__dirname, 'package.json'))
-const cliExternals = new Set(['electron', 'better-sqlite3', 'node-pty'])
+const cliExternals = new Set(['electron', 'better-sqlite3', 'node-pty', '@napi-rs/keyring'])
 const nodeBuiltinModules = new Set([
   ...builtinModules,
   ...builtinModules.map((moduleId) => `node:${moduleId}`),
@@ -54,7 +54,7 @@ export default defineConfig({
     external: [
       'electron',
       'better-sqlite3',
-      'node-pty',
+      'node-pty', '@napi-rs/keyring',
     ],
   },
   build: {
@@ -67,7 +67,7 @@ export default defineConfig({
       '../../packages/desktop-cli/src/cli/desktop-runbooks-entry.ts',
     ),
     rollupOptions: {
-      external: ['electron', 'better-sqlite3', 'node-pty'],
+      external: ['electron', 'better-sqlite3', 'node-pty', '@napi-rs/keyring'],
       output: {
         entryFileNames: 'cli.js',
         chunkFileNames: 'chunks/[name]-[hash].js',
