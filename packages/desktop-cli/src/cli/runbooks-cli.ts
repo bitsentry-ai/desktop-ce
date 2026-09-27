@@ -19,13 +19,18 @@ import type {
   DesktopPluginDescriptor,
   DesktopPluginFieldDefinition,
   DesktopPluginStoredAuthRecord,
+  DesktopPluginStoredAuthStore,
   DesktopPluginStoredAuthValue,
 } from '@bitsentry-ce/core/features/plugins'
 
 import { LocalPluginCredentialsStore } from '../runtime/plugin-credentials-store'
 import { getRuntimeUserDataPath } from '../runtime/runtime-paths'
 
-type ParsedArgs = {
+export type RunbookCliCredentialOptions = {
+  createPluginCredentialsStore?: (userDataPath?: string) => DesktopPluginStoredAuthStore
+}
+
+type ParsedArgs = RunbookCliCredentialOptions & {
   positionals: string[]
   flags: Map<string, string[]>
 }
@@ -648,7 +653,7 @@ function resolveUserPluginDirectory(args: ParsedArgs): string {
 function createPluginRuntime(args: ParsedArgs) {
   const installRoot = resolveUserPluginDirectory(args)
   const userDataDirectory = resolveConfiguredUserDataDirectory(args)
-  const authStore = new LocalPluginCredentialsStore(userDataDirectory)
+  const authStore = args.createPluginCredentialsStore?.(userDataDirectory) ?? new LocalPluginCredentialsStore(userDataDirectory)
   const localPluginDirectories = resolveDesktopPluginDirectories([installRoot])
 
   return {
@@ -1134,8 +1139,9 @@ function resolveCliCommand(args: ParsedArgs): ResolvedCliCommand | null {
 export async function runRunbooksCli(
   createRuntime: RunbookCliRuntimeFactory,
   argv = process.argv,
+  credentialOptions: RunbookCliCredentialOptions = {},
 ): Promise<void> {
-  const args = parseArgv(argv.slice(2))
+  const args = { ...parseArgv(argv.slice(2)), ...credentialOptions }
   const resolvedCommand = resolveCliCommand(args)
   if (resolvedCommand === null) {
     printHelp()
