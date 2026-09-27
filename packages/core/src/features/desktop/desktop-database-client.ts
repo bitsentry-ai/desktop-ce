@@ -1,3 +1,4 @@
+import { retireDesktopTables } from './desktop-retirement'
 import BetterSqlite3 from 'better-sqlite3'
 import { randomUUID } from 'crypto'
 import {
@@ -29,42 +30,9 @@ import {
   type AnySQLiteColumn,
 } from 'drizzle-orm/sqlite-core'
 
-const roleTable = sqliteTable('Role', {
-  id: integer('id').primaryKey(),
-  name: text('name'),
-})
 
-const statusTable = sqliteTable('Status', {
-  id: integer('id').primaryKey(),
-  name: text('name'),
-})
 
-const userTable = sqliteTable('User', {
-  id: integer('id').primaryKey({ autoIncrement: true }),
-  email: text('email'),
-  password: text('password'),
-  firstName: text('firstName'),
-  lastName: text('lastName'),
-  provider: text('provider').notNull(),
-  roleId: integer('roleId'),
-  statusId: integer('statusId'),
-  lastLoginAt: text('lastLoginAt'),
-  totpSecret: text('totpSecret'),
-  totpEnabled: integer('totpEnabled', { mode: 'boolean' }).notNull(),
-  totpBackupCodes: text('totpBackupCodes'),
-  createdAt: text('createdAt').notNull(),
-  updatedAt: text('updatedAt').notNull(),
-  deletedAt: text('deletedAt'),
-})
 
-const sessionTable = sqliteTable('Session', {
-  id: integer('id').primaryKey({ autoIncrement: true }),
-  userId: integer('userId').notNull(),
-  hash: text('hash').notNull(),
-  createdAt: text('createdAt').notNull(),
-  updatedAt: text('updatedAt').notNull(),
-  deletedAt: text('deletedAt'),
-})
 
 const settingTable = sqliteTable('Setting', {
   id: integer('id').primaryKey({ autoIncrement: true }),
@@ -85,130 +53,15 @@ const auditLogTable = sqliteTable('AuditLog', {
   createdAt: text('createdAt').notNull(),
 })
 
-const agentTable = sqliteTable('Agent', {
-  id: text('id').primaryKey(),
-  name: text('name').notNull(),
-  description: text('description'),
-  type: text('type').notNull(),
-  status: text('status').notNull(),
-  version: text('version').notNull(),
-  hostname: text('hostname'),
-  ipAddress: text('ipAddress'),
-  operatingSystem: text('operatingSystem'),
-  configuration: text('configuration'),
-  capabilities: text('capabilities').notNull(),
-  lastHeartbeat: text('lastHeartbeat'),
-  lastSeen: text('lastSeen'),
-  createdAt: text('createdAt').notNull(),
-  updatedAt: text('updatedAt').notNull(),
-  deletedAt: text('deletedAt'),
-})
 
-const agentHealthTable = sqliteTable('AgentHealth', {
-  id: text('id').primaryKey(),
-  agentId: text('agentId').notNull(),
-  cpuUsage: real('cpuUsage'),
-  memoryUsage: real('memoryUsage'),
-  diskUsage: real('diskUsage'),
-  networkIn: real('networkIn'),
-  networkOut: real('networkOut'),
-  uptime: real('uptime'),
-  errors: text('errors'),
-  warnings: text('warnings'),
-  createdAt: text('createdAt').notNull(),
-  updatedAt: text('updatedAt').notNull(),
-})
 
-const agentTagTable = sqliteTable('AgentTag', {
-  id: text('id').primaryKey(),
-  agentId: text('agentId').notNull(),
-  key: text('key').notNull(),
-  value: text('value').notNull(),
-  createdAt: text('createdAt').notNull(),
-})
 
-const vulnerabilityTable = sqliteTable('Vulnerability', {
-  id: text('id').primaryKey(),
-  title: text('title').notNull(),
-  description: text('description'),
-  severity: text('severity').notNull(),
-  status: text('status').notNull(),
-  cvssScore: real('cvssScore'),
-  cveId: text('cveId'),
-  source: text('source'),
-  affectedAsset: text('affectedAsset'),
-  remediation: text('remediation'),
-  assignedToId: integer('assignedToId'),
-  falsePositiveJustification: text('falsePositiveJustification'),
-  createdAt: text('createdAt').notNull(),
-  updatedAt: text('updatedAt').notNull(),
-  deletedAt: text('deletedAt'),
-})
 
-const vulnerabilityAgentTable = sqliteTable('VulnerabilityAgent', {
-  id: text('id').primaryKey(),
-  vulnerabilityId: text('vulnerabilityId').notNull(),
-  agentId: text('agentId').notNull(),
-})
 
-const vulnerabilityTimelineTable = sqliteTable('VulnerabilityTimeline', {
-  id: text('id').primaryKey(),
-  vulnerabilityId: text('vulnerabilityId').notNull(),
-  action: text('action').notNull(),
-  comment: text('comment'),
-  userId: integer('userId'),
-  oldStatus: text('oldStatus'),
-  newStatus: text('newStatus'),
-  createdAt: text('createdAt').notNull(),
-})
 
-const threatIntelligenceTable = sqliteTable('ThreatIntelligence', {
-  id: text('id').primaryKey(),
-  source: text('source').notNull(),
-  type: text('type').notNull(),
-  severity: text('severity').notNull(),
-  title: text('title').notNull(),
-  description: text('description').notNull(),
-  mitre: text('mitre'),
-  confidence: integer('confidence'),
-  active: integer('active', { mode: 'boolean' }).notNull(),
-  expiresAt: text('expiresAt'),
-  createdAt: text('createdAt').notNull(),
-  updatedAt: text('updatedAt').notNull(),
-})
 
-const threatIndicatorTable = sqliteTable('ThreatIndicator', {
-  id: text('id').primaryKey(),
-  threatId: text('threatId').notNull(),
-  type: text('type').notNull(),
-  value: text('value').notNull(),
-  description: text('description'),
-  createdAt: text('createdAt').notNull(),
-})
 
-const integrationTable = sqliteTable('Integration', {
-  id: text('id').primaryKey(),
-  name: text('name').notNull(),
-  type: text('type').notNull(),
-  status: text('status').notNull(),
-  configuration: text('configuration').notNull(),
-  credentials: text('credentials'),
-  lastSync: text('lastSync'),
-  errors: text('errors'),
-  createdAt: text('createdAt').notNull(),
-  updatedAt: text('updatedAt').notNull(),
-})
 
-const integrationHealthTable = sqliteTable('IntegrationHealth', {
-  id: text('id').primaryKey(),
-  integrationId: text('integrationId').notNull(),
-  status: text('status').notNull(),
-  responseTime: real('responseTime'),
-  lastChecked: text('lastChecked').notNull(),
-  errors: text('errors'),
-  createdAt: text('createdAt').notNull(),
-  updatedAt: text('updatedAt').notNull(),
-})
 
 const errorSourceTable = sqliteTable('ErrorSource', {
   id: text('id').primaryKey(),
@@ -285,27 +138,6 @@ const errorEventTable = sqliteTable('ErrorEvent', {
   updatedAt: text('updatedAt').notNull(),
 })
 
-const ticketTable = sqliteTable('Ticket', {
-  id: text('id').primaryKey(),
-  title: text('title').notNull(),
-  description: text('description'),
-  status: text('status').notNull(),
-  priority: text('priority').notNull(),
-  externalTicketId: text('externalTicketId'),
-  externalTicketNumber: text('externalTicketNumber'),
-  ticketProvider: text('ticketProvider').notNull(),
-  ticketUrl: text('ticketUrl'),
-  vulnerabilityId: text('vulnerabilityId'),
-  incidentId: text('incidentId'),
-  diagnosisId: integer('diagnosisId'),
-  automatic: integer('automatic', { mode: 'boolean' }).notNull(),
-  resolutionType: text('resolutionType'),
-  resolutionNotes: text('resolutionNotes'),
-  lessonsLearned: text('lessonsLearned'),
-  resolvedAt: text('resolvedAt'),
-  createdAt: text('createdAt').notNull(),
-  updatedAt: text('updatedAt').notNull(),
-})
 
 const jobRunTable = sqliteTable('JobRun', {
   id: text('id').primaryKey(),
@@ -324,38 +156,7 @@ const jobRunTable = sqliteTable('JobRun', {
   updatedAt: text('updatedAt').notNull(),
 })
 
-const reportTable = sqliteTable('Report', {
-  id: text('id').primaryKey(),
-  name: text('name').notNull(),
-  type: text('type').notNull(),
-  format: text('format').notNull(),
-  status: text('status').notNull(),
-  parameters: text('parameters'),
-  content: text('content'),
-  filePath: text('filePath'),
-  scheduledAt: text('scheduledAt'),
-  completedAt: text('completedAt'),
-  userId: integer('userId'),
-  createdAt: text('createdAt').notNull(),
-  updatedAt: text('updatedAt').notNull(),
-})
 
-const scanTable = sqliteTable('Scan', {
-  id: text('id').primaryKey(),
-  name: text('name').notNull(),
-  type: text('type').notNull(),
-  status: text('status').notNull(),
-  target: text('target'),
-  configuration: text('configuration'),
-  results: text('results'),
-  summary: text('summary'),
-  progress: integer('progress'),
-  startedAt: text('startedAt'),
-  completedAt: text('completedAt'),
-  jobRunId: text('jobRunId'),
-  createdAt: text('createdAt').notNull(),
-  updatedAt: text('updatedAt').notNull(),
-})
 
 const telemetryDailyTable = sqliteTable('TelemetryDaily', {
   id: integer('id').primaryKey({ autoIncrement: true }),
@@ -424,25 +225,7 @@ const diagnosisEntrySourceRefTable = sqliteTable('DiagnosisEntrySourceRef', {
   updatedAt: text('updatedAt').notNull(),
 })
 
-const cveEntryTable = sqliteTable('CveEntry', {
-  id: text('id').primaryKey(),
-  summary: text('summary'),
-  severity: text('severity'),
-  cvssScore: real('cvssScore'),
-  publishedAt: text('publishedAt'),
-  lastModifiedAt: text('lastModifiedAt'),
-  references: text('references'),
-  metadata: text('metadata'),
-  createdAt: text('createdAt').notNull(),
-  updatedAt: text('updatedAt').notNull(),
-})
 
-const telemetryCveLinkTable = sqliteTable('TelemetryCveLink', {
-  id: text('id').primaryKey(),
-  telemetryEntryId: integer('telemetryEntryId').notNull(),
-  cveId: text('cveId').notNull(),
-  createdAt: text('createdAt').notNull(),
-})
 
 const jobScheduleTable = sqliteTable('JobSchedule', {
   jobKey: text('jobKey').primaryKey(),
@@ -546,51 +329,9 @@ const runbookVersionTable = sqliteTable('RunbookVersion', {
   updatedAt: text('updatedAt').notNull(),
 })
 
-const diagnosisSessionTable = sqliteTable('DiagnosisSession', {
-  id: text('id').primaryKey(),
-  runbookId: text('runbookId').notNull(),
-  runbookVersionId: text('runbookVersionId'),
-  runbookTitle: text('runbookTitle').notNull(),
-  runbookRevisionNumber: integer('runbookRevisionNumber'),
-  runbookContextJson: text('runbookContextJson'),
-  executionId: text('executionId'),
-  executionSnapshotJson: text('executionSnapshotJson'),
-  status: text('status').notNull(),
-  startedAt: text('startedAt').notNull(),
-  completedAt: text('completedAt'),
-  prompt: text('prompt').notNull(),
-  createdAt: text('createdAt').notNull(),
-  updatedAt: text('updatedAt').notNull(),
-})
 
-const diagnosisTraceEntryTable = sqliteTable('DiagnosisTraceEntry', {
-  id: text('id').primaryKey(),
-  diagnosisSessionId: text('diagnosisSessionId').notNull(),
-  content: text('content').notNull(),
-  createdAt: text('createdAt').notNull(),
-  updatedAt: text('updatedAt').notNull(),
-})
 
-const diagnosisToolRunTable = sqliteTable('DiagnosisToolRun', {
-  id: text('id').primaryKey(),
-  diagnosisSessionId: text('diagnosisSessionId').notNull(),
-  sortOrder: integer('sortOrder').notNull(),
-  toolCallId: text('toolCallId').notNull(),
-  toolName: text('toolName').notNull(),
-  state: text('state').notNull(),
-  output: text('output'),
-  error: text('error'),
-  createdAt: text('createdAt').notNull(),
-  updatedAt: text('updatedAt').notNull(),
-})
 
-const diagnosisReportTable = sqliteTable('DiagnosisReport', {
-  id: text('id').primaryKey(),
-  diagnosisSessionId: text('diagnosisSessionId').notNull(),
-  content: text('content').notNull(),
-  createdAt: text('createdAt').notNull(),
-  updatedAt: text('updatedAt').notNull(),
-})
 
 const investigationSessionTable = sqliteTable('InvestigationSession', {
   id: text('id').primaryKey(),
@@ -640,15 +381,6 @@ const investigationReportTable = sqliteTable('InvestigationReport', {
   updatedAt: text('updatedAt').notNull(),
 })
 
-const activityEventTable = sqliteTable('ActivityEvent', {
-  id: text('id').primaryKey(),
-  entityType: text('entityType').notNull(),
-  entityId: text('entityId').notNull(),
-  eventType: text('eventType').notNull(),
-  payloadJson: text('payloadJson'),
-  createdAt: text('createdAt').notNull(),
-  updatedAt: text('updatedAt').notNull(),
-})
 
 const legacyImportLedgerTable = sqliteTable('LegacyImportLedger', {
   key: text('key').primaryKey(),
@@ -657,35 +389,16 @@ const legacyImportLedgerTable = sqliteTable('LegacyImportLedger', {
 })
 
 const modelTables = {
-  role: roleTable,
-  status: statusTable,
-  user: userTable,
-  session: sessionTable,
   setting: settingTable,
   auditLog: auditLogTable,
-  agent: agentTable,
-  agentHealth: agentHealthTable,
-  agentTag: agentTagTable,
-  vulnerability: vulnerabilityTable,
-  vulnerabilityAgent: vulnerabilityAgentTable,
-  vulnerabilityTimeline: vulnerabilityTimelineTable,
-  threatIntelligence: threatIntelligenceTable,
-  threatIndicator: threatIndicatorTable,
-  integration: integrationTable,
-  integrationHealth: integrationHealthTable,
   errorSource: errorSourceTable,
   errorIssue: errorIssueTable,
   errorEvent: errorEventTable,
-  ticket: ticketTable,
   jobRun: jobRunTable,
-  report: reportTable,
-  scan: scanTable,
   telemetryDaily: telemetryDailyTable,
   telemetryEntry: telemetryEntryTable,
   diagnosisEntry: diagnosisEntryTable,
   diagnosisEntrySourceRef: diagnosisEntrySourceRefTable,
-  cveEntry: cveEntryTable,
-  telemetryCveLink: telemetryCveLinkTable,
   jobSchedule: jobScheduleTable,
   incidentThread: incidentThreadTable,
   incidentMessage: incidentMessageTable,
@@ -694,15 +407,10 @@ const modelTables = {
   runbook: runbookTable,
   runbookAction: runbookActionTable,
   runbookVersion: runbookVersionTable,
-  diagnosisSession: diagnosisSessionTable,
-  diagnosisTraceEntry: diagnosisTraceEntryTable,
-  diagnosisToolRun: diagnosisToolRunTable,
-  diagnosisReport: diagnosisReportTable,
   investigationSession: investigationSessionTable,
   investigationTraceEntry: investigationTraceEntryTable,
   investigationToolRun: investigationToolRunTable,
   investigationReport: investigationReportTable,
-  activityEvent: activityEventTable,
   legacyImportLedger: legacyImportLedgerTable,
 } as const
 
@@ -826,10 +534,6 @@ function toSqlLikeText(value: unknown): string {
   return JSON.stringify(value)
 }
 
-function includeEnabled(include: IncludeInput, key: string): boolean {
-  const value = include[key]
-  return value !== undefined && value !== null && value !== false
-}
 
 function getModelColumn(model: ModelName, field: string): AnySQLiteColumn | undefined {
   const columns: Record<string, AnySQLiteColumn | undefined> = modelColumns[model]
@@ -876,10 +580,6 @@ function applyDiagnosisEntryCreateDefaults(output: Record<string, unknown>): voi
 function applyModelCreateDefaults(model: ModelName, output: Record<string, unknown>): void {
   if (model === 'setting') {
     setDefaultValue(output, 'type', 'string')
-    return
-  }
-  if (model === 'user') {
-    setDefaultValue(output, 'totpEnabled', false)
     return
   }
   if (model === 'errorSource') {
@@ -934,35 +634,16 @@ export interface DbClientOptions {
 }
 
 const modelColumns: Record<ModelName, Record<string, AnySQLiteColumn>> = {
-  role: getTableColumns(roleTable),
-  status: getTableColumns(statusTable),
-  user: getTableColumns(userTable),
-  session: getTableColumns(sessionTable),
   setting: getTableColumns(settingTable),
   auditLog: getTableColumns(auditLogTable),
-  agent: getTableColumns(agentTable),
-  agentHealth: getTableColumns(agentHealthTable),
-  agentTag: getTableColumns(agentTagTable),
-  vulnerability: getTableColumns(vulnerabilityTable),
-  vulnerabilityAgent: getTableColumns(vulnerabilityAgentTable),
-  vulnerabilityTimeline: getTableColumns(vulnerabilityTimelineTable),
-  threatIntelligence: getTableColumns(threatIntelligenceTable),
-  threatIndicator: getTableColumns(threatIndicatorTable),
-  integration: getTableColumns(integrationTable),
-  integrationHealth: getTableColumns(integrationHealthTable),
   errorSource: getTableColumns(errorSourceTable),
   errorIssue: getTableColumns(errorIssueTable),
   errorEvent: getTableColumns(errorEventTable),
-  ticket: getTableColumns(ticketTable),
   jobRun: getTableColumns(jobRunTable),
-  report: getTableColumns(reportTable),
-  scan: getTableColumns(scanTable),
   telemetryDaily: getTableColumns(telemetryDailyTable),
   telemetryEntry: getTableColumns(telemetryEntryTable),
   diagnosisEntry: getTableColumns(diagnosisEntryTable),
   diagnosisEntrySourceRef: getTableColumns(diagnosisEntrySourceRefTable),
-  cveEntry: getTableColumns(cveEntryTable),
-  telemetryCveLink: getTableColumns(telemetryCveLinkTable),
   jobSchedule: getTableColumns(jobScheduleTable),
   incidentThread: getTableColumns(incidentThreadTable),
   incidentMessage: getTableColumns(incidentMessageTable),
@@ -971,48 +652,24 @@ const modelColumns: Record<ModelName, Record<string, AnySQLiteColumn>> = {
   runbook: getTableColumns(runbookTable),
   runbookAction: getTableColumns(runbookActionTable),
   runbookVersion: getTableColumns(runbookVersionTable),
-  diagnosisSession: getTableColumns(diagnosisSessionTable),
-  diagnosisTraceEntry: getTableColumns(diagnosisTraceEntryTable),
-  diagnosisToolRun: getTableColumns(diagnosisToolRunTable),
-  diagnosisReport: getTableColumns(diagnosisReportTable),
   investigationSession: getTableColumns(investigationSessionTable),
   investigationTraceEntry: getTableColumns(investigationTraceEntryTable),
   investigationToolRun: getTableColumns(investigationToolRunTable),
   investigationReport: getTableColumns(investigationReportTable),
-  activityEvent: getTableColumns(activityEventTable),
   legacyImportLedger: getTableColumns(legacyImportLedgerTable),
 }
 
 const dateColumnsByModel: Record<ModelName, Set<string>> = {
-  role: new Set(),
-  status: new Set(),
-  user: new Set(['lastLoginAt', 'createdAt', 'updatedAt', 'deletedAt']),
-  session: new Set(['createdAt', 'updatedAt', 'deletedAt']),
   setting: new Set(['createdAt', 'updatedAt']),
   auditLog: new Set(['createdAt']),
-  agent: new Set(['lastHeartbeat', 'lastSeen', 'createdAt', 'updatedAt', 'deletedAt']),
-  agentHealth: new Set(['createdAt', 'updatedAt']),
-  agentTag: new Set(['createdAt']),
-  vulnerability: new Set(['createdAt', 'updatedAt', 'deletedAt']),
-  vulnerabilityAgent: new Set(),
-  vulnerabilityTimeline: new Set(['createdAt']),
-  threatIntelligence: new Set(['expiresAt', 'createdAt', 'updatedAt']),
-  threatIndicator: new Set(['createdAt']),
-  integration: new Set(['lastSync', 'createdAt', 'updatedAt']),
-  integrationHealth: new Set(['lastChecked', 'createdAt', 'updatedAt']),
   errorSource: new Set(['expiresAt', 'lastSyncAt', 'createdAt', 'updatedAt']),
   errorIssue: new Set(['firstSeen', 'lastSeen', 'createdAt', 'updatedAt']),
   errorEvent: new Set(['timestamp', 'createdAt', 'updatedAt']),
-  ticket: new Set(['resolvedAt', 'createdAt', 'updatedAt']),
   jobRun: new Set(['scheduledAt', 'startedAt', 'completedAt', 'createdAt', 'updatedAt']),
-  report: new Set(['scheduledAt', 'completedAt', 'createdAt', 'updatedAt']),
-  scan: new Set(['startedAt', 'completedAt', 'createdAt', 'updatedAt']),
   telemetryDaily: new Set(['createdAt', 'updatedAt']),
   telemetryEntry: new Set(['entryTimestamp', 'createdAt', 'updatedAt']),
   diagnosisEntry: new Set(['createdAt', 'updatedAt']),
   diagnosisEntrySourceRef: new Set(['createdAt', 'updatedAt']),
-  cveEntry: new Set(['publishedAt', 'lastModifiedAt', 'createdAt', 'updatedAt']),
-  telemetryCveLink: new Set(['createdAt']),
   jobSchedule: new Set(['lastRunAt', 'nextRunAt', 'createdAt', 'updatedAt']),
   incidentThread: new Set(['createdAt', 'updatedAt', 'archivedAt', 'deletedAt']),
   incidentMessage: new Set(['createdAt', 'updatedAt']),
@@ -1021,48 +678,24 @@ const dateColumnsByModel: Record<ModelName, Set<string>> = {
   runbook: new Set(['createdAt', 'updatedAt', 'deletedAt']),
   runbookAction: new Set(['createdAt', 'updatedAt']),
   runbookVersion: new Set(['createdAt', 'updatedAt']),
-  diagnosisSession: new Set(['startedAt', 'completedAt', 'createdAt', 'updatedAt']),
-  diagnosisTraceEntry: new Set(['createdAt', 'updatedAt']),
-  diagnosisToolRun: new Set(['createdAt', 'updatedAt']),
-  diagnosisReport: new Set(['createdAt', 'updatedAt']),
   investigationSession: new Set(['startedAt', 'completedAt', 'createdAt', 'updatedAt']),
   investigationTraceEntry: new Set(['createdAt', 'updatedAt']),
   investigationToolRun: new Set(['createdAt', 'updatedAt']),
   investigationReport: new Set(['createdAt', 'updatedAt']),
-  activityEvent: new Set(['createdAt', 'updatedAt']),
   legacyImportLedger: new Set(['importedAt']),
 }
 
 const booleanColumnsByModel: Record<ModelName, Set<string>> = {
-  role: new Set(),
-  status: new Set(),
-  user: new Set(['totpEnabled']),
-  session: new Set(),
   setting: new Set(),
   auditLog: new Set(),
-  agent: new Set(),
-  agentHealth: new Set(),
-  agentTag: new Set(),
-  vulnerability: new Set(),
-  vulnerabilityAgent: new Set(),
-  vulnerabilityTimeline: new Set(),
-  threatIntelligence: new Set(['active']),
-  threatIndicator: new Set(),
-  integration: new Set(),
-  integrationHealth: new Set(),
   errorSource: new Set(['syncEnabled', 'autoDiagnosisEnabled']),
   errorIssue: new Set(['isUnhandled']),
   errorEvent: new Set(),
-  ticket: new Set(['automatic']),
   jobRun: new Set(),
-  report: new Set(),
-  scan: new Set(),
   telemetryDaily: new Set(),
   telemetryEntry: new Set(),
   diagnosisEntry: new Set(),
   diagnosisEntrySourceRef: new Set(),
-  cveEntry: new Set(),
-  telemetryCveLink: new Set(),
   jobSchedule: new Set(['enabled']),
   incidentThread: new Set(),
   incidentMessage: new Set(),
@@ -1071,15 +704,10 @@ const booleanColumnsByModel: Record<ModelName, Set<string>> = {
   runbook: new Set(),
   runbookAction: new Set(),
   runbookVersion: new Set(['isLatest']),
-  diagnosisSession: new Set(),
-  diagnosisTraceEntry: new Set(),
-  diagnosisToolRun: new Set(),
-  diagnosisReport: new Set(),
   investigationSession: new Set(),
   investigationTraceEntry: new Set(),
   investigationToolRun: new Set(),
   investigationReport: new Set(),
-  activityEvent: new Set(),
   legacyImportLedger: new Set(),
 }
 
@@ -1103,35 +731,16 @@ export class DbClient {
   private readonly sqlite: BetterSqlite3.Database
   private readonly db: BetterSQLite3Database<typeof modelTables>
 
-  readonly role = this.createDelegate('role')
-  readonly status = this.createDelegate('status')
-  readonly user = this.createDelegate('user')
-  readonly session = this.createDelegate('session')
   readonly setting = this.createDelegate('setting')
   readonly auditLog = this.createDelegate('auditLog')
-  readonly agent = this.createDelegate('agent')
-  readonly agentHealth = this.createDelegate('agentHealth')
-  readonly agentTag = this.createDelegate('agentTag')
-  readonly vulnerability = this.createDelegate('vulnerability')
-  readonly vulnerabilityAgent = this.createDelegate('vulnerabilityAgent')
-  readonly vulnerabilityTimeline = this.createDelegate('vulnerabilityTimeline')
-  readonly threatIntelligence = this.createDelegate('threatIntelligence')
-  readonly threatIndicator = this.createDelegate('threatIndicator')
-  readonly integration = this.createDelegate('integration')
-  readonly integrationHealth = this.createDelegate('integrationHealth')
   readonly errorSource = this.createDelegate('errorSource')
   readonly errorIssue = this.createDelegate('errorIssue')
   readonly errorEvent = this.createDelegate('errorEvent')
-  readonly ticket = this.createDelegate('ticket')
   readonly jobRun = this.createDelegate('jobRun')
-  readonly report = this.createDelegate('report')
-  readonly scan = this.createDelegate('scan')
   readonly telemetryDaily = this.createDelegate('telemetryDaily')
   readonly telemetryEntry = this.createDelegate('telemetryEntry')
   readonly diagnosisEntry = this.createDelegate('diagnosisEntry')
   readonly diagnosisEntrySourceRef = this.createDelegate('diagnosisEntrySourceRef')
-  readonly cveEntry = this.createDelegate('cveEntry')
-  readonly telemetryCveLink = this.createDelegate('telemetryCveLink')
   readonly jobSchedule = this.createDelegate('jobSchedule')
   readonly incidentThread = this.createDelegate('incidentThread')
   readonly incidentMessage = this.createDelegate('incidentMessage')
@@ -1140,16 +749,15 @@ export class DbClient {
   readonly runbook = this.createDelegate('runbook')
   readonly runbookAction = this.createDelegate('runbookAction')
   readonly runbookVersion = this.createDelegate('runbookVersion')
-  readonly diagnosisSession = this.createDelegate('diagnosisSession')
-  readonly diagnosisTraceEntry = this.createDelegate('diagnosisTraceEntry')
-  readonly diagnosisToolRun = this.createDelegate('diagnosisToolRun')
-  readonly diagnosisReport = this.createDelegate('diagnosisReport')
   readonly investigationSession = this.createDelegate('investigationSession')
   readonly investigationTraceEntry = this.createDelegate('investigationTraceEntry')
   readonly investigationToolRun = this.createDelegate('investigationToolRun')
   readonly investigationReport = this.createDelegate('investigationReport')
-  readonly activityEvent = this.createDelegate('activityEvent')
   readonly legacyImportLedger = this.createDelegate('legacyImportLedger')
+
+  async retireLegacyTables(archiveAndVerify: (payload: string) => Promise<void>): Promise<void> {
+    await retireDesktopTables(this.sqlite, archiveAndVerify)
+  }
 
   constructor(options?: DbClientOptions) {
     const dbUrl = options?.datasources?.db?.url ?? 'file:bitsentry.db'
@@ -1682,129 +1290,8 @@ export class DbClient {
   }
 
   private async applyInclude(
-    model: ModelName,
+    _model: ModelName,
     row: Record<string, unknown>,
-    include: IncludeInput,
-  ): Promise<Record<string, unknown>> {
-    const output: Record<string, unknown> = { ...row }
-
-    if (model === 'user') {
-      await this.applyUserInclude(output, include)
-      return output
-    }
-
-    if (model === 'agent') {
-      await this.applyAgentInclude(output, include)
-      return output
-    }
-
-    if (model === 'vulnerability') {
-      await this.applyVulnerabilityInclude(output, include)
-      return output
-    }
-
-    if (model === 'threatIntelligence') {
-      await this.applyThreatIntelligenceInclude(output, include)
-      return output
-    }
-
-    if (model === 'integration') {
-      await this.applyIntegrationInclude(output, include)
-      return output
-    }
-
-    return { ...output }
-  }
-
-  private async applyUserInclude(
-    output: Record<string, unknown>,
-    include: IncludeInput,
-  ): Promise<void> {
-    if (includeEnabled(include, 'role')) {
-      output.role = await this.findNullableRelation('role', output.roleId)
-    }
-    if (includeEnabled(include, 'status')) {
-      output.status = await this.findNullableRelation('status', output.statusId)
-    }
-  }
-
-  private async findNullableRelation(
-    relation: 'role' | 'status',
-    id: unknown,
-  ): Promise<Record<string, unknown> | null> {
-    if (id == null) {
-      return null
-    }
-
-    return this[relation].findUnique({ where: { id: Number(id) } })
-  }
-
-  private async applyAgentInclude(
-    output: Record<string, unknown>,
-    include: IncludeInput,
-  ): Promise<void> {
-    const agentId = String(output.id)
-    if (includeEnabled(include, 'health')) {
-      output.health = await this.agentHealth.findUnique({
-        where: { agentId },
-      })
-    }
-    if (includeEnabled(include, 'tags')) {
-      output.tags = await this.agentTag.findMany({
-        where: { agentId },
-      })
-    }
-  }
-
-  private async applyVulnerabilityInclude(
-    output: Record<string, unknown>,
-    include: IncludeInput,
-  ): Promise<void> {
-    const vulnerabilityId = String(output.id)
-    if (includeEnabled(include, 'agents')) {
-      output.agents = await this.vulnerabilityAgent.findMany({
-        where: { vulnerabilityId },
-      })
-    }
-    if (includeEnabled(include, 'timeline')) {
-      output.timeline = await this.vulnerabilityTimeline.findMany({
-        where: { vulnerabilityId },
-        orderBy: this.timelineOrderBy(include.timeline),
-      })
-    }
-  }
-
-  private timelineOrderBy(value: unknown): OrderByInput | undefined {
-    if (!isPlainObject(value) || !isPlainObject(value.orderBy)) {
-      return undefined
-    }
-
-    return value.orderBy as OrderByInput
-  }
-
-  private async applyThreatIntelligenceInclude(
-    output: Record<string, unknown>,
-    include: IncludeInput,
-  ): Promise<void> {
-    if (!includeEnabled(include, 'indicators')) {
-      return
-    }
-
-    output.indicators = await this.threatIndicator.findMany({
-      where: { threatId: String(output.id) },
-    })
-  }
-
-  private async applyIntegrationInclude(
-    output: Record<string, unknown>,
-    include: IncludeInput,
-  ): Promise<void> {
-    if (!includeEnabled(include, 'healthCheck')) {
-      return
-    }
-
-    output.healthCheck = await this.integrationHealth.findUnique({
-      where: { integrationId: String(output.id) },
-    })
-  }
+    _include: IncludeInput,
+  ): Promise<Record<string, unknown>> { return { ...row } }
 }
