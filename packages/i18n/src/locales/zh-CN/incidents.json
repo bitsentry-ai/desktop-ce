@@ -89,5 +89,8 @@
   "incidents.integrationWrites.inspect": "重试前请检查远程资源。此请求可能已经完成。",
   "incidents.integrationWrites.closeRequest": "我明确要求关闭此工单。",
   "incidents.integrationWrites.approve": "批准此确切更改",
-  "incidents.integrationWrites.cancel": "拒绝"
+  "incidents.integrationWrites.cancel": "拒绝",
+  "incidents.integrationResources.title": "关联工单和文档",
+  "incidents.integrationResources.error": "无法刷新关联资源。之前观察到的状态可能已过时。",
+  "incidents.integrationResources.observed": "最后观察时间："
 }

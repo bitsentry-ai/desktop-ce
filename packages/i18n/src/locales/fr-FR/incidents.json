@@ -89,5 +89,8 @@
   "incidents.integrationWrites.inspect": "Vérifiez la ressource distante avant de réessayer. La demande peut avoir abouti.",
   "incidents.integrationWrites.closeRequest": "Je demande explicitement la clôture de ce ticket.",
   "incidents.integrationWrites.approve": "Valider cette modification exacte",
-  "incidents.integrationWrites.cancel": "Rejeter"
+  "incidents.integrationWrites.cancel": "Rejeter",
+  "incidents.integrationResources.title": "Tickets et documents liés",
+  "incidents.integrationResources.error": "Impossible d’actualiser les ressources liées. Leur état peut être obsolète.",
+  "incidents.integrationResources.observed": "Dernière observation :"
 }

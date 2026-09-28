@@ -12,6 +12,7 @@ export const integrationActionToolSchema = z.object({
 export type IntegrationActionInput = z.infer<typeof integrationActionToolSchema>;
 export interface IntegrationToolsPort {
   list(): Promise<IntegrationConnection[]>;
+  listResources?(): Promise<import("../plugins/integration-resources").IntegrationResource[]>;
   proposeWrite?(request: IntegrationActionInput): Promise<import("../plugins/integration-operations").IntegrationOperation>;
   executeRead?(request: IntegrationActionInput): Promise<DesktopPluginExecutionResult>;
 }

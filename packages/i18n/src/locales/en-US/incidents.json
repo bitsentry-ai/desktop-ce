@@ -89,5 +89,8 @@
   "incidents.integrationWrites.inspect": "Inspect the remote resource before retrying. This request may have completed.",
   "incidents.integrationWrites.closeRequest": "I explicitly request closing this ticket.",
   "incidents.integrationWrites.approve": "Approve this exact change",
-  "incidents.integrationWrites.cancel": "Reject"
+  "incidents.integrationWrites.cancel": "Reject",
+  "incidents.integrationResources.title": "Linked tickets and documents",
+  "incidents.integrationResources.error": "Could not refresh linked resources. Previously observed state may be stale.",
+  "incidents.integrationResources.observed": "Last observed:"
 }

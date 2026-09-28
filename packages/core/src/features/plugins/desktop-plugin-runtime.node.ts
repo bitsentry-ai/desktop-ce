@@ -1,3 +1,4 @@
+import { StoredIntegrationResources, extractIntegrationResources } from "./integration-resources";
 import { IntegrationOperationService } from "./integration-operations";
 import { StoredIntegrationOperations } from "./integration-operation-store";
 import { IntegrationConnectionStore } from "./integration-connection-store";
@@ -329,6 +330,8 @@ class DesktopNodePluginRuntimeService extends DesktopPluginRuntimeService {
     });
   }
 
+  private resources?: StoredIntegrationResources;
+  override getIntegrationResources() { this.resources ??= new StoredIntegrationResources(this.storedAuthStore); return this.resources; }
   private operations?: IntegrationOperationService;
   override getIntegrationOperations(): IntegrationOperationService {
     if (this.storedAuthStore === NOOP_DESKTOP_PLUGIN_STORED_AUTH_STORE) throw new Error("Durable proposal storage is unavailable.");
@@ -342,6 +345,16 @@ class DesktopNodePluginRuntimeService extends DesktopPluginRuntimeService {
       };
     });
     return this.operations;
+  }
+
+  override async refreshIntegrationResources(threadId: string) {
+    const operations = await this.getIntegrationOperations().list(threadId);
+    for (const operation of operations.filter((row) => row.status === "succeeded")) {
+      const resources = extractIntegrationResources(threadId, { id: operation.connectionId, name: operation.connectionName, pluginId: operation.pluginId === "itop" ? "itop" : "outline", target: operation.target }, operation.result);
+      const existing = await this.getIntegrationResources().list(threadId);
+      await this.getIntegrationResources().save(resources.filter((resource) => !existing.some((row) => row.connectionId === resource.connectionId && row.resourceType === resource.resourceType && row.externalId === resource.externalId && row.observedAt >= operation.updatedAt)).map((resource) => ({ ...resource, observedAt: operation.updatedAt })));
+    }
+    return this.getIntegrationResources().list(threadId);
   }
 
   override async listIntegrationConnections(): Promise<IntegrationConnection[]> {

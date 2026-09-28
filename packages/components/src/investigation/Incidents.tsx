@@ -1,3 +1,4 @@
+import { DesktopIntegrationResourcesPanel } from "./IntegrationResourcesPanel";
 import { DesktopIntegrationOperationsPanel } from "./IntegrationOperationsPanel";
 import {
   useCallback,
@@ -3064,6 +3065,7 @@ export default function IncidentsPage() {
           {topBarActions}
         </div>
 
+        {activeId !== null && <DesktopIntegrationResourcesPanel key={activeId} threadId={activeId} />}
         {activeId !== null && <DesktopIntegrationOperationsPanel key={activeId} threadId={activeId} disabled={isArchivedIncident} />}
 
         {/* Warning banner when blocked */}

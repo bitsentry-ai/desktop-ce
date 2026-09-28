@@ -89,5 +89,8 @@
   "incidents.integrationWrites.inspect": "Periksa sumber daya jarak jauh sebelum mencoba lagi. Permintaan ini mungkin sudah selesai.",
   "incidents.integrationWrites.closeRequest": "Saya secara eksplisit meminta penutupan tiket ini.",
   "incidents.integrationWrites.approve": "Setujui perubahan persis ini",
-  "incidents.integrationWrites.cancel": "Tolak"
+  "incidents.integrationWrites.cancel": "Tolak",
+  "incidents.integrationResources.title": "Tiket dan dokumen tertaut",
+  "incidents.integrationResources.error": "Tidak dapat menyegarkan sumber daya tertaut. Status sebelumnya mungkin sudah usang.",
+  "incidents.integrationResources.observed": "Terakhir diamati:"
 }
