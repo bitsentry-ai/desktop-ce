@@ -105,5 +105,15 @@
   "incidents.knowledge.runbook": "选择已保存的运行手册",
   "incidents.knowledge.parameters": "参数值（字符串 JSON 对象）",
   "incidents.knowledge.approveExecution": "我已审查这些确切步骤和参数并批准此次执行。",
-  "incidents.knowledge.execute": "执行已审查的运行手册"
+  "incidents.knowledge.execute": "执行已审查的运行手册",
+  "incidents.deliveries.title": "Webhook 投递",
+  "incidents.deliveries.error": "无法加载或核对此投递。重试前请检查当前状态。",
+  "incidents.deliveries.processing": "处理中",
+  "incidents.deliveries.succeeded": "成功",
+  "incidents.deliveries.failed": "失败",
+  "incidents.deliveries.uncertain": "结果不确定",
+  "incidents.deliveries.reconciled": "已远程确认",
+  "incidents.deliveries.retry": "重试状态同步",
+  "incidents.deliveries.inspect": "确认前请在 iTop 中检查原始事件。创建操作绝不会自动重试。",
+  "incidents.deliveries.reconcile": "验证并关联现有工单"
 }

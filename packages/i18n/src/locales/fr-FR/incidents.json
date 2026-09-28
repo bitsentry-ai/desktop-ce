@@ -105,5 +105,15 @@
   "incidents.knowledge.runbook": "Choisir un runbook enregistré",
   "incidents.knowledge.parameters": "Valeurs des paramètres (objet JSON de chaînes)",
   "incidents.knowledge.approveExecution": "J’ai vérifié ces étapes et paramètres exacts et autorise cette exécution.",
-  "incidents.knowledge.execute": "Exécuter le runbook vérifié"
+  "incidents.knowledge.execute": "Exécuter le runbook vérifié",
+  "incidents.deliveries.title": "Livraisons webhook",
+  "incidents.deliveries.error": "Impossible de charger ou rapprocher cette livraison. Vérifiez son état avant de réessayer.",
+  "incidents.deliveries.processing": "En cours",
+  "incidents.deliveries.succeeded": "Réussi",
+  "incidents.deliveries.failed": "Échec",
+  "incidents.deliveries.uncertain": "Résultat incertain",
+  "incidents.deliveries.reconciled": "Confirmé à distance",
+  "incidents.deliveries.retry": "Réessayer la synchronisation",
+  "incidents.deliveries.inspect": "Inspectez iTop pour l’événement initial avant de confirmer. La création n’est jamais réessayée automatiquement.",
+  "incidents.deliveries.reconcile": "Vérifier et lier le ticket existant"
 }

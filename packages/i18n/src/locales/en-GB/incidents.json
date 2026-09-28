@@ -105,5 +105,15 @@
   "incidents.knowledge.runbook": "Select a saved runbook",
   "incidents.knowledge.parameters": "Parameter values (JSON object of strings)",
   "incidents.knowledge.approveExecution": "I reviewed these exact steps and parameters and approve this execution.",
-  "incidents.knowledge.execute": "Execute reviewed runbook"
+  "incidents.knowledge.execute": "Execute reviewed runbook",
+  "incidents.deliveries.title": "Webhook deliveries",
+  "incidents.deliveries.error": "Could not load or reconcile this delivery. Inspect its current state before retrying.",
+  "incidents.deliveries.processing": "Processing",
+  "incidents.deliveries.succeeded": "Succeeded",
+  "incidents.deliveries.failed": "Failed",
+  "incidents.deliveries.uncertain": "Outcome uncertain",
+  "incidents.deliveries.reconciled": "Confirmed remotely",
+  "incidents.deliveries.retry": "Retry state synchronization",
+  "incidents.deliveries.inspect": "Inspect iTop for the original event before confirming. Creation is never retried automatically.",
+  "incidents.deliveries.reconcile": "Verify and link existing ticket"
 }

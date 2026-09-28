@@ -105,5 +105,15 @@
   "incidents.knowledge.runbook": "Pilih runbook tersimpan",
   "incidents.knowledge.parameters": "Nilai parameter (objek JSON berisi string)",
   "incidents.knowledge.approveExecution": "Saya telah meninjau langkah dan parameter persis ini dan menyetujui eksekusinya.",
-  "incidents.knowledge.execute": "Jalankan runbook yang ditinjau"
+  "incidents.knowledge.execute": "Jalankan runbook yang ditinjau",
+  "incidents.deliveries.title": "Pengiriman webhook",
+  "incidents.deliveries.error": "Tidak dapat memuat atau merekonsiliasi pengiriman. Periksa statusnya sebelum mencoba lagi.",
+  "incidents.deliveries.processing": "Diproses",
+  "incidents.deliveries.succeeded": "Berhasil",
+  "incidents.deliveries.failed": "Gagal",
+  "incidents.deliveries.uncertain": "Hasil belum pasti",
+  "incidents.deliveries.reconciled": "Dikonfirmasi di sistem jarak jauh",
+  "incidents.deliveries.retry": "Coba ulang sinkronisasi status",
+  "incidents.deliveries.inspect": "Periksa iTop untuk peristiwa asli sebelum mengonfirmasi. Pembuatan tidak pernah dicoba ulang secara otomatis.",
+  "incidents.deliveries.reconcile": "Verifikasi dan tautkan tiket yang ada"
 }
