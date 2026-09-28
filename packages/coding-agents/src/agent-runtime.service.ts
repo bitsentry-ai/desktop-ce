@@ -180,6 +180,7 @@ function getAgentErrorCode(message: string): AgentErrorCode | undefined {
 }
 
 const DEFAULT_AGENT_SESSION_TIMEOUT_MS = 300_000
+const INTEGRATION_READ_TIMEOUT_MS = 30_000
 const MAX_TOOL_ITERATIONS = 10 // Prevent infinite loops
 const MAX_MESSAGE_HISTORY = 50 // Limit conversation history
 const JOURNAL_TIME_WINDOW_PADDING_MS = 5 * 60 * 1000
@@ -3075,7 +3076,24 @@ export class AgentRuntimeService {
       saveRunbookAuthoringProposal: (proposal) =>
         this.authoringProposalStore?.save(proposal) ?? Promise.resolve(),
       pluginRuntime: this.pluginRuntime,
-      integrationConnections: { list: () => this.pluginRuntime?.listIntegrationConnections() ?? Promise.resolve([]) },
+      integrationConnections: {
+        list: () => this.pluginRuntime?.listIntegrationConnections() ?? Promise.resolve([]),
+        executeRead: async (request) => {
+          const pluginRuntime = this.pluginRuntime
+          if (pluginRuntime === undefined) throw new Error('Plugin runtime is unavailable.');
+          const connection = (await pluginRuntime.listIntegrationConnections()).find((row) => row.id === request.connectionId);
+          const action = connection?.actions.find((row) => row.id === request.actionId);
+          if (action?.riskLevel !== 'read') throw new Error('Only read actions are allowed here.');
+          const deadlineAt = Date.now() + INTEGRATION_READ_TIMEOUT_MS
+          // Race the plugin against the deadline: a plugin that ignores its signal must not hold the chat turn.
+          return runOrchestratedOperation({
+            operation: 'Integration read',
+            signal: session.abortController.signal,
+            timeoutMs: INTEGRATION_READ_TIMEOUT_MS,
+            execute: (signal) => pluginRuntime.executeIntegrationAction(request, { signal, deadlineAt }, { requiredRiskLevel: 'read' }),
+          });
+        },
+      },
       ...(options.observeEvents
         ? { onToolEvent: (event: HostToolEvent) => this.observeHostToolEvent(session, event) }
         : {}),

@@ -29,3 +29,11 @@
 	path = packages/plugins/linux-cve-remediate
 	url = git@github.com:bitsentry-ai/bitsentry-plugin-linux-cve-remediate.git
 	branch = main
+[submodule "packages/plugins/itop"]
+	path = packages/plugins/itop
+	url = git@github.com:bitsentry-ai/bitsentry-plugin-itop.git
+	branch = main
+[submodule "packages/plugins/outline"]
+	path = packages/plugins/outline
+	url = git@github.com:bitsentry-ai/bitsentry-plugin-outline.git
+	branch = main
