@@ -90,6 +90,12 @@
   "incidents.integrationWrites.closeRequest": "Saya secara eksplisit meminta penutupan tiket ini.",
   "incidents.integrationWrites.approve": "Setujui perubahan persis ini",
   "incidents.integrationWrites.cancel": "Tolak",
+  "incidents.integrationWrites.reconciled": "Dikonfirmasi di sistem jarak jauh",
+  "incidents.integrationWrites.inspected": "Saya telah memeriksa sistem jarak jauh dan mengonfirmasi hasil yang dipilih.",
+  "incidents.integrationWrites.externalId": "ID sumber daya eksternal terverifikasi",
+  "incidents.integrationWrites.confirmApplied": "Konfirmasi diterapkan dan verifikasi sumber daya",
+  "incidents.integrationWrites.confirmNotApplied": "Konfirmasi tidak ada perubahan yang diterapkan",
+  "incidents.integrationWrites.renew": "Usulkan perubahan identik lainnya",
   "incidents.integrationResources.title": "Tiket dan dokumen tertaut",
   "incidents.integrationResources.error": "Tidak dapat menyegarkan sumber daya tertaut. Status sebelumnya mungkin sudah usang.",
   "incidents.integrationResources.observed": "Terakhir diamati:"

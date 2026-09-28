@@ -16,6 +16,8 @@ function makeValidPayloads(): Record<DesktopRpcChannel, unknown> {
   Object.assign(payloads, {
     'plugins:get': { pluginId: 'sentry' },
     'plugins:listResources': { threadId: 'thread-1' },
+    'plugins:renewOperation': { threadId: 'thread-1', id: UUID },
+    'plugins:reconcileOperation': { threadId: 'thread-1', id: UUID, applied: false, confirmed: true },
     'plugins:listOperations': { threadId: 'thread-1' },
     'plugins:approveOperation': { threadId: 'thread-1', id: UUID, closeRequested: false },
     'plugins:cancelOperation': { threadId: 'thread-1', id: UUID },

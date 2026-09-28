@@ -90,6 +90,12 @@
   "incidents.integrationWrites.closeRequest": "I explicitly request closing this ticket.",
   "incidents.integrationWrites.approve": "Approve this exact change",
   "incidents.integrationWrites.cancel": "Reject",
+  "incidents.integrationWrites.reconciled": "Confirmed remotely",
+  "incidents.integrationWrites.inspected": "I inspected the remote system and confirm the selected outcome.",
+  "incidents.integrationWrites.externalId": "Verified external resource ID",
+  "incidents.integrationWrites.confirmApplied": "Confirm applied and verify resource",
+  "incidents.integrationWrites.confirmNotApplied": "Confirm no change was applied",
+  "incidents.integrationWrites.renew": "Propose another identical change",
   "incidents.integrationResources.title": "Linked tickets and documents",
   "incidents.integrationResources.error": "Could not refresh linked resources. Previously observed state may be stale.",
   "incidents.integrationResources.observed": "Last observed:"

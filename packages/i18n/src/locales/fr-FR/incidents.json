@@ -90,6 +90,12 @@
   "incidents.integrationWrites.closeRequest": "Je demande explicitement la clôture de ce ticket.",
   "incidents.integrationWrites.approve": "Valider cette modification exacte",
   "incidents.integrationWrites.cancel": "Rejeter",
+  "incidents.integrationWrites.reconciled": "Confirmé à distance",
+  "incidents.integrationWrites.inspected": "J’ai inspecté le système distant et confirme le résultat choisi.",
+  "incidents.integrationWrites.externalId": "Identifiant externe vérifié",
+  "incidents.integrationWrites.confirmApplied": "Confirmer et vérifier la ressource",
+  "incidents.integrationWrites.confirmNotApplied": "Confirmer qu’aucune modification n’a été appliquée",
+  "incidents.integrationWrites.renew": "Proposer une autre modification identique",
   "incidents.integrationResources.title": "Tickets et documents liés",
   "incidents.integrationResources.error": "Impossible d’actualiser les ressources liées. Leur état peut être obsolète.",
   "incidents.integrationResources.observed": "Dernière observation :"

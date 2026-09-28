@@ -16,6 +16,29 @@ function setup() {
   return { service, propose, execute, runtime, store }
 }
 describe('durable integration approval boundary', () => {
+  it('deduplicates concurrent submissions and reconnects before execution', async () => {
+    const { service, propose, execute } = setup()
+    const proposals = await Promise.all([propose(), propose(), propose()])
+    expect(new Set(proposals.map((row) => row.id)).size).toBe(1)
+    expect(await service.list('thread')).toHaveLength(1)
+    await service.approve('thread', proposals[0].id, false)
+    expect((await propose()).status).toBe('succeeded')
+    expect(execute).toHaveBeenCalledTimes(1)
+  })
+  it('recovers abandoned executions only after explicit inspection and makes repeats deliberate', async () => {
+    const { service, propose, store, execute } = setup()
+    const proposal = await propose()
+    await store.transition(proposal.id, 'proposed', { status: 'executing', updatedAt: new Date(Date.now() - 180_000).toISOString() })
+    expect((await service.list('thread'))[0].status).toBe('uncertain')
+    await expect(service.renew('thread', proposal.id)).rejects.toThrow()
+    await expect(service.reconcile('thread', proposal.id, false, false)).rejects.toThrow()
+    expect((await service.reconcile('thread', proposal.id, false, true)).status).toBe('failed')
+    const next = await service.renew('thread', proposal.id)
+    expect(next.id).not.toBe(proposal.id)
+    expect((await service.renew('thread', proposal.id)).id).toBe(next.id)
+    expect(execute).not.toHaveBeenCalled()
+  })
+
   it('persists a preview without executing and executes exact content once under concurrent approval', async () => {
     const { service, propose, execute } = setup()
     const proposal = await propose()
