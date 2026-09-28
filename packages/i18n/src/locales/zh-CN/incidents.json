@@ -98,5 +98,12 @@
   "incidents.integrationWrites.renew": "提议另一次相同更改",
   "incidents.integrationResources.title": "关联工单和文档",
   "incidents.integrationResources.error": "无法刷新关联资源。之前观察到的状态可能已过时。",
-  "incidents.integrationResources.observed": "最后观察时间："
+  "incidents.integrationResources.observed": "最后观察时间：",
+  "incidents.knowledge.select": "用作知识来源",
+  "incidents.knowledge.executeTitle": "审查并执行已保存的运行手册",
+  "incidents.knowledge.executeError": "执行尚未确认。重试前请检查记录结果和当前运行手册版本。",
+  "incidents.knowledge.runbook": "选择已保存的运行手册",
+  "incidents.knowledge.parameters": "参数值（字符串 JSON 对象）",
+  "incidents.knowledge.approveExecution": "我已审查这些确切步骤和参数并批准此次执行。",
+  "incidents.knowledge.execute": "执行已审查的运行手册"
 }

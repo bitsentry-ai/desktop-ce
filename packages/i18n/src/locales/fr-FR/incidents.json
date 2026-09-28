@@ -98,5 +98,12 @@
   "incidents.integrationWrites.renew": "Proposer une autre modification identique",
   "incidents.integrationResources.title": "Tickets et documents liés",
   "incidents.integrationResources.error": "Impossible d’actualiser les ressources liées. Leur état peut être obsolète.",
-  "incidents.integrationResources.observed": "Dernière observation :"
+  "incidents.integrationResources.observed": "Dernière observation :",
+  "incidents.knowledge.select": "Utiliser comme source",
+  "incidents.knowledge.executeTitle": "Vérifier et exécuter un runbook enregistré",
+  "incidents.knowledge.executeError": "L’exécution n’a pas été confirmée. Vérifiez le résultat et la révision avant de réessayer.",
+  "incidents.knowledge.runbook": "Choisir un runbook enregistré",
+  "incidents.knowledge.parameters": "Valeurs des paramètres (objet JSON de chaînes)",
+  "incidents.knowledge.approveExecution": "J’ai vérifié ces étapes et paramètres exacts et autorise cette exécution.",
+  "incidents.knowledge.execute": "Exécuter le runbook vérifié"
 }
