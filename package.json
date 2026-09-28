@@ -30,9 +30,9 @@
     "core:build": "pnpm --filter @bitsentry/plugin-sdk build && pnpm --filter @bitsentry-ce/core build",
     "i18n:build": "pnpm --filter @bitsentry-ce/i18n build",
     "components:build": "pnpm --filter @bitsentry-ce/components build",
-    "plugins:build": "pnpm --filter @bitsentry/plugin-sdk build && pnpm --filter @bitsentry-ce/core build && pnpm --filter './packages/plugins/*' build && pnpm run plugins:build-artifacts",
+    "plugins:build": "pnpm --filter @bitsentry/plugin-sdk build && pnpm --filter @bitsentry-ce/core build && pnpm --filter './packages/plugins/*' build && pnpm run plugins:standalone build && pnpm run plugins:build-artifacts",
     "plugins:build-artifacts": "node scripts/plugins/build-artifacts.mjs",
-    "plugins:lint": "pnpm --filter './packages/plugins/*' lint",
+    "plugins:lint": "pnpm --filter './packages/plugins/*' lint && pnpm run plugins:standalone lint",
     "plugins:publish-artifacts": "pnpm run plugins:build && node scripts/plugins/publish-artifacts.mjs",
     "plugins:test": "pnpm --filter './packages/plugins/*' test",
     "core:test": "pnpm --filter @bitsentry-ce/core test",
@@ -72,7 +72,9 @@
     "desktop:package:win": "pnpm --filter @bitsentry-ce/desktop run package:win",
     "desktop:package:publish": "pnpm --filter @bitsentry-ce/desktop run package:publish",
     "desktop:predev": "pnpm --filter @bitsentry-ce/desktop run predev",
-    "desktop:verify:mac-app": "pnpm --filter @bitsentry-ce/desktop run verify:mac-app"
+    "desktop:verify:mac-app": "pnpm --filter @bitsentry-ce/desktop run verify:mac-app",
+    "plugins:standalone": "node scripts/plugins/standalone.mjs",
+    "plugins:typecheck": "pnpm run plugins:standalone typecheck"
   },
   "author": "BitSentry Team",
   "license": "Apache-2.0",
