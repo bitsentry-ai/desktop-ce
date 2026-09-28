@@ -355,6 +355,7 @@ class DesktopNodePluginRuntimeService extends DesktopPluginRuntimeService {
   override async executeAction(
     request: DesktopPluginExecutionRequest,
     operation?: DesktopPluginOperationContext,
+    policy?: DesktopPluginExecutionPolicy,
   ): Promise<DesktopPluginExecutionResult> {
     const plugin = this.getPlugin(request.pluginId);
     let auth = request.auth ?? {};
@@ -371,7 +372,7 @@ class DesktopNodePluginRuntimeService extends DesktopPluginRuntimeService {
     return super.executeAction({
       ...request,
       auth,
-    }, operation);
+    }, operation, policy);
   }
 }
 

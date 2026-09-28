@@ -158,6 +158,54 @@ describe('DesktopPluginRuntimeService', () => {
     }
   })
 
+  it('rejects a write action called as a read without executing it', async () => {
+    const tempRoot = await mkdtemp(path.join(tmpdir(), 'bitsentry-code-plugin-'))
+
+    try {
+      const pluginRoot = path.join(tempRoot, 'plugins')
+      const writeMarkerPath = path.join(tempRoot, 'write-executed')
+      await writeCodePlugin({
+        root: pluginRoot,
+        pluginId: 'ticket-desk',
+        source: `
+          module.exports = {
+            id: "ticket-desk",
+            name: "Ticket Desk",
+            version: "0.1.0",
+            description: "Fixture plugin with a write action.",
+            auth: { fields: [] },
+            actions: [
+              {
+                id: "update_ticket",
+                title: "Update Ticket",
+                description: "Changes a remote ticket.",
+                riskLevel: "write",
+                fields: [],
+                async execute() {
+                  require("fs").writeFileSync(${JSON.stringify(writeMarkerPath)}, "written");
+                  return { status: 200, summary: "Ticket updated." };
+                },
+              },
+            ],
+          };
+        `,
+      })
+
+      const service = createDesktopNodePluginRuntimeService([pluginRoot])
+
+      await expect(
+        service.executeAction(
+          { pluginId: 'ticket-desk', actionId: 'update_ticket', auth: {}, input: {} },
+          undefined,
+          { requiredRiskLevel: 'read' },
+        ),
+      ).rejects.toThrow('is not a read action')
+      await expect(access(writeMarkerPath)).rejects.toThrow()
+    } finally {
+      await rm(tempRoot, { recursive: true, force: true })
+    }
+  })
+
   it('passes parent operation metadata to local code plugin actions', async () => {
     const tempRoot = await mkdtemp(path.join(tmpdir(), 'bitsentry-plugin-operation-'))
 
