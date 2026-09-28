@@ -32,6 +32,7 @@ const connection: IntegrationConnection = {
   pluginId: 'outline',
   enabled: true,
   target: 'https://outline.example/api',
+  authMode: 'token',
   availability: 'configured',
   actions: [readAction],
 }

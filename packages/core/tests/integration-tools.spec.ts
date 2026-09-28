@@ -13,7 +13,7 @@ const plugin: DesktopPluginDescriptor = {
 }
 const connection: IntegrationConnection = {
   id: '11111111-1111-4111-8111-111111111111', name: 'Knowledge', pluginId: 'outline', enabled: true,
-  target: 'https://outline.example/api', availability: 'configured', actions: plugin.actions,
+  target: 'https://outline.example/api', authMode: 'token', availability: 'configured', actions: plugin.actions,
 }
 function port() {
   return { list: async () => [connection], executeRead: vi.fn().mockResolvedValue({ ok: true, status: 200, data: { id: 'doc', text: 'Evidence' } }) }

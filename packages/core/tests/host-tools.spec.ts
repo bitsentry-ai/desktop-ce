@@ -57,6 +57,42 @@ function createContext(enabledApiProviders?: string): HostToolContext {
 }
 
 describe('host tools', () => {
+  it('returns only credential-free integration connection data to the model', async () => {
+    const context = createContext()
+    context.integrationConnections = {
+      list: async () => [
+        {
+          id: '11111111-1111-4111-8111-111111111111',
+          name: 'Production',
+          pluginId: 'itop',
+          enabled: true,
+          target: 'https://production.itop.example/',
+          authMode: 'token',
+          availability: 'configured',
+          actions: [],
+        },
+        {
+          id: '22222222-2222-4222-8222-222222222222',
+          name: 'Staging',
+          pluginId: 'itop',
+          enabled: true,
+          target: 'https://staging.itop.example/',
+          authMode: 'username_password',
+          availability: 'configured',
+          actions: [],
+        },
+      ],
+    }
+
+    const result = await executeHostTool(context, 'list_integration_connections', {})
+
+    expect(result?.error).toBeUndefined()
+    expect(result?.output).toContain('https://production.itop.example/')
+    expect(result?.output).toContain('https://staging.itop.example/')
+    expect(result?.output).not.toContain('production-secret')
+    expect(result?.output).not.toContain('staging-password')
+  })
+
   it('links conversational runbook proposals into persisted artifact versions', async () => {
     const context = createContext()
     const saveRunbookAuthoringProposal = vi.fn().mockResolvedValue(undefined)
