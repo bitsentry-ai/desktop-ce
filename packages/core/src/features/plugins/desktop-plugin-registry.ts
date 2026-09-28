@@ -281,6 +281,10 @@ export class DesktopPluginRegistry {
   }
 }
 
+export interface DesktopPluginExecutionPolicy {
+  requiredRiskLevel?: "read" | "write";
+}
+
 export class DesktopPluginRuntimeService {
   constructor(protected registry = new DesktopPluginRegistry()) {}
 
@@ -294,7 +298,7 @@ export class DesktopPluginRuntimeService {
     throw new Error("Integration connection storage is not available in this runtime.");
   }
 
-  async executeIntegrationAction(_request: { connectionId: string; actionId: string; input: Record<string, unknown> }, _operation?: DesktopPluginOperationContext): Promise<DesktopPluginExecutionResult> {
+  async executeIntegrationAction(_request: { connectionId: string; actionId: string; input: Record<string, unknown> }, _operation?: DesktopPluginOperationContext, _policy?: DesktopPluginExecutionPolicy): Promise<DesktopPluginExecutionResult> {
     throw new Error("Integration connection execution is not available in this runtime.");
   }
 
@@ -390,6 +394,7 @@ export class DesktopPluginRuntimeService {
   async executeAction(
     input: DesktopPluginExecutionRequest,
     operation?: DesktopPluginOperationContext,
+    policy?: DesktopPluginExecutionPolicy,
   ): Promise<DesktopPluginExecutionResult> {
     const request = desktopPluginExecutionRequestSchema.parse(input);
     const plugin = this.registry.get(request.pluginId);
@@ -401,6 +406,12 @@ export class DesktopPluginRuntimeService {
     if (action === null) {
       throw new Error(
         `Unknown action "${request.actionId}" for plugin "${request.pluginId}"`,
+      );
+    }
+    // Checked on the instance that executes, so a registry reload cannot swap in a different risk level.
+    if (policy?.requiredRiskLevel !== undefined && action.riskLevel !== policy.requiredRiskLevel) {
+      throw new Error(
+        `Action "${request.actionId}" for plugin "${request.pluginId}" is not a ${policy.requiredRiskLevel} action.`,
       );
     }
 

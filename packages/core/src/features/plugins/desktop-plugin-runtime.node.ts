@@ -28,6 +28,7 @@ import { loadDesktopLocalPlugins } from "./desktop-local-plugin-loader";
 import {
   DesktopPluginRegistry,
   DesktopPluginRuntimeService,
+  type DesktopPluginExecutionPolicy,
 } from "./desktop-plugin-registry";
 
 const localRequire = createRequire(
@@ -343,11 +344,12 @@ class DesktopNodePluginRuntimeService extends DesktopPluginRuntimeService {
   override async executeIntegrationAction(
     request: { connectionId: string; actionId: string; input: Record<string, unknown> },
     operation?: DesktopPluginOperationContext,
+    policy?: DesktopPluginExecutionPolicy,
   ): Promise<DesktopPluginExecutionResult> {
     const connection = (await this.connections.list()).find((row) => row.id === request.connectionId);
     if (connection === undefined || !connection.enabled) throw new Error("Integration connection is missing or disabled.");
     // Call the registry directly: never merge another instance's default auth.
-    return super.executeAction({ pluginId: connection.pluginId, actionId: request.actionId, input: request.input, auth: connection.auth }, operation);
+    return super.executeAction({ pluginId: connection.pluginId, actionId: request.actionId, input: request.input, auth: connection.auth }, operation, policy);
   }
 
   override async executeAction(

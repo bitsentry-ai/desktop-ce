@@ -3090,7 +3090,7 @@ export class AgentRuntimeService {
             operation: 'Integration read',
             signal: session.abortController.signal,
             timeoutMs: INTEGRATION_READ_TIMEOUT_MS,
-            execute: (signal) => pluginRuntime.executeIntegrationAction(request, { signal, deadlineAt }),
+            execute: (signal) => pluginRuntime.executeIntegrationAction(request, { signal, deadlineAt }, { requiredRiskLevel: 'read' }),
           });
         },
       },

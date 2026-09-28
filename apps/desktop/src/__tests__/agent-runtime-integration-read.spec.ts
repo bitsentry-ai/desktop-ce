@@ -1,3 +1,6 @@
+import { access, mkdtemp, rm } from 'fs/promises'
+import { tmpdir } from 'os'
+import path from 'path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import {
@@ -5,7 +8,13 @@ import {
   type AgentRuntimeLlmAdapter,
   type AgentRuntimeRunbookGateway,
 } from '../main/features/agent-runtime/services/agent-runtime.service'
-import type { DesktopPluginDescriptor, DesktopPluginRuntimeService } from '@bitsentry-ce/core/features/plugins'
+import type {
+  DesktopPluginDescriptor,
+  DesktopPluginRuntimeService,
+  DesktopPluginStoredAuthRecord,
+  DesktopPluginStoredAuthStore,
+} from '@bitsentry-ce/core/features/plugins'
+import { createDesktopNodePluginRuntimeService } from '@bitsentry-ce/core/features/plugins/node'
 import type { IntegrationConnection } from '@bitsentry-ce/core/features/plugins/integration-connections'
 
 type LlmChatRequest = Parameters<AgentRuntimeLlmAdapter['chatWithTools']>[0]
@@ -37,14 +46,10 @@ const connection: IntegrationConnection = {
   actions: [readAction],
 }
 
-function createRuntime(llmAdapter: AgentRuntimeLlmAdapter): AgentRuntimeService {
-  const pluginRuntime = {
-    listPlugins: async () => [plugin],
-    listIntegrationConnections: async () => [connection],
-    // A hung plugin: the read never settles and ignores its abort signal.
-    executeIntegrationAction: () => new Promise<never>(() => undefined),
-  } as unknown as DesktopPluginRuntimeService
-
+function createRuntime(
+  llmAdapter: AgentRuntimeLlmAdapter,
+  pluginRuntime: DesktopPluginRuntimeService,
+): AgentRuntimeService {
   return new AgentRuntimeService(
     () => null,
     llmAdapter,
@@ -64,24 +69,90 @@ async function advanceUntil(predicate: () => boolean): Promise<void> {
   throw new Error('Timed out waiting for agent runtime')
 }
 
-afterEach(() => {
+async function waitFor(predicate: () => boolean): Promise<void> {
+  const timeoutAt = Date.now() + 5_000
+  while (Date.now() < timeoutAt) {
+    if (predicate()) return
+    await new Promise((resolve) => setTimeout(resolve, 10))
+  }
+  throw new Error('Timed out waiting for agent runtime')
+}
+
+function readIntegrationTurn(): AgentRuntimeLlmAdapter {
+  return {
+    chatWithTools: vi.fn().mockResolvedValueOnce({
+      content: 'Reading the failover document.',
+      toolCalls: [{
+        id: 'call-read',
+        name: 'read_integration',
+        args: { connectionId: connection.id, actionId: 'get_document', input: { id: 'doc-1' } },
+      }],
+    }).mockResolvedValueOnce({ content: 'Done.', toolCalls: [] }),
+  }
+}
+
+function followUpToolContent(llmAdapter: AgentRuntimeLlmAdapter): string | undefined {
+  const followUp = vi.mocked(llmAdapter.chatWithTools).mock.calls[1]?.[0] as LlmChatRequest | undefined
+  const content = followUp?.messages.find((message) => message.role === 'tool')?.content
+  return typeof content === 'string' ? content : JSON.stringify(content)
+}
+
+function knowledgePluginArtifact(riskLevel: 'read' | 'write', writeMarkerPath: string): string {
+  return Buffer.from(`
+exports.plugin = {
+  id: 'outline',
+  name: 'Outline',
+  version: '1.0.0',
+  description: 'Knowledge fixture.',
+  auth: { fields: [] },
+  actions: [{
+    id: 'get_document',
+    title: 'Get document',
+    description: 'Get a knowledge document.',
+    riskLevel: '${riskLevel}',
+    fields: [{ key: 'id', label: 'ID', type: 'string', required: true }],
+    execute() {
+      if ('${riskLevel}' === 'write') require('fs').writeFileSync(${JSON.stringify(writeMarkerPath)}, 'written')
+      return { ok: true, status: 200, data: { id: 'doc-1', text: 'Evidence' } }
+    },
+  }],
+}
+`, 'utf-8').toString('base64')
+}
+
+function createMemoryAuthStore(): DesktopPluginStoredAuthStore {
+  const records = new Map<string, DesktopPluginStoredAuthRecord>()
+  return {
+    get: async (pluginId) => records.get(pluginId) ?? {},
+    set: async (pluginId, values) => {
+      records.set(pluginId, values)
+      return values
+    },
+    clear: async (pluginId) => {
+      records.delete(pluginId)
+    },
+  }
+}
+
+const tempRoots: string[] = []
+
+afterEach(async () => {
   vi.useRealTimers()
+  await Promise.all(tempRoots.map((root) => rm(root, { recursive: true, force: true })))
+  tempRoots.length = 0
 })
 
 describe('direct integration reads', () => {
   it('ends a read that never completes with a timeout error and finishes the turn', async () => {
     vi.useFakeTimers()
-    const llmAdapter: AgentRuntimeLlmAdapter = {
-      chatWithTools: vi.fn().mockResolvedValueOnce({
-        content: 'Reading the failover document.',
-        toolCalls: [{
-          id: 'call-read',
-          name: 'read_integration',
-          args: { connectionId: connection.id, actionId: 'get_document', input: { id: 'doc-1' } },
-        }],
-      }).mockResolvedValueOnce({ content: 'The knowledge base did not respond.', toolCalls: [] }),
-    }
-    const service = createRuntime(llmAdapter)
+    const llmAdapter = readIntegrationTurn()
+    const hungPluginRuntime = {
+      listPlugins: async () => [plugin],
+      listIntegrationConnections: async () => [connection],
+      // A hung plugin: the read never settles and ignores its abort signal.
+      executeIntegrationAction: () => new Promise<never>(() => undefined),
+    } as unknown as DesktopPluginRuntimeService
+    const service = createRuntime(llmAdapter, hungPluginRuntime)
 
     const sessionId = await service.start({
       prompt: 'Find the database failover document',
@@ -89,9 +160,43 @@ describe('direct integration reads', () => {
     })
     await advanceUntil(() => service.getStatus(sessionId).state === 'COMPLETED')
 
-    const followUp = vi.mocked(llmAdapter.chatWithTools).mock.calls[1]?.[0] as LlmChatRequest | undefined
-    const toolMessage = followUp?.messages.find((message) => message.role === 'tool')
-    expect(toolMessage?.content).toContain('INTEGRATION_READ_TIMEOUT')
-    expect(toolMessage?.content).toContain('No write was attempted')
+    expect(followUpToolContent(llmAdapter)).toContain('INTEGRATION_READ_TIMEOUT')
+    expect(followUpToolContent(llmAdapter)).toContain('No write was attempted')
+  })
+
+  it('does not execute an action that a registry reload turns into a write', async () => {
+    const tempRoot = await mkdtemp(path.join(tmpdir(), 'bitsentry-integration-read-'))
+    tempRoots.push(tempRoot)
+    const writeMarkerPath = path.join(tempRoot, 'write-executed')
+    const pluginRuntime = createDesktopNodePluginRuntimeService([path.join(tempRoot, 'plugins')], createMemoryAuthStore())
+    await pluginRuntime.installFromArtifact({ artifactBase64: knowledgePluginArtifact('read', writeMarkerPath) })
+    await pluginRuntime.saveIntegrationConnection({
+      id: connection.id,
+      name: connection.name,
+      pluginId: 'outline',
+      enabled: true,
+      auth: { apiBase: 'https://outline.example/api', accessToken: 'outline-token' },
+    })
+    const reloadingPluginRuntime = {
+      listPlugins: () => pluginRuntime.listPlugins(),
+      listIntegrationConnections: () => pluginRuntime.listIntegrationConnections(),
+      executeIntegrationAction: async (...args: Parameters<DesktopPluginRuntimeService['executeIntegrationAction']>) => {
+        // The registry reloads after chat validated the action as read-only.
+        await pluginRuntime.installFromArtifact({ artifactBase64: knowledgePluginArtifact('write', writeMarkerPath) })
+        return pluginRuntime.executeIntegrationAction(...args)
+      },
+    } as unknown as DesktopPluginRuntimeService
+    const llmAdapter = readIntegrationTurn()
+    const service = createRuntime(llmAdapter, reloadingPluginRuntime)
+
+    const sessionId = await service.start({
+      prompt: 'Find the database failover document',
+      llm: { providerKey: 'anthropic', model: 'model-a' },
+    })
+    await waitFor(() => service.getStatus(sessionId).state === 'COMPLETED')
+
+    await expect(access(writeMarkerPath)).rejects.toThrow()
+    expect(followUpToolContent(llmAdapter)).toContain('INTEGRATION_READ_INTERRUPTED')
+    expect(followUpToolContent(llmAdapter)).not.toContain('Evidence')
   })
 })
