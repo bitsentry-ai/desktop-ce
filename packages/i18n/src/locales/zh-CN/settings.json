@@ -235,5 +235,19 @@
   "settings.updateSettingsSection.updates": "更新",
   "settings.updateSettingsSection.versionAvailableToDownload": "BitSentry Desktop {{version}} 可供下载。",
   "settings.updateSettingsSection.versionReadyToInstall": "BitSentry Desktop {{version}} 已准备好安装。",
-  "settings.dataPolicy.policyManagedDescription": "数据处理和脱敏控制由平台策略管理，无法从设置中更改。"
+  "settings.dataPolicy.policyManagedDescription": "数据处理和脱敏控制由平台策略管理，无法从设置中更改。",
+  "settings.integrationConnections.title": "聊天集成连接",
+  "settings.integrationConnections.description": "为聊天中的每个 iTop 或 Outline 实例命名。凭据保留在此产品中。保存不会测试连接。编辑时请重新输入令牌。",
+  "settings.integrationConnections.plugin": "集成",
+  "settings.integrationConnections.name": "连接名称",
+  "settings.integrationConnections.endpoint": "实例或 API 地址",
+  "settings.integrationConnections.token": "API 令牌",
+  "settings.integrationConnections.save": "保存连接",
+  "settings.integrationConnections.edit": "编辑",
+  "settings.integrationConnections.remove": "删除",
+  "settings.integrationConnections.cancel": "取消",
+  "settings.integrationConnections.loadFailed": "无法加载连接。请刷新后重试。",
+  "settings.integrationConnections.saveFailed": "无法保存连接。请检查地址、凭据和名称是否唯一。",
+  "settings.integrationConnections.removeFailed": "无法删除连接。请重试。",
+  "settings.integrationConnections.outline": "Outline"
 }

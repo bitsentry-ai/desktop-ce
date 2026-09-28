@@ -1,3 +1,4 @@
+import { integrationConnectionInputSchema } from "@bitsentry-ce/core/features/plugins";
 import { z } from "zod";
 import { DESKTOP_RPC_CHANNELS, type DesktopRpcChannel } from "./desktop-ipc-contract";
 
@@ -290,6 +291,8 @@ export function createDesktopIpcPayloadValidator(
   });
 
   const schemaOverrides: Partial<Record<DesktopRpcChannel, z.ZodType>> = {
+    "plugins:saveConnection": integrationConnectionInputSchema,
+    "plugins:removeConnection": z.object({ id: z.uuid() }).strict(),
     "plugins:get": z.object({
       pluginId: z.string().min(1),
     }),
@@ -592,6 +595,7 @@ export function createDesktopIpcPayloadValidator(
 
   const noPayloadChannels: DesktopRpcChannel[] = [
     "plugins:list",
+    "plugins:listConnections",
     "settings:getAll",
     "settings:getGeneral",
     "settings:getSecurity",
