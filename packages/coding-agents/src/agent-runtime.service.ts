@@ -3075,6 +3075,7 @@ export class AgentRuntimeService {
       saveRunbookAuthoringProposal: (proposal) =>
         this.authoringProposalStore?.save(proposal) ?? Promise.resolve(),
       pluginRuntime: this.pluginRuntime,
+      integrationConnections: { list: () => this.pluginRuntime?.listIntegrationConnections() ?? Promise.resolve([]) },
       ...(options.observeEvents
         ? { onToolEvent: (event: HostToolEvent) => this.observeHostToolEvent(session, event) }
         : {}),

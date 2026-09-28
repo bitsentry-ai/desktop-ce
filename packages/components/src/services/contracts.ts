@@ -1,3 +1,4 @@
+import type { IntegrationConnection, IntegrationConnectionInput } from "@bitsentry-ce/core/features/plugins";
 import type {
   AccessLevel,
   AgentThreadSnapshot,
@@ -519,6 +520,9 @@ export interface PluginInstallSummary {
 }
 
 export interface PluginsServicePort {
+  listConnections?(): Promise<IntegrationConnection[]>;
+  saveConnection?(input: IntegrationConnectionInput): Promise<unknown>;
+  removeConnection?(id: string): Promise<unknown>;
   list(): Promise<PluginDescriptor[]>;
   get(pluginId: string): Promise<PluginDescriptor | null>;
   listAvailable(

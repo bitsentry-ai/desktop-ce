@@ -1,3 +1,4 @@
+import { integrationConnectionInputSchema } from "./integration-connections";
 import type {
   DesktopPluginExecutionRequest,
   DesktopPluginFieldType,
@@ -174,6 +175,16 @@ export function createDesktopPluginHandlers(
   storedAuthStore: DesktopPluginStoredAuthStore = NOOP_DESKTOP_PLUGIN_STORED_AUTH_STORE,
 ): Record<string, (payload: unknown) => Promise<unknown>> {
   return {
+    "plugins:listConnections": () => service.listIntegrationConnections(),
+    "plugins:saveConnection": async (payload) => {
+      await service.saveIntegrationConnection(integrationConnectionInputSchema.parse(payload));
+      return { ok: true };
+    },
+    "plugins:removeConnection": async (payload) => {
+      const id = (payload as { id: string }).id;
+      await service.removeIntegrationConnection(id);
+      return { ok: true };
+    },
     "plugins:list": () => Promise.resolve({
       data: service.listPlugins(),
     }),

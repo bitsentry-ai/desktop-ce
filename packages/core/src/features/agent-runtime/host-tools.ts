@@ -1,3 +1,4 @@
+import type { IntegrationConnection } from "../plugins/integration-connections";
 import { telemetryActionConfigWithCliSchema } from "../runbooks/runbooks.schemas";
 import { z } from 'zod'
 import type { RunbookContext, ToolResult } from './types'
@@ -253,6 +254,7 @@ export const RUNBOOK_COMPLETION_WAIT_SECONDS = RUNBOOK_COMPLETION_WAIT_TIMEOUT_M
 export type HostToolName =
   | 'list_runbooks'
   | 'list_plugins'
+  | 'list_integration_connections'
   | 'list_models'
   | 'execute_runbook'
   | 'get_runbook_execution'
@@ -292,6 +294,7 @@ export type HostToolEvent = {
 )
 
 export interface HostToolContext {
+  integrationConnections?: { list(): Promise<IntegrationConnection[]> };
   gateway: RunbookGateway
   session: AgentSessionRef
   buildRequestKey?: (
@@ -1031,6 +1034,12 @@ export const hostTools = [
     description: 'List available runbooks that can be executed for the incident.',
     argsSchema: listRunbooksHostToolSchema,
     handler: async (context: HostToolContext) => await listRunbooks(context),
+  },
+  {
+    name: 'list_integration_connections',
+    description: 'List named ticket and knowledge connections, instance targets, availability, and allowed operations. Credentials are never returned. Configured means credentials are saved, not that a live connectivity check succeeded.',
+    argsSchema: z.object({}).strict(),
+    handler: async (context) => ({ output: JSON.stringify(await context.integrationConnections?.list() ?? []) }),
   },
   {
     name: 'list_plugins',
