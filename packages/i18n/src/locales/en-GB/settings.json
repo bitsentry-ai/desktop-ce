@@ -249,5 +249,6 @@
   "settings.integrationConnections.loadFailed": "Could not load connections. Reload to try again.",
   "settings.integrationConnections.saveFailed": "Could not save the connection. Check the URL, credentials, and unique name.",
   "settings.integrationConnections.removeFailed": "Could not remove the connection. Try again.",
-  "settings.integrationConnections.outline": "Outline"
+  "settings.integrationConnections.outline": "Outline",
+  "settings.integrationConnections.ticketMapping": "Ticket field and lifecycle mappings (optional JSON)"
 }
