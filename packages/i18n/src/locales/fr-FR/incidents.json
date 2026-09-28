@@ -76,5 +76,18 @@
   "incidents.incidents.unarchiveIncident_2": "Désarchiver l'incident",
   "incidents.incidents.workingFor": "En cours pour",
   "incidents.incidents.workspaceTrigger": "Déclencheur d'espace de travail",
-  "incidents.session.cancelledByUser": "Session annulée par l’utilisateur"
+  "incidents.session.cancelledByUser": "Session annulée par l’utilisateur",
+  "incidents.integrationWrites.title": "Modifications des intégrations",
+  "incidents.integrationWrites.error": "Impossible de charger ou appliquer cette modification. Actualisez et vérifiez son état avant de réessayer.",
+  "incidents.integrationWrites.proposed": "En attente de validation",
+  "incidents.integrationWrites.executing": "En cours",
+  "incidents.integrationWrites.succeeded": "Réussi",
+  "incidents.integrationWrites.failed": "Échec",
+  "incidents.integrationWrites.uncertain": "Résultat incertain",
+  "incidents.integrationWrites.cancelled": "Annulé",
+  "incidents.integrationWrites.public": "Contenu public ou partagé : vérifiez le public et le contenu exact.",
+  "incidents.integrationWrites.inspect": "Vérifiez la ressource distante avant de réessayer. La demande peut avoir abouti.",
+  "incidents.integrationWrites.closeRequest": "Je demande explicitement la clôture de ce ticket.",
+  "incidents.integrationWrites.approve": "Valider cette modification exacte",
+  "incidents.integrationWrites.cancel": "Rejeter"
 }

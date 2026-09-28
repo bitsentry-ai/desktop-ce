@@ -12,6 +12,7 @@ export const integrationActionToolSchema = z.object({
 export type IntegrationActionInput = z.infer<typeof integrationActionToolSchema>;
 export interface IntegrationToolsPort {
   list(): Promise<IntegrationConnection[]>;
+  proposeWrite?(request: IntegrationActionInput): Promise<import("../plugins/integration-operations").IntegrationOperation>;
   executeRead?(request: IntegrationActionInput): Promise<DesktopPluginExecutionResult>;
 }
 
@@ -44,6 +45,7 @@ export async function runIntegrationTool(
   const missing = action.fields.filter((field) => field.required && (parsed.data[field.key] === undefined || parsed.data[field.key] === null || parsed.data[field.key] === "")).map((field) => field.key);
   if (missing.length > 0) return error("CLARIFICATION_REQUIRED", "Ask the engineer for these required fields before retrying.", missing);
   if (mode === "preview") {
+    if (port.proposeWrite !== undefined) return saveProposal(port.proposeWrite, { ...request, input: parsed.data });
     return { output: JSON.stringify({
       status: "preview", requiresApproval: true, connectionId: connection.id,
       connectionName: connection.name, target: connection.target, pluginId: connection.pluginId,
@@ -73,4 +75,9 @@ async function executeReadTool(
   } catch {
     return error("INTEGRATION_READ_INTERRUPTED", "The read was cancelled or failed. Check connection availability and retry the read if needed.");
   }
+}
+
+async function saveProposal(propose: NonNullable<IntegrationToolsPort["proposeWrite"]>, request: IntegrationActionInput): Promise<ToolResult> {
+  try { return { output: JSON.stringify(await propose(request)) }; }
+  catch { return error("PROPOSAL_UNAVAILABLE", "The write proposal could not be saved. Check the connection and ticket mapping; no write was attempted."); }
 }

@@ -76,5 +76,18 @@
   "incidents.incidents.unarchiveIncident_2": "Batalkan pengarsipan insiden",
   "incidents.incidents.workingFor": "Bekerja untuk",
   "incidents.incidents.workspaceTrigger": "Pemicu ruang kerja",
-  "incidents.session.cancelledByUser": "Sesi dibatalkan oleh pengguna"
+  "incidents.session.cancelledByUser": "Sesi dibatalkan oleh pengguna",
+  "incidents.integrationWrites.title": "Perubahan integrasi",
+  "incidents.integrationWrites.error": "Tidak dapat memuat atau menerapkan perubahan. Segarkan dan periksa statusnya sebelum mencoba lagi.",
+  "incidents.integrationWrites.proposed": "Menunggu persetujuan",
+  "incidents.integrationWrites.executing": "Sedang dijalankan",
+  "incidents.integrationWrites.succeeded": "Berhasil",
+  "incidents.integrationWrites.failed": "Gagal",
+  "incidents.integrationWrites.uncertain": "Hasil belum pasti",
+  "incidents.integrationWrites.cancelled": "Dibatalkan",
+  "incidents.integrationWrites.public": "Konten publik atau bersama: periksa audiens dan konten persisnya.",
+  "incidents.integrationWrites.inspect": "Periksa sumber daya jarak jauh sebelum mencoba lagi. Permintaan ini mungkin sudah selesai.",
+  "incidents.integrationWrites.closeRequest": "Saya secara eksplisit meminta penutupan tiket ini.",
+  "incidents.integrationWrites.approve": "Setujui perubahan persis ini",
+  "incidents.integrationWrites.cancel": "Tolak"
 }
