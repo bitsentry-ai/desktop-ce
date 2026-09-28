@@ -93,3 +93,47 @@ it('keeps reconciliation uncertain when a read returns a different resource', as
   await expect(service.reconcile('thread', proposal.id, true, true, 'expected')).rejects.toThrow('exact remote resource')
   expect((await service.list('thread'))[0].status).toBe('uncertain')
 })
+it('enforces ticket mappings again at the approval boundary for generic writes', async () => {
+  const { service, execute, runtime } = setup()
+  runtime.connection.pluginId = 'itop'
+  runtime.connection.ticketMapping = {
+    className: 'UserRequest', referenceField: 'ref', titleField: 'title', internalLogField: 'private_log', publicLogField: 'public_log',
+    fields: { title: 'title', caller: 'caller_id' }, defaults: {},
+    requiredFields: { create: ['title', 'caller'], acknowledge: [], assign: [], internal_log: [], public_log: [], resolve: [], close: [] }, stimuli: {},
+  }
+  runtime.plugin.id = 'itop'
+  runtime.plugin.actions = [{ id: 'create_object', title: 'Create', description: 'Create', riskLevel: 'write', fields: [{ key: 'class', label: 'Class', type: 'string', required: true }, { key: 'fields', label: 'Fields', type: 'json', required: true }] }]
+  const request = { connectionId: runtime.connection.id, actionId: 'create_object', input: { class: 'UserRequest', fields: { title: 'Outage' } } }
+  await expect(service.propose('thread', request)).rejects.toThrow('caller')
+  const proposal = await service.propose('thread', { ...request, input: { ...request.input, fields: { title: 'Outage', caller_id: 42 } } })
+  runtime.connection.ticketMapping.requiredFields.create.push('organization')
+  await expect(service.approve('thread', proposal.id, false)).rejects.toThrow('organization')
+  expect(execute).not.toHaveBeenCalled()
+})
+
+it('keeps a live execution leased and refuses reconciliation until it settles', async () => {
+  vi.useFakeTimers()
+  const { service, propose, execute, store } = setup()
+  let finish!: (value: { ok: boolean; status: number; data: object }) => void
+  execute.mockImplementation(() => new Promise((resolve) => { finish = resolve }))
+  try {
+    const proposal = await propose()
+    const approval = service.approve('thread', proposal.id, false)
+    await vi.advanceTimersByTimeAsync(150_000)
+    expect((await service.list('thread'))[0].status).toBe('executing')
+    await store.transition(proposal.id, 'executing', { status: 'uncertain', updatedAt: new Date().toISOString() })
+    await expect(service.reconcile('thread', proposal.id, false, true)).rejects.toThrow('still active')
+    finish({ ok: true, status: 200, data: {} })
+    expect((await approval).status).toBe('succeeded')
+  } finally { vi.useRealTimers() }
+})
+it('does not expire an execution using an observation made before its heartbeat', async () => {
+  const { propose, store } = setup()
+  const proposal = await propose()
+  const before = '2026-09-26T11:00:00.000Z'
+  const after = '2026-09-26T11:01:00.000Z'
+  await store.transition(proposal.id, 'proposed', { status: 'executing', updatedAt: before })
+  await store.transition(proposal.id, 'executing', { status: 'executing', updatedAt: after })
+  expect(await store.transition(proposal.id, 'executing', { status: 'uncertain', updatedAt: after }, before)).toBe(false)
+  expect((await store.get(proposal.id))?.status).toBe('executing')
+})

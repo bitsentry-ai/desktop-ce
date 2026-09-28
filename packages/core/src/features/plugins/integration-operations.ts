@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { extractIntegrationResources } from "./integration-resources";
 import { buildPluginInputSchema } from "./desktop-plugin-registry";
+import type { ItopTicketMapping } from "./itop-ticket-mapping";
 import type { IntegrationConnection } from "./integration-connections";
 import type { DesktopPluginDescriptor, DesktopPluginExecutionResult } from "./plugins.types";
 
@@ -17,7 +18,7 @@ export interface IntegrationOperationStore {
   list(threadId: string): Promise<IntegrationOperation[]>;
   get(id: string): Promise<IntegrationOperation | null>;
   create(operation: IntegrationOperation): Promise<void>;
-  transition(id: string, expected: IntegrationOperation["status"], patch: Pick<IntegrationOperation, "status" | "updatedAt"> & Partial<Pick<IntegrationOperation, "result" | "message">>): Promise<boolean>;
+  transition(id: string, expected: IntegrationOperation["status"], patch: Pick<IntegrationOperation, "status" | "updatedAt"> & Partial<Pick<IntegrationOperation, "result" | "message">>, expectedUpdatedAt?: string): Promise<boolean>;
 }
 export interface IntegrationWriteRuntime {
   connection: IntegrationConnection;
@@ -40,6 +41,7 @@ function classify(runtime: IntegrationWriteRuntime, request: IntegrationWriteReq
   const fields = z.record(z.string(), z.unknown()).parse(request.input.fields ?? {});
   if (runtime.plugin.id === "itop") {
     if (mapping === undefined || request.input.class !== mapping.className) throw new Error("Configure a matching ticket mapping before approving writes.");
+    validateTicketFields(mapping, request, fields);
     // Direct state changes bypass configured lifecycle semantics and are never approved.
     if ("status" in fields) throw new Error("Use a configured lifecycle operation to change ticket status.");
     if (request.actionId === "apply_stimulus" && !Object.values(mapping.stimuli).includes(String(request.input.stimulus))) throw new Error("This lifecycle transition is not configured.");
@@ -52,12 +54,13 @@ function classify(runtime: IntegrationWriteRuntime, request: IntegrationWriteReq
 
 /** Approval is an application action; no agent tool receives this capability. */
 export class IntegrationOperationService {
+  private static readonly activeExecutions = new Set<string>();
   constructor(private readonly store: IntegrationOperationStore, private readonly resolve: (id: string) => Promise<IntegrationWriteRuntime>) {}
   async list(threadId: string) {
     const rows = await this.store.list(threadId);
     for (const row of rows) {
       if (row.status === "executing" && Date.now() - Date.parse(row.updatedAt) > 120_000) {
-        await this.store.transition(row.id, "executing", { status: "uncertain", updatedAt: new Date().toISOString(), message: "Execution has not confirmed completion. Inspect the remote system before recovery." });
+        await this.store.transition(row.id, "executing", { status: "uncertain", updatedAt: new Date().toISOString(), message: "Execution has not confirmed completion. Inspect the remote system before recovery." }, row.updatedAt);
       }
     }
     return this.store.list(threadId);
@@ -95,6 +98,7 @@ export class IntegrationOperationService {
   async reconcile(threadId: string, id: string, applied: boolean, confirmed: boolean, externalId?: string) {
     const operation = await this.owned(threadId, id);
     if (!confirmed || operation.status !== "uncertain") throw new Error("Inspect the remote system and explicitly confirm the outcome first.");
+    if (IntegrationOperationService.activeExecutions.has(id)) throw new Error("Execution is still active. Wait for it to settle before reconciliation.");
     let result: unknown;
     if (applied) {
       if (!externalId) throw new Error("Provide the external resource ID you inspected.");
@@ -132,6 +136,10 @@ export class IntegrationOperationService {
     const flags = classify(runtime, operation);
     if (flags.requiresCloseRequest !== operation.requiresCloseRequest || flags.publicUpdate !== operation.publicUpdate) throw new Error("Ticket mapping changed. Create a new preview.");
     if (!await this.store.transition(id, "proposed", { status: "executing", updatedAt: new Date().toISOString() })) return this.owned(threadId, id);
+    IntegrationOperationService.activeExecutions.add(id);
+    const heartbeat = setInterval(() => {
+      void this.store.transition(id, "executing", { status: "executing", updatedAt: new Date().toISOString() }).catch(() => {});
+    }, 30_000);
     try {
       const result = await runtime.execute(operation);
       const recorded = await this.store.transition(id, "executing", {
@@ -141,6 +149,9 @@ export class IntegrationOperationService {
       if (!recorded && result.ok) await this.store.transition(id, "uncertain", { status: "succeeded", result: result.data, message: undefined, updatedAt: new Date().toISOString() });
     } catch {
       await this.store.transition(id, "executing", { status: "uncertain", message: "The request was interrupted. The remote change may have completed; inspect it before retrying.", updatedAt: new Date().toISOString() });
+    } finally {
+      clearInterval(heartbeat);
+      IntegrationOperationService.activeExecutions.delete(id);
     }
     return this.owned(threadId, id);
   }
@@ -174,4 +185,25 @@ function remoteWriteOutcome(result: DesktopPluginExecutionResult): Pick<Integrat
   const rejected = [400, 401, 403, 404, 409, 422, 429].includes(result.status);
   const messages: Record<number, string> = { 401: "credentials_rejected", 403: "credentials_rejected", 409: "stale_resource" };
   return { status: rejected ? "failed" : "uncertain", result: result.data, message: messages[result.status] ?? (rejected ? "remote_rejected" : "uncertain") };
+}
+
+function validateTicketFields(mapping: ItopTicketMapping, request: IntegrationWriteRequest, fields: Record<string, unknown>) {
+  const operations: Array<keyof ItopTicketMapping["requiredFields"]> = [];
+  if (request.actionId === "create_object") operations.push("create");
+  for (const operation of ["acknowledge", "assign", "resolve", "close"] as const) {
+    if (request.actionId === "apply_stimulus" && request.input.stimulus === mapping.stimuli[operation]) operations.push(operation);
+  }
+  for (const [operation, field] of [["internal_log", mapping.internalLogField], ["public_log", mapping.publicLogField]] as const) {
+    if (field in fields) {
+      operations.push(operation);
+      z.object({ add_item: z.object({ message: z.string().trim().min(1), format: z.literal("text") }).strict() }).strict().parse(fields[field]);
+    }
+  }
+  const allowed = new Set([...Object.values(mapping.fields), mapping.internalLogField, mapping.publicLogField]);
+  if (Object.keys(fields).some((field) => !allowed.has(field))) throw new Error("Use only configured ticket field mappings.");
+  const missing = operations.flatMap((operation) => mapping.requiredFields[operation]).filter((key) => {
+    const value = fields[mapping.fields[key]];
+    return value === undefined || value === null || value === "";
+  });
+  if (missing.length) throw new Error(`Required ticket fields are missing: ${Array.from(new Set(missing)).join(", ")}`);
 }
