@@ -4,14 +4,14 @@ import { integrationConnectionInputSchema, validateIntegrationConnection, type I
 
 const STORE_KEY = "bitsentry.integration-connections.v1";
 const connectionsSchema = z.array(integrationConnectionInputSchema).max(100);
+const pendingWrites = new WeakMap<DesktopPluginStoredAuthStore, Promise<void>>();
 
 /** Uses the product's credential store, including its encryption and atomic writes. */
 export class IntegrationConnectionStore {
-  private pending: Promise<unknown> = Promise.resolve();
   constructor(private readonly credentials: DesktopPluginStoredAuthStore) {}
 
   async list(): Promise<IntegrationConnectionInput[]> {
-    await this.pending;
+    await pendingWrites.get(this.credentials);
     return this.read();
   }
 
@@ -23,11 +23,11 @@ export class IntegrationConnectionStore {
   }
 
   private update(change: (rows: IntegrationConnectionInput[]) => IntegrationConnectionInput[]): Promise<void> {
-    const operation = this.pending.then(async () => {
+    const operation = (pendingWrites.get(this.credentials) ?? Promise.resolve()).then(async () => {
       const rows = connectionsSchema.parse(change(await this.read()));
       await this.credentials.set(STORE_KEY, { connections: JSON.stringify(rows) });
     });
-    this.pending = operation.catch(() => {});
+    pendingWrites.set(this.credentials, operation.catch(() => {}));
     return operation;
   }
 

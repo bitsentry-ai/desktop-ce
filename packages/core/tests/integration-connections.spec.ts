@@ -15,15 +15,17 @@ const first = { id: '11111111-1111-4111-8111-111111111111', name: 'Production', 
 const second = { ...first, id: '22222222-2222-4222-8222-222222222222', name: 'Staging', auth: { baseUrl: 'https://staging.example', authToken: 'staging-secret' } }
 
 describe('named integration credentials', () => {
-  it('preserves separate instance secrets across concurrent writes and reload', async () => {
+  it('preserves concurrent saves from separate store instances that share credentials', async () => {
     const backing = credentials()
-    const store = new IntegrationConnectionStore(backing)
-    await Promise.all([store.save(first), store.save(second)])
-    const reloaded = await new IntegrationConnectionStore(backing).list()
+    const firstStore = new IntegrationConnectionStore(backing)
+    const secondStore = new IntegrationConnectionStore(backing)
+    await Promise.all([firstStore.save(first), secondStore.save(second)])
+    const reloadedStore = new IntegrationConnectionStore(backing)
+    const reloaded = await reloadedStore.list()
     expect(reloaded.find((row) => row.id === first.id)?.auth.authToken).toBe('production-secret')
     expect(reloaded.find((row) => row.id === second.id)?.auth.authToken).toBe('staging-secret')
-    await store.remove(first.id)
-    expect(await store.list()).toEqual([second])
+    await firstStore.remove(first.id)
+    expect(await reloadedStore.list()).toEqual([second])
   })
 
   it('does not return credentials or misrepresent a missing plugin as configured', () => {
@@ -32,6 +34,18 @@ describe('named integration credentials', () => {
     expect(descriptor.target).toBe('https://itop.example/team')
     expect(JSON.stringify(descriptor)).not.toContain('production-secret')
     expect(descriptor).not.toHaveProperty('auth')
+  })
+
+  it('describes username/password auth without exposing either credential', () => {
+    const basicAuthConnection = {
+      ...first,
+      auth: { baseUrl: 'https://itop.example', username: 'sandbox-user', password: 'sandbox-password' },
+    }
+    expect(validateIntegrationConnection(basicAuthConnection)).toEqual(basicAuthConnection)
+    const descriptor = describeIntegrationConnection(basicAuthConnection)
+    expect(descriptor.authMode).toBe('username_password')
+    expect(JSON.stringify(descriptor)).not.toContain('sandbox-user')
+    expect(JSON.stringify(descriptor)).not.toContain('sandbox-password')
   })
 
   it('rejects ambiguous names and keeps the queue usable after rejection', async () => {

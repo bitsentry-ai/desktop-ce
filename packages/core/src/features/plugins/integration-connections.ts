@@ -13,6 +13,7 @@ export type IntegrationConnectionInput = z.infer<typeof integrationConnectionInp
 
 export const integrationConnectionSchema = integrationConnectionInputSchema.omit({ auth: true }).extend({
   target: z.string(),
+  authMode: z.enum(["token", "username_password"]),
   availability: z.enum(["configured", "disabled", "plugin_unavailable", "credentials_missing"]),
   actions: z.array(z.object({ id: z.string(), title: z.string(), riskLevel: z.enum(["read", "write"]) })),
 });
@@ -58,6 +59,11 @@ export function describeIntegrationConnection(
     pluginId: connection.pluginId,
     enabled: connection.enabled,
     target,
+    authMode: connection.pluginId === "itop" &&
+        !(connection.auth.authToken?.trim()) &&
+        Boolean(connection.auth.username?.trim() && connection.auth.password?.trim())
+      ? "username_password"
+      : "token",
     availability: !connection.enabled ? "disabled"
       : !target || !hasIntegrationCredentials(connection) ? "credentials_missing"
       : plugin == null ? "plugin_unavailable" : "configured",
