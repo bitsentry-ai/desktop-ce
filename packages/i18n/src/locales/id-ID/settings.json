@@ -250,5 +250,11 @@
   "settings.integrationConnections.saveFailed": "Tidak dapat menyimpan koneksi. Periksa URL, kredensial, dan nama yang unik.",
   "settings.integrationConnections.removeFailed": "Tidak dapat menghapus koneksi. Coba lagi.",
   "settings.integrationConnections.outline": "Outline",
-  "settings.integrationConnections.ticketMapping": "Pemetaan kolom dan siklus hidup tiket (JSON opsional)"
+  "settings.integrationConnections.ticketMapping": "Pemetaan kolom dan siklus hidup tiket (JSON opsional)",
+  "settings.integrationConnections.availability.configured": "Dikonfigurasi",
+  "settings.integrationConnections.availability.disabled": "Dinonaktifkan",
+  "settings.integrationConnections.availability.plugin_unavailable": "Plugin tidak tersedia",
+  "settings.integrationConnections.availability.credentials_missing": "Kredensial belum diisi",
+  "settings.integrationConnections.availability.destination_blocked": "Tujuan diblokir kebijakan host",
+  "settings.integrationConnections.targetImmutable": "Target koneksi tetap. Buat koneksi baru untuk instans lain; kredensial dapat diperbarui di sini."
 }

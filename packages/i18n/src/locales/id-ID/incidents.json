@@ -115,5 +115,13 @@
   "incidents.deliveries.reconciled": "Dikonfirmasi di sistem jarak jauh",
   "incidents.deliveries.retry": "Coba ulang sinkronisasi status",
   "incidents.deliveries.inspect": "Periksa iTop untuk peristiwa asli sebelum mengonfirmasi. Pembuatan tidak pernah dicoba ulang secara otomatis.",
-  "incidents.deliveries.reconcile": "Verifikasi dan tautkan tiket yang ada"
+  "incidents.deliveries.reconcile": "Verifikasi dan tautkan tiket yang ada",
+  "incidents.integrationRecovery.credentials": "Kredensial ditolak. Perbarui koneksi di Pengaturan, lalu segarkan sumber daya.",
+  "incidents.integrationRecovery.stale": "Target atau revisi dokumen berubah. Segarkan dan tinjau usulan baru.",
+  "incidents.integrationRecovery.unavailable": "Koneksi, plugin, atau sumber daya tidak tersedia. Pulihkan akses sebelum melanjutkan.",
+  "incidents.integrationRecovery.close": "Penutupan memerlukan permintaan eksplisit Anda.",
+  "incidents.integrationRecovery.rejected": "Sistem jarak jauh menolak perubahan. Tinjau bidang wajib sebelum mengusulkan perbaikan.",
+  "incidents.integrationRecovery.refresh": "Segarkan sumber daya",
+  "incidents.integrationRecovery.staleCard": "Pengamatan ini lebih dari lima menit. Segarkan sebelum mengandalkan statusnya.",
+  "incidents.integrationRecovery.deleted": "Sumber daya dilaporkan dihapus. Tautan historis dipertahankan."
 }

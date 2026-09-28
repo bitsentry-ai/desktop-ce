@@ -250,5 +250,11 @@
   "settings.integrationConnections.saveFailed": "Could not save the connection. Check the URL, credentials, and unique name.",
   "settings.integrationConnections.removeFailed": "Could not remove the connection. Try again.",
   "settings.integrationConnections.outline": "Outline",
-  "settings.integrationConnections.ticketMapping": "Ticket field and lifecycle mappings (optional JSON)"
+  "settings.integrationConnections.ticketMapping": "Ticket field and lifecycle mappings (optional JSON)",
+  "settings.integrationConnections.availability.configured": "Configured",
+  "settings.integrationConnections.availability.disabled": "Disabled",
+  "settings.integrationConnections.availability.plugin_unavailable": "Plugin unavailable",
+  "settings.integrationConnections.availability.credentials_missing": "Credentials missing",
+  "settings.integrationConnections.availability.destination_blocked": "Destination blocked by host policy",
+  "settings.integrationConnections.targetImmutable": "Connection targets are permanent. Create a new named connection for another instance; credentials can be updated here."
 }

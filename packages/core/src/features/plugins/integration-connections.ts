@@ -15,7 +15,7 @@ export type IntegrationConnectionInput = z.infer<typeof integrationConnectionInp
 
 export const integrationConnectionSchema = integrationConnectionInputSchema.omit({ auth: true }).extend({
   target: z.string(),
-  availability: z.enum(["configured", "disabled", "plugin_unavailable", "credentials_missing"]),
+  availability: z.enum(["configured", "disabled", "plugin_unavailable", "credentials_missing", "destination_blocked"]),
   actions: z.array(z.object({ id: z.string(), title: z.string(), riskLevel: z.enum(["read", "write"]) })),
 });
 export type IntegrationConnection = z.infer<typeof integrationConnectionSchema>;
@@ -30,8 +30,8 @@ export function validateIntegrationConnection(input: unknown): IntegrationConnec
   }
   const endpoint = connection.pluginId === "itop" ? connection.auth.baseUrl : connection.auth.apiBase;
   const url = new URL(endpoint ?? "");
-  if (!["https:", "http:"].includes(url.protocol) || url.username || url.password || url.search || url.hash) {
-    throw new Error("Connection URL must be HTTP(S) without embedded credentials, query, or fragment.");
+  if (url.protocol !== "https:" || url.username || url.password || url.search || url.hash) {
+    throw new Error("Connection URL must be HTTPS without embedded credentials, query, or fragment.");
   }
   if (!hasIntegrationCredentials(connection)) throw new Error("Connection credentials are incomplete.");
   return connection;
@@ -66,4 +66,22 @@ export function describeIntegrationConnection(
       : plugin == null ? "plugin_unavailable" : "configured",
     actions: plugin?.actions.map(({ id, title, riskLevel }) => ({ id, title, riskLevel })) ?? [],
   };
+}
+
+export function normalizeIntegrationTarget(value: string): string {
+  const url = new URL(value);
+  if (url.protocol !== "https:" || url.username || url.password || url.search || url.hash) throw new Error("Integration target must use HTTPS without embedded credentials.");
+  let target = url.href;
+  while (target.endsWith("/")) { target = target.slice(0, -1); }
+  return target;
+}
+export function applyIntegrationDestinationPolicy(connection: IntegrationConnection, policy: { itop?: string; outline?: string }): IntegrationConnection {
+  if (connection.availability !== "configured") return connection;
+  try {
+    const target = normalizeIntegrationTarget(connection.target);
+    const allowed = (connection.pluginId === "itop" ? policy.itop : policy.outline) ?? "";
+    const targets = allowed.split(",").map((row) => row.trim()).filter(Boolean).map(normalizeIntegrationTarget);
+    if (targets.includes(target) || (connection.pluginId === "outline" && target === "https://app.getoutline.com/api")) return connection;
+  } catch { /* Invalid host configuration is unavailable, never a policy bypass. */ }
+  return { ...connection, availability: "destination_blocked" };
 }

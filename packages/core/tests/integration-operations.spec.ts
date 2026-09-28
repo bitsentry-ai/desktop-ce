@@ -75,3 +75,21 @@ describe('durable integration approval boundary', () => {
     expect(execute).not.toHaveBeenCalled()
   })
 })
+
+it.each([[401, 'failed', 'credentials_rejected'], [409, 'failed', 'stale_resource'], [503, 'uncertain', 'uncertain']])('records remote status %s without retrying', async (status, expected, message) => {
+  const { service, propose, execute } = setup()
+  const proposal = await propose()
+  execute.mockResolvedValue({ ok: false, status, data: {} })
+  expect(await service.approve('thread', proposal.id, false)).toMatchObject({ status: expected, message })
+  await service.approve('thread', proposal.id, false)
+  expect(execute).toHaveBeenCalledTimes(1)
+})
+it('keeps reconciliation uncertain when a read returns a different resource', async () => {
+  const { service, propose, execute, runtime, store } = setup()
+  const proposal = await propose()
+  await store.transition(proposal.id, 'proposed', { status: 'uncertain', updatedAt: new Date().toISOString() })
+  runtime.plugin.actions.push({ id: 'get_document', title: 'Read', description: 'Read', riskLevel: 'read', fields: [] })
+  execute.mockResolvedValue({ ok: true, status: 200, data: { data: { id: 'wrong', title: 'Wrong', url: '/doc/wrong' } } })
+  await expect(service.reconcile('thread', proposal.id, true, true, 'expected')).rejects.toThrow('exact remote resource')
+  expect((await service.list('thread'))[0].status).toBe('uncertain')
+})

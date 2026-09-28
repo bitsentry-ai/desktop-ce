@@ -115,5 +115,13 @@
   "incidents.deliveries.reconciled": "Confirmed remotely",
   "incidents.deliveries.retry": "Retry state synchronization",
   "incidents.deliveries.inspect": "Inspect iTop for the original event before confirming. Creation is never retried automatically.",
-  "incidents.deliveries.reconcile": "Verify and link existing ticket"
+  "incidents.deliveries.reconcile": "Verify and link existing ticket",
+  "incidents.integrationRecovery.credentials": "Credentials were rejected. Update this connection in Settings, then refresh the resource.",
+  "incidents.integrationRecovery.stale": "The target or document revision changed. Refresh and review a new proposal before retrying.",
+  "incidents.integrationRecovery.unavailable": "The connection, plugin, or resource is unavailable. Restore access before continuing.",
+  "incidents.integrationRecovery.close": "Closing requires your explicit request.",
+  "incidents.integrationRecovery.rejected": "The remote system rejected this change. Review the required fields before proposing a corrected change.",
+  "incidents.integrationRecovery.refresh": "Refresh resource",
+  "incidents.integrationRecovery.staleCard": "This observation is older than five minutes. Refresh it before relying on its state.",
+  "incidents.integrationRecovery.deleted": "The remote resource was reported deleted. The historical link is retained."
 }

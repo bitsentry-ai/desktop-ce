@@ -1,6 +1,6 @@
 import { z } from "zod";
 import type { DesktopPluginStoredAuthStore } from "./desktop-plugin-auth-store";
-import { integrationConnectionInputSchema, validateIntegrationConnection, type IntegrationConnectionInput } from "./integration-connections";
+import { integrationConnectionInputSchema, validateIntegrationConnection, describeIntegrationConnection, normalizeIntegrationTarget, type IntegrationConnectionInput } from "./integration-connections";
 
 const STORE_KEY = "bitsentry.integration-connections.v1";
 const connectionsSchema = z.array(integrationConnectionInputSchema).max(100);
@@ -41,6 +41,7 @@ export class IntegrationConnectionStore {
       if (existing !== undefined && existing.pluginId !== connection.pluginId) {
         throw new Error("A connection cannot change its plugin.");
       }
+      if (existing !== undefined && normalizeIntegrationTarget(describeIntegrationConnection(existing).target) !== normalizeIntegrationTarget(describeIntegrationConnection(connection).target)) throw new Error("Create a new named connection to change its target instance.");
       return [...rows.filter((row) => row.id !== connection.id), connection];
     });
   }

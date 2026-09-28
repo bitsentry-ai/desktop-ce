@@ -115,5 +115,13 @@
   "incidents.deliveries.reconciled": "Confirmé à distance",
   "incidents.deliveries.retry": "Réessayer la synchronisation",
   "incidents.deliveries.inspect": "Inspectez iTop pour l’événement initial avant de confirmer. La création n’est jamais réessayée automatiquement.",
-  "incidents.deliveries.reconcile": "Vérifier et lier le ticket existant"
+  "incidents.deliveries.reconcile": "Vérifier et lier le ticket existant",
+  "incidents.integrationRecovery.credentials": "Identifiants refusés. Mettez à jour la connexion dans les paramètres, puis actualisez la ressource.",
+  "incidents.integrationRecovery.stale": "La cible ou la révision a changé. Actualisez et vérifiez une nouvelle proposition.",
+  "incidents.integrationRecovery.unavailable": "Connexion, plugin ou ressource indisponible. Rétablissez l’accès.",
+  "incidents.integrationRecovery.close": "La clôture nécessite votre demande explicite.",
+  "incidents.integrationRecovery.rejected": "Le système distant a refusé cette modification. Vérifiez les champs requis.",
+  "incidents.integrationRecovery.refresh": "Actualiser la ressource",
+  "incidents.integrationRecovery.staleCard": "Cette observation date de plus de cinq minutes. Actualisez-la avant de vous y fier.",
+  "incidents.integrationRecovery.deleted": "La ressource distante a été signalée supprimée. Le lien historique est conservé."
 }

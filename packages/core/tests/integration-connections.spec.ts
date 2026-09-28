@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { IntegrationConnectionStore } from '../src/features/plugins/integration-connection-store'
-import { describeIntegrationConnection, validateIntegrationConnection } from '../src/features/plugins/integration-connections'
+import { applyIntegrationDestinationPolicy, describeIntegrationConnection, validateIntegrationConnection } from '../src/features/plugins/integration-connections'
 import type { DesktopPluginStoredAuthRecord, DesktopPluginStoredAuthStore } from '../src/features/plugins/desktop-plugin-auth-store'
 
 function credentials(): DesktopPluginStoredAuthStore {
@@ -47,4 +47,18 @@ describe('named integration credentials', () => {
       expect(() => validateIntegrationConnection({ ...first, auth: { ...first.auth, baseUrl } })).toThrow()
     }
   })
+})
+
+it('keeps linked instance identity immutable while allowing credential rotation', async () => {
+  const store = new IntegrationConnectionStore(credentials())
+  await store.save(first)
+  await expect(store.save({ ...first, auth: second.auth })).rejects.toThrow('new named connection')
+  await store.save({ ...first, auth: { ...first.auth, authToken: 'rotated' } })
+  expect((await store.list())[0].auth.authToken).toBe('rotated')
+})
+it('reports unavailable destinations using the host exact-instance allowlist', () => {
+  const connection = { ...describeIntegrationConnection(first), availability: 'configured' as const }
+  expect(applyIntegrationDestinationPolicy(connection, {}).availability).toBe('destination_blocked')
+  expect(applyIntegrationDestinationPolicy(connection, { itop: 'https://itop.example/team/' }).availability).toBe('configured')
+  expect(applyIntegrationDestinationPolicy(connection, { itop: 'https://itop.example' }).availability).toBe('destination_blocked')
 })

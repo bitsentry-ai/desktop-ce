@@ -115,5 +115,13 @@
   "incidents.deliveries.reconciled": "已远程确认",
   "incidents.deliveries.retry": "重试状态同步",
   "incidents.deliveries.inspect": "确认前请在 iTop 中检查原始事件。创建操作绝不会自动重试。",
-  "incidents.deliveries.reconcile": "验证并关联现有工单"
+  "incidents.deliveries.reconcile": "验证并关联现有工单",
+  "incidents.integrationRecovery.credentials": "凭据被拒绝。请在设置中更新此连接，然后刷新资源。",
+  "incidents.integrationRecovery.stale": "目标或文档版本已更改。请刷新并审查新提议后再重试。",
+  "incidents.integrationRecovery.unavailable": "连接、插件或资源不可用。请恢复访问后再继续。",
+  "incidents.integrationRecovery.close": "关闭工单需要您的明确请求。",
+  "incidents.integrationRecovery.rejected": "远程系统拒绝了此更改。请检查必填字段后再提出修正。",
+  "incidents.integrationRecovery.refresh": "刷新资源",
+  "incidents.integrationRecovery.staleCard": "此观察已超过五分钟。依赖其状态前请刷新。",
+  "incidents.integrationRecovery.deleted": "远程资源已报告删除。历史链接已保留。"
 }

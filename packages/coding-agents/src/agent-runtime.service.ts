@@ -3089,7 +3089,8 @@ export class AgentRuntimeService {
           const action = connection?.actions.find((row) => row.id === request.actionId);
           if (action?.riskLevel !== 'read') throw new Error('Only read actions are allowed here.');
           const result = await this.pluginRuntime.executeIntegrationAction(request, { signal: session.abortController.signal, deadlineAt: Date.now() + 30_000 });
-          if (result.ok && connection && session.incidentThreadId) await this.pluginRuntime.getIntegrationResources().save(extractIntegrationResources(session.incidentThreadId, connection, result.data));
+          try { if (result.ok && connection && session.incidentThreadId) await this.pluginRuntime.getIntegrationResources().save(extractIntegrationResources(session.incidentThreadId, connection, result.data)); }
+          catch { return { ...result, resourceWarning: true }; }
           return result;
         },
       },

@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest'
-import { extractIntegrationResources, StoredIntegrationResources } from '../src/features/plugins/integration-resources'
+import { describe, expect, it, vi } from 'vitest'
+import { extractIntegrationResources, refreshLinkedIntegrationResource, StoredIntegrationResources } from '../src/features/plugins/integration-resources'
 import type { DesktopPluginStoredAuthRecord } from '../src/features/plugins/desktop-plugin-auth-store'
 const connection = { id: '11111111-1111-4111-8111-111111111111', name: 'Production', pluginId: 'itop' as const, target: 'https://itop.example' }
 describe('thread integration resources', () => {
@@ -25,4 +25,35 @@ describe('thread integration resources', () => {
     await reloaded.save(rows)
     expect(await reloaded.list('thread')).toHaveLength(1)
   })
+})
+
+it('refreshes only an existing linked resource and preserves source selection', async () => {
+  const initial = extractIntegrationResources('thread', connection, { objects: { 'UserRequest::42': { class: 'UserRequest', key: '42', fields: { title: 'Old', status: 'new' } } } })[0]
+  let saved = { ...initial, selected: true }
+  const store = { list: async () => [saved], save: vi.fn(async (rows: typeof initial[]) => { saved = { ...rows[0], selected: saved.selected } }) }
+  const runtime = {
+    connection: { ...connection, enabled: true, availability: 'configured' as const, actions: [] },
+    plugin: { id: 'itop', name: 'iTop', version: '1.0.0', description: 'Tickets', type: 'data_source' as const, auth: { fields: [] }, actions: [{ id: 'get_object', title: 'Read', description: 'Read', riskLevel: 'read' as const, fields: [] }] },
+    execute: vi.fn().mockResolvedValue({ ok: true, status: 200, data: { objects: { 'UserRequest::42': { class: 'UserRequest', key: '42', fields: { title: 'Current', status: 'assigned' } } } } }),
+  }
+  const input = { threadId: 'thread', connectionId: connection.id, resourceType: 'ticket' as const, externalId: '42' }
+  expect(await refreshLinkedIntegrationResource(input, store, runtime)).toMatchObject({ title: 'Current', state: { status: 'assigned' }, selected: true })
+  await expect(refreshLinkedIntegrationResource({ ...input, externalId: '43' }, store, runtime)).rejects.toThrow('unavailable')
+  expect(runtime.execute).toHaveBeenCalledTimes(1)
+})
+
+it('ignores unsafe numeric ticket identities instead of rounding them', () => {
+  expect(extractIntegrationResources('thread', connection, { objects: { 'UserRequest::9007199254740993': { class: 'UserRequest', key: '9007199254740993', fields: {} } } })).toEqual([])
+})
+it('retains the stored custom class when the current mapping has changed', () => {
+  const rows = extractIntegrationResources('thread', connection, { objects: { 'Problem::42': { class: 'Problem', key: '42', fields: { title: 'Problem' } } } }, 'Problem')
+  expect(rows[0]).toMatchObject({ externalId: '42', state: { className: 'Problem' } })
+})
+it('does not let delayed historical hydration overwrite a newer observation or selection', async () => {
+  let value: DesktopPluginStoredAuthRecord = {}
+  const store = new StoredIntegrationResources({ get: async () => value, set: async (_id, next) => { value = next; return next }, clear: async () => {} })
+  const row = extractIntegrationResources('thread', connection, { objects: { 'UserRequest::42': { class: 'UserRequest', key: '42', fields: { title: 'Current' } } } })[0]
+  await store.save([{ ...row, observedAt: '2026-09-26T12:00:00.000Z', selected: true }])
+  await store.save([{ ...row, title: 'Historical', observedAt: '2026-09-26T11:00:00.000Z' }])
+  expect((await store.list('thread'))[0]).toMatchObject({ title: 'Current', selected: true })
 })

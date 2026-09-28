@@ -250,5 +250,11 @@
   "settings.integrationConnections.saveFailed": "Impossible d’enregistrer la connexion. Vérifiez l’URL, les identifiants et l’unicité du nom.",
   "settings.integrationConnections.removeFailed": "Impossible de supprimer la connexion. Réessayez.",
   "settings.integrationConnections.outline": "Outline",
-  "settings.integrationConnections.ticketMapping": "Correspondances des champs et du cycle de vie des tickets (JSON facultatif)"
+  "settings.integrationConnections.ticketMapping": "Correspondances des champs et du cycle de vie des tickets (JSON facultatif)",
+  "settings.integrationConnections.availability.configured": "Configuré",
+  "settings.integrationConnections.availability.disabled": "Désactivé",
+  "settings.integrationConnections.availability.plugin_unavailable": "Plugin indisponible",
+  "settings.integrationConnections.availability.credentials_missing": "Identifiants manquants",
+  "settings.integrationConnections.availability.destination_blocked": "Destination bloquée par la politique hôte",
+  "settings.integrationConnections.targetImmutable": "Les cibles sont permanentes. Créez une nouvelle connexion pour une autre instance ; les identifiants restent modifiables ici."
 }
