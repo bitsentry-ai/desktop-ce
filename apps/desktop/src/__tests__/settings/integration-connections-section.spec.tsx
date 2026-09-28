@@ -122,4 +122,45 @@ describe('IntegrationConnectionsSection', () => {
     expect(rows[0]?.auth).toMatchObject({ baseUrl: 'https://token.itop.example/' })
     expect(rows[0]?.auth).not.toHaveProperty('username')
   })
+
+  it('keeps a disabled connection disabled when saving edits', async () => {
+    const { rows, service } = createConnectionService()
+    rows.push({
+      id: '33333333-3333-4333-8333-333333333333', name: 'Disabled', pluginId: 'itop', enabled: false,
+      auth: { baseUrl: 'https://disabled.itop.example', authToken: 'old-token' },
+    })
+    render(<IntegrationConnectionsSection service={service} />)
+
+    expect(await screen.findByText('Disabled — https://disabled.itop.example/')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'settings.integrationConnections.edit' }))
+    fill('settings.integrationConnections.token', 'updated-token')
+    fireEvent.click(screen.getByRole('button', { name: 'settings.integrationConnections.save' }))
+
+    await waitFor(() => expect(rows[0]?.auth.authToken).toBe('updated-token'))
+    expect(rows[0]?.enabled).toBe(false)
+  })
+
+  it('clears the edit form after deleting its connection so Save cannot recreate it', async () => {
+    const { rows, service } = createConnectionService()
+    const deletedId = '44444444-4444-4444-8444-444444444444'
+    rows.push({
+      id: deletedId, name: 'To delete', pluginId: 'itop', enabled: true,
+      auth: { baseUrl: 'https://delete.itop.example', authToken: 'old-token' },
+    })
+    render(<IntegrationConnectionsSection service={service} />)
+
+    expect(await screen.findByText('To delete — https://delete.itop.example/')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'settings.integrationConnections.edit' }))
+    fireEvent.click(screen.getByRole('button', { name: 'settings.integrationConnections.remove' }))
+    await waitFor(() => expect(rows).toHaveLength(0))
+
+    fill('settings.integrationConnections.name', 'Replacement')
+    fill('settings.integrationConnections.endpoint', 'https://replacement.itop.example')
+    fill('settings.integrationConnections.token', 'replacement-token')
+    fireEvent.click(screen.getByRole('button', { name: 'settings.integrationConnections.save' }))
+
+    await waitFor(() => expect(rows).toHaveLength(1))
+    expect(rows[0]?.id).not.toBe(deletedId)
+    expect(rows[0]?.name).toBe('Replacement')
+  })
 })

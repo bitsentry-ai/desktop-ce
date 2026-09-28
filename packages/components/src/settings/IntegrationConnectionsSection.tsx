@@ -22,6 +22,7 @@ export function IntegrationConnectionsSection({ service }: { service: Integratio
   const [authMode, setAuthMode] = useState<"token" | "username_password">("token");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  const [connectionEnabled, setConnectionEnabled] = useState(true);
   const [editingId, setEditingId] = useState<string | null>(null);
   const listRequestVersion = useRef(0);
   useEffect(() => {
@@ -51,12 +52,12 @@ export function IntegrationConnectionsSection({ service }: { service: Integratio
     setError(null);
     try {
       await service.save({
-        id: editingId ?? crypto.randomUUID(), name, pluginId, enabled: true,
+        id: editingId ?? crypto.randomUUID(), name, pluginId, enabled: connectionEnabled,
         auth: pluginId === "itop"
           ? authMode === "token" ? { baseUrl: endpoint, authToken: token } : { baseUrl: endpoint, username, password }
           : { apiBase: endpoint, accessToken: token },
       });
-      setToken(""); setUsername(""); setPassword(""); setName(""); setEndpoint(""); setEditingId(null); setAuthMode("token");
+      setToken(""); setUsername(""); setPassword(""); setName(""); setEndpoint(""); setEditingId(null); setAuthMode("token"); setConnectionEnabled(true);
       await refreshRows();
     } catch { setError(t("settings.integrationConnections.saveFailed")); }
     finally { setBusy(false); }
@@ -65,7 +66,13 @@ export function IntegrationConnectionsSection({ service }: { service: Integratio
   async function remove(id: string) {
     if (busy) return;
     setBusy(true); setError(null);
-    try { await service.remove(id); await refreshRows(); }
+    try {
+      await service.remove(id);
+      if (editingId === id) {
+        setEditingId(null); setName(""); setEndpoint(""); setToken(""); setUsername(""); setPassword(""); setAuthMode("token"); setConnectionEnabled(true);
+      }
+      await refreshRows();
+    }
     catch { setError(t("settings.integrationConnections.removeFailed")); }
     finally { setBusy(false); }
   }
@@ -78,7 +85,7 @@ export function IntegrationConnectionsSection({ service }: { service: Integratio
       <span className="min-w-0 flex-1 break-all">{row.name} — {row.target}</span>
       <Button disabled={busy} variant="outline" onClick={() => {
         setEditingId(row.id); setName(row.name); setPluginId(row.pluginId); setEndpoint(row.target);
-        setAuthMode(row.pluginId === "itop" ? row.authMode : "token"); setToken(""); setUsername(""); setPassword("");
+        setAuthMode(row.pluginId === "itop" ? row.authMode : "token"); setToken(""); setUsername(""); setPassword(""); setConnectionEnabled(row.enabled);
       }}>{t("settings.integrationConnections.edit")}</Button>
       <Button disabled={busy} variant="outline" onClick={() => { void remove(row.id); }}>{t("settings.integrationConnections.remove")}</Button>
     </li>)}</ul>
@@ -111,7 +118,7 @@ export function IntegrationConnectionsSection({ service }: { service: Integratio
       </>}
       <Button type="submit" disabled={busy}>{t("settings.integrationConnections.save")}</Button>
       {editingId !== null && <Button type="button" variant="outline" disabled={busy} onClick={() => {
-        setEditingId(null); setName(""); setEndpoint(""); setToken(""); setUsername(""); setPassword(""); setAuthMode("token");
+        setEditingId(null); setName(""); setEndpoint(""); setToken(""); setUsername(""); setPassword(""); setAuthMode("token"); setConnectionEnabled(true);
       }}>{t("settings.integrationConnections.cancel")}</Button>}
     </form>
   </section>;
