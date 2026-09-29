@@ -196,6 +196,28 @@ describe('iTop write approval re-checks what may have changed since the preview'
     expect(remote.writes).toHaveLength(1)
   })
 
+  it.each([
+    ['the common status name', 'status', 'status'],
+    ['the configured state attribute', 'state', 'state'],
+  ])('never proposes a direct change to %s', async (_label, statusField, attribute) => {
+    const { runtime, mapping, service } = itopSetup()
+    runtime.connection.ticketMapping = { ...mapping, statusField }
+    const closeDirectly = (fields: Record<string, unknown>, ticketOperation: 'internal_log' | 'public_log') =>
+      service.propose('thread', { connectionId: itopId, actionId: 'update_object', input: { class: 'UserRequest', id: 12, fields } }, { ticketOperation })
+
+    await expect(closeDirectly({ [attribute]: 'closed' }, 'internal_log')).rejects.toThrow('configured lifecycle operation')
+    await expect(closeDirectly({ [attribute]: 'closed', public_log: { add_item: { message: 'Done', format: 'text' } } }, 'public_log')).rejects.toThrow('configured lifecycle operation')
+  })
+
+  it('refuses an approval when the mapping now names the changed attribute as the ticket state', async () => {
+    const { remote, runtime, mapping, service } = itopSetup()
+    const proposal = await service.propose('thread', { connectionId: itopId, actionId: 'update_object', input: { class: 'UserRequest', id: 12, fields: { state: 'closed' } } }, { ticketOperation: 'internal_log' })
+    runtime.connection.ticketMapping = { ...mapping, statusField: 'state' }
+
+    await expect(service.approve('thread', proposal.id, false)).rejects.toThrow('configured lifecycle operation')
+    expect(remote.writes).toEqual([])
+  })
+
   it('does not write a proposal that already left the proposed state', async () => {
     const { remote, service, proposeClose } = itopSetup()
     const proposal = await proposeClose()

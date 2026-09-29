@@ -49,8 +49,9 @@ function classify(runtime: IntegrationWriteRuntime, request: IntegrationWriteReq
   const fields = z.record(z.string(), z.unknown()).parse(request.input.fields ?? {});
   if (runtime.plugin.id === "itop") {
     if (mapping === undefined || request.input.class !== mapping.className) throw new Error("Configure a matching ticket mapping before approving writes.");
-    // Direct state changes bypass configured lifecycle semantics and are never approved.
-    if ("status" in fields) throw new Error("Use a configured lifecycle operation to change ticket status.");
+    // Direct state changes bypass configured lifecycle semantics and are never approved. The state attribute is
+    // configurable per connection, so both it and the common `status` name are refused.
+    if (["status", mapping.statusField].some((attribute) => attribute in fields)) throw new Error("Use a configured lifecycle operation to change ticket status.");
     // A lifecycle write must come from the configured operation whose stimulus it carries.
     if (request.actionId === "apply_stimulus" && lifecycleTransition(runtime, ticketOperation)?.stimulus !== request.input.stimulus) throw new Error("This lifecycle transition is not configured.");
   }
