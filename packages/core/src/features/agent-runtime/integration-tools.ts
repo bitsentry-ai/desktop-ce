@@ -18,8 +18,29 @@ export interface IntegrationToolsPort {
 
 const MAX_RESULT_CHARS = 32_000;
 const deniedActions = new Set(["delete_object", "delete_document"]);
+const ticketWriteActions = new Set(["create_object", "update_object", "apply_stimulus"]);
 function error(code: string, message: string, fields?: string[]): ToolResult {
   return { error: JSON.stringify({ code, message, ...(fields ? { fields } : {}) }) };
+}
+
+export interface IntegrationToolOptions {
+  /** Set only by ticket_operation, which applies the connection's ticket mapping itself. */
+  ticketOperation?: boolean;
+}
+
+/**
+ * Generic previews must not bypass ticket_operation's required fields and lifecycle checks:
+ * without a ticket mapping no iTop write is proposed, and with one the mapped class is off limits.
+ */
+function genericWriteRefusal(connection: IntegrationConnection, action: DesktopPluginDescriptor["actions"][number], request: IntegrationActionInput, options: IntegrationToolOptions): ToolResult | undefined {
+  if (connection.pluginId !== "itop" || options.ticketOperation === true) return undefined;
+  const mapping = connection.ticketMapping;
+  if (!mapping) return error("TICKET_MAPPING_REQUIRED", "This iTop connection has no ticket mapping, so no generic write can be proposed. Ask the engineer to configure the ticket field and lifecycle mapping on the connection, then use ticket_operation.");
+  const requestedClass = request.input.class ?? action.fields.find((field) => field.key === "class")?.defaultValue;
+  if (ticketWriteActions.has(action.id) && typeof requestedClass === "string" && requestedClass.toLowerCase() === mapping.className.toLowerCase()) {
+    return error("USE_TICKET_OPERATION", `${mapping.className} tickets on this connection must go through ticket_operation, which applies the configured required fields and lifecycle states. Do not retry with propose_integration_write.`);
+  }
+  return undefined;
 }
 
 export async function runIntegrationTool(
@@ -27,6 +48,7 @@ export async function runIntegrationTool(
   plugins: DesktopPluginDescriptor[],
   request: IntegrationActionInput,
   mode: "read" | "preview",
+  options: IntegrationToolOptions = {},
 ): Promise<ToolResult> {
   if (port === undefined) return error("INTEGRATION_UNAVAILABLE", "Integration connections are unavailable in this runtime.");
   const connection = (await port.list()).find((row) => row.id === request.connectionId);
@@ -38,6 +60,8 @@ export async function runIntegrationTool(
   if (action === undefined || deniedActions.has(action.id)) return error("ACTION_UNAVAILABLE", "This action is not available for chat.");
   if (mode === "read" && action.riskLevel !== "read") return error("APPROVAL_REQUIRED", "This action changes remote data. Use propose_integration_write to show a preview; do not execute it as a read.");
   if (mode === "preview" && action.riskLevel !== "write") return error("READ_ACTION", "Use read_integration for this read-only action.");
+  const refusal = mode === "preview" ? genericWriteRefusal(connection, action, request, options) : undefined;
+  if (refusal !== undefined) return refusal;
   const keys = new Set(action.fields.map((field) => field.key));
   if (Object.keys(request.input).some((key) => !keys.has(key))) return error("INVALID_FIELDS", "Use only the input fields declared by list_plugins. Credentials are resolved by the runtime.");
   const parsed = buildPluginInputSchema(action.fields).safeParse(request.input);

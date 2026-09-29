@@ -124,7 +124,7 @@ export async function ticketOperation(context: HostToolContext, input: TicketOpe
     if (!("value" in observed)) return observed;
     observedTicketState = observed;
   }
-  const result = await runIntegrationTool(context.integrationConnections, plugins, { connectionId: input.connectionId, ...action }, "preview");
+  const result = await runIntegrationTool(context.integrationConnections, plugins, { connectionId: input.connectionId, ...action }, "preview", { ticketOperation: true });
   if (result.output !== undefined) {
     const preview = JSON.parse(result.output) as Record<string, unknown>;
     result.output = JSON.stringify({
