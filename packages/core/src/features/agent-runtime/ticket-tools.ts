@@ -40,7 +40,8 @@ function readRequest(input: TicketOperationInput, mapping: ItopTicketMapping) {
 
 function mutationRequest(input: TicketOperationInput, mapping: ItopTicketMapping): TicketMutation | ToolResult {
   if (input.operation === "search" || input.operation === "read") return clarification("Use a read operation.");
-  const supplied = { ...mapping.defaults, ...input.fields };
+  // Defaults describe a new ticket; a log entry or lifecycle change must not overwrite fields of an existing one.
+  const supplied = input.operation === "create" ? { ...mapping.defaults, ...input.fields } : { ...input.fields };
   const required = mapping.requiredFields[input.operation];
   const missing = required.filter((key) => supplied[key] === undefined || supplied[key] === null || supplied[key] === "");
   if (missing.length > 0) return clarification("Ask the engineer for the configured required ticket fields.", missing);

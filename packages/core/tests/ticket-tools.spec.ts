@@ -12,7 +12,9 @@ const noRequiredFields = { create: [], acknowledge: [], assign: [], internal_log
 // Two iTop installations with different status fields, stimuli, and lifecycles.
 const mappings = {
   [production]: itopTicketMappingSchema.parse({
-    className: 'UserRequest', fields: { title: 'title', caller: 'caller_id', agent: 'agent_id' },
+    className: 'UserRequest', fields: { title: 'title', caller: 'caller_id', agent: 'agent_id', priority: 'priority' },
+    // A default describes a new ticket, e.g. its priority.
+    defaults: { priority: 3 },
     requiredFields: { ...noRequiredFields, create: ['title', 'caller'], assign: ['agent'] },
     stimuli: {
       acknowledge: { stimulus: 'ev_assign', from: ['new'] },
@@ -156,4 +158,25 @@ describe('ticket operations', () => {
     }
     expect(received.filter(({ actionId }) => actionId !== 'get_object')).toEqual([])
   })
+
+  it('gives only a new ticket the mapping defaults, so a log or lifecycle change cannot overwrite existing fields', async () => {
+    const { context } = remote()
+
+    const created = await run(context, { connectionId: production, operation: 'create', fields: { title: 'API outage', caller: 'Ana' } })
+    expect(created.preview).toMatchObject({ input: { fields: { title: 'API outage', caller_id: 'Ana', priority: 3 } } })
+
+    const existing = [
+      { operation: 'internal_log', ticketId: '14', message: 'Checked the load balancer' },
+      { operation: 'public_log', ticketId: '14', message: 'We are investigating' },
+      { operation: 'assign', ticketId: '13', fields: { agent: 'Budi' } },
+      { operation: 'resolve', ticketId: '14' },
+      { operation: 'close', ticketId: '12' },
+    ]
+    for (const change of existing) {
+      const { preview } = await run(context, { connectionId: production, ...change })
+      const fields = (preview?.input as { fields: Record<string, unknown> }).fields
+      expect(fields).not.toHaveProperty('priority')
+    }
+  })
 })
+
