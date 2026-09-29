@@ -89,5 +89,22 @@
   "incidents.integrationWrites.inspect": "Periksa sumber daya jarak jauh sebelum mencoba lagi. Permintaan ini mungkin sudah selesai.",
   "incidents.integrationWrites.closeRequest": "Saya secara eksplisit meminta penutupan tiket ini.",
   "incidents.integrationWrites.approve": "Setujui perubahan persis ini",
-  "incidents.integrationWrites.cancel": "Tolak"
+  "incidents.integrationWrites.cancel": "Tolak",
+  "incidents.integrationWrites.target": "Target",
+  "incidents.integrationWrites.action": "Aksi",
+  "incidents.integrationWrites.changes": "Perubahan yang diusulkan",
+  "incidents.integrationWrites.noChanges": "Tidak ada perubahan field pada permintaan ini.",
+  "incidents.integrationWrites.details": "Detail teknis",
+  "incidents.integrationWrites.request": "Permintaan",
+  "incidents.integrationWrites.result": "Hasil",
+  "incidents.integrationWrites.fact.class": "Kelas tiket",
+  "incidents.integrationWrites.fact.id": "ID tiket",
+  "incidents.integrationWrites.fact.stimulus": "Transisi",
+  "incidents.integrationWrites.operation.create": "Buat tiket",
+  "incidents.integrationWrites.operation.acknowledge": "Akui tiket",
+  "incidents.integrationWrites.operation.assign": "Tugaskan tiket",
+  "incidents.integrationWrites.operation.internal_log": "Tambah log privat",
+  "incidents.integrationWrites.operation.public_log": "Tambah log publik",
+  "incidents.integrationWrites.operation.resolve": "Selesaikan tiket",
+  "incidents.integrationWrites.operation.close": "Tutup tiket"
 }

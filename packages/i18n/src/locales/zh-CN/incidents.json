@@ -89,5 +89,22 @@
   "incidents.integrationWrites.inspect": "重试前请检查远程资源。此请求可能已经完成。",
   "incidents.integrationWrites.closeRequest": "我明确要求关闭此工单。",
   "incidents.integrationWrites.approve": "批准此确切更改",
-  "incidents.integrationWrites.cancel": "拒绝"
+  "incidents.integrationWrites.cancel": "拒绝",
+  "incidents.integrationWrites.target": "目标",
+  "incidents.integrationWrites.action": "操作",
+  "incidents.integrationWrites.changes": "拟议更改",
+  "incidents.integrationWrites.noChanges": "此请求没有字段更改。",
+  "incidents.integrationWrites.details": "技术详情",
+  "incidents.integrationWrites.request": "请求",
+  "incidents.integrationWrites.result": "结果",
+  "incidents.integrationWrites.fact.class": "工单类别",
+  "incidents.integrationWrites.fact.id": "工单 ID",
+  "incidents.integrationWrites.fact.stimulus": "状态转换",
+  "incidents.integrationWrites.operation.create": "创建工单",
+  "incidents.integrationWrites.operation.acknowledge": "确认工单",
+  "incidents.integrationWrites.operation.assign": "分配工单",
+  "incidents.integrationWrites.operation.internal_log": "添加私有日志",
+  "incidents.integrationWrites.operation.public_log": "添加公开日志",
+  "incidents.integrationWrites.operation.resolve": "解决工单",
+  "incidents.integrationWrites.operation.close": "关闭工单"
 }
