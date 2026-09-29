@@ -1,3 +1,4 @@
+import { DesktopIntegrationOperationsPanel } from "./IntegrationOperationsPanel";
 import {
   useCallback,
   useEffect,
@@ -3062,6 +3063,8 @@ export default function IncidentsPage() {
           )}
           {topBarActions}
         </div>
+
+        {activeIncident !== null && <DesktopIntegrationOperationsPanel key={activeIncident.id} threadId={activeIncident.id} disabled={isArchivedIncident} />}
 
         {/* Warning banner when blocked */}
         {!isArchivedIncident &&

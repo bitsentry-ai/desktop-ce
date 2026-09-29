@@ -1,3 +1,5 @@
+import { IntegrationOperationService } from "./integration-operations";
+import { StoredIntegrationOperations } from "./integration-operation-store";
 import { IntegrationConnectionStore } from "./integration-connection-store";
 import { describeIntegrationConnection, type IntegrationConnection, type IntegrationConnectionInput } from "./integration-connections";
 import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
@@ -328,6 +330,22 @@ class DesktopNodePluginRuntimeService extends DesktopPluginRuntimeService {
     });
   }
 
+  private operations?: IntegrationOperationService;
+  override getIntegrationOperations(): IntegrationOperationService {
+    if (this.storedAuthStore === NOOP_DESKTOP_PLUGIN_STORED_AUTH_STORE) throw new Error("Durable proposal storage is unavailable.");
+    this.operations ??= new IntegrationOperationService(new StoredIntegrationOperations(this.storedAuthStore), async (id) => {
+      const connection = (await this.connections.list()).find((row) => row.id === id);
+      if (connection === undefined) throw new Error("Connection unavailable.");
+      const plugin = this.getPlugin(connection.pluginId);
+      if (plugin === null) throw new Error("Plugin unavailable.");
+      return { connection: describeIntegrationConnection(connection, plugin), plugin,
+        execute: (request) => super.executeAction({ pluginId: connection.pluginId, actionId: request.actionId, input: request.input, auth: connection.auth }, { deadlineAt: Date.now() + 30_000 }),
+        read: (request) => super.executeAction({ pluginId: connection.pluginId, actionId: request.actionId, input: request.input, auth: connection.auth }, { deadlineAt: Date.now() + 30_000 }, { requiredRiskLevel: "read" }),
+      };
+    });
+    return this.operations;
+  }
+
   override async listIntegrationConnections(): Promise<IntegrationConnection[]> {
     return (await this.connections.list()).map((connection) =>
       describeIntegrationConnection(connection, this.getPlugin(connection.pluginId)));
@@ -348,6 +366,13 @@ class DesktopNodePluginRuntimeService extends DesktopPluginRuntimeService {
   ): Promise<DesktopPluginExecutionResult> {
     const connection = (await this.connections.list()).find((row) => row.id === request.connectionId);
     if (connection === undefined || !connection.enabled) throw new Error("Integration connection is missing or disabled.");
+    if (this.getPlugin(connection.pluginId)?.actions.find((row) => row.id === request.actionId)?.riskLevel !== "read") throw new Error("Writes require a stored, engineer-approved proposal.");
+    // Checked on the same record whose credentials run below, so the result cannot describe another endpoint.
+    const expected = policy?.expectedConnection;
+    if (expected !== undefined) {
+      const current = describeIntegrationConnection(connection, this.getPlugin(connection.pluginId));
+      if (current.target !== expected.target || current.revision !== expected.revision) throw new Error("Connection changed. Retry the read.");
+    }
     // Call the registry directly: never merge another instance's default auth.
     return super.executeAction({ pluginId: connection.pluginId, actionId: request.actionId, input: request.input, auth: connection.auth }, operation, policy);
   }

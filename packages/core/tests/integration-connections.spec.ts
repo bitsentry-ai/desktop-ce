@@ -25,7 +25,8 @@ describe('named integration credentials', () => {
     expect(reloaded.find((row) => row.id === first.id)?.auth.authToken).toBe('production-secret')
     expect(reloaded.find((row) => row.id === second.id)?.auth.authToken).toBe('staging-secret')
     await firstStore.remove(first.id)
-    expect(await reloadedStore.list()).toEqual([second])
+    // The store stamps a revision on save; everything the engineer entered must be unchanged.
+    expect(await reloadedStore.list()).toMatchObject([second])
   })
 
   it('does not return credentials or misrepresent a missing plugin as configured', () => {
