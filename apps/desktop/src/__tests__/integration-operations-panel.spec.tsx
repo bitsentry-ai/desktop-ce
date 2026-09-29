@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
-import type { IntegrationOperation } from '@bitsentry-ce/core/features/plugins'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { IntegrationOperationService, type IntegrationOperation, type IntegrationOperationStore, type IntegrationWriteRuntime } from '@bitsentry-ce/core/features/plugins'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('@bitsentry-ce/i18n', () => ({
@@ -14,7 +14,10 @@ import {
   type IntegrationOperationsPort,
 } from '@bitsentry-ce/components/investigation/IntegrationOperationsPanel'
 
-afterEach(cleanup)
+afterEach(() => {
+  cleanup()
+  vi.useRealTimers()
+})
 
 const label = (suffix: string) => `incidents.integrationWrites.${suffix}`
 
@@ -150,6 +153,100 @@ describe('IntegrationOperationsPanel', () => {
 
     const details = screen.getByText(label('details')).closest('details') as HTMLDetailsElement
     expect(within(details).getByText(/"code": 100/)).toBeTruthy()
+  })
+})
+
+const staleMessage = 'Connection changed. Create a new preview.'
+
+function memoryStore(): IntegrationOperationStore {
+  const rows = new Map<string, IntegrationOperation>()
+  return {
+    list: async (threadId) => [...rows.values()].filter((row) => row.threadId === threadId),
+    get: async (id) => rows.get(id) ?? null,
+    create: async (row) => { rows.set(row.id, row) },
+    transition: async (id, expected, patch) => {
+      const row = rows.get(id)
+      if (row === undefined || row.status !== expected) return false
+      rows.set(id, { ...row, ...patch })
+      return true
+    },
+  }
+}
+
+describe('a refused approval', () => {
+  it('stays visible across list refreshes while the operation waits, unchanged, for a new preview', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    const execute = vi.fn().mockResolvedValue({ ok: true, status: 200, data: {} })
+    const runtime: IntegrationWriteRuntime = {
+      connection: { id: '11111111-1111-4111-8111-111111111111', name: 'Team wiki', pluginId: 'outline', target: 'https://outline.example/api', enabled: true, authMode: 'token', availability: 'configured', actions: [], revision: 'saved-once' },
+      plugin: { id: 'outline', name: 'Outline', version: '1.0.0', description: 'Documents', type: 'data_source', auth: { fields: [] }, actions: [{ id: 'create_document', title: 'Create', description: 'Create', riskLevel: 'write', fields: [{ key: 'title', label: 'Title', type: 'string', required: true }] }] },
+      execute,
+      read: vi.fn(),
+    }
+    const service = new IntegrationOperationService(memoryStore(), async () => runtime)
+    const proposal = await service.propose('thread-1', { connectionId: runtime.connection.id, actionId: 'create_document', input: { title: 'Exact approved title' } })
+    const list = vi.fn((threadId: string) => service.list(threadId))
+    const port: IntegrationOperationsPort = { list, approve: (threadId, id, closeRequested) => service.approve(threadId, id, closeRequested), cancel: (threadId, id) => service.cancel(threadId, id) }
+    render(<IntegrationOperationsPanel threadId="thread-1" disabled={false} service={port} />)
+    await screen.findByRole('region', { name: label('title') })
+
+    runtime.connection.revision = 'saved-again'
+    fireEvent.click(screen.getByRole('button', { name: label('approve') }))
+    expect((await screen.findByRole('alert')).textContent).toBe(staleMessage)
+
+    const listsBefore = list.mock.calls.length
+    await act(async () => { await vi.advanceTimersByTimeAsync(5200) })
+
+    expect(list.mock.calls.length).toBeGreaterThan(listsBefore)
+    expect(screen.getByRole('alert').textContent).toBe(staleMessage)
+    expect(screen.queryByText(label('error'))).toBeNull()
+    expect(screen.getByText(label('proposed'))).toBeTruthy()
+    expect((screen.getByRole('button', { name: label('approve') }) as HTMLButtonElement).disabled).toBe(false)
+    expect(execute).not.toHaveBeenCalled()
+    expect((await service.list('thread-1')).find((row) => row.id === proposal.id)?.status).toBe('proposed')
+  })
+
+  it('clears when the engineer tries again', async () => {
+    const row = operation()
+    const port = portWith([row])
+    vi.mocked(port.approve).mockRejectedValueOnce(new Error(staleMessage)).mockResolvedValueOnce(undefined)
+    render(<IntegrationOperationsPanel threadId="thread-1" disabled={false} service={port} />)
+    await screen.findByRole('region', { name: label('title') })
+
+    fireEvent.click(screen.getByRole('button', { name: label('approve') }))
+    await screen.findByRole('alert')
+    fireEvent.click(screen.getByRole('button', { name: label('approve') }))
+
+    await waitFor(() => { expect(screen.queryByRole('alert')).toBeNull() })
+    expect(port.approve).toHaveBeenCalledTimes(2)
+  })
+
+  it('is not shown once the operation is no longer awaiting approval', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    const rows = [operation()]
+    const port = portWith(rows)
+    vi.mocked(port.approve).mockRejectedValue(new Error(staleMessage))
+    render(<IntegrationOperationsPanel threadId="thread-1" disabled={false} service={port} />)
+    await screen.findByRole('region', { name: label('title') })
+    fireEvent.click(screen.getByRole('button', { name: label('approve') }))
+    await screen.findByRole('alert')
+
+    vi.mocked(port.list).mockResolvedValue([operation({ status: 'cancelled' })])
+    await act(async () => { await vi.advanceTimersByTimeAsync(2600) })
+
+    expect(screen.queryByRole('alert')).toBeNull()
+    expect(screen.getByText(label('cancelled'))).toBeTruthy()
+  })
+
+  it('falls back to the generic message when the failure carries no reason', async () => {
+    const port = portWith([operation()])
+    vi.mocked(port.approve).mockRejectedValue(new Error('  '))
+    render(<IntegrationOperationsPanel threadId="thread-1" disabled={false} service={port} />)
+    await screen.findByRole('region', { name: label('title') })
+
+    fireEvent.click(screen.getByRole('button', { name: label('approve') }))
+
+    expect((await screen.findByRole('alert')).textContent).toBe(label('error'))
   })
 })
 
