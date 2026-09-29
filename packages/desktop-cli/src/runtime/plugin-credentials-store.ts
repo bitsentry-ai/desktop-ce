@@ -102,17 +102,57 @@ function removePluginRecord(
   return next
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+const UNREADABLE_STORE_MESSAGE =
+  'The plugin credential store could not be read. Nothing was changed; fix or restore auth/plugins.json and retry.'
+
+/**
+ * Only a missing file is an empty store. Any other failure must stop the caller: writing on top of an
+ * unreadable file would erase every other plugin's credentials.
+ */
 async function readStore(storePath: string): Promise<PluginCredentialsFile> {
+  let raw: string
   try {
-    const raw = await readFile(storePath, 'utf-8')
-    const parsed = JSON.parse(raw) as Partial<PluginCredentialsFile>
-    return {
-      version: STORE_VERSION,
-      plugins: parsed.plugins ?? {},
-    }
-  } catch {
-    return emptyStore()
+    raw = await readFile(storePath, 'utf-8')
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return emptyStore()
+    throw new Error(UNREADABLE_STORE_MESSAGE)
   }
+
+  // A parse error would quote part of the file, which holds credentials, so report a fixed message.
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(raw)
+  } catch {
+    throw new Error(UNREADABLE_STORE_MESSAGE)
+  }
+  if (!isRecord(parsed) || (parsed.plugins !== undefined && !isRecord(parsed.plugins))) {
+    throw new Error(UNREADABLE_STORE_MESSAGE)
+  }
+  return {
+    version: STORE_VERSION,
+    plugins: (parsed.plugins ?? {}) as Record<string, PluginAuthRecord>,
+  }
+}
+
+// Every read-modify-write of one file runs one at a time, across all store instances in this process.
+// A second process writing the same file at the same moment is not covered by this lock.
+const storeLocks = new Map<string, Promise<void>>()
+
+async function withStoreLock<T>(storePath: string, task: () => Promise<T>): Promise<T> {
+  const run = (storeLocks.get(storePath) ?? Promise.resolve()).then(task)
+  const tail = run.then(
+    () => undefined,
+    () => undefined,
+  )
+  storeLocks.set(storePath, tail)
+  void tail.then(() => {
+    if (storeLocks.get(storePath) === tail) storeLocks.delete(storePath)
+  })
+  return run
 }
 
 async function writeStore(storePath: string, data: PluginCredentialsFile): Promise<void> {
@@ -143,7 +183,8 @@ export class LocalPluginCredentialsStore implements DesktopPluginStoredAuthStore
   }
 
   async get(pluginId: string): Promise<DesktopPluginStoredAuthRecord> {
-    const store = await readStore(this.storePath)
+    // Reads wait for in-flight writes: some platforms briefly have no file while a write replaces it.
+    const store = await withStoreLock(this.storePath, () => readStore(this.storePath))
     const values = store.plugins[pluginId]?.values
     if (values === undefined) {
       return {}
@@ -157,29 +198,33 @@ export class LocalPluginCredentialsStore implements DesktopPluginStoredAuthStore
     values: DesktopPluginStoredAuthRecord,
   ): Promise<DesktopPluginStoredAuthRecord> {
     const normalized = normalizeStoredAuthRecord(values)
-    const store = await readStore(this.storePath)
+    return withStoreLock(this.storePath, async () => {
+      const store = await readStore(this.storePath)
 
-    if (Object.keys(normalized).length === 0) {
-      store.plugins = removePluginRecord(store.plugins, pluginId)
+      if (Object.keys(normalized).length === 0) {
+        store.plugins = removePluginRecord(store.plugins, pluginId)
+        await writeStore(this.storePath, store)
+        return {}
+      }
+
+      store.plugins[pluginId] = {
+        values: normalized,
+        updatedAt: new Date().toISOString(),
+      }
       await writeStore(this.storePath, store)
-      return {}
-    }
-
-    store.plugins[pluginId] = {
-      values: normalized,
-      updatedAt: new Date().toISOString(),
-    }
-    await writeStore(this.storePath, store)
-    return { ...normalized }
+      return { ...normalized }
+    })
   }
 
-  async clear(pluginId: string): Promise<void> {
-    const store = await readStore(this.storePath)
-    if (store.plugins[pluginId] === undefined) {
-      return
-    }
+  clear(pluginId: string): Promise<void> {
+    return withStoreLock(this.storePath, async () => {
+      const store = await readStore(this.storePath)
+      if (store.plugins[pluginId] === undefined) {
+        return
+      }
 
-    store.plugins = removePluginRecord(store.plugins, pluginId)
-    await writeStore(this.storePath, store)
+      store.plugins = removePluginRecord(store.plugins, pluginId)
+      await writeStore(this.storePath, store)
+    })
   }
 }
