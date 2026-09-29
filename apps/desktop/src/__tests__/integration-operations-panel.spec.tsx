@@ -153,7 +153,66 @@ describe('IntegrationOperationsPanel', () => {
   })
 })
 
+describe('non-iTop operations', () => {
+  const outline = () =>
+    operation({
+      pluginId: 'outline',
+      connectionName: 'Team wiki',
+      actionId: 'create_document',
+      ticketOperation: undefined,
+      input: { title: 'Postmortem', text: 'Body', id: 'doc-1', class: 'runbook', stimulus: 'draft', outputFields: 'id' },
+    })
+
+  it('lists class, id and stimulus as plain inputs instead of ticket facts', async () => {
+    await renderPanel([outline()])
+
+    expect(screen.queryByText(label('fact.class'))).toBeNull()
+    expect(screen.queryByText(label('fact.id'))).toBeNull()
+    expect(screen.queryByText(label('fact.stimulus'))).toBeNull()
+
+    const changes = screen.getByText(label('changes')).parentElement as HTMLElement
+    for (const [key, value] of [['title', 'Postmortem'], ['text', 'Body'], ['id', 'doc-1'], ['class', 'runbook'], ['stimulus', 'draft']]) {
+      expect(within(changes).getByText(key)).toBeTruthy()
+      expect(within(changes).getByText(value)).toBeTruthy()
+    }
+    expect(within(changes).queryByText('outputFields')).toBeNull()
+  })
+
+  it('keeps every input in the technical details', async () => {
+    await renderPanel([outline()])
+
+    const details = screen.getByText(label('details')).closest('details') as HTMLDetailsElement
+    for (const text of [/"title": "Postmortem"/, /"id": "doc-1"/, /"class": "runbook"/, /"stimulus": "draft"/, /"outputFields": "id"/]) {
+      expect(within(details).getByText(text)).toBeTruthy()
+    }
+  })
+})
+
 describe('summarizeOperation', () => {
+  it('labels class, id and stimulus as ticket facts only for iTop', () => {
+    const input = { class: 'UserRequest', id: 12, stimulus: 'ev_close' }
+
+    expect(summarizeOperation(operation({ input })).facts).toEqual([
+      { key: 'class', value: 'UserRequest' },
+      { key: 'id', value: '12' },
+      { key: 'stimulus', value: 'ev_close' },
+    ])
+
+    const other = summarizeOperation(operation({ pluginId: 'outline', input }))
+    expect(other.facts).toEqual([])
+    expect(other.changes).toEqual([
+      { key: 'class', value: 'UserRequest' },
+      { key: 'id', value: '12' },
+      { key: 'stimulus', value: 'ev_close' },
+    ])
+  })
+
+  it('keeps a fields value that is not a field map instead of dropping it', () => {
+    const { changes } = summarizeOperation(operation({ pluginId: 'outline', input: { fields: 'raw text' } }))
+
+    expect(changes).toEqual([{ key: 'fields', value: 'raw text' }])
+  })
+
   it('lists field changes first and other request values after, and drops output selection', () => {
     const { changes, facts } = summarizeOperation(
       operation({

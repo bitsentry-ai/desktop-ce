@@ -20,18 +20,22 @@ type StatusVariant = "warning" | "info" | "success" | "destructive" | "secondary
 const STATUS_VARIANTS: Record<IntegrationOperation["status"], StatusVariant> = {
   proposed: "warning", executing: "info", succeeded: "success", failed: "destructive", uncertain: "warning", cancelled: "secondary",
 };
-const HIDDEN_INPUT_KEYS = new Set(["outputFields", "fields", "class", "id", "stimulus"]);
+const ITOP_FACT_KEYS = ["class", "id", "stimulus"] as const;
 const display = (value: unknown) => typeof value === "string" ? value : JSON.stringify(value);
 
 interface Change { key: string; value: string }
 /** Readable view of what the request changes; the raw input stays available under technical details. */
 export function summarizeOperation(row: IntegrationOperation) {
-  const fields = typeof row.input.fields === "object" && row.input.fields !== null ? row.input.fields as Record<string, unknown> : {};
+  const listedFields = typeof row.input.fields === "object" && row.input.fields !== null && !Array.isArray(row.input.fields);
+  const fields = listedFields ? row.input.fields as Record<string, unknown> : {};
+  // `class`, `id` and `stimulus` only mean a ticket, ticket ID and transition for iTop; other plugins list them like any input.
+  const factKeys: readonly string[] = row.pluginId === "itop" ? ITOP_FACT_KEYS : [];
+  const hiddenKeys = new Set(["outputFields", ...(listedFields ? ["fields"] : []), ...factKeys]);
   const changes: Change[] = [
     ...Object.entries(fields).map(([key, value]) => ({ key, value: display(value) })),
-    ...Object.entries(row.input).filter(([key]) => !HIDDEN_INPUT_KEYS.has(key)).map(([key, value]) => ({ key, value: display(value) })),
+    ...Object.entries(row.input).filter(([key]) => !hiddenKeys.has(key)).map(([key, value]) => ({ key, value: display(value) })),
   ];
-  const facts = (["class", "id", "stimulus"] as const).filter((key) => row.input[key] !== undefined).map((key) => ({ key, value: display(row.input[key]) }));
+  const facts = factKeys.filter((key) => row.input[key] !== undefined).map((key) => ({ key, value: display(row.input[key]) }));
   return { changes, facts };
 }
 
