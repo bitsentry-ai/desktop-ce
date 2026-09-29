@@ -20,6 +20,7 @@ type StatusVariant = "warning" | "info" | "success" | "destructive" | "secondary
 const STATUS_VARIANTS: Record<IntegrationOperation["status"], StatusVariant> = {
   proposed: "warning", executing: "info", succeeded: "success", failed: "destructive", uncertain: "warning", cancelled: "secondary",
 };
+const MAX_REFUSAL_LENGTH = 300;
 const ITOP_FACT_KEYS = ["class", "id", "stimulus"] as const;
 const display = (value: unknown) => typeof value === "string" ? value : JSON.stringify(value);
 
@@ -49,6 +50,7 @@ export function IntegrationOperationsPanel({ threadId, disabled, service }: { th
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(false);
   const [closeRequests, setCloseRequests] = useState<Record<string, boolean>>({});
+  const [refusals, setRefusals] = useState<Record<string, string>>({});
   useEffect(() => {
     let active = true;
     const refresh = async () => { try { const next = await service.list(threadId); if (active) { setRows(next); setError(false); } } catch { if (active) setError(true); } };
@@ -58,11 +60,17 @@ export function IntegrationOperationsPanel({ threadId, disabled, service }: { th
   }, [service, threadId]);
   async function act(row: IntegrationOperation, approve: boolean) {
     setBusy(true); setError(false);
+    setRefusals((old) => Object.fromEntries(Object.entries(old).filter(([id]) => id !== row.id)));
     try {
       if (approve) await service.approve(threadId, row.id, closeRequests[row.id] === true);
       else await service.cancel(threadId, row.id);
       setRows(await service.list(threadId));
-    } catch { setError(true); } finally { setBusy(false); }
+    } catch (caught) {
+      // A refusal explains why nothing was written. It belongs to its card and must outlive the 2.5 s list refresh.
+      const reason = caught instanceof Error ? caught.message.trim().slice(0, MAX_REFUSAL_LENGTH) : "";
+      if (reason === "") setError(true);
+      else setRefusals((old) => ({ ...old, [row.id]: reason }));
+    } finally { setBusy(false); }
   }
   if (rows.length === 0 && !error) return null;
   return <section className="max-h-[60vh] shrink-0 space-y-2 overflow-y-auto border-b border-border p-3" aria-label={t("incidents.integrationWrites.title")}>
@@ -104,6 +112,7 @@ export function IntegrationOperationsPanel({ threadId, disabled, service }: { th
               <pre className="max-h-48 overflow-auto whitespace-pre-wrap break-all rounded-md bg-muted p-2">{JSON.stringify(row.result, null, 2)}</pre>
             </>}
           </details>
+          {row.status === "proposed" && refusals[row.id] !== undefined && <p role="alert" className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">{refusals[row.id]}</p>}
           {row.status === "proposed" && <div className="flex flex-wrap items-center gap-2 border-t border-border pt-3">
             {row.requiresCloseRequest && <label className="mr-auto flex items-center gap-2 text-sm"><input type="checkbox" checked={closeRequests[row.id] === true} disabled={disabled || busy} onChange={(event) => setCloseRequests((old) => ({ ...old, [row.id]: event.target.checked }))} /> {t("incidents.integrationWrites.closeRequest")}</label>}
             <Button size="sm" disabled={disabled || busy || (row.requiresCloseRequest && !closeRequests[row.id])} onClick={() => { void act(row, true); }}>{t("incidents.integrationWrites.approve")}</Button>

@@ -75,6 +75,7 @@ describe('durable integration approval boundary', () => {
     runtime.connection.revision = 'saved-again'
     await expect(service.approve('thread', proposal.id, false)).rejects.toThrow('Connection changed. Create a new preview.')
     expect(execute).not.toHaveBeenCalled()
+    expect((await service.list('thread'))[0]?.status).toBe('proposed')
   })
 })
 
