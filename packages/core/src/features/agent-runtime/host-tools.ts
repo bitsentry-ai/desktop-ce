@@ -1,3 +1,4 @@
+import { ticketOperation, ticketOperationToolSchema, type TicketOperationInput } from "./ticket-tools";
 import { integrationActionToolSchema, runIntegrationTool, type IntegrationToolsPort, type IntegrationActionInput } from "./integration-tools";
 import { telemetryActionConfigWithCliSchema } from "../runbooks/runbooks.schemas";
 import { z } from 'zod'
@@ -256,6 +257,7 @@ export type HostToolName =
   | 'list_plugins'
   | 'list_integration_connections'
   | 'read_integration'
+  | 'ticket_operation'
   | 'propose_integration_write'
   | 'list_models'
   | 'execute_runbook'
@@ -1036,6 +1038,12 @@ export const hostTools = [
     description: 'List available runbooks that can be executed for the incident.',
     argsSchema: listRunbooksHostToolSchema,
     handler: async (context: HostToolContext) => await listRunbooks(context),
+  },
+  {
+    name: 'ticket_operation',
+    description: 'Search/read iTop tickets and preview create, acknowledge, assign, internal/public log, resolve, or close operations using connection-specific field/lifecycle mappings. Reads execute directly; every mutation is a preview only. Lifecycle previews first read the current ticket state and are refused unless the connection allows the transition from that state. Ask for missing required fields and show whether a log update is public. Closing requires an explicit engineer request.',
+    argsSchema: ticketOperationToolSchema,
+    handler: (context: HostToolContext, input: TicketOperationInput) => ticketOperation(context, input),
   },
   {
     name: 'read_integration',
