@@ -89,5 +89,22 @@
   "incidents.integrationWrites.inspect": "Inspect the remote resource before retrying. This request may have completed.",
   "incidents.integrationWrites.closeRequest": "I explicitly request closing this ticket.",
   "incidents.integrationWrites.approve": "Approve this exact change",
-  "incidents.integrationWrites.cancel": "Reject"
+  "incidents.integrationWrites.cancel": "Reject",
+  "incidents.integrationWrites.target": "Target",
+  "incidents.integrationWrites.action": "Action",
+  "incidents.integrationWrites.changes": "Proposed changes",
+  "incidents.integrationWrites.noChanges": "No field changes in this request.",
+  "incidents.integrationWrites.details": "Technical details",
+  "incidents.integrationWrites.request": "Request",
+  "incidents.integrationWrites.result": "Result",
+  "incidents.integrationWrites.fact.class": "Ticket class",
+  "incidents.integrationWrites.fact.id": "Ticket ID",
+  "incidents.integrationWrites.fact.stimulus": "Transition",
+  "incidents.integrationWrites.operation.create": "Create ticket",
+  "incidents.integrationWrites.operation.acknowledge": "Acknowledge ticket",
+  "incidents.integrationWrites.operation.assign": "Assign ticket",
+  "incidents.integrationWrites.operation.internal_log": "Add private log",
+  "incidents.integrationWrites.operation.public_log": "Add public log",
+  "incidents.integrationWrites.operation.resolve": "Resolve ticket",
+  "incidents.integrationWrites.operation.close": "Close ticket"
 }

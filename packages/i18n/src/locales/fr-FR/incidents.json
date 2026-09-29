@@ -89,5 +89,22 @@
   "incidents.integrationWrites.inspect": "Vérifiez la ressource distante avant de réessayer. La demande peut avoir abouti.",
   "incidents.integrationWrites.closeRequest": "Je demande explicitement la clôture de ce ticket.",
   "incidents.integrationWrites.approve": "Valider cette modification exacte",
-  "incidents.integrationWrites.cancel": "Rejeter"
+  "incidents.integrationWrites.cancel": "Rejeter",
+  "incidents.integrationWrites.target": "Cible",
+  "incidents.integrationWrites.action": "Action",
+  "incidents.integrationWrites.changes": "Modifications proposées",
+  "incidents.integrationWrites.noChanges": "Aucune modification de champ dans cette requête.",
+  "incidents.integrationWrites.details": "Détails techniques",
+  "incidents.integrationWrites.request": "Requête",
+  "incidents.integrationWrites.result": "Résultat",
+  "incidents.integrationWrites.fact.class": "Classe du ticket",
+  "incidents.integrationWrites.fact.id": "ID du ticket",
+  "incidents.integrationWrites.fact.stimulus": "Transition",
+  "incidents.integrationWrites.operation.create": "Créer un ticket",
+  "incidents.integrationWrites.operation.acknowledge": "Prendre en compte le ticket",
+  "incidents.integrationWrites.operation.assign": "Assigner le ticket",
+  "incidents.integrationWrites.operation.internal_log": "Ajouter un journal privé",
+  "incidents.integrationWrites.operation.public_log": "Ajouter un journal public",
+  "incidents.integrationWrites.operation.resolve": "Résoudre le ticket",
+  "incidents.integrationWrites.operation.close": "Fermer le ticket"
 }
