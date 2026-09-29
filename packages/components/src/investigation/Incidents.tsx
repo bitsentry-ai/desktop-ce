@@ -3064,7 +3064,7 @@ export default function IncidentsPage() {
           {topBarActions}
         </div>
 
-        {activeId !== null && <DesktopIntegrationOperationsPanel key={activeId} threadId={activeId} disabled={isArchivedIncident} />}
+        {activeIncident !== null && <DesktopIntegrationOperationsPanel key={activeIncident.id} threadId={activeIncident.id} disabled={isArchivedIncident} />}
 
         {/* Warning banner when blocked */}
         {!isArchivedIncident &&
