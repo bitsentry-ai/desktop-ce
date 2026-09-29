@@ -7,6 +7,7 @@ const lifecycleTransitionSchema = z.object({
   from: z.array(z.string().trim().min(1).max(100)).min(1).max(50).optional(),
 }).strict();
 export const ticketWriteOperationSchema = z.enum(["create", "acknowledge", "assign", "internal_log", "public_log", "resolve", "close"]);
+export type TicketWriteOperation = z.infer<typeof ticketWriteOperationSchema>;
 export const itopTicketMappingSchema = z.object({
   className: identifier,
   referenceField: identifier.default("ref"),

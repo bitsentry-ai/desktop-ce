@@ -1,7 +1,7 @@
 import { z } from "zod";
 import type { DesktopPluginStoredAuthStore } from "./desktop-plugin-auth-store";
 import { integrationOperationSchema, type IntegrationOperation, type IntegrationOperationStore } from "./integration-operations";
-const KEY = "bitsentry.integration-operations.v1";
+import { INTEGRATION_OPERATIONS_STORE_KEY as KEY } from "./integration-store-keys";
 export class StoredIntegrationOperations implements IntegrationOperationStore {
   private pending: Promise<unknown> = Promise.resolve();
   constructor(private readonly credentials: DesktopPluginStoredAuthStore) {}

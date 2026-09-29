@@ -3077,12 +3077,12 @@ export class AgentRuntimeService {
         this.authoringProposalStore?.save(proposal) ?? Promise.resolve(),
       pluginRuntime: this.pluginRuntime,
       integrationConnections: {
-        proposeWrite: async (request) => {
+        proposeWrite: async (request, meta) => {
           if (!session.incidentThreadId || this.pluginRuntime === undefined) throw new Error('An active conversation is required.');
-          return this.pluginRuntime.getIntegrationOperations().propose(session.incidentThreadId, request);
+          return this.pluginRuntime.getIntegrationOperations().propose(session.incidentThreadId, request, meta);
         },
         list: () => this.pluginRuntime?.listIntegrationConnections() ?? Promise.resolve([]),
-        executeRead: async (request) => {
+        executeRead: async (request, expectedConnection) => {
           const pluginRuntime = this.pluginRuntime
           if (pluginRuntime === undefined) throw new Error('Plugin runtime is unavailable.');
           const connection = (await pluginRuntime.listIntegrationConnections()).find((row) => row.id === request.connectionId);
@@ -3094,7 +3094,7 @@ export class AgentRuntimeService {
             operation: 'Integration read',
             signal: session.abortController.signal,
             timeoutMs: INTEGRATION_READ_TIMEOUT_MS,
-            execute: (signal) => pluginRuntime.executeIntegrationAction(request, { signal, deadlineAt }, { requiredRiskLevel: 'read' }),
+            execute: (signal) => pluginRuntime.executeIntegrationAction(request, { signal, deadlineAt }, { requiredRiskLevel: 'read', expectedConnection }),
           });
         },
       },

@@ -9,6 +9,8 @@ export const integrationConnectionInputSchema = z.object({
   pluginId: integrationPluginIdSchema,
   enabled: z.boolean().default(true),
   ticketMapping: itopTicketMappingSchema.optional(),
+  /** Changes on every save of a stored connection, so an approval can tell that credentials or settings were edited. */
+  revision: z.string().max(100).optional(),
   auth: z.record(z.string(), z.string().max(16_384)),
 }).strict();
 export type IntegrationConnectionInput = z.infer<typeof integrationConnectionInputSchema>;
@@ -67,6 +69,7 @@ export function describeIntegrationConnection(
       ? "username_password"
       : "token",
     ticketMapping: connection.ticketMapping,
+    revision: connection.revision,
     availability: !connection.enabled ? "disabled"
       : !target || !hasIntegrationCredentials(connection) ? "credentials_missing"
       : plugin == null ? "plugin_unavailable" : "configured",

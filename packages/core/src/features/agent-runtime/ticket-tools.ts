@@ -1,7 +1,8 @@
 import { z } from "zod";
 import type { HostToolContext } from "./host-tools";
 import { runIntegrationTool } from "./integration-tools";
-import type { ItopTicketMapping } from "../plugins/itop-ticket-mapping";
+import { ticketWriteOperationSchema, type ItopTicketMapping } from "../plugins/itop-ticket-mapping";
+import { readItopTicketState } from "../plugins/itop-ticket-state";
 import type { ToolResult } from "./types";
 
 export const ticketOperationToolSchema = z.object({
@@ -73,9 +74,8 @@ async function readTicketState(context: HostToolContext, connectionId: string, m
   try {
     const { content, truncated } = JSON.parse(read.output) as { content: string; truncated: boolean };
     if (truncated) return stateUnavailable("RESPONSE_TRUNCATED");
-    const objects = Object.values((JSON.parse(content) as { objects?: Record<string, { fields?: Record<string, unknown> }> }).objects ?? {});
-    const state = objects.length === 1 ? objects[0]?.fields?.[mapping.statusField] : undefined;
-    return typeof state === "string" && state !== "" ? { state } : stateUnavailable("STATUS_FIELD_MISSING");
+    const state = readItopTicketState(JSON.parse(content), mapping.statusField);
+    return state === undefined ? stateUnavailable("STATUS_FIELD_MISSING") : { state };
   } catch {
     return stateUnavailable("UNREADABLE_RESPONSE");
   }
@@ -124,7 +124,7 @@ export async function ticketOperation(context: HostToolContext, input: TicketOpe
     if (!("value" in observed)) return observed;
     observedTicketState = observed;
   }
-  const result = await runIntegrationTool(context.integrationConnections, plugins, { connectionId: input.connectionId, ...action }, "preview", { ticketOperation: true });
+  const result = await runIntegrationTool(context.integrationConnections, plugins, { connectionId: input.connectionId, ...action }, "preview", { ticketOperation: ticketWriteOperationSchema.parse(input.operation) });
   if (result.output !== undefined) {
     const preview = JSON.parse(result.output) as Record<string, unknown>;
     result.output = JSON.stringify({

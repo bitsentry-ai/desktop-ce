@@ -1,8 +1,8 @@
 import { z } from "zod";
 import type { DesktopPluginStoredAuthStore } from "./desktop-plugin-auth-store";
 import { integrationConnectionInputSchema, validateIntegrationConnection, type IntegrationConnectionInput } from "./integration-connections";
+import { INTEGRATION_CONNECTIONS_STORE_KEY as STORE_KEY } from "./integration-store-keys";
 
-const STORE_KEY = "bitsentry.integration-connections.v1";
 const connectionsSchema = z.array(integrationConnectionInputSchema).max(100);
 const pendingWrites = new WeakMap<DesktopPluginStoredAuthStore, Promise<void>>();
 
@@ -41,7 +41,8 @@ export class IntegrationConnectionStore {
       if (existing !== undefined && existing.pluginId !== connection.pluginId) {
         throw new Error("A connection cannot change its plugin.");
       }
-      return [...rows.filter((row) => row.id !== connection.id), connection];
+      // A new revision on every save lets a pending approval notice that the connection was edited.
+      return [...rows.filter((row) => row.id !== connection.id), { ...connection, revision: crypto.randomUUID() }];
     });
   }
 

@@ -340,6 +340,7 @@ class DesktopNodePluginRuntimeService extends DesktopPluginRuntimeService {
       if (plugin === null) throw new Error("Plugin unavailable.");
       return { connection: describeIntegrationConnection(connection, plugin), plugin,
         execute: (request) => super.executeAction({ pluginId: connection.pluginId, actionId: request.actionId, input: request.input, auth: connection.auth }, { deadlineAt: Date.now() + 30_000 }),
+        read: (request) => super.executeAction({ pluginId: connection.pluginId, actionId: request.actionId, input: request.input, auth: connection.auth }, { deadlineAt: Date.now() + 30_000 }, { requiredRiskLevel: "read" }),
       };
     });
     return this.operations;
@@ -366,6 +367,12 @@ class DesktopNodePluginRuntimeService extends DesktopPluginRuntimeService {
     const connection = (await this.connections.list()).find((row) => row.id === request.connectionId);
     if (connection === undefined || !connection.enabled) throw new Error("Integration connection is missing or disabled.");
     if (this.getPlugin(connection.pluginId)?.actions.find((row) => row.id === request.actionId)?.riskLevel !== "read") throw new Error("Writes require a stored, engineer-approved proposal.");
+    // Checked on the same record whose credentials run below, so the result cannot describe another endpoint.
+    const expected = policy?.expectedConnection;
+    if (expected !== undefined) {
+      const current = describeIntegrationConnection(connection, this.getPlugin(connection.pluginId));
+      if (current.target !== expected.target || current.revision !== expected.revision) throw new Error("Connection changed. Retry the read.");
+    }
     // Call the registry directly: never merge another instance's default auth.
     return super.executeAction({ pluginId: connection.pluginId, actionId: request.actionId, input: request.input, auth: connection.auth }, operation, policy);
   }

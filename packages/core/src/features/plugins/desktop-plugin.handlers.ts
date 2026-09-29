@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { integrationConnectionInputSchema } from "./integration-connections";
+import { isInternalStoredAuthKey } from "./integration-store-keys";
 import type {
   DesktopPluginExecutionRequest,
   DesktopPluginFieldType,
@@ -23,6 +24,13 @@ function asPayloadRecord(payload: unknown): Record<string, unknown> {
   }
 
   return {};
+}
+
+/** Stored-auth handlers take a caller-chosen id; internal BitSentry records are off limits. */
+function readStoredAuthPluginId(payload: unknown): string {
+  const pluginId = readRequiredPluginId(payload);
+  if (isInternalStoredAuthKey(pluginId)) throw new Error("This storage id is reserved.");
+  return pluginId;
 }
 
 function readRequiredPluginId(payload: unknown): string {
@@ -204,7 +212,7 @@ export function createDesktopPluginHandlers(
       return Promise.resolve(service.getPlugin(pluginId));
     },
     "plugins:getStoredAuth": (payload) => {
-      const pluginId = readRequiredPluginId(payload);
+      const pluginId = readStoredAuthPluginId(payload);
 
       if (service.getPlugin(pluginId) === null) {
         throw new Error(`Unknown plugin: ${pluginId}`);
@@ -213,7 +221,7 @@ export function createDesktopPluginHandlers(
       return storedAuthStore.get(pluginId);
     },
     "plugins:updateStoredAuth": (payload) => {
-      const pluginId = readRequiredPluginId(payload);
+      const pluginId = readStoredAuthPluginId(payload);
 
       const plugin = service.getPlugin(pluginId);
       if (plugin === null) {
@@ -242,7 +250,7 @@ export function createDesktopPluginHandlers(
       return storedAuthStore.set(pluginId, normalized);
     },
     "plugins:clearStoredAuth": async (payload) => {
-      const pluginId = readRequiredPluginId(payload);
+      const pluginId = readStoredAuthPluginId(payload);
 
       await storedAuthStore.clear(pluginId);
       return { success: true };

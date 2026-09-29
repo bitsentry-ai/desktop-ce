@@ -283,6 +283,8 @@ export class DesktopPluginRegistry {
 
 export interface DesktopPluginExecutionPolicy {
   requiredRiskLevel?: "read" | "write";
+  /** A stored-connection run must use this exact target and revision, or it is refused. */
+  expectedConnection?: { target: string; revision?: string };
 }
 
 export class DesktopPluginRuntimeService {
