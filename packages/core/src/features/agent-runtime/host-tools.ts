@@ -1053,7 +1053,7 @@ export const hostTools = [
   },
   {
     name: 'propose_integration_write',
-    description: 'Validate and preview an iTop or Outline create/update. Never executes a write. Show the exact connection, target, and content and request engineer review. Missing required fields require clarification.',
+    description: 'Validate and preview an iTop or Outline create/update. Never executes a write. Show the exact connection, target, and content and request engineer review. Missing required fields require clarification. For iTop tickets use ticket_operation; this tool refuses iTop writes on ticket classes and on connections without a ticket mapping.',
     argsSchema: integrationActionToolSchema,
     handler: async (context: HostToolContext, input: IntegrationActionInput) => runIntegrationTool(context.integrationConnections, await context.pluginRuntime?.listPlugins() ?? [], input, 'preview'),
   },
