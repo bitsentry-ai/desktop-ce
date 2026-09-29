@@ -1041,7 +1041,7 @@ export const hostTools = [
   },
   {
     name: 'ticket_operation',
-    description: 'Search/read iTop tickets and preview create, acknowledge, assign, internal/public log, resolve, or close operations using connection-specific field/lifecycle mappings. Reads execute directly; every mutation is a preview only. Ask for missing required fields and show whether a log update is public. Closing requires an explicit engineer request.',
+    description: 'Search/read iTop tickets and preview create, acknowledge, assign, internal/public log, resolve, or close operations using connection-specific field/lifecycle mappings. Reads execute directly; every mutation is a preview only. Lifecycle previews first read the current ticket state and are refused unless the connection allows the transition from that state. Ask for missing required fields and show whether a log update is public. Closing requires an explicit engineer request.',
     argsSchema: ticketOperationToolSchema,
     handler: (context: HostToolContext, input: TicketOperationInput) => ticketOperation(context, input),
   },

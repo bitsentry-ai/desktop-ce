@@ -18,6 +18,10 @@ export type TicketOperationInput = z.infer<typeof ticketOperationToolSchema>;
 function clarification(message: string, fields: string[] = []): ToolResult {
   return { error: JSON.stringify({ code: "CLARIFICATION_REQUIRED", message, fields }) };
 }
+function stateUnavailable(cause: string): ToolResult {
+  return { error: JSON.stringify({ code: "TICKET_STATE_UNAVAILABLE", cause, message: "Could not read the ticket's current state, so no proposal was created. Check the connection and ticket ID, then retry." }) };
+}
+type TicketMutation = { actionId: string; input: Record<string, unknown>; allowedStates?: string[] };
 function oqlString(value: string): string {
   return `'${value.replace(/\\/g, "\\\\").replace(/'/g, "\\'")}'`;
 }
@@ -33,7 +37,7 @@ function readRequest(input: TicketOperationInput, mapping: ItopTicketMapping) {
   return { actionId: "list_objects", input: { ...common, query: `SELECT ${mapping.className} WHERE ${predicate}`, limit: input.operation === "read" ? 2 : input.limit, page: 1 } };
 }
 
-function mutationRequest(input: TicketOperationInput, mapping: ItopTicketMapping): { actionId: string; input: Record<string, unknown> } | ToolResult {
+function mutationRequest(input: TicketOperationInput, mapping: ItopTicketMapping): TicketMutation | ToolResult {
   if (input.operation === "search" || input.operation === "read") return clarification("Use a read operation.");
   const supplied = { ...mapping.defaults, ...input.fields };
   const required = mapping.requiredFields[input.operation];
@@ -51,9 +55,57 @@ function mutationRequest(input: TicketOperationInput, mapping: ItopTicketMapping
     const field = input.operation === "public_log" ? mapping.publicLogField : mapping.internalLogField;
     return { actionId: "update_object", input: { ...common, id, fields: { ...fields, [field]: { add_item: { message: input.message, format: "text" } } } } };
   }
-  const stimulus = mapping.stimuli[input.operation];
-  if (stimulus === undefined) return clarification("This lifecycle operation has no configured mapping. Ask the engineer to configure its iTop stimulus.", [input.operation]);
-  return { actionId: "apply_stimulus", input: { ...common, id, stimulus } };
+  const transition = mapping.stimuli[input.operation];
+  if (transition === undefined) return clarification("This lifecycle operation has no configured mapping. Ask the engineer to configure its iTop stimulus.", [input.operation]);
+  if (transition.from === undefined) return clarification("This lifecycle operation has no allowed source states configured. Ask the engineer to configure them for this connection.", [input.operation]);
+  return { actionId: "apply_stimulus", input: { ...common, id, stimulus: transition.stimulus }, allowedStates: transition.from };
+}
+
+/** Reads the mapped status field of one ticket through the selected connection's read path. */
+async function readTicketState(context: HostToolContext, connectionId: string, mapping: ItopTicketMapping, id: unknown, plugins: Parameters<typeof runIntegrationTool>[1]): Promise<{ state: string } | ToolResult> {
+  const read = await runIntegrationTool(context.integrationConnections, plugins, {
+    connectionId, actionId: "get_object", input: { class: mapping.className, id, outputFields: mapping.statusField },
+  }, "read");
+  if (read.output === undefined) {
+    const code = (JSON.parse(read.error ?? "{}") as { code?: unknown }).code;
+    return stateUnavailable(typeof code === "string" ? code : "READ_FAILED");
+  }
+  try {
+    const { content, truncated } = JSON.parse(read.output) as { content: string; truncated: boolean };
+    if (truncated) return stateUnavailable("RESPONSE_TRUNCATED");
+    const objects = Object.values((JSON.parse(content) as { objects?: Record<string, { fields?: Record<string, unknown> }> }).objects ?? {});
+    const state = objects.length === 1 ? objects[0]?.fields?.[mapping.statusField] : undefined;
+    return typeof state === "string" && state !== "" ? { state } : stateUnavailable("STATUS_FIELD_MISSING");
+  } catch {
+    return stateUnavailable("UNREADABLE_RESPONSE");
+  }
+}
+
+function readOperation(
+  context: HostToolContext, input: TicketOperationInput, mapping: ItopTicketMapping, plugins: Parameters<typeof runIntegrationTool>[1],
+): Promise<ToolResult> | ToolResult {
+  if (input.operation === "read" && /^\d+$/.test(input.ticketId ?? "") && (!Number.isSafeInteger(Number(input.ticketId)) || Number(input.ticketId) < 1)) return clarification("Use a positive numeric ticket ID or a human reference.", ["ticketId"]);
+  if (input.operation === "read" && !input.ticketId) return clarification("Which ticket should be read?", ["ticketId"]);
+  if (input.operation === "search" && !input.query) return clarification("What ticket title or reference should be searched?", ["query"]);
+  return runIntegrationTool(context.integrationConnections, plugins, { connectionId: input.connectionId, ...readRequest(input, mapping) }, "read");
+}
+
+type ObservedTicketState = { field: string; value: string; allowedStates: string[] };
+
+/** A lifecycle proposal is only allowed from a source state the connection's mapping permits. */
+async function checkTicketState(
+  context: HostToolContext, input: TicketOperationInput, mapping: ItopTicketMapping, id: unknown, allowedStates: string[],
+  plugins: Parameters<typeof runIntegrationTool>[1],
+): Promise<ObservedTicketState | ToolResult> {
+  const observed = await readTicketState(context, input.connectionId, mapping, id, plugins);
+  if (!("state" in observed)) return observed;
+  if (!allowedStates.includes(observed.state)) {
+    return { error: JSON.stringify({
+      code: "INVALID_TICKET_STATE", operation: input.operation, currentState: observed.state, allowedStates,
+      message: `The ticket is in state "${observed.state}"; ${input.operation} is only allowed from: ${allowedStates.join(", ")}. No proposal was created.`,
+    }) };
+  }
+  return { field: mapping.statusField, value: observed.state, allowedStates };
 }
 
 export async function ticketOperation(context: HostToolContext, input: TicketOperationInput): Promise<ToolResult> {
@@ -61,17 +113,24 @@ export async function ticketOperation(context: HostToolContext, input: TicketOpe
   if (connection?.pluginId !== "itop" || connection.ticketMapping === undefined) return clarification("Choose an iTop connection with ticket field and lifecycle mappings configured.");
   const plugins = await context.pluginRuntime?.listPlugins() ?? [];
   if (input.operation === "read" || input.operation === "search") {
-    if (input.operation === "read" && /^\d+$/.test(input.ticketId ?? "") && (!Number.isSafeInteger(Number(input.ticketId)) || Number(input.ticketId) < 1)) return clarification("Use a positive numeric ticket ID or a human reference.", ["ticketId"]);
-    if (input.operation === "read" && !input.ticketId) return clarification("Which ticket should be read?", ["ticketId"]);
-    if (input.operation === "search" && !input.query) return clarification("What ticket title or reference should be searched?", ["query"]);
-    return runIntegrationTool(context.integrationConnections, plugins, { connectionId: input.connectionId, ...readRequest(input, connection.ticketMapping) }, "read");
+    return readOperation(context, input, connection.ticketMapping, plugins);
   }
   const request = mutationRequest(input, connection.ticketMapping);
   if (!("actionId" in request)) return request;
-  const result = await runIntegrationTool(context.integrationConnections, plugins, { connectionId: input.connectionId, ...request }, "preview");
+  const { allowedStates, ...action } = request;
+  let observedTicketState: ObservedTicketState | undefined;
+  if (allowedStates !== undefined) {
+    const observed = await checkTicketState(context, input, connection.ticketMapping, action.input.id, allowedStates, plugins);
+    if (!("value" in observed)) return observed;
+    observedTicketState = observed;
+  }
+  const result = await runIntegrationTool(context.integrationConnections, plugins, { connectionId: input.connectionId, ...action }, "preview");
   if (result.output !== undefined) {
     const preview = JSON.parse(result.output) as Record<string, unknown>;
-    result.output = JSON.stringify({ ...preview, ticketOperation: input.operation, publicUpdate: input.operation === "public_log", requiresExplicitCloseRequest: input.operation === "close" });
+    result.output = JSON.stringify({
+      ...preview, ticketOperation: input.operation, publicUpdate: input.operation === "public_log", requiresExplicitCloseRequest: input.operation === "close",
+      ...(observedTicketState === undefined ? {} : { observedTicketState }),
+    });
   }
   return result;
 }
