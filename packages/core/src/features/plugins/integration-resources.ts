@@ -24,6 +24,8 @@ const MAX_STATE_TEXT = 200;
 function isStateValue(value: unknown): value is string | number | boolean {
   return typeof value === "number" || typeof value === "boolean" || (typeof value === "string" && value.length <= MAX_STATE_TEXT);
 }
+/** A card title must be short too: a title field mapped to a long text attribute falls back to the reference. */
+function shortText(value: unknown): string { return isStateValue(value) ? text(value) : ""; }
 /** The attributes a follow-up needs: the mapped reference and state, plus whatever the mapping requires to assign a ticket. */
 function ticketStateKeys(mapping: IntegrationConnection["ticketMapping"]): string[] {
   if (mapping === undefined) return DEFAULT_TICKET_STATE_KEYS;
@@ -45,7 +47,7 @@ export function extractIntegrationResources(threadId: string, connection: Pick<I
       url.search = new URLSearchParams({ operation: "details", class: className, id: externalId }).toString();
       const mapping = connection.ticketMapping;
       const state = Object.fromEntries(ticketStateKeys(mapping).filter((key) => isStateValue(fields[key])).map((key) => [key, fields[key]]));
-      return [integrationResourceSchema.parse({ ...common, resourceType: "ticket", externalId, url: url.toString(), title: text(fields[mapping?.titleField ?? "title"]) || text(fields[mapping?.referenceField ?? "ref"]) || externalId, state })];
+      return [integrationResourceSchema.parse({ ...common, resourceType: "ticket", externalId, url: url.toString(), title: shortText(fields[mapping?.titleField ?? "title"]) || shortText(fields[mapping?.referenceField ?? "ref"]) || externalId, state })];
     });
   }
   const rows = Array.isArray(data.data) ? data.data : [data.data];

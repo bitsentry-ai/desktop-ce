@@ -60,6 +60,16 @@ describe('ticket resources for a custom ticket mapping', () => {
     expect(rows[0]?.state).toEqual({ problem_ref: 'P-7', lifecycle: 'new' })
   })
 
+  it('never uses long text as a card title, even when the mapping names that attribute as the title', () => {
+    const longMapping = itopTicketMappingSchema.parse({ ...problemMapping, titleField: 'description' })
+    const rows = extractIntegrationResources('thread', { ...connection, ticketMapping: longMapping }, problem({
+      problem_ref: 'P-7', lifecycle: 'new', description: 'y'.repeat(500),
+    }))
+
+    expect(rows[0]?.title).toBe('P-7')
+    expect(JSON.stringify(rows)).not.toContain('yyyy')
+  })
+
   it('still ignores a class that is neither mapped nor a default ticket class', () => {
     const other = { objects: { 'Change::9': { class: 'Change', key: '9', fields: { problem_ref: 'C-9' } } } }
 
