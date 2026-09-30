@@ -17,6 +17,7 @@ export interface IntegrationReadSnapshot { target: string; revision?: string }
 /** `capture: false` marks an internal check whose partial result must not replace a linked resource card. */
 export interface IntegrationReadOptions { capture?: boolean }
 export interface IntegrationToolsPort {
+  timeTracking?: Pick<import("../plugins/time-tracking-adapter").TimeTrackingAdapterRegistry, "capabilities">;
   list(): Promise<IntegrationConnection[]>;
   listResources?(): Promise<import("../plugins/integration-resources").IntegrationResource[]>;
   proposeWrite?(request: IntegrationActionInput, meta?: { ticketOperation?: TicketWriteOperation }): Promise<import("../plugins/integration-operations").IntegrationOperation>;
