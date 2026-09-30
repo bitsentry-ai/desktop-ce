@@ -106,5 +106,8 @@
   "incidents.integrationWrites.operation.internal_log": "Tambah log privat",
   "incidents.integrationWrites.operation.public_log": "Tambah log publik",
   "incidents.integrationWrites.operation.resolve": "Selesaikan tiket",
-  "incidents.integrationWrites.operation.close": "Tutup tiket"
+  "incidents.integrationWrites.operation.close": "Tutup tiket",
+  "incidents.integrationResources.title": "Tiket dan dokumen tertaut",
+  "incidents.integrationResources.error": "Tidak dapat menyegarkan sumber daya tertaut. Status sebelumnya mungkin sudah usang.",
+  "incidents.integrationResources.observed": "Terakhir diamati:"
 }

@@ -199,4 +199,40 @@ describe('direct integration reads', () => {
     expect(followUpToolContent(llmAdapter)).toContain('INTEGRATION_READ_INTERRUPTED')
     expect(followUpToolContent(llmAdapter)).not.toContain('Evidence')
   })
+
+  describe('linking what a read returned to the conversation', () => {
+    const readResult = { ok: true, status: 200, data: { data: [{ document: { id: 'doc-1', title: 'Failover', url: '/doc/failover' } }], note: 'Evidence' } }
+    const pluginRuntimeWith = (save: (resources: unknown[]) => Promise<void>) => ({
+      listPlugins: async () => [plugin],
+      listIntegrationConnections: async () => [connection],
+      executeIntegrationAction: async () => readResult,
+      getIntegrationResources: () => ({ save }),
+    }) as unknown as DesktopPluginRuntimeService
+
+    it('retains the linked document after a successful read', async () => {
+      const save = vi.fn(async () => undefined)
+      const llmAdapter = readIntegrationTurn()
+      const service = createRuntime(llmAdapter, pluginRuntimeWith(save))
+
+      const sessionId = await service.start({ prompt: 'Find the failover document', llm: { providerKey: 'anthropic', model: 'model-a' }, incidentThreadId: 'thread-1' })
+      await waitFor(() => service.getStatus(sessionId).state === 'COMPLETED')
+
+      expect(save).toHaveBeenCalledTimes(1)
+      expect(save).toHaveBeenCalledWith([expect.objectContaining({ threadId: 'thread-1', connectionId: connection.id, externalId: 'doc-1', resourceType: 'document' })])
+      expect(followUpToolContent(llmAdapter)).toContain('Evidence')
+    })
+
+    it('still returns the read result when retaining the resource fails', async () => {
+      const save = vi.fn(async () => { throw new Error('resource store unavailable') })
+      const llmAdapter = readIntegrationTurn()
+      const service = createRuntime(llmAdapter, pluginRuntimeWith(save))
+
+      const sessionId = await service.start({ prompt: 'Find the failover document', llm: { providerKey: 'anthropic', model: 'model-a' }, incidentThreadId: 'thread-1' })
+      await waitFor(() => service.getStatus(sessionId).state === 'COMPLETED')
+
+      expect(save).toHaveBeenCalledTimes(1)
+      expect(followUpToolContent(llmAdapter)).toContain('Evidence')
+      expect(followUpToolContent(llmAdapter)).not.toContain('resource store unavailable')
+    })
+  })
 })

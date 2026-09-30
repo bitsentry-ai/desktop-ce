@@ -106,5 +106,8 @@
   "incidents.integrationWrites.operation.internal_log": "添加私有日志",
   "incidents.integrationWrites.operation.public_log": "添加公开日志",
   "incidents.integrationWrites.operation.resolve": "解决工单",
-  "incidents.integrationWrites.operation.close": "关闭工单"
+  "incidents.integrationWrites.operation.close": "关闭工单",
+  "incidents.integrationResources.title": "关联工单和文档",
+  "incidents.integrationResources.error": "无法刷新关联资源。之前观察到的状态可能已过时。",
+  "incidents.integrationResources.observed": "最后观察时间："
 }

@@ -16,6 +16,7 @@ export type IntegrationActionInput = z.infer<typeof integrationActionToolSchema>
 export interface IntegrationReadSnapshot { target: string; revision?: string }
 export interface IntegrationToolsPort {
   list(): Promise<IntegrationConnection[]>;
+  listResources?(): Promise<import("../plugins/integration-resources").IntegrationResource[]>;
   proposeWrite?(request: IntegrationActionInput, meta?: { ticketOperation?: TicketWriteOperation }): Promise<import("../plugins/integration-operations").IntegrationOperation>;
   executeRead?(request: IntegrationActionInput, expected?: IntegrationReadSnapshot): Promise<DesktopPluginExecutionResult>;
 }

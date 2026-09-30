@@ -106,5 +106,8 @@
   "incidents.integrationWrites.operation.internal_log": "Add private log",
   "incidents.integrationWrites.operation.public_log": "Add public log",
   "incidents.integrationWrites.operation.resolve": "Resolve ticket",
-  "incidents.integrationWrites.operation.close": "Close ticket"
+  "incidents.integrationWrites.operation.close": "Close ticket",
+  "incidents.integrationResources.title": "Linked tickets and documents",
+  "incidents.integrationResources.error": "Could not refresh linked resources. Previously observed state may be stale.",
+  "incidents.integrationResources.observed": "Last observed:"
 }

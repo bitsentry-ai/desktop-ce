@@ -256,6 +256,7 @@ export type HostToolName =
   | 'list_runbooks'
   | 'list_plugins'
   | 'list_integration_connections'
+  | 'list_thread_resources'
   | 'read_integration'
   | 'ticket_operation'
   | 'propose_integration_write'
@@ -738,7 +739,7 @@ async function executeRunbook(
   input: ExecuteRunbookHostToolInput,
 ): Promise<ToolResult> {
   const runbook = await resolveRunbookReference(context, input)
-  if (runbook.actions.some((action) => action.type === 'plugin' && ['itop', 'outline'].includes(action.pluginId ?? ''))) {
+  if (runbook.actions.some((action) => action.type === 'plugin' && ['itop', 'outline'].includes(action.pluginId?.trim() ?? ''))) {
     return { error: 'Use named integration read tools or an engineer-approved write proposal for ticket and document actions in chat.' }
   }
   const parameterValues = context.resolveParameterValues?.(context.session, runbook, input) ?? normalizeParameterValues(input)
@@ -1059,6 +1060,12 @@ export const hostTools = [
     description: 'Validate and preview an iTop or Outline create/update. Never executes a write. Show the exact connection, target, and content and request engineer review. Missing required fields require clarification. For iTop tickets use ticket_operation; this tool refuses iTop writes on ticket classes and on connections without a ticket mapping.',
     argsSchema: integrationActionToolSchema,
     handler: async (context: HostToolContext, input: IntegrationActionInput) => runIntegrationTool(context.integrationConnections, await context.pluginRuntime?.listPlugins() ?? [], input, 'preview'),
+  },
+  {
+    name: 'list_thread_resources',
+    description: 'List tickets and documents linked to this conversation, including exact connection and external IDs, source URLs, observed state and freshness. Use these IDs for follow-ups; ask which resource when ambiguous. Refresh through a read tool before changing stale data.',
+    argsSchema: z.object({}).strict(),
+    handler: async (context) => ({ output: JSON.stringify(await context.integrationConnections?.listResources?.() ?? []) }),
   },
   {
     name: 'list_integration_connections',
