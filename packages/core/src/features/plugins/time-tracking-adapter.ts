@@ -46,7 +46,7 @@ export class TimeTrackingAdapterRegistry {
     const adapter = this.adapters.get(connectionId);
     if (!adapter) return { connectionId, availability: "not_connected", actions: [], remoteIdempotency: "unknown" };
     const result = timerCapabilitiesSchema.parse(await adapter.capabilities(connectionId));
-    if (result.connectionId !== connectionId || result.adapterId !== adapter.id) throw new Error("Timer adapter returned a mismatched connection identity.");
+    if (result.connectionId !== connectionId || (result.adapterId !== undefined && result.adapterId !== adapter.id)) throw new Error("Timer adapter returned a mismatched connection identity.");
     return result;
   }
   /** Host-only lookup; no chat tool exposes executeApproved before a custom implementation is connected. */
