@@ -122,5 +122,7 @@
   "incidents.knowledge.runbook": "Pilih runbook tersimpan",
   "incidents.knowledge.parameters": "Nilai parameter (objek JSON berisi string)",
   "incidents.knowledge.approveExecution": "Saya telah meninjau langkah dan parameter persis ini dan menyetujui eksekusinya.",
-  "incidents.knowledge.execute": "Jalankan runbook yang ditinjau"
+  "incidents.knowledge.execute": "Jalankan runbook yang ditinjau",
+  "incidents.knowledge.loadError": "Tidak dapat menyegarkan runbook atau status eksekusi. Data yang ditampilkan mungkin sudah usang.",
+  "incidents.knowledge.changed": "Runbook berubah setelah Anda meninjaunya. Tinjau langkah yang diperbarui lalu setujui lagi."
 }

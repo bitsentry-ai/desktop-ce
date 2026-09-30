@@ -122,5 +122,7 @@
   "incidents.knowledge.runbook": "Choisir un runbook enregistré",
   "incidents.knowledge.parameters": "Valeurs des paramètres (objet JSON de chaînes)",
   "incidents.knowledge.approveExecution": "J’ai vérifié ces étapes et paramètres exacts et autorise cette exécution.",
-  "incidents.knowledge.execute": "Exécuter le runbook vérifié"
+  "incidents.knowledge.execute": "Exécuter le runbook vérifié",
+  "incidents.knowledge.loadError": "Impossible d'actualiser les runbooks ou l'état de l'exécution. Les informations affichées peuvent être obsolètes.",
+  "incidents.knowledge.changed": "Le runbook a changé après votre revue. Relisez les étapes mises à jour et approuvez à nouveau."
 }

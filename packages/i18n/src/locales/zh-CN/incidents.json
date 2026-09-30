@@ -122,5 +122,7 @@
   "incidents.knowledge.runbook": "选择已保存的运行手册",
   "incidents.knowledge.parameters": "参数值（字符串 JSON 对象）",
   "incidents.knowledge.approveExecution": "我已审查这些确切步骤和参数并批准此次执行。",
-  "incidents.knowledge.execute": "执行已审查的运行手册"
+  "incidents.knowledge.execute": "执行已审查的运行手册",
+  "incidents.knowledge.loadError": "无法刷新运行手册或执行状态。所显示的内容可能已过期。",
+  "incidents.knowledge.changed": "该运行手册在您审核后已更改。请查看更新后的步骤并重新批准。"
 }

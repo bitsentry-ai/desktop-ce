@@ -122,5 +122,7 @@
   "incidents.knowledge.runbook": "Select a saved runbook",
   "incidents.knowledge.parameters": "Parameter values (JSON object of strings)",
   "incidents.knowledge.approveExecution": "I reviewed these exact steps and parameters and approve this execution.",
-  "incidents.knowledge.execute": "Execute reviewed runbook"
+  "incidents.knowledge.execute": "Execute reviewed runbook",
+  "incidents.knowledge.loadError": "Could not refresh runbooks or the execution status. What is shown may be out of date.",
+  "incidents.knowledge.changed": "The runbook changed after you reviewed it. Review the updated steps and approve again."
 }

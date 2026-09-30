@@ -6,12 +6,30 @@ import type { HostToolContext } from '../src/features/agent-runtime/host-tools'
 import type { IntegrationResource } from '../src/features/plugins/integration-resources'
 const source: IntegrationResource = { threadId: 'thread', connectionId: '11111111-1111-4111-8111-111111111111', connectionName: 'Knowledge', resourceType: 'document', externalId: 'doc', title: 'Evidence', url: 'https://outline.example/doc/evidence', state: {}, observedAt: '2026-09-26T00:00:00.000Z', selected: true }
 describe('knowledge to runbook evidence boundaries', () => {
-  it('blocks model execution when the engineer selected knowledge sources', async () => {
+  const runbookContext = (description: string, start: ReturnType<typeof vi.fn>) => ({
+    session: { id: 'session', incidentThreadId: 'thread' },
+    integrationConnections: { listResources: async () => [{ ...source, selected: true }] },
+    gateway: { start, listExecutable: async () => [{ id: 'runbook', title: 'Check', description, actions: [] }] },
+  }) as unknown as HostToolContext
+
+  it('blocks model execution of a runbook that was created from selected knowledge', async () => {
     const start = vi.fn()
-    const context = { session: { id: 'session', incidentThreadId: 'thread' }, integrationConnections: { listResources: async () => [source] }, gateway: { start, listExecutable: async () => [{ id: 'runbook', title: 'Check', description: '', actions: [] }] } } as unknown as HostToolContext
+    const context = runbookContext('Check the failover.' + knowledgeReferences([source]), start)
+
     const result = await executeHostTool(context, 'execute_runbook', { runbookId: 'runbook' })
+
     expect(result?.error).toContain('engineer review')
     expect(start).not.toHaveBeenCalled()
+  })
+
+  it('still runs an unrelated saved runbook while knowledge sources are selected', async () => {
+    const start = vi.fn().mockRejectedValue(new Error('started'))
+    const context = runbookContext('Restart the worker.', start)
+
+    const result = await executeHostTool(context, 'execute_runbook', { runbookId: 'runbook' })
+
+    expect(start).toHaveBeenCalledTimes(1)
+    expect(result?.error).not.toContain('engineer review')
   })
 
   it('requires engineer-selected sources before retrieving knowledge', async () => {

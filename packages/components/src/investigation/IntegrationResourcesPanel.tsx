@@ -13,12 +13,16 @@ export function IntegrationResourcesPanel({ threadId, service, disabled = false 
   const { t } = useTranslation();
   const [rows, setRows] = useState<IntegrationResource[]>([]);
   const [failed, setFailed] = useState(false);
+  // Once a source was selected the execution panel stays mounted, so a running execution is not lost when the last one is unchecked.
+  const [everSelected, setEverSelected] = useState(false);
   useEffect(() => {
     let active = true;
     const refresh = async () => { try { const result = await service.list(threadId); if (active) { setRows(result); setFailed(false); } } catch { if (active) setFailed(true); } };
     void refresh(); const timer = setInterval(() => { void refresh(); }, 5000);
     return () => { active = false; clearInterval(timer); };
   }, [threadId, service]);
+  const anySelected = rows.some((row) => row.selected);
+  useEffect(() => { if (anySelected) setEverSelected(true); }, [anySelected]);
   if (!rows.length && !failed) return null;
   return <details className="max-h-60 shrink-0 overflow-y-auto border-b border-border px-4 py-2">
     <summary>{t("incidents.integrationResources.title")} ({rows.length})</summary>
@@ -30,6 +34,6 @@ export function IntegrationResourcesPanel({ threadId, service, disabled = false 
       <pre className="whitespace-pre-wrap break-all text-xs">{JSON.stringify(row.state, null, 2)}</pre>
       <p className="text-xs text-muted-foreground">{t("incidents.integrationResources.observed")} <time dateTime={row.observedAt}>{new Date(row.observedAt).toLocaleString()}</time></p>
     </article>)}</div>
-    {rows.some((row) => row.selected) && <KnowledgeExecutionPanel threadId={threadId} disabled={disabled} />}
+    {(anySelected || everSelected) && <KnowledgeExecutionPanel threadId={threadId} disabled={disabled} active={anySelected} />}
   </details>;
 }
