@@ -15,6 +15,8 @@ export const itopTicketMappingSchema = z.object({
   internalLogField: identifier.default("private_log"),
   publicLogField: identifier.default("public_log"),
   statusField: identifier.default("status"),
+  /** States in which a ticket counts as solved, for searching earlier solutions. */
+  solvedStates: z.array(z.string().trim().min(1).max(100)).min(1).max(50).default(["resolved", "closed"]),
   fields: z.record(identifier, identifier),
   requiredFields: z.record(ticketWriteOperationSchema, z.array(identifier).max(50)),
   defaults: z.record(identifier, z.union([z.string(), z.number(), z.boolean(), z.null()])).default({}),
