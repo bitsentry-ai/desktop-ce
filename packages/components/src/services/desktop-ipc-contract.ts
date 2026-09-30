@@ -3,6 +3,8 @@ export const DESKTOP_RPC_CHANNELS = [
   'plugins:get',
   'plugins:getStoredAuth',
   'plugins:listResources',
+  'plugins:renewOperation',
+  'plugins:reconcileOperation',
   'plugins:listOperations',
   'plugins:approveOperation',
   'plugins:cancelOperation',

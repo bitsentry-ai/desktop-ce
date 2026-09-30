@@ -11,70 +11,172 @@ function memoryStore() {
 
 function setup() {
   const store = memoryStore()
-  const execute = vi.fn().mockResolvedValue({ ok: true, status: 200, data: { id: 'remote-document' } })
+  const remote = { documents: [] as Array<{ id: string; title: string }>, reads: [] as string[] }
+  const execute = vi.fn(async (request: Parameters<IntegrationWriteRuntime['execute']>[0]) => {
+    const document = { id: 'remote-document', title: String(request.input.title ?? '') }
+    remote.documents.push(document)
+    return { ok: true, status: 200, data: document }
+  })
+  const read = vi.fn(async (request: Parameters<IntegrationWriteRuntime['read']>[0]) => {
+    const id = String(request.input.id)
+    remote.reads.push(id)
+    const document = remote.documents.find((row) => row.id === id)
+    return document === undefined ? { ok: false, status: 404 } : { ok: true, status: 200, data: document }
+  })
   const runtime: IntegrationWriteRuntime = {
     connection: { id: '11111111-1111-4111-8111-111111111111', name: 'Knowledge', pluginId: 'outline', target: 'https://outline.example/api', enabled: true, authMode: 'token', availability: 'configured', actions: [] },
-    plugin: { id: 'outline', name: 'Outline', version: '1.0.0', description: 'Documents', type: 'data_source', auth: { fields: [] }, actions: [{ id: 'create_document', title: 'Create', description: 'Create', riskLevel: 'write', fields: [{ key: 'title', label: 'Title', type: 'string', required: true }] }] }, execute,
-    read: vi.fn(),
+    plugin: { id: 'outline', name: 'Outline', version: '1.0.0', description: 'Documents', type: 'data_source', auth: { fields: [] }, actions: [{ id: 'create_document', title: 'Create', description: 'Create', riskLevel: 'write', fields: [{ key: 'title', label: 'Title', type: 'string', required: true }] }, { id: 'get_document', title: 'Read', description: 'Read', riskLevel: 'read', fields: [{ key: 'id', label: 'ID', type: 'string', required: true }] }] }, execute,
+    read,
   }
   const service = new IntegrationOperationService(store, async () => runtime)
   const propose = () => service.propose('thread', { connectionId: runtime.connection.id, actionId: 'create_document', input: { title: 'Exact approved title' } })
-  return { service, propose, execute, runtime, store }
+  return { service, propose, execute, read, runtime, store, remote }
 }
 describe('durable integration approval boundary', () => {
-  it('persists a preview without executing and executes exact content once under concurrent approval', async () => {
-    const { service, propose, execute } = setup()
-    const proposal = await propose()
-    expect(execute).not.toHaveBeenCalled()
+  it('deduplicates repeated submissions across reconnects by returning the existing result', async () => {
+    const { service, propose, runtime, store, remote } = setup()
+    const proposals = await Promise.all([propose(), propose(), propose()])
+    expect(new Set(proposals.map((row) => row.id)).size).toBe(1)
     expect(await service.list('thread')).toHaveLength(1)
-    await Promise.all([service.approve('thread', proposal.id, false), service.approve('thread', proposal.id, false)])
-    expect(execute).toHaveBeenCalledTimes(1)
-    expect(execute.mock.calls[0]?.[0].input).toEqual({ title: 'Exact approved title' })
+    const approved = await Promise.all(proposals.map((row) => service.approve('thread', row.id, false)))
+    expect(approved.map((row) => row.status)).toEqual(['succeeded', 'succeeded', 'succeeded'])
+    expect(remote.documents).toEqual([{ id: 'remote-document', title: 'Exact approved title' }])
+    const reconnected = new IntegrationOperationService(store, async () => runtime)
+    const repeated = await reconnected.propose('thread', { connectionId: runtime.connection.id, actionId: 'create_document', input: { title: 'Exact approved title' } })
+    expect(repeated).toMatchObject({ id: proposals[0].id, status: 'succeeded' })
+    expect(remote.documents).toEqual([{ id: 'remote-document', title: 'Exact approved title' }])
+  })
+  it('creates a fresh preview after the saved connection revision changes', async () => {
+    const { propose, runtime, remote } = setup()
+    const oldPreview = await propose()
+    runtime.connection.revision = 'saved-again'
+    const refreshed = await propose()
+    expect(refreshed.id).not.toBe(oldPreview.id)
+    expect(refreshed).toMatchObject({ status: 'proposed', connectionRevision: 'saved-again' })
+    expect(remote.documents).toEqual([])
+  })
+  it('recovers abandoned executions only after explicit inspection and makes repeats deliberate', async () => {
+    const { service, propose, store, remote } = setup()
+    const proposal = await propose()
+    await store.transition(proposal.id, 'proposed', { status: 'executing', updatedAt: new Date(Date.now() - 180_000).toISOString() })
+    expect((await service.list('thread'))[0].status).toBe('uncertain')
+    await expect(service.renew('thread', proposal.id)).rejects.toThrow()
+    await expect(service.reconcile('thread', proposal.id, false, false)).rejects.toThrow()
+    expect((await service.reconcile('thread', proposal.id, false, true)).status).toBe('failed')
+    const next = await service.renew('thread', proposal.id)
+    expect(next.id).not.toBe(proposal.id)
+    expect((await service.renew('thread', proposal.id)).id).toBe(next.id)
+    expect(remote.documents).toEqual([])
+  })
+
+  it('keeps an uncertain result visible and verifies the remote resource with a read before recovery', async () => {
+    const { service, propose, execute, remote } = setup()
+    execute.mockImplementation(async (request) => {
+      remote.documents.push({ id: 'remote-document', title: String(request.input.title) })
+      throw new Error('transport disconnected after the remote write')
+    })
+    const proposal = await propose()
+    const uncertain = await service.approve('thread', proposal.id, false)
+    expect(uncertain).toMatchObject({ status: 'uncertain', message: expect.stringContaining('inspect it before retrying') })
+    expect(await service.list('thread')).toMatchObject([{ id: proposal.id, status: 'uncertain' }])
+    const repeated = await propose()
+    expect(repeated).toMatchObject({ id: proposal.id, status: 'uncertain' })
+    const reconciled = await service.reconcile('thread', proposal.id, true, true, 'remote-document')
+    expect(reconciled).toMatchObject({ status: 'reconciled', result: { id: 'remote-document', title: 'Exact approved title' } })
+    expect(remote.reads).toEqual(['remote-document'])
+    expect(remote.documents).toEqual([{ id: 'remote-document', title: 'Exact approved title' }])
+  })
+
+  it('does not allow reconciliation while the original write is still running', async () => {
+    const { service, propose, execute, runtime, store, remote } = setup()
+    const reconnected = new IntegrationOperationService(store, async () => runtime)
+    type ExecutionResult = Awaited<ReturnType<IntegrationWriteRuntime['execute']>>
+    let finishWrite!: (result: ExecutionResult) => void
+    let announceStart!: () => void
+    const started = new Promise<void>((resolve) => { announceStart = resolve })
+    const pendingWrite = new Promise<ExecutionResult>((resolve) => { finishWrite = resolve })
+    execute.mockImplementation(async (request) => {
+      announceStart()
+      const result = await pendingWrite
+      if (result.ok) remote.documents.push({ id: 'remote-document', title: String(request.input.title) })
+      return result
+    })
+    const proposal = await propose()
+    const approval = service.approve('thread', proposal.id, false)
+    try {
+      await started
+      const now = Date.now()
+      vi.useFakeTimers()
+      vi.setSystemTime(now + 121_000)
+      expect(await service.list('thread')).toMatchObject([{ id: proposal.id, status: 'uncertain', message: expect.stringContaining('still running') }])
+      await expect(reconnected.reconcile('thread', proposal.id, false, true)).rejects.toThrow(/still running/i)
+      finishWrite({ ok: true, status: 200, data: { id: 'remote-document' } })
+      expect(await approval).toMatchObject({ status: 'succeeded' })
+      expect(remote.documents).toEqual([{ id: 'remote-document', title: 'Exact approved title' }])
+    } finally {
+      finishWrite({ ok: true, status: 200, data: { id: 'remote-document' } })
+      vi.useRealTimers()
+      await approval.catch(() => {})
+    }
+  })
+
+  it('persists a preview without executing and executes exact content once under concurrent approval', async () => {
+    const { service, propose, remote } = setup()
+    const proposal = await propose()
+    expect(remote.documents).toEqual([])
+    expect(await service.list('thread')).toHaveLength(1)
+    const approvals = await Promise.all([service.approve('thread', proposal.id, false), service.approve('thread', proposal.id, false)])
+    expect(approvals.map((row) => row.status)).toEqual(['succeeded', 'succeeded'])
+    expect(remote.documents).toEqual([{ id: 'remote-document', title: 'Exact approved title' }])
     expect((await service.approve('thread', proposal.id, false)).status).toBe('succeeded')
+    expect(remote.documents).toEqual([{ id: 'remote-document', title: 'Exact approved title' }])
   })
   it('rejects a proposal from another thread and a changed remote target', async () => {
-    const { service, propose, execute, runtime } = setup()
+    const { service, propose, runtime, remote } = setup()
     const proposal = await propose()
     await expect(service.approve('other', proposal.id, false)).rejects.toThrow()
     runtime.connection.target = 'https://another.example/api'
     await expect(service.approve('thread', proposal.id, false)).rejects.toThrow('Connection changed')
-    expect(execute).not.toHaveBeenCalled()
+    expect(remote.documents).toEqual([])
   })
   it('retains an uncertain outcome without automatic retry after a transport failure', async () => {
-    const { service, propose, execute } = setup()
+    const { service, propose, execute, remote } = setup()
     const proposal = await propose()
-    execute.mockRejectedValue(new Error('secret credential'))
+    execute.mockImplementation(async (request) => {
+      remote.documents.push({ id: 'remote-document', title: String(request.input.title) })
+      throw new Error('secret credential')
+    })
     const result = await service.approve('thread', proposal.id, false)
     expect(result.status).toBe('uncertain')
     expect(JSON.stringify(result)).not.toContain('secret credential')
     await service.approve('thread', proposal.id, false)
-    expect(execute).toHaveBeenCalledTimes(1)
+    expect(remote.documents).toEqual([{ id: 'remote-document', title: 'Exact approved title' }])
   })
   it('never executes a rejected proposal', async () => {
-    const { service, propose, execute } = setup()
+    const { service, propose, remote } = setup()
     const proposal = await propose()
     await service.cancel('thread', proposal.id)
     expect((await service.approve('thread', proposal.id, true)).status).toBe('cancelled')
-    expect(execute).not.toHaveBeenCalled()
+    expect(remote.documents).toEqual([])
   })
   it('labels a document write as public', async () => {
     const { propose } = setup()
     expect((await propose()).publicUpdate).toBe(true)
   })
   it('refuses to approve after the plugin was updated, without executing', async () => {
-    const { service, propose, execute, runtime } = setup()
+    const { service, propose, runtime, remote } = setup()
     const proposal = await propose()
     runtime.plugin.version = '2.0.0'
     await expect(service.approve('thread', proposal.id, false)).rejects.toThrow('Plugin changed. Create a new preview.')
-    expect(execute).not.toHaveBeenCalled()
+    expect(remote.documents).toEqual([])
     expect((await service.list('thread'))[0]?.status).toBe('proposed')
   })
   it('refuses to approve after the connection was edited on the same target, without executing', async () => {
-    const { service, propose, execute, runtime } = setup()
+    const { service, propose, runtime, remote } = setup()
     const proposal = await propose()
     runtime.connection.revision = 'saved-again'
     await expect(service.approve('thread', proposal.id, false)).rejects.toThrow('Connection changed. Create a new preview.')
-    expect(execute).not.toHaveBeenCalled()
+    expect(remote.documents).toEqual([])
     expect((await service.list('thread'))[0]?.status).toBe('proposed')
   })
 })

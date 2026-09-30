@@ -347,6 +347,8 @@ export function createDesktopLocalBitsentryServices({
       })
     },
     listResources: (threadId: string) => ipcInvoke<import('@bitsentry-ce/core/features/plugins').IntegrationResource[]>('plugins:listResources', { threadId }),
+    renewOperation: (threadId: string, id: string) => ipcInvoke('plugins:renewOperation', { threadId, id }),
+    reconcileOperation: (threadId: string, id: string, applied: boolean, confirmed: boolean, externalId?: string) => ipcInvoke('plugins:reconcileOperation', { threadId, id, applied, confirmed, externalId }),
     listOperations: (threadId: string) => ipcInvoke<import('@bitsentry-ce/core/features/plugins').IntegrationOperation[]>('plugins:listOperations', { threadId }),
     approveOperation: (threadId: string, id: string, closeRequested: boolean) => ipcInvoke('plugins:approveOperation', { threadId, id, closeRequested }),
     cancelOperation: (threadId: string, id: string) => ipcInvoke('plugins:cancelOperation', { threadId, id }),

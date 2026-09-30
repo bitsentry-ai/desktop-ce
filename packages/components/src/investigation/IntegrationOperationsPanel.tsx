@@ -5,6 +5,8 @@ import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
 import { useBitsentryServices } from "../services/context";
 export interface IntegrationOperationsPort {
+  renew?(threadId: string, id: string): Promise<unknown>;
+  reconcile?(threadId: string, id: string, applied: boolean, confirmed: boolean, externalId?: string): Promise<unknown>;
   list(threadId: string): Promise<IntegrationOperation[]>;
   approve(threadId: string, id: string, closeRequested: boolean): Promise<unknown>;
   cancel(threadId: string, id: string): Promise<unknown>;
@@ -12,13 +14,14 @@ export interface IntegrationOperationsPort {
 export function DesktopIntegrationOperationsPanel({ threadId, disabled }: { threadId: string; disabled: boolean }) {
   const { plugins } = useBitsentryServices();
   const service = useMemo(() => plugins?.listOperations && plugins.approveOperation && plugins.cancelOperation ? {
+    renew: plugins.renewOperation?.bind(plugins), reconcile: plugins.reconcileOperation?.bind(plugins),
     list: plugins.listOperations.bind(plugins), approve: plugins.approveOperation.bind(plugins), cancel: plugins.cancelOperation.bind(plugins),
   } : null, [plugins]);
   return service === null ? null : <IntegrationOperationsPanel threadId={threadId} disabled={disabled} service={service} />;
 }
 type StatusVariant = "warning" | "info" | "success" | "destructive" | "secondary";
 const STATUS_VARIANTS: Record<IntegrationOperation["status"], StatusVariant> = {
-  proposed: "warning", executing: "info", succeeded: "success", failed: "destructive", uncertain: "warning", cancelled: "secondary",
+  proposed: "warning", executing: "info", succeeded: "success", failed: "destructive", uncertain: "warning", cancelled: "secondary", reconciled: "secondary",
 };
 const MAX_REFUSAL_LENGTH = 300;
 const ITOP_FACT_KEYS = ["class", "id", "stimulus"] as const;
@@ -102,7 +105,7 @@ export function IntegrationOperationsPanel({ threadId, disabled, service }: { th
                 </li>)}
               </ul>}
           </div>
-          {(row.status === "uncertain" || row.status === "executing") && <p className="text-sm text-muted-foreground">{t("incidents.integrationWrites.inspect")}</p>}
+          {(row.status === "uncertain" || row.status === "executing") && <p className="text-sm text-muted-foreground">{row.message ?? t("incidents.integrationWrites.inspect")}</p>}
           <details className="text-xs">
             <summary className="cursor-pointer text-muted-foreground">{t("incidents.integrationWrites.details")}</summary>
             <p className="mt-2 font-medium">{t("incidents.integrationWrites.request")}</p>
@@ -118,8 +121,41 @@ export function IntegrationOperationsPanel({ threadId, disabled, service }: { th
             <Button size="sm" disabled={disabled || busy || (row.requiresCloseRequest && !closeRequests[row.id])} onClick={() => { void act(row, true); }}>{t("incidents.integrationWrites.approve")}</Button>
             <Button size="sm" variant="outline" disabled={disabled || busy} onClick={() => { void act(row, false); }}>{t("incidents.integrationWrites.cancel")}</Button>
           </div>}
+          <OperationRecoveryControls row={row} service={service} disabled={disabled || busy} onRefresh={async () => setRows(await service.list(threadId))} />
         </div>
       </details>;
     })}
   </section>;
+}
+
+function OperationRecoveryControls({ row, service, disabled, onRefresh }: { row: IntegrationOperation; service: IntegrationOperationsPort; disabled: boolean; onRefresh(): Promise<void> }) {
+  const { t } = useTranslation();
+  const [confirmed, setConfirmed] = useState(false);
+  const [externalId, setExternalId] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [failure, setFailure] = useState<string | null>(null);
+  async function perform(action: () => Promise<unknown>) {
+    setBusy(true);
+    setFailure(null);
+    try {
+      await action();
+      await onRefresh();
+    } catch (caught) {
+      const reason = caught instanceof Error ? caught.message.trim().slice(0, MAX_REFUSAL_LENGTH) : "";
+      setFailure(reason || t("incidents.integrationWrites.error"));
+    } finally {
+      setBusy(false);
+    }
+  }
+  const terminal = ["succeeded", "reconciled", "failed", "cancelled"].includes(row.status);
+  return <div className="mt-2 flex flex-wrap items-center gap-2">
+    {failure !== null && <p role="alert" className="w-full rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">{failure}</p>}
+    {row.status === "uncertain" && service.reconcile && <>
+      <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={confirmed} disabled={disabled || busy} onChange={(event) => setConfirmed(event.target.checked)} /> {t("incidents.integrationWrites.inspected")}</label>
+      <input className="rounded border border-border bg-background px-2 py-1 text-sm" aria-label={t("incidents.integrationWrites.externalId")} placeholder={t("incidents.integrationWrites.externalId")} value={externalId} onChange={(event) => setExternalId(event.target.value)} disabled={disabled || busy} />
+      <Button size="sm" disabled={disabled || busy || !confirmed || !externalId.trim()} onClick={() => { void perform(() => service.reconcile!(row.threadId, row.id, true, confirmed, externalId.trim())); }}>{t("incidents.integrationWrites.confirmApplied")}</Button>
+      <Button size="sm" variant="outline" disabled={disabled || busy || !confirmed} onClick={() => { void perform(() => service.reconcile!(row.threadId, row.id, false, confirmed)); }}>{t("incidents.integrationWrites.confirmNotApplied")}</Button>
+    </>}
+    {terminal && service.renew && <Button size="sm" variant="outline" disabled={disabled || busy} onClick={() => { void perform(() => service.renew!(row.threadId, row.id)); }}>{t("incidents.integrationWrites.renew")}</Button>}
+  </div>;
 }
