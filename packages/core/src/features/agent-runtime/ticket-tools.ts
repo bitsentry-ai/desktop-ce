@@ -67,7 +67,7 @@ function mutationRequest(input: TicketOperationInput, mapping: ItopTicketMapping
 async function readTicketState(context: HostToolContext, connectionId: string, mapping: ItopTicketMapping, id: unknown, plugins: Parameters<typeof runIntegrationTool>[1]): Promise<{ state: string } | ToolResult> {
   const read = await runIntegrationTool(context.integrationConnections, plugins, {
     connectionId, actionId: "get_object", input: { class: mapping.className, id, outputFields: mapping.statusField },
-  }, "read");
+  }, "read", { capture: false });
   if (read.output === undefined) {
     const code = (JSON.parse(read.error ?? "{}") as { code?: unknown }).code;
     return stateUnavailable(typeof code === "string" ? code : "READ_FAILED");
@@ -109,6 +109,19 @@ async function checkTicketState(
   return { field: mapping.statusField, value: observed.state, allowedStates };
 }
 
+/**
+ * A human reference ("R-000013") in a write resolves only against tickets this conversation already linked on the same
+ * connection, and only when exactly one matches. Anything else is left for the clarification the write already gives.
+ */
+async function resolveStoredReference(context: HostToolContext, input: TicketOperationInput, mapping: ItopTicketMapping): Promise<TicketOperationInput | ToolResult> {
+  const reference = input.ticketId?.trim();
+  if (input.operation === "create" || input.operation === "search" || input.operation === "read" || reference === undefined || reference === "" || /^\d+$/.test(reference)) return input;
+  const rows = (await context.integrationConnections?.listResources?.()) ?? [];
+  const matches = rows.filter((row) => row.connectionId === input.connectionId && row.resourceType === "ticket" && String(row.state[mapping.referenceField]) === reference);
+  if (matches.length > 1) return clarification(`More than one linked ticket has the reference ${reference}. Ask the engineer which one, then use its numeric external ID.`, ["ticketId"]);
+  return matches[0] === undefined ? input : { ...input, ticketId: matches[0].externalId };
+}
+
 export async function ticketOperation(context: HostToolContext, input: TicketOperationInput): Promise<ToolResult> {
   const connection = (await context.integrationConnections?.list())?.find((row) => row.id === input.connectionId);
   if (connection?.pluginId !== "itop" || connection.ticketMapping === undefined) return clarification("Choose an iTop connection with ticket field and lifecycle mappings configured.");
@@ -116,7 +129,9 @@ export async function ticketOperation(context: HostToolContext, input: TicketOpe
   if (input.operation === "read" || input.operation === "search") {
     return readOperation(context, input, connection.ticketMapping, plugins);
   }
-  const request = mutationRequest(input, connection.ticketMapping);
+  const resolved = await resolveStoredReference(context, input, connection.ticketMapping);
+  if (!("connectionId" in resolved)) return resolved;
+  const request = mutationRequest(resolved, connection.ticketMapping);
   if (!("actionId" in request)) return request;
   const { allowedStates, ...action } = request;
   let observedTicketState: ObservedTicketState | undefined;

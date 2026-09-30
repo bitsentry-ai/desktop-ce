@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import { ticketOperation, ticketOperationToolSchema } from '../src/features/agent-runtime/ticket-tools'
 import type { HostToolContext } from '../src/features/agent-runtime/host-tools'
-import type { IntegrationActionInput } from '../src/features/agent-runtime/integration-tools'
+import type { IntegrationActionInput, IntegrationReadOptions } from '../src/features/agent-runtime/integration-tools'
 import { itopTicketMappingSchema } from '../src/features/plugins/itop-ticket-mapping'
-import type { DesktopPluginDescriptor } from '../src/features/plugins'
+import type { DesktopPluginDescriptor, IntegrationResource } from '../src/features/plugins'
 
 const production = '11111111-1111-4111-8111-111111111111'
 const staging = '22222222-2222-4222-8222-222222222222'
@@ -48,8 +48,8 @@ const plugin: DesktopPluginDescriptor = {
 }
 
 /** Fake iTop: serves each connection's own tickets and records every action it receives. */
-function remote() {
-  const received: Array<{ connectionId: string; actionId: string }> = []
+function remote(resources?: IntegrationResource[]) {
+  const received: Array<{ connectionId: string; actionId: string; id?: unknown; options?: IntegrationReadOptions }> = []
   const context: HostToolContext = {
     gateway: {} as HostToolContext['gateway'], session: { id: 'session' },
     pluginRuntime: { listPlugins: () => [plugin] },
@@ -58,8 +58,9 @@ function remote() {
         id, name: id === production ? 'Production' : 'Staging', pluginId: 'itop' as const, enabled: true, authMode: 'token' as const,
         availability: 'configured' as const, target: 'https://itop.example', actions: plugin.actions, ticketMapping: mappings[id],
       })),
-      executeRead: async (request: IntegrationActionInput) => {
-        received.push({ connectionId: request.connectionId, actionId: request.actionId })
+      ...(resources === undefined ? {} : { listResources: async () => resources }),
+      executeRead: async (request: IntegrationActionInput, _expected?: unknown, options?: IntegrationReadOptions) => {
+        received.push({ connectionId: request.connectionId, actionId: request.actionId, id: request.input.id, options })
         const id = Number(request.input.id)
         const ticket = tickets[request.connectionId]?.[id]
         if (request.actionId !== 'get_object' || ticket === undefined) return { ok: false, status: 404, summary: 'iTop object was not found' }
@@ -180,3 +181,84 @@ describe('ticket operations', () => {
   })
 })
 
+const stored = (connectionId: string, externalId: string, state: IntegrationResource['state']): IntegrationResource => ({
+  threadId: 'thread', connectionId, connectionName: 'Production', resourceType: 'ticket', externalId,
+  url: `https://itop.example/pages/UI.php?operation=details&class=UserRequest&id=${externalId}`, title: 'Disk full', state, observedAt: '2026-09-30T09:00:00.000Z',
+})
+const assign = { operation: 'assign', ticketId: 'R-000013', fields: { agent: 14 } }
+
+describe('a ticket reference in a write', () => {
+  it('resolves to the numeric id of the one ticket this conversation linked on that connection', async () => {
+    const { context, received } = remote([stored(production, '13', { ref: 'R-000013', status: 'new' })])
+
+    const { error, preview } = await run(context, { connectionId: production, ...assign })
+
+    expect(error).toBeUndefined()
+    expect(preview).toMatchObject({ status: 'preview', connectionId: production, input: { class: 'UserRequest', id: 13, stimulus: 'ev_assign' }, observedTicketState: { value: 'new' } })
+    expect(received).toContainEqual(expect.objectContaining({ connectionId: production, actionId: 'get_object', id: 13 }))
+  })
+
+  it('asks for clarification when no linked ticket has that reference', async () => {
+    const { context } = remote([stored(production, '14', { ref: 'R-000014', status: 'assigned' })])
+
+    await expect(run(context, { connectionId: production, ...assign })).resolves.toEqual({
+      error: expect.objectContaining({ code: 'CLARIFICATION_REQUIRED', fields: ['ticketId'] }), preview: undefined,
+    })
+  })
+
+  it('asks which ticket when more than one linked ticket has that reference', async () => {
+    const { context, received } = remote([stored(production, '13', { ref: 'R-000013' }), stored(production, '14', { ref: 'R-000013' })])
+
+    const { error, preview } = await run(context, { connectionId: production, ...assign })
+
+    expect(preview).toBeUndefined()
+    expect(error).toMatchObject({ code: 'CLARIFICATION_REQUIRED', fields: ['ticketId'], message: expect.stringContaining('More than one linked ticket') })
+    expect(received).toEqual([])
+  })
+
+  it('never uses a ticket linked through another connection', async () => {
+    const { context } = remote([stored(staging, '13', { ref: 'R-000013', state: 'new' })])
+
+    await expect(run(context, { connectionId: production, ...assign })).resolves.toMatchObject({ error: { code: 'CLARIFICATION_REQUIRED', fields: ['ticketId'] } })
+  })
+
+  it('ignores a linked document and a resource whose state has no such reference', async () => {
+    const document = { ...stored(production, '13', { ref: 'R-000013' }), resourceType: 'document' as const }
+    const { context } = remote([document, stored(production, '15', { status: 'new' })])
+
+    await expect(run(context, { connectionId: production, ...assign })).resolves.toMatchObject({ error: { code: 'CLARIFICATION_REQUIRED' } })
+  })
+
+  it('uses the connection’s own reference field, not a fixed one', async () => {
+    const { context } = remote([stored(staging, '12', { reference: 'INC-12', state: 'done' })])
+    mappings[staging] = itopTicketMappingSchema.parse({ ...mappings[staging], referenceField: 'reference', stimuli: { close: { stimulus: 'ev_finish', from: ['done'] } } })
+
+    const { preview } = await run(context, { connectionId: staging, operation: 'close', ticketId: 'INC-12' })
+
+    expect(preview).toMatchObject({ input: { class: 'Incident', id: 12, stimulus: 'ev_finish' } })
+  })
+
+  it('leaves a numeric id and every other operation untouched', async () => {
+    const { context } = remote([stored(production, '99', { ref: '13' })])
+
+    await expect(run(context, { connectionId: production, operation: 'assign', ticketId: '13', fields: { agent: 14 } })).resolves.toMatchObject({ preview: { input: { id: 13 } } })
+  })
+})
+
+describe('the status check before a lifecycle proposal', () => {
+  it('is an internal read that must not be retained as a resource observation', async () => {
+    const { context, received } = remote()
+
+    await run(context, { connectionId: production, operation: 'close', ticketId: '12' })
+
+    expect(received).toEqual([expect.objectContaining({ actionId: 'get_object', id: 12, options: { capture: false } })])
+  })
+
+  it('does not change how an ordinary ticket read is retained', async () => {
+    const { context, received } = remote()
+
+    await run(context, { connectionId: production, operation: 'read', ticketId: '12' })
+
+    expect(received).toEqual([expect.objectContaining({ actionId: 'get_object', id: 12, options: undefined })])
+  })
+})

@@ -3084,7 +3084,7 @@ export class AgentRuntimeService {
           return this.pluginRuntime.getIntegrationOperations().propose(session.incidentThreadId, request, meta);
         },
         list: () => this.pluginRuntime?.listIntegrationConnections() ?? Promise.resolve([]),
-        executeRead: async (request, expectedConnection) => {
+        executeRead: async (request, expectedConnection, readOptions) => {
           const pluginRuntime = this.pluginRuntime
           if (pluginRuntime === undefined) throw new Error('Plugin runtime is unavailable.');
           const connection = (await pluginRuntime.listIntegrationConnections()).find((row) => row.id === request.connectionId);
@@ -3098,7 +3098,7 @@ export class AgentRuntimeService {
             timeoutMs: INTEGRATION_READ_TIMEOUT_MS,
             execute: (signal) => pluginRuntime.executeIntegrationAction(request, { signal, deadlineAt }, { requiredRiskLevel: 'read', expectedConnection }),
           });
-          if (result.ok && connection && session.incidentThreadId) {
+          if (result.ok && connection && session.incidentThreadId && readOptions?.capture !== false) {
             // Linking a resource is bookkeeping: if it fails, the read the engineer asked for still succeeded.
             try {
               await pluginRuntime.getIntegrationResources().save(extractIntegrationResources(session.incidentThreadId, connection, result.data));
