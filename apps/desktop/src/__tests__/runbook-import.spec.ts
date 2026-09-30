@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { DesktopRunbookExportArtifactV1 } from "@bitsentry-ce/core/features/runbooks/desktop-runbook-ce.types";
 import { createDesktopYamlRunbookHandlers as createRunbookHandlers } from "@bitsentry-ce/core/features/runbooks/desktop-runbook-handler-yaml-bindings";
@@ -828,6 +828,38 @@ describe("Runbook import handlers", () => {
     ).resolves.toMatchObject({
       executionId: "10000000-0000-4000-8000-000000000001",
       resultId: "result-gui",
+    });
+  });
+
+  describe("a revision-checked run without a runbook gateway", () => {
+    afterEach(() => { vi.restoreAllMocks(); });
+
+    const setup = (storedRevision: number) => {
+      vi.spyOn(RunbookStore.prototype, "getRunbookOrThrow").mockResolvedValue({
+        id: "rb-gui", title: "Reviewed", description: "", revisionNumber: storedRevision, actions: [],
+        createdAt: "2026-09-30T00:00:00.000Z", updatedAt: "2026-09-30T00:00:00.000Z",
+      } as never);
+      const executionService = { start: vi.fn(async () => ({ executionId: "exec-1", resultId: "result-1" })), get: vi.fn(), cancel: vi.fn() };
+      const handlers = createRunbookHandlers(
+        createDb({ auditLog: { create: vi.fn(() => undefined) } }) as never,
+        { executionService: executionService as never, globalVariablesService: { list: vi.fn(() => []) } as never },
+        { edition: "ce" },
+      );
+      return { executionService, handlers };
+    };
+
+    it("starts the run when the stored revision is the one that was reviewed", async () => {
+      const { executionService, handlers } = setup(3);
+
+      await expect(handlers["runbooks:execute"]({ runbookId: "rb-gui", expectedRevisionNumber: 3, incidentThreadId: "thread-1" })).resolves.toMatchObject({ executionId: "exec-1" });
+      expect(executionService.start).toHaveBeenCalledTimes(1);
+    });
+
+    it("refuses, and starts nothing, when the runbook was edited after review", async () => {
+      const { executionService, handlers } = setup(4);
+
+      await expect(handlers["runbooks:execute"]({ runbookId: "rb-gui", expectedRevisionNumber: 3 })).rejects.toThrow("changed after it was reviewed");
+      expect(executionService.start).not.toHaveBeenCalled();
     });
   });
 

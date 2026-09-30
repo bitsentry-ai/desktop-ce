@@ -520,6 +520,7 @@ export interface PluginInstallSummary {
 }
 
 export interface PluginsServicePort {
+  selectResource?(resource: import("@bitsentry-ce/core/features/plugins").IntegrationResource, selected: boolean): Promise<unknown>;
   renewOperation?(threadId: string, id: string): Promise<unknown>;
   reconcileOperation?(threadId: string, id: string, applied: boolean, confirmed: boolean, externalId?: string): Promise<unknown>;
   listResources?(threadId: string): Promise<import("@bitsentry-ce/core/features/plugins").IntegrationResource[]>;
@@ -1046,6 +1047,8 @@ export interface RunbooksServicePort {
   listTelemetryNeeds(): Promise<TelemetryNeedOption[]>;
   execute(input: {
     runbookId: string;
+    expectedRevisionNumber?: number;
+    requestKey?: string;
     parameterValues?: RunbookParameterValues;
     incidentThreadId?: string;
     triggerContext?: RunbookTriggerContext;

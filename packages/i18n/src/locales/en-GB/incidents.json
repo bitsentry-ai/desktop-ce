@@ -115,5 +115,14 @@
   "incidents.integrationWrites.operation.close": "Close ticket",
   "incidents.integrationResources.title": "Linked tickets and documents",
   "incidents.integrationResources.error": "Could not refresh linked resources. Previously observed state may be stale.",
-  "incidents.integrationResources.observed": "Last observed:"
+  "incidents.integrationResources.observed": "Last observed:",
+  "incidents.knowledge.select": "Use as knowledge source",
+  "incidents.knowledge.executeTitle": "Review and execute a saved runbook",
+  "incidents.knowledge.executeError": "Execution was not confirmed. Check the recorded result and current runbook revision before retrying.",
+  "incidents.knowledge.runbook": "Select a saved runbook",
+  "incidents.knowledge.parameters": "Parameter values (JSON object of strings)",
+  "incidents.knowledge.approveExecution": "I reviewed these exact steps and parameters and approve this execution.",
+  "incidents.knowledge.execute": "Execute reviewed runbook",
+  "incidents.knowledge.loadError": "Could not refresh runbooks or the execution status. What is shown may be out of date.",
+  "incidents.knowledge.changed": "The runbook changed after you reviewed it. Review the updated steps and approve again."
 }

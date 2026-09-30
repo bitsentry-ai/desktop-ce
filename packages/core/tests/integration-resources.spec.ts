@@ -57,7 +57,7 @@ describe('ticket resources for a custom ticket mapping', () => {
     }))
 
     expect(rows[0]?.title).toBe('Disk full')
-    expect(rows[0]?.state).toEqual({ problem_ref: 'P-7', lifecycle: 'new' })
+    expect(rows[0]?.state).toEqual({ problem_ref: 'P-7', lifecycle: 'new', className: 'Problem' })
   })
 
   it('never uses long text as a card title, even when the mapping names that attribute as the title', () => {
@@ -79,7 +79,7 @@ describe('ticket resources for a custom ticket mapping', () => {
   it('keeps the default state keys when the connection has no mapping', () => {
     const rows = extractIntegrationResources('thread', connection, { objects: { 'UserRequest::3': { class: 'UserRequest', key: '3', fields: { title: 'T', ref: 'R-3', status: 'new', agent_id: 14, team_id: 39, request_type: 'incident' } } } })
 
-    expect(rows[0]?.state).toEqual({ ref: 'R-3', status: 'new', agent_id: 14, team_id: 39 })
+    expect(rows[0]?.state).toEqual({ ref: 'R-3', status: 'new', agent_id: 14, team_id: 39, className: 'UserRequest' })
   })
 })
 
@@ -110,7 +110,7 @@ describe('observations that arrive out of order', () => {
       store.save([observed('new', '2026-09-30T09:00:00.000Z')]),
     ])
 
-    expect((await store.list('thread'))[0]?.state).toEqual({ status: 'resolved' })
+    expect((await store.list('thread'))[0]?.state).toMatchObject({ status: 'resolved' })
   })
 
   it('replaces an observation with a newer one', async () => {
@@ -119,6 +119,61 @@ describe('observations that arrive out of order', () => {
 
     await store.save([observed('assigned', '2026-09-30T10:00:00.000Z')])
 
-    expect((await store.list('thread'))[0]?.state).toEqual({ status: 'assigned' })
+    expect((await store.list('thread'))[0]?.state).toMatchObject({ status: 'assigned' })
+  })
+})
+
+describe('selecting linked resources as knowledge', () => {
+  const memory = () => {
+    const data = new Map<string, DesktopPluginStoredAuthRecord>()
+    return { get: async (id: string) => data.get(id) ?? {}, set: async (id: string, value: DesktopPluginStoredAuthRecord) => { data.set(id, value); return value }, clear: async (id: string) => { data.delete(id) } }
+  }
+  const card = (status: string, observedAt: string, threadId = 'thread') => ({
+    ...extractIntegrationResources(threadId, connection, { objects: { 'UserRequest::42': { class: 'UserRequest', key: '42', fields: { title: 'Outage', status } } } })[0]!,
+    observedAt,
+  })
+
+  it('changes only the selection and leaves the rest of the stored card alone', async () => {
+    const store = new StoredIntegrationResources(memory())
+    await store.save([card('new', '2026-09-30T09:00:00.000Z')])
+
+    await store.select('thread', connection.id, 'ticket', '42', true)
+
+    expect((await store.list('thread'))[0]).toMatchObject({ selected: true, observedAt: '2026-09-30T09:00:00.000Z', state: { status: 'new' } })
+  })
+
+  it('keeps a newer observation that lands while the selection is being saved', async () => {
+    const store = new StoredIntegrationResources(memory())
+    await store.save([card('new', '2026-09-30T09:00:00.000Z')])
+
+    await Promise.all([
+      store.select('thread', connection.id, 'ticket', '42', true),
+      store.save([card('resolved', '2026-09-30T10:00:00.000Z')]),
+    ])
+
+    expect((await store.list('thread'))[0]).toMatchObject({ selected: true, observedAt: '2026-09-30T10:00:00.000Z', state: { status: 'resolved' } })
+  })
+
+  it('keeps a selection when the same resource is observed again', async () => {
+    const store = new StoredIntegrationResources(memory())
+    await store.save([card('new', '2026-09-30T09:00:00.000Z')])
+    await store.select('thread', connection.id, 'ticket', '42', true)
+
+    await store.save([card('assigned', '2026-09-30T10:00:00.000Z')])
+
+    expect((await store.list('thread'))[0]).toMatchObject({ selected: true, state: { status: 'assigned' } })
+  })
+
+  it('can clear a selection, and refuses a resource that is not linked to that conversation', async () => {
+    const store = new StoredIntegrationResources(memory())
+    await store.save([card('new', '2026-09-30T09:00:00.000Z')])
+    await store.select('thread', connection.id, 'ticket', '42', true)
+
+    await store.select('thread', connection.id, 'ticket', '42', false)
+    expect((await store.list('thread'))[0]?.selected).toBe(false)
+
+    await expect(store.select('other', connection.id, 'ticket', '42', true)).rejects.toThrow('not found')
+    await expect(store.select('thread', connection.id, 'ticket', '99', true)).rejects.toThrow('not found')
+    expect(await store.list('other')).toEqual([])
   })
 })
