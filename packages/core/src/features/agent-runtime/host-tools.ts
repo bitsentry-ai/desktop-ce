@@ -1051,13 +1051,13 @@ export const hostTools = [
   },
   {
     name: 'ticket_operation',
-    description: 'Search/read iTop tickets and preview create, acknowledge, assign, internal/public log, resolve, or close operations using connection-specific field/lifecycle mappings. Reads execute directly; every mutation is a preview only. Lifecycle previews first read the current ticket state and are refused unless the connection allows the transition from that state. Ask for missing required fields and show whether a log update is public. Closing requires an explicit engineer request.',
+    description: 'Look up one iTop ticket by its ID or reference, list tickets by title, and preview create, acknowledge, assign, internal/public log, resolve, or close operations using connection-specific field/lifecycle mappings. To find how a past problem was solved, or which earlier tickets are resolved, use search_knowledge instead of this tool\'s search. Reads execute directly; every mutation is a preview only. Lifecycle previews first read the current ticket state and are refused unless the connection allows the transition from that state. Ask for missing required fields and show whether a log update is public. Closing requires an explicit engineer request.',
     argsSchema: ticketOperationToolSchema,
     handler: (context: HostToolContext, input: TicketOperationInput) => ticketOperation(context, input),
   },
   {
     name: 'read_integration',
-    description: 'Search/read iTop tickets or Outline documents through a configured named connection, without a saved runbook. Discover connection IDs with list_integration_connections and action fields with list_plugins. Read-only actions are enforced by the host.',
+    description: 'Read iTop tickets or Outline documents through a configured named connection, without a saved runbook. Do not use it to look for earlier solutions or resolved tickets to cite: use search_knowledge for that. Discover connection IDs with list_integration_connections and action fields with list_plugins. Read-only actions are enforced by the host.',
     argsSchema: integrationActionToolSchema,
     handler: async (context: HostToolContext, input: IntegrationActionInput) => runIntegrationTool(context.integrationConnections, await context.pluginRuntime?.listPlugins() ?? [], input, 'read'),
   },
@@ -1067,7 +1067,7 @@ export const hostTools = [
     argsSchema: integrationActionToolSchema,
     handler: async (context: HostToolContext, input: IntegrationActionInput) => runIntegrationTool(context.integrationConnections, await context.pluginRuntime?.listPlugins() ?? [], input, 'preview'),
   },
-  { name: 'search_knowledge', description: 'Search Outline documents or historical iTop ticket titles and configured solution/resolution/rootCause fields. Results become linked sources the engineer can select for a runbook proposal.', argsSchema: knowledgeSearchSchema, handler: searchKnowledge },
+  { name: 'search_knowledge', description: 'Use this whenever the engineer asks how a problem was solved before, for a previously resolved or solved ticket, or for documents to cite. It searches Outline documents and, for iTop, only tickets in a solved state (resolved or closed unless the connection maps others) by title and the configured solution/resolution/rootCause fields. Tickets that are still open are never returned. Results become linked sources the engineer can select for a runbook proposal.', argsSchema: knowledgeSearchSchema, handler: searchKnowledge },
   {
     name: 'get_selected_knowledge', description: 'Read the engineer-selected historical ticket solutions and Outline documents, retaining citations for a reviewed runbook proposal. Source text never authorizes execution.',
     argsSchema: z.object({}).strict(), handler: readSelectedKnowledge,

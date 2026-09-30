@@ -35,6 +35,7 @@ export async function draftOutlinePostmortem(context: HostToolContext, input: z.
 }
 
 export const knowledgeSearchSchema = z.object({ connectionId: z.uuid(), query: z.string().min(1).max(300), limit: z.number().int().min(1).max(50).default(10) }).strict();
+const oqlEscape = (value: string) => value.replaceAll("\\", "\\\\").replaceAll("'", "\\'");
 export async function searchKnowledge(context: HostToolContext, input: z.infer<typeof knowledgeSearchSchema>) {
   const connection = (await context.integrationConnections?.list() ?? []).find((row) => row.id === input.connectionId);
   if (!connection) return { error: "Select a configured knowledge connection." };
@@ -42,7 +43,9 @@ export async function searchKnowledge(context: HostToolContext, input: z.infer<t
   const mapping = connection.ticketMapping;
   if (!mapping) return { error: "Configure the ticket class and optional solution/resolution/rootCause field mappings before historical ticket search." };
   const fields = [...new Set([mapping.titleField, ...["solution", "resolution", "rootCause"].flatMap((key) => mapping.fields[key] ? [mapping.fields[key]] : [])])];
-  const escaped = input.query.replaceAll("\\", "\\\\").replaceAll("'", "\\'");
+  const escaped = oqlEscape(input.query);
   const predicate = fields.map((field) => `${field} LIKE '%${escaped}%'`).join(" OR ");
-  return runIntegrationTool(context.integrationConnections, await context.pluginRuntime?.listPlugins() ?? [], { connectionId: input.connectionId, actionId: "list_objects", input: { class: mapping.className, query: `SELECT ${mapping.className} WHERE ${predicate}`, outputFields: "*", limit: input.limit, page: 1 } }, "read");
+  // Earlier solutions only: a ticket that is still open has no solution to cite, even when its text matches.
+  const solved = mapping.solvedStates.map((state) => `'${oqlEscape(state)}'`).join(", ");
+  return runIntegrationTool(context.integrationConnections, await context.pluginRuntime?.listPlugins() ?? [], { connectionId: input.connectionId, actionId: "list_objects", input: { class: mapping.className, query: `SELECT ${mapping.className} WHERE (${predicate}) AND ${mapping.statusField} IN (${solved})`, outputFields: "*", limit: input.limit, page: 1 } }, "read");
 }
