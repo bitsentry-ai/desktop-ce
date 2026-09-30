@@ -739,7 +739,7 @@ async function executeRunbook(
   input: ExecuteRunbookHostToolInput,
 ): Promise<ToolResult> {
   const runbook = await resolveRunbookReference(context, input)
-  if (runbook.actions.some((action) => action.type === 'plugin' && ['itop', 'outline'].includes(action.pluginId ?? ''))) {
+  if (runbook.actions.some((action) => action.type === 'plugin' && ['itop', 'outline'].includes(action.pluginId?.trim() ?? ''))) {
     return { error: 'Use named integration read tools or an engineer-approved write proposal for ticket and document actions in chat.' }
   }
   const parameterValues = context.resolveParameterValues?.(context.session, runbook, input) ?? normalizeParameterValues(input)
