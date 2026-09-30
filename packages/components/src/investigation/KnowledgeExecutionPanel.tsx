@@ -1,11 +1,71 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { z } from "zod";
 import { useTranslation } from "@bitsentry-ce/i18n";
 import type { RunbookRecord, RunbookExecutionRecord } from "../services/contracts";
 import { useBitsentryServices } from "../services/context";
+import { formatDuration } from "../chat/utils";
+import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
+import { Label } from "../ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../ui/select";
+import { Textarea } from "../ui/textarea";
 
 const sameReviewedSteps = (a: RunbookRecord, b: RunbookRecord) => a.revisionNumber === b.revisionNumber && JSON.stringify(a.actions) === JSON.stringify(b.actions);
+
+type RunbookAction = RunbookRecord["actions"][number];
+/** What a step will do, in words the engineer can review; never headers, bodies or credentials. */
+function describeAction(action: RunbookAction): string {
+  if (action.command) return action.command;
+  if (action.url) return `${action.method ?? "GET"} ${action.url}`;
+  if (action.prompt) return action.prompt;
+  return [action.pluginId, action.pluginActionId].filter(Boolean).join(":");
+}
+const STATUS_LABEL_KEYS: Record<string, string> = { claim_expired: "claimExpired" };
+function statusVariant(status: string): "success" | "destructive" | "info" | "secondary" {
+  if (status === "completed") return "success";
+  if (status === "failed" || status === "claim_expired") return "destructive";
+  if (status === "running" || status === "queued" || status === "pending") return "info";
+  return "secondary";
+}
+function executionOutput(execution: RunbookExecutionRecord): string {
+  return execution.steps
+    .flatMap((step) => [step.output, step.error].filter((text): text is string => typeof text === "string" && text.trim() !== "").map((text) => `${step.title}\n${text}`))
+    .join("\n\n");
+}
+
+function StepList({ actions, revision }: { actions: RunbookAction[]; revision: number | undefined }) {
+  const { t } = useTranslation();
+  return <div className="space-y-1.5">
+    <p className="flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+      {t("incidents.knowledge.steps")}
+      {revision !== undefined && <span className="font-normal normal-case">{t("incidents.knowledge.revision", { revision })}</span>}
+    </p>
+    <ol className="space-y-1.5">
+      {actions.map((action, index) => <li key={action.id} className="flex gap-2 rounded-md border border-border bg-card p-2 text-sm">
+        <span className="w-5 shrink-0 text-right text-xs text-muted-foreground">{index + 1}.</span>
+        <div className="min-w-0 flex-1 space-y-1">
+          <div className="flex items-center gap-2"><span className="min-w-0 truncate font-medium">{action.title}</span><Badge variant="secondary" className="shrink-0">{action.type}</Badge></div>
+          {describeAction(action) !== "" && <code className="block break-all rounded bg-muted px-1.5 py-1 font-mono text-xs">{describeAction(action)}</code>}
+        </div>
+      </li>)}
+    </ol>
+  </div>;
+}
+
+function ExecutionResult({ execution }: { execution: RunbookExecutionRecord }) {
+  const { t } = useTranslation();
+  const output = executionOutput(execution);
+  const took = execution.completedAt === undefined ? null : formatDuration(new Date(execution.completedAt).getTime() - new Date(execution.startedAt).getTime());
+  return <div className="space-y-2 rounded-lg border border-border bg-card p-3">
+    <div className="flex flex-wrap items-center gap-2">
+      <span className="text-sm font-medium">{execution.runbookTitle}</span>
+      <Badge variant={statusVariant(execution.status)}>{t(`common.incidentArtifactsRail.status.${STATUS_LABEL_KEYS[execution.status] ?? execution.status}`)}</Badge>
+      {took !== null && <span className="text-xs text-muted-foreground">{t("incidents.knowledge.duration", { time: took })}</span>}
+    </div>
+    <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{t("incidents.knowledge.output")}</p>
+    <pre className="max-h-60 overflow-auto whitespace-pre-wrap break-all rounded-md bg-muted p-2 font-mono text-xs">{output === "" ? t("incidents.knowledge.noOutput") : output}</pre>
+  </div>;
+}
 
 /**
  * Stays mounted once it exists: an execution that is still running keeps being polled, and its result stays reachable,
@@ -14,6 +74,7 @@ const sameReviewedSteps = (a: RunbookRecord, b: RunbookRecord) => a.revisionNumb
 export function KnowledgeExecutionPanel({ threadId, disabled, active = true }: { threadId: string; disabled: boolean; active?: boolean }) {
   const { runbooks } = useBitsentryServices();
   const { t } = useTranslation();
+  const parametersId = useId();
   const [catalog, setCatalog] = useState<RunbookRecord[]>([]);
   const [selected, setSelected] = useState<RunbookRecord | null>(null);
   const [parameters, setParameters] = useState("{}");
@@ -63,23 +124,26 @@ export function KnowledgeExecutionPanel({ threadId, disabled, active = true }: {
     } catch { setExecuteError(true); } finally { setBusy(false); }
   }
   if (!active && executionId === null) return null;
-  return <section className="space-y-2 border-t border-border py-2">
-    <p className="font-medium">{t("incidents.knowledge.executeTitle")}</p>
-    {executeError && <p role="alert">{t("incidents.knowledge.executeError")}</p>}
-    {loadError && <p role="alert">{t("incidents.knowledge.loadError")}</p>}
-    {changed && <p role="status">{t("incidents.knowledge.changed")}</p>}
+  return <section aria-label={t("incidents.knowledge.executeTitle")} className="space-y-3 border-t border-border pt-3">
+    <h3 className="text-sm font-semibold">{t("incidents.knowledge.executeTitle")}</h3>
+    {executeError && <p role="alert" className="text-sm text-destructive">{t("incidents.knowledge.executeError")}</p>}
+    {loadError && <p role="alert" className="text-sm text-destructive">{t("incidents.knowledge.loadError")}</p>}
+    {changed && <p role="status" className="text-sm text-muted-foreground">{t("incidents.knowledge.changed")}</p>}
     {active && <>
-      <select className="max-w-full rounded border border-border bg-background p-1" aria-label={t("incidents.knowledge.runbook")} value={selected?.id ?? ""} disabled={disabled || busy} onChange={(event) => { setSelected(catalog.find((row) => row.id === event.target.value) ?? null); setApproved(false); setChanged(false); }}>
-        <option value="">{t("incidents.knowledge.runbook")}</option>
-        {catalog.map((row) => <option key={row.id} value={row.id}>{row.title} · {row.id}</option>)}
-      </select>
+      <Select value={selected?.id ?? ""} disabled={disabled || busy} onValueChange={(value) => { setSelected(catalog.find((row) => row.id === value) ?? null); setApproved(false); setChanged(false); }}>
+        <SelectTrigger aria-label={t("incidents.knowledge.runbook")} className="max-w-full"><SelectValue placeholder={t("incidents.knowledge.runbook")} /></SelectTrigger>
+        <SelectContent>{catalog.map((row) => <SelectItem key={row.id} value={row.id}>{row.title} · {row.id}</SelectItem>)}</SelectContent>
+      </Select>
       {selected && <>
-        <pre className="max-h-60 overflow-auto whitespace-pre-wrap break-all text-xs">{JSON.stringify({ title: selected.title, revision: selected.revisionNumber, actions: selected.actions }, null, 2)}</pre>
-        <textarea className="w-full rounded border border-border bg-background p-2 font-mono text-xs" aria-label={t("incidents.knowledge.parameters")} value={parameters} disabled={disabled || busy} onChange={(event) => { setParameters(event.target.value); setApproved(false); }} />
-        <label className="block"><input type="checkbox" checked={approved} disabled={disabled || busy} onChange={(event) => setApproved(event.target.checked)} /> {t("incidents.knowledge.approveExecution")}</label>
+        <StepList actions={selected.actions} revision={selected.revisionNumber} />
+        <div className="space-y-1.5">
+          <Label htmlFor={parametersId}>{t("incidents.knowledge.parameters")}</Label>
+          <Textarea id={parametersId} className="font-mono text-xs" value={parameters} disabled={disabled || busy} onChange={(event) => { setParameters(event.target.value); setApproved(false); }} />
+        </div>
+        <label className="flex items-start gap-2 text-sm"><input type="checkbox" className="mt-0.5 accent-primary" checked={approved} disabled={disabled || busy} onChange={(event) => { setApproved(event.target.checked); }} /> {t("incidents.knowledge.approveExecution")}</label>
         <Button disabled={disabled || busy || !approved} onClick={() => { void execute(); }}>{t("incidents.knowledge.execute")}</Button>
       </>}
     </>}
-    {execution && <pre className="max-h-60 overflow-auto whitespace-pre-wrap break-all text-xs">{JSON.stringify(execution, null, 2)}</pre>}
+    {execution && <ExecutionResult execution={execution} />}
   </section>;
 }
