@@ -2,12 +2,18 @@
 
 import { webcrypto } from 'node:crypto'
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import type { IntegrationResource } from '@bitsentry-ce/core/features/plugins'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-vi.mock('@bitsentry-ce/i18n', () => ({
-  useTranslation: () => ({ t: (key: string) => key }),
-}))
+vi.mock('@bitsentry-ce/i18n', async () => {
+  // Keys are returned as they are, except where a value is interpolated: those use the real en-US text, so a placeholder the code does not fill shows up.
+  const { readFileSync } = await import('node:fs')
+  const { resolve } = await import('node:path')
+  const english = JSON.parse(readFileSync(resolve(process.cwd(), '../../packages/i18n/src/locales/en-US/incidents.json'), 'utf8')) as Record<string, string>
+  const fill = (text: string, options: Record<string, unknown>) => text.replace(/{{(\w+)}}/g, (_match, name: string) => String(options[name] ?? `{{${name}}}`))
+  return { useTranslation: () => ({ t: (key: string, options?: Record<string, unknown>) => options === undefined ? key : fill(english[key] ?? key, options) }) }
+})
 
 import { KnowledgeExecutionPanel } from '@bitsentry-ce/components/investigation/KnowledgeExecutionPanel'
 import { IntegrationResourcesPanel } from '@bitsentry-ce/components/investigation/IntegrationResourcesPanel'
@@ -25,7 +31,13 @@ function runbook(revisionNumber: number, command = 'uptime'): RunbookRecord {
 }
 
 function setup(initial: RunbookRecord[] = [runbook(1)]) {
-  const world = { catalog: initial, listFails: false, executeFails: false, executions: 0 }
+  const world = {
+    catalog: initial, listFails: false, executeFails: false, executions: 0,
+    execution: {
+      runbookId: 'rb-1', runbookTitle: 'Check uptime', status: 'running', startedAt: '2026-09-30T09:10:00.000Z', source: 'manual',
+      steps: [{ actionId: 'a1', order: 1, type: 'shell', title: 'Uptime', status: 'completed', output: 'up 3 days' }],
+    } as Record<string, unknown>,
+  }
   const runbooks = {
     list: vi.fn(async () => {
       if (world.listFails) {
@@ -33,7 +45,7 @@ function setup(initial: RunbookRecord[] = [runbook(1)]) {
       }
       return world.catalog
     }),
-    getExecution: vi.fn(async (id: string) => ({ executionId: id, status: 'running' })),
+    getExecution: vi.fn(async (id: string) => ({ ...world.execution, executionId: id })),
     execute: vi.fn(async (request: { requestKey: string }) => {
       if (world.executeFails) {
         throw new Error('unconfirmed')
@@ -56,13 +68,17 @@ function renderPanel(services: BitsentryServicePorts, props: { active?: boolean 
 const tick = (ms: number) => act(async () => { await vi.advanceTimersByTimeAsync(ms) })
 
 async function review() {
-  fireEvent.change(await screen.findByRole('combobox', { name: label('runbook') }), { target: { value: 'rb-1' } })
+  const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+  await user.click(await screen.findByRole('combobox', { name: label('runbook') }))
+  await user.click(await screen.findByRole('option', { name: /Check uptime/ }))
   fireEvent.click(approveBox())
 }
 const run = () => fireEvent.click(screen.getByRole('button', { name: label('execute') }))
 const approveBox = () => screen.getByLabelText(label('approveExecution')) as HTMLInputElement
 
 beforeEach(() => {
+  // jsdom lacks the pointer and scroll APIs the Radix Select uses.
+  Object.assign(Element.prototype, { hasPointerCapture: () => false, setPointerCapture: () => undefined, releasePointerCapture: () => undefined, scrollIntoView: () => undefined })
   Object.defineProperty(globalThis, 'crypto', { value: webcrypto, configurable: true })
   vi.useFakeTimers({ shouldAdvanceTime: true })
 })
@@ -82,7 +98,7 @@ describe('KnowledgeExecutionPanel', () => {
     await tick(5200)
 
     expect(approveBox().checked).toBe(false)
-    expect(screen.getByText(/"revision": 2/)).toBeTruthy()
+    expect(screen.getByText('Revision 2')).toBeTruthy()
     expect(screen.getByText(/rm -rf \/tmp\/scratch/)).toBeTruthy()
     expect(screen.getByRole('status').textContent).toBe(label('changed'))
     expect((screen.getByRole('button', { name: label('execute') }) as HTMLButtonElement).disabled).toBe(true)
@@ -116,7 +132,7 @@ describe('KnowledgeExecutionPanel', () => {
     await tick(5200)
 
     expect(screen.queryByLabelText(label('approveExecution'))).toBeNull()
-    expect((screen.getByRole('combobox', { name: label('runbook') }) as HTMLSelectElement).value).toBe('')
+    expect(screen.getByRole('combobox', { name: label('runbook') }).textContent).toBe(label('runbook'))
   })
 
   it('uses a new request key for each explicit run, even with identical steps and parameters', async () => {
@@ -176,12 +192,73 @@ describe('KnowledgeExecutionPanel', () => {
     expect(screen.getByText(label('executeError'))).toBeTruthy()
   })
 
+  it('shows the reviewed steps as a numbered list with their command, not as JSON', async () => {
+    const { services } = setup()
+    const view = renderPanel(services)
+    await review()
+
+    const steps = screen.getAllByRole('listitem')
+    expect(steps).toHaveLength(1)
+    expect(steps[0]?.parentElement?.tagName).toBe('OL')
+    expect(steps[0]?.textContent).toContain('1.')
+    expect(steps[0]?.textContent).toContain('Uptime')
+    expect(steps[0]?.textContent).toContain('shell')
+    expect(steps[0]?.querySelector('code')?.textContent).toBe('uptime')
+    expect(screen.getByText('Revision 1')).toBeTruthy()
+    expect(view.container.querySelector('pre')).toBeNull()
+  })
+
+  it('never runs before the engineer explicitly approves the reviewed steps', async () => {
+    const { runbooks, services } = setup()
+    renderPanel(services)
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+    await user.click(await screen.findByRole('combobox', { name: label('runbook') }))
+    await user.click(await screen.findByRole('option', { name: /Check uptime/ }))
+
+    expect(approveBox().checked).toBe(false)
+    expect((screen.getByRole('button', { name: label('execute') }) as HTMLButtonElement).disabled).toBe(true)
+    run()
+    await tick(200)
+    expect(runbooks.execute).not.toHaveBeenCalled()
+
+    fireEvent.click(approveBox())
+    run()
+    await waitFor(() => { expect(runbooks.execute).toHaveBeenCalledTimes(1) })
+  })
+
+  it('shows the result as a status, how long it took, and its output', async () => {
+    const { world, services } = setup()
+    world.execution = { ...world.execution, status: 'completed', completedAt: '2026-09-30T09:10:05.000Z' }
+    renderPanel(services)
+    await review()
+    run()
+
+    expect(await screen.findByText('common.incidentArtifactsRail.status.completed')).toBeTruthy()
+    expect(screen.getByText('Took 5.0s')).toBeTruthy()
+    expect(screen.getByText('Check uptime', { selector: 'span' })).toBeTruthy()
+    const output = screen.getByText(/up 3 days/)
+    expect(output.tagName).toBe('PRE')
+    expect(output.textContent).toContain('Uptime')
+    expect(screen.queryByText(/"executionId"/)).toBeNull()
+  })
+
+  it('says so when a finished run recorded no output', async () => {
+    const { world, services } = setup()
+    world.execution = { ...world.execution, status: 'failed', steps: [] }
+    renderPanel(services)
+    await review()
+    run()
+
+    expect(await screen.findByText('common.incidentArtifactsRail.status.failed')).toBeTruthy()
+    expect(screen.getByText(label('noOutput'))).toBeTruthy()
+  })
+
   it('hides the review controls when inactive but keeps showing a running execution', async () => {
     const { runbooks, services } = setup()
     const view = renderPanel(services)
     await review()
     run()
-    await screen.findByText(/"executionId": "exec-1"/)
+    await screen.findByText(/up 3 days/)
 
     view.rerender(
       <BitsentryServicesProvider services={services}>
@@ -190,7 +267,7 @@ describe('KnowledgeExecutionPanel', () => {
     )
 
     expect(screen.queryByRole('combobox')).toBeNull()
-    expect(screen.getByText(/"executionId": "exec-1"/)).toBeTruthy()
+    expect(screen.getByText(/up 3 days/)).toBeTruthy()
     const before = runbooks.getExecution.mock.calls.length
     await tick(2200)
     expect(runbooks.getExecution.mock.calls.length).toBeGreaterThan(before)
@@ -212,15 +289,15 @@ describe('IntegrationResourcesPanel', () => {
         <IntegrationResourcesPanel threadId="thread-1" disabled={false} service={resources} />
       </BitsentryServicesProvider>,
     )
-    fireEvent.click((await screen.findByText(/Failover guide/)).closest('details')!.querySelector('summary')!)
+    fireEvent.click(await screen.findByRole('button', { name: /incidents.integrationResources.title/ }))
     await review()
     run()
-    await screen.findByText(/"executionId": "exec-1"/)
+    await screen.findByText(/up 3 days/)
 
     rows.current = [resource(false)]
     await tick(5200)
 
-    expect(screen.getByText(/"executionId": "exec-1"/)).toBeTruthy()
+    expect(screen.getByText(/up 3 days/)).toBeTruthy()
     expect(screen.queryByRole('combobox')).toBeNull()
   })
 
