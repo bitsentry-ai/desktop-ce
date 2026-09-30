@@ -14,11 +14,13 @@ export const integrationActionToolSchema = z.object({
 export type IntegrationActionInput = z.infer<typeof integrationActionToolSchema>;
 /** The connection as the tool saw it; a read must run on this exact target and revision. */
 export interface IntegrationReadSnapshot { target: string; revision?: string }
+/** `capture: false` marks an internal check whose partial result must not replace a linked resource card. */
+export interface IntegrationReadOptions { capture?: boolean }
 export interface IntegrationToolsPort {
   list(): Promise<IntegrationConnection[]>;
   listResources?(): Promise<import("../plugins/integration-resources").IntegrationResource[]>;
   proposeWrite?(request: IntegrationActionInput, meta?: { ticketOperation?: TicketWriteOperation }): Promise<import("../plugins/integration-operations").IntegrationOperation>;
-  executeRead?(request: IntegrationActionInput, expected?: IntegrationReadSnapshot): Promise<DesktopPluginExecutionResult>;
+  executeRead?(request: IntegrationActionInput, expected?: IntegrationReadSnapshot, options?: IntegrationReadOptions): Promise<DesktopPluginExecutionResult>;
 }
 
 const MAX_RESULT_CHARS = 32_000;
@@ -31,6 +33,8 @@ function error(code: string, message: string, fields?: string[]): ToolResult {
 export interface IntegrationToolOptions {
   /** Set only by ticket_operation, which applies the connection's ticket mapping itself. Names the operation. */
   ticketOperation?: TicketWriteOperation;
+  /** Set only by ticket_operation for its own status pre-check, so that read is not retained as a resource observation. */
+  capture?: false;
 }
 
 /**
@@ -75,7 +79,7 @@ export async function runIntegrationTool(
   if (missing.length > 0) return error("CLARIFICATION_REQUIRED", "Ask the engineer for these required fields before retrying.", missing);
   if (mode === "preview") return writeProposal(port, connection, { ...request, input: parsed.data }, options);
   if (port.executeRead === undefined) return error("INTEGRATION_UNAVAILABLE", "Read execution is unavailable in this runtime.");
-  return executeReadTool(port.executeRead, connection, { ...request, input: parsed.data });
+  return executeReadTool(port.executeRead, connection, { ...request, input: parsed.data }, options.capture === false ? { capture: false } : undefined);
 }
 
 /** Saves the write as a durable proposal when the runtime can, and otherwise shows a preview only. */
@@ -93,9 +97,11 @@ async function executeReadTool(
   execute: NonNullable<IntegrationToolsPort["executeRead"]>,
   connection: IntegrationConnection,
   request: IntegrationActionInput,
+  readOptions?: IntegrationReadOptions,
 ): Promise<ToolResult> {
   try {
-    const result = await execute(request, { target: connection.target, revision: connection.revision });
+    const snapshot = { target: connection.target, revision: connection.revision };
+    const result = readOptions === undefined ? await execute(request, snapshot) : await execute(request, snapshot, readOptions);
     if (!result.ok) return error(result.status === 401 || result.status === 403 ? "CREDENTIALS_REJECTED" : "REMOTE_READ_FAILED", `The integration read failed (status ${String(result.status)}). No write was attempted.`);
     const content = JSON.stringify(result.data ?? {});
     return { output: JSON.stringify({
