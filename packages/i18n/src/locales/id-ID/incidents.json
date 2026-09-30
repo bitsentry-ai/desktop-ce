@@ -140,5 +140,17 @@
   "incidents.knowledge.revision": "Revisi {{revision}}",
   "incidents.knowledge.duration": "Durasi {{time}}",
   "incidents.knowledge.output": "Output",
-  "incidents.knowledge.noOutput": "Tidak ada output yang tercatat."
+  "incidents.knowledge.noOutput": "Tidak ada output yang tercatat.",
+  "incidents.integrationRail.title": "Integrasi",
+  "incidents.integrationRail.close": "Tutup integrasi",
+  "incidents.integrationRail.views": "Tampilan integrasi",
+  "incidents.integrationRail.sources": "Sumber",
+  "incidents.integrationRail.ticketActions": "Tindakan tiket",
+  "incidents.integrationRail.sourcesSubtitle": "{{linked}} tertaut · {{selected}} dipilih sebagai sumber",
+  "incidents.integrationRail.actionsSubtitle": "{{total}} diusulkan · {{pending}} menunggu persetujuan",
+  "incidents.integrationRail.pendingShort": "{{pending}} menunggu",
+  "incidents.integrationRail.publicBadge": "Publik",
+  "incidents.integrationRail.noSources": "Saat agen membaca tiket atau dokumen, item itu muncul di sini agar dapat Anda gunakan sebagai sumber.",
+  "incidents.integrationRail.noActions": "Saat agen mengusulkan perubahan tiket, usulan itu muncul di sini untuk Anda tinjau sebelum ada yang ditulis.",
+  "incidents.integrationRail.selectAction": "Pilih tindakan tiket untuk meninjau usulan lengkapnya."
 }

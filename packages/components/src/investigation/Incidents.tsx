@@ -1,5 +1,8 @@
-import { DesktopIntegrationResourcesPanel } from "./IntegrationResourcesPanel";
-import { DesktopIntegrationOperationsPanel } from "./IntegrationOperationsPanel";
+import IncidentIntegrationsRail, {
+  IntegrationsRailTriggers,
+  useDesktopIntegrationPorts,
+  useIntegrationsRailState,
+} from "./IncidentIntegrationsRail";
 import {
   useCallback,
   useEffect,
@@ -1628,6 +1631,13 @@ export default function IncidentsPage() {
     | undefined
   >();
   const [artifactsOpen, setArtifactsOpen] = useState(false);
+  const integrationPorts = useDesktopIntegrationPorts();
+  const closeRunbookRail = useCallback(() => { setArtifactsOpen(false); }, []);
+  const integrationsRail = useIntegrationsRailState({
+    incidentId: activeId,
+    runbookRailOpen: artifactsOpen,
+    closeRunbookRail,
+  });
   const pendingEventsRef = useRef<
     Array<{
       sessionId: string;
@@ -2808,6 +2818,9 @@ export default function IncidentsPage() {
 
   const topBarActions = (
     <>
+      {activeIncident !== null && (
+        <IntegrationsRailTriggers state={integrationsRail} />
+      )}
       {activeIncident !== null && artifactCount > 0 && (
         <Tooltip>
           <TooltipTrigger asChild>
@@ -3065,9 +3078,6 @@ export default function IncidentsPage() {
           {topBarActions}
         </div>
 
-        {activeIncident !== null && <DesktopIntegrationResourcesPanel key={`resources-${activeIncident.id}`} threadId={activeIncident.id} disabled={isArchivedIncident} />}
-        {activeIncident !== null && <DesktopIntegrationOperationsPanel key={activeIncident.id} threadId={activeIncident.id} disabled={isArchivedIncident} />}
-
         {/* Warning banner when blocked */}
         {!isArchivedIncident &&
           providerConfigsLoaded &&
@@ -3079,7 +3089,7 @@ export default function IncidentsPage() {
           <div
             className={cn(
               "flex h-full flex-col transition-[margin] duration-300",
-              artifactsOpen && "md:mr-[430px]",
+              (artifactsOpen || integrationsRail.open) && "md:mr-[430px]",
             )}
           >
             {/* Messages container with floating scroll button */}
@@ -3239,6 +3249,23 @@ export default function IncidentsPage() {
             sessionId={activeSessionId}
             onRevisionRequested={setPrompt}
           />
+          {activeIncident !== null &&
+            (integrationPorts.resources !== undefined ||
+              integrationPorts.operations !== undefined) && (
+            <IncidentIntegrationsRail
+              key={activeIncident.id}
+              threadId={activeIncident.id}
+              disabled={isArchivedIncident}
+              isOpen={integrationsRail.open}
+              view={integrationsRail.view}
+              focusOnOpen={integrationsRail.openedByUser}
+              onViewChange={integrationsRail.setView}
+              onClose={integrationsRail.close}
+              resources={integrationPorts.resources}
+              operations={integrationPorts.operations}
+              onSummaryChange={integrationsRail.reportSummary}
+            />
+          )}
         </div>
       </div>
     </PageShell>
