@@ -185,6 +185,14 @@ export function createDesktopPluginHandlers(
 ): Record<string, (payload: unknown) => Promise<unknown>> {
   return {
     "plugins:listResources": (payload) => service.refreshIntegrationResources(z.object({ threadId: z.string().min(1) }).strict().parse(payload).threadId),
+    "plugins:renewOperation": (payload) => {
+      const input = z.object({ threadId: z.string().min(1), id: z.uuid() }).strict().parse(payload);
+      return service.getIntegrationOperations().renew(input.threadId, input.id);
+    },
+    "plugins:reconcileOperation": (payload) => {
+      const input = z.object({ threadId: z.string().min(1), id: z.uuid(), applied: z.boolean(), confirmed: z.boolean(), externalId: z.string().min(1).max(200).optional() }).strict().parse(payload);
+      return service.getIntegrationOperations().reconcile(input.threadId, input.id, input.applied, input.confirmed, input.externalId);
+    },
     "plugins:listOperations": (payload) => service.getIntegrationOperations().list(z.object({ threadId: z.string().min(1) }).parse(payload).threadId),
     "plugins:approveOperation": (payload) => {
       const input = z.object({ threadId: z.string().min(1), id: z.uuid(), closeRequested: z.boolean().default(false) }).strict().parse(payload);

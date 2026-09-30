@@ -352,7 +352,7 @@ class DesktopNodePluginRuntimeService extends DesktopPluginRuntimeService {
   override async refreshIntegrationResources(threadId: string) {
     const operations = await this.getIntegrationOperations().list(threadId);
     const saved = await this.connections.list();
-    for (const operation of operations.filter((row) => row.status === "succeeded")) {
+    for (const operation of operations.filter((row) => row.status === "succeeded" || row.status === "reconciled")) {
       // The saved connection carries the ticket mapping the extractor needs; the operation only remembers name and target.
       const connection = saved.find((row) => row.id === operation.connectionId)
         ?? { id: operation.connectionId, name: operation.connectionName, pluginId: operation.pluginId === "itop" ? "itop" as const : "outline" as const, target: operation.target };

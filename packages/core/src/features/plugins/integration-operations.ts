@@ -11,7 +11,7 @@ export const integrationOperationSchema = z.object({
   input: z.record(z.string(), z.unknown()), publicUpdate: z.boolean(), requiresCloseRequest: z.boolean(),
   // Kept from the preview so approval can refuse when the plugin or the connection changed since.
   pluginVersion: z.string(), connectionRevision: z.string().optional(), ticketOperation: ticketWriteOperationSchema.optional(),
-  status: z.enum(["proposed", "executing", "succeeded", "failed", "uncertain", "cancelled"]),
+  status: z.enum(["proposed", "executing", "succeeded", "failed", "uncertain", "cancelled", "reconciled"]),
   createdAt: z.string(), updatedAt: z.string(), result: z.unknown().optional(), message: z.string().optional(),
 });
 export type IntegrationOperation = z.infer<typeof integrationOperationSchema>;
@@ -30,6 +30,8 @@ export interface IntegrationWriteRuntime {
   /** Runs a read-only action on the same connection snapshot that `execute` would use. */
   read(request: IntegrationWriteRequest): Promise<DesktopPluginExecutionResult>;
 }
+
+const activeExecutions = new Map<string, number>();
 
 function validateWrite(runtime: IntegrationWriteRuntime, request: IntegrationWriteRequest) {
   const action = runtime.plugin.actions.find((row) => row.id === request.actionId);
@@ -89,21 +91,70 @@ async function assertTicketState(runtime: IntegrationWriteRuntime, operation: In
 /** Approval is an application action; no agent tool receives this capability. */
 export class IntegrationOperationService {
   constructor(private readonly store: IntegrationOperationStore, private readonly resolve: (id: string) => Promise<IntegrationWriteRuntime>) {}
-  list(threadId: string) { return this.store.list(threadId); }
+  async list(threadId: string) {
+    const rows = await this.store.list(threadId);
+    for (const row of rows) {
+      if (row.status === "executing" && Date.now() - Date.parse(row.updatedAt) > 120_000) {
+        await this.store.transition(row.id, "executing", { status: "uncertain", updatedAt: new Date().toISOString(), message: "Execution has not confirmed completion. Inspect the remote system before recovery." });
+      }
+    }
+    const current = await this.store.list(threadId);
+    return current.map((row) => row.status === "uncertain" && (activeExecutions.get(row.id) ?? 0) > 0
+      ? { ...row, message: "The original write is still running. Wait for it to finish before reconciling." }
+      : row);
+  }
 
-  async propose(threadId: string, request: IntegrationWriteRequest, meta: IntegrationWriteMeta = {}): Promise<IntegrationOperation> {
+  async propose(threadId: string, request: IntegrationWriteRequest, meta: IntegrationWriteMeta = {}, renewalOf?: string): Promise<IntegrationOperation> {
     const runtime = await this.resolve(request.connectionId);
     const input = validateWrite(runtime, request);
     const now = new Date().toISOString();
+    if (renewalOf === undefined) {
+      const previous = (await this.store.list(threadId)).filter((row) => row.connectionId === request.connectionId && row.target === runtime.connection.target && row.pluginId === runtime.plugin.id && row.actionId === request.actionId && row.ticketOperation === meta.ticketOperation && JSON.stringify(canonical(row.input)) === JSON.stringify(canonical(input))).sort((a, b) => b.createdAt.localeCompare(a.createdAt)).find((row) => row.status !== "proposed" || (row.pluginVersion === runtime.plugin.version && row.connectionRevision === runtime.connection.revision));
+      if (previous !== undefined) return previous;
+    }
+    const id = await proposalId({ threadId, connectionId: request.connectionId, pluginId: runtime.plugin.id, pluginVersion: runtime.plugin.version, connectionRevision: runtime.connection.revision ?? null, target: runtime.connection.target, actionId: request.actionId, input, ticketOperation: meta.ticketOperation ?? null, renewalOf: renewalOf ?? null });
+    const existing = await this.store.get(id);
+    if (existing !== null) return existing;
     const operation = integrationOperationSchema.parse({
-      id: crypto.randomUUID(), threadId, connectionId: runtime.connection.id,
+      id, threadId, connectionId: runtime.connection.id,
       connectionName: runtime.connection.name, target: runtime.connection.target,
       pluginId: runtime.plugin.id, actionId: request.actionId, input,
       pluginVersion: runtime.plugin.version, connectionRevision: runtime.connection.revision, ticketOperation: meta.ticketOperation,
       ...classify(runtime, { ...request, input }, meta.ticketOperation), status: "proposed", createdAt: now, updatedAt: now,
     });
-    await this.store.create(operation);
+    try {
+      await this.store.create(operation);
+    } catch (error) {
+      const concurrent = await this.store.get(id);
+      if (concurrent !== null) return concurrent;
+      throw error;
+    }
     return operation;
+  }
+
+  async renew(threadId: string, id: string) {
+    const previous = await this.owned(threadId, id);
+    if (!["succeeded", "reconciled", "failed", "cancelled"].includes(previous.status)) throw new Error("Resolve the previous outcome before proposing a repeat.");
+    return this.propose(threadId, { connectionId: previous.connectionId, actionId: previous.actionId, input: previous.input }, { ticketOperation: previous.ticketOperation }, previous.id);
+  }
+
+  async reconcile(threadId: string, id: string, applied: boolean, confirmed: boolean, externalId?: string) {
+    const operation = await this.owned(threadId, id);
+    if (!confirmed || operation.status !== "uncertain") throw new Error("Inspect the remote system and explicitly confirm the outcome first.");
+    if ((activeExecutions.get(id) ?? 0) > 0) throw new Error("The original write is still running. Wait for it to finish before reconciling.");
+    let result: unknown;
+    if (applied) {
+      if (!externalId) throw new Error("Provide the external resource ID you inspected.");
+      const runtime = await this.resolve(operation.connectionId);
+      assertUnchanged(runtime, operation);
+      const request = recoveryRead(operation, externalId);
+      if (runtime.plugin.actions.find((action) => action.id === request.actionId)?.riskLevel !== "read") throw new Error("Resource verification is unavailable.");
+      const response = await runtime.read(request);
+      if (!response.ok) throw new Error("The remote resource could not be verified. Keep this outcome uncertain.");
+      result = response.data;
+    }
+    await this.store.transition(id, "uncertain", { status: applied ? "reconciled" : "failed", result, message: applied ? "The engineer confirmed the change and the remote resource was read successfully." : "The engineer inspected the remote system and confirmed that this operation did not apply.", updatedAt: new Date().toISOString() });
+    return this.owned(threadId, id);
   }
 
   private async owned(threadId: string, id: string): Promise<IntegrationOperation> {
@@ -128,17 +179,57 @@ export class IntegrationOperationService {
     const flags = classify(runtime, operation, operation.ticketOperation);
     if (flags.requiresCloseRequest !== operation.requiresCloseRequest || flags.publicUpdate !== operation.publicUpdate) throw new Error("Ticket mapping changed. Create a new preview.");
     await assertTicketState(runtime, operation);
-    if (!await this.store.transition(id, "proposed", { status: "executing", updatedAt: new Date().toISOString() })) return this.owned(threadId, id);
-    try {
-      const result = await runtime.execute(operation);
-      await this.store.transition(id, "executing", {
-        status: result.ok ? "succeeded" : "uncertain", result: result.data,
-        message: result.ok ? undefined : "The remote system did not confirm success. Inspect the remote resource before retrying.",
-        updatedAt: new Date().toISOString(),
-      });
-    } catch {
-      await this.store.transition(id, "executing", { status: "uncertain", message: "The request was interrupted. The remote change may have completed; inspect it before retrying.", updatedAt: new Date().toISOString() });
-    }
-    return this.owned(threadId, id);
+    return this.withExecutionFence(id, async () => {
+      if (!await this.store.transition(id, "proposed", { status: "executing", updatedAt: new Date().toISOString() })) return this.owned(threadId, id);
+      try {
+        const result = await runtime.execute(operation);
+        const patch = {
+          status: result.ok ? "succeeded" as const : "uncertain" as const,
+          result: result.data,
+          message: result.ok ? undefined : "The remote system did not confirm success. Inspect the remote resource before retrying.",
+          updatedAt: new Date().toISOString(),
+        };
+        if (!await this.store.transition(id, "executing", patch)) await this.store.transition(id, "uncertain", patch);
+      } catch {
+        const patch = { status: "uncertain" as const, message: "The request was interrupted. The remote change may have completed; inspect it before retrying.", updatedAt: new Date().toISOString() };
+        if (!await this.store.transition(id, "executing", patch)) await this.store.transition(id, "uncertain", patch);
+      }
+      return this.owned(threadId, id);
+    });
   }
+
+  private async withExecutionFence<T>(id: string, action: () => Promise<T>): Promise<T> {
+    activeExecutions.set(id, (activeExecutions.get(id) ?? 0) + 1);
+    try {
+      return await action();
+    } finally {
+      const remaining = (activeExecutions.get(id) ?? 1) - 1;
+      if (remaining === 0) activeExecutions.delete(id);
+      else activeExecutions.set(id, remaining);
+    }
+  }
+}
+
+function canonical(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(canonical);
+  if (value !== null && typeof value === "object") return Object.fromEntries(Object.entries(value).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0).map(([key, item]) => [key, canonical(item)]));
+  return value;
+}
+async function proposalId(value: unknown): Promise<string> {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(JSON.stringify(canonical(value))));
+  const bytes = new Uint8Array(digest).slice(0, 16);
+  bytes[6] = (bytes[6] & 15) | 128;
+  bytes[8] = (bytes[8] & 63) | 128;
+  const hex = Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
+function recoveryRead(operation: IntegrationOperation, externalId: string): IntegrationWriteRequest {
+  if (operation.pluginId === "itop") {
+    const id = Number(externalId);
+    if (!/^\d+$/.test(externalId) || !Number.isSafeInteger(id) || id < 1) throw new Error("Use the exact numeric iTop resource ID.");
+    if (operation.actionId !== "create_object" && id !== Number(operation.input.id)) throw new Error("Verify the exact resource targeted by this operation.");
+    return { connectionId: operation.connectionId, actionId: "get_object", input: { class: operation.input.class, id, outputFields: "*" } };
+  }
+  if (operation.actionId !== "create_document" && externalId !== operation.input.id) throw new Error("Verify the exact document targeted by this operation.");
+  return { connectionId: operation.connectionId, actionId: "get_document", input: { id: externalId } };
 }
