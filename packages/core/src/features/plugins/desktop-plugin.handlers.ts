@@ -1,3 +1,4 @@
+import { linkedResourceInputSchema } from "./integration-resources";
 import { z } from "zod";
 import { integrationConnectionInputSchema } from "./integration-connections";
 import { isInternalStoredAuthKey } from "./integration-store-keys";
@@ -189,6 +190,7 @@ export function createDesktopPluginHandlers(
       await service.getIntegrationResources().select(input.threadId, input.connectionId, input.resourceType, input.externalId, input.selected);
       return { ok: true };
     },
+    "plugins:refreshResource": (payload) => service.refreshIntegrationResource(linkedResourceInputSchema.parse(payload)),
     "plugins:listResources": (payload) => service.refreshIntegrationResources(z.object({ threadId: z.string().min(1) }).strict().parse(payload).threadId),
     "plugins:renewOperation": (payload) => {
       const input = z.object({ threadId: z.string().min(1), id: z.uuid() }).strict().parse(payload);

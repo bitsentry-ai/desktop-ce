@@ -232,6 +232,7 @@ describe('direct integration reads', () => {
 
       expect(save).toHaveBeenCalledTimes(1)
       expect(followUpToolContent(llmAdapter)).toContain('Evidence')
+      expect(followUpToolContent(llmAdapter)).toContain('the resource card could not be saved')
       expect(followUpToolContent(llmAdapter)).not.toContain('resource store unavailable')
     })
   })

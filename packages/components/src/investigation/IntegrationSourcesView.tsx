@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { Check, ExternalLink, FileText, Ticket } from "lucide-react";
+import { Check, ExternalLink, FileText, RefreshCw, Ticket } from "lucide-react";
 import { useTranslation } from "@bitsentry-ce/i18n";
 import type { IntegrationResource } from "@bitsentry-ce/core/features/plugins";
 import { cn } from "../lib/utils";
@@ -8,7 +8,7 @@ import { Button } from "../ui/button";
 import { buttonVariants } from "../ui/button.variants";
 import { KnowledgeExecutionPanel } from "./KnowledgeExecutionPanel";
 import { relativeTime } from "./relative-time";
-export interface IntegrationResourcesPort { select?(resource: IntegrationResource, selected: boolean): Promise<unknown>; list(threadId: string): Promise<IntegrationResource[]>; }
+export interface IntegrationResourcesPort { refresh?(resource: IntegrationResource): Promise<unknown>; select?(resource: IntegrationResource, selected: boolean): Promise<unknown>; list(threadId: string): Promise<IntegrationResource[]>; }
 
 type BadgeVariant = "success" | "info" | "warning" | "secondary";
 const SOLVED = new Set(["resolved", "closed"]);
@@ -37,6 +37,7 @@ function ticketBadge(status: string): { variant: BadgeVariant; label: string } |
   return { variant, label: status.replaceAll("_", " ") };
 }
 const shortId = (id: string) => (id.length > 8 ? id.slice(0, 8) : id);
+const STALE_AFTER_MS = 300_000;
 export const resourceKey = (row: IntegrationResource) => `${row.connectionId}:${row.resourceType}:${row.externalId}`;
 
 function Fact({ label, children }: { label: string; children: ReactNode }) {
@@ -75,12 +76,14 @@ function documentView(row: IntegrationResource, t: Translate): CardView {
   };
 }
 
-function ResourceCard({ row, disabled, onToggle }: { row: IntegrationResource; disabled: boolean; onToggle?: (selected: boolean) => void }) {
+function ResourceCard({ row, disabled, onToggle, onRefresh }: { row: IntegrationResource; disabled: boolean; onToggle?: (selected: boolean) => void; onRefresh?: () => void }) {
   const { t } = useTranslation();
   const selected = row.selected === true;
   const Icon = row.resourceType === "ticket" ? Ticket : FileText;
   const { referenceLine, badge, facts, openLabel } = row.resourceType === "ticket" ? ticketView(row, t) : documentView(row, t);
   const shownFacts = facts.filter(([, value]) => value !== "");
+  const deleted = row.state.deleted === true;
+  const stale = !deleted && Date.now() - Date.parse(row.observedAt) > STALE_AFTER_MS;
   return <article aria-label={row.title} className={cn("flex min-w-0 flex-col gap-2 rounded-2xl border border-border bg-card p-3 transition-colors hover:border-primary/40", selected && "bg-primary/5 ring-1 ring-primary")}>
     <div className="flex items-center gap-2 text-xs text-muted-foreground">
       <Icon className="size-4 shrink-0" aria-hidden="true" />
@@ -93,14 +96,22 @@ function ResourceCard({ row, disabled, onToggle }: { row: IntegrationResource; d
         <ExternalLink className="size-4" aria-hidden="true" />
       </a>
     </div>
+    {/* A removed resource keeps its last known details below: nothing the engineer already read is lost. */}
+    {deleted && <p role="status" className="rounded-md border border-amber-500/30 bg-amber-50 px-2.5 py-1.5 text-xs font-medium text-amber-700 dark:bg-amber-950/30 dark:text-amber-400">{t("incidents.integrationRecovery.deleted")}</p>}
+    {stale && <p className="text-xs text-amber-700 dark:text-amber-400">{t("incidents.integrationRecovery.staleCard")}</p>}
     <p className="truncate font-mono text-xs text-muted-foreground" title={row.externalId}>{referenceLine}</p>
     {shownFacts.length > 0 && <dl className="grid grid-cols-2 gap-x-3 gap-y-1">{shownFacts.map(([label, value]) => <Fact key={label} label={label}>{value}</Fact>)}</dl>}
     <div className="mt-auto flex items-center justify-between gap-2 border-t border-border pt-2">
       <time className="min-w-0 truncate text-xs text-muted-foreground" dateTime={row.observedAt} title={new Date(row.observedAt).toLocaleString()}>{t("incidents.integrationResources.observedAt", { time: relativeTime(row.observedAt) })}</time>
+      <div className="flex shrink-0 items-center gap-1.5">
+      {onRefresh !== undefined && <Button type="button" size="sm" variant="ghost" disabled={disabled} onClick={onRefresh} title={t("incidents.integrationRecovery.refresh")}>
+        <RefreshCw aria-hidden="true" /><span className="sr-only">{t("incidents.integrationRecovery.refresh")}</span>
+      </Button>}
       {onToggle !== undefined && <Button type="button" size="sm" variant={selected ? "default" : "outline"} aria-pressed={selected} disabled={disabled} onClick={() => { onToggle(!selected); }}>
         {selected && <Check aria-hidden="true" />}
         {t(selected ? "incidents.integrationResources.sourceSelected" : "incidents.integrationResources.useAsSource")}
       </Button>}
+      </div>
     </div>
   </article>;
 }
@@ -109,11 +120,15 @@ function ResourceCard({ row, disabled, onToggle }: { row: IntegrationResource; d
  * The Sources view of the integrations rail: every linked ticket and document in one column, the source toggle on
  * each card, and the saved-runbook review below them once a source is selected.
  */
-export function IntegrationSourcesView({ threadId, rows, failed, disabled, onSelect }: {
+export function IntegrationSourcesView({ threadId, rows, failed, disabled, onSelect, onRefresh, actionError = null }: {
   threadId: string;
   rows: IntegrationResource[];
   failed: boolean;
   disabled: boolean;
+  /** Absent when the product cannot refresh a linked resource; the cards then show no refresh control. */
+  onRefresh?: (resource: IntegrationResource) => void;
+  /** The recovery message for the last select or refresh that failed. */
+  actionError?: string | null;
   /** Absent when the product cannot select sources; the cards then show no toggle. */
   onSelect?: (resource: IntegrationResource, selected: boolean) => void;
 }) {
@@ -123,9 +138,10 @@ export function IntegrationSourcesView({ threadId, rows, failed, disabled, onSel
   const [everSelected, setEverSelected] = useState(false);
   useEffect(() => { if (anySelected) setEverSelected(true); }, [anySelected]);
   return <div className="space-y-3">
+    {actionError !== null && <p role="alert" className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">{t(actionError)}</p>}
     {failed && <p role="alert" className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">{t("incidents.integrationResources.error")}</p>}
     {rows.length === 0 && !failed && <div className="rounded-2xl border border-dashed border-border/70 bg-muted/10 px-4 py-5 text-sm text-muted-foreground">{t("incidents.integrationRail.noSources")}</div>}
-    {rows.map((row) => <ResourceCard key={resourceKey(row)} row={row} disabled={disabled} onToggle={onSelect === undefined ? undefined : (selected) => { onSelect(row, selected); }} />)}
+    {rows.map((row) => <ResourceCard key={resourceKey(row)} row={row} disabled={disabled} onToggle={onSelect === undefined ? undefined : (selected) => { onSelect(row, selected); }} onRefresh={onRefresh === undefined ? undefined : () => { onRefresh(row); }} />)}
     {(anySelected || everSelected) && <KnowledgeExecutionPanel threadId={threadId} disabled={disabled} active={anySelected} />}
   </div>;
 }

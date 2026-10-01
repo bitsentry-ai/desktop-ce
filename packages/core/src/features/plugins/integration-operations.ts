@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { readNamesResource } from "./integration-resources";
 import { buildPluginInputSchema } from "./desktop-plugin-registry";
 import type { IntegrationConnection } from "./integration-connections";
 import { ticketWriteOperationSchema } from "./itop-ticket-mapping";
@@ -39,6 +40,8 @@ function validateWrite(runtime: IntegrationWriteRuntime, request: IntegrationWri
   if (Object.keys(request.input).some((key) => !action.fields.some((field) => field.key === key))) throw new Error("Unknown action field.");
   const input = buildPluginInputSchema(action.fields).parse(request.input);
   if (action.fields.some((field) => field.required && (input[field.key] === undefined || input[field.key] === null || input[field.key] === ""))) throw new Error("Required fields are missing.");
+  // An update must name the revision the engineer saw, or it could overwrite a newer edit.
+  if (runtime.plugin.id === "outline" && action.id === "update_document" && !Number.isSafeInteger(input.lastRevision)) throw new Error("Read the current document revision before proposing an update.");
   return input;
 }
 
@@ -150,7 +153,9 @@ export class IntegrationOperationService {
       const request = recoveryRead(operation, externalId);
       if (runtime.plugin.actions.find((action) => action.id === request.actionId)?.riskLevel !== "read") throw new Error("Resource verification is unavailable.");
       const response = await runtime.read(request);
-      if (!response.ok) throw new Error("The remote resource could not be verified. Keep this outcome uncertain.");
+      // The read must return exactly the resource the engineer named, not just any successful answer.
+      const matches = response.ok && readNamesResource(operation.pluginId, response.data, externalId, operation.pluginId === "itop" ? operation.input.class : undefined);
+      if (!matches) throw new Error("The remote system did not return the exact remote resource you named, so it could not be verified. Keep this outcome uncertain.");
       result = response.data;
     }
     await this.store.transition(id, "uncertain", { status: applied ? "reconciled" : "failed", result, message: applied ? "The engineer confirmed the change and the remote resource was read successfully." : "The engineer inspected the remote system and confirmed that this operation did not apply.", updatedAt: new Date().toISOString() });
@@ -183,12 +188,7 @@ export class IntegrationOperationService {
       if (!await this.store.transition(id, "proposed", { status: "executing", updatedAt: new Date().toISOString() })) return this.owned(threadId, id);
       try {
         const result = await runtime.execute(operation);
-        const patch = {
-          status: result.ok ? "succeeded" as const : "uncertain" as const,
-          result: result.data,
-          message: result.ok ? undefined : "The remote system did not confirm success. Inspect the remote resource before retrying.",
-          updatedAt: new Date().toISOString(),
-        };
+        const patch = { ...remoteWriteOutcome(result), updatedAt: new Date().toISOString() };
         if (!await this.store.transition(id, "executing", patch)) await this.store.transition(id, "uncertain", patch);
       } catch {
         const patch = { status: "uncertain" as const, message: "The request was interrupted. The remote change may have completed; inspect it before retrying.", updatedAt: new Date().toISOString() };
@@ -232,4 +232,16 @@ function recoveryRead(operation: IntegrationOperation, externalId: string): Inte
   }
   if (operation.actionId !== "create_document" && externalId !== operation.input.id) throw new Error("Verify the exact document targeted by this operation.");
   return { connectionId: operation.connectionId, actionId: "get_document", input: { id: externalId } };
+}
+
+/**
+ * A remote system that clearly refused the request did not apply it, so the write failed with a reason the engineer can act on.
+ * Anything else (a 5xx, a timeout, an unknown answer) stays uncertain and is never shown as success.
+ */
+function remoteWriteOutcome(result: DesktopPluginExecutionResult): Pick<IntegrationOperation, "status" | "result" | "message"> {
+  if (result.ok) return { status: "succeeded", result: result.data, message: undefined };
+  const refused = [400, 401, 403, 404, 409, 422, 429].includes(result.status);
+  const reasons: Record<number, string> = { 401: "credentials_rejected", 403: "credentials_rejected", 409: "stale_resource" };
+  if (!refused) return { status: "uncertain", result: result.data, message: "The remote system did not confirm success. Inspect the remote resource before retrying." };
+  return { status: "failed", result: result.data, message: reasons[result.status] ?? "remote_rejected" };
 }

@@ -312,3 +312,30 @@ describe('summarizeOperation', () => {
     expect(facts).toEqual([])
   })
 })
+
+describe('why a write did not apply', () => {
+  const recovery = (suffix: string) => `incidents.integrationRecovery.${suffix}`
+
+  it.each([['credentials_rejected', 'credentials'], ['stale_resource', 'stale'], ['remote_rejected', 'rejected']])('tells the engineer what to do when the remote system refused (%s)', (message, key) => {
+    renderView([operation({ status: 'failed', message })])
+
+    expect(within(proposal('create')).getByRole('alert').textContent).toBe(recovery(key))
+    expect(within(proposal('create')).getByText(label('failed'))).toBeTruthy()
+  })
+
+  it('shows no refusal reason for a failure it cannot explain', () => {
+    renderView([operation({ status: 'failed', message: 'something else' })])
+
+    expect(within(proposal('create')).queryByRole('alert')).toBeNull()
+  })
+
+  it('keeps an unknown outcome uncertain: it asks to inspect the remote system and never shows a refusal or a success', () => {
+    renderView([operation({ status: 'uncertain', message: 'The remote system did not confirm success. Inspect the remote resource before retrying.' })])
+
+    const region = proposal('create')
+    expect(within(region).getByText(label('uncertain'))).toBeTruthy()
+    expect(within(region).getByText(/Inspect the remote resource/)).toBeTruthy()
+    expect(within(region).queryByRole('alert')).toBeNull()
+    expect(within(region).queryByText(label('succeeded'))).toBeNull()
+  })
+})

@@ -330,3 +330,34 @@ describe('iTop write approval re-checks what may have changed since the preview'
     expect(remote.writes).toEqual([])
   })
 })
+
+it.each([[401, 'failed', 'credentials_rejected'], [409, 'failed', 'stale_resource'], [422, 'failed', 'remote_rejected'], [503, 'uncertain', expect.stringContaining('Inspect the remote resource')]])('records remote status %s without retrying', async (status, expected, message) => {
+  const { service, propose, execute } = setup()
+  const proposal = await propose()
+  execute.mockResolvedValue({ ok: false, status, data: {} })
+  expect(await service.approve('thread', proposal.id, false)).toMatchObject({ status: expected, message })
+  await service.approve('thread', proposal.id, false)
+  expect(execute).toHaveBeenCalledTimes(1)
+})
+it('keeps reconciliation uncertain when a read returns a different resource', async () => {
+  const { service, propose, execute, runtime, store } = setup()
+  const proposal = await propose()
+  await store.transition(proposal.id, 'proposed', { status: 'uncertain', updatedAt: new Date().toISOString() })
+  runtime.plugin.actions.push({ id: 'get_document', title: 'Read', description: 'Read', riskLevel: 'read', fields: [] })
+  execute.mockResolvedValue({ ok: true, status: 200, data: { data: { id: 'wrong', title: 'Wrong', url: '/doc/wrong' } } })
+  await expect(service.reconcile('thread', proposal.id, true, true, 'expected')).rejects.toThrow('exact remote resource')
+  expect((await service.list('thread'))[0].status).toBe('uncertain')
+})
+
+it('refuses to propose an Outline update that does not name the revision that was read, and proposes it once it does', async () => {
+  const { service, runtime } = setup()
+  runtime.plugin.actions.push({ id: 'update_document', title: 'Update', description: 'Update', riskLevel: 'write', fields: [
+    { key: 'id', label: 'ID', type: 'string', required: true }, { key: 'text', label: 'Text', type: 'string', required: true },
+    { key: 'lastRevision', label: 'Expected revision', type: 'number', required: false },
+  ] })
+  const update = (input: Record<string, unknown>) => service.propose('thread', { connectionId: runtime.connection.id, actionId: 'update_document', input })
+
+  await expect(update({ id: 'doc', text: 'New text' })).rejects.toThrow('revision')
+  expect(await service.list('thread')).toEqual([])
+  await expect(update({ id: 'doc', text: 'New text', lastRevision: 4 })).resolves.toMatchObject({ status: 'proposed', input: { lastRevision: 4 } })
+})

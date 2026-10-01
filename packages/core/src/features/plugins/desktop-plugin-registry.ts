@@ -288,6 +288,8 @@ export interface DesktopPluginExecutionPolicy {
 }
 
 export class DesktopPluginRuntimeService {
+  async refreshIntegrationResource(_input: import("./integration-resources").LinkedResourceInput): Promise<import("./integration-resources").IntegrationResource> { throw new Error("Resource refresh is unavailable."); }
+
   refreshIntegrationResources(threadId: string) { return this.getIntegrationResources().list(threadId); }
   getIntegrationResources(): import("./integration-resources").IntegrationResourceStore { throw new Error("Resource storage is unavailable."); }
 

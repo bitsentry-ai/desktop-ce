@@ -43,11 +43,11 @@ function document_(overrides: Partial<IntegrationResource> = {}): IntegrationRes
 }
 
 type SelectHandler = (resource: IntegrationResource, selected: boolean) => void
-function renderView(rows: IntegrationResource[], options: { disabled?: boolean; failed?: boolean; select?: SelectHandler | null } = {}) {
+function renderView(rows: IntegrationResource[], options: { disabled?: boolean; failed?: boolean; select?: SelectHandler | null; refresh?: (resource: IntegrationResource) => void; actionError?: string | null } = {}) {
   const onSelect = options.select === null ? undefined : options.select ?? vi.fn<SelectHandler>()
   const view = render(
     <BitsentryServicesProvider services={{ runbooks: { list: async () => [], getExecution: async () => null, execute: async () => ({}) } } as unknown as BitsentryServicePorts}>
-      <IntegrationSourcesView threadId="thread-1" rows={rows} failed={options.failed ?? false} disabled={options.disabled ?? false} onSelect={onSelect} />
+      <IntegrationSourcesView threadId="thread-1" rows={rows} failed={options.failed ?? false} disabled={options.disabled ?? false} onSelect={onSelect} onRefresh={options.refresh} actionError={options.actionError ?? null} />
     </BitsentryServicesProvider>,
   )
   return { ...view, onSelect }
@@ -247,5 +247,60 @@ describe('keyboard use', () => {
     expect(document.activeElement).toBe(screen.getByRole('link', { name: label('openInKnowledgeBase') }))
     await user.tab()
     expect(document.activeElement?.textContent).toBe(label('useAsSource'))
+  })
+})
+
+describe('recovering a linked resource', () => {
+  const recovery = (suffix: string) => `incidents.integrationRecovery.${suffix}`
+
+  it('offers a refresh on each card and asks to refresh exactly that resource', () => {
+    const refresh = vi.fn()
+    renderView([ticket(), document_()], { refresh })
+
+    const card = screen.getByRole('article', { name: 'Sandbox integration read example' })
+    fireEvent.click(within(card).getByRole('button', { name: recovery('refresh') }))
+
+    expect(refresh).toHaveBeenCalledTimes(1)
+    expect(refresh).toHaveBeenCalledWith(expect.objectContaining({ externalId: 'a1b2c3d4-e5f6-7890-abcd-ef1234567890' }))
+  })
+
+  it('shows no refresh where the product cannot refresh, and cannot refresh in an archived conversation', () => {
+    const { unmount } = renderView([ticket()])
+    expect(screen.queryByRole('button', { name: recovery('refresh') })).toBeNull()
+    unmount()
+
+    renderView([ticket()], { refresh: vi.fn(), disabled: true })
+    expect((screen.getByRole('button', { name: recovery('refresh') }) as HTMLButtonElement).disabled).toBe(true)
+  })
+
+  it('warns that a removed resource was deleted while keeping everything that was last known', () => {
+    renderView([ticket({ state: { ref: 'R-000003', status: 'resolved', className: 'UserRequest', team_id: 39, deleted: true } })])
+
+    const card = screen.getByRole('article', { name: 'Logon Failure - Unknown user or bad password' })
+    expect(within(card).getByRole('status').textContent).toBe(recovery('deleted'))
+    expect(within(card).getByText('R-000003 · UserRequest #3')).toBeTruthy()
+    expect(within(card).getByText('resolved')).toBeTruthy()
+    expect(within(card).getByText(label('team')).nextElementSibling?.textContent).toBe('39')
+    expect(within(card).getByRole('link', { name: label('openInTicketSystem') })).toBeTruthy()
+  })
+
+  it('does not warn about a resource that was not deleted', () => {
+    renderView([ticket()])
+
+    expect(screen.queryByRole('status')).toBeNull()
+  })
+
+  it('says an observation older than five minutes should be refreshed, and stays quiet about a recent one', () => {
+    renderView([ticket({ externalId: '1', title: 'Old one', observedAt: minutesAgo(10) }), ticket({ externalId: '2', title: 'Fresh one', observedAt: minutesAgo(1) })])
+
+    expect(within(screen.getByRole('article', { name: 'Old one' })).getByText(recovery('staleCard'))).toBeTruthy()
+    expect(within(screen.getByRole('article', { name: 'Fresh one' })).queryByText(recovery('staleCard'))).toBeNull()
+  })
+
+  it('shows the recovery message for the last failed action above the cards', () => {
+    renderView([ticket()], { actionError: recovery('destinationBlocked') })
+
+    expect(screen.getByRole('alert').textContent).toBe(recovery('destinationBlocked'))
+    expect(screen.getByRole('article')).toBeTruthy()
   })
 })
