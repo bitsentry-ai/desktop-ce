@@ -152,5 +152,14 @@
   "incidents.integrationRail.publicBadge": "Public",
   "incidents.integrationRail.noSources": "Lorsque l’agent lit un ticket ou un document, il apparaît ici pour que vous puissiez l’utiliser comme source.",
   "incidents.integrationRail.noActions": "Lorsque l’agent propose une modification de ticket, elle apparaît ici pour votre vérification avant toute écriture.",
-  "incidents.integrationRail.selectAction": "Sélectionnez une action sur un ticket pour consulter la proposition complète."
+  "incidents.integrationRail.selectAction": "Sélectionnez une action sur un ticket pour consulter la proposition complète.",
+  "incidents.knowledge.picker.placeholder": "Choisir un runbook enregistré",
+  "incidents.knowledge.picker.hint": "Le choisir affiche seulement ses étapes. Rien ne s’exécute sans votre validation.",
+  "incidents.knowledge.picker.searchLabel": "Rechercher dans les runbooks enregistrés",
+  "incidents.knowledge.picker.searchPlaceholder": "Rechercher par titre ou ID",
+  "incidents.knowledge.picker.loading": "Chargement des runbooks enregistrés…",
+  "incidents.knowledge.picker.empty": "Aucun runbook enregistré pour l’instant. Créez-en un dans Runbooks.",
+  "incidents.knowledge.picker.noMatch": "Aucun runbook ne correspond à « {{query}} ».",
+  "incidents.knowledge.picker.count": "{{shown}} sur {{total}} runbooks",
+  "incidents.knowledge.picker.id": "ID {{id}}"
 }

@@ -7,7 +7,7 @@ import { formatDuration } from "../chat/utils";
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
 import { Label } from "../ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../ui/select";
+import { RunbookPicker } from "./RunbookPicker";
 import { Textarea } from "../ui/textarea";
 
 const sameReviewedSteps = (a: RunbookRecord, b: RunbookRecord) => a.revisionNumber === b.revisionNumber && JSON.stringify(a.actions) === JSON.stringify(b.actions);
@@ -76,6 +76,7 @@ export function KnowledgeExecutionPanel({ threadId, disabled, active = true }: {
   const { t } = useTranslation();
   const parametersId = useId();
   const [catalog, setCatalog] = useState<RunbookRecord[]>([]);
+  const [catalogLoaded, setCatalogLoaded] = useState(false);
   const [selected, setSelected] = useState<RunbookRecord | null>(null);
   const [parameters, setParameters] = useState("{}");
   const [approved, setApproved] = useState(false);
@@ -90,7 +91,7 @@ export function KnowledgeExecutionPanel({ threadId, disabled, active = true }: {
   useEffect(() => {
     if (!active) return;
     let alive = true;
-    const refresh = async () => { try { const rows = await runbooks.list(); if (alive) { setCatalog(rows); setLoadError(false); } } catch { if (alive) setLoadError(true); } };
+    const refresh = async () => { try { const rows = await runbooks.list(); if (alive) { setCatalog(rows); setCatalogLoaded(true); setLoadError(false); } } catch { if (alive) { setCatalogLoaded(true); setLoadError(true); } } };
     void refresh(); const timer = setInterval(() => { void refresh(); }, 5000);
     return () => { alive = false; clearInterval(timer); };
   }, [runbooks, active]);
@@ -130,10 +131,8 @@ export function KnowledgeExecutionPanel({ threadId, disabled, active = true }: {
     {loadError && <p role="alert" className="text-sm text-destructive">{t("incidents.knowledge.loadError")}</p>}
     {changed && <p role="status" className="text-sm text-muted-foreground">{t("incidents.knowledge.changed")}</p>}
     {active && <>
-      <Select value={selected?.id ?? ""} disabled={disabled || busy} onValueChange={(value) => { setSelected(catalog.find((row) => row.id === value) ?? null); setApproved(false); setChanged(false); }}>
-        <SelectTrigger aria-label={t("incidents.knowledge.runbook")} className="max-w-full"><SelectValue placeholder={t("incidents.knowledge.runbook")} /></SelectTrigger>
-        <SelectContent>{catalog.map((row) => <SelectItem key={row.id} value={row.id}>{row.title} · {row.id}</SelectItem>)}</SelectContent>
-      </Select>
+      <RunbookPicker runbooks={catalog} selectedId={selected?.id ?? null} loading={!catalogLoaded} loadFailed={loadError} disabled={disabled || busy}
+        onSelect={(id) => { setSelected(catalog.find((row) => row.id === id) ?? null); setApproved(false); setChanged(false); }} />
       {selected && <>
         <StepList actions={selected.actions} revision={selected.revisionNumber} />
         <div className="space-y-1.5">

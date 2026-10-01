@@ -152,5 +152,14 @@
   "incidents.integrationRail.publicBadge": "Publik",
   "incidents.integrationRail.noSources": "Saat agen membaca tiket atau dokumen, item itu muncul di sini agar dapat Anda gunakan sebagai sumber.",
   "incidents.integrationRail.noActions": "Saat agen mengusulkan perubahan tiket, usulan itu muncul di sini untuk Anda tinjau sebelum ada yang ditulis.",
-  "incidents.integrationRail.selectAction": "Pilih tindakan tiket untuk meninjau usulan lengkapnya."
+  "incidents.integrationRail.selectAction": "Pilih tindakan tiket untuk meninjau usulan lengkapnya.",
+  "incidents.knowledge.picker.placeholder": "Pilih runbook tersimpan",
+  "incidents.knowledge.picker.hint": "Memilihnya hanya menampilkan langkahnya. Tidak ada yang berjalan sebelum Anda menyetujui.",
+  "incidents.knowledge.picker.searchLabel": "Cari runbook tersimpan",
+  "incidents.knowledge.picker.searchPlaceholder": "Cari berdasarkan judul atau ID",
+  "incidents.knowledge.picker.loading": "Memuat runbook tersimpan…",
+  "incidents.knowledge.picker.empty": "Belum ada runbook tersimpan. Buat satu di Runbooks.",
+  "incidents.knowledge.picker.noMatch": "Tidak ada runbook yang cocok dengan “{{query}}”.",
+  "incidents.knowledge.picker.count": "{{shown}} dari {{total}} runbook",
+  "incidents.knowledge.picker.id": "ID {{id}}"
 }
