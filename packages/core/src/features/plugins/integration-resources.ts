@@ -26,6 +26,8 @@ function isStateValue(value: unknown): value is string | number | boolean {
   return typeof value === "number" || typeof value === "boolean" || (typeof value === "string" && value.length <= MAX_STATE_TEXT);
 }
 /** A card title must be short too: a title field mapped to a long text attribute falls back to the reference. */
+/** A ticket ID that survives the number conversion the iTop read needs; anything larger would be rounded to another ticket. */
+const isTicketId = (value: string) => /^\d+$/.test(value) && Number.isSafeInteger(Number(value)) && Number(value) >= 1;
 function shortText(value: unknown): string { return isStateValue(value) ? text(value) : ""; }
 /** The attributes a follow-up needs: the mapped reference and state, plus whatever the mapping requires to assign a ticket. */
 function ticketStateKeys(mapping: IntegrationConnection["ticketMapping"]): string[] {
@@ -33,7 +35,8 @@ function ticketStateKeys(mapping: IntegrationConnection["ticketMapping"]): strin
   const assigned = (mapping.requiredFields.assign ?? []).map((key) => mapping.fields[key]).filter((key): key is string => key !== undefined);
   return [...new Set([mapping.referenceField, mapping.statusField, ...assigned])];
 }
-export function extractIntegrationResources(threadId: string, connection: Pick<IntegrationConnection, "id" | "name" | "pluginId" | "target" | "ticketMapping">, raw: unknown): IntegrationResource[] {
+/** `ticketClass` is the class the link was stored with; a later change of the mapping must not make an existing link unreadable. */
+export function extractIntegrationResources(threadId: string, connection: Pick<IntegrationConnection, "id" | "name" | "pluginId" | "target" | "ticketMapping">, raw: unknown, ticketClass?: string): IntegrationResource[] {
   const data = record(raw);
   const now = new Date().toISOString();
   const common = { threadId, connectionId: connection.id, connectionName: connection.name, observedAt: now };
@@ -42,8 +45,8 @@ export function extractIntegrationResources(threadId: string, connection: Pick<I
       const object = record(value); const fields = record(object.fields);
       const externalId = text(object.key);
       const className = text(object.class) || key.split("::")[0];
-      if (![connection.ticketMapping?.className ?? "UserRequest", "Incident", "Ticket"].includes(className)) return [];
-      if (!/^\d+$/.test(externalId)) return [];
+      if (![ticketClass ?? connection.ticketMapping?.className ?? "UserRequest", "Incident", "Ticket"].includes(className)) return [];
+      if (!isTicketId(externalId)) return [];
       const url = new URL("pages/UI.php", connection.target.replace(/\/?$/, "/"));
       url.search = new URLSearchParams({ operation: "details", class: className, id: externalId }).toString();
       const mapping = connection.ticketMapping;
@@ -100,30 +103,44 @@ export type LinkedResourceInput = z.infer<typeof linkedResourceInputSchema>;
  * When the remote system says the resource is gone, the last known data is kept and only marked as deleted, so nothing the
  * engineer already saw or selected is lost.
  */
-export async function refreshLinkedIntegrationResource(input: LinkedResourceInput, store: Pick<IntegrationResourceStore, "list" | "save">, runtime: import("./integration-operations").IntegrationWriteRuntime): Promise<IntegrationResource> {
-  const resource = (await store.list(input.threadId)).find((row) => row.connectionId === input.connectionId && row.resourceType === input.resourceType && row.externalId === input.externalId);
+type RefreshRuntime = import("./integration-operations").IntegrationWriteRuntime;
+
+/** Refuses a refresh that cannot read the exact resource, before anything is sent. Returns what to read it with. */
+function refreshPlan(input: LinkedResourceInput, resource: IntegrationResource | undefined, runtime: RefreshRuntime) {
   if (!resource || runtime.connection.id !== input.connectionId || runtime.connection.availability !== "configured") throw new Error("Linked resource or connection is unavailable.");
-  const actionId = resource.resourceType === "ticket" ? "get_object" : "get_document";
+  const ticket = resource.resourceType === "ticket";
+  const actionId = ticket ? "get_object" : "get_document";
   if (runtime.plugin.actions.find((action) => action.id === actionId)?.riskLevel !== "read") throw new Error("Read capability is unavailable.");
-  const className = resource.state.className ?? runtime.connection.ticketMapping?.className;
-  if (resource.resourceType === "ticket" && typeof className !== "string") throw new Error("Ticket class is missing; read the exact ticket again.");
-  const request = { connectionId: input.connectionId, actionId, input: resource.resourceType === "ticket" ? { class: className, id: Number(input.externalId), outputFields: "*" } : { id: input.externalId } };
+  const className = typeof resource.state.className === "string" ? resource.state.className : runtime.connection.ticketMapping?.className;
+  if (ticket && typeof className !== "string") throw new Error("Ticket class is missing; read the exact ticket again.");
+  if (ticket && !isTicketId(input.externalId)) throw new Error("Ticket ID is outside the supported range.");
+  return { className, request: { connectionId: input.connectionId, actionId, input: ticket ? { class: className, id: Number(input.externalId), outputFields: "*" } : { id: input.externalId } } };
+}
+
+/**
+ * Reads the exact linked resource again. A card is only ever replaced by what the remote system returned for that same resource.
+ * When the remote system says the resource is gone, the last known data is kept and only marked as deleted, so nothing the
+ * engineer already saw or selected is lost.
+ */
+export async function refreshLinkedIntegrationResource(input: LinkedResourceInput, store: Pick<IntegrationResourceStore, "list" | "save">, runtime: RefreshRuntime): Promise<IntegrationResource> {
+  const find = async () => (await store.list(input.threadId)).find((row) => row.connectionId === input.connectionId && row.resourceType === input.resourceType && row.externalId === input.externalId);
+  const resource = await find();
+  const { className, request } = refreshPlan(input, resource, runtime);
+  // Stamped before the read: a slow answer must not claim a later observation than the one it saw.
+  const observedAt = new Date().toISOString();
   const result = await runtime.read(request);
-  const markDeleted = async (): Promise<IntegrationResource> => {
-    const gone = { ...resource, state: { ...resource.state, deleted: true }, observedAt: new Date().toISOString() };
-    await store.save([gone]);
-    return gone;
-  };
+  // What is stored afterwards is returned, so a newer observation that landed meanwhile is never hidden by this answer.
+  const keep = async (next: IntegrationResource) => { await store.save([next]); return (await find()) ?? next; };
+  const markDeleted = () => keep({ ...resource!, state: { ...resource!.state, deleted: true }, observedAt });
   if (!result.ok) {
     if (result.status === 404) return markDeleted();
     throw new Error(result.status === 401 || result.status === 403 ? "Connection credentials were rejected." : "Resource is unavailable; access may have changed. Refresh again when the connection is restored.");
   }
-  const next = extractIntegrationResources(input.threadId, runtime.connection, result.data).find((row) => row.externalId === input.externalId && row.resourceType === input.resourceType);
-  // iTop answers a read of a missing object with success and no object.
-  if (!next) return markDeleted();
-  const updated = { ...next, selected: resource.selected };
-  await store.save([updated]);
-  return updated;
+  const next = extractIntegrationResources(input.threadId, runtime.connection, result.data, typeof className === "string" ? className : undefined).find((row) => row.externalId === input.externalId && row.resourceType === input.resourceType);
+  if (next) return keep({ ...next, observedAt });
+  // iTop answers a read of a missing object with success and no object. An object that is there but unusable is not a deletion.
+  if (readNamesResource(runtime.connection.pluginId, result.data, input.externalId)) throw new Error("The remote response did not contain this exact resource.");
+  return markDeleted();
 }
 
 /** Whether a read answer names exactly this resource: the same ID, and for iTop the same ticket class. A different resource never verifies it. */
