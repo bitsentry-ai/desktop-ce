@@ -140,5 +140,17 @@
   "incidents.knowledge.revision": "Revision {{revision}}",
   "incidents.knowledge.duration": "Took {{time}}",
   "incidents.knowledge.output": "Output",
-  "incidents.knowledge.noOutput": "No output was recorded."
+  "incidents.knowledge.noOutput": "No output was recorded.",
+  "incidents.integrationRail.title": "Integrations",
+  "incidents.integrationRail.close": "Close integrations",
+  "incidents.integrationRail.views": "Integration views",
+  "incidents.integrationRail.sources": "Sources",
+  "incidents.integrationRail.ticketActions": "Ticket actions",
+  "incidents.integrationRail.sourcesSubtitle": "{{linked}} linked · {{selected}} selected as sources",
+  "incidents.integrationRail.actionsSubtitle": "{{total}} proposed · {{pending}} awaiting approval",
+  "incidents.integrationRail.pendingShort": "{{pending}} pending",
+  "incidents.integrationRail.publicBadge": "Public",
+  "incidents.integrationRail.noSources": "When the agent reads a ticket or document, it appears here so you can use it as a source.",
+  "incidents.integrationRail.noActions": "When the agent proposes a ticket change, it appears here for your review before anything is written.",
+  "incidents.integrationRail.selectAction": "Select a ticket action to review its full proposal."
 }

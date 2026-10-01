@@ -140,5 +140,17 @@
   "incidents.knowledge.revision": "Révision {{revision}}",
   "incidents.knowledge.duration": "Durée : {{time}}",
   "incidents.knowledge.output": "Sortie",
-  "incidents.knowledge.noOutput": "Aucune sortie enregistrée."
+  "incidents.knowledge.noOutput": "Aucune sortie enregistrée.",
+  "incidents.integrationRail.title": "Intégrations",
+  "incidents.integrationRail.close": "Fermer les intégrations",
+  "incidents.integrationRail.views": "Vues des intégrations",
+  "incidents.integrationRail.sources": "Sources",
+  "incidents.integrationRail.ticketActions": "Actions sur les tickets",
+  "incidents.integrationRail.sourcesSubtitle": "{{linked}} liée(s) · {{selected}} sélectionnée(s) comme sources",
+  "incidents.integrationRail.actionsSubtitle": "{{total}} proposée(s) · {{pending}} en attente de validation",
+  "incidents.integrationRail.pendingShort": "{{pending}} en attente",
+  "incidents.integrationRail.publicBadge": "Public",
+  "incidents.integrationRail.noSources": "Lorsque l’agent lit un ticket ou un document, il apparaît ici pour que vous puissiez l’utiliser comme source.",
+  "incidents.integrationRail.noActions": "Lorsque l’agent propose une modification de ticket, elle apparaît ici pour votre vérification avant toute écriture.",
+  "incidents.integrationRail.selectAction": "Sélectionnez une action sur un ticket pour consulter la proposition complète."
 }

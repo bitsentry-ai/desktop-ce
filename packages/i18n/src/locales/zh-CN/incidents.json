@@ -140,5 +140,17 @@
   "incidents.knowledge.revision": "修订 {{revision}}",
   "incidents.knowledge.duration": "耗时 {{time}}",
   "incidents.knowledge.output": "输出",
-  "incidents.knowledge.noOutput": "未记录任何输出。"
+  "incidents.knowledge.noOutput": "未记录任何输出。",
+  "incidents.integrationRail.title": "集成",
+  "incidents.integrationRail.close": "关闭集成面板",
+  "incidents.integrationRail.views": "集成视图",
+  "incidents.integrationRail.sources": "来源",
+  "incidents.integrationRail.ticketActions": "工单操作",
+  "incidents.integrationRail.sourcesSubtitle": "已关联 {{linked}} 项 · 已选 {{selected}} 项作为来源",
+  "incidents.integrationRail.actionsSubtitle": "已提议 {{total}} 项 · {{pending}} 项等待批准",
+  "incidents.integrationRail.pendingShort": "{{pending}} 项待批准",
+  "incidents.integrationRail.publicBadge": "公开",
+  "incidents.integrationRail.noSources": "当代理读取工单或文档时，它会显示在此处，供您用作来源。",
+  "incidents.integrationRail.noActions": "当代理提议更改工单时，它会显示在此处供您审查，之后才会写入任何内容。",
+  "incidents.integrationRail.selectAction": "选择一项工单操作以查看完整提议。"
 }

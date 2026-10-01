@@ -16,7 +16,7 @@ vi.mock('@bitsentry-ce/i18n', async () => {
 })
 
 import { KnowledgeExecutionPanel } from '@bitsentry-ce/components/investigation/KnowledgeExecutionPanel'
-import { IntegrationResourcesPanel } from '@bitsentry-ce/components/investigation/IntegrationResourcesPanel'
+import IncidentIntegrationsRail from '@bitsentry-ce/components/investigation/IncidentIntegrationsRail'
 import { BitsentryServicesProvider } from '@bitsentry-ce/components/services/context'
 import type { BitsentryServicePorts, RunbookRecord } from '@bitsentry-ce/components/services/contracts'
 
@@ -274,7 +274,7 @@ describe('KnowledgeExecutionPanel', () => {
   })
 })
 
-describe('IntegrationResourcesPanel', () => {
+describe('the integrations rail sources view', () => {
   const resource = (selected: boolean): IntegrationResource => ({
     threadId: 'thread-1', connectionId: '11111111-1111-4111-8111-111111111111', connectionName: 'Wiki', resourceType: 'document',
     externalId: 'doc-1', url: 'https://outline.example/doc/1', title: 'Failover guide', state: {}, observedAt: '2026-09-30T00:00:00.000Z', selected,
@@ -286,10 +286,9 @@ describe('IntegrationResourcesPanel', () => {
     const resources = { list: vi.fn(async () => rows.current), select: vi.fn(async () => undefined) }
     render(
       <BitsentryServicesProvider services={services}>
-        <IntegrationResourcesPanel threadId="thread-1" disabled={false} service={resources} />
+        <IncidentIntegrationsRail isOpen view="sources" onViewChange={() => undefined} onClose={() => undefined} threadId="thread-1" disabled={false} resources={resources} />
       </BitsentryServicesProvider>,
     )
-    fireEvent.click(await screen.findByRole('button', { name: /incidents.integrationResources.title/ }))
     await review()
     run()
     await screen.findByText(/up 3 days/)
@@ -306,7 +305,7 @@ describe('IntegrationResourcesPanel', () => {
     const resources = { list: vi.fn(async () => [resource(false)]), select: vi.fn(async () => undefined) }
     render(
       <BitsentryServicesProvider services={services}>
-        <IntegrationResourcesPanel threadId="thread-1" disabled={false} service={resources} />
+        <IncidentIntegrationsRail isOpen view="sources" onViewChange={() => undefined} onClose={() => undefined} threadId="thread-1" disabled={false} resources={resources} />
       </BitsentryServicesProvider>,
     )
     await screen.findByText(/Failover guide/)

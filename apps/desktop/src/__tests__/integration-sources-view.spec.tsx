@@ -14,7 +14,7 @@ vi.mock('@bitsentry-ce/i18n', async () => {
   return { useTranslation: () => ({ t: (key: string, options?: Record<string, unknown>) => options === undefined ? key : fill(english[key] ?? key, options) }) }
 })
 
-import { IntegrationResourcesPanel, type IntegrationResourcesPort } from '@bitsentry-ce/components/investigation/IntegrationResourcesPanel'
+import { IntegrationSourcesView } from '@bitsentry-ce/components/investigation/IntegrationSourcesView'
 import { BitsentryServicesProvider } from '@bitsentry-ce/components/services/context'
 import type { BitsentryServicePorts } from '@bitsentry-ce/components/services/contracts'
 
@@ -42,60 +42,60 @@ function document_(overrides: Partial<IntegrationResource> = {}): IntegrationRes
   }
 }
 
-function renderPanel(rows: IntegrationResource[], options: { disabled?: boolean; select?: IntegrationResourcesPort['select'] | null } = {}) {
-  const select = options.select === null ? undefined : options.select ?? vi.fn(async () => undefined)
-  const service: IntegrationResourcesPort = { list: vi.fn(async () => rows), ...(select === undefined ? {} : { select }) }
+type SelectHandler = (resource: IntegrationResource, selected: boolean) => void
+function renderView(rows: IntegrationResource[], options: { disabled?: boolean; failed?: boolean; select?: SelectHandler | null } = {}) {
+  const onSelect = options.select === null ? undefined : options.select ?? vi.fn<SelectHandler>()
   const view = render(
     <BitsentryServicesProvider services={{ runbooks: { list: async () => [], getExecution: async () => null, execute: async () => ({}) } } as unknown as BitsentryServicePorts}>
-      <IntegrationResourcesPanel threadId="thread-1" disabled={options.disabled ?? false} service={service} />
+      <IntegrationSourcesView threadId="thread-1" rows={rows} failed={options.failed ?? false} disabled={options.disabled ?? false} onSelect={onSelect} />
     </BitsentryServicesProvider>,
   )
-  return { ...view, service, select }
-}
-const header = () => screen.findByRole('button', { name: new RegExp(label('title')) })
-async function open() {
-  fireEvent.click(await header())
+  return { ...view, onSelect }
 }
 
-describe('linked resources panel header', () => {
-  it('is collapsed by default, shows how many resources and sources there are, and toggles with aria-expanded', async () => {
-    renderPanel([ticket({ selected: true }), document_()])
-    const button = await header()
+describe('the sources view', () => {
+  it('stacks every linked resource as a card, in the order they were observed', () => {
+    renderView([ticket(), document_()])
 
-    expect(button.getAttribute('aria-expanded')).toBe('false')
-    expect(within(button).getByText('2')).toBeTruthy()
-    expect(within(button).getByText('1 selected as sources')).toBeTruthy()
-    expect(screen.getByLabelText(label('title'), { selector: 'section' })).toBeTruthy()
-    expect(document.getElementById(button.getAttribute('aria-controls')!)?.hidden).toBe(true)
-
-    fireEvent.click(button)
-    expect(button.getAttribute('aria-expanded')).toBe('true')
-    expect(document.getElementById(button.getAttribute('aria-controls')!)?.hidden).toBe(false)
-
-    fireEvent.click(button)
-    expect(button.getAttribute('aria-expanded')).toBe('false')
+    expect(screen.getAllByRole('article').map((card) => card.getAttribute('aria-label'))).toEqual([
+      'Logon Failure - Unknown user or bad password',
+      'Sandbox integration read example',
+    ])
   })
 
-  it('does not say anything about selected sources when none is selected', async () => {
-    renderPanel([ticket()])
-    const button = await header()
+  it('says when nothing is linked yet', () => {
+    renderView([])
 
-    expect(within(button).queryByText(/selected as sources/)).toBeNull()
-    expect(button.textContent).not.toContain('{{')
+    expect(screen.getByText('incidents.integrationRail.noSources')).toBeTruthy()
+    expect(screen.queryByRole('article')).toBeNull()
   })
 
-  it('renders nothing when there is nothing linked and nothing failed', async () => {
-    const { container } = renderPanel([])
-    await Promise.resolve()
+  it('reports a refresh failure while keeping the cards it last saw', () => {
+    renderView([ticket()], { failed: true })
 
-    expect(container.querySelector('section')).toBeNull()
+    expect(screen.getByRole('alert').textContent).toBe(label('error'))
+    expect(screen.getByRole('article')).toBeTruthy()
+    expect(screen.queryByText('incidents.integrationRail.noSources')).toBeNull()
+  })
+
+  it('shows no saved-runbook review until a source is selected', () => {
+    renderView([ticket()])
+
+    expect(screen.queryByText('incidents.knowledge.executeTitle')).toBeNull()
+  })
+
+  it('offers the saved-runbook review below the cards once a source is selected', () => {
+    renderView([ticket({ selected: true }), document_()])
+
+    const cards = screen.getAllByRole('article')
+    const review = screen.getByRole('region', { name: 'incidents.knowledge.executeTitle' })
+    expect(cards[1]!.compareDocumentPosition(review) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
 })
 
 describe('a linked ticket card', () => {
-  it('shows the title, the reference with its class and id, the connection and the status', async () => {
-    const { container } = renderPanel([ticket()])
-    await open()
+  it('shows the title, the reference with its class and id, the connection and the status', () => {
+    const { container } = renderView([ticket()])
 
     const card = screen.getByRole('article', { name: 'Logon Failure - Unknown user or bad password' })
     expect(within(card).getByRole('heading', { level: 4 }).textContent).toBe('Logon Failure - Unknown user or bad password')
@@ -108,12 +108,11 @@ describe('a linked ticket card', () => {
     expect(card.textContent).not.toContain('{')
   })
 
-  it('shows team, agent and request type, and leaves out zero and empty values', async () => {
-    renderPanel([
+  it('shows team, agent and request type, and leaves out zero and empty values', () => {
+    renderView([
       ticket(),
       ticket({ externalId: '4', title: 'Unassigned request', state: { ref: 'R-000004', status: 'new', className: 'UserRequest', team_id: 0, agent_id: '', request_type: 'incident' } }),
     ])
-    await open()
 
     const assigned = screen.getByRole('article', { name: 'Logon Failure - Unknown user or bad password' })
     expect(within(assigned).getByText(label('team')).nextElementSibling?.textContent).toBe('39')
@@ -126,22 +125,20 @@ describe('a linked ticket card', () => {
     expect(within(unassigned).getByText(label('requestType'))).toBeTruthy()
   })
 
-  it('falls back to the class and id when the state carries no reference', async () => {
-    renderPanel([ticket({ state: { className: 'Problem' }, externalId: '7' })])
-    await open()
+  it('falls back to the class and id when the state carries no reference', () => {
+    renderView([ticket({ state: { className: 'Problem' }, externalId: '7' })])
 
     expect(screen.getByText('Problem #7')).toBeTruthy()
   })
 
-  it('maps the status to a badge: solved, new and in-progress look different from each other', async () => {
-    renderPanel([
+  it('maps the status to a badge: solved, new and in-progress look different from each other', () => {
+    renderView([
       ticket({ externalId: '1', title: 'Solved one', state: { status: 'resolved' } }),
       ticket({ externalId: '2', title: 'Closed one', state: { status: 'closed' } }),
       ticket({ externalId: '3', title: 'New one', state: { status: 'new' } }),
       ticket({ externalId: '4', title: 'Assigned one', state: { status: 'assigned' } }),
-      ticket({ externalId: '5', title: 'Odd one', state: { status: 'on_hold' } }),
+      ticket({ externalId: '5', title: 'Odd one', state: { status: 'on hold' } }),
     ])
-    await open()
     const badge = (title: string, text: string) => within(screen.getByRole('article', { name: title })).getByText(text)
 
     expect(badge('Solved one', 'resolved').className).toContain('emerald')
@@ -152,9 +149,8 @@ describe('a linked ticket card', () => {
     expect(badge('Odd one', 'on hold').className).toContain('bg-muted')
   })
 
-  it('links to the source in a new tab with an accessible name', async () => {
-    renderPanel([ticket()])
-    await open()
+  it('links to the source in a new tab with an accessible name', () => {
+    renderView([ticket()])
 
     const link = screen.getByRole('link', { name: label('openInTicketSystem') })
     expect(link.getAttribute('href')).toBe('https://itop.example/pages/UI.php?operation=details&class=UserRequest&id=3')
@@ -162,10 +158,9 @@ describe('a linked ticket card', () => {
     expect(link.getAttribute('rel')).toBe('noopener noreferrer')
   })
 
-  it('says when it was observed, with the exact time available', async () => {
+  it('says when it was observed, with the exact time available', () => {
     const observedAt = minutesAgo(5)
-    renderPanel([ticket({ observedAt })])
-    await open()
+    renderView([ticket({ observedAt })])
 
     const time = screen.getByText(/^Observed /)
     expect(time.tagName).toBe('TIME')
@@ -175,9 +170,8 @@ describe('a linked ticket card', () => {
 })
 
 describe('a linked document card', () => {
-  it('shows the title, a short id, the update date, the collection and that it is published', async () => {
-    const { container } = renderPanel([document_()])
-    await open()
+  it('shows the title, a short id, the update date, the collection and that it is published', () => {
+    const { container } = renderView([document_()])
 
     const card = screen.getByRole('article', { name: 'Sandbox integration read example' })
     expect(within(card).getByText('a1b2c3d4')).toBeTruthy()
@@ -188,9 +182,8 @@ describe('a linked document card', () => {
     expect(container.querySelector('pre')).toBeNull()
   })
 
-  it('shows a draft when it was never published', async () => {
-    renderPanel([document_({ state: { updatedAt: '2026-09-29T09:00:00.000Z' } })])
-    await open()
+  it('shows a draft when it was never published', () => {
+    renderView([document_({ state: { updatedAt: '2026-09-29T09:00:00.000Z' } })])
 
     expect(screen.getByText(label('draft'))).toBeTruthy()
     expect(screen.queryByText(label('published'))).toBeNull()
@@ -198,48 +191,43 @@ describe('a linked document card', () => {
 })
 
 describe('using a resource as a source', () => {
-  it('offers a pressed-state toggle that selects and deselects through the service', async () => {
-    const { select } = renderPanel([ticket()])
-    await open()
+  it('offers a pressed-state toggle that asks to select the resource', () => {
+    const { onSelect } = renderView([ticket()])
 
     const off = screen.getByRole('button', { name: label('useAsSource') })
     expect(off.getAttribute('aria-pressed')).toBe('false')
     fireEvent.click(off)
-    expect(select).toHaveBeenCalledWith(expect.objectContaining({ externalId: '3', connectionId }), true)
+    expect(onSelect).toHaveBeenCalledWith(expect.objectContaining({ externalId: '3', connectionId }), true)
   })
 
-  it('shows a selected card as selected and toggles it off', async () => {
-    const { select } = renderPanel([ticket({ selected: true })])
-    await open()
+  it('shows a selected card as selected and asks to deselect it', () => {
+    const { onSelect } = renderView([ticket({ selected: true })])
 
     const card = screen.getByRole('article', { name: 'Logon Failure - Unknown user or bad password' })
     expect(card.className).toContain('ring-primary')
     const on = within(card).getByRole('button', { name: label('sourceSelected') })
     expect(on.getAttribute('aria-pressed')).toBe('true')
     fireEvent.click(on)
-    expect(select).toHaveBeenCalledWith(expect.objectContaining({ externalId: '3' }), false)
+    expect(onSelect).toHaveBeenCalledWith(expect.objectContaining({ externalId: '3' }), false)
   })
 
-  it('leaves an unselected card without the selection ring', async () => {
-    renderPanel([ticket()])
-    await open()
+  it('leaves an unselected card without the selection ring', () => {
+    renderView([ticket()])
 
     expect(screen.getByRole('article').className).not.toContain('ring-primary')
   })
 
-  it('cannot be toggled in an archived conversation', async () => {
-    const { select } = renderPanel([ticket()], { disabled: true })
-    await open()
+  it('cannot be toggled in an archived conversation', () => {
+    const { onSelect } = renderView([ticket()], { disabled: true })
 
     const toggle = screen.getByRole('button', { name: label('useAsSource') }) as HTMLButtonElement
     expect(toggle.disabled).toBe(true)
     fireEvent.click(toggle)
-    expect(select).not.toHaveBeenCalled()
+    expect(onSelect).not.toHaveBeenCalled()
   })
 
-  it('shows no toggle when the product cannot select sources', async () => {
-    renderPanel([ticket()], { select: null })
-    await open()
+  it('shows no toggle when the product cannot select sources', () => {
+    renderView([ticket()], { select: null })
 
     expect(screen.queryByRole('button', { name: label('useAsSource') })).toBeNull()
     expect(screen.getByRole('article')).toBeTruthy()
@@ -247,11 +235,9 @@ describe('using a resource as a source', () => {
 })
 
 describe('keyboard use', () => {
-  it('reaches the header, then each card’s link and toggle, in reading order', async () => {
-    renderPanel([ticket(), document_()])
+  it('reaches each card’s link and toggle, in reading order', async () => {
+    renderView([ticket(), document_()])
     const user = userEvent.setup()
-    await open()
-    ;(await header()).focus()
 
     await user.tab()
     expect(document.activeElement).toBe(screen.getByRole('link', { name: label('openInTicketSystem') }))
