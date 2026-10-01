@@ -152,5 +152,14 @@
   "incidents.integrationRail.publicBadge": "公开",
   "incidents.integrationRail.noSources": "当代理读取工单或文档时，它会显示在此处，供您用作来源。",
   "incidents.integrationRail.noActions": "当代理提议更改工单时，它会显示在此处供您审查，之后才会写入任何内容。",
-  "incidents.integrationRail.selectAction": "选择一项工单操作以查看完整提议。"
+  "incidents.integrationRail.selectAction": "选择一项工单操作以查看完整提议。",
+  "incidents.knowledge.picker.placeholder": "选择已保存的运行手册",
+  "incidents.knowledge.picker.hint": "选择后只会显示其步骤，未经批准不会运行。",
+  "incidents.knowledge.picker.searchLabel": "搜索已保存的运行手册",
+  "incidents.knowledge.picker.searchPlaceholder": "按标题或 ID 搜索",
+  "incidents.knowledge.picker.loading": "正在加载已保存的运行手册…",
+  "incidents.knowledge.picker.empty": "还没有已保存的运行手册。请在“运行手册”中创建。",
+  "incidents.knowledge.picker.noMatch": "没有与“{{query}}”匹配的运行手册。",
+  "incidents.knowledge.picker.count": "共 {{total}} 个，显示 {{shown}} 个",
+  "incidents.knowledge.picker.id": "ID {{id}}"
 }

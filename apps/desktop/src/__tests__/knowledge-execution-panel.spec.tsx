@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { webcrypto } from 'node:crypto'
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { IntegrationResource } from '@bitsentry-ce/core/features/plugins'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -69,10 +69,17 @@ const tick = (ms: number) => act(async () => { await vi.advanceTimersByTimeAsync
 
 async function review() {
   const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
-  await user.click(await screen.findByRole('combobox', { name: label('runbook') }))
-  await user.click(await screen.findByRole('option', { name: /Check uptime/ }))
+  await choose(user)
   fireEvent.click(approveBox())
 }
+const pickerTrigger = () => screen.findByRole('button', { name: new RegExp(`${label('picker.placeholder')}|Check uptime`) })
+const choose = async (user: ReturnType<typeof userEvent.setup>) => {
+  await user.click(await pickerTrigger())
+  await user.click(await screen.findByRole('option', { name: /Check uptime/ }))
+}
+// The picker shows the chosen runbook too, so the review and the result are read inside their own areas.
+const reviewedSteps = () => screen.getByText(label('steps')).parentElement as HTMLElement
+const resultCard = () => screen.getByText(label('output')).parentElement as HTMLElement
 const run = () => fireEvent.click(screen.getByRole('button', { name: label('execute') }))
 const approveBox = () => screen.getByLabelText(label('approveExecution')) as HTMLInputElement
 
@@ -98,7 +105,7 @@ describe('KnowledgeExecutionPanel', () => {
     await tick(5200)
 
     expect(approveBox().checked).toBe(false)
-    expect(screen.getByText('Revision 2')).toBeTruthy()
+    expect(within(reviewedSteps()).getByText('Revision 2')).toBeTruthy()
     expect(screen.getByText(/rm -rf \/tmp\/scratch/)).toBeTruthy()
     expect(screen.getByRole('status').textContent).toBe(label('changed'))
     expect((screen.getByRole('button', { name: label('execute') }) as HTMLButtonElement).disabled).toBe(true)
@@ -132,7 +139,7 @@ describe('KnowledgeExecutionPanel', () => {
     await tick(5200)
 
     expect(screen.queryByLabelText(label('approveExecution'))).toBeNull()
-    expect(screen.getByRole('combobox', { name: label('runbook') }).textContent).toBe(label('runbook'))
+    expect((await pickerTrigger()).textContent).toContain(label('picker.placeholder'))
   })
 
   it('uses a new request key for each explicit run, even with identical steps and parameters', async () => {
@@ -204,7 +211,7 @@ describe('KnowledgeExecutionPanel', () => {
     expect(steps[0]?.textContent).toContain('Uptime')
     expect(steps[0]?.textContent).toContain('shell')
     expect(steps[0]?.querySelector('code')?.textContent).toBe('uptime')
-    expect(screen.getByText('Revision 1')).toBeTruthy()
+    expect(within(reviewedSteps()).getByText('Revision 1')).toBeTruthy()
     expect(view.container.querySelector('pre')).toBeNull()
   })
 
@@ -212,8 +219,7 @@ describe('KnowledgeExecutionPanel', () => {
     const { runbooks, services } = setup()
     renderPanel(services)
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
-    await user.click(await screen.findByRole('combobox', { name: label('runbook') }))
-    await user.click(await screen.findByRole('option', { name: /Check uptime/ }))
+    await choose(user)
 
     expect(approveBox().checked).toBe(false)
     expect((screen.getByRole('button', { name: label('execute') }) as HTMLButtonElement).disabled).toBe(true)
@@ -235,7 +241,7 @@ describe('KnowledgeExecutionPanel', () => {
 
     expect(await screen.findByText('common.incidentArtifactsRail.status.completed')).toBeTruthy()
     expect(screen.getByText('Took 5.0s')).toBeTruthy()
-    expect(screen.getByText('Check uptime', { selector: 'span' })).toBeTruthy()
+    expect(within(resultCard()).getByText('Check uptime')).toBeTruthy()
     const output = screen.getByText(/up 3 days/)
     expect(output.tagName).toBe('PRE')
     expect(output.textContent).toContain('Uptime')
@@ -266,7 +272,7 @@ describe('KnowledgeExecutionPanel', () => {
       </BitsentryServicesProvider>,
     )
 
-    expect(screen.queryByRole('combobox')).toBeNull()
+    expect(screen.queryByRole('button', { name: new RegExp(`${label('picker.placeholder')}|Check uptime`) })).toBeNull()
     expect(screen.getByText(/up 3 days/)).toBeTruthy()
     const before = runbooks.getExecution.mock.calls.length
     await tick(2200)
@@ -297,7 +303,7 @@ describe('the integrations rail sources view', () => {
     await tick(5200)
 
     expect(screen.getByText(/up 3 days/)).toBeTruthy()
-    expect(screen.queryByRole('combobox')).toBeNull()
+    expect(screen.queryByRole('button', { name: new RegExp(`${label('picker.placeholder')}|Check uptime`) })).toBeNull()
   })
 
   it('shows no execution panel until a source has been selected', async () => {

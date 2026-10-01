@@ -152,5 +152,14 @@
   "incidents.integrationRail.publicBadge": "Public",
   "incidents.integrationRail.noSources": "When the agent reads a ticket or document, it appears here so you can use it as a source.",
   "incidents.integrationRail.noActions": "When the agent proposes a ticket change, it appears here for your review before anything is written.",
-  "incidents.integrationRail.selectAction": "Select a ticket action to review its full proposal."
+  "incidents.integrationRail.selectAction": "Select a ticket action to review its full proposal.",
+  "incidents.knowledge.picker.placeholder": "Choose a saved runbook",
+  "incidents.knowledge.picker.hint": "Selecting one only shows its steps. Nothing runs until you approve.",
+  "incidents.knowledge.picker.searchLabel": "Search saved runbooks",
+  "incidents.knowledge.picker.searchPlaceholder": "Search by title or ID",
+  "incidents.knowledge.picker.loading": "Loading saved runbooks…",
+  "incidents.knowledge.picker.empty": "No saved runbooks yet. Create one in Runbooks.",
+  "incidents.knowledge.picker.noMatch": "No runbook matches “{{query}}”.",
+  "incidents.knowledge.picker.count": "{{shown}} of {{total}} runbooks",
+  "incidents.knowledge.picker.id": "ID {{id}}"
 }

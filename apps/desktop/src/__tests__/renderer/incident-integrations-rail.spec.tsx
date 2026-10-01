@@ -198,7 +198,7 @@ describe('the integrations rail beside the Incident chat', () => {
     fireEvent.click(tab('sources'))
     expect(tab('sources').getAttribute('aria-selected')).toBe('true')
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
-    await user.click(await screen.findByRole('combobox', { name: 'incidents.knowledge.runbook' }))
+    await user.click(await screen.findByRole('button', { name: /incidents\.knowledge\.picker\.placeholder/ }))
     await user.click(await screen.findByRole('option', { name: /Check uptime/ }))
     fireEvent.change(screen.getByLabelText('incidents.knowledge.parameters'), { target: { value: '{"host":"db-1"}' } })
 
@@ -223,6 +223,21 @@ describe('the integrations rail beside the Incident chat', () => {
 
     expect(railIsOpen()).toBe(false)
     expect(document.activeElement).toBe(trigger)
+  })
+
+  it('closes an open runbook list on the first Escape and the rail only on the second', async () => {
+    render(<Host resources={resourcesPort({ current: [ticket({ selected: true })] })} />)
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+    fireEvent.click(await sourcesTrigger())
+    await user.click(await screen.findByRole('button', { name: /incidents\.knowledge\.picker\.placeholder/ }))
+    expect(screen.getByRole('listbox')).toBeTruthy()
+
+    await user.keyboard('{Escape}')
+    expect(screen.queryByRole('listbox')).toBeNull()
+    expect(railIsOpen()).toBe(true)
+
+    await user.keyboard('{Escape}')
+    expect(railIsOpen()).toBe(false)
   })
 
   it('shows sources and ticket actions read-only for an archived incident', async () => {
