@@ -161,5 +161,22 @@
   "incidents.knowledge.picker.empty": "No saved runbooks yet. Create one in Runbooks.",
   "incidents.knowledge.picker.noMatch": "No runbook matches “{{query}}”.",
   "incidents.knowledge.picker.count": "{{shown}} of {{total}} runbooks",
-  "incidents.knowledge.picker.id": "ID {{id}}"
+  "incidents.knowledge.picker.id": "ID {{id}}",
+  "incidents.deliveries.title": "Webhook deliveries",
+  "incidents.deliveries.error": "Could not load or reconcile this delivery. Inspect its current state before retrying.",
+  "incidents.deliveries.processing": "Processing",
+  "incidents.deliveries.succeeded": "Succeeded",
+  "incidents.deliveries.failed": "Failed",
+  "incidents.deliveries.uncertain": "Outcome uncertain",
+  "incidents.deliveries.reconciled": "Confirmed remotely",
+  "incidents.deliveries.retry": "Retry state synchronization",
+  "incidents.deliveries.inspect": "Inspect iTop for the original event before confirming. Creation is never retried automatically.",
+  "incidents.deliveries.reconcile": "Verify and link existing ticket",
+  "incidents.deliveries.providerId": "iTop returned ticket ID {{id}}.",
+  "incidents.deliveries.channel.create": "Ticket creation",
+  "incidents.deliveries.channel.changes": "Ticket change from iTop",
+  "incidents.integrationRail.deliveries": "Deliveries",
+  "incidents.integrationRail.deliveriesSubtitle": "{{total}} deliveries · {{attention}} to review",
+  "incidents.integrationRail.attentionShort": "{{attention}} to review",
+  "incidents.integrationRail.noDeliveries": "When iTop reports a change or a ticket is created from a webhook, its delivery appears here."
 }
