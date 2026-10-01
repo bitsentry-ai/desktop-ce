@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { IntegrationWriteRuntime } from '../src/features/plugins'
 import type { DesktopPluginStoredAuthRecord } from '../src/features/plugins'
-import { extractIntegrationResources, refreshLinkedIntegrationResource, StoredIntegrationResources, type IntegrationResource } from '../src/features/plugins/integration-resources'
+import { extractIntegrationResources, readNamesResource, refreshLinkedIntegrationResource, StoredIntegrationResources, type IntegrationResource } from '../src/features/plugins/integration-resources'
 
 const connectionId = '11111111-1111-4111-8111-111111111111'
 const ticket = (overrides: Partial<IntegrationResource> = {}): IntegrationResource => ({
@@ -143,5 +143,29 @@ describe('reading a ticket ID or class from a stored link', () => {
   it('keeps the class the link was stored with when the current mapping differs', () => {
     expect(extractIntegrationResources('thread-1', connection, mapping)).toEqual([])
     expect(extractIntegrationResources('thread-1', connection, mapping, 'Problem')[0]).toMatchObject({ externalId: '42', state: { className: 'Problem' } })
+  })
+})
+
+describe('whether a read answer names the resource', () => {
+  it('recognises an iTop ticket from its key and class, or from the map key alone', () => {
+    const full = { objects: { 'UserRequest::12': { key: '12', class: 'UserRequest', fields: {} } } }
+    const keyedOnly = { objects: { 'UserRequest::12': { code: 0, fields: {} } } }
+
+    expect(readNamesResource('itop', full, '12', 'UserRequest')).toBe(true)
+    expect(readNamesResource('itop', keyedOnly, '12', 'UserRequest')).toBe(true)
+  })
+
+  it('does not accept another ticket, another class, or no object at all', () => {
+    const answer = { objects: { 'UserRequest::12': { key: '12', class: 'UserRequest', fields: {} } } }
+
+    expect(readNamesResource('itop', answer, '13', 'UserRequest')).toBe(false)
+    expect(readNamesResource('itop', answer, '12', 'Problem')).toBe(false)
+    expect(readNamesResource('itop', { objects: null }, '12')).toBe(false)
+  })
+
+  it('recognises an Outline document by its id, wrapped or not, and nothing else', () => {
+    expect(readNamesResource('outline', { data: { id: 'doc-1' } }, 'doc-1')).toBe(true)
+    expect(readNamesResource('outline', { id: 'doc-1' }, 'doc-1')).toBe(true)
+    expect(readNamesResource('outline', { data: { id: 'doc-2' } }, 'doc-1')).toBe(false)
   })
 })

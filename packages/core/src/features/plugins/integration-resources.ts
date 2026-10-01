@@ -147,9 +147,11 @@ export async function refreshLinkedIntegrationResource(input: LinkedResourceInpu
 export function readNamesResource(pluginId: string, data: unknown, externalId: string, className?: unknown): boolean {
   const root = record(data);
   if (pluginId === "itop") {
+    // iTop keys each object as "Class::id" and repeats both inside it; either one identifies the ticket.
     return Object.entries(record(root.objects)).some(([key, value]) => {
       const object = record(value);
-      return text(object.key) === externalId && (className === undefined || (text(object.class) || key.split("::")[0]) === className);
+      const [mapClass, mapId] = key.split("::");
+      return (text(object.key) || mapId) === externalId && (className === undefined || (text(object.class) || mapClass) === className);
     });
   }
   const rows = Array.isArray(root.data) ? root.data : [root.data ?? root];
