@@ -161,5 +161,22 @@
   "incidents.knowledge.picker.empty": "Belum ada runbook tersimpan. Buat satu di Runbooks.",
   "incidents.knowledge.picker.noMatch": "Tidak ada runbook yang cocok dengan “{{query}}”.",
   "incidents.knowledge.picker.count": "{{shown}} dari {{total}} runbook",
-  "incidents.knowledge.picker.id": "ID {{id}}"
+  "incidents.knowledge.picker.id": "ID {{id}}",
+  "incidents.deliveries.title": "Pengiriman webhook",
+  "incidents.deliveries.error": "Tidak dapat memuat atau merekonsiliasi pengiriman. Periksa statusnya sebelum mencoba lagi.",
+  "incidents.deliveries.processing": "Diproses",
+  "incidents.deliveries.succeeded": "Berhasil",
+  "incidents.deliveries.failed": "Gagal",
+  "incidents.deliveries.uncertain": "Hasil belum pasti",
+  "incidents.deliveries.reconciled": "Dikonfirmasi di sistem jarak jauh",
+  "incidents.deliveries.retry": "Coba ulang sinkronisasi status",
+  "incidents.deliveries.inspect": "Periksa iTop untuk peristiwa asli sebelum mengonfirmasi. Pembuatan tidak pernah dicoba ulang secara otomatis.",
+  "incidents.deliveries.reconcile": "Verifikasi dan tautkan tiket yang ada",
+  "incidents.deliveries.providerId": "iTop mengembalikan ID tiket {{id}}.",
+  "incidents.deliveries.channel.create": "Pembuatan tiket",
+  "incidents.deliveries.channel.changes": "Perubahan tiket dari iTop",
+  "incidents.integrationRail.deliveries": "Pengiriman",
+  "incidents.integrationRail.deliveriesSubtitle": "{{total}} pengiriman · {{attention}} perlu diperiksa",
+  "incidents.integrationRail.attentionShort": "{{attention}} perlu diperiksa",
+  "incidents.integrationRail.noDeliveries": "Saat iTop melaporkan perubahan atau tiket dibuat lewat webhook, pengirimannya muncul di sini."
 }

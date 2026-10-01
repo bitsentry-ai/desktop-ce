@@ -27,6 +27,7 @@ import IncidentIntegrationsRail, {
   useIntegrationsRailState,
 } from '@bitsentry-ce/components/investigation/IncidentIntegrationsRail'
 import type { IntegrationOperationsPort } from '@bitsentry-ce/components/investigation/IntegrationActionsView'
+import type { IntegrationDelivery, IntegrationDeliveriesPort } from '@bitsentry-ce/components/investigation/IntegrationDeliveriesView'
 import type { IntegrationResourcesPort } from '@bitsentry-ce/components/investigation/IntegrationSourcesView'
 import { BitsentryServicesProvider } from '@bitsentry-ce/components/services/context'
 import type { BitsentryServicePorts, RunbookRecord } from '@bitsentry-ce/components/services/contracts'
@@ -64,23 +65,27 @@ function operation(overrides: Partial<IntegrationOperation> = {}): IntegrationOp
   }
 }
 const resourcesPort = (rows: { current: IntegrationResource[] }): IntegrationResourcesPort => ({ list: vi.fn(async () => rows.current), select: vi.fn(async () => undefined) })
+const delivery = (overrides: Partial<IntegrationDelivery> = {}): IntegrationDelivery => ({
+  id: '33333333-3333-4333-8333-333333333333', eventId: 'evt-change-0001', channel: 'itop:changes', state: 'failed', externalId: null, updatedAt: '2026-09-30T09:30:00.000Z', ...overrides,
+})
+const deliveriesPort = (rows: { current: IntegrationDelivery[] }): IntegrationDeliveriesPort => ({ list: vi.fn(async () => rows.current), retry: vi.fn(async () => undefined), reconcile: vi.fn(async () => undefined) })
 const operationsPort = (rows: { current: IntegrationOperation[] }): IntegrationOperationsPort => ({ list: vi.fn(async () => rows.current), approve: vi.fn(async () => undefined), cancel: vi.fn(async () => undefined) })
 
 /** An Incident host: its own Runbook rail flag, the two header entry points, the chat composer and the rail. */
-function Host({ resources, operations, runbookOpenAtStart = false, disabled = false }: {
-  resources?: IntegrationResourcesPort; operations?: IntegrationOperationsPort; runbookOpenAtStart?: boolean; disabled?: boolean
+function Host({ resources, operations, deliveries, threadId = 'incident-1', runbookOpenAtStart = false, disabled = false }: {
+  resources?: IntegrationResourcesPort; operations?: IntegrationOperationsPort; deliveries?: IntegrationDeliveriesPort; threadId?: string; runbookOpenAtStart?: boolean; disabled?: boolean
 }) {
   const [runbookOpen, setRunbookOpen] = useState(runbookOpenAtStart)
   const closeRunbookRail = useCallback(() => { setRunbookOpen(false) }, [])
-  const rail = useIntegrationsRailState({ incidentId: 'incident-1', runbookRailOpen: runbookOpen, closeRunbookRail })
+  const rail = useIntegrationsRailState({ incidentId: threadId, runbookRailOpen: runbookOpen, closeRunbookRail })
   return (
     <BitsentryServicesProvider services={services}>
       <button type="button" aria-pressed={runbookOpen} onClick={() => { setRunbookOpen((open) => !open) }}>Runbook Results</button>
       <IntegrationsRailTriggers state={rail} />
       <textarea aria-label="Message" />
       <IncidentIntegrationsRail
-        threadId="incident-1" disabled={disabled} isOpen={rail.open} view={rail.view} focusOnOpen={rail.openedByUser}
-        onViewChange={rail.setView} onClose={rail.close} resources={resources} operations={operations} onSummaryChange={rail.reportSummary}
+        threadId={threadId} disabled={disabled} isOpen={rail.open} view={rail.view} focusOnOpen={rail.openedByUser}
+        onViewChange={rail.setView} onClose={rail.close} resources={resources} operations={operations} deliveries={deliveries} onSummaryChange={rail.reportSummary}
       />
     </BitsentryServicesProvider>
   )
@@ -90,8 +95,9 @@ const railElement = () => document.querySelector('aside') as HTMLElement
 const railIsOpen = () => railElement().getAttribute('aria-hidden') === 'false'
 const runbookButton = () => screen.getByRole('button', { name: 'Runbook Results' })
 const sourcesTrigger = () => screen.findByRole('button', { name: /incidents\.integrationRail\.sources/ })
+const deliveriesTrigger = () => screen.findByRole('button', { name: /incidents\.integrationRail\.deliveries/ })
 const actionsTrigger = () => screen.findByRole('button', { name: /incidents\.integrationRail\.ticketActions/ })
-const tab = (name: 'sources' | 'ticketActions') => screen.getByRole('tab', { name: new RegExp(`incidents\\.integrationRail\\.${name}`) })
+const tab = (name: 'sources' | 'ticketActions' | 'deliveries') => screen.getByRole('tab', { name: new RegExp(`incidents\\.integrationRail\\.${name}`) })
 const tick = (ms: number) => act(async () => { await vi.advanceTimersByTimeAsync(ms) })
 
 beforeEach(() => {
@@ -261,6 +267,72 @@ describe('the integrations rail beside the Incident chat', () => {
 
     expect(screen.getByRole('alert').textContent).toBe('incidents.integrationResources.error')
     expect(screen.getByRole('article')).toBeTruthy()
+  })
+})
+
+describe('webhook deliveries in the rail', () => {
+  it('raises a count on its header entry point for a delivery that needs review without opening the rail', async () => {
+    render(<Host deliveries={deliveriesPort({ current: [delivery(), delivery({ id: 'ok', eventId: 'evt-ok', state: 'succeeded' })] })} />)
+
+    const trigger = await deliveriesTrigger()
+
+    expect(trigger.textContent).toContain('1 to review')
+    expect(railIsOpen()).toBe(false)
+  })
+
+  it('shows the deliveries and their recovery in the rail, and lets the engineer switch to them with the arrow keys', async () => {
+    render(<Host resources={resourcesPort({ current: [ticket()] })} deliveries={deliveriesPort({ current: [delivery()] })} />)
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+    fireEvent.click(await sourcesTrigger())
+
+    tab('sources').focus()
+    await user.keyboard('{ArrowRight}{ArrowRight}')
+
+    expect(tab('deliveries').getAttribute('aria-selected')).toBe('true')
+    expect(document.activeElement).toBe(tab('deliveries'))
+    expect(await screen.findByRole('button', { name: 'incidents.deliveries.retry' })).toBeTruthy()
+    expect(within(railElement()).getByText('1 deliveries · 1 to review')).toBeTruthy()
+  })
+
+  it('has no deliveries view where the client has no deliveries', async () => {
+    render(<Host resources={resourcesPort({ current: [ticket()] })} />)
+    fireEvent.click(await sourcesTrigger())
+
+    expect(screen.queryByRole('tab', { name: /incidents\.integrationRail\.deliveries/ })).toBeNull()
+    expect(screen.queryByRole('button', { name: /incidents\.integrationRail\.deliveries/ })).toBeNull()
+  })
+
+  it('does not let a slow older answer bring back a status that has already moved on', async () => {
+    const answers: Array<(rows: IntegrationDelivery[]) => void> = []
+    const port = deliveriesPort({ current: [] })
+    vi.mocked(port.list).mockImplementation(() => new Promise<IntegrationDelivery[]>((resolve) => { answers.push(resolve) }))
+    render(<Host deliveries={port} />)
+    await tick(5200)
+    expect(answers).toHaveLength(2)
+
+    await act(async () => { answers[1]!([delivery({ state: 'succeeded' })]) })
+    await act(async () => { answers[0]!([delivery({ state: 'failed' })]) })
+
+    const trigger = await deliveriesTrigger()
+    expect(trigger.textContent).not.toContain('to review')
+    fireEvent.click(trigger)
+    expect(screen.queryByRole('button', { name: 'incidents.deliveries.retry' })).toBeNull()
+  })
+
+  it('shows nothing from the previous conversation while the next one loads', async () => {
+    const rail = (threadId: string, deliveries: IntegrationDeliveriesPort) => (
+      <BitsentryServicesProvider services={services}>
+        <IncidentIntegrationsRail threadId={threadId} disabled={false} isOpen view="deliveries" onViewChange={() => undefined} onClose={() => undefined} deliveries={deliveries} />
+      </BitsentryServicesProvider>
+    )
+    const view = render(rail('incident-1', deliveriesPort({ current: [delivery()] })))
+    expect(await screen.findByRole('button', { name: 'incidents.deliveries.retry' })).toBeTruthy()
+
+    const next = deliveriesPort({ current: [] })
+    vi.mocked(next.list).mockImplementation(() => new Promise<IntegrationDelivery[]>(() => undefined))
+    view.rerender(rail('incident-2', next))
+
+    expect(screen.queryByRole('button', { name: 'incidents.deliveries.retry' })).toBeNull()
   })
 })
 

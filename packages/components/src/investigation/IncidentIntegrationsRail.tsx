@@ -1,13 +1,14 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type ElementType, type KeyboardEvent } from "react";
-import { Link2, Plug, Ticket, X } from "lucide-react";
+import { Link2, Plug, Ticket, Webhook, X } from "lucide-react";
 import { useTranslation } from "@bitsentry-ce/i18n";
 import type { IntegrationOperation, IntegrationResource } from "@bitsentry-ce/core/features/plugins";
 import { cn } from "../lib/utils";
 import { useBitsentryServices } from "../services/context";
 import { IntegrationActionsView, type IntegrationOperationsPort } from "./IntegrationActionsView";
+import { IntegrationDeliveriesView, needsReview, type IntegrationDelivery, type IntegrationDeliveriesPort } from "./IntegrationDeliveriesView";
 import { IntegrationSourcesView, type IntegrationResourcesPort } from "./IntegrationSourcesView";
 
-export type IntegrationsRailView = "sources" | "actions";
+export type IntegrationsRailView = "sources" | "actions" | "deliveries";
 
 /** What the Incident host needs from the rail without owning its data: header counts and the requests awaiting approval. */
 export interface IntegrationsRailSummary {
@@ -15,12 +16,15 @@ export interface IntegrationsRailSummary {
   selectedCount: number;
   operationCount: number;
   pendingCount: number;
+  deliveryCount: number;
+  /** Deliveries that failed or whose outcome is unknown. They raise a count on the header entry point and never open the rail. */
+  attentionCount: number;
   /** Operations awaiting approval, sorted; the host notices a new proposal by an ID it has not seen for this incident. */
   pendingIds: string[];
 }
-export const EMPTY_INTEGRATIONS_SUMMARY: IntegrationsRailSummary = { resourceCount: 0, selectedCount: 0, operationCount: 0, pendingCount: 0, pendingIds: [] };
+export const EMPTY_INTEGRATIONS_SUMMARY: IntegrationsRailSummary = { resourceCount: 0, selectedCount: 0, operationCount: 0, pendingCount: 0, deliveryCount: 0, attentionCount: 0, pendingIds: [] };
 const summaryKey = (summary: IntegrationsRailSummary) =>
-  [summary.resourceCount, summary.selectedCount, summary.operationCount, summary.pendingCount, summary.pendingIds.join(",")].join("|");
+  [summary.resourceCount, summary.selectedCount, summary.operationCount, summary.pendingCount, summary.deliveryCount, summary.attentionCount, summary.pendingIds.join(",")].join("|");
 
 export interface IntegrationsRailState {
   open: boolean;
@@ -99,22 +103,22 @@ export function useDesktopIntegrationPorts(): { resources?: IntegrationResources
   }), [plugins]);
 }
 
-function CountPill({ count, pending }: { count: number; pending: number }) {
+function CountPill({ count, pending, attention = 0 }: { count: number; pending: number; attention?: number }) {
   const { t } = useTranslation();
-  if (pending > 0) {
-    return <span className="rounded-full bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-medium text-amber-700 dark:text-amber-400">{t("incidents.integrationRail.pendingShort", { pending })}</span>;
-  }
+  const amber = "rounded-full bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-medium text-amber-700 dark:text-amber-400";
+  if (pending > 0) return <span className={amber}>{t("incidents.integrationRail.pendingShort", { pending })}</span>;
+  if (attention > 0) return <span className={amber}>{t("incidents.integrationRail.attentionShort", { attention })}</span>;
   return <span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px]">{count}</span>;
 }
 
-function RailTrigger({ active, icon: Icon, label, title, count, pending, onClick }: {
-  active: boolean; icon: ElementType; label: string; title: string; count: number; pending: number; onClick(): void;
+function RailTrigger({ active, icon: Icon, label, title, count, pending, attention = 0, onClick }: {
+  active: boolean; icon: ElementType; label: string; title: string; count: number; pending: number; attention?: number; onClick(): void;
 }) {
   return <button type="button" aria-pressed={active} title={title} onClick={onClick}
     className={cn("flex items-center gap-1.5 rounded-md border border-border px-2 py-1 text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring", active ? "bg-muted text-foreground" : "hover:bg-muted")}>
     <Icon size={12} aria-hidden="true" />
     {label}
-    <CountPill count={count} pending={pending} />
+    <CountPill count={count} pending={pending} attention={attention} />
   </button>;
 }
 
@@ -124,6 +128,7 @@ export function IntegrationsRailTriggers({ state }: { state: IntegrationsRailSta
   const { summary } = state;
   const sourcesActive = state.open && state.view === "sources";
   const actionsActive = state.open && state.view === "actions";
+  const deliveriesActive = state.open && state.view === "deliveries";
   return <>
     {(summary.resourceCount > 0 || sourcesActive) && <RailTrigger active={sourcesActive} icon={Link2} label={t("incidents.integrationRail.sources")}
       title={t("incidents.integrationRail.sourcesSubtitle", { linked: summary.resourceCount, selected: summary.selectedCount })}
@@ -131,6 +136,9 @@ export function IntegrationsRailTriggers({ state }: { state: IntegrationsRailSta
     {(summary.operationCount > 0 || actionsActive) && <RailTrigger active={actionsActive} icon={Ticket} label={t("incidents.integrationRail.ticketActions")}
       title={t("incidents.integrationRail.actionsSubtitle", { total: summary.operationCount, pending: summary.pendingCount })}
       count={summary.operationCount} pending={summary.pendingCount} onClick={() => { state.toggle("actions"); }} />}
+    {(summary.deliveryCount > 0 || deliveriesActive) && <RailTrigger active={deliveriesActive} icon={Webhook} label={t("incidents.integrationRail.deliveries")}
+      title={t("incidents.integrationRail.deliveriesSubtitle", { total: summary.deliveryCount, attention: summary.attentionCount })}
+      count={summary.deliveryCount} pending={0} attention={summary.attentionCount} onClick={() => { state.toggle("deliveries"); }} />}
   </>;
 }
 
@@ -138,17 +146,24 @@ function usePolledRows<T>(threadId: string, port: { list(threadId: string): Prom
   const [rows, setRows] = useState<T[]>([]);
   const [failed, setFailed] = useState(false);
   const activeRef = useRef(true);
+  const latestRequestRef = useRef(0);
   const refresh = useCallback(async () => {
     if (port === undefined) return;
+    // Refreshes overlap (the timer, a decision, a recovery). Only the newest answer may replace what is shown, or a slow
+    // older one would bring back a status that has already moved on, together with its controls.
+    const request = ++latestRequestRef.current;
     try {
       const next = await port.list(threadId);
-      if (activeRef.current) { setRows(next); setFailed(false); }
+      if (activeRef.current && request === latestRequestRef.current) { setRows(next); setFailed(false); }
     } catch {
-      if (activeRef.current) setFailed(true);
+      if (activeRef.current && request === latestRequestRef.current) setFailed(true);
     }
   }, [port, threadId]);
   useEffect(() => {
     activeRef.current = true;
+    // Rows belong to one conversation: show nothing from the previous one while the new list loads.
+    setRows([]);
+    setFailed(false);
     void refresh();
     const timer = setInterval(() => { void refresh(); }, intervalMs);
     return () => { activeRef.current = false; clearInterval(timer); };
@@ -157,14 +172,14 @@ function usePolledRows<T>(threadId: string, port: { list(threadId: string): Prom
   return { rows, failed, refresh, fail };
 }
 
-function ViewTab({ id, panelId, active, label, count, pending, onSelect }: {
-  id: string; panelId: string; active: boolean; label: string; count: number; pending: number; onSelect(): void;
+function ViewTab({ id, panelId, active, label, count, pending, attention = 0, onSelect }: {
+  id: string; panelId: string; active: boolean; label: string; count: number; pending: number; attention?: number; onSelect(): void;
 }) {
   return <button type="button" role="tab" id={id} aria-selected={active} aria-controls={panelId} onClick={onSelect}
     className={cn("flex flex-1 items-center justify-center gap-1.5 rounded-xl border px-3 py-1.5 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
       active ? "border-primary bg-primary/5 text-foreground" : "border-transparent text-muted-foreground hover:bg-muted/40 hover:text-foreground")}>
     {label}
-    <CountPill count={count} pending={pending} />
+    <CountPill count={count} pending={pending} attention={attention} />
   </button>;
 }
 
@@ -173,7 +188,7 @@ function ViewTab({ id, panelId, active, label, count, pending, onSelect }: {
  * ticket actions with their approvals in the other. Both views stay mounted, so switching keeps a half-filled review or
  * a selected operation. The host keys it by incident and decides when it is open.
  */
-export default function IncidentIntegrationsRail({ isOpen, view, focusOnOpen = false, onViewChange, onClose, threadId, disabled, resources, operations, onSummaryChange }: {
+export default function IncidentIntegrationsRail({ isOpen, view, focusOnOpen = false, onViewChange, onClose, threadId, disabled, resources, operations, deliveries, onSummaryChange }: {
   isOpen: boolean;
   view: IntegrationsRailView;
   focusOnOpen?: boolean;
@@ -183,6 +198,7 @@ export default function IncidentIntegrationsRail({ isOpen, view, focusOnOpen = f
   disabled: boolean;
   resources?: IntegrationResourcesPort;
   operations?: IntegrationOperationsPort;
+  deliveries?: IntegrationDeliveriesPort;
   onSummaryChange?(summary: IntegrationsRailSummary): void;
 }) {
   const { t } = useTranslation();
@@ -191,11 +207,14 @@ export default function IncidentIntegrationsRail({ isOpen, view, focusOnOpen = f
   const returnFocusRef = useRef<HTMLElement | null>(null);
   const sources = usePolledRows<IntegrationResource>(threadId, resources, 5000);
   const actions = usePolledRows<IntegrationOperation>(threadId, operations, 2500);
+  const deliveryRows = usePolledRows<IntegrationDelivery>(threadId, deliveries, 5000);
   const selectedCount = sources.rows.filter((row) => row.selected === true).length;
   const pendingIds = useMemo(() => actions.rows.filter((row) => row.status === "proposed").map((row) => row.id).sort(), [actions.rows]);
+  const attentionCount = deliveryRows.rows.filter(needsReview).length;
   const summary = useMemo<IntegrationsRailSummary>(() => ({
-    resourceCount: sources.rows.length, selectedCount, operationCount: actions.rows.length, pendingCount: pendingIds.length, pendingIds,
-  }), [actions.rows.length, pendingIds, selectedCount, sources.rows.length]);
+    resourceCount: sources.rows.length, selectedCount, operationCount: actions.rows.length, pendingCount: pendingIds.length,
+    deliveryCount: deliveryRows.rows.length, attentionCount, pendingIds,
+  }), [actions.rows.length, attentionCount, deliveryRows.rows.length, pendingIds, selectedCount, sources.rows.length]);
   useEffect(() => { onSummaryChange?.(summary); }, [onSummaryChange, summary]);
 
   useEffect(() => {
@@ -218,16 +237,21 @@ export default function IncidentIntegrationsRail({ isOpen, view, focusOnOpen = f
   const handleKeyDown = (event: KeyboardEvent<HTMLElement>) => {
     if (event.key === "Escape" && !event.defaultPrevented) { event.preventDefault(); onClose(); }
   };
+  const views: IntegrationsRailView[] = deliveries === undefined ? ["sources", "actions"] : ["sources", "actions", "deliveries"];
   const handleTabListKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
-    const next: IntegrationsRailView = view === "sources" ? "actions" : "sources";
+    const step = event.key === "ArrowRight" ? 1 : -1;
+    const next = views[(views.indexOf(view) + step + views.length) % views.length]!;
     event.preventDefault();
     onViewChange(next);
     document.getElementById(tabId(next))?.focus();
   };
-  const subtitle = view === "sources"
-    ? t("incidents.integrationRail.sourcesSubtitle", { linked: summary.resourceCount, selected: summary.selectedCount })
-    : t("incidents.integrationRail.actionsSubtitle", { total: summary.operationCount, pending: summary.pendingCount });
+  const subtitles: Record<IntegrationsRailView, string> = {
+    sources: t("incidents.integrationRail.sourcesSubtitle", { linked: summary.resourceCount, selected: summary.selectedCount }),
+    actions: t("incidents.integrationRail.actionsSubtitle", { total: summary.operationCount, pending: summary.pendingCount }),
+    deliveries: t("incidents.integrationRail.deliveriesSubtitle", { total: summary.deliveryCount, attention: summary.attentionCount }),
+  };
+  const subtitle = subtitles[view];
 
   return <aside ref={asideRef} tabIndex={-1} data-tour="incidents-integrations-rail" aria-label={t("incidents.integrationRail.title")} aria-hidden={!isOpen} inert={!isOpen} onKeyDown={handleKeyDown}
     className={cn("absolute inset-y-0 right-0 z-20 flex w-full max-w-[430px] flex-col border-l border-border bg-background/95 shadow-2xl outline-none backdrop-blur transition-transform duration-300", isOpen ? "translate-x-0" : "translate-x-full")}>
@@ -245,6 +269,7 @@ export default function IncidentIntegrationsRail({ isOpen, view, focusOnOpen = f
     <div role="tablist" aria-label={t("incidents.integrationRail.views")} onKeyDown={handleTabListKeyDown} className="flex gap-1 border-b border-border px-4 py-2">
       <ViewTab id={tabId("sources")} panelId={panelId("sources")} active={view === "sources"} label={t("incidents.integrationRail.sources")} count={summary.resourceCount} pending={0} onSelect={() => { onViewChange("sources"); }} />
       <ViewTab id={tabId("actions")} panelId={panelId("actions")} active={view === "actions"} label={t("incidents.integrationRail.ticketActions")} count={summary.operationCount} pending={summary.pendingCount} onSelect={() => { onViewChange("actions"); }} />
+      {deliveries !== undefined && <ViewTab id={tabId("deliveries")} panelId={panelId("deliveries")} active={view === "deliveries"} label={t("incidents.integrationRail.deliveries")} count={summary.deliveryCount} pending={0} attention={summary.attentionCount} onSelect={() => { onViewChange("deliveries"); }} />}
     </div>
     <div role="tabpanel" id={panelId("sources")} aria-labelledby={tabId("sources")} className={cn("min-h-0 flex-1 overflow-y-auto px-4 py-4", view === "sources" ? "block" : "hidden")}>
       <IntegrationSourcesView threadId={threadId} rows={sources.rows} failed={sources.failed} disabled={disabled} onSelect={selectResource} />
@@ -254,5 +279,8 @@ export default function IncidentIntegrationsRail({ isOpen, view, focusOnOpen = f
         ? <p className="px-4 py-4 text-sm text-muted-foreground">{t("incidents.integrationRail.noActions")}</p>
         : <IntegrationActionsView threadId={threadId} rows={actions.rows} failed={actions.failed} disabled={disabled} service={operations} onRefresh={actions.refresh} />}
     </div>
+    {deliveries !== undefined && <div role="tabpanel" id={panelId("deliveries")} aria-labelledby={tabId("deliveries")} className={cn("min-h-0 flex-1 overflow-y-auto px-4 py-4", view === "deliveries" ? "block" : "hidden")}>
+      <IntegrationDeliveriesView threadId={threadId} rows={deliveryRows.rows} failed={deliveryRows.failed} disabled={disabled} service={deliveries} onRefresh={deliveryRows.refresh} />
+    </div>}
   </aside>;
 }
