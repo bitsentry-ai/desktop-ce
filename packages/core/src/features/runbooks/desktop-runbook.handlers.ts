@@ -547,6 +547,11 @@ export function createDesktopRunbookHandlers(
       ) {
         incidentThreadId = triggerContext.incidentThreadId;
       }
+      if (input.expectedRevisionNumber !== undefined && runbookGateway === undefined) {
+        // Without a gateway the stored revision is the only thing to check: a run must be the one that was reviewed.
+        const current = await store.getRunbookOrThrow(runbookId);
+        if (current.revisionNumber !== input.expectedRevisionNumber) throw new Error("The runbook changed after it was reviewed. Review the current revision before running it.");
+      }
       const result = runbookGateway === undefined
         ? await executionService.start(runbookId, {
             incidentThreadId,
@@ -556,6 +561,7 @@ export function createDesktopRunbookHandlers(
           })
         : await runbookGateway.start({
             runbookId,
+            expectedRevisionNumber: typeof input.expectedRevisionNumber === "number" ? input.expectedRevisionNumber : undefined,
             requestKey: asString(
               input.requestKey,
               `gui:${crypto.randomUUID()}`,
