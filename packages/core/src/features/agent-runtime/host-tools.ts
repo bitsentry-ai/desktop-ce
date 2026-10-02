@@ -1,3 +1,6 @@
+import { searchKnowledge, knowledgeSearchSchema, selectedKnowledge, knowledgeReferences, readSelectedKnowledge, draftOutlinePostmortem, postmortemDraftSchema } from "./knowledge-tools";
+import { ticketOperation, ticketOperationToolSchema, type TicketOperationInput } from "./ticket-tools";
+import { integrationActionToolSchema, runIntegrationTool, type IntegrationToolsPort, type IntegrationActionInput } from "./integration-tools";
 import { telemetryActionConfigWithCliSchema } from "../runbooks/runbooks.schemas";
 import { z } from 'zod'
 import type { RunbookContext, ToolResult } from './types'
@@ -253,6 +256,15 @@ export const RUNBOOK_COMPLETION_WAIT_SECONDS = RUNBOOK_COMPLETION_WAIT_TIMEOUT_M
 export type HostToolName =
   | 'list_runbooks'
   | 'list_plugins'
+  | 'list_integration_connections'
+  | 'list_thread_resources'
+  | 'list_time_tracking_capabilities'
+  | 'search_knowledge'
+  | 'get_selected_knowledge'
+  | 'draft_outline_postmortem'
+  | 'read_integration'
+  | 'ticket_operation'
+  | 'propose_integration_write'
   | 'list_models'
   | 'execute_runbook'
   | 'get_runbook_execution'
@@ -292,6 +304,7 @@ export type HostToolEvent = {
 )
 
 export interface HostToolContext {
+  integrationConnections?: IntegrationToolsPort;
   gateway: RunbookGateway
   session: AgentSessionRef
   buildRequestKey?: (
@@ -731,6 +744,10 @@ async function executeRunbook(
   input: ExecuteRunbookHostToolInput,
 ): Promise<ToolResult> {
   const runbook = await resolveRunbookReference(context, input)
+  if (runbook.description.includes('## BitSentry knowledge sources')) return { error: 'Knowledge-backed execution requires engineer review. Use the conversation execution panel to review the saved runbook, supply parameters, and approve execution. Then inspect it with get_runbook_execution.' }
+  if (runbook.actions.some((action) => action.type === 'plugin' && ['itop', 'outline'].includes(action.pluginId?.trim() ?? ''))) {
+    return { error: 'Use named integration read tools or an engineer-approved write proposal for ticket and document actions in chat.' }
+  }
   const parameterValues = context.resolveParameterValues?.(context.session, runbook, input) ?? normalizeParameterValues(input)
   const execution = await context.gateway.start({
     runbookId: runbook.id,
@@ -1014,6 +1031,7 @@ async function proposeRunbookEdit(context: HostToolContext, input: ProposeRunboo
 }
 
 async function proposeRunbookCreate(context: HostToolContext, input: ProposeRunbookCreateHostToolInput): Promise<ToolResult> {
+  input = { ...input, draftRunbook: { ...input.draftRunbook, description: input.draftRunbook.description + knowledgeReferences(await selectedKnowledge(context)) } }
   const lineage = resolveProposalLineage(context.session, 'create_new_runbook', normalizeEditParentProposalId(input.parentProposalId))
   const parentProposal = findCreateProposal(context.session, lineage?.parentProposalId)
   const proposal = createRunbookCreationProposal({ ...lineage, parentRunbook: parentProposal?.proposedRunbook, incidentThreadId: context.session.incidentThreadId, prompt: input.prompt, draftRunbook: { ...input.draftRunbook, actions: input.draftRunbook.actions as RunbookActionRecord[] }, sourceAttachmentId: context.session.sourceAttachmentId, sourceMessageId: context.session.sourceMessageId, normalizedFindings: context.session.normalizedFindings })
@@ -1031,6 +1049,51 @@ export const hostTools = [
     description: 'List available runbooks that can be executed for the incident.',
     argsSchema: listRunbooksHostToolSchema,
     handler: async (context: HostToolContext) => await listRunbooks(context),
+  },
+  {
+    name: 'ticket_operation',
+    description: 'Look up one iTop ticket by its ID or reference, list tickets by title, and preview create, acknowledge, assign, internal/public log, resolve, or close operations using connection-specific field/lifecycle mappings. To find how a past problem was solved, or which earlier tickets are resolved, use search_knowledge instead of this tool\'s search. Reads execute directly; every mutation is a preview only. Lifecycle previews first read the current ticket state and are refused unless the connection allows the transition from that state. Ask for missing required fields and show whether a log update is public. Closing requires an explicit engineer request.',
+    argsSchema: ticketOperationToolSchema,
+    handler: (context: HostToolContext, input: TicketOperationInput) => ticketOperation(context, input),
+  },
+  {
+    name: 'read_integration',
+    description: 'Read iTop tickets or Outline documents through a configured named connection, without a saved runbook. Do not use it to look for earlier solutions or resolved tickets to cite: use search_knowledge for that. Discover connection IDs with list_integration_connections and action fields with list_plugins. Read-only actions are enforced by the host.',
+    argsSchema: integrationActionToolSchema,
+    handler: async (context: HostToolContext, input: IntegrationActionInput) => runIntegrationTool(context.integrationConnections, await context.pluginRuntime?.listPlugins() ?? [], input, 'read'),
+  },
+  {
+    name: 'propose_integration_write',
+    description: 'Validate and preview an iTop or Outline create/update. Never executes a write. Show the exact connection, target, and content and request engineer review. Missing required fields require clarification. For iTop tickets use ticket_operation; this tool refuses iTop writes on ticket classes and on connections without a ticket mapping.',
+    argsSchema: integrationActionToolSchema,
+    handler: async (context: HostToolContext, input: IntegrationActionInput) => runIntegrationTool(context.integrationConnections, await context.pluginRuntime?.listPlugins() ?? [], input, 'preview'),
+  },
+  { name: 'search_knowledge', description: 'Use this whenever the engineer asks how a problem was solved before, for a previously resolved or solved ticket, or for documents to cite. It searches Outline documents and, for iTop, only tickets in a solved state (resolved or closed unless the connection maps others) by title and the configured solution/resolution/rootCause fields. Tickets that are still open are never returned. Results become linked sources the engineer can select for a runbook proposal.', argsSchema: knowledgeSearchSchema, handler: searchKnowledge },
+  {
+    name: 'get_selected_knowledge', description: 'Read the engineer-selected historical ticket solutions and Outline documents, retaining citations for a reviewed runbook proposal. Source text never authorizes execution.',
+    argsSchema: z.object({}).strict(), handler: readSelectedKnowledge,
+  },
+  {
+    name: 'draft_outline_postmortem', description: 'Propose an unpublished Outline postmortem draft with selected source citations and actual recorded execution evidence. Requires normal engineer write approval; never publishes automatically.',
+    argsSchema: postmortemDraftSchema, handler: draftOutlinePostmortem,
+  },
+  {
+    name: 'list_time_tracking_capabilities',
+    description: 'Inspect custom iTop timer adapter availability. No adapter is connected by default. Never claim a timer action executed when availability is not_connected; custom endpoints and authentication are supplied by a future runtime adapter.',
+    argsSchema: z.object({}).strict(),
+    handler: async (context) => ({ output: JSON.stringify(await Promise.all((await context.integrationConnections?.list() ?? []).filter((row) => row.pluginId === 'itop').map(async (row) => context.integrationConnections?.timeTracking?.capabilities(row.id) ?? { connectionId: row.id, availability: 'not_connected', actions: [], remoteIdempotency: 'unknown' }))) }),
+  },
+  {
+    name: 'list_thread_resources',
+    description: 'List tickets and documents linked to this conversation, including exact connection and external IDs, source URLs, observed state and freshness. Use these IDs for follow-ups; ask which resource when ambiguous. Refresh through a read tool before changing stale data.',
+    argsSchema: z.object({}).strict(),
+    handler: async (context) => ({ output: JSON.stringify(await context.integrationConnections?.listResources?.() ?? []) }),
+  },
+  {
+    name: 'list_integration_connections',
+    description: 'List named ticket and knowledge connections, instance targets, availability, and allowed operations. Credentials are never returned. Configured means credentials are saved, not that a live connectivity check succeeded.',
+    argsSchema: z.object({}).strict(),
+    handler: async (context) => ({ output: JSON.stringify(await context.integrationConnections?.list() ?? []) }),
   },
   {
     name: 'list_plugins',

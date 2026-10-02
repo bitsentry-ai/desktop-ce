@@ -7,8 +7,9 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { runAfterPack } from "../../packages/desktop-cli/dist/packaging/after-pack.js";
 
-const projectRoot = fileURLToPath(
-  new URL("../../apps/desktop/", import.meta.url),
+const projectRoot = path.resolve(
+  process.env.BITSENTRY_KEYRING_PACKAGING_PROJECT_ROOT ??
+    fileURLToPath(new URL("../../apps/desktop/", import.meta.url)),
 );
 const require = createRequire(import.meta.url);
 const suffixes = { darwin: "", linux: "-gnu", win32: "-msvc" };

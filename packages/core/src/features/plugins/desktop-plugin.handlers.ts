@@ -1,4 +1,9 @@
+import { linkedResourceInputSchema } from "./integration-resources";
+import { z } from "zod";
+import { integrationConnectionInputSchema } from "./integration-connections";
+import { isInternalStoredAuthKey } from "./integration-store-keys";
 import type {
+  DesktopPluginDescriptor,
   DesktopPluginExecutionRequest,
   DesktopPluginFieldType,
   DesktopPluginInstallFromArtifactRequest,
@@ -21,6 +26,13 @@ function asPayloadRecord(payload: unknown): Record<string, unknown> {
   }
 
   return {};
+}
+
+/** Stored-auth handlers take a caller-chosen id; internal BitSentry records are off limits. */
+function readStoredAuthPluginId(payload: unknown): string {
+  const pluginId = readRequiredPluginId(payload);
+  if (isInternalStoredAuthKey(pluginId)) throw new Error("This storage id is reserved.");
+  return pluginId;
 }
 
 function readRequiredPluginId(payload: unknown): string {
@@ -62,6 +74,18 @@ function readAuthRecord(payload: unknown): Record<string, unknown> {
   }
 
   return {};
+}
+
+function publicStoredAuth(
+  plugin: DesktopPluginDescriptor,
+  values: DesktopPluginStoredAuthRecord,
+): DesktopPluginStoredAuthRecord {
+  const result: DesktopPluginStoredAuthRecord = {};
+  for (const field of plugin.auth.fields) {
+    if (field.secret === true || values[field.key] === undefined) continue;
+    result[field.key] = values[field.key];
+  }
+  return result;
 }
 
 function normalizeStringAuthValue(
@@ -174,6 +198,40 @@ export function createDesktopPluginHandlers(
   storedAuthStore: DesktopPluginStoredAuthStore = NOOP_DESKTOP_PLUGIN_STORED_AUTH_STORE,
 ): Record<string, (payload: unknown) => Promise<unknown>> {
   return {
+    "plugins:selectResource": async (payload) => {
+      const input = z.object({ threadId: z.string().min(1), connectionId: z.uuid(), resourceType: z.enum(["ticket", "document"]), externalId: z.string().min(1).max(200), selected: z.boolean() }).strict().parse(payload);
+      await service.getIntegrationResources().select(input.threadId, input.connectionId, input.resourceType, input.externalId, input.selected);
+      return { ok: true };
+    },
+    "plugins:refreshResource": (payload) => service.refreshIntegrationResource(linkedResourceInputSchema.parse(payload)),
+    "plugins:listResources": (payload) => service.refreshIntegrationResources(z.object({ threadId: z.string().min(1) }).strict().parse(payload).threadId),
+    "plugins:renewOperation": (payload) => {
+      const input = z.object({ threadId: z.string().min(1), id: z.uuid() }).strict().parse(payload);
+      return service.getIntegrationOperations().renew(input.threadId, input.id);
+    },
+    "plugins:reconcileOperation": (payload) => {
+      const input = z.object({ threadId: z.string().min(1), id: z.uuid(), applied: z.boolean(), confirmed: z.boolean(), externalId: z.string().min(1).max(200).optional() }).strict().parse(payload);
+      return service.getIntegrationOperations().reconcile(input.threadId, input.id, input.applied, input.confirmed, input.externalId);
+    },
+    "plugins:listOperations": (payload) => service.getIntegrationOperations().list(z.object({ threadId: z.string().min(1) }).parse(payload).threadId),
+    "plugins:approveOperation": (payload) => {
+      const input = z.object({ threadId: z.string().min(1), id: z.uuid(), closeRequested: z.boolean().default(false) }).strict().parse(payload);
+      return service.getIntegrationOperations().approve(input.threadId, input.id, input.closeRequested);
+    },
+    "plugins:cancelOperation": (payload) => {
+      const input = z.object({ threadId: z.string().min(1), id: z.uuid() }).strict().parse(payload);
+      return service.getIntegrationOperations().cancel(input.threadId, input.id);
+    },
+    "plugins:listConnections": () => service.listIntegrationConnections(),
+    "plugins:saveConnection": async (payload) => {
+      await service.saveIntegrationConnection(integrationConnectionInputSchema.parse(payload));
+      return { ok: true };
+    },
+    "plugins:removeConnection": async (payload) => {
+      const id = (payload as { id: string }).id;
+      await service.removeIntegrationConnection(id);
+      return { ok: true };
+    },
     "plugins:list": () => Promise.resolve({
       data: service.listPlugins(),
     }),
@@ -182,17 +240,18 @@ export function createDesktopPluginHandlers(
 
       return Promise.resolve(service.getPlugin(pluginId));
     },
-    "plugins:getStoredAuth": (payload) => {
-      const pluginId = readRequiredPluginId(payload);
+    "plugins:getStoredAuth": async (payload) => {
+      const pluginId = readStoredAuthPluginId(payload);
 
-      if (service.getPlugin(pluginId) === null) {
+      const plugin = service.getPlugin(pluginId);
+      if (plugin === null) {
         throw new Error(`Unknown plugin: ${pluginId}`);
       }
 
-      return storedAuthStore.get(pluginId);
+      return publicStoredAuth(plugin, await storedAuthStore.get(pluginId));
     },
-    "plugins:updateStoredAuth": (payload) => {
-      const pluginId = readRequiredPluginId(payload);
+    "plugins:updateStoredAuth": async (payload) => {
+      const pluginId = readStoredAuthPluginId(payload);
 
       const plugin = service.getPlugin(pluginId);
       if (plugin === null) {
@@ -202,6 +261,12 @@ export function createDesktopPluginHandlers(
       const auth = readAuthRecord(payload);
       const allowedKeys = new Set(plugin.auth.fields.map((field) => field.key));
       const normalized: DesktopPluginStoredAuthRecord = {};
+      const existing = await storedAuthStore.get(pluginId);
+      for (const field of plugin.auth.fields) {
+        if (field.secret === true && existing[field.key] !== undefined) {
+          normalized[field.key] = existing[field.key];
+        }
+      }
       for (const [key, value] of Object.entries(auth)) {
         if (!allowedKeys.has(key)) {
           continue;
@@ -218,10 +283,13 @@ export function createDesktopPluginHandlers(
         }
       }
 
-      return storedAuthStore.set(pluginId, normalized);
+      return publicStoredAuth(
+        plugin,
+        await storedAuthStore.set(pluginId, normalized),
+      );
     },
     "plugins:clearStoredAuth": async (payload) => {
-      const pluginId = readRequiredPluginId(payload);
+      const pluginId = readStoredAuthPluginId(payload);
 
       await storedAuthStore.clear(pluginId);
       return { success: true };

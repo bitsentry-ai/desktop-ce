@@ -57,6 +57,42 @@ function createContext(enabledApiProviders?: string): HostToolContext {
 }
 
 describe('host tools', () => {
+  it('returns only credential-free integration connection data to the model', async () => {
+    const context = createContext()
+    context.integrationConnections = {
+      list: async () => [
+        {
+          id: '11111111-1111-4111-8111-111111111111',
+          name: 'Production',
+          pluginId: 'itop',
+          enabled: true,
+          target: 'https://production.itop.example/',
+          authMode: 'token',
+          availability: 'configured',
+          actions: [],
+        },
+        {
+          id: '22222222-2222-4222-8222-222222222222',
+          name: 'Staging',
+          pluginId: 'itop',
+          enabled: true,
+          target: 'https://staging.itop.example/',
+          authMode: 'username_password',
+          availability: 'configured',
+          actions: [],
+        },
+      ],
+    }
+
+    const result = await executeHostTool(context, 'list_integration_connections', {})
+
+    expect(result?.error).toBeUndefined()
+    expect(result?.output).toContain('https://production.itop.example/')
+    expect(result?.output).toContain('https://staging.itop.example/')
+    expect(result?.output).not.toContain('production-secret')
+    expect(result?.output).not.toContain('staging-password')
+  })
+
   it('links conversational runbook proposals into persisted artifact versions', async () => {
     const context = createContext()
     const saveRunbookAuthoringProposal = vi.fn().mockResolvedValue(undefined)
@@ -1149,6 +1185,35 @@ describe('host tools', () => {
       result: { output: expect.stringContaining('runbooks') },
     })
     expect(events[1]?.toolName).toBe(events[0]?.toolName)
+  })
+
+  describe('saved plugin actions for ticket and document integrations', () => {
+    const pluginRunbook = (pluginId: string) => makeRunbook({
+      actions: [{ id: 'action-1', type: 'plugin', title: 'Change a ticket', pluginId, pluginActionId: 'apply_stimulus' } as RunbookRecord['actions'][number]],
+    })
+
+    it.each(['itop', 'outline', ' itop ', 'outline\n', '\titop'])('is refused in chat before anything starts when its plugin id is %j', async (pluginId) => {
+      const start = vi.fn()
+      const context = createContext()
+      context.gateway.listExecutable = vi.fn().mockResolvedValue([pluginRunbook(pluginId)])
+      context.gateway.start = start
+
+      const result = await executeHostTool(context, 'execute_runbook', { runbookId: 'rb-sentry' })
+
+      expect(result?.error).toContain('engineer-approved write proposal')
+      expect(start).not.toHaveBeenCalled()
+    })
+
+    it('still starts a plugin action for another integration', async () => {
+      const start = vi.fn().mockResolvedValue({ executionId: makeExecution().executionId, resultId: 'result-1', execution: makeExecution(), deduplicated: false })
+      const context = createContext()
+      context.gateway.listExecutable = vi.fn().mockResolvedValue([pluginRunbook(' sentry ')])
+      context.gateway.start = start
+
+      await executeHostTool(context, 'execute_runbook', { runbookId: 'rb-sentry' })
+
+      expect(start).toHaveBeenCalledTimes(1)
+    })
   })
 
   it('executes a resolved runbook by title and by id', async () => {
