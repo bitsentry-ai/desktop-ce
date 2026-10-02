@@ -120,11 +120,14 @@ exports.plugin = {
     })
 
     try {
-      await runRunbooksCli(unusedRunbookRuntimeFactory, [
-        'node',
-        'bitsentry',
-        ...args,
-      ], { createPluginCredentialsStore: (directory) => new LocalPluginCredentialsStore(directory, () => testCipher) })
+      await runRunbooksCli(
+        unusedRunbookRuntimeFactory,
+        ['node', 'bitsentry', ...args],
+        {
+          createPluginCredentialsStore: (directory) =>
+            new LocalPluginCredentialsStore(directory, () => testCipher),
+        },
+      )
       return chunks.join('')
     } finally {
       write.mockRestore()

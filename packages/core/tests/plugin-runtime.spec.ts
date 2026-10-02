@@ -158,6 +158,54 @@ describe('DesktopPluginRuntimeService', () => {
     }
   })
 
+  it('rejects a write action called as a read without executing it', async () => {
+    const tempRoot = await mkdtemp(path.join(tmpdir(), 'bitsentry-code-plugin-'))
+
+    try {
+      const pluginRoot = path.join(tempRoot, 'plugins')
+      const writeMarkerPath = path.join(tempRoot, 'write-executed')
+      await writeCodePlugin({
+        root: pluginRoot,
+        pluginId: 'ticket-desk',
+        source: `
+          module.exports = {
+            id: "ticket-desk",
+            name: "Ticket Desk",
+            version: "0.1.0",
+            description: "Fixture plugin with a write action.",
+            auth: { fields: [] },
+            actions: [
+              {
+                id: "update_ticket",
+                title: "Update Ticket",
+                description: "Changes a remote ticket.",
+                riskLevel: "write",
+                fields: [],
+                async execute() {
+                  require("fs").writeFileSync(${JSON.stringify(writeMarkerPath)}, "written");
+                  return { status: 200, summary: "Ticket updated." };
+                },
+              },
+            ],
+          };
+        `,
+      })
+
+      const service = createDesktopNodePluginRuntimeService([pluginRoot])
+
+      await expect(
+        service.executeAction(
+          { pluginId: 'ticket-desk', actionId: 'update_ticket', auth: {}, input: {} },
+          undefined,
+          { requiredRiskLevel: 'read' },
+        ),
+      ).rejects.toThrow('is not a read action')
+      await expect(access(writeMarkerPath)).rejects.toThrow()
+    } finally {
+      await rm(tempRoot, { recursive: true, force: true })
+    }
+  })
+
   it('passes parent operation metadata to local code plugin actions', async () => {
     const tempRoot = await mkdtemp(path.join(tmpdir(), 'bitsentry-plugin-operation-'))
 
@@ -224,7 +272,9 @@ describe('DesktopPluginRuntimeService', () => {
     const artifactRoot = path.resolve(__dirname, '../../../build/plugins')
     const expectedPluginIds = [
       'github',
+      'itop',
       'linux-cve-status',
+      'outline',
       'posthog',
       'sentry',
       'wazuh',
@@ -368,6 +418,100 @@ describe('DesktopPluginRuntimeService', () => {
           region: 'us-east-1',
         },
       })
+    } finally {
+      await rm(tempRoot, { recursive: true, force: true })
+    }
+  })
+
+  it('executes the selected integration connection and returns credential-free descriptors', async () => {
+    const tempRoot = await mkdtemp(path.join(tmpdir(), 'bitsentry-itop-connection-'))
+
+    try {
+      const pluginRoot = path.join(tempRoot, 'plugins')
+      await writeCodePlugin({
+        root: pluginRoot,
+        pluginId: 'itop',
+        source: `
+          module.exports = {
+            id: "itop",
+            name: "iTop",
+            version: "1.0.0",
+            description: "Test integration connection routing.",
+            auth: { fields: [
+              { key: "baseUrl", label: "Base URL", type: "string", required: true },
+              { key: "authToken", label: "API token", type: "string", required: true, secret: true }
+            ] },
+            actions: [{
+              id: "read_target",
+              title: "Read target",
+              description: "Returns the configured target.",
+              riskLevel: "read",
+              fields: [],
+              async execute(context) {
+                return { status: 200, summary: context.auth.baseUrl, data: { target: context.auth.baseUrl } };
+              }
+            }]
+          };
+        `,
+      })
+      const values = new Map<string, DesktopPluginStoredAuthRecord>()
+      values.set('itop', { authToken: 'legacy-default-secret' })
+      const service = createDesktopNodePluginRuntimeService([pluginRoot], {
+        get: async (key) => values.get(key) ?? {},
+        set: async (key, value) => { values.set(key, value); return value },
+        clear: async (key) => { values.delete(key) },
+      })
+      const production = {
+        id: '11111111-1111-4111-8111-111111111111', name: 'Production', pluginId: 'itop' as const,
+        enabled: true, auth: { baseUrl: 'https://production.itop.example', authToken: 'production-secret' },
+      }
+      const staging = {
+        id: '22222222-2222-4222-8222-222222222222', name: 'Staging', pluginId: 'itop' as const,
+        enabled: true, auth: { baseUrl: 'https://staging.itop.example', authToken: 'staging-secret' },
+      }
+      const disabled = {
+        id: '33333333-3333-4333-8333-333333333333', name: 'Disabled', pluginId: 'itop' as const,
+        enabled: false, auth: { baseUrl: 'https://disabled.itop.example', authToken: 'disabled-secret' },
+      }
+      await Promise.all([
+        service.saveIntegrationConnection(production),
+        service.saveIntegrationConnection(staging),
+        service.saveIntegrationConnection(disabled),
+      ])
+      const missingSecret = {
+        id: '44444444-4444-4444-8444-444444444444', name: 'Missing secret', pluginId: 'itop',
+        enabled: true, auth: { baseUrl: 'https://missing.itop.example', authToken: '' },
+      }
+      values.set('bitsentry.integration-connections.v1', {
+        connections: JSON.stringify([production, staging, disabled, missingSecret]),
+      })
+
+      const descriptors = await service.listIntegrationConnections()
+      expect(descriptors.map(({ id, target }) => ({ id, target }))).toEqual([
+        { id: production.id, target: `${production.auth.baseUrl}/` },
+        { id: staging.id, target: `${staging.auth.baseUrl}/` },
+        { id: disabled.id, target: `${disabled.auth.baseUrl}/` },
+        { id: missingSecret.id, target: `${missingSecret.auth.baseUrl}/` },
+      ])
+      expect(descriptors.find(({ id }) => id === missingSecret.id)?.availability).toBe('credentials_missing')
+      expect(JSON.stringify(descriptors)).not.toContain('production-secret')
+      expect(JSON.stringify(descriptors)).not.toContain('staging-secret')
+      expect(JSON.stringify(descriptors)).not.toContain('disabled-secret')
+      expect(JSON.stringify(descriptors)).not.toContain('legacy-default-secret')
+
+      const result = await service.executeIntegrationAction({
+        connectionId: staging.id, actionId: 'read_target', input: {},
+      })
+      expect(result.data).toEqual({ target: staging.auth.baseUrl })
+      await expect(service.executeIntegrationAction({
+        connectionId: disabled.id, actionId: 'read_target', input: {},
+      })).rejects.toThrow('missing or disabled')
+      await expect(service.executeIntegrationAction({
+        connectionId: '55555555-5555-4555-8555-555555555555', actionId: 'read_target', input: {},
+      })).rejects.toThrow('missing or disabled')
+      await expect(service.executeIntegrationAction({
+        connectionId: missingSecret.id, actionId: 'read_target', input: {},
+      })).rejects.toThrow('Missing required auth field: authToken')
     } finally {
       await rm(tempRoot, { recursive: true, force: true })
     }
