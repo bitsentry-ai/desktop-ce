@@ -273,6 +273,7 @@ describe('DesktopPluginRuntimeService', () => {
     const expectedPluginIds = [
       'github',
       'itop',
+      'linux-cve-remediate',
       'linux-cve-status',
       'outline',
       'posthog',
