@@ -1,3 +1,4 @@
+import type { IntegrationConnection, IntegrationConnectionInput } from "./integration-connections";
 import { z, type ZodType } from "zod";
 
 import type {
@@ -280,8 +281,35 @@ export class DesktopPluginRegistry {
   }
 }
 
+export interface DesktopPluginExecutionPolicy {
+  requiredRiskLevel?: "read" | "write";
+  /** A stored-connection run must use this exact target and revision, or it is refused. */
+  expectedConnection?: { target: string; revision?: string };
+}
+
 export class DesktopPluginRuntimeService {
+  async refreshIntegrationResource(_input: import("./integration-resources").LinkedResourceInput): Promise<import("./integration-resources").IntegrationResource> { throw new Error("Resource refresh is unavailable."); }
+
+  refreshIntegrationResources(threadId: string) { return this.getIntegrationResources().list(threadId); }
+  getIntegrationResources(): import("./integration-resources").IntegrationResourceStore { throw new Error("Resource storage is unavailable."); }
+
+  getIntegrationOperations(): import("./integration-operations").IntegrationOperationService { throw new Error("Write approvals are unavailable in this runtime."); }
+
   constructor(protected registry = new DesktopPluginRegistry()) {}
+
+  async listIntegrationConnections(): Promise<IntegrationConnection[]> { return []; }
+
+  async saveIntegrationConnection(_input: IntegrationConnectionInput): Promise<void> {
+    throw new Error("Integration connection storage is not available in this runtime.");
+  }
+
+  async removeIntegrationConnection(_id: string): Promise<void> {
+    throw new Error("Integration connection storage is not available in this runtime.");
+  }
+
+  async executeIntegrationAction(_request: { connectionId: string; actionId: string; input: Record<string, unknown> }, _operation?: DesktopPluginOperationContext, _policy?: DesktopPluginExecutionPolicy): Promise<DesktopPluginExecutionResult> {
+    throw new Error("Integration connection execution is not available in this runtime.");
+  }
 
   listPlugins(): DesktopPluginDescriptor[] {
     return this.registry.list();
@@ -375,6 +403,7 @@ export class DesktopPluginRuntimeService {
   async executeAction(
     input: DesktopPluginExecutionRequest,
     operation?: DesktopPluginOperationContext,
+    policy?: DesktopPluginExecutionPolicy,
   ): Promise<DesktopPluginExecutionResult> {
     const request = desktopPluginExecutionRequestSchema.parse(input);
     const plugin = this.registry.get(request.pluginId);
@@ -386,6 +415,12 @@ export class DesktopPluginRuntimeService {
     if (action === null) {
       throw new Error(
         `Unknown action "${request.actionId}" for plugin "${request.pluginId}"`,
+      );
+    }
+    // Checked on the instance that executes, so a registry reload cannot swap in a different risk level.
+    if (policy?.requiredRiskLevel !== undefined && action.riskLevel !== policy.requiredRiskLevel) {
+      throw new Error(
+        `Action "${request.actionId}" for plugin "${request.pluginId}" is not a ${policy.requiredRiskLevel} action.`,
       );
     }
 
