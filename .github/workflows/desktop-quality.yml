@@ -6,6 +6,7 @@ on:
       - '.github/workflows/desktop-quality.yml'
       - 'apps/**'
       - 'packages/**'
+      - 'scripts/security/**'
       - 'package.json'
       - 'pnpm-lock.yaml'
       - 'pnpm-workspace.yaml'
@@ -69,6 +70,10 @@ jobs:
       # native module ABI. Rebuild only after deterministic Node tests finish.
       - run: pnpm --dir apps/desktop run prepare:native-deps
       - run: pnpm run build
+      - name: Verify target architecture keyring packaging
+        run: |
+          pnpm --filter @bitsentry-ce/desktop run build:cli-bundle
+          node --test scripts/security/keyring-packaging.test.mjs
       - name: Verify cross-process credential coordination
         run: node --test scripts/security/credential-lock.test.mjs
       - name: Run local runbook smoke scenario

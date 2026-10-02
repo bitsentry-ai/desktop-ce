@@ -3,6 +3,11 @@ packages:
   - 'packages/*'
   - 'packages/plugins/*'
   - 'packages/electron-trpc/packages/*'
+supportedArchitectures:
+  cpu:
+    - current
+    - x64
+    - arm64
 overrides:
   '@anthropic-ai/sdk': 0.91.1
   '@xmldom/xmldom': 0.8.13
