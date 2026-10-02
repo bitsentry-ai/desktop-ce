@@ -7,8 +7,8 @@ import { fileURLToPath } from "node:url";
 // through the Desktop workspace or silently resolve new dependency versions.
 const plugins = ["itop", "outline"];
 const operation = process.argv[2] ?? "build";
-if (!["build", "lint", "typecheck"].includes(operation)) {
-  throw new Error("Usage: node scripts/plugins/standalone.mjs build|lint|typecheck");
+if (!["build", "lint", "typecheck", "test"].includes(operation)) {
+  throw new Error("Usage: node scripts/plugins/standalone.mjs build|lint|typecheck|test");
 }
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const pnpmEntry = process.env.npm_execpath;

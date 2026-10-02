@@ -314,8 +314,10 @@ describe('iTop write approval re-checks what may have changed since the preview'
 
   it('refuses an approval when the mapping now names the changed attribute as the ticket state', async () => {
     const { remote, runtime, mapping, service } = itopSetup()
+    // `state` is an ordinary mapped field when the preview is made, and becomes the ticket state attribute afterwards.
+    runtime.connection.ticketMapping = { ...mapping, fields: { ...mapping.fields, state: 'state' } }
     const proposal = await service.propose('thread', { connectionId: itopId, actionId: 'update_object', input: { class: 'UserRequest', id: 12, fields: { state: 'closed' } } }, { ticketOperation: 'internal_log' })
-    runtime.connection.ticketMapping = { ...mapping, statusField: 'state' }
+    runtime.connection.ticketMapping = { ...mapping, fields: { ...mapping.fields, state: 'state' }, statusField: 'state' }
 
     await expect(service.approve('thread', proposal.id, false)).rejects.toThrow('configured lifecycle operation')
     expect(remote.writes).toEqual([])
@@ -360,4 +362,33 @@ it('refuses to propose an Outline update that does not name the revision that wa
   await expect(update({ id: 'doc', text: 'New text' })).rejects.toThrow('revision')
   expect(await service.list('thread')).toEqual([])
   await expect(update({ id: 'doc', text: 'New text', lastRevision: 4 })).resolves.toMatchObject({ status: 'proposed', input: { lastRevision: 4 } })
+})
+
+it('enforces ticket mappings again at the approval boundary for generic writes', async () => {
+  const { service, execute, runtime } = setup()
+  runtime.connection.pluginId = 'itop'
+  runtime.connection.ticketMapping = {
+    className: 'UserRequest', referenceField: 'ref', titleField: 'title', internalLogField: 'private_log', publicLogField: 'public_log',
+    statusField: 'status', solvedStates: ['resolved', 'closed'], fields: { title: 'title', caller: 'caller_id' }, defaults: {},
+    requiredFields: { create: ['title', 'caller'], acknowledge: [], assign: [], internal_log: [], public_log: [], resolve: [], close: [] }, stimuli: {},
+  }
+  runtime.plugin.id = 'itop'
+  runtime.plugin.actions = [{ id: 'create_object', title: 'Create', description: 'Create', riskLevel: 'write', fields: [{ key: 'class', label: 'Class', type: 'string', required: true }, { key: 'fields', label: 'Fields', type: 'json', required: true }] }]
+  const request = { connectionId: runtime.connection.id, actionId: 'create_object', input: { class: 'UserRequest', fields: { title: 'Outage' } } }
+  await expect(service.propose('thread', request)).rejects.toThrow('caller')
+  const proposal = await service.propose('thread', { ...request, input: { ...request.input, fields: { title: 'Outage', caller_id: 42 } } })
+  runtime.connection.ticketMapping.requiredFields.create.push('organization')
+  await expect(service.approve('thread', proposal.id, false)).rejects.toThrow('organization')
+  expect(execute).not.toHaveBeenCalled()
+})
+
+it('does not expire an execution using an observation made before its latest update', async () => {
+  const { propose, store } = setup()
+  const proposal = await propose()
+  const before = '2026-09-26T11:00:00.000Z'
+  const after = '2026-09-26T11:01:00.000Z'
+  await store.transition(proposal.id, 'proposed', { status: 'executing', updatedAt: before })
+  await store.transition(proposal.id, 'executing', { status: 'executing', updatedAt: after })
+  expect(await store.transition(proposal.id, 'executing', { status: 'uncertain', updatedAt: after }, before)).toBe(false)
+  expect((await store.get(proposal.id))?.status).toBe('executing')
 })

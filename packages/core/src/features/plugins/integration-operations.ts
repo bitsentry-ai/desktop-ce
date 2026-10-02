@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { readNamesResource } from "./integration-resources";
 import { buildPluginInputSchema } from "./desktop-plugin-registry";
+import type { ItopTicketMapping } from "./itop-ticket-mapping";
 import type { IntegrationConnection } from "./integration-connections";
 import { ticketWriteOperationSchema } from "./itop-ticket-mapping";
 import { readItopTicketState } from "./itop-ticket-state";
@@ -22,7 +23,7 @@ export interface IntegrationOperationStore {
   list(threadId: string): Promise<IntegrationOperation[]>;
   get(id: string): Promise<IntegrationOperation | null>;
   create(operation: IntegrationOperation): Promise<void>;
-  transition(id: string, expected: IntegrationOperation["status"], patch: Pick<IntegrationOperation, "status" | "updatedAt"> & Partial<Pick<IntegrationOperation, "result" | "message">>): Promise<boolean>;
+  transition(id: string, expected: IntegrationOperation["status"], patch: Pick<IntegrationOperation, "status" | "updatedAt"> & Partial<Pick<IntegrationOperation, "result" | "message">>, expectedUpdatedAt?: string): Promise<boolean>;
 }
 export interface IntegrationWriteRuntime {
   connection: IntegrationConnection;
@@ -59,6 +60,8 @@ function classify(runtime: IntegrationWriteRuntime, request: IntegrationWriteReq
     if (["status", mapping.statusField].some((attribute) => attribute in fields)) throw new Error("Use a configured lifecycle operation to change ticket status.");
     // A lifecycle write must come from the configured operation whose stimulus it carries.
     if (request.actionId === "apply_stimulus" && lifecycleTransition(runtime, ticketOperation)?.stimulus !== request.input.stimulus) throw new Error("This lifecycle transition is not configured.");
+    // Whatever remains must be mapped, and the configured required fields must be present, even if the preview was made earlier.
+    validateTicketFields(mapping, request, fields);
   }
   return {
     publicUpdate: runtime.plugin.id === "outline" || (mapping !== undefined && mapping.publicLogField in fields),
@@ -98,7 +101,7 @@ export class IntegrationOperationService {
     const rows = await this.store.list(threadId);
     for (const row of rows) {
       if (row.status === "executing" && Date.now() - Date.parse(row.updatedAt) > 120_000) {
-        await this.store.transition(row.id, "executing", { status: "uncertain", updatedAt: new Date().toISOString(), message: "Execution has not confirmed completion. Inspect the remote system before recovery." });
+        await this.store.transition(row.id, "executing", { status: "uncertain", updatedAt: new Date().toISOString(), message: "Execution has not confirmed completion. Inspect the remote system before recovery." }, row.updatedAt);
       }
     }
     const current = await this.store.list(threadId);
@@ -244,4 +247,25 @@ function remoteWriteOutcome(result: DesktopPluginExecutionResult): Pick<Integrat
   const reasons: Record<number, string> = { 401: "credentials_rejected", 403: "credentials_rejected", 409: "stale_resource" };
   if (!refused) return { status: "uncertain", result: result.data, message: "The remote system did not confirm success. Inspect the remote resource before retrying." };
   return { status: "failed", result: result.data, message: reasons[result.status] ?? "remote_rejected" };
+}
+
+function validateTicketFields(mapping: ItopTicketMapping, request: IntegrationWriteRequest, fields: Record<string, unknown>) {
+  const operations: Array<keyof ItopTicketMapping["requiredFields"]> = [];
+  if (request.actionId === "create_object") operations.push("create");
+  for (const operation of ["acknowledge", "assign", "resolve", "close"] as const) {
+    if (request.actionId === "apply_stimulus" && request.input.stimulus === mapping.stimuli[operation]?.stimulus) operations.push(operation);
+  }
+  for (const [operation, field] of [["internal_log", mapping.internalLogField], ["public_log", mapping.publicLogField]] as const) {
+    if (field in fields) {
+      operations.push(operation);
+      z.object({ add_item: z.object({ message: z.string().trim().min(1), format: z.literal("text") }).strict() }).strict().parse(fields[field]);
+    }
+  }
+  const allowed = new Set([...Object.values(mapping.fields), mapping.internalLogField, mapping.publicLogField]);
+  if (Object.keys(fields).some((field) => !allowed.has(field))) throw new Error("Use only configured ticket field mappings.");
+  const missing = operations.flatMap((operation) => mapping.requiredFields[operation]).filter((key) => {
+    const value = fields[mapping.fields[key]];
+    return value === undefined || value === null || value === "";
+  });
+  if (missing.length) throw new Error(`Required ticket fields are missing: ${Array.from(new Set(missing)).join(", ")}`);
 }
