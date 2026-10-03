@@ -13,7 +13,7 @@ import { setRuntimeUserDataPath } from '@bitsentry-ce/desktop-cli/runtime/runtim
 
 type BetterSqlite3Constructor = typeof import('better-sqlite3')
 
-const CURRENT_SCHEMA_VERSION = 17
+const CURRENT_SCHEMA_VERSION = 18
 const tempDirectories: string[] = []
 let Database: BetterSqlite3Constructor | undefined
 let nativeModuleWarning: string | undefined
@@ -112,6 +112,17 @@ describeSqliteMigrations('desktop SQLite upgrades', () => {
     expect(retainedRows).toEqual([{ value: 'retained-value' }])
     expect(firstVersions).toEqual(Array.from({ length: CURRENT_SCHEMA_VERSION }, (_, index) => index + 1))
     expect(firstUserVersion[0]?.user_version).toBe(CURRENT_SCHEMA_VERSION)
+    expect(await getDatabase().$queryRawUnsafe(`
+      SELECT name FROM sqlite_master WHERE type = 'table'
+      AND name IN ('IntegrationConnection', 'ExternalResource', 'ResourceLink', 'IntegrationOperation', 'IntegrationDelivery')
+      ORDER BY name
+    `)).toEqual([
+      { name: 'ExternalResource' },
+      { name: 'IntegrationConnection' },
+      { name: 'IntegrationDelivery' },
+      { name: 'IntegrationOperation' },
+      { name: 'ResourceLink' },
+    ])
 
     await closeDatabase()
     await initializeDatabase()
@@ -129,6 +140,11 @@ describeSqliteMigrations('desktop SQLite upgrades', () => {
 
     const sqlite = newDatabase(databasePath)
     sqlite.exec(`
+      DROP TABLE "IntegrationDelivery";
+      DROP TABLE "IntegrationOperation";
+      DROP TABLE "ResourceLink";
+      DROP TABLE "ExternalResource";
+      DROP TABLE "IntegrationConnection";
       DELETE FROM "_MigrationLedger" WHERE "version" = ${String(CURRENT_SCHEMA_VERSION)};
       PRAGMA user_version = ${String(CURRENT_SCHEMA_VERSION - 1)};
     `)
@@ -138,6 +154,9 @@ describeSqliteMigrations('desktop SQLite upgrades', () => {
     expect(await migrationLedgerVersions()).toEqual(
       Array.from({ length: CURRENT_SCHEMA_VERSION }, (_, index) => index + 1),
     )
+    expect(await getDatabase().$queryRawUnsafe(
+      'SELECT "value" FROM "Setting" WHERE "key" = \'retained.setting\'',
+    )).toEqual([{ value: 'retained-value' }])
   })
 
   it('purges failed authoring shells on startup without removing user tombstones', async () => {
