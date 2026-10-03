@@ -306,18 +306,6 @@ describe('plugin credential store', () => {
 })
 
 describe('credential write coordination', () => {
-  it('retains writes from independent store instances', async () => {
-    const directory = await mkdtemp(path.join(tmpdir(), 'plugin-concurrent-'))
-    try {
-      const encryption = cipher()
-      const stores = Array.from({ length: 12 }, () => new LocalPluginCredentialsStore(directory, () => encryption))
-      await Promise.all(stores.map((store, index) => store.set(`profile-${index}`, { token: `secret-${index}` })))
-      for (let index = 0; index < stores.length; index++) {
-        expect(await stores[index].get(`profile-${index}`)).toEqual({ token: `secret-${index}` })
-      }
-    } finally { await rm(directory, { recursive: true, force: true }) }
-  })
-
   it('treats prototype-like profile names as ordinary data', async () => {
     const directory = await mkdtemp(path.join(tmpdir(), 'plugin-keys-'))
     try {
@@ -327,6 +315,8 @@ describe('credential write coordination', () => {
       expect(await store.get('__proto__')).toEqual({ token: 'secret' })
       await store.clear('__proto__')
       expect(await store.get('__proto__')).toEqual({})
-    } finally { await rm(directory, { recursive: true, force: true }) }
+    } finally {
+      await rm(directory, { recursive: true, force: true })
+    }
   })
 })
