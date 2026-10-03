@@ -1,3 +1,5 @@
+import { randomUUID } from 'node:crypto'
+import { LocalPluginCredentialsStore } from '../src/runtime/plugin-credentials-store'
 import { mkdtemp, readFile, rm, writeFile } from 'fs/promises'
 import { tmpdir } from 'os'
 import path from 'path'
@@ -14,6 +16,20 @@ const unusedRunbookRuntimeFactory: RunbookCliRuntimeFactory = () =>
 
 describe('plugin CLI lifecycle', () => {
   const tempRoots: string[] = []
+  // Simulate an injected OS credential provider without storing its key on disk.
+  const protectedValues = new Map<string, string>()
+  const testCipher = {
+    encrypt(value: string) {
+      const id = randomUUID()
+      protectedValues.set(id, value)
+      return id
+    },
+    decrypt(id: string) {
+      const value = protectedValues.get(id)
+      if (value === undefined) throw new Error('Unavailable test credential')
+      return value
+    },
+  }
 
   afterEach(async () => {
     vi.restoreAllMocks()
@@ -22,6 +38,7 @@ describe('plugin CLI lifecycle', () => {
       tempRoots.map((tempRoot) => rm(tempRoot, { recursive: true, force: true })),
     )
     tempRoots.length = 0
+    protectedValues.clear()
   })
 
   async function writePluginArtifact(input: {
@@ -103,11 +120,14 @@ exports.plugin = {
     })
 
     try {
-      await runRunbooksCli(unusedRunbookRuntimeFactory, [
-        'node',
-        'bitsentry',
-        ...args,
-      ])
+      await runRunbooksCli(
+        unusedRunbookRuntimeFactory,
+        ['node', 'bitsentry', ...args],
+        {
+          createPluginCredentialsStore: (directory) =>
+            new LocalPluginCredentialsStore(directory, () => testCipher),
+        },
+      )
       return chunks.join('')
     } finally {
       write.mockRestore()

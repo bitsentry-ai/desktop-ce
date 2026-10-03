@@ -1,4 +1,5 @@
-import { mkdir, readFile, rename, rm, writeFile } from 'fs/promises'
+import { mkdir, readFile, rename, writeFile } from 'fs/promises'
+import { randomUUID } from 'node:crypto'
 import path from 'path'
 
 import type {
@@ -10,7 +11,8 @@ import type {
 import { getRuntimeUserDataPath } from './runtime-paths'
 
 type PluginAuthRecord = {
-  values: DesktopPluginStoredAuthRecord
+  values?: DesktopPluginStoredAuthRecord
+  encryptedValues?: string
   updatedAt: string
 }
 
@@ -20,6 +22,41 @@ type PluginCredentialsFile = {
 }
 
 const STORE_VERSION = 1 as const
+
+export interface PluginCredentialCipher {
+  encrypt(value: string): string
+  decrypt(value: string): string
+}
+
+export function electronPluginCredentialCipher(): PluginCredentialCipher {
+  const unavailable = () =>
+    new Error(
+      'Secure plugin credential storage is unavailable. Open the Desktop app and retry through its local execution host, or configure a secure credential provider.',
+    )
+  try {
+    const electron = require('electron') as {
+      safeStorage?: {
+        isEncryptionAvailable(): boolean
+        getSelectedStorageBackend?(): string
+        encryptString(value: string): Buffer
+        decryptString(value: Buffer): string
+      }
+    }
+    const storage = electron.safeStorage
+    if (
+      !storage?.isEncryptionAvailable() ||
+      (process.platform === 'linux' &&
+        storage.getSelectedStorageBackend?.() === 'basic_text')
+    )
+      throw unavailable()
+    return {
+      encrypt: (value) => storage.encryptString(value).toString('base64'),
+      decrypt: (value) => storage.decryptString(Buffer.from(value, 'base64')),
+    }
+  } catch {
+    throw unavailable()
+  }
+}
 
 function emptyStore(): PluginCredentialsFile {
   return {
@@ -107,7 +144,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 const UNREADABLE_STORE_MESSAGE =
-  'The plugin credential store could not be read. Nothing was changed; fix or restore auth/plugins.json and retry.'
+  'The plugin credential store could not be read because it is corrupt, unsupported, or inaccessible. Nothing was changed; fix or restore auth/plugins.json and retry.'
 
 /**
  * Only a missing file is an empty store. Any other failure must stop the caller: writing on top of an
@@ -129,12 +166,28 @@ async function readStore(storePath: string): Promise<PluginCredentialsFile> {
   } catch {
     throw new Error(UNREADABLE_STORE_MESSAGE)
   }
-  if (!isRecord(parsed) || (parsed.plugins !== undefined && !isRecord(parsed.plugins))) {
+  if (
+    !isRecord(parsed) ||
+    parsed.version !== STORE_VERSION ||
+    !isRecord(parsed.plugins)
+  ) {
     throw new Error(UNREADABLE_STORE_MESSAGE)
+  }
+  for (const record of Object.values(parsed.plugins)) {
+    if (!isRecord(record) || typeof record.updatedAt !== 'string') {
+      throw new Error(UNREADABLE_STORE_MESSAGE)
+    }
+    const plaintext = record.values !== undefined
+    const encrypted =
+      typeof record.encryptedValues === 'string' &&
+      record.encryptedValues.length > 0
+    if (plaintext === encrypted || (plaintext && !isRecord(record.values))) {
+      throw new Error(UNREADABLE_STORE_MESSAGE)
+    }
   }
   return {
     version: STORE_VERSION,
-    plugins: (parsed.plugins ?? {}) as Record<string, PluginAuthRecord>,
+    plugins: parsed.plugins as Record<string, PluginAuthRecord>,
   }
 }
 
@@ -142,7 +195,10 @@ async function readStore(storePath: string): Promise<PluginCredentialsFile> {
 // A second process writing the same file at the same moment is not covered by this lock.
 const storeLocks = new Map<string, Promise<void>>()
 
-async function withStoreLock<T>(storePath: string, task: () => Promise<T>): Promise<T> {
+async function withStoreLock<T>(
+  storePath: string,
+  task: () => Promise<T>,
+): Promise<T> {
   const run = (storeLocks.get(storePath) ?? Promise.resolve()).then(task)
   const tail = run.then(
     () => undefined,
@@ -155,61 +211,101 @@ async function withStoreLock<T>(storePath: string, task: () => Promise<T>): Prom
   return run
 }
 
-async function writeStore(storePath: string, data: PluginCredentialsFile): Promise<void> {
+async function writeStore(
+  storePath: string,
+  data: PluginCredentialsFile,
+): Promise<void> {
   await mkdir(path.dirname(storePath), { recursive: true })
 
   const payload = JSON.stringify(data, null, 2)
-  const tempPath = `${storePath}.tmp-${String(process.pid)}-${String(Date.now())}`
+  const tempPath = `${storePath}.tmp-${randomUUID()}`
   await writeFile(tempPath, payload, { encoding: 'utf-8', mode: 0o600 })
 
-  try {
-    await rename(tempPath, storePath)
-  } catch (error) {
-    if (process.platform === 'win32') {
-      await rm(storePath, { force: true })
-      await rename(tempPath, storePath)
-      return
-    }
-
-    throw error
-  }
+  await rename(tempPath, storePath)
 }
 
 export class LocalPluginCredentialsStore implements DesktopPluginStoredAuthStore {
   private readonly storePath: string
 
-  constructor(userDataPath?: string) {
+  constructor(
+    userDataPath?: string,
+    private readonly cipherFactory: () => PluginCredentialCipher = electronPluginCredentialCipher,
+  ) {
     this.storePath = resolveStorePath(userDataPath)
   }
 
-  async get(pluginId: string): Promise<DesktopPluginStoredAuthRecord> {
-    // Reads wait for in-flight writes: some platforms briefly have no file while a write replaces it.
-    const store = await withStoreLock(this.storePath, () => readStore(this.storePath))
-    const values = store.plugins[pluginId]?.values
-    if (values === undefined) {
-      return {}
+  private decode(
+    record: PluginAuthRecord,
+    cipher: PluginCredentialCipher,
+  ): DesktopPluginStoredAuthRecord {
+    try {
+      const raw: unknown = JSON.parse(cipher.decrypt(record.encryptedValues!))
+      if (raw === null || typeof raw !== 'object' || Array.isArray(raw))
+        throw new Error('Invalid values')
+      return normalizeStoredAuthRecord(raw as DesktopPluginStoredAuthRecord)
+    } catch {
+      throw new Error(
+        'Plugin credentials could not be decrypted. Unlock the system credential store or restore access to the original device key. No data was changed.',
+      )
     }
-
-    return { ...values }
   }
 
-  async set(
+  private encrypt(
+    values: DesktopPluginStoredAuthRecord,
+    cipher: PluginCredentialCipher,
+  ): PluginAuthRecord {
+    const serialized = JSON.stringify(values)
+    const encryptedValues = cipher.encrypt(serialized)
+    if (cipher.decrypt(encryptedValues) !== serialized)
+      throw new Error(
+        'Credential encryption verification failed; no data was changed.',
+      )
+    return { encryptedValues, updatedAt: new Date().toISOString() }
+  }
+
+  private migrate(
+    store: PluginCredentialsFile,
+    cipher: PluginCredentialCipher,
+  ): boolean {
+    let changed = false
+    for (const [id, record] of Object.entries(store.plugins)) {
+      if (record.values === undefined) {
+        this.decode(record, cipher)
+        continue
+      }
+      store.plugins[id] = this.encrypt(
+        normalizeStoredAuthRecord(record.values),
+        cipher,
+      )
+      changed = true
+    }
+    return changed
+  }
+
+  get(pluginId: string): Promise<DesktopPluginStoredAuthRecord> {
+    return withStoreLock(this.storePath, async () => {
+      const store = await readStore(this.storePath)
+      if (!Object.hasOwn(store.plugins, pluginId)) return {}
+      const cipher = this.cipherFactory()
+      if (this.migrate(store, cipher)) await writeStore(this.storePath, store)
+      const record = store.plugins[pluginId]
+      return record === undefined ? {} : this.decode(record, cipher)
+    })
+  }
+
+  set(
     pluginId: string,
     values: DesktopPluginStoredAuthRecord,
   ): Promise<DesktopPluginStoredAuthRecord> {
-    const normalized = normalizeStoredAuthRecord(values)
     return withStoreLock(this.storePath, async () => {
+      const normalized = normalizeStoredAuthRecord(values)
       const store = await readStore(this.storePath)
-
+      const cipher = this.cipherFactory()
+      this.migrate(store, cipher)
       if (Object.keys(normalized).length === 0) {
         store.plugins = removePluginRecord(store.plugins, pluginId)
-        await writeStore(this.storePath, store)
-        return {}
-      }
-
-      store.plugins[pluginId] = {
-        values: normalized,
-        updatedAt: new Date().toISOString(),
+      } else {
+        store.plugins[pluginId] = this.encrypt(normalized, cipher)
       }
       await writeStore(this.storePath, store)
       return { ...normalized }
@@ -219,10 +315,9 @@ export class LocalPluginCredentialsStore implements DesktopPluginStoredAuthStore
   clear(pluginId: string): Promise<void> {
     return withStoreLock(this.storePath, async () => {
       const store = await readStore(this.storePath)
-      if (store.plugins[pluginId] === undefined) {
-        return
-      }
-
+      if (store.plugins[pluginId] === undefined) return
+      const cipher = this.cipherFactory()
+      this.migrate(store, cipher)
       store.plugins = removePluginRecord(store.plugins, pluginId)
       await writeStore(this.storePath, store)
     })

@@ -3,6 +3,7 @@ import { z } from "zod";
 import { integrationConnectionInputSchema } from "./integration-connections";
 import { isInternalStoredAuthKey } from "./integration-store-keys";
 import type {
+  DesktopPluginDescriptor,
   DesktopPluginExecutionRequest,
   DesktopPluginFieldType,
   DesktopPluginInstallFromArtifactRequest,
@@ -73,6 +74,18 @@ function readAuthRecord(payload: unknown): Record<string, unknown> {
   }
 
   return {};
+}
+
+function publicStoredAuth(
+  plugin: DesktopPluginDescriptor,
+  values: DesktopPluginStoredAuthRecord,
+): DesktopPluginStoredAuthRecord {
+  const result: DesktopPluginStoredAuthRecord = {};
+  for (const field of plugin.auth.fields) {
+    if (field.secret === true || values[field.key] === undefined) continue;
+    result[field.key] = values[field.key];
+  }
+  return result;
 }
 
 function normalizeStringAuthValue(
@@ -227,16 +240,17 @@ export function createDesktopPluginHandlers(
 
       return Promise.resolve(service.getPlugin(pluginId));
     },
-    "plugins:getStoredAuth": (payload) => {
+    "plugins:getStoredAuth": async (payload) => {
       const pluginId = readStoredAuthPluginId(payload);
 
-      if (service.getPlugin(pluginId) === null) {
+      const plugin = service.getPlugin(pluginId);
+      if (plugin === null) {
         throw new Error(`Unknown plugin: ${pluginId}`);
       }
 
-      return storedAuthStore.get(pluginId);
+      return publicStoredAuth(plugin, await storedAuthStore.get(pluginId));
     },
-    "plugins:updateStoredAuth": (payload) => {
+    "plugins:updateStoredAuth": async (payload) => {
       const pluginId = readStoredAuthPluginId(payload);
 
       const plugin = service.getPlugin(pluginId);
@@ -247,6 +261,12 @@ export function createDesktopPluginHandlers(
       const auth = readAuthRecord(payload);
       const allowedKeys = new Set(plugin.auth.fields.map((field) => field.key));
       const normalized: DesktopPluginStoredAuthRecord = {};
+      const existing = await storedAuthStore.get(pluginId);
+      for (const field of plugin.auth.fields) {
+        if (field.secret === true && existing[field.key] !== undefined) {
+          normalized[field.key] = existing[field.key];
+        }
+      }
       for (const [key, value] of Object.entries(auth)) {
         if (!allowedKeys.has(key)) {
           continue;
@@ -263,7 +283,10 @@ export function createDesktopPluginHandlers(
         }
       }
 
-      return storedAuthStore.set(pluginId, normalized);
+      return publicStoredAuth(
+        plugin,
+        await storedAuthStore.set(pluginId, normalized),
+      );
     },
     "plugins:clearStoredAuth": async (payload) => {
       const pluginId = readStoredAuthPluginId(payload);

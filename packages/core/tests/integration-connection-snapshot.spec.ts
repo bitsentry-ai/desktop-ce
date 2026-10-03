@@ -91,6 +91,82 @@ describe('stored integration connections', () => {
 })
 
 describe('plugin credential handlers', () => {
+  it('returns public settings and preserves saved credentials through public settings edits', async () => {
+    const root = await mkdtemp(path.join(tmpdir(), 'bitsentry-public-auth-'))
+    try {
+      const authStore = memoryAuthStore()
+      const service = createDesktopNodePluginRuntimeService(
+        [path.join(root, 'plugins')],
+        authStore,
+      )
+      await service.installFromArtifact({
+        artifactBase64: Buffer.from(
+          `
+exports.plugin = {
+  id: 'auth-fixture', name: 'Auth fixture', version: '1.0.0', description: 'Stored auth fixture.',
+  auth: { fields: [
+    { key: 'endpoint', label: 'Endpoint', type: 'string', required: true },
+    { key: 'token', label: 'Token', type: 'string', required: true, secret: true },
+  ] },
+  actions: [{ id: 'verify', title: 'Verify', description: 'Verify configured auth.', riskLevel: 'read', fields: [],
+    execute(context) { return { ok: context.auth.token === 'fixture-secret', status: 200, summary: 'Auth checked.', data: { endpoint: context.auth.endpoint } } } }],
+}
+`,
+          'utf-8',
+        ).toString('base64'),
+      })
+      const handlers = createDesktopPluginHandlers(service, authStore)
+      const update = handlers['plugins:updateStoredAuth']
+      const read = handlers['plugins:getStoredAuth']
+      if (update === undefined || read === undefined)
+        throw new Error('Stored auth handlers unavailable')
+
+      await expect(
+        update({
+          pluginId: 'auth-fixture',
+          auth: {
+            endpoint: 'https://first.example',
+            token: 'fixture-secret',
+            undeclared: 'private-value',
+          },
+        }),
+      ).resolves.toEqual({ endpoint: 'https://first.example' })
+      await authStore.set('auth-fixture', {
+        endpoint: 'https://first.example',
+        token: 'fixture-secret',
+        undeclared: 'legacy-private-value',
+      })
+      await expect(read({ pluginId: 'auth-fixture' })).resolves.toEqual({
+        endpoint: 'https://first.example',
+      })
+
+      for (const auth of [
+        { endpoint: 'https://edited.example' },
+        { endpoint: 'https://edited.example', token: '' },
+      ]) {
+        await expect(
+          update({ pluginId: 'auth-fixture', auth }),
+        ).resolves.toEqual({ endpoint: 'https://edited.example' })
+        await expect(
+          service.executeAction({
+            pluginId: 'auth-fixture',
+            actionId: 'verify',
+            auth: {},
+            input: {},
+          }),
+        ).resolves.toMatchObject({
+          ok: true,
+          data: { endpoint: 'https://edited.example' },
+        })
+      }
+      await expect(read({ pluginId: 'auth-fixture' })).resolves.toEqual({
+        endpoint: 'https://edited.example',
+      })
+    } finally {
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+
   it.each([
     ['plugins:getStoredAuth', {}],
     ['plugins:updateStoredAuth', { auth: { anything: 'value' } }],
