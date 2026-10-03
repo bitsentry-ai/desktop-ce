@@ -8,6 +8,42 @@ import { ensureIntegrationStorageSchema } from '../src/runtime/integration-stora
 import { DesktopIntegrationOperationStore } from '../src/runtime/integration-operation-store.js'
 
 describe('generic SQLite integration storage', () => {
+  it('rolls back a failed schema upgrade and retries without losing legacy data', async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), 'integration-upgrade-'))
+    const db = new DbClient({ datasources: { db: { url: `file:${path.join(directory, 'profile.db')}` } } })
+    try {
+      await db.$executeRawUnsafe(`
+        CREATE TABLE "Setting" (key TEXT PRIMARY KEY, value TEXT);
+        INSERT INTO "Setting" VALUES ('retained.setting', 'retained-value');
+        CREATE TABLE "ResourceLink" (id TEXT PRIMARY KEY);
+      `)
+      await expect(ensureIntegrationStorageSchema(db)).rejects.toThrow()
+      expect(await db.$queryRaw(`SELECT name FROM sqlite_master WHERE type = 'table'
+        AND name IN ('IntegrationConnection', 'ExternalResource') ORDER BY name`)).toEqual([])
+      expect(await db.$queryRaw('SELECT key, value FROM "Setting"')).toEqual([
+        { key: 'retained.setting', value: 'retained-value' },
+      ])
+      await db.$executeRawUnsafe('DROP TABLE "ResourceLink"')
+      await ensureIntegrationStorageSchema(db)
+      await ensureIntegrationStorageSchema(db)
+      expect(await db.$queryRaw(`SELECT name FROM sqlite_master WHERE type = 'table'
+        AND name IN ('IntegrationConnection', 'ExternalResource', 'ResourceLink', 'IntegrationOperation', 'IntegrationDelivery')
+        ORDER BY name`)).toEqual([
+        { name: 'ExternalResource' },
+        { name: 'IntegrationConnection' },
+        { name: 'IntegrationDelivery' },
+        { name: 'IntegrationOperation' },
+        { name: 'ResourceLink' },
+      ])
+      expect(await db.$queryRaw('SELECT key, value FROM "Setting"')).toEqual([
+        { key: 'retained.setting', value: 'retained-value' },
+      ])
+    } finally {
+      await db.$disconnect()
+      await rm(directory, { recursive: true, force: true })
+    }
+  })
+
   it('persists approval, fences competing connections, and retains uncertain writes across reopen', async () => {
     const directory = await mkdtemp(path.join(os.tmpdir(), 'integration-storage-'))
     const options = { datasources: { db: { url: `file:${path.join(directory, 'profile.db')}` } } }
@@ -45,11 +81,11 @@ describe('generic SQLite integration storage', () => {
       const winner = claims.find((claim) => claim !== undefined)
       expect(claims.filter(Boolean)).toHaveLength(1)
       if (winner?.leaseToken === null || winner?.leaseToken === undefined) throw new Error('Missing claim token')
-      expect(await competingStore.finish({ id: 'intent', token: 'stale', status: 'succeeded', resultCiphertext: null, resourceId: null })).toBe(false)
+      expect(await competingStore.finish({ id: 'intent', token: 'stale', status: 'succeeded', resultCiphertext: null, resourceId: null })).toEqual(false)
       await first.$queryRaw('UPDATE "IntegrationOperation" SET "leaseExpiresAt" = 0 WHERE id = ? RETURNING id', 'intent')
       expect(await store.expire()).toEqual(['intent'])
       expect(await store.claim('intent')).toBeUndefined()
-      expect(await store.finish({ id: 'intent', token: winner.leaseToken, status: 'succeeded', resultCiphertext: null, resourceId: null })).toBe(false)
+      expect(await store.finish({ id: 'intent', token: winner.leaseToken, status: 'succeeded', resultCiphertext: null, resourceId: null })).toEqual(false)
       const reopened = new DbClient(options)
       try {
         const rows = await reopened.$queryRaw('SELECT status, "requestCiphertext" FROM "IntegrationOperation" WHERE id = ?', 'intent')

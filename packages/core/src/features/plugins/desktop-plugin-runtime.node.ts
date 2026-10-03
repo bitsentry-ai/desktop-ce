@@ -1,3 +1,8 @@
+import { refreshLinkedIntegrationResource, type LinkedResourceInput, StoredIntegrationResources, extractIntegrationResources } from "./integration-resources";
+import { IntegrationOperationService } from "./integration-operations";
+import { StoredIntegrationOperations } from "./integration-operation-store";
+import { IntegrationConnectionStore } from "./integration-connection-store";
+import { describeIntegrationConnection, type IntegrationConnection, type IntegrationConnectionInput } from "./integration-connections";
 import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
@@ -27,6 +32,7 @@ import { loadDesktopLocalPlugins } from "./desktop-local-plugin-loader";
 import {
   DesktopPluginRegistry,
   DesktopPluginRuntimeService,
+  type DesktopPluginExecutionPolicy,
 } from "./desktop-plugin-registry";
 
 const localRequire = createRequire(
@@ -253,11 +259,13 @@ function applyFieldDefaults(
 }
 
 class DesktopNodePluginRuntimeService extends DesktopPluginRuntimeService {
+  private readonly connections: IntegrationConnectionStore;
   constructor(
     private readonly storedAuthStore: DesktopPluginStoredAuthStore,
     private readonly localPluginDirectories: string[],
   ) {
     super(new DesktopPluginRegistry());
+    this.connections = new IntegrationConnectionStore(storedAuthStore);
     this.reloadRegistry();
   }
 
@@ -325,9 +333,79 @@ class DesktopNodePluginRuntimeService extends DesktopPluginRuntimeService {
     });
   }
 
+  override async refreshIntegrationResource(input: LinkedResourceInput) {
+    const connection = (await this.listIntegrationConnections()).find((row) => row.id === input.connectionId);
+    const plugin = connection ? this.getPlugin(connection.pluginId) : null;
+    if (!connection || !plugin) throw new Error("Connection or plugin is unavailable.");
+    const read = (request: { connectionId: string; actionId: string; input: Record<string, unknown> }) => this.executeIntegrationAction(request, { deadlineAt: Date.now() + 30_000 }, { requiredRiskLevel: "read", expectedConnection: connection });
+    return refreshLinkedIntegrationResource(input, this.getIntegrationResources(), { connection, plugin, execute: read, read });
+  }
+  private resources?: StoredIntegrationResources;
+  override getIntegrationResources() { this.resources ??= new StoredIntegrationResources(this.storedAuthStore); return this.resources; }
+  private operations?: IntegrationOperationService;
+  override getIntegrationOperations(): IntegrationOperationService {
+    if (this.storedAuthStore === NOOP_DESKTOP_PLUGIN_STORED_AUTH_STORE) throw new Error("Durable proposal storage is unavailable.");
+    this.operations ??= new IntegrationOperationService(new StoredIntegrationOperations(this.storedAuthStore), async (id) => {
+      const connection = (await this.connections.list()).find((row) => row.id === id);
+      if (connection === undefined) throw new Error("Connection unavailable.");
+      const plugin = this.getPlugin(connection.pluginId);
+      if (plugin === null) throw new Error("Plugin unavailable.");
+      return { connection: describeIntegrationConnection(connection, plugin), plugin,
+        execute: (request) => super.executeAction({ pluginId: connection.pluginId, actionId: request.actionId, input: request.input, auth: connection.auth }, { deadlineAt: Date.now() + 30_000 }),
+        read: (request) => super.executeAction({ pluginId: connection.pluginId, actionId: request.actionId, input: request.input, auth: connection.auth }, { deadlineAt: Date.now() + 30_000 }, { requiredRiskLevel: "read" }),
+      };
+    });
+    return this.operations;
+  }
+
+  override async refreshIntegrationResources(threadId: string) {
+    const operations = await this.getIntegrationOperations().list(threadId);
+    const saved = await this.connections.list();
+    for (const operation of operations.filter((row) => row.status === "succeeded" || row.status === "reconciled")) {
+      // The saved connection carries the ticket mapping the extractor needs; the operation only remembers name and target.
+      const connection = saved.find((row) => row.id === operation.connectionId)
+        ?? { id: operation.connectionId, name: operation.connectionName, pluginId: operation.pluginId === "itop" ? "itop" as const : "outline" as const, target: operation.target };
+      const resources = extractIntegrationResources(threadId, { id: connection.id, name: connection.name, pluginId: connection.pluginId, target: operation.target, ticketMapping: "ticketMapping" in connection ? connection.ticketMapping : undefined }, operation.result);
+      await this.getIntegrationResources().save(resources.map((resource) => ({ ...resource, observedAt: operation.updatedAt })));
+    }
+    return this.getIntegrationResources().list(threadId);
+  }
+
+  override async listIntegrationConnections(): Promise<IntegrationConnection[]> {
+    return (await this.connections.list()).map((connection) =>
+      describeIntegrationConnection(connection, this.getPlugin(connection.pluginId)));
+  }
+
+  override saveIntegrationConnection(input: IntegrationConnectionInput): Promise<void> {
+    return this.connections.save(input);
+  }
+
+  override removeIntegrationConnection(id: string): Promise<void> {
+    return this.connections.remove(id);
+  }
+
+  override async executeIntegrationAction(
+    request: { connectionId: string; actionId: string; input: Record<string, unknown> },
+    operation?: DesktopPluginOperationContext,
+    policy?: DesktopPluginExecutionPolicy,
+  ): Promise<DesktopPluginExecutionResult> {
+    const connection = (await this.connections.list()).find((row) => row.id === request.connectionId);
+    if (connection === undefined || !connection.enabled) throw new Error("Integration connection is missing or disabled.");
+    if (this.getPlugin(connection.pluginId)?.actions.find((row) => row.id === request.actionId)?.riskLevel !== "read") throw new Error("Writes require a stored, engineer-approved proposal.");
+    // Checked on the same record whose credentials run below, so the result cannot describe another endpoint.
+    const expected = policy?.expectedConnection;
+    if (expected !== undefined) {
+      const current = describeIntegrationConnection(connection, this.getPlugin(connection.pluginId));
+      if (current.target !== expected.target || current.revision !== expected.revision) throw new Error("Connection changed. Retry the read.");
+    }
+    // Call the registry directly: never merge another instance's default auth.
+    return super.executeAction({ pluginId: connection.pluginId, actionId: request.actionId, input: request.input, auth: connection.auth }, operation, policy);
+  }
+
   override async executeAction(
     request: DesktopPluginExecutionRequest,
     operation?: DesktopPluginOperationContext,
+    policy?: DesktopPluginExecutionPolicy,
   ): Promise<DesktopPluginExecutionResult> {
     const plugin = this.getPlugin(request.pluginId);
     let auth = request.auth ?? {};
@@ -344,7 +422,7 @@ class DesktopNodePluginRuntimeService extends DesktopPluginRuntimeService {
     return super.executeAction({
       ...request,
       auth,
-    }, operation);
+    }, operation, policy);
   }
 }
 

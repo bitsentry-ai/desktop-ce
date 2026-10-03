@@ -142,6 +142,8 @@ jobs:
           git config submodule.packages/plugins/posthog.url https://github.com/bitsentry-ai/bitsentry-plugin-posthog.git
           git config submodule.packages/plugins/sentry.url https://github.com/bitsentry-ai/bitsentry-plugin-sentry.git
           git config submodule.packages/plugins/wazuh.url https://github.com/bitsentry-ai/bitsentry-plugin-wazuh.git
+          git config submodule.packages/plugins/itop.url https://github.com/bitsentry-ai/bitsentry-plugin-itop.git
+          git config submodule.packages/plugins/outline.url https://github.com/bitsentry-ai/bitsentry-plugin-outline.git
           git submodule update --init --depth 1 \
             packages/electron-trpc \
             packages/plugin-sdk \
@@ -149,11 +151,13 @@ jobs:
             packages/plugins/linux-cve-status \
             packages/plugins/posthog \
             packages/plugins/sentry \
-            packages/plugins/wazuh
+            packages/plugins/wazuh \
+            packages/plugins/itop \
+            packages/plugins/outline
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 22.12.0
+          node-version-file: '.nvmrc'
 
       - uses: pnpm/action-setup@v4
         with:
@@ -239,6 +243,8 @@ jobs:
           git config submodule.packages/plugins/posthog.url https://github.com/bitsentry-ai/bitsentry-plugin-posthog.git
           git config submodule.packages/plugins/sentry.url https://github.com/bitsentry-ai/bitsentry-plugin-sentry.git
           git config submodule.packages/plugins/wazuh.url https://github.com/bitsentry-ai/bitsentry-plugin-wazuh.git
+          git config submodule.packages/plugins/itop.url https://github.com/bitsentry-ai/bitsentry-plugin-itop.git
+          git config submodule.packages/plugins/outline.url https://github.com/bitsentry-ai/bitsentry-plugin-outline.git
           git submodule update --init --depth 1 \
             packages/electron-trpc \
             packages/plugin-sdk \
@@ -246,11 +252,13 @@ jobs:
             packages/plugins/linux-cve-status \
             packages/plugins/posthog \
             packages/plugins/sentry \
-            packages/plugins/wazuh
+            packages/plugins/wazuh \
+            packages/plugins/itop \
+            packages/plugins/outline
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 22.12.0
+          node-version-file: '.nvmrc'
 
       - uses: pnpm/action-setup@v4
         with:

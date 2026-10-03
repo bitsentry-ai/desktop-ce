@@ -27,7 +27,9 @@ import { LocalPluginCredentialsStore } from '../runtime/plugin-credentials-store
 import { getRuntimeUserDataPath } from '../runtime/runtime-paths'
 
 export type RunbookCliCredentialOptions = {
-  createPluginCredentialsStore?: (userDataPath?: string) => DesktopPluginStoredAuthStore
+  createPluginCredentialsStore?: (
+    userDataPath?: string,
+  ) => DesktopPluginStoredAuthStore
 }
 
 type ParsedArgs = RunbookCliCredentialOptions & {
@@ -653,7 +655,9 @@ function resolveUserPluginDirectory(args: ParsedArgs): string {
 function createPluginRuntime(args: ParsedArgs) {
   const installRoot = resolveUserPluginDirectory(args)
   const userDataDirectory = resolveConfiguredUserDataDirectory(args)
-  const authStore = args.createPluginCredentialsStore?.(userDataDirectory) ?? new LocalPluginCredentialsStore(userDataDirectory)
+  const authStore =
+    args.createPluginCredentialsStore?.(userDataDirectory) ??
+    new LocalPluginCredentialsStore(userDataDirectory)
   const localPluginDirectories = resolveDesktopPluginDirectories([installRoot])
 
   return {

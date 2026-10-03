@@ -32,7 +32,10 @@ export interface PluginCredentialCipher {
 }
 
 export function electronPluginCredentialCipher(): PluginCredentialCipher {
-  const unavailable = () => new Error('Secure plugin credential storage is unavailable. Open the Desktop app and retry through its local execution host, or configure a secure credential provider.')
+  const unavailable = () =>
+    new Error(
+      'Secure plugin credential storage is unavailable. Open the Desktop app and retry through its local execution host, or configure a secure credential provider.',
+    )
   try {
     const electron = require('electron') as {
       safeStorage?: {
@@ -43,8 +46,12 @@ export function electronPluginCredentialCipher(): PluginCredentialCipher {
       }
     }
     const storage = electron.safeStorage
-    if (!storage?.isEncryptionAvailable() ||
-      (process.platform === 'linux' && storage.getSelectedStorageBackend?.() === 'basic_text')) throw unavailable()
+    if (
+      !storage?.isEncryptionAvailable() ||
+      (process.platform === 'linux' &&
+        storage.getSelectedStorageBackend?.() === 'basic_text')
+    )
+      throw unavailable()
     return {
       encrypt: (value) => storage.encryptString(value).toString('base64'),
       decrypt: (value) => storage.decryptString(Buffer.from(value, 'base64')),
@@ -99,7 +106,9 @@ function cloneStoredAuthValue(
 function normalizeStoredAuthRecord(
   values: DesktopPluginStoredAuthRecord,
 ): DesktopPluginStoredAuthRecord {
-  const normalized: DesktopPluginStoredAuthRecord = Object.create(null) as DesktopPluginStoredAuthRecord
+  const normalized: DesktopPluginStoredAuthRecord = Object.create(
+    null,
+  ) as DesktopPluginStoredAuthRecord
 
   for (const [key, value] of Object.entries(values)) {
     const normalizedKey = key.trim()
@@ -122,7 +131,10 @@ function removePluginRecord(
   plugins: Record<string, PluginAuthRecord>,
   pluginId: string,
 ): Record<string, PluginAuthRecord> {
-  const next: Record<string, PluginAuthRecord> = Object.create(null) as Record<string, PluginAuthRecord>
+  const next: Record<string, PluginAuthRecord> = Object.create(null) as Record<
+    string,
+    PluginAuthRecord
+  >
 
   for (const [key, value] of Object.entries(plugins)) {
     if (key === pluginId) {
@@ -135,30 +147,62 @@ function removePluginRecord(
   return next
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+const UNREADABLE_STORE_MESSAGE =
+  'The plugin credential store could not be read because it is corrupt, unsupported, or inaccessible. Nothing was changed; fix or restore auth/plugins.json and retry.'
+
+/**
+ * Only a missing file is an empty store. Any other failure must stop the caller: writing on top of an
+ * unreadable file would erase every other plugin's credentials.
+ */
 async function readStore(storePath: string): Promise<PluginCredentialsFile> {
   let raw: string
   try {
     raw = await readFile(storePath, 'utf-8')
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return emptyStore()
-    throw new Error('Plugin credential storage could not be read; the file was preserved.')
+    throw new Error(UNREADABLE_STORE_MESSAGE)
   }
+
+  // A parse error would quote part of the file, which holds credentials, so report a fixed message.
+  let parsed: unknown
   try {
-    const parsed = JSON.parse(raw) as PluginCredentialsFile
-    if (parsed.version !== STORE_VERSION || !parsed.plugins || typeof parsed.plugins !== 'object' || Array.isArray(parsed.plugins)) throw new Error('Invalid store')
-    for (const record of Object.values(parsed.plugins)) {
-      if (!record || typeof record !== 'object' || typeof record.updatedAt !== 'string') throw new Error('Invalid credential record')
-      const plaintext = record.values !== undefined
-      const encrypted = typeof record.encryptedValues === 'string'
-      if (plaintext === encrypted || (plaintext && (!record.values || typeof record.values !== 'object' || Array.isArray(record.values)))) throw new Error('Invalid credential record')
-    }
-    return parsed
+    parsed = JSON.parse(raw)
   } catch {
-    throw new Error('Plugin credential storage is corrupt or unsupported; restore the file from backup. No data was changed.')
+    throw new Error(UNREADABLE_STORE_MESSAGE)
+  }
+  if (
+    !isRecord(parsed) ||
+    parsed.version !== STORE_VERSION ||
+    !isRecord(parsed.plugins)
+  ) {
+    throw new Error(UNREADABLE_STORE_MESSAGE)
+  }
+  for (const record of Object.values(parsed.plugins)) {
+    if (!isRecord(record) || typeof record.updatedAt !== 'string') {
+      throw new Error(UNREADABLE_STORE_MESSAGE)
+    }
+    const plaintext = record.values !== undefined
+    const encrypted =
+      typeof record.encryptedValues === 'string' &&
+      record.encryptedValues.length > 0
+    if (plaintext === encrypted || (plaintext && !isRecord(record.values))) {
+      throw new Error(UNREADABLE_STORE_MESSAGE)
+    }
+  }
+  return {
+    version: STORE_VERSION,
+    plugins: parsed.plugins as Record<string, PluginAuthRecord>,
   }
 }
 
-async function writeStore(storePath: string, data: PluginCredentialsFile): Promise<void> {
+async function writeStore(
+  storePath: string,
+  data: PluginCredentialsFile,
+): Promise<void> {
   await mkdir(path.dirname(storePath), { recursive: true, mode: 0o700 })
   const tempPath = `${storePath}.tmp-${randomUUID()}`
   try {
@@ -173,7 +217,11 @@ async function writeStore(storePath: string, data: PluginCredentialsFile): Promi
     await rename(tempPath, storePath)
     if (process.platform !== 'win32') {
       const directory = await open(path.dirname(storePath), 'r')
-      try { await directory.sync() } finally { await directory.close() }
+      try {
+        await directory.sync()
+      } finally {
+        await directory.close()
+      }
     }
   } finally {
     await rm(tempPath, { force: true })
@@ -184,43 +232,84 @@ export class LocalPluginCredentialsStore implements DesktopPluginStoredAuthStore
   private readonly storePath: string
   private queue: Promise<unknown> = Promise.resolve()
 
-  constructor(userDataPath?: string, private readonly cipherFactory: () => PluginCredentialCipher = () => keychainPluginCredentialCipher(userDataPath ?? getRuntimeUserDataPath(), electronPluginCredentialCipher)) {
+  constructor(
+    userDataPath?: string,
+    private readonly cipherFactory: () => PluginCredentialCipher = () =>
+      keychainPluginCredentialCipher(
+        userDataPath ?? getRuntimeUserDataPath(),
+        electronPluginCredentialCipher,
+      ),
+  ) {
     this.storePath = resolveStorePath(userDataPath)
   }
 
   private serial<T>(operation: () => Promise<T>): Promise<T> {
     const locked = () => withCredentialFileLock(this.storePath, operation)
     const result = this.queue.then(locked, locked)
-    this.queue = result.then(() => undefined, () => undefined)
+    this.queue = result.then(
+      () => undefined,
+      () => undefined,
+    )
     return result
   }
 
-  private decode(record: PluginAuthRecord, cipher: PluginCredentialCipher, id: string): DesktopPluginStoredAuthRecord {
+  private decode(
+    record: PluginAuthRecord,
+    cipher: PluginCredentialCipher,
+    id: string,
+  ): DesktopPluginStoredAuthRecord {
     try {
-      const raw: unknown = JSON.parse(cipher.decrypt(record.encryptedValues!, id))
-      if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) throw new Error('Invalid values')
+      const raw: unknown = JSON.parse(
+        cipher.decrypt(record.encryptedValues!, id),
+      )
+      if (raw === null || typeof raw !== 'object' || Array.isArray(raw))
+        throw new Error('Invalid values')
       return normalizeStoredAuthRecord(raw as DesktopPluginStoredAuthRecord)
     } catch {
-      throw new Error('Plugin credentials could not be decrypted. Unlock the system credential store or restore access to the original device key. No data was changed.')
+      throw new Error(
+        'Plugin credentials could not be decrypted. Unlock the system credential store or restore access to the original device key. No data was changed.',
+      )
     }
   }
 
-  private encrypt(values: DesktopPluginStoredAuthRecord, cipher: PluginCredentialCipher, id: string): PluginAuthRecord {
+  private encrypt(
+    values: DesktopPluginStoredAuthRecord,
+    cipher: PluginCredentialCipher,
+    id: string,
+  ): PluginAuthRecord {
     const serialized = JSON.stringify(values)
     const encryptedValues = cipher.encrypt(serialized, id)
-    if (cipher.decrypt(encryptedValues, id) !== serialized) throw new Error('Credential encryption verification failed; no data was changed.')
+    if (cipher.decrypt(encryptedValues, id) !== serialized)
+      throw new Error(
+        'Credential encryption verification failed; no data was changed.',
+      )
     return { encryptedValues, updatedAt: new Date().toISOString() }
   }
 
-  private migrate(store: PluginCredentialsFile, cipher: PluginCredentialCipher): boolean {
+  private migrate(
+    store: PluginCredentialsFile,
+    cipher: PluginCredentialCipher,
+  ): boolean {
     // Verify all existing ciphertext before creating a replacement key or writing.
     const values = new Map<string, DesktopPluginStoredAuthRecord>()
     for (const [id, record] of Object.entries(store.plugins)) {
-      values.set(id, record.values === undefined ? this.decode(record, cipher, id) : normalizeStoredAuthRecord(record.values))
+      values.set(
+        id,
+        record.values === undefined
+          ? this.decode(record, cipher, id)
+          : normalizeStoredAuthRecord(record.values),
+      )
     }
     let changed = false
     for (const [id, record] of Object.entries(store.plugins)) {
-      if (record.values === undefined && !(cipher.format === 'keyring-v1' && !record.encryptedValues?.startsWith('keyring:v1:'))) continue
+      if (
+        record.values === undefined &&
+        !(
+          cipher.format === 'keyring-v1' &&
+          !record.encryptedValues?.startsWith('keyring:v1:')
+        )
+      )
+        continue
       store.plugins[id] = this.encrypt(values.get(id)!, cipher, id)
       changed = true
     }
@@ -238,7 +327,10 @@ export class LocalPluginCredentialsStore implements DesktopPluginStoredAuthStore
     })
   }
 
-  set(pluginId: string, values: DesktopPluginStoredAuthRecord): Promise<DesktopPluginStoredAuthRecord> {
+  set(
+    pluginId: string,
+    values: DesktopPluginStoredAuthRecord,
+  ): Promise<DesktopPluginStoredAuthRecord> {
     return this.serial(async () => {
       const normalized = normalizeStoredAuthRecord(values)
       const store = await readStore(this.storePath)
@@ -247,7 +339,12 @@ export class LocalPluginCredentialsStore implements DesktopPluginStoredAuthStore
       if (Object.keys(normalized).length === 0) {
         store.plugins = removePluginRecord(store.plugins, pluginId)
       } else {
-        Object.defineProperty(store.plugins, pluginId, { value: this.encrypt(normalized, cipher, pluginId), enumerable: true, writable: true, configurable: true })
+        Object.defineProperty(store.plugins, pluginId, {
+          value: this.encrypt(normalized, cipher, pluginId),
+          enumerable: true,
+          writable: true,
+          configurable: true,
+        })
       }
       await writeStore(this.storePath, store)
       return { ...normalized }
