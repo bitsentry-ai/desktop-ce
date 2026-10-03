@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readdir, rm, writeFile } from 'fs/promises'
+import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'fs/promises'
 import { tmpdir } from 'os'
 import path from 'path'
 
@@ -59,6 +59,45 @@ exports.plugin = {
   function artifactBase64(source: string): string {
     return Buffer.from(source, 'utf-8').toString('base64')
   }
+
+  function versionedPluginArtifactSource(patch = ''): string {
+    return `${pluginArtifactSource({
+      pluginId: 'artifact-plugin-test',
+      summary: 'pong from versioned artifact',
+    })}
+exports.plugin.auth.fields = [
+  { key: 'apiKey', label: 'API Key', type: 'string', secret: true },
+]
+exports.plugin.metadata = {
+  persistence: {
+    configVersion: 2,
+    configFields: [
+      { key: 'baseUrl', label: 'URL', type: 'string', required: true },
+      { key: 'mapping', label: 'Mapping', type: 'json' },
+    ],
+    destinationField: 'baseUrl',
+    resources: [{ type: 'case', stateVersion: 3, readActionId: 'ping' }],
+    eventChannels: ['case.changed'],
+  },
+}
+exports.plugin.persistence = {
+  validateConfig: (config) => config,
+  validateResourceState: ({ state }) => state,
+}
+${patch}
+`
+  }
+
+  const invalidPersistenceContracts = [
+    ['missing handlers', 'delete exports.plugin.persistence'],
+    ['missing metadata', 'delete exports.plugin.metadata'],
+    ['invalid configuration version', 'exports.plugin.metadata.persistence.configVersion = 0'],
+    ['invalid resource version', 'exports.plugin.metadata.persistence.resources[0].stateVersion = 0'],
+    ['secret configuration fields', 'exports.plugin.metadata.persistence.configFields[1].secret = true'],
+    ['credential names in configuration', 'exports.plugin.metadata.persistence.configFields[1].key = "apiKey"'],
+    ['undeclared recovery actions', 'exports.plugin.metadata.persistence.resources[0].readActionId = "missing"'],
+    ['write recovery actions', 'exports.plugin.actions[0].riskLevel = "write"'],
+  ]
 
   it('installs a single-file plugin artifact and reloads it for execution', async () => {
     const tempRoot = await createTempRoot()
@@ -131,4 +170,82 @@ exports.plugin = {
       summary: 'pong after update',
     })
   })
+
+  it('installs versioned metadata and executes the plugin after reopening', async () => {
+    const tempRoot = await createTempRoot()
+    const installRoot = path.join(tempRoot, 'plugins')
+    const service = createDesktopNodePluginRuntimeService([installRoot])
+
+    const installed = await service.installFromArtifact({
+      artifactBase64: artifactBase64(versionedPluginArtifactSource()),
+    })
+    expect(installed.descriptor.metadata).toEqual({
+      persistence: {
+        configVersion: 2,
+        configFields: [
+          { key: 'baseUrl', label: 'URL', type: 'string', required: true },
+          { key: 'mapping', label: 'Mapping', type: 'json', required: false },
+        ],
+        destinationField: 'baseUrl',
+        resources: [{ type: 'case', stateVersion: 3, readActionId: 'ping' }],
+        eventChannels: ['case.changed'],
+      },
+    })
+
+    const reopened = createDesktopNodePluginRuntimeService([installRoot])
+    expect(reopened.getPlugin(installed.pluginId)).toEqual(installed.descriptor)
+    await expect(reopened.executeAction({
+      pluginId: installed.pluginId,
+      actionId: 'ping',
+      auth: {},
+      input: {},
+    })).resolves.toMatchObject({
+      ok: true,
+      summary: 'pong from versioned artifact',
+    })
+  })
+
+  it.each(invalidPersistenceContracts)(
+    'rejects %s during installation and local loading',
+    async (_name, patch) => {
+      const tempRoot = await createTempRoot()
+      const installRoot = path.join(tempRoot, 'plugins')
+      const service = createDesktopNodePluginRuntimeService([installRoot])
+      const legacySource = pluginArtifactSource({
+        pluginId: 'artifact-plugin-test',
+        summary: 'pong from retained artifact',
+      })
+      const installed = await service.installFromArtifact({
+        artifactBase64: artifactBase64(legacySource),
+      })
+      const invalidSource = versionedPluginArtifactSource(patch)
+
+      await expect(service.installFromArtifact({
+        artifactBase64: artifactBase64(invalidSource),
+      })).rejects.toThrow()
+      await expect(readFile(path.join(installed.installedPath, 'plugin.js'), 'utf8'))
+        .resolves.toEqual(legacySource)
+
+      const reopened = createDesktopNodePluginRuntimeService([installRoot])
+      await expect(reopened.executeAction({
+        pluginId: installed.pluginId,
+        actionId: 'ping',
+        auth: {},
+        input: {},
+      })).resolves.toMatchObject({ summary: 'pong from retained artifact' })
+
+      const localRoot = path.join(tempRoot, 'invalid-local-plugins')
+      const pluginRoot = path.join(localRoot, installed.pluginId)
+      await mkdir(pluginRoot, { recursive: true })
+      await writeFile(path.join(pluginRoot, 'plugin.js'), invalidSource)
+      const localService = createDesktopNodePluginRuntimeService([localRoot])
+      expect(localService.listPlugins()).toEqual([])
+      await expect(localService.executeAction({
+        pluginId: installed.pluginId,
+        actionId: 'ping',
+        auth: {},
+        input: {},
+      })).rejects.toThrow('Unknown plugin')
+    },
+  )
 })
