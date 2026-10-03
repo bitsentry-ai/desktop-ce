@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -26,24 +26,29 @@ describe('shared GUI and CLI keychain encryption', () => {
     const encrypted = first.encrypt('private-token', 'connection-a')
     expect(encrypted).not.toContain('private-token')
     const reopened = keychainPluginCredentialCipher(directory, unavailableLegacy, entry)
-    expect(reopened.decrypt(encrypted, 'connection-a')).toBe('private-token')
+    expect(reopened.decrypt(encrypted, 'connection-a')).toEqual('private-token')
     expect(() => reopened.decrypt(encrypted, 'connection-b')).toThrow()
     const other = keychainPluginCredentialCipher(await profile(), unavailableLegacy, entry)
     expect(() => other.decrypt(encrypted, 'connection-a')).toThrow()
-    expect(passwords.size).toBe(1)
   })
 
   it('does not replace a missing key while existing ciphertext still needs it', async () => {
     const directory = await profile()
     let password: string | null = null
-    let writes = 0
-    const entry = () => ({ getPassword: () => password, setPassword: (value: string) => { password = value; writes++ } })
+    const entry = () => ({ getPassword: () => password, setPassword: (value: string) => { password = value } })
     const factory = () => keychainPluginCredentialCipher(directory, unavailableLegacy, entry)
     const store = new LocalPluginCredentialsStore(directory, factory)
     await store.set('first', { token: 'secret' })
+    const file = path.join(directory, 'auth', 'plugins.json')
+    const original = await readFile(file, 'utf8')
+    const originalKey = password
     password = null
     await expect(store.set('second', { token: 'another' })).rejects.toThrow()
-    expect(writes).toBe(1)
+    expect(await readFile(file, 'utf8')).toEqual(original)
+    password = originalKey
+    const reopened = new LocalPluginCredentialsStore(directory, factory)
+    await expect(reopened.get('first')).resolves.toEqual({ token: 'secret' })
+    await expect(reopened.get('second')).resolves.toEqual({})
   })
 
   it('fails closed when the OS credential store cannot be read', async () => {

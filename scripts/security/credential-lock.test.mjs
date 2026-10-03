@@ -69,7 +69,7 @@ test('independent processes preserve every encrypted profile write', async () =>
     await Promise.all(ids.map((id) => child(directory, id)));
     const reader = createStore(directory);
     for (const id of ids) {
-      assert.deepEqual(await reader.get(id), { token: `fixture-token-${id}` });
+      assert.deepEqual({ ...await reader.get(id) }, { token: `fixture-token-${id}` });
     }
     assert.doesNotMatch(await readFile(path.join(directory, 'auth', 'plugins.json'), 'utf8'), /fixture-token/);
   } finally { await rm(directory, { recursive: true, force: true }); }
@@ -90,9 +90,9 @@ test('a crashed writer preserves encrypted profiles and permits explicit recover
     await rm(`${file}.lock`, { recursive: true });
     await store.set('recovered', { token: 'fixture-recovered-token' });
     const reopened = createStore(directory);
-    assert.deepEqual(await reopened.get('original'), { token: 'fixture-original-token' });
-    assert.deepEqual(await reopened.get('recovered'), { token: 'fixture-recovered-token' });
-    assert.deepEqual(await reopened.get('interrupted'), {});
+    assert.deepEqual({ ...await reopened.get('original') }, { token: 'fixture-original-token' });
+    assert.deepEqual({ ...await reopened.get('recovered') }, { token: 'fixture-recovered-token' });
+    assert.deepEqual({ ...await reopened.get('interrupted') }, {});
     assert.doesNotMatch(await readFile(file, 'utf8'), /fixture-.*token/);
   } finally { await rm(directory, { recursive: true, force: true }); }
 });
