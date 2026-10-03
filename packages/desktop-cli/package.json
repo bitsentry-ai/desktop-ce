@@ -41,6 +41,7 @@
   "dependencies": {
     "@bitsentry-ce/coding-agents": "workspace:*",
     "@bitsentry-ce/core": "workspace:*",
+    "@napi-rs/keyring": "2.1.0",
     "electron": "40.9.3",
     "electron-log": "^5.4.3",
     "electron-updater": "^6.8.3",

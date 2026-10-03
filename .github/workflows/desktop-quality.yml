@@ -6,6 +6,7 @@ on:
       - '.github/workflows/desktop-quality.yml'
       - 'apps/**'
       - 'packages/**'
+      - 'scripts/security/**'
       - 'package.json'
       - 'pnpm-lock.yaml'
       - 'pnpm-workspace.yaml'
@@ -68,11 +69,17 @@ jobs:
       - run: pnpm --filter @bitsentry-ce/desktop test
       - run: pnpm --filter @bitsentry-ce/core test
       - name: Verify encrypted plugin credential migration
-        run: pnpm --filter @bitsentry-ce/desktop-cli test -- tests/plugin-credentials-store.spec.ts
+        run: pnpm --filter @bitsentry-ce/desktop-cli test
       # Vitest executes under Node, whereas Electron needs a separately rebuilt
       # native module ABI. Rebuild only after deterministic Node tests finish.
       - run: pnpm --dir apps/desktop run prepare:native-deps
       - run: pnpm run build
+      - name: Verify target architecture keyring packaging
+        run: |
+          pnpm --filter @bitsentry-ce/desktop run build:cli-bundle
+          node --test scripts/security/keyring-packaging.test.mjs
+      - name: Verify cross-process credential coordination
+        run: node --test scripts/security/credential-lock.test.mjs
       - name: Run local runbook smoke scenario
         env:
           BITSENTRY_DESKTOP_SMOKE_NO_SANDBOX: '1'

@@ -304,3 +304,19 @@ describe('plugin credential store', () => {
     })
   })
 })
+
+describe('credential write coordination', () => {
+  it('treats prototype-like profile names as ordinary data', async () => {
+    const directory = await mkdtemp(path.join(tmpdir(), 'plugin-keys-'))
+    try {
+      const encryption = cipher()
+      const store = new LocalPluginCredentialsStore(directory, () => encryption)
+      await store.set('__proto__', { token: 'secret' })
+      expect(await store.get('__proto__')).toEqual({ token: 'secret' })
+      await store.clear('__proto__')
+      expect(await store.get('__proto__')).toEqual({})
+    } finally {
+      await rm(directory, { recursive: true, force: true })
+    }
+  })
+})
