@@ -135,10 +135,11 @@ describe('local model catalog selection', () => {
 
   it('hides frozen models while keeping their catalog records resolvable', () => {
     expect(getCatalogModelIds('openai')).toEqual([
-      'gpt-5.6-sol',
-      'gpt-5.6-terra',
-      'gpt-5.6-luna',
+      'gpt-6.1-sol',
+      'gpt-6-astra',
+      'gpt-6-luna',
     ])
+    expect(getCatalogModel('openai', 'gpt-5.6-terra')).toBeDefined()
     expect(getCatalogModel('openai', 'gpt-oss-120b')).toBeDefined()
     expect(getCatalogModelIds('groq')).not.toEqual(
       expect.arrayContaining(['openai/gpt-oss-120b', 'openai/gpt-oss-20b']),

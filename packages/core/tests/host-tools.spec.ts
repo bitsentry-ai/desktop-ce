@@ -567,8 +567,8 @@ describe('host tools', () => {
     expect(catalog.source).toBe('static_catalog')
     expect(catalog.providers[0]?.providerKey).toBe('openai')
     expect(catalog.providers[0]?.models).toContainEqual({
-      modelId: 'gpt-5.6-terra',
-      displayName: 'GPT-5.6 Terra',
+      modelId: 'gpt-6.1-sol',
+      displayName: 'GPT-6.1 Sol',
       contextWindowTokens: 1_050_000,
     })
 
