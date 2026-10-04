@@ -239,9 +239,9 @@ const HIDDEN_MODEL_IDS_BY_PROVIDER: Partial<Record<
       ?.models
       .map((model) => model.id)
       .filter((modelId) => ![
-        'gpt-5.6-sol',
-        'gpt-5.6-terra',
-        'gpt-5.6-luna',
+        'gpt-6.1-sol',
+        'gpt-6-astra',
+        'gpt-6-luna',
       ].includes(modelId))
       ?? [],
   ),
