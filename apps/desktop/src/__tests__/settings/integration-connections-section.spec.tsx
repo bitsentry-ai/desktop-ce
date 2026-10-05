@@ -3,6 +3,7 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import type { IntegrationConnection, IntegrationConnectionInput } from '@bitsentry-ce/core/features/plugins'
 import { describeIntegrationConnection } from '@bitsentry-ce/core/features/plugins'
+import type { PluginDescriptor } from '@bitsentry-ce/components/services/contracts'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({ t: (key: string) => key }))
@@ -15,6 +16,35 @@ import { IntegrationConnectionsSection, type IntegrationConnectionsPort } from '
 
 afterEach(cleanup)
 
+/** A ticketing plugin that is not iTop: the form must be built from what the plugin declares. */
+const ticketing: PluginDescriptor = {
+  id: 'acme.tickets',
+  name: 'Acme tickets',
+  version: '1.0.0',
+  description: 'Example ticketing plugin',
+  metadata: {
+    persistence: {
+      configVersion: 3,
+      destinationField: 'serviceUrl',
+      configFields: [
+        { key: 'serviceUrl', label: 'Service URL', type: 'string', required: true },
+        { key: 'project', label: 'Project key', type: 'string', required: false },
+      ],
+      resources: [{ type: 'issue', stateVersion: 1, readActionId: 'read_issue' }],
+      eventChannels: [],
+    },
+  },
+  auth: {
+    fields: [
+      { key: 'apiToken', label: 'API token', type: 'string', required: false, secret: true },
+      { key: 'username', label: 'User name', type: 'string', required: false },
+    ],
+  },
+  actions: [],
+}
+
+const withoutPersistence: PluginDescriptor = { ...ticketing, id: 'acme.legacy', name: 'Acme legacy', metadata: {} }
+
 function deferred<T>() {
   let resolve!: (value: T) => void
   const promise = new Promise<T>((finish) => { resolve = finish })
@@ -22,17 +52,26 @@ function deferred<T>() {
 }
 
 function describeRows(rows: IntegrationConnectionInput[]): IntegrationConnection[] {
-  return rows.map((row) => describeIntegrationConnection(row))
+  return rows.map((row) => describeIntegrationConnection(row, ticketing as never))
 }
 
 function fill(label: string, value: string) {
   fireEvent.change(screen.getByLabelText(label), { target: { value } })
 }
 
+function choosePlugin() {
+  fireEvent.change(screen.getByLabelText('settings.integrationConnections.plugin'), { target: { value: ticketing.id } })
+}
+
+function save() {
+  fireEvent.click(screen.getByRole('button', { name: 'settings.integrationConnections.save' }))
+}
+
 function createConnectionService() {
   const rows: IntegrationConnectionInput[] = []
   const service: IntegrationConnectionsPort = {
     list: async () => describeRows(rows),
+    listPlugins: async () => [ticketing, withoutPersistence],
     save: async (connection) => {
       const index = rows.findIndex((row) => row.id === connection.id)
       if (index === -1) rows.push(connection)
@@ -46,7 +85,20 @@ function createConnectionService() {
   return { rows, service }
 }
 
+const storedConnection: IntegrationConnectionInput = {
+  id: '33333333-3333-4333-8333-333333333333', name: 'Disabled', pluginId: ticketing.id, enabled: false,
+  configVersion: 3, config: { serviceUrl: 'https://tickets.example/api', project: 'OPS' }, auth: { apiToken: 'stored-token' },
+}
+
 describe('IntegrationConnectionsSection', () => {
+  it('offers only plugins that declare a connection contract', async () => {
+    const { service } = createConnectionService()
+    render(<IntegrationConnectionsSection service={service} />)
+
+    await screen.findByRole('option', { name: 'Acme tickets' })
+    expect(screen.queryByRole('option', { name: 'Acme legacy' })).toBeNull()
+  })
+
   it('keeps a saved connection visible when the initial list request resolves late', async () => {
     const initialList = deferred<IntegrationConnection[]>()
     const saved: IntegrationConnectionInput[] = []
@@ -59,108 +111,77 @@ describe('IntegrationConnectionsSection', () => {
         }
         return Promise.resolve(describeRows(saved))
       },
+      listPlugins: async () => [ticketing],
       save: async (connection) => { saved.push(connection) },
-      remove: async (id) => {
-        const index = saved.findIndex((row) => row.id === id)
-        if (index !== -1) saved.splice(index, 1)
-      },
+      remove: async () => undefined,
     }
 
     render(<IntegrationConnectionsSection service={service} />)
+    await screen.findByRole('option', { name: 'Acme tickets' })
+    choosePlugin()
     fill('settings.integrationConnections.name', 'Production')
-    fill('settings.integrationConnections.endpoint', 'https://itop.example')
-    fill('settings.integrationConnections.token', 'production-secret')
-    fireEvent.click(screen.getByRole('button', { name: 'settings.integrationConnections.save' }))
+    fill('Service URL', 'https://tickets.example/api')
+    save()
 
-    expect(await screen.findByText('Production — https://itop.example/')).toBeTruthy()
+    expect(await screen.findByText('Production — https://tickets.example/api')).toBeTruthy()
     await act(async () => { initialList.resolve([]) })
-    await waitFor(() => expect(screen.getByText('Production — https://itop.example/')).toBeTruthy())
+    await waitFor(() => expect(screen.getByText('Production — https://tickets.example/api')).toBeTruthy())
   })
 
-  it('creates and edits an iTop username/password connection in that auth mode', async () => {
+  it('saves provider settings apart from credentials, as the plugin versions them', async () => {
     const { rows, service } = createConnectionService()
     render(<IntegrationConnectionsSection service={service} />)
-    fill('settings.integrationConnections.name', 'Sandbox')
-    fill('settings.integrationConnections.endpoint', 'https://itop.example')
-    fireEvent.change(screen.getByLabelText('settings.integrationConnections.authMethod'), {
-      target: { value: 'username_password' },
+    await screen.findByRole('option', { name: 'Acme tickets' })
+    choosePlugin()
+    fill('settings.integrationConnections.name', 'Acme production')
+    fill('Service URL', 'https://tickets.example/api')
+    fill('Project key', 'OPS')
+    fill('API token', 'private-token')
+    save()
+
+    await waitFor(() => expect(rows).toHaveLength(1))
+    expect(rows[0]).toMatchObject({
+      pluginId: ticketing.id, enabled: true, configVersion: 3,
+      config: { serviceUrl: 'https://tickets.example/api', project: 'OPS' },
+      auth: { apiToken: 'private-token' },
     })
-    fill('settings.integrationConnections.username', 'sandbox-user')
-    fill('settings.integrationConnections.password', 'first-password')
-    fireEvent.click(screen.getByRole('button', { name: 'settings.integrationConnections.save' }))
-
-    expect(await screen.findByText('Sandbox — https://itop.example/')).toBeTruthy()
-    expect(rows[0]).toMatchObject({ auth: { baseUrl: 'https://itop.example', username: 'sandbox-user', password: 'first-password' } })
-    expect(rows[0]?.auth).not.toHaveProperty('authToken')
-
-    fireEvent.click(screen.getByRole('button', { name: 'settings.integrationConnections.edit' }))
-    expect(screen.getByLabelText('settings.integrationConnections.authMethod')).toHaveProperty('value', 'username_password')
-    fill('settings.integrationConnections.username', 'sandbox-user-updated')
-    fill('settings.integrationConnections.password', 'updated-password')
-    fireEvent.click(screen.getByRole('button', { name: 'settings.integrationConnections.save' }))
-
-    await waitFor(() => expect(rows[0]?.auth.password).toBe('updated-password'))
-    expect(rows[0]?.auth).toMatchObject({ username: 'sandbox-user-updated', baseUrl: 'https://itop.example/' })
-    expect(rows[0]?.auth).not.toHaveProperty('authToken')
+    expect(rows[0]?.config).not.toHaveProperty('apiToken')
   })
 
-  it('creates and edits an iTop token connection without changing its auth mode', async () => {
+  it('keeps a disabled connection disabled and sends no credential when only the name changes', async () => {
     const { rows, service } = createConnectionService()
-    render(<IntegrationConnectionsSection service={service} />)
-    fill('settings.integrationConnections.name', 'Token iTop')
-    fill('settings.integrationConnections.endpoint', 'https://token.itop.example')
-    fill('settings.integrationConnections.token', 'initial-token')
-    fireEvent.click(screen.getByRole('button', { name: 'settings.integrationConnections.save' }))
-    expect(await screen.findByText('Token iTop — https://token.itop.example/')).toBeTruthy()
-
-    fireEvent.click(screen.getByRole('button', { name: 'settings.integrationConnections.edit' }))
-    expect(screen.getByLabelText('settings.integrationConnections.authMethod')).toHaveProperty('value', 'token')
-    fill('settings.integrationConnections.token', 'updated-token')
-    fireEvent.click(screen.getByRole('button', { name: 'settings.integrationConnections.save' }))
-
-    await waitFor(() => expect(rows[0]?.auth.authToken).toBe('updated-token'))
-    expect(rows[0]?.auth).toMatchObject({ baseUrl: 'https://token.itop.example/' })
-    expect(rows[0]?.auth).not.toHaveProperty('username')
-  })
-
-  it('keeps a disabled connection disabled when saving edits', async () => {
-    const { rows, service } = createConnectionService()
-    rows.push({
-      id: '33333333-3333-4333-8333-333333333333', name: 'Disabled', pluginId: 'itop', enabled: false,
-      auth: { baseUrl: 'https://disabled.itop.example', authToken: 'old-token' },
-    })
+    rows.push(storedConnection)
     render(<IntegrationConnectionsSection service={service} />)
 
-    expect(await screen.findByText('Disabled — https://disabled.itop.example/')).toBeTruthy()
-    fireEvent.click(screen.getByRole('button', { name: 'settings.integrationConnections.edit' }))
-    fill('settings.integrationConnections.token', 'updated-token')
-    fireEvent.click(screen.getByRole('button', { name: 'settings.integrationConnections.save' }))
+    expect(await screen.findByText('Disabled — https://tickets.example/api')).toBeTruthy()
+    fireEvent.click(await screen.findByRole('button', { name: 'settings.integrationConnections.edit' }))
+    expect(screen.getByLabelText('Project key')).toHaveProperty('value', 'OPS')
+    fill('settings.integrationConnections.name', 'Renamed')
+    save()
 
-    await waitFor(() => expect(rows[0]?.auth.authToken).toBe('updated-token'))
+    await waitFor(() => expect(rows[0]?.name).toBe('Renamed'))
     expect(rows[0]?.enabled).toBe(false)
+    // An empty credential is never sent; the host keeps what is stored.
+    expect(rows[0]?.auth).toEqual({})
   })
 
   it('clears the edit form after deleting its connection so Save cannot recreate it', async () => {
     const { rows, service } = createConnectionService()
-    const deletedId = '44444444-4444-4444-8444-444444444444'
-    rows.push({
-      id: deletedId, name: 'To delete', pluginId: 'itop', enabled: true,
-      auth: { baseUrl: 'https://delete.itop.example', authToken: 'old-token' },
-    })
+    rows.push({ ...storedConnection, enabled: true })
     render(<IntegrationConnectionsSection service={service} />)
 
-    expect(await screen.findByText('To delete — https://delete.itop.example/')).toBeTruthy()
-    fireEvent.click(screen.getByRole('button', { name: 'settings.integrationConnections.edit' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'settings.integrationConnections.edit' }))
     fireEvent.click(screen.getByRole('button', { name: 'settings.integrationConnections.remove' }))
     await waitFor(() => expect(rows).toHaveLength(0))
 
+    choosePlugin()
     fill('settings.integrationConnections.name', 'Replacement')
-    fill('settings.integrationConnections.endpoint', 'https://replacement.itop.example')
-    fill('settings.integrationConnections.token', 'replacement-token')
-    fireEvent.click(screen.getByRole('button', { name: 'settings.integrationConnections.save' }))
+    fill('Service URL', 'https://replacement.example/api')
+    fill('API token', 'replacement-token')
+    save()
 
     await waitFor(() => expect(rows).toHaveLength(1))
-    expect(rows[0]?.id).not.toBe(deletedId)
+    expect(rows[0]?.id).not.toBe(storedConnection.id)
     expect(rows[0]?.name).toBe('Replacement')
   })
 })

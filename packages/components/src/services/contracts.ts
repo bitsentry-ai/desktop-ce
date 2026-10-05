@@ -479,6 +479,7 @@ export interface PluginDataSourceSetupField {
 }
 
 export interface PluginDescriptorMetadata {
+  persistence?: import("@bitsentry-ce/core/features/plugins").DesktopPluginPersistence;
   dataSource?: PluginDataSourceMetadata;
 }
 

@@ -258,6 +258,11 @@ function applyFieldDefaults(
   return resolved;
 }
 
+/** Versioned, non-secret configuration travels next to the credentials, never inside them. */
+function connectionConfig(connection: IntegrationConnectionInput) {
+  return connection.config === undefined ? undefined : { version: connection.configVersion ?? 0, value: connection.config };
+}
+
 class DesktopNodePluginRuntimeService extends DesktopPluginRuntimeService {
   private readonly connections: IntegrationConnectionStore;
   constructor(
@@ -351,8 +356,8 @@ class DesktopNodePluginRuntimeService extends DesktopPluginRuntimeService {
       const plugin = this.getPlugin(connection.pluginId);
       if (plugin === null) throw new Error("Plugin unavailable.");
       return { connection: describeIntegrationConnection(connection, plugin), plugin,
-        execute: (request) => super.executeAction({ pluginId: connection.pluginId, actionId: request.actionId, input: request.input, auth: connection.auth }, { deadlineAt: Date.now() + 30_000 }),
-        read: (request) => super.executeAction({ pluginId: connection.pluginId, actionId: request.actionId, input: request.input, auth: connection.auth }, { deadlineAt: Date.now() + 30_000 }, { requiredRiskLevel: "read" }),
+        execute: (request) => super.executeAction({ pluginId: connection.pluginId, actionId: request.actionId, input: request.input, auth: connection.auth, connectionConfig: connectionConfig(connection) }, { deadlineAt: Date.now() + 30_000 }),
+        read: (request) => super.executeAction({ pluginId: connection.pluginId, actionId: request.actionId, input: request.input, auth: connection.auth, connectionConfig: connectionConfig(connection) }, { deadlineAt: Date.now() + 30_000 }, { requiredRiskLevel: "read" }),
       };
     });
     return this.operations;
@@ -364,7 +369,7 @@ class DesktopNodePluginRuntimeService extends DesktopPluginRuntimeService {
     for (const operation of operations.filter((row) => row.status === "succeeded" || row.status === "reconciled")) {
       // The saved connection carries the ticket mapping the extractor needs; the operation only remembers name and target.
       const connection = saved.find((row) => row.id === operation.connectionId)
-        ?? { id: operation.connectionId, name: operation.connectionName, pluginId: operation.pluginId === "itop" ? "itop" as const : "outline" as const, target: operation.target };
+        ?? { id: operation.connectionId, name: operation.connectionName, pluginId: operation.pluginId, target: operation.target };
       const resources = extractIntegrationResources(threadId, { id: connection.id, name: connection.name, pluginId: connection.pluginId, target: operation.target, ticketMapping: "ticketMapping" in connection ? connection.ticketMapping : undefined }, operation.result);
       await this.getIntegrationResources().save(resources.map((resource) => ({ ...resource, observedAt: operation.updatedAt })));
     }
@@ -377,7 +382,9 @@ class DesktopNodePluginRuntimeService extends DesktopPluginRuntimeService {
   }
 
   override saveIntegrationConnection(input: IntegrationConnectionInput): Promise<void> {
-    return this.connections.save(input);
+    // The plugin's own validator decides what is stored, so a normalized value such as a URL without a trailing slash is what runs later.
+    const config = input.config === undefined ? undefined : this.registry.validateConnectionConfig(input.pluginId, input.configVersion ?? 0, input.config);
+    return this.connections.save({ ...input, config }, this.getPlugin(input.pluginId));
   }
 
   override removeIntegrationConnection(id: string): Promise<void> {
@@ -399,7 +406,7 @@ class DesktopNodePluginRuntimeService extends DesktopPluginRuntimeService {
       if (current.target !== expected.target || current.revision !== expected.revision) throw new Error("Connection changed. Retry the read.");
     }
     // Call the registry directly: never merge another instance's default auth.
-    return super.executeAction({ pluginId: connection.pluginId, actionId: request.actionId, input: request.input, auth: connection.auth }, operation, policy);
+    return super.executeAction({ pluginId: connection.pluginId, actionId: request.actionId, input: request.input, auth: connection.auth, connectionConfig: connectionConfig(connection) }, operation, policy);
   }
 
   override async executeAction(

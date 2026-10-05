@@ -14,7 +14,7 @@ export function PluginsSettingsSection({
 }: PluginsSettingsSectionProps) {
   const { plugins } = useBitsentryServices();
   const connections = useMemo(() => plugins?.listConnections && plugins.saveConnection && plugins.removeConnection ? {
-    list: plugins.listConnections.bind(plugins), save: plugins.saveConnection.bind(plugins), remove: plugins.removeConnection.bind(plugins),
+    list: plugins.listConnections.bind(plugins), listPlugins: plugins.list.bind(plugins), save: plugins.saveConnection.bind(plugins), remove: plugins.removeConnection.bind(plugins),
   } : null, [plugins]);
   return (
     <section

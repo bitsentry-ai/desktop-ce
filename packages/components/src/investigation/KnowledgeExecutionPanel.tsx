@@ -106,6 +106,8 @@ export function KnowledgeExecutionPanel({ threadId, disabled, active = true, hid
   useEffect(() => {
     if (!executionId) return;
     let alive = true;
+    // A new run must not show the previous run's status and output while its own record loads.
+    setExecution(null);
     const refresh = async () => { try { const value = await runbooks.getExecution(executionId); if (alive) { setExecution(value); setLoadError(false); } } catch { if (alive) setLoadError(true); } };
     void refresh(); const timer = setInterval(() => { void refresh(); }, 2000);
     return () => { alive = false; clearInterval(timer); };

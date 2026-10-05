@@ -180,6 +180,24 @@ describe('KnowledgeExecutionPanel', () => {
     expect(runbooks.execute.mock.calls[2]?.[0].requestKey).not.toBe(first)
   })
 
+  it('does not show the previous run while the next run is loading', async () => {
+    const { world, runbooks, services } = setup()
+    renderPanel(services)
+    await review()
+    run()
+    await waitFor(() => { expect(screen.getByText(/up 3 days/)).toBeTruthy() })
+
+    let finish!: (value: { executionId: string }) => void
+    runbooks.getExecution.mockImplementationOnce(() => new Promise<{ executionId: string }>((resolve) => { finish = resolve }))
+    fireEvent.click(approveBox())
+    run()
+    await waitFor(() => { expect(runbooks.execute).toHaveBeenCalledTimes(2) })
+
+    expect(screen.queryByText(/up 3 days/)).toBeNull()
+    await act(async () => { finish({ ...world.execution, executionId: 'exec-2', status: 'completed', steps: [{ actionId: 'a1', order: 1, type: 'shell', title: 'Uptime', status: 'completed', output: 'up 4 days' }] } as { executionId: string }) })
+    expect(await screen.findByText(/up 4 days/)).toBeTruthy()
+  })
+
   it('clears a refresh error once a later refresh succeeds, but keeps an execution error', async () => {
     const { world, services } = setup()
     renderPanel(services)
