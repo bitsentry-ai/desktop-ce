@@ -20,6 +20,7 @@ import { formatJsonBlockForDisplay } from "../lib/jsonDisplay";
 import { StructuredOutputDisplay } from "../runbook/StructuredOutputDisplay";
 import type {
   RunbookActionType,
+  RunbookAuthoringProposalKind,
   RunbookExecutionRecord,
   RunbookExecutionStatus,
   RunbookExecutionStepRecord,
@@ -104,7 +105,7 @@ interface IncidentArtifactReference {
   order: number;
 }
 
-interface IncidentArtifactEntry {
+export interface IncidentArtifactEntry {
   key: string;
   order: number;
   resultId: string | null;
@@ -1297,20 +1298,28 @@ function ArtifactDetails({
   );
 }
 
-export default function IncidentArtifactsRail({
-  isOpen,
-  onClose,
+/** What a host needs from Runbook results without owning their data: the list size and what waits for a person. */
+export interface RunbookResultsSummary {
+  /** Runs and latest drafts in the list. */
+  count: number;
+  /** Runs that ended in failure. */
+  failedRuns: Array<{ key: string; title: string; completedSteps: number; totalSteps: number }>;
+  /** Latest drafts that wait for an approve, revise or reject decision. */
+  pendingDrafts: Array<{ proposalId: string; title: string; version: number; kind: RunbookAuthoringProposalKind }>;
+}
+
+/**
+ * The data and the selection of Runbook results: the runs and drafts of one incident, which one is open, and the
+ * automatic choices (a run in progress, a new draft). A host reads the summary and renders `RunbookResultsView`.
+ */
+export function useRunbookResults({
   messages,
   incidentId,
   sessionId,
-  onRevisionRequested,
 }: {
-  isOpen: boolean;
-  onClose: () => void;
   messages: IncidentArtifactsMessage[];
   incidentId?: string | null;
   sessionId?: string | null;
-  onRevisionRequested?: (requestedEdit: string) => void;
 }) {
   const { t } = useTranslation();
   const { runbooks, agent } = useBitsentryServices();
@@ -1652,9 +1661,181 @@ export default function IncidentArtifactsRail({
 
   const selectedArtifact =
     artifacts.find((artifact) => artifact.key === selectedKey) ?? null;
-  const latestProposals = proposals.filter((proposal) => proposal.isLatest);
+  const latestProposals = useMemo(
+    () => proposals.filter((proposal) => proposal.isLatest),
+    [proposals],
+  );
   const selectedProposal =
     proposals.find((proposal) => proposal.proposalId === selectedProposalId) ?? null;
+
+  const selectRun = useCallback((key: string) => {
+    setSelectedKey(key);
+    setSelectedProposalId(null);
+    viewingProposalHistoryRef.current = false;
+    setShowProposalDetails(false);
+  }, []);
+  /** Opens the newest version of a draft, the way picking it in the list does. */
+  const selectDraft = useCallback((proposalId: string) => {
+    setSelectedProposalId(proposalId);
+    viewingProposalHistoryRef.current = false;
+    setShowProposalDetails(true);
+  }, []);
+  /** Opens one version from the version picker; an older version is kept while the list refreshes. */
+  const selectDraftVersion = useCallback((proposalId: string) => {
+    const proposal = proposals.find((candidate) => candidate.proposalId === proposalId);
+    setSelectedProposalId(proposalId);
+    viewingProposalHistoryRef.current = proposal?.isLatest === false;
+    setShowProposalDetails(true);
+  }, [proposals]);
+
+  const summary = useMemo<RunbookResultsSummary>(() => ({
+    count: artifacts.length + latestProposals.length,
+    failedRuns: artifacts
+      .filter((artifact) => artifact.status === "failed")
+      .map((artifact) => ({
+        key: artifact.key,
+        title: artifact.runbookTitle,
+        completedSteps: artifact.completedStepCount,
+        totalSteps: artifact.stepCount,
+      })),
+    pendingDrafts: latestProposals
+      .filter((proposal) => proposal.status === "pending_approval")
+      .map((proposal) => ({
+        proposalId: proposal.proposalId,
+        title: proposal.proposedRunbook.title,
+        version: proposal.artifactVersion,
+        kind: proposal.kind,
+      })),
+  }), [artifacts, latestProposals]);
+
+  return {
+    agent,
+    incidentId,
+    sessionId,
+    artifacts,
+    proposals,
+    latestProposals,
+    selectedKey,
+    selectedArtifact,
+    selectedProposal,
+    showProposalDetails,
+    summary,
+    selectRun,
+    selectDraft,
+    selectDraftVersion,
+    refreshProposals,
+  };
+}
+
+export type RunbookResults = ReturnType<typeof useRunbookResults>;
+
+/**
+ * The run list, the details of the selected run and the review of the selected draft. It has no frame of its own:
+ * the rail and the Artifacts panel give it a box with a height.
+ */
+export function RunbookResultsView({
+  results,
+  onRevisionRequested,
+}: {
+  results: RunbookResults;
+  onRevisionRequested?: (requestedEdit: string) => void;
+}) {
+  const { t } = useTranslation();
+  const {
+    agent,
+    incidentId,
+    sessionId,
+    artifacts,
+    proposals,
+    latestProposals,
+    selectedKey,
+    selectedArtifact,
+    selectedProposal,
+    showProposalDetails,
+    selectRun,
+    selectDraft,
+    selectDraftVersion,
+    refreshProposals,
+  } = results;
+
+  return (
+    <div className="grid min-h-0 flex-1 grid-rows-[minmax(180px,0.9fr)_minmax(0,1.4fr)]">
+      <div
+        data-tour="incidents-artifacts-list"
+        className="min-h-0 overflow-y-auto px-4 py-4"
+      >
+        <div className="space-y-2">
+          {latestProposals.map((proposal) => (
+            <RunbookProposalListItem
+              key={proposal.artifactId}
+              proposal={proposal}
+              isSelected={selectedProposal?.artifactId === proposal.artifactId}
+              onSelect={() => { selectDraft(proposal.proposalId); }}
+            />
+          ))}
+          {artifacts.map((artifact) => (
+            <ArtifactListItem
+              key={artifact.key}
+              artifact={artifact}
+              isSelected={artifact.key === selectedKey}
+              onSelect={() => { selectRun(artifact.key); }}
+            />
+          ))}
+
+          {artifacts.length === 0 && latestProposals.length === 0 && (
+            <div className="rounded-2xl border border-dashed border-border/70 bg-muted/10 px-4 py-5 text-sm text-muted-foreground">
+              {t("common.incidentArtifactsRail.whenTheIncidentAgentExecutes")}
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div
+        data-tour="incidents-artifacts-detail"
+        className="min-h-0 px-4 pb-4"
+      >
+        {!showProposalDetails || selectedProposal === null ? (
+          <ArtifactDetails artifact={selectedArtifact} />
+        ) : agent === undefined ? (
+          <div className="rounded-2xl border border-border p-4 text-sm text-muted-foreground">
+            {t(
+              "common.incidentArtifactsRail.proposal.actionsUnavailableInClient",
+            )}
+          </div>
+        ) : (
+          <RunbookProposalArtifact
+            agent={agent}
+            incidentId={incidentId ?? ""}
+            sessionId={sessionId ?? undefined}
+            proposals={proposals}
+            selectedProposal={selectedProposal}
+            onSelect={selectDraftVersion}
+            onRefresh={refreshProposals}
+            onRevisionRequested={onRevisionRequested}
+          />
+        )}
+      </div>
+    </div>
+  );
+}
+
+export default function IncidentArtifactsRail({
+  isOpen,
+  onClose,
+  messages,
+  incidentId,
+  sessionId,
+  onRevisionRequested,
+}: {
+  isOpen: boolean;
+  onClose: () => void;
+  messages: IncidentArtifactsMessage[];
+  incidentId?: string | null;
+  sessionId?: string | null;
+  onRevisionRequested?: (requestedEdit: string) => void;
+}) {
+  const { t } = useTranslation();
+  const results = useRunbookResults({ messages, incidentId, sessionId });
   let railTransformClass = "translate-x-full";
   if (isOpen) {
     railTransformClass = "translate-x-0";
@@ -1678,7 +1859,7 @@ export default function IncidentArtifactsRail({
           </div>
           <div className="text-xs text-muted-foreground">
             {t("common.incidentArtifactsRail.runbookExecutionCount", {
-              count: artifacts.length + latestProposals.length,
+              count: results.summary.count,
             })}
           </div>
         </div>
@@ -1692,77 +1873,10 @@ export default function IncidentArtifactsRail({
         </button>
       </div>
 
-      <div className="grid min-h-0 flex-1 grid-rows-[minmax(180px,0.9fr)_minmax(0,1.4fr)]">
-        <div
-          data-tour="incidents-artifacts-list"
-          className="min-h-0 overflow-y-auto px-4 py-4"
-        >
-          <div className="space-y-2">
-            {latestProposals.map((proposal) => (
-              <RunbookProposalListItem
-                key={proposal.artifactId}
-                proposal={proposal}
-                isSelected={selectedProposal?.artifactId === proposal.artifactId}
-                onSelect={() => {
-                  setSelectedProposalId(proposal.proposalId);
-                  viewingProposalHistoryRef.current = false;
-                  setShowProposalDetails(true);
-                }}
-              />
-            ))}
-            {artifacts.map((artifact) => (
-              <ArtifactListItem
-                key={artifact.key}
-                artifact={artifact}
-                isSelected={artifact.key === selectedKey}
-                onSelect={() => {
-                  setSelectedKey(artifact.key);
-                  setSelectedProposalId(null);
-                  viewingProposalHistoryRef.current = false;
-                  setShowProposalDetails(false);
-                }}
-              />
-            ))}
-
-            {artifacts.length === 0 && latestProposals.length === 0 && (
-              <div className="rounded-2xl border border-dashed border-border/70 bg-muted/10 px-4 py-5 text-sm text-muted-foreground">
-                {t("common.incidentArtifactsRail.whenTheIncidentAgentExecutes")}
-              </div>
-            )}
-          </div>
-        </div>
-
-        <div
-          data-tour="incidents-artifacts-detail"
-          className="min-h-0 px-4 pb-4"
-        >
-          {!showProposalDetails || selectedProposal === null ? (
-            <ArtifactDetails artifact={selectedArtifact} />
-          ) : agent === undefined ? (
-            <div className="rounded-2xl border border-border p-4 text-sm text-muted-foreground">
-              {t(
-                "common.incidentArtifactsRail.proposal.actionsUnavailableInClient",
-              )}
-            </div>
-          ) : (
-            <RunbookProposalArtifact
-              agent={agent}
-              incidentId={incidentId ?? ""}
-              sessionId={sessionId ?? undefined}
-              proposals={proposals}
-              selectedProposal={selectedProposal}
-              onSelect={(proposalId) => {
-                const proposal = proposals.find((candidate) => candidate.proposalId === proposalId);
-                setSelectedProposalId(proposalId);
-                viewingProposalHistoryRef.current = proposal?.isLatest === false;
-                setShowProposalDetails(true);
-              }}
-              onRefresh={refreshProposals}
-              onRevisionRequested={onRevisionRequested}
-            />
-          )}
-        </div>
-      </div>
+      <RunbookResultsView
+        results={results}
+        onRevisionRequested={onRevisionRequested}
+      />
     </aside>
   );
 }
