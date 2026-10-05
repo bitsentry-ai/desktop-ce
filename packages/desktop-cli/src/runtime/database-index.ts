@@ -15,7 +15,6 @@ const DATABASE_SCHEMA_VERSION = 18
 
 export type DesktopDatabaseRuntimeSeeders = {
   seedDefaults(client: DbClient): Promise<void>
-  seedDemoData(client: DbClient): Promise<void>
 }
 
 let configuredSeeders: DesktopDatabaseRuntimeSeeders | null = null
@@ -98,7 +97,6 @@ export async function initializeDatabase(): Promise<DbClient> {
     await assertDatabaseIntegrity()
 
     await seeders.seedDefaults(db)
-    await seeders.seedDemoData(db)
   } catch (error) {
     log.error('[database] Initialization failed:', error)
     if (backupPath !== null) {
