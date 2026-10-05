@@ -143,7 +143,7 @@ export function IntegrationsRailTriggers({ state }: { state: IntegrationsRailSta
   </>;
 }
 
-function usePolledRows<T>(threadId: string, port: { list(threadId: string): Promise<T[]> } | undefined, intervalMs: number) {
+export function usePolledRows<T>(threadId: string, port: { list(threadId: string): Promise<T[]> } | undefined, intervalMs: number) {
   const [rows, setRows] = useState<T[]>([]);
   const [failed, setFailed] = useState(false);
   const activeRef = useRef(true);
@@ -174,7 +174,7 @@ function usePolledRows<T>(threadId: string, port: { list(threadId: string): Prom
 }
 
 /** One source action at a time: a select or a refresh. A failure becomes the recovery message for its cause; the next attempt clears it. */
-function useSourceActions(resources: IntegrationResourcesPort | undefined, reload: () => Promise<void>) {
+export function useSourceActions(resources: IntegrationResourcesPort | undefined, reload: () => Promise<void>) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const run = (action: () => Promise<unknown>) => {

@@ -23,9 +23,9 @@ export const needsReview = (row: IntegrationDelivery) => (row.channel === CHANGE
 export function orderDeliveries(rows: IntegrationDelivery[]): IntegrationDelivery[] {
   return [...rows].sort((a, b) => Number(needsReview(b)) - Number(needsReview(a)) || b.updatedAt.localeCompare(a.updatedAt));
 }
-const shortEvent = (id: string) => (id.length > 14 ? `${id.slice(0, 12)}…` : id);
+export const shortEvent = (id: string) => (id.length > 14 ? `${id.slice(0, 12)}…` : id);
 
-function RecoveryControls({ row, threadId, disabled, service, onRefresh }: {
+export function DeliveryRecoveryControls({ row, threadId, disabled, service, onRefresh }: {
   row: IntegrationDelivery; threadId: string; disabled: boolean; service: IntegrationDeliveriesPort; onRefresh(): Promise<void>;
 }) {
   const { t } = useTranslation();
@@ -64,15 +64,22 @@ function RecoveryControls({ row, threadId, disabled, service, onRefresh }: {
   </div>;
 }
 
+export const deliveryChannelLabel = (row: IntegrationDelivery, t: ReturnType<typeof useTranslation>["t"]) =>
+  (row.channel === CREATE_CHANNEL ? t("incidents.deliveries.channel.create") : t("incidents.deliveries.channel.changes"));
+export function DeliveryStateBadge({ row }: { row: IntegrationDelivery }) {
+  const { t } = useTranslation();
+  return <Badge variant={STATE_VARIANTS[row.state] ?? "secondary"} className="shrink-0">{t(`incidents.deliveries.${row.state}`)}</Badge>;
+}
+
 function DeliveryCard({ row, threadId, disabled, service, onRefresh }: {
   row: IntegrationDelivery; threadId: string; disabled: boolean; service: IntegrationDeliveriesPort; onRefresh(): Promise<void>;
 }) {
   const { t } = useTranslation();
-  const channel = row.channel === CREATE_CHANNEL ? t("incidents.deliveries.channel.create") : t("incidents.deliveries.channel.changes");
+  const channel = deliveryChannelLabel(row, t);
   return <article aria-label={`${channel} ${shortEvent(row.eventId)}`} className="min-w-0 space-y-2 rounded-2xl border border-border bg-card p-3">
     <div className="flex flex-wrap items-center gap-2">
       <span className="text-sm font-medium">{channel}</span>
-      <Badge variant={STATE_VARIANTS[row.state] ?? "secondary"} className="shrink-0">{t(`incidents.deliveries.${row.state}`)}</Badge>
+      <DeliveryStateBadge row={row} />
     </div>
     <p className="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
       <time dateTime={row.updatedAt} title={new Date(row.updatedAt).toLocaleString()}>{relativeTime(row.updatedAt)}</time>
@@ -80,7 +87,7 @@ function DeliveryCard({ row, threadId, disabled, service, onRefresh }: {
       <span className="min-w-0 truncate font-mono" title={row.eventId}>{shortEvent(row.eventId)}</span>
     </p>
     {/* The form is keyed by what it was built for, so a new status or a new ticket ID starts it from a clean state. */}
-    {needsReview(row) && <RecoveryControls key={`${row.state}:${row.externalId ?? ""}`} row={row} threadId={threadId} disabled={disabled} service={service} onRefresh={onRefresh} />}
+    {needsReview(row) && <DeliveryRecoveryControls key={`${row.state}:${row.externalId ?? ""}`} row={row} threadId={threadId} disabled={disabled} service={service} onRefresh={onRefresh} />}
   </article>;
 }
 
