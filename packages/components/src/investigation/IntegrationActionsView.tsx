@@ -45,12 +45,12 @@ export const orderOperations = (rows: IntegrationOperation[]) => [...rows].sort(
 export function preferredOperation(rows: IntegrationOperation[]): IntegrationOperation | null {
   return rows.find((row) => row.status === "proposed") ?? rows.find((row) => row.status === "uncertain") ?? rows[0] ?? null;
 }
-const operationLabel = (row: IntegrationOperation, t: Translate) => row.ticketOperation === undefined ? row.actionId : t(`incidents.integrationWrites.operation.${row.ticketOperation}`);
+export const operationLabel = (row: IntegrationOperation, t: Translate) => row.ticketOperation === undefined ? row.actionId : t(`incidents.integrationWrites.operation.${row.ticketOperation}`);
 
 function Fact({ label, children }: { label: string; children: ReactNode }) {
   return <div className="min-w-0"><dt className="text-xs text-muted-foreground">{label}</dt><dd className="break-all text-sm">{children}</dd></div>;
 }
-function StatusBadges({ row }: { row: IntegrationOperation }) {
+export function StatusBadges({ row }: { row: IntegrationOperation }) {
   const { t } = useTranslation();
   return <>
     <Badge variant={STATUS_VARIANTS[row.status]} className="shrink-0">{t(`incidents.integrationWrites.${row.status}`)}</Badge>
@@ -78,13 +78,59 @@ function OperationListItem({ row, isSelected, onSelect }: { row: IntegrationOper
   </button>;
 }
 
-function OperationDetails({ row, disabled, busy, refusal, closeRequested, onCloseRequestedChange, onApprove, onReject, service, onRefresh }: {
+interface OperationBodyProps {
   row: IntegrationOperation; disabled: boolean; busy: boolean; refusal: string | undefined; closeRequested: boolean;
   onCloseRequestedChange(value: boolean): void; onApprove(): void; onReject(): void; service: IntegrationOperationsPort; onRefresh(): Promise<void>;
-}) {
+}
+const RAIL_BODY_CLASS = "min-h-0 min-w-0 flex-1 space-y-3 overflow-y-auto overflow-x-hidden px-4 py-4";
+
+/** The exact proposal with its approval and recovery controls. `className` frames it: the rail scrolls it, a card in the Artifacts panel does not. */
+export function OperationBody({ row, disabled, busy, refusal, closeRequested, onCloseRequestedChange, onApprove, onReject, service, onRefresh, className = RAIL_BODY_CLASS }: OperationBodyProps & { className?: string }) {
   const { t } = useTranslation();
   const { changes, facts } = summarizeOperation(row);
   const awaiting = row.status === "proposed";
+  return <div className={className}>
+    {row.publicUpdate && <p role="note" className="rounded-md border border-amber-500/30 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-700 dark:bg-amber-950/30 dark:text-amber-400">{t("incidents.integrationWrites.public")}</p>}
+    <dl className="grid grid-cols-1 gap-3">
+      <Fact label={t("incidents.integrationWrites.target")}>{row.target}</Fact>
+      <Fact label={t("incidents.integrationWrites.action")}><code className="text-xs">{row.actionId}</code></Fact>
+      {facts.map((fact) => <Fact key={fact.key} label={t(`incidents.integrationWrites.fact.${fact.key}`)}>{fact.value}</Fact>)}
+    </dl>
+    <div>
+      <h4 className="mb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">{t("incidents.integrationWrites.changes")}</h4>
+      {changes.length === 0
+        ? <p className="text-sm text-muted-foreground">{t("incidents.integrationWrites.noChanges")}</p>
+        : <ul className="divide-y divide-border rounded-md border border-border">
+          {changes.map((change) => <li key={change.key} className="px-3 py-2 text-sm">
+            <code className="block break-all text-xs text-muted-foreground">{change.key}</code>
+            <span className="mt-0.5 block whitespace-pre-wrap break-words">{change.value}</span>
+          </li>)}
+        </ul>}
+    </div>
+    {row.status === "failed" && row.message !== undefined && REFUSAL_KEYS[row.message] !== undefined && <p role="alert" className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">{t(REFUSAL_KEYS[row.message]!)}</p>}
+    {(row.status === "uncertain" || row.status === "executing") && <p className="text-sm text-muted-foreground">{row.message ?? t("incidents.integrationWrites.inspect")}</p>}
+    <details className="text-xs">
+      <summary className="cursor-pointer text-muted-foreground">{t("incidents.integrationWrites.details")}</summary>
+      <p className="mt-2 font-medium">{t("incidents.integrationWrites.request")}</p>
+      <pre className="max-h-48 overflow-auto whitespace-pre-wrap break-all rounded-md bg-muted p-2">{JSON.stringify(row.input, null, 2)}</pre>
+      {row.result !== undefined && <>
+        <p className="mt-2 font-medium">{t("incidents.integrationWrites.result")}</p>
+        <pre className="max-h-48 overflow-auto whitespace-pre-wrap break-all rounded-md bg-muted p-2">{JSON.stringify(row.result, null, 2)}</pre>
+      </>}
+    </details>
+    {awaiting && refusal !== undefined && <p role="alert" className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">{refusal}</p>}
+    {awaiting && <div className="flex flex-wrap items-center gap-2 border-t border-border pt-3">
+      {row.requiresCloseRequest && <label className="mr-auto flex items-center gap-2 text-sm"><input type="checkbox" className="accent-primary" checked={closeRequested} disabled={disabled || busy} onChange={(event) => { onCloseRequestedChange(event.target.checked); }} /> {t("incidents.integrationWrites.closeRequest")}</label>}
+      <Button size="sm" disabled={disabled || busy || (row.requiresCloseRequest && !closeRequested)} onClick={onApprove}>{t("incidents.integrationWrites.approve")}</Button>
+      <Button size="sm" variant="outline" disabled={disabled || busy} onClick={onReject}>{t("incidents.integrationWrites.cancel")}</Button>
+    </div>}
+    <OperationRecoveryControls row={row} service={service} disabled={disabled || busy} onRefresh={onRefresh} />
+  </div>;
+}
+
+function OperationDetails(props: OperationBodyProps) {
+  const { t } = useTranslation();
+  const { row } = props;
   return <section aria-label={operationLabel(row, t)} className="flex h-full min-w-0 flex-col overflow-hidden rounded-2xl border border-border bg-card">
     <div className="border-b border-border px-4 py-3">
       <div className="flex flex-wrap items-center gap-2">
@@ -93,44 +139,50 @@ function OperationDetails({ row, disabled, busy, refusal, closeRequested, onClos
       </div>
       <p className="mt-1 truncate text-xs text-muted-foreground">{row.connectionName}</p>
     </div>
-    <div className="min-h-0 min-w-0 flex-1 space-y-3 overflow-y-auto overflow-x-hidden px-4 py-4">
-      {row.publicUpdate && <p role="note" className="rounded-md border border-amber-500/30 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-700 dark:bg-amber-950/30 dark:text-amber-400">{t("incidents.integrationWrites.public")}</p>}
-      <dl className="grid grid-cols-1 gap-3">
-        <Fact label={t("incidents.integrationWrites.target")}>{row.target}</Fact>
-        <Fact label={t("incidents.integrationWrites.action")}><code className="text-xs">{row.actionId}</code></Fact>
-        {facts.map((fact) => <Fact key={fact.key} label={t(`incidents.integrationWrites.fact.${fact.key}`)}>{fact.value}</Fact>)}
-      </dl>
-      <div>
-        <h4 className="mb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">{t("incidents.integrationWrites.changes")}</h4>
-        {changes.length === 0
-          ? <p className="text-sm text-muted-foreground">{t("incidents.integrationWrites.noChanges")}</p>
-          : <ul className="divide-y divide-border rounded-md border border-border">
-            {changes.map((change) => <li key={change.key} className="px-3 py-2 text-sm">
-              <code className="block break-all text-xs text-muted-foreground">{change.key}</code>
-              <span className="mt-0.5 block whitespace-pre-wrap break-words">{change.value}</span>
-            </li>)}
-          </ul>}
-      </div>
-      {row.status === "failed" && row.message !== undefined && REFUSAL_KEYS[row.message] !== undefined && <p role="alert" className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">{t(REFUSAL_KEYS[row.message]!)}</p>}
-      {(row.status === "uncertain" || row.status === "executing") && <p className="text-sm text-muted-foreground">{row.message ?? t("incidents.integrationWrites.inspect")}</p>}
-      <details className="text-xs">
-        <summary className="cursor-pointer text-muted-foreground">{t("incidents.integrationWrites.details")}</summary>
-        <p className="mt-2 font-medium">{t("incidents.integrationWrites.request")}</p>
-        <pre className="max-h-48 overflow-auto whitespace-pre-wrap break-all rounded-md bg-muted p-2">{JSON.stringify(row.input, null, 2)}</pre>
-        {row.result !== undefined && <>
-          <p className="mt-2 font-medium">{t("incidents.integrationWrites.result")}</p>
-          <pre className="max-h-48 overflow-auto whitespace-pre-wrap break-all rounded-md bg-muted p-2">{JSON.stringify(row.result, null, 2)}</pre>
-        </>}
-      </details>
-      {awaiting && refusal !== undefined && <p role="alert" className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">{refusal}</p>}
-      {awaiting && <div className="flex flex-wrap items-center gap-2 border-t border-border pt-3">
-        {row.requiresCloseRequest && <label className="mr-auto flex items-center gap-2 text-sm"><input type="checkbox" className="accent-primary" checked={closeRequested} disabled={disabled || busy} onChange={(event) => { onCloseRequestedChange(event.target.checked); }} /> {t("incidents.integrationWrites.closeRequest")}</label>}
-        <Button size="sm" disabled={disabled || busy || (row.requiresCloseRequest && !closeRequested)} onClick={onApprove}>{t("incidents.integrationWrites.approve")}</Button>
-        <Button size="sm" variant="outline" disabled={disabled || busy} onClick={onReject}>{t("incidents.integrationWrites.cancel")}</Button>
-      </div>}
-      <OperationRecoveryControls row={row} service={service} disabled={disabled || busy} onRefresh={onRefresh} />
-    </div>
+    <OperationBody {...props} />
   </section>;
+}
+
+export interface OperationDecisions {
+  busy: boolean;
+  /** An approval or rejection failed without a reason the engineer can act on. */
+  failed: boolean;
+  closeRequested(id: string): boolean;
+  setCloseRequested(id: string, value: boolean): void;
+  /** What the remote system refused for. It stays with its operation across list refreshes. */
+  refusal(id: string): string | undefined;
+  decide(row: IntegrationOperation, approve: boolean): Promise<void>;
+}
+
+/** Approve and reject for the operations of one incident, shared by every list that shows them. A client without ticket actions has nothing to decide. */
+export function useOperationDecisions({ threadId, service, onRefresh }: {
+  threadId: string; service: IntegrationOperationsPort | undefined; onRefresh(): Promise<void>;
+}): OperationDecisions {
+  const [busy, setBusy] = useState(false);
+  const [failed, setFailed] = useState(false);
+  const [closeRequests, setCloseRequests] = useState<Record<string, boolean>>({});
+  const [refusals, setRefusals] = useState<Record<string, string>>({});
+  async function decide(row: IntegrationOperation, approve: boolean) {
+    if (service === undefined) return;
+    setBusy(true); setFailed(false);
+    setRefusals((old) => Object.fromEntries(Object.entries(old).filter(([id]) => id !== row.id)));
+    try {
+      if (approve) await service.approve(threadId, row.id, closeRequests[row.id] === true);
+      else await service.cancel(threadId, row.id);
+      await onRefresh();
+    } catch (caught) {
+      // A refusal explains why nothing was written. It belongs to its operation and must outlive the list refresh.
+      const reason = caught instanceof Error ? caught.message.trim().slice(0, MAX_REFUSAL_LENGTH) : "";
+      if (reason === "") setFailed(true);
+      else setRefusals((old) => ({ ...old, [row.id]: reason }));
+    } finally { setBusy(false); }
+  }
+  return {
+    busy, failed, decide,
+    closeRequested: (id) => closeRequests[id] === true,
+    setCloseRequested: (id, value) => { setCloseRequests((old) => ({ ...old, [id]: value })); },
+    refusal: (id) => refusals[id],
+  };
 }
 
 /**
@@ -143,10 +195,7 @@ export function IntegrationActionsView({ threadId, rows, failed, disabled, servi
   const { t } = useTranslation();
   const ordered = useMemo(() => orderOperations(rows), [rows]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [decisionFailed, setDecisionFailed] = useState(false);
-  const [closeRequests, setCloseRequests] = useState<Record<string, boolean>>({});
-  const [refusals, setRefusals] = useState<Record<string, string>>({});
+  const decisions = useOperationDecisions({ threadId, service, onRefresh });
   const knownIdsRef = useRef(new Set<string>());
   useEffect(() => {
     const known = knownIdsRef.current;
@@ -158,22 +207,8 @@ export function IntegrationActionsView({ threadId, rows, failed, disabled, servi
     setSelectedId(preferredOperation(ordered)?.id ?? null);
   }, [ordered, selectedId]);
   const selected = ordered.find((row) => row.id === selectedId) ?? null;
-  async function decide(row: IntegrationOperation, approve: boolean) {
-    setBusy(true); setDecisionFailed(false);
-    setRefusals((old) => Object.fromEntries(Object.entries(old).filter(([id]) => id !== row.id)));
-    try {
-      if (approve) await service.approve(threadId, row.id, closeRequests[row.id] === true);
-      else await service.cancel(threadId, row.id);
-      await onRefresh();
-    } catch (caught) {
-      // A refusal explains why nothing was written. It belongs to its operation and must outlive the list refresh.
-      const reason = caught instanceof Error ? caught.message.trim().slice(0, MAX_REFUSAL_LENGTH) : "";
-      if (reason === "") setDecisionFailed(true);
-      else setRefusals((old) => ({ ...old, [row.id]: reason }));
-    } finally { setBusy(false); }
-  }
   return <div className="flex min-h-0 flex-1 flex-col">
-    {(failed || decisionFailed) && <p role="alert" className="mx-4 mt-4 shrink-0 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">{t("incidents.integrationWrites.error")}</p>}
+    {(failed || decisions.failed) && <p role="alert" className="mx-4 mt-4 shrink-0 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">{t("incidents.integrationWrites.error")}</p>}
     <div className="max-h-[min(40vh,18rem)] shrink-0 overflow-y-auto px-4 py-4">
       <div className="space-y-2">
         {ordered.map((row) => <OperationListItem key={row.id} row={row} isSelected={row.id === selectedId} onSelect={() => { setSelectedId(row.id); }} />)}
@@ -181,9 +216,9 @@ export function IntegrationActionsView({ threadId, rows, failed, disabled, servi
       </div>
     </div>
     <div className="min-h-0 flex-1 px-4 pb-4">
-      {selected !== null && <OperationDetails key={selected.id} row={selected} disabled={disabled} busy={busy} refusal={refusals[selected.id]} closeRequested={closeRequests[selected.id] === true}
-        onCloseRequestedChange={(value) => { setCloseRequests((old) => ({ ...old, [selected.id]: value })); }}
-        onApprove={() => { void decide(selected, true); }} onReject={() => { void decide(selected, false); }} service={service} onRefresh={onRefresh} />}
+      {selected !== null && <OperationDetails key={selected.id} row={selected} disabled={disabled} busy={decisions.busy} refusal={decisions.refusal(selected.id)} closeRequested={decisions.closeRequested(selected.id)}
+        onCloseRequestedChange={(value) => { decisions.setCloseRequested(selected.id, value); }}
+        onApprove={() => { void decisions.decide(selected, true); }} onReject={() => { void decisions.decide(selected, false); }} service={service} onRefresh={onRefresh} />}
       {selected === null && ordered.length > 0 && <div className="flex h-full items-center justify-center rounded-2xl border border-dashed border-border/70 bg-muted/10 px-6 text-center text-sm text-muted-foreground">{t("incidents.integrationRail.selectAction")}</div>}
     </div>
   </div>;

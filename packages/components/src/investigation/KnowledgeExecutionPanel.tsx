@@ -69,9 +69,10 @@ function ExecutionResult({ execution }: { execution: RunbookExecutionRecord }) {
 
 /**
  * Stays mounted once it exists: an execution that is still running keeps being polled, and its result stays reachable,
- * even when nothing is selected any more. `active` only decides whether the review controls are shown.
+ * even when nothing is selected any more. `active` only decides whether the review controls are shown. A host that
+ * labels the review itself can hide the title.
  */
-export function KnowledgeExecutionPanel({ threadId, disabled, active = true }: { threadId: string; disabled: boolean; active?: boolean }) {
+export function KnowledgeExecutionPanel({ threadId, disabled, active = true, hideTitle = false }: { threadId: string; disabled: boolean; active?: boolean; hideTitle?: boolean }) {
   const { runbooks } = useBitsentryServices();
   const { t } = useTranslation();
   const parametersId = useId();
@@ -126,7 +127,7 @@ export function KnowledgeExecutionPanel({ threadId, disabled, active = true }: {
   }
   if (!active && executionId === null) return null;
   return <section aria-label={t("incidents.knowledge.executeTitle")} className="space-y-3 border-t border-border pt-3">
-    <h3 className="text-sm font-semibold">{t("incidents.knowledge.executeTitle")}</h3>
+    {!hideTitle && <h3 className="text-sm font-semibold">{t("incidents.knowledge.executeTitle")}</h3>}
     {executeError && <p role="alert" className="text-sm text-destructive">{t("incidents.knowledge.executeError")}</p>}
     {loadError && <p role="alert" className="text-sm text-destructive">{t("incidents.knowledge.loadError")}</p>}
     {changed && <p role="status" className="text-sm text-muted-foreground">{t("incidents.knowledge.changed")}</p>}

@@ -117,10 +117,21 @@ function ResourceCard({ row, disabled, onToggle, onRefresh }: { row: Integration
 }
 
 /**
+ * Whether the saved-runbook review is shown for these sources. Once a source was selected the review stays mounted, so a
+ * running execution is not lost when the last one is unchecked; `anySelected` only decides whether its controls are shown.
+ */
+export function useExecutionPanelState(rows: IntegrationResource[]) {
+  const anySelected = rows.some((row) => row.selected === true);
+  const [everSelected, setEverSelected] = useState(false);
+  useEffect(() => { if (anySelected) setEverSelected(true); }, [anySelected]);
+  return { anySelected, visible: anySelected || everSelected };
+}
+
+/**
  * The Sources view of the integrations rail: every linked ticket and document in one column, the source toggle on
  * each card, and the saved-runbook review below them once a source is selected.
  */
-export function IntegrationSourcesView({ threadId, rows, failed, disabled, onSelect, onRefresh, actionError = null }: {
+export function IntegrationSourcesView({ threadId, rows, failed, disabled, onSelect, onRefresh, actionError = null, showExecution = true }: {
   threadId: string;
   rows: IntegrationResource[];
   failed: boolean;
@@ -131,17 +142,16 @@ export function IntegrationSourcesView({ threadId, rows, failed, disabled, onSel
   actionError?: string | null;
   /** Absent when the product cannot select sources; the cards then show no toggle. */
   onSelect?: (resource: IntegrationResource, selected: boolean) => void;
+  /** False where the host shows the saved-runbook review itself, outside this list. */
+  showExecution?: boolean;
 }) {
   const { t } = useTranslation();
-  const anySelected = rows.some((row) => row.selected === true);
-  // Once a source was selected the execution panel stays mounted, so a running execution is not lost when the last one is unchecked.
-  const [everSelected, setEverSelected] = useState(false);
-  useEffect(() => { if (anySelected) setEverSelected(true); }, [anySelected]);
+  const execution = useExecutionPanelState(rows);
   return <div className="space-y-3">
     {actionError !== null && <p role="alert" className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">{t(actionError)}</p>}
     {failed && <p role="alert" className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">{t("incidents.integrationResources.error")}</p>}
     {rows.length === 0 && !failed && <div className="rounded-2xl border border-dashed border-border/70 bg-muted/10 px-4 py-5 text-sm text-muted-foreground">{t("incidents.integrationRail.noSources")}</div>}
     {rows.map((row) => <ResourceCard key={resourceKey(row)} row={row} disabled={disabled} onToggle={onSelect === undefined ? undefined : (selected) => { onSelect(row, selected); }} onRefresh={onRefresh === undefined ? undefined : () => { onRefresh(row); }} />)}
-    {(anySelected || everSelected) && <KnowledgeExecutionPanel threadId={threadId} disabled={disabled} active={anySelected} />}
+    {showExecution && execution.visible && <KnowledgeExecutionPanel threadId={threadId} disabled={disabled} active={execution.anySelected} />}
   </div>;
 }
