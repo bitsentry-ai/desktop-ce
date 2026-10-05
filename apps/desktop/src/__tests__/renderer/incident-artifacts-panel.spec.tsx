@@ -28,7 +28,7 @@ vi.mock('@bitsentry-ce/i18n', async () => {
 
 import IncidentArtifactsPanel, { ArtifactsPanelTrigger } from '@bitsentry-ce/components/investigation/IncidentArtifactsPanel'
 import { useArtifactsPanelState } from '@bitsentry-ce/components/investigation/artifacts-panel-state'
-import type { IncidentArtifactsMessage } from '@bitsentry-ce/components/investigation/IncidentArtifactsRail'
+import IncidentArtifactsRail, { type IncidentArtifactsMessage } from '@bitsentry-ce/components/investigation/IncidentArtifactsRail'
 import type { IntegrationOperationsPort } from '@bitsentry-ce/components/investigation/IntegrationActionsView'
 import type { IntegrationDelivery, IntegrationDeliveriesPort } from '@bitsentry-ce/components/investigation/IntegrationDeliveriesView'
 import type { IntegrationResourcesPort } from '@bitsentry-ce/components/investigation/IntegrationSourcesView'
@@ -281,6 +281,60 @@ describe('"Needs you"', () => {
     expect(within(runbookResults()).getAllByText('output of Analyze server 227').length).toBeGreaterThan(0)
     expect(within(runbookResults()).queryByRole('button', { name: 'Approve' })).toBeNull()
     expect(scrolled.at(-1)).toBe(runbookResults())
+  })
+})
+
+describe('Runbook Results layout', () => {
+  const classes = (element: Element) => element.getAttribute('class') ?? ''
+  const everyElement = (container: Element) => [...container.querySelectorAll('*')]
+  /** Areas that scroll on their own: in a box that is too short they hide what is inside them. */
+  const innerScrollAreas = (container: Element) => everyElement(container).filter((element) => /(^|\s)overflow-(y-)?(auto|scroll)(\s|$)/.test(classes(element)))
+  /** Rows that take a fixed share of the box height: in a box that is too short the steps row shrinks to nothing. */
+  const fixedRows = (container: Element) => everyElement(container).filter((element) => /(^|\s)grid-rows-\[/.test(classes(element)))
+
+  async function openRun() {
+    renderBusyIncident()
+    await waitFor(() => { expect(chipCounts()).toEqual(['9', '2', '3', '2', '2']) })
+    expect(await within(runbookResults()).findByRole('button', { name: 'Approve' })).toBeTruthy()
+    fireEvent.click(within(runbookResults()).getByRole('button', { name: /^Restart nginx check/ }))
+  }
+
+  it.each(['All', 'Runbooks'])('gives the selected run its natural height under %s, so its steps cannot collapse under the output', async (filter) => {
+    await openRun()
+    fireEvent.click(chip(filter))
+    const results = runbookResults()
+
+    expect(within(results).getByText('Live Steps')).toBeTruthy()
+    expect(within(results).getByRole('button', { name: /^1\s*Collect logs/ })).toBeTruthy()
+    expect(within(results).getByText('Output')).toBeTruthy()
+    expect(fixedRows(results)).toEqual([])
+    expect(innerScrollAreas(results)).toEqual([])
+  })
+
+  it.each(['All', 'Runbooks'])('scrolls the whole panel under %s', async (filter) => {
+    renderBusyIncident()
+    await waitFor(() => { expect(chipCounts()).toEqual(['9', '2', '3', '2', '2']) })
+    fireEvent.click(chip(filter))
+
+    const scroller = runbookResults().closest('.overflow-y-auto')
+
+    expect(scroller).toBeTruthy()
+    expect(panel().contains(scroller)).toBe(true)
+  })
+
+  it('keeps the full-height layout in the Desktop rail, where the list and the details scroll inside their own rows', async () => {
+    storeRuns([failedRun, completedRun])
+    render(
+      <BitsentryServicesProvider services={services}>
+        <IncidentArtifactsRail isOpen onClose={() => undefined} messages={NO_MESSAGES} incidentId={INCIDENT} />
+      </BitsentryServicesProvider>,
+    )
+    fireEvent.click(await screen.findByRole('button', { name: /^Restart nginx check/ }))
+    const rail = document.querySelector('aside') as HTMLElement
+
+    expect(within(rail).getByText('Live Steps')).toBeTruthy()
+    expect(fixedRows(rail).length).toBeGreaterThanOrEqual(2)
+    expect(innerScrollAreas(rail).length).toBeGreaterThanOrEqual(2)
   })
 })
 

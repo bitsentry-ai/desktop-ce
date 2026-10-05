@@ -1100,10 +1100,13 @@ function ArtifactListItem({
 
 function ArtifactDetails({
   artifact,
+  layout,
 }: {
   artifact: IncidentArtifactEntry | null;
+  layout: RunbookResultsLayout;
 }) {
   const { t } = useTranslation();
+  const flow = layout === "flow";
   const [selectedStepKey, setSelectedStepKey] = useState<string | null>(null);
 
   useEffect(() => {
@@ -1149,14 +1152,26 @@ function ArtifactDetails({
 
   if (artifact === null) {
     return (
-      <div className="flex h-full items-center justify-center rounded-2xl border border-dashed border-border/70 bg-muted/10 px-6 text-center text-sm text-muted-foreground">
+      <div
+        className={
+          flow
+            ? "rounded-2xl border border-dashed border-border/70 bg-muted/10 px-6 py-6 text-center text-sm text-muted-foreground"
+            : "flex h-full items-center justify-center rounded-2xl border border-dashed border-border/70 bg-muted/10 px-6 text-center text-sm text-muted-foreground"
+        }
+      >
         {t("common.incidentArtifactsRail.selectARunbookExecutionTo")}
       </div>
     );
   }
 
   return (
-    <div className="flex h-full min-w-0 flex-col overflow-hidden rounded-2xl border border-border bg-card">
+    <div
+      className={
+        flow
+          ? "flex min-w-0 flex-col overflow-hidden rounded-2xl border border-border bg-card"
+          : "flex h-full min-w-0 flex-col overflow-hidden rounded-2xl border border-border bg-card"
+      }
+    >
       <div className="border-b border-border px-4 py-3">
         <div className="flex flex-wrap items-center gap-2">
           <div className="text-sm font-semibold">{artifact.runbookTitle}</div>
@@ -1179,8 +1194,14 @@ function ArtifactDetails({
         </div>
       </div>
 
-      <div className="grid min-h-0 flex-1 grid-rows-[minmax(0,1fr)_minmax(180px,0.9fr)]">
-        <div className="min-h-0 overflow-y-auto px-4 py-4">
+      <div
+        className={
+          flow
+            ? undefined
+            : "grid min-h-0 flex-1 grid-rows-[minmax(0,1fr)_minmax(180px,0.9fr)]"
+        }
+      >
+        <div className={flow ? "px-4 py-4" : "min-h-0 overflow-y-auto px-4 py-4"}>
           <div className="mb-3 flex items-center justify-between text-[11px] uppercase tracking-[0.18em] text-muted-foreground/60">
             <span>{t("common.incidentArtifactsRail.liveSteps")}</span>
             <span>
@@ -1260,7 +1281,13 @@ function ArtifactDetails({
           </div>
         </div>
 
-        <div className="min-h-0 min-w-0 overflow-y-auto overflow-x-hidden border-t border-border px-4 py-4">
+        <div
+          className={
+            flow
+              ? "min-w-0 overflow-x-hidden border-t border-border px-4 py-4"
+              : "min-h-0 min-w-0 overflow-y-auto overflow-x-hidden border-t border-border px-4 py-4"
+          }
+        >
           <div className="space-y-3">
             <div>
               <div className="mb-2 text-[11px] uppercase tracking-[0.18em] text-muted-foreground/60">
@@ -1730,15 +1757,24 @@ export function useRunbookResults({
 export type RunbookResults = ReturnType<typeof useRunbookResults>;
 
 /**
+ * How Runbook Results use the space they are given. "fill" is the full-height rail: the list and the details share a
+ * box of fixed height and scroll inside it. "flow" takes the natural height, the list first and then the selected run
+ * or draft, with nothing scrolling on its own, for a host that scrolls the whole page, such as the Artifacts panel.
+ */
+export type RunbookResultsLayout = "fill" | "flow";
+
+/**
  * The run list, the details of the selected run and the review of the selected draft. It has no frame of its own:
- * the rail and the Artifacts panel give it a box with a height.
+ * the host gives it a box, with a height for "fill" and without one for "flow".
  */
 export function RunbookResultsView({
   results,
   onRevisionRequested,
+  layout = "fill",
 }: {
   results: RunbookResults;
   onRevisionRequested?: (requestedEdit: string) => void;
+  layout?: RunbookResultsLayout;
 }) {
   const { t } = useTranslation();
   const {
@@ -1758,62 +1794,78 @@ export function RunbookResultsView({
     refreshProposals,
   } = results;
 
+  const list = (
+    <div className="space-y-2">
+      {latestProposals.map((proposal) => (
+        <RunbookProposalListItem
+          key={proposal.artifactId}
+          proposal={proposal}
+          isSelected={selectedProposal?.artifactId === proposal.artifactId}
+          onSelect={() => { selectDraft(proposal.proposalId); }}
+        />
+      ))}
+      {artifacts.map((artifact) => (
+        <ArtifactListItem
+          key={artifact.key}
+          artifact={artifact}
+          isSelected={artifact.key === selectedKey}
+          onSelect={() => { selectRun(artifact.key); }}
+        />
+      ))}
+
+      {artifacts.length === 0 && latestProposals.length === 0 && (
+        <div className="rounded-2xl border border-dashed border-border/70 bg-muted/10 px-4 py-5 text-sm text-muted-foreground">
+          {t("common.incidentArtifactsRail.whenTheIncidentAgentExecutes")}
+        </div>
+      )}
+    </div>
+  );
+
+  const details =
+    !showProposalDetails || selectedProposal === null ? (
+      <ArtifactDetails artifact={selectedArtifact} layout={layout} />
+    ) : agent === undefined ? (
+      <div className="rounded-2xl border border-border p-4 text-sm text-muted-foreground">
+        {t(
+          "common.incidentArtifactsRail.proposal.actionsUnavailableInClient",
+        )}
+      </div>
+    ) : (
+      <RunbookProposalArtifact
+        agent={agent}
+        incidentId={incidentId ?? ""}
+        sessionId={sessionId ?? undefined}
+        proposals={proposals}
+        selectedProposal={selectedProposal}
+        onSelect={selectDraftVersion}
+        onRefresh={refreshProposals}
+        onRevisionRequested={onRevisionRequested}
+      />
+    );
+
+  if (layout === "flow") {
+    return (
+      <div className="space-y-3">
+        <div data-tour="incidents-artifacts-list">{list}</div>
+        <div data-tour="incidents-artifacts-detail">{details}</div>
+      </div>
+    );
+  }
+
   return (
     <div className="grid min-h-0 flex-1 grid-rows-[minmax(180px,0.9fr)_minmax(0,1.4fr)]">
       <div
         data-tour="incidents-artifacts-list"
         className="min-h-0 overflow-y-auto px-4 py-4"
       >
-        <div className="space-y-2">
-          {latestProposals.map((proposal) => (
-            <RunbookProposalListItem
-              key={proposal.artifactId}
-              proposal={proposal}
-              isSelected={selectedProposal?.artifactId === proposal.artifactId}
-              onSelect={() => { selectDraft(proposal.proposalId); }}
-            />
-          ))}
-          {artifacts.map((artifact) => (
-            <ArtifactListItem
-              key={artifact.key}
-              artifact={artifact}
-              isSelected={artifact.key === selectedKey}
-              onSelect={() => { selectRun(artifact.key); }}
-            />
-          ))}
-
-          {artifacts.length === 0 && latestProposals.length === 0 && (
-            <div className="rounded-2xl border border-dashed border-border/70 bg-muted/10 px-4 py-5 text-sm text-muted-foreground">
-              {t("common.incidentArtifactsRail.whenTheIncidentAgentExecutes")}
-            </div>
-          )}
-        </div>
+        {list}
       </div>
 
       <div
         data-tour="incidents-artifacts-detail"
         className="min-h-0 px-4 pb-4"
       >
-        {!showProposalDetails || selectedProposal === null ? (
-          <ArtifactDetails artifact={selectedArtifact} />
-        ) : agent === undefined ? (
-          <div className="rounded-2xl border border-border p-4 text-sm text-muted-foreground">
-            {t(
-              "common.incidentArtifactsRail.proposal.actionsUnavailableInClient",
-            )}
-          </div>
-        ) : (
-          <RunbookProposalArtifact
-            agent={agent}
-            incidentId={incidentId ?? ""}
-            sessionId={sessionId ?? undefined}
-            proposals={proposals}
-            selectedProposal={selectedProposal}
-            onSelect={selectDraftVersion}
-            onRefresh={refreshProposals}
-            onRevisionRequested={onRevisionRequested}
-          />
-        )}
+        {details}
       </div>
     </div>
   );

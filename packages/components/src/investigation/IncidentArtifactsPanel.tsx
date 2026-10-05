@@ -50,8 +50,8 @@ function SectionHeading({ icon: Icon, label, count }: { icon: ElementType; label
 }
 
 /** A section stays mounted while another filter is chosen, so a half-filled review or a selected run is still there when it comes back. */
-function Section({ label, visible, fill = false, sectionRef, children }: { label: string; visible: boolean; fill?: boolean; sectionRef?: Ref<HTMLElement>; children: ReactNode }) {
-  return <section ref={sectionRef} aria-label={label} hidden={!visible} className={visible && fill ? "flex min-h-0 flex-1 flex-col" : undefined}>{children}</section>;
+function Section({ label, visible, sectionRef, children }: { label: string; visible: boolean; sectionRef?: Ref<HTMLElement>; children: ReactNode }) {
+  return <section ref={sectionRef} aria-label={label} hidden={!visible}>{children}</section>;
 }
 
 const operationCardId = (id: string) => `operation:${id}`;
@@ -148,7 +148,6 @@ export default function IncidentArtifactsPanel({ isOpen, filter, focusOnOpen = f
   const showRunbooks = filter === "runbooks" || (everything && runbookSummary.count > 0);
   const showActions = filter === "actions" || (everything && (sectionOperations.length > 0 || actions.failed || decisions.failed));
   const showDeliveries = deliveries !== undefined && (filter === "deliveries" || (everything && (sectionDeliveries.length > 0 || deliveryRows.failed)));
-  const fillBody = filter === "runbooks";
 
   const operationCard = (row: IntegrationOperation) => operations === undefined ? null
     : <OperationCard key={row.id} row={row} open={cards.isOpen(operationCardId(row.id))} onToggle={() => { cards.toggle(operationCardId(row.id)); }} disabled={disabled} decisions={decisions} service={operations} onRefresh={actions.refresh} />;
@@ -179,7 +178,7 @@ export default function IncidentArtifactsPanel({ isOpen, filter, focusOnOpen = f
       {deliveries !== undefined && <FilterChip active={filter === "deliveries"} label={t("incidents.integrationRail.deliveries")} count={deliveryRows.rows.length} onSelect={() => { onFilterChange("deliveries"); }} />}
     </div>
 
-    <div className={cn("min-h-0 flex-1 px-4 py-4", fillBody ? "flex flex-col overflow-hidden" : "space-y-5 overflow-y-auto")}>
+    <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-4 py-4">
       {showNeedsYou && <section aria-label={t("incidents.artifactsPanel.needsYouTitle")} className="space-y-2 rounded-2xl border border-amber-500/40 bg-amber-500/5 p-3">
         <h3 className="flex items-center gap-1.5 text-xs font-semibold text-amber-700 dark:text-amber-400">
           <AlertTriangle size={13} aria-hidden="true" />
@@ -200,11 +199,9 @@ export default function IncidentArtifactsPanel({ isOpen, filter, focusOnOpen = f
         <IntegrationSourcesView threadId={threadId} rows={sources.rows} failed={sources.failed} disabled={disabled || sourceActions.busy} onSelect={sourceActions.select} onRefresh={sourceActions.refresh} actionError={sourceActions.error} showExecution={false} />
       </Section>
 
-      <Section label={t("common.incidentArtifactsRail.runbookResults")} visible={showRunbooks} fill={fillBody} sectionRef={runbookSectionRef}>
-        <div className="shrink-0"><SectionHeading icon={FileText} label={t("common.incidentArtifactsRail.runbookResults")} count={runbookSummary.count} /></div>
-        <div className={cn("flex flex-col overflow-hidden rounded-2xl border border-border", fillBody ? "min-h-0 flex-1" : "h-[min(75vh,46rem)]")}>
-          <RunbookResultsView results={runbookResults} onRevisionRequested={onRevisionRequested} />
-        </div>
+      <Section label={t("common.incidentArtifactsRail.runbookResults")} visible={showRunbooks} sectionRef={runbookSectionRef}>
+        <SectionHeading icon={FileText} label={t("common.incidentArtifactsRail.runbookResults")} count={runbookSummary.count} />
+        <RunbookResultsView results={runbookResults} onRevisionRequested={onRevisionRequested} layout="flow" />
       </Section>
 
       <Section label={t("incidents.integrationRail.ticketActions")} visible={showActions}>
