@@ -37,7 +37,7 @@ describe('SQLite integration runtime cutover', () => {
       let executions = 0
       const service = (storage: typeof first) => new IntegrationOperationService(storage.operations, async () => {
         const row = (await storage.connections.list())[0]
-        return { connectionRevision: row.revision, connection: describeIntegrationConnection(row, plugin), plugin, execute: async () => {
+        return { connection: describeIntegrationConnection(row, plugin), plugin, execute: async () => {
           executions++
           await f.db.$queryRaw('UPDATE "IntegrationOperation" SET "leaseExpiresAt"=0 WHERE status=\'executing\' RETURNING id')
           await second.operations.lease!.expire()
@@ -64,7 +64,7 @@ describe('SQLite integration runtime cutover', () => {
     } finally { await f.close() }
   })
 
-  it('imports encrypted history once, disables connections, and preserves originals', async () => {
+  it('imports encrypted history once, disables connections, keeps selections, and preserves originals', async () => {
     const f = await fixture()
     try {
       const operation: IntegrationOperation = { id: '80000000-0000-4000-8000-000000000002', connectionId: connection.id, threadId: 'thread', connectionName: connection.name, pluginId: 'outline', actionId: 'create_document', target: 'https://outline.example/api', input: { title: 'Historical document' }, publicUpdate: true, requiresCloseRequest: false, status: 'executing', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }
@@ -78,13 +78,11 @@ describe('SQLite integration runtime cutover', () => {
       expect(await storage.connections.list()).toHaveLength(1)
       expect((await storage.connections.list())[0].enabled).toBe(false)
       expect((await storage.operations.list('thread'))[0].status).toBe('uncertain')
-      expect((await storage.resources.list('thread'))[0]).toMatchObject({ externalId: '42', selected: false })
+      expect((await storage.resources.list('thread'))[0]).toMatchObject({ externalId: '42', selected: true })
       expect((await f.secrets.get('bitsentry.integration-operations.v1')).operations).toBe(JSON.stringify([operation]))
       const resourceRows = await f.db.$queryRaw('SELECT * FROM "ExternalResource"')
       expect(resourceRows).toHaveLength(1)
       expect(JSON.stringify(resourceRows)).not.toContain('Historical document')
-      await storage.resources.select('thread', connection.id, 'document', '42', true)
-      expect((await storage.resources.list('thread'))[0].selected).toBe(true)
     } finally { await f.close() }
   })
 
@@ -96,12 +94,63 @@ describe('SQLite integration runtime cutover', () => {
       let executed = false
       const service = new IntegrationOperationService(storage.operations, async () => {
         const row = (await storage.connections.list())[0]
-        return { connectionRevision: row.revision, connection: describeIntegrationConnection(row, plugin), plugin, execute: async () => { executed = true; return { ok: true, status: 200, data: {} } } }
+        return { connection: describeIntegrationConnection(row, plugin), plugin, execute: async () => { executed = true; return { ok: true, status: 200, data: {} } } }
       })
       const proposal = await service.propose('thread', { connectionId: connection.id, actionId: 'create_document', input: { title: 'Preview' } })
       await storage.connections.save({ ...connection, auth: { ...connection.auth, accessToken: 'replacement-token' } })
-      expect((await service.approve('thread', proposal.id, false)).status).toBe('proposed')
+      await expect(service.approve('thread', proposal.id, false)).rejects.toThrow('Connection changed')
       expect(executed).toBe(false)
+      expect((await storage.operations.list('thread'))[0].status).toBe('proposed')
+    } finally { await f.close() }
+  })
+  it('keeps several selected sources, across refreshes and a reopen', async () => {
+    const f = await fixture()
+    try {
+      const storage = createDesktopIntegrationStorage(f.db, f.secrets)
+      await storage.connections.save(connection)
+      const card = (externalId: string) => ({ connectionId: connection.id, connectionName: connection.name, threadId: 'thread', resourceType: 'document', externalId, title: `Document ${externalId}`, url: `https://outline.example/doc/${externalId}`, state: { revision: 1 }, observedAt: new Date().toISOString() })
+      await storage.resources.save([card('1'), card('2'), card('3')])
+      await storage.resources.select('thread', connection.id, 'document', '1', true)
+      await storage.resources.select('thread', connection.id, 'document', '2', true)
+      await storage.resources.select('thread', connection.id, 'document', '1', false)
+      await storage.resources.select('thread', connection.id, 'document', '3', true)
+      // A refresh of a selected source must not drop it.
+      await storage.resources.save([{ ...card('2'), observedAt: new Date(Date.now() + 1000).toISOString() }])
+      const selectedIds = async (opened: typeof storage) => (await opened.resources.list('thread')).filter(row => row.selected).map(row => row.externalId).sort()
+      expect(await selectedIds(storage)).toEqual(['2', '3'])
+      expect(await selectedIds(createDesktopIntegrationStorage(f.second, f.secrets))).toEqual(['2', '3'])
+    } finally { await f.close() }
+  })
+
+  it('lets a profile created with the one-selection index keep several selected sources', async () => {
+    const f = await fixture()
+    try {
+      await f.db.$executeRawUnsafe('CREATE UNIQUE INDEX "ResourceLink_selected" ON "ResourceLink"("subjectType","subjectId") WHERE "selected" = 1 AND "removedAt" IS NULL')
+      await ensureIntegrationStorageSchema(f.db)
+      const storage = createDesktopIntegrationStorage(f.db, f.secrets)
+      await storage.connections.save(connection)
+      const card = (externalId: string) => ({ connectionId: connection.id, connectionName: connection.name, threadId: 'thread', resourceType: 'document', externalId, title: 'Document', url: 'https://outline.example/doc', state: {}, observedAt: new Date().toISOString() })
+      await storage.resources.save([card('1'), card('2')])
+      await storage.resources.select('thread', connection.id, 'document', '1', true)
+      await storage.resources.select('thread', connection.id, 'document', '2', true)
+      expect((await storage.resources.list('thread')).filter(row => row.selected)).toHaveLength(2)
+    } finally { await f.close() }
+  })
+
+  it('keeps the stored credentials when a connection is edited without sending them', async () => {
+    const f = await fixture()
+    try {
+      const storage = createDesktopIntegrationStorage(f.db, f.secrets)
+      const timer = { ...plugin, id: 'third-party.time', name: 'Timer', auth: { fields: [{ key: 'apiKey', label: 'Key', type: 'string', required: true, secret: true }] }, actions: [], metadata: { persistence: { configVersion: 1, destinationField: 'serviceUrl', configFields: [{ key: 'serviceUrl', label: 'Service', type: 'string', required: true }, { key: 'project', label: 'Project', type: 'string', required: false }], resources: [], eventChannels: [] } } } as DesktopPluginDescriptor
+      const saved = { id: '80000000-0000-4000-8000-000000000009', pluginId: timer.id, name: 'Timer', enabled: true, configVersion: 1, config: { serviceUrl: 'https://timer.example/api', project: 'ops' }, auth: { apiKey: 'private-key' } }
+      await storage.connections.save(saved, timer)
+      const before = (await storage.connections.list())[0]
+
+      await storage.connections.save({ ...saved, config: { serviceUrl: 'https://timer.example/api', project: 'support' }, auth: {} }, timer)
+
+      const after = (await storage.connections.list())[0]
+      expect(after).toMatchObject({ config: { project: 'support' }, auth: { apiKey: 'private-key' } })
+      expect(after.revision).not.toBe(before.revision)
     } finally { await f.close() }
   })
 })

@@ -70,7 +70,7 @@ export async function backfillDesktopIntegrationStorage(db: DbClient, secrets: L
     if (records['bitsentry.integration-sqlite-cutover.v1'].completed === 'true') return
     const connections = array(records['bitsentry.integration-connections.v1'].connections).map(value => integrationConnectionInputSchema.parse(value))
     const resources = array(records['bitsentry.integration-resources.v1'].resources).map(value => integrationResourceSchema.parse(value))
-    const operations = array(records['bitsentry.integration-operations.v1'].operations).map(value => integrationOperationSchema.parse(value))
+    const operations = array(records['bitsentry.integration-operations.v1'].operations).map(value => integrationOperationSchema.parse({ pluginVersion: 'legacy-unknown', ...(value as object) }))
     const connectionIds = new Set(connections.map(row => row.id))
     const threadIds = new Set((await db.$queryRaw<{ id: string }>('SELECT id FROM "IncidentThread"')).map(row => row.id))
     if ([...resources, ...operations].some(row => !connectionIds.has(row.connectionId) || !threadIds.has(row.threadId))) throw new Error('Legacy integration history contains a missing connection or thread. Restore its encrypted backup before migrating; no source records were removed.')
