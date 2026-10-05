@@ -8,6 +8,8 @@ import {
   type AgentRuntimeLlmAdapter,
   type AgentRuntimeRunbookGateway,
 } from '../main/features/agent-runtime/services/agent-runtime.service'
+import { createDesktopAgentService } from '@bitsentry-ce/coding-agents'
+import { AgentRuntimeService as ComposedAgentRuntimeService } from '@bitsentry-ce/desktop-cli/runtime/desktop-agent-runtime'
 import type {
   DesktopPluginDescriptor,
   DesktopPluginRuntimeService,
@@ -162,6 +164,28 @@ describe('direct integration reads', () => {
 
     expect(followUpToolContent(llmAdapter)).toContain('INTEGRATION_READ_TIMEOUT')
     expect(followUpToolContent(llmAdapter)).toContain('No write was attempted')
+  })
+
+  it('reads an integration through the agent runtime the desktop app composes', async () => {
+    const llmAdapter = readIntegrationTurn()
+    const pluginRuntime = {
+      listPlugins: async () => [plugin],
+      listIntegrationConnections: async () => [connection],
+      executeIntegrationAction: async () => ({ ok: true, status: 200, summary: 'Read', data: { text: 'Failover evidence' } }),
+    } as unknown as DesktopPluginRuntimeService
+    // The same wiring the app uses: its dependency object is mapped onto the runtime constructor's positional arguments.
+    const service = createDesktopAgentService(
+      { llmAdapter, runbookGateway: { listExecutable: async () => [] } as unknown as AgentRuntimeRunbookGateway, pluginRuntime, windowGetter: () => null },
+      { AgentRuntimeService: ComposedAgentRuntimeService },
+    )
+
+    const sessionId = await service.start({
+      prompt: 'Find the database failover document',
+      llm: { providerKey: 'anthropic', model: 'model-a' },
+    })
+    await waitFor(() => service.getStatus(sessionId).state === 'COMPLETED')
+
+    expect(followUpToolContent(llmAdapter)).toContain('Failover evidence')
   })
 
   it('does not execute an action that a registry reload turns into a write', async () => {

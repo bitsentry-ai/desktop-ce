@@ -199,7 +199,7 @@ export function createDesktopPluginHandlers(
 ): Record<string, (payload: unknown) => Promise<unknown>> {
   return {
     "plugins:selectResource": async (payload) => {
-      const input = z.object({ threadId: z.string().min(1), connectionId: z.uuid(), resourceType: z.enum(["ticket", "document"]), externalId: z.string().min(1).max(200), selected: z.boolean() }).strict().parse(payload);
+      const input = z.object({ threadId: z.string().min(1), connectionId: z.uuid(), resourceType: z.string().min(1).max(100), externalId: z.string().min(1).max(200), selected: z.boolean() }).strict().parse(payload);
       await service.getIntegrationResources().select(input.threadId, input.connectionId, input.resourceType, input.externalId, input.selected);
       return { ok: true };
     },

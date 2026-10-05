@@ -1,3 +1,4 @@
+import { hasPluginCredentials, validatePluginConnectionConfig, validatePluginResourceState } from "@bitsentry/plugin-sdk";
 import type { IntegrationConnection, IntegrationConnectionInput } from "./integration-connections";
 import { z, type ZodType } from "zod";
 
@@ -34,6 +35,7 @@ type PluginActionRuntime = {
   referencePath?: string;
   inputSchema: ZodType<Record<string, unknown>>;
   execute(input: {
+    config?: Record<string, unknown>;
     auth: Record<string, unknown>;
     input: Record<string, unknown>;
     operation?: DesktopPluginOperationContext;
@@ -41,6 +43,7 @@ type PluginActionRuntime = {
 };
 
 type PluginRuntime = {
+  codePlugin: DesktopCodePlugin;
   descriptor: DesktopPluginDescriptor;
   actions: Map<string, PluginActionRuntime>;
   dataSource?: DesktopCodePluginDataSource;
@@ -109,6 +112,17 @@ function createPluginHostContext(
   };
 }
 
+function validateNormalizedResources(plugin: DesktopCodePlugin, data: unknown): unknown {
+  if (data === null || typeof data !== "object" || Array.isArray(data)) return data;
+  const result = data as Record<string, unknown>;
+  if (!Array.isArray(result.resources)) return data;
+  const resources = result.resources.map((value: unknown) => {
+    const resource = z.object({ resourceType: z.string(), stateVersion: z.number().int().positive(), state: z.unknown() }).passthrough().parse(value);
+    return { ...resource, state: validatePluginResourceState(plugin, resource.resourceType, resource.stateVersion, resource.state) };
+  });
+  return { ...result, resources };
+}
+
 function createActionRuntime(
   pluginId: string,
   action: DesktopCodePluginAction,
@@ -130,6 +144,7 @@ function createActionRuntime(
         pluginId,
         actionId: action.id,
         auth: request.auth,
+        config: request.config,
         input: validatedInput,
         host: createPluginHostContext(context),
         operation: request.operation,
@@ -141,7 +156,7 @@ function createActionRuntime(
         ok: result.ok ?? true,
         status: result.status,
         summary: result.summary,
-        data: result.data,
+        data: validateNormalizedResources(context.loadedPlugin.plugin, result.data),
       });
     },
   };
@@ -179,6 +194,7 @@ function createPluginRuntime(
   );
 
   return {
+    codePlugin: plugin,
     descriptor,
     actions: new Map(actions.map((action) => [action.id, action])),
     dataSource: plugin.dataSource,
@@ -266,6 +282,10 @@ export class DesktopPluginRegistry {
 
   get(pluginId: string): DesktopPluginDescriptor | null {
     return this.plugins.get(pluginId)?.descriptor ?? null;
+  }
+
+  validateConnectionConfig(pluginId: string, version: number, value: unknown): Record<string, unknown> {
+    return validatePluginConnectionConfig(this.plugins.get(pluginId)?.codePlugin, version, value);
   }
 
   getAction(pluginId: string, actionId: string): PluginActionRuntime | null {
@@ -438,7 +458,10 @@ export class DesktopPluginRuntimeService {
       }
     }
 
+    if (!hasPluginCredentials(plugin, request.auth)) throw new Error("Connection credentials are incomplete.");
+    const config = request.connectionConfig === undefined ? undefined : this.registry.validateConnectionConfig(request.pluginId, request.connectionConfig.version, request.connectionConfig.value);
     return action.execute({
+      config,
       auth: request.auth,
       input: request.input,
       operation,

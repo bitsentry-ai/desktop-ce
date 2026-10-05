@@ -41,6 +41,30 @@ describe('knowledge to runbook evidence boundaries', () => {
     expect(executeRead).not.toHaveBeenCalled()
     expect(knowledgeReferences([source])).toContain(source.url)
   })
+  it('reads a selected resource of another plugin through the read action that plugin declares', async () => {
+    const entry: IntegrationResource = { ...source, connectionId: '33333333-3333-4333-8333-333333333333', connectionName: 'Timer', resourceType: 'time_entry', externalId: '42', title: 'Investigation', state: {}, selected: true }
+    const timer = {
+      id: 'third-party.time', name: 'Timer', version: '1', description: 'Time entries', type: 'data_source', auth: { fields: [] },
+      metadata: { persistence: { configVersion: 1, destinationField: 'serviceUrl', configFields: [], resources: [{ type: 'time_entry', stateVersion: 1, readActionId: 'read_entry' }], eventChannels: [] } },
+      actions: [{ id: 'read_entry', title: 'Read entry', description: 'Read entry', riskLevel: 'read', fields: [{ key: 'id', label: 'ID', type: 'number', required: true }] }],
+    } as unknown as DesktopPluginDescriptor
+    const reads: IntegrationActionInput[] = []
+    const context = {
+      session: { id: 'session', incidentThreadId: 'thread' },
+      pluginRuntime: { listPlugins: () => [timer] },
+      integrationConnections: {
+        listResources: async () => [entry],
+        list: async () => [{ id: entry.connectionId, name: 'Timer', pluginId: timer.id, enabled: true, authMode: 'token', availability: 'configured', target: 'https://timer.example.test', actions: timer.actions }],
+        executeRead: async (request: IntegrationActionInput) => { reads.push(request); return { ok: true, status: 200, summary: 'ok', data: { seconds: 15 } } },
+      },
+    } as unknown as HostToolContext
+
+    const result = await readSelectedKnowledge(context)
+
+    expect(result.error).toBeUndefined()
+    expect(reads).toEqual([{ connectionId: entry.connectionId, actionId: 'read_entry', input: { id: 42 } }])
+    expect(JSON.parse(String(result.output)).evidence[0].result.content).toContain('15')
+  })
   it('proposes an unpublished postmortem with actual failed execution evidence and source references', async () => {
     const proposeWrite = vi.fn(async (request: IntegrationActionInput) => ({ id: 'proposal', ...request, status: 'proposed' }))
     const context = {

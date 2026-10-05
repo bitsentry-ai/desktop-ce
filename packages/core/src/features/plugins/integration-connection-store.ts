@@ -1,9 +1,11 @@
 import { z } from "zod";
 import type { DesktopPluginStoredAuthStore } from "./desktop-plugin-auth-store";
-import { integrationConnectionInputSchema, validateIntegrationConnection, type IntegrationConnectionInput } from "./integration-connections";
+import { integrationConnectionInputSchema, keepStoredCredentials, validateIntegrationConnection, type IntegrationConnectionInput } from "./integration-connections";
+import type { DesktopPluginDescriptor } from "./plugins.types";
 import { INTEGRATION_CONNECTIONS_STORE_KEY as STORE_KEY } from "./integration-store-keys";
 
 const connectionsSchema = z.array(integrationConnectionInputSchema).max(100);
+
 const pendingWrites = new WeakMap<DesktopPluginStoredAuthStore, Promise<void>>();
 
 /** Uses the product's credential store, including its encryption and atomic writes. */
@@ -31,13 +33,15 @@ export class IntegrationConnectionStore {
     return operation;
   }
 
-  save(input: IntegrationConnectionInput): Promise<void> {
-    const connection = validateIntegrationConnection(input);
+  save(input: IntegrationConnectionInput, plugin?: DesktopPluginDescriptor | null): Promise<void> {
+    // A malformed save is refused before it queues behind another write.
+    integrationConnectionInputSchema.parse(input);
     return this.update((rows) => {
+      const existing = rows.find((row) => row.id === input.id);
+      const connection = validateIntegrationConnection(keepStoredCredentials(input, existing, plugin), plugin);
       if (rows.some((row) => row.id !== connection.id && row.name.toLowerCase() === connection.name.toLowerCase())) {
         throw new Error("A connection with that name already exists.");
       }
-      const existing = rows.find((row) => row.id === connection.id);
       if (existing !== undefined && existing.pluginId !== connection.pluginId) {
         throw new Error("A connection cannot change its plugin.");
       }

@@ -1,32 +1,43 @@
-import { itopTicketMappingSchema } from "@bitsentry-ce/core/features/plugins";
+import type { PluginDescriptor } from "../services/contracts";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useTranslation } from "@bitsentry-ce/i18n";
-import type { IntegrationConnection, IntegrationConnectionInput } from "@bitsentry-ce/core/features/plugins";
+import type { IntegrationConnection, IntegrationConnectionInput, DesktopPluginFieldDefinition } from "@bitsentry-ce/core/features/plugins";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 
 export interface IntegrationConnectionsPort {
   list(): Promise<IntegrationConnection[]>;
+  listPlugins(): Promise<PluginDescriptor[]>;
   save(input: IntegrationConnectionInput): Promise<unknown>;
   remove(id: string): Promise<unknown>;
+}
+
+function parseFields(fields: DesktopPluginFieldDefinition[], values: Record<string, string>): Record<string, unknown> {
+  return Object.fromEntries(fields.flatMap((field) => {
+    const value = values[field.key];
+    if (value === undefined || value === "") return field.defaultValue === undefined ? [] : [[field.key, field.defaultValue]];
+    if (field.type === "json" || field.type === "string_array") return [[field.key, JSON.parse(value) as unknown]];
+    if (field.type === "number") return [[field.key, Number(value)]];
+    if (field.type === "boolean") return [[field.key, value === "true"]];
+    return [[field.key, value]];
+  }));
 }
 
 export function IntegrationConnectionsSection({ service }: { service: IntegrationConnectionsPort }) {
   const { t } = useTranslation();
   const [rows, setRows] = useState<IntegrationConnection[]>([]);
+  const [plugins, setPlugins] = useState<PluginDescriptor[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [pluginId, setPluginId] = useState<"itop" | "outline">("itop");
+  const [pluginId, setPluginId] = useState("");
   const [name, setName] = useState("");
-  const [endpoint, setEndpoint] = useState("");
-  const [token, setToken] = useState("");
-  const [authMode, setAuthMode] = useState<"token" | "username_password">("token");
-  const [username, setUsername] = useState("");
-  const [password, setPassword] = useState("");
+  const [config, setConfig] = useState<Record<string, string>>({});
+  const [auth, setAuth] = useState<Record<string, string>>({});
   const [connectionEnabled, setConnectionEnabled] = useState(true);
-  const [ticketMappingText, setTicketMappingText] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
   const listRequestVersion = useRef(0);
+  const plugin = plugins.find((item) => item.id === pluginId);
+  const contract = plugin?.metadata?.persistence;
   useEffect(() => {
     const requestVersion = ++listRequestVersion.current;
     void service.list().then((result) => {
@@ -35,6 +46,14 @@ export function IntegrationConnectionsSection({ service }: { service: Integratio
       if (requestVersion === listRequestVersion.current) setError(t("settings.integrationConnections.loadFailed"));
     });
     return () => { listRequestVersion.current += 1; };
+  }, [service, t]);
+  // The plugin choices do not wait for the connection list: a slow list must not leave the form empty.
+  useEffect(() => {
+    let active = true;
+    void service.listPlugins().then((available) => {
+      if (active) setPlugins(available.filter((item) => item.metadata?.persistence !== undefined));
+    }, () => { if (active) setError(t("settings.integrationConnections.loadFailed")); });
+    return () => { active = false; };
   }, [service, t]);
 
   async function refreshRows() {
@@ -47,86 +66,67 @@ export function IntegrationConnectionsSection({ service }: { service: Integratio
     }
   }
 
+  function reset() { setEditingId(null); setName(""); setConfig({}); setAuth({}); setConnectionEnabled(true); }
   async function save(event: FormEvent) {
     event.preventDefault();
-    if (busy) return;
-    setBusy(true);
-    setError(null);
+    if (busy || !plugin || !contract) return;
+    setBusy(true); setError(null);
     try {
       await service.save({
         id: editingId ?? crypto.randomUUID(), name, pluginId, enabled: connectionEnabled,
-        ticketMapping: pluginId === "itop" && ticketMappingText.trim() ? itopTicketMappingSchema.parse(JSON.parse(ticketMappingText)) : undefined,
-        auth: pluginId === "itop"
-          ? authMode === "token" ? { baseUrl: endpoint, authToken: token } : { baseUrl: endpoint, username, password }
-          : { apiBase: endpoint, accessToken: token },
+        configVersion: contract.configVersion, config: parseFields(contract.configFields, config),
+        // Blank credentials on an edit keep what is stored; the host never receives an empty value as a credential.
+        auth: Object.fromEntries(Object.entries(auth).filter(([, value]) => value !== "")),
       });
-      setToken(""); setUsername(""); setPassword(""); setName(""); setEndpoint(""); setEditingId(null); setAuthMode("token"); setConnectionEnabled(true); setTicketMappingText("");
+      reset();
       await refreshRows();
     } catch { setError(t("settings.integrationConnections.saveFailed")); }
     finally { setBusy(false); }
   }
-
   async function remove(id: string) {
     if (busy) return;
     setBusy(true); setError(null);
     try {
       await service.remove(id);
-      if (editingId === id) {
-        setEditingId(null); setName(""); setEndpoint(""); setToken(""); setUsername(""); setPassword(""); setAuthMode("token"); setConnectionEnabled(true); setTicketMappingText("");
-      }
+      if (editingId === id) reset();
       await refreshRows();
     }
     catch { setError(t("settings.integrationConnections.removeFailed")); }
     finally { setBusy(false); }
   }
-
+  function fieldInput(field: DesktopPluginFieldDefinition, secret: boolean) {
+    const values = secret ? auth : config;
+    const change = (value: string) => (secret ? setAuth : setConfig)((old) => ({ ...old, [field.key]: value }));
+    // A stored credential stays when the field is left blank, so only a new connection must fill the required ones.
+    const required = field.required === true && !(secret && editingId !== null);
+    const value = values[field.key] ?? "";
+    if (field.type === "json" || field.type === "string_array") return <textarea value={value} required={required} disabled={busy} onChange={(event) => change(event.target.value)} className="mt-1 min-h-32 w-full rounded border bg-background p-2 font-mono text-xs" />;
+    if (field.type === "boolean" || field.enumValues) return <select value={value} required={required} disabled={busy} onChange={(event) => change(event.target.value)} className="ml-3 rounded border bg-background p-2"><option value="" />{(field.enumValues ?? ["true", "false"]).map((option) => <option key={option} value={option}>{option}</option>)}</select>;
+    return <Input type={secret && field.secret === true ? "password" : field.type === "number" ? "number" : "text"} autoComplete={secret ? "new-password" : "off"} value={value} required={required} disabled={busy} onChange={(event) => change(event.target.value)} />;
+  }
   return <section className="mb-6 space-y-4 rounded-md border border-border p-6">
     <h2 className="text-lg font-medium">{t("settings.integrationConnections.title")}</h2>
     <p className="text-sm text-muted-foreground">{t("settings.integrationConnections.description")}</p>
     {error !== null && <p role="alert" className="text-destructive">{error}</p>}
     <ul className="space-y-2">{rows.map((row) => <li key={row.id} className="flex items-center gap-3">
       <span className="min-w-0 flex-1 break-all">{row.name} — {row.target}</span>
-      <Button disabled={busy} variant="outline" onClick={() => {
-        setEditingId(row.id); setName(row.name); setPluginId(row.pluginId); setEndpoint(row.target);
-        setAuthMode(row.pluginId === "itop" ? row.authMode : "token"); setToken(""); setUsername(""); setPassword(""); setConnectionEnabled(row.enabled);
-        setTicketMappingText(row.ticketMapping ? JSON.stringify(row.ticketMapping, null, 2) : "");
+      <Button disabled={busy || !plugins.some((item) => item.id === row.pluginId)} variant="outline" onClick={() => {
+        setEditingId(row.id); setName(row.name); setPluginId(row.pluginId); setAuth({}); setConnectionEnabled(row.enabled);
+        setConfig(Object.fromEntries(Object.entries(row.config ?? {}).map(([key, value]) => [key, typeof value === "string" ? value : JSON.stringify(value, null, 2)])));
       }}>{t("settings.integrationConnections.edit")}</Button>
       <Button disabled={busy} variant="outline" onClick={() => { void remove(row.id); }}>{t("settings.integrationConnections.remove")}</Button>
     </li>)}</ul>
     <form onSubmit={(event) => { void save(event); }} className="grid gap-3">
       <label>{t("settings.integrationConnections.plugin")}
-        <select value={pluginId} disabled={busy || editingId !== null} onChange={(event) => {
-          setPluginId(event.target.value === "outline" ? "outline" : "itop"); setAuthMode("token");
-          setToken(""); setUsername(""); setPassword(""); setEndpoint(""); setTicketMappingText("");
-        }} className="ml-3 rounded border bg-background p-2">
-          <option value="itop">iTop</option><option value="outline">{t("settings.integrationConnections.outline")}</option>
+        <select value={pluginId} required disabled={busy || editingId !== null} onChange={(event) => { setPluginId(event.target.value); reset(); }} className="ml-3 rounded border bg-background p-2">
+          <option value="" />{plugins.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
         </select>
       </label>
       <label>{t("settings.integrationConnections.name")}<Input value={name} maxLength={100} required disabled={busy} onChange={(event) => { setName(event.target.value); }} /></label>
-      <label>{t("settings.integrationConnections.endpoint")}<Input type="url" value={endpoint} required disabled={busy} onChange={(event) => { setEndpoint(event.target.value); }} /></label>
-      {pluginId === "itop" && <label>{t("settings.integrationConnections.authMethod")}
-        <select value={authMode} disabled={busy} onChange={(event) => {
-          setAuthMode(event.target.value === "username_password" ? "username_password" : "token");
-          setToken(""); setUsername(""); setPassword("");
-        }} className="ml-3 rounded border bg-background p-2">
-          <option value="token">{t("settings.integrationConnections.token")}</option>
-          <option value="username_password">{t("settings.integrationConnections.usernamePassword")}</option>
-        </select>
-      </label>}
-      {(pluginId === "outline" || authMode === "token") && <label>{t("settings.integrationConnections.token")}
-        <Input type="password" autoComplete="new-password" value={token} required disabled={busy} onChange={(event) => { setToken(event.target.value); }} />
-      </label>}
-      {pluginId === "itop" && authMode === "username_password" && <>
-        <label>{t("settings.integrationConnections.username")}<Input autoComplete="username" value={username} required disabled={busy} onChange={(event) => { setUsername(event.target.value); }} /></label>
-        <label>{t("settings.integrationConnections.password")}<Input type="password" autoComplete="new-password" value={password} required disabled={busy} onChange={(event) => { setPassword(event.target.value); }} /></label>
-      </>}
-      {pluginId === "itop" && <label>{t("settings.integrationConnections.ticketMapping")}
-        <textarea value={ticketMappingText} disabled={busy} onChange={(event) => { setTicketMappingText(event.target.value); }} className="mt-1 min-h-40 w-full rounded border bg-background p-2 font-mono text-xs" />
-      </label>}
-      <Button type="submit" disabled={busy}>{t("settings.integrationConnections.save")}</Button>
-      {editingId !== null && <Button type="button" variant="outline" disabled={busy} onClick={() => {
-        setEditingId(null); setName(""); setEndpoint(""); setToken(""); setUsername(""); setPassword(""); setAuthMode("token"); setConnectionEnabled(true); setTicketMappingText("");
-      }}>{t("settings.integrationConnections.cancel")}</Button>}
+      {contract?.configFields.map((field) => <label key={field.key}>{field.label}{fieldInput(field, false)}</label>)}
+      {plugin?.auth.fields.map((field) => <label key={field.key}>{field.label}{fieldInput(field, true)}</label>)}
+      <Button type="submit" disabled={busy || !contract}>{t("settings.integrationConnections.save")}</Button>
+      {editingId !== null && <Button type="button" variant="outline" disabled={busy} onClick={reset}>{t("settings.integrationConnections.cancel")}</Button>}
     </form>
   </section>;
 }

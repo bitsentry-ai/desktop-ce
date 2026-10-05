@@ -35,7 +35,7 @@ export interface IntegrationWriteRuntime {
 
 const activeExecutions = new Map<string, number>();
 
-function validateWrite(runtime: IntegrationWriteRuntime, request: IntegrationWriteRequest) {
+export function validateWrite(runtime: IntegrationWriteRuntime, request: IntegrationWriteRequest) {
   const action = runtime.plugin.actions.find((row) => row.id === request.actionId);
   if (runtime.connection.availability !== "configured" || action?.riskLevel !== "write" || ["delete_object", "delete_document"].includes(request.actionId)) throw new Error("This write is unavailable.");
   if (Object.keys(request.input).some((key) => !action.fields.some((field) => field.key === key))) throw new Error("Unknown action field.");
@@ -50,9 +50,9 @@ function lifecycleTransition(runtime: IntegrationWriteRuntime, ticketOperation: 
   return Object.entries(runtime.connection.ticketMapping?.stimuli ?? {}).find(([name]) => name === ticketOperation)?.[1];
 }
 
-function classify(runtime: IntegrationWriteRuntime, request: IntegrationWriteRequest, ticketOperation: IntegrationWriteMeta["ticketOperation"]) {
+export function classify(runtime: IntegrationWriteRuntime, request: IntegrationWriteRequest, ticketOperation: IntegrationWriteMeta["ticketOperation"]) {
   const mapping = runtime.connection.ticketMapping;
-  const fields = z.record(z.string(), z.unknown()).parse(request.input.fields ?? {});
+  const fields = runtime.plugin.id === "itop" ? z.record(z.string(), z.unknown()).parse(request.input.fields ?? {}) : {};
   if (runtime.plugin.id === "itop") {
     if (mapping === undefined || request.input.class !== mapping.className) throw new Error("Configure a matching ticket mapping before approving writes.");
     // Direct state changes bypass configured lifecycle semantics and are never approved. The state attribute is
@@ -78,7 +78,7 @@ function assertUnchanged(runtime: IntegrationWriteRuntime, operation: Integratio
 }
 
 /** A lifecycle change is checked against the ticket's state now, not the state seen at preview time. */
-async function assertTicketState(runtime: IntegrationWriteRuntime, operation: IntegrationOperation) {
+export async function assertTicketState(runtime: IntegrationWriteRuntime, operation: IntegrationOperation) {
   if (runtime.plugin.id !== "itop" || operation.actionId !== "apply_stimulus") return;
   const mapping = runtime.connection.ticketMapping;
   const transition = lifecycleTransition(runtime, operation.ticketOperation);
@@ -153,7 +153,7 @@ export class IntegrationOperationService {
       if (!externalId) throw new Error("Provide the external resource ID you inspected.");
       const runtime = await this.resolve(operation.connectionId);
       assertUnchanged(runtime, operation);
-      const request = recoveryRead(operation, externalId);
+      const request = recoveryRead(operation, externalId, runtime.plugin);
       if (runtime.plugin.actions.find((action) => action.id === request.actionId)?.riskLevel !== "read") throw new Error("Resource verification is unavailable.");
       const response = await runtime.read(request);
       // The read must return exactly the resource the engineer named, not just any successful answer.
@@ -213,7 +213,7 @@ export class IntegrationOperationService {
   }
 }
 
-function canonical(value: unknown): unknown {
+export function canonical(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(canonical);
   if (value !== null && typeof value === "object") return Object.fromEntries(Object.entries(value).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0).map(([key, item]) => [key, canonical(item)]));
   return value;
@@ -226,7 +226,18 @@ async function proposalId(value: unknown): Promise<string> {
   const hex = Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 }
-function recoveryRead(operation: IntegrationOperation, externalId: string): IntegrationWriteRequest {
+function genericRecoveryRead(operation: IntegrationOperation, externalId: string, plugin?: DesktopPluginDescriptor): IntegrationWriteRequest {
+    const resources = plugin?.metadata?.persistence?.resources ?? [];
+    if (resources.length !== 1) throw new Error("Select a plugin-specific resource verifier before reconciliation.");
+    const action = plugin?.actions.find((item) => item.id === resources[0].readActionId && item.riskLevel === "read");
+    if (!action) throw new Error("Resource verification is unavailable.");
+    if (operation.input.id !== undefined && String(operation.input.id) !== externalId) throw new Error("Verify the exact targeted resource.");
+    const id = action.fields.find((field) => field.key === "id")?.type === "number" ? Number(externalId) : externalId;
+    return { connectionId: operation.connectionId, actionId: action.id, input: buildPluginInputSchema(action.fields).parse({ id }) };
+}
+
+export function recoveryRead(operation: IntegrationOperation, externalId: string, plugin?: DesktopPluginDescriptor): IntegrationWriteRequest {
+  if (operation.pluginId !== "itop" && operation.pluginId !== "outline") return genericRecoveryRead(operation, externalId, plugin);
   if (operation.pluginId === "itop") {
     const id = Number(externalId);
     if (!/^\d+$/.test(externalId) || !Number.isSafeInteger(id) || id < 1) throw new Error("Use the exact numeric iTop resource ID.");
@@ -241,7 +252,7 @@ function recoveryRead(operation: IntegrationOperation, externalId: string): Inte
  * A remote system that clearly refused the request did not apply it, so the write failed with a reason the engineer can act on.
  * Anything else (a 5xx, a timeout, an unknown answer) stays uncertain and is never shown as success.
  */
-function remoteWriteOutcome(result: DesktopPluginExecutionResult): Pick<IntegrationOperation, "status" | "result" | "message"> {
+export function remoteWriteOutcome(result: DesktopPluginExecutionResult): Pick<IntegrationOperation, "status" | "result" | "message"> {
   if (result.ok) return { status: "succeeded", result: result.data, message: undefined };
   const refused = [400, 401, 403, 404, 409, 422, 429].includes(result.status);
   const reasons: Record<number, string> = { 401: "credentials_rejected", 403: "credentials_rejected", 409: "stale_resource" };

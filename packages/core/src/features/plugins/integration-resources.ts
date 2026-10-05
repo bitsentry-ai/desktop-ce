@@ -3,8 +3,9 @@ import type { IntegrationConnection } from "./integration-connections";
 import type { DesktopPluginStoredAuthStore } from "./desktop-plugin-auth-store";
 export const integrationResourceSchema = z.object({
   threadId: z.string().min(1), connectionId: z.uuid(), connectionName: z.string(),
-  resourceType: z.enum(["ticket", "document"]), externalId: z.string().min(1).max(200),
-  url: z.url(), title: z.string(), state: z.record(z.string(), z.union([z.string(), z.number(), z.boolean(), z.null()])),
+  resourceType: z.string().min(1).max(100), externalId: z.string().min(1).max(200),
+  url: z.url(), title: z.string(), state: z.record(z.string(), z.unknown()),
+  stateVersion: z.number().int().positive().optional(),
   observedAt: z.string(), selected: z.boolean().optional(),
 });
 export type IntegrationResource = z.infer<typeof integrationResourceSchema>;
@@ -52,6 +53,16 @@ export function extractIntegrationResources(threadId: string, connection: Pick<I
       const mapping = connection.ticketMapping;
       const state = Object.fromEntries(ticketStateKeys(mapping).filter((key) => isStateValue(fields[key])).map((key) => [key, fields[key]]));
       return [integrationResourceSchema.parse({ ...common, resourceType: "ticket", externalId, url: url.toString(), title: shortText(fields[mapping?.titleField ?? "title"]) || shortText(fields[mapping?.referenceField ?? "ref"]) || externalId, state: { ...state, className } })];
+    });
+  }
+  if (connection.pluginId !== "outline") {
+    const resources = Array.isArray(data.resources) ? data.resources : [];
+    return resources.slice(0, 50).flatMap((value) => {
+      const row = record(value);
+      const url = safeUrl(row.url, connection.target);
+      if (!url) return [];
+      const parsed = integrationResourceSchema.safeParse({ ...row, ...common, url });
+      return parsed.success ? [parsed.data] : [];
     });
   }
   const rows = Array.isArray(data.data) ? data.data : [data.data];
@@ -105,16 +116,37 @@ export type LinkedResourceInput = z.infer<typeof linkedResourceInputSchema>;
  */
 type RefreshRuntime = import("./integration-operations").IntegrationWriteRuntime;
 
+/** The read action the plugin declares for a resource type; the first-party iTop and Outline names stay as the fallback. */
+function resourceReadAction(plugin: import("./plugins.types").DesktopPluginDescriptor, resourceType: string): string | undefined {
+  return plugin.metadata?.persistence?.resources.find((item) => item.type === resourceType)?.readActionId
+    ?? (plugin.id === "itop" && resourceType === "ticket" ? "get_object" : plugin.id === "outline" && resourceType === "document" ? "get_document" : undefined);
+}
+
+/**
+ * What reads this exact resource again: the read action its plugin declares for the type, with the ID in the form that
+ * action's `id` field expects. Refuses, before anything is sent, a resource that cannot be read exactly.
+ */
+export function linkedResourceRead(
+  plugin: import("./plugins.types").DesktopPluginDescriptor,
+  ticketMapping: IntegrationConnection["ticketMapping"],
+  resource: Pick<IntegrationResource, "resourceType" | "externalId" | "state">,
+): { className: string | undefined; actionId: string; input: Record<string, unknown> } {
+  const ticket = plugin.id === "itop" && resource.resourceType === "ticket";
+  const actionId = resourceReadAction(plugin, resource.resourceType);
+  const action = plugin.actions.find((item) => item.id === actionId);
+  if (action?.riskLevel !== "read") throw new Error("Read capability is unavailable.");
+  const className = typeof resource.state.className === "string" ? resource.state.className : ticketMapping?.className;
+  if (ticket && typeof className !== "string") throw new Error("Ticket class is missing; read the exact ticket again.");
+  if (ticket && !isTicketId(resource.externalId)) throw new Error("Ticket ID is outside the supported range.");
+  const numericId = action.fields.find((field) => field.key === "id")?.type === "number";
+  return { className, actionId: action.id, input: ticket ? { class: className, id: Number(resource.externalId), outputFields: "*" } : { id: numericId ? Number(resource.externalId) : resource.externalId } };
+}
+
 /** Refuses a refresh that cannot read the exact resource, before anything is sent. Returns what to read it with. */
 function refreshPlan(input: LinkedResourceInput, resource: IntegrationResource | undefined, runtime: RefreshRuntime) {
   if (!resource || runtime.connection.id !== input.connectionId || runtime.connection.availability !== "configured") throw new Error("Linked resource or connection is unavailable.");
-  const ticket = resource.resourceType === "ticket";
-  const actionId = ticket ? "get_object" : "get_document";
-  if (runtime.plugin.actions.find((action) => action.id === actionId)?.riskLevel !== "read") throw new Error("Read capability is unavailable.");
-  const className = typeof resource.state.className === "string" ? resource.state.className : runtime.connection.ticketMapping?.className;
-  if (ticket && typeof className !== "string") throw new Error("Ticket class is missing; read the exact ticket again.");
-  if (ticket && !isTicketId(input.externalId)) throw new Error("Ticket ID is outside the supported range.");
-  return { className, request: { connectionId: input.connectionId, actionId, input: ticket ? { class: className, id: Number(input.externalId), outputFields: "*" } : { id: input.externalId } } };
+  const { className, actionId, input: readInput } = linkedResourceRead(runtime.plugin, runtime.connection.ticketMapping, resource);
+  return { className, request: { connectionId: input.connectionId, actionId, input: readInput } };
 }
 
 /**
@@ -154,6 +186,7 @@ export function readNamesResource(pluginId: string, data: unknown, externalId: s
       return (text(object.key) || mapId) === externalId && (className === undefined || (text(object.class) || mapClass) === className);
     });
   }
+  if (pluginId !== "outline") return (Array.isArray(root.resources) ? root.resources : []).some((value) => text(record(value).externalId) === externalId);
   const rows = Array.isArray(root.data) ? root.data : [root.data ?? root];
   return rows.some((value) => { const row = record(value); return text((row.document === undefined ? row : record(row.document)).id) === externalId; });
 }
