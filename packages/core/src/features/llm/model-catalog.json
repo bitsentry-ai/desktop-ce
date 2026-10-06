@@ -7,6 +7,123 @@
       "supportsPlanMode": false,
       "models": [
         {
+          "id": "gpt-6.1-sol",
+          "displayName": "GPT-6.1 Sol",
+          "contextWindowTokens": 1050000,
+          "supportsImageInput": true,
+          "supportsAudioInput": false,
+          "supportsVideoInput": false,
+          "supportsPdfInput": false,
+          "supportsThinking": true,
+          "thinkingMode": "toggle",
+          "reasoningOptions": [
+            "low",
+            "medium",
+            "high"
+          ],
+          "defaultReasoningOption": "medium",
+          "composerOptions": [
+            {
+              "id": "effort",
+              "label": "Reasoning",
+              "type": "select",
+              "options": [
+                {
+                  "value": "low",
+                  "label": "Low"
+                },
+                {
+                  "value": "medium",
+                  "label": "Medium",
+                  "isDefault": true
+                },
+                {
+                  "value": "high",
+                  "label": "High"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "gpt-6-astra",
+          "displayName": "GPT-6 Astra",
+          "contextWindowTokens": 1050000,
+          "supportsImageInput": true,
+          "supportsAudioInput": false,
+          "supportsVideoInput": false,
+          "supportsPdfInput": false,
+          "supportsThinking": true,
+          "thinkingMode": "toggle",
+          "reasoningOptions": [
+            "low",
+            "medium",
+            "high"
+          ],
+          "defaultReasoningOption": "medium",
+          "composerOptions": [
+            {
+              "id": "effort",
+              "label": "Reasoning",
+              "type": "select",
+              "options": [
+                {
+                  "value": "low",
+                  "label": "Low"
+                },
+                {
+                  "value": "medium",
+                  "label": "Medium",
+                  "isDefault": true
+                },
+                {
+                  "value": "high",
+                  "label": "High"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "gpt-6-luna",
+          "displayName": "GPT-6 Luna",
+          "contextWindowTokens": 1050000,
+          "supportsImageInput": true,
+          "supportsAudioInput": false,
+          "supportsVideoInput": false,
+          "supportsPdfInput": false,
+          "supportsThinking": true,
+          "thinkingMode": "toggle",
+          "reasoningOptions": [
+            "low",
+            "medium",
+            "high"
+          ],
+          "defaultReasoningOption": "medium",
+          "composerOptions": [
+            {
+              "id": "effort",
+              "label": "Reasoning",
+              "type": "select",
+              "options": [
+                {
+                  "value": "low",
+                  "label": "Low"
+                },
+                {
+                  "value": "medium",
+                  "label": "Medium",
+                  "isDefault": true
+                },
+                {
+                  "value": "high",
+                  "label": "High"
+                }
+              ]
+            }
+          ]
+        },
+        {
           "id": "gpt-5.5",
           "displayName": "GPT-5.5",
           "supportsImageInput": true,

@@ -53,7 +53,7 @@ export default defineConfig({
           'speakeasy',
           'qrcode',
           'jsonwebtoken',
-          'node-pty',
+          'node-pty', '@napi-rs/keyring',
         ],
       },
     },

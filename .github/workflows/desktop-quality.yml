@@ -6,6 +6,7 @@ on:
       - '.github/workflows/desktop-quality.yml'
       - 'apps/**'
       - 'packages/**'
+      - 'scripts/security/**'
       - 'package.json'
       - 'pnpm-lock.yaml'
       - 'pnpm-workspace.yaml'
@@ -26,21 +27,27 @@ jobs:
           git config submodule.packages/electron-trpc.url https://github.com/bitsentry-ai/electron-trpc.git
           git config submodule.packages/plugin-sdk.url https://github.com/bitsentry-ai/-bitsentry-plugin-sdk.git
           git config submodule.packages/plugins/github.url https://github.com/bitsentry-ai/bitsentry-plugin-github.git
+          git config submodule.packages/plugins/linux-cve-remediate.url https://github.com/bitsentry-ai/bitsentry-plugin-linux-cve-remediate.git
           git config submodule.packages/plugins/linux-cve-status.url https://github.com/bitsentry-ai/bitsentry-plugin-linux-cve-status.git
           git config submodule.packages/plugins/posthog.url https://github.com/bitsentry-ai/bitsentry-plugin-posthog.git
           git config submodule.packages/plugins/sentry.url https://github.com/bitsentry-ai/bitsentry-plugin-sentry.git
           git config submodule.packages/plugins/wazuh.url https://github.com/bitsentry-ai/bitsentry-plugin-wazuh.git
+          git config submodule.packages/plugins/itop.url https://github.com/bitsentry-ai/bitsentry-plugin-itop.git
+          git config submodule.packages/plugins/outline.url https://github.com/bitsentry-ai/bitsentry-plugin-outline.git
           git submodule update --init --depth 1 \
             packages/electron-trpc \
             packages/plugin-sdk \
             packages/plugins/github \
+            packages/plugins/linux-cve-remediate \
             packages/plugins/linux-cve-status \
             packages/plugins/posthog \
             packages/plugins/sentry \
-            packages/plugins/wazuh
+            packages/plugins/wazuh \
+            packages/plugins/itop \
+            packages/plugins/outline
       - uses: actions/setup-node@v4
         with:
-          node-version: 22.12.0
+          node-version-file: '.nvmrc'
       - uses: pnpm/action-setup@v4
         with:
           version: 10.32.1
@@ -63,10 +70,18 @@ jobs:
       - run: pnpm --dir apps/desktop exec node node_modules/electron/install.js
       - run: pnpm --filter @bitsentry-ce/desktop test
       - run: pnpm --filter @bitsentry-ce/core test
+      - name: Verify encrypted plugin credential migration
+        run: pnpm --filter @bitsentry-ce/desktop-cli test
       # Vitest executes under Node, whereas Electron needs a separately rebuilt
       # native module ABI. Rebuild only after deterministic Node tests finish.
       - run: pnpm --dir apps/desktop run prepare:native-deps
       - run: pnpm run build
+      - name: Verify target architecture keyring packaging
+        run: |
+          pnpm --filter @bitsentry-ce/desktop run build:cli-bundle
+          node --test scripts/security/keyring-packaging.test.mjs
+      - name: Verify cross-process credential coordination
+        run: node --test scripts/security/credential-lock.test.mjs
       - name: Run local runbook smoke scenario
         env:
           BITSENTRY_DESKTOP_SMOKE_NO_SANDBOX: '1'

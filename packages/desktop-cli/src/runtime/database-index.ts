@@ -1,4 +1,5 @@
 import log from 'electron-log'
+import { ensureIntegrationStorageSchema } from './integration-storage-schema.js'
 import { mkdir } from 'fs/promises'
 import path from 'path'
 import { DbClient } from '@bitsentry-ce/core/features/desktop/desktop-database-client'
@@ -10,11 +11,10 @@ import {
 import { getDatabasePath, getDatabaseUrl } from './database-paths.js'
 
 let db: DbClient | null = null
-const DATABASE_SCHEMA_VERSION = 17
+const DATABASE_SCHEMA_VERSION = 18
 
 export type DesktopDatabaseRuntimeSeeders = {
   seedDefaults(client: DbClient): Promise<void>
-  seedDemoData(client: DbClient): Promise<void>
 }
 
 let configuredSeeders: DesktopDatabaseRuntimeSeeders | null = null
@@ -97,7 +97,6 @@ export async function initializeDatabase(): Promise<DbClient> {
     await assertDatabaseIntegrity()
 
     await seeders.seedDefaults(db)
-    await seeders.seedDemoData(db)
   } catch (error) {
     log.error('[database] Initialization failed:', error)
     if (backupPath !== null) {
@@ -1881,6 +1880,10 @@ async function runMigrations(): Promise<void> {
     `)
     if (!appliedVersions.has(17)) {
       await markMigrationApplied(17, 'runbook_execution_event_journal')
+    }
+    await ensureIntegrationStorageSchema(getDb())
+    if (!appliedVersions.has(18)) {
+      await markMigrationApplied(18, 'generic_integration_storage')
     }
     await getDb().$executeRawUnsafe(`PRAGMA user_version = ${String(DATABASE_SCHEMA_VERSION)}`)
 

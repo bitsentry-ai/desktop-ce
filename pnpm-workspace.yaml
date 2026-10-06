@@ -2,7 +2,15 @@ packages:
   - 'apps/*'
   - 'packages/*'
   - 'packages/plugins/*'
+  # These submodules install/build independently using their own lockfiles.
+  - '!packages/plugins/itop'
+  - '!packages/plugins/outline'
   - 'packages/electron-trpc/packages/*'
+supportedArchitectures:
+  cpu:
+    - current
+    - x64
+    - arm64
 overrides:
   '@anthropic-ai/sdk': 0.91.1
   '@xmldom/xmldom': 0.8.13
@@ -37,7 +45,7 @@ overrides:
   picomatch@4: 4.0.4
   protobufjs: 7.6.3
   socket.io-parser: 4.2.6
-  tar: 7.5.16
+  tar: 7.5.22
   tmp: 0.2.7
   undici: 6.27.0
   hono: 4.12.25

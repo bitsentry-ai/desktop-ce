@@ -1182,6 +1182,22 @@ export class DbClient {
     return Promise.resolve(rows)
   }
 
+  /** Parameterized single-statement access for operational stores. */
+  $queryRaw<T extends Record<string, unknown> = Record<string, unknown>>(
+    statement: string,
+    ...parameters: (string | number | bigint | Buffer | null)[]
+  ): Promise<T[]> {
+    return Promise.resolve(this.sqlite.prepare(statement).all(...parameters) as T[])
+  }
+
+  /** Synchronous transaction: unrelated async IPC work cannot join this batch. */
+  $executeBatch(statements: { sql: string; parameters: (string | number | null)[] }[]): Promise<void> {
+    this.sqlite.transaction(() => {
+      for (const statement of statements) this.sqlite.prepare(statement.sql).run(...statement.parameters)
+    }).immediate()
+    return Promise.resolve()
+  }
+
   async $transaction<T>(operation: () => Promise<T>): Promise<T> {
     this.sqlite.exec('BEGIN IMMEDIATE')
     try {

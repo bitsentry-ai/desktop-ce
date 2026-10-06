@@ -66,6 +66,7 @@ export interface DesktopStateDatabase {
   investigationReport: DesktopStateCollectionTable
   $queryRawUnsafe<T extends DesktopStateRow = DesktopStateRow>(query: string): Promise<T[]>
   $executeRawUnsafe(query: string): Promise<unknown>
+  $executeBatch?(statements: { sql: string; parameters: (string | number | null)[] }[]): Promise<void>
 }
 
 interface ToolCallRecord {
@@ -1138,19 +1139,13 @@ class DesktopStateStore {
     incidents: IncidentThreadRecord[],
     incidentMessages: Record<string, ChatMessage[]>,
   ): Promise<void> {
-    /**
-     * Incident threads and messages are renderer-owned. Every persistent
-     * write currently arrives through a renderer snapshot: the explicit
-     * replacement IPC, its compatibility sync alias, or legacy localStorage
-     * bootstrap. The agent runtime and runbook execution service only retain
-     * incidentThreadId on their own records.
-     *
-     * This wholesale replacement is safe only while that ownership remains
-     * true. If a main-process feature starts writing either incident table,
-     * change periodic synchronization to a non-destructive merge like
-     * mergeRunbooksFromRenderer and reserve full replacement for import.
-     */
     await this.ensureIncidentThreadSessionIdColumn()
+    if (this.db.$executeBatch !== undefined) {
+      await this.replaceIncidentsAtomically(incidents, incidentMessages)
+      return
+    }
+    // Compatibility for legacy in-memory adapters. Product SQLite always uses
+    // the atomic path, retaining threads referenced by durable operations.
     await this.db.incidentMessage.deleteMany({})
     await this.db.incidentThread.deleteMany({})
 
@@ -1203,6 +1198,39 @@ class DesktopStateStore {
         })
       }
     }
+  }
+
+  private async replaceIncidentsAtomically(
+    incidents: IncidentThreadRecord[],
+    incidentMessages: Record<string, ChatMessage[]>,
+  ): Promise<void> {
+    const statements: { sql: string; parameters: (string | number | null)[] }[] = [{
+      sql: 'UPDATE "IncidentThread" SET "deletedAt" = ? WHERE "deletedAt" IS NULL',
+      parameters: [new Date().toISOString()],
+    }]
+    for (const incident of incidents) {
+      statements.push({
+        sql: `INSERT INTO "IncidentThread" ("id","title","prompt","state","sessionId","createdAt","updatedAt","archivedAt","deletedAt")
+          VALUES (?,?,?,?,?,?,?,?,NULL) ON CONFLICT("id") DO UPDATE SET
+          "title"=excluded."title","prompt"=excluded."prompt","state"=excluded."state","sessionId"=excluded."sessionId",
+          "updatedAt"=excluded."updatedAt","archivedAt"=excluded."archivedAt","deletedAt"=NULL`,
+        parameters: [incident.id, incident.title, incident.prompt, incident.state, incident.sessionId ?? null,
+          incident.createdAt, new Date().toISOString(), incident.archivedAt ?? null],
+      }, { sql: 'DELETE FROM "IncidentMessage" WHERE "threadId" = ?', parameters: [incident.id] })
+      for (const [index, message] of (incidentMessages[incident.id] ?? []).entries()) {
+        const agent = message.kind === 'agent' ? message : undefined
+        statements.push({
+          sql: `INSERT INTO "IncidentMessage" ("id","threadId","sortOrder","kind","text","streamText","toolCallsJson","finalText","status","errorMsg","createdAt","updatedAt")
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
+          parameters: [`${incident.id}:${message.kind}:${String(index)}`, incident.id, index, message.kind,
+            message.kind === 'user' ? message.text : null, agent?.streamText ?? null,
+            agent === undefined ? null : JSON.stringify(agent.toolCalls), agent?.finalText ?? null,
+            agent?.status ?? null, agent?.errorMsg ?? null, incident.createdAt, new Date().toISOString()],
+        })
+      }
+    }
+    if (this.db.$executeBatch === undefined) throw new Error('Atomic incident persistence is unavailable')
+    await this.db.$executeBatch(statements)
   }
 
   /**
@@ -1446,7 +1474,7 @@ class DesktopStateStore {
     await this.ensureIncidentThreadSessionIdColumn()
     const [incidents, messages, runbooks, runbookActions, resultRows, traceEntries, toolRuns, reports] =
       await Promise.all([
-        this.db.incidentThread.findMany({ orderBy: { createdAt: 'desc' } }),
+        this.db.incidentThread.findMany({ where: { deletedAt: null }, orderBy: { createdAt: 'desc' } }),
         this.db.incidentMessage.findMany({ orderBy: { sortOrder: 'asc' } }),
         this.db.runbook.findMany({
           where: { deletedAt: null },
@@ -1460,8 +1488,9 @@ class DesktopStateStore {
       ])
 
     const incidentMessages: Record<string, ChatMessage[]> = {}
+    const visibleThreadIds = new Set(incidents.map((incident) => incident.id))
     for (const rawMessage of messages) {
-      addIncidentMessage(incidentMessages, rawMessage)
+      if (visibleThreadIds.has(rawMessage.threadId)) addIncidentMessage(incidentMessages, rawMessage)
     }
 
     const runbookActionsByRunbookId = new Map<string, RunbookActionRecord[]>()
