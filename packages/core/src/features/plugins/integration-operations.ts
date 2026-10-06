@@ -19,10 +19,20 @@ export const integrationOperationSchema = z.object({
 export type IntegrationOperation = z.infer<typeof integrationOperationSchema>;
 export type IntegrationWriteRequest = { connectionId: string; actionId: string; input: Record<string, unknown> };
 export type IntegrationWriteMeta = { ticketOperation?: z.infer<typeof ticketWriteOperationSchema> };
+type OperationPatch = Pick<IntegrationOperation, "status" | "updatedAt"> & Partial<Pick<IntegrationOperation, "result" | "message">>;
 export interface IntegrationOperationStore {
   list(threadId: string): Promise<IntegrationOperation[]>;
   get(id: string): Promise<IntegrationOperation | null>;
-  create(operation: IntegrationOperation): Promise<void>;
+  /** `intentKey` names the proposal for duplicate prevention when a store keeps it apart from the operation ID. */
+  create(operation: IntegrationOperation, intentKey?: string): Promise<void>;
+  findByIntent?(connectionId: string, intentKey: string): Promise<IntegrationOperation | null>;
+  /** A store that fences execution by lease. It decides who runs a write and settles an expired one as uncertain. */
+  lease?: {
+    approveAndClaim(id: string): Promise<string | null>;
+    heartbeat(id: string, token: string): Promise<boolean>;
+    finish(id: string, token: string, patch: OperationPatch): Promise<boolean>;
+    expire(): Promise<unknown>;
+  };
   transition(id: string, expected: IntegrationOperation["status"], patch: Pick<IntegrationOperation, "status" | "updatedAt"> & Partial<Pick<IntegrationOperation, "result" | "message">>, expectedUpdatedAt?: string): Promise<boolean>;
 }
 export interface IntegrationWriteRuntime {
@@ -98,10 +108,12 @@ export async function assertTicketState(runtime: IntegrationWriteRuntime, operat
 export class IntegrationOperationService {
   constructor(private readonly store: IntegrationOperationStore, private readonly resolve: (id: string) => Promise<IntegrationWriteRuntime>) {}
   async list(threadId: string) {
-    const rows = await this.store.list(threadId);
-    for (const row of rows) {
-      if (row.status === "executing" && Date.now() - Date.parse(row.updatedAt) > 120_000) {
-        await this.store.transition(row.id, "executing", { status: "uncertain", updatedAt: new Date().toISOString(), message: "Execution has not confirmed completion. Inspect the remote system before recovery." }, row.updatedAt);
+    if (this.store.lease) await this.store.lease.expire();
+    else {
+      for (const row of await this.store.list(threadId)) {
+        if (row.status === "executing" && Date.now() - Date.parse(row.updatedAt) > 120_000) {
+          await this.store.transition(row.id, "executing", { status: "uncertain", updatedAt: new Date().toISOString(), message: "Execution has not confirmed completion. Inspect the remote system before recovery." }, row.updatedAt);
+        }
       }
     }
     const current = await this.store.list(threadId);
@@ -118,9 +130,12 @@ export class IntegrationOperationService {
       const previous = (await this.store.list(threadId)).filter((row) => row.connectionId === request.connectionId && row.target === runtime.connection.target && row.pluginId === runtime.plugin.id && row.actionId === request.actionId && row.ticketOperation === meta.ticketOperation && JSON.stringify(canonical(row.input)) === JSON.stringify(canonical(input))).sort((a, b) => b.createdAt.localeCompare(a.createdAt)).find((row) => row.status !== "proposed" || (row.pluginVersion === runtime.plugin.version && row.connectionRevision === runtime.connection.revision));
       if (previous !== undefined) return previous;
     }
-    const id = await proposalId({ threadId, connectionId: request.connectionId, pluginId: runtime.plugin.id, pluginVersion: runtime.plugin.version, connectionRevision: runtime.connection.revision ?? null, target: runtime.connection.target, actionId: request.actionId, input, ticketOperation: meta.ticketOperation ?? null, renewalOf: renewalOf ?? null });
-    const existing = await this.store.get(id);
+    const intentKey = await proposalId({ threadId, connectionId: request.connectionId, pluginId: runtime.plugin.id, pluginVersion: runtime.plugin.version, connectionRevision: runtime.connection.revision ?? null, target: runtime.connection.target, actionId: request.actionId, input, ticketOperation: meta.ticketOperation ?? null, renewalOf: renewalOf ?? null });
+    const find = () => this.store.findByIntent ? this.store.findByIntent(request.connectionId, intentKey) : this.store.get(intentKey);
+    const existing = await find();
     if (existing !== null) return existing;
+    // A store that keeps the intent apart gives every operation its own random ID, so two runtimes cannot collide on one.
+    const id = this.store.findByIntent ? crypto.randomUUID() : intentKey;
     const operation = integrationOperationSchema.parse({
       id, threadId, connectionId: runtime.connection.id,
       connectionName: runtime.connection.name, target: runtime.connection.target,
@@ -129,9 +144,9 @@ export class IntegrationOperationService {
       ...classify(runtime, { ...request, input }, meta.ticketOperation), status: "proposed", createdAt: now, updatedAt: now,
     });
     try {
-      await this.store.create(operation);
+      await this.store.create(operation, intentKey);
     } catch (error) {
-      const concurrent = await this.store.get(id);
+      const concurrent = await find();
       if (concurrent !== null) return concurrent;
       throw error;
     }
@@ -188,14 +203,22 @@ export class IntegrationOperationService {
     if (flags.requiresCloseRequest !== operation.requiresCloseRequest || flags.publicUpdate !== operation.publicUpdate) throw new Error("Ticket mapping changed. Create a new preview.");
     await assertTicketState(runtime, operation);
     return this.withExecutionFence(id, async () => {
-      if (!await this.store.transition(id, "proposed", { status: "executing", updatedAt: new Date().toISOString() })) return this.owned(threadId, id);
+      const lease = this.store.lease;
+      const token = lease ? await lease.approveAndClaim(id) : null;
+      if (lease ? token === null : !await this.store.transition(id, "proposed", { status: "executing", updatedAt: new Date().toISOString() })) return this.owned(threadId, id);
+      // The outcome is recorded only by the holder of the claim. If it was lost, the stored outcome stays as it is.
+      const finish = (patch: OperationPatch) => lease && token !== null ? lease.finish(id, token, patch) : this.store.transition(id, "executing", patch);
+      const heartbeat = setInterval(() => {
+        void (lease && token !== null ? lease.heartbeat(id, token) : this.store.transition(id, "executing", { status: "executing", updatedAt: new Date().toISOString() })).catch(() => {});
+      }, 30_000);
       try {
         const result = await runtime.execute(operation);
-        const patch = { ...remoteWriteOutcome(result), updatedAt: new Date().toISOString() };
-        if (!await this.store.transition(id, "executing", patch)) await this.store.transition(id, "uncertain", patch);
+        await finish({ ...remoteWriteOutcome(result), updatedAt: new Date().toISOString() });
       } catch {
-        const patch = { status: "uncertain" as const, message: "The request was interrupted. The remote change may have completed; inspect it before retrying.", updatedAt: new Date().toISOString() };
-        if (!await this.store.transition(id, "executing", patch)) await this.store.transition(id, "uncertain", patch);
+        await finish({ status: "uncertain", message: "The request was interrupted. The remote change may have completed; inspect it before retrying.", updatedAt: new Date().toISOString() });
+      } finally {
+        clearInterval(heartbeat);
+        await lease?.expire();
       }
       return this.owned(threadId, id);
     });

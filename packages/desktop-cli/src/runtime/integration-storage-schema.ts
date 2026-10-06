@@ -62,7 +62,9 @@ CREATE TABLE IF NOT EXISTS "ResourceLink" (
   UNIQUE ("resourceId","subjectType","subjectId")
 );
 CREATE INDEX IF NOT EXISTS "ResourceLink_subject" ON "ResourceLink"("subjectType","subjectId","removedAt");
-CREATE UNIQUE INDEX IF NOT EXISTS "ResourceLink_selected" ON "ResourceLink"("subjectType","subjectId") WHERE "selected" = 1 AND "removedAt" IS NULL;
+-- A conversation can keep several selected sources. Earlier versions allowed one, so the index is dropped on open.
+DROP INDEX IF EXISTS "ResourceLink_selected";
+CREATE INDEX IF NOT EXISTS "ResourceLink_selected_subject" ON "ResourceLink"("subjectType","subjectId") WHERE "selected" = 1 AND "removedAt" IS NULL;
 
 CREATE TABLE IF NOT EXISTS "IntegrationOperation" (
   "id" TEXT PRIMARY KEY NOT NULL,
