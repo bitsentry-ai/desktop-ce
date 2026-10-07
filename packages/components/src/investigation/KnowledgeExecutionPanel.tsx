@@ -87,6 +87,7 @@ export function KnowledgeExecutionPanel({ threadId, disabled, active = true, hid
   const [changed, setChanged] = useState(false);
   const [executionId, setExecutionId] = useState<string | null>(null);
   const [execution, setExecution] = useState<RunbookExecutionRecord | null>(null);
+  const currentExecution = execution?.executionId === executionId ? execution : null;
   // One explicit Run click owns one key: it is kept only while that same click is retried, and dropped once it is accepted.
   const attempt = useRef<{ canonical: string; nonce: string } | null>(null);
   useEffect(() => {
@@ -146,6 +147,6 @@ export function KnowledgeExecutionPanel({ threadId, disabled, active = true, hid
         <Button disabled={disabled || busy || !approved} onClick={() => { void execute(); }}>{t("incidents.knowledge.execute")}</Button>
       </>}
     </>}
-    {execution && <ExecutionResult execution={execution} />}
+    {currentExecution && <ExecutionResult execution={currentExecution} />}
   </section>;
 }
