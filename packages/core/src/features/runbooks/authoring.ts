@@ -389,6 +389,8 @@ export function getUnknownRunbookTemplatePlaceholders(
     while ((match = pattern.exec(value)) !== null) {
       const key = match[1]?.trim();
       if (key === undefined || parameterKeys.has(key)) continue;
+      // Leading-dot fields are literal command templates, such as Docker's Go templates.
+      if ((field === "command" || field === "pluginInput") && key.startsWith(".")) continue;
       const identity = `${field}:${key}`;
       if (seen.has(identity)) continue;
       seen.add(identity);

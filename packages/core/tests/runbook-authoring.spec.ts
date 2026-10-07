@@ -1128,6 +1128,27 @@ describe("runbook authoring", () => {
     })).toThrow("Available actions: action-logs (external_source: Search error logs).");
   });
 
+  it.each(["shell", "plugin"] as const)("preserves literal Docker fields in a %s action", (type) => {
+    const command = "docker ps --format '{{.Names}} {{.Image}} {{.Status}}'";
+    const action = type === "shell"
+      ? { id: "containers", type, title: "List containers", command }
+      : {
+          id: "containers", type, title: "List containers",
+          pluginId: "dashboard-ssh", pluginActionId: "execute",
+          pluginInput: JSON.stringify({ connectionId: "saved-connection", command }),
+        };
+    expect(validateRunbook({ ...makeBaseRunbook(), actions: [action] }).valid).toBe(true);
+
+    const unknownParameter = type === "shell"
+      ? { ...action, command: `${command} {{container}}` }
+      : { ...action, pluginInput: JSON.stringify({ command: `${command} {{container}}` }) };
+    expect(validateRunbook({ ...makeBaseRunbook(), actions: [unknownParameter] }).errors).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining('Unknown runbook placeholder "{{container}}". Declare it as an action parameter.'),
+      ]),
+    );
+  });
+
   it("flags an out-of-range idle timeout before approval", () => {
     const validation = validateRunbook({ ...makeBaseRunbook(), idleTimeout: 3600 });
 
