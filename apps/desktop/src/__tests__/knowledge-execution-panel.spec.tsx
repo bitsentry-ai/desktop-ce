@@ -192,6 +192,10 @@ describe('KnowledgeExecutionPanel', () => {
     fireEvent.click(approveBox())
     run()
     await waitFor(() => { expect(runbooks.execute).toHaveBeenCalledTimes(2) })
+    await waitFor(() => {
+      expect(runbooks.getExecution).toHaveBeenCalledWith('exec-2')
+      expect(finish).toBeTypeOf('function')
+    })
 
     expect(screen.queryByText(/up 3 days/)).toBeNull()
     await act(async () => { finish({ ...world.execution, executionId: 'exec-2', status: 'completed', steps: [{ actionId: 'a1', order: 1, type: 'shell', title: 'Uptime', status: 'completed', output: 'up 4 days' }] } as { executionId: string }) })
