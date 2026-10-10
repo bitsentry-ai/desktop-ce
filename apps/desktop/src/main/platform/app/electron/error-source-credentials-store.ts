@@ -6,8 +6,6 @@ import {
   type ErrorSourceCredentials,
   type ErrorSourceCredentialsStore as ErrorSourceCredentialsStoreContract,
 } from "@bitsentry-ce/core/features/error-sources";
-import { SqliteErrorSourcesRepositoryAdapter } from "@bitsentry-ce/core/features/error-sources/desktop-sqlite-error-sources.adapter";
-import type { DbClient } from "@bitsentry-ce/core/features/desktop/desktop-database-client";
 
 type StoredCredential = { encryptedValue: string };
 type CredentialsFile = { version: 1; sources: Record<string, StoredCredential> };
@@ -112,29 +110,5 @@ export class ErrorSourceCredentialsStore implements ErrorSourceCredentialsStoreC
       store.sources = removeCredential(store.sources, sourceId);
       await writeStore(this.storePath, store);
     });
-  }
-}
-
-export async function migrateLegacyErrorSourceCredentials(
-  db: DbClient,
-  credentialsStore: ErrorSourceCredentialsStoreContract,
-): Promise<void> {
-  const repository = new SqliteErrorSourcesRepositoryAdapter(db);
-  for (const source of await repository.findMany()) {
-    if (source.accessTokenRef === null && source.refreshTokenRef === null) continue;
-    await credentialsStore.set(source.id, {
-      accessToken: source.accessTokenRef,
-      refreshToken: source.refreshTokenRef,
-    });
-    const updated = await repository.update({
-      id: source.id,
-      accessTokenRef: null,
-      refreshTokenRef: null,
-    });
-    if (updated === null) {
-      throw new Error(
-        `Failed to clear legacy credentials from SQLite for source ${source.id}`,
-      );
-    }
   }
 }

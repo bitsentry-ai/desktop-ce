@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest'
 
 import {
   normalizeJournalTimeWindowParameterValues,
-  normalizeRunbookActionType,
   normalizeRunbookIdleTimeout,
   normalizeRunbookParameterValues,
   normalizeRunbookTriggerContext,
@@ -96,10 +95,5 @@ describe('runbook type normalization', () => {
     ).toEqual({
       since: '1 hour ago',
     })
-  })
-  it('maps legacy ai actions to llm and falls back safely', () => {
-    expect(normalizeRunbookActionType('AI')).toBe('llm')
-    expect(normalizeRunbookActionType('external_source')).toBe('external_source')
-    expect(normalizeRunbookActionType('unknown', 'http')).toBe('http')
   })
 })

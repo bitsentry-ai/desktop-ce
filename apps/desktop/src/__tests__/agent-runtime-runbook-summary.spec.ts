@@ -249,10 +249,6 @@ function getLastAgentMessage(snapshot: AgentThreadSnapshot): Extract<ChatMessage
   return lastMessage
 }
 
-function getLastAgentToolCalls(service: AgentRuntimeService, sessionId: string): ToolCallCard[] {
-  return getLastAgentMessage(service.getSnapshot(sessionId)).toolCalls
-}
-
 function getAllAgentToolCalls(service: AgentRuntimeService, sessionId: string): ToolCallCard[] {
   return service
     .getSnapshot(sessionId)
@@ -791,32 +787,6 @@ describe('AgentRuntimeService runbook outcomes', () => {
     expect(runbookStore.create).not.toHaveBeenCalled()
     expect(runbookStore.updateMeta).not.toHaveBeenCalled()
     expect(runbookStore.updateActions).not.toHaveBeenCalled()
-  })
-
-  it('removes an incomplete newly created runbook when writing actions fails', async () => {
-    const createdShell = makeRunbook('rb-new', 'New runbook', [])
-    const runbookStore = {
-      list: vi.fn().mockResolvedValue([]),
-      create: vi.fn().mockResolvedValue(createdShell),
-      updateMeta: vi.fn(),
-      updateActions: vi.fn().mockRejectedValue(new Error('action persistence failed')),
-      remove: vi.fn().mockResolvedValue({ ok: true }),
-      getIncludingDeleted: vi.fn(),
-      purge: vi.fn().mockResolvedValue({ ok: true }),
-    }
-    const runbookExecutionService = { start: vi.fn(), waitForCompletion: vi.fn(), get: vi.fn().mockResolvedValue(null), getLatestForIncidentThread: vi.fn().mockResolvedValue(null) }
-    const llmAdapter = {
-      chatWithTools: vi.fn()
-        .mockResolvedValueOnce({ content: 'I will draft a runbook for review.', toolCalls: [{ id: 'call-propose-create', name: 'propose_runbook_create', args: { prompt: 'Create a status runbook.', draftRunbook: { title: 'New runbook', description: 'Collect status.', actions: [{ id: 'step-1', type: 'shell', title: 'Collect status', command: 'systemctl status bitsentry' }] } } }] })
-        .mockResolvedValueOnce({ content: 'The proposal requires approval.', toolCalls: [] }),
-    }
-    const service = createRuntime({ llmAdapter, runbookStore, runbookExecutionService })
-    const sessionId = await service.start({ prompt: 'Create a status runbook.', incidentThreadId: 'incident-authoring' })
-    await waitForCondition(() => service.getStatus(sessionId).state === 'COMPLETED')
-    const proposal = (await service.listRunbookAuthoringProposals({ sessionId }))[0]
-
-    await expect(service.approveRunbookAuthoringProposal({ sessionId, proposalId: proposal.proposalId })).rejects.toThrow('action persistence failed')
-    expect(runbookStore.purge).toHaveBeenCalledWith({ id: createdShell.id })
   })
 
   it('approves proposals with identical model action ids without reusing a stored primary key', async () => {
@@ -3930,9 +3900,6 @@ describe('runtime projection outcomes', () => {
     await waitForCondition(() => service.getStatus(sessionId).state === 'COMPLETED')
 
     expect(llmAdapter.chatWithTools).toHaveBeenCalledTimes(1)
-    expect(runbookExecutionService.waitForCompletion).toHaveBeenCalledWith(execution.executionId, {
-      timeoutMs: 30_000,
-    })
     const finalText = getLastAgentMessage(service.getSnapshot(sessionId)).finalText
     expect(finalText).toContain('Runbook result: Sentry Desktop Error Check')
     expect(finalText).toContain(

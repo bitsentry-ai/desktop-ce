@@ -5,8 +5,6 @@ import type { DbClient } from './client'
 
 const desktopDatabaseSeeders = createDesktopDatabaseSeeders({
   defaultLlmProvider: 'codex',
-  migrateRemovedCloudLlmSettings: true,
-  migrateCeKanyeRestRunbook: true,
   logger: log,
 })
 

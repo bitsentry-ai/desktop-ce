@@ -20,7 +20,6 @@ export {
 export type {
   DesktopExportedRunbookV1,
   DesktopRunbookExportArtifactV1,
-  LegacyRunbookActionType,
   RunbookActionParameter,
   RunbookActionType,
   RunbookExecutionCompletionReason,

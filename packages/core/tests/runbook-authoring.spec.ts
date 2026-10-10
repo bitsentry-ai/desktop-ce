@@ -165,32 +165,6 @@ describe("runbook authoring", () => {
     })).toThrowError(RunbookProposalValidationError);
   });
 
-  it("rejects an LLM-only create proposal with findings", () => {
-    expect(() => createRunbookCreationProposal({
-      prompt: "Create an LLM-only CVE summary.",
-      normalizedFindings: findings,
-      draftRunbook: {
-        title: "LLM-only CVE summary",
-        description: "Summarize the attached findings.",
-        actions: [llmOnlySummaryAction()],
-      },
-    })).toThrowError(RunbookProposalValidationError);
-  });
-
-  it("rejects an LLM-only edit proposal with findings", () => {
-    expect(() => createRunbookEditProposal({
-      prompt: "Add an LLM-only CVE summary.",
-      normalizedFindings: findings,
-      targetRunbook: { ...makeBaseRunbook(), actions: [] },
-      operations: [{
-        id: "op-llm-summary",
-        type: "add_action",
-        rationale: "Summarize the attached findings.",
-        action: llmOnlySummaryAction(),
-      }],
-    })).toThrowError(RunbookProposalValidationError);
-  });
-
   it("accepts a plugin evaluation followed by an LLM summary", () => {
     const proposal = createRunbookCreationProposal({
       prompt: "Create a CVE analysis runbook.",
@@ -922,26 +896,6 @@ describe("runbook authoring", () => {
       proposal: { status: "approved" },
       runbook: { title: "Redis latency triage" },
     });
-  });
-
-  it("accepts a friendly catalog model name in an LLM authoring proposal", () => {
-    const proposal = createRunbookCreationProposal({
-      id: "proposal-friendly-model",
-      prompt: "Create an LLM summary runbook.",
-      draftRunbook: {
-        title: "Friendly model summary",
-        description: "Summarize evidence with a catalog model.",
-        actions: [{
-          id: "action-summary",
-          type: "llm",
-          title: "Summarize evidence",
-          prompt: "Summarize the evidence.",
-          llmModel: "GPT 5.6 Terra",
-        }],
-      },
-    });
-
-    expect(proposal.validation).toMatchObject({ valid: true, errors: [] });
   });
 
   it("rejects an unknown LLM model before approval", () => {

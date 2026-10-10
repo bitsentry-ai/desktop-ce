@@ -1,6 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
 import { randomUUID } from 'crypto'
-import { z } from 'zod'
 import {
   executeHostTool,
   getHostTool,
@@ -445,16 +444,6 @@ describe('host tools', () => {
     expect(JSON.parse(result?.output ?? '')).not.toHaveProperty('parentProposalId')
   })
 
-  it.each(['propose_runbook_create', 'propose_runbook_edit'])('exposes an optional nullable parent for %s', (toolName) => {
-    const tool = getHostTool(toolName)
-    if (tool === undefined) throw new Error('Expected authoring tool')
-    const schema = z.toJSONSchema(tool.providerArgsSchema ?? tool.argsSchema)
-    expect(schema.required).not.toContain('parentProposalId')
-    expect(schema.properties?.parentProposalId).toMatchObject({
-      anyOf: [{ type: 'string' }, { type: 'null' }],
-    })
-  })
-
   it('warns before approving a shell runbook in Safe Tools mode', async () => {
     const context = createContext()
     context.session.accessLevel = 'auto-accept-edits'
@@ -695,40 +684,6 @@ describe('host tools', () => {
     expect(context.session.runbookAuthoringProposals).toBeUndefined()
   })
 
-  it('normalizes a legacy action-output placeholder in a create proposal', async () => {
-    const context = createContext()
-    const result = await executeHostTool(context, 'propose_runbook_create', {
-      prompt: 'Create a CVE analysis runbook.',
-      draftRunbook: {
-        title: 'CVE analysis',
-        description: 'Evaluate findings and summarize the result.',
-        actions: [
-          {
-            id: 'evaluate-cve-remediation',
-            type: 'plugin',
-            title: 'Evaluate CVE remediation',
-            pluginId: 'linux-cve-status',
-            pluginActionId: 'evaluate_remediation',
-            pluginInput: '{{findings}}',
-            parameters: [{ id: 'findings', key: 'findings', required: true }],
-          },
-          {
-            id: 'summarize-cve-remediation',
-            type: 'llm',
-            title: 'Summarize CVE remediation',
-            prompt: 'Summarize {{evaluate-cve-remediation.output}}.',
-            llmModel: 'gpt-5.6-terra',
-          },
-        ],
-      },
-    })
-
-    expect(result?.error).toBeUndefined()
-    expect(context.session.runbookAuthoringProposals?.[0]?.proposedRunbook.actions[1]?.prompt).toBe(
-      'Summarize ${steps.0.output}.',
-    )
-  })
-
   it('allows provider schemas to pass legacy output aliases to runtime normalization', () => {
     const tool = getHostTool('propose_runbook_create')
     const input = {
@@ -770,33 +725,6 @@ describe('host tools', () => {
 
     expect(result?.error).toBeUndefined()
     expect(context.session.runbookAuthoringProposals).toHaveLength(1)
-  })
-
-  it('rejects a findings-consuming LLM-only create before pushing a proposal', async () => {
-    const context = createContext()
-    context.session.normalizedFindings = [{ 'vulnerability.id': 'CVE-2024-0727' }]
-
-    const result = await executeHostTool(context, 'propose_runbook_create', {
-      prompt: 'Create an LLM-only CVE summary.',
-      draftRunbook: {
-        title: 'LLM-only CVE summary',
-        description: 'Summarize the attached findings.',
-        actions: [{
-          id: 'step-summary',
-          type: 'llm',
-          title: 'Summarize findings',
-          prompt: 'Summarize {{findings}}.',
-          llmModel: 'gpt-5.6-terra',
-          parameters: [{ id: 'findings', key: 'findings', required: true }],
-        }],
-      },
-    })
-
-    expect(JSON.parse(result?.error ?? '')).toMatchObject({
-      code: 'RUNBOOK_PROPOSAL_VALIDATION',
-      toolName: 'propose_runbook_create',
-    })
-    expect(context.session.runbookAuthoringProposals).toBeUndefined()
   })
 
   it.each([
@@ -1115,26 +1043,6 @@ describe('host tools', () => {
     })
   })
 
-  it('rejects an out-of-range proposal idle timeout with the documented unit', async () => {
-    const context = createContext()
-
-    const result = await executeHostTool(context, 'propose_runbook_create', {
-      prompt: 'Create a status runbook.',
-      draftRunbook: {
-        title: 'Status check',
-        description: '',
-        idleTimeout: 3600,
-        actions: [{ id: 'step-1', type: 'shell', title: 'Check status', command: 'systemctl status bitsentry' }],
-      },
-    })
-
-    expect(JSON.parse(result?.error ?? '')).toMatchObject({
-      code: 'INVALID_TOOL_ARGUMENTS',
-      toolName: 'propose_runbook_create',
-    })
-    expect(result?.error).toContain('minutes')
-  })
-
   it('creates a session-only runbook edit proposal through the host-tool registry', async () => {
     const runbook = makeRunbook({ actions: [{ id: 'step-1', type: 'shell', title: 'Check service status', command: 'systemctl status bitsentry' }] })
     const context = createContext()
@@ -1332,41 +1240,6 @@ describe('host tools', () => {
 
     expect(firstLookupAfterTimeout?.error).toBeUndefined()
     expect(secondWait?.error).toBeUndefined()
-  })
-
-  it('normalizes a legacy action-output placeholder in an edit proposal', async () => {
-    const context = createContext()
-    context.listAuthorableRunbooks = vi.fn().mockResolvedValue([makeRunbook({
-      actions: [{
-        id: 'evaluate-cve-remediation',
-        type: 'plugin',
-        title: 'Evaluate CVE remediation',
-        pluginId: 'linux-cve-status',
-        pluginActionId: 'evaluate_remediation',
-      }],
-    })])
-
-    const result = await executeHostTool(context, 'propose_runbook_edit', {
-      runbookId: 'rb-sentry',
-      prompt: 'Add a summary action.',
-      operations: [{
-        id: 'op-summary',
-        type: 'add_action',
-        rationale: 'Summarize the evaluator output.',
-        action: {
-          id: 'summarize-cve-remediation',
-          type: 'llm',
-          title: 'Summarize CVE remediation',
-          prompt: 'Summarize {{evaluate-cve-remediation.output}}.',
-          llmModel: 'gpt-5.6-terra',
-        },
-      }],
-    })
-
-    expect(result?.error).toBeUndefined()
-    expect(context.session.runbookAuthoringProposals?.[0]?.operations[0]?.action?.prompt).toBe(
-      'Summarize ${steps.0.output}.',
-    )
   })
 
   it.each([

@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import React from "react";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ChatBubble, hasWaitingAgentIndicator } from "@bitsentry-ce/components/chat/ChatBubble";
 import { Composer, type ComposerProps } from "@bitsentry-ce/components/chat/Composer";
@@ -30,6 +30,7 @@ vi.mock("@bitsentry-ce/i18n", () => ({
 
 afterEach(() => {
   cleanup();
+  vi.useRealTimers();
   traitTranslations = {
     "common.traitsDropdown.reasoning": "Reasoning",
     "common.traitsDropdown.reasoningExtraHigh": "Extra High",
@@ -109,6 +110,21 @@ function composerProps(
 }
 
 describe("ChatBubble waiting state", () => {
+  it("shows a waiting indicator when an assistant message has not emitted content yet", () => {
+    const message: Extract<ChatMessage, { kind: "agent" }> = {
+      kind: "agent",
+      iterations: [],
+      activeIterationId: null,
+      toolCalls: [],
+      finalText: null,
+      status: "thinking",
+    };
+
+    render(<ChatBubble msg={message} providerKey="openai" />);
+
+    expect(screen.getByText("common.incidents.aiIsResponding")).toBeTruthy();
+  });
+
   it("renders only Working for while thinking, without an Asking model chip", () => {
     const message: Extract<ChatMessage, { kind: "agent" }> = {
       kind: "agent",
@@ -213,6 +229,39 @@ describe("ChatBubble waiting state", () => {
     );
 
     expect(screen.getByText("common.incidents.aiIsResponding")).toBeTruthy();
+  });
+
+  it("updates the active waiting duration while the message object is unchanged", () => {
+    vi.useFakeTimers();
+    const startedAt = new Date("2026-06-27T00:00:00.000Z");
+    vi.setSystemTime(startedAt);
+    const message: Extract<ChatMessage, { kind: "agent" }> = {
+      kind: "agent",
+      iterations: [
+        {
+          id: "iteration-1",
+          startedAt: startedAt.toISOString(),
+          text: "",
+          streamDeltas: [],
+          toolCallIds: [],
+          status: "thinking",
+        },
+      ],
+      activeIterationId: "iteration-1",
+      toolCalls: [],
+      finalText: null,
+      status: "thinking",
+    };
+
+    render(<ChatBubble msg={message} providerKey="openai" />);
+
+    expect(screen.getByText("common.incidents.workingFor 0s")).toBeTruthy();
+
+    act(() => {
+      vi.advanceTimersByTime(3000);
+    });
+
+    expect(screen.getByText("common.incidents.workingFor 3.0s")).toBeTruthy();
   });
 });
 

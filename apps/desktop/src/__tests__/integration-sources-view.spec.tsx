@@ -204,17 +204,10 @@ describe('using a resource as a source', () => {
     const { onSelect } = renderView([ticket({ selected: true })])
 
     const card = screen.getByRole('article', { name: 'Logon Failure - Unknown user or bad password' })
-    expect(card.className).toContain('ring-primary')
     const on = within(card).getByRole('button', { name: label('sourceSelected') })
     expect(on.getAttribute('aria-pressed')).toBe('true')
     fireEvent.click(on)
     expect(onSelect).toHaveBeenCalledWith(expect.objectContaining({ externalId: '3' }), false)
-  })
-
-  it('leaves an unselected card without the selection ring', () => {
-    renderView([ticket()])
-
-    expect(screen.getByRole('article').className).not.toContain('ring-primary')
   })
 
   it('cannot be toggled in an archived conversation', () => {

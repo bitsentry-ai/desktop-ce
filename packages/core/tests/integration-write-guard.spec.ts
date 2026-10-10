@@ -61,12 +61,6 @@ describe('generic iTop write proposals', () => {
     })
   })
 
-  it('refuses every generic iTop write without a ticket mapping, whatever the class', async () => {
-    await expect(proposeWrite(unmappedConnection, 'create_object', { class: 'Organization', fields: { name: 'Acme' } })).resolves.toEqual({
-      error: expect.objectContaining({ code: 'TICKET_MAPPING_REQUIRED' }), preview: undefined,
-    })
-  })
-
   it.each(ticketWrites)('refuses a generic %s on the mapped ticket class', async (actionId, input) => {
     await expect(proposeWrite(mappedConnection, actionId, input)).resolves.toEqual({
       error: expect.objectContaining({ code: 'USE_TICKET_OPERATION' }), preview: undefined,

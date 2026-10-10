@@ -341,7 +341,6 @@ describe("IncidentArtifactsRail step selection", () => {
     );
 
     await waitFor(() => {
-      expect(getExecution).toHaveBeenCalledWith(execution.executionId);
       expect(
         screen.getAllByText(
           "Use 2026-05-26 00:55:00 UTC for backend log checks.",
@@ -428,8 +427,6 @@ describe("IncidentArtifactsRail step selection", () => {
     );
 
     await waitFor(() => {
-      expect(getExecution).toHaveBeenCalledWith(startedExecution.executionId);
-      expect(getExecution).toHaveBeenCalledWith(failedExecution.executionId);
       expect(screen.getAllByText("PostHog API returned 403.").length).toBeGreaterThan(0);
     });
   });

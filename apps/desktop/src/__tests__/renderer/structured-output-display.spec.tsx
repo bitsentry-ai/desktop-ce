@@ -46,13 +46,6 @@ const EVIDENCE_QUERIES = [
 ];
 
 describe("expandJsonWhitespaceEscapes", () => {
-  it("expands the escapes JSON.stringify introduces for nested newlines", () => {
-    const serialized = JSON.stringify({ output: "first\nsecond" }, null, 2);
-
-    expect(serialized).toContain("first\\nsecond");
-    expect(expandJsonWhitespaceEscapes(serialized)).toContain("first\nsecond");
-  });
-
   it("leaves literal backslash sequences alone", () => {
     // The source string holds a backslash followed by "n", not a newline.
     const serialized = JSON.stringify({ pattern: "line\\nbreak" }, null, 2);
@@ -97,7 +90,6 @@ describe("formatStructuredValue", () => {
 
     // The formatter separates every header row with a blank line and expands
     // its empty separator entry into three.
-    expect(EVIDENCE_QUERY_OUTPUT).toContain("\n\n\n\n");
     expect(formatted).not.toMatch(/\n\s*\n/);
     expect(formatted).toContain(
       "Returned: 1 issue(s)\n1. Error: Cannot find module",

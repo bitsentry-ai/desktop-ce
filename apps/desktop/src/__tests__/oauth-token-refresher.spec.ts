@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 
+import type { SqliteErrorSourcesRepositoryAdapter } from '@bitsentry-ce/core/features/error-sources/desktop-sqlite-error-sources.adapter'
 import {
   refreshSourceAccessToken,
   type RefreshAccessTokenInput,
@@ -80,6 +81,10 @@ function createOAuthPluginRuntime(input: {
   })()
 
   return { runtime, executeAction }
+}
+
+function asPluginRuntime(runtime: unknown): DesktopPluginRuntimeService {
+  return runtime as DesktopPluginRuntimeService
 }
 
 describe('refreshSourceAccessToken', () => {
@@ -208,5 +213,118 @@ describe('refreshSourceAccessToken', () => {
     )
 
     expect(executeAction).not.toHaveBeenCalled()
+  })
+
+  it('uses plugin-specific OAuth refresh env names for vendor PostHog sources', async () => {
+    const originalClientId = process.env.VENDOR_POSTHOG_OAUTH_CLIENT_ID
+    const originalClientSecret = process.env.VENDOR_POSTHOG_OAUTH_CLIENT_SECRET
+    process.env.VENDOR_POSTHOG_OAUTH_CLIENT_ID = 'vendor-client-id'
+    process.env.VENDOR_POSTHOG_OAUTH_CLIENT_SECRET = 'vendor-client-secret'
+
+    try {
+      const sourcesRepository = {
+        update: vi.fn().mockResolvedValue({ id: 'source-2' }),
+      } satisfies Pick<SqliteErrorSourcesRepositoryAdapter, 'update'>
+      const getPlugin = vi.fn((pluginId: string) => {
+        if (pluginId !== 'vendor-posthog') {
+          return null
+        }
+
+        return {
+          id: 'vendor-posthog',
+          name: 'Vendor PostHog',
+          version: '1.0.0',
+          description: 'Vendor-specific PostHog plugin',
+          type: 'data_source' as const,
+          metadata: {
+            dataSource: {
+              sourceType: 'posthog' as const,
+              setupFields: [],
+              oauth: {
+                envClientIdName: 'VENDOR_POSTHOG_OAUTH_CLIENT_ID',
+                envClientSecretName: 'VENDOR_POSTHOG_OAUTH_CLIENT_SECRET',
+                publicClient: false,
+              },
+            },
+          },
+          auth: { fields: [] },
+          actions: [
+            {
+              id: 'refresh_token',
+              title: 'Refresh token',
+              description: 'Refreshes OAuth tokens.',
+              riskLevel: 'write' as const,
+              fields: [],
+            },
+          ],
+        }
+      })
+      const executeAction = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        summary: 'refreshed',
+        data: {
+          accessToken: 'refreshed-access-token',
+          refreshToken: 'refreshed-refresh-token',
+          expiresIn: 3600,
+          scope: 'projects:read vendor:events',
+        },
+      })
+      const pluginRuntime: Pick<
+        DesktopPluginRuntimeService,
+        'getPlugin' | 'executeAction'
+      > = {
+        getPlugin,
+        executeAction,
+      }
+
+      await expect(
+        refreshSourceAccessToken({
+          source: {
+            id: 'source-2',
+            name: 'Vendor PostHog',
+            sourceType: 'posthog' as const,
+            accessTokenRef: '',
+            refreshTokenRef: 'refresh-token-1',
+            expiresAt: new Date(Date.now() - 5 * 60_000).toISOString(),
+            grantedScopes: ['projects:read'],
+            configuration: {},
+            additionalMetadata: { pluginId: 'vendor-posthog' },
+          },
+          sourcesRepository,
+          pluginRuntime: asPluginRuntime(pluginRuntime),
+        }),
+      ).resolves.toBe('refreshed-access-token')
+
+      expect(executeAction).toHaveBeenCalledWith({
+        pluginId: 'vendor-posthog',
+        actionId: 'refresh_token',
+        auth: {},
+        input: {
+          clientId: 'vendor-client-id',
+          clientSecret: 'vendor-client-secret',
+          refreshToken: 'refresh-token-1',
+        },
+      })
+      expect(sourcesRepository.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          id: 'source-2',
+          accessTokenRef: 'refreshed-access-token',
+          refreshTokenRef: 'refreshed-refresh-token',
+          grantedScopes: ['projects:read', 'vendor:events'],
+        }),
+      )
+    } finally {
+      if (originalClientId == null) {
+        delete process.env.VENDOR_POSTHOG_OAUTH_CLIENT_ID
+      } else {
+        process.env.VENDOR_POSTHOG_OAUTH_CLIENT_ID = originalClientId
+      }
+      if (originalClientSecret == null) {
+        delete process.env.VENDOR_POSTHOG_OAUTH_CLIENT_SECRET
+      } else {
+        process.env.VENDOR_POSTHOG_OAUTH_CLIENT_SECRET = originalClientSecret
+      }
+    }
   })
 })

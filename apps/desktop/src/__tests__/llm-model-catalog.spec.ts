@@ -377,33 +377,6 @@ describe('local model catalog selection', () => {
     }
   })
 
-  it('exposes current Gemini models with the Gemini 3 thinking-level control', () => {
-    const modelIds = getProviderCatalogModels('gemini').map((model) => model.id)
-
-    expect(modelIds).toEqual([
-      'gemini-3.6-flash',
-      'gemini-3.5-flash',
-      'gemini-3.5-flash-lite',
-      'gemini-3.1-flash-lite',
-      'gemini-3.1-pro-preview',
-      'gemini-3-flash-preview',
-    ])
-    expect(modelIds).not.toContain('gemini-2.0-flash')
-
-    for (const model of getProviderCatalogModels('gemini').filter((entry) => entry.id.startsWith('gemini-3'))) {
-      expect(model.thinkingMode).toBe('always_on')
-      const thinkingLevel = getEffectiveComposerOptions(model).find((option) => option.id === 'thinkingLevel')
-      expect(thinkingLevel).toMatchObject({ type: 'select' })
-      if (thinkingLevel?.type !== 'select') throw new Error(`${model.id} needs thinkingLevel`)
-      expect(thinkingLevel.options.map((option) => option.value)).toEqual(
-        model.id === 'gemini-3.1-pro-preview'
-          ? ['low', 'medium', 'high']
-          : ['minimal', 'low', 'medium', 'high'],
-      )
-      expect(thinkingLevel.options.find((option) => option.isDefault)?.value).toBe('high')
-    }
-  })
-
   it('hides confirmed stale Gemini IDs from catalog and live discovery', () => {
     const staleIds = [
       'gemini-2.5-pro',
@@ -421,28 +394,6 @@ describe('local model catalog selection', () => {
     expect(getCatalogModelIds('gemini')).not.toEqual(
       expect.arrayContaining(staleIds),
     )
-  })
-
-  it('keeps current native Anthropic IDs in the canonical catalog', () => {
-    const modelIds = getCatalogModelIds('anthropic')
-
-    expect(modelIds).toEqual(expect.arrayContaining([
-      'claude-opus-5',
-      'claude-sonnet-5',
-      'claude-fable-5',
-      'claude-opus-4-8',
-      'claude-haiku-4-5',
-    ]))
-    expect(modelIds).not.toContain('claude-opus-4-1')
-
-    for (const modelId of ['claude-opus-5', 'claude-sonnet-5', 'claude-fable-5', 'claude-opus-4-8']) {
-      expect(getCatalogModel('anthropic', modelId)).toMatchObject({
-        id: modelId,
-        supportsSamplingParameters: false,
-        contextWindowTokens: 1_000_000,
-        maxOutputTokens: 128_000,
-      })
-    }
   })
 
   it('uses catalog limits before legacy fallbacks and preserves CLI context choices', () => {

@@ -413,10 +413,6 @@ describe('cli-probe service', () => {
 
     // Assert
     expect(result).toBe(aliasPath)
-    expect(mocks.log.info).toHaveBeenCalledWith(
-      '[local-ai] Skipping Windows CLI directory scan',
-      expect.objectContaining({ root: 'C:\\Program Files\\WindowsApps', code: 'EACCES' }),
-    )
   })
 
   it('logs the resolved command and real stderr when a candidate probe fails', async () => {

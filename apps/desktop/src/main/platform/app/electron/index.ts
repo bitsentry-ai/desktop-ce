@@ -7,7 +7,6 @@ import {
 import { getTelemetryStatus, setTelemetryEnabled } from '@bitsentry-ce/core/features/analytics'
 import path from 'path'
 import { appendFileSync, readFileSync } from 'fs'
-import { rm } from 'fs/promises'
 import { randomUUID } from 'crypto'
 import {
   app,
@@ -92,7 +91,7 @@ import {
 import { getAutoUpdaterEnablement } from '@bitsentry-ce/core/features/updater/desktop-updater-policy'
 import { startAutoUpdater } from '@bitsentry-ce/desktop-cli/runtime/desktop-updater'
 import { LocalPluginCredentialsStore } from '@bitsentry-ce/desktop-cli/runtime/plugin-credentials-store'
-import { ErrorSourceCredentialsStore, migrateLegacyErrorSourceCredentials } from './error-source-credentials-store'
+import { ErrorSourceCredentialsStore } from './error-source-credentials-store'
 import { LocalRunbookExecutionHost } from '@bitsentry-ce/desktop-cli/runtime/local-runbook-execution-host'
 import { DesktopShutdownCoordinator } from './shutdown-coordinator'
 import { formatDesktopStartupFingerprint } from './startup-fingerprint'
@@ -474,18 +473,10 @@ app
       const db = await initializeDatabase()
       await initSentryIfEnabled(db)
 
-      // One-time cleanup: cloud LLM providers were removed, so drop the
-      // encrypted credentials file left behind by older installs.
-      const legacyLlmCredentialsPath = path.join(app.getPath('userData'), 'auth', 'llm-providers.json')
-      await rm(legacyLlmCredentialsPath, { force: true }).catch((error: unknown) => {
-        log.warn('[main] Failed to remove legacy LLM credentials file:', error)
-      })
-
       services = await composeServices(db)
       const desktopServices = services
       const userDataPath = app.getPath('userData')
       const errorSourceCredentialsStore = new ErrorSourceCredentialsStore(userDataPath)
-      await migrateLegacyErrorSourceCredentials(db, errorSourceCredentialsStore)
       const pluginCredentialsStore = new LocalPluginCredentialsStore(userDataPath)
       const pluginRuntime = createDesktopNodePluginRuntimeService(
         [path.join(userDataPath, 'plugins')],

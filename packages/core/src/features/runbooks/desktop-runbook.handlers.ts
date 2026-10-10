@@ -145,64 +145,6 @@ function firstNonEmptyString(...values: unknown[]): string {
   return "";
 }
 
-function withOptionalStringField<T extends Record<string, unknown>>(
-  value: T,
-  key: string,
-  fieldValue: string,
-): T {
-  if (fieldValue.length === 0) {
-    return value;
-  }
-
-  return {
-    ...value,
-    [key]: fieldValue,
-  };
-}
-
-function normalizeLegacyRunbookAction(rawAction: unknown): Record<string, unknown> {
-  const action = asObject(rawAction);
-  const sourceRef = firstNonEmptyString(action.sourceRef, action.sourceId);
-  return withOptionalStringField(action, "sourceRef", sourceRef);
-}
-
-function normalizeLegacyRunbook(rawRunbook: unknown): Record<string, unknown> {
-  const runbook = asObject(rawRunbook);
-  if (!Array.isArray(runbook.actions)) {
-    return runbook;
-  }
-
-  return {
-    ...runbook,
-    actions: runbook.actions.map((rawAction) =>
-      normalizeLegacyRunbookAction(rawAction),
-    ),
-  };
-}
-
-function normalizeLegacyExternalSource(rawSource: unknown): Record<string, unknown> {
-  const source = asObject(rawSource);
-  const ref = firstNonEmptyString(source.ref, source.id);
-  return withOptionalStringField(source, "ref", ref);
-}
-
-function normalizeLegacyRunbookImportArtifact(parsed: unknown): unknown {
-  const artifact = asObject(parsed);
-  const normalized = { ...artifact };
-  if (Array.isArray(artifact.runbooks)) {
-    normalized.runbooks = artifact.runbooks.map((rawRunbook) =>
-      normalizeLegacyRunbook(rawRunbook),
-    );
-  }
-  if (Array.isArray(artifact.externalSources)) {
-    normalized.externalSources = artifact.externalSources.map((rawSource) =>
-      normalizeLegacyExternalSource(rawSource),
-    );
-  }
-
-  return normalized;
-}
-
 function asStringRecord(value: unknown): Record<string, string> | undefined {
   if (value === null || typeof value !== "object" || Array.isArray(value)) {
     return undefined;
@@ -238,18 +180,17 @@ function validateRunbookImportArtifact(
   parsed: unknown,
   edition: DesktopRunbookImportEdition = "pro",
 ): DesktopRunbookExportArtifactV1 {
-  const normalizedParsed = normalizeLegacyRunbookImportArtifact(parsed);
-  const result = runbookExportArtifactV1Schema.safeParse(normalizedParsed);
+  const result = runbookExportArtifactV1Schema.safeParse(parsed);
   if (!result.success) {
     const firstIssue = result.error.issues[0];
     throw new Error(
-      formatRunbookImportValidationError(firstIssue, normalizedParsed),
+      formatRunbookImportValidationError(firstIssue, parsed),
     );
   }
 
   assertSupportedRunbookImportProviders(result.data, edition);
 
-  const input = asObject(normalizedParsed);
+  const input = asObject(parsed);
   let rawRunbooks: unknown[] = [];
   if (Array.isArray(input.runbooks)) {
     rawRunbooks = input.runbooks;

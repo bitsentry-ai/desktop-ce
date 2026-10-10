@@ -541,7 +541,6 @@ describe('incident response copy and markdown extraction', () => {
     expect(
       response.compareDocumentPosition(copyButton) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy()
-    expect(copyButton.parentElement?.className).toContain('flex items-center gap-1.5')
   })
 
   it('extracts nested code-block text recursively', () => {

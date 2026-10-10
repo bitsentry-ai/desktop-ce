@@ -30,45 +30,12 @@ export const userSchema = z.object({
 });
 
 // Auth schemas
-export const loginSchema = z.object({
-  email: z.email(),
-  password: z.string(),
-});
-
-export const registerSchema = z.object({
-  email: z.email(),
-  password: z.string().min(6),
-  firstName: z.string(),
-  lastName: z.string(),
-});
-
-export const requestPasswordResetSchema = z.object({
-  email: z.email(),
-});
-
-export const resetPasswordSchema = z.object({
-  token: z.string(),
-  newPassword: z.string().min(6),
-});
-
 export const updateProfileSchema = z.object({
   firstName: z.string().min(1).optional(),
   lastName: z.string().min(1).optional(),
   email: z.email().optional(),
   password: z.string().min(6).optional(),
   oldPassword: z.string().min(1).optional(),
-});
-
-export const verifyEmailSchema = z.object({
-  hash: z.string(),
-});
-
-export const confirmNewEmailSchema = z.object({
-  token: z.string(),
-});
-
-export const refreshTokenSchema = z.object({
-  refreshToken: z.string(),
 });
 
 export const loginResponseSchema = z.object({

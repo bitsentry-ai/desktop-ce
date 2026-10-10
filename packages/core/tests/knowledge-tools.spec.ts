@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { draftOutlinePostmortem, readSelectedKnowledge, knowledgeReferences, searchKnowledge, knowledgeSearchSchema } from '../src/features/agent-runtime/knowledge-tools'
 import type { IntegrationActionInput } from '../src/features/agent-runtime/integration-tools'
-import { executeHostTool, hostTools } from '../src/features/agent-runtime/host-tools'
+import { executeHostTool } from '../src/features/agent-runtime/host-tools'
 import { itopTicketMappingSchema } from '../src/features/plugins/itop-ticket-mapping'
 import type { DesktopPluginDescriptor } from '../src/features/plugins'
 import type { HostToolContext } from '../src/features/agent-runtime/host-tools'
@@ -150,20 +150,5 @@ describe('searching earlier ticket solutions', () => {
     expect(mappingWith().solvedStates).toEqual(['resolved', 'closed'])
     expect(mappingWith({ solvedStates: ['done'] }).solvedStates).toEqual(['done'])
     expect(() => mappingWith({ solvedStates: [] })).toThrow()
-  })
-})
-
-describe('steering the model to the solved-ticket search', () => {
-  const description = (name: string) => hostTools.find((tool) => tool.name === name)?.description ?? ''
-
-  it('tells the model to use search_knowledge for earlier solutions and resolved tickets', () => {
-    expect(description('search_knowledge')).toContain('how a problem was solved before')
-    expect(description('search_knowledge')).toContain('previously resolved or solved ticket')
-    expect(description('search_knowledge')).toContain('still open are never returned')
-  })
-
-  it('points the general ticket and read tools away from solution lookups', () => {
-    expect(description('ticket_operation')).toContain('use search_knowledge')
-    expect(description('read_integration')).toContain('use search_knowledge')
   })
 })

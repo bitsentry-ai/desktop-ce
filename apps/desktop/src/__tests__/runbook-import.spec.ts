@@ -401,49 +401,6 @@ describe("RunbookStore importRunbooks", () => {
     expect(imported?.actions[0]?.pluginAuth).toBeUndefined();
   });
 
-  it("imports legacy external source actions without artifact externalSources", async () => {
-    const { store, db } = createStore();
-    const artifact: DesktopRunbookExportArtifactV1 = {
-      format: "bitsentry.runbooks.export",
-      version: 1,
-      exportedAt: "2026-05-31T00:00:00.000Z",
-      runbooks: [
-        {
-          title: "Retrieve issues",
-          actions: [
-            {
-              type: "external_source",
-              title: "Query GitHub issues",
-              query: "is:issue is:open",
-              sourceRef: "jagad",
-              sourceName: "Jagad GitHub",
-            },
-          ],
-        },
-      ],
-    };
-
-    const summary = await store.importRunbooks({
-      artifact,
-      options: { dryRun: false },
-    });
-
-    expect(summary).toMatchObject({
-      imported: 1,
-      skipped: 0,
-      failed: 0,
-    });
-    expect(summary.results[0].warnings).toContain(
-      'Action "Query GitHub issues" references external source "Jagad GitHub" and should be reviewed in the target environment.',
-    );
-    const [createRunbookActionCall] = db.runbookAction.create.mock.calls;
-    expect(createRunbookActionCall[0]).toMatchObject({
-      data: {
-        sourceId: null,
-      },
-    });
-  });
-
   it("rejects external source actions that reference an undefined artifact sourceRef", async () => {
     const { store } = createStore();
     const artifact: DesktopRunbookExportArtifactV1 = {
@@ -905,22 +862,52 @@ describe("Runbook import handlers", () => {
       'Runbook "Kanye Rest" action "What did kanye say?" uses unsupported LLM provider "groq". Supported providers: claude_code, codex, opencode, cursor.',
     );
   });
+
+  it("imports cursor CLI provider actions through the handler", async () => {
+    const db = createDb();
+    const executionService = {};
+    const globalVariablesService = {
+      list: vi.fn(() => []),
+    };
+    const handlers = createRunbookHandlers(
+      db as never,
+      {
+        executionService: executionService as never,
+        globalVariablesService: globalVariablesService as never,
+      },
+    );
+
+    await expect(
+      handlers["runbooks:import"]({
+        artifact: {
+          format: "bitsentry.runbooks.export",
+          version: 1,
+          exportedAt: "2026-06-15T00:00:00.000Z",
+          runbooks: [
+            {
+              title: "Local CLI Providers Test Suite",
+              actions: [
+                {
+                  type: "llm",
+                  title: "cursor test-action",
+                  prompt: "Reply OK",
+                  llmProviderKey: "cursor",
+                },
+              ],
+            },
+          ],
+        },
+        options: { dryRun: true },
+      }),
+    ).resolves.toMatchObject({
+      imported: 1,
+      skipped: 0,
+      failed: 0,
+      results: [expect.objectContaining({ status: "imported" })],
+    });
+  });
 });
 
-
-it.each(["diagnose", "verify", "recommend"] as const)("loads persisted legacy %s actions without losing config", async (stage) => {
-  const { store } = createStore({
-    runbook: { findUnique: vi.fn(() => ({ id: "legacy", title: "Legacy" })) },
-    runbookAction: { findMany: vi.fn(() => [{
-      id: "action", type: `diagnosis_${stage}`, title: "Legacy action",
-      body: JSON.stringify({ telemetryEntryIds: [42], sourceId: "source-1" }),
-    }]) },
-  });
-  const loaded = await store.getRunbookOrThrow("legacy");
-  expect(loaded.actions[0]).toMatchObject({
-    type: "diagnosis", telemetryConfig: { stage, telemetryEntryIds: [42], sourceId: "source-1" },
-  });
-});
 
 it("rejects stage-less canonical diagnosis in both store write paths before writes", async () => {
   const { store, db } = createStore({ runbook: { findUnique: vi.fn(() => ({ id: "runbook", title: "Runbook" })) } });
