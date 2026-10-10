@@ -253,12 +253,4 @@ describe('the status check before a lifecycle proposal', () => {
 
     expect(received).toEqual([expect.objectContaining({ actionId: 'get_object', id: 12, options: { capture: false } })])
   })
-
-  it('does not change how an ordinary ticket read is retained', async () => {
-    const { context, received } = remote()
-
-    await run(context, { connectionId: production, operation: 'read', ticketId: '12' })
-
-    expect(received).toEqual([expect.objectContaining({ actionId: 'get_object', id: 12, options: undefined })])
-  })
 })

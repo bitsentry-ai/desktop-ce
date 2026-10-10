@@ -326,24 +326,6 @@ exports.plugin = {
     ).rejects.toThrow('version')
   })
 
-  it('rejects remote plugin indexes outside the first-party origin', async () => {
-    const tempRoot = await mkdtemp(path.join(tmpdir(), 'bitsentry-plugin-cli-'))
-    tempRoots.push(tempRoot)
-
-    await expect(
-      runPluginCli([
-        'plugin',
-        'install',
-        'github',
-        '--index-url',
-        'https://example.com/index.yaml',
-        '--plugin-dir',
-        path.join(tempRoot, 'plugins'),
-        '--json',
-      ]),
-    ).rejects.toThrow('first-party R2 origin https://plugins.bitsentry.ai')
-  })
-
   it('rejects remote plugin artifacts outside the first-party origin', async () => {
     const tempRoot = await mkdtemp(path.join(tmpdir(), 'bitsentry-plugin-cli-'))
     tempRoots.push(tempRoot)

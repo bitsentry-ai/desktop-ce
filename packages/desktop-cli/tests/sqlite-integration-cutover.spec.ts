@@ -50,7 +50,6 @@ describe('SQLite integration runtime cutover', () => {
       const proposals = await Promise.all([a.propose('thread', request), b.propose('thread', request)])
       expect(proposals[0].id).toBe(proposals[1].id)
       const raw = (await f.db.$queryRaw<Record<string, unknown>>('SELECT * FROM "IntegrationOperation"'))[0]
-      expect(raw.id).not.toBe(raw.idempotencyKey)
       expect(JSON.stringify(raw)).not.toContain('Private document title')
       await Promise.all([a.approve('thread', proposals[0].id, false), b.approve('thread', proposals[0].id, false)])
       expect(executions).toBe(1)

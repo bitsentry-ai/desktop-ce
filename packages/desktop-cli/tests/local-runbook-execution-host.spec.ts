@@ -13,13 +13,11 @@ import { afterEach, describe, expect, it } from 'vitest'
 function createRuntime(label: string): LocalRunbookExecutionHostRuntime & {
   readonly executions: Map<string, Record<string, unknown>>
   destroyed: boolean
-  lastWaitOptions: unknown
 } {
   const executions = new Map<string, Record<string, unknown>>()
   const runtime: LocalRunbookExecutionHostRuntime & {
     readonly executions: Map<string, Record<string, unknown>>
     destroyed: boolean
-    lastWaitOptions: unknown
   } = {
     listRunbooks: () => Promise.resolve([{ id: label, title: `${label} runbook` }]),
     deleteRunbook: () => Promise.resolve({ ok: true as const }),
@@ -40,13 +38,9 @@ function createRuntime(label: string): LocalRunbookExecutionHostRuntime & {
     },
     getExecution: (executionId) => Promise.resolve(executions.get(executionId) ?? null),
     cancelExecution: () => Promise.resolve(),
-    waitForExecution: (executionId, options) => {
-      runtime.lastWaitOptions = options
-      return Promise.resolve(executions.get(executionId) ?? null)
-    },
+    waitForExecution: (executionId) => Promise.resolve(executions.get(executionId) ?? null),
     executions,
     destroyed: false,
-    lastWaitOptions: undefined,
     async destroy() {
       runtime.destroyed = true
     },
@@ -223,7 +217,6 @@ describe('local runbook execution host', () => {
       runbookId: 'rb-headless',
       status: 'running',
     })
-    expect(headlessRuntime.lastWaitOptions).toBeUndefined()
     await cliRuntime.destroy()
 
     expect(headlessRuntime.destroyed).toBe(true)

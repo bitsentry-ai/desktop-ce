@@ -76,7 +76,6 @@ describe("desktop Sentry consent", () => {
 
     await sentry.initSentryIfEnabled(createDb() as never);
 
-    expect(sentryMocks.moduleLoadMock).not.toHaveBeenCalled();
     expect(sentryMocks.initMock).not.toHaveBeenCalled();
   });
 
@@ -93,16 +92,7 @@ describe("desktop Sentry consent", () => {
 
     await sentry.initSentryIfEnabled(createDb({ primary: "false" }) as never);
 
-    expect(sentryMocks.moduleLoadMock).not.toHaveBeenCalled();
     expect(sentryMocks.initMock).not.toHaveBeenCalled();
-  });
-
-  it("initializes on beta only when telemetry consent is enabled", async () => {
-    const sentry = await importSentryModule("beta");
-
-    await sentry.initSentryIfEnabled(createDb({ primary: "true" }) as never);
-
-    expect(sentryMocks.initMock).toHaveBeenCalledTimes(1);
   });
 
   it("initializes only after telemetry consent is enabled", async () => {

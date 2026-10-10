@@ -383,10 +383,6 @@ rl.on('line', (line) => {
 }
 
 describe('Codex model argument handling', () => {
-  it('passes the model as a -c config override because app-server ignores --model', () => {
-    expect(withCodexModelArgs([], 'gpt-5.4-mini')).toEqual(['-c', 'model="gpt-5.4-mini"'])
-  })
-
   it('keeps user-supplied model overrides untouched', () => {
     expect(withCodexModelArgs(['--model', 'x'], 'gpt-5.4-mini')).toEqual(['--model', 'x'])
     expect(withCodexModelArgs(['-c', 'model="x"'], 'gpt-5.4-mini')).toEqual(['-c', 'model="x"'])

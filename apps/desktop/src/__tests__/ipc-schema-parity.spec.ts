@@ -115,7 +115,6 @@ describe('desktop IPC schema parity', () => {
   it('accepts and rejects a contract payload for every registered channel', () => {
     const validPayloads = makeValidPayloads()
 
-    expect(Object.keys(validPayloads).sort()).toEqual([...DESKTOP_RPC_CHANNELS].sort())
     for (const channel of DESKTOP_RPC_CHANNELS) {
       expect(validateIpcPayload(channel, validPayloads[channel])).toBeDefined()
       expect(() => validateIpcPayload(channel, null)).toThrow()

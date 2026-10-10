@@ -1,4 +1,3 @@
-import { legacyDiagnosisStage } from "./runbooks.schemas";
 import { randomUUID } from "crypto";
 import {
   SqliteErrorSourcesRepositoryAdapter,
@@ -1047,12 +1046,6 @@ function parseIncomingRunbookAction(
 }
 
 function toRunbookAction(raw: Record<string, unknown>): DesktopRunbookActionRecord {
-  const stage = legacyDiagnosisStage(raw.type);
-  if (stage !== undefined) {
-    raw = { ...raw, type: "diagnosis", body: undefined, telemetryConfig: {
-      ...parseTelemetryConfig("diagnosis", raw.body ?? raw.telemetryConfig), stage,
-    } };
-  }
   const type = normalizeRunbookActionType(raw.type);
   const isPluginAction = type === "plugin";
   let url = asOptionalString(raw.url);
@@ -1872,7 +1865,6 @@ export class DesktopRunbookStore {
           );
         }
         if (
-          artifactExternalSourcesByRef.size > 0 &&
           !artifactExternalSourcesByRef.has(sourceRef)
         ) {
           throw new Error(

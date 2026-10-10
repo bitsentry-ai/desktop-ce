@@ -152,17 +152,6 @@ export function createDesktopIpcPayloadValidator(
       z.object({
         id: idValueSchema,
         sortOrder: z.number().int().min(0).optional(),
-        type: z.literal("ai"),
-        title: z.string(),
-        prompt: z.string().optional(),
-        llmProviderKey: desktopRunbookLlmProviderKeySchema.optional(),
-        llmModel: z.string().optional(),
-        parameters: z.array(runbookActionParameterSchema).optional(),
-        logFilter: config.logFilterConfigSchema.optional(),
-      }),
-      z.object({
-        id: idValueSchema,
-        sortOrder: z.number().int().min(0).optional(),
         type: z.literal("llm"),
         title: z.string(),
         prompt: z.string().optional(),

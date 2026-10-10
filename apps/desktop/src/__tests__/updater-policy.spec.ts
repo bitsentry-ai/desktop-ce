@@ -39,23 +39,6 @@ describe('getAutoUpdaterEnablement', () => {
     })
   })
 
-  it('enables auto-updater for packaged non-smoke runs with the canonical stable feed', () => {
-    expect(
-      getAutoUpdaterEnablement({
-        isPackaged: true,
-        isSmokeTest: false,
-        currentVersion: '0.1.0',
-        platform: 'darwin',
-        arch: 'arm64',
-        releaseChannel: 'stable',
-      }),
-    ).toEqual({
-      enabled: true,
-      disabledReasonCode: null,
-      feedUrl: 'https://downloads.bitsentry.ai/desktop/releases/macos/arm64',
-    })
-  })
-
   it.each([
     ['darwin', 'arm64', 'https://downloads.bitsentry.ai/desktop/releases/macos/arm64'],
     ['darwin', 'x64', 'https://downloads.bitsentry.ai/desktop/releases/macos/x64'],

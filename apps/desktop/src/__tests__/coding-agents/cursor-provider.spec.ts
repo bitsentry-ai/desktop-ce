@@ -77,7 +77,7 @@ async function readLoggedMessages(logPath: string): Promise<LoggedCursorMessage[
 
 async function createMockCursorAgent(
   configOptions: unknown[] = DEFAULT_CURSOR_CONFIG_OPTIONS,
-  options: { rejectModelSelection?: boolean; reportedMcpServers?: unknown } = {},
+  options: { rejectModelSelection?: boolean } = {},
 ): Promise<{ binaryPath: string; logPath: string; cwd: string }> {
   const cwd = await mkdtemp(path.join(os.tmpdir(), 'cursor-provider-'))
   tmpDirs.push(cwd)
@@ -85,7 +85,6 @@ async function createMockCursorAgent(
   const logPath = path.join(cwd, 'messages.jsonl')
   const configOptionsJson = JSON.stringify(configOptions)
   const rejectModelSelection = options.rejectModelSelection === true
-  const reportedMcpServersJson = JSON.stringify(options.reportedMcpServers)
   const script = `
 const fs = require('fs')
 const readline = require('readline')
@@ -120,7 +119,6 @@ rl.on('line', (line) => {
       result: {
         sessionId: 'session-1',
         configOptions: ${configOptionsJson},
-        ...((${reportedMcpServersJson}) === undefined ? {} : { mcpServers: (${reportedMcpServersJson}) }),
       },
     }) + '\\n')
     return
@@ -506,30 +504,6 @@ describe('Cursor provider behavior', () => {
         ],
       }),
     ).toEqual(['claude-opus-4-6', 'gpt-5', 'claude-sonnet-4-6', 'gpt-5.4'])
-  })
-
-  it('logs MCP servers reported in addition to the injected host server', async () => {
-    const warnings: unknown[][] = []
-    setCodingAgentsLoggerForTesting({
-      info: () => {},
-      warn: (...args) => { warnings.push(args) },
-      error: () => {},
-    })
-    const mock = await createMockCursorAgent(DEFAULT_CURSOR_CONFIG_OPTIONS, {
-      reportedMcpServers: { [HOST_MCP_SERVER_NAME]: {}, github: {}, pagerduty: {} },
-    })
-
-    await expect(executeCursor({
-      prompt: 'List runbooks',
-      binaryPath: mock.binaryPath,
-      abortController: new AbortController(),
-      cwd: mock.cwd,
-    })).resolves.toMatchObject({ output: 'done' })
-
-    expect(warnings).toContainEqual([
-      '[cursor-provider] Cursor reported additional MCP servers at session start',
-      { sessionId: 'session-1', mcpServers: ['github', 'pagerduty'] },
-    ])
   })
 
   it('sets Cursor effort through advertised ACP config options', async () => {

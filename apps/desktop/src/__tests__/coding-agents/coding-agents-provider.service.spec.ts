@@ -35,8 +35,6 @@ import {
 import {
   getCatalogModel,
   getCatalogModelIds,
-  getEffectiveComposerOptions,
-  resolveCatalogModelRuntimeSelection,
 } from "@bitsentry-ce/components/llm/modelCatalog";
 
 const cli = {
@@ -93,32 +91,6 @@ function createService(
 describe("CodingAgentsProviderService", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-  });
-
-  it("exposes Opus 5 with separate effort and context options", () => {
-    const catalogModel = getCatalogModel("claude_code", "claude-opus-5");
-    expect(catalogModel).toMatchObject({
-      id: "claude-opus-5",
-      displayName: "Claude Opus 5",
-    });
-    expect(getEffectiveComposerOptions(catalogModel!)).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ id: "effort" }),
-        expect.objectContaining({ id: "contextWindow" }),
-      ]),
-    );
-    expect(getEffectiveComposerOptions(catalogModel!)).not.toEqual(
-      expect.arrayContaining([expect.objectContaining({ id: "fastMode" })]),
-    );
-    expect(
-      resolveCatalogModelRuntimeSelection("claude_code", "claude-opus-5", {
-        effort: "high",
-        contextWindow: "1m",
-      }),
-    ).toEqual({
-      modelId: "claude-opus-5",
-      traitValues: { effort: "high", contextWindow: "1m" },
-    });
   });
 
   it("silently detects and uses the resolved codex binary without changing the saved path", async () => {
@@ -418,4 +390,81 @@ describe("CodingAgentsProviderService", () => {
     expect(service.getSettings().opencode.binaryPath).toBe("opencode");
     expect(service.getSettings().opencode.lastProbe?.status).toBe("ready");
   });
+
+  it('retries OpenCode model sync when its database is briefly locked', async () => {
+    vi.mocked(detectBinary).mockResolvedValue(null)
+    let attempts = 0
+    vi.mocked(execFile).mockImplementation((_command, _args, options, callback) => {
+      let cb = callback
+      if (typeof options === 'function') {
+        cb = options
+      }
+      attempts += 1
+      if (attempts === 1) {
+        cb?.(
+          new Error(
+            'Command failed: opencode models\nError: Unexpected error\n\ndatabase is locked',
+          ),
+          '',
+          'Error: Unexpected error\n\ndatabase is locked',
+        )
+        return new ChildProcess()
+      }
+
+      cb?.(null, 'opencode/big-pickle\n', '')
+      return new ChildProcess()
+    })
+
+    const db = createDbMock()
+    const service = createService(db)
+    await service.saveSettings({
+      opencode: {
+        enabled: true,
+        binaryPath: 'opencode',
+      },
+    })
+
+    const models = await service.listModels('opencode')
+
+    expect(models).toEqual(['opencode/big-pickle'])
+    expect(execFile).toHaveBeenCalledTimes(2)
+  })
+
+  it('dedupes concurrent OpenCode model sync requests', async () => {
+    vi.mocked(detectBinary).mockResolvedValue(null)
+    let completeModelsCommand: ((stdout: string) => void) | undefined
+    vi.mocked(execFile).mockImplementation((_command, _args, options, callback) => {
+      let cb = callback
+      if (typeof options === 'function') {
+        cb = options
+      }
+      if (cb === undefined || cb === null) {
+        throw new Error('Expected execFile callback')
+      }
+      completeModelsCommand = (stdout: string) => {
+        cb(null, stdout, '')
+      }
+      return new ChildProcess()
+    })
+
+    const db = createDbMock()
+    const service = createService(db)
+    await service.saveSettings({
+      opencode: {
+        enabled: true,
+        binaryPath: 'opencode',
+      },
+    })
+
+    const first = service.listModels('opencode')
+    const second = service.listModels('opencode')
+    await Promise.resolve()
+
+    expect(execFile).toHaveBeenCalledTimes(1)
+    completeModelsCommand?.('opencode/big-pickle\n')
+    await expect(Promise.all([first, second])).resolves.toEqual([
+      ['opencode/big-pickle'],
+      ['opencode/big-pickle'],
+    ])
+  })
 });

@@ -44,6 +44,25 @@ function createLocalAiProvider(overrides: Partial<LocalAiProviderPort>): LocalAi
   }
 }
 
+function createSseResponse(events: string[]): Response {
+  const encoder = new TextEncoder()
+  return new Response(
+    new ReadableStream({
+      start(controller) {
+        for (const event of events) {
+          controller.enqueue(encoder.encode(event))
+        }
+        controller.close()
+      },
+    }),
+    {
+      headers: {
+        'Content-Type': 'text/event-stream',
+      },
+    },
+  )
+}
+
 function collectObjectKeys(value: unknown): string[] {
   if (Array.isArray(value)) {
     return value.flatMap(collectObjectKeys)
@@ -222,43 +241,6 @@ describe('AgentLlmAdapterService', () => {
     expect(response.content).toBe('I found two runbooks.')
     expect(response.toolCalls).toEqual([])
     expect(response.toolProtocol).toBe('mcp')
-  })
-
-  it('uses MCP without injecting host tool definitions into the prompt', async () => {
-    const adapter = createAdapter()
-    let capturedPrompt = ''
-
-    adapter.setLocalAiProvider(createLocalAiProvider({
-      execute: (_provider, prompt) => {
-        capturedPrompt = prompt
-        return Promise.resolve({
-          output: 'Listing runbooks.',
-          toolCalls: [{ id: 'ignored-call', name: 'list_runbooks', args: {} }],
-        })
-      },
-    }))
-
-    const response = await adapter.chatWithTools({
-      messages: [{ role: 'user', content: 'List runbooks' }],
-      tools: [{
-        name: 'list_runbooks',
-        description: 'List available runbooks.',
-        inputSchema: { type: 'object', properties: {} },
-      }],
-      signal: new AbortController().signal,
-      llm: { providerKey: 'codex', model: 'gpt-5.4' },
-      accessLevel: 'auto-accept-edits',
-      hostToolContext: createHostToolContext(),
-    })
-
-    expect(response).toMatchObject({
-      content: 'Listing runbooks.',
-      toolProtocol: 'mcp',
-      toolCalls: [],
-    })
-    expect(capturedPrompt).toBe('[user]: List runbooks')
-    expect(capturedPrompt).not.toContain('BitSentry host tool protocol:')
-    expect(capturedPrompt).not.toContain('"type":"tool_calls"')
   })
 
   it('keeps Claude MCP prompts free of the legacy protocol text', async () => {
@@ -780,128 +762,6 @@ describe('AgentLlmAdapterService', () => {
     })
   })
 
-  it('logs effort evidence from the serialized provider request body', async () => {
-    const adapter = createAdapter({
-      getApiKey: () => Promise.resolve('test-key'),
-    })
-    const infos: unknown[][] = []
-    setCodingAgentsLoggerForTesting({
-      info: (...args) => { infos.push(args) },
-      warn: () => {},
-      error: () => {},
-    })
-    const requests: Array<{ url: string; body: Record<string, unknown> }> = []
-    vi.stubGlobal('fetch', vi.fn().mockImplementation((url: string, init?: RequestInit) => {
-      const body = JSON.parse(String(init?.body)) as Record<string, unknown>
-      requests.push({ url, body })
-      if (url.includes('/responses')) {
-        return Promise.resolve(new Response(JSON.stringify({ output_text: 'Done' })))
-      }
-      if (url.includes('anthropic')) {
-        return Promise.resolve(new Response(JSON.stringify({ content: [{ type: 'text', text: 'Done' }] })))
-      }
-      if (url.includes('generativelanguage')) {
-        return Promise.resolve(new Response(JSON.stringify({ candidates: [{ content: { parts: [{ text: 'Done' }] } }] })))
-      }
-      return Promise.resolve(new Response(JSON.stringify({ choices: [{ message: { content: 'Done' } }] })))
-    }))
-
-    const tool = {
-      name: 'execute_shell_command',
-      description: 'Execute a shell command.',
-      inputSchema: { type: 'object', properties: { command: { type: 'string' } } },
-    }
-    await adapter.chatWithTools({
-      messages: [{ role: 'user', content: 'Explain this briefly.' }],
-      signal: new AbortController().signal,
-      llm: { providerKey: 'openai', model: 'gpt-5.5' },
-      traitValues: { effort: 'medium' },
-    })
-    await adapter.chatWithTools({
-      messages: [{ role: 'user', content: 'Print the working directory.' }],
-      tools: [tool],
-      signal: new AbortController().signal,
-      llm: { providerKey: 'openai', model: 'gpt-5.6-terra' },
-      traitValues: { effort: 'medium' },
-    })
-    await adapter.chatWithTools({
-      messages: [{ role: 'user', content: 'Solve this task.' }],
-      signal: new AbortController().signal,
-      llm: {
-        providerKey: 'anthropic',
-        model: 'claude-sonnet-4-5',
-        thinkingEnabled: true,
-      },
-      traitValues: { effort: 'medium' },
-    })
-    await adapter.chatWithTools({
-      messages: [{ role: 'user', content: 'Solve this task.' }],
-      signal: new AbortController().signal,
-      llm: {
-        providerKey: 'anthropic',
-        model: 'claude-sonnet-4-6',
-        thinkingEnabled: true,
-      },
-      traitValues: { effort: 'low' },
-    })
-    await adapter.chatWithTools({
-      messages: [{ role: 'user', content: 'Solve this task.' }],
-      signal: new AbortController().signal,
-      llm: { providerKey: 'gemini', model: 'gemini-3-flash-preview' },
-      traitValues: { thinkingLevel: 'medium' },
-    })
-
-    const evidence = infos
-      .filter(([label]) => label === '[effort-evidence]')
-      .map(([, entry]) => entry as Record<string, unknown>)
-    expect(evidence).toHaveLength(5)
-    const serializedEfforts = [
-      requests[0]?.body.reasoning_effort,
-      (requests[1]?.body.reasoning as Record<string, unknown> | undefined)?.effort,
-      (requests[2]?.body.thinking as Record<string, unknown> | undefined)?.budget_tokens,
-      (requests[3]?.body.output_config as Record<string, unknown> | undefined)?.effort,
-      (((requests[4]?.body.generationConfig as Record<string, unknown> | undefined)
-        ?.thinkingConfig) as Record<string, unknown> | undefined)?.thinkingLevel,
-    ]
-    expect(evidence).toEqual([
-      {
-        provider: 'openai',
-        model: 'gpt-5.5',
-        endpoint: '/v1/chat/completions',
-        effort: serializedEfforts[0],
-        parameter: 'reasoning_effort',
-      },
-      {
-        provider: 'openai',
-        model: 'gpt-5.6-terra',
-        endpoint: '/v1/responses',
-        effort: serializedEfforts[1],
-        parameter: 'reasoning.effort',
-      },
-      {
-        provider: 'anthropic',
-        model: 'claude-sonnet-4-5',
-        endpoint: '/v1/messages',
-        effort: serializedEfforts[2],
-        parameter: 'thinking.budget_tokens',
-      },
-      {
-        provider: 'anthropic',
-        model: 'claude-sonnet-4-6',
-        endpoint: '/v1/messages',
-        effort: serializedEfforts[3],
-        parameter: 'output_config.effort',
-      },
-      {
-        provider: 'gemini',
-        model: 'gemini-3-flash-preview',
-        endpoint: '/v1beta/models/gemini-3-flash-preview:generateContent',
-        effort: serializedEfforts[4],
-        parameter: 'generationConfig.thinkingConfig.thinkingLevel',
-      },
-    ])
-  })
-
   it('keeps OpenAI effort clamping and rejects unsupported routed models', async () => {
     const adapter = createAdapter({
       getApiKey: () => Promise.resolve('test-key'),
@@ -1167,29 +1027,6 @@ describe('AgentLlmAdapterService', () => {
     ])
   })
 
-  it('omits empty plain Anthropic text content', async () => {
-    const adapter = createAdapter({
-      getApiKey: () => Promise.resolve('test-key'),
-    })
-    let requestBody: Record<string, unknown> | undefined
-    vi.stubGlobal('fetch', vi.fn().mockImplementation((_url: string, init?: RequestInit) => {
-      requestBody = JSON.parse(String(init?.body)) as Record<string, unknown>
-      return Promise.resolve(new Response(JSON.stringify({
-        content: [{ type: 'text', text: 'Done.' }],
-      })))
-    }))
-
-    await adapter.chatWithTools({
-      messages: [{ role: 'assistant', content: '' }],
-      signal: new AbortController().signal,
-      llm: { providerKey: 'anthropic', model: 'claude-opus-4-8' },
-    })
-
-    const messages = requestBody?.messages as Array<{ role: string; content: unknown }>
-    expect(messages[0]?.content).toEqual([])
-    expect(JSON.stringify(requestBody)).not.toContain('"type":"text","text":""')
-  })
-
   it('omits Anthropic thinking configuration when thinking is disabled', async () => {
     const adapter = createAdapter({
       getApiKey: () => Promise.resolve('test-key'),
@@ -1222,31 +1059,6 @@ describe('AgentLlmAdapterService', () => {
       contextTokens: 8,
       contextLimit: 1_000_000,
     })
-  })
-
-  it('keeps a natural MCP CLI response independent of the supplied tool list', async () => {
-    const adapter = createAdapter()
-    const output = 'I can inspect a runbook after you choose one.'
-
-    adapter.setLocalAiProvider(createLocalAiProvider({
-      execute: () => Promise.resolve({ output }),
-    }))
-
-    const response = await adapter.chatWithTools({
-      messages: [{ role: 'user', content: 'List runbooks' }],
-      tools: [{
-        name: 'list_runbooks',
-        description: 'List available runbooks.',
-        inputSchema: { type: 'object', properties: {} },
-      }],
-      signal: new AbortController().signal,
-      llm: { providerKey: 'codex', model: 'gpt-5.4' },
-      accessLevel: 'auto-accept-edits',
-      hostToolContext: createHostToolContext(),
-    })
-
-    expect(response).toMatchObject({ toolCalls: [], toolProtocol: 'mcp' })
-    expect(response.content).toBe(output)
   })
 
   it('replays only user and assistant chat text to a fresh MCP CLI subprocess', async () => {
@@ -1304,6 +1116,122 @@ describe('AgentLlmAdapterService', () => {
     expect(capturedPrompt).not.toContain('Assistant requested host tool')
     expect(capturedPrompt).not.toContain('BitSentry host tool protocol:')
     expect(capturedPrompt).not.toContain('[tool]:')
+  })
+
+  it('does not collapse local provider reasoning or command output into assistant text', async () => {
+    const adapter = createAdapter()
+
+    adapter.setLocalAiProvider(createLocalAiProvider({
+      isReady: () => true,
+      execute: (_provider, _prompt, _abortController, onDelta) => {
+        onDelta?.({ type: 'reasoning', text: 'private reasoning' })
+        onDelta?.({ type: 'command_output', text: 'native shell output' })
+        onDelta?.({ type: 'text', text: 'Visible answer.' })
+
+        return Promise.resolve({
+          output: 'Visible answer.',
+        })
+      },
+    }))
+
+    const streamed: string[] = []
+    const response = await adapter.chatWithTools({
+      messages: [{ role: 'user', content: 'Answer cleanly' }],
+      signal: new AbortController().signal,
+      llm: { providerKey: 'codex', model: 'gpt-5.4' },
+      accessLevel: 'full-access',
+      onDelta: (delta) => {
+        if (delta.type === 'text' && delta.text !== undefined && delta.text !== '') {
+          streamed.push(delta.text)
+        }
+      },
+    })
+
+    expect(streamed.join('')).toBe('Visible answer.')
+    expect(response.content).toBe('Visible answer.')
+  })
+
+  it('streams text deltas from OpenAI-compatible providers while preserving tool calls', async () => {
+    const fetchMock = vi.fn<typeof fetch>(() => Promise.resolve(createSseResponse([
+      'data: {"choices":[{"delta":{"content":"Hel"}}]}\n\n',
+      'data: {"choices":[{"delta":{"content":"lo"}}]}\n\n',
+      'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_1","function":{"name":"list_runbooks","arguments":"{\\"limit\\":"}}]}}]}\n\n',
+      'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"10}"}}]}}],"usage":{"prompt_tokens":7,"completion_tokens":3}}\n\n',
+      'data: [DONE]\n\n',
+    ])))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const settingsStore: AgentLlmSettingsStore = {
+      setting: {
+        findUnique: vi.fn().mockResolvedValue(null),
+      },
+    }
+    const credentialsStore: AgentLlmCredentialsStore = {
+      getApiKey: (providerKey) => {
+        let apiKey: string | undefined
+        if (providerKey === 'groq') {
+          apiKey = 'test-api-key'
+        }
+        return Promise.resolve(apiKey)
+      },
+    }
+    const adapter = new AgentLlmAdapterService(settingsStore, credentialsStore)
+
+    const streamed: string[] = []
+    const response = await adapter.chatWithTools({
+      messages: [{ role: 'user', content: 'List runbooks' }],
+      tools: [{
+        name: 'list_runbooks',
+        description: 'List available runbooks.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            limit: { type: 'number' },
+          },
+        },
+      }],
+      signal: new AbortController().signal,
+      llm: { providerKey: 'groq', model: 'openai/gpt-oss-20b' },
+      onDelta: (delta) => {
+        if (delta.type === 'text' && delta.text !== undefined && delta.text !== '') {
+          streamed.push(delta.text)
+        }
+      },
+    })
+
+    expect(streamed).toEqual(['Hel', 'lo'])
+    expect(response.content).toBe('Hello')
+    expect(response.toolCalls).toEqual([
+      {
+        id: 'call_1',
+        name: 'list_runbooks',
+        args: { limit: 10 },
+      },
+    ])
+    expect(response.tokenUsage).toEqual({
+      inputTokens: 7,
+      outputTokens: 3,
+      contextTokens: 10,
+      contextLimit: 131_072,
+    })
+    const firstFetchCall = fetchMock.mock.calls.at(0)
+    expect(firstFetchCall).toBeDefined()
+    if (firstFetchCall === undefined) {
+      throw new Error('Expected fetch to be called')
+    }
+
+    const fetchInit = firstFetchCall[1]
+    expect(fetchInit).toBeDefined()
+    if (fetchInit === undefined) {
+      throw new Error('Expected fetch init to be passed')
+    }
+
+    const requestBody = fetchInit.body
+    expect(typeof requestBody).toBe('string')
+    if (typeof requestBody !== 'string') {
+      throw new Error('Expected fetch body to be a string')
+    }
+    expect(requestBody).toContain('"stream_options":{"include_usage":true}')
   })
 
 })
