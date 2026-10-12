@@ -13,6 +13,7 @@ import { createDesktopPluginHandlers } from '../src/features/plugins/desktop-plu
 import { createDesktopNodePluginRuntimeService } from '../src/features/plugins/node'
 
 const connectionId = '11111111-1111-4111-8111-111111111111'
+const originalItopAllowlist = process.env.ITOP_ALLOWED_BASE_URLS
 
 function memoryAuthStore(): DesktopPluginStoredAuthStore & { records: Map<string, DesktopPluginStoredAuthRecord> } {
   const records = new Map<string, DesktopPluginStoredAuthRecord>()
@@ -35,8 +36,12 @@ exports.plugin = {
 
 describe('stored integration connections', () => {
   let root: string
-  beforeEach(async () => { root = await mkdtemp(path.join(tmpdir(), 'bitsentry-connections-')) })
-  afterEach(async () => { await rm(root, { recursive: true, force: true }) })
+  beforeEach(async () => { root = await mkdtemp(path.join(tmpdir(), 'bitsentry-connections-')); process.env.ITOP_ALLOWED_BASE_URLS = 'https://itop.example' })
+  afterEach(async () => {
+    await rm(root, { recursive: true, force: true })
+    if (originalItopAllowlist === undefined) delete process.env.ITOP_ALLOWED_BASE_URLS
+    else process.env.ITOP_ALLOWED_BASE_URLS = originalItopAllowlist
+  })
 
   async function setup() {
     const authStore = memoryAuthStore()
@@ -77,16 +82,19 @@ describe('stored integration connections', () => {
     await expect(read({ target, revision })).resolves.toMatchObject({ ok: true })
   })
 
-  it.each([
-    ['its credentials were edited on the same target', 'https://itop.example', 'second-token'],
-    ['it now points at another endpoint', 'https://other.example', 'first-token'],
-  ])('refuses a read when the connection changed after the tool listed it (%s)', async (_label, baseUrl, authToken) => {
+  it('refuses a read when the connection credentials changed after the tool listed it', async () => {
     const { save, current, read } = await setup()
     await save('https://itop.example', 'first-token')
     const { target, revision } = await current()
-    await save(baseUrl, authToken)
+    await save('https://itop.example', 'second-token')
 
     await expect(read({ target, revision })).rejects.toThrow('Connection changed. Retry the read.')
+  })
+
+  it('refuses to change an existing connection to another endpoint', async () => {
+    const { save } = await setup()
+    await save('https://itop.example', 'first-token')
+    await expect(save('https://other.example', 'first-token')).rejects.toThrow('new named connection')
   })
 })
 

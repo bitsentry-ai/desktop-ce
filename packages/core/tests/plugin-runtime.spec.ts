@@ -426,6 +426,8 @@ describe('DesktopPluginRuntimeService', () => {
 
   it('executes the selected integration connection and returns credential-free descriptors', async () => {
     const tempRoot = await mkdtemp(path.join(tmpdir(), 'bitsentry-itop-connection-'))
+    const originalAllowlist = process.env.ITOP_ALLOWED_BASE_URLS
+    process.env.ITOP_ALLOWED_BASE_URLS = 'https://staging.itop.example'
 
     try {
       const pluginRoot = path.join(tempRoot, 'plugins')
@@ -514,6 +516,8 @@ describe('DesktopPluginRuntimeService', () => {
         connectionId: missingSecret.id, actionId: 'read_target', input: {},
       })).rejects.toThrow('Missing required auth field: authToken')
     } finally {
+      if (originalAllowlist === undefined) delete process.env.ITOP_ALLOWED_BASE_URLS
+      else process.env.ITOP_ALLOWED_BASE_URLS = originalAllowlist
       await rm(tempRoot, { recursive: true, force: true })
     }
   })

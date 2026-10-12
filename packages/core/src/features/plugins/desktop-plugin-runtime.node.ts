@@ -418,7 +418,7 @@ class DesktopNodePluginRuntimeService extends DesktopPluginRuntimeService {
     const connection = (await this.connections.list()).find((row) => row.id === request.connectionId);
     if (connection === undefined || !connection.enabled) throw new Error("Integration connection is missing or disabled.");
     const plugin = this.getPlugin(connection.pluginId);
-    if (plugin === null || this.applyDestinationPolicy(describeIntegrationConnection(connection, plugin)).availability !== "configured") {
+    if (plugin === null || this.applyDestinationPolicy(describeIntegrationConnection(connection, plugin)).availability === "destination_blocked") {
       throw new Error("Integration destination is not allowed by host policy.");
     }
     if (plugin.actions.find((row) => row.id === request.actionId)?.riskLevel !== "read") throw new Error("Writes require a stored, engineer-approved proposal.");
