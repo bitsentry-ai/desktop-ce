@@ -32,6 +32,16 @@ function error(code: string, message: string, fields?: string[]): ToolResult {
   return { error: JSON.stringify({ code, message, ...(fields ? { fields } : {}) }) };
 }
 
+function integrationConnectionGate(connection: IntegrationConnection | undefined): { ok: true; connection: IntegrationConnection } | { ok: false; error: ToolResult } {
+  if (connection?.availability === "destination_blocked") {
+    return { ok: false, error: error("DESTINATION_NOT_ALLOWED", "This destination is not allowed on this host. Ask the engineer to add the exact HTTPS endpoint to the host allowlist. Do not switch instances or try to bypass the allowlist. No write was attempted.") };
+  }
+  if (connection === undefined || connection.availability !== "configured") {
+    return { ok: false, error: error("CONNECTION_UNAVAILABLE", "Select a configured connection using list_integration_connections. Ask the engineer to configure credentials or install the plugin if necessary.") };
+  }
+  return { ok: true, connection };
+}
+
 export interface IntegrationToolOptions {
   /** Set only by ticket_operation, which applies the connection's ticket mapping itself. Names the operation. */
   ticketOperation?: TicketWriteOperation;
@@ -68,13 +78,9 @@ export async function runIntegrationTool(
   options: IntegrationToolOptions = {},
 ): Promise<ToolResult> {
   if (port === undefined) return error("INTEGRATION_UNAVAILABLE", "Integration connections are unavailable in this runtime.");
-  const connection = (await port.list()).find((row) => row.id === request.connectionId);
-  if (connection?.availability === "destination_blocked") {
-    return error("DESTINATION_NOT_ALLOWED", "This destination is not allowed on this host. Ask the engineer to add the exact HTTPS endpoint to the host allowlist. Do not switch instances or try to bypass the allowlist. No write was attempted.");
-  }
-  if (connection === undefined || connection.availability !== "configured") {
-    return error("CONNECTION_UNAVAILABLE", "Select a configured connection using list_integration_connections. Ask the engineer to configure credentials or install the plugin if necessary.");
-  }
+  const gate = integrationConnectionGate((await port.list()).find((row) => row.id === request.connectionId));
+  if (!gate.ok) return gate.error;
+  const { connection } = gate;
   const plugin = plugins.find((row) => row.id === connection.pluginId);
   const action = plugin?.actions.find((row) => row.id === request.actionId);
   if (action === undefined || deniedActions.has(action.id)) return error("ACTION_UNAVAILABLE", "This action is not available for chat.");
