@@ -137,9 +137,12 @@ function createMemoryAuthStore(): DesktopPluginStoredAuthStore {
 }
 
 const tempRoots: string[] = []
+const originalOutlineAllowlist = process.env.OUTLINE_ALLOWED_API_BASES
 
 afterEach(async () => {
   vi.useRealTimers()
+  if (originalOutlineAllowlist === undefined) delete process.env.OUTLINE_ALLOWED_API_BASES
+  else process.env.OUTLINE_ALLOWED_API_BASES = originalOutlineAllowlist
   await Promise.all(tempRoots.map((root) => rm(root, { recursive: true, force: true })))
   tempRoots.length = 0
 })
@@ -189,6 +192,7 @@ describe('direct integration reads', () => {
   })
 
   it('does not execute an action that a registry reload turns into a write', async () => {
+    process.env.OUTLINE_ALLOWED_API_BASES = 'https://outline.example/api'
     const tempRoot = await mkdtemp(path.join(tmpdir(), 'bitsentry-integration-read-'))
     tempRoots.push(tempRoot)
     const writeMarkerPath = path.join(tempRoot, 'write-executed')

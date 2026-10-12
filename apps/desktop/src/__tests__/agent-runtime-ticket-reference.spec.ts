@@ -88,12 +88,16 @@ async function waitFor(predicate: () => boolean): Promise<void> {
 }
 
 const tempRoots: string[] = []
+const originalItopAllowlist = process.env.ITOP_ALLOWED_BASE_URLS
 afterEach(async () => {
   await Promise.all(tempRoots.map((root) => rm(root, { recursive: true, force: true })))
   tempRoots.length = 0
+  if (originalItopAllowlist === undefined) delete process.env.ITOP_ALLOWED_BASE_URLS
+  else process.env.ITOP_ALLOWED_BASE_URLS = originalItopAllowlist
 })
 
 async function setup() {
+  process.env.ITOP_ALLOWED_BASE_URLS = 'https://itop.example'
   const root = await mkdtemp(path.join(tmpdir(), 'bitsentry-ticket-reference-'))
   tempRoots.push(root)
   const pluginRuntime = createDesktopNodePluginRuntimeService([path.join(root, 'plugins')], createMemoryAuthStore())
