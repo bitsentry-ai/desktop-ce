@@ -1,4 +1,4 @@
-import path from 'path'
+import path from 'node:path'
 import { getRuntimeUserDataPath } from './runtime-paths.js'
 
 export function getDatabasePath(): string {

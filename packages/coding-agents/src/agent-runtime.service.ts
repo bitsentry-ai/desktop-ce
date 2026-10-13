@@ -12,7 +12,7 @@ import { extractIntegrationResources } from "@bitsentry-ce/core/features/plugins
  */
 
 import { codingAgentsLogger as log } from './logger.js'
-import { createHash, randomUUID } from 'crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { zodToJsonSchema } from '@alcyone-labs/zod-to-json-schema'
 import { z } from 'zod'
 import { getErrorMessage } from '@bitsentry-ce/core'
@@ -293,7 +293,7 @@ function normalizeExecuteRunbookArgs(args: Record<string, unknown>): Record<stri
   )
   const parameterValues = {
     ...topLevelParameterValues,
-    ...(explicitParameterValues ?? {}),
+    ...explicitParameterValues,
   }
   const normalized: Record<string, unknown> = {}
   if (Object.keys(parameterValues).length > 0) {
@@ -1728,14 +1728,6 @@ function readFirstStringProperty(
   return fallback
 }
 
-function appendOptionalLine(lines: string[], line: string | null): void {
-  if (line === null) {
-    return
-  }
-
-  lines.push(line)
-}
-
 /**
  * Agent Runtime Service
  *
@@ -1745,9 +1737,8 @@ function appendOptionalLine(lines: string[], line: string | null): void {
 function formatVisibleRunbookListEntry(runbook: Record<string, unknown>): { title: string; lines: string[] } {
   const title = readFirstStringProperty([runbook], 'title', 'Untitled runbook')
   const actionCount = readNumberProperty(runbook, 'actionCount')
-  const actionSummary = actionCount === null
-    ? ''
-    : ` (${String(actionCount)} ${actionCount === 1 ? 'action' : 'actions'})`
+  const actionNoun = actionCount === 1 ? 'action' : 'actions'
+  const actionSummary = actionCount === null ? '' : ` (${String(actionCount)} ${actionNoun})`
   const description = readNonEmptyTrimmedStringProperty(runbook, 'description')
   return {
     title,
@@ -1794,20 +1785,12 @@ export class AgentRuntimeService {
       }
     }
 
-    try {
-      rejectIfIncidentSessionActive()
-    } catch (error) {
-      return Promise.reject(error)
-    }
+    rejectIfIncidentSessionActive()
 
     const persistedProposals = input.incidentThreadId === undefined
       ? []
       : await this.authoringProposalStore?.list(input.incidentThreadId) ?? []
-    try {
-      rejectIfIncidentSessionActive()
-    } catch (error) {
-      return Promise.reject(error)
-    }
+    rejectIfIncidentSessionActive()
     const sessionId = randomUUID()
     const timeoutMs = input.timeoutMs ?? DEFAULT_AGENT_SESSION_TIMEOUT_MS // 5 minutes for thinking models
     const startedAt = new Date()
@@ -2268,7 +2251,7 @@ export class AgentRuntimeService {
         'In your response, make sure to:',
         '1. Reference the specific runbook actions',
         '2. Provide your actual analysis (not just "I will analyze")',
-        '3. Tie your conclusion back to this runbook: "' + runbookContext.title + '"',
+        `3. Tie your conclusion back to this runbook: "${runbookContext.title}"`,
         '',
         'Do NOT stop after explaining your plan. Complete the full analysis.',
         '--- END RUNBOOK CONTEXT ---',
@@ -2693,10 +2676,10 @@ export class AgentRuntimeService {
           // Keep system message and recent messages
           const systemMessage = session.messages.find((m) => m.role === 'system')
           const recentMessages = session.messages.slice(-MAX_MESSAGE_HISTORY)
-          if (systemMessage !== undefined) {
-            session.messages = [systemMessage, ...recentMessages.filter((m) => m.role !== 'system')]
-          } else {
+          if (systemMessage === undefined) {
             session.messages = recentMessages
+          } else {
+            session.messages = [systemMessage, ...recentMessages.filter((m) => m.role !== 'system')]
           }
         }
       }
@@ -3795,8 +3778,7 @@ export class AgentRuntimeService {
     for (const runbook of runbooks) {
       this.appendRunbookListSummary(lines, runbook)
     }
-    lines.push('Choose only from the exact runbook titles above. Do not invent runbook titles or IDs.')
-    lines.push('Summarize the available runbooks for the user in clean Markdown.')
+    lines.push('Choose only from the exact runbook titles above. Do not invent runbook titles or IDs.', 'Summarize the available runbooks for the user in clean Markdown.')
 
     return lines.join('\n')
   }
@@ -3824,8 +3806,7 @@ export class AgentRuntimeService {
       return
     }
 
-    lines.push('  Parameters:')
-    lines.push(...formatRunbookParameterSummary(parameters).map((parameter) => `  ${parameter}`))
+    lines.push('  Parameters:', ...formatRunbookParameterSummary(parameters).map((parameter) => `  ${parameter}`))
   }
 
   private buildDirectRunbookExecutionConversationContent(
@@ -3929,8 +3910,7 @@ export class AgentRuntimeService {
     const finalStructuredOutput = readRecordProperty(executionSummary, 'finalStructuredOutput')
     const structuredIssues = readRecordArrayProperty(finalStructuredOutput, 'issues')
     if (structuredIssues.length > 0) {
-      lines.push(`- Structured issue preview (top ${String(structuredIssues.length)}):`)
-      lines.push(...formatStructuredIssuePreview(structuredIssues).map((issue) => `  ${issue}`))
+      lines.push(`- Structured issue preview (top ${String(structuredIssues.length)}):`, ...formatStructuredIssuePreview(structuredIssues).map((issue) => `  ${issue}`))
       const issueCount = readNumberProperty(finalStructuredOutput, 'issueCount')
       if (finalStructuredOutput?.issuesTruncated === true && issueCount !== null) {
         lines.push(`- ${String(issueCount - structuredIssues.length)} more issues remain in Runbook Results.`)
@@ -4089,7 +4069,7 @@ export class AgentRuntimeService {
 
     const mergedValues = {
       ...session.latestJournalTimeWindowParameters,
-      ...(explicitValues ?? {}),
+      ...explicitValues,
     }
 
     for (const key of ['since', 'until']) {

@@ -1,6 +1,6 @@
-import { mkdtemp, mkdir, rm, writeFile } from 'fs/promises'
-import os from 'os'
-import path from 'path'
+import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises'
+import os from 'node:os'
+import path from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 
 import { createCodingAgentsProcessEnv } from '@bitsentry-ce/coding-agents/coding-agents-process-env'

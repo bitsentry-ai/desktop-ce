@@ -1,6 +1,6 @@
-import { chmod, mkdtemp, readFile, rm, writeFile } from 'fs/promises'
-import os from 'os'
-import path from 'path'
+import { chmod, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import os from 'node:os'
+import path from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { CodexAppServerClient } from '@bitsentry-ce/coding-agents/codex-app-server-client'
 

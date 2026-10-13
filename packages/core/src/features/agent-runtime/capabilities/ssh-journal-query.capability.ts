@@ -10,7 +10,7 @@
  * - Allowlisted journalctl flags only
  */
 
-import { spawn } from 'child_process'
+import { spawn } from 'node:child_process'
 import { z } from 'zod'
 import type {
   ToolContext,
@@ -113,7 +113,7 @@ async function executeSshJournalQuery(
   sshProcess.once('exit', markSshExited)
 
   // Stream stdout chunks
-  const stdoutChunks: Promise<void> = new Promise((resolve) => {
+  const stdoutChunks = new Promise<void>((resolve) => {
     sshProcess.stdout.on('data', (data: Buffer) => {
       const chunk = data.toString('utf-8')
       if (outputBuffer.length + chunk.length > MAX_TOOL_OUTPUT) {
@@ -123,7 +123,7 @@ async function executeSshJournalQuery(
 
       // Stream chunk to renderer (truncated if needed)
       if (chunk.length > 1000) {
-        onChunk(chunk.slice(0, 1000) + '...[truncated]')
+        onChunk(`${chunk.slice(0, 1000)}...[truncated]`)
       } else {
         onChunk(chunk)
       }
@@ -133,7 +133,7 @@ async function executeSshJournalQuery(
   })
 
   // Capture stderr
-  const stderrChunks: Promise<void> = new Promise((resolve) => {
+  const stderrChunks = new Promise<void>((resolve) => {
     sshProcess.stderr.on('data', (data: Buffer) => {
       const chunk = data.toString('utf-8')
       stderrBuffer = appendBoundedOutput(stderrBuffer, chunk, MAX_TOOL_OUTPUT)
@@ -202,7 +202,7 @@ async function executeSshJournalQuery(
     if (outputTruncated) {
       artifactId = `ssh-journal-${sessionId}-${toolCallId}-${String(Date.now())}`
       log.info(`[agent-runtime:${sessionId}] Output truncated (${String(MAX_TOOL_OUTPUT)} chars retained), artifact:`, artifactId)
-      finalOutput = outputBuffer.slice(0, MAX_TOOL_OUTPUT) + `\n\n...[truncated, see artifact ${artifactId}]`
+      finalOutput = `${outputBuffer.slice(0, MAX_TOOL_OUTPUT)}\n\n...[truncated, see artifact ${artifactId}]`
     }
 
     return {

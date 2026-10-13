@@ -167,7 +167,7 @@ function createValidationError(error: ZodError): DesktopIpcDispatchError {
 }
 
 function isDesktopRpcChannel(channel: string): channel is DesktopRpcChannel {
-  return DESKTOP_RPC_CHANNELS.some((knownChannel) => knownChannel === channel);
+  return (DESKTOP_RPC_CHANNELS as readonly string[]).includes(channel);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

@@ -103,7 +103,10 @@ export function IntegrationConnectionsSection({ service }: { service: Integratio
     const targetLocked = !secret && editingId !== null && field.key === contract?.destinationField;
     if (field.type === "json" || field.type === "string_array") return <textarea value={value} required={required} disabled={busy || targetLocked} onChange={(event) => change(event.target.value)} className="mt-1 min-h-32 w-full rounded border bg-background p-2 font-mono text-xs" />;
     if (field.type === "boolean" || field.enumValues) return <select value={value} required={required} disabled={busy || targetLocked} onChange={(event) => change(event.target.value)} className="ml-3 rounded border bg-background p-2"><option value="" />{(field.enumValues ?? ["true", "false"]).map((option) => <option key={option} value={option}>{option}</option>)}</select>;
-    return <Input type={secret && field.secret === true ? "password" : field.type === "number" ? "number" : "text"} autoComplete={secret ? "new-password" : "off"} value={value} required={required} disabled={busy || targetLocked} onChange={(event) => change(event.target.value)} />;
+    let inputType = "text";
+    if (secret && field.secret === true) inputType = "password";
+    else if (field.type === "number") inputType = "number";
+    return <Input type={inputType} autoComplete={secret ? "new-password" : "off"} value={value} required={required} disabled={busy || targetLocked} onChange={(event) => change(event.target.value)} />;
   }
   return <section className="mb-6 space-y-4 rounded-md border border-border p-6">
     <h2 className="text-lg font-medium">{t("settings.integrationConnections.title")}</h2>

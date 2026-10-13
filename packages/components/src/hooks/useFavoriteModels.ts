@@ -35,7 +35,9 @@ function loadFavorites(): FavoriteEntry[] {
 function saveFavorites(entries: FavoriteEntry[]): void {
   try {
     localStorage.setItem(LS_KEY, JSON.stringify(entries));
-  } catch {}
+  } catch {
+    // Storage can be unavailable (private mode or full quota); persistence is best effort.
+  }
 }
 
 export function useFavoriteModels() {

@@ -5,9 +5,9 @@ import {
   markDesktopFirstRunCaptured,
 } from '@bitsentry-ce/desktop-cli/runtime/desktop-posthog'
 import { getTelemetryStatus, setTelemetryEnabled } from '@bitsentry-ce/core/features/analytics'
-import path from 'path'
-import { appendFileSync, readFileSync } from 'fs'
-import { randomUUID } from 'crypto'
+import path from 'node:path'
+import { appendFileSync, readFileSync } from 'node:fs'
+import { randomUUID } from 'node:crypto'
 import {
   app,
   BrowserWindow,
@@ -595,7 +595,7 @@ app
       dispatcher.registerAll(
         createDesktopDialogHandlers({
           app,
-          dialog: dialog,
+          dialog,
           getWindow: () => desktopShell.mainWindow,
           approveRunbookExportPath,
           approveRunbookImportPaths,

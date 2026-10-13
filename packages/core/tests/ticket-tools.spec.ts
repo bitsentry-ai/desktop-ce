@@ -34,6 +34,10 @@ const tickets: Record<string, Record<number, Record<string, string>>> = {
   [staging]: { 12: { state: 'done', status: 'new' } },
 }
 
+const itopFieldType = (key: string) => {
+  if (key === 'fields') return 'json' as const
+  return ['id', 'limit', 'page'].includes(key) ? 'number' as const : 'string' as const
+}
 const plugin: DesktopPluginDescriptor = {
   id: 'itop', name: 'iTop', version: '1.0.0', type: 'data_source', description: 'Tickets', auth: { fields: [] },
   actions: [
@@ -42,7 +46,7 @@ const plugin: DesktopPluginDescriptor = {
   ].map(({ id, riskLevel }) => ({
     id, title: id, description: id, riskLevel,
     fields: ['class', 'fields', 'id', 'outputFields', 'comment', 'stimulus', 'query', 'limit', 'page'].map((key) => ({
-      key, label: key, type: key === 'fields' ? 'json' as const : ['id', 'limit', 'page'].includes(key) ? 'number' as const : 'string' as const, required: false,
+      key, label: key, type: itopFieldType(key), required: false,
     })),
   })),
 }

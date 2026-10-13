@@ -28,7 +28,6 @@ function createDb(
       upsert: vi.fn(({
         where: { key },
         update,
-        create,
       }: {
         where: { key: string }
         update: { value: string }
