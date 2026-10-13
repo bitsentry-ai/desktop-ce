@@ -13,7 +13,7 @@ import { setRuntimeUserDataPath } from '@bitsentry-ce/desktop-cli/runtime/runtim
 
 type BetterSqlite3Constructor = typeof import('better-sqlite3')
 
-const CURRENT_SCHEMA_VERSION = 18
+const CURRENT_SCHEMA_VERSION = 19
 const tempDirectories: string[] = []
 let Database: BetterSqlite3Constructor | undefined
 let nativeModuleWarning: string | undefined
