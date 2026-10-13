@@ -21,7 +21,7 @@ export type IntegrationConnectionInput = z.infer<typeof integrationConnectionInp
 export const integrationConnectionSchema = integrationConnectionInputSchema.omit({ auth: true }).extend({
   target: z.string(),
   authMode: z.enum(["token", "username_password"]),
-  availability: z.enum(["configured", "disabled", "plugin_unavailable", "credentials_missing"]),
+  availability: z.enum(["configured", "disabled", "plugin_unavailable", "credentials_missing", "destination_blocked"]),
   actions: z.array(z.object({ id: z.string(), title: z.string(), riskLevel: z.enum(["read", "write"]) })),
 });
 export type IntegrationConnection = z.infer<typeof integrationConnectionSchema>;
@@ -30,7 +30,7 @@ function validateVersionedConnection(connection: IntegrationConnectionInput, plu
   if (!plugin || plugin.id !== connection.pluginId) throw new Error("Plugin configuration is unavailable.");
   const config = validatePluginConnectionShape(plugin, connection.configVersion ?? 0, connection.config);
   const contract = requirePluginPersistence(plugin);
-  normalizeIntegrationTarget(config[contract.destinationField]);
+  config[contract.destinationField] = normalizeIntegrationTarget(config[contract.destinationField]);
   const fields = new Map(plugin.auth.fields.map((field) => [field.key, field]));
   if (Object.keys(connection.auth).some((key) => !fields.has(key))) throw new Error("Unknown credential field.");
   if (!hasPluginCredentials(plugin, connection.auth)) throw new Error("Connection credentials are incomplete.");
@@ -40,11 +40,11 @@ function validateVersionedConnection(connection: IntegrationConnectionInput, plu
   return { ...connection, config: ticketMapping === undefined || config.ticketMapping !== undefined ? config : { ...config, ticketMapping }, ticketMapping };
 }
 
-/** The destination must be an HTTP(S) URL without credentials, query or fragment. */
+/** The destination must be HTTPS without credentials, query or fragment. */
 export function normalizeIntegrationTarget(value: unknown): string {
   const url = new URL(typeof value === "string" ? value : "");
-  if (!["https:", "http:"].includes(url.protocol) || url.username || url.password || url.search || url.hash) {
-    throw new Error("Connection URL must be HTTP(S) without embedded credentials, query, or fragment.");
+  if (url.protocol !== "https:" || url.username || url.password || url.search || url.hash) {
+    throw new Error("Connection URL must be HTTPS without embedded credentials, query, or fragment.");
   }
   let target = url.href;
   while (target.endsWith("/")) { target = target.slice(0, -1); }
@@ -64,8 +64,8 @@ export function validateIntegrationConnection(input: unknown, plugin?: DesktopPl
   }
   const endpoint = connection.pluginId === "itop" ? connection.auth.baseUrl : connection.auth.apiBase;
   const url = new URL(endpoint ?? "");
-  if (!["https:", "http:"].includes(url.protocol) || url.username || url.password || url.search || url.hash) {
-    throw new Error("Connection URL must be HTTP(S) without embedded credentials, query, or fragment.");
+  if (url.protocol !== "https:" || url.username || url.password || url.search || url.hash) {
+    throw new Error("Connection URL must be HTTPS without embedded credentials, query, or fragment.");
   }
   if (!hasIntegrationCredentials(connection)) throw new Error("Connection credentials are incomplete.");
   return connection;
@@ -113,6 +113,18 @@ export function describeIntegrationConnection(
       : plugin == null ? "plugin_unavailable" : "configured",
     actions: plugin?.actions.map(({ id, title, riskLevel }) => ({ id, title, riskLevel })) ?? [],
   };
+}
+
+/** Apply host-owned exact destination allowlists before a connection is exposed or executed. */
+export function applyIntegrationDestinationPolicy(connection: IntegrationConnection, policy: { itop?: string; outline?: string }): IntegrationConnection {
+  if (connection.availability !== "configured") return connection;
+  try {
+    const target = normalizeIntegrationTarget(connection.target);
+    const configured = connection.pluginId === "itop" ? policy.itop : policy.outline;
+    const allowed = (configured ?? "").split(",").map((value) => value.trim()).filter(Boolean).map(normalizeIntegrationTarget);
+    if (allowed.includes(target) || (connection.pluginId === "outline" && target === "https://app.getoutline.com/api")) return connection;
+  } catch { /* Invalid host policy blocks the connection. */ }
+  return { ...connection, availability: "destination_blocked" };
 }
 
 /**

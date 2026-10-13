@@ -1,6 +1,6 @@
 import { z } from "zod";
 import type { DesktopPluginStoredAuthStore } from "./desktop-plugin-auth-store";
-import { integrationConnectionInputSchema, keepStoredCredentials, validateIntegrationConnection, type IntegrationConnectionInput } from "./integration-connections";
+import { describeIntegrationConnection, integrationConnectionInputSchema, keepStoredCredentials, normalizeIntegrationTarget, validateIntegrationConnection, type IntegrationConnectionInput } from "./integration-connections";
 import type { DesktopPluginDescriptor } from "./plugins.types";
 import { INTEGRATION_CONNECTIONS_STORE_KEY as STORE_KEY } from "./integration-store-keys";
 
@@ -51,6 +51,9 @@ export class IntegrationConnectionStore implements IntegrationConnectionStorage 
       }
       if (existing !== undefined && existing.pluginId !== connection.pluginId) {
         throw new Error("A connection cannot change its plugin.");
+      }
+      if (existing !== undefined && normalizeIntegrationTarget(describeIntegrationConnection(existing, plugin).target) !== normalizeIntegrationTarget(describeIntegrationConnection(connection, plugin).target)) {
+        throw new Error("Create a new named connection to change its target instance.");
       }
       // A new revision on every save lets a pending approval notice that the connection was edited.
       return [...rows.filter((row) => row.id !== connection.id), { ...connection, revision: crypto.randomUUID() }];

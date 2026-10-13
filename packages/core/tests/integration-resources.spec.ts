@@ -40,6 +40,11 @@ const problemMapping = itopTicketMappingSchema.parse({
 const problem = (fields: Record<string, unknown>) => ({ objects: { 'Problem::7': { class: 'Problem', key: '7', fields } } })
 
 describe('ticket resources for a custom ticket mapping', () => {
+  it('retains the operation ticket class when the current mapping has changed', () => {
+    const rows = extractIntegrationResources('thread', { ...connection, ticketMapping: problemMapping }, { objects: { 'Incident::7': { class: 'Incident', key: '7', fields: { summary: 'Incident' } } } }, 'Incident')
+    expect(rows[0]).toMatchObject({ externalId: '7', state: { className: 'Incident' } })
+  })
+
   it('keeps the mapped reference, state and assignment attributes and falls back to the reference for the title', () => {
     const rows = extractIntegrationResources('thread', { ...connection, ticketMapping: problemMapping }, problem({
       problem_ref: 'P-7', lifecycle: 'assigned', support_group_id: 39, assignee_id: 14, description: 'long text', private_log: 'secret',

@@ -104,7 +104,7 @@ describe('refreshing linked resources from saved operations', () => {
   })
 
   it('still links from an operation whose connection was removed, without a mapping', async () => {
-    const { service } = await setup([succeededOperation({ result: { objects: { 'UserRequest::3': { class: 'UserRequest', key: '3', fields: { title: 'T', ref: 'R-3', status: 'new' } } } } })])
+    const { service } = await setup([succeededOperation({ input: { class: 'UserRequest', fields: { title: 'T' } }, result: { objects: { 'UserRequest::3': { class: 'UserRequest', key: '3', fields: { title: 'T', ref: 'R-3', status: 'new' } } } } })])
     await service.removeIntegrationConnection(connectionId)
 
     const rows = await service.refreshIntegrationResources(threadId)
