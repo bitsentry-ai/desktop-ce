@@ -1,9 +1,9 @@
-import process from 'process'
-import os from 'os'
-import path from 'path'
-import { access, mkdtemp, open, readFile, rm, writeFile } from 'fs/promises'
-import { spawn } from 'child_process'
-import { fileURLToPath } from 'url'
+import process from 'node:process'
+import os from 'node:os'
+import path from 'node:path'
+import { access, mkdtemp, open, readFile, rm, writeFile } from 'node:fs/promises'
+import { spawn } from 'node:child_process'
+import { fileURLToPath } from 'node:url'
 import { parse as parseYaml } from 'yaml'
 
 import {
@@ -700,7 +700,6 @@ function normalizeCliStoredAuthValue(
       return normalizeCliStringArrayAuthValue(field, value)
     case 'json':
       return JSON.parse(JSON.stringify(value)) as DesktopPluginStoredAuthValue
-    case 'string':
     default:
       return normalizeCliStringAuthValue(field, value)
   }
@@ -828,10 +827,6 @@ function resolvePluginIndexUrl(args: ParsedArgs): string {
   }
 
   return DEFAULT_PLUGIN_INDEX_URL
-}
-
-function isRemoteUrl(source: string): boolean {
-  return source.startsWith('http://') || source.startsWith('https://')
 }
 
 function readPluginName(args: ParsedArgs): string {

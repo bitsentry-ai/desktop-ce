@@ -12,8 +12,7 @@ export function ToolCard({ card }: { card: ToolCallCard }) {
   if (card.state === "running") {
     dot = "bg-amber-400 animate-pulse";
     label = "";
-  }
-  if (card.state === "done") {
+  } else if (card.state === "done") {
     dot = "bg-emerald-400";
     label = t("common.incidents.toolStateDone");
   }

@@ -1,6 +1,6 @@
-import { mkdir, mkdtemp, rm, writeFile } from 'fs/promises'
-import { tmpdir } from 'os'
-import path from 'path'
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import path from 'node:path'
 
 import { createDesktopNodePluginRuntimeService } from '@bitsentry-ce/core/features/plugins/node'
 import { afterEach, describe, expect, it } from 'vitest'

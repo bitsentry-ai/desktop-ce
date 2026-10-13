@@ -10,6 +10,11 @@ import { Label } from "../ui/label";
 import { RunbookPicker } from "./RunbookPicker";
 import { Textarea } from "../ui/textarea";
 
+/** Code-unit order keeps the canonical request identical in every locale. */
+function compareKeys(a: string, b: string): number {
+  if (a === b) return 0;
+  return a < b ? -1 : 1;
+}
 const sameReviewedSteps = (a: RunbookRecord, b: RunbookRecord) => a.revisionNumber === b.revisionNumber && JSON.stringify(a.actions) === JSON.stringify(b.actions);
 
 type RunbookAction = RunbookRecord["actions"][number];
@@ -118,11 +123,11 @@ export function KnowledgeExecutionPanel({ threadId, disabled, active = true, hid
     setBusy(true); setExecuteError(false);
     try {
       const values = z.record(z.string(), z.string()).parse(JSON.parse(parameters));
-      const canonical = JSON.stringify([threadId, selected.id, selected.revisionNumber, Object.entries(values).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0)]);
+      const canonical = JSON.stringify([threadId, selected.id, selected.revisionNumber, Object.entries(values).sort(([a], [b]) => compareKeys(a, b))]);
       if (attempt.current?.canonical !== canonical) attempt.current = { canonical, nonce: crypto.randomUUID() };
       const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(canonical + attempt.current.nonce)));
       // i18n-ignore-next-line -- Internal idempotency key prefix, never displayed.
-      const requestKey = "knowledge:" + Array.from(digest, (byte) => byte.toString(16).padStart(2, "0")).join("");
+      const requestKey = `knowledge:${Array.from(digest, (byte) => byte.toString(16).padStart(2, "0")).join("")}`;
       const result = await runbooks.execute({ runbookId: selected.id, expectedRevisionNumber: selected.revisionNumber, requestKey, incidentThreadId: threadId, parameterValues: values });
       attempt.current = null;
       setExecutionId(result.executionId); setApproved(false);

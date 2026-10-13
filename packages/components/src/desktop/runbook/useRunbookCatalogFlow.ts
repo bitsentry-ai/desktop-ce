@@ -83,7 +83,9 @@ export function useRunbookCatalogFlow({
   const syncRunbooksCache = useCallback((nextRunbooks: RunbookRecord[]) => {
     try {
       localStorage.setItem(RUNBOOKS_KEY, JSON.stringify(nextRunbooks));
-    } catch {}
+    } catch {
+      // Storage can be unavailable (private mode or full quota); persistence is best effort.
+    }
   }, []);
 
   const commitRunbooks = useCallback(

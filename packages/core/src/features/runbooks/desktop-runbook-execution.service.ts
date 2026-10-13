@@ -1,4 +1,4 @@
-import { randomUUID } from "crypto";
+import { randomUUID } from "node:crypto";
 import { getErrorMessage } from "../../shared/errors";
 import {
   addStepTemplateWarnings as addSharedStepTemplateWarnings,
@@ -75,7 +75,6 @@ const PLUGIN_ACTION_STEP_TIMEOUT_MS = 60_000;
 const RUNBOOK_SHELL_STEP_TIMEOUT_MS = 300_000;
 const RUNBOOK_LLM_STEP_TIMEOUT_MS = 300_000;
 const SHELL_STEP_EMIT_THROTTLE_MS = 250;
-const MILLISECONDS_PER_MINUTE = 60_000;
 const EXECUTION_CONTROL_HEARTBEAT_INTERVAL_MS = 2_000;
 
 export type RunbookExecutionEdition = "pro" | "ce";
@@ -614,7 +613,7 @@ export class RunbookExecutionService {
       );
 
     if (inMemoryMatches.length > 0) {
-      const latest = inMemoryMatches[0]!;
+      const latest = inMemoryMatches[0];
       return {
         resultId: latest.resultId,
         execution: this.snapshotForBoundary(latest),
@@ -677,7 +676,7 @@ export class RunbookExecutionService {
         return this.get(executionId);
       }
       if (error instanceof OrchestrationError && error.kind === "cancelled") {
-        throw new Error("Runbook wait cancelled");
+        throw new Error("Runbook wait cancelled", { cause: error });
       }
       throw error;
     }
@@ -1433,11 +1432,11 @@ export class RunbookExecutionService {
       if (error instanceof OrchestrationError) {
         if (error.kind === "timeout") {
           throw new Error(
-            `HTTP request timed out after ${String(this.httpTimeoutMs)}ms`,
+            `HTTP request timed out after ${String(this.httpTimeoutMs)}ms`, { cause: error },
           );
         }
         if (error.kind === "cancelled") {
-          throw new Error("HTTP request cancelled");
+          throw new Error("HTTP request cancelled", { cause: error });
         }
         this.recordActivity(session);
         throw error.cause;
@@ -1666,7 +1665,7 @@ export class RunbookExecutionService {
         message = error.message;
       }
       throw new Error(
-        `${fieldLabel} must resolve to a valid JSON object: ${message}`,
+        `${fieldLabel} must resolve to a valid JSON object: ${message}`, { cause: error },
       );
     }
 
@@ -2304,7 +2303,7 @@ export class RunbookExecutionService {
     result: LocalAiExecutionResult,
   ): Record<string, unknown> {
     const metadata: Record<string, unknown> = {
-      ...(previousMetadata ?? {}),
+      ...previousMetadata,
       providerKey,
     };
 
@@ -2738,17 +2737,17 @@ export class RunbookExecutionService {
       return {
         ...result,
         metadata: {
-          ...(result.metadata ?? {}),
+          ...result.metadata,
           logFilter: filtered.metadata,
         },
         structuredOutput: {
-          ...(result.structuredOutput ?? {}),
+          ...result.structuredOutput,
           ...filtered.structuredOutput,
         },
       };
     } catch (error) {
       if (error instanceof RunbookLogFilterError) {
-        throw new Error(`Log filter failed: ${error.message}`);
+        throw new Error(`Log filter failed: ${error.message}`, { cause: error });
       }
       throw error;
     }

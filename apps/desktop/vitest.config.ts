@@ -1,4 +1,4 @@
-import { resolve } from 'path'
+import { resolve } from 'node:path'
 import { defineConfig } from 'vitest/config'
 
 const desktopNodeModules = resolve(__dirname, 'node_modules')

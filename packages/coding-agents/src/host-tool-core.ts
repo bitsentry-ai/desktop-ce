@@ -80,7 +80,7 @@ export function createHostToolCore(
       }
       return {
         content: [{ type: 'text', text }],
-        ...(result?.error !== undefined ? { isError: true } : {}),
+        ...(result?.error === undefined ? {} : { isError: true }),
       }
     },
   }

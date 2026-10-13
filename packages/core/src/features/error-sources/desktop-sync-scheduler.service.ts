@@ -16,7 +16,7 @@ export class SyncSchedulerService {
       void this.syncService
         .syncAllEnabled()
         .then((results) => {
-          const failed = results.filter((result) => Boolean(result.error)).length
+          const failed = results.filter((result) => result.error).length
           if (failed > 0) {
             log.warn(`[error-sources] Scheduled sync completed with ${String(failed)} failures`)
           }

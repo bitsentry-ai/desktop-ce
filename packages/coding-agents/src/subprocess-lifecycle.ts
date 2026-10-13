@@ -1,5 +1,5 @@
-import { spawnSync } from 'child_process'
-import type { ChildProcess } from 'child_process'
+import { spawnSync } from 'node:child_process'
+import type { ChildProcess } from 'node:child_process'
 
 const DEFAULT_SUBPROCESS_TERMINATION_GRACE_MS = 2_000
 const DEFAULT_SUBPROCESS_FORCE_KILL_WAIT_MS = 2_000

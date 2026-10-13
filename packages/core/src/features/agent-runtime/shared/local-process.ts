@@ -1,4 +1,4 @@
-import type { ChildProcess } from 'child_process'
+import type { ChildProcess } from 'node:child_process'
 
 /**
  * True when `-pid` names the process group of one detached child. Never
