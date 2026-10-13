@@ -1,4 +1,4 @@
-import { randomUUID } from "crypto";
+import { randomUUID } from "node:crypto";
 import {
   SqliteErrorSourcesRepositoryAdapter,
   type ErrorSourceDatabase,
@@ -996,7 +996,7 @@ function assertValidAction(action: DesktopRunbookActionRecord): void {
     }
   }
 
-  if (action.type === "plugin") {
+  else if (action.type === "plugin") {
     if (action.pluginId === undefined || action.pluginId.trim().length === 0) {
       throw new Error("Plugin action is missing a selected plugin");
     }
@@ -1260,7 +1260,9 @@ export class DesktopRunbookStore {
     } catch (error) {
       try {
         await this.db.$executeRawUnsafe("ROLLBACK");
-      } catch {}
+      } catch {
+        // Rethrow the original failure; a failed rollback adds nothing.
+      }
       throw error;
     }
   }
@@ -1407,8 +1409,7 @@ export class DesktopRunbookStore {
         where: { runbookId },
       });
 
-      for (let index = 0; index < nextActions.length; index += 1) {
-        const action = nextActions[index];
+      for (const [index, action] of nextActions.entries()) {
         let headersJson: string | null = null;
         if (action.headers !== undefined && action.headers.length > 0) {
           headersJson = JSON.stringify(action.headers);
@@ -1613,9 +1614,9 @@ export class DesktopRunbookStore {
     }
 
     const now = new Date().toISOString();
-    for (let index = 0; index < actionIdsInOrder.length; index += 1) {
+    for (const [index, element] of actionIdsInOrder.entries()) {
       await this.db.runbookAction.update({
-        where: { id: actionIdsInOrder[index], runbookId },
+        where: { id: element, runbookId },
         data: {
           sortOrder: index,
           updatedAt: now,

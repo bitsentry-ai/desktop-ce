@@ -83,10 +83,10 @@ function readBlockquoteContent(line: string): MarkdownBlockquoteContent {
 
 function getIndentColumns(line: string): number {
   let columns = 0;
-  for (let index = 0; index < line.length; index += 1) {
-    if (line[index] === " ") {
+  for (const element of line) {
+    if (element === " ") {
       columns += 1;
-    } else if (line[index] === "\t") {
+    } else if (element === "\t") {
       columns += 4 - (columns % 4);
     } else {
       break;
@@ -612,7 +612,7 @@ function stripHtmlTags(value: string): string {
     if (start < 0) return result + value.slice(cursor);
     const end = value.indexOf(">", start + 1);
     if (end < 0) return result + value.slice(cursor);
-    result += value.slice(cursor, start) + " ";
+    result += `${value.slice(cursor, start)} `;
     cursor = end + 1;
   }
   return result;
@@ -734,7 +734,7 @@ export function getCodeText(children: ReactNode): string {
   return getNestedText(codeElement.props.children);
 }
 
-export const MarkdownContent = memo(function MarkdownContent({
+function MarkdownContentView({
   content,
   className,
   paragraphizeSoftBreaks = false,
@@ -805,6 +805,8 @@ export const MarkdownContent = memo(function MarkdownContent({
       </ReactMarkdown>
     </div>
   );
-});
+}
+
+export const MarkdownContent = memo(MarkdownContentView);
 
 export default MarkdownContent;

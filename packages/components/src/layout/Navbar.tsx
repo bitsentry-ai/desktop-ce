@@ -13,7 +13,6 @@ import {
   type DesktopUpdaterState,
 } from "../services/desktop-api";
 import type {
-  DiagnosisRecord,
 } from "../services";
 import {
   Settings,
@@ -51,20 +50,6 @@ import {
   type RunbookNavItem,
 } from "./runbook-nav";
 
-function getLatestDiagnosisState(record: DiagnosisRecord): string {
-  if (record.state_history.length === 0) return "pending";
-  return record.state_history[record.state_history.length - 1].toState;
-}
-
-function getDiagnosisDotClass(latestState: string): string {
-  if (latestState === "verification_pending") return "bg-amber-400";
-  if (latestState === "completed" || latestState === "verified") {
-    return "bg-emerald-400";
-  }
-  if (latestState === "failed") return "bg-red-400";
-  return "bg-muted-foreground/30";
-}
-
 function getResultDotClass(status: string): string {
   if (status === "running") return "bg-amber-400";
   if (status === "completed") return "bg-emerald-400";
@@ -88,55 +73,6 @@ const ACCORDION_PAGES = [
   "/resolution",
   "/profile",
 ];
-
-function highlightElement(targetId: string) {
-  const element = document.getElementById(targetId);
-  if (element === null) return;
-
-  element.scrollIntoView({ behavior: "smooth", block: "center" });
-  element.classList.add("ring-2", "ring-primary");
-  window.setTimeout(() => {
-    element.classList.remove("ring-2", "ring-primary");
-  }, 2000);
-}
-
-interface QuickAnchorLinkProps {
-  anchorId: string;
-  children: React.ReactNode;
-  currentHash: string;
-  currentPath: string;
-  targetPath: string;
-  title?: string;
-}
-
-const QuickAnchorLink = ({
-  anchorId,
-  children,
-  currentHash,
-  currentPath,
-  targetPath,
-  title,
-}: QuickAnchorLinkProps) => (
-  <Link
-    to={`${targetPath}#${anchorId}`}
-    title={title}
-    onClick={() => {
-      if (currentPath === targetPath) {
-        window.setTimeout(() => {
-          highlightElement(anchorId);
-        }, 0);
-      }
-    }}
-    className={cn(
-      "block w-full rounded-md px-3 py-1.5 text-left text-xs text-muted-foreground transition-colors hover:bg-neutral-100/50 hover:text-foreground dark:hover:bg-white/10",
-      currentPath === targetPath &&
-        currentHash === `#${anchorId}` &&
-        "bg-neutral-100/50 text-foreground font-medium dark:bg-white/10",
-    )}
-  >
-    {children}
-  </Link>
-);
 
 type NavItem = {
   icon: React.ElementType;

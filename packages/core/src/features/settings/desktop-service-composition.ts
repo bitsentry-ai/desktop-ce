@@ -3,7 +3,7 @@ import { SettingsUseCasesImpl } from "./application/use-cases";
 
 export type DesktopComposedServices<
   TJobRuntime,
-  TExtraServices extends object = {},
+  TExtraServices extends object = Record<never, never>,
 > = {
   settingsUseCases: SettingsUseCasesImpl;
   jobRuntime: TJobRuntime;

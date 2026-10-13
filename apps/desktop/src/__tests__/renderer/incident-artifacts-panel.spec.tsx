@@ -20,7 +20,8 @@ vi.mock('@bitsentry-ce/i18n', async () => {
   const english = { ...load('common'), ...load('incidents') }
   const fill = (text: string, options: Record<string, unknown>) => text.replace(/{{(\w+)}}/g, (_match, name: string) => String(options[name] ?? `{{${name}}}`))
   const t = (key: string, options: Record<string, unknown> = {}) => {
-    const plural = typeof options.count === 'number' ? english[`${key}_${options.count === 1 ? 'one' : 'other'}`] : undefined
+    const pluralForm = options.count === 1 ? 'one' : 'other'
+    const plural = typeof options.count === 'number' ? english[`${key}_${pluralForm}`] : undefined
     return fill(plural ?? english[key] ?? key, options)
   }
   return { useTranslation: () => ({ t }) }

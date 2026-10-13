@@ -76,7 +76,6 @@ export function buildPluginInputSchema(
       case "string_array":
         schema = z.array(z.string());
         break;
-      case "string":
       default:
         schema = z.string();
         break;

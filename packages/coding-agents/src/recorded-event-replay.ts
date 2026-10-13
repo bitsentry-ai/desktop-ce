@@ -70,8 +70,8 @@ function parseEvent(value: unknown, lineNumber: number): RecordedProviderEvent {
 export function parseRecordedProviderEvents(jsonl: string): RecordedProviderEvent[] {
   const events: RecordedProviderEvent[] = []
   const lines = jsonl.split(/\r?\n/)
-  for (let index = 0; index < lines.length; index += 1) {
-    const line = lines[index]?.trim()
+  for (const [index, line_] of lines.entries()) {
+    const line = line_?.trim()
     if (line === undefined || line.length === 0) continue
 
     try {
@@ -80,7 +80,7 @@ export function parseRecordedProviderEvents(jsonl: string): RecordedProviderEven
       if (error instanceof Error && error.message.startsWith('Recorded provider event')) {
         throw error
       }
-      throw new Error(`Recorded provider event line ${index + 1} is not valid JSON`)
+      throw new Error(`Recorded provider event line ${index + 1} is not valid JSON`, { cause: error })
     }
   }
   return events

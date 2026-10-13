@@ -113,7 +113,7 @@ type DesktopLocalBridge = {
   }
 }
 
-let desktopAuthSession: AuthSessionState = {
+const desktopAuthSession: AuthSessionState = {
   user: {
     id: 1,
     email: 'local-operator@desktop',
@@ -706,9 +706,7 @@ export function createDesktopLocalBitsentryServices({
       getAuthSession() {
         return desktopAuthSession
       },
-      logout() {
-        return
-      },
+      logout() {},
       navigate(path: string) {
         window.location.assign(path)
       },

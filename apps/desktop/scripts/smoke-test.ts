@@ -151,11 +151,15 @@ function stopChild(signal: NodeJS.Signals = "SIGTERM"): void {
       process.kill(-child.pid, signal);
       return;
     }
-  } catch {}
+  } catch {
+    // The process group may already be gone; fall back to the child itself.
+  }
 
   try {
     child.kill(signal);
-  } catch {}
+  } catch {
+    // The child may already have exited.
+  }
 }
 
 function finish(code: number, message: string): void {
@@ -223,7 +227,9 @@ function observeMarkers(text: string): void {
 function observeMarkerFile(): void {
   try {
     observeMarkers(readFileSync(smokeMarkerFile, "utf8"));
-  } catch {}
+  } catch {
+    // The marker file may not exist yet.
+  }
 }
 
 child.stdout.on("data", handleOutputChunk);

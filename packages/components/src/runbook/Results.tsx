@@ -90,7 +90,7 @@ function mergeExecutionEventIntoResults(
       completionReason: execution.completionReason,
     }, ...previous];
   }
-  return previous.map((result) => result.id !== resultId ? result : {
+  return previous.map((result) => result.id === resultId ? {
     ...result,
     executionId,
     incidentThreadId: incidentThreadId ?? result.incidentThreadId,
@@ -100,7 +100,7 @@ function mergeExecutionEventIntoResults(
     startedAt: result.startedAt.length === 0 ? execution.startedAt : result.startedAt,
     completedAt: execution.completedAt ?? result.completedAt,
     completionReason: execution.completionReason ?? result.completionReason,
-  });
+  } : result);
 }
 
 const RESULTS_KEY = "bitsentry_results";
@@ -136,7 +136,9 @@ function loadResults(): StoredRunResult[] {
 function saveResults(list: StoredRunResult[]) {
   try {
     localStorage.setItem(RESULTS_KEY, JSON.stringify(list));
-  } catch {}
+  } catch {
+    // Storage can be unavailable (private mode or full quota); persistence is best effort.
+  }
 }
 
 function loadResultTraces(): Record<string, ResultTraceMemory> {
@@ -165,7 +167,9 @@ function loadResultTraces(): Record<string, ResultTraceMemory> {
 function saveResultTraces(traceMap: Record<string, ResultTraceMemory>) {
   try {
     localStorage.setItem(RESULT_TRACES_KEY, JSON.stringify(traceMap));
-  } catch {}
+  } catch {
+    // Storage can be unavailable (private mode or full quota); persistence is best effort.
+  }
 }
 
 const RUN_RESULT_STATUSES = new Set<string>([

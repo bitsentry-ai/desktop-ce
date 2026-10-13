@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { randomUUID } from 'crypto'
+import { randomUUID } from 'node:crypto'
 import {
   executeHostTool,
   getHostTool,

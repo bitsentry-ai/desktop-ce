@@ -1164,8 +1164,7 @@ class DesktopStateStore {
       })
 
       const messages = incidentMessages[incident.id] ?? []
-      for (let index = 0; index < messages.length; index += 1) {
-        const message = messages[index]
+      for (const [index, message] of messages.entries()) {
         if (message.kind === 'user') {
           await this.db.incidentMessage.create({
             data: {

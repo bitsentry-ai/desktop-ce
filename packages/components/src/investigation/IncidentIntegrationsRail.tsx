@@ -184,8 +184,8 @@ export function useSourceActions(resources: IntegrationResourcesPort | undefined
   };
   return {
     busy, error,
-    select: resources?.select === undefined ? undefined : (resource: IntegrationResource, selected: boolean) => { run(() => resources.select!(resource, selected)); },
-    refresh: resources?.refresh === undefined ? undefined : (resource: IntegrationResource) => { run(() => resources.refresh!(resource)); },
+    select: resources?.select === undefined ? undefined : (resource: IntegrationResource, selected: boolean) => { run(async () => resources.select?.(resource, selected)); },
+    refresh: resources?.refresh === undefined ? undefined : (resource: IntegrationResource) => { run(async () => resources.refresh?.(resource)); },
   };
 }
 
@@ -256,7 +256,7 @@ export default function IncidentIntegrationsRail({ isOpen, view, focusOnOpen = f
   const handleTabListKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
     const step = event.key === "ArrowRight" ? 1 : -1;
-    const next = views[(views.indexOf(view) + step + views.length) % views.length]!;
+    const next = views[(views.indexOf(view) + step + views.length) % views.length];
     event.preventDefault();
     onViewChange(next);
     document.getElementById(tabId(next))?.focus();
