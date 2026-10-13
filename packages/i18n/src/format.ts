@@ -18,7 +18,7 @@ function dtf(
   locale: SupportedLocale,
   options: Intl.DateTimeFormatOptions = {},
 ): Intl.DateTimeFormat {
-  const key = locale + "|" + JSON.stringify(options);
+  const key = `${locale}|${JSON.stringify(options)}`;
   let f = dtfCache.get(key);
   if (f === undefined) {
     f = new Intl.DateTimeFormat(locale, options);
@@ -31,7 +31,7 @@ function nf(
   locale: SupportedLocale,
   options: Intl.NumberFormatOptions = {},
 ): Intl.NumberFormat {
-  const key = locale + "|" + JSON.stringify(options);
+  const key = `${locale}|${JSON.stringify(options)}`;
   let f = nfCache.get(key);
   if (f === undefined) {
     f = new Intl.NumberFormat(locale, options);
@@ -44,7 +44,7 @@ function rtf(
   locale: SupportedLocale,
   options: Intl.RelativeTimeFormatOptions = { numeric: "auto" },
 ): Intl.RelativeTimeFormat {
-  const key = locale + "|" + JSON.stringify(options);
+  const key = `${locale}|${JSON.stringify(options)}`;
   let f = rtfCache.get(key);
   if (f === undefined) {
     f = new Intl.RelativeTimeFormat(locale, options);

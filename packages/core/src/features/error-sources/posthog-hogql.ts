@@ -230,8 +230,8 @@ export function rowToObject(
   columns: string[],
 ): Record<string, unknown> {
   const out: Record<string, unknown> = {};
-  for (let i = 0; i < columns.length; i += 1) {
-    out[columns[i]] = row[i];
+  for (const [i, column] of columns.entries()) {
+    out[column] = row[i];
   }
   return out;
 }

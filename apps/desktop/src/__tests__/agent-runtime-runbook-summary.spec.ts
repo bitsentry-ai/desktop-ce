@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi, type Mock } from 'vitest'
-import { randomUUID } from 'crypto'
+import { randomUUID } from 'node:crypto'
 
 import {
   AgentRuntimeService,

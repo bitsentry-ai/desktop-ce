@@ -227,11 +227,11 @@ export function ModelPicker({
   const handleSelect = useCallback(
     (providerKey: ModelCatalogProviderKey, modelId: string) => {
       const selectModelSelection = onSelectModelSelection;
-      if (selectModelSelection !== undefined) {
-        selectModelSelection(providerKey, modelId);
-      } else {
+      if (selectModelSelection === undefined) {
         onSelectProvider(providerKey);
         onSelectModel(modelId);
+      } else {
+        selectModelSelection(providerKey, modelId);
       }
       setOpen(false);
     },

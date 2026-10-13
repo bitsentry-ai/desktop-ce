@@ -769,13 +769,12 @@ function toTokenUsage(
   providerKey: LlmProviderKey,
   model: string,
   inputTokens: number | undefined,
-  outputTokens: number | undefined,
+  normalizedOutputTokens = 0,
 ): ChatResponse['tokenUsage'] {
   if (inputTokens === undefined) {
     return undefined
   }
 
-  const normalizedOutputTokens = outputTokens ?? 0
 
   return {
     inputTokens,
@@ -1254,7 +1253,7 @@ export class AgentLlmAdapterService {
         return await this.chatOpenAiCompatible({
           ...input,
           providerKey,
-          apiKey: apiKey,
+          apiKey,
           baseUrl: baseUrl ?? this.getDefaultBaseUrl(providerKey),
           model,
         })
@@ -1262,7 +1261,7 @@ export class AgentLlmAdapterService {
       case 'anthropic':
         return await this.chatAnthropic({
           ...input,
-          apiKey: apiKey,
+          apiKey,
           baseUrl: baseUrl ?? this.getDefaultBaseUrl(providerKey),
           model,
         })
@@ -1270,7 +1269,7 @@ export class AgentLlmAdapterService {
       case 'gemini':
         return await this.chatGemini({
           ...input,
-          apiKey: apiKey,
+          apiKey,
           model,
         })
 
@@ -1642,8 +1641,7 @@ export class AgentLlmAdapterService {
       .filter((toolCall): toolCall is ToolCall => toolCall !== null)
 
     const outputText = data.output_text ?? output
-      .filter((item) => item.type === 'message')
-      .flatMap((item) => item.content ?? [])
+      .flatMap((item) => (item.type === 'message' ? item.content ?? [] : []))
       .filter((item) => item.type === 'output_text')
       .map((item) => item.text ?? '')
       .join('')
@@ -1828,9 +1826,9 @@ export class AgentLlmAdapterService {
               name: tc.name,
               args: tc.args,
             },
-            ...(tc.thoughtSignature !== undefined
-              ? { thoughtSignature: tc.thoughtSignature }
-              : {}),
+            ...(tc.thoughtSignature === undefined
+              ? {}
+              : { thoughtSignature: tc.thoughtSignature }),
           })))
           return {
             role: 'model' as const,

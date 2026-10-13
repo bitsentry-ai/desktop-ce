@@ -16,7 +16,7 @@ describe('knowledge to runbook evidence boundaries', () => {
 
   it('blocks model execution of a runbook that was created from selected knowledge', async () => {
     const start = vi.fn()
-    const context = runbookContext('Check the failover.' + knowledgeReferences([source]), start)
+    const context = runbookContext(`Check the failover.${knowledgeReferences([source])}`, start)
 
     const result = await executeHostTool(context, 'execute_runbook', { runbookId: 'runbook' })
 

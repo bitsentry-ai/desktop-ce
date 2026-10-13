@@ -1,5 +1,5 @@
-import { EventEmitter } from 'events'
-import path from 'path'
+import { EventEmitter } from 'node:events'
+import path from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 const childProcessMocks = vi.hoisted(() => ({

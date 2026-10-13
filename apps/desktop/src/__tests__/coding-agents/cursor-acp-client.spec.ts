@@ -1,6 +1,6 @@
-import { mkdtemp, readFile, rm, writeFile, chmod } from 'fs/promises'
-import os from 'os'
-import path from 'path'
+import { mkdtemp, readFile, rm, writeFile, chmod } from 'node:fs/promises'
+import os from 'node:os'
+import path from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { CursorAcpClient } from '@bitsentry-ce/coding-agents'
 

@@ -54,7 +54,6 @@ function buildFieldTemplateValue(field: PluginFieldDefinition): unknown {
       return {};
     case "string_array":
       return [];
-    case "string":
     default:
       return "";
   }
@@ -172,7 +171,6 @@ function readStructuredFieldStringValue(
       }
 
       return JSON.stringify(rawValue, null, 2);
-    case "string":
     default:
       if (typeof rawValue === "string") {
         return rawValue;
@@ -235,7 +233,6 @@ function updateStructuredFieldRecord(input: {
     case "number": return updateNumberField(input.record, field, nextValue);
     case "string_array": return updateStringArrayField(input.record, field, nextValue);
     case "json": return updateJsonField(input.record, field, nextValue);
-    case "string":
     default: return updateStringField(input.record, field, nextValue);
   }
 }

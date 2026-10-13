@@ -438,4 +438,6 @@ export const ChatBubble = memo(function ChatBubble({
       </div>
     </div>
   );
-});
+}
+
+export const ChatBubble = memo(ChatBubbleView);

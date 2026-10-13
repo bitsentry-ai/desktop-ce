@@ -28,22 +28,22 @@ function runbook(
   };
 }
 
-function contextFor(runbook: RunbookRecord): RunbookContextV1 {
+function contextFor(record: RunbookRecord): RunbookContextV1 {
   return {
     format: "bitsentry.runbook.context",
     version: 1,
     runbook: {
-      id: runbook.id,
-      title: runbook.title,
-      description: runbook.description,
-      revisionNumber: runbook.revisionNumber,
-      updatedAt: runbook.updatedAt,
-      actionCount: runbook.actions.length,
+      id: record.id,
+      title: record.title,
+      description: record.description,
+      revisionNumber: record.revisionNumber,
+      updatedAt: record.updatedAt,
+      actionCount: record.actions.length,
     },
     summary: {
-      purposeText: runbook.title,
+      purposeText: record.title,
       actionTypeCounts: {
-        shell: runbook.actions.filter((action) => action.type === "shell")
+        shell: record.actions.filter((action) => action.type === "shell")
           .length,
         llm: 0,
         http: 0,
@@ -56,9 +56,9 @@ function contextFor(runbook: RunbookRecord): RunbookContextV1 {
         diagnosis_verify: 0,
         diagnosis_recommend: 0,
       },
-      orderedActionTitles: runbook.actions.map((action) => action.title),
+      orderedActionTitles: record.actions.map((action) => action.title),
     },
-    actions: runbook.actions.map((action, index) => ({
+    actions: record.actions.map((action, index) => ({
       id: action.id,
       order: index + 1,
       type: action.type,

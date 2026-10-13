@@ -397,25 +397,13 @@ const RUNBOOK_TRIGGER_CONTEXT_STRING_FIELDS = [
 function isRunbookExecutionSource(
   value: string,
 ): value is RunbookExecutionSource {
-  for (const source of RUNBOOK_EXECUTION_SOURCE_VALUES) {
-    if (source === value) {
-      return true;
-    }
-  }
-
-  return false;
+  return RUNBOOK_EXECUTION_SOURCES.has(value);
 }
 
 function isRunbookTriggerSurface(
   value: string,
 ): value is RunbookTriggerSurface {
-  for (const surface of RUNBOOK_TRIGGER_SURFACE_VALUES) {
-    if (surface === value) {
-      return true;
-    }
-  }
-
-  return false;
+  return RUNBOOK_TRIGGER_SURFACES.has(value);
 }
 
 function asRunbookObject(value: unknown): Record<string, unknown> | undefined {
@@ -518,13 +506,7 @@ const RUNBOOK_ACTION_TYPE_VALUES = [
 const RUNBOOK_ACTION_TYPES = new Set<string>(RUNBOOK_ACTION_TYPE_VALUES);
 
 function isRunbookActionType(value: string): value is RunbookActionType {
-  for (const actionType of RUNBOOK_ACTION_TYPE_VALUES) {
-    if (actionType === value) {
-      return true;
-    }
-  }
-
-  return false;
+  return RUNBOOK_ACTION_TYPES.has(value);
 }
 
 function parseRunbookActionType(

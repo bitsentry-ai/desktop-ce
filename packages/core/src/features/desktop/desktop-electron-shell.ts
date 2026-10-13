@@ -1,5 +1,5 @@
-import path from 'path'
-import { mkdir, writeFile } from 'fs/promises'
+import path from 'node:path'
+import { mkdir, writeFile } from 'node:fs/promises'
 
 export interface DesktopShellWindowPort {
   webContents: {
@@ -23,9 +23,7 @@ export interface DesktopShellWindowPort {
   loadURL: (...args: unknown[]) => unknown
 }
 
-export interface DesktopShellBrowserWindowFactory {
-  new (options?: unknown): unknown
-}
+export type DesktopShellBrowserWindowFactory = new (options?: unknown) => unknown
 
 export interface DesktopShellAppPort {
   isPackaged: boolean
@@ -153,7 +151,7 @@ export async function writeDesktopStartupDiagnosticsArtifact(
     )
   } catch (error) {
     throw new Error(
-      `[main] Failed to write startup diagnostics artifact: ${formatDesktopStartupError(error)}`,
+      `[main] Failed to write startup diagnostics artifact: ${formatDesktopStartupError(error)}`, { cause: error },
     )
   }
 }

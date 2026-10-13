@@ -1,4 +1,4 @@
-import path from 'path'
+import path from 'node:path'
 import type {
   approveRunbookExportPath,
   approveRunbookImportPaths,
@@ -92,6 +92,7 @@ function defaultDialogDirectory(
         return resolvedPath
       }
     } catch {
+      // Electron rejects unknown locations; try the next candidate.
     }
   }
 

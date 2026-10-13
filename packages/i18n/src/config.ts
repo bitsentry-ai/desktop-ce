@@ -82,6 +82,6 @@ export function resolveSupportedLocale(
     if (locale.toLowerCase() === lower) return locale;
   }
   const prefix = lower.split("-")[0];
-  const match = SUPPORTED_LOCALES.find((l) => l.toLowerCase().startsWith(prefix + "-"));
+  const match = SUPPORTED_LOCALES.find((l) => l.toLowerCase().startsWith(`${prefix}-`));
   return match ?? null;
 }

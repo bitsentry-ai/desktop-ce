@@ -1,5 +1,5 @@
-import { builtinModules, createRequire } from 'module'
-import { resolve } from 'path'
+import { builtinModules, createRequire } from 'node:module'
+import { resolve } from 'node:path'
 import { defineConfig } from 'vite'
 
 const electronTrpcPackageRoot = resolve(

@@ -1,5 +1,5 @@
-import os from 'os'
-import path from 'path'
+import os from 'node:os'
+import path from 'node:path'
 import { CursorAcpClient, type CursorJsonRpcId } from './cursor-acp-client.js'
 import { HOST_MCP_SERVER_NAME, type HostMcpEndpoint } from './host-mcp-server.service.js'
 import type { LocalAiExecutionResult, LocalAiStreamDelta } from './types.js'
@@ -1185,7 +1185,7 @@ export async function executeCursor(
 
     log.error('[cursor-provider] Execution error:', err)
     options.onDelta?.({ type: 'status', status: 'failed' })
-    throw new Error(appendCursorStderrTail(getErrorMessage(err), client.getStderrTail()))
+    throw new Error(appendCursorStderrTail(getErrorMessage(err), client.getStderrTail()), { cause: err })
   } finally {
     toolCallRegistry.clear()
     options.abortController.signal.removeEventListener('abort', onAbort)

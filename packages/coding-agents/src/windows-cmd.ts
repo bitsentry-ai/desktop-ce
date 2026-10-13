@@ -1,4 +1,4 @@
-import path from 'path'
+import path from 'node:path'
 
 const WINDOWS_CMD_SHIM_EXTENSIONS = new Set(['.cmd', '.bat'])
 

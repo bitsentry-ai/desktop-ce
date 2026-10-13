@@ -1,6 +1,6 @@
-import { mkdtemp, readFile, writeFile } from 'fs/promises'
-import os from 'os'
-import path from 'path'
+import { mkdtemp, readFile, writeFile } from 'node:fs/promises'
+import os from 'node:os'
+import path from 'node:path'
 import type { CliJson } from './cli-test-helpers.js'
 import { createCliTestContext, removeTempDirWithRetry } from './cli-test-helpers.js'
 

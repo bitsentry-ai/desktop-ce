@@ -554,7 +554,7 @@ describe('incident response copy and markdown extraction', () => {
     )
     const pre = createElement('pre', null, code)
 
-    expect(getCodeText(pre.props.children)).toBe('const value = 1' + '42')
+    expect(getCodeText(pre.props.children)).toBe('const value = 142')
   })
 })
 

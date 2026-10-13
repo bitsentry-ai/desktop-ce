@@ -8,7 +8,7 @@ const Toaster = ({ ...props }: ToasterProps) => {
   const theme = themeContext.theme ?? "system";
   const style: React.CSSProperties & { "--width"?: string } = {
     "--width": "420px",
-    ...(props.style ?? {}),
+    ...props.style,
   };
 
   return (

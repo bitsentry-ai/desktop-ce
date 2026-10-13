@@ -1,7 +1,7 @@
 import { retireDesktopTables } from './desktop-retirement'
 import { SqliteWorker } from './desktop-database-worker'
 import BetterSqlite3 from 'better-sqlite3'
-import { randomUUID } from 'crypto'
+import { randomUUID } from 'node:crypto'
 import {
   and,
   asc,
@@ -955,7 +955,7 @@ export class DbClient {
     let where: WhereInput | null = null
     if (prepared.id !== undefined) {
       where = { id: prepared.id }
-    } else if (typeof result.lastInsertRowid !== 'undefined') {
+    } else if (result.lastInsertRowid !== undefined) {
       where = { id: Number(result.lastInsertRowid) }
     } else if (prepared.key !== undefined) {
       where = { key: prepared.key }

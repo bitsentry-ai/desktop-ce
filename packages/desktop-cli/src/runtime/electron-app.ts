@@ -22,6 +22,7 @@ export function tryGetElectronApp(): ElectronAppLike | null {
   try {
     // `require("electron")` returns the app API inside Electron, but a plain
     // executable path string when loaded under Node. We only use the object form.
+    // eslint-disable-next-line @typescript-eslint/no-require-imports -- Electron is optional outside the desktop app.
     const electron: unknown = require('electron')
     if (electron === null || typeof electron !== 'object' || Array.isArray(electron)) {
       return null

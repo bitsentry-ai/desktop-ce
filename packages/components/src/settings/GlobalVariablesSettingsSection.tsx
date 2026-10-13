@@ -91,8 +91,9 @@ function validateDraft(
     current = globals.find((globalVariable) => globalVariable.id === currentId);
   }
 
+  const currentlySecure = current?.secure === true;
   const changesSecureMode =
-    current !== undefined && (current.secure === true) !== draft.secure;
+    current !== undefined && currentlySecure !== draft.secure;
   if (changesSecureMode && draft.value === undefined) {
     return translate(
       "common.globalVariablesSettingsSection.enterReplacementValue",
@@ -229,8 +230,8 @@ function VariablePanel({
                   { setDraft((current) => ({ ...current, value: event.target.value })); }
                 }
                 onFocus={() => {
-                  const changesSecureMode =
-                    (globalVariable.secure === true) !== draft.secure;
+                  const currentlySecure = globalVariable.secure === true;
+                  const changesSecureMode = currentlySecure !== draft.secure;
                   if (!changesSecureMode || draft.value !== undefined) return;
                   setDraft((current) => ({ ...current, value: "" }));
                 }}
@@ -480,10 +481,10 @@ function CreatePanel({
 }
 
 export function GlobalVariablesSettingsSection({
-  id = "global-variables",
+  id: sectionId = "global-variables",
   className,
   title,
-  description,
+  description: descriptionProp,
 }: GlobalVariablesSettingsSectionProps) {
   const { t } = useTranslation();
   const { toast } = useToast();
@@ -609,7 +610,7 @@ export function GlobalVariablesSettingsSection({
 
   const sectionTitle = title ?? t("navigation.navbar.globalVariables");
   const sectionDescription =
-    description ??
+    descriptionProp ??
     t("common.globalVariablesSettingsSection.storeSharedRunbookValues");
 
   let createButton: ReactNode = null;
@@ -676,7 +677,7 @@ export function GlobalVariablesSettingsSection({
   }
 
   return (
-    <section id={id} data-tour="settings-global-variables" className={className}>
+    <section id={sectionId} data-tour="settings-global-variables" className={className}>
       <div className="mb-4 flex items-start justify-between gap-3">
         <div>
           <h2 className="text-sm font-semibold text-foreground">

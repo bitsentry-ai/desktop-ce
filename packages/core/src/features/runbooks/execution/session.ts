@@ -18,8 +18,6 @@ export interface SecureParameterLike {
 export type SecureValueDefinitionLike = SecureParameterLike;
 export type ExecutionParameterValues = Record<string, string>;
 
-export interface ExecutionGlobalDefinitionLike extends SecureValueDefinitionLike {}
-
 export interface CreateExecutionSessionStateInput {
   executionId: string;
   runbookId: string;
@@ -37,7 +35,7 @@ export interface CreateExecutionSessionStateInput {
   >;
   parameterDefinitions: Iterable<Pick<RunbookActionParameter, "key" | "secure">>;
   globals: Record<string, string>;
-  globalDefinitions: Iterable<ExecutionGlobalDefinitionLike>;
+  globalDefinitions: Iterable<SecureValueDefinitionLike>;
 }
 
 export interface ExecutionSessionStateLike {

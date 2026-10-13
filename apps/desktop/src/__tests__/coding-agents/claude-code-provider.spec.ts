@@ -1,6 +1,6 @@
-import { EventEmitter } from 'events'
-import type { ChildProcess } from 'child_process'
-import { existsSync } from 'fs'
+import { EventEmitter } from 'node:events'
+import type { ChildProcess } from 'node:child_process'
+import { existsSync } from 'node:fs'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 type ClaudeQuerySession = AsyncIterable<unknown> & {
@@ -402,7 +402,7 @@ describe('executeClaudeCode', () => {
       async *[Symbol.asyncIterator]() {
         const text = await firstPromptText(prompt)
         if (text === 'first turn') await releaseFirst.promise
-        if (text === 'second turn') await releaseSecond.promise
+        else if (text === 'second turn') await releaseSecond.promise
         let result = 'turn-second'
         if (text === 'first turn') {
           result = 'turn-first'
@@ -749,7 +749,7 @@ describe('executeClaudeCode', () => {
         '/d',
         '/s',
         '/c',
-        '"\"C:\\Users\\User\\AppData\\Roaming\\npm\\claude.cmd\" \"--output-format\" \"stream-json\""',
+        '""C:\\Users\\User\\AppData\\Roaming\\npm\\claude.cmd" "--output-format" "stream-json""',
       ],
       expect.objectContaining({
         cwd: 'C:\\Users\\User\\Project',

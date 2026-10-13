@@ -1,5 +1,5 @@
-import path from 'path'
-import { access, copyFile, mkdir, readdir, stat, unlink } from 'fs/promises'
+import path from 'node:path'
+import { access, copyFile, mkdir, readdir, stat, unlink } from 'node:fs/promises'
 import log from './cli-log.js'
 import { getRuntimeUserDataPath } from './runtime-paths.js'
 

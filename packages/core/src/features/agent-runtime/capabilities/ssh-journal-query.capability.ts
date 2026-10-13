@@ -10,7 +10,7 @@
  * - Allowlisted journalctl flags only
  */
 
-import { spawn } from 'child_process'
+import { spawn } from 'node:child_process'
 import { Cause, Effect, Exit, Option } from 'effect'
 import { z } from 'zod'
 import type {

@@ -336,11 +336,9 @@ function setupFieldConfigurationKeys(
   const keys = new Set([field.key]);
   if (field.key === "owner") {
     keys.add("orgSlug");
-  }
-  if (field.key === "repos") {
+  } else if (field.key === "repos") {
     keys.add("projectIds");
-  }
-  if (field.key === "indexUrl") {
+  } else if (field.key === "indexUrl") {
     keys.add("baseUrl");
   }
   return [...keys];

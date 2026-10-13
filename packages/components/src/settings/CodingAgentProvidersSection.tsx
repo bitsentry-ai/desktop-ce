@@ -985,27 +985,27 @@ export function CodingAgentProvidersSection({
           description: t('settings.localCliProviders.binaryPathDetected'),
         })
         return result
-      } else {
-        captureDesktopAnalyticsEvent('desktop_coding_agent_detection_failed', {
-          provider,
-        })
-        captureRendererException(
-          new Error(`Failed to detect ${provider} binary`),
-          {
-            provider,
-            operation: 'detect',
-            preferredBinaryPath: preferredBinaryPath ?? null,
-          },
-        )
-        toast({
-          title: t('settings.localCliProviders.notFound'),
-          description: t('settings.localCliProviders.binaryNotFoundOnPath', {
-            binary: providerBinaryName(provider),
-          }),
-          variant: 'destructive',
-        })
-        return null
       }
+
+      captureDesktopAnalyticsEvent('desktop_coding_agent_detection_failed', {
+        provider,
+      })
+      captureRendererException(
+        new Error(`Failed to detect ${provider} binary`),
+        {
+          provider,
+          operation: 'detect',
+          preferredBinaryPath: preferredBinaryPath ?? null,
+        },
+      )
+      toast({
+        title: t('settings.localCliProviders.notFound'),
+        description: t('settings.localCliProviders.binaryNotFoundOnPath', {
+          binary: providerBinaryName(provider),
+        }),
+        variant: 'destructive',
+      })
+      return null
     },
     [
       captureDesktopAnalyticsEvent,
@@ -1128,7 +1128,7 @@ export function CodingAgentProvidersSection({
       }))
       await llmApi.saveProvider(provider, {
         availableModels: models,
-        ...(nextModel !== currentModel ? { model: nextModel } : {}),
+        ...(nextModel === currentModel ? {} : { model: nextModel }),
       })
       notifyLlmProvidersUpdated()
       captureDesktopAnalyticsEvent('desktop_coding_agent_models_synced', {

@@ -1,9 +1,9 @@
 import { randomUUID } from 'node:crypto'
 import { LocalPluginCredentialsStore } from '../src/runtime/plugin-credentials-store'
-import { mkdtemp, readFile, rm, writeFile } from 'fs/promises'
-import { tmpdir } from 'os'
-import path from 'path'
-import { pathToFileURL } from 'url'
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import path from 'node:path'
+import { pathToFileURL } from 'node:url'
 
 import {
   runRunbooksCli,
@@ -376,12 +376,7 @@ exports.plugin = {
     const artifactUrl =
       'https://github.com/bitsentry-ai/desktop-ce/releases/download/plugin-catalog/github-release-plugin-test.plugin.js'
     const fetchMock = vi.fn((input: string | URL | Request) => {
-      const url =
-        typeof input === 'string'
-          ? input
-          : input instanceof URL
-            ? input.toString()
-            : input.url
+      const url = input instanceof Request ? input.url : input.toString()
       if (url === indexUrl) {
         return new Response(
           [
