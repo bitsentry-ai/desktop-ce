@@ -90,6 +90,14 @@ function isLegacyParameterKey(value: string): boolean {
   return [...value.slice(1)].every((character) => /[A-Za-z0-9_.-]/.test(character));
 }
 
+// Bare Go template actions, as in `docker inspect --format '{{with .X}}…{{else}}none{{end}}'`.
+const GO_TEMPLATE_KEYWORDS = new Set(["else", "end", "break", "continue"]);
+
+/** Whether `{{key}}` is a literal Go template keyword rather than a runbook parameter. */
+export function isGoTemplateKeyword(key: string): boolean {
+  return GO_TEMPLATE_KEYWORDS.has(key);
+}
+
 function isExecutionContextReference(value: string): boolean {
   return value !== "" && value[0]?.trim() !== "";
 }
@@ -155,7 +163,9 @@ export class TemplateResolver {
       template,
       "{{",
       "}}",
-      isLegacyParameterKey,
+      (key) =>
+        isLegacyParameterKey(key) &&
+        (!isGoTemplateKeyword(key) || this.hasParam(key)),
       (match, key: string) =>
         replaceLookup(match, `params.${key}`, this.lookupParam(key)),
     );
@@ -213,6 +223,13 @@ export class TemplateResolver {
       secure: false,
       missingReference: reference,
     };
+  }
+
+  private hasParam(key: string): boolean {
+    return (
+      this.parameterDefinitions.has(key) ||
+      Object.prototype.hasOwnProperty.call(this.context.params ?? {}, key)
+    );
   }
 
   private lookupParam(key: string): LookupResult {
