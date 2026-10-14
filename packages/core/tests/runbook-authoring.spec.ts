@@ -1082,8 +1082,11 @@ describe("runbook authoring", () => {
     })).toThrow("Available actions: action-logs (external_source: Search error logs).");
   });
 
-  it.each(["shell", "plugin"] as const)("preserves literal Docker fields in a %s action", (type) => {
-    const command = "docker ps --format '{{.Names}} {{.Image}} {{.Status}}'";
+  it.each([
+    ["shell", "docker ps --format '{{.Names}} {{.Image}} {{.Status}}'"],
+    ["plugin", "docker ps --format '{{.Names}} {{.Image}} {{.Status}}'"],
+    ["plugin", "docker inspect --type container --format '{{.Name}} {{with .State.Health}}{{.Status}}{{else}}none{{end}}' app"],
+  ] as const)("preserves literal Docker fields in a %s action: %s", (type, command) => {
     const action = type === "shell"
       ? { id: "containers", type, title: "List containers", command }
       : {
