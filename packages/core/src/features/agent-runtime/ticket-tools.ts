@@ -3,6 +3,7 @@ import type { HostToolContext } from "./host-tools";
 import { runIntegrationTool } from "./integration-tools";
 import { ticketWriteOperationSchema, type ItopTicketMapping } from "../plugins/itop-ticket-mapping";
 import { readItopTicketState } from "../plugins/itop-ticket-state";
+import { customerReportProvenance, type CustomerReport } from "../plugins/customer-reports";
 import type { ToolResult } from "./types";
 
 export const ticketOperationToolSchema = z.object({
@@ -13,6 +14,7 @@ export const ticketOperationToolSchema = z.object({
   limit: z.number().int().min(1).max(50).default(20),
   fields: z.record(z.string(), z.union([z.string(), z.number(), z.boolean(), z.null()])).default({}),
   message: z.string().trim().min(1).max(32_000).optional(),
+  customerReportId: z.uuid().optional().describe("Create only: the id from a [customer-report] message header. The report goes to the ticket's private log, never to the description or public log."),
 }).strict();
 export type TicketOperationInput = z.infer<typeof ticketOperationToolSchema>;
 
@@ -38,7 +40,7 @@ function readRequest(input: TicketOperationInput, mapping: ItopTicketMapping) {
   return { actionId: "list_objects", input: { ...common, query: `SELECT ${mapping.className} WHERE ${predicate}`, limit: input.operation === "read" ? 2 : input.limit, page: 1 } };
 }
 
-function mutationRequest(input: TicketOperationInput, mapping: ItopTicketMapping): TicketMutation | ToolResult {
+function mutationRequest(input: TicketOperationInput, mapping: ItopTicketMapping, report?: CustomerReport): TicketMutation | ToolResult {
   if (input.operation === "search" || input.operation === "read") return clarification("Use a read operation.");
   // Defaults describe a new ticket; a log entry or lifecycle change must not overwrite fields of an existing one.
   const supplied = input.operation === "create" ? { ...mapping.defaults, ...input.fields } : { ...input.fields };
@@ -49,7 +51,11 @@ function mutationRequest(input: TicketOperationInput, mapping: ItopTicketMapping
   if (unknown.length > 0) return clarification("These field names are not mapped for this connection. Use the configured names.", unknown);
   const fields = Object.fromEntries(Object.entries(supplied).map(([key, value]) => [mapping.fields[key], value]));
   const common = { class: mapping.className, fields, outputFields: "*", comment: "BitSentry chat: engineer-reviewed ticket operation" };
-  if (input.operation === "create") return { actionId: "create_object", input: common };
+  if (input.operation === "create") {
+    if (report === undefined) return { actionId: "create_object", input: common };
+    // The original report and its source stay internal: private log only.
+    return { actionId: "create_object", input: { ...common, fields: { ...fields, [mapping.internalLogField]: { add_item: { message: customerReportProvenance(report), format: "text" } } } } };
+  }
   const id = Number(input.ticketId);
   if (!/^\d+$/.test(input.ticketId ?? "") || !Number.isSafeInteger(id) || id < 1) return clarification("Read the ticket first and use its unambiguous numeric external ID.", ["ticketId"]);
   if (input.operation === "internal_log" || input.operation === "public_log") {
@@ -122,6 +128,14 @@ async function resolveStoredReference(context: HostToolContext, input: TicketOpe
   return matches[0] === undefined ? input : { ...input, ticketId: matches[0].externalId };
 }
 
+/** The report named by a create, read from this conversation only. */
+async function customerReportFor(context: HostToolContext, input: TicketOperationInput): Promise<CustomerReport | ToolResult | undefined> {
+  if (input.customerReportId === undefined) return undefined;
+  if (input.operation !== "create") return clarification("A customer report can only be attached when creating a ticket.", ["customerReportId"]);
+  const report = await context.integrationConnections?.getCustomerReport?.(input.customerReportId);
+  return report ?? { error: JSON.stringify({ code: "CUSTOMER_REPORT_NOT_FOUND", message: "This customer report was not found in this conversation. Ask the engineer to submit it again from the composer. No write was proposed." }) };
+}
+
 export async function ticketOperation(context: HostToolContext, input: TicketOperationInput): Promise<ToolResult> {
   const connection = (await context.integrationConnections?.list())?.find((row) => row.id === input.connectionId);
   if (connection?.pluginId !== "itop" || connection.ticketMapping === undefined) return clarification("Choose an iTop connection with ticket field and lifecycle mappings configured.");
@@ -131,7 +145,9 @@ export async function ticketOperation(context: HostToolContext, input: TicketOpe
   }
   const resolved = await resolveStoredReference(context, input, connection.ticketMapping);
   if (!("connectionId" in resolved)) return resolved;
-  const request = mutationRequest(resolved, connection.ticketMapping);
+  const report = await customerReportFor(context, input);
+  if (report !== undefined && !("channel" in report)) return report;
+  const request = mutationRequest(resolved, connection.ticketMapping, report);
   if (!("actionId" in request)) return request;
   const { allowedStates, ...action } = request;
   let observedTicketState: ObservedTicketState | undefined;
@@ -140,7 +156,9 @@ export async function ticketOperation(context: HostToolContext, input: TicketOpe
     if (!("value" in observed)) return observed;
     observedTicketState = observed;
   }
-  const result = await runIntegrationTool(context.integrationConnections, plugins, { connectionId: input.connectionId, ...action }, "preview", { ticketOperation: ticketWriteOperationSchema.parse(input.operation) });
+  const result = await runIntegrationTool(context.integrationConnections, plugins, { connectionId: input.connectionId, ...action }, "preview", {
+    ticketOperation: ticketWriteOperationSchema.parse(input.operation), ...(report === undefined ? {} : { customerReportId: report.id }),
+  });
   if (result.output !== undefined) {
     const preview = JSON.parse(result.output) as Record<string, unknown>;
     result.output = JSON.stringify({

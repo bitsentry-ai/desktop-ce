@@ -153,3 +153,40 @@ describe('SQLite integration runtime cutover', () => {
     } finally { await f.close() }
   })
 })
+
+describe('SQLite customer reports', () => {
+  const input = {
+    threadId: 'thread', clientRequestId: '90000000-0000-4000-8000-000000000001', channel: 'whatsapp' as const, sender: 'Budi – IT PT X',
+    receivedAt: '2026-10-15T09:12:00+07:00', timeZone: 'Asia/Jakarta', reportText: 'Portal HR timeout sejak jam 9.',
+  }
+
+  it('saves a report once per client request, seals its text, and keeps it across reopen', async () => {
+    const f = await fixture()
+    try {
+      const storage = createDesktopIntegrationStorage(f.db, f.secrets)
+      const first = await storage.customerReports!.save(input, 'wira')
+      const retried = await createDesktopIntegrationStorage(f.second, f.secrets).customerReports!.save(input, 'wira')
+      expect(retried.id).toBe(first.id)
+      expect(first).toMatchObject({ ...input, submittedBy: 'wira', operationId: null })
+      await expect(storage.customerReports!.save({ ...input, reportText: 'changed text' }, 'wira')).rejects.toThrow('different content')
+      const rows = await f.db.$queryRaw<{ payloadCiphertext: string }>('SELECT "payloadCiphertext" FROM "CustomerReport"')
+      expect(rows).toHaveLength(1)
+      expect(rows[0].payloadCiphertext).not.toContain('Portal HR')
+      expect(await createDesktopIntegrationStorage(f.second, f.secrets).customerReports!.get('thread', first.id)).toEqual(first)
+      expect(await storage.customerReports!.get('other-thread', first.id)).toBeNull()
+    } finally { await f.close() }
+  })
+
+  it('links a report only from the operation it still points to and never changes its content', async () => {
+    const f = await fixture()
+    try {
+      const reports = createDesktopIntegrationStorage(f.db, f.secrets).customerReports!
+      const saved = await reports.save(input, 'wira')
+      expect(await reports.link('thread', saved.id, null, 'operation-1')).toBe(true)
+      expect(await reports.link('thread', saved.id, null, 'operation-2')).toBe(false)
+      expect(await reports.link('thread', saved.id, 'operation-1', 'operation-2')).toBe(true)
+      expect((await reports.get('thread', saved.id))?.operationId).toBe('operation-2')
+      await expect(async () => f.db.$executeRawUnsafe(`UPDATE "CustomerReport" SET channel='email' WHERE id='${saved.id}'`)).rejects.toThrow('immutable')
+    } finally { await f.close() }
+  })
+})

@@ -1479,5 +1479,21 @@
   "common.dataSourcesManager.installSuccess": "Plugin installed.",
   "common.dataSourcesManager.installLoading": "Loading",
   "common.dataSourcesManager.installNoFileChosen": "No file chosen",
-  "common.systemSettings.appearanceSubtitle": "Theme, language, and display options."
+  "common.systemSettings.appearanceSubtitle": "Theme, language, and display options.",
+  "common.incidents.customerReport.menu": "Customer report",
+  "common.incidents.customerReport.title": "Customer report",
+  "common.incidents.customerReport.internalOnly": "Internal only",
+  "common.incidents.customerReport.channelLabel": "Channel",
+  "common.incidents.customerReport.channels.whatsapp": "WhatsApp",
+  "common.incidents.customerReport.channels.email": "Email",
+  "common.incidents.customerReport.channels.phone": "Phone",
+  "common.incidents.customerReport.channels.other": "Other",
+  "common.incidents.customerReport.sender": "Sender",
+  "common.incidents.customerReport.receivedAt": "Received at",
+  "common.incidents.customerReport.timeZone": "Time zone",
+  "common.incidents.customerReport.remove": "Remove customer report",
+  "common.incidents.customerReport.placeholder": "Paste the customer report…",
+  "common.incidents.customerReport.from": "From {{sender}} · received {{receivedAt}}",
+  "common.incidents.customerReport.unverified": "Engineer-provided, not verified by BitSentry",
+  "common.incidents.customerReport.saveFailed": "The customer report could not be saved. Your text and details are kept; try sending again."
 }

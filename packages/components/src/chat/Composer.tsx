@@ -36,9 +36,12 @@ import {
   FileText,
   ImagePlus,
   Loader2,
+  MessageSquareText,
   Plus,
   X,
 } from "lucide-react";
+import { CustomerReportPanel } from "./CustomerReportPanel";
+import { createCustomerReportDraft, isCustomerReportDraftReady, type ComposerCustomerReport, type CustomerReportDraft } from "./customerReport";
 import { ModelPicker } from "./ModelPicker";
 import type { AccessLevel, InteractionMode } from "./types";
 import { DEFAULT_ACCESS_LEVEL, DEFAULT_INTERACTION_MODE } from "./types";
@@ -98,6 +101,8 @@ export interface ComposerProps {
   // Controlled access level (managed by parent so it persists per-incident)
   accessLevel?: AccessLevel;
   onAccessLevelChange?: (level: AccessLevel) => void;
+  // Customer report intake: shown in the attach menu only when the host can save reports.
+  customerReport?: ComposerCustomerReport;
 }
 
 function getSeededTraitValues(
@@ -108,6 +113,20 @@ function getSeededTraitValues(
   if (defaults.thinking === undefined) return defaults;
 
   return { ...defaults, thinking: thinkingEnabled };
+}
+
+/** A customer report needs its text and its required source fields; otherwise text or an attachment is enough. */
+function composerCanSend(isBlocked: boolean, prompt: string, attachmentCount: number, reportDraft: CustomerReportDraft | null): boolean {
+  if (isBlocked) return false;
+  if (reportDraft !== null) return prompt.trim().length > 0 && isCustomerReportDraftReady(reportDraft, prompt);
+  return prompt.trim().length > 0 || attachmentCount > 0;
+}
+
+function composerPlaceholder(t: (key: string) => string, isBlocked: boolean, threadStatus: ThreadStatus | undefined, hasReport: boolean): string {
+  if (isBlocked) {
+    return threadStatus === "blocked_no_runbook" ? t("common.incidents.createARunbookToEnable") : t("common.incidents.configureAProviderInSettings");
+  }
+  return hasReport ? t("common.incidents.customerReport.placeholder") : t("common.incidents.describeTheSecurityIssueTo");
 }
 
 export function Composer({
@@ -144,6 +163,7 @@ export function Composer({
   tokenUsage,
   accessLevel: accessLevelProp,
   onAccessLevelChange,
+  customerReport,
 }: ComposerProps) {
   const { t } = useTranslation();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -166,9 +186,10 @@ export function Composer({
 
   // ── Derived ────────────────────────────────────────────────────────────────
   const composerSupportsPhotos = Boolean(selectedModelCapability?.supportsImageInput);
+  const reportDraft = customerReport?.draft ?? null;
   const hasAttachOptions =
-    composerSupportsPhotos || composerFileAccept?.includes(".csv") === true;
-  const canSend = !isBlocked && (prompt.trim().length > 0 || composerImages.length > 0);
+    composerSupportsPhotos || composerFileAccept?.includes(".csv") === true || customerReport !== undefined;
+  const canSend = composerCanSend(isBlocked, prompt, composerImages.length, reportDraft);
 
   const composerOptions = useMemo(
     () => {
@@ -258,16 +279,7 @@ export function Composer({
 
   if (isArchived) return null;
 
-  let placeholderText = placeholder;
-  if (placeholderText === undefined) {
-    placeholderText = t("common.incidents.describeTheSecurityIssueTo");
-    if (isBlocked) {
-      placeholderText = t("common.incidents.configureAProviderInSettings");
-      if (threadStatus === "blocked_no_runbook") {
-        placeholderText = t("common.incidents.createARunbookToEnable");
-      }
-    }
-  }
+  const placeholderText = placeholder ?? composerPlaceholder(t, isBlocked, threadStatus, reportDraft !== null);
 
   let accessSelector: ReactNode = null;
   const shouldShowAccessSelector = selectedProviderKey !== null;
@@ -340,6 +352,14 @@ export function Composer({
       >
         {/* Textarea area with optional attach button */}
         <div className="relative px-3 pb-2 pt-3.5 sm:px-4 sm:pt-4">
+          {customerReport !== undefined && reportDraft !== null && (
+            <CustomerReportPanel
+              draft={reportDraft}
+              onChange={customerReport.onDraftChange}
+              onRemove={() => { customerReport.onDraftChange(null); }}
+              disabled={isProcessing || isBlocked}
+            />
+          )}
           {composerImages.length > 0 && (
             <div className="mb-3 flex flex-wrap gap-2">
               {composerImages.map((image) =>
@@ -447,6 +467,20 @@ export function Composer({
                           className="shrink-0 text-muted-foreground"
                         />
                         {t("common.incidents.addFiles")}
+                      </button>
+                    )}
+                    {customerReport !== undefined && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (reportDraft === null) customerReport.onDraftChange(createCustomerReportDraft(customerReport.defaultTimeZone));
+                          setAttachMenuOpen(false);
+                          textareaRef.current?.focus();
+                        }}
+                        className="flex w-full items-center gap-3 whitespace-nowrap rounded-lg px-3 py-2 text-sm text-foreground transition-colors hover:bg-accent"
+                      >
+                        <MessageSquareText size={14} className="shrink-0 text-muted-foreground" />
+                        {t("common.incidents.customerReport.menu")}
                       </button>
                     )}
                   </div>

@@ -68,6 +68,8 @@ import type {
   ThreadStatus,
 } from "../chat/types";
 import { Composer } from "../chat/Composer";
+import { toCustomerReportInput, type CustomerReportDraft } from "../chat/customerReport";
+import { customerReportDisplayText, formatCustomerReportMessage } from "@bitsentry-ce/core/features/plugins";
 import type {
   AgentLlmSelection,
   AgentSendRequest,
@@ -180,7 +182,7 @@ export async function sendIncidentAgentMessage(
 
 function resolveIncidentTitle(incident: IncidentThread | null | undefined, text: string): string {
   if (!shouldAutoTitleIncident(incident?.title)) return incident?.title ?? "New Incident";
-  return text.slice(0, 50) || "New Incident";
+  return customerReportDisplayText(text).trim().slice(0, 50) || "New Incident";
 }
 
 // ─── Local-storage helpers ────────────────────────────────────────────────────
@@ -296,7 +298,7 @@ function normalizeIncidentPreview(
   value: string | null | undefined,
 ): string | null {
   if (typeof value !== "string") return null;
-  const normalized = value.replace(/\s+/g, " ").trim();
+  const normalized = customerReportDisplayText(value).replace(/\s+/g, " ").trim();
   if (normalized.length === 0) return null;
   return normalized;
 }
@@ -1663,6 +1665,13 @@ export default function IncidentsPage() {
   const checkingSessionIdsRef = useRef<Set<string>>(new Set());
 
   const [prompt, setPrompt] = useState("");
+  // A customer report draft belongs to one conversation; switching threads drops it.
+  const [customerReportDraft, setCustomerReportDraft] = useState<CustomerReportDraft | null>(null);
+  const [customerReportError, setCustomerReportError] = useState<string | null>(null);
+  useEffect(() => {
+    setCustomerReportDraft(null);
+    setCustomerReportError(null);
+  }, [activeId]);
   const [showScrollIndicator, setShowScrollIndicator] = useState(false);
   const [isScrollingToBottom, setIsScrollingToBottom] = useState(false);
   const showScrollIndicatorRef = useRef(false);
@@ -2611,6 +2620,27 @@ export default function IncidentsPage() {
     setComposerImages((prev) => prev.filter((image) => image.id !== imageId));
   }, []);
 
+  /**
+   * The message to send. A customer report is saved first and then named in the message header. On failure the
+   * draft and its client request ID stay, so a retry saves it once.
+   */
+  const outgoingText = async (threadId: string, rawPrompt: string): Promise<string | null> => {
+    if (customerReportDraft === null) return rawPrompt.trim();
+    // The report is saved exactly as pasted, including leading and trailing whitespace.
+    const input = toCustomerReportInput(customerReportDraft, threadId, rawPrompt);
+    if (input === null || integrationPorts.customerReports === undefined) return null;
+    try {
+      const saved = await integrationPorts.customerReports.save(input);
+      setCustomerReportDraft(null);
+      setCustomerReportError(null);
+      return formatCustomerReportMessage(saved);
+    } catch (error: unknown) {
+      setCustomerReportError(t("common.incidents.customerReport.saveFailed"));
+      captureIncidentException(error, { operation: "customerReport.save", incidentId: threadId });
+      return null;
+    }
+  };
+
   const handleSend = async (options?: {
     accessLevel?: AccessLevel;
     interactionMode?: InteractionMode;
@@ -2619,7 +2649,8 @@ export default function IncidentsPage() {
     if (!canSendIncidentMessage(prompt, composerImages.length, activeId, selectedProviderKey, selectedModelId)) return;
     if (activeId === null || selectedProviderKey === null) return;
     if (activeIncident?.archived === true) return;
-    const text = prompt.trim();
+    const text = await outgoingText(activeId, prompt);
+    if (text === null) return;
     const wasRunning = activeIncident?.state === "RUNNING";
     const shouldContinueSession = activeSessionId !== null || wasRunning;
     const preview = normalizeIncidentPreview(text);
@@ -3237,6 +3268,14 @@ export default function IncidentsPage() {
                 tokenUsage={sessionTokenUsage}
                 accessLevel={selectedAccessLevel}
                 onAccessLevelChange={setSelectedAccessLevel}
+                attachmentError={customerReportError}
+                customerReport={integrationPorts.customerReports === undefined ? undefined : {
+                  draft: customerReportDraft,
+                  onDraftChange: (draft) => {
+                    setCustomerReportDraft(draft);
+                    setCustomerReportError(null);
+                  },
+                }}
               />
             )}
           </div>

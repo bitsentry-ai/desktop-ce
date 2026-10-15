@@ -10,6 +10,7 @@ export const DESKTOP_RPC_CHANNELS = [
   'plugins:listOperations',
   'plugins:approveOperation',
   'plugins:cancelOperation',
+  'plugins:saveCustomerReport',
   'plugins:listConnections',
   'plugins:saveConnection',
   'plugins:removeConnection',

@@ -23,6 +23,7 @@ function makeValidPayloads(): Record<DesktopRpcChannel, unknown> {
     'plugins:listOperations': { threadId: 'thread-1' },
     'plugins:approveOperation': { threadId: 'thread-1', id: UUID, closeRequested: false },
     'plugins:cancelOperation': { threadId: 'thread-1', id: UUID },
+    'plugins:saveCustomerReport': { threadId: 'thread-1', clientRequestId: UUID, channel: 'phone', sender: 'Ana', receivedAt: '2026-10-15T09:12:00+07:00', timeZone: 'Asia/Jakarta', reportText: 'Portal down' },
     'plugins:saveConnection': { id: UUID, name: 'Production', pluginId: 'itop', auth: { baseUrl: 'https://itop.example', authToken: 'example' } },
     'plugins:removeConnection': { id: UUID },
     'plugins:getStoredAuth': { pluginId: 'sentry' },

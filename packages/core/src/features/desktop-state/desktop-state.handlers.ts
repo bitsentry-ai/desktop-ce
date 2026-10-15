@@ -1,3 +1,4 @@
+import { customerReportDisplayText } from '../plugins/customer-reports'
 import { logFilterConfigSchema, type LogFilterConfig } from '../runbooks'
 import {
   normalizeRunbookActionType,
@@ -490,7 +491,7 @@ function normalizeIncidentMessages(
 
 function normalizePreviewText(value: string | null | undefined): string | null {
   if (typeof value !== 'string') return null
-  const normalized = value.replace(/\s+/g, ' ').trim()
+  const normalized = customerReportDisplayText(value).replace(/\s+/g, ' ').trim()
   if (normalized.length > 0) {
     return normalized
   }

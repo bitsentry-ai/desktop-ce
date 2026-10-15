@@ -207,5 +207,13 @@
   "incidents.artifactsPanel.pendingApproval": "等待批准",
   "incidents.artifactsPanel.empty": "当代理读取工单、执行运行手册、提议更改或收到 webhook 时，相关内容会显示在此处。",
   "incidents.artifactsPanel.runSavedRunbook": "执行已保存的运行手册",
-  "incidents.artifactsPanel.eventId": "事件 ID"
+  "incidents.artifactsPanel.eventId": "事件 ID",
+  "incidents.integrationWrites.customerReport.title": "客户报告来源",
+  "incidents.integrationWrites.customerReport.internalOnly": "仅内部 — 不发送给客户",
+  "incidents.integrationWrites.customerReport.channel": "渠道",
+  "incidents.integrationWrites.customerReport.sender": "发送人",
+  "incidents.integrationWrites.customerReport.received": "接收时间",
+  "incidents.integrationWrites.customerReport.submittedBy": "提交人",
+  "incidents.integrationWrites.customerReport.unverified": "由工程师提供，未经验证",
+  "incidents.integrationRecovery.refusedBeforeWrite": "iTop 在写入任何内容之前拒绝了此请求。请检查连接及其权限，然后重新提出更改。"
 }

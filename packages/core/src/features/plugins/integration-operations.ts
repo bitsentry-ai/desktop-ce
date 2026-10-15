@@ -6,6 +6,10 @@ import type { IntegrationConnection } from "./integration-connections";
 import { ticketWriteOperationSchema } from "./itop-ticket-mapping";
 import { readItopTicketState } from "./itop-ticket-state";
 import type { DesktopPluginDescriptor, DesktopPluginExecutionResult } from "./plugins.types";
+import {
+  CustomerReportLinkError, customerReportLinkDecision, customerReportProvenance, customerReportRefusal, customerReportSummarySchema,
+  NOT_APPLIED_MESSAGE, REFUSED_BEFORE_WRITE, summarizeCustomerReport, type CustomerReport, type CustomerReportStore,
+} from "./customer-reports";
 
 export const integrationOperationSchema = z.object({
   id: z.uuid(), threadId: z.string().min(1), connectionId: z.uuid(),
@@ -13,12 +17,14 @@ export const integrationOperationSchema = z.object({
   input: z.record(z.string(), z.unknown()), publicUpdate: z.boolean(), requiresCloseRequest: z.boolean(),
   // Kept from the preview so approval can refuse when the plugin or the connection changed since.
   pluginVersion: z.string(), connectionRevision: z.string().optional(), ticketOperation: ticketWriteOperationSchema.optional(),
+  // The customer report this ticket create carries in its private log.
+  customerReport: customerReportSummarySchema.optional(),
   status: z.enum(["proposed", "executing", "succeeded", "failed", "uncertain", "cancelled", "reconciled"]),
   createdAt: z.string(), updatedAt: z.string(), result: z.unknown().optional(), message: z.string().optional(),
 });
 export type IntegrationOperation = z.infer<typeof integrationOperationSchema>;
 export type IntegrationWriteRequest = { connectionId: string; actionId: string; input: Record<string, unknown> };
-export type IntegrationWriteMeta = { ticketOperation?: z.infer<typeof ticketWriteOperationSchema> };
+export type IntegrationWriteMeta = { ticketOperation?: z.infer<typeof ticketWriteOperationSchema>; customerReportId?: string };
 type OperationPatch = Pick<IntegrationOperation, "status" | "updatedAt"> & Partial<Pick<IntegrationOperation, "result" | "message">>;
 export interface IntegrationOperationStore {
   list(threadId: string): Promise<IntegrationOperation[]>;
@@ -104,9 +110,28 @@ export async function assertTicketState(runtime: IntegrationWriteRuntime, operat
   if (!transition.from.includes(state)) throw new Error(`The ticket is in state "${state}"; ${String(operation.ticketOperation)} is only allowed from: ${transition.from.join(", ")}. Nothing was changed.`);
 }
 
+/**
+ * A report may only go to the private log of a new ticket, exactly as the report store holds it, and never to a
+ * customer-visible field. Both products check this before a proposal is saved.
+ */
+export function assertCustomerReportWrite(runtime: Pick<IntegrationWriteRuntime, "connection" | "plugin">, request: IntegrationWriteRequest, meta: IntegrationWriteMeta, report: CustomerReport) {
+  const mapping = runtime.connection.ticketMapping;
+  if (runtime.plugin.id !== "itop" || mapping === undefined || request.actionId !== "create_object" || meta.ticketOperation !== "create") {
+    throw new Error("A customer report can only be attached to a new iTop ticket.");
+  }
+  const fields = z.record(z.string(), z.unknown()).parse(request.input.fields ?? {});
+  if (mapping.publicLogField in fields) throw new Error("A customer report ticket cannot write the public log.");
+  const entry = z.object({ add_item: z.object({ message: z.string(), format: z.literal("text") }).strict() }).strict().safeParse(fields[mapping.internalLogField]);
+  if (!entry.success || entry.data.add_item.message !== customerReportProvenance(report)) throw new Error("The customer report must be recorded unchanged in the private log.");
+}
+
 /** Approval is an application action; no agent tool receives this capability. */
 export class IntegrationOperationService {
-  constructor(private readonly store: IntegrationOperationStore, private readonly resolve: (id: string) => Promise<IntegrationWriteRuntime>) {}
+  constructor(
+    private readonly store: IntegrationOperationStore,
+    private readonly resolve: (id: string) => Promise<IntegrationWriteRuntime>,
+    private readonly reports?: CustomerReportStore,
+  ) {}
   async list(threadId: string) {
     if (this.store.lease) await this.store.lease.expire();
     else {
@@ -126,11 +151,14 @@ export class IntegrationOperationService {
     const runtime = await this.resolve(request.connectionId);
     const input = validateWrite(runtime, request);
     const now = new Date().toISOString();
+    const report = await this.customerReportFor(threadId, runtime, { ...request, input }, meta);
     if (renewalOf === undefined) {
-      const previous = (await this.store.list(threadId)).filter((row) => row.connectionId === request.connectionId && row.target === runtime.connection.target && row.pluginId === runtime.plugin.id && row.actionId === request.actionId && row.ticketOperation === meta.ticketOperation && JSON.stringify(canonical(row.input)) === JSON.stringify(canonical(input))).sort((a, b) => b.createdAt.localeCompare(a.createdAt)).find((row) => row.status !== "proposed" || (row.pluginVersion === runtime.plugin.version && row.connectionRevision === runtime.connection.revision));
+      const previous = await this.previousProposal(threadId, runtime, { ...request, input }, meta, report);
       if (previous !== undefined) return previous;
     }
-    const intentKey = await proposalId({ threadId, connectionId: request.connectionId, pluginId: runtime.plugin.id, pluginVersion: runtime.plugin.version, connectionRevision: runtime.connection.revision ?? null, target: runtime.connection.target, actionId: request.actionId, input, ticketOperation: meta.ticketOperation ?? null, renewalOf: renewalOf ?? null });
+    const linked = report === undefined ? undefined : await this.linkedCreate(report);
+    if (linked !== undefined) return linked;
+    const intentKey = await proposalId({ threadId, connectionId: request.connectionId, pluginId: runtime.plugin.id, pluginVersion: runtime.plugin.version, connectionRevision: runtime.connection.revision ?? null, target: runtime.connection.target, actionId: request.actionId, input, ticketOperation: meta.ticketOperation ?? null, renewalOf: renewalOf ?? null, customerReportId: report?.id ?? null, after: report?.operationId ?? null });
     const find = () => this.store.findByIntent ? this.store.findByIntent(request.connectionId, intentKey) : this.store.get(intentKey);
     const existing = await find();
     if (existing !== null) return existing;
@@ -141,6 +169,7 @@ export class IntegrationOperationService {
       connectionName: runtime.connection.name, target: runtime.connection.target,
       pluginId: runtime.plugin.id, actionId: request.actionId, input,
       pluginVersion: runtime.plugin.version, connectionRevision: runtime.connection.revision, ticketOperation: meta.ticketOperation,
+      ...(report === undefined ? {} : { customerReport: summarizeCustomerReport(report) }),
       ...classify(runtime, { ...request, input }, meta.ticketOperation), status: "proposed", createdAt: now, updatedAt: now,
     });
     try {
@@ -150,13 +179,45 @@ export class IntegrationOperationService {
       if (concurrent !== null) return concurrent;
       throw error;
     }
+    if (report !== undefined) await this.linkReport(threadId, report, operation.id);
     return operation;
+  }
+
+  /** The report a ticket create carries, checked to be in this conversation and only in the private log. */
+  private async customerReportFor(threadId: string, runtime: IntegrationWriteRuntime, request: IntegrationWriteRequest, meta: IntegrationWriteMeta): Promise<CustomerReport | undefined> {
+    if (meta.customerReportId === undefined) return undefined;
+    const report = this.reports === undefined ? null : await this.reports.get(threadId, meta.customerReportId);
+    if (report === null) throw new CustomerReportLinkError("CUSTOMER_REPORT_NOT_FOUND", "This customer report was not found in this conversation. Ask the engineer to submit it again from the composer.");
+    assertCustomerReportWrite(runtime, request, meta, report);
+    return report;
+  }
+
+  /** An identical earlier request answers a repeated submission. For a report, only the operation it points to counts. */
+  private async previousProposal(threadId: string, runtime: IntegrationWriteRuntime, request: IntegrationWriteRequest, meta: IntegrationWriteMeta, report: CustomerReport | undefined) {
+    const previous = (await this.store.list(threadId)).filter((row) => row.connectionId === request.connectionId && row.target === runtime.connection.target && row.pluginId === runtime.plugin.id && row.actionId === request.actionId && row.ticketOperation === meta.ticketOperation && row.customerReport?.id === report?.id && JSON.stringify(canonical(row.input)) === JSON.stringify(canonical(request.input))).sort((a, b) => b.createdAt.localeCompare(a.createdAt)).find((row) => row.status !== "proposed" || (row.pluginVersion === runtime.plugin.version && row.connectionRevision === runtime.connection.revision));
+    return previous !== undefined && (report === undefined || previous.id === report.operationId) ? previous : undefined;
+  }
+
+  /** The earlier create to return instead of a new one; throws while its outcome is open or unknown. */
+  private async linkedCreate(report: CustomerReport): Promise<IntegrationOperation | undefined> {
+    const linked = report.operationId === null ? null : await this.store.get(report.operationId);
+    if (linked === null) return undefined;
+    const decision = customerReportLinkDecision(linked);
+    if (decision === "refuse") throw customerReportRefusal(linked);
+    return decision === "reuse" ? linked : undefined;
+  }
+
+  /** The report moves to the new operation only if it still points where it did when the decision was made. */
+  private async linkReport(threadId: string, report: CustomerReport, operationId: string) {
+    if (this.reports === undefined || await this.reports.link(threadId, report.id, report.operationId, operationId)) return;
+    await this.store.transition(operationId, "proposed", { status: "cancelled", updatedAt: new Date().toISOString() });
+    throw new CustomerReportLinkError("CUSTOMER_REPORT_CHANGED", "Another ticket proposal for this customer report was saved at the same time. Review the existing proposal instead.");
   }
 
   async renew(threadId: string, id: string) {
     const previous = await this.owned(threadId, id);
     if (!["succeeded", "reconciled", "failed", "cancelled"].includes(previous.status)) throw new Error("Resolve the previous outcome before proposing a repeat.");
-    return this.propose(threadId, { connectionId: previous.connectionId, actionId: previous.actionId, input: previous.input }, { ticketOperation: previous.ticketOperation }, previous.id);
+    return this.propose(threadId, { connectionId: previous.connectionId, actionId: previous.actionId, input: previous.input }, { ticketOperation: previous.ticketOperation, customerReportId: previous.customerReport?.id }, previous.id);
   }
 
   async reconcile(threadId: string, id: string, applied: boolean, confirmed: boolean, externalId?: string) {
@@ -176,7 +237,7 @@ export class IntegrationOperationService {
       if (!matches) throw new Error("The remote system did not return the exact remote resource you named, so it could not be verified. Keep this outcome uncertain.");
       result = response.data;
     }
-    await this.store.transition(id, "uncertain", { status: applied ? "reconciled" : "failed", result, message: applied ? "The engineer confirmed the change and the remote resource was read successfully." : "The engineer inspected the remote system and confirmed that this operation did not apply.", updatedAt: new Date().toISOString() });
+    await this.store.transition(id, "uncertain", { status: applied ? "reconciled" : "failed", result, message: applied ? "The engineer confirmed the change and the remote resource was read successfully." : NOT_APPLIED_MESSAGE, updatedAt: new Date().toISOString() });
     return this.owned(threadId, id);
   }
 
@@ -213,7 +274,7 @@ export class IntegrationOperationService {
       }, 30_000);
       try {
         const result = await runtime.execute(operation);
-        await finish({ ...remoteWriteOutcome(result), updatedAt: new Date().toISOString() });
+        await finish({ ...remoteWriteOutcome(result, operation), updatedAt: new Date().toISOString() });
       } catch {
         await finish({ status: "uncertain", message: "The request was interrupted. The remote change may have completed; inspect it before retrying.", updatedAt: new Date().toISOString() });
       } finally {
@@ -272,14 +333,29 @@ export function recoveryRead(operation: IntegrationOperation, externalId: string
 }
 
 /**
+ * iTop REST codes it returns before running the operation: authentication, missing or invalid parameters, unknown
+ * version or verb, and the class rights check (webservices/rest.php, core/restservices.class.inc.php). Code 100 can
+ * come after the object was written, so it is not here.
+ */
+const ITOP_REFUSED_BEFORE_WRITE = new Set([1, 2, 3, 4, 5, 6, 10, 11]);
+const UNCONFIRMED = "The remote system did not confirm success. Inspect the remote resource before retrying.";
+
+/**
  * A remote system that clearly refused the request did not apply it, so the write failed with a reason the engineer can act on.
  * Anything else (a 5xx, a timeout, an unknown answer) stays uncertain and is never shown as success.
+ * An iTop ticket create is stricter: only iTop's own refusal before writing counts as failed. A gateway's HTTP 4xx does
+ * not prove that iTop did not create the ticket, so it stays uncertain until the engineer checks.
  */
-export function remoteWriteOutcome(result: DesktopPluginExecutionResult): Pick<IntegrationOperation, "status" | "result" | "message"> {
+export function remoteWriteOutcome(result: DesktopPluginExecutionResult, request?: { pluginId: string; actionId: string }): Pick<IntegrationOperation, "status" | "result" | "message"> {
   if (result.ok) return { status: "succeeded", result: result.data, message: undefined };
+  if (request?.pluginId === "itop") {
+    const code = (result.data as { code?: unknown } | undefined)?.code;
+    if (typeof code === "number" && ITOP_REFUSED_BEFORE_WRITE.has(code)) return { status: "failed", result: result.data, message: REFUSED_BEFORE_WRITE };
+    if (request.actionId === "create_object") return { status: "uncertain", result: result.data, message: UNCONFIRMED };
+  }
   const refused = [400, 401, 403, 404, 409, 422, 429].includes(result.status);
   const reasons: Record<number, string> = { 401: "credentials_rejected", 403: "credentials_rejected", 409: "stale_resource" };
-  if (!refused) return { status: "uncertain", result: result.data, message: "The remote system did not confirm success. Inspect the remote resource before retrying." };
+  if (!refused) return { status: "uncertain", result: result.data, message: UNCONFIRMED };
   return { status: "failed", result: result.data, message: reasons[result.status] ?? "remote_rejected" };
 }
 

@@ -254,3 +254,36 @@ describe('the status check before a lifecycle proposal', () => {
     expect(received).toEqual([expect.objectContaining({ actionId: 'get_object', id: 12, options: { capture: false } })])
   })
 })
+
+describe('ticket create from a customer report', () => {
+  const report = {
+    id: '33333333-3333-4333-8333-333333333333', threadId: 'thread', clientRequestId: '44444444-4444-4444-8444-444444444444',
+    channel: 'email' as const, sender: 'ops@customer.example', receivedAt: '2026-10-15T09:12:00+07:00', timeZone: 'Asia/Jakarta',
+    reportText: 'Original customer text', submittedBy: 'wira', operationId: null, createdAt: '2026-10-15T02:13:00.000Z',
+  }
+
+  it('puts the report in the private log only and passes it to the proposal', async () => {
+    const { context } = remote()
+    const proposals: Array<{ request: IntegrationActionInput; meta: unknown }> = []
+    context.integrationConnections = {
+      ...context.integrationConnections!,
+      getCustomerReport: async (id: string) => id === report.id ? report : null,
+      proposeWrite: async (request: IntegrationActionInput, meta?: unknown) => { proposals.push({ request, meta }); return { id: 'proposal' } as never },
+    }
+    await run(context, { connectionId: production, operation: 'create', fields: { title: 'Mail outage', caller: 'Ana' }, customerReportId: report.id })
+
+    expect(proposals).toHaveLength(1)
+    const fields = proposals[0].request.input.fields as Record<string, unknown>
+    expect(fields.private_log).toEqual({ add_item: { message: expect.stringContaining('Original customer text'), format: 'text' } })
+    expect(fields).not.toHaveProperty('public_log')
+    expect(JSON.stringify({ title: fields.title, description: fields.description })).not.toContain('Original customer text')
+    expect(proposals[0].meta).toEqual({ ticketOperation: 'create', customerReportId: report.id })
+  })
+
+  it('refuses an unknown report and a report on a non-create operation without proposing', async () => {
+    const { context } = remote()
+    context.integrationConnections = { ...context.integrationConnections!, getCustomerReport: async () => null }
+    await expect(run(context, { connectionId: production, operation: 'create', fields: { title: 'x', caller: 'Ana' }, customerReportId: report.id })).resolves.toMatchObject({ error: { code: 'CUSTOMER_REPORT_NOT_FOUND' } })
+    await expect(run(context, { connectionId: production, operation: 'internal_log', ticketId: '14', message: 'x', customerReportId: report.id })).resolves.toMatchObject({ error: { code: 'CLARIFICATION_REQUIRED' } })
+  })
+})

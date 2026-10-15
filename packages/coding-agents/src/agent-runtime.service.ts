@@ -3083,6 +3083,7 @@ export class AgentRuntimeService {
           if (!session.incidentThreadId || this.pluginRuntime === undefined) throw new Error('An active conversation is required.');
           return this.pluginRuntime.getIntegrationOperations().propose(session.incidentThreadId, request, meta);
         },
+        getCustomerReport: (id) => session.incidentThreadId && this.pluginRuntime ? this.pluginRuntime.getCustomerReports().get(session.incidentThreadId, id) : Promise.resolve(null),
         list: () => this.pluginRuntime?.listIntegrationConnections() ?? Promise.resolve([]),
         executeRead: async (request, expectedConnection, readOptions) => {
           const pluginRuntime = this.pluginRuntime

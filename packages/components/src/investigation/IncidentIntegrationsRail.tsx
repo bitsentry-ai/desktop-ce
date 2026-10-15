@@ -93,7 +93,10 @@ export function useIntegrationsRailState({ incidentId, runbookRailOpen, closeRun
 }
 
 /** The desktop ports for the rail, from whichever plugin capabilities this client exposes. */
-export function useDesktopIntegrationPorts(): { resources?: IntegrationResourcesPort; operations?: IntegrationOperationsPort } {
+export interface CustomerReportsPort {
+  save(input: import("@bitsentry-ce/core/features/plugins").CustomerReportInput): Promise<import("@bitsentry-ce/core/features/plugins").CustomerReport>;
+}
+export function useDesktopIntegrationPorts(): { resources?: IntegrationResourcesPort; operations?: IntegrationOperationsPort; customerReports?: CustomerReportsPort } {
   const { plugins } = useBitsentryServices();
   return useMemo(() => ({
     resources: plugins?.listResources ? { list: plugins.listResources.bind(plugins), select: plugins.selectResource?.bind(plugins), refresh: plugins.refreshResource?.bind(plugins) } : undefined,
@@ -101,6 +104,7 @@ export function useDesktopIntegrationPorts(): { resources?: IntegrationResources
       renew: plugins.renewOperation?.bind(plugins), reconcile: plugins.reconcileOperation?.bind(plugins),
       list: plugins.listOperations.bind(plugins), approve: plugins.approveOperation.bind(plugins), cancel: plugins.cancelOperation.bind(plugins),
     } : undefined,
+    customerReports: plugins?.saveCustomerReport ? { save: plugins.saveCustomerReport.bind(plugins) } : undefined,
   }), [plugins]);
 }
 

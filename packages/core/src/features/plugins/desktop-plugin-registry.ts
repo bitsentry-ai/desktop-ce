@@ -314,6 +314,7 @@ export class DesktopPluginRuntimeService {
   getIntegrationResources(): import("./integration-resources").IntegrationResourceStore { throw new Error("Resource storage is unavailable."); }
 
   getIntegrationOperations(): import("./integration-operations").IntegrationOperationService { throw new Error("Write approvals are unavailable in this runtime."); }
+  getCustomerReports(): import("./customer-reports").CustomerReportStore { throw new Error("Customer reports are unavailable in this runtime."); }
 
   constructor(protected registry = new DesktopPluginRegistry()) {}
 

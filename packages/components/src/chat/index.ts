@@ -10,3 +10,5 @@ export * from "./TraitsDropdown";
 export * from "./SendButton";
 export * from "./ModelPicker";
 export * from "./ProviderLogos";
+export * from "./customerReport";
+export * from "./CustomerReportPanel";

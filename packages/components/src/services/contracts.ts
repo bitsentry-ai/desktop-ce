@@ -529,6 +529,8 @@ export interface PluginsServicePort {
   listOperations?(threadId: string): Promise<import('@bitsentry-ce/core/features/plugins').IntegrationOperation[]>;
   approveOperation?(threadId: string, id: string, closeRequested: boolean): Promise<unknown>;
   cancelOperation?(threadId: string, id: string): Promise<unknown>;
+  /** Saves a pasted customer report; the same client request ID returns the first save. */
+  saveCustomerReport?(input: import('@bitsentry-ce/core/features/plugins').CustomerReportInput): Promise<import('@bitsentry-ce/core/features/plugins').CustomerReport>;
   listConnections?(): Promise<IntegrationConnection[]>;
   saveConnection?(input: IntegrationConnectionInput): Promise<unknown>;
   removeConnection?(id: string): Promise<unknown>;

@@ -207,5 +207,13 @@
   "incidents.artifactsPanel.pendingApproval": "Menunggu persetujuan",
   "incidents.artifactsPanel.empty": "Saat agen membaca tiket, menjalankan runbook, mengusulkan perubahan, atau webhook masuk, hasilnya muncul di sini.",
   "incidents.artifactsPanel.runSavedRunbook": "Jalankan runbook tersimpan",
-  "incidents.artifactsPanel.eventId": "ID peristiwa"
+  "incidents.artifactsPanel.eventId": "ID peristiwa",
+  "incidents.integrationWrites.customerReport.title": "Sumber laporan pelanggan",
+  "incidents.integrationWrites.customerReport.internalOnly": "Hanya internal — tidak dikirim ke pelanggan",
+  "incidents.integrationWrites.customerReport.channel": "Kanal",
+  "incidents.integrationWrites.customerReport.sender": "Pengirim",
+  "incidents.integrationWrites.customerReport.received": "Diterima",
+  "incidents.integrationWrites.customerReport.submittedBy": "Dikirim oleh",
+  "incidents.integrationWrites.customerReport.unverified": "Diisi oleh engineer, tidak diverifikasi",
+  "incidents.integrationRecovery.refusedBeforeWrite": "iTop menolak permintaan ini sebelum menulis apa pun. Periksa koneksi dan izinnya, lalu ajukan perubahan lagi."
 }

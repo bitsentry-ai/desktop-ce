@@ -1,4 +1,4 @@
-import { integrationConnectionInputSchema } from "@bitsentry-ce/core/features/plugins";
+import { customerReportInputSchema, integrationConnectionInputSchema } from "@bitsentry-ce/core/features/plugins";
 import { z } from "zod";
 import { DESKTOP_RPC_CHANNELS, type DesktopRpcChannel } from "./desktop-ipc-contract";
 
@@ -288,6 +288,7 @@ export function createDesktopIpcPayloadValidator(
     "plugins:listOperations": z.object({ threadId: z.string().min(1) }).strict(),
     "plugins:approveOperation": z.object({ threadId: z.string().min(1), id: z.uuid(), closeRequested: z.boolean() }).strict(),
     "plugins:cancelOperation": z.object({ threadId: z.string().min(1), id: z.uuid() }).strict(),
+    "plugins:saveCustomerReport": customerReportInputSchema,
     "plugins:saveConnection": integrationConnectionInputSchema,
     "plugins:removeConnection": z.object({ id: z.uuid() }).strict(),
     "plugins:get": z.object({

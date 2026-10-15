@@ -6,6 +6,7 @@ export * from "./integration-connections";
 export * from "./itop-ticket-mapping";
 
 export * from "./integration-operations";
+export * from "./customer-reports";
 export * from "./integration-store-keys";
 export * from "./itop-ticket-state";
 

@@ -5,6 +5,7 @@ import { describeIntegrationConnection, integrationConnectionInputSchema, keepSt
 import type { IntegrationConnectionStorage } from '@bitsentry-ce/core/features/plugins/integration-connection-store'
 import { canonical, integrationOperationSchema, type IntegrationOperation, type IntegrationOperationStore } from '@bitsentry-ce/core/features/plugins/integration-operations'
 import { integrationResourceSchema, type IntegrationResource } from '@bitsentry-ce/core/features/plugins/integration-resources'
+import { customerReportInputSchema, customerReportSchema, type CustomerReport, type CustomerReportInput, type CustomerReportStore } from '@bitsentry-ce/core/features/plugins/customer-reports'
 import type { DesktopPluginDescriptor } from '@bitsentry-ce/core/features/plugins/plugins.types'
 import { LocalPluginCredentialsStore } from './plugin-credentials-store.js'
 import { backfillDesktopIntegrationStorage } from './integration-storage-backfill.js'
@@ -133,12 +134,51 @@ export class SqliteIntegrationOperations implements IntegrationOperationStore {
   }
 }
 
+/** Customer reports keep their text and source sealed; a retry with the same client request ID returns the first save. */
+export class SqliteCustomerReports implements CustomerReportStore {
+  constructor(private readonly db: DbClient, private readonly secrets: LocalPluginCredentialsStore) {}
+  private async decode(row: Row): Promise<CustomerReport> {
+    const payload: unknown = JSON.parse(await this.secrets.openPayload(`customer-report:${String(row.id)}`, String(row.payloadCiphertext)))
+    return customerReportSchema.parse({ ...(payload as Row), id: row.id, threadId: row.threadId, clientRequestId: row.clientRequestId, channel: row.channel, operationId: row.operationId ?? null, createdAt: row.createdAt })
+  }
+  private async find(threadId: string, clientRequestId: string): Promise<CustomerReport | null> {
+    const row = (await this.db.$queryRaw<Row>('SELECT * FROM "CustomerReport" WHERE "threadId"=? AND "clientRequestId"=?', threadId, clientRequestId))[0]
+    return row ? this.decode(row) : null
+  }
+  async save(value: CustomerReportInput, submittedBy: string): Promise<CustomerReport> {
+    const input = customerReportInputSchema.parse(value)
+    const existing = await this.find(input.threadId, input.clientRequestId)
+    if (existing === null) {
+      const id = randomUUID()
+      const { sender, receivedAt, timeZone, reportText } = input
+      const payload = await this.secrets.sealPayload(`customer-report:${id}`, JSON.stringify({ sender, receivedAt, timeZone, reportText, submittedBy }))
+      await this.db.$executeBatch([{ sql: `INSERT INTO "CustomerReport" (id,"threadId","clientRequestId",channel,"payloadCiphertext","createdAt") VALUES (?,?,?,?,?,?) ON CONFLICT("threadId","clientRequestId") DO NOTHING`, parameters: [id, input.threadId, input.clientRequestId, input.channel, payload, now()] }])
+    }
+    const saved = existing ?? await this.find(input.threadId, input.clientRequestId)
+    if (saved === null) throw new Error('The customer report could not be saved.')
+    // A retry must send the same report; a reused request ID with other content is refused.
+    if (saved.channel !== input.channel || saved.sender !== input.sender || saved.receivedAt !== input.receivedAt || saved.timeZone !== input.timeZone || saved.reportText !== input.reportText) {
+      throw new Error('This customer report request was already saved with different content.')
+    }
+    return saved
+  }
+  async get(threadId: string, id: string): Promise<CustomerReport | null> {
+    const row = (await this.db.$queryRaw<Row>('SELECT * FROM "CustomerReport" WHERE id=? AND "threadId"=?', id, threadId))[0]
+    return row ? this.decode(row) : null
+  }
+  async link(threadId: string, id: string, expected: string | null, operationId: string): Promise<boolean> {
+    const rows = await this.db.$queryRaw<Row>('UPDATE "CustomerReport" SET "operationId"=? WHERE id=? AND "threadId"=? AND "operationId" IS ? RETURNING id', operationId, id, threadId, expected)
+    return rows.length === 1
+  }
+}
+
 export function createDesktopIntegrationStorage(db: DbClient, secrets: LocalPluginCredentialsStore): DesktopIntegrationStorage {
   const ready = backfillDesktopIntegrationStorage(db, secrets)
   void ready.catch(() => {}) // Surface failures through the requesting integration UI.
   const connections = new SqliteIntegrationConnections(db, secrets)
   const resources = new SqliteIntegrationResources(db, secrets)
   const operations = new SqliteIntegrationOperations(db, secrets)
+  const customerReports = new SqliteCustomerReports(db, secrets)
   return {
     connections: {
       list: async () => { await ready; return connections.list() },
@@ -149,6 +189,11 @@ export function createDesktopIntegrationStorage(db: DbClient, secrets: LocalPlug
       list: async threadId => { await ready; return resources.list(threadId) },
       save: async rows => { await ready; return resources.save(rows) },
       select: async (...args) => { await ready; return resources.select(...args) },
+    },
+    customerReports: {
+      save: async (...args) => { await ready; return customerReports.save(...args) },
+      get: async (...args) => { await ready; return customerReports.get(...args) },
+      link: async (...args) => { await ready; return customerReports.link(...args) },
     },
     operations: {
       list: async threadId => { await ready; return operations.list(threadId) },
