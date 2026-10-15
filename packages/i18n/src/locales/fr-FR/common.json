@@ -1495,5 +1495,13 @@
   "common.incidents.customerReport.placeholder": "Collez le signalement du client…",
   "common.incidents.customerReport.from": "De {{sender}} · reçu le {{receivedAt}}",
   "common.incidents.customerReport.unverified": "Fourni par l'ingénieur, non vérifié par BitSentry",
-  "common.incidents.customerReport.saveFailed": "Le signalement client n'a pas pu être enregistré. Votre texte et vos informations sont conservés ; réessayez l'envoi."
+  "common.incidents.customerReport.saveFailed": "Le signalement client n'a pas pu être enregistré. Votre texte et vos informations sont conservés ; réessayez l'envoi.",
+  "common.incidents.customerReport.now": "Maintenant",
+  "common.incidents.customerReport.senderPlaceholder": "Nom, téléphone ou e-mail",
+  "common.incidents.customerReport.senderRequired": "Indiquez qui a envoyé le signalement.",
+  "common.incidents.customerReport.receivedAtRequired": "Indiquez quand vous avez reçu le signalement.",
+  "common.incidents.customerReport.receivedAtFuture": "L'heure de réception ne peut pas être dans le futur.",
+  "common.incidents.customerReport.suggestedTimeZones": "Suggérés",
+  "common.incidents.customerReport.allTimeZones": "Tous les fuseaux horaires",
+  "common.incidents.customerReport.unverifiedShort": "Fourni par l'ingénieur, non vérifié"
 }

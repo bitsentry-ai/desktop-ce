@@ -1495,5 +1495,13 @@
   "common.incidents.customerReport.placeholder": "粘贴客户报告…",
   "common.incidents.customerReport.from": "来自 {{sender}} · 接收于 {{receivedAt}}",
   "common.incidents.customerReport.unverified": "由工程师提供，未经 BitSentry 验证",
-  "common.incidents.customerReport.saveFailed": "无法保存客户报告。您的文本和详细信息已保留，请重新发送。"
+  "common.incidents.customerReport.saveFailed": "无法保存客户报告。您的文本和详细信息已保留，请重新发送。",
+  "common.incidents.customerReport.now": "现在",
+  "common.incidents.customerReport.senderPlaceholder": "姓名、电话或电子邮件",
+  "common.incidents.customerReport.senderRequired": "请填写报告的发送人。",
+  "common.incidents.customerReport.receivedAtRequired": "请填写收到报告的时间。",
+  "common.incidents.customerReport.receivedAtFuture": "接收时间不能晚于当前时间。",
+  "common.incidents.customerReport.suggestedTimeZones": "推荐",
+  "common.incidents.customerReport.allTimeZones": "所有时区",
+  "common.incidents.customerReport.unverifiedShort": "由工程师提供，未经验证"
 }

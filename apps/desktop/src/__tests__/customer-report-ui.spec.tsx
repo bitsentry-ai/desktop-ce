@@ -56,29 +56,54 @@ function ComposerHarness({ prompt, initial, onSend }: { prompt: string; initial:
 }
 
 describe("customer report composer", () => {
-  it("opens the report panel from the attach menu with the default time zone", () => {
+  const panel = () => screen.queryByRole("group", { name: "common.incidents.customerReport.title" });
+
+  it("opens the report panel from the attach menu, focused on the sender, in the default time zone", () => {
     render(<ComposerHarness prompt="Portal HR timeout" initial={null} onSend={vi.fn()} />);
     fireEvent.click(screen.getByRole("button", { name: "common.incidents.composerOptions" }));
     fireEvent.click(screen.getByRole("button", { name: "common.incidents.customerReport.menu" }));
-    expect(screen.getByRole("region", { name: "common.incidents.customerReport.title" })).toBeTruthy();
-    expect((screen.getByDisplayValue("Asia/Jakarta") as HTMLSelectElement).value).toBe("Asia/Jakarta");
+    expect(panel()).toBeTruthy();
+    expect(document.activeElement).toBe(screen.getByLabelText(/common\.incidents\.customerReport\.sender/));
+    expect(screen.getByRole("combobox", { name: /common\.incidents\.customerReport\.timeZone/ }).textContent).toContain("Asia/Jakarta (UTC+07:00)");
   });
 
-  it("does not send until the sender and received time are filled in", () => {
+  it("moves the channel choice with the arrow keys", () => {
+    const draft: CustomerReportDraft = { clientRequestId: report.clientRequestId, channel: "whatsapp", sender: "", receivedAtLocal: "", timeZone: "UTC" };
+    render(<ComposerHarness prompt="x" initial={draft} onSend={vi.fn()} />);
+    fireEvent.keyDown(screen.getByRole("radio", { name: "common.incidents.customerReport.channels.whatsapp" }), { key: "ArrowRight" });
+    expect(screen.getByRole("radio", { name: "common.incidents.customerReport.channels.email" }).getAttribute("aria-checked")).toBe("true");
+    fireEvent.keyDown(screen.getByRole("radio", { name: "common.incidents.customerReport.channels.email" }), { key: "ArrowLeft" });
+    fireEvent.keyDown(screen.getByRole("radio", { name: "common.incidents.customerReport.channels.whatsapp" }), { key: "ArrowLeft" });
+    expect(screen.getByRole("radio", { name: "common.incidents.customerReport.channels.other" }).getAttribute("aria-checked")).toBe("true");
+  });
+
+  it("does not send until the sender and received time are filled in, and says which field is missing", () => {
     const draft: CustomerReportDraft = { clientRequestId: report.clientRequestId, channel: "phone", sender: "", receivedAtLocal: "", timeZone: "Asia/Jakarta" };
     render(<ComposerHarness prompt="Portal HR timeout" initial={draft} onSend={vi.fn()} />);
     const send = screen.getByRole("button", { name: "common.incidents.sendMessage" }) as HTMLButtonElement;
     expect(send.disabled).toBe(true);
-    fireEvent.change(screen.getByLabelText(/common\.incidents\.customerReport\.sender/), { target: { value: "Ana" } });
-    fireEvent.change(screen.getByLabelText(/common\.incidents\.customerReport\.receivedAt/), { target: { value: "2026-10-15T09:12" } });
+    const sender = screen.getByLabelText(/common\.incidents\.customerReport\.sender/);
+    fireEvent.blur(sender);
+    expect(screen.getByRole("alert").textContent).toBe("common.incidents.customerReport.senderRequired");
+    expect(sender.getAttribute("aria-invalid")).toBe("true");
+    fireEvent.change(sender, { target: { value: "Ana" } });
+    fireEvent.click(screen.getByRole("button", { name: "common.incidents.customerReport.now" }));
+    expect(screen.queryByRole("alert")).toBeNull();
     expect(send.disabled).toBe(false);
+  });
+
+  it("refuses a received time in the future", () => {
+    const draft: CustomerReportDraft = { clientRequestId: report.clientRequestId, channel: "phone", sender: "Ana", receivedAtLocal: "2099-01-01T09:00", timeZone: "UTC" };
+    render(<ComposerHarness prompt="Portal HR timeout" initial={draft} onSend={vi.fn()} />);
+    expect(screen.getByRole("alert").textContent).toBe("common.incidents.customerReport.receivedAtFuture");
+    expect((screen.getByRole("button", { name: "common.incidents.sendMessage" }) as HTMLButtonElement).disabled).toBe(true);
   });
 
   it("removes the draft from the panel", () => {
     const draft: CustomerReportDraft = { clientRequestId: report.clientRequestId, channel: "email", sender: "Ana", receivedAtLocal: "2026-10-15T09:12", timeZone: "UTC" };
     render(<ComposerHarness prompt="x" initial={draft} onSend={vi.fn()} />);
     fireEvent.click(screen.getByRole("button", { name: "common.incidents.customerReport.remove" }));
-    expect(screen.queryByRole("region", { name: "common.incidents.customerReport.title" })).toBeNull();
+    expect(panel()).toBeNull();
   });
 });
 

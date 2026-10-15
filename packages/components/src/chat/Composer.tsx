@@ -358,6 +358,7 @@ export function Composer({
               onChange={customerReport.onDraftChange}
               onRemove={() => { customerReport.onDraftChange(null); }}
               disabled={isProcessing || isBlocked}
+              defaultTimeZone={customerReport.defaultTimeZone}
             />
           )}
           {composerImages.length > 0 && (
