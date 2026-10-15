@@ -291,7 +291,9 @@ function saveProviderLock(
     const locks = loadProviderLocks();
     locks[incidentId] = { providerKey, modelId, accessLevel };
     localStorage.setItem(INCIDENT_PROVIDER_LOCK_KEY, JSON.stringify(locks));
-  } catch {}
+  } catch {
+    // Storage can be unavailable (private mode or full quota); persistence is best effort.
+  }
 }
 
 function normalizeIncidentPreview(
@@ -385,13 +387,17 @@ function loadIncidents(): IncidentThread[] {
 function saveIncidents(incidents: IncidentThread[]) {
   try {
     localStorage.setItem(LS_KEY, JSON.stringify(incidents));
-  } catch {}
+  } catch {
+    // Storage can be unavailable (private mode or full quota); persistence is best effort.
+  }
 }
 
 function saveIncidentMessages(messagesMap: Record<string, ChatMessage[]>) {
   try {
     localStorage.setItem(INCIDENT_MESSAGES_KEY, JSON.stringify(messagesMap));
-  } catch {}
+  } catch {
+    // Storage can be unavailable (private mode or full quota); persistence is best effort.
+  }
 }
 
 function normalizeIncidentTokenUsageMap(
@@ -777,7 +783,9 @@ function saveIncidentTokenUsage(
       INCIDENT_TOKEN_USAGE_KEY,
       JSON.stringify(tokenUsageByIncident),
     );
-  } catch {}
+  } catch {
+    // Storage can be unavailable (private mode or full quota); persistence is best effort.
+  }
 }
 
 function hasDesktopIncidentsApi(): boolean {
@@ -895,7 +903,9 @@ function captureIncidentException(
     } else {
       Sentry.captureException(error, { extra: context });
     }
-  } catch {}
+  } catch {
+    // Error reporting must never break the caller.
+  }
 }
 
 function readFileAsDataUrl(file: File): Promise<string> {
@@ -1075,8 +1085,7 @@ function EditableTitle({
     if (e.key === "Enter") {
       e.preventDefault();
       commit();
-    }
-    if (e.key === "Escape") {
+    } else if (e.key === "Escape") {
       setDraft(value);
       setEditing(false);
     }
@@ -1357,14 +1366,15 @@ export function RunbookAuthoringProposalCards({
               approvedOperationIds: proposal.kind === "edit_existing_runbook" ? selectedOperationIds : undefined,
             });
             setDecisionProposal(result.proposal);
-            if (result.savedRunbook !== undefined) {
+            const { savedRunbook } = result;
+            if (savedRunbook !== undefined) {
               setSavedTitleByProposalId((previous) => ({
                 ...previous,
-                [proposal.proposalId]: result.savedRunbook!.title,
+                [proposal.proposalId]: savedRunbook.title,
               }));
               window.dispatchEvent(
                 new CustomEvent("bitsentry:runbooks-updated", {
-                  detail: { runbook: result.savedRunbook },
+                  detail: { runbook: savedRunbook },
                 }),
               );
             }
@@ -3193,7 +3203,7 @@ export default function IncidentsPage() {
                     const animateScroll = (currentTime: number) => {
                       const elapsed = currentTime - startTime;
                       const progress = Math.min(elapsed / duration, 1);
-                      const easeOut = 1 - Math.pow(1 - progress, 3);
+                      const easeOut = 1 - (1 - progress) ** 3;
 
                       container.scrollTop = startScroll + distance * easeOut;
 

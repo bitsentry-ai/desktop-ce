@@ -33,7 +33,7 @@ function readRequest(input: TicketOperationInput, mapping: ItopTicketMapping) {
   if (input.operation === "read" && /^\d+$/.test(input.ticketId ?? "")) {
     return { actionId: "get_object", input: { ...common, id: Number(input.ticketId) } };
   }
-  const titleQuery = oqlString("%" + (input.query ?? "") + "%");
+  const titleQuery = oqlString(`%${input.query ?? ""}%`);
   const predicate = input.operation === "read"
     ? `${mapping.referenceField} = ${oqlString(input.ticketId ?? "")}`
     : `(${mapping.titleField} LIKE ${titleQuery} OR ${mapping.referenceField} = ${oqlString(input.query ?? "")})`;

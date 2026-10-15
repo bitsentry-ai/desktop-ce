@@ -1,4 +1,4 @@
-import { randomUUID } from 'crypto'
+import { randomUUID } from 'node:crypto'
 
 export type JobStatus = 'queued' | 'running' | 'completed' | 'failed' | 'cancelled'
 
@@ -171,7 +171,7 @@ function isTerminalStatus(status: string): boolean {
 }
 
 function retryDelayMs(attempt: number): number {
-  return Math.pow(2, attempt - 1) * 1000
+  return 2 ** (attempt - 1) * 1000
 }
 
 function shouldCatchUpSchedule(

@@ -1,4 +1,4 @@
-import { randomUUID } from 'crypto'
+import { randomUUID } from 'node:crypto'
 import {
   isTelemetryEnabled,
   type DesktopTelemetrySettingsDb,
@@ -20,7 +20,7 @@ export interface DesktopAnalyticsContext {
   platform: NodeJS.Platform
 }
 
-export interface DesktopAnalyticsSettingsDb extends DesktopTelemetrySettingsDb {}
+export type DesktopAnalyticsSettingsDb = DesktopTelemetrySettingsDb;
 
 export interface DesktopAnalyticsRuntime {
   getRuntimeAppVersion(): string

@@ -72,11 +72,21 @@ export function validateIntegrationConnection(input: unknown, plugin?: DesktopPl
 }
 
 export function hasIntegrationCredentials(connection: IntegrationConnectionInput, plugin?: DesktopPluginDescriptor | null): boolean {
-  if (connection.config !== undefined) return plugin != null ? hasPluginCredentials(plugin, connection.auth) : Object.values(connection.auth).some((value) => value.trim().length > 0);
+  if (connection.config !== undefined) return plugin == null ? Object.values(connection.auth).some((value) => value.trim().length > 0) : hasPluginCredentials(plugin, connection.auth);
   const present = (key: string) => (connection.auth[key]?.trim().length ?? 0) > 0;
   return connection.pluginId === "itop"
     ? present("baseUrl") && (present("authToken") || (present("username") && present("password")))
     : present("apiBase") && present("accessToken");
+}
+
+function integrationAvailability(
+  connection: IntegrationConnectionInput,
+  plugin: DesktopPluginDescriptor | null | undefined,
+  target: string,
+): IntegrationConnection["availability"] {
+  if (!connection.enabled) return "disabled";
+  if (!target || !hasIntegrationCredentials(connection, plugin)) return "credentials_missing";
+  return plugin == null ? "plugin_unavailable" : "configured";
 }
 
 /** Explicit projection: auth must never be spread into a model-visible descriptor. */
@@ -87,8 +97,9 @@ export function describeIntegrationConnection(
   let target = "";
   try {
     // The target is read from the endpoint that requests really use, never from a stored copy.
+    const authDestinationField = connection.pluginId === "itop" ? "baseUrl" : "apiBase";
     const destination = connection.config === undefined
-      ? connection.auth[connection.pluginId === "itop" ? "baseUrl" : "apiBase"]
+      ? connection.auth[authDestinationField]
       : connection.config[plugin?.metadata?.persistence?.destinationField ?? "endpoint"];
     const url = new URL(typeof destination === "string" ? destination : "");
     target = `${url.origin}${url.pathname}`;
@@ -108,9 +119,7 @@ export function describeIntegrationConnection(
     configVersion: connection.configVersion ?? 1,
     ticketMapping: connection.ticketMapping,
     revision: connection.revision,
-    availability: !connection.enabled ? "disabled"
-      : !target || !hasIntegrationCredentials(connection, plugin) ? "credentials_missing"
-      : plugin == null ? "plugin_unavailable" : "configured",
+    availability: integrationAvailability(connection, plugin, target),
     actions: plugin?.actions.map(({ id, title, riskLevel }) => ({ id, title, riskLevel })) ?? [],
   };
 }

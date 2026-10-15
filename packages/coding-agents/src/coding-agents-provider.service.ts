@@ -1,5 +1,5 @@
 import { codingAgentsLogger as log } from "./logger.js";
-import { execFile } from "child_process";
+import { execFile } from "node:child_process";
 import type {
   LocalAiProviderKey,
   LocalAiSettings,
@@ -330,10 +330,10 @@ export class CodingAgentsProviderService {
     return {
       ...this.settings,
       ...patch,
-      claudeCode: { ...this.settings.claudeCode, ...(patch.claudeCode ?? {}) },
-      codex: { ...this.settings.codex, ...(patch.codex ?? {}) },
-      opencode: { ...this.settings.opencode, ...(patch.opencode ?? {}) },
-      cursor: { ...this.settings.cursor, ...(patch.cursor ?? {}) },
+      claudeCode: { ...this.settings.claudeCode, ...patch.claudeCode },
+      codex: { ...this.settings.codex, ...patch.codex },
+      opencode: { ...this.settings.opencode, ...patch.opencode },
+      cursor: { ...this.settings.cursor, ...patch.cursor },
     };
   }
 
@@ -692,7 +692,7 @@ export class CodingAgentsProviderService {
     // For Codex, try model/list via a short-lived app-server probe
     let client: CodexAppServerClient | undefined;
     try {
-      const os = await import("os");
+      const os = await import("node:os");
       client = new CodexAppServerClient(
         this.settings.codex.binaryPath,
         os.tmpdir(),

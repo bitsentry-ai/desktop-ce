@@ -253,7 +253,7 @@ function AssistantWaitingIndicator({
   );
 }
 
-export const ChatBubble = memo(function ChatBubble({
+function ChatBubbleView({
   msg,
   providerKey,
   collapsedJsonLabel,
@@ -461,4 +461,6 @@ export const ChatBubble = memo(function ChatBubble({
       </div>
     </div>
   );
-});
+}
+
+export const ChatBubble = memo(ChatBubbleView);

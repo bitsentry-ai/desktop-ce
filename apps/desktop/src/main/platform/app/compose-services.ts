@@ -4,7 +4,7 @@ import {
   type DesktopSettingsServices,
 } from '@bitsentry-ce/desktop-cli/runtime/desktop-settings-services'
 
-export interface DesktopServices extends DesktopSettingsServices {}
+export type DesktopServices = DesktopSettingsServices
 
 export function composeServices(db: DbClient): Promise<DesktopServices> {
   return Promise.resolve(composeDesktopSettingsServices(db))

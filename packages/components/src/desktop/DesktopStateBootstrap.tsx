@@ -171,7 +171,9 @@ function loadJson<T>(key: string, fallback: T): T {
 function saveJson(key: string, value: unknown): void {
   try {
     localStorage.setItem(key, JSON.stringify(value));
-  } catch {}
+  } catch {
+    // Storage can be unavailable (private mode or full quota); persistence is best effort.
+  }
 }
 
 function readLocalSnapshot(): DesktopProductStateSnapshot {

@@ -1,5 +1,5 @@
 import type { DbClient } from "../desktop/desktop-database-client";
-import { randomUUID } from "crypto";
+import { randomUUID } from "node:crypto";
 import log from "electron-log";
 import { z } from "zod";
 import { errorSourceTypeSchema } from "./error-sources.schemas";
@@ -330,11 +330,9 @@ function pluginSetupFieldConfigurationKeys(
   const keys = new Set([field.key]);
   if (field.key === "owner") {
     keys.add("orgSlug");
-  }
-  if (field.key === "repos") {
+  } else if (field.key === "repos") {
     keys.add("projectIds");
-  }
-  if (field.key === "indexUrl") {
+  } else if (field.key === "indexUrl") {
     keys.add("baseUrl");
   }
   return [...keys];
@@ -937,7 +935,7 @@ export function createDesktopErrorSourcesHandlers(
       } catch (error) {
         log.warn("[error-sources] probeConnection:failed", error);
         const detail = getErrorMessage(error);
-        throw new Error(`Probe failed: ${detail}`);
+        throw new Error(`Probe failed: ${detail}`, { cause: error });
       }
     },
 
@@ -984,7 +982,7 @@ export function createDesktopErrorSourcesHandlers(
 
       const customPluginConfiguration = {
           ...persistedSetup.configuration,
-          ...(readPayloadRecord(payload.configuration) ?? {}),
+          ...readPayloadRecord(payload.configuration),
         };
 
         const sourceId = randomUUID();

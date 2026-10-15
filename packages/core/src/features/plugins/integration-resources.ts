@@ -51,7 +51,7 @@ export function extractIntegrationResources(threadId: string, connection: Pick<I
       const url = new URL("pages/UI.php", connection.target.replace(/\/?$/, "/"));
       url.search = new URLSearchParams({ operation: "details", class: className, id: externalId }).toString();
       const mapping = connection.ticketMapping;
-      const state = Object.fromEntries(ticketStateKeys(mapping).filter((key) => isStateValue(fields[key])).map((key) => [key, fields[key]]));
+      const state = Object.fromEntries(ticketStateKeys(mapping).filter((field) => isStateValue(fields[field])).map((field) => [field, fields[field]]));
       return [integrationResourceSchema.parse({ ...common, resourceType: "ticket", externalId, url: url.toString(), title: shortText(fields[mapping?.titleField ?? "title"]) || shortText(fields[mapping?.referenceField ?? "ref"]) || externalId, state: { ...state, className } })];
     });
   }
@@ -98,7 +98,7 @@ export class StoredIntegrationResources implements IntegrationResourceStore {
         const index = rows.findIndex((row) => row.threadId === resource.threadId && row.connectionId === resource.connectionId && row.resourceType === resource.resourceType && row.externalId === resource.externalId);
         if (index < 0) rows.push(resource);
         // Decided inside the serialized write, so a slow older observation cannot replace a newer one.
-        else if (Date.parse(resource.observedAt) >= Date.parse(rows[index]!.observedAt)) rows[index] = { ...resource, selected: resource.selected ?? rows[index]!.selected };
+        else if (Date.parse(resource.observedAt) >= Date.parse(rows[index].observedAt)) rows[index] = { ...resource, selected: resource.selected ?? rows[index].selected };
       }
       await this.credentials.set("bitsentry.integration-resources.v1", { resources: JSON.stringify(rows) });
     });
@@ -117,9 +117,14 @@ export type LinkedResourceInput = z.infer<typeof linkedResourceInputSchema>;
 type RefreshRuntime = import("./integration-operations").IntegrationWriteRuntime;
 
 /** The read action the plugin declares for a resource type; the first-party iTop and Outline names stay as the fallback. */
+const BUILTIN_READ_ACTIONS = new Map([
+  ["itop:ticket", "get_object"],
+  ["outline:document", "get_document"],
+]);
+
 function resourceReadAction(plugin: import("./plugins.types").DesktopPluginDescriptor, resourceType: string): string | undefined {
   return plugin.metadata?.persistence?.resources.find((item) => item.type === resourceType)?.readActionId
-    ?? (plugin.id === "itop" && resourceType === "ticket" ? "get_object" : plugin.id === "outline" && resourceType === "document" ? "get_document" : undefined);
+    ?? BUILTIN_READ_ACTIONS.get(`${plugin.id}:${resourceType}`);
 }
 
 /**
@@ -146,7 +151,7 @@ export function linkedResourceRead(
 function refreshPlan(input: LinkedResourceInput, resource: IntegrationResource | undefined, runtime: RefreshRuntime) {
   if (!resource || runtime.connection.id !== input.connectionId || runtime.connection.availability !== "configured") throw new Error("Linked resource or connection is unavailable.");
   const { className, actionId, input: readInput } = linkedResourceRead(runtime.plugin, runtime.connection.ticketMapping, resource);
-  return { className, request: { connectionId: input.connectionId, actionId, input: readInput } };
+  return { className, request: { connectionId: input.connectionId, actionId, input: readInput }, resource };
 }
 
 /**
@@ -156,14 +161,13 @@ function refreshPlan(input: LinkedResourceInput, resource: IntegrationResource |
  */
 export async function refreshLinkedIntegrationResource(input: LinkedResourceInput, store: Pick<IntegrationResourceStore, "list" | "save">, runtime: RefreshRuntime): Promise<IntegrationResource> {
   const find = async () => (await store.list(input.threadId)).find((row) => row.connectionId === input.connectionId && row.resourceType === input.resourceType && row.externalId === input.externalId);
-  const resource = await find();
-  const { className, request } = refreshPlan(input, resource, runtime);
+  const { className, request, resource } = refreshPlan(input, await find(), runtime);
   // Stamped before the read: a slow answer must not claim a later observation than the one it saw.
   const observedAt = new Date().toISOString();
   const result = await runtime.read(request);
   // What is stored afterwards is returned, so a newer observation that landed meanwhile is never hidden by this answer.
   const keep = async (next: IntegrationResource) => { await store.save([next]); return (await find()) ?? next; };
-  const markDeleted = () => keep({ ...resource!, state: { ...resource!.state, deleted: true }, observedAt });
+  const markDeleted = () => keep({ ...resource, state: { ...resource.state, deleted: true }, observedAt });
   if (!result.ok) {
     if (result.status === 404) return markDeleted();
     throw new Error(result.status === 401 || result.status === 403 ? "Connection credentials were rejected." : "Resource is unavailable; access may have changed. Refresh again when the connection is restored.");

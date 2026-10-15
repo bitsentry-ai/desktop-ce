@@ -184,7 +184,11 @@ describe('durable integration approval boundary', () => {
 
 const noRequiredFields = { create: [], acknowledge: [], assign: [], internal_log: [], public_log: [], resolve: [], close: [] }
 const itopId = '22222222-2222-4222-8222-222222222222'
-const fieldsOf = (...keys: string[]) => keys.map((key) => ({ key, label: key, type: key === 'id' ? 'number' as const : key === 'fields' ? 'json' as const : 'string' as const, required: ['id', 'stimulus'].includes(key) }))
+const fieldTypeOf = (key: string) => {
+  if (key === 'id') return 'number' as const
+  return key === 'fields' ? 'json' as const : 'string' as const
+}
+const fieldsOf = (...keys: string[]) => keys.map((key) => ({ key, label: key, type: fieldTypeOf(key), required: ['id', 'stimulus'].includes(key) }))
 
 function itopSetup() {
   // A fake iTop: it holds one ticket's state and records every write it receives.

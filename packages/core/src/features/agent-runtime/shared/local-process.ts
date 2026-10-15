@@ -1,4 +1,4 @@
-import type { ChildProcess } from 'child_process'
+import type { ChildProcess } from 'node:child_process'
 
 /**
  * Signals the complete POSIX process group created by a detached child.

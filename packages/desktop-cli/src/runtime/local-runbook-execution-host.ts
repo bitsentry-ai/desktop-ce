@@ -563,7 +563,8 @@ export class LocalRunbookExecutionHost {
 
   private async getRuntime(): Promise<LocalRunbookExecutionHostRuntime> {
     if (this.runtime !== null) return this.runtime
-    this.runtimePromise ??= this.options.createRuntime!()
+    if (this.options.createRuntime === undefined) throw new Error('Local runbook execution host has no runtime.')
+    this.runtimePromise ??= this.options.createRuntime()
     this.runtime = await this.runtimePromise
     return this.runtime
   }
@@ -585,8 +586,7 @@ export class LocalRunbookExecutionHost {
   private async trackExecutionStart<T>(start: () => Promise<T>): Promise<T> {
     this.lastExecutionActivityAt = Date.now()
     const operation = start()
-    let tracked: Promise<void>
-    tracked = operation
+    const tracked: Promise<void> = operation
       .then(() => {}, () => {})
       .finally(() => {
         this.activeExecutionStarts.delete(tracked)

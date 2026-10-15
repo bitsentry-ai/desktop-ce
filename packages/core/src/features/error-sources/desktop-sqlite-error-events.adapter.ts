@@ -1,4 +1,4 @@
-import { randomUUID } from 'crypto'
+import { randomUUID } from 'node:crypto'
 import type { DbClient } from '../desktop/desktop-database-client'
 import type { ErrorEvent, ErrorEventQuery } from './desktop-error-sources.types'
 import {
@@ -52,17 +52,17 @@ export class SqliteErrorEventsRepositoryAdapter {
     const eventData = this.toEventData(input)
 
     let row: SqliteRow
-    if (existing !== null) {
-      row = await this.db.errorEvent.update({
-        where: { id: existing.id },
-        data: eventData,
-      })
-    } else {
+    if (existing === null) {
       row = await this.db.errorEvent.create({
         data: {
           id: randomUUID(),
           ...eventData,
         },
+      })
+    } else {
+      row = await this.db.errorEvent.update({
+        where: { id: existing.id },
+        data: eventData,
       })
     }
 

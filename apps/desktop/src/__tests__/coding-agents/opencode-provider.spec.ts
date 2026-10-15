@@ -1,6 +1,6 @@
-import { EventEmitter } from 'events'
-import { readFile } from 'fs/promises'
-import { PassThrough } from 'stream'
+import { EventEmitter } from 'node:events'
+import { readFile } from 'node:fs/promises'
+import { PassThrough } from 'node:stream'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   AgentLlmAdapterService,

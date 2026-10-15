@@ -143,14 +143,6 @@ function readRequiredString(value: unknown, fallback: string): string {
   return readOptionalString(value) ?? fallback;
 }
 
-function readNullableBoolean(value: unknown): boolean | null {
-  if (value === null || value === undefined) {
-    return null;
-  }
-
-  return Boolean(value);
-}
-
 function readRecordString(
   record: ExternalPayloadRecord | null,
   key: string,
@@ -217,14 +209,6 @@ function extractTagValue(
   const value = tags[tagKey];
   if (value == null) return null;
   return readOptionalString(value);
-}
-
-function extractIssueField(
-  issue: ExternalPayloadRecord,
-  tagKey: string,
-): string | null {
-  const parsedTags = parseIssueTags(issue.tags);
-  return extractTagValue(parsedTags, tagKey);
 }
 
 function extractException(event: ExternalPayloadRecord): {
@@ -644,12 +628,6 @@ function parseJsonObject(value: unknown): Record<string, unknown> | null {
     // no-op
   }
   return null;
-}
-
-function extractIssueMetadata(
-  issue: ExternalPayloadRecord,
-): Record<string, unknown> | null {
-  return readRecord(issue.metadata);
 }
 
 function toDiagnosisIssueContext(
