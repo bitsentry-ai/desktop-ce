@@ -1495,5 +1495,13 @@
   "common.incidents.customerReport.placeholder": "Tempel laporan pelanggan…",
   "common.incidents.customerReport.from": "Dari {{sender}} · diterima {{receivedAt}}",
   "common.incidents.customerReport.unverified": "Diisi oleh engineer, tidak diverifikasi BitSentry",
-  "common.incidents.customerReport.saveFailed": "Laporan pelanggan tidak dapat disimpan. Teks dan detail tetap tersimpan; coba kirim lagi."
+  "common.incidents.customerReport.saveFailed": "Laporan pelanggan tidak dapat disimpan. Teks dan detail tetap tersimpan; coba kirim lagi.",
+  "common.incidents.customerReport.now": "Sekarang",
+  "common.incidents.customerReport.senderPlaceholder": "Nama, telepon, atau email",
+  "common.incidents.customerReport.senderRequired": "Isi siapa yang mengirim laporan.",
+  "common.incidents.customerReport.receivedAtRequired": "Isi kapan laporan diterima.",
+  "common.incidents.customerReport.receivedAtFuture": "Waktu diterima tidak boleh di masa depan.",
+  "common.incidents.customerReport.suggestedTimeZones": "Disarankan",
+  "common.incidents.customerReport.allTimeZones": "Semua zona waktu",
+  "common.incidents.customerReport.unverifiedShort": "Diisi engineer, belum diverifikasi"
 }

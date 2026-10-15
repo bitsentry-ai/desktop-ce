@@ -1494,5 +1494,13 @@
   "common.incidents.customerReport.placeholder": "Paste the customer report…",
   "common.incidents.customerReport.from": "From {{sender}} · received {{receivedAt}}",
   "common.incidents.customerReport.unverified": "Engineer-provided, not verified by BitSentry",
-  "common.incidents.customerReport.saveFailed": "The customer report could not be saved. Your text and details are kept; try sending again."
+  "common.incidents.customerReport.saveFailed": "The customer report could not be saved. Your text and details are kept; try sending again.",
+  "common.incidents.customerReport.now": "Now",
+  "common.incidents.customerReport.senderPlaceholder": "Name, phone or email",
+  "common.incidents.customerReport.senderRequired": "Enter who sent the report.",
+  "common.incidents.customerReport.receivedAtRequired": "Enter when you received the report.",
+  "common.incidents.customerReport.receivedAtFuture": "The received time cannot be in the future.",
+  "common.incidents.customerReport.suggestedTimeZones": "Suggested",
+  "common.incidents.customerReport.allTimeZones": "All time zones",
+  "common.incidents.customerReport.unverifiedShort": "Engineer-provided, not verified"
 }

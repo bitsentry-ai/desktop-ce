@@ -49,6 +49,41 @@ export function supportedTimeZones(selected: string): string[] {
   return zones.includes(selected) ? zones : [selected, ...zones];
 }
 
+/** The current wall-clock time in a time zone, as a date-time input value (`YYYY-MM-DDTHH:mm`). */
+export function nowInTimeZone(timeZone: string, now: Date = new Date()): string {
+  const zone = isIanaTimeZone(timeZone) ? timeZone : "UTC";
+  const parts = Object.fromEntries(new Intl.DateTimeFormat("en-US", {
+    timeZone: zone, hourCycle: "h23", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit",
+  }).formatToParts(now).filter((part) => part.type !== "literal").map((part) => [part.type, part.value]));
+  return `${parts.year}-${parts.month}-${parts.day}T${parts.hour}:${parts.minute}`;
+}
+
+/** The zone's current offset from UTC, e.g. `UTC+07:00`, or an empty string for an unknown zone. */
+export function timeZoneOffsetLabel(timeZone: string, now: Date = new Date()): string {
+  const iso = zonedLocalToIso(nowInTimeZone(timeZone, now), timeZone);
+  return iso === null ? "" : `UTC${iso.slice(-6)}`;
+}
+
+/** Zones an engineer most likely needs first: the current choice, the organization's and browser's zones, Indonesia and UTC. */
+export function suggestedTimeZones(selected: string, defaultTimeZone?: string): string[] {
+  const candidates = [selected, defaultTimeZone, browserTimeZone(), "Asia/Jakarta", "Asia/Makassar", "Asia/Jayapura", "UTC"];
+  return Array.from(new Set(candidates.filter((zone): zone is string => zone !== undefined && isIanaTimeZone(zone))));
+}
+
+/** A received time may be a few minutes ahead of this device's clock, but not later than that. */
+const FUTURE_TOLERANCE_MS = 5 * 60_000;
+export type CustomerReportFieldIssue = "required" | "future";
+
+/** What blocks the report's source fields from being saved. The report text is checked by the composer. */
+export function customerReportDraftIssues(draft: CustomerReportDraft, now: Date = new Date()): { sender?: CustomerReportFieldIssue; receivedAt?: CustomerReportFieldIssue } {
+  const issues: { sender?: CustomerReportFieldIssue; receivedAt?: CustomerReportFieldIssue } = {};
+  if (draft.sender.trim() === "") issues.sender = "required";
+  const receivedAt = zonedLocalToIso(draft.receivedAtLocal, draft.timeZone);
+  if (receivedAt === null) issues.receivedAt = "required";
+  else if (Date.parse(receivedAt) > now.getTime() + FUTURE_TOLERANCE_MS) issues.receivedAt = "future";
+  return issues;
+}
+
 /** The report the host saves before it sends the message, or null while a required field is missing. */
 export function toCustomerReportInput(draft: CustomerReportDraft, threadId: string, reportText: string): CustomerReportInput | null {
   const receivedAt = zonedLocalToIso(draft.receivedAtLocal, draft.timeZone);
@@ -61,5 +96,5 @@ export function toCustomerReportInput(draft: CustomerReportDraft, threadId: stri
 }
 
 export function isCustomerReportDraftReady(draft: CustomerReportDraft, reportText: string): boolean {
-  return toCustomerReportInput(draft, "thread", reportText) !== null;
+  return Object.keys(customerReportDraftIssues(draft)).length === 0 && toCustomerReportInput(draft, "thread", reportText) !== null;
 }
