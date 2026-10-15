@@ -64,6 +64,12 @@ function operation(overrides: Partial<IntegrationOperation> = {}): IntegrationOp
     status: 'proposed', createdAt: '2026-09-30T09:00:00.000Z', updatedAt: '2026-09-30T09:00:00.000Z', ...overrides,
   }
 }
+/** The rail of one conversation, open on its deliveries. */
+const deliveriesRail = (threadId: string, deliveries: IntegrationDeliveriesPort) => (
+  <BitsentryServicesProvider services={services}>
+    <IncidentIntegrationsRail threadId={threadId} disabled={false} isOpen view="deliveries" onViewChange={() => undefined} onClose={() => undefined} deliveries={deliveries} />
+  </BitsentryServicesProvider>
+)
 const resourcesPort = (rows: { current: IntegrationResource[] }): IntegrationResourcesPort => ({ list: vi.fn(async () => rows.current), select: vi.fn(async () => undefined) })
 const delivery = (overrides: Partial<IntegrationDelivery> = {}): IntegrationDelivery => ({
   id: '33333333-3333-4333-8333-333333333333', eventId: 'evt-change-0001', channel: 'itop:changes', state: 'failed', externalId: null, updatedAt: '2026-09-30T09:30:00.000Z', ...overrides,
@@ -319,18 +325,38 @@ describe('webhook deliveries in the rail', () => {
     expect(screen.queryByRole('button', { name: 'incidents.deliveries.retry' })).toBeNull()
   })
 
+  it('shows the list when every answer takes longer than the polling interval', async () => {
+    const port = resourcesPort({ current: [ticket()] })
+    vi.mocked(port.list).mockImplementation(() => new Promise<IntegrationResource[]>((resolve) => { setTimeout(() => { resolve([ticket()]) }, 8000) }))
+    render(<Host resources={port} />)
+
+    await tick(8100)
+
+    fireEvent.click(await sourcesTrigger())
+    expect(screen.getByRole('article', { name: ticket().title })).toBeTruthy()
+  })
+
+  it('never shows a late answer for the previous conversation', async () => {
+    const answers: Array<(rows: IntegrationDelivery[]) => void> = []
+    const first = deliveriesPort({ current: [] })
+    vi.mocked(first.list).mockImplementation(() => new Promise<IntegrationDelivery[]>((resolve) => { answers.push(resolve) }))
+    const view = render(deliveriesRail('incident-1', first))
+    const next = deliveriesPort({ current: [] })
+    vi.mocked(next.list).mockImplementation(() => new Promise<IntegrationDelivery[]>(() => undefined))
+    view.rerender(deliveriesRail('incident-2', next))
+
+    await act(async () => { answers[0]!([delivery()]) })
+
+    expect(screen.queryByRole('button', { name: 'incidents.deliveries.retry' })).toBeNull()
+  })
+
   it('shows nothing from the previous conversation while the next one loads', async () => {
-    const rail = (threadId: string, deliveries: IntegrationDeliveriesPort) => (
-      <BitsentryServicesProvider services={services}>
-        <IncidentIntegrationsRail threadId={threadId} disabled={false} isOpen view="deliveries" onViewChange={() => undefined} onClose={() => undefined} deliveries={deliveries} />
-      </BitsentryServicesProvider>
-    )
-    const view = render(rail('incident-1', deliveriesPort({ current: [delivery()] })))
+    const view = render(deliveriesRail('incident-1', deliveriesPort({ current: [delivery()] })))
     expect(await screen.findByRole('button', { name: 'incidents.deliveries.retry' })).toBeTruthy()
 
     const next = deliveriesPort({ current: [] })
     vi.mocked(next.list).mockImplementation(() => new Promise<IntegrationDelivery[]>(() => undefined))
-    view.rerender(rail('incident-2', next))
+    view.rerender(deliveriesRail('incident-2', next))
 
     expect(screen.queryByRole('button', { name: 'incidents.deliveries.retry' })).toBeNull()
   })
