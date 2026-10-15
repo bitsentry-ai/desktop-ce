@@ -1,3 +1,4 @@
+import { customerReportDisplayText } from "@bitsentry-ce/core/features/plugins";
 import React, { useEffect, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { cn } from "../lib/utils";
@@ -164,7 +165,7 @@ function normalizeIncidentPreview(
   value: string | null | undefined,
 ): string | null {
   if (typeof value !== "string") return null;
-  const normalized = value.replace(/\s+/g, " ").trim();
+  const normalized = customerReportDisplayText(value).replace(/\s+/g, " ").trim();
   if (normalized.length === 0) return null;
   return normalized;
 }

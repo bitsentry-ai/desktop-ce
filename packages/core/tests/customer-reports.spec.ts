@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import {
-  customerReportProvenance, formatCustomerReportMessage, parseCustomerReportMessage,
+  customerReportDisplayText, customerReportProvenance, formatCustomerReportMessage, parseCustomerReportMessage,
   REFUSED_BEFORE_WRITE, zonedLocalToIso, type CustomerReport, type CustomerReportInput, type CustomerReportStore,
 } from '../src/features/plugins/customer-reports'
 import { IntegrationOperationService, type IntegrationWriteRuntime } from '../src/features/plugins/integration-operations'
@@ -33,6 +33,14 @@ describe('customer report content', () => {
     })
     expect(parseCustomerReportMessage('plain message')).toBeNull()
     expect(parseCustomerReportMessage('[customer-report]{"id":"not-a-uuid"}\ntext')).toBeNull()
+  })
+
+  it('keeps leading and trailing whitespace of the pasted report and shows only the report in titles', () => {
+    const pasted = '  Portal HR timeout.\n  Mohon dicek.  '
+    const text = formatCustomerReportMessage({ ...report, reportText: pasted })
+    expect(parseCustomerReportMessage(text)?.body).toBe(pasted)
+    expect(customerReportDisplayText(text)).toBe(pasted)
+    expect(customerReportDisplayText('plain message')).toBe('plain message')
   })
 
   it('converts a wall-clock time in a time zone to ISO with that zone offset', () => {

@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { customerReportProvenance, formatCustomerReportMessage, type IntegrationOperation } from "@bitsentry-ce/core/features/plugins";
 import { ChatBubble } from "@bitsentry-ce/components/chat/ChatBubble";
 import { Composer, type ComposerProps } from "@bitsentry-ce/components/chat/Composer";
-import type { CustomerReportDraft } from "@bitsentry-ce/components/chat/customerReport";
+import { toCustomerReportInput, type CustomerReportDraft } from "@bitsentry-ce/components/chat/customerReport";
 import type { ChatMessage } from "@bitsentry-ce/components/chat/types";
 import { OperationBody } from "@bitsentry-ce/components/investigation/IntegrationActionsView";
 
@@ -79,6 +79,14 @@ describe("customer report composer", () => {
     render(<ComposerHarness prompt="x" initial={draft} onSend={vi.fn()} />);
     fireEvent.click(screen.getByRole("button", { name: "common.incidents.customerReport.remove" }));
     expect(screen.queryByRole("region", { name: "common.incidents.customerReport.title" })).toBeNull();
+  });
+});
+
+describe("customer report save input", () => {
+  it("saves the pasted text exactly, including leading and trailing whitespace", () => {
+    const draft: CustomerReportDraft = { clientRequestId: report.clientRequestId, channel: "email", sender: "  Ana  ", receivedAtLocal: "2026-10-15T09:12", timeZone: "Asia/Jakarta" };
+    expect(toCustomerReportInput(draft, "thread-1", "  Portal down  \n")).toMatchObject({ reportText: "  Portal down  \n", sender: "Ana", receivedAt: "2026-10-15T09:12:00+07:00" });
+    expect(toCustomerReportInput(draft, "thread-1", "   ")).toBeNull();
   });
 });
 

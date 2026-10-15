@@ -69,7 +69,7 @@ import type {
 } from "../chat/types";
 import { Composer } from "../chat/Composer";
 import { toCustomerReportInput, type CustomerReportDraft } from "../chat/customerReport";
-import { formatCustomerReportMessage } from "@bitsentry-ce/core/features/plugins";
+import { customerReportDisplayText, formatCustomerReportMessage } from "@bitsentry-ce/core/features/plugins";
 import type {
   AgentLlmSelection,
   AgentSendRequest,
@@ -182,7 +182,7 @@ export async function sendIncidentAgentMessage(
 
 function resolveIncidentTitle(incident: IncidentThread | null | undefined, text: string): string {
   if (!shouldAutoTitleIncident(incident?.title)) return incident?.title ?? "New Incident";
-  return text.slice(0, 50) || "New Incident";
+  return customerReportDisplayText(text).trim().slice(0, 50) || "New Incident";
 }
 
 // ─── Local-storage helpers ────────────────────────────────────────────────────
@@ -298,7 +298,7 @@ function normalizeIncidentPreview(
   value: string | null | undefined,
 ): string | null {
   if (typeof value !== "string") return null;
-  const normalized = value.replace(/\s+/g, " ").trim();
+  const normalized = customerReportDisplayText(value).replace(/\s+/g, " ").trim();
   if (normalized.length === 0) return null;
   return normalized;
 }
@@ -2624,9 +2624,10 @@ export default function IncidentsPage() {
    * The message to send. A customer report is saved first and then named in the message header. On failure the
    * draft and its client request ID stay, so a retry saves it once.
    */
-  const outgoingText = async (threadId: string, text: string): Promise<string | null> => {
-    if (customerReportDraft === null) return text;
-    const input = toCustomerReportInput(customerReportDraft, threadId, text);
+  const outgoingText = async (threadId: string, rawPrompt: string): Promise<string | null> => {
+    if (customerReportDraft === null) return rawPrompt.trim();
+    // The report is saved exactly as pasted, including leading and trailing whitespace.
+    const input = toCustomerReportInput(customerReportDraft, threadId, rawPrompt);
     if (input === null || integrationPorts.customerReports === undefined) return null;
     try {
       const saved = await integrationPorts.customerReports.save(input);
@@ -2648,7 +2649,7 @@ export default function IncidentsPage() {
     if (!canSendIncidentMessage(prompt, composerImages.length, activeId, selectedProviderKey, selectedModelId)) return;
     if (activeId === null || selectedProviderKey === null) return;
     if (activeIncident?.archived === true) return;
-    const text = await outgoingText(activeId, prompt.trim());
+    const text = await outgoingText(activeId, prompt);
     if (text === null) return;
     const wasRunning = activeIncident?.state === "RUNNING";
     const shouldContinueSession = activeSessionId !== null || wasRunning;

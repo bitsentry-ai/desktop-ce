@@ -97,6 +97,11 @@ export function parseCustomerReportMessage(text: string): { header: CustomerRepo
   }
 }
 
+/** What a title or preview shows for a message: the report text, without its header line. */
+export function customerReportDisplayText(text: string): string {
+  return parseCustomerReportMessage(text)?.body ?? text;
+}
+
 /** The answer a remote system gives when it refused a write before writing anything. */
 export const REFUSED_BEFORE_WRITE = "refused_before_write";
 /** The outcome recorded when the engineer inspected the remote system and confirmed nothing was applied. */
