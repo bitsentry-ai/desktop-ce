@@ -227,6 +227,93 @@ describe('reconciling an uncertain creation', () => {
   })
 })
 
+const heldCreate = (overrides: Partial<IntegrationDelivery> = {}) => uncertainCreate({
+  id: '33333333-3333-4333-8333-333333333333', eventId: 'evt-held-0001', state: 'held', title: 'Disk full on db-1', priority: 'MEDIUM',
+  decision: { outcome: 'hold', reasons: ['priority_not_accepted', 'repeat_in_window'], policyVersion: 'abc123', source: 'wazuh', repeatCount: 2, previousEventId: 'evt-earlier-0001', windowMinutes: 60 },
+  override: null, ...overrides,
+})
+function reviewPort(rows: IntegrationDelivery[]) {
+  return { ...portFor(rows), authorize: vi.fn(async () => undefined), dismiss: vi.fn(async () => undefined) }
+}
+const reasonField = () => screen.getByRole('textbox', { name: label('reasonLabel') }) as HTMLTextAreaElement
+const authorizeButton = () => screen.getByRole('button', { name: label('authorize') }) as HTMLButtonElement
+const dismissButton = () => screen.getByRole('button', { name: label('dismiss') }) as HTMLButtonElement
+
+describe('a ticket creation held by the triage policy', () => {
+  it('shows what the event asked for and why it was held, before the deliveries that are fine', () => {
+    renderView([delivery({ updatedAt: '2026-10-02T00:00:00.000Z' }), heldCreate()], { port: reviewPort([]) })
+
+    const [first] = screen.getAllByRole('article')
+    expect(first.getAttribute('aria-label')).toContain('evt-held')
+    expect(within(first).getByText(label('held'))).toBeTruthy()
+    expect(within(first).getByText('Disk full on db-1')).toBeTruthy()
+    expect(within(first).getByText('Priority MEDIUM does not create a ticket automatically.')).toBeTruthy()
+    expect(within(first).getByText('Repeats event evt-earlier-… (2 in the last 60 min).')).toBeTruthy()
+  })
+
+  it('cannot be authorized or dismissed until the engineer gives a reason', () => {
+    renderView([heldCreate()], { port: reviewPort([]) })
+    expect(authorizeButton().disabled).toBe(true)
+    expect(dismissButton().disabled).toBe(true)
+
+    fireEvent.change(reasonField(), { target: { value: 'too short' } })
+    fireEvent.blur(reasonField())
+    expect(screen.getByText('Give a reason of at least 10 characters.')).toBeTruthy()
+    expect(authorizeButton().disabled).toBe(true)
+
+    fireEvent.change(reasonField(), { target: { value: 'Customer confirmed the outage' } })
+    expect(authorizeButton().disabled).toBe(false)
+    expect(dismissButton().disabled).toBe(false)
+  })
+
+  it('authorizes with the trimmed reason and then shows the created ticket and who decided', async () => {
+    const row = heldCreate()
+    const port = reviewPort([row])
+    vi.mocked(port.list).mockResolvedValue([{ ...row, state: 'succeeded', externalId: '4711', override: { action: 'authorized', reason: 'Customer confirmed the outage', at: '2026-10-15T10:00:00.000Z' } }])
+    renderView([row], { port })
+    fireEvent.change(reasonField(), { target: { value: '  Customer confirmed the outage  ' } })
+
+    fireEvent.click(authorizeButton())
+
+    await waitFor(() => { expect(port.authorize).toHaveBeenCalledWith('thread-1', row.id, 'Customer confirmed the outage') })
+    expect(await screen.findByText('Authorized by an engineer: Customer confirmed the outage')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: label('authorize') })).toBeNull()
+  })
+
+  it('dismisses with the reason and keeps the event listed', async () => {
+    const row = heldCreate()
+    const port = reviewPort([row])
+    vi.mocked(port.list).mockResolvedValue([{ ...row, state: 'dismissed', override: { action: 'dismissed', reason: 'Known backup noise', at: '2026-10-15T10:00:00.000Z' } }])
+    renderView([row], { port })
+    fireEvent.change(reasonField(), { target: { value: 'Known backup noise' } })
+
+    fireEvent.click(dismissButton())
+
+    await waitFor(() => { expect(port.dismiss).toHaveBeenCalledWith('thread-1', row.id, 'Known backup noise') })
+    expect(await screen.findByText(label('dismissed'))).toBeTruthy()
+    expect(screen.getByText('Dismissed by an engineer: Known backup noise')).toBeTruthy()
+    expect(screen.getByText('Disk full on db-1')).toBeTruthy()
+  })
+
+  it('shows why an authorization was refused', async () => {
+    const port = reviewPort([heldCreate()])
+    vi.mocked(port.authorize).mockRejectedValue(new Error('This event was already authorized or dismissed'))
+    renderView([heldCreate()], { port })
+    fireEvent.change(reasonField(), { target: { value: 'Customer confirmed the outage' } })
+
+    fireEvent.click(authorizeButton())
+
+    expect((await screen.findByRole('alert')).textContent).toBe('This event was already authorized or dismissed')
+  })
+
+  it('only explains the hold where the host offers no review', () => {
+    renderView([heldCreate()])
+
+    expect(screen.getByText(label('heldHint'))).toBeTruthy()
+    expect(screen.queryByRole('button', { name: label('authorize') })).toBeNull()
+  })
+})
+
 describe('an archived conversation', () => {
   it('shows the deliveries but cannot act on them', () => {
     renderView([failedChange(), uncertainCreate()], { disabled: true })

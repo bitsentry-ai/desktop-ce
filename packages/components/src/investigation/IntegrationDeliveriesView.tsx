@@ -1,24 +1,46 @@
-import { useMemo, useState } from "react";
+import { useId, useMemo, useState } from "react";
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
+import { Textarea } from "../ui/textarea";
 import { useTranslation } from "@bitsentry-ce/i18n";
 import { relativeTime } from "./relative-time";
 
-export interface IntegrationDelivery { id: string; eventId: string; channel: string; state: string; externalId: string | null; updatedAt: string; }
+/** Why the triage policy let a ticket creation through or held it. */
+export interface DeliveryDecision {
+  outcome: "accept" | "hold";
+  reasons: string[];
+  policyVersion: string;
+  source: string | null;
+  repeatCount: number;
+  previousEventId: string | null;
+  windowMinutes: number;
+}
+/** An engineer's decision on a held ticket creation. */
+export interface DeliveryOverride { action: "authorized" | "dismissed"; reason: string; at: string; }
+export interface IntegrationDelivery {
+  id: string; eventId: string; channel: string; state: string; externalId: string | null; updatedAt: string;
+  title?: string | null; priority?: string | null; decision?: DeliveryDecision | null; override?: DeliveryOverride | null;
+}
 export interface IntegrationDeliveriesPort {
   list(threadId: string): Promise<IntegrationDelivery[]>;
   retry(threadId: string, id: string): Promise<unknown>;
   reconcile(threadId: string, id: string, externalId: string, confirmed: boolean): Promise<unknown>;
+  /** Hosts that gate external ticket creation let the engineer create or dismiss a held event, always with a reason. */
+  authorize?(threadId: string, id: string, reason: string): Promise<unknown>;
+  dismiss?(threadId: string, id: string, reason: string): Promise<unknown>;
 }
 
 const CHANGES_CHANNEL = "itop:changes";
 const CREATE_CHANNEL = "itop:create";
 const MAX_REASON_LENGTH = 300;
 type StatusVariant = "warning" | "info" | "success" | "destructive" | "secondary";
-const STATE_VARIANTS: Record<string, StatusVariant> = { processing: "info", succeeded: "success", failed: "destructive", uncertain: "warning", reconciled: "secondary" };
+const STATE_VARIANTS: Record<string, StatusVariant> = { processing: "info", succeeded: "success", failed: "destructive", uncertain: "warning", reconciled: "secondary", held: "warning", dismissed: "secondary" };
+/** An engineer's reason is saved in the audit log; the server refuses a shorter one. */
+export const MIN_OVERRIDE_REASON = 10;
+const MAX_OVERRIDE_REASON = 500;
 
-/** Whether the engineer has something to do: a failed state synchronization or a creation whose outcome is unknown. */
-export const needsReview = (row: IntegrationDelivery) => (row.channel === CHANGES_CHANNEL && row.state === "failed") || (row.channel === CREATE_CHANNEL && row.state === "uncertain");
+/** Whether the engineer has something to do: a failed state synchronization, or a creation that is held or whose outcome is unknown. */
+export const needsReview = (row: IntegrationDelivery) => (row.channel === CHANGES_CHANNEL && row.state === "failed") || (row.channel === CREATE_CHANNEL && (row.state === "uncertain" || row.state === "held"));
 /** Deliveries that need review come first; the newest come first within each group. */
 export function orderDeliveries(rows: IntegrationDelivery[]): IntegrationDelivery[] {
   return [...rows].sort((a, b) => Number(needsReview(b)) - Number(needsReview(a)) || b.updatedAt.localeCompare(a.updatedAt));
@@ -52,6 +74,7 @@ export function DeliveryRecoveryControls({ row, threadId, disabled, service, onR
     {failure !== null && <p role="alert" className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">{failure}</p>}
     {row.channel === CHANGES_CHANNEL && row.state === "failed" &&
       <Button size="sm" variant="outline" disabled={disabled || busy} onClick={() => { void perform(() => service.retry(threadId, row.id)); }}>{t("incidents.deliveries.retry")}</Button>}
+    {row.channel === CREATE_CHANNEL && row.state === "held" && <HeldReview row={row} threadId={threadId} disabled={disabled || busy} service={service} perform={perform} />}
     {row.channel === CREATE_CHANNEL && row.state === "uncertain" && <>
       <p className="text-sm text-muted-foreground">{t("incidents.deliveries.inspect")}</p>
       {row.externalId === null
@@ -61,6 +84,59 @@ export function DeliveryRecoveryControls({ row, threadId, disabled, service, onR
       <label className="flex items-start gap-2 text-sm"><input type="checkbox" className="mt-0.5 accent-primary" checked={confirmed} disabled={disabled || busy} onChange={(event) => { setConfirmed(event.target.checked); }} /> {t("incidents.integrationWrites.inspected")}</label>
       <Button size="sm" disabled={disabled || busy || !confirmed || externalId === ""} onClick={() => { void perform(() => service.reconcile(threadId, row.id, externalId, confirmed)); }}>{t("incidents.deliveries.reconcile")}</Button>
     </>}
+  </div>;
+}
+
+function HeldReview({ row, threadId, disabled, service, perform }: {
+  row: IntegrationDelivery; threadId: string; disabled: boolean; service: IntegrationDeliveriesPort; perform(action: () => Promise<unknown>): Promise<void>;
+}) {
+  const { t } = useTranslation();
+  const id = useId();
+  const [reason, setReason] = useState("");
+  const [touched, setTouched] = useState(false);
+  const { authorize, dismiss } = service;
+  if (authorize === undefined || dismiss === undefined) return <p className="text-sm text-muted-foreground">{t("incidents.deliveries.heldHint")}</p>;
+  const trimmed = reason.trim();
+  const tooShort = trimmed.length < MIN_OVERRIDE_REASON;
+  const error = touched && tooShort ? t("incidents.deliveries.reasonTooShort", { min: MIN_OVERRIDE_REASON }) : undefined;
+  return <>
+    <p className="text-sm text-muted-foreground">{t("incidents.deliveries.heldHint")}</p>
+    <div className="space-y-1.5">
+      <label htmlFor={`${id}-reason`} className="block text-xs font-medium text-muted-foreground">{t("incidents.deliveries.reasonLabel")}</label>
+      <Textarea id={`${id}-reason`} className="min-h-[64px] text-sm" value={reason} maxLength={MAX_OVERRIDE_REASON} disabled={disabled}
+        placeholder={t("incidents.deliveries.reasonPlaceholder")} aria-invalid={error !== undefined} aria-describedby={error === undefined ? undefined : `${id}-reason-error`}
+        onBlur={() => { setTouched(true); }} onChange={(event) => { setReason(event.target.value); }} />
+      {error !== undefined && <p id={`${id}-reason-error`} className="text-xs text-destructive">{error}</p>}
+    </div>
+    <div className="flex flex-wrap gap-2">
+      <Button size="sm" disabled={disabled || tooShort} onClick={() => { void perform(() => authorize(threadId, row.id, trimmed)); }}>{t("incidents.deliveries.authorize")}</Button>
+      <Button size="sm" variant="outline" disabled={disabled || tooShort} onClick={() => { void perform(() => dismiss(threadId, row.id, trimmed)); }}>{t("incidents.deliveries.dismiss")}</Button>
+    </div>
+  </>;
+}
+
+/** What the triage policy decided for a ticket creation and why, and what an engineer decided afterwards. */
+export function DeliveryDecisionDetails({ row }: { row: IntegrationDelivery }) {
+  const { t } = useTranslation();
+  const { decision, override } = row;
+  if (row.channel !== CREATE_CHANNEL || (decision == null && (row.title ?? null) === null)) return null;
+  const reasonText = (reason: string) => t(`incidents.deliveries.reason.${reason}`, {
+    priority: row.priority ?? "", source: decision?.source ?? "", eventId: shortEvent(decision?.previousEventId ?? ""),
+    minutes: decision?.windowMinutes ?? 0, earlier: decision?.repeatCount ?? 0,
+  });
+  return <div className="space-y-1.5 text-sm">
+    {(row.title ?? null) !== null && <p className="break-words font-medium">{row.title}</p>}
+    {decision != null && <>
+      <p className="text-xs text-muted-foreground">
+        {t(decision.outcome === "accept" ? "incidents.deliveries.decision.accepted" : "incidents.deliveries.decision.held")}
+        {(row.priority ?? null) !== null && <> · {row.priority}</>}
+        {decision.source !== null && <> · {t("incidents.deliveries.source", { source: decision.source })}</>}
+      </p>
+      {decision.reasons.length > 0 && <ul className="list-disc space-y-0.5 pl-5 text-xs">{decision.reasons.map((reason) => <li key={reason}>{reasonText(reason)}</li>)}</ul>}
+    </>}
+    {override != null && <p className="break-words text-xs text-muted-foreground">
+      {t(override.action === "authorized" ? "incidents.deliveries.override.authorized" : "incidents.deliveries.override.dismissed", { reason: override.reason })}
+    </p>}
   </div>;
 }
 
@@ -86,6 +162,7 @@ function DeliveryCard({ row, threadId, disabled, service, onRefresh }: {
       <span aria-hidden="true">·</span>
       <span className="min-w-0 truncate font-mono" title={row.eventId}>{shortEvent(row.eventId)}</span>
     </p>
+    <DeliveryDecisionDetails row={row} />
     {/* The form is keyed by what it was built for, so a new status or a new ticket ID starts it from a clean state. */}
     {needsReview(row) && <DeliveryRecoveryControls key={`${row.state}:${row.externalId ?? ""}`} row={row} threadId={threadId} disabled={disabled} service={service} onRefresh={onRefresh} />}
   </article>;
