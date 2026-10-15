@@ -1,7 +1,7 @@
 import { z } from "zod";
 import type { HostToolContext } from "./host-tools";
 import { runIntegrationTool } from "./integration-tools";
-import { ticketWriteOperationSchema, type ItopTicketMapping } from "../plugins/itop-ticket-mapping";
+import { customerReportOrigin, ticketWriteOperationSchema, type ItopTicketMapping } from "../plugins/itop-ticket-mapping";
 import { readItopTicketState } from "../plugins/itop-ticket-state";
 import { customerReportProvenance, type CustomerReport } from "../plugins/customer-reports";
 import type { ToolResult } from "./types";
@@ -40,6 +40,20 @@ function readRequest(input: TicketOperationInput, mapping: ItopTicketMapping) {
   return { actionId: "list_objects", input: { ...common, query: `SELECT ${mapping.className} WHERE ${predicate}`, limit: input.operation === "read" ? 2 : input.limit, page: 1 } };
 }
 
+/**
+ * A new ticket. With a customer report, the original report and its source stay internal (private log only), and the
+ * channel sets the ticket origin when the connection maps one, so iTop does not record its default.
+ */
+function createRequest(common: { class: string; fields: Record<string, unknown>; outputFields: string; comment: string }, mapping: ItopTicketMapping, report?: CustomerReport): TicketMutation {
+  if (report === undefined) return { actionId: "create_object", input: common };
+  const origin = customerReportOrigin(mapping, report.channel);
+  return { actionId: "create_object", input: { ...common, fields: {
+    ...common.fields,
+    ...(origin === undefined ? {} : { [origin.field]: origin.value }),
+    [mapping.internalLogField]: { add_item: { message: customerReportProvenance(report), format: "text" } },
+  } } };
+}
+
 function mutationRequest(input: TicketOperationInput, mapping: ItopTicketMapping, report?: CustomerReport): TicketMutation | ToolResult {
   if (input.operation === "search" || input.operation === "read") return clarification("Use a read operation.");
   // Defaults describe a new ticket; a log entry or lifecycle change must not overwrite fields of an existing one.
@@ -51,11 +65,7 @@ function mutationRequest(input: TicketOperationInput, mapping: ItopTicketMapping
   if (unknown.length > 0) return clarification("These field names are not mapped for this connection. Use the configured names.", unknown);
   const fields = Object.fromEntries(Object.entries(supplied).map(([key, value]) => [mapping.fields[key], value]));
   const common = { class: mapping.className, fields, outputFields: "*", comment: "BitSentry chat: engineer-reviewed ticket operation" };
-  if (input.operation === "create") {
-    if (report === undefined) return { actionId: "create_object", input: common };
-    // The original report and its source stay internal: private log only.
-    return { actionId: "create_object", input: { ...common, fields: { ...fields, [mapping.internalLogField]: { add_item: { message: customerReportProvenance(report), format: "text" } } } } };
-  }
+  if (input.operation === "create") return createRequest(common, mapping, report);
   const id = Number(input.ticketId);
   if (!/^\d+$/.test(input.ticketId ?? "") || !Number.isSafeInteger(id) || id < 1) return clarification("Read the ticket first and use its unambiguous numeric external ID.", ["ticketId"]);
   if (input.operation === "internal_log" || input.operation === "public_log") {

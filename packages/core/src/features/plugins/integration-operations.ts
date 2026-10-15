@@ -3,7 +3,7 @@ import { readNamesResource } from "./integration-resources";
 import { buildPluginInputSchema } from "./desktop-plugin-registry";
 import type { ItopTicketMapping } from "./itop-ticket-mapping";
 import type { IntegrationConnection } from "./integration-connections";
-import { ticketWriteOperationSchema } from "./itop-ticket-mapping";
+import { customerReportOrigin, ticketWriteOperationSchema } from "./itop-ticket-mapping";
 import { readItopTicketState } from "./itop-ticket-state";
 import type { DesktopPluginDescriptor, DesktopPluginExecutionResult } from "./plugins.types";
 import {
@@ -123,6 +123,9 @@ export function assertCustomerReportWrite(runtime: Pick<IntegrationWriteRuntime,
   if (mapping.publicLogField in fields) throw new Error("A customer report ticket cannot write the public log.");
   const entry = z.object({ add_item: z.object({ message: z.string(), format: z.literal("text") }).strict() }).strict().safeParse(fields[mapping.internalLogField]);
   if (!entry.success || entry.data.add_item.message !== customerReportProvenance(report)) throw new Error("The customer report must be recorded unchanged in the private log.");
+  // The ticket origin, when the connection maps one, must say how the report arrived.
+  const origin = customerReportOrigin(mapping, report.channel);
+  if (origin !== undefined && fields[origin.field] !== origin.value) throw new Error(`The ticket origin must be "${origin.value}" for a ${report.channel} report.`);
 }
 
 /** Approval is an application action; no agent tool receives this capability. */
@@ -371,7 +374,7 @@ function validateTicketFields(mapping: ItopTicketMapping, request: IntegrationWr
       z.object({ add_item: z.object({ message: z.string().trim().min(1), format: z.literal("text") }).strict() }).strict().parse(fields[field]);
     }
   }
-  const allowed = new Set([...Object.values(mapping.fields), mapping.internalLogField, mapping.publicLogField]);
+  const allowed = new Set([...Object.values(mapping.fields), mapping.internalLogField, mapping.publicLogField, ...(mapping.originField === undefined ? [] : [mapping.originField])]);
   if (Object.keys(fields).some((field) => !allowed.has(field))) throw new Error("Use only configured ticket field mappings.");
   const missing = operations.flatMap((operation) => mapping.requiredFields[operation]).filter((key) => {
     const value = fields[mapping.fields[key]];
