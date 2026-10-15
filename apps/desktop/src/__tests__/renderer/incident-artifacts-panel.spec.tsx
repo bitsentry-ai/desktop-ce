@@ -520,6 +520,25 @@ describe('deliveries and sources in the panel', () => {
     expect(within(screen.getByRole('article', { name: /^Ticket change from iTop/ })).getByText('Processing')).toBeTruthy()
   })
 
+  it('lists a ticket whose acknowledgement is overdue under "Needs you" until the ticket is acknowledged', async () => {
+    const minutesAgo = (minutes: number) => new Date(Date.now() - minutes * 60_000).toISOString()
+    const overdue = { priority: '2', l1: { target: 15, startedAt: minutesAgo(40), dueAt: minutesAgo(25), metAt: minutesAgo(36), met: true }, l2: { target: 30, startedAt: minutesAgo(36), dueAt: minutesAgo(6), metAt: null, met: false } }
+    const rows = { current: [ticket({ state: { ...ticket().state, status: 'assigned', deadlines: overdue } })] }
+    render(<Host resources={resourcesPort(rows)} />)
+    expect((await screen.findByRole('button', { name: /^Artifacts/ })).textContent).toContain('1 needs you')
+    fireEvent.click(trigger())
+
+    const row = within(needsYou()).getByRole('article', { name: ticket().title })
+    expect(within(row).getByText('Overdue 6 min')).toBeTruthy()
+    expect(within(row).getByText(/^L2 acknowledgement · due /)).toBeTruthy()
+    fireEvent.click(within(row).getByRole('button', { name: /View/ }))
+    expect(chip('Sources').getAttribute('aria-pressed')).toBe('true')
+
+    rows.current = [ticket({ state: { ...ticket().state, status: 'pending', deadlines: { ...overdue, l2: { ...overdue.l2, met: true } } } })]
+    await tick(5000)
+    expect(noNeedsYou()).toBeNull()
+  })
+
   it('shows "Run a saved runbook" at the bottom only once a source is selected', async () => {
     const rows = { current: [ticket()] }
     const port = resourcesPort(rows)

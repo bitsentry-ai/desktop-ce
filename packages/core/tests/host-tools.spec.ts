@@ -92,6 +92,26 @@ describe('host tools', () => {
     expect(result?.output).not.toContain('staging-password')
   })
 
+  it('tells the agent which linked tickets are past their response deadlines', async () => {
+    const context = createContext()
+    const minutesAgo = (minutes: number) => new Date(Date.now() - minutes * 60_000).toISOString()
+    const ticket = {
+      threadId: 'thread', connectionId: '11111111-1111-4111-8111-111111111111', connectionName: 'Production', resourceType: 'ticket', externalId: '7',
+      url: 'https://production.itop.example/pages/UI.php?id=7', title: 'VPN down', observedAt: minutesAgo(1),
+      state: { ref: 'R-7', status: 'new', deadlines: { priority: '1', l1: { target: 10, startedAt: minutesAgo(30), dueAt: minutesAgo(20), metAt: null, met: false }, l2: { target: 15, startedAt: null, dueAt: null, metAt: null, met: false } } },
+    }
+    const document = { ...ticket, resourceType: 'document', externalId: 'doc', title: 'Runbook', state: { updatedAt: minutesAgo(60) } }
+    context.integrationConnections = { list: async () => [], listResources: async () => [ticket, document] }
+
+    const result = await executeHostTool(context, 'list_thread_resources', {})
+
+    expect(JSON.parse(result?.output ?? '[]')).toMatchObject([
+      { externalId: '7', deadlineStatus: { priority: '1', l1: { kind: 'overdue', minutes: 20 }, l2: { kind: 'not_started' } } },
+      { externalId: 'doc' },
+    ])
+    expect(JSON.parse(result?.output ?? '[]')[1]).not.toHaveProperty('deadlineStatus')
+  })
+
   it('links conversational runbook proposals into persisted artifact versions', async () => {
     const context = createContext()
     const saveRunbookAuthoringProposal = vi.fn().mockResolvedValue(undefined)

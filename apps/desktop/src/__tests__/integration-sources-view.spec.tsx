@@ -297,3 +297,42 @@ describe('recovering a linked resource', () => {
     expect(screen.getByRole('article')).toBeTruthy()
   })
 })
+
+describe('the response deadlines of a ticket card', () => {
+  const level = (startedMinutesAgo: number | null, target: number | null, met: { metAt?: string; met?: boolean } = {}) => {
+    const startedAt = startedMinutesAgo === null ? null : minutesAgo(startedMinutesAgo)
+    const dueAt = startedAt === null || target === null ? null : new Date(Date.parse(startedAt) + target * 60_000).toISOString()
+    return { target, startedAt, dueAt, metAt: met.metAt ?? null, met: met.met ?? met.metAt !== undefined }
+  }
+  const deadlines = (l1: ReturnType<typeof level>, l2: ReturnType<typeof level>, priority: string | null = '2') => ({ priority, l1, l2 })
+  const section = () => screen.getByRole('region', { name: 'incidents.integrationResources.deadlines.title' })
+  const row = (level: 'l1' | 'l2') => within(section()).getByText(`incidents.integrationResources.deadlines.${level}`).parentElement as HTMLElement
+
+  it('shows the L1 response as met and counts down the L2 acknowledgement', () => {
+    renderView([ticket({ state: { ...ticket().state, status: 'assigned', deadlines: deadlines(level(20, 15, { metAt: minutesAgo(12) }), level(12, 30)) } })])
+
+    expect(within(section()).getByText('Priority 2')).toBeTruthy()
+    expect(within(row('l1')).getByText('incidents.integrationResources.deadlines.met')).toBeTruthy()
+    expect(within(row('l2')).getByText('18 min left')).toBeTruthy()
+  })
+
+  it('says how late an unanswered ticket is', () => {
+    renderView([ticket({ state: { ...ticket().state, status: 'new', deadlines: deadlines(level(21, 15), level(null, 30)) } })])
+
+    expect(within(row('l1')).getByText('Overdue 6 min')).toBeTruthy()
+    expect(within(row('l2')).getByText('incidents.integrationResources.deadlines.notStarted')).toBeTruthy()
+  })
+
+  it('says when a priority has no target instead of showing a deadline', () => {
+    renderView([ticket({ state: { ...ticket().state, status: 'new', deadlines: deadlines(level(5, null), level(null, null), '4') } })])
+
+    expect(within(row('l1')).getByText('incidents.integrationResources.deadlines.noTarget')).toBeTruthy()
+    expect(within(row('l1')).getByText('Priority 4')).toBeTruthy()
+  })
+
+  it('shows no deadlines for a ticket whose connection does not track them', () => {
+    renderView([ticket()])
+
+    expect(screen.queryByRole('region', { name: 'incidents.integrationResources.deadlines.title' })).toBeNull()
+  })
+})
