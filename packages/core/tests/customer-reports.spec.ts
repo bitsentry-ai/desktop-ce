@@ -78,9 +78,9 @@ function memoryReports(rows: CustomerReport[]): CustomerReportStore & { rows: Cu
 }
 
 const itopId = '22222222-2222-4222-8222-222222222222'
-function setup(executeResult: () => Promise<unknown> = async () => ({ ok: true, status: 200, data: { code: 0, objects: { 'UserRequest::7': { code: 0, key: 7, fields: { ref: 'R-000007' } } } } })) {
+function setup(executeResult: () => Promise<unknown> = async () => ({ ok: true, status: 200, data: { code: 0, objects: { 'UserRequest::7': { code: 0, key: 7, fields: { ref: 'R-000007' } } } } }), originField?: string) {
   const mapping = itopTicketMappingSchema.parse({
-    className: 'UserRequest', fields: { title: 'title', description: 'description' },
+    className: 'UserRequest', fields: { title: 'title', description: 'description' }, ...(originField === undefined ? {} : { originField }),
     requiredFields: { create: [], acknowledge: [], assign: [], internal_log: [], public_log: [], resolve: [], close: [] }, stimuli: {},
   })
   const field = (key: string) => ({ key, label: key, type: key === 'fields' ? 'json' as const : 'string' as const, required: key === 'class' })
@@ -161,5 +161,22 @@ describe('a ticket create that carries a customer report', () => {
     await expect(service.propose('other-thread', { connectionId: itopId, actionId: 'create_object', input: { class: 'UserRequest', fields: { title: 'x' } } }, { ticketOperation: 'create', customerReportId: report.id })).rejects.toMatchObject({ code: 'CUSTOMER_REPORT_NOT_FOUND' })
     await expect(service.propose('thread', { connectionId: itopId, actionId: 'create_object', input: { class: 'UserRequest', fields: { title: 'x', private_log: { add_item: { message: 'edited', format: 'text' } } } } }, { ticketOperation: 'create', customerReportId: report.id })).rejects.toThrow('unchanged in the private log')
     await expect(service.propose('thread', { connectionId: itopId, actionId: 'create_object', input: { class: 'UserRequest', fields: { title: 'x', public_log: { add_item: { message: customerReportProvenance(reports.rows[0]), format: 'text' } } } } }, { ticketOperation: 'create', customerReportId: report.id })).rejects.toThrow('public log')
+  })
+})
+
+describe('the ticket origin of a customer report create', () => {
+  const origin = (title: string, value?: string) => ({ class: 'UserRequest', fields: { title, ...(value === undefined ? {} : { origin: value }), private_log: { add_item: { message: customerReportProvenance(report), format: 'text' } } }, outputFields: '*' })
+
+  it('records how the report arrived when the connection maps an origin field', async () => {
+    const { service, writes } = setup(undefined, 'origin')
+    const proposal = await service.propose('thread', { connectionId: itopId, actionId: 'create_object', input: origin('HR portal timeout', 'chat') }, { ticketOperation: 'create', customerReportId: report.id })
+    await service.approve('thread', proposal.id, false)
+    expect(writes).toEqual([expect.objectContaining({ input: expect.objectContaining({ fields: expect.objectContaining({ origin: 'chat' }) }) })])
+  })
+
+  it('refuses a create whose origin does not match the report channel', async () => {
+    const { service } = setup(undefined, 'origin')
+    await expect(service.propose('thread', { connectionId: itopId, actionId: 'create_object', input: origin('HR portal timeout', 'phone') }, { ticketOperation: 'create', customerReportId: report.id })).rejects.toThrow('origin must be "chat"')
+    await expect(service.propose('thread', { connectionId: itopId, actionId: 'create_object', input: origin('HR portal timeout') }, { ticketOperation: 'create', customerReportId: report.id })).rejects.toThrow('origin must be "chat"')
   })
 })

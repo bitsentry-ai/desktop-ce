@@ -96,7 +96,7 @@ export function CustomerReportPanel({
     >
       <div className="flex items-center gap-2 border-b border-border/60 px-3 py-2">
         <MessageSquareText size={14} aria-hidden="true" className="shrink-0 text-muted-foreground" />
-        <h3 id={`${id}-title`} className="text-xs font-medium text-foreground">{t("common.incidents.customerReport.title")}</h3>
+        <h3 id={`${id}-title`} className="whitespace-nowrap text-xs font-medium text-foreground">{t("common.incidents.customerReport.title")}</h3>
         <CustomerReportInternalBadge label={t("common.incidents.customerReport.internalOnly")} />
         <span className="hidden min-w-0 truncate text-[11px] text-muted-foreground sm:inline">{t("common.incidents.customerReport.unverifiedShort")}</span>
         <Button
@@ -111,10 +111,11 @@ export function CustomerReportPanel({
           <X className="!size-3.5" />
         </Button>
       </div>
-      <div className="grid gap-3 p-3 sm:grid-cols-2">
+      {/* Columns follow the composer's own width, not the window: a narrow composer stacks the fields. */}
+      <div className="grid grid-cols-[repeat(auto-fit,minmax(17rem,1fr))] gap-3 p-3">
         <div className="min-w-0 space-y-1.5">
           <span id={`${id}-channel`} className="block text-xs font-medium text-muted-foreground">{t("common.incidents.customerReport.channelLabel")}</span>
-          <div role="radiogroup" aria-labelledby={`${id}-channel`} className="grid grid-cols-4 gap-1 rounded-md border border-border p-0.5">
+          <div role="radiogroup" aria-labelledby={`${id}-channel`} className="flex flex-wrap gap-1 rounded-md border border-border p-0.5">
             {customerReportChannels.map((channel, index) => {
               const selected = channel === draft.channel;
               return (
@@ -129,7 +130,7 @@ export function CustomerReportPanel({
                   onClick={() => { onChange({ ...draft, channel }); }}
                   onKeyDown={(event) => { onChannelKeyDown(event, index); }}
                   className={cn(
-                    "h-7 truncate rounded px-1.5 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30 disabled:cursor-not-allowed disabled:opacity-50",
+                    "h-7 min-w-fit flex-1 whitespace-nowrap rounded px-2 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30 disabled:cursor-not-allowed disabled:opacity-50",
                     selected ? "bg-muted text-foreground" : "text-muted-foreground hover:text-foreground",
                   )}
                 >

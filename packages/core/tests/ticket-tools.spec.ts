@@ -286,4 +286,20 @@ describe('ticket create from a customer report', () => {
     await expect(run(context, { connectionId: production, operation: 'create', fields: { title: 'x', caller: 'Ana' }, customerReportId: report.id })).resolves.toMatchObject({ error: { code: 'CUSTOMER_REPORT_NOT_FOUND' } })
     await expect(run(context, { connectionId: production, operation: 'internal_log', ticketId: '14', message: 'x', customerReportId: report.id })).resolves.toMatchObject({ error: { code: 'CLARIFICATION_REQUIRED' } })
   })
+
+  it('sets the ticket origin from the report channel only when the connection maps an origin field', async () => {
+    const { context } = remote()
+    const proposals: Array<{ request: IntegrationActionInput }> = []
+    const connections = await context.integrationConnections!.list()
+    context.integrationConnections = {
+      ...context.integrationConnections!,
+      list: async () => connections.map((row) => row.id === production ? { ...row, ticketMapping: { ...row.ticketMapping!, originField: 'origin' } } : row),
+      getCustomerReport: async () => report,
+      proposeWrite: async (request: IntegrationActionInput) => { proposals.push({ request }); return { id: 'proposal' } as never },
+    }
+    await run(context, { connectionId: production, operation: 'create', fields: { title: 'Mail outage', caller: 'Ana' }, customerReportId: report.id })
+    await run(context, { connectionId: staging, operation: 'create', fields: { title: 'Mail outage' }, customerReportId: report.id })
+    expect((proposals[0].request.input.fields as Record<string, unknown>).origin).toBe('mail')
+    expect(proposals[1].request.input.fields).not.toHaveProperty('origin')
+  })
 })
