@@ -5,7 +5,7 @@ import type { IntegrationOperation } from "@bitsentry-ce/core/features/plugins";
 import { cn } from "../lib/utils";
 import { Button } from "../ui/button";
 import { OperationBody, StatusBadges, operationLabel, type IntegrationOperationsPort, type OperationDecisions } from "./IntegrationActionsView";
-import { DeliveryRecoveryControls, DeliveryStateBadge, deliveryChannelLabel, needsReview, shortEvent, type IntegrationDelivery, type IntegrationDeliveriesPort } from "./IntegrationDeliveriesView";
+import { DeliveryDecisionDetails, DeliveryRecoveryControls, DeliveryStateBadge, deliveryChannelLabel, needsReview, shortEvent, type IntegrationDelivery, type IntegrationDeliveriesPort } from "./IntegrationDeliveriesView";
 import { relativeTime } from "./relative-time";
 
 /** Which cards of the Artifacts panel are open. A card keeps its half-filled form while it is closed. */
@@ -69,6 +69,7 @@ export function DeliveryItemCard({ row, open, onToggle, threadId, disabled, serv
     subtitle={<>{updatedAt(row.updatedAt)} · <span className="font-mono" title={row.eventId}>{shortEvent(row.eventId)}</span></>}>
     <div className="space-y-2 px-3 pb-3">
       <p className="break-all text-xs text-muted-foreground">{t("incidents.artifactsPanel.eventId")} <span className="font-mono">{row.eventId}</span></p>
+      <DeliveryDecisionDetails row={row} />
       {row.externalId !== null && !needsReview(row) && <p className="text-sm">{t("incidents.deliveries.providerId", { id: row.externalId })}</p>}
       {/* The form is keyed by what it was built for, so a new status or a new ticket ID starts it from a clean state. */}
       {needsReview(row) && <DeliveryRecoveryControls key={`${row.state}:${row.externalId ?? ""}`} row={row} threadId={threadId} disabled={disabled} service={service} onRefresh={onRefresh} />}
