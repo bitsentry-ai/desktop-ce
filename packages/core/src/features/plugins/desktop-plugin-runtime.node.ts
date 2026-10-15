@@ -268,6 +268,7 @@ export interface DesktopIntegrationStorage {
   connections: IntegrationConnectionStorage;
   resources: import("./integration-resources").IntegrationResourceStore;
   operations: import("./integration-operations").IntegrationOperationStore;
+  customerReports?: import("./customer-reports").CustomerReportStore;
 }
 
 class DesktopNodePluginRuntimeService extends DesktopPluginRuntimeService {
@@ -371,8 +372,13 @@ class DesktopNodePluginRuntimeService extends DesktopPluginRuntimeService {
         execute: (request) => super.executeAction({ pluginId: connection.pluginId, actionId: request.actionId, input: request.input, auth: connection.auth, connectionConfig: connectionConfig(connection) }, { deadlineAt: Date.now() + 30_000 }),
         read: (request) => super.executeAction({ pluginId: connection.pluginId, actionId: request.actionId, input: request.input, auth: connection.auth, connectionConfig: connectionConfig(connection) }, { deadlineAt: Date.now() + 30_000 }, { requiredRiskLevel: "read" }),
       };
-    });
+    }, this.integrationStorage?.customerReports);
     return this.operations;
+  }
+
+  override getCustomerReports() {
+    if (this.integrationStorage?.customerReports === undefined) return super.getCustomerReports();
+    return this.integrationStorage.customerReports;
   }
 
   override async refreshIntegrationResources(threadId: string) {

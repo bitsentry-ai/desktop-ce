@@ -207,5 +207,13 @@
   "incidents.artifactsPanel.pendingApproval": "Pending approval",
   "incidents.artifactsPanel.empty": "When the agent reads a ticket, runs a runbook, proposes a change or a webhook arrives, it appears here.",
   "incidents.artifactsPanel.runSavedRunbook": "Run a saved runbook",
-  "incidents.artifactsPanel.eventId": "Event ID"
+  "incidents.artifactsPanel.eventId": "Event ID",
+  "incidents.integrationWrites.customerReport.title": "Customer report source",
+  "incidents.integrationWrites.customerReport.internalOnly": "Internal only — not sent to customer",
+  "incidents.integrationWrites.customerReport.channel": "Channel",
+  "incidents.integrationWrites.customerReport.sender": "Sender",
+  "incidents.integrationWrites.customerReport.received": "Received",
+  "incidents.integrationWrites.customerReport.submittedBy": "Submitted by",
+  "incidents.integrationWrites.customerReport.unverified": "Engineer-provided, not verified",
+  "incidents.integrationRecovery.refusedBeforeWrite": "iTop refused this request before writing anything. Check the connection and its permissions, then propose the change again."
 }

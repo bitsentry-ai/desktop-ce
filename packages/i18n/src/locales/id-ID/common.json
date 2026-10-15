@@ -1479,5 +1479,21 @@
   "common.dataSourcesManager.installSuccess": "Plugin installed.",
   "common.dataSourcesManager.installLoading": "Loading",
   "common.dataSourcesManager.installNoFileChosen": "No file chosen",
-  "common.systemSettings.appearanceSubtitle": "Tema, bahasa, dan opsi tampilan."
+  "common.systemSettings.appearanceSubtitle": "Tema, bahasa, dan opsi tampilan.",
+  "common.incidents.customerReport.menu": "Laporan pelanggan",
+  "common.incidents.customerReport.title": "Laporan pelanggan",
+  "common.incidents.customerReport.internalOnly": "Hanya internal",
+  "common.incidents.customerReport.channelLabel": "Kanal",
+  "common.incidents.customerReport.channels.whatsapp": "WhatsApp",
+  "common.incidents.customerReport.channels.email": "Email",
+  "common.incidents.customerReport.channels.phone": "Telepon",
+  "common.incidents.customerReport.channels.other": "Lainnya",
+  "common.incidents.customerReport.sender": "Pengirim",
+  "common.incidents.customerReport.receivedAt": "Diterima pada",
+  "common.incidents.customerReport.timeZone": "Zona waktu",
+  "common.incidents.customerReport.remove": "Hapus laporan pelanggan",
+  "common.incidents.customerReport.placeholder": "Tempel laporan pelanggan…",
+  "common.incidents.customerReport.from": "Dari {{sender}} · diterima {{receivedAt}}",
+  "common.incidents.customerReport.unverified": "Diisi oleh engineer, tidak diverifikasi BitSentry",
+  "common.incidents.customerReport.saveFailed": "Laporan pelanggan tidak dapat disimpan. Teks dan detail tetap tersimpan; coba kirim lagi."
 }

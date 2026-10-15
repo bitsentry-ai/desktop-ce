@@ -1,4 +1,6 @@
+import { userInfo } from "node:os";
 import { linkedResourceInputSchema } from "./integration-resources";
+import { customerReportInputSchema } from "./customer-reports";
 import { z } from "zod";
 import { integrationConnectionInputSchema } from "./integration-connections";
 import { isInternalStoredAuthKey } from "./integration-store-keys";
@@ -193,6 +195,15 @@ function normalizeStoredAuthValue(
   }
 }
 
+function localSubmitter(): string {
+  try {
+    const name = userInfo().username.trim();
+    return name.length > 0 ? name.slice(0, 200) : "local-profile";
+  } catch {
+    return "local-profile";
+  }
+}
+
 export function createDesktopPluginHandlers(
   service = createDesktopNodePluginRuntimeService(),
   storedAuthStore: DesktopPluginStoredAuthStore = NOOP_DESKTOP_PLUGIN_STORED_AUTH_STORE,
@@ -222,6 +233,8 @@ export function createDesktopPluginHandlers(
       const input = z.object({ threadId: z.string().min(1), id: z.uuid() }).strict().parse(payload);
       return service.getIntegrationOperations().cancel(input.threadId, input.id);
     },
+    // Desktop is a single local profile; the OS account names who submitted the report.
+    "plugins:saveCustomerReport": (payload) => service.getCustomerReports().save(customerReportInputSchema.parse(payload), localSubmitter()),
     "plugins:listConnections": () => service.listIntegrationConnections(),
     "plugins:saveConnection": async (payload) => {
       await service.saveIntegrationConnection(integrationConnectionInputSchema.parse(payload));

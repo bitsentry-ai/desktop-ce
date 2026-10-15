@@ -148,6 +148,22 @@ CREATE TRIGGER IF NOT EXISTS "IntegrationDelivery_identity_guard" BEFORE UPDATE 
 WHEN NEW."connectionId" IS NOT OLD."connectionId" OR NEW."direction" IS NOT OLD."direction"
   OR NEW."channel" IS NOT OLD."channel" OR NEW."eventId" IS NOT OLD."eventId" OR NEW."payloadHash" IS NOT OLD."payloadHash"
 BEGIN SELECT RAISE(ABORT, 'Delivery identity is immutable'); END;
+
+-- A customer report pasted into chat. Its content is sealed; only the link to the ticket create can change.
+CREATE TABLE IF NOT EXISTS "CustomerReport" (
+  "id" TEXT PRIMARY KEY NOT NULL,
+  "threadId" TEXT NOT NULL CHECK (length(trim("threadId")) > 0),
+  "clientRequestId" TEXT NOT NULL CHECK (length(trim("clientRequestId")) > 0),
+  "channel" TEXT NOT NULL CHECK ("channel" IN ('whatsapp','email','phone','other')),
+  "payloadCiphertext" TEXT NOT NULL,
+  "operationId" TEXT,
+  "createdAt" TEXT NOT NULL,
+  UNIQUE ("threadId","clientRequestId")
+);
+CREATE TRIGGER IF NOT EXISTS "CustomerReport_content_guard" BEFORE UPDATE ON "CustomerReport"
+WHEN NEW."id" IS NOT OLD."id" OR NEW."threadId" IS NOT OLD."threadId" OR NEW."clientRequestId" IS NOT OLD."clientRequestId"
+  OR NEW."channel" IS NOT OLD."channel" OR NEW."payloadCiphertext" IS NOT OLD."payloadCiphertext" OR NEW."createdAt" IS NOT OLD."createdAt"
+BEGIN SELECT RAISE(ABORT, 'Customer report content is immutable'); END;
 `
 
 export async function ensureIntegrationStorageSchema(db: DbClient): Promise<void> {

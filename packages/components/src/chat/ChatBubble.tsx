@@ -15,9 +15,12 @@ import {
   CheckIcon,
   CopyIcon,
   FileText,
+  MessageSquareText,
   ShieldAlert,
   Loader2,
 } from "lucide-react";
+import { parseCustomerReportMessage, type CustomerReportMessageHeader } from "@bitsentry-ce/core/features/plugins";
+import { CustomerReportInternalBadge } from "./CustomerReportPanel";
 import { getProviderLogo } from "./ProviderLogos";
 import { Tooltip, TooltipContent, TooltipTrigger } from "../ui/tooltip";
 import { cn } from "../lib/utils";
@@ -33,8 +36,41 @@ function dedupeToolCalls(toolCalls: ToolCallCard[]): ToolCallCard[] {
 type AgentMessage = Extract<ChatMessage, { kind: "agent" }>;
 type UserMessage = Extract<ChatMessage, { kind: "user" }>;
 
+/** Shows a received time in the report's own zone, with the offset the engineer recorded. */
+export function formatCustomerReportReceivedAt(header: Pick<CustomerReportMessageHeader, "receivedAt" | "timeZone">, locale?: string): string {
+  const offset = /(Z|[+-]\d{2}:\d{2})$/.exec(header.receivedAt)?.[1] ?? "";
+  try {
+    const time = new Intl.DateTimeFormat(locale, { dateStyle: "medium", timeStyle: "short", timeZone: header.timeZone }).format(new Date(header.receivedAt));
+    return `${time} (${header.timeZone}, UTC${offset === "Z" ? "+00:00" : offset})`;
+  } catch {
+    return header.receivedAt;
+  }
+}
+
+function CustomerReportChip({ header }: { header: CustomerReportMessageHeader }) {
+  const { t, i18n } = useTranslation();
+  return (
+    <div className="flex w-full flex-col gap-1.5 rounded-xl border border-border/60 bg-background/50 py-2 pl-2 pr-3">
+      <div className="flex items-center gap-2.5">
+        <span className="flex size-7 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground">
+          <MessageSquareText size={14} />
+        </span>
+        <span className="min-w-0 truncate text-xs font-medium">
+          {t("common.incidents.customerReport.title")} · {t(`common.incidents.customerReport.channels.${header.channel}`)}
+        </span>
+        <span className="ml-auto"><CustomerReportInternalBadge label={t("common.incidents.customerReport.internalOnly")} /></span>
+      </div>
+      <div className="pl-[38px] text-[11px] text-muted-foreground">
+        {t("common.incidents.customerReport.from", { sender: header.sender, receivedAt: formatCustomerReportReceivedAt(header, i18n?.language) })}
+      </div>
+      <div className="pl-[38px] text-[11px] text-amber-700 dark:text-amber-400">{t("common.incidents.customerReport.unverified")}</div>
+    </div>
+  );
+}
+
 function UserChatBubble({ msg }: { msg: UserMessage }) {
   const { t } = useTranslation();
+  const report = parseCustomerReportMessage(msg.text);
   const attachmentsContent: ReactNode = msg.attachments !== undefined && msg.attachments.length > 0
     ? (
         <div className="flex flex-wrap gap-2">
@@ -71,13 +107,15 @@ function UserChatBubble({ msg }: { msg: UserMessage }) {
         </div>
       )
     : null;
-  const textContent = msg.text.length > 0
-    ? <div className="whitespace-pre-wrap break-words">{msg.text}</div>
+  const bodyText = report === null ? msg.text : report.body;
+  const textContent = bodyText.length > 0
+    ? <div className="whitespace-pre-wrap break-words">{bodyText}</div>
     : null;
 
   return (
     <div className="flex justify-end">
       <div className="max-w-[75%] space-y-2 rounded-2xl bg-muted px-4 py-2.5 text-sm">
+        {report !== null && <CustomerReportChip header={report.header} />}
         {attachmentsContent}
         {textContent}
       </div>

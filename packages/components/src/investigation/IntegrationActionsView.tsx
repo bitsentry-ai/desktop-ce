@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { FileText, Ticket } from "lucide-react";
+import { AlertCircle, FileText, Ticket } from "lucide-react";
 import { useTranslation } from "@bitsentry-ce/i18n";
-import type { IntegrationOperation } from "@bitsentry-ce/core/features/plugins";
+import { customerReportMarker, type IntegrationOperation } from "@bitsentry-ce/core/features/plugins";
+import { CustomerReportInternalBadge } from "../chat/CustomerReportPanel";
+import { formatCustomerReportReceivedAt } from "../chat/ChatBubble";
 import { cn } from "../lib/utils";
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
@@ -19,7 +21,7 @@ const STATUS_VARIANTS: Record<IntegrationOperation["status"], StatusVariant> = {
 };
 const MAX_REFUSAL_LENGTH = 300;
 /** What the remote system refused for, set when a write definitely did not apply. An unknown outcome never gets one. */
-const REFUSAL_KEYS: Record<string, string> = { credentials_rejected: "incidents.integrationRecovery.credentials", stale_resource: "incidents.integrationRecovery.stale", remote_rejected: "incidents.integrationRecovery.rejected" };
+const REFUSAL_KEYS: Record<string, string> = { credentials_rejected: "incidents.integrationRecovery.credentials", stale_resource: "incidents.integrationRecovery.stale", remote_rejected: "incidents.integrationRecovery.rejected", refused_before_write: "incidents.integrationRecovery.refusedBeforeWrite" };
 const ITOP_FACT_KEYS = ["class", "id", "stimulus"] as const;
 const display = (value: unknown) => typeof value === "string" ? value : JSON.stringify(value);
 type Translate = ReturnType<typeof useTranslation>["t"];
@@ -32,8 +34,11 @@ export function summarizeOperation(row: IntegrationOperation) {
   // `class`, `id` and `stimulus` only mean a ticket, ticket ID and transition for iTop; other plugins list them like any input.
   const factKeys: readonly string[] = row.pluginId === "itop" ? ITOP_FACT_KEYS : [];
   const hiddenKeys = new Set(["outputFields", ...(listedFields ? ["fields"] : []), ...factKeys]);
+  // The customer report entry is shown in its own section; its raw text stays under technical details.
+  const marker = row.customerReport === undefined ? undefined : customerReportMarker(row.customerReport.id);
+  const isReportEntry = (value: unknown) => marker !== undefined && typeof value === "object" && value !== null && JSON.stringify(value).includes(marker);
   const changes: Change[] = [
-    ...Object.entries(fields).map(([key, value]) => ({ key, value: display(value) })),
+    ...Object.entries(fields).filter(([, value]) => !isReportEntry(value)).map(([key, value]) => ({ key, value: display(value) })),
     ...Object.entries(row.input).filter(([key]) => !hiddenKeys.has(key)).map(([key, value]) => ({ key, value: display(value) })),
   ];
   const facts = factKeys.filter((key) => row.input[key] !== undefined).map((key) => ({ key, value: display(row.input[key]) }));
@@ -46,6 +51,23 @@ export function preferredOperation(rows: IntegrationOperation[]): IntegrationOpe
   return rows.find((row) => row.status === "proposed") ?? rows.find((row) => row.status === "uncertain") ?? rows[0] ?? null;
 }
 export const operationLabel = (row: IntegrationOperation, t: Translate) => row.ticketOperation === undefined ? row.actionId : t(`incidents.integrationWrites.operation.${row.ticketOperation}`);
+
+function CustomerReportSource({ report }: { report: NonNullable<IntegrationOperation["customerReport"]> }) {
+  const { t, i18n } = useTranslation();
+  return <section aria-label={t("incidents.integrationWrites.customerReport.title")} className="rounded-md border border-border bg-muted/30 px-3 py-2.5">
+    <div className="mb-1.5 flex flex-wrap items-center gap-2">
+      <h4 className="whitespace-nowrap text-xs font-medium uppercase tracking-wide text-muted-foreground">{t("incidents.integrationWrites.customerReport.title")}</h4>
+      <CustomerReportInternalBadge label={t("incidents.integrationWrites.customerReport.internalOnly")} />
+    </div>
+    <dl className="grid grid-cols-2 gap-2">
+      <Fact label={t("incidents.integrationWrites.customerReport.channel")}>{t(`common.incidents.customerReport.channels.${report.channel}`)}</Fact>
+      <Fact label={t("incidents.integrationWrites.customerReport.sender")}>{report.sender}</Fact>
+      <div className="col-span-2"><Fact label={t("incidents.integrationWrites.customerReport.received")}>{formatCustomerReportReceivedAt(report, i18n?.language)}</Fact></div>
+      <div className="col-span-2"><Fact label={t("incidents.integrationWrites.customerReport.submittedBy")}>{report.submittedBy}</Fact></div>
+    </dl>
+    <p className="mt-2 flex items-center gap-1 text-[11px] text-amber-700 dark:text-amber-400"><AlertCircle size={11} aria-hidden="true" />{t("incidents.integrationWrites.customerReport.unverified")}</p>
+  </section>;
+}
 
 function Fact({ label, children }: { label: string; children: ReactNode }) {
   return <div className="min-w-0"><dt className="text-xs text-muted-foreground">{label}</dt><dd className="break-all text-sm">{children}</dd></div>;
@@ -96,6 +118,7 @@ export function OperationBody({ row, disabled, busy, refusal, closeRequested, on
       <Fact label={t("incidents.integrationWrites.action")}><code className="text-xs">{row.actionId}</code></Fact>
       {facts.map((fact) => <Fact key={fact.key} label={t(`incidents.integrationWrites.fact.${fact.key}`)}>{fact.value}</Fact>)}
     </dl>
+    {row.customerReport !== undefined && <CustomerReportSource report={row.customerReport} />}
     <div>
       <h4 className="mb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">{t("incidents.integrationWrites.changes")}</h4>
       {changes.length === 0

@@ -5,6 +5,7 @@ import type { IntegrationConnection } from "../plugins/integration-connections";
 import type { TicketWriteOperation } from "../plugins/itop-ticket-mapping";
 import type { ToolResult } from "./types";
 import { OrchestrationError } from "./shared/effect-orchestration";
+import { CustomerReportLinkError } from "../plugins/customer-reports";
 
 export const integrationActionToolSchema = z.object({
   connectionId: z.uuid().describe("Exact named connection ID from list_integration_connections."),
@@ -20,7 +21,9 @@ export interface IntegrationToolsPort {
   timeTracking?: Pick<import("../plugins/time-tracking-adapter").TimeTrackingAdapterRegistry, "capabilities">;
   list(): Promise<IntegrationConnection[]>;
   listResources?(): Promise<import("../plugins/integration-resources").IntegrationResource[]>;
-  proposeWrite?(request: IntegrationActionInput, meta?: { ticketOperation?: TicketWriteOperation }): Promise<import("../plugins/integration-operations").IntegrationOperation>;
+  proposeWrite?(request: IntegrationActionInput, meta?: { ticketOperation?: TicketWriteOperation; customerReportId?: string }): Promise<import("../plugins/integration-operations").IntegrationOperation>;
+  /** A customer report saved in the current conversation, or null when it does not belong to it. */
+  getCustomerReport?(id: string): Promise<import("../plugins/customer-reports").CustomerReport | null>;
   /** `resourceWarning` means the read succeeded but its resource card could not be saved. */
   executeRead?(request: IntegrationActionInput, expected?: IntegrationReadSnapshot, options?: IntegrationReadOptions): Promise<DesktopPluginExecutionResult & { resourceWarning?: boolean }>;
 }
@@ -47,6 +50,8 @@ export interface IntegrationToolOptions {
   ticketOperation?: TicketWriteOperation;
   /** Set only by ticket_operation for its own status pre-check, so that read is not retained as a resource observation. */
   capture?: false;
+  /** Set only by ticket_operation when a new ticket carries a customer report. */
+  customerReportId?: string;
 }
 
 /**
@@ -103,7 +108,7 @@ export async function runIntegrationTool(
 function writeProposal(port: IntegrationToolsPort, connection: IntegrationConnection, request: IntegrationActionInput, options: IntegrationToolOptions): Promise<ToolResult> | ToolResult {
   const stale = staleUpdateRefusal(connection, request);
   if (stale !== undefined) return stale;
-  if (port.proposeWrite !== undefined) return saveProposal(port.proposeWrite, request, { ticketOperation: options.ticketOperation });
+  if (port.proposeWrite !== undefined) return saveProposal(port.proposeWrite, request, { ticketOperation: options.ticketOperation, ...(options.customerReportId === undefined ? {} : { customerReportId: options.customerReportId }) });
   return { output: JSON.stringify({
     status: "preview", requiresApproval: true, connectionId: connection.id,
     connectionName: connection.name, target: connection.target, pluginId: connection.pluginId,
@@ -162,7 +167,11 @@ function classifyReadFailure(cause: unknown): ToolResult {
   return error("INTEGRATION_READ_INTERRUPTED", "The read failed. Check connection availability and retry the read if needed. No write was attempted.");
 }
 
-async function saveProposal(propose: NonNullable<IntegrationToolsPort["proposeWrite"]>, request: IntegrationActionInput, meta: { ticketOperation?: TicketWriteOperation }): Promise<ToolResult> {
+async function saveProposal(propose: NonNullable<IntegrationToolsPort["proposeWrite"]>, request: IntegrationActionInput, meta: { ticketOperation?: TicketWriteOperation; customerReportId?: string }): Promise<ToolResult> {
   try { return { output: JSON.stringify(await propose(request, meta)) }; }
-  catch { return error("PROPOSAL_UNAVAILABLE", "The write proposal could not be saved. Check the connection and ticket mapping; no write was attempted."); }
+  catch (cause) {
+    // A customer report refusal tells the agent what the engineer must resolve first.
+    if (cause instanceof CustomerReportLinkError) return error(cause.code, cause.message);
+    return error("PROPOSAL_UNAVAILABLE", "The write proposal could not be saved. Check the connection and ticket mapping; no write was attempted.");
+  }
 }
