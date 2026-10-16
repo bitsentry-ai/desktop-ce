@@ -35,10 +35,10 @@ describe('L1 response and L2 acknowledgement deadlines of a linked ticket', () =
 
     expect(ticketDeadlineStatus(row.state, at('09:10'))).toEqual({
       priority: '2',
-      l1: { kind: 'pending', dueAt: '2026-10-15T02:15:00.000Z', minutes: 5 },
+      l1: { kind: 'pending', targetMinutes: 15, dueAt: '2026-10-15T02:15:00.000Z', minutesLeft: 5 },
       l2: { kind: 'not_started' },
     })
-    expect(ticketDeadlineStatus(row.state, at('09:21'))?.l1).toEqual({ kind: 'overdue', dueAt: '2026-10-15T02:15:00.000Z', minutes: 6 })
+    expect(ticketDeadlineStatus(row.state, at('09:21'))?.l1).toEqual({ kind: 'overdue', targetMinutes: 15, dueAt: '2026-10-15T02:15:00.000Z', minutesOverdue: 6 })
   })
 
   it('meets L1 on assignment and starts the L2 acknowledgement clock there', () => {
@@ -46,8 +46,8 @@ describe('L1 response and L2 acknowledgement deadlines of a linked ticket', () =
 
     expect(ticketDeadlineStatus(row.state, at('09:20'))).toEqual({
       priority: '2',
-      l1: { kind: 'met', dueAt: '2026-10-15T02:15:00.000Z', metAt: '2026-10-15T02:12:00.000Z', late: false },
-      l2: { kind: 'pending', dueAt: '2026-10-15T02:42:00.000Z', minutes: 22 },
+      l1: { kind: 'met', targetMinutes: 15, dueAt: '2026-10-15T02:15:00.000Z', metAt: '2026-10-15T02:12:00.000Z', late: false },
+      l2: { kind: 'pending', targetMinutes: 30, dueAt: '2026-10-15T02:42:00.000Z', minutesLeft: 22 },
     })
   })
 
@@ -57,10 +57,11 @@ describe('L1 response and L2 acknowledgement deadlines of a linked ticket', () =
     expect(ticketDeadlineStatus(row.state, at('09:21'))?.l1).toMatchObject({ kind: 'met', late: true })
   })
 
-  it('meets L2 once the ticket reaches an acknowledged state', () => {
+  it('meets L2 once the ticket reaches an acknowledged state, without claiming it was on time', () => {
     const row = card({ ...opened, status: 'pending', assignment_date: '2026-10-15 09:12:00' })
 
-    expect(ticketDeadlineStatus(row.state, at('10:30'))?.l2).toEqual({ kind: 'met', dueAt: '2026-10-15T02:42:00.000Z', metAt: null, late: false })
+    // Nothing records when the ticket reached the state, so whether it was late is unknown.
+    expect(ticketDeadlineStatus(row.state, at('10:30'))?.l2).toEqual({ kind: 'met', targetMinutes: 30, dueAt: '2026-10-15T02:42:00.000Z', metAt: null, late: null })
   })
 
   it('shows no deadline for a priority without a target and never guesses one', () => {

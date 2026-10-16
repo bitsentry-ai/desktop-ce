@@ -138,6 +138,7 @@
   "incidents.integrationResources.deadlines.met": "Terpenuhi",
   "incidents.integrationResources.deadlines.metLate": "Terpenuhi terlambat",
   "incidents.integrationResources.deadlines.metAt": "pukul {{time}}",
+  "incidents.integrationResources.deadlines.metTimeUnknown": "waktu tidak tercatat",
   "incidents.integrationResources.deadlines.due": "tenggat {{time}}",
   "incidents.integrationResources.deadlines.noTarget": "Tanpa target",
   "incidents.integrationResources.deadlines.noPriority": "prioritas belum diisi",

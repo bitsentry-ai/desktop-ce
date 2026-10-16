@@ -138,6 +138,7 @@
   "incidents.integrationResources.deadlines.met": "Met",
   "incidents.integrationResources.deadlines.metLate": "Met late",
   "incidents.integrationResources.deadlines.metAt": "at {{time}}",
+  "incidents.integrationResources.deadlines.metTimeUnknown": "time not recorded",
   "incidents.integrationResources.deadlines.due": "due {{time}}",
   "incidents.integrationResources.deadlines.noTarget": "No target",
   "incidents.integrationResources.deadlines.noPriority": "no priority set",

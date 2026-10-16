@@ -99,9 +99,10 @@ export const deadlineLevelLabel = (level: DeadlineLevel, t: Translate) => t(`${D
 /** How one deadline reads on a card: a short status and the time it refers to. */
 export function deadlineSummary(status: DeadlineStatus, now: number, t: Translate): { variant: BadgeVariant; label: string; detail: string } {
   switch (status.kind) {
-    case "pending": return { variant: "info", label: t(`${DEADLINE_KEY}.pending`, { minutes: status.minutes }), detail: t(`${DEADLINE_KEY}.due`, { time: deadlineTime(status.dueAt, now) }) };
-    case "overdue": return { variant: "destructive", label: t(`${DEADLINE_KEY}.overdue`, { minutes: status.minutes }), detail: t(`${DEADLINE_KEY}.due`, { time: deadlineTime(status.dueAt, now) }) };
-    case "met": return { variant: status.late ? "warning" : "success", label: t(status.late ? `${DEADLINE_KEY}.metLate` : `${DEADLINE_KEY}.met`), detail: status.metAt === null ? "" : t(`${DEADLINE_KEY}.metAt`, { time: deadlineTime(status.metAt, now) }) };
+    case "pending": return { variant: "info", label: t(`${DEADLINE_KEY}.pending`, { minutes: status.minutesLeft }), detail: t(`${DEADLINE_KEY}.due`, { time: deadlineTime(status.dueAt, now) }) };
+    case "overdue": return { variant: "destructive", label: t(`${DEADLINE_KEY}.overdue`, { minutes: status.minutesOverdue }), detail: t(`${DEADLINE_KEY}.due`, { time: deadlineTime(status.dueAt, now) }) };
+    // A level met without a recorded time is not shown as on time.
+    case "met": return { variant: status.late === null ? "secondary" : status.late ? "warning" : "success", label: t(status.late === true ? `${DEADLINE_KEY}.metLate` : `${DEADLINE_KEY}.met`), detail: status.metAt === null ? t(`${DEADLINE_KEY}.metTimeUnknown`) : t(`${DEADLINE_KEY}.metAt`, { time: deadlineTime(status.metAt, now) }) };
     case "no_target": return { variant: "secondary", label: t(`${DEADLINE_KEY}.noTarget`), detail: status.priority === null ? t(`${DEADLINE_KEY}.noPriority`) : t(`${DEADLINE_KEY}.priority`, { priority: status.priority }) };
     case "not_started": return { variant: "secondary", label: t(`${DEADLINE_KEY}.notStarted`), detail: "" };
   }

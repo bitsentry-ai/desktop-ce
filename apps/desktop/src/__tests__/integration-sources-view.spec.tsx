@@ -316,6 +316,14 @@ describe('the response deadlines of a ticket card', () => {
     expect(within(row('l2')).getByText('18 min left')).toBeTruthy()
   })
 
+  it('shows a deadline met without a recorded time as met, not on time', () => {
+    renderView([ticket({ state: { ...ticket().state, status: 'resolved', deadlines: deadlines(level(20, 15, { metAt: minutesAgo(12) }), level(12, 2, { met: true })) } })])
+
+    expect(within(row('l2')).getByText('incidents.integrationResources.deadlines.met')).toBeTruthy()
+    expect(within(row('l2')).getByText('incidents.integrationResources.deadlines.metTimeUnknown')).toBeTruthy()
+    expect(within(row('l2')).queryByText('incidents.integrationResources.deadlines.metLate')).toBeNull()
+  })
+
   it('says how late an unanswered ticket is', () => {
     renderView([ticket({ state: { ...ticket().state, status: 'new', deadlines: deadlines(level(21, 15), level(null, 30)) } })])
 

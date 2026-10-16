@@ -106,10 +106,25 @@ describe('host tools', () => {
     const result = await executeHostTool(context, 'list_thread_resources', {})
 
     expect(JSON.parse(result?.output ?? '[]')).toMatchObject([
-      { externalId: '7', deadlineStatus: { priority: '1', l1: { kind: 'overdue', minutes: 20 }, l2: { kind: 'not_started' } } },
+      { externalId: '7', deadlineStatus: { priority: '1', l1: { kind: 'overdue', targetMinutes: 10, minutesOverdue: 20 }, l2: { kind: 'not_started' } } },
       { externalId: 'doc' },
     ])
     expect(JSON.parse(result?.output ?? '[]')[1]).not.toHaveProperty('deadlineStatus')
+  })
+
+  it('gives the agent the target in minutes and no on-time verdict for a deadline met without a recorded time', async () => {
+    const context = createContext()
+    const minutesAgo = (minutes: number) => new Date(Date.now() - minutes * 60_000).toISOString()
+    const ticket = {
+      threadId: 'thread', connectionId: '11111111-1111-4111-8111-111111111111', connectionName: 'Production', resourceType: 'ticket', externalId: '33',
+      url: 'https://production.itop.example/pages/UI.php?id=33', title: 'Printer offline', observedAt: minutesAgo(1),
+      state: { ref: 'R-33', status: 'resolved', deadlines: { priority: '2', l1: { target: 15, startedAt: minutesAgo(30), dueAt: minutesAgo(15), metAt: minutesAgo(20), met: true }, l2: { target: 2, startedAt: minutesAgo(20), dueAt: minutesAgo(18), metAt: null, met: true } } },
+    }
+    context.integrationConnections = { list: async () => [], listResources: async () => [ticket] }
+
+    const result = await executeHostTool(context, 'list_thread_resources', {})
+
+    expect(JSON.parse(result?.output ?? '[]')[0].deadlineStatus.l2).toEqual({ kind: 'met', targetMinutes: 2, dueAt: ticket.state.deadlines.l2.dueAt, metAt: null, late: null })
   })
 
   it('links conversational runbook proposals into persisted artifact versions', async () => {

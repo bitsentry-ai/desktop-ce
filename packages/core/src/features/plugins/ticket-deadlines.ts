@@ -67,25 +67,29 @@ export function observeTicketDeadlines(fields: Record<string, unknown>, status: 
   return { priority, l1: level("l1"), l2: level("l2") };
 }
 
+/**
+ * Targets and counts are whole minutes. `late` is null when the met time or the due time is not known, for example a
+ * level met only by state: the ticket reached the state, but nothing records when.
+ */
 export type DeadlineStatus =
   | { kind: "not_started" }
   | { kind: "no_target"; priority: string | null }
-  | { kind: "met"; dueAt: string | null; metAt: string | null; late: boolean }
-  | { kind: "pending"; dueAt: string; minutes: number }
-  | { kind: "overdue"; dueAt: string; minutes: number };
+  | { kind: "met"; targetMinutes: number | null; dueAt: string | null; metAt: string | null; late: boolean | null }
+  | { kind: "pending"; targetMinutes: number; dueAt: string; minutesLeft: number }
+  | { kind: "overdue"; targetMinutes: number; dueAt: string; minutesOverdue: number };
 
 function levelStatus(level: ObservedTicketDeadlines["l1"], priority: string | null, now: number): DeadlineStatus {
   if (level.met) {
-    const late = level.dueAt !== null && level.metAt !== null && Date.parse(level.metAt) > Date.parse(level.dueAt);
-    return { kind: "met", dueAt: level.dueAt, metAt: level.metAt, late };
+    const late = level.dueAt === null || level.metAt === null ? null : Date.parse(level.metAt) > Date.parse(level.dueAt);
+    return { kind: "met", targetMinutes: level.target, dueAt: level.dueAt, metAt: level.metAt, late };
   }
   if (level.startedAt === null) return { kind: "not_started" };
-  if (level.dueAt === null) return { kind: "no_target", priority };
+  if (level.dueAt === null || level.target === null) return { kind: "no_target", priority };
   // Time left rounds up and time overdue rounds down, so neither claims a minute that has not passed.
   const left = Date.parse(level.dueAt) - now;
   return left >= 0
-    ? { kind: "pending", dueAt: level.dueAt, minutes: Math.ceil(left / 60_000) }
-    : { kind: "overdue", dueAt: level.dueAt, minutes: Math.max(1, Math.floor(-left / 60_000)) };
+    ? { kind: "pending", targetMinutes: level.target, dueAt: level.dueAt, minutesLeft: Math.ceil(left / 60_000) }
+    : { kind: "overdue", targetMinutes: level.target, dueAt: level.dueAt, minutesOverdue: Math.max(1, Math.floor(-left / 60_000)) };
 }
 
 /** Where a ticket stands against its deadlines now, or null when its connection tracks no deadlines. */
