@@ -64,7 +64,7 @@ export function useRunbookResourceData({
   const selectableLlmProviders = useMemo(
     () =>
       llmProviders.filter(
-        (provider) => provider.hasApiKey && provider.isSelectable,
+        (provider) => provider.isConfigured && provider.isSelectable,
       ),
     [llmProviders],
   );
@@ -87,11 +87,13 @@ export function useRunbookResourceData({
 
     selectableLlmProviders.forEach((provider) => {
       const providerKey = provider.providerKey;
-      const models = mergeProviderModels(
-        providerKey,
-        provider.availableModels,
-        provider.model,
-      );
+      const models = providerKey === "openai_compatible"
+        ? (provider.model ? [provider.model] : [])
+        : mergeProviderModels(
+            providerKey,
+            provider.availableModels,
+            provider.model,
+          );
 
       models.forEach((modelId) => {
         const normalized = modelId.trim();
@@ -102,7 +104,9 @@ export function useRunbookResourceData({
         options.push({
           providerKey: provider.providerKey,
           modelId: normalized,
-          label: getModelDisplayName(providerKey, normalized),
+          label: providerKey === "openai_compatible"
+            ? normalized
+            : getModelDisplayName(providerKey, normalized),
         });
       });
     });
@@ -246,6 +250,7 @@ export function useRunbookResourceData({
               providerType: providerTypes[providerKey] ?? "third_party",
               baseUrl: config.baseUrl,
               hasApiKey: config.hasApiKey,
+              isConfigured: config.hasApiKey,
               model,
               availableModels: mergeProviderModels(
                 providerKey as ModelCatalogProviderKey,

@@ -149,7 +149,7 @@ export interface LlmToolDefinition {
 }
 
 export interface LlmSelection {
-  providerKey?: RunbookActionRecord["llmProviderKey"];
+  providerKey?: Exclude<RunbookActionRecord["llmProviderKey"], "openai_compatible">;
   model?: string;
   thinkingEnabled?: boolean;
 }
@@ -447,7 +447,7 @@ interface PreparedHttpRequest {
 interface PreparedAiStepInput {
   prompt: string;
   model: string | undefined;
-  providerKey: RunbookActionRecord["llmProviderKey"];
+  providerKey: LlmSelection["providerKey"];
 }
 
 interface LocalAiSnapshotThrottleState {
@@ -1808,7 +1808,12 @@ export class RunbookExecutionService {
       "placeholder",
     );
     let model = llmModel?.value;
-    let providerKey = action.llmProviderKey;
+    if (action.llmProviderKey === "openai_compatible") {
+      throw new Error(
+        "Self-hosted OpenAI-compatible providers run in the Dashboard. Choose a Desktop provider for this step.",
+      );
+    }
+    let providerKey: LlmSelection["providerKey"] = action.llmProviderKey;
     if (model !== undefined && model.trim().length > 0) {
       const resolved =
         providerKey === undefined
@@ -2266,7 +2271,7 @@ export class RunbookExecutionService {
   }
 
   private createLlmSelection(
-    providerKey: RunbookActionRecord["llmProviderKey"],
+    providerKey: LlmSelection["providerKey"],
     model: string | undefined,
   ): LlmSelection {
     const selection: LlmSelection = {};
