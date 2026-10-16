@@ -150,28 +150,36 @@ export function IntegrationsRailTriggers({ state }: { state: IntegrationsRailSta
 export function usePolledRows<T>(threadId: string, port: { list(threadId: string): Promise<T[]> } | undefined, intervalMs: number) {
   const [rows, setRows] = useState<T[]>([]);
   const [failed, setFailed] = useState(false);
-  const activeRef = useRef(true);
-  const latestRequestRef = useRef(0);
+  // Answers of an earlier conversation or an unmounted list are never shown: each one belongs to a generation.
+  const generationRef = useRef(0);
+  const issuedRef = useRef(0);
+  const shownRef = useRef(0);
   const refresh = useCallback(async () => {
     if (port === undefined) return;
-    // Refreshes overlap (the timer, a decision, a recovery). Only the newest answer may replace what is shown, or a slow
-    // older one would bring back a status that has already moved on, together with its controls.
-    const request = ++latestRequestRef.current;
+    const generation = generationRef.current;
+    const request = ++issuedRef.current;
+    // Refreshes overlap (the timer, a decision, a recovery). An answer is shown unless a newer one is already shown, so a
+    // slow older answer cannot bring back a status that has moved on, and a list that is slower than the timer still shows.
+    const show = () => {
+      if (generation !== generationRef.current || request <= shownRef.current) return false;
+      shownRef.current = request;
+      return true;
+    };
     try {
       const next = await port.list(threadId);
-      if (activeRef.current && request === latestRequestRef.current) { setRows(next); setFailed(false); }
+      if (show()) { setRows(next); setFailed(false); }
     } catch {
-      if (activeRef.current && request === latestRequestRef.current) setFailed(true);
+      if (show()) setFailed(true);
     }
   }, [port, threadId]);
   useEffect(() => {
-    activeRef.current = true;
+    generationRef.current += 1;
     // Rows belong to one conversation: show nothing from the previous one while the new list loads.
     setRows([]);
     setFailed(false);
     void refresh();
     const timer = setInterval(() => { void refresh(); }, intervalMs);
-    return () => { activeRef.current = false; clearInterval(timer); };
+    return () => { generationRef.current += 1; clearInterval(timer); };
   }, [intervalMs, refresh]);
   const fail = useCallback(() => { setFailed(true); }, []);
   return { rows, failed, refresh, fail };

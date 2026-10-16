@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { ticketDeadlinesSchema } from "./ticket-deadlines";
 
 const identifier = z.string().regex(/^[A-Za-z]\w*$/).max(100);
 const lifecycleTransitionSchema = z.object({
@@ -32,6 +33,8 @@ export const itopTicketMappingSchema = z.object({
     phone: z.string().trim().min(1).max(100).optional(),
     other: z.string().trim().min(1).max(100).optional(),
   }).strict().optional(),
+  /** L1 response and L2 acknowledgement deadlines shown on linked ticket cards. Absent: no deadlines are tracked. */
+  deadlines: ticketDeadlinesSchema.optional(),
   stimuli: z.object({
     acknowledge: lifecycleTransitionSchema.optional(),
     assign: lifecycleTransitionSchema.optional(),

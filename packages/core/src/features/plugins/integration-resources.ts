@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { IntegrationConnection } from "./integration-connections";
 import type { DesktopPluginStoredAuthStore } from "./desktop-plugin-auth-store";
+import { observeTicketDeadlines } from "./ticket-deadlines";
 export const integrationResourceSchema = z.object({
   threadId: z.string().min(1), connectionId: z.uuid(), connectionName: z.string(),
   resourceType: z.string().min(1).max(100), externalId: z.string().min(1).max(200),
@@ -52,7 +53,9 @@ export function extractIntegrationResources(threadId: string, connection: Pick<I
       url.search = new URLSearchParams({ operation: "details", class: className, id: externalId }).toString();
       const mapping = connection.ticketMapping;
       const state = Object.fromEntries(ticketStateKeys(mapping).filter((key) => isStateValue(fields[key])).map((key) => [key, fields[key]]));
-      return [integrationResourceSchema.parse({ ...common, resourceType: "ticket", externalId, url: url.toString(), title: shortText(fields[mapping?.titleField ?? "title"]) || shortText(fields[mapping?.referenceField ?? "ref"]) || externalId, state: { ...state, className } })];
+      // Deadlines are worked out from the timestamps of this read; only their results are kept on the card.
+      const deadlines = mapping?.deadlines === undefined ? {} : { deadlines: observeTicketDeadlines(fields, text(fields[mapping.statusField]), mapping.deadlines) };
+      return [integrationResourceSchema.parse({ ...common, resourceType: "ticket", externalId, url: url.toString(), title: shortText(fields[mapping?.titleField ?? "title"]) || shortText(fields[mapping?.referenceField ?? "ref"]) || externalId, state: { ...state, ...deadlines, className } })];
     });
   }
   if (connection.pluginId !== "outline") {

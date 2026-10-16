@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { Check, ExternalLink, FileText, RefreshCw, Ticket } from "lucide-react";
 import { useTranslation } from "@bitsentry-ce/i18n";
-import type { IntegrationResource } from "@bitsentry-ce/core/features/plugins";
+import { DEADLINE_LEVELS, ticketDeadlineStatus, type DeadlineLevel, type DeadlineStatus, type IntegrationResource } from "@bitsentry-ce/core/features/plugins";
 import { cn } from "../lib/utils";
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
@@ -10,7 +10,7 @@ import { KnowledgeExecutionPanel } from "./KnowledgeExecutionPanel";
 import { relativeTime } from "./relative-time";
 export interface IntegrationResourcesPort { refresh?(resource: IntegrationResource): Promise<unknown>; select?(resource: IntegrationResource, selected: boolean): Promise<unknown>; list(threadId: string): Promise<IntegrationResource[]>; }
 
-type BadgeVariant = "success" | "info" | "warning" | "secondary";
+type BadgeVariant = "success" | "info" | "warning" | "secondary" | "destructive";
 const SOLVED = new Set(["resolved", "closed"]);
 const IN_PROGRESS = new Set(["assigned", "pending", "escalated_tto", "escalated_ttr", "waiting_for_approval"]);
 
@@ -76,6 +76,64 @@ function documentView(row: IntegrationResource, t: Translate): CardView {
   };
 }
 
+/** The current time, moved on every `intervalMs`, so a countdown keeps running between refreshes. */
+function useNow(intervalMs: number): number {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const id = setInterval(() => { setNow(Date.now()); }, intervalMs);
+    return () => { clearInterval(id); };
+  }, [intervalMs]);
+  return now;
+}
+
+/** A deadline time: the clock time today, with the date on any other day. */
+export function deadlineTime(iso: string, now: number): string {
+  const date = new Date(iso);
+  const sameDay = date.toDateString() === new Date(now).toDateString();
+  return sameDay ? date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : date.toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+}
+
+const DEADLINE_KEY = "incidents.integrationResources.deadlines";
+export const deadlineLevelLabel = (level: DeadlineLevel, t: Translate) => t(`${DEADLINE_KEY}.${level}`);
+
+/** How one deadline reads on a card: a short status and the time it refers to. */
+export function deadlineSummary(status: DeadlineStatus, now: number, t: Translate): { variant: BadgeVariant; label: string; detail: string } {
+  switch (status.kind) {
+    case "pending": return { variant: "info", label: t(`${DEADLINE_KEY}.pending`, { minutes: status.minutesLeft }), detail: t(`${DEADLINE_KEY}.due`, { time: deadlineTime(status.dueAt, now) }) };
+    case "overdue": return { variant: "destructive", label: t(`${DEADLINE_KEY}.overdue`, { minutes: status.minutesOverdue }), detail: t(`${DEADLINE_KEY}.due`, { time: deadlineTime(status.dueAt, now) }) };
+    // A level met without a recorded time is not shown as on time.
+    case "met": return { variant: status.late === null ? "secondary" : status.late ? "warning" : "success", label: t(status.late === true ? `${DEADLINE_KEY}.metLate` : `${DEADLINE_KEY}.met`), detail: status.metAt === null ? t(`${DEADLINE_KEY}.metTimeUnknown`) : t(`${DEADLINE_KEY}.metAt`, { time: deadlineTime(status.metAt, now) }) };
+    case "no_target": return { variant: "secondary", label: t(`${DEADLINE_KEY}.noTarget`), detail: status.priority === null ? t(`${DEADLINE_KEY}.noPriority`) : t(`${DEADLINE_KEY}.priority`, { priority: status.priority }) };
+    case "not_started": return { variant: "secondary", label: t(`${DEADLINE_KEY}.notStarted`), detail: "" };
+  }
+}
+
+/** The L1 response and L2 acknowledgement deadlines of a ticket, when its connection tracks them. */
+function TicketDeadlines({ row }: { row: IntegrationResource }) {
+  const { t } = useTranslation();
+  const now = useNow(30_000);
+  const status = ticketDeadlineStatus(row.state, now);
+  if (status === null) return null;
+  return <section aria-label={t(`${DEADLINE_KEY}.title`)} className="space-y-1.5 rounded-xl border border-border/70 bg-muted/10 px-2.5 py-2">
+    <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
+      <span className="font-medium">{t(`${DEADLINE_KEY}.title`)}</span>
+      {status.priority !== null && <span>{t(`${DEADLINE_KEY}.priority`, { priority: status.priority })}</span>}
+    </div>
+    <dl className="space-y-1">
+      {DEADLINE_LEVELS.map((level) => {
+        const summary = deadlineSummary(status[level], now, t);
+        return <div key={level} className="flex min-w-0 items-center gap-2 text-sm">
+          <dt className="min-w-0 flex-1 truncate">{deadlineLevelLabel(level, t)}</dt>
+          <dd className="flex shrink-0 items-center gap-1.5">
+            {summary.detail !== "" && <span className="text-xs text-muted-foreground">{summary.detail}</span>}
+            <Badge variant={summary.variant} className="whitespace-nowrap">{summary.label}</Badge>
+          </dd>
+        </div>;
+      })}
+    </dl>
+  </section>;
+}
+
 function ResourceCard({ row, disabled, onToggle, onRefresh }: { row: IntegrationResource; disabled: boolean; onToggle?: (selected: boolean) => void; onRefresh?: () => void }) {
   const { t } = useTranslation();
   const selected = row.selected === true;
@@ -101,6 +159,7 @@ function ResourceCard({ row, disabled, onToggle, onRefresh }: { row: Integration
     {stale && <p className="text-xs text-amber-700 dark:text-amber-400">{t("incidents.integrationRecovery.staleCard")}</p>}
     <p className="truncate font-mono text-xs text-muted-foreground" title={row.externalId}>{referenceLine}</p>
     {shownFacts.length > 0 && <dl className="grid grid-cols-2 gap-x-3 gap-y-1">{shownFacts.map(([label, value]) => <Fact key={label} label={label}>{value}</Fact>)}</dl>}
+    {row.resourceType === "ticket" && <TicketDeadlines row={row} />}
     <div className="mt-auto flex items-center justify-between gap-2 border-t border-border pt-2">
       <time className="min-w-0 truncate text-xs text-muted-foreground" dateTime={row.observedAt} title={new Date(row.observedAt).toLocaleString()}>{t("incidents.integrationResources.observedAt", { time: relativeTime(row.observedAt) })}</time>
       <div className="flex shrink-0 items-center gap-1.5">

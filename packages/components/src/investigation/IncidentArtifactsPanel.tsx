@@ -1,7 +1,8 @@
 import { useEffect, useId, useMemo, useRef, useState, type ElementType, type KeyboardEvent, type ReactNode, type Ref } from "react";
-import { AlertTriangle, BookOpen, ChevronDown, FileText, Layers, Link2, Ticket, Webhook, X } from "lucide-react";
+import { AlertTriangle, BookOpen, ChevronDown, Clock, FileText, Layers, Link2, Ticket, Webhook, X } from "lucide-react";
 import { useTranslation } from "@bitsentry-ce/i18n";
-import type { IntegrationOperation, IntegrationResource } from "@bitsentry-ce/core/features/plugins";
+import { DEADLINE_LEVELS, needsAction, ticketDeadlineStatus, type DeadlineLevel, type DeadlineStatus, type IntegrationOperation, type IntegrationResource } from "@bitsentry-ce/core/features/plugins";
+import { Badge } from "../ui/badge";
 import { cn } from "../lib/utils";
 import type { ArtifactsFilter, ArtifactsPanelState, ArtifactsPanelSummary } from "./artifacts-panel-state";
 import { RunbookResultsView, useRunbookResults, type IncidentArtifactsMessage } from "./IncidentArtifactsRail";
@@ -9,7 +10,7 @@ import { usePolledRows, useSourceActions } from "./IncidentIntegrationsRail";
 import { orderOperations, useOperationDecisions, type IntegrationOperationsPort } from "./IntegrationActionsView";
 import { AttentionRow, DeliveryItemCard, OperationCard, useOpenCards } from "./IntegrationArtifactCards";
 import { needsReview, orderDeliveries, type IntegrationDelivery, type IntegrationDeliveriesPort } from "./IntegrationDeliveriesView";
-import { IntegrationSourcesView, useExecutionPanelState, type IntegrationResourcesPort } from "./IntegrationSourcesView";
+import { IntegrationSourcesView, deadlineLevelLabel, deadlineSummary, resourceKey, useExecutionPanelState, type IntegrationResourcesPort } from "./IntegrationSourcesView";
 import { KnowledgeExecutionPanel } from "./KnowledgeExecutionPanel";
 
 const COUNT_PILL = "rounded-full bg-muted px-1.5 py-0.5 text-[10px]";
@@ -57,6 +58,18 @@ function Section({ label, visible, sectionRef, children }: { label: string; visi
 const operationCardId = (id: string) => `operation:${id}`;
 const deliveryCardId = (id: string) => `delivery:${id}`;
 
+/** Linked tickets with a running L1 or L2 clock: overdue first, then the nearest deadline. */
+export function ticketsAwaitingResponse(rows: IntegrationResource[], now: number): Array<{ row: IntegrationResource; level: DeadlineLevel; status: Extract<DeadlineStatus, { kind: "pending" | "overdue" }> }> {
+  return rows.flatMap((row) => {
+    if (row.resourceType !== "ticket" || row.state.deleted === true) return [];
+    const status = ticketDeadlineStatus(row.state, now);
+    const level = status === null ? undefined : DEADLINE_LEVELS.find((key) => needsAction(status[key]));
+    if (status === null || level === undefined) return [];
+    const current = status[level];
+    return current.kind === "pending" || current.kind === "overdue" ? [{ row, level, status: current }] : [];
+  }).sort((a, b) => Date.parse(a.status.dueAt) - Date.parse(b.status.dueAt));
+}
+
 /**
  * Every artifact of one Incident in a single panel beside the chat: the sources the agent read, the runbook results, the
  * ticket actions and the webhook deliveries. What waits for the engineer is on top, and the filters narrow it to one kind.
@@ -100,7 +113,8 @@ export default function IncidentArtifactsPanel({ isOpen, filter, focusOnOpen = f
   const deliveryList = useMemo(() => orderDeliveries(deliveryRows.rows), [deliveryRows.rows]);
   const pendingOperations = useMemo(() => operationRows.filter((row) => row.status === "proposed"), [operationRows]);
   const reviewDeliveries = useMemo(() => deliveryList.filter(needsReview), [deliveryList]);
-  const needYou = pendingOperations.length + reviewDeliveries.length + runbookSummary.failedRuns.length + runbookSummary.pendingDrafts.length;
+  const dueTickets = useMemo(() => ticketsAwaitingResponse(sources.rows, Date.now()), [sources.rows]);
+  const needYou = pendingOperations.length + reviewDeliveries.length + runbookSummary.failedRuns.length + runbookSummary.pendingDrafts.length + dueTickets.length;
   const total = sources.rows.length + runbookSummary.count + operationRows.length + deliveryRows.rows.length;
   const pendingIds = useMemo(
     () => [...pendingOperations.map((row) => `operation:${row.id}`), ...runbookSummary.pendingDrafts.map((draft) => `draft:${draft.proposalId}`)].sort(),
@@ -187,6 +201,11 @@ export default function IncidentArtifactsPanel({ isOpen, filter, focusOnOpen = f
         </h3>
         {runbookSummary.pendingDrafts.map((draft) => <AttentionRow key={draft.proposalId} icon={FileText} title={draft.title} actionLabel={t("incidents.artifactsPanel.review")} onAction={() => { reviewDraft(draft.proposalId); }}
           subtitle={`${t(draft.kind === "create_new_runbook" ? "common.incidentArtifactsRail.proposal.newRunbook" : "common.incidentArtifactsRail.proposal.runbookUpdate")} · ${t("common.incidentArtifactsRail.proposal.versionOption", { version: draft.version })} · ${t("incidents.artifactsPanel.pendingApproval")}`} />)}
+        {dueTickets.map(({ row, level, status }) => {
+          const due = deadlineSummary(status, Date.now(), t);
+          return <AttentionRow key={`deadline:${resourceKey(row)}`} icon={Clock} title={row.title} actionLabel={t("incidents.integrationResources.deadlines.view")} onAction={() => { onFilterChange("sources"); }}
+            subtitle={`${deadlineLevelLabel(level, t)} · ${due.detail}`} badge={<Badge variant={due.variant} className="whitespace-nowrap">{due.label}</Badge>} />;
+        })}
         {pendingOperations.map(operationCard)}
         {reviewDeliveries.map(deliveryCard)}
         {runbookSummary.failedRuns.map((run) => <AttentionRow key={run.key} icon={FileText} title={run.title} actionLabel={t("incidents.artifactsPanel.viewRun")} onAction={() => { viewRun(run.key); }}

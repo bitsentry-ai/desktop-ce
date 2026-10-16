@@ -3,6 +3,7 @@ import { ticketOperation, ticketOperationToolSchema, type TicketOperationInput }
 import { integrationActionToolSchema, runIntegrationTool, type IntegrationToolsPort, type IntegrationActionInput } from "./integration-tools";
 import { telemetryActionConfigWithCliSchema } from "../runbooks/runbooks.schemas";
 import { z } from 'zod'
+import { ticketDeadlineStatus } from '../plugins/ticket-deadlines'
 import type { RunbookContext, ToolResult } from './types'
 import type {
   RunbookActionRecord,
@@ -1085,9 +1086,16 @@ export const hostTools = [
   },
   {
     name: 'list_thread_resources',
-    description: 'List tickets and documents linked to this conversation, including exact connection and external IDs, source URLs, observed state and freshness. Use these IDs for follow-ups; ask which resource when ambiguous. Refresh through a read tool before changing stale data.',
+    description: 'List tickets and documents linked to this conversation, including exact connection and external IDs, source URLs, observed state and freshness. Tickets on connections with deadlines also carry deadlineStatus: L1 response and L2 acknowledgement, each not_started, no_target, pending (minutesLeft), overdue (minutesOverdue) or met. targetMinutes is the configured target in minutes; quote it in minutes as given. A met level with late null has no recorded met time, so say it was met but do not call it on time or late. Never work out a deadline result from other ticket timestamps such as resolution or assignment dates. These are response deadlines only, not resolution or billable time. Use these IDs for follow-ups; ask which resource when ambiguous. Refresh through a read tool before changing stale data or reporting a deadline.',
     argsSchema: z.object({}).strict(),
-    handler: async (context) => ({ output: JSON.stringify(await context.integrationConnections?.listResources?.() ?? []) }),
+    handler: async (context) => {
+      const now = Date.now()
+      const rows = await context.integrationConnections?.listResources?.() ?? []
+      return { output: JSON.stringify(rows.map((row) => {
+        const deadlineStatus = ticketDeadlineStatus(row.state, now)
+        return deadlineStatus === null ? row : { ...row, deadlineStatus }
+      })) }
+    },
   },
   {
     name: 'list_integration_connections',

@@ -4,6 +4,7 @@ export * from "./desktop-plugin-auth-store";
 
 export * from "./integration-connections";
 export * from "./itop-ticket-mapping";
+export * from "./ticket-deadlines";
 
 export * from "./integration-operations";
 export * from "./customer-reports";
