@@ -1532,5 +1532,8 @@
   "common.incidents.customerReport.receivedNotProvided": "未提供收到时间",
   "common.incidents.customerReport.fromSender": "来自 {{sender}}",
   "common.incidents.customerReport.receivedOn": "收到于 {{receivedAt}}",
-  "common.incidents.customerReport.subjectLine": "主题：{{subject}}"
+  "common.incidents.customerReport.subjectLine": "主题：{{subject}}",
+  "common.incidents.customerReport.questions.confirm": "要保存这份客户报告吗？",
+  "common.incidents.customerReport.options.save": "保存",
+  "common.incidents.customerReport.options.changeSomething": "修改某项"
 }

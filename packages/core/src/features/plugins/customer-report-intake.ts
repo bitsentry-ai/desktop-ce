@@ -13,12 +13,15 @@ import {
  * again, and nothing is guessed: an unknown sender or time stays empty.
  */
 
-/** The questions, in the order they are asked. `origin` is asked only when the agent is not sure the message is from a customer. */
-export const customerReportIntakeFields = ["origin", "channel", "sender", "subject", "receivedAt", "reportText"] as const;
+/**
+ * The questions, in the order they are asked. `origin` is asked only when the agent is not sure the message is from a
+ * customer; `confirm` only when the chat gave every value, so the engineer still saves the report.
+ */
+export const customerReportIntakeFields = ["origin", "channel", "sender", "subject", "receivedAt", "reportText", "confirm"] as const;
 export type CustomerReportIntakeField = (typeof customerReportIntakeFields)[number];
 
-/** Fields the agent may fill from the conversation. The report text always comes from the engineer. */
-export const extractableIntakeFields = ["channel", "sender", "subject", "receivedAt"] as const;
+/** Fields the agent may fill from the conversation, each only with the exact words it came from. */
+export const extractableIntakeFields = ["channel", "sender", "subject", "receivedAt", "reportText"] as const;
 export type ExtractableIntakeField = (typeof extractableIntakeFields)[number];
 
 /** Answers the engineer can change after giving them. */
@@ -65,8 +68,8 @@ export type CustomerReportIntake = z.infer<typeof customerReportIntakeSchema>;
 /** One value the agent read from the conversation, with the exact words it came from. */
 export const intakeExtractionSchema = z.object({
   field: z.enum(extractableIntakeFields),
-  value: z.string().min(1).max(300),
-  quote: z.string().min(2).max(500),
+  value: z.string().min(1).max(30_000),
+  quote: z.string().min(2).max(30_000),
 }).strict();
 export type IntakeExtraction = z.infer<typeof intakeExtractionSchema>;
 
@@ -76,8 +79,10 @@ export const customerReportIntakeAnswerSchema = z.discriminatedUnion("field", [
   z.object({ field: z.literal("channel"), value: z.enum(customerReportChannels) }).strict(),
   z.object({ field: z.literal("sender"), value: senderSchema.nullable() }).strict(),
   z.object({ field: z.literal("subject"), value: subjectSchema }).strict(),
-  z.object({ field: z.literal("receivedAt"), value: isoWithOffsetSchema.nullable() }).strict(),
+  /** The zone the engineer typed or picked the time in; it is saved with the report. */
+  z.object({ field: z.literal("receivedAt"), value: isoWithOffsetSchema.nullable(), timeZone: z.string().min(1).max(64).refine(isIanaTimeZone).optional() }).strict(),
   z.object({ field: z.literal("reportText"), value: reportTextSchema }).strict(),
+  z.object({ field: z.literal("confirm"), value: z.literal(true) }).strict(),
 ]);
 export type CustomerReportIntakeAnswer = z.infer<typeof customerReportIntakeAnswerSchema>;
 
@@ -117,8 +122,11 @@ export class CustomerReportIntakeError extends Error {
   }
 }
 
-/** The next question for these answers, or null when the report can be saved. Subject is asked for email only. */
-export function nextIntakeQuestion(intake: Pick<CustomerReportIntake, "needsOrigin" | "answers">): CustomerReportIntakeField | null {
+/**
+ * The next question for these answers, or null when the report can be saved. Subject is asked for email only. A report
+ * is never saved without one engineer answer: when the chat gave everything, the engineer confirms it.
+ */
+export function nextIntakeQuestion(intake: Pick<CustomerReportIntake, "needsOrigin" | "answers" | "lastRequestId" | "customerReportId">): CustomerReportIntakeField | null {
   if (intake.needsOrigin) return "origin";
   const { answers } = intake;
   if (answers.channel === undefined) return "channel";
@@ -126,7 +134,7 @@ export function nextIntakeQuestion(intake: Pick<CustomerReportIntake, "needsOrig
   if (answers.channel === "email" && answers.subject === undefined) return "subject";
   if (answers.receivedAt === undefined) return "receivedAt";
   if (answers.reportText === undefined) return "reportText";
-  return null;
+  return intake.lastRequestId === null && intake.customerReportId === null ? "confirm" : null;
 }
 
 const normalize = (value: string) => value.normalize("NFKC").replace(/\s+/g, " ").trim().toLocaleLowerCase();
@@ -135,24 +143,36 @@ const normalize = (value: string) => value.normalize("NFKC").replace(/\s+/g, " "
 const FUTURE_TOLERANCE_MS = 5 * 60_000;
 const inFuture = (iso: string, now: Date) => Date.parse(iso) > now.getTime() + FUTURE_TOLERANCE_MS;
 
+/** A subject is taken only from an email's own subject line, never written from the complaint. */
+const SUBJECT_LINE = /(^|\s)(subject|subjek|perihal|re|fwd?)\s*:/i;
+
 /**
  * The extracted values that are grounded in the conversation. A value is kept only if its quote appears in what the
- * engineer wrote; a sender or subject must also appear inside its quote. Anything else is dropped, so it is asked.
+ * engineer wrote; a sender, subject or report text must also appear inside its quote, and a subject quote must be the
+ * email's subject line. Anything else is dropped, so it is asked.
  */
+/** The value this extraction stands for, or undefined when it is not grounded in its own quote. */
+function groundedValue(item: IntakeExtraction, quote: string, now: Date): string | undefined {
+  const value = item.value.trim();
+  switch (item.field) {
+    case "channel": return (customerReportChannels as readonly string[]).includes(value) ? value : undefined;
+    case "receivedAt": return isoWithOffsetSchema.safeParse(value).success && !inFuture(value, now) ? value : undefined;
+    case "subject": if (!SUBJECT_LINE.test(item.quote)) return undefined; break;
+    default: break;
+  }
+  if (value.length === 0 || !quote.includes(normalize(value))) return undefined;
+  // The customer's words keep their own line breaks; other values are one line.
+  return item.field === "reportText" ? item.value : value;
+}
+
 export function groundedExtractions(extracted: readonly IntakeExtraction[], conversation: readonly string[], now: Date = new Date()): Partial<Record<ExtractableIntakeField, string>> {
   const text = normalize(conversation.join("\n"));
   const kept: Partial<Record<ExtractableIntakeField, string>> = {};
   for (const item of extracted) {
     const quote = normalize(item.quote);
     if (quote.length < 2 || !text.includes(quote) || kept[item.field] !== undefined) continue;
-    const value = item.value.trim();
-    if (item.field === "channel") {
-      if ((customerReportChannels as readonly string[]).includes(value)) kept.channel = value;
-    } else if (item.field === "receivedAt") {
-      if (isoWithOffsetSchema.safeParse(value).success && !inFuture(value, now)) kept.receivedAt = value;
-    } else if (value.length > 0 && quote.includes(normalize(value))) {
-      kept[item.field] = value;
-    }
+    const value = groundedValue(item, quote, now);
+    if (value !== undefined) kept[item.field] = value;
   }
   return kept;
 }
@@ -163,6 +183,7 @@ function withExtractions(answers: CustomerReportIntakeAnswers, grounded: Partial
   if (next.sender === undefined && grounded.sender !== undefined) next.sender = grounded.sender;
   if (next.subject === undefined && grounded.subject !== undefined) next.subject = grounded.subject;
   if (next.receivedAt === undefined && grounded.receivedAt !== undefined) next.receivedAt = grounded.receivedAt;
+  if (next.reportText === undefined && grounded.reportText !== undefined) next.reportText = grounded.reportText;
   if (next.channel !== undefined && next.channel !== "email") delete next.subject;
   return customerReportIntakeAnswersSchema.parse(next);
 }
@@ -240,7 +261,7 @@ export function answerCustomerReportIntake(intake: CustomerReportIntake, input: 
   if (intake.lastRequestId === input.clientRequestId) return { kind: "unchanged", intake };
   if (intake.status === "dismissed") throw new CustomerReportIntakeError("INTAKE_CLOSED", "This customer report was dismissed.");
   const { answer } = input;
-  const answered = answer.field !== "origin" && intake.answers[answer.field] !== undefined;
+  const answered = answer.field !== "origin" && answer.field !== "confirm" && intake.answers[answer.field] !== undefined;
   if (answer.field !== intake.question && !answered) {
     throw new CustomerReportIntakeError("INTAKE_FIELD_NOT_ASKED", `The ${answer.field} question is not open.`);
   }
@@ -253,9 +274,11 @@ export function answerCustomerReportIntake(intake: CustomerReportIntake, input: 
     if (!answer.value) return { kind: "dismissed", intake: { ...base, status: "dismissed", question: null } };
     return settle({ ...base, needsOrigin: false, answers: { ...base.answers, reportText: base.answers.reportText ?? intake.relayedText } });
   }
+  if (answer.field === "confirm") return settle(base);
+  const timeZone = answer.field === "receivedAt" && answer.timeZone !== undefined ? answer.timeZone : base.timeZone;
   const answers: CustomerReportIntakeAnswers = { ...base.answers, [answer.field]: answer.value };
   if (answers.channel !== "email") delete answers.subject;
-  return settle({ ...base, answers: customerReportIntakeAnswersSchema.parse(answers) });
+  return settle({ ...base, timeZone, answers: customerReportIntakeAnswersSchema.parse(answers) });
 }
 
 function settle(next: CustomerReportIntake): CustomerReportIntakeAnswerResult {

@@ -1532,5 +1532,8 @@
   "common.incidents.customerReport.receivedNotProvided": "waktu diterima tidak diisi",
   "common.incidents.customerReport.fromSender": "Dari {{sender}}",
   "common.incidents.customerReport.receivedOn": "diterima {{receivedAt}}",
-  "common.incidents.customerReport.subjectLine": "Subjek: {{subject}}"
+  "common.incidents.customerReport.subjectLine": "Subjek: {{subject}}",
+  "common.incidents.customerReport.questions.confirm": "Simpan laporan pelanggan ini?",
+  "common.incidents.customerReport.options.save": "Simpan",
+  "common.incidents.customerReport.options.changeSomething": "Ubah sesuatu"
 }

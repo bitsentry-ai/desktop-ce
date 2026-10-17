@@ -164,6 +164,53 @@ describe('customer report intake in chat', () => {
   })
 })
 
+describe('a forwarded customer email in chat', () => {
+  const prompt = 'Please collect this forwarded customer email here only; do not create a ticket or change external systems.\nFrom: Rina from Acme\nSubject: Service desk timeout\nDate: 17 October 2026, 09:15 WITA (UTC+08:00)\n\nHi team, our service desk page keeps loading and then times out. Two colleagues have the same problem.'
+  const body = 'Hi team, our service desk page keeps loading and then times out. Two colleagues have the same problem.'
+
+  it('asks only to confirm when the email gives every value, and saves the customer\'s words without the engineer\'s instructions or headers', async () => {
+    const chat = conversation([prompt])
+    const started = await chat.tool({ origin: 'customer', extracted: [
+      { field: 'channel', value: 'email', quote: 'forwarded customer email' },
+      { field: 'sender', value: 'Rina from Acme', quote: 'From: Rina from Acme' },
+      { field: 'subject', value: 'Service desk timeout', quote: 'Subject: Service desk timeout' },
+      { field: 'receivedAt', value: '2026-10-17T09:15:00+08:00', quote: '17 October 2026, 09:15 WITA (UTC+08:00)' },
+      { field: 'reportText', value: body, quote: body },
+    ] })
+    expect(started).toMatchObject({ status: 'asking', question: { field: 'confirm' } })
+
+    const saved = await chat.answer(started.intakeId ?? '', { field: 'confirm', value: true })
+    expect(saved.report).toMatchObject({ channel: 'email', sender: 'Rina from Acme', subject: 'Service desk timeout', receivedAt: '2026-10-17T09:15:00+08:00', reportText: body })
+  })
+
+  it('keeps the engineer\'s instructions out of the customer\'s words: report text not in the message is asked instead', async () => {
+    const chat = conversation([prompt])
+    const started = await chat.tool({ origin: 'customer', extracted: [
+      { field: 'channel', value: 'email', quote: 'forwarded customer email' },
+      { field: 'reportText', value: 'The service desk is down for everyone.', quote: 'The service desk is down for everyone.' },
+    ] })
+    expect(started.known).not.toHaveProperty('reportText')
+  })
+
+  it('never takes a subject from the complaint itself', async () => {
+    const chat = conversation(['We just got a customer report by email: the service desk keeps loading and times out for them.'])
+    const started = await chat.tool({ origin: 'customer', extracted: [
+      { field: 'channel', value: 'email', quote: 'by email' },
+      { field: 'sender', value: 'customer', quote: 'customer report' },
+      { field: 'subject', value: 'the service desk keeps loading', quote: 'the service desk keeps loading' },
+    ] })
+    expect(started).toMatchObject({ question: { field: 'subject' } })
+  })
+
+  it('saves a typed received time with the zone the engineer typed it in', async () => {
+    const chat = conversation(['Rina from Acme called, she cannot log in to the portal.'])
+    const started = await chat.tool({ origin: 'customer', extracted: [{ field: 'sender', value: 'Rina', quote: 'Rina from Acme' }, { field: 'channel', value: 'phone', quote: 'called' }] })
+    await chat.answer(started.intakeId ?? '', { field: 'receivedAt', value: '2026-10-17T09:30:00+08:00', timeZone: 'Asia/Makassar' })
+    const saved = await chat.answer(started.intakeId ?? '', { field: 'reportText', value: 'Cannot log in.' })
+    expect(saved.report).toMatchObject({ receivedAt: '2026-10-17T09:30:00+08:00', timeZone: 'Asia/Makassar' })
+  })
+})
+
 describe('correcting a customer report', () => {
   async function savedEmailReport() {
     const chat = conversation(['We just got a customer report by email: the service desk keeps loading.'])

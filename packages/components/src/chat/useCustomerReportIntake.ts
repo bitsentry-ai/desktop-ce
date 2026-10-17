@@ -8,6 +8,8 @@ import {
   type EditableIntakeField,
 } from "@bitsentry-ce/core/features/plugins";
 import {
+  browserTimeZone,
+  CHANGE_SOMETHING,
   customerReportAnswerMessage,
   intakeAnswerText,
   intakeQuestionView,
@@ -56,7 +58,7 @@ const NO = /^(no|nope|tidak|bukan|nggak|enggak|ga|gak|non|否|不是)\b/i;
 
 /** The answer for what the engineer typed or picked, or the message that says why it cannot be used. */
 function resolveAnswer(t: Translate, field: CustomerReportIntakeField, view: IntakeQuestionView, typed: string, selected: number | undefined, timeZone: string): { answer: CustomerReportIntakeAnswer } | { error: string } | null {
-  if (typed.trim() !== "") {
+  if (typed.trim() !== "" && field !== "confirm") {
     switch (field) {
       case "origin": return { answer: { field, value: !NO.test(typed.trim()) } };
       case "channel": {
@@ -66,7 +68,7 @@ function resolveAnswer(t: Translate, field: CustomerReportIntakeField, view: Int
       case "receivedAt": {
         const parsed = parseReceivedTime(typed, timeZone);
         if ("issue" in parsed) return { error: t(parsed.issue === "future" ? `${K}.errors.future` : `${K}.errors.timeFormat`) };
-        return { answer: { field, value: parsed.iso } };
+        return { answer: { field, value: parsed.iso, timeZone } };
       }
       case "reportText": return { answer: { field, value: typed } };
       default: return { answer: { field, value: typed.trim() } };
@@ -75,6 +77,7 @@ function resolveAnswer(t: Translate, field: CustomerReportIntakeField, view: Int
   const option = selected === undefined ? undefined : view.options[selected];
   if (option === undefined) return null;
   if (option.value === TYPE_INSTEAD) return { error: t(`${K}.errors.typeTime`) };
+  if (field === "receivedAt") return { answer: { field, value: option.value as string | null, timeZone } };
   return { answer: { field, value: option.value } as CustomerReportIntakeAnswer };
 }
 
@@ -173,7 +176,12 @@ export function useCustomerReportIntake({ client, threadId, busy, send }: {
       if (choice !== undefined) setMode({ kind: "edit", field: choice.value as EditableIntakeField });
       return;
     }
-    const resolved = resolveAnswer(t, view.key, view, typed, index, intake.timeZone);
+    if (view.key === "confirm" && index !== undefined && view.options[index]?.value === CHANGE_SOMETHING) {
+      setMode({ kind: "choose" });
+      return;
+    }
+    // Typed and "just now" times are read on the engineer's own clock.
+    const resolved = resolveAnswer(t, view.key, view, typed, index, browserTimeZone());
     if (resolved === null) return;
     if ("error" in resolved) { setError(resolved.error); return; }
     const editing = mode.kind === "edit";

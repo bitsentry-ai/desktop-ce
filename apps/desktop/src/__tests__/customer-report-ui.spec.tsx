@@ -18,6 +18,7 @@ import {
 import { ChatBubble } from "@bitsentry-ce/components/chat/ChatBubble";
 import { Composer } from "@bitsentry-ce/components/chat/Composer";
 import { CustomerReportIntakeChatContext, useCustomerReportIntake } from "@bitsentry-ce/components/chat/useCustomerReportIntake";
+import { formatReceivedAt } from "@bitsentry-ce/components/chat/customerReport";
 import type { ChatMessage } from "@bitsentry-ce/components/chat/types";
 import { OperationBody } from "@bitsentry-ce/components/investigation/IntegrationActionsView";
 
@@ -27,7 +28,8 @@ vi.mock("@bitsentry-ce/i18n", () => ({
 
 const K = "common.incidents.customerReport";
 const THREAD = "thread-1";
-// 09:00 in Jakarta.
+// The engineer works in Jakarta; typed times are read on that clock. 09:00 in Jakarta.
+process.env.TZ = "Asia/Jakarta";
 const NOW = new Date("2026-10-17T02:00:00.000Z");
 
 beforeEach(() => { vi.useFakeTimers({ toFake: ["Date"] }); vi.setSystemTime(NOW); });
@@ -184,6 +186,36 @@ describe("customer report question in the composer", () => {
     await waitFor(() => { expect(sent).toHaveLength(2); });
     expect(answered(sent[1])).toMatchObject({ field: "sender", answer: "Sari", edit: true, next: "subject" });
     expect(await asked(`${K}.questions.subject`)).toBeTruthy();
+  });
+});
+
+describe("a forwarded email that gives every value", () => {
+  it("only asks to save it, then saves the customer's words", async () => {
+    const { service, agentAsks, reports } = intakeService();
+    const body = "Hi team, our service desk page keeps loading and then times out.";
+    await agentAsks({ origin: "customer", extracted: [
+      { field: "channel", value: "email", quote: "forwarded customer email" },
+      { field: "sender", value: "Rina from Acme", quote: "From: Rina from Acme" },
+      { field: "subject", value: "Service desk timeout", quote: "Subject: Service desk timeout" },
+      { field: "receivedAt", value: "2026-10-17T08:15:00+08:00", quote: "08:15 WITA (UTC+08:00)" },
+      { field: "reportText", value: body, quote: body },
+    ] }, [`Please collect this forwarded customer email.\nFrom: Rina from Acme\nSubject: Service desk timeout\nDate: 17 October 2026, 08:15 WITA (UTC+08:00)\n\n${body}`]);
+    const sent: string[] = [];
+    render(<Thread service={service} busy={false} sent={sent} />);
+    await asked(`${K}.questions.confirm`);
+    fireEvent.click(option(`${K}.options.save`));
+
+    await waitFor(() => { expect(sent).toHaveLength(1); });
+    expect(reports).toHaveLength(1);
+    expect(reports[0]).toMatchObject({ sender: "Rina from Acme", subject: "Service desk timeout", reportText: body });
+    expect(answered(sent[0])).toMatchObject({ field: "confirm", next: null, customerReportId: reports[0].id });
+  });
+});
+
+describe("a received time", () => {
+  it("shows the clock it was recorded with, and the zone name only when the offsets match", () => {
+    expect(formatReceivedAt("2026-10-17T10:15:00+08:00", "UTC", "en-US")).toBe("Oct 17, 2026, 10:15 AM (UTC+08:00)");
+    expect(formatReceivedAt("2026-10-17T10:15:00+08:00", "Asia/Makassar", "en-US")).toBe("Oct 17, 2026, 10:15 AM (Asia/Makassar, UTC+08:00)");
   });
 });
 

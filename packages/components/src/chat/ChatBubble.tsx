@@ -147,7 +147,7 @@ function CustomerReportIntakeMessage({ msg }: { msg: UserMessage }) {
   const report = answer.header.edit === true ? null : parseCustomerReportMessage(answer.body);
   return (
     <div className="space-y-3">
-      {answer.header.field !== "reportText" && <CustomerReportAnswerRow header={answer.header} />}
+      {answer.header.field !== "reportText" && answer.header.field !== "confirm" && <CustomerReportAnswerRow header={answer.header} />}
       {report !== null && (
         <div className="flex justify-end">
           <div className="max-w-[75%] space-y-2 rounded-2xl bg-muted px-4 py-2.5 text-sm">

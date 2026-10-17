@@ -78,6 +78,8 @@ export interface IntakeQuestionView {
 type Translate = (key: string, values?: Record<string, unknown>) => string;
 const K = "common.incidents.customerReport";
 export const TYPE_INSTEAD = "type";
+/** The confirm option that opens "What should I change?" instead of saving. */
+export const CHANGE_SOMETHING = "change";
 
 export function intakeQuestionTitle(t: Translate, key: IntakeQuestionKey, channel?: string): string {
   if (key === "receivedAt" && channel === "phone") return t(`${K}.questions.receivedAtPhone`);
@@ -93,9 +95,13 @@ function clock(iso: string, timeZone: string, locale?: string): string {
   }
 }
 
-/** What the panel shows for one question of this intake. */
-export function intakeQuestionView(t: Translate, key: IntakeQuestionKey, intake: CustomerReportIntake, now: Date = new Date(), locale?: string): IntakeQuestionView {
-  const { answers, timeZone } = intake;
+/**
+ * What the panel shows for one question of this intake. `localZone` is the zone the engineer types times in, the
+ * browser's own; times the intake already holds keep the zone they were given in.
+ */
+export function intakeQuestionView(t: Translate, key: IntakeQuestionKey, intake: CustomerReportIntake, now: Date = new Date(), locale?: string, localZone: string = browserTimeZone()): IntakeQuestionView {
+  const { answers } = intake;
+  const timeZone = localZone;
   const title = intakeQuestionTitle(t, key, answers.channel);
   const notSure = { label: t(`${K}.options.notSure`), value: null };
   switch (key) {
@@ -125,6 +131,15 @@ export function intakeQuestionView(t: Translate, key: IntakeQuestionKey, intake:
         key, title, placeholder: t(`${K}.placeholders.reportText`), multiline: true,
         options: intake.relayedText.trim() === "" ? [] : [{ label: t(`${K}.options.useWhatIWrote`), hint: shortText(intake.relayedText, 80), value: intake.relayedText }],
       };
+    case "confirm": {
+      const sender = answers.sender ?? t(`${K}.senderNotProvided`);
+      const received = answers.receivedAt === undefined || answers.receivedAt === null ? t(`${K}.receivedNotProvided`) : formatReceivedAt(answers.receivedAt, intake.timeZone, locale);
+      const summary = [answers.channel === undefined ? "" : t(`${K}.channels.${answers.channel}`), sender, received].filter((part) => part !== "").join(" · ");
+      return {
+        key, title, multiline: false,
+        options: [{ label: t(`${K}.options.save`), hint: summary, value: true }, { label: t(`${K}.options.changeSomething`), value: CHANGE_SOMETHING }],
+      };
+    }
     case "fix":
       return {
         key, title, multiline: false,
@@ -141,18 +156,39 @@ export function shortText(text: string, max: number): string {
 /** The answer as the timeline row and the agent see it. */
 export function intakeAnswerText(t: Translate, field: CustomerReportIntakeField, value: unknown, timeZone: string, locale?: string): string {
   if (field === "origin") return t(value === true ? `${K}.options.originYes` : `${K}.options.originNo`);
+  if (field === "confirm") return t(`${K}.options.save`);
   if (value === null) return t(`${K}.options.notSure`);
   if (field === "channel") return t(`${K}.channels.${String(value)}`);
   if (field === "receivedAt") return formatReceivedAt(String(value), timeZone, locale);
   return shortText(String(value), 200);
 }
 
-/** A received time in the report's own zone, with the offset the engineer recorded. */
+/** The zone's UTC offset at an instant, as `+08:00`. */
+function zoneOffset(timeZone: string, instant: Date): string | null {
+  const iso = zonedLocalToIso(nowInTimeZone(timeZone, instant), timeZone);
+  return iso === null ? null : iso.slice(-6);
+}
+
+/**
+ * A received time on the clock the engineer recorded: the same instant, the clock of its own offset, and the zone name
+ * only when that zone has the same offset then. "10:15 (UTC+08:00)" is never shown as "02:15 (UTC, UTC+08:00)".
+ */
 export function formatReceivedAt(receivedAt: string, timeZone: string, locale?: string): string {
-  const offset = /(Z|[+-]\d{2}:\d{2})$/.exec(receivedAt)?.[1] ?? "";
+  const recorded = /(Z|[+-]\d{2}:\d{2})$/.exec(receivedAt)?.[1];
+  const offset = recorded === undefined || recorded === "Z" ? "+00:00" : recorded;
+  const instant = new Date(receivedAt);
+  if (Number.isNaN(instant.getTime())) return receivedAt;
   try {
-    const time = new Intl.DateTimeFormat(locale, { dateStyle: "medium", timeStyle: "short", timeZone }).format(new Date(receivedAt));
-    return `${time} (${timeZone}, UTC${offset === "Z" ? "+00:00" : offset})`;
+    if (isIanaTimeZone(timeZone) && zoneOffset(timeZone, instant) === offset) {
+      const time = new Intl.DateTimeFormat(locale, { dateStyle: "medium", timeStyle: "short", timeZone }).format(instant);
+      return `${time} (${timeZone}, UTC${offset})`;
+    }
+    // No zone with this offset is known: show the recorded wall clock, read as UTC shifted by the offset.
+    const sign = offset.startsWith("-") ? -1 : 1;
+    const minutes = sign * (Number(offset.slice(1, 3)) * 60 + Number(offset.slice(4, 6)));
+    const wall = new Date(instant.getTime() + minutes * 60_000);
+    const time = new Intl.DateTimeFormat(locale, { dateStyle: "medium", timeStyle: "short", timeZone: "UTC" }).format(wall);
+    return `${time} (UTC${offset})`;
   } catch {
     return receivedAt;
   }
