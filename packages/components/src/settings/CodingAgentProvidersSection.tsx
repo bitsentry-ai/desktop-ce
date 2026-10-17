@@ -1128,7 +1128,7 @@ export function CodingAgentProvidersSection({
       }))
       await llmApi.saveProvider(provider, {
         availableModels: models,
-        ...(nextModel === currentModel ? {} : { model: nextModel }),
+        ...(nextModel !== currentModel ? { model: nextModel } : {}),
       })
       notifyLlmProvidersUpdated()
       captureDesktopAnalyticsEvent('desktop_coding_agent_models_synced', {

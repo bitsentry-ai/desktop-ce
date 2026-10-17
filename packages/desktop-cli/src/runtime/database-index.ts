@@ -1,8 +1,8 @@
 import { archiveRetiredDesktopData } from './retirement-archive.js'
 import log from 'electron-log'
 import { ensureIntegrationStorageSchema } from './integration-storage-schema.js'
-import { mkdir } from 'node:fs/promises'
-import path from 'node:path'
+import { mkdir } from 'fs/promises'
+import path from 'path'
 import { DbClient } from '@bitsentry-ce/core/features/desktop/desktop-database-client'
 import {
   createDatabaseSnapshot,

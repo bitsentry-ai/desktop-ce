@@ -8,9 +8,7 @@ export async function selectedKnowledge(context: HostToolContext): Promise<Integ
   return (await context.integrationConnections?.listResources?.() ?? []).filter((row) => row.selected);
 }
 export function knowledgeReferences(resources: IntegrationResource[]): string {
-  if (resources.length === 0) return "";
-  const lines = resources.map((row) => `- ${row.connectionName} / ${row.resourceType} ${row.externalId}: ${row.url} (observed ${row.observedAt})`);
-  return `\n\n## BitSentry knowledge sources\n${lines.join("\n")}`;
+  return resources.length ? "\n\n## BitSentry knowledge sources\n" + resources.map((row) => `- ${row.connectionName} / ${row.resourceType} ${row.externalId}: ${row.url} (observed ${row.observedAt})`).join("\n") : "";
 }
 export async function readSelectedKnowledge(context: HostToolContext) {
   const resources = await selectedKnowledge(context);
@@ -40,7 +38,7 @@ export async function draftOutlinePostmortem(context: HostToolContext, input: z.
   const sources = await selectedKnowledge(context);
   const execution = context.session.incidentThreadId ? await context.gateway.getLatestForIncidentThread(context.session.incidentThreadId) : null;
   const actualResult = execution === null ? "No runbook execution is recorded for this conversation." : JSON.stringify({ executionId: execution.executionId, runbookId: execution.runbookId, runbookTitle: execution.runbookTitle, status: execution.status, recordedResult: context.summarizeExecution?.(execution) ?? { startedAt: execution.startedAt, completedAt: execution.completedAt, steps: execution.steps.map((step) => ({ title: step.title, type: step.type, status: step.status, exitCode: step.exitCode, statusCode: step.statusCode })) } }, null, 2).slice(0, 16000);
-  return runIntegrationTool(context.integrationConnections, await context.pluginRuntime?.listPlugins() ?? [], { connectionId: input.connectionId, actionId: "create_document", input: { collectionId: input.collectionId, title: input.title, text: `${input.markdown + knowledgeReferences(sources)}\n\n## Recorded execution evidence\n\n\`\`\`json\n${actualResult}\n\`\`\``, publish: false } }, "preview");
+  return runIntegrationTool(context.integrationConnections, await context.pluginRuntime?.listPlugins() ?? [], { connectionId: input.connectionId, actionId: "create_document", input: { collectionId: input.collectionId, title: input.title, text: input.markdown + knowledgeReferences(sources) + "\n\n## Recorded execution evidence\n\n```json\n" + actualResult + "\n```", publish: false } }, "preview");
 }
 
 export const knowledgeSearchSchema = z.object({ connectionId: z.uuid(), query: z.string().min(1).max(300), limit: z.number().int().min(1).max(50).default(10) }).strict();

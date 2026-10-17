@@ -1,4 +1,4 @@
-import path from 'node:path'
+import path from 'path'
 
 const approvedRunbookImportPaths = new Map<string, string>()
 const approvedRunbookExportPaths = new Map<string, string>()

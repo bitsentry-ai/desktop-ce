@@ -513,15 +513,15 @@ export class SettingsUseCasesImpl implements SettingsUseCases {
       const normalizedLastUsedExternalSourceId =
         normalizeLastUsedExternalSourceId(lastUsedExternalSourceId);
 
-      if (normalizedLastUsedExternalSourceId === undefined) {
-        await this.settingRepository.remove("general.lastUsedExternalSourceId");
-      } else {
+      if (normalizedLastUsedExternalSourceId !== undefined) {
         await this.settingRepository.upsert(
           "general.lastUsedExternalSourceId",
           normalizedLastUsedExternalSourceId,
           "string",
           userId,
         );
+      } else {
+        await this.settingRepository.remove("general.lastUsedExternalSourceId");
       }
       // Always drop the legacy row so a stale fallback can't resurrect
       // after the user clears or changes their selection.

@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { randomUUID } from "crypto";
 import { getErrorMessage } from "../../shared/errors";
 import { readBoundedResponseText } from "../../shared/bounded-response";
 import {

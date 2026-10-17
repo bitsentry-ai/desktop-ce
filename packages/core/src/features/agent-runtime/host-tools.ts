@@ -992,7 +992,23 @@ async function proposeRunbookEdit(context: HostToolContext, input: ProposeRunboo
   )
   let proposal: RunbookAuthoringProposal
 
-  if (unpersistedCreate === undefined) {
+  if (unpersistedCreate !== undefined) {
+    const lineage = resolveProposalLineage(
+      context.session,
+      'create_new_runbook',
+      unpersistedCreate.id,
+    )
+    proposal = createRunbookCreationRevisionProposal({
+      ...lineage,
+      incidentThreadId: context.session.incidentThreadId,
+      prompt: input.prompt,
+      targetRunbook: unpersistedCreate.proposedRunbook,
+      operations,
+      sourceAttachmentId: context.session.sourceAttachmentId,
+      sourceMessageId: context.session.sourceMessageId,
+      normalizedFindings: context.session.normalizedFindings,
+    })
+  } else {
     const targetRunbook = await resolveAuthorableRunbookReference(context, input)
     const lineage = resolveProposalLineage(
       context.session,
@@ -1005,22 +1021,6 @@ async function proposeRunbookEdit(context: HostToolContext, input: ProposeRunboo
       incidentThreadId: context.session.incidentThreadId,
       prompt: input.prompt,
       targetRunbook,
-      operations,
-      sourceAttachmentId: context.session.sourceAttachmentId,
-      sourceMessageId: context.session.sourceMessageId,
-      normalizedFindings: context.session.normalizedFindings,
-    })
-  } else {
-    const lineage = resolveProposalLineage(
-      context.session,
-      'create_new_runbook',
-      unpersistedCreate.id,
-    )
-    proposal = createRunbookCreationRevisionProposal({
-      ...lineage,
-      incidentThreadId: context.session.incidentThreadId,
-      prompt: input.prompt,
-      targetRunbook: unpersistedCreate.proposedRunbook,
       operations,
       sourceAttachmentId: context.session.sourceAttachmentId,
       sourceMessageId: context.session.sourceMessageId,

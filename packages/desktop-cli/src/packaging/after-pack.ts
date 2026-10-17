@@ -1,5 +1,5 @@
-import { access, chmod, cp, mkdir, readdir, realpath, writeFile } from 'node:fs/promises'
-import path from 'node:path'
+import { access, chmod, cp, mkdir, readdir, realpath, writeFile } from 'fs/promises'
+import path from 'path'
 
 export type ElectronPlatformName = 'darwin' | 'linux' | 'win32'
 const CLI_WRAPPER_NODE_PATH_ENV = 'BITSENTRY_CLI_WRAPPER_NODE_PATH'

@@ -1,12 +1,12 @@
-import { spawn } from 'node:child_process'
-import type { ChildProcess } from 'node:child_process'
+import { spawn } from 'child_process'
+import type { ChildProcess } from 'child_process'
 import { createClaudeCodeSubscriptionEnv } from './claude-code-env.js'
 import { createHostToolCore } from './host-tool-core.js'
 import { codingAgentsLogger as log } from './logger.js'
 import type { LocalAiExecutionResult, LocalAiStreamDelta } from './types.js'
-import { mkdtemp, rm } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { mkdtemp, rm } from 'fs/promises'
+import { tmpdir } from 'os'
+import { join } from 'path'
 import {
   getHostTools,
   type HostToolContext,

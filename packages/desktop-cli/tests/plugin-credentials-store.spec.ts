@@ -1,5 +1,5 @@
 import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
-import * as fileSystem from 'node:fs/promises'
+import * as fileSystem from 'fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto'
@@ -10,7 +10,7 @@ import {
 } from '../src/runtime/plugin-credentials-store'
 
 vi.mock('fs/promises', async (importOriginal) => {
-  const original = await importOriginal<typeof import('node:fs/promises')>()
+  const original = await importOriginal<typeof import('fs/promises')>()
   return { ...original, rename: vi.fn(original.rename) }
 })
 

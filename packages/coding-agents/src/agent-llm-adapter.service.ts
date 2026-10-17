@@ -1826,9 +1826,9 @@ export class AgentLlmAdapterService {
               name: tc.name,
               args: tc.args,
             },
-            ...(tc.thoughtSignature === undefined
-              ? {}
-              : { thoughtSignature: tc.thoughtSignature }),
+            ...(tc.thoughtSignature !== undefined
+              ? { thoughtSignature: tc.thoughtSignature }
+              : {}),
           })))
           return {
             role: 'model' as const,

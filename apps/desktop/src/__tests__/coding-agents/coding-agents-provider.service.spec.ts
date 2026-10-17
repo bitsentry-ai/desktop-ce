@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("child_process", async () => {
   const actual =
-    await vi.importActual<typeof import("node:child_process")>("child_process");
+    await vi.importActual<typeof import("child_process")>("child_process");
   return {
     ...actual,
     execFile: vi.fn(),
@@ -26,7 +26,7 @@ vi.mock("../../../../../packages/coding-agents/src/cli-probe.service", () => ({
   ],
 }));
 
-import { ChildProcess, execFile } from "node:child_process";
+import { ChildProcess, execFile } from "child_process";
 import {
   CodingAgentsProviderService,
   type CodingAgentsProviderDependencies,

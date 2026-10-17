@@ -19,7 +19,7 @@ import {
   createDesktopAgentLlmAdapter,
   type AgentLlmCredentialsStore,
 } from '@bitsentry-ce/coding-agents'
-import path from "node:path";
+import path from "path";
 import { DesktopRunbookStore as RunbookStore } from '@bitsentry-ce/core/features/runbooks/desktop-runbook.store'
 import { CodingAgentsProviderService } from './desktop-coding-agents.js'
 import { SqliteErrorSourcesRepositoryAdapter } from '@bitsentry-ce/core/features/error-sources/desktop-sqlite-error-sources.adapter'

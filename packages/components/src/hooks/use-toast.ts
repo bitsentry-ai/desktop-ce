@@ -84,12 +84,12 @@ export const reducer = (state: State, action: Action): State => {
 
       // ! Side effects ! - This could be extracted into a dismissToast() action,
       // but I'll keep it here for simplicity
-      if (toastId === undefined) {
-        for (const queued of state.toasts) {
-          addToRemoveQueue(queued.id);
-        }
-      } else {
+      if (toastId !== undefined) {
         addToRemoveQueue(toastId);
+      } else {
+        state.toasts.forEach((toast) => {
+          addToRemoveQueue(toast.id);
+        });
       }
 
       return {
@@ -140,12 +140,11 @@ function toast({ ...props }: Toast) {
     duration = props.duration;
   }
 
-  const update = (next: ToasterToast) => {
-    dispatch({
+  const update = (props: ToasterToast) =>
+    { dispatch({
       type: "UPDATE_TOAST",
-      toast: { ...next, id },
-    });
-  };
+      toast: { ...props, id },
+    }); };
   const dismiss = () => { dispatch({ type: "DISMISS_TOAST", toastId: id }); };
 
   dispatch({

@@ -1,4 +1,4 @@
-import { readFile, writeFile } from "node:fs/promises";
+import { readFile, writeFile } from "fs/promises";
 import log from "electron-log";
 
 import {

@@ -1,8 +1,8 @@
-import { spawnSync } from 'node:child_process'
-import { access, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
-import path from 'node:path'
-import { pathToFileURL } from 'node:url'
+import { spawnSync } from 'child_process'
+import { access, mkdir, mkdtemp, rm, writeFile } from 'fs/promises'
+import { tmpdir } from 'os'
+import path from 'path'
+import { pathToFileURL } from 'url'
 
 import {
   DesktopPluginRuntimeService,

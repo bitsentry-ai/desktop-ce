@@ -1,6 +1,6 @@
-import { access } from 'node:fs/promises'
-import path from 'node:path'
-import { spawn } from 'node:child_process'
+import { access } from 'fs/promises'
+import path from 'path'
+import { spawn } from 'child_process'
 
 interface RunPackagedCliSmokeOptions {
   desktopDir: string

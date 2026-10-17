@@ -49,10 +49,6 @@ const correctnessRules = {
   "require-yield": "error",
   "@typescript-eslint/no-loop-func": "error",
   "@typescript-eslint/no-non-null-assertion": "error",
-  "@typescript-eslint/no-shadow": [
-    "error",
-    { allow: ["_"], ignoreOnInitialization: true },
-  ],
   "@typescript-eslint/no-unused-vars": [
     "error",
     {
@@ -64,8 +60,6 @@ const correctnessRules = {
     },
   ],
   "unicorn/error-message": "error",
-  "unicorn/new-for-builtins": "error",
-  "unicorn/no-chained-comparison": "error",
   "unicorn/no-instanceof-array": "error",
   "unicorn/prefer-number-properties": "error",
   "unicorn/throw-new-error": "error",
@@ -77,7 +71,6 @@ const readabilityRules = {
   "no-else-return": "error",
   "no-implicit-coercion": "error",
   "no-lonely-if": "error",
-  "no-nested-ternary": "error",
   "no-return-assign": "error",
   "no-unneeded-ternary": "error",
   "no-useless-computed-key": "error",
@@ -90,7 +83,6 @@ const readabilityRules = {
   "prefer-const": "error",
   "prefer-exponentiation-operator": "error",
   "prefer-object-spread": "error",
-  "prefer-template": "error",
   "@typescript-eslint/consistent-generic-constructors": "error",
   "@typescript-eslint/default-param-last": "error",
   "@typescript-eslint/no-confusing-non-null-assertion": "error",
@@ -101,12 +93,9 @@ const readabilityRules = {
   "@typescript-eslint/prefer-function-type": "error",
   "sonarjs/cognitive-complexity": ["error", 15],
   "sonarjs/no-nested-conditional": "error",
-  "unicorn/no-for-loop": "error",
-  "unicorn/no-negated-condition": "error",
   "unicorn/no-unnecessary-boolean-comparison": "error",
   "unicorn/no-unreadable-iife": "error",
   "unicorn/no-useless-boolean-cast": "error",
-  "unicorn/no-useless-else": "error",
   "unicorn/no-useless-fallback-in-spread": "error",
   "unicorn/no-useless-promise-resolve-reject": "error",
   "unicorn/no-useless-switch-case": "error",
@@ -121,7 +110,6 @@ const readabilityRules = {
   "unicorn/prefer-else-if": "error",
   "unicorn/prefer-includes": "error",
   "unicorn/prefer-logical-operator-over-ternary": "error",
-  "unicorn/prefer-node-protocol": "error",
   "unicorn/prefer-optional-catch-binding": "error",
   "unicorn/prefer-regexp-test": "error",
   "unicorn/prefer-single-call": "error",
@@ -150,7 +138,11 @@ const sharedGlobals = {
 };
 
 const testStyleRuleOverrides = {
-  files: ["**/*.{spec,test}.{ts,tsx}", "**/*.e2e-spec.ts", "**/__tests__/**/*.{ts,tsx}"],
+  files: [
+    "**/*.{spec,test}.{ts,tsx}",
+    "**/*.e2e-spec.ts",
+    "**/__tests__/**/*.{ts,tsx}",
+  ],
   rules: {
     "@typescript-eslint/consistent-type-assertions": "off",
     "@typescript-eslint/no-extraneous-class": "off",

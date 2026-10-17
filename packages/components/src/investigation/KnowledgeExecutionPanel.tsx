@@ -127,7 +127,7 @@ export function KnowledgeExecutionPanel({ threadId, disabled, active = true, hid
       if (attempt.current?.canonical !== canonical) attempt.current = { canonical, nonce: crypto.randomUUID() };
       const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(canonical + attempt.current.nonce)));
       // i18n-ignore-next-line -- Internal idempotency key prefix, never displayed.
-      const requestKey = `knowledge:${Array.from(digest, (byte) => byte.toString(16).padStart(2, "0")).join("")}`;
+      const requestKey = "knowledge:" + Array.from(digest, (byte) => byte.toString(16).padStart(2, "0")).join("");
       const result = await runbooks.execute({ runbookId: selected.id, expectedRevisionNumber: selected.revisionNumber, requestKey, incidentThreadId: threadId, parameterValues: values });
       attempt.current = null;
       setExecutionId(result.executionId); setApproved(false);

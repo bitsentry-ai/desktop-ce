@@ -1,4 +1,4 @@
-import path from 'node:path'
+import path from 'path'
 
 type AfterPackModule = {
   runAfterPack: (context: unknown, desktopDir: string) => Promise<void>

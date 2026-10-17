@@ -72,7 +72,7 @@ export function validateIntegrationConnection(input: unknown, plugin?: DesktopPl
 }
 
 export function hasIntegrationCredentials(connection: IntegrationConnectionInput, plugin?: DesktopPluginDescriptor | null): boolean {
-  if (connection.config !== undefined) return plugin == null ? Object.values(connection.auth).some((value) => value.trim().length > 0) : hasPluginCredentials(plugin, connection.auth);
+  if (connection.config !== undefined) return plugin != null ? hasPluginCredentials(plugin, connection.auth) : Object.values(connection.auth).some((value) => value.trim().length > 0);
   const present = (key: string) => (connection.auth[key]?.trim().length ?? 0) > 0;
   return connection.pluginId === "itop"
     ? present("baseUrl") && (present("authToken") || (present("username") && present("password")))

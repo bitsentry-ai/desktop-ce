@@ -1,9 +1,9 @@
 import { randomUUID } from 'node:crypto'
 import { LocalPluginCredentialsStore } from '../src/runtime/plugin-credentials-store'
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
-import path from 'node:path'
-import { pathToFileURL } from 'node:url'
+import { mkdtemp, readFile, rm, writeFile } from 'fs/promises'
+import { tmpdir } from 'os'
+import path from 'path'
+import { pathToFileURL } from 'url'
 
 import {
   runRunbooksCli,

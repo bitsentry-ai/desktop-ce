@@ -1,9 +1,9 @@
-import process from 'node:process'
-import os from 'node:os'
-import path from 'node:path'
-import { access, mkdtemp, open, readFile, rm, writeFile } from 'node:fs/promises'
-import { spawn } from 'node:child_process'
-import { fileURLToPath } from 'node:url'
+import process from 'process'
+import os from 'os'
+import path from 'path'
+import { access, mkdtemp, open, readFile, rm, writeFile } from 'fs/promises'
+import { spawn } from 'child_process'
+import { fileURLToPath } from 'url'
 import { parse as parseYaml } from 'yaml'
 
 import {

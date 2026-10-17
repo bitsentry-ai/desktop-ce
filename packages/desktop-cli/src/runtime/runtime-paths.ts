@@ -1,5 +1,5 @@
-import os from 'node:os'
-import path from 'node:path'
+import os from 'os'
+import path from 'path'
 import { getDesktopEditionIdentity } from '@bitsentry-ce/core/features/desktop/desktop-edition-identity'
 import { tryGetElectronApp } from './electron-app.js'
 

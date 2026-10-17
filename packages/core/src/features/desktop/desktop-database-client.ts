@@ -1,7 +1,7 @@
 import { retireDesktopTables } from './desktop-retirement'
 import { SqliteWorker } from './desktop-database-worker'
 import BetterSqlite3 from 'better-sqlite3'
-import { randomUUID } from 'node:crypto'
+import { randomUUID } from 'crypto'
 import {
   and,
   asc,

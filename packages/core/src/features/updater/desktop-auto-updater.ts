@@ -152,7 +152,11 @@ export function startDesktopAutoUpdater(
 
   const isoNow = (): string => new Date().toISOString()
 
-  if (options.shouldEnable) {
+  if (!options.shouldEnable) {
+    options.logger.info(
+      `[updater] disabled: ${options.disabledReasonCode ?? 'unknown reason'}`,
+    )
+  } else {
     options.autoUpdater.logger = options.logger
     options.autoUpdater.autoDownload = false
     options.autoUpdater.autoInstallOnAppQuit = true
@@ -229,10 +233,6 @@ export function startDesktopAutoUpdater(
       installInFlight = false
       setState({ status: 'error', message })
     })
-  } else {
-    options.logger.info(
-      `[updater] disabled: ${options.disabledReasonCode ?? 'unknown reason'}`,
-    )
   }
 
   const triggerCheck = async (reason: string): Promise<void> => {
