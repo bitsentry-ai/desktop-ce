@@ -1247,5 +1247,7 @@
   "common.structured.showChange": "Voir la modification",
   "common.structured.before": "Avant",
   "common.structured.after": "Après",
-  "common.structured.data": "Données"
+  "common.structured.data": "Données",
+  "common.results.statusAwaitingApproval": "En attente d’approbation",
+  "common.results.statusSkipped": "Ignorée"
 }

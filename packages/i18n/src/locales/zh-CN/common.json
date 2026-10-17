@@ -1247,5 +1247,7 @@
   "common.structured.showChange": "查看变更",
   "common.structured.before": "变更前",
   "common.structured.after": "变更后",
-  "common.structured.data": "数据"
+  "common.structured.data": "数据",
+  "common.results.statusAwaitingApproval": "等待批准",
+  "common.results.statusSkipped": "已跳过"
 }

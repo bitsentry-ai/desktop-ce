@@ -7,6 +7,7 @@
  */
 
 export type RunOutcomeStatus =
+  | "awaiting_approval"
   | "queued"
   | "pending"
   | "running"
@@ -135,6 +136,8 @@ export function describeRunOutcome(
     case "queued":
     case "pending":
       return { text: t("common.results.outcomeWaiting"), tone: "neutral" };
+    case "awaiting_approval":
+      return { text: t("common.results.statusAwaitingApproval"), tone: "warning" };
     case "running":
     case "cancelled":
     case "claim_expired": {

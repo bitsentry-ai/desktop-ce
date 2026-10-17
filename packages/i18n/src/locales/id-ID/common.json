@@ -1247,5 +1247,7 @@
   "common.structured.showChange": "Lihat perubahan",
   "common.structured.before": "Sebelum",
   "common.structured.after": "Sesudah",
-  "common.structured.data": "Data"
+  "common.structured.data": "Data",
+  "common.results.statusAwaitingApproval": "Menunggu persetujuan",
+  "common.results.statusSkipped": "Dilewati"
 }
