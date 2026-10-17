@@ -51,6 +51,10 @@ export function useCustomerReportIntakeChat(): CustomerReportIntakeChat | null {
 }
 
 type Mode = { kind: "asked" } | { kind: "edit"; field: EditableIntakeField } | { kind: "choose" };
+/** The intake as last read or saved; a higher version is newer. */
+interface Stored { threadId: string | null; intake: CustomerReportIntake | null; version: number }
+/** An answer sent to the agent: the intake it answered, the intake it saved, and whether the agent's turn started. */
+interface Sent { threadId: string; asked: CustomerReportIntake; next: CustomerReportIntake; version: number; turn: boolean }
 type Translate = (key: string, values?: Record<string, unknown>) => string;
 const K = "common.incidents.customerReport";
 
@@ -109,34 +113,53 @@ function typedReceivedTime(iso: string, timeZone: string, now: Date = new Date()
 /**
  * The conversation's customer report intake. The agent opens a question; the engineer answers in the composer panel;
  * each answer is saved, then sent to the agent as a chat message. The answered question stays, disabled, until the
- * agent's turn starts, and the next question opens only when that turn ends, so it always follows the agent's reply.
+ * agent's turn starts, and the next question opens in the render that ends that turn, together with the agent's reply.
  */
-export function useCustomerReportIntake({ client, threadId, busy, send }: {
+export function useCustomerReportIntake({ client, threadId, busy, refresh, send }: {
   client: CustomerReportIntakeClient | undefined;
   threadId: string | null;
   /** True while the agent works; the panel waits until its reply is in. */
   busy: boolean;
+  /** Changes when the agent may have changed the intake during its turn, so the question is ready when the turn ends. */
+  refresh?: number;
   send: (text: string) => void | Promise<void>;
 }): { composer: ComposerCustomerReportIntake | undefined; chat: CustomerReportIntakeChat } {
   const { t, i18n } = useTranslation();
-  const [state, setState] = useState<{ threadId: string | null; intake: CustomerReportIntake | null }>({ threadId: null, intake: null });
+  const [state, setState] = useState<Stored>({ threadId: null, intake: null, version: 0 });
+  const [sent, setSent] = useState<Sent | null>(null);
   const [mode, setMode] = useState<Mode>({ kind: "asked" });
   const [selected, setSelected] = useState<number | undefined>(undefined);
   const [answerText, setAnswerText] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const request = useRef<{ key: string; id: string } | null>(null);
-  const intake = state.threadId === threadId ? state.intake : null;
+  // Each read and save takes the next version; a read that ends after a newer read or save is dropped.
+  const version = useRef(0);
+  const sentRef = useRef<Sent | null>(null);
+  const hold = useCallback((next: Sent | null) => { sentRef.current = next; setSent(next); }, []);
+  const stored = state.threadId === threadId ? state : null;
+  const pending = sent?.threadId === threadId ? sent : null;
+  // The answered question stays until the agent's turn starts. The saved intake opens in the render that ends that
+  // turn, so it shows with the agent's reply; a read made after the save replaces it.
+  let intake = stored?.intake ?? null;
+  if (pending !== null && !pending.turn) intake = pending.asked;
+  else if (pending !== null && pending.version > (stored?.version ?? 0)) intake = pending.next;
 
   const load = useCallback(async () => {
     if (client === undefined || threadId === null) return;
+    const current = ++version.current;
     try {
       const latest = await client.latest(threadId);
-      setState({ threadId, intake: latest });
+      if (current === version.current) setState({ threadId, intake: latest, version: current });
     } catch {
       // The panel stays closed until the next load; chat itself keeps working.
     }
   }, [client, threadId]);
+  /** The sent answer is done with: its saved intake is kept unless a newer one was read. */
+  const settle = useCallback((done: Sent) => {
+    setState((current) => (current.threadId === done.threadId && done.version > current.version ? { threadId: done.threadId, intake: done.next, version: done.version } : current));
+    if (sentRef.current?.version === done.version) hold(null);
+  }, [hold]);
 
   useEffect(() => {
     setMode({ kind: "asked" });
@@ -145,9 +168,17 @@ export function useCustomerReportIntake({ client, threadId, busy, send }: {
   // The agent opens questions during its turn; read the intake again once the turn ends.
   const wasBusy = useRef(busy);
   useEffect(() => {
-    if (wasBusy.current && !busy) void load();
+    if (busy && sentRef.current !== null && !sentRef.current.turn) hold({ ...sentRef.current, turn: true });
+    if (wasBusy.current && !busy) {
+      const done = sentRef.current;
+      if (done?.turn === true) settle(done);
+      void load();
+    }
     wasBusy.current = busy;
-  }, [busy, load]);
+  }, [busy, hold, load, settle]);
+  useEffect(() => {
+    if (refresh !== undefined && refresh > 0) void load();
+  }, [refresh, load]);
 
   let key: IntakeQuestionKey | null = null;
   if (mode.kind === "edit") key = mode.field;
@@ -194,11 +225,13 @@ export function useCustomerReportIntake({ client, threadId, busy, send }: {
       const result = await client.answer({ threadId, intakeId: intake.id, clientRequestId: request.current.id, answer: resolved.answer });
       request.current = null;
       const shown = intakeAnswerText(t, resolved.answer.field, resolved.answer.value, intake.timeZone, i18n?.language);
+      const done: Sent = { threadId, asked: intake, next: result.intake, version: ++version.current, turn: false };
+      hold(done);
       try {
-        // The answered question stays until the agent's turn starts; the next one opens when that turn ends.
         await send(customerReportAnswerMessage(result, resolved.answer.field, shown, editing));
       } finally {
-        setState({ threadId, intake: result.intake });
+        // A page that started no turn for the answer opens the saved intake now.
+        if (sentRef.current?.version === done.version && !sentRef.current.turn) settle(done);
         setMode({ kind: "asked" });
       }
     } catch (cause) {
@@ -206,7 +239,7 @@ export function useCustomerReportIntake({ client, threadId, busy, send }: {
     } finally {
       setSubmitting(false);
     }
-  }, [client, i18n?.language, intake, mode.kind, send, submitting, t, threadId, view]);
+  }, [client, hold, i18n?.language, intake, mode.kind, send, settle, submitting, t, threadId, view]);
 
   const dismiss = useCallback(async () => {
     if (mode.kind !== "asked") { setMode({ kind: "asked" }); return; }
@@ -214,18 +247,21 @@ export function useCustomerReportIntake({ client, threadId, busy, send }: {
     setSubmitting(true);
     try {
       const closed = await client.dismiss({ threadId, intakeId: intake.id });
+      const done: Sent = { threadId, asked: intake, next: closed, version: ++version.current, turn: false };
+      // A closed correction keeps the saved report; only a new report that is closed tells the agent.
+      if (closed.status !== "dismissed") { settle(done); return; }
+      hold(done);
       try {
-        // A closed correction keeps the saved report; only a new report that is closed tells the agent.
-        if (closed.status === "dismissed") await send(formatCustomerReportDismissMessage(closed.id));
+        await send(formatCustomerReportDismissMessage(closed.id));
       } finally {
-        setState({ threadId, intake: closed });
+        if (sentRef.current?.version === done.version && !sentRef.current.turn) settle(done);
       }
     } catch (cause) {
       setError(errorMessage(t, cause));
     } finally {
       setSubmitting(false);
     }
-  }, [client, intake, mode.kind, send, submitting, t, threadId]);
+  }, [client, hold, intake, mode.kind, send, settle, submitting, t, threadId]);
 
   const select = useCallback((index: number) => {
     setSelected(index);

@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
-import React, { useMemo, useState } from "react";
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import React, { useLayoutEffect, useMemo, useState } from "react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   CustomerReportIntakeService,
@@ -61,17 +61,109 @@ function intakeService() {
 }
 
 /** An Incident thread: the chat shows what was sent, the composer shows the open question. */
-function Thread({ service, busy, sent, initial = [], turnStarted }: { service: CustomerReportIntakeService; busy: boolean; sent: string[]; initial?: string[]; turnStarted?: Promise<void> }) {
+function Thread({ service, busy, sent, initial = [] }: { service: CustomerReportIntakeService; busy: boolean; sent: string[]; initial?: string[] }) {
   const client = useMemo(() => ({
     latest: (threadId: string) => service.latest(threadId),
     answer: (input: Parameters<CustomerReportIntakeService["answer"]>[0]) => service.answer(input, "wira"),
     dismiss: (input: Parameters<CustomerReportIntakeService["dismiss"]>[0]) => service.dismiss(input),
   }), [service]);
   const [messages, setMessages] = useState<string[]>(initial);
-  const intake = useCustomerReportIntake({ client, threadId: THREAD, busy, send: (text) => { sent.push(text); setMessages((previous) => [...previous, text]); return turnStarted; } });
+  const intake = useCustomerReportIntake({ client, threadId: THREAD, busy, send: (text) => { sent.push(text); setMessages((previous) => [...previous, text]); } });
   return (
     <CustomerReportIntakeChatContext.Provider value={intake.chat}>
       {messages.map((text, index) => <ChatBubble key={index} msg={{ kind: "user", text } as ChatMessage} providerKey="openai" />)}
+      <Composer
+        prompt=""
+        onPromptChange={vi.fn()}
+        onSend={vi.fn()}
+        onCancel={vi.fn()}
+        isProcessing={busy}
+        isBlocked={false}
+        isArchived={false}
+        composerImages={[]}
+        onRemoveImage={vi.fn()}
+        onPickImages={vi.fn()}
+        onPickFiles={vi.fn()}
+        onImageFilesSelected={vi.fn()}
+        onPaste={vi.fn()}
+        imageInputRef={React.createRef<HTMLInputElement>()}
+        fileInputRef={React.createRef<HTMLInputElement>()}
+        selectedProviderKey={null}
+        selectedModelId=""
+        onSelectProvider={vi.fn()}
+        onSelectModel={vi.fn()}
+        configuredProviderKeys={[]}
+        providerConfigs={{}}
+        selectedModelCapability={undefined}
+        thinkingEnabled={false}
+        onThinkingToggle={vi.fn()}
+        customerReportIntake={intake.composer}
+      />
+    </CustomerReportIntakeChatContext.Provider>
+  );
+}
+
+/** A step the test lets finish. */
+function gate() {
+  let open = () => {};
+  const done = new Promise<void>((resolve) => { open = resolve; });
+  return { done, open };
+}
+
+/** What the page does, step by step, while the agent answers. */
+interface PageSteps {
+  answer?: Promise<void>;
+  messageSaved?: Promise<void>;
+  runStarted?: Promise<void>;
+  latest?: () => Promise<void>;
+}
+interface PageAgent { start: () => void; reply: (text: string) => void; toolDone: () => void; finish: (text: string) => void }
+/** What one committed render shows. */
+interface Frame { question: string | null; rows: number; reply: string | null; busy: boolean; panel: HTMLElement | null }
+
+/**
+ * The Dashboard's Incident page: the sent message and the busy composer show in one render, the agent's turn starts
+ * later, its reply streams, and the turn ends with the final reply and the idle composer in one render.
+ */
+function Page({ service, steps, agent, frames }: { service: CustomerReportIntakeService; steps: PageSteps; agent: { current: PageAgent | null }; frames: Frame[] }) {
+  const client = useMemo(() => ({
+    latest: async (threadId: string) => { const latest = await service.latest(threadId); await steps.latest?.(); return latest; },
+    answer: async (input: Parameters<CustomerReportIntakeService["answer"]>[0]) => { const result = await service.answer(input, "wira"); await steps.answer; return result; },
+    dismiss: (input: Parameters<CustomerReportIntakeService["dismiss"]>[0]) => service.dismiss(input),
+  }), [service, steps]);
+  const [rows, setRows] = useState<string[]>([]);
+  const [reply, setReply] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [toolCalls, setToolCalls] = useState(0);
+  agent.current = {
+    start: () => { setBusy(true); },
+    reply: setReply,
+    toolDone: () => { setToolCalls((count) => count + 1); },
+    finish: (text) => { setReply(text); setBusy(false); },
+  };
+  const intake = useCustomerReportIntake({
+    client,
+    threadId: THREAD,
+    busy,
+    refresh: toolCalls,
+    send: async (text) => {
+      await steps.messageSaved;
+      setRows((previous) => [...previous, text]);
+      setReply(null);
+      setToolCalls(0);
+      setBusy(true);
+      await steps.runStarted;
+    },
+  });
+  useLayoutEffect(() => {
+    const shown = panel();
+    const question = shown === null ? null : (["sender", "subject", "receivedAt"].find((key) => within(shown).queryByText(`${K}.questions.${key}`) !== null) ?? "other");
+    frames.push({ question, rows: rows.length, reply, busy, panel: shown });
+  });
+  return (
+    <CustomerReportIntakeChatContext.Provider value={intake.chat}>
+      {rows.map((text, index) => <ChatBubble key={index} msg={{ kind: "user", text } as ChatMessage} providerKey="openai" />)}
+      {reply !== null && <p>{reply}</p>}
       <Composer
         prompt=""
         onPromptChange={vi.fn()}
@@ -130,32 +222,66 @@ describe("customer report question in the composer", () => {
     expect(screen.queryByText(/\[customer-report-answer\]/)).toBeNull();
   });
 
-  it("keeps the answered question until the agent's turn starts, and opens the next one only after that turn", async () => {
+  it("never shows the next question before the agent's reply that asks it, through every step of the turn", async () => {
     const { service, agentAsks } = intakeService();
     await agentAsks({ origin: "customer", extracted: [{ field: "channel", value: "email", quote: "by email" }] }, ["We just got a customer report by email: the service desk keeps loading."]);
-    const sent: string[] = [];
-    let startTurn = () => {};
-    const turnStarted = new Promise<void>((resolve) => { startTurn = resolve; });
-    const view = render(<Thread service={service} busy={false} sent={sent} turnStarted={turnStarted} />);
+    const answer = gate();
+    const messageSaved = gate();
+    const runStarted = gate();
+    const refreshed = gate();
+    let slowRefresh = false;
+    const steps: PageSteps = { answer: answer.done, messageSaved: messageSaved.done, runStarted: runStarted.done, latest: () => (slowRefresh ? refreshed.done : Promise.resolve()) };
+    const agent: { current: PageAgent | null } = { current: null };
+    const frames: Frame[] = [];
+    render(<Page service={service} steps={steps} agent={agent} frames={frames} />);
     expect(await asked(`${K}.questions.sender`)).toBeTruthy();
     fireEvent.click(option(`${K}.options.notSure`));
 
-    // Saved and sent, while the page still starts the agent's turn: the next question is not shown yet.
-    await waitFor(() => { expect(sent).toHaveLength(1); });
-    expect((await service.latest(THREAD))?.question).toBe("subject");
-    const waiting = within(panel() as HTMLElement);
-    expect(waiting.getByText(`${K}.questions.sender`)).toBeTruthy();
-    expect(waiting.queryByText(`${K}.questions.subject`)).toBeNull();
-    expect((option(`${K}.options.notSure`) as HTMLButtonElement).disabled).toBe(true);
+    // The answer is saving: the answered question stays, disabled.
+    await waitFor(() => { expect((option(`${K}.options.notSure`) as HTMLButtonElement).disabled).toBe(true); });
+    answer.open();
+    // The answer is saved and the chat message is saving: still the answered question, and no row yet.
+    await waitFor(async () => { expect((await service.latest(THREAD))?.question).toBe("subject"); });
+    expect(within(panel() as HTMLElement).getByText(`${K}.questions.sender`)).toBeTruthy();
+    messageSaved.open();
+    // The row is in: the panel is gone and the composer is busy, in the same render.
+    await waitFor(() => { expect(frames.at(-1)).toMatchObject({ rows: 1, busy: true, question: null }); });
+    // The agent's turn starts late, its reply streams, and the turn ends while the intake is read again slowly.
+    runStarted.open();
+    act(() => { agent.current?.reply("Noted, Wira"); });
+    slowRefresh = true;
+    act(() => { agent.current?.finish("Noted. What was the email's subject line?"); });
+    expect(frames.at(-1)).toMatchObject({ question: "subject", busy: false, reply: "Noted. What was the email's subject line?" });
+    const opened = frames.at(-1)?.panel;
+    refreshed.open();
+    await waitFor(() => { expect(frames.at(-1)?.panel).toBe(opened); });
 
-    // The agent works: the composer is the normal busy composer.
-    view.rerender(<Thread service={service} busy sent={sent} turnStarted={turnStarted} />);
-    startTurn();
-    await waitFor(() => { expect(panel()).toBeNull(); });
+    // In no render did the next question show before its reply, nor the answered question after its row.
+    expect(frames.filter((frame) => frame.question === "subject" && (frame.busy || frame.reply !== "Noted. What was the email's subject line?"))).toEqual([]);
+    expect(frames.filter((frame) => frame.rows === 1 && frame.question === "sender")).toEqual([]);
+    // Once it opened, the next question stayed open: no gap, no second opening.
+    const first = frames.findIndex((frame) => frame.question === "subject");
+    expect(frames.slice(first).filter((frame) => frame.question !== "subject" || frame.panel !== opened)).toEqual([]);
+  });
 
-    // The agent's reply is in: now the next question opens.
-    view.rerender(<Thread service={service} busy={false} sent={sent} turnStarted={turnStarted} />);
-    expect(await asked(`${K}.questions.subject`)).toBeTruthy();
+  it("opens the first question with the agent's reply that asks it", async () => {
+    const { service, agentAsks } = intakeService();
+    const agent: { current: PageAgent | null } = { current: null };
+    const frames: Frame[] = [];
+    render(<Page service={service} steps={{}} agent={agent} frames={frames} />);
+    // The engineer's first message is sent by the page itself; the agent works.
+    act(() => { agent.current?.start(); });
+    expect(panel()).toBeNull();
+
+    // During its turn, the agent opens the intake with its tool, then writes the question.
+    const busyFrames = frames.length;
+    await agentAsks({ origin: "customer", extracted: [{ field: "channel", value: "email", quote: "by email" }] }, ["We just got a customer report by email: the service desk keeps loading."]);
+    act(() => { agent.current?.toolDone(); });
+    // The agent writes its reply after the tool; the intake read ends in that time.
+    await act(async () => { await new Promise((resolve) => { setTimeout(resolve, 0); }); });
+    act(() => { agent.current?.finish("I'll record the customer report first. Who sent it?"); });
+    expect(frames.at(-1)).toMatchObject({ question: "sender", reply: "I'll record the customer report first. Who sent it?" });
+    expect(frames.slice(busyFrames).filter((frame) => frame.question !== null && frame.reply !== "I'll record the customer report first. Who sent it?")).toEqual([]);
   });
 
   it("takes a typed answer, and refuses a received time in the future without saving it", async () => {
