@@ -8,6 +8,8 @@ export * from "./ticket-deadlines";
 
 export * from "./integration-operations";
 export * from "./customer-reports";
+export * from "./customer-report-intake";
+export * from "./customer-report-intake-service";
 export * from "./integration-store-keys";
 export * from "./itop-ticket-state";
 

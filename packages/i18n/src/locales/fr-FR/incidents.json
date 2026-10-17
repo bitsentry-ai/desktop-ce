@@ -247,5 +247,7 @@
   "incidents.integrationWrites.customerReport.received": "Reçu",
   "incidents.integrationWrites.customerReport.submittedBy": "Soumis par",
   "incidents.integrationWrites.customerReport.unverified": "Fourni par l'ingénieur, non vérifié",
+  "incidents.integrationWrites.customerReport.notProvided": "Non fourni",
+  "incidents.integrationWrites.customerReport.subject": "Objet",
   "incidents.integrationRecovery.refusedBeforeWrite": "iTop a refusé cette requête avant toute écriture. Vérifiez la connexion et ses autorisations, puis proposez à nouveau la modification."
 }

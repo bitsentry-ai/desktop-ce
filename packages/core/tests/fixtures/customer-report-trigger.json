@@ -1,0 +1,342 @@
+{
+  "description": "Engineer messages for the customer report trigger eval. A positive relays what a customer or end user said or sent; a negative is the engineer's own observation, an alert, a log line or an internal request. Pasted messages may start the intake through the 'Is this a message from a customer?' question.",
+  "positives": [
+    {
+      "text": "We just got a customer report by email: the service desk keeps loading and times out for them.",
+      "language": "en",
+      "style": "relayed"
+    },
+    {
+      "text": "Pak Budi barusan WA, katanya VPN kantor putus terus dari pagi.",
+      "language": "id",
+      "style": "relayed"
+    },
+    {
+      "text": "Rina from Acme called, she can't log in to the portal since 9.",
+      "language": "en",
+      "style": "call"
+    },
+    {
+      "text": "Bu Sari komplain, katanya tidak bisa akses VPN dari pagi.",
+      "language": "id",
+      "style": "relayed"
+    },
+    {
+      "text": "klien komplain via email, dashboard-nya error 502 dari tadi",
+      "language": "mixed",
+      "style": "relayed"
+    },
+    {
+      "text": "A customer just phoned about VPN drops in the Surabaya office.",
+      "language": "en",
+      "style": "call"
+    },
+    {
+      "text": "user lapor lewat WA kalau printer lantai 3 mati",
+      "language": "mixed",
+      "style": "relayed"
+    },
+    {
+      "text": "Bu Sari kirim email, aplikasi absensi tidak bisa dibuka",
+      "language": "id",
+      "style": "relayed"
+    },
+    {
+      "text": "Got a call from PT Maju's IT, their email can't send since this morning",
+      "language": "en",
+      "style": "call"
+    },
+    {
+      "text": "customer says the login page shows 500 after they reset password",
+      "language": "en",
+      "style": "relayed"
+    },
+    {
+      "text": "Ada keluhan dari nasabah, mobile banking gak bisa transfer sejak jam 10",
+      "language": "id",
+      "style": "relayed"
+    },
+    {
+      "text": "Forwarded from the client:\n> Hi team, our portal has been down since 08:00. Please check urgently.\n> Regards, Andi (PT Sinar)",
+      "language": "en",
+      "style": "forwarded"
+    },
+    {
+      "text": "Fwd: Subject: Website down\nFrom: dewi@contoh.co.id\nHalo, website kami tidak bisa diakses sejak pagi. Mohon bantuannya.",
+      "language": "mixed",
+      "style": "forwarded"
+    },
+    {
+      "text": "[10:42, 17/10/2026] Pak Joko: mas, aplikasi kasir error terus dari tadi pagi",
+      "language": "id",
+      "style": "pasted-whatsapp"
+    },
+    {
+      "text": "Call summary: caller Mr. Tan from Hotel Mawar, Wi-Fi in lobby down since 7am, guests complaining",
+      "language": "en",
+      "style": "call"
+    },
+    {
+      "text": "tenant di lantai 5 telp, katanya AC server room bunyi alarm",
+      "language": "id",
+      "style": "call"
+    },
+    {
+      "text": "Pelanggan kami chat, katanya invoice email tidak sampai",
+      "language": "id",
+      "style": "relayed"
+    },
+    {
+      "text": "Our client Acme emailed that the API returns 403 for all requests since the deploy",
+      "language": "en",
+      "style": "relayed"
+    },
+    {
+      "text": "cust complain dashbord lemot bgt",
+      "language": "mixed",
+      "style": "typo"
+    },
+    {
+      "text": "pak andi dr finance wa: 'sistem payroll ga bisa login'",
+      "language": "id",
+      "style": "typo"
+    },
+    {
+      "text": "Someone from Bank XYZ rang, internet banking times out for their users",
+      "language": "en",
+      "style": "call"
+    },
+    {
+      "text": "the customer messaged us on Teams: VPN keeps disconnecting every 5 minutes",
+      "language": "en",
+      "style": "relayed"
+    },
+    {
+      "text": "Ibu Rina (PT Kencana) nelpon barusan, email kantor mereka kena spam terus",
+      "language": "id",
+      "style": "call"
+    },
+    {
+      "text": "a client DM'd me on LinkedIn saying our status page is down",
+      "language": "en",
+      "style": "relayed"
+    },
+    {
+      "text": "Laporan dari user via telepon: koneksi ke ERP putus-putus",
+      "language": "id",
+      "style": "call"
+    },
+    {
+      "text": "Support call just now: Mrs. Lee can't reset her MFA",
+      "language": "en",
+      "style": "call"
+    },
+    {
+      "text": "Dear BitSentry team, since yesterday 14:00 our servers have been unreachable from Jakarta. Please advise. - Budi, PT Abadi",
+      "language": "en",
+      "style": "pasted-email"
+    },
+    {
+      "text": "Selamat pagi, saya tidak bisa membuka service desk dari tadi pagi. Halaman loading terus. Mohon dibantu.",
+      "language": "id",
+      "style": "pasted"
+    },
+    {
+      "text": "Hi team, I can't open the service desk this morning. Please help.",
+      "language": "en",
+      "style": "pasted"
+    },
+    {
+      "text": "Halo kak, akun saya terkunci setelah salah password 3x, tolong dibuka ya",
+      "language": "id",
+      "style": "pasted"
+    },
+    {
+      "text": "klien bilang via WA kalau backup semalam gagal",
+      "language": "id",
+      "style": "relayed"
+    },
+    {
+      "text": "User from the branch office emailed: shared drive is read-only since 9:30",
+      "language": "en",
+      "style": "relayed"
+    },
+    {
+      "text": "Pak Hendra telpon jam 9 tadi, server absensi down",
+      "language": "id",
+      "style": "call"
+    },
+    {
+      "text": "got an email from a customer, their SSO redirect loops forever",
+      "language": "en",
+      "style": "relayed"
+    },
+    {
+      "text": "The client phoned in, says the checkout page is very slow",
+      "language": "en",
+      "style": "call"
+    },
+    {
+      "text": "customer report: CCTV NVR offline di gudang",
+      "language": "mixed",
+      "style": "relayed"
+    },
+    {
+      "text": "Ada komplain dari customer lewat email soal sertifikat SSL expired",
+      "language": "mixed",
+      "style": "relayed"
+    },
+    {
+      "text": "Mbak Tia dr PT Lima wa aku, katanya website mereka kena deface",
+      "language": "id",
+      "style": "typo"
+    },
+    {
+      "text": "Our customer's CTO messaged: 'Seeing data loss on the reports page since the migration'",
+      "language": "en",
+      "style": "relayed"
+    },
+    {
+      "text": "Customer escalated by phone: production DB connection errors at 10:15",
+      "language": "en",
+      "style": "call"
+    },
+    {
+      "text": "Barusan ada yang telepon dari klien, katanya VPN tidak bisa connect",
+      "language": "id",
+      "style": "call"
+    },
+    {
+      "text": "an end user wrote in the support chat that downloads fail with 404",
+      "language": "en",
+      "style": "relayed"
+    },
+    {
+      "text": "Received this from a client via WhatsApp: 'Email kami masuk spam semua sejak kemarin'",
+      "language": "mixed",
+      "style": "pasted-whatsapp"
+    },
+    {
+      "text": "Pak Budi komplen lg, vpn putus2 trs dr pagi",
+      "language": "id",
+      "style": "typo"
+    },
+    {
+      "text": "pasien lapor lewat WA, aplikasi pendaftaran online error",
+      "language": "id",
+      "style": "relayed"
+    }
+  ],
+  "negatives": [
+    {
+      "text": "Seeing 502s on the service desk in the nginx logs since 09:00.",
+      "language": "en",
+      "style": "own-observation"
+    },
+    {
+      "text": "Wazuh alert: brute force on ssh at 03:12",
+      "language": "en",
+      "style": "alert"
+    },
+    {
+      "text": "check disk usage on the db host",
+      "language": "en",
+      "style": "request"
+    },
+    {
+      "text": "CPU on web-01 has been at 95% for 20 minutes",
+      "language": "en",
+      "style": "own-observation"
+    },
+    {
+      "text": "Grafana shows p99 latency spiked to 4s at 10:05",
+      "language": "en",
+      "style": "metrics"
+    },
+    {
+      "text": "can you run the VPN health runbook?",
+      "language": "en",
+      "style": "request"
+    },
+    {
+      "text": "Saya lihat log error 500 di api-gateway dari jam 8",
+      "language": "id",
+      "style": "own-observation"
+    },
+    {
+      "text": "Tolong cek status sertifikat SSL di domain utama",
+      "language": "id",
+      "style": "request"
+    },
+    {
+      "text": "my teammate Andi asked me to restart the nginx container",
+      "language": "en",
+      "style": "internal"
+    },
+    {
+      "text": "Alert from Uptime Kuma: portal.example.com is DOWN",
+      "language": "en",
+      "style": "alert"
+    },
+    {
+      "text": "kernel: Out of memory: Killed process 1234 (java)",
+      "language": "en",
+      "style": "log"
+    },
+    {
+      "text": "Investigate why the backup job failed last night",
+      "language": "en",
+      "style": "request"
+    },
+    {
+      "text": "Dari monitoring, disk /var di server-02 penuh 98%",
+      "language": "id",
+      "style": "metrics"
+    },
+    {
+      "text": "Please list the runbooks for database failover",
+      "language": "en",
+      "style": "request"
+    },
+    {
+      "text": "I think the DNS change broke the mail server",
+      "language": "en",
+      "style": "own-observation"
+    },
+    {
+      "text": "Rekan saya minta saya cek firewall rule untuk port 443",
+      "language": "id",
+      "style": "internal"
+    },
+    {
+      "text": "ERROR 2026-10-17T09:12:01 db-pool exhausted max=50",
+      "language": "en",
+      "style": "log"
+    },
+    {
+      "text": "Create an iTop ticket for the outage we found",
+      "language": "en",
+      "style": "request"
+    },
+    {
+      "text": "What's the L1 deadline for R-000123?",
+      "language": "en",
+      "style": "request"
+    },
+    {
+      "text": "Sentry reports TypeError in checkout.js after release 4.2",
+      "language": "en",
+      "style": "alert"
+    },
+    {
+      "text": "Tim internal melaporkan build pipeline gagal di tahap test",
+      "language": "id",
+      "style": "internal"
+    },
+    {
+      "text": "PagerDuty incident #4521 triggered: high error rate on payments",
+      "language": "en",
+      "style": "alert"
+    }
+  ]
+}

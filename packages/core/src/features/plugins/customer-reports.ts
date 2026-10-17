@@ -5,6 +5,8 @@ export const customerReportChannels = ["whatsapp", "email", "phone", "other"] as
 export type CustomerReportChannel = (typeof customerReportChannels)[number];
 
 const ISO_WITH_OFFSET = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d{1,3})?)?(Z|[+-]\d{2}:\d{2})$/;
+/** An ISO 8601 time with its UTC offset, as the engineer's zone gave it. */
+export const isoWithOffsetSchema = z.string().regex(ISO_WITH_OFFSET).refine((value) => !Number.isNaN(Date.parse(value)));
 
 export function isIanaTimeZone(value: string): boolean {
   try {
@@ -15,15 +17,21 @@ export function isIanaTimeZone(value: string): boolean {
   }
 }
 
-/** What the engineer submits. Sender and received time are as provided; BitSentry cannot verify them. */
+/**
+ * What the engineer submits. Sender and received time are as provided; BitSentry cannot verify them. Null means the
+ * engineer did not know: it is recorded as "not provided", never guessed.
+ */
 export const customerReportInputSchema = z.object({
   threadId: z.string().min(1).max(200),
   clientRequestId: z.uuid(),
   channel: z.enum(customerReportChannels),
-  sender: z.string().trim().min(1).max(200),
-  receivedAt: z.string().regex(ISO_WITH_OFFSET).refine((value) => !Number.isNaN(Date.parse(value))),
+  sender: z.string().trim().min(1).max(200).nullable(),
+  receivedAt: isoWithOffsetSchema.nullable(),
   timeZone: z.string().min(1).max(64).refine(isIanaTimeZone),
+  subject: z.string().trim().min(1).max(300).nullable().optional(),
   reportText: z.string().min(1).max(30_000).refine((value) => value.trim().length > 0),
+  /** The intake that collected this report in chat, when it came from one. */
+  intakeId: z.uuid().nullable().optional(),
 }).strict();
 export type CustomerReportInput = z.infer<typeof customerReportInputSchema>;
 
@@ -31,19 +39,21 @@ export const customerReportSchema = customerReportInputSchema.extend({
   id: z.uuid(),
   submittedBy: z.string().min(1).max(200),
   operationId: z.string().nullable(),
+  /** A correction saves a new report; the earlier one points to it and is no longer used for tickets. */
+  supersededById: z.uuid().nullable().optional(),
   createdAt: z.string(),
 });
 export type CustomerReport = z.infer<typeof customerReportSchema>;
 
 /** The source details shown with a ticket proposal. The original text stays in the report and the private log. */
 export const customerReportSummarySchema = customerReportSchema.pick({
-  id: true, channel: true, sender: true, receivedAt: true, timeZone: true, submittedBy: true,
+  id: true, channel: true, sender: true, receivedAt: true, timeZone: true, subject: true, submittedBy: true,
 });
 export type CustomerReportSummary = z.infer<typeof customerReportSummarySchema>;
 
 export function summarizeCustomerReport(report: CustomerReport): CustomerReportSummary {
-  const { id, channel, sender, receivedAt, timeZone, submittedBy } = report;
-  return customerReportSummarySchema.parse({ id, channel, sender, receivedAt, timeZone, submittedBy });
+  const { id, channel, sender, receivedAt, timeZone, subject, submittedBy } = report;
+  return customerReportSummarySchema.parse({ id, channel, sender, receivedAt, timeZone, subject, submittedBy });
 }
 
 /** A store that keeps reports per conversation. `link` moves the report to a new create operation only if it still points to `expected`. */
@@ -51,9 +61,12 @@ export interface CustomerReportStore {
   save(input: CustomerReportInput, submittedBy: string): Promise<CustomerReport>;
   get(threadId: string, id: string): Promise<CustomerReport | null>;
   link(threadId: string, id: string, expected: string | null, operationId: string): Promise<boolean>;
+  /** Marks a report as replaced by a correction. The content of either report never changes. */
+  supersede?(threadId: string, id: string, supersededById: string): Promise<void>;
 }
 
 const CHANNEL_LABELS: Record<CustomerReportChannel, string> = { whatsapp: "WhatsApp", email: "Email", phone: "Phone", other: "Other" };
+const NOT_PROVIDED = "not provided";
 export const customerReportMarker = (id: string) => `bitsentry-customer-report:${id}`;
 
 /**
@@ -61,11 +74,13 @@ export const customerReportMarker = (id: string) => `bitsentry-customer-report:$
  * same text and the duplicate checks see the same request.
  */
 export function customerReportProvenance(report: CustomerReport): string {
+  const received = report.receivedAt === null ? NOT_PROVIDED : `${report.receivedAt} (${report.timeZone})`;
   return [
     "Customer report (engineer-provided, not verified by BitSentry)",
     `Channel: ${CHANNEL_LABELS[report.channel]}`,
-    `Sender: ${report.sender}`,
-    `Received: ${report.receivedAt} (${report.timeZone})`,
+    `Sender: ${report.sender ?? NOT_PROVIDED}`,
+    `Received: ${received}`,
+    ...(report.subject === undefined || report.subject === null ? [] : [`Subject: ${report.subject}`]),
     `Submitted by: ${report.submittedBy}`,
     "--- Original report ---",
     report.reportText,
@@ -76,12 +91,16 @@ export function customerReportProvenance(report: CustomerReport): string {
 
 /** One header line in the chat message names the report, so the chat can show it and the agent can refer to it. */
 const MESSAGE_PREFIX = "[customer-report]";
-const messageHeaderSchema = customerReportSummarySchema.omit({ submittedBy: true });
+const messageHeaderSchema = customerReportSummarySchema.omit({ submittedBy: true }).extend({ intakeId: z.uuid().optional() });
 export type CustomerReportMessageHeader = z.infer<typeof messageHeaderSchema>;
 
 export function formatCustomerReportMessage(report: CustomerReport): string {
-  const { id, channel, sender, receivedAt, timeZone } = report;
-  const header = messageHeaderSchema.parse({ id, channel, sender, receivedAt, timeZone });
+  const { id, channel, sender, receivedAt, timeZone, subject, intakeId } = report;
+  const header = messageHeaderSchema.parse({
+    id, channel, sender, receivedAt, timeZone,
+    ...(subject === undefined || subject === null ? {} : { subject }),
+    ...(intakeId === undefined || intakeId === null ? {} : { intakeId }),
+  });
   return `${MESSAGE_PREFIX}${JSON.stringify(header)}\n${report.reportText}`;
 }
 
@@ -97,8 +116,23 @@ export function parseCustomerReportMessage(text: string): { header: CustomerRepo
   }
 }
 
-/** What a title or preview shows for a message: the report text, without its header line. */
+const INTAKE_MESSAGE = /^\[customer-report-(answer|dismissed)\](\{[^\n]*\})/;
+
+/**
+ * What a title or preview shows for a message: the report text without its header line, or for an answer to a
+ * customer report question, the answer itself.
+ */
 export function customerReportDisplayText(text: string): string {
+  const intake = INTAKE_MESSAGE.exec(text);
+  if (intake !== null) {
+    try {
+      const header: unknown = JSON.parse(intake[2]);
+      if (intake[1] === "answer" && typeof header === "object" && header !== null && typeof (header as { answer?: unknown }).answer === "string") return (header as { answer: string }).answer;
+    } catch {
+      // A malformed header shows nothing rather than its raw JSON.
+    }
+    return "";
+  }
   return parseCustomerReportMessage(text)?.body ?? text;
 }
 
@@ -124,10 +158,16 @@ export function customerReportLinkDecision(linked: LinkedOperation | null): "cre
 }
 
 export class CustomerReportLinkError extends Error {
-  constructor(readonly code: "CUSTOMER_REPORT_NOT_FOUND" | "CUSTOMER_REPORT_PENDING" | "CUSTOMER_REPORT_UNRESOLVED" | "CUSTOMER_REPORT_CHANGED", message: string) {
+  constructor(readonly code: "CUSTOMER_REPORT_NOT_FOUND" | "CUSTOMER_REPORT_PENDING" | "CUSTOMER_REPORT_UNRESOLVED" | "CUSTOMER_REPORT_CHANGED" | "CUSTOMER_REPORT_CORRECTED", message: string) {
     super(message);
     this.name = "CustomerReportLinkError";
   }
+}
+
+/** A corrected report is replaced by its newest version; a ticket create must use that one. */
+export function customerReportCorrected(report: Pick<CustomerReport, "supersededById">): CustomerReportLinkError | null {
+  if (report.supersededById === undefined || report.supersededById === null) return null;
+  return new CustomerReportLinkError("CUSTOMER_REPORT_CORRECTED", `The engineer corrected this customer report. Use customerReportId ${report.supersededById} instead. No write was proposed.`);
 }
 
 export function customerReportRefusal(linked: LinkedOperation): CustomerReportLinkError {

@@ -1,27 +1,23 @@
 import {
-  customerReportInputSchema,
+  customerReportChannels,
+  editableIntakeFields,
+  formatCustomerReportAnswerMessage,
+  formatCustomerReportMessage,
   isIanaTimeZone,
   zonedLocalToIso,
-  type CustomerReportChannel,
-  type CustomerReportInput,
+  type CustomerReport,
+  type CustomerReportIntake,
+  type CustomerReportIntakeAnswerInput,
+  type CustomerReportIntakeDismissInput,
+  type CustomerReportIntakeField,
+  type CustomerReportIntakeResult,
 } from "@bitsentry-ce/core/features/plugins";
 
-/** What the composer holds while the engineer fills in a customer report. One client request ID per draft, reused on retry. */
-export interface CustomerReportDraft {
-  clientRequestId: string;
-  channel: CustomerReportChannel;
-  sender: string;
-  /** `YYYY-MM-DDTHH:mm`, the value of a date-time input, read in `timeZone`. */
-  receivedAtLocal: string;
-  timeZone: string;
-}
-
-/** Hosts that support customer reports pass this to the composer. */
-export interface ComposerCustomerReport {
-  draft: CustomerReportDraft | null;
-  onDraftChange: (draft: CustomerReportDraft | null) => void;
-  /** The organization's time zone when the host knows it; otherwise the browser's zone is used. */
-  defaultTimeZone?: string;
+/** How a host reads and answers the conversation's customer report intake: IPC on Desktop, tRPC on the Dashboard. */
+export interface CustomerReportIntakeClient {
+  latest(threadId: string): Promise<CustomerReportIntake | null>;
+  answer(input: CustomerReportIntakeAnswerInput): Promise<CustomerReportIntakeResult>;
+  dismiss(input: CustomerReportIntakeDismissInput): Promise<CustomerReportIntake>;
 }
 
 export function browserTimeZone(): string {
@@ -32,24 +28,7 @@ export function browserTimeZone(): string {
   }
 }
 
-export function createCustomerReportDraft(defaultTimeZone?: string): CustomerReportDraft {
-  const timeZone = defaultTimeZone !== undefined && isIanaTimeZone(defaultTimeZone) ? defaultTimeZone : browserTimeZone();
-  return { clientRequestId: crypto.randomUUID(), channel: "whatsapp", sender: "", receivedAtLocal: "", timeZone };
-}
-
-export function supportedTimeZones(selected: string): string[] {
-  let zones: string[] = [];
-  try {
-    // Typed locally: older TypeScript lib targets do not declare this ES2022 method.
-    const supported = (Intl as unknown as { supportedValuesOf?: (key: "timeZone") => string[] }).supportedValuesOf;
-    zones = supported === undefined ? [] : supported("timeZone");
-  } catch {
-    zones = [];
-  }
-  return zones.includes(selected) ? zones : [selected, ...zones];
-}
-
-/** The current wall-clock time in a time zone, as a date-time input value (`YYYY-MM-DDTHH:mm`). */
+/** The current wall-clock time in a time zone, as `YYYY-MM-DDTHH:mm`. */
 export function nowInTimeZone(timeZone: string, now: Date = new Date()): string {
   const zone = isIanaTimeZone(timeZone) ? timeZone : "UTC";
   const parts = Object.fromEntries(new Intl.DateTimeFormat("en-US", {
@@ -58,43 +37,136 @@ export function nowInTimeZone(timeZone: string, now: Date = new Date()): string 
   return `${parts.year}-${parts.month}-${parts.day}T${parts.hour}:${parts.minute}`;
 }
 
-/** The zone's current offset from UTC, e.g. `UTC+07:00`, or an empty string for an unknown zone. */
-export function timeZoneOffsetLabel(timeZone: string, now: Date = new Date()): string {
-  const iso = zonedLocalToIso(nowInTimeZone(timeZone, now), timeZone);
-  return iso === null ? "" : `UTC${iso.slice(-6)}`;
-}
-
-/** Zones an engineer most likely needs first: the current choice, the organization's and browser's zones, Indonesia and UTC. */
-export function suggestedTimeZones(selected: string, defaultTimeZone?: string): string[] {
-  const candidates = [selected, defaultTimeZone, browserTimeZone(), "Asia/Jakarta", "Asia/Makassar", "Asia/Jayapura", "UTC"];
-  return Array.from(new Set(candidates.filter((zone): zone is string => zone !== undefined && isIanaTimeZone(zone))));
-}
-
 /** A received time may be a few minutes ahead of this device's clock, but not later than that. */
 const FUTURE_TOLERANCE_MS = 5 * 60_000;
-export type CustomerReportFieldIssue = "required" | "future";
+const DAY_MS = 24 * 60 * 60_000;
+const pad = (value: number) => String(value).padStart(2, "0");
 
-/** What blocks the report's source fields from being saved. The report text is checked by the composer. */
-export function customerReportDraftIssues(draft: CustomerReportDraft, now: Date = new Date()): { sender?: CustomerReportFieldIssue; receivedAt?: CustomerReportFieldIssue } {
-  const issues: { sender?: CustomerReportFieldIssue; receivedAt?: CustomerReportFieldIssue } = {};
-  if (draft.sender.trim() === "") issues.sender = "required";
-  const receivedAt = zonedLocalToIso(draft.receivedAtLocal, draft.timeZone);
-  if (receivedAt === null) issues.receivedAt = "required";
-  else if (Date.parse(receivedAt) > now.getTime() + FUTURE_TOLERANCE_MS) issues.receivedAt = "future";
-  return issues;
+/**
+ * Reads a typed received time in the report's zone: "09:30", "9.30", "today 09:30" or "yesterday 14:10"
+ * (also "hari ini" and "kemarin"). Anything else is a format issue, so nothing is guessed.
+ */
+export function parseReceivedTime(text: string, timeZone: string, now: Date = new Date()): { iso: string } | { issue: "format" | "future" } {
+  const match = /^(?:(yesterday|today|kemarin|hari ini)\s+)?(\d{1,2})[:.](\d{2})$/i.exec(text.trim());
+  if (match === null) return { issue: "format" };
+  const [hour, minute] = [Number(match[2]), Number(match[3])];
+  if (hour > 23 || minute > 59) return { issue: "format" };
+  const yesterday = /^(yesterday|kemarin)$/i.test(match[1] ?? "");
+  const day = nowInTimeZone(timeZone, yesterday ? new Date(now.getTime() - DAY_MS) : now).slice(0, 10);
+  const iso = zonedLocalToIso(`${day}T${pad(hour)}:${pad(minute)}`, timeZone);
+  if (iso === null) return { issue: "format" };
+  return Date.parse(iso) > now.getTime() + FUTURE_TOLERANCE_MS ? { issue: "future" } : { iso };
 }
 
-/** The report the host saves before it sends the message, or null while a required field is missing. */
-export function toCustomerReportInput(draft: CustomerReportDraft, threadId: string, reportText: string): CustomerReportInput | null {
-  const receivedAt = zonedLocalToIso(draft.receivedAtLocal, draft.timeZone);
-  if (receivedAt === null) return null;
-  const parsed = customerReportInputSchema.safeParse({
-    threadId, clientRequestId: draft.clientRequestId, channel: draft.channel,
-    sender: draft.sender.trim(), receivedAt, timeZone: draft.timeZone, reportText,
-  });
-  return parsed.success ? parsed.data : null;
+/** The current time in the zone, as ISO with that zone's offset. */
+export function receivedNow(timeZone: string, now: Date = new Date()): string | null {
+  return zonedLocalToIso(nowInTimeZone(timeZone, now), timeZone);
 }
 
-export function isCustomerReportDraftReady(draft: CustomerReportDraft, reportText: string): boolean {
-  return Object.keys(customerReportDraftIssues(draft)).length === 0 && toCustomerReportInput(draft, "thread", reportText) !== null;
+/** The panel's question, or `fix` while the engineer chooses which answer to change. */
+export type IntakeQuestionKey = CustomerReportIntakeField | "fix";
+/** An option's answer; `type` asks the engineer to type it instead. */
+export interface IntakeOption { label: string; hint?: string; value: unknown }
+export interface IntakeQuestionView {
+  key: IntakeQuestionKey;
+  title: string;
+  placeholder?: string;
+  multiline: boolean;
+  options: IntakeOption[];
+}
+
+type Translate = (key: string, values?: Record<string, unknown>) => string;
+const K = "common.incidents.customerReport";
+export const TYPE_INSTEAD = "type";
+
+export function intakeQuestionTitle(t: Translate, key: IntakeQuestionKey, channel?: string): string {
+  if (key === "receivedAt" && channel === "phone") return t(`${K}.questions.receivedAtPhone`);
+  if (key === "reportText" && channel === "phone") return t(`${K}.questions.reportTextPhone`);
+  return t(`${K}.questions.${key}`);
+}
+
+function clock(iso: string, timeZone: string, locale?: string): string {
+  try {
+    return new Intl.DateTimeFormat(locale, { timeStyle: "short", timeZone }).format(new Date(iso));
+  } catch {
+    return iso;
+  }
+}
+
+/** What the panel shows for one question of this intake. */
+export function intakeQuestionView(t: Translate, key: IntakeQuestionKey, intake: CustomerReportIntake, now: Date = new Date(), locale?: string): IntakeQuestionView {
+  const { answers, timeZone } = intake;
+  const title = intakeQuestionTitle(t, key, answers.channel);
+  const notSure = { label: t(`${K}.options.notSure`), value: null };
+  switch (key) {
+    case "origin":
+      return { key, title, multiline: false, options: [{ label: t(`${K}.options.originYes`), value: true }, { label: t(`${K}.options.originNo`), value: false }] };
+    case "channel":
+      return { key, title, multiline: false, options: customerReportChannels.map((channel) => ({ label: t(`${K}.channels.${channel}`), value: channel })) };
+    case "sender": {
+      const contact = answers.channel === "email" ? "senderEmail" : answers.channel === "whatsapp" || answers.channel === "phone" ? "senderPhone" : "sender";
+      return { key, title, placeholder: t(`${K}.placeholders.${contact}`), multiline: false, options: [notSure] };
+    }
+    case "subject":
+      return { key, title, placeholder: t(`${K}.placeholders.subject`), multiline: false, options: [] };
+    case "receivedAt": {
+      const justNow = receivedNow(timeZone, now);
+      return {
+        key, title, placeholder: t(`${K}.placeholders.receivedAt`), multiline: false,
+        options: [
+          ...(justNow === null ? [] : [{ label: t(`${K}.options.justNow`), hint: clock(justNow, timeZone, locale), value: justNow }]),
+          { label: t(`${K}.options.earlierToday`), hint: t(`${K}.options.earlierTodayHint`), value: TYPE_INSTEAD },
+          notSure,
+        ],
+      };
+    }
+    case "reportText":
+      return {
+        key, title, placeholder: t(`${K}.placeholders.reportText`), multiline: true,
+        options: intake.relayedText.trim() === "" ? [] : [{ label: t(`${K}.options.useWhatIWrote`), hint: shortText(intake.relayedText, 80), value: intake.relayedText }],
+      };
+    case "fix":
+      return {
+        key, title, multiline: false,
+        options: editableIntakeFields.filter((field) => field !== "subject" || answers.channel === "email").map((field) => ({ label: t(`${K}.fields.${field}`), value: field })),
+      };
+  }
+}
+
+export function shortText(text: string, max: number): string {
+  const line = text.replace(/\s+/g, " ").trim();
+  return line.length > max ? `${line.slice(0, max - 1)}…` : line;
+}
+
+/** The answer as the timeline row and the agent see it. */
+export function intakeAnswerText(t: Translate, field: CustomerReportIntakeField, value: unknown, timeZone: string, locale?: string): string {
+  if (field === "origin") return t(value === true ? `${K}.options.originYes` : `${K}.options.originNo`);
+  if (value === null) return t(`${K}.options.notSure`);
+  if (field === "channel") return t(`${K}.channels.${String(value)}`);
+  if (field === "receivedAt") return formatReceivedAt(String(value), timeZone, locale);
+  return shortText(String(value), 200);
+}
+
+/** A received time in the report's own zone, with the offset the engineer recorded. */
+export function formatReceivedAt(receivedAt: string, timeZone: string, locale?: string): string {
+  const offset = /(Z|[+-]\d{2}:\d{2})$/.exec(receivedAt)?.[1] ?? "";
+  try {
+    const time = new Intl.DateTimeFormat(locale, { dateStyle: "medium", timeStyle: "short", timeZone }).format(new Date(receivedAt));
+    return `${time} (${timeZone}, UTC${offset === "Z" ? "+00:00" : offset})`;
+  } catch {
+    return receivedAt;
+  }
+}
+
+/** The chat message that carries one answer to the agent; a completing answer also carries the saved report. */
+export function customerReportAnswerMessage(result: CustomerReportIntakeResult, field: CustomerReportIntakeField, answer: string, edit: boolean): string {
+  const report: CustomerReport | null = result.report;
+  return formatCustomerReportAnswerMessage({
+    intakeId: result.intake.id,
+    field,
+    answer,
+    ...(edit ? { edit: true } : {}),
+    next: result.intake.status === "open" ? result.intake.question : null,
+    ...(report === null ? {} : { customerReportId: report.id }),
+  }, report === null ? "" : formatCustomerReportMessage(report));
 }

@@ -4,6 +4,8 @@ import { integrationActionToolSchema, runIntegrationTool, type IntegrationToolsP
 import { telemetryActionConfigWithCliSchema } from "../runbooks/runbooks.schemas";
 import { z } from 'zod'
 import { ticketDeadlineStatus } from '../plugins/ticket-deadlines'
+import type { CustomerReportIntakeStart } from '../plugins/customer-report-intake'
+import { REQUEST_CUSTOMER_REPORT_INPUT_DESCRIPTION, requestCustomerReportInput, requestCustomerReportInputSchema, type CustomerReportIntakePort } from './customer-report-intake-tool'
 import type { RunbookContext, ToolResult } from './types'
 import type {
   RunbookActionRecord,
@@ -271,6 +273,7 @@ export type HostToolName =
   | 'get_runbook_execution'
   | 'propose_runbook_edit'
   | 'propose_runbook_create'
+  | 'request_customer_report_input'
 
 export interface AgentSessionRef {
   id: string
@@ -306,6 +309,7 @@ export type HostToolEvent = {
 
 export interface HostToolContext {
   integrationConnections?: IntegrationToolsPort;
+  customerReportIntake?: CustomerReportIntakePort;
   gateway: RunbookGateway
   session: AgentSessionRef
   buildRequestKey?: (
@@ -1053,7 +1057,7 @@ export const hostTools = [
   },
   {
     name: 'ticket_operation',
-    description: 'Look up one iTop ticket by its ID or reference, list tickets by title, and preview create, acknowledge, assign, internal/public log, resolve, or close operations using connection-specific field/lifecycle mappings. To find how a past problem was solved, or which earlier tickets are resolved, use search_knowledge instead of this tool\'s search. Reads execute directly; every mutation is a preview only. Lifecycle previews first read the current ticket state and are refused unless the connection allows the transition from that state. Ask for missing required fields and show whether a log update is public. Closing requires an explicit engineer request. When the engineer\'s message starts with a [customer-report] header, a ticket create for it passes that header\'s id as customerReportId: the original report and its source then go to the private log only. Write a neutral description; do not copy the report text into the description or a public log.',
+    description: 'Look up one iTop ticket by its ID or reference, list tickets by title, and preview create, acknowledge, assign, internal/public log, resolve, or close operations using connection-specific field/lifecycle mappings. To find how a past problem was solved, or which earlier tickets are resolved, use search_knowledge instead of this tool\'s search. Reads execute directly; every mutation is a preview only. Lifecycle previews first read the current ticket state and are refused unless the connection allows the transition from that state. Ask for missing required fields and show whether a log update is public. Closing requires an explicit engineer request. When an engineer message carries a [customer-report] header line (on its own, or inside a [customer-report-answer] message that saved the report), a ticket create for it passes that header\'s id as customerReportId, using the newest one after a correction: the original report and its source then go to the private log only. Write a neutral description; do not copy the report text into the description or a public log.',
     argsSchema: ticketOperationToolSchema,
     handler: (context: HostToolContext, input: TicketOperationInput) => ticketOperation(context, input),
   },
@@ -1077,6 +1081,12 @@ export const hostTools = [
   {
     name: 'draft_outline_postmortem', description: 'Propose an unpublished Outline postmortem draft with selected source citations and actual recorded execution evidence. Requires normal engineer write approval; never publishes automatically.',
     argsSchema: postmortemDraftSchema, handler: draftOutlinePostmortem,
+  },
+  {
+    name: 'request_customer_report_input',
+    description: REQUEST_CUSTOMER_REPORT_INPUT_DESCRIPTION,
+    argsSchema: requestCustomerReportInputSchema,
+    handler: async (context: HostToolContext, input: CustomerReportIntakeStart) => await requestCustomerReportInput(context.customerReportIntake, input),
   },
   {
     name: 'list_time_tracking_capabilities',

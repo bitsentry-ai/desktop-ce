@@ -1,5 +1,6 @@
 import { refreshLinkedIntegrationResource, type LinkedResourceInput, StoredIntegrationResources, extractIntegrationResources } from "./integration-resources";
 import { IntegrationOperationService } from "./integration-operations";
+import { CustomerReportIntakeService } from "./customer-report-intake-service";
 import { StoredIntegrationOperations } from "./integration-operation-store";
 import { type IntegrationConnectionStorage, IntegrationConnectionStore } from "./integration-connection-store";
 import { applyIntegrationDestinationPolicy, describeIntegrationConnection, type IntegrationConnection, type IntegrationConnectionInput } from "./integration-connections";
@@ -269,6 +270,7 @@ export interface DesktopIntegrationStorage {
   resources: import("./integration-resources").IntegrationResourceStore;
   operations: import("./integration-operations").IntegrationOperationStore;
   customerReports?: import("./customer-reports").CustomerReportStore;
+  customerReportIntakes?: import("./customer-report-intake").CustomerReportIntakeStore;
 }
 
 class DesktopNodePluginRuntimeService extends DesktopPluginRuntimeService {
@@ -379,6 +381,16 @@ class DesktopNodePluginRuntimeService extends DesktopPluginRuntimeService {
   override getCustomerReports() {
     if (this.integrationStorage?.customerReports === undefined) return super.getCustomerReports();
     return this.integrationStorage.customerReports;
+  }
+
+  private customerReportIntake?: CustomerReportIntakeService;
+  override getCustomerReportIntake(): CustomerReportIntakeService {
+    const intakes = this.integrationStorage?.customerReportIntakes;
+    if (intakes === undefined || this.integrationStorage?.customerReports === undefined) return super.getCustomerReportIntake();
+    this.customerReportIntake ??= new CustomerReportIntakeService(intakes, this.integrationStorage.customerReports, {
+      linkedOperation: (operationId) => this.integrationStorage?.operations.get(operationId) ?? Promise.resolve(null),
+    });
+    return this.customerReportIntake;
   }
 
   override async refreshIntegrationResources(threadId: string) {

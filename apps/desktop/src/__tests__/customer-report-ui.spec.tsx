@@ -1,12 +1,23 @@
 // @vitest-environment jsdom
 
-import React, { useState } from "react";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
-import { customerReportProvenance, formatCustomerReportMessage, type IntegrationOperation } from "@bitsentry-ce/core/features/plugins";
+import React, { useMemo, useState } from "react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  CustomerReportIntakeService,
+  customerReportProvenance,
+  formatCustomerReportMessage,
+  parseCustomerReportAnswerMessage,
+  parseCustomerReportDismissMessage,
+  type CustomerReport,
+  type CustomerReportInput,
+  type CustomerReportIntake,
+  type CustomerReportIntakeStart,
+  type IntegrationOperation,
+} from "@bitsentry-ce/core/features/plugins";
 import { ChatBubble } from "@bitsentry-ce/components/chat/ChatBubble";
-import { Composer, type ComposerProps } from "@bitsentry-ce/components/chat/Composer";
-import { toCustomerReportInput, type CustomerReportDraft } from "@bitsentry-ce/components/chat/customerReport";
+import { Composer } from "@bitsentry-ce/components/chat/Composer";
+import { CustomerReportIntakeChatContext, useCustomerReportIntake } from "@bitsentry-ce/components/chat/useCustomerReportIntake";
 import type { ChatMessage } from "@bitsentry-ce/components/chat/types";
 import { OperationBody } from "@bitsentry-ce/components/investigation/IntegrationActionsView";
 
@@ -14,122 +25,216 @@ vi.mock("@bitsentry-ce/i18n", () => ({
   useTranslation: () => ({ t: (key: string) => key }),
 }));
 
-afterEach(cleanup);
+const K = "common.incidents.customerReport";
+const THREAD = "thread-1";
+// 09:00 in Jakarta.
+const NOW = new Date("2026-10-17T02:00:00.000Z");
 
-const report = {
-  id: "33333333-3333-4333-8333-333333333333", threadId: "thread-1", clientRequestId: "44444444-4444-4444-8444-444444444444",
-  channel: "whatsapp" as const, sender: "Budi – IT PT X", receivedAt: "2026-10-15T09:12:00+07:00", timeZone: "Asia/Jakarta",
-  reportText: "Portal HR timeout sejak jam 9.", submittedBy: "wira", operationId: null, createdAt: "2026-10-15T02:13:00.000Z",
-};
+beforeEach(() => { vi.useFakeTimers({ toFake: ["Date"] }); vi.setSystemTime(NOW); });
+afterEach(() => { cleanup(); vi.useRealTimers(); });
 
-function ComposerHarness({ prompt, initial, onSend }: { prompt: string; initial: CustomerReportDraft | null; onSend: ComposerProps["onSend"] }) {
-  const [draft, setDraft] = useState<CustomerReportDraft | null>(initial);
+/** The stores a host keeps; the service is the same one Desktop and the Dashboard use. */
+function intakeService() {
+  const intakes = new Map<string, CustomerReportIntake>();
+  const reports: CustomerReport[] = [];
+  const service = new CustomerReportIntakeService({
+    latest: async (threadId) => [...intakes.values()].filter((row) => row.threadId === threadId).sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0] ?? null,
+    get: async (threadId, id) => { const row = intakes.get(id); return row?.threadId === threadId ? row : null; },
+    save: async (intake) => { intakes.set(intake.id, intake); return intake; },
+  }, {
+    save: async (input: CustomerReportInput, submittedBy: string) => {
+      const existing = reports.find((row) => row.clientRequestId === input.clientRequestId);
+      if (existing) return existing;
+      const row = { ...input, id: crypto.randomUUID(), submittedBy, operationId: null, supersededById: null, createdAt: NOW.toISOString() };
+      reports.push(row);
+      return row;
+    },
+    get: async (threadId, id) => reports.find((row) => row.threadId === threadId && row.id === id) ?? null,
+    link: async () => true,
+    supersede: async (_threadId, id, supersededById) => { const row = reports.find((item) => item.id === id); if (row) row.supersededById = supersededById; },
+  });
+  /** What the agent's request_customer_report_input call does. */
+  const agentAsks = (start: CustomerReportIntakeStart, engineerMessages: string[]) => service.start(THREAD, { start, timeZone: "Asia/Jakarta", engineerMessages });
+  return { service, reports, agentAsks };
+}
+
+/** An Incident thread: the chat shows what was sent, the composer shows the open question. */
+function Thread({ service, busy, sent, initial = [] }: { service: CustomerReportIntakeService; busy: boolean; sent: string[]; initial?: string[] }) {
+  const client = useMemo(() => ({
+    latest: (threadId: string) => service.latest(threadId),
+    answer: (input: Parameters<CustomerReportIntakeService["answer"]>[0]) => service.answer(input, "wira"),
+    dismiss: (input: Parameters<CustomerReportIntakeService["dismiss"]>[0]) => service.dismiss(input),
+  }), [service]);
+  const [messages, setMessages] = useState<string[]>(initial);
+  const intake = useCustomerReportIntake({ client, threadId: THREAD, busy, send: (text) => { sent.push(text); setMessages((previous) => [...previous, text]); } });
   return (
-    <Composer
-      prompt={prompt}
-      onPromptChange={vi.fn()}
-      onSend={onSend}
-      onCancel={vi.fn()}
-      isProcessing={false}
-      isBlocked={false}
-      isArchived={false}
-      composerImages={[]}
-      onRemoveImage={vi.fn()}
-      onPickImages={vi.fn()}
-      onPickFiles={vi.fn()}
-      onImageFilesSelected={vi.fn()}
-      onPaste={vi.fn()}
-      imageInputRef={React.createRef<HTMLInputElement>()}
-      fileInputRef={React.createRef<HTMLInputElement>()}
-      selectedProviderKey={null}
-      selectedModelId=""
-      onSelectProvider={vi.fn()}
-      onSelectModel={vi.fn()}
-      configuredProviderKeys={[]}
-      providerConfigs={{}}
-      selectedModelCapability={undefined}
-      thinkingEnabled={false}
-      onThinkingToggle={vi.fn()}
-      customerReport={{ draft, onDraftChange: setDraft, defaultTimeZone: "Asia/Jakarta" }}
-    />
+    <CustomerReportIntakeChatContext.Provider value={intake.chat}>
+      {messages.map((text, index) => <ChatBubble key={index} msg={{ kind: "user", text } as ChatMessage} providerKey="openai" />)}
+      <Composer
+        prompt=""
+        onPromptChange={vi.fn()}
+        onSend={vi.fn()}
+        onCancel={vi.fn()}
+        isProcessing={busy}
+        isBlocked={false}
+        isArchived={false}
+        composerImages={[]}
+        onRemoveImage={vi.fn()}
+        onPickImages={vi.fn()}
+        onPickFiles={vi.fn()}
+        onImageFilesSelected={vi.fn()}
+        onPaste={vi.fn()}
+        imageInputRef={React.createRef<HTMLInputElement>()}
+        fileInputRef={React.createRef<HTMLInputElement>()}
+        selectedProviderKey={null}
+        selectedModelId=""
+        onSelectProvider={vi.fn()}
+        onSelectModel={vi.fn()}
+        configuredProviderKeys={[]}
+        providerConfigs={{}}
+        selectedModelCapability={undefined}
+        thinkingEnabled={false}
+        onThinkingToggle={vi.fn()}
+        customerReportIntake={intake.composer}
+      />
+    </CustomerReportIntakeChatContext.Provider>
   );
 }
 
-describe("customer report composer", () => {
-  const panel = () => screen.queryByRole("group", { name: "common.incidents.customerReport.title" });
+const panel = () => screen.queryByRole("region", { name: `${K}.title` });
+/** The open question, read inside the panel: the timeline repeats answered questions. */
+const asked = (key: string) => waitFor(() => within(screen.getByRole("region", { name: `${K}.title` })).getByText(key));
+/** An option button; its name also carries the number key that picks it. */
+const option = (label: string) => within(panel() as HTMLElement).getByRole("button", { name: new RegExp(`^${label.replace(/\./g, "\\.")}`) });
+const answerBox = () => screen.getByRole("textbox") as HTMLTextAreaElement;
+const answered = (text: string) => parseCustomerReportAnswerMessage(text)?.header;
 
-  it("opens the report panel from the attach menu, focused on the sender, in the default time zone", () => {
-    render(<ComposerHarness prompt="Portal HR timeout" initial={null} onSend={vi.fn()} />);
-    fireEvent.click(screen.getByRole("button", { name: "common.incidents.composerOptions" }));
-    fireEvent.click(screen.getByRole("button", { name: "common.incidents.customerReport.menu" }));
-    expect(panel()).toBeTruthy();
-    expect(document.activeElement).toBe(screen.getByLabelText(/common\.incidents\.customerReport\.sender/));
-    expect(screen.getByRole("combobox", { name: /common\.incidents\.customerReport\.timeZone/ }).textContent).toContain("Asia/Jakarta (UTC+07:00)");
-  });
-
-  it("moves the channel choice with the arrow keys", () => {
-    const draft: CustomerReportDraft = { clientRequestId: report.clientRequestId, channel: "whatsapp", sender: "", receivedAtLocal: "", timeZone: "UTC" };
-    render(<ComposerHarness prompt="x" initial={draft} onSend={vi.fn()} />);
-    fireEvent.keyDown(screen.getByRole("radio", { name: "common.incidents.customerReport.channels.whatsapp" }), { key: "ArrowRight" });
-    expect(screen.getByRole("radio", { name: "common.incidents.customerReport.channels.email" }).getAttribute("aria-checked")).toBe("true");
-    fireEvent.keyDown(screen.getByRole("radio", { name: "common.incidents.customerReport.channels.email" }), { key: "ArrowLeft" });
-    fireEvent.keyDown(screen.getByRole("radio", { name: "common.incidents.customerReport.channels.whatsapp" }), { key: "ArrowLeft" });
-    expect(screen.getByRole("radio", { name: "common.incidents.customerReport.channels.other" }).getAttribute("aria-checked")).toBe("true");
-  });
-
-  it("does not send until the sender and received time are filled in, and says which field is missing", () => {
-    const draft: CustomerReportDraft = { clientRequestId: report.clientRequestId, channel: "phone", sender: "", receivedAtLocal: "", timeZone: "Asia/Jakarta" };
-    render(<ComposerHarness prompt="Portal HR timeout" initial={draft} onSend={vi.fn()} />);
-    const send = screen.getByRole("button", { name: "common.incidents.sendMessage" }) as HTMLButtonElement;
-    expect(send.disabled).toBe(true);
-    const sender = screen.getByLabelText(/common\.incidents\.customerReport\.sender/);
-    fireEvent.blur(sender);
-    expect(screen.getByRole("alert").textContent).toBe("common.incidents.customerReport.senderRequired");
-    expect(sender.getAttribute("aria-invalid")).toBe("true");
-    fireEvent.change(sender, { target: { value: "Ana" } });
-    fireEvent.click(screen.getByRole("button", { name: "common.incidents.customerReport.now" }));
-    expect(screen.queryByRole("alert")).toBeNull();
-    expect(send.disabled).toBe(false);
-  });
-
-  it("refuses a received time in the future", () => {
-    const draft: CustomerReportDraft = { clientRequestId: report.clientRequestId, channel: "phone", sender: "Ana", receivedAtLocal: "2099-01-01T09:00", timeZone: "UTC" };
-    render(<ComposerHarness prompt="Portal HR timeout" initial={draft} onSend={vi.fn()} />);
-    expect(screen.getByRole("alert").textContent).toBe("common.incidents.customerReport.receivedAtFuture");
-    expect((screen.getByRole("button", { name: "common.incidents.sendMessage" }) as HTMLButtonElement).disabled).toBe(true);
-  });
-
-  it("removes the draft from the panel", () => {
-    const draft: CustomerReportDraft = { clientRequestId: report.clientRequestId, channel: "email", sender: "Ana", receivedAtLocal: "2026-10-15T09:12", timeZone: "UTC" };
-    render(<ComposerHarness prompt="x" initial={draft} onSend={vi.fn()} />);
-    fireEvent.click(screen.getByRole("button", { name: "common.incidents.customerReport.remove" }));
+describe("customer report question in the composer", () => {
+  it("opens after the agent's reply, and a picked option is saved and sent to the agent", async () => {
+    const { service, agentAsks } = intakeService();
+    await agentAsks({ origin: "customer", extracted: [{ field: "channel", value: "email", quote: "by email" }] }, ["We just got a customer report by email: the service desk keeps loading."]);
+    const sent: string[] = [];
+    const view = render(<Thread service={service} busy sent={sent} />);
     expect(panel()).toBeNull();
+
+    view.rerender(<Thread service={service} busy={false} sent={sent} />);
+    expect(await asked(`${K}.questions.sender`)).toBeTruthy();
+    fireEvent.click(option(`${K}.options.notSure`));
+
+    await waitFor(() => { expect(sent).toHaveLength(1); });
+    expect(answered(sent[0])).toMatchObject({ field: "sender", answer: `${K}.options.notSure`, next: "subject" });
+    expect((await service.latest(THREAD))?.answers.sender).toBeNull();
+    expect(await asked(`${K}.questions.subject`)).toBeTruthy();
+    expect(screen.queryByText(/\[customer-report-answer\]/)).toBeNull();
+  });
+
+  it("takes a typed answer, and refuses a received time in the future without saving it", async () => {
+    const { service, agentAsks } = intakeService();
+    await agentAsks({ origin: "customer", extracted: [{ field: "sender", value: "Rina", quote: "Rina from Acme" }, { field: "channel", value: "phone", quote: "called" }] }, ["Rina from Acme called, she cannot log in."]);
+    const sent: string[] = [];
+    render(<Thread service={service} busy={false} sent={sent} />);
+    expect(await asked(`${K}.questions.receivedAtPhone`)).toBeTruthy();
+
+    fireEvent.change(answerBox(), { target: { value: "09:30" } });
+    fireEvent.keyDown(answerBox(), { key: "Enter" });
+    expect((await screen.findByRole("alert")).textContent).toBe(`${K}.errors.future`);
+    expect(sent).toEqual([]);
+
+    fireEvent.change(answerBox(), { target: { value: "08:15" } });
+    fireEvent.keyDown(answerBox(), { key: "Enter" });
+    await waitFor(() => { expect(sent).toHaveLength(1); });
+    expect((await service.latest(THREAD))?.answers.receivedAt).toBe("2026-10-17T08:15:00+07:00");
+  });
+
+  it("closes a new report for good when the engineer dismisses it", async () => {
+    const { service, agentAsks } = intakeService();
+    await agentAsks({ origin: "customer" }, ["A customer complained the VPN keeps dropping."]);
+    const sent: string[] = [];
+    render(<Thread service={service} busy={false} sent={sent} />);
+    expect(await asked(`${K}.questions.channel`)).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: `${K}.dismiss` }));
+    await waitFor(() => { expect(sent).toHaveLength(1); });
+    expect(parseCustomerReportDismissMessage(sent[0])).not.toBeNull();
+    expect((await service.latest(THREAD))?.status).toBe("dismissed");
+    expect(panel()).toBeNull();
+    expect(screen.getByText(`${K}.dismissed`)).toBeTruthy();
+  });
+
+  it("changes one earlier answer from its row; closing the change keeps the open question", async () => {
+    const { service, agentAsks } = intakeService();
+    await agentAsks({ origin: "customer", extracted: [{ field: "channel", value: "email", quote: "by email" }] }, ["We just got a customer report by email: the service desk keeps loading."]);
+    const sent: string[] = [];
+    render(<Thread service={service} busy={false} sent={sent} />);
+    await asked(`${K}.questions.sender`);
+    fireEvent.change(answerBox(), { target: { value: "Dewi" } });
+    fireEvent.click(screen.getByRole("button", { name: `${K}.submit` }));
+    await asked(`${K}.questions.subject`);
+
+    fireEvent.click(screen.getByRole("button", { name: `${K}.changeAnswer` }));
+    expect(await asked(`${K}.questions.sender`)).toBeTruthy();
+    expect(answerBox().value).toBe("Dewi");
+    fireEvent.click(screen.getByRole("button", { name: `${K}.cancelChange` }));
+    expect(await asked(`${K}.questions.subject`)).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: `${K}.changeAnswer` }));
+    await asked(`${K}.questions.sender`);
+    fireEvent.change(answerBox(), { target: { value: "Sari" } });
+    fireEvent.click(screen.getByRole("button", { name: `${K}.update` }));
+    await waitFor(() => { expect(sent).toHaveLength(2); });
+    expect(answered(sent[1])).toMatchObject({ field: "sender", answer: "Sari", edit: true, next: "subject" });
+    expect(await asked(`${K}.questions.subject`)).toBeTruthy();
   });
 });
 
-describe("customer report save input", () => {
-  it("saves the pasted text exactly, including leading and trailing whitespace", () => {
-    const draft: CustomerReportDraft = { clientRequestId: report.clientRequestId, channel: "email", sender: "  Ana  ", receivedAtLocal: "2026-10-15T09:12", timeZone: "Asia/Jakarta" };
-    expect(toCustomerReportInput(draft, "thread-1", "  Portal down  \n")).toMatchObject({ reportText: "  Portal down  \n", sender: "Ana", receivedAt: "2026-10-15T09:12:00+07:00" });
-    expect(toCustomerReportInput(draft, "thread-1", "   ")).toBeNull();
-  });
-});
+describe("a saved customer report in the chat", () => {
+  async function savedWithoutSource() {
+    const { service, agentAsks, reports } = intakeService();
+    const started = await agentAsks({ origin: "customer", extracted: [{ field: "channel", value: "whatsapp", quote: "barusan WA" }] }, ["Klien barusan WA, katanya VPN putus."]);
+    const intakeId = started.intake.id;
+    await service.answer({ threadId: THREAD, intakeId, clientRequestId: crypto.randomUUID(), answer: { field: "sender", value: null } }, "wira");
+    await service.answer({ threadId: THREAD, intakeId, clientRequestId: crypto.randomUUID(), answer: { field: "receivedAt", value: null } }, "wira");
+    const done = await service.answer({ threadId: THREAD, intakeId, clientRequestId: crypto.randomUUID(), answer: { field: "reportText", value: "VPN putus terus dari pagi." } }, "wira");
+    const message = `[customer-report-answer]${JSON.stringify({ intakeId, field: "reportText", answer: "VPN putus terus dari pagi.", next: null, customerReportId: done.report?.id })}\n${formatCustomerReportMessage(done.report as CustomerReport)}`;
+    return { service, reports, message };
+  }
 
-describe("customer report message", () => {
-  it("shows the source as an internal chip and only the report text in the bubble", () => {
-    const message: ChatMessage = { kind: "user", text: formatCustomerReportMessage(report) } as ChatMessage;
-    render(<ChatBubble msg={message} providerKey="openai" />);
-    expect(screen.getByText(/common\.incidents\.customerReport\.title · common\.incidents\.customerReport\.channels\.whatsapp/)).toBeTruthy();
-    expect(screen.getByText("common.incidents.customerReport.internalOnly")).toBeTruthy();
-    expect(screen.getByText("common.incidents.customerReport.unverified")).toBeTruthy();
-    expect(screen.getByText(report.reportText)).toBeTruthy();
-    expect(screen.queryByText(/\[customer-report\]/)).toBeNull();
+  it("shows an unknown sender and time as not provided, never as a guess", async () => {
+    const { service, message } = await savedWithoutSource();
+    render(<Thread service={service} busy={false} sent={[]} initial={[message]} />);
+    expect(screen.getByText(`${K}.senderNotProvided · ${K}.receivedNotProvided`)).toBeTruthy();
+    expect(screen.getByText("VPN putus terus dari pagi.")).toBeTruthy();
+    expect(screen.queryByText(/\[customer-report/)).toBeNull();
+  });
+
+  it("lets the engineer change one answer from the card, which saves a corrected report", async () => {
+    const { service, reports, message } = await savedWithoutSource();
+    const sent: string[] = [];
+    render(<Thread service={service} busy={false} sent={sent} initial={[message]} />);
+    fireEvent.click(await screen.findByRole("button", { name: `${K}.edit` }));
+    expect(await asked(`${K}.questions.fix`)).toBeTruthy();
+    fireEvent.click(option(`${K}.fields.sender`));
+    await asked(`${K}.questions.sender`);
+    fireEvent.change(answerBox(), { target: { value: "Pak Budi" } });
+    fireEvent.click(screen.getByRole("button", { name: `${K}.update` }));
+
+    await waitFor(() => { expect(sent).toHaveLength(1); });
+    expect(reports).toHaveLength(2);
+    expect(reports[0].supersededById).toBe(reports[1].id);
+    expect(reports[1]).toMatchObject({ sender: "Pak Budi", reportText: "VPN putus terus dari pagi." });
+    expect(answered(sent[0])).toMatchObject({ field: "sender", edit: true, customerReportId: reports[1].id });
+    await waitFor(() => { expect(screen.getByText(`${K}.fromSender · ${K}.receivedNotProvided`)).toBeTruthy(); });
   });
 });
 
 describe("customer report ticket proposal", () => {
+  const report = {
+    id: "33333333-3333-4333-8333-333333333333", threadId: THREAD, clientRequestId: "44444444-4444-4444-8444-444444444444",
+    channel: "whatsapp" as const, sender: "Budi – IT PT X", receivedAt: "2026-10-15T09:12:00+07:00", timeZone: "Asia/Jakarta",
+    reportText: "Portal HR timeout sejak jam 9.", submittedBy: "wira", operationId: null, createdAt: "2026-10-15T02:13:00.000Z",
+  };
   const row: IntegrationOperation = {
-    id: "22222222-2222-4222-8222-222222222222", threadId: "thread-1", connectionId: "11111111-1111-4111-8111-111111111111",
+    id: "22222222-2222-4222-8222-222222222222", threadId: THREAD, connectionId: "11111111-1111-4111-8111-111111111111",
     connectionName: "Itop Bitsentry", target: "https://itop.example", pluginId: "itop", actionId: "create_object",
     input: { class: "UserRequest", fields: { title: "HR portal timeout", private_log: { add_item: { message: customerReportProvenance(report), format: "text" } } } },
     publicUpdate: false, requiresCloseRequest: false, pluginVersion: "1.0.0", connectionRevision: "1", ticketOperation: "create",
@@ -146,4 +251,10 @@ describe("customer report ticket proposal", () => {
     expect(screen.getByText("title")).toBeTruthy();
     expect(screen.queryByText("private_log")).toBeNull();
   });
+
+  it("shows a sender the engineer did not know as not provided", () => {
+    render(<OperationBody row={{ ...row, customerReport: { ...row.customerReport!, sender: null, receivedAt: null } }} disabled={false} busy={false} refusal={undefined} closeRequested={false} onCloseRequestedChange={vi.fn()} onApprove={vi.fn()} onReject={vi.fn()} service={{ list: vi.fn(), approve: vi.fn(), cancel: vi.fn() }} onRefresh={vi.fn()} />);
+    expect(screen.getAllByText("incidents.integrationWrites.customerReport.notProvided")).toHaveLength(2);
+  });
 });
+

@@ -36,12 +36,11 @@ import {
   FileText,
   ImagePlus,
   Loader2,
-  MessageSquareText,
   Plus,
   X,
 } from "lucide-react";
-import { CustomerReportPanel } from "./CustomerReportPanel";
-import { createCustomerReportDraft, isCustomerReportDraftReady, type ComposerCustomerReport, type CustomerReportDraft } from "./customerReport";
+import { CustomerReportQuestionPanel } from "./CustomerReportPanel";
+import type { ComposerCustomerReportIntake } from "./useCustomerReportIntake";
 import { ModelPicker } from "./ModelPicker";
 import type { AccessLevel, InteractionMode } from "./types";
 import { DEFAULT_ACCESS_LEVEL, DEFAULT_INTERACTION_MODE } from "./types";
@@ -101,8 +100,8 @@ export interface ComposerProps {
   // Controlled access level (managed by parent so it persists per-incident)
   accessLevel?: AccessLevel;
   onAccessLevelChange?: (level: AccessLevel) => void;
-  // Customer report intake: shown in the attach menu only when the host can save reports.
-  customerReport?: ComposerCustomerReport;
+  // The open customer report question, when the agent asked one. The text area then holds the typed answer.
+  customerReportIntake?: ComposerCustomerReportIntake;
 }
 
 function getSeededTraitValues(
@@ -115,18 +114,42 @@ function getSeededTraitValues(
   return { ...defaults, thinking: thinkingEnabled };
 }
 
-/** A customer report needs its text and its required source fields; otherwise text or an attachment is enough. */
-function composerCanSend(isBlocked: boolean, prompt: string, attachmentCount: number, reportDraft: CustomerReportDraft | null): boolean {
+/** While a customer report question is open, the text area holds the typed answer instead of the prompt. */
+function composerTextBinding(question: ComposerCustomerReportIntake | undefined, prompt: string, onPromptChange: (value: string) => void, onPaste: (event: React.ClipboardEvent<HTMLTextAreaElement>) => void, disabled: boolean) {
+  if (question === undefined) {
+    return { rows: 3, value: prompt, onChange: onPromptChange, onPaste, disabled };
+  }
+  return { rows: question.question.multiline ? 3 : 2, value: question.answerText, onChange: question.setAnswerText, onPaste: () => {}, disabled: question.submitting };
+}
+
+function QuestionSubmitButton({ question }: { question: ComposerCustomerReportIntake }) {
+  const { t } = useTranslation();
+  const label = t(question.editing ? "common.incidents.customerReport.update" : "common.incidents.customerReport.submit");
+  return (
+    <button
+      type="button"
+      onClick={question.submit}
+      disabled={!question.canSubmit}
+      className="h-8 whitespace-nowrap rounded-[10px] bg-violet-600 px-3.5 text-[13px] font-semibold text-white transition-colors hover:bg-violet-700 disabled:cursor-default disabled:bg-violet-200 dark:disabled:bg-violet-500/30"
+    >
+      {question.submitting ? <Loader2 size={14} className="animate-spin" aria-label={label} /> : label}
+    </button>
+  );
+}
+
+function composerCanSend(isBlocked: boolean, prompt: string, attachmentCount: number): boolean {
   if (isBlocked) return false;
-  if (reportDraft !== null) return prompt.trim().length > 0 && isCustomerReportDraftReady(reportDraft, prompt);
   return prompt.trim().length > 0 || attachmentCount > 0;
 }
 
-function composerPlaceholder(t: (key: string) => string, isBlocked: boolean, threadStatus: ThreadStatus | undefined, hasReport: boolean): string {
+function composerPlaceholder(t: (key: string) => string, isBlocked: boolean, threadStatus: ThreadStatus | undefined, question: ComposerCustomerReportIntake | undefined, placeholder: string | undefined): string {
   if (isBlocked) {
     return threadStatus === "blocked_no_runbook" ? t("common.incidents.createARunbookToEnable") : t("common.incidents.configureAProviderInSettings");
   }
-  return hasReport ? t("common.incidents.customerReport.placeholder") : t("common.incidents.describeTheSecurityIssueTo");
+  if (question !== undefined) {
+    return question.question.placeholder ?? t("common.incidents.customerReport.placeholders.customAnswer");
+  }
+  return placeholder ?? t("common.incidents.describeTheSecurityIssueTo");
 }
 
 export function Composer({
@@ -163,7 +186,7 @@ export function Composer({
   tokenUsage,
   accessLevel: accessLevelProp,
   onAccessLevelChange,
-  customerReport,
+  customerReportIntake,
 }: ComposerProps) {
   const { t } = useTranslation();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -186,10 +209,11 @@ export function Composer({
 
   // ── Derived ────────────────────────────────────────────────────────────────
   const composerSupportsPhotos = Boolean(selectedModelCapability?.supportsImageInput);
-  const reportDraft = customerReport?.draft ?? null;
+  const question = isBlocked ? undefined : customerReportIntake;
+  const asking = question !== undefined;
   const hasAttachOptions =
-    composerSupportsPhotos || composerFileAccept?.includes(".csv") === true || customerReport !== undefined;
-  const canSend = composerCanSend(isBlocked, prompt, composerImages.length, reportDraft);
+    composerSupportsPhotos || composerFileAccept?.includes(".csv") === true;
+  const canSend = composerCanSend(isBlocked, prompt, composerImages.length);
 
   const composerOptions = useMemo(
     () => {
@@ -239,6 +263,12 @@ export function Composer({
     });
   }, [thinkingEnabled]);
 
+  // A new customer report question takes the focus, so the engineer can type the answer at once.
+  const questionKey = question?.question.key;
+  useEffect(() => {
+    if (questionKey !== undefined) textareaRef.current?.focus({ preventScroll: true });
+  }, [questionKey]);
+
   // ── Close popovers on outside click ────────────────────────────────────────
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
@@ -259,18 +289,18 @@ export function Composer({
   // ── Keyboard: Enter sends, Shift+Enter newline ─────────────────────────────
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-      if (
-        e.key === "Enter" &&
-        !e.shiftKey &&
-        !e.nativeEvent.isComposing &&
-        !isProcessing &&
-        canSend
-      ) {
+      if (e.key !== "Enter" || e.shiftKey || e.nativeEvent.isComposing) return;
+      if (question !== undefined) {
+        e.preventDefault();
+        if (question.canSubmit) question.submit();
+        return;
+      }
+      if (!isProcessing && canSend) {
         e.preventDefault();
         onSend({ accessLevel, interactionMode, traitValues });
       }
     },
-    [onSend, isProcessing, canSend, accessLevel, interactionMode, traitValues],
+    [onSend, isProcessing, canSend, accessLevel, interactionMode, traitValues, question],
   );
 
   const handleTraitChange = useCallback((id: string, value: string | boolean) => {
@@ -279,7 +309,8 @@ export function Composer({
 
   if (isArchived) return null;
 
-  const placeholderText = placeholder ?? composerPlaceholder(t, isBlocked, threadStatus, reportDraft !== null);
+  const placeholderText = composerPlaceholder(t, isBlocked, threadStatus, question, placeholder);
+  const textBinding = composerTextBinding(question, prompt, onPromptChange, onPaste, isProcessing || isBlocked);
 
   let accessSelector: ReactNode = null;
   const shouldShowAccessSelector = selectedProviderKey !== null;
@@ -345,22 +376,15 @@ export function Composer({
       <div
         data-tour="incidents-composer"
         className={cn(
-          "group rounded-[20px] border bg-card transition-colors duration-200",
-          !isProcessing && !isBlocked && "focus-within:border-ring/45",
+          "group rounded-[20px] border bg-card transition-[border-color,box-shadow] duration-200",
+          !isProcessing && !isBlocked && !asking && "focus-within:border-ring/45",
+          asking && "border-violet-300 shadow-[0_0_0_3px_rgb(124_58_237_/_0.08)] dark:border-violet-500/40",
           isBlocked && "opacity-60",
         )}
       >
+        {question !== undefined && <CustomerReportQuestionPanel key={question.question.key} intake={question} />}
         {/* Textarea area with optional attach button */}
         <div className="relative px-3 pb-2 pt-3.5 sm:px-4 sm:pt-4">
-          {customerReport !== undefined && reportDraft !== null && (
-            <CustomerReportPanel
-              draft={reportDraft}
-              onChange={customerReport.onDraftChange}
-              onRemove={() => { customerReport.onDraftChange(null); }}
-              disabled={isProcessing || isBlocked}
-              defaultTimeZone={customerReport.defaultTimeZone}
-            />
-          )}
           {composerImages.length > 0 && (
             <div className="mb-3 flex flex-wrap gap-2">
               {composerImages.map((image) =>
@@ -470,32 +494,18 @@ export function Composer({
                         {t("common.incidents.addFiles")}
                       </button>
                     )}
-                    {customerReport !== undefined && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          if (reportDraft === null) customerReport.onDraftChange(createCustomerReportDraft(customerReport.defaultTimeZone));
-                          setAttachMenuOpen(false);
-                          textareaRef.current?.focus();
-                        }}
-                        className="flex w-full items-center gap-3 whitespace-nowrap rounded-lg px-3 py-2 text-sm text-foreground transition-colors hover:bg-accent"
-                      >
-                        <MessageSquareText size={14} className="shrink-0 text-muted-foreground" />
-                        {t("common.incidents.customerReport.menu")}
-                      </button>
-                    )}
                   </div>
                 )}
               </div>
             )}
             <textarea
               ref={textareaRef}
-              rows={3}
-              value={prompt}
-              onChange={(e) => { onPromptChange(e.target.value); }}
+              rows={textBinding.rows}
+              value={textBinding.value}
+              onChange={(e) => { textBinding.onChange(e.target.value); }}
               onKeyDown={handleKeyDown}
-              onPaste={(event) => { onPaste(event); }}
-              disabled={isProcessing || isBlocked}
+              onPaste={(event) => { textBinding.onPaste(event); }}
+              disabled={textBinding.disabled}
               placeholder={placeholderText}
               className="w-full flex-1 resize-none bg-transparent p-0 pt-1 text-sm leading-5 outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed"
             />
@@ -550,12 +560,16 @@ export function Composer({
           {/* Right: context + send / stop */}
           <div data-tour="incidents-send-btn" className="flex shrink-0 items-center gap-2">
             {contextIndicator}
-            <SendButton
-              isProcessing={isProcessing}
-              canSend={canSend}
-              onSend={() => { onSend({ accessLevel, interactionMode, traitValues }); }}
-              onCancel={onCancel}
-            />
+            {question !== undefined ? (
+              <QuestionSubmitButton question={question} />
+            ) : (
+              <SendButton
+                isProcessing={isProcessing}
+                canSend={canSend}
+                onSend={() => { onSend({ accessLevel, interactionMode, traitValues }); }}
+                onCancel={onCancel}
+              />
+            )}
           </div>
         </div>
       </div>

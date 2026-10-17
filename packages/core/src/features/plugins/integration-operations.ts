@@ -7,7 +7,7 @@ import { customerReportOrigin, ticketWriteOperationSchema } from "./itop-ticket-
 import { readItopTicketState } from "./itop-ticket-state";
 import type { DesktopPluginDescriptor, DesktopPluginExecutionResult } from "./plugins.types";
 import {
-  CustomerReportLinkError, customerReportLinkDecision, customerReportProvenance, customerReportRefusal, customerReportSummarySchema,
+  CustomerReportLinkError, customerReportCorrected, customerReportLinkDecision, customerReportProvenance, customerReportRefusal, customerReportSummarySchema,
   NOT_APPLIED_MESSAGE, REFUSED_BEFORE_WRITE, summarizeCustomerReport, type CustomerReport, type CustomerReportStore,
 } from "./customer-reports";
 
@@ -190,7 +190,9 @@ export class IntegrationOperationService {
   private async customerReportFor(threadId: string, runtime: IntegrationWriteRuntime, request: IntegrationWriteRequest, meta: IntegrationWriteMeta): Promise<CustomerReport | undefined> {
     if (meta.customerReportId === undefined) return undefined;
     const report = this.reports === undefined ? null : await this.reports.get(threadId, meta.customerReportId);
-    if (report === null) throw new CustomerReportLinkError("CUSTOMER_REPORT_NOT_FOUND", "This customer report was not found in this conversation. Ask the engineer to submit it again from the composer.");
+    if (report === null) throw new CustomerReportLinkError("CUSTOMER_REPORT_NOT_FOUND", "This customer report was not found in this conversation. Ask the engineer to share it again in chat.");
+    const corrected = customerReportCorrected(report);
+    if (corrected !== null) throw corrected;
     assertCustomerReportWrite(runtime, request, meta, report);
     return report;
   }

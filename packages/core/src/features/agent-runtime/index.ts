@@ -107,3 +107,4 @@ export {
   type HostToolName,
   type HostToolSpec,
 } from './host-tools'
+export { CUSTOMER_REPORT_INTAKE_PROMPT, requestCustomerReportInput, REQUEST_CUSTOMER_REPORT_INPUT_DESCRIPTION, type CustomerReportIntakePort } from './customer-report-intake-tool'

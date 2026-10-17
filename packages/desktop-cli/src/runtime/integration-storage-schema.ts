@@ -164,6 +164,29 @@ CREATE TRIGGER IF NOT EXISTS "CustomerReport_content_guard" BEFORE UPDATE ON "Cu
 WHEN NEW."id" IS NOT OLD."id" OR NEW."threadId" IS NOT OLD."threadId" OR NEW."clientRequestId" IS NOT OLD."clientRequestId"
   OR NEW."channel" IS NOT OLD."channel" OR NEW."payloadCiphertext" IS NOT OLD."payloadCiphertext" OR NEW."createdAt" IS NOT OLD."createdAt"
 BEGIN SELECT RAISE(ABORT, 'Customer report content is immutable'); END;
+
+-- A corrected customer report: the earlier version points to the newer one. Neither report changes.
+CREATE TABLE IF NOT EXISTS "CustomerReportCorrection" (
+  "reportId" TEXT PRIMARY KEY NOT NULL REFERENCES "CustomerReport"("id") ON DELETE RESTRICT,
+  "threadId" TEXT NOT NULL CHECK (length(trim("threadId")) > 0),
+  "supersededById" TEXT NOT NULL REFERENCES "CustomerReport"("id") ON DELETE RESTRICT,
+  "createdAt" TEXT NOT NULL,
+  CHECK ("reportId" <> "supersededById")
+);
+
+-- A customer report being collected in chat, one question at a time. Its answers are sealed like the report.
+CREATE TABLE IF NOT EXISTS "CustomerReportIntake" (
+  "id" TEXT PRIMARY KEY NOT NULL,
+  "threadId" TEXT NOT NULL CHECK (length(trim("threadId")) > 0),
+  "status" TEXT NOT NULL CHECK ("status" IN ('open','dismissed','saved')),
+  "payloadCiphertext" TEXT NOT NULL,
+  "createdAt" TEXT NOT NULL,
+  "updatedAt" TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS "CustomerReportIntake_thread" ON "CustomerReportIntake"("threadId","createdAt");
+CREATE TRIGGER IF NOT EXISTS "CustomerReportIntake_identity_guard" BEFORE UPDATE ON "CustomerReportIntake"
+WHEN NEW."id" IS NOT OLD."id" OR NEW."threadId" IS NOT OLD."threadId" OR NEW."createdAt" IS NOT OLD."createdAt"
+BEGIN SELECT RAISE(ABORT, 'Customer report intake identity is immutable'); END;
 `
 
 export async function ensureIntegrationStorageSchema(db: DbClient): Promise<void> {

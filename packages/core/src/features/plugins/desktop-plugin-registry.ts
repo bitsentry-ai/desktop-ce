@@ -315,6 +315,7 @@ export class DesktopPluginRuntimeService {
 
   getIntegrationOperations(): import("./integration-operations").IntegrationOperationService { throw new Error("Write approvals are unavailable in this runtime."); }
   getCustomerReports(): import("./customer-reports").CustomerReportStore { throw new Error("Customer reports are unavailable in this runtime."); }
+  getCustomerReportIntake(): import("./customer-report-intake-service").CustomerReportIntakeService { throw new Error("Customer reports are unavailable in this runtime."); }
 
   constructor(protected registry = new DesktopPluginRegistry()) {}
 
