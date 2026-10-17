@@ -138,6 +138,11 @@ export function findCurrentExecutionStep(
   const runningStep = snapshot.steps.find((step) => step.status === "running");
   if (runningStep !== undefined) return runningStep;
 
+  const awaitingStep = snapshot.steps.find(
+    (step) => step.status === "awaiting_approval",
+  );
+  if (awaitingStep !== undefined) return awaitingStep;
+
   if (options?.includePending === true) {
     return snapshot.steps.find((step) => step.status === "pending");
   }

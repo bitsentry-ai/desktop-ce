@@ -38,6 +38,7 @@ import { useRunbooksService } from "../services/hooks";
 import { useTranslation } from "@bitsentry-ce/i18n";
 
 type RunResultStatus =
+  | "awaiting_approval"
   | "queued"
   | "pending"
   | "running"
@@ -206,6 +207,8 @@ function effectiveCompletedAt(
 
 function statusLabel(status: RunResultStatus): string {
   switch (status) {
+    case "awaiting_approval":
+      return "Awaiting approval";
     case "queued":
       return "Queued";
     case "pending":
@@ -223,12 +226,13 @@ function statusLabel(status: RunResultStatus): string {
   }
 }
 
-function statusClass(status: RunResultStatus): string {
+function statusClass(status: RunResultStatus | "skipped"): string {
   switch (status) {
     case "queued":
       return "bg-sky-500/15 text-sky-500";
     case "pending":
       return "bg-sky-500/15 text-sky-500";
+    case "awaiting_approval":
     case "running":
       return "bg-amber-500/15 text-amber-500";
     case "claim_expired":
@@ -237,6 +241,7 @@ function statusClass(status: RunResultStatus): string {
       return "bg-emerald-500/15 text-emerald-500";
     case "failed":
       return "bg-destructive/15 text-destructive";
+    case "skipped":
     case "cancelled":
       return "bg-muted text-muted-foreground";
   }
@@ -895,6 +900,7 @@ export default function ResultsPage() {
           total: 0,
           queued: 0,
           pending: 0,
+          awaiting_approval: 0,
           running: 0,
           claim_expired: 0,
           completed: 0,
