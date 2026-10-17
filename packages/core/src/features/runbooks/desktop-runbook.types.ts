@@ -140,6 +140,7 @@ export interface RunbookContextV1<TTelemetryActionConfig = unknown> {
 }
 
 export type RunbookExecutionStatus =
+  | "awaiting_approval"
   | "queued"
   | "pending"
   | "running"
@@ -155,6 +156,8 @@ export type RunbookExecutionCompletionReason =
   | "app_shutdown"
   | "lease_expired";
 export type RunbookExecutionStepStatus =
+  | "awaiting_approval"
+  | "skipped"
   | "pending"
   | "running"
   | "completed"

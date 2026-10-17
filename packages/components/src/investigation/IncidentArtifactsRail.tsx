@@ -278,6 +278,10 @@ function stepStatusLabel(
   status: RunbookExecutionStepRecord["status"],
 ): string {
   switch (status) {
+    case "awaiting_approval":
+      return t("common.results.statusAwaitingApproval");
+    case "skipped":
+      return t("common.results.statusSkipped");
     case "pending":
       return t("common.incidentArtifactsRail.stepStatus.pending");
     case "running":
@@ -299,6 +303,7 @@ function statusClasses(status: IncidentArtifactEntry["status"]): string {
       return "bg-sky-500/15 text-sky-500";
     case "pending":
       return "bg-sky-500/15 text-sky-500";
+    case "awaiting_approval":
     case "running":
       return "bg-amber-500/15 text-amber-500";
     case "claim_expired":
@@ -317,6 +322,8 @@ function statusLabel(
   status: IncidentArtifactEntry["status"],
 ): string {
   switch (status) {
+    case "awaiting_approval":
+      return t("common.results.statusAwaitingApproval");
     case "starting":
       return t("common.incidentArtifactsRail.status.starting");
     case "queued":
@@ -547,6 +554,8 @@ function artifactStatusPriority(
   status: IncidentArtifactEntry["status"],
 ): number {
   switch (status) {
+    case "awaiting_approval":
+      return 6;
     case "running":
       return 5;
     case "queued":

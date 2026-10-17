@@ -1542,5 +1542,7 @@
   "common.incidents.customerReport.subjectLine": "主题：{{subject}}",
   "common.incidents.customerReport.questions.confirm": "要保存这份客户报告吗？",
   "common.incidents.customerReport.options.save": "保存",
-  "common.incidents.customerReport.options.changeSomething": "修改某项"
+  "common.incidents.customerReport.options.changeSomething": "修改某项",
+  "common.results.statusAwaitingApproval": "等待批准",
+  "common.results.statusSkipped": "已跳过"
 }

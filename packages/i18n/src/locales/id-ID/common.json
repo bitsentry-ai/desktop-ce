@@ -1542,5 +1542,7 @@
   "common.incidents.customerReport.subjectLine": "Subjek: {{subject}}",
   "common.incidents.customerReport.questions.confirm": "Simpan laporan pelanggan ini?",
   "common.incidents.customerReport.options.save": "Simpan",
-  "common.incidents.customerReport.options.changeSomething": "Ubah sesuatu"
+  "common.incidents.customerReport.options.changeSomething": "Ubah sesuatu",
+  "common.results.statusAwaitingApproval": "Menunggu persetujuan",
+  "common.results.statusSkipped": "Dilewati"
 }

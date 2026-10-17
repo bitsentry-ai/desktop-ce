@@ -1542,5 +1542,7 @@
   "common.incidents.customerReport.subjectLine": "Objet : {{subject}}",
   "common.incidents.customerReport.questions.confirm": "Dois-je enregistrer ce signalement client ?",
   "common.incidents.customerReport.options.save": "Enregistrer",
-  "common.incidents.customerReport.options.changeSomething": "Modifier quelque chose"
+  "common.incidents.customerReport.options.changeSomething": "Modifier quelque chose",
+  "common.results.statusAwaitingApproval": "En attente d’approbation",
+  "common.results.statusSkipped": "Ignorée"
 }
