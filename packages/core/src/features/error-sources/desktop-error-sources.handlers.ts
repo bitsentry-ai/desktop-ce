@@ -1,5 +1,5 @@
 import type { DbClient } from "../desktop/desktop-database-client";
-import { randomUUID } from "node:crypto";
+import { randomUUID } from "crypto";
 import log from "electron-log";
 import { z } from "zod";
 import { errorSourceTypeSchema } from "./error-sources.schemas";

@@ -612,7 +612,7 @@ function stripHtmlTags(value: string): string {
     if (start < 0) return result + value.slice(cursor);
     const end = value.indexOf(">", start + 1);
     if (end < 0) return result + value.slice(cursor);
-    result += `${value.slice(cursor, start)} `;
+    result += value.slice(cursor, start) + " ";
     cursor = end + 1;
   }
   return result;

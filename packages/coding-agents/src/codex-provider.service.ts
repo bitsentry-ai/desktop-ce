@@ -1,6 +1,6 @@
-import os from 'node:os'
-import { mkdtemp, rm } from 'node:fs/promises'
-import path from 'node:path'
+import os from 'os'
+import { mkdtemp, rm } from 'fs/promises'
+import path from 'path'
 import { codingAgentsLogger as log } from './logger.js'
 import { CodexAppServerClient, type JsonRpcId } from './codex-app-server-client.js'
 import { HOST_MCP_SERVER_NAME, type HostMcpEndpoint } from './host-mcp-server.service.js'
@@ -547,7 +547,7 @@ export async function executeCodex(
         const streamed = itemId !== undefined && streamedAgentMessageIds.has(itemId)
         const shouldAppendCompletedText =
           finalText !== undefined &&
-          (itemId === undefined ? output.length === 0 : !streamed)
+          (itemId !== undefined ? !streamed : output.length === 0)
         if (shouldAppendCompletedText && finalText !== undefined) {
           const emittedText = appendAssistantText(finalText)
           debug?.recordAnomaly('codex.completed_without_stream_deltas', {

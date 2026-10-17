@@ -1,6 +1,6 @@
-import { access, lstat, mkdir, mkdtemp, rm, symlink } from 'node:fs/promises'
-import os from 'node:os'
-import path from 'node:path'
+import { access, lstat, mkdir, mkdtemp, rm, symlink } from 'fs/promises'
+import os from 'os'
+import path from 'path'
 import { codingAgentsLogger as log } from './logger.js'
 
 export interface IsolatedCodexIncidentHome {

@@ -90,7 +90,7 @@ function mergeExecutionEventIntoResults(
       completionReason: execution.completionReason,
     }, ...previous];
   }
-  return previous.map((result) => result.id === resultId ? {
+  return previous.map((result) => result.id !== resultId ? result : {
     ...result,
     executionId,
     incidentThreadId: incidentThreadId ?? result.incidentThreadId,
@@ -100,7 +100,7 @@ function mergeExecutionEventIntoResults(
     startedAt: result.startedAt.length === 0 ? execution.startedAt : result.startedAt,
     completedAt: execution.completedAt ?? result.completedAt,
     completionReason: execution.completionReason ?? result.completionReason,
-  } : result);
+  });
 }
 
 const RESULTS_KEY = "bitsentry_results";

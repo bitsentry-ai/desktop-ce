@@ -1,5 +1,5 @@
-import { existsSync, readFileSync, readdirSync } from 'node:fs'
-import path from 'node:path'
+import { existsSync, readFileSync, readdirSync } from 'fs'
+import path from 'path'
 
 const PREFERRED_NODE_MAJOR = 22
 

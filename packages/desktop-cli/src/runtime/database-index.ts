@@ -1,8 +1,8 @@
 import { archiveRetiredDesktopData } from './retirement-archive.js'
 import log from 'electron-log'
 import { ensureIntegrationStorageSchema } from './integration-storage-schema.js'
-import { mkdir } from 'node:fs/promises'
-import path from 'node:path'
+import { mkdir } from 'fs/promises'
+import path from 'path'
 import { DbClient } from '@bitsentry-ce/core/features/desktop/desktop-database-client'
 import {
   createDatabaseSnapshot,
@@ -377,8 +377,8 @@ async function backfillLegacyRunbookVersion(
   const actions = safeParseLegacyRunbookActions(version.actionsJson)
   const updatedAt = legacyUpdatedAt(version.updatedAt)
 
-  for (const [index, action] of actions.entries()) {
-    await insertLegacyRunbookAction(runbookId, action, index, updatedAt)
+  for (let index = 0; index < actions.length; index += 1) {
+    await insertLegacyRunbookAction(runbookId, actions[index], index, updatedAt)
   }
 
   hydratedRunbookIds.add(runbookId)

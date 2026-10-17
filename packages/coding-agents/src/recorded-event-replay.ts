@@ -70,8 +70,8 @@ function parseEvent(value: unknown, lineNumber: number): RecordedProviderEvent {
 export function parseRecordedProviderEvents(jsonl: string): RecordedProviderEvent[] {
   const events: RecordedProviderEvent[] = []
   const lines = jsonl.split(/\r?\n/)
-  for (const [index, line_] of lines.entries()) {
-    const line = line_?.trim()
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index]?.trim()
     if (line === undefined || line.length === 0) continue
 
     try {

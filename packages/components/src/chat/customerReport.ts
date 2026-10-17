@@ -110,7 +110,9 @@ export function intakeQuestionView(t: Translate, key: IntakeQuestionKey, intake:
     case "channel":
       return { key, title, multiline: false, options: customerReportChannels.map((channel) => ({ label: t(`${K}.channels.${channel}`), value: channel })) };
     case "sender": {
-      const contact = answers.channel === "email" ? "senderEmail" : answers.channel === "whatsapp" || answers.channel === "phone" ? "senderPhone" : "sender";
+      let contact: "senderEmail" | "senderPhone" | "sender" = "sender";
+      if (answers.channel === "email") contact = "senderEmail";
+      else if (answers.channel === "whatsapp" || answers.channel === "phone") contact = "senderPhone";
       return { key, title, placeholder: t(`${K}.placeholders.${contact}`), multiline: false, options: [notSure] };
     }
     case "subject":

@@ -1,5 +1,5 @@
-import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
-import path from "node:path";
+import { mkdir, readFile, rename, rm, writeFile } from "fs/promises";
+import path from "path";
 import { safeStorage } from "electron";
 
 import {
