@@ -473,6 +473,7 @@ export function createDesktopLocalBitsentryServices({
             providerType: providerTypes[providerKey] ?? 'third_party',
             baseUrl: config.baseUrl,
             hasApiKey: config.hasApiKey,
+            isConfigured: config.hasApiKey,
             model,
             availableModels,
             isPrimary: config.isPrimary,

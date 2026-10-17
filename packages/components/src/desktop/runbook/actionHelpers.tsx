@@ -242,6 +242,8 @@ function hasValidLlmModel(
     return true;
   }
 
+  if (action.llmProviderKey === "openai_compatible") return true;
+
   const model = action.llmModel.trim();
   if (/^\{\{[^{}]+\}\}$/.test(model)) {
     return true;

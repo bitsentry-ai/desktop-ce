@@ -20,6 +20,7 @@ export type DiagnosisLlmProviderKey =
   | "groq"
   | "kilocode"
   | "openai"
+  | "openai_compatible"
   | "anthropic"
   | "gemini"
   | "openrouter";
