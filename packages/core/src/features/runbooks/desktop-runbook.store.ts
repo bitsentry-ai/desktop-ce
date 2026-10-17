@@ -996,7 +996,7 @@ function assertValidAction(action: DesktopRunbookActionRecord): void {
     }
   }
 
-  if (action.type === "plugin") {
+  else if (action.type === "plugin") {
     if (action.pluginId === undefined || action.pluginId.trim().length === 0) {
       throw new Error("Plugin action is missing a selected plugin");
     }
@@ -1260,7 +1260,9 @@ export class DesktopRunbookStore {
     } catch (error) {
       try {
         await this.db.$executeRawUnsafe("ROLLBACK");
-      } catch {}
+      } catch {
+        // Rethrow the original failure; a failed rollback adds nothing.
+      }
       throw error;
     }
   }

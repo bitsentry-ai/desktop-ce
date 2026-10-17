@@ -203,6 +203,16 @@ function validatePendingOauthState(
   }
 }
 
+function resolveEnvClientSecret(
+  sourceType: ErrorSourceType,
+  config: OAuthProviderConfig,
+): string {
+  if (config.publicClient) {
+    return process.env[config.envClientSecretName]?.trim() ?? "";
+  }
+  return getRequiredEnv(config.envClientSecretName, sourceType);
+}
+
 function resolveOAuthCredentials(
   sourceType: ErrorSourceType,
   input: CompleteOAuthInput,
@@ -212,9 +222,7 @@ function resolveOAuthCredentials(
   const suppliedSecret = input.clientSecret?.trim() ?? "";
   const clientSecret = suppliedSecret.length > 0
     ? suppliedSecret
-    : config.publicClient
-      ? process.env[config.envClientSecretName]?.trim() ?? ""
-      : getRequiredEnv(config.envClientSecretName, sourceType);
+    : resolveEnvClientSecret(sourceType, config);
   const redirectUri = input.redirectUri?.trim() ||
     process.env[config.envRedirectUriName]?.trim() || config.defaultRedirectUri;
   return { clientId, clientSecret, redirectUri };
@@ -226,6 +234,7 @@ type ElectronShellLike = {
 
 function tryGetElectronShell(): ElectronShellLike | null {
   try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports -- Electron is optional outside the desktop app.
     const electron = require("electron") as unknown;
     if (
       electron === null ||

@@ -1185,7 +1185,7 @@ export async function executeCursor(
 
     log.error('[cursor-provider] Execution error:', err)
     options.onDelta?.({ type: 'status', status: 'failed' })
-    throw new Error(appendCursorStderrTail(getErrorMessage(err), client.getStderrTail()))
+    throw new Error(appendCursorStderrTail(getErrorMessage(err), client.getStderrTail()), { cause: err })
   } finally {
     toolCallRegistry.clear()
     options.abortController.signal.removeEventListener('abort', onAbort)

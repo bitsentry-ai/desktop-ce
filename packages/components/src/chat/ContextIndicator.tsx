@@ -88,19 +88,22 @@ export function ContextIndicator({
     circumference - (progressPercentage / 100) * circumference;
   const { ringClass, barClass } = getMeterClasses(usageRatio);
 
-  const usageSummary = hasContextLimit
-    ? usageUnavailable
-      ? t("common.contextIndicator.contextLimitUsageUnavailable", {
-          limit: formatVerbose(contextLimit),
-        })
-      : t("common.contextIndicator.contextWindowUsage", {
-          percentage: contextPercentage,
-          used: formatCompact(total),
-          limit: formatCompact(contextLimit),
-        })
-    : t("common.contextIndicator.lastRequestSummary", {
-        total: formatVerbose(totalProcessed),
-      });
+  let usageSummary: string;
+  if (!hasContextLimit) {
+    usageSummary = t("common.contextIndicator.lastRequestSummary", {
+      total: formatVerbose(totalProcessed),
+    });
+  } else if (usageUnavailable) {
+    usageSummary = t("common.contextIndicator.contextLimitUsageUnavailable", {
+      limit: formatVerbose(contextLimit),
+    });
+  } else {
+    usageSummary = t("common.contextIndicator.contextWindowUsage", {
+      percentage: contextPercentage,
+      used: formatCompact(total),
+      limit: formatCompact(contextLimit),
+    });
+  }
   const progressLabel = hasContextLimit
     ? t("common.contextIndicator.contextWindowProgressLabel", {
         percentage: contextPercentage,

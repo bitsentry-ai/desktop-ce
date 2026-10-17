@@ -330,10 +330,10 @@ export class CodingAgentsProviderService {
     return {
       ...this.settings,
       ...patch,
-      claudeCode: { ...this.settings.claudeCode, ...(patch.claudeCode ?? {}) },
-      codex: { ...this.settings.codex, ...(patch.codex ?? {}) },
-      opencode: { ...this.settings.opencode, ...(patch.opencode ?? {}) },
-      cursor: { ...this.settings.cursor, ...(patch.cursor ?? {}) },
+      claudeCode: { ...this.settings.claudeCode, ...patch.claudeCode },
+      codex: { ...this.settings.codex, ...patch.codex },
+      opencode: { ...this.settings.opencode, ...patch.opencode },
+      cursor: { ...this.settings.cursor, ...patch.cursor },
     };
   }
 

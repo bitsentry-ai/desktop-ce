@@ -138,8 +138,9 @@ async function executeReadTool(
     if (!result.ok) return readFailure(result.status);
     const content = JSON.stringify(result.data ?? {});
     // These are the same observations used by source cards; no second resource lookup is required to interpret a read.
+    const className = typeof request.input.class === "string" ? request.input.class : undefined;
     const ticketDeadlines = readOptions?.capture === false || connection.ticketMapping?.deadlines === undefined ? []
-      : extractIntegrationResources("read-result", connection, result.data, typeof request.input.class === "string" ? request.input.class : undefined)
+      : extractIntegrationResources("read-result", connection, result.data, className)
         .filter((row) => row.resourceType === "ticket")
         .map((row) => ({ externalId: row.externalId, className: row.state.className, deadlineStatus: ticketDeadlineStatus(row.state) }));
     return { output: JSON.stringify({
@@ -155,8 +156,15 @@ async function executeReadTool(
   }
 }
 
+function readFailureCode(status: number) {
+  if (status === 401 || status === 403) return "CREDENTIALS_REJECTED";
+  if (status === 404) return "RESOURCE_NOT_FOUND";
+  if (status === 409) return "STALE_RESOURCE";
+  return "REMOTE_READ_FAILED";
+}
+
 function readFailure(status: number): ToolResult {
-  const code = status === 401 || status === 403 ? "CREDENTIALS_REJECTED" : status === 404 ? "RESOURCE_NOT_FOUND" : status === 409 ? "STALE_RESOURCE" : "REMOTE_READ_FAILED";
+  const code = readFailureCode(status);
   return error(code, `The integration read failed (status ${String(status)}). No write was attempted. Restore access or refresh the exact resource before continuing.`);
 }
 

@@ -80,7 +80,7 @@ export function parseRecordedProviderEvents(jsonl: string): RecordedProviderEven
       if (error instanceof Error && error.message.startsWith('Recorded provider event')) {
         throw error
       }
-      throw new Error(`Recorded provider event line ${index + 1} is not valid JSON`)
+      throw new Error(`Recorded provider event line ${index + 1} is not valid JSON`, { cause: error })
     }
   }
   return events

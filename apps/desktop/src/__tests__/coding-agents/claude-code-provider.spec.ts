@@ -355,7 +355,7 @@ describe('executeClaudeCode', () => {
     queryMock.mockImplementation(({ prompt }) => ({
       async *[Symbol.asyncIterator]() {
         if (prompt === 'first turn') await releaseFirst.promise
-        if (prompt === 'second turn') await releaseSecond.promise
+        else if (prompt === 'second turn') await releaseSecond.promise
         let result = 'turn-second'
         if (prompt === 'first turn') {
           result = 'turn-first'
@@ -702,7 +702,7 @@ describe('executeClaudeCode', () => {
         '/d',
         '/s',
         '/c',
-        '"\"C:\\Users\\User\\AppData\\Roaming\\npm\\claude.cmd\" \"--output-format\" \"stream-json\""',
+        "\"\"C:\\Users\\User\\AppData\\Roaming\\npm\\claude.cmd\" \"--output-format\" \"stream-json\"\"",
       ],
       expect.objectContaining({
         cwd: 'C:\\Users\\User\\Project',

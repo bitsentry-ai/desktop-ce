@@ -376,12 +376,7 @@ exports.plugin = {
     const artifactUrl =
       'https://github.com/bitsentry-ai/desktop-ce/releases/download/plugin-catalog/github-release-plugin-test.plugin.js'
     const fetchMock = vi.fn((input: string | URL | Request) => {
-      const url =
-        typeof input === 'string'
-          ? input
-          : input instanceof URL
-            ? input.toString()
-            : input.url
+      const url = input instanceof Request ? input.url : input.toString()
       if (url === indexUrl) {
         return new Response(
           [

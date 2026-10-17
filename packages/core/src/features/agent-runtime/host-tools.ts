@@ -161,7 +161,7 @@ function createRunbookActionProposalSchema(options: { allowLegacyStepOutputPlace
     if (action.type === 'llm') validateLlmActionProposal(action, context)
     if (action.type === 'diagnosis' && action.telemetryConfig?.stage === undefined) context.addIssue({ code: 'custom', path: ['telemetryConfig', 'stage'], message: 'Diagnosis actions require a stage.' })
     if (action.type === 'external_source') validateExternalSourceActionProposal(action, context)
-    if (action.type === 'plugin') validatePluginActionProposal(action, context)
+    else if (action.type === 'plugin') validatePluginActionProposal(action, context)
     validateRunbookTemplatePlaceholders(action, context, options)
   })
 }
@@ -1169,7 +1169,7 @@ function normalizeHostToolArgs(rawArgs: unknown): unknown {
   // altogether. Both forms mean the same thing as an empty object; passing
   // either directly to a strict object schema turns a valid call into a
   // spurious validation rejection.
-  return rawArgs === null || rawArgs === undefined ? {} : rawArgs
+  return rawArgs ?? {}
 }
 
 function eventArgs(rawArgs: unknown): Record<string, unknown> {

@@ -737,8 +737,8 @@ export async function probeClaudeCode(binaryPath: string): Promise<CLIProbeResul
     }
   }
 
-  let version: string | null = null
-  let auth: CLIProbeResult['auth'] = { status: 'unknown' }
+  let version: string | null
+  let auth: CLIProbeResult['auth']
 
   try {
     const versionResult = await runCommand(resolvedBinaryPath, ['--version'], PROBE_TIMEOUT_MS)
@@ -806,7 +806,7 @@ export async function probeCodex(binaryPath: string, args?: string[]): Promise<C
     }
   }
 
-  let version: string | null = null
+  let version: string | null
 
   try {
     const versionResult = await runCommand(resolvedBinaryPath, ['--version'], PROBE_TIMEOUT_MS)
@@ -1063,7 +1063,7 @@ export async function probeCursor(binaryPath: string): Promise<CLIProbeResult> {
     }
   }
 
-  let version: string | null = null
+  let version: string | null
 
   try {
     const versionResult = await runCommand(resolvedBinaryPath, ['--version'], PROBE_TIMEOUT_MS)
@@ -1080,7 +1080,7 @@ export async function probeCursor(binaryPath: string): Promise<CLIProbeResult> {
     }
   }
 
-  let auth: CLIProbeResult['auth'] = { status: 'unknown' }
+  let auth: CLIProbeResult['auth']
   try {
     const authResult = await runCommand(resolvedBinaryPath, ['status'], PROBE_TIMEOUT_MS)
     auth = parseCursorAuthOutput(authResult.stdout, authResult.stderr)
@@ -1159,7 +1159,7 @@ export async function probeOpenCode(binaryPath: string, args?: string[]): Promis
     }
   }
 
-  let version: string | null = null
+  let version: string | null
 
   try {
     const versionResult = await runCommand(resolvedBinaryPath, ['--version'], PROBE_TIMEOUT_MS)
@@ -1484,7 +1484,6 @@ function probeCodexAccount(
 
     const output = readline.createInterface({ input: child.stdout })
     const probeState: ProbeLifecycleState = { completed: false }
-    let nextId = 1
 
     const timeout = setTimeout(() => {
       if (!probeState.completed) {
@@ -1507,8 +1506,8 @@ function probeCodexAccount(
       reject,
     )
 
-    const initId = nextId++
-    const accountId = nextId++
+    const initId = 1
+    const accountId = 2
 
     output.on('line', (line) => {
       const parsed = parseProbeLine(line)
