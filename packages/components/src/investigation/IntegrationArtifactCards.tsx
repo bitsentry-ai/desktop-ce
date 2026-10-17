@@ -55,7 +55,7 @@ export function OperationCard({ row, open, onToggle, disabled, decisions, servic
     subtitle={<>{row.connectionName} · {updatedAt(row.updatedAt)}</>}>
     <OperationBody className="space-y-3 px-3 pb-3" row={row} disabled={disabled} busy={decisions.busy} refusal={decisions.refusal(row.id)} closeRequested={decisions.closeRequested(row.id)}
       onCloseRequestedChange={(value) => { decisions.setCloseRequested(row.id, value); }}
-      onApprove={() => { void decisions.decide(row, true); }} onReject={() => { void decisions.decide(row, false); }} service={service} onRefresh={onRefresh} />
+      onApprove={(reference) => { void decisions.decide(row, true, reference); }} onReject={() => { void decisions.decide(row, false); }} service={service} onRefresh={onRefresh} />
   </CollapsibleCard>;
 }
 
