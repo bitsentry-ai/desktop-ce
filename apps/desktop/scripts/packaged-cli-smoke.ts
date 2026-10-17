@@ -1,4 +1,4 @@
-import path from 'node:path'
+import path from 'path'
 
 const desktopDir = path.resolve(__dirname, '../..')
 type PackagedCliSmokeModule = {

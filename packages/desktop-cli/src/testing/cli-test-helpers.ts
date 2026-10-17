@@ -1,7 +1,7 @@
-import { readFile, rm, writeFile } from 'node:fs/promises'
-import { spawn } from 'node:child_process'
-import { createRequire } from 'node:module'
-import path from 'node:path'
+import { readFile, rm, writeFile } from 'fs/promises'
+import { spawn } from 'child_process'
+import { createRequire } from 'module'
+import path from 'path'
 import YAML from 'yaml'
 
 export type CliJson = Record<string, unknown>

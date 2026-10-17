@@ -1,5 +1,5 @@
-import { spawn } from "node:child_process";
-import { createHash, randomBytes } from "node:crypto";
+import { spawn } from "child_process";
+import { createHash, randomBytes } from "crypto";
 import type { ErrorSourceType } from "./error-sources.schemas";
 import type { DesktopPluginRuntimeService } from "../plugins";
 import { createDesktopNodePluginRuntimeService } from "../plugins/node";

@@ -16,7 +16,7 @@ import {
   type DesktopPluginExecutionResult,
 } from "@bitsentry-ce/core/features/plugins";
 import { createDesktopNodePluginRuntimeService } from "@bitsentry-ce/core/features/plugins/node";
-import path from "node:path";
+import path from "path";
 
 class TestPluginRuntimeService extends DesktopPluginRuntimeService {
   readonly executeActionMock =

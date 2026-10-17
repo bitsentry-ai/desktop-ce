@@ -1834,7 +1834,9 @@ export function RunbookResultsView({
   } else if (agent === undefined) {
     details = (
       <div className="rounded-2xl border border-border p-4 text-sm text-muted-foreground">
-        {t("common.incidentArtifactsRail.proposal.actionsUnavailableInClient")}
+        {t(
+          "common.incidentArtifactsRail.proposal.actionsUnavailableInClient",
+        )}
       </div>
     );
   } else {

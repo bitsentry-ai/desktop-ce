@@ -1,8 +1,8 @@
-import { mkdir, open, readFile, rename, rm } from 'node:fs/promises'
+import { mkdir, open, readFile, rename, rm } from 'fs/promises'
 import { withCredentialFileLock } from './credential-file-lock.js'
 import { randomUUID } from 'node:crypto'
 import { keychainPluginCredentialCipher } from './keychain-plugin-cipher.js'
-import path from 'node:path'
+import path from 'path'
 
 import type {
   DesktopPluginStoredAuthRecord,

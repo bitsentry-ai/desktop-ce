@@ -44,12 +44,12 @@ function markTourCompleted(tourId: TourId) {
 }
 
 export function resetTourProgress(tourId?: TourId) {
-  if (tourId === undefined) {
-    localStorage.removeItem(STORAGE_KEY);
-  } else {
+  if (tourId !== undefined) {
     const completed = getCompletedTours();
     completed.delete(tourId);
     localStorage.setItem(STORAGE_KEY, JSON.stringify([...completed]));
+  } else {
+    localStorage.removeItem(STORAGE_KEY);
   }
 }
 
@@ -108,9 +108,7 @@ export function useTour(tourId: TourId = "main") {
 
           // Poll until the first real tour-target element appears (max 3 s).
           const firstTargeted = tourDef.steps.find((s) => s.element);
-          if (firstTargeted === undefined) {
-            await new Promise((r) => setTimeout(r, 600));
-          } else {
+          if (firstTargeted !== undefined) {
             const resolveEl = () => {
               if (typeof firstTargeted.element === "function") {
                 const el = firstTargeted.element();
@@ -127,6 +125,8 @@ export function useTour(tourId: TourId = "main") {
             };
 
             await waitForElement(resolveEl, 3000);
+          } else {
+            await new Promise((r) => setTimeout(r, 600));
           }
         }
 

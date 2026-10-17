@@ -138,8 +138,9 @@ async function executeReadTool(
     if (!result.ok) return readFailure(result.status);
     const content = JSON.stringify(result.data ?? {});
     // These are the same observations used by source cards; no second resource lookup is required to interpret a read.
+    const className = typeof request.input.class === "string" ? request.input.class : undefined;
     const ticketDeadlines = readOptions?.capture === false || connection.ticketMapping?.deadlines === undefined ? []
-      : extractIntegrationResources("read-result", connection, result.data, typeof request.input.class === "string" ? request.input.class : undefined)
+      : extractIntegrationResources("read-result", connection, result.data, className)
         .filter((row) => row.resourceType === "ticket")
         .map((row) => ({ externalId: row.externalId, className: row.state.className, deadlineStatus: ticketDeadlineStatus(row.state) }));
     return { output: JSON.stringify({

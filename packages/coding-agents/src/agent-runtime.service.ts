@@ -12,7 +12,7 @@ import { extractIntegrationResources } from "@bitsentry-ce/core/features/plugins
  */
 
 import { codingAgentsLogger as log } from './logger.js'
-import { createHash, randomUUID } from 'node:crypto'
+import { createHash, randomUUID } from 'crypto'
 import { zodToJsonSchema } from '@alcyone-labs/zod-to-json-schema'
 import { z } from 'zod'
 import { getErrorMessage } from '@bitsentry-ce/core'
@@ -2251,7 +2251,7 @@ export class AgentRuntimeService {
         'In your response, make sure to:',
         '1. Reference the specific runbook actions',
         '2. Provide your actual analysis (not just "I will analyze")',
-        `3. Tie your conclusion back to this runbook: "${runbookContext.title}"`,
+        '3. Tie your conclusion back to this runbook: "' + runbookContext.title + '"',
         '',
         'Do NOT stop after explaining your plan. Complete the full analysis.',
         '--- END RUNBOOK CONTEXT ---',
@@ -2676,10 +2676,10 @@ export class AgentRuntimeService {
           // Keep system message and recent messages
           const systemMessage = session.messages.find((m) => m.role === 'system')
           const recentMessages = session.messages.slice(-MAX_MESSAGE_HISTORY)
-          if (systemMessage === undefined) {
-            session.messages = recentMessages
-          } else {
+          if (systemMessage !== undefined) {
             session.messages = [systemMessage, ...recentMessages.filter((m) => m.role !== 'system')]
+          } else {
+            session.messages = recentMessages
           }
         }
       }

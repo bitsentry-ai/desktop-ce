@@ -1,7 +1,7 @@
 import BetterSqlite3 from 'better-sqlite3'
 
 export const RETIRED_DESKTOP_TABLES = ['Role', 'Status', 'User', 'Session', 'Agent', 'AgentHealth', 'AgentTag', 'Vulnerability', 'VulnerabilityAgent', 'VulnerabilityTimeline', 'ThreatIntelligence', 'ThreatIndicator', 'Integration', 'IntegrationHealth', 'Ticket', 'Report', 'Scan', 'CveEntry', 'TelemetryCveLink', 'DiagnosisSession', 'DiagnosisTraceEntry', 'DiagnosisToolRun', 'DiagnosisReport', 'ActivityEvent'] as const
-const quote = (value: string): string => `"${value.replaceAll('"', '""')}"`
+const quote = (value: string): string => '"' + value.replaceAll('"', '""') + '"'
 type Cell = { type: 'integer' | 'blob' | 'value'; value: string | number | null }
 type ArchivedTable = { name: string; sql: string; columns: string[]; rows: Cell[][] }
 function encode(value: unknown): Cell {

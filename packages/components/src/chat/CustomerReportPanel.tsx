@@ -80,13 +80,7 @@ export function CustomerReportQuestionPanel({ intake }: { intake: ComposerCustom
                   <span className="text-sm font-medium text-foreground">{option.label}</span>
                   {option.hint !== undefined && <span className="truncate text-xs text-muted-foreground">{option.hint}</span>}
                 </span>
-                {on ? (
-                  <CheckIcon className="size-3.5 shrink-0 text-violet-600 dark:text-violet-300" aria-hidden="true" />
-                ) : index < 9 ? (
-                  <kbd className="flex size-5 shrink-0 items-center justify-center rounded border border-border bg-background text-[11px] font-medium tabular-nums text-muted-foreground">
-                    {index + 1}
-                  </kbd>
-                ) : null}
+                <OptionShortcut selected={on} index={index} />
               </button>
             );
           })}
@@ -94,5 +88,15 @@ export function CustomerReportQuestionPanel({ intake }: { intake: ComposerCustom
       )}
       {error !== null && <p role="alert" className="mt-2 text-xs text-destructive">{error}</p>}
     </section>
+  );
+}
+
+function OptionShortcut({ selected, index }: { selected: boolean; index: number }) {
+  if (selected) return <CheckIcon className="size-3.5 shrink-0 text-violet-600 dark:text-violet-300" aria-hidden="true" />;
+  if (index >= 9) return null;
+  return (
+    <kbd className="flex size-5 shrink-0 items-center justify-center rounded border border-border bg-background text-[11px] font-medium tabular-nums text-muted-foreground">
+      {index + 1}
+    </kbd>
   );
 }

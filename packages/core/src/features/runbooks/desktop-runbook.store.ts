@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { randomUUID } from "crypto";
 import {
   SqliteErrorSourcesRepositoryAdapter,
   type ErrorSourceDatabase,
@@ -1409,7 +1409,8 @@ export class DesktopRunbookStore {
         where: { runbookId },
       });
 
-      for (const [index, action] of nextActions.entries()) {
+      for (let index = 0; index < nextActions.length; index += 1) {
+        const action = nextActions[index];
         let headersJson: string | null = null;
         if (action.headers !== undefined && action.headers.length > 0) {
           headersJson = JSON.stringify(action.headers);
@@ -1614,9 +1615,9 @@ export class DesktopRunbookStore {
     }
 
     const now = new Date().toISOString();
-    for (const [index, element] of actionIdsInOrder.entries()) {
+    for (let index = 0; index < actionIdsInOrder.length; index += 1) {
       await this.db.runbookAction.update({
-        where: { id: element, runbookId },
+        where: { id: actionIdsInOrder[index], runbookId },
         data: {
           sortOrder: index,
           updatedAt: now,

@@ -1,5 +1,5 @@
-import os from 'node:os'
-import path from 'node:path'
+import os from 'os'
+import path from 'path'
 import { CursorAcpClient, type CursorJsonRpcId } from './cursor-acp-client.js'
 import { HOST_MCP_SERVER_NAME, type HostMcpEndpoint } from './host-mcp-server.service.js'
 import type { LocalAiExecutionResult, LocalAiStreamDelta } from './types.js'
