@@ -3,7 +3,7 @@ import type { HostToolContext } from "./host-tools";
 import { runIntegrationTool } from "./integration-tools";
 import { customerReportOrigin, ticketWriteOperationSchema, type ItopTicketMapping } from "../plugins/itop-ticket-mapping";
 import { readItopTicketState } from "../plugins/itop-ticket-state";
-import { customerReportProvenance, type CustomerReport } from "../plugins/customer-reports";
+import { customerReportCorrected, customerReportProvenance, type CustomerReport } from "../plugins/customer-reports";
 import type { ToolResult } from "./types";
 
 export const ticketOperationToolSchema = z.object({
@@ -143,7 +143,9 @@ async function customerReportFor(context: HostToolContext, input: TicketOperatio
   if (input.customerReportId === undefined) return undefined;
   if (input.operation !== "create") return clarification("A customer report can only be attached when creating a ticket.", ["customerReportId"]);
   const report = await context.integrationConnections?.getCustomerReport?.(input.customerReportId);
-  return report ?? { error: JSON.stringify({ code: "CUSTOMER_REPORT_NOT_FOUND", message: "This customer report was not found in this conversation. Ask the engineer to submit it again from the composer. No write was proposed." }) };
+  if (report === null || report === undefined) return { error: JSON.stringify({ code: "CUSTOMER_REPORT_NOT_FOUND", message: "This customer report was not found in this conversation. Ask the engineer to share it again in chat. No write was proposed." }) };
+  const corrected = customerReportCorrected(report);
+  return corrected === null ? report : { error: JSON.stringify({ code: corrected.code, message: corrected.message }) };
 }
 
 export async function ticketOperation(context: HostToolContext, input: TicketOperationInput): Promise<ToolResult> {

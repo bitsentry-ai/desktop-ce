@@ -15,12 +15,24 @@ import {
   CheckIcon,
   CopyIcon,
   FileText,
+  MessageCircle,
   MessageSquareText,
+  Pencil,
   ShieldAlert,
   Loader2,
 } from "lucide-react";
-import { parseCustomerReportMessage, type CustomerReportMessageHeader } from "@bitsentry-ce/core/features/plugins";
+import {
+  editableIntakeFields,
+  parseCustomerReportAnswerMessage,
+  parseCustomerReportDismissMessage,
+  parseCustomerReportMessage,
+  type CustomerReportAnswerHeader,
+  type CustomerReportMessageHeader,
+  type EditableIntakeField,
+} from "@bitsentry-ce/core/features/plugins";
 import { CustomerReportInternalBadge } from "./CustomerReportPanel";
+import { formatReceivedAt, intakeQuestionTitle } from "./customerReport";
+import { useCustomerReportIntakeChat } from "./useCustomerReportIntake";
 import { getProviderLogo } from "./ProviderLogos";
 import { Tooltip, TooltipContent, TooltipTrigger } from "../ui/tooltip";
 import { cn } from "../lib/utils";
@@ -36,19 +48,30 @@ function dedupeToolCalls(toolCalls: ToolCallCard[]): ToolCallCard[] {
 type AgentMessage = Extract<ChatMessage, { kind: "agent" }>;
 type UserMessage = Extract<ChatMessage, { kind: "user" }>;
 
-/** Shows a received time in the report's own zone, with the offset the engineer recorded. */
-export function formatCustomerReportReceivedAt(header: Pick<CustomerReportMessageHeader, "receivedAt" | "timeZone">, locale?: string): string {
-  const offset = /(Z|[+-]\d{2}:\d{2})$/.exec(header.receivedAt)?.[1] ?? "";
-  try {
-    const time = new Intl.DateTimeFormat(locale, { dateStyle: "medium", timeStyle: "short", timeZone: header.timeZone }).format(new Date(header.receivedAt));
-    return `${time} (${header.timeZone}, UTC${offset === "Z" ? "+00:00" : offset})`;
-  } catch {
-    return header.receivedAt;
-  }
+/** Shows a received time in the report's own zone, with the offset the engineer recorded; null when not provided. */
+export function formatCustomerReportReceivedAt(header: Pick<CustomerReportMessageHeader, "receivedAt" | "timeZone">, locale?: string): string | null {
+  return header.receivedAt === null ? null : formatReceivedAt(header.receivedAt, header.timeZone, locale);
 }
 
+const isEditable = (field: string): field is EditableIntakeField => (editableIntakeFields as readonly string[]).includes(field);
+
+/**
+ * The saved report as a card. A corrected report shows its newest answers in place, so the timeline keeps one card
+ * per report; Edit lets the engineer change one answer.
+ */
 function CustomerReportChip({ header }: { header: CustomerReportMessageHeader }) {
   const { t, i18n } = useTranslation();
+  const chat = useCustomerReportIntakeChat();
+  const intake = chat?.intake;
+  const current = intake !== null && intake !== undefined && header.intakeId === intake.id && intake.status === "saved" && intake.answers.channel !== undefined
+    ? { ...header, channel: intake.answers.channel, sender: intake.answers.sender ?? null, receivedAt: intake.answers.receivedAt ?? null, subject: intake.answers.subject ?? undefined }
+    : header;
+  const receivedAt = formatCustomerReportReceivedAt(current, i18n?.language);
+  const source = [
+    current.sender === null ? t("common.incidents.customerReport.senderNotProvided") : t("common.incidents.customerReport.fromSender", { sender: current.sender }),
+    receivedAt === null ? t("common.incidents.customerReport.receivedNotProvided") : t("common.incidents.customerReport.receivedOn", { receivedAt }),
+  ].join(" · ");
+  const canEdit = chat?.canEdit === true && current !== header;
   return (
     <div className="flex w-full flex-col gap-1.5 rounded-xl border border-border/60 bg-background/50 py-2 pl-2 pr-3">
       <div className="flex items-center gap-2.5">
@@ -56,20 +79,99 @@ function CustomerReportChip({ header }: { header: CustomerReportMessageHeader })
           <MessageSquareText size={14} />
         </span>
         <span className="min-w-0 truncate text-xs font-medium">
-          {t("common.incidents.customerReport.title")} · {t(`common.incidents.customerReport.channels.${header.channel}`)}
+          {t("common.incidents.customerReport.title")} · {t(`common.incidents.customerReport.channels.${current.channel}`)}
         </span>
-        <span className="ml-auto"><CustomerReportInternalBadge label={t("common.incidents.customerReport.internalOnly")} /></span>
+        <span className="ml-auto flex shrink-0 items-center gap-1">
+          {canEdit && (
+            <button
+              type="button"
+              onClick={chat.chooseEdit}
+              className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-medium text-muted-foreground transition-colors hover:bg-violet-100 hover:text-violet-800 dark:hover:bg-violet-500/15 dark:hover:text-violet-200"
+            >
+              <Pencil size={11} aria-hidden="true" />
+              {t("common.incidents.customerReport.edit")}
+            </button>
+          )}
+          <CustomerReportInternalBadge label={t("common.incidents.customerReport.internalOnly")} />
+        </span>
       </div>
-      <div className="pl-[38px] text-[11px] text-muted-foreground">
-        {t("common.incidents.customerReport.from", { sender: header.sender, receivedAt: formatCustomerReportReceivedAt(header, i18n?.language) })}
-      </div>
+      <div className="pl-[38px] text-[11px] text-muted-foreground">{source}</div>
+      {current.subject !== undefined && current.subject !== null && (
+        <div className="pl-[38px] text-[11px] text-foreground">{t("common.incidents.customerReport.subjectLine", { subject: current.subject })}</div>
+      )}
       <div className="pl-[38px] text-[11px] text-amber-700 dark:text-amber-400">{t("common.incidents.customerReport.unverified")}</div>
     </div>
   );
 }
 
+/** An answered customer report question stays in the timeline as one quiet row, like T3 Code's answered input. */
+function CustomerReportAnswerRow({ header }: { header: CustomerReportAnswerHeader }) {
+  const { t } = useTranslation();
+  const chat = useCustomerReportIntakeChat();
+  const intake = chat?.intake;
+  const field = header.field;
+  const own = intake !== null && intake !== undefined && intake.id === header.intakeId;
+  const canEdit = chat?.canEdit === true && own && isEditable(field) && intake.answers[field] !== undefined && header.edit !== true;
+  return (
+    <div className="flex min-w-0 items-center gap-2 pl-[38px] text-xs text-muted-foreground">
+      <MessageCircle size={14} className="shrink-0 text-violet-600 dark:text-violet-300" aria-hidden="true" />
+      <span className="whitespace-nowrap">{intakeQuestionTitle(t, field, own ? intake.answers.channel : undefined)}</span>
+      <span className="min-w-0 truncate font-medium text-foreground">{header.answer}</span>
+      {header.edit === true && <span className="shrink-0 text-[11px]">{t("common.incidents.customerReport.changed")}</span>}
+      {canEdit && isEditable(field) && (
+        <button
+          type="button"
+          onClick={() => { chat.edit(field); }}
+          aria-label={t("common.incidents.customerReport.changeAnswer")}
+          className="flex size-5 shrink-0 items-center justify-center rounded-md text-muted-foreground/70 transition-colors hover:bg-violet-100 hover:text-violet-800 dark:hover:bg-violet-500/15 dark:hover:text-violet-200"
+        >
+          <Pencil size={11} />
+        </button>
+      )}
+    </div>
+  );
+}
+
+function CustomerReportIntakeMessage({ msg }: { msg: UserMessage }) {
+  const { t } = useTranslation();
+  if (parseCustomerReportDismissMessage(msg.text) !== null) {
+    return (
+      <div className="flex items-center gap-2 pl-[38px] text-xs text-muted-foreground">
+        <MessageCircle size={14} className="shrink-0 text-muted-foreground/70" aria-hidden="true" />
+        {t("common.incidents.customerReport.dismissed")}
+      </div>
+    );
+  }
+  const answer = parseCustomerReportAnswerMessage(msg.text);
+  if (answer === null) return null;
+  const report = answer.header.edit === true ? null : parseCustomerReportMessage(answer.body);
+  return (
+    <div className="space-y-3">
+      {answer.header.field !== "reportText" && answer.header.field !== "confirm" && <CustomerReportAnswerRow header={answer.header} />}
+      {report !== null && (
+        <div className="flex justify-end">
+          <div className="max-w-[75%] space-y-2 rounded-2xl bg-muted px-4 py-2.5 text-sm">
+            <CustomerReportChip header={report.header} />
+            {report.body.length > 0 && <div className="whitespace-pre-wrap break-words">{report.body}</div>}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Whether a user message is a customer report answer or dismissal, which renders as a quiet row, not a bubble. */
+export function isCustomerReportIntakeMessage(text: string): boolean {
+  return parseCustomerReportAnswerMessage(text) !== null || parseCustomerReportDismissMessage(text) !== null;
+}
+
 function UserChatBubble({ msg }: { msg: UserMessage }) {
   const { t } = useTranslation();
+  if (isCustomerReportIntakeMessage(msg.text)) return <CustomerReportIntakeMessage msg={msg} />;
+  return <UserTextBubble msg={msg} t={t} />;
+}
+
+function UserTextBubble({ msg, t }: { msg: UserMessage; t: (key: string, values?: Record<string, unknown>) => string }) {
   const report = parseCustomerReportMessage(msg.text);
   const attachmentsContent: ReactNode = msg.attachments !== undefined && msg.attachments.length > 0
     ? (

@@ -61,8 +61,9 @@ function CustomerReportSource({ report }: { report: NonNullable<IntegrationOpera
     </div>
     <dl className="grid grid-cols-2 gap-2">
       <Fact label={t("incidents.integrationWrites.customerReport.channel")}>{t(`common.incidents.customerReport.channels.${report.channel}`)}</Fact>
-      <Fact label={t("incidents.integrationWrites.customerReport.sender")}>{report.sender}</Fact>
-      <div className="col-span-2"><Fact label={t("incidents.integrationWrites.customerReport.received")}>{formatCustomerReportReceivedAt(report, i18n?.language)}</Fact></div>
+      <Fact label={t("incidents.integrationWrites.customerReport.sender")}>{report.sender ?? t("incidents.integrationWrites.customerReport.notProvided")}</Fact>
+      <div className="col-span-2"><Fact label={t("incidents.integrationWrites.customerReport.received")}>{formatCustomerReportReceivedAt(report, i18n?.language) ?? t("incidents.integrationWrites.customerReport.notProvided")}</Fact></div>
+      {report.subject !== undefined && report.subject !== null && <div className="col-span-2"><Fact label={t("incidents.integrationWrites.customerReport.subject")}>{report.subject}</Fact></div>}
       <div className="col-span-2"><Fact label={t("incidents.integrationWrites.customerReport.submittedBy")}>{report.submittedBy}</Fact></div>
     </dl>
     <p className="mt-2 flex items-center gap-1 text-[11px] text-amber-700 dark:text-amber-400"><AlertCircle size={11} aria-hidden="true" />{t("incidents.integrationWrites.customerReport.unverified")}</p>

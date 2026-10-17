@@ -1,6 +1,6 @@
 import { userInfo } from "node:os";
 import { linkedResourceInputSchema } from "./integration-resources";
-import { customerReportInputSchema } from "./customer-reports";
+import { customerReportIntakeAnswerInputSchema, customerReportIntakeDismissInputSchema } from "./customer-report-intake";
 import { z } from "zod";
 import { integrationConnectionInputSchema } from "./integration-connections";
 import { isInternalStoredAuthKey } from "./integration-store-keys";
@@ -233,8 +233,10 @@ export function createDesktopPluginHandlers(
       const input = z.object({ threadId: z.string().min(1), id: z.uuid() }).strict().parse(payload);
       return service.getIntegrationOperations().cancel(input.threadId, input.id);
     },
+    "plugins:getCustomerReportIntake": (payload) => service.getCustomerReportIntake().latest(z.object({ threadId: z.string().min(1) }).strict().parse(payload).threadId),
     // Desktop is a single local profile; the OS account names who submitted the report.
-    "plugins:saveCustomerReport": (payload) => service.getCustomerReports().save(customerReportInputSchema.parse(payload), localSubmitter()),
+    "plugins:answerCustomerReportIntake": (payload) => service.getCustomerReportIntake().answer(customerReportIntakeAnswerInputSchema.parse(payload), localSubmitter()),
+    "plugins:dismissCustomerReportIntake": (payload) => service.getCustomerReportIntake().dismiss(customerReportIntakeDismissInputSchema.parse(payload)),
     "plugins:listConnections": () => service.listIntegrationConnections(),
     "plugins:saveConnection": async (payload) => {
       await service.saveIntegrationConnection(integrationConnectionInputSchema.parse(payload));

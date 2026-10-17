@@ -4,6 +4,7 @@ import { useTranslation } from "@bitsentry-ce/i18n";
 import type { IntegrationOperation, IntegrationResource } from "@bitsentry-ce/core/features/plugins";
 import { cn } from "../lib/utils";
 import { useBitsentryServices } from "../services/context";
+import type { CustomerReportIntakeClient } from "../chat/customerReport";
 import { integrationErrorKey } from "./integration-error";
 import { IntegrationActionsView, type IntegrationOperationsPort } from "./IntegrationActionsView";
 import { IntegrationDeliveriesView, needsReview, type IntegrationDelivery, type IntegrationDeliveriesPort } from "./IntegrationDeliveriesView";
@@ -92,11 +93,8 @@ export function useIntegrationsRailState({ incidentId, runbookRailOpen, closeRun
   return { open: current.open, view: current.view, openedByUser: current.openedByUser, summary, toggle, close, setView, reportSummary };
 }
 
-/** The desktop ports for the rail, from whichever plugin capabilities this client exposes. */
-export interface CustomerReportsPort {
-  save(input: import("@bitsentry-ce/core/features/plugins").CustomerReportInput): Promise<import("@bitsentry-ce/core/features/plugins").CustomerReport>;
-}
-export function useDesktopIntegrationPorts(): { resources?: IntegrationResourcesPort; operations?: IntegrationOperationsPort; customerReports?: CustomerReportsPort } {
+/** The desktop ports for the rail and the customer report intake, from whichever plugin capabilities this client exposes. */
+export function useDesktopIntegrationPorts(): { resources?: IntegrationResourcesPort; operations?: IntegrationOperationsPort; customerReportIntake?: CustomerReportIntakeClient } {
   const { plugins } = useBitsentryServices();
   return useMemo(() => ({
     resources: plugins?.listResources ? { list: plugins.listResources.bind(plugins), select: plugins.selectResource?.bind(plugins), refresh: plugins.refreshResource?.bind(plugins) } : undefined,
@@ -104,7 +102,9 @@ export function useDesktopIntegrationPorts(): { resources?: IntegrationResources
       renew: plugins.renewOperation?.bind(plugins), reconcile: plugins.reconcileOperation?.bind(plugins),
       list: plugins.listOperations.bind(plugins), approve: plugins.approveOperation.bind(plugins), cancel: plugins.cancelOperation.bind(plugins),
     } : undefined,
-    customerReports: plugins?.saveCustomerReport ? { save: plugins.saveCustomerReport.bind(plugins) } : undefined,
+    customerReportIntake: plugins?.getCustomerReportIntake && plugins.answerCustomerReportIntake && plugins.dismissCustomerReportIntake ? {
+      latest: plugins.getCustomerReportIntake.bind(plugins), answer: plugins.answerCustomerReportIntake.bind(plugins), dismiss: plugins.dismissCustomerReportIntake.bind(plugins),
+    } : undefined,
   }), [plugins]);
 }
 

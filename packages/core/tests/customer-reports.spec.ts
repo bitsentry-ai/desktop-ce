@@ -162,6 +162,14 @@ describe('a ticket create that carries a customer report', () => {
     await expect(service.propose('thread', { connectionId: itopId, actionId: 'create_object', input: { class: 'UserRequest', fields: { title: 'x', private_log: { add_item: { message: 'edited', format: 'text' } } } } }, { ticketOperation: 'create', customerReportId: report.id })).rejects.toThrow('unchanged in the private log')
     await expect(service.propose('thread', { connectionId: itopId, actionId: 'create_object', input: { class: 'UserRequest', fields: { title: 'x', public_log: { add_item: { message: customerReportProvenance(reports.rows[0]), format: 'text' } } } } }, { ticketOperation: 'create', customerReportId: report.id })).rejects.toThrow('public log')
   })
+
+  it('refuses the earlier version of a corrected report and names the newest one', async () => {
+    const { reports, propose, writes } = setup()
+    const newest = '55555555-5555-4555-8555-555555555555'
+    reports.rows[0].supersededById = newest
+    await expect(propose()).rejects.toMatchObject({ code: 'CUSTOMER_REPORT_CORRECTED', message: expect.stringContaining(newest) })
+    expect(writes).toEqual([])
+  })
 })
 
 describe('the ticket origin of a customer report create', () => {

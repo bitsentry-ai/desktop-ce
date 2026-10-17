@@ -247,5 +247,7 @@
   "incidents.integrationWrites.customerReport.received": "Diterima",
   "incidents.integrationWrites.customerReport.submittedBy": "Dikirim oleh",
   "incidents.integrationWrites.customerReport.unverified": "Diisi oleh engineer, tidak diverifikasi",
+  "incidents.integrationWrites.customerReport.notProvided": "Tidak diisi",
+  "incidents.integrationWrites.customerReport.subject": "Subjek",
   "incidents.integrationRecovery.refusedBeforeWrite": "iTop menolak permintaan ini sebelum menulis apa pun. Periksa koneksi dan izinnya, lalu ajukan perubahan lagi."
 }

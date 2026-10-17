@@ -6,6 +6,7 @@ import type { IntegrationConnectionStorage } from '@bitsentry-ce/core/features/p
 import { canonical, integrationOperationSchema, type IntegrationOperation, type IntegrationOperationStore } from '@bitsentry-ce/core/features/plugins/integration-operations'
 import { integrationResourceSchema, type IntegrationResource } from '@bitsentry-ce/core/features/plugins/integration-resources'
 import { customerReportInputSchema, customerReportSchema, type CustomerReport, type CustomerReportInput, type CustomerReportStore } from '@bitsentry-ce/core/features/plugins/customer-reports'
+import { customerReportIntakeSchema, type CustomerReportIntake, type CustomerReportIntakeStore } from '@bitsentry-ce/core/features/plugins/customer-report-intake'
 import type { DesktopPluginDescriptor } from '@bitsentry-ce/core/features/plugins/plugins.types'
 import { LocalPluginCredentialsStore } from './plugin-credentials-store.js'
 import { backfillDesktopIntegrationStorage } from './integration-storage-backfill.js'
@@ -139,10 +140,10 @@ export class SqliteCustomerReports implements CustomerReportStore {
   constructor(private readonly db: DbClient, private readonly secrets: LocalPluginCredentialsStore) {}
   private async decode(row: Row): Promise<CustomerReport> {
     const payload: unknown = JSON.parse(await this.secrets.openPayload(`customer-report:${String(row.id)}`, String(row.payloadCiphertext)))
-    return customerReportSchema.parse({ ...(payload as Row), id: row.id, threadId: row.threadId, clientRequestId: row.clientRequestId, channel: row.channel, operationId: row.operationId ?? null, createdAt: row.createdAt })
+    return customerReportSchema.parse({ ...(payload as Row), id: row.id, threadId: row.threadId, clientRequestId: row.clientRequestId, channel: row.channel, operationId: row.operationId ?? null, supersededById: row.supersededById ?? null, createdAt: row.createdAt })
   }
   private async find(threadId: string, clientRequestId: string): Promise<CustomerReport | null> {
-    const row = (await this.db.$queryRaw<Row>('SELECT * FROM "CustomerReport" WHERE "threadId"=? AND "clientRequestId"=?', threadId, clientRequestId))[0]
+    const row = (await this.db.$queryRaw<Row>(`${SELECT_REPORT} WHERE r."threadId"=? AND r."clientRequestId"=?`, threadId, clientRequestId))[0]
     return row ? this.decode(row) : null
   }
   async save(value: CustomerReportInput, submittedBy: string): Promise<CustomerReport> {
@@ -150,25 +151,57 @@ export class SqliteCustomerReports implements CustomerReportStore {
     const existing = await this.find(input.threadId, input.clientRequestId)
     if (existing === null) {
       const id = randomUUID()
-      const { sender, receivedAt, timeZone, reportText } = input
-      const payload = await this.secrets.sealPayload(`customer-report:${id}`, JSON.stringify({ sender, receivedAt, timeZone, reportText, submittedBy }))
+      const { sender, receivedAt, timeZone, subject, reportText, intakeId } = input
+      const payload = await this.secrets.sealPayload(`customer-report:${id}`, JSON.stringify({ sender, receivedAt, timeZone, subject: subject ?? null, reportText, intakeId: intakeId ?? null, submittedBy }))
       await this.db.$executeBatch([{ sql: `INSERT INTO "CustomerReport" (id,"threadId","clientRequestId",channel,"payloadCiphertext","createdAt") VALUES (?,?,?,?,?,?) ON CONFLICT("threadId","clientRequestId") DO NOTHING`, parameters: [id, input.threadId, input.clientRequestId, input.channel, payload, now()] }])
     }
     const saved = existing ?? await this.find(input.threadId, input.clientRequestId)
     if (saved === null) throw new Error('The customer report could not be saved.')
     // A retry must send the same report; a reused request ID with other content is refused.
-    if (saved.channel !== input.channel || saved.sender !== input.sender || saved.receivedAt !== input.receivedAt || saved.timeZone !== input.timeZone || saved.reportText !== input.reportText) {
+    if (saved.channel !== input.channel || saved.sender !== input.sender || saved.receivedAt !== input.receivedAt || saved.timeZone !== input.timeZone || (saved.subject ?? null) !== (input.subject ?? null) || saved.reportText !== input.reportText) {
       throw new Error('This customer report request was already saved with different content.')
     }
     return saved
   }
   async get(threadId: string, id: string): Promise<CustomerReport | null> {
-    const row = (await this.db.$queryRaw<Row>('SELECT * FROM "CustomerReport" WHERE id=? AND "threadId"=?', id, threadId))[0]
+    const row = (await this.db.$queryRaw<Row>(`${SELECT_REPORT} WHERE r.id=? AND r."threadId"=?`, id, threadId))[0]
     return row ? this.decode(row) : null
   }
   async link(threadId: string, id: string, expected: string | null, operationId: string): Promise<boolean> {
     const rows = await this.db.$queryRaw<Row>('UPDATE "CustomerReport" SET "operationId"=? WHERE id=? AND "threadId"=? AND "operationId" IS ? RETURNING id', operationId, id, threadId, expected)
     return rows.length === 1
+  }
+  /** The first correction of a report is kept; a later one corrects the newer version instead. */
+  async supersede(threadId: string, id: string, supersededById: string): Promise<void> {
+    await this.db.$executeBatch([{ sql: 'INSERT INTO "CustomerReportCorrection" ("reportId","threadId","supersededById","createdAt") SELECT ?,?,?,? WHERE EXISTS (SELECT 1 FROM "CustomerReport" WHERE id=? AND "threadId"=?) ON CONFLICT("reportId") DO NOTHING', parameters: [id, threadId, supersededById, now(), supersededById, threadId] }])
+  }
+}
+
+const SELECT_REPORT = 'SELECT r.*, c."supersededById" FROM "CustomerReport" r LEFT JOIN "CustomerReportCorrection" c ON c."reportId"=r.id'
+
+/** Customer report intakes keep their answers sealed; the status stays readable so a closed intake is never reopened. */
+export class SqliteCustomerReportIntakes implements CustomerReportIntakeStore {
+  constructor(private readonly db: DbClient, private readonly secrets: LocalPluginCredentialsStore) {}
+  private async decode(row: Row): Promise<CustomerReportIntake> {
+    const payload: unknown = JSON.parse(await this.secrets.openPayload(`customer-report-intake:${String(row.id)}`, String(row.payloadCiphertext)))
+    return customerReportIntakeSchema.parse({ ...(payload as Row), id: row.id, threadId: row.threadId, status: row.status, createdAt: row.createdAt, updatedAt: row.updatedAt })
+  }
+  async latest(threadId: string): Promise<CustomerReportIntake | null> {
+    const row = (await this.db.$queryRaw<Row>('SELECT * FROM "CustomerReportIntake" WHERE "threadId"=? ORDER BY "createdAt" DESC, rowid DESC LIMIT 1', threadId))[0]
+    return row ? this.decode(row) : null
+  }
+  async get(threadId: string, id: string): Promise<CustomerReportIntake | null> {
+    const row = (await this.db.$queryRaw<Row>('SELECT * FROM "CustomerReportIntake" WHERE id=? AND "threadId"=?', id, threadId))[0]
+    return row ? this.decode(row) : null
+  }
+  async save(value: CustomerReportIntake): Promise<CustomerReportIntake> {
+    const intake = customerReportIntakeSchema.parse(value)
+    const { id, threadId, status, createdAt, updatedAt, ...payload } = intake
+    const sealed = await this.secrets.sealPayload(`customer-report-intake:${id}`, JSON.stringify(payload))
+    await this.db.$executeBatch([{ sql: 'INSERT INTO "CustomerReportIntake" (id,"threadId",status,"payloadCiphertext","createdAt","updatedAt") VALUES (?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET status=excluded.status,"payloadCiphertext"=excluded."payloadCiphertext","updatedAt"=excluded."updatedAt" WHERE "CustomerReportIntake"."threadId"=excluded."threadId"', parameters: [id, threadId, status, sealed, createdAt, updatedAt] }])
+    const saved = await this.get(threadId, id)
+    if (saved === null) throw new Error('The customer report could not be saved.')
+    return saved
   }
 }
 
@@ -179,6 +212,7 @@ export function createDesktopIntegrationStorage(db: DbClient, secrets: LocalPlug
   const resources = new SqliteIntegrationResources(db, secrets)
   const operations = new SqliteIntegrationOperations(db, secrets)
   const customerReports = new SqliteCustomerReports(db, secrets)
+  const customerReportIntakes = new SqliteCustomerReportIntakes(db, secrets)
   return {
     connections: {
       list: async () => { await ready; return connections.list() },
@@ -194,6 +228,12 @@ export function createDesktopIntegrationStorage(db: DbClient, secrets: LocalPlug
       save: async (...args) => { await ready; return customerReports.save(...args) },
       get: async (...args) => { await ready; return customerReports.get(...args) },
       link: async (...args) => { await ready; return customerReports.link(...args) },
+      supersede: async (...args) => { await ready; return customerReports.supersede(...args) },
+    },
+    customerReportIntakes: {
+      latest: async threadId => { await ready; return customerReportIntakes.latest(threadId) },
+      get: async (...args) => { await ready; return customerReportIntakes.get(...args) },
+      save: async intake => { await ready; return customerReportIntakes.save(intake) },
     },
     operations: {
       list: async threadId => { await ready; return operations.list(threadId) },

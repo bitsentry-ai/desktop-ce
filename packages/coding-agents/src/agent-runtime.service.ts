@@ -61,6 +61,7 @@ import type {
 import type { RunbookGateway } from '@bitsentry-ce/core/features/runbooks'
 import type { RunbookAuthoringProposalPersistence } from '@bitsentry-ce/core/features/runbooks'
 import type { DesktopPluginRuntimeService } from '@bitsentry-ce/core/features/plugins'
+import { CUSTOMER_REPORT_INTAKE_PROMPT, type CustomerReportIntakePort } from '@bitsentry-ce/core/features/agent-runtime'
 import { approveRunbookAuthoringProposal, getRunbookAuthoringRevisionHash, rejectRunbookAuthoringProposal, requestRunbookAuthoringRevision, restoreRunbookAuthoringProposal, type RunbookAuthoringProposal } from '@bitsentry-ce/core/features/runbooks/authoring'
 import {
   createAgentToolResultEnvelope,
@@ -725,6 +726,14 @@ function createUserMessageContent(text: string, attachments?: AgentChatAttachmen
           },
     ),
   ]
+}
+
+function deviceTimeZone(): string {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
+  } catch {
+    return 'UTC'
+  }
 }
 
 function readChatMessageText(content: ChatMessage['content']): string {
@@ -2094,6 +2103,8 @@ export class AgentRuntimeService {
       'You are participating in a continuous, multi-turn conversation.',
       'You have full access to the message history above. Do NOT claim you cannot remember previous turns.',
       '',
+      CUSTOMER_REPORT_INTAKE_PROMPT,
+      '',
     ]
 
     this.appendSshInstructions(baseInstructions, isSshRelated)
@@ -3111,9 +3122,24 @@ export class AgentRuntimeService {
           return result;
         },
       },
+      ...(session.incidentThreadId !== undefined && this.pluginRuntime !== undefined
+        ? { customerReportIntake: this.customerReportIntakePort(session.incidentThreadId, session) }
+        : {}),
       ...(options.observeEvents
         ? { onToolEvent: (event: HostToolEvent) => this.observeHostToolEvent(session, event) }
         : {}),
+    }
+  }
+
+  /** The quote check reads the engineer's messages in this session; the device's zone reads a typed time. */
+  private customerReportIntakePort(threadId: string, session: AgentSession): CustomerReportIntakePort {
+    return {
+      start: (start) => {
+        const pluginRuntime = this.pluginRuntime
+        if (pluginRuntime === undefined) throw new Error('Plugin runtime is unavailable.')
+        const engineerMessages = session.messages.filter((message) => message.role === 'user').map((message) => readChatMessageText(message.content))
+        return pluginRuntime.getCustomerReportIntake().start(threadId, { start, timeZone: deviceTimeZone(), engineerMessages })
+      },
     }
   }
 
