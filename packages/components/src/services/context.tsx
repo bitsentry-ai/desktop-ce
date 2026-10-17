@@ -10,11 +10,12 @@ interface BitsentryServicesProviderProps {
 
 interface ActionPermissions {
   canOperate: boolean;
+  canApprove: boolean;
   operatorTitle?: string;
 }
 
 // Local desktop execution has no organization roles; Dashboard supplies its policy.
-const localPermissions: ActionPermissions = { canOperate: true };
+const localPermissions: ActionPermissions = { canOperate: true, canApprove: true };
 const ActionPermissionsContext = createContext<ActionPermissions>(localPermissions);
 
 export const useActionPermissions = () => useContext(ActionPermissionsContext);
