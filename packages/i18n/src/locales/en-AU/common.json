@@ -1535,5 +1535,7 @@
   "common.incidents.customerReport.subjectLine": "Subject: {{subject}}",
   "common.incidents.customerReport.questions.confirm": "Shall I save this customer report?",
   "common.incidents.customerReport.options.save": "Save",
-  "common.incidents.customerReport.options.changeSomething": "Change something"
+  "common.incidents.customerReport.options.changeSomething": "Change something",
+  "common.results.statusAwaitingApproval": "Awaiting approval",
+  "common.results.statusSkipped": "Skipped"
 }
