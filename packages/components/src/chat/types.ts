@@ -77,11 +77,13 @@ export interface AgentIteration {
 
 export type ChatMessage =
   | {
+      id?: string;
       kind: "user";
       text: string;
       attachments?: ComposerAttachment[];
     }
   | {
+      id?: string;
       kind: "agent";
       iterations: AgentIteration[];
       activeIterationId: string | null;
