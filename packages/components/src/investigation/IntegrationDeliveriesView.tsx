@@ -1,3 +1,4 @@
+import { useActionPermissions } from "../services/context";
 import { useId, useMemo, useState } from "react";
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
@@ -91,6 +92,7 @@ function HeldReview({ row, threadId, disabled, service, perform }: {
   row: IntegrationDelivery; threadId: string; disabled: boolean; service: IntegrationDeliveriesPort; perform(action: () => Promise<unknown>): Promise<void>;
 }) {
   const { t } = useTranslation();
+  const { canOperate, operatorTitle } = useActionPermissions();
   const id = useId();
   const [reason, setReason] = useState("");
   const [touched, setTouched] = useState(false);
@@ -109,8 +111,8 @@ function HeldReview({ row, threadId, disabled, service, perform }: {
       {error !== undefined && <p id={`${id}-reason-error`} className="text-xs text-destructive">{error}</p>}
     </div>
     <div className="flex flex-wrap gap-2">
-      <Button size="sm" disabled={disabled || tooShort} onClick={() => { void perform(() => authorize(threadId, row.id, trimmed)); }}>{t("incidents.deliveries.authorize")}</Button>
-      <Button size="sm" variant="outline" disabled={disabled || tooShort} onClick={() => { void perform(() => dismiss(threadId, row.id, trimmed)); }}>{t("incidents.deliveries.dismiss")}</Button>
+      <Button size="sm" title={operatorTitle} disabled={!canOperate || disabled || tooShort} onClick={() => { void perform(() => authorize(threadId, row.id, trimmed)); }}>{t("incidents.deliveries.authorize")}</Button>
+      <Button size="sm" variant="outline" title={operatorTitle} disabled={!canOperate || disabled || tooShort} onClick={() => { void perform(() => dismiss(threadId, row.id, trimmed)); }}>{t("incidents.deliveries.dismiss")}</Button>
     </div>
   </>;
 }
