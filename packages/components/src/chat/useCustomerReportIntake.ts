@@ -108,7 +108,8 @@ function typedReceivedTime(iso: string, timeZone: string, now: Date = new Date()
 
 /**
  * The conversation's customer report intake. The agent opens a question; the engineer answers in the composer panel;
- * each answer is saved, then sent to the agent as a chat message so it replies before the next question appears.
+ * each answer is saved, then sent to the agent as a chat message. The answered question stays, disabled, until the
+ * agent's turn starts, and the next question opens only when that turn ends, so it always follows the agent's reply.
  */
 export function useCustomerReportIntake({ client, threadId, busy, send }: {
   client: CustomerReportIntakeClient | undefined;
@@ -192,10 +193,14 @@ export function useCustomerReportIntake({ client, threadId, busy, send }: {
     try {
       const result = await client.answer({ threadId, intakeId: intake.id, clientRequestId: request.current.id, answer: resolved.answer });
       request.current = null;
-      setState({ threadId, intake: result.intake });
-      setMode({ kind: "asked" });
       const shown = intakeAnswerText(t, resolved.answer.field, resolved.answer.value, intake.timeZone, i18n?.language);
-      await send(customerReportAnswerMessage(result, resolved.answer.field, shown, editing));
+      try {
+        // The answered question stays until the agent's turn starts; the next one opens when that turn ends.
+        await send(customerReportAnswerMessage(result, resolved.answer.field, shown, editing));
+      } finally {
+        setState({ threadId, intake: result.intake });
+        setMode({ kind: "asked" });
+      }
     } catch (cause) {
       setError(errorMessage(t, cause));
     } finally {
@@ -209,9 +214,12 @@ export function useCustomerReportIntake({ client, threadId, busy, send }: {
     setSubmitting(true);
     try {
       const closed = await client.dismiss({ threadId, intakeId: intake.id });
-      setState({ threadId, intake: closed });
-      // A closed correction keeps the saved report; only a new report that is closed tells the agent.
-      if (closed.status === "dismissed") await send(formatCustomerReportDismissMessage(closed.id));
+      try {
+        // A closed correction keeps the saved report; only a new report that is closed tells the agent.
+        if (closed.status === "dismissed") await send(formatCustomerReportDismissMessage(closed.id));
+      } finally {
+        setState({ threadId, intake: closed });
+      }
     } catch (cause) {
       setError(errorMessage(t, cause));
     } finally {

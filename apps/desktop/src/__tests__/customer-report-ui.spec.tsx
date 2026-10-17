@@ -61,14 +61,14 @@ function intakeService() {
 }
 
 /** An Incident thread: the chat shows what was sent, the composer shows the open question. */
-function Thread({ service, busy, sent, initial = [] }: { service: CustomerReportIntakeService; busy: boolean; sent: string[]; initial?: string[] }) {
+function Thread({ service, busy, sent, initial = [], turnStarted }: { service: CustomerReportIntakeService; busy: boolean; sent: string[]; initial?: string[]; turnStarted?: Promise<void> }) {
   const client = useMemo(() => ({
     latest: (threadId: string) => service.latest(threadId),
     answer: (input: Parameters<CustomerReportIntakeService["answer"]>[0]) => service.answer(input, "wira"),
     dismiss: (input: Parameters<CustomerReportIntakeService["dismiss"]>[0]) => service.dismiss(input),
   }), [service]);
   const [messages, setMessages] = useState<string[]>(initial);
-  const intake = useCustomerReportIntake({ client, threadId: THREAD, busy, send: (text) => { sent.push(text); setMessages((previous) => [...previous, text]); } });
+  const intake = useCustomerReportIntake({ client, threadId: THREAD, busy, send: (text) => { sent.push(text); setMessages((previous) => [...previous, text]); return turnStarted; } });
   return (
     <CustomerReportIntakeChatContext.Provider value={intake.chat}>
       {messages.map((text, index) => <ChatBubble key={index} msg={{ kind: "user", text } as ChatMessage} providerKey="openai" />)}
@@ -128,6 +128,34 @@ describe("customer report question in the composer", () => {
     expect((await service.latest(THREAD))?.answers.sender).toBeNull();
     expect(await asked(`${K}.questions.subject`)).toBeTruthy();
     expect(screen.queryByText(/\[customer-report-answer\]/)).toBeNull();
+  });
+
+  it("keeps the answered question until the agent's turn starts, and opens the next one only after that turn", async () => {
+    const { service, agentAsks } = intakeService();
+    await agentAsks({ origin: "customer", extracted: [{ field: "channel", value: "email", quote: "by email" }] }, ["We just got a customer report by email: the service desk keeps loading."]);
+    const sent: string[] = [];
+    let startTurn = () => {};
+    const turnStarted = new Promise<void>((resolve) => { startTurn = resolve; });
+    const view = render(<Thread service={service} busy={false} sent={sent} turnStarted={turnStarted} />);
+    expect(await asked(`${K}.questions.sender`)).toBeTruthy();
+    fireEvent.click(option(`${K}.options.notSure`));
+
+    // Saved and sent, while the page still starts the agent's turn: the next question is not shown yet.
+    await waitFor(() => { expect(sent).toHaveLength(1); });
+    expect((await service.latest(THREAD))?.question).toBe("subject");
+    const waiting = within(panel() as HTMLElement);
+    expect(waiting.getByText(`${K}.questions.sender`)).toBeTruthy();
+    expect(waiting.queryByText(`${K}.questions.subject`)).toBeNull();
+    expect((option(`${K}.options.notSure`) as HTMLButtonElement).disabled).toBe(true);
+
+    // The agent works: the composer is the normal busy composer.
+    view.rerender(<Thread service={service} busy sent={sent} turnStarted={turnStarted} />);
+    startTurn();
+    await waitFor(() => { expect(panel()).toBeNull(); });
+
+    // The agent's reply is in: now the next question opens.
+    view.rerender(<Thread service={service} busy={false} sent={sent} turnStarted={turnStarted} />);
+    expect(await asked(`${K}.questions.subject`)).toBeTruthy();
   });
 
   it("takes a typed answer, and refuses a received time in the future without saving it", async () => {
