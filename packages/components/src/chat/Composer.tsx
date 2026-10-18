@@ -41,6 +41,12 @@ import {
 } from "lucide-react";
 import { CustomerReportQuestionPanel } from "./CustomerReportPanel";
 import type { ComposerCustomerReportIntake } from "./useCustomerReportIntake";
+import {
+  RemediationFlowButtons,
+  RemediationQuestionPanel,
+  RemediationResumeChip,
+  type ComposerRemediationFlow,
+} from "./RemediationQuestionPanel";
 import { ModelPicker } from "./ModelPicker";
 import type { AccessLevel, InteractionMode } from "./types";
 import { DEFAULT_ACCESS_LEVEL, DEFAULT_INTERACTION_MODE } from "./types";
@@ -102,6 +108,8 @@ export interface ComposerProps {
   onAccessLevelChange?: (level: AccessLevel) => void;
   // The open customer report question, when the agent asked one. The text area then holds the typed answer.
   customerReportIntake?: ComposerCustomerReportIntake;
+  // The CVE remediation steps for this incident. A customer report question shows first; one card shows at a time.
+  remediationFlow?: ComposerRemediationFlow;
 }
 
 function getSeededTraitValues(
@@ -114,12 +122,15 @@ function getSeededTraitValues(
   return { ...defaults, thinking: thinkingEnabled };
 }
 
-/** While a customer report question is open, the text area holds the typed answer instead of the prompt. */
-function composerTextBinding(question: ComposerCustomerReportIntake | undefined, prompt: string, onPromptChange: (value: string) => void, onPaste: (event: React.ClipboardEvent<HTMLTextAreaElement>) => void, disabled: boolean) {
-  if (question === undefined) {
-    return { rows: 3, value: prompt, onChange: onPromptChange, onPaste, disabled };
+/** While a question or a remediation step is open, the text area holds its answer instead of the prompt. */
+function composerTextBinding(question: ComposerCustomerReportIntake | undefined, remediation: ComposerRemediationFlow | undefined, prompt: string, onPromptChange: (value: string) => void, onPaste: (event: React.ClipboardEvent<HTMLTextAreaElement>) => void, disabled: boolean) {
+  if (question !== undefined) {
+    return { rows: question.question.multiline ? 3 : 2, value: question.answerText, onChange: question.setAnswerText, onPaste: () => {}, disabled: question.submitting };
   }
-  return { rows: question.question.multiline ? 3 : 2, value: question.answerText, onChange: question.setAnswerText, onPaste: () => {}, disabled: question.submitting };
+  if (remediation?.input !== undefined) {
+    return { rows: 1, value: remediation.input.value, onChange: remediation.input.onChange, onPaste: () => {}, disabled: remediation.submitting };
+  }
+  return { rows: 3, value: prompt, onChange: onPromptChange, onPaste, disabled };
 }
 
 function QuestionSubmitButton({ question }: { question: ComposerCustomerReportIntake }) {
@@ -142,13 +153,14 @@ function composerCanSend(isBlocked: boolean, prompt: string, attachmentCount: nu
   return prompt.trim().length > 0 || attachmentCount > 0;
 }
 
-function composerPlaceholder(t: (key: string) => string, isBlocked: boolean, threadStatus: ThreadStatus | undefined, question: ComposerCustomerReportIntake | undefined, placeholder: string | undefined): string {
+function composerPlaceholder(t: (key: string) => string, isBlocked: boolean, threadStatus: ThreadStatus | undefined, question: ComposerCustomerReportIntake | undefined, remediation: ComposerRemediationFlow | undefined, placeholder: string | undefined): string {
   if (isBlocked) {
     return threadStatus === "blocked_no_runbook" ? t("common.incidents.createARunbookToEnable") : t("common.incidents.configureAProviderInSettings");
   }
   if (question !== undefined) {
     return question.question.placeholder ?? t("common.incidents.customerReport.placeholders.customAnswer");
   }
+  if (remediation?.input !== undefined) return remediation.input.placeholder;
   return placeholder ?? t("common.incidents.describeTheSecurityIssueTo");
 }
 
@@ -187,6 +199,7 @@ export function Composer({
   accessLevel: accessLevelProp,
   onAccessLevelChange,
   customerReportIntake,
+  remediationFlow,
 }: ComposerProps) {
   const { t } = useTranslation();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -210,7 +223,11 @@ export function Composer({
   // ── Derived ────────────────────────────────────────────────────────────────
   const composerSupportsPhotos = Boolean(selectedModelCapability?.supportsImageInput);
   const question = isBlocked ? undefined : customerReportIntake;
+  // The remediation card waits while the agent works and while a customer report question is open.
+  const remediation = question === undefined && !isBlocked && !isProcessing && remediationFlow?.open === true ? remediationFlow : undefined;
+  const showResumeChip = remediationFlow !== undefined && question === undefined && remediation === undefined;
   const asking = question !== undefined;
+  const hidesText = remediation !== undefined && remediation.input === undefined;
   const hasAttachOptions =
     composerSupportsPhotos || composerFileAccept?.includes(".csv") === true;
   const canSend = composerCanSend(isBlocked, prompt, composerImages.length);
@@ -295,12 +312,17 @@ export function Composer({
         if (question.canSubmit) question.submit();
         return;
       }
+      if (remediation !== undefined) {
+        e.preventDefault();
+        if (remediation.primary !== undefined && remediation.primary.disabled !== true && !remediation.submitting) remediation.primary.run();
+        return;
+      }
       if (!isProcessing && canSend) {
         e.preventDefault();
         onSend({ accessLevel, interactionMode, traitValues });
       }
     },
-    [onSend, isProcessing, canSend, accessLevel, interactionMode, traitValues, question],
+    [onSend, isProcessing, canSend, accessLevel, interactionMode, traitValues, question, remediation],
   );
 
   const handleTraitChange = useCallback((id: string, value: string | boolean) => {
@@ -309,8 +331,8 @@ export function Composer({
 
   if (isArchived) return null;
 
-  const placeholderText = composerPlaceholder(t, isBlocked, threadStatus, question, placeholder);
-  const textBinding = composerTextBinding(question, prompt, onPromptChange, onPaste, isProcessing || isBlocked);
+  const placeholderText = composerPlaceholder(t, isBlocked, threadStatus, question, remediation, placeholder);
+  const textBinding = composerTextBinding(question, remediation, prompt, onPromptChange, onPaste, isProcessing || isBlocked);
 
   let accessSelector: ReactNode = null;
   const shouldShowAccessSelector = selectedProviderKey !== null;
@@ -362,6 +384,7 @@ export function Composer({
           }}
         />
       )}
+      {showResumeChip && <RemediationResumeChip flow={remediationFlow} disabled={isProcessing || isBlocked} />}
       <input
         ref={fileInputRef}
         type="file"
@@ -377,14 +400,16 @@ export function Composer({
         data-tour="incidents-composer"
         className={cn(
           "group rounded-[20px] border bg-card transition-[border-color,box-shadow] duration-200",
-          !isProcessing && !isBlocked && !asking && "focus-within:border-ring/45",
+          !isProcessing && !isBlocked && !asking && remediation === undefined && "focus-within:border-ring/45",
           asking && "border-violet-300 shadow-[0_0_0_3px_rgb(124_58_237_/_0.08)] dark:border-violet-500/40",
+          remediation !== undefined && "border-amber-200 shadow-[0_0_0_3px_rgb(253_230_138_/_0.35)] dark:border-amber-500/40",
           isBlocked && "opacity-60",
         )}
       >
         {question !== undefined && <CustomerReportQuestionPanel key={question.question.key} intake={question} />}
+        {remediation !== undefined && <RemediationQuestionPanel flow={remediation} />}
         {/* Textarea area with optional attach button */}
-        <div className="relative px-3 pb-2 pt-3.5 sm:px-4 sm:pt-4">
+        <div className="relative px-3 pb-2 pt-3.5 sm:px-4 sm:pt-4" hidden={hidesText}>
           {composerImages.length > 0 && (
             <div className="mb-3 flex flex-wrap gap-2">
               {composerImages.map((image) =>
@@ -445,7 +470,7 @@ export function Composer({
           )}
           <div className="flex items-start gap-2">
             {/* Attach button (left of textarea) */}
-            {hasAttachOptions && (
+            {hasAttachOptions && remediation === undefined && (
               <div ref={attachMenuRef} className="relative z-40 mt-0.5 shrink-0">
                 <button
                   type="button"
@@ -560,9 +585,9 @@ export function Composer({
           {/* Right: context + send / stop */}
           <div data-tour="incidents-send-btn" className="flex shrink-0 items-center gap-2">
             {contextIndicator}
-            {question !== undefined ? (
-              <QuestionSubmitButton question={question} />
-            ) : (
+            {question !== undefined && <QuestionSubmitButton question={question} />}
+            {remediation !== undefined && <RemediationFlowButtons flow={remediation} />}
+            {question === undefined && remediation === undefined && (
               <SendButton
                 isProcessing={isProcessing}
                 canSend={canSend}
