@@ -1,5 +1,5 @@
 {
-  "description": "Engineer messages for the customer report trigger eval. A positive relays what a customer or end user said or sent; a negative is the engineer's own observation, an alert, a log line or an internal request. Pasted messages may start the intake through the 'Is this a message from a customer?' question.",
+  "description": "Engineer messages for the customer report trigger eval. A positive relays what a customer or end user said or sent; a negative is the engineer's own observation, an alert, a log line, an internal request or a request to work on data, such as scanner findings, even when a customer supplied the data. Pasted messages may start the intake through the 'Is this a message from a customer?' question.",
   "positives": [
     {
       "text": "We just got a customer report by email: the service desk keeps loading and times out for them.",
@@ -337,6 +337,31 @@
       "text": "PagerDuty incident #4521 triggered: high error rate on payments",
       "language": "en",
       "style": "alert"
+    },
+    {
+      "text": "Could you review these three findings from the customer’s September Wazuh report and show which ones have a vendor fix? Run the saved read-only Linux CVE Status evaluator with these findings as its input, and keep the agent IDs unchanged. These are historical customer findings, not a current scan of our server. Do not create a remediation request or patch anything",
+      "language": "en",
+      "style": "data-request"
+    },
+    {
+      "text": "Here are the findings from PT Maju's monthly scan report. Which ones have a fixed version?\nagent.id,package.name,package.version,vulnerability.id\n007,openssl,3.0.13-0ubuntu3.4,CVE-2026-1001\n007,curl,8.5.0-2ubuntu10.6,CVE-2026-1002",
+      "language": "en",
+      "style": "data-request"
+    },
+    {
+      "text": "Summarise the vulnerability scan the client sent last week and list the critical CVEs.",
+      "language": "en",
+      "style": "data-request"
+    },
+    {
+      "text": "Tolong evaluasi temuan CVE dari laporan Wazuh klien ini, mana yang sudah ada vendor fix?",
+      "language": "id",
+      "style": "data-request"
+    },
+    {
+      "text": "cek CSV export Wazuh dari customer, agent 003 kena CVE apa saja?",
+      "language": "mixed",
+      "style": "data-request"
     }
   ]
 }
