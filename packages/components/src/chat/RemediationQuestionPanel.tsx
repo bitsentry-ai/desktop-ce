@@ -218,7 +218,11 @@ export function RemediationQuestionPanel({ flow }: { flow: ComposerRemediationFl
   return (
     <section
       aria-label={title}
-      className="rounded-t-[19px] border-b border-amber-200 bg-gradient-to-b from-amber-50 to-amber-50/40 px-4 py-3 duration-200 animate-in fade-in slide-in-from-bottom-1 dark:border-amber-500/30 dark:from-amber-500/10 dark:to-transparent"
+      className={cn(
+        "rounded-t-[19px] bg-gradient-to-b from-amber-50 px-4 py-3 duration-200 animate-in fade-in slide-in-from-bottom-1 dark:from-amber-500/10 dark:to-transparent",
+        // The line divides the card from the text area. Without a text area the toolbar follows, so the tint fades out instead.
+        flow.input === undefined ? "to-transparent" : "border-b border-amber-200 to-amber-50/40 dark:border-amber-500/30",
+      )}
     >
       <div className="mb-1.5 flex items-center gap-2">
         <span className="inline-flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-widest text-amber-700 dark:text-amber-300">
