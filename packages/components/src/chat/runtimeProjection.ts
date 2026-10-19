@@ -56,6 +56,7 @@ export type RuntimeProjectionEvent =
       tokenUsage?: AgentThreadTokenUsage;
     }
   | { type: "cancelled"; timestamp: string; message: string }
+  | { type: "queue_updated"; timestamp: string }
   | {
       type: "error";
       timestamp: string;
@@ -185,6 +186,51 @@ export function appendPromptToThreadSnapshot(
     currentToolCallId: null,
     messages: [
       ...snapshot.messages,
+      {
+        kind: "user",
+        text: input.prompt,
+        attachments: input.attachments,
+      },
+      createAgentMessage(),
+    ],
+  };
+}
+
+/**
+ * A steer joins the running turn: the agent's work so far closes, the steer shows as the engineer's message, and the
+ * rest of the turn streams into a new agent message after it.
+ */
+export function appendSteerToThreadSnapshot(
+  snapshot: AgentThreadSnapshot,
+  input: {
+    prompt: string;
+    attachments?: ComposerAttachment[];
+    timestamp: string;
+  },
+): AgentThreadSnapshot {
+  const messages = mapLastAgentMessage(snapshot.messages, (message) => ({
+    ...message,
+    status: "done",
+    activity: undefined,
+    activeIterationId: null,
+    iterations: message.iterations.map((iteration) => {
+      if (iteration.status === "done" || iteration.status === "error") {
+        return iteration;
+      }
+
+      return {
+        ...iteration,
+        status: "done",
+        completedAt: iteration.completedAt ?? input.timestamp,
+      };
+    }),
+  }));
+
+  return {
+    ...snapshot,
+    threadState: "RUNNING",
+    messages: [
+      ...messages,
       {
         kind: "user",
         text: input.prompt,
@@ -478,6 +524,9 @@ export function reduceAgentThreadSnapshot(
           }),
         })),
       };
+
+    case "queue_updated":
+      return snapshot;
 
     case "error":
       return {

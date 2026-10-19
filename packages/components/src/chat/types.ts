@@ -93,6 +93,16 @@ export type ChatMessage =
       errorCode?: AgentErrorCode;
     };
 
+/** A follow-up waiting for the running turn to finish. */
+export interface AgentQueuedMessage {
+  id: string;
+  text: string;
+  attachments?: ComposerAttachment[];
+  queuedAt: string;
+  /** Waiting to join the running turn as a steer rather than to run after it. */
+  steer?: boolean;
+}
+
 export interface AgentThreadSnapshot {
   sessionId: string;
   startedAt: string;
@@ -101,6 +111,12 @@ export interface AgentThreadSnapshot {
   currentToolCallId: string | null;
   messages: ChatMessage[];
   tokenUsage?: AgentThreadTokenUsage;
+  /** Follow-ups that run one at a time once the current turn ends. */
+  queuedMessages?: AgentQueuedMessage[];
+  /** True after a stop, timeout or failure: queued follow-ups wait for an explicit resume. */
+  queueHeld?: boolean;
+  /** True while the running turn can take a steer: a message added before its next model call. */
+  canSteer?: boolean;
 }
 
 export interface SavedProviderConfig {

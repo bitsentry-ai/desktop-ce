@@ -34,6 +34,7 @@ type AgentEventType =
   | 'final'            // Final assistant response complete
   | 'cancelled'        // Session cancelled by user or timeout
   | 'error'            // Agent-level error
+  | 'queue_updated'    // Queued follow-ups, the queue hold or steerability changed
 
 export type AgentErrorCode = 'NO_LLM_PROVIDER_CONFIGURED'
 
@@ -227,6 +228,18 @@ export type ChatMessage =
       errorCode?: AgentErrorCode
     }
 
+/**
+ * A follow-up waiting for the running turn to finish.
+ */
+export interface AgentQueuedMessage {
+  id: string
+  text: string
+  attachments?: AgentChatAttachment[]
+  queuedAt: string
+  /** Waiting to join the running turn as a steer rather than to run after it. */
+  steer?: boolean
+}
+
 export interface AgentThreadSnapshot {
   sessionId: string
   startedAt: string
@@ -235,6 +248,12 @@ export interface AgentThreadSnapshot {
   currentToolCallId: string | null
   messages: ChatMessage[]
   tokenUsage?: AgentThreadTokenUsage
+  /** Follow-ups that run one at a time once the current turn ends. */
+  queuedMessages?: AgentQueuedMessage[]
+  /** True after a stop, timeout or failure: queued follow-ups wait for an explicit resume. */
+  queueHeld?: boolean
+  /** True while the running turn can take a steer: a message added before its next model call. */
+  canSteer?: boolean
 }
 
 /**
@@ -304,6 +323,13 @@ interface AgentErrorEvent extends AgentEvent {
 }
 
 /**
+ * The queue, the hold or whether the turn can be steered changed.
+ */
+export interface QueueUpdatedEvent extends AgentEvent {
+  type: 'queue_updated'
+}
+
+/**
  * Union type of all agent events.
  */
 export type AgentEventData =
@@ -319,6 +345,7 @@ export type AgentEventData =
   | FinalEvent
   | CancelledEvent
   | AgentErrorEvent
+  | QueueUpdatedEvent
 
 /**
  * Agent start request.
@@ -339,9 +366,16 @@ export interface AgentStartInput {
 /**
  * Agent send request (continue conversation).
  */
+/**
+ * How a message sent while a turn runs is delivered. A queued message runs after the turn; a steer joins the
+ * running turn before its next model call, and is queued instead when the turn cannot take one.
+ */
+export type AgentMessageDelivery = 'queue' | 'steer'
+
 export interface AgentSendInput {
   message: string
   sessionId?: string  // Optional: continue existing session
+  delivery?: AgentMessageDelivery
   attachments?: AgentChatAttachment[]
   llm?: AgentLlmSelection
   accessLevel?: 'auto-accept-edits' | 'full-access'
@@ -351,6 +385,17 @@ export interface AgentSendInput {
   runbookRevisionNumber?: number
   incidentThreadId?: string
 }
+
+/**
+ * A change to a session's queued follow-ups. `steer` moves a queued message into the running turn; `resume` releases
+ * a held queue.
+ */
+export type AgentQueueUpdateInput =
+  | { sessionId: string; action: 'edit'; messageId: string; message: string; attachments?: AgentChatAttachment[] }
+  | { sessionId: string; action: 'remove'; messageId: string }
+  | { sessionId: string; action: 'reorder'; messageId: string; beforeMessageId: string | null }
+  | { sessionId: string; action: 'steer'; messageId: string }
+  | { sessionId: string; action: 'resume' }
 
 /**
  * Agent session snapshot.
