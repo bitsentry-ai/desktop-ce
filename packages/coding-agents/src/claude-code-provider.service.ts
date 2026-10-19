@@ -97,10 +97,72 @@ interface ClaudeSdkSession extends AsyncIterable<unknown> {
   close(): void
 }
 
+/** A user message in the SDK's streaming input. */
+export interface ClaudePromptMessage {
+  type: 'user'
+  message: { role: 'user'; content: string }
+  parent_tool_use_id: null
+  /**
+   * "next" joins the running turn at its next model call without stopping it.
+   * Never "now": that aborts the turn's running tool calls, which could cut a
+   * runbook step off halfway.
+   */
+  priority?: 'next'
+}
+
 type ClaudeSdkQuery = (params: {
-  prompt: string
+  prompt: AsyncIterable<ClaudePromptMessage>
   options?: ClaudeCodeQueryOptions
 }) => ClaudeSdkSession
+
+function claudePromptMessage(text: string, priority?: 'next'): ClaudePromptMessage {
+  return {
+    type: 'user',
+    message: { role: 'user', content: text },
+    parent_tool_use_id: null,
+    ...(priority === undefined ? {} : { priority }),
+  }
+}
+
+/**
+ * The turn's input: the prompt, then any steers, until the turn's result
+ * arrives. Closing it then ends the session, and refuses a later steer, which
+ * would otherwise start a turn the runtime never asked for.
+ */
+export function createClaudePromptStream(prompt: string): {
+  messages: AsyncIterable<ClaudePromptMessage>
+  steer: (text: string) => boolean
+  close: () => void
+} {
+  const pending: ClaudePromptMessage[] = [claudePromptMessage(prompt)]
+  let closed = false
+  let wake: (() => void) | undefined
+  return {
+    messages: {
+      async *[Symbol.asyncIterator]() {
+        for (;;) {
+          const next = pending.shift()
+          if (next !== undefined) {
+            yield next
+            continue
+          }
+          if (closed) return
+          await new Promise<void>((resolve) => { wake = resolve })
+        }
+      },
+    },
+    steer: (text) => {
+      if (closed) return false
+      pending.push(claudePromptMessage(text, 'next'))
+      wake?.()
+      return true
+    },
+    close: () => {
+      closed = true
+      wake?.()
+    },
+  }
+}
 
 let testClaudeSdkQueryLoader: (() => Promise<ClaudeSdkQuery> | ClaudeSdkQuery) | undefined
 const CLAUDE_ONE_M_CONTEXT_BETA: ClaudeCodeSdkBeta = 'context-1m-2025-08-07'
@@ -125,7 +187,7 @@ async function loadClaudeSdkQuery(): Promise<ClaudeSdkQuery> {
 
   const sdk = await import('@anthropic-ai/claude-agent-sdk')
   return (params) => sdk.query({
-    prompt: params.prompt,
+    prompt: params.prompt as never,
     options: params.options as never,
   })
 }
@@ -650,6 +712,7 @@ async function runClaudeCodeSession(
   options: ClaudeCodeExecutionOptions,
   state: ClaudeCodeSessionState,
   effectiveAccessLevel: ClaudeCodeAccessLevel,
+  onResult: () => void,
 ): Promise<void> {
   for await (const message of session) {
     if (options.abortController.signal.aborted) break
@@ -661,6 +724,9 @@ async function runClaudeCodeSession(
       options.debug,
       options.onDelta,
     )
+    if (typeof message === 'object' && message !== null && (message as { type?: unknown }).type === 'result') {
+      onResult()
+    }
   }
 }
 
@@ -785,19 +851,34 @@ export async function executeClaudeCode(
 
   options.onDelta?.({ type: 'status', status: 'started' })
   let session: ClaudeSdkSession | undefined
+  const prompt = createClaudePromptStream(options.prompt)
+  const endTurnInput = () => {
+    prompt.close()
+    options.onDelta?.({ type: 'steer_handle', steer: null })
+  }
 
   try {
     session = query({
-      prompt: options.prompt,
+      prompt: prompt.messages,
       options: queryOptions,
     })
-    await runClaudeCodeSession(session, options, state, effectiveAccessLevel)
+    options.onDelta?.({
+      type: 'steer_handle',
+      steer: (text) => {
+        if (!prompt.steer(text)) {
+          return Promise.reject(new Error('The Claude Code turn already ended.'))
+        }
+        return Promise.resolve()
+      },
+    })
+    await runClaudeCodeSession(session, options, state, effectiveAccessLevel, endTurnInput)
     if (!options.abortController.signal.aborted) {
       await updateClaudeContextUsage(session, state)
     }
   } catch (err: unknown) {
     handleClaudeExecutionError(err, options)
   } finally {
+    endTurnInput()
     if (session !== undefined) {
       closeClaudeSession(session)
     }
