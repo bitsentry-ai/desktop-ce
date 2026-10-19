@@ -21,10 +21,10 @@ describe("ToolCard progress", () => {
       progress: "Checked 12 of 40 findings, 28 remaining, 1 retrying (14s)",
     };
 
-    const { rerender } = render(<ToolCard card={{ ...card, state: "running" }} />);
+    const { rerender } = render(<ToolCard card={{ ...card, state: "running" }} messageId="message-1" />);
     expect(screen.getByText(card.progress)).toBeTruthy();
 
-    rerender(<ToolCard card={{ ...card, state: "done" }} />);
+    rerender(<ToolCard card={{ ...card, state: "done" }} messageId="message-1" />);
     expect(screen.queryByText(card.progress)).toBeNull();
   });
 });

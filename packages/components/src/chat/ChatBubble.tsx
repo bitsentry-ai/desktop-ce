@@ -396,6 +396,8 @@ export const ChatBubble = memo(function ChatBubble({
   }
 
   const copyableMarkdown = getCopyableMarkdown(msg);
+  // Keys the disclosures in this message's tool cards, so they stay open when the virtualized row remounts.
+  const messageId = msg.id ?? "";
   const toolCallMap = Object.fromEntries(
     msg.toolCalls.map((tc) => [tc.toolCallId, tc]),
   );
@@ -531,10 +533,10 @@ export const ChatBubble = memo(function ChatBubble({
                 {timestampContent}
 
                 {iterTools.length > 0 && (
-                  <WorkLogGroup toolCalls={iterTools}>
+                  <WorkLogGroup disclosureKey={`${messageId}:${iter.id}:group`} toolCalls={iterTools}>
                     <div className="flex flex-wrap gap-1.5">
                       {iterTools.map((tc) => (
-                        <ToolCard key={tc.toolCallId} card={tc} />
+                        <ToolCard key={tc.toolCallId} card={tc} messageId={messageId} />
                       ))}
                     </div>
                   </WorkLogGroup>
