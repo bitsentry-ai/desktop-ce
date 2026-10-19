@@ -162,6 +162,12 @@ function loadResultTraces(): Record<string, ResultTraceMemory> {
   }
 }
 
+function dispatchExecutionMirrorUpdate(): void {
+  window.dispatchEvent(
+    new CustomEvent("bitsentry:results-updated", { detail: { source: "execution-mirror" } }),
+  );
+}
+
 function saveResultTraces(traceMap: Record<string, ResultTraceMemory>) {
   try {
     localStorage.setItem(RESULT_TRACES_KEY, JSON.stringify(traceMap));
@@ -915,14 +921,16 @@ export default function ResultsPage() {
     activeExecution = traceMap[activeId]?.execution ?? null;
   }
 
+  // Results and traces here only mirror main-process executions, which main has
+  // already persisted; the tag stops the bootstrap from syncing them back.
   useEffect(() => {
     saveResults(results);
-    window.dispatchEvent(new Event("bitsentry:results-updated"));
+    dispatchExecutionMirrorUpdate();
   }, [results]);
 
   useEffect(() => {
     saveResultTraces(traceMap);
-    window.dispatchEvent(new Event("bitsentry:results-updated"));
+    dispatchExecutionMirrorUpdate();
   }, [traceMap]);
 
   const syncExecution = useCallback(

@@ -141,19 +141,18 @@ describe("DesktopStateBootstrap", () => {
       "bitsentry_runbooks",
       JSON.stringify([{ id: "stale-runbook" }]),
     );
-    let bootstrapCalls = 0;
     mockIpcInvoke.mockImplementation((channel: string) => {
       if (channel === "desktopState:bootstrap") {
-        bootstrapCalls += 1;
         return Promise.resolve({
           incidents: [],
           incidentMessages: {},
-          runbooks: bootstrapCalls === 1
-            ? [{ id: "server-runbook" }]
-            : [{ id: "server-runbook" }, { id: "agent-approved" }],
+          runbooks: [{ id: "server-runbook" }],
           results: [],
           resultTraces: {},
         });
+      }
+      if (channel === "runbooks:list") {
+        return Promise.resolve([{ id: "server-runbook" }, { id: "agent-approved" }]);
       }
       if (channel === "desktopState:syncRunbooks") return Promise.resolve();
       if (channel === "desktopState:syncResults") return Promise.resolve();
