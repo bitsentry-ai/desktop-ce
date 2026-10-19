@@ -373,15 +373,16 @@ function createAgentBridge(bridge: DesktopPreloadBridgePort) {
       return bridge.invoke('agent:restoreRunbookAuthoringProposal', input)
     },
     onEvent: (
-      callback: (event: {
-        sessionId: string
-        event: {
-          type: string
-          timestamp: string
-          [key: string]: unknown
-        }
-        snapshot?: Record<string, unknown>
-      }) => void,
+      // Structural events carry the full snapshot; coalesced streaming
+      // updates carry only the changed message (kind: 'message').
+      callback: (event:
+        | {
+            sessionId: string
+            kind: 'snapshot'
+            event: { type: string; timestamp: string; [key: string]: unknown }
+            snapshot?: Record<string, unknown>
+          }
+        | { sessionId: string; kind: 'message'; [key: string]: unknown }) => void,
     ): (() => void) => {
       return createSubscription(bridge, 'bitsentry:agent:event', callback)
     },

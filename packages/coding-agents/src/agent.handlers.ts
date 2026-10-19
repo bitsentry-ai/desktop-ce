@@ -4,7 +4,7 @@
  * IPC bridge and service composition helpers for the desktop agent runtime.
  */
 
-import type { AgentThreadSnapshot } from '@bitsentry-ce/components/chat/types'
+import type { AgentSnapshotReply } from '@bitsentry-ce/components/chat/types'
 import { z } from 'zod'
 import type {
   AgentStartInput,
@@ -31,7 +31,7 @@ export interface AgentRuntimeSessionController {
   cancel(sessionId: string): void
   destroy(): Promise<void>
   getStatus(sessionId: string): AgentSessionStatus
-  getSnapshot(sessionId: string): AgentThreadSnapshot
+  getSnapshot(sessionId: string): AgentSnapshotReply
   listRunbookAuthoringProposals(input: { sessionId?: string; incidentThreadId?: string }): Promise<RunbookAuthoringProposalReview[]>
   approveRunbookAuthoringProposal(input: { sessionId?: string; incidentThreadId?: string; proposalId: string; approvedOperationIds?: string[] }): Promise<RunbookAuthoringProposalDecisionResult>
   rejectRunbookAuthoringProposal(input: { sessionId?: string; incidentThreadId?: string; proposalId: string; reason?: string }): Promise<RunbookAuthoringProposalDecisionResult>
@@ -153,7 +153,7 @@ export function createDesktopAgentHandlers(
 
     'agent:getSnapshot': (
       payload: unknown,
-    ): Promise<AgentThreadSnapshot | null> => {
+    ): Promise<AgentSnapshotReply | null> => {
       const input = payload as { sessionId: string }
       try {
         return Promise.resolve(agentRuntime.getSnapshot(input.sessionId))

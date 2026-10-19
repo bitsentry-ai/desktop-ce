@@ -70,18 +70,21 @@ export interface AgentIteration {
   startedAt: string;
   completedAt?: string;
   text: string;
-  streamDeltas?: StreamDeltaRecord[];
+  /** Set once a command_output delta streamed into this iteration. */
+  hasCommandOutput?: true;
   toolCallIds: string[];
   status: "thinking" | "streaming" | "done" | "error";
 }
 
 export type ChatMessage =
   | {
+      id?: string;
       kind: "user";
       text: string;
       attachments?: ComposerAttachment[];
     }
   | {
+      id?: string;
       kind: "agent";
       iterations: AgentIteration[];
       activeIterationId: string | null;
@@ -101,6 +104,32 @@ export interface AgentThreadSnapshot {
   currentToolCallId: string | null;
   messages: ChatMessage[];
   tokenUsage?: AgentThreadTokenUsage;
+}
+
+/** agent.getSnapshot reply: `sequence` is that of the last payload sent for the session. */
+export type AgentSnapshotReply = AgentThreadSnapshot & { sequence: number };
+
+/**
+ * Payloads on the "bitsentry:agent:event" channel. Structural events carry the
+ * full snapshot; coalesced streaming updates (every 50 ms at most) carry only
+ * the last agent message, the one deltas touch. `sequence` increases with
+ * every payload of a session, so the renderer can drop stale ones.
+ */
+export type AgentEventPayload<TEvent = unknown, TSnapshot = AgentThreadSnapshot> =
+  | { sessionId: string; kind: "snapshot"; sequence: number; event: TEvent; snapshot?: TSnapshot }
+  | AgentMessageUpdatePayload;
+
+export interface AgentMessageUpdatePayload {
+  sessionId: string;
+  kind: "message";
+  sequence: number;
+  messageCount: number;
+  messageIndex: number;
+  message: ChatMessage;
+  threadState: AgentSessionState;
+  runtimeState: AgentSessionState;
+  tokenUsage?: AgentThreadTokenUsage;
+  currentToolCallId: string | null;
 }
 
 export interface SavedProviderConfig {
