@@ -90,6 +90,7 @@
   },
   "devDependencies": {
     "@aws-sdk/client-s3": "3.996.0",
+    "@babel/core": "^7.29.6",
     "@electron/rebuild": "^4.0.3",
     "@testing-library/react": "^16.3.0",
     "@testing-library/user-event": "^14.6.1",
@@ -103,6 +104,7 @@
     "@types/speakeasy": "^2.0.10",
     "@vitejs/plugin-react": "^5.1.4",
     "autoprefixer": "^10.4.24",
+    "babel-plugin-react-compiler": "^1.0.0",
     "electron": "^40.9.3",
     "electron-builder": "^26.8.1",
     "electron-devtools-installer": "^4.0.0",

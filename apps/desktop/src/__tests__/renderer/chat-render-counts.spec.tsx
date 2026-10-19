@@ -152,6 +152,8 @@ describe("chat render counts", () => {
     const earlier = messages.slice(0, -1).flatMap((msg) => [`row:${msg.id ?? ""}`, `row:${msg.id ?? ""}#nested`]);
     expect(earlier.filter((id) => commits.has(id))).toEqual([]);
     expect(commits.get("row:m29")).toBeLessThanOrEqual(50);
+    // The copy button keeps its props while the reply streams, so the tooltip trigger never re-commits.
+    expect(commits.get("row:m29#nested") ?? 0).toBe(0);
   });
 
   it("keeps the message list still while the user types", async () => {

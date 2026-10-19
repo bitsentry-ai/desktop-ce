@@ -3,6 +3,7 @@ import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
 import { Textarea } from "../ui/textarea";
 import { useTranslation } from "@bitsentry-ce/i18n";
+import { useNow } from "../hooks/useNow";
 import { relativeTime } from "./relative-time";
 
 /** Why the triage policy let a ticket creation through or held it. */
@@ -151,6 +152,7 @@ function DeliveryCard({ row, threadId, disabled, service, onRefresh }: {
   row: IntegrationDelivery; threadId: string; disabled: boolean; service: IntegrationDeliveriesPort; onRefresh(): Promise<void>;
 }) {
   const { t } = useTranslation();
+  const now = useNow();
   const channel = deliveryChannelLabel(row, t);
   return <article aria-label={`${channel} ${shortEvent(row.eventId)}`} className="min-w-0 space-y-2 rounded-2xl border border-border bg-card p-3">
     <div className="flex flex-wrap items-center gap-2">
@@ -158,7 +160,7 @@ function DeliveryCard({ row, threadId, disabled, service, onRefresh }: {
       <DeliveryStateBadge row={row} />
     </div>
     <p className="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
-      <time dateTime={row.updatedAt} title={new Date(row.updatedAt).toLocaleString()}>{relativeTime(row.updatedAt)}</time>
+      <time dateTime={row.updatedAt} title={new Date(row.updatedAt).toLocaleString()}>{relativeTime(row.updatedAt, now)}</time>
       <span aria-hidden="true">·</span>
       <span className="min-w-0 truncate font-mono" title={row.eventId}>{shortEvent(row.eventId)}</span>
     </p>

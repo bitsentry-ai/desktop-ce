@@ -2,6 +2,7 @@ import {
   memo,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
   type ReactNode,
@@ -277,6 +278,12 @@ function CopyMarkdownResponseButton({ content }: { content: string }) {
   const { t } = useTranslation();
   const [copied, setCopied] = useState(false);
   const copiedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Read on click, so a streaming reply keeps the button's props unchanged. New props would re-render the Radix
+  // trigger, whose Slot passes a new ref callback each render and so re-sets the tooltip trigger in a nested commit.
+  const contentRef = useRef(content);
+  useLayoutEffect(() => {
+    contentRef.current = content;
+  }, [content]);
 
   let label = t("common.markdown.copyResponseMarkdown");
   let Icon = CopyIcon;
@@ -289,7 +296,7 @@ function CopyMarkdownResponseButton({ content }: { content: string }) {
     if (typeof navigator === "undefined" || navigator.clipboard == null) return;
 
     void navigator.clipboard
-      .writeText(content)
+      .writeText(contentRef.current)
       .then(() => {
         if (copiedTimerRef.current != null) {
           clearTimeout(copiedTimerRef.current);
@@ -301,7 +308,7 @@ function CopyMarkdownResponseButton({ content }: { content: string }) {
         }, 1200);
       })
       .catch(() => {});
-  }, [content]);
+  }, []);
 
   useEffect(
     () => () => {

@@ -46,7 +46,7 @@ function useLocalIncidentStorage(
     pendingRef.current = { incidents, messagesMap };
     if (timerRef.current !== null) clearTimeout(timerRef.current);
     const now = Date.now();
-    pendingSinceRef.current ??= now;
+    if (pendingSinceRef.current === null) pendingSinceRef.current = now;
     const delay = Math.min(LOCAL_SAVE_DEBOUNCE_MS, Math.max(0, pendingSinceRef.current + LOCAL_SAVE_MAX_WAIT_MS - now));
     timerRef.current = setTimeout(flush, delay);
   }, [enabled, flush, incidents, messagesMap]);
@@ -88,8 +88,11 @@ export function useIncidentPersistence(activeId: string | null) {
   const desktopStoreFallbackLoggedRef = useRef(false);
   const messagesMapRef = useRef(messagesMap);
   const isDesktopIncidentsRef = useRef(isDesktopIncidents);
-  messagesMapRef.current = messagesMap;
-  isDesktopIncidentsRef.current = isDesktopIncidents;
+  // Synced after each commit, since the compiler forbids writing refs during render.
+  useLayoutEffect(() => {
+    messagesMapRef.current = messagesMap;
+    isDesktopIncidentsRef.current = isDesktopIncidents;
+  });
 
   useLocalIncidentStorage(!isDesktopIncidents, incidents, messagesMap);
 
