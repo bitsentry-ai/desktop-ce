@@ -66,6 +66,7 @@ export type RuntimeProjectionEvent =
 
 function createAgentMessage(): Extract<ChatMessage, { kind: "agent" }> {
   return {
+    id: crypto.randomUUID(),
     kind: "agent",
     iterations: [],
     activeIterationId: null,
@@ -80,7 +81,6 @@ function createIteration(timestamp: string): AgentIteration {
     id: crypto.randomUUID(),
     startedAt: timestamp,
     text: "",
-    streamDeltas: [],
     toolCallIds: [],
     status: "thinking",
   };
@@ -92,17 +92,23 @@ function appendAgentMessage(
   return [...messages, createAgentMessage()];
 }
 
+export function findLastAgentMessageIndex(messages: readonly ChatMessage[]): number {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    if (messages[index]?.kind === "agent") return index;
+  }
+  return -1;
+}
+
 function mapLastAgentMessage(
   messages: ChatMessage[],
   updater: (message: Extract<ChatMessage, { kind: "agent" }>) => ChatMessage,
 ): Array<ChatMessage> {
-  const idx = [...messages].reverse().findIndex((message) => message.kind === "agent");
-  if (idx === -1) {
+  const realIdx = findLastAgentMessageIndex(messages);
+  if (realIdx === -1) {
     const seeded = appendAgentMessage(messages);
     return mapLastAgentMessage(seeded, updater);
   }
 
-  const realIdx = messages.length - 1 - idx;
   const next = [...messages];
   next[realIdx] = updater(next[realIdx] as Extract<ChatMessage, { kind: "agent" }>);
   return next;
@@ -161,6 +167,7 @@ export function createAgentThreadSnapshot(input: {
     currentToolCallId: null,
     messages: [
       {
+        id: crypto.randomUUID(),
         kind: "user",
         text: input.prompt,
         attachments: input.attachments,
@@ -186,6 +193,7 @@ export function appendPromptToThreadSnapshot(
     messages: [
       ...snapshot.messages,
       {
+        id: crypto.randomUUID(),
         kind: "user",
         text: input.prompt,
         attachments: input.attachments,
@@ -199,6 +207,7 @@ export function setAgentThreadRuntimeState(
   snapshot: AgentThreadSnapshot,
   runtimeState: AgentSessionState,
 ): AgentThreadSnapshot {
+  if (snapshot.runtimeState === runtimeState) return snapshot;
   return {
     ...snapshot,
     runtimeState,
@@ -243,14 +252,7 @@ export function reduceAgentThreadSnapshot(
                 ...iteration,
                 text: iteration.text + event.delta,
                 status: "streaming",
-                streamDeltas: [
-                  ...(iteration.streamDeltas ?? []),
-                  {
-                    timestamp: event.timestamp,
-                    text: event.delta,
-                    kind: event.kind ?? "text",
-                  },
-                ],
+                ...(event.kind === "command_output" ? { hasCommandOutput: true as const } : {}),
               };
             }),
           };
@@ -301,7 +303,11 @@ export function reduceAgentThreadSnapshot(
         })),
       };
 
-    case "activity":
+    case "activity": {
+      const lastAgent = snapshot.messages[findLastAgentMessageIndex(snapshot.messages)];
+      if (lastAgent?.kind === "agent" && lastAgent.activity === (event.phase ?? undefined)) {
+        return snapshot;
+      }
       return {
         ...snapshot,
         messages: mapLastAgentMessage(snapshot.messages, (message) => ({
@@ -309,6 +315,7 @@ export function reduceAgentThreadSnapshot(
           activity: event.phase ?? undefined,
         })),
       };
+    }
 
     case "tool_start":
       return {
@@ -363,6 +370,7 @@ export function reduceAgentThreadSnapshot(
         }),
       };
 
+    // Live tool output is not projected; tool_end carries the final output.
     case "tool_update":
       return snapshot;
 
@@ -411,12 +419,8 @@ export function reduceAgentThreadSnapshot(
           if (lastIteration !== undefined) {
             streamedResponse = lastIteration.text.trim();
           }
-          const streamDeltas = lastIteration?.streamDeltas ?? [];
           const shouldAppendFinalResponse =
-            finalResponse.length > 0 &&
-            streamDeltas.some(
-              (delta) => delta.kind === "command_output",
-            );
+            finalResponse.length > 0 && lastIteration?.hasCommandOutput === true;
           const shouldPreserveStreamedResponse =
             streamedResponse.length > 0 &&
             !shouldAppendFinalResponse &&

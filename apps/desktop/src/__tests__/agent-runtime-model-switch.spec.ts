@@ -111,10 +111,12 @@ describe('AgentRuntimeService model switching', () => {
       message: 'Turn two',
       llm: { providerKey: 'anthropic', model: 'model-b' },
     })
-    await waitForCondition(() => events.filter(({ event }) => event.type === 'final').length === 2)
+    const finalEvents = () => events.flatMap((payload) => (
+      payload.kind === 'snapshot' && payload.event.type === 'final' ? [payload.event] : []
+    ))
+    await waitForCondition(() => finalEvents().length === 2)
 
-    const finalEvents = events.filter(({ event }) => event.type === 'final')
-    expect(finalEvents[1]?.event).toMatchObject({
+    expect(finalEvents()[1]).toMatchObject({
       type: 'final',
       llm: { providerKey: 'anthropic', model: 'model-b' },
     })

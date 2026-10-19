@@ -183,12 +183,6 @@ export interface ToolCallCard {
   modelContext?: string
 }
 
-interface StreamDeltaRecord {
-  timestamp: string
-  text: string
-  kind?: 'text' | 'command_output'
-}
-
 export interface AgentThreadTokenUsage {
   kind?: 'estimate' | 'actual'
   observedAt?: string
@@ -204,18 +198,20 @@ export interface AgentIteration {
   startedAt: string
   completedAt?: string
   text: string
-  streamDeltas?: StreamDeltaRecord[]
+  hasCommandOutput?: true
   toolCallIds: string[]
   status: 'thinking' | 'streaming' | 'done' | 'error'
 }
 
 export type ChatMessage =
   | {
+      id?: string
       kind: 'user'
       text: string
       attachments?: AgentChatAttachment[]
     }
   | {
+      id?: string
       kind: 'agent'
       iterations: AgentIteration[]
       activeIterationId: string | null

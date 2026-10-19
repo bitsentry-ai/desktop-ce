@@ -1,5 +1,5 @@
 import type { IntegrationConnection, IntegrationConnectionInput } from "@bitsentry-ce/core/features/plugins";
-import type { AgentThreadSnapshot } from '../chat/types'
+import type { AgentEventPayload, AgentSnapshotReply } from '../chat/types'
 import type {
   AuthSessionState,
   AvailablePlugin,
@@ -75,7 +75,7 @@ type DesktopLocalBridge = {
     send: (input: AgentSendRequest) => Promise<{ sessionId: string }>
     cancel: (sessionId: string) => Promise<void>
     getStatus: (sessionId: string) => Promise<AgentSessionStatus | null>
-    getSnapshot: (sessionId: string) => Promise<AgentThreadSnapshot | null>
+    getSnapshot: (sessionId: string) => Promise<AgentSnapshotReply | null>
     listRunbookAuthoringProposals: (input: {
       sessionId?: string
       incidentThreadId?: string
@@ -104,11 +104,7 @@ type DesktopLocalBridge = {
       proposalId: string
     }) => Promise<RunbookAuthoringProposalDecisionResult>
     onEvent: (
-      handler: (data: {
-        sessionId: string
-        event: AgentEvent
-        snapshot?: AgentThreadSnapshot
-      }) => void,
+      handler: (data: AgentEventPayload<AgentEvent>) => void,
     ) => () => void
   }
 }
@@ -697,11 +693,7 @@ export function createDesktopLocalBitsentryServices({
         proposalId: string
       }) => getDesktopBridge().agent.restoreRunbookAuthoringProposal(input),
       onEvent: (
-        handler: (data: {
-          sessionId: string
-          event: AgentEvent
-          snapshot?: AgentThreadSnapshot
-        }) => void,
+        handler: (data: AgentEventPayload<AgentEvent>) => void,
       ) => getDesktopBridge().agent.onEvent(handler),
     },
 
