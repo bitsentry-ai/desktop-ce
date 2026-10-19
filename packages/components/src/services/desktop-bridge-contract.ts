@@ -95,6 +95,7 @@ export interface DesktopAgentStartInput {
 export interface DesktopAgentSendInput {
   message: string;
   sessionId?: string;
+  delivery?: import("./contracts").AgentMessageDelivery;
   attachments?: DesktopAgentAttachment[];
   llm?: DesktopAgentLlmSelection;
   runbookContext?: DesktopRunbookContext;
@@ -349,6 +350,7 @@ export interface DesktopBitsentryBridge<
     start: (input: DesktopAgentStartInput) => Promise<{ sessionId: string }>;
     send: (input: DesktopAgentSendInput) => Promise<{ sessionId: string }>;
     cancel: (sessionId: string) => Promise<void>;
+    updateQueue: (input: import("./contracts").AgentQueueUpdateRequest) => Promise<void>;
     getStatus: (
       sessionId: string,
     ) => Promise<DesktopAgentStatus<TAgentState> | null>;

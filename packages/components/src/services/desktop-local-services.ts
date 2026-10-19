@@ -30,6 +30,7 @@ import type {
   AgentEvent,
   RunbookAuthoringProposalDecisionResult,
   RunbookAuthoringProposalReview,
+  AgentQueueUpdateRequest,
   AgentSendRequest,
   AgentSessionStatus,
   AgentStartRequest,
@@ -74,6 +75,7 @@ type DesktopLocalBridge = {
     start: (input: AgentStartRequest) => Promise<{ sessionId: string }>
     send: (input: AgentSendRequest) => Promise<{ sessionId: string }>
     cancel: (sessionId: string) => Promise<void>
+    updateQueue: (input: AgentQueueUpdateRequest) => Promise<void>
     getStatus: (sessionId: string) => Promise<AgentSessionStatus | null>
     getSnapshot: (sessionId: string) => Promise<AgentThreadSnapshot | null>
     listRunbookAuthoringProposals: (input: {
@@ -667,6 +669,7 @@ export function createDesktopLocalBitsentryServices({
       start: (input: AgentStartRequest) => getDesktopBridge().agent.start(input),
       send: (input: AgentSendRequest) => getDesktopBridge().agent.send(input),
       cancel: (sessionId: string) => getDesktopBridge().agent.cancel(sessionId),
+      updateQueue: (input: AgentQueueUpdateRequest) => getDesktopBridge().agent.updateQueue(input),
       getStatus: (sessionId: string) => getDesktopBridge().agent.getStatus(sessionId),
       getSnapshot: (sessionId: string) => getDesktopBridge().agent.getSnapshot(sessionId),
       listRunbookAuthoringProposals: (input: {
