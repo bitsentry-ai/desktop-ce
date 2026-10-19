@@ -999,11 +999,22 @@ async function runMigrations(): Promise<void> {
         "finalText" TEXT,
         "status" TEXT,
         "errorMsg" TEXT,
+        "messageJson" TEXT,
         "createdAt" DATETIME NOT NULL,
         "updatedAt" DATETIME NOT NULL,
         CONSTRAINT "IncidentMessage_threadId_fkey" FOREIGN KEY ("threadId") REFERENCES "IncidentThread" ("id") ON DELETE CASCADE ON UPDATE CASCADE
       )
     `)
+    const incidentMessageColumns = await getTableColumns('IncidentMessage')
+    if (!incidentMessageColumns.has('messageJson')) {
+      try {
+        await getDb().$executeRawUnsafe(`
+          ALTER TABLE "IncidentMessage" ADD COLUMN "messageJson" TEXT
+        `)
+      } catch (error) {
+        if (!isDuplicateColumnError(error)) throw error
+      }
+    }
     await getDb().$executeRawUnsafe(`
       CREATE INDEX IF NOT EXISTS "IncidentMessage_threadId_sortOrder_idx" ON "IncidentMessage"("threadId", "sortOrder")
     `)

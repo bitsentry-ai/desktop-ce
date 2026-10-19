@@ -16,12 +16,13 @@ import { createHash, randomUUID } from 'crypto'
 import { zodToJsonSchema } from '@alcyone-labs/zod-to-json-schema'
 import { z } from 'zod'
 import { getErrorMessage } from '@bitsentry-ce/core'
-import type { AgentThreadSnapshot, ComposerAttachment } from '@bitsentry-ce/components/chat/types'
+import type { AgentThreadSnapshot, ChatMessage as ThreadChatMessage, ComposerAttachment, ToolCallCard } from '@bitsentry-ce/components/chat/types'
 import {
   appendPromptToThreadSnapshot,
   createAgentThreadSnapshot,
   reduceAgentThreadSnapshot,
   setAgentThreadRuntimeState,
+  settleInterruptedAgentTurn,
 } from '@bitsentry-ce/components/chat/runtimeProjection'
 import {
   validateToolInput,
@@ -77,6 +78,15 @@ import {
 const CHANNEL_EVENT = 'bitsentry:agent:event'
 const NO_LLM_PROVIDER_CONFIGURED_MESSAGE =
   'No LLM provider configured. Please configure a provider in Settings.'
+
+// Restored agent turns carry a plain-text digest of their tool calls.
+const MAX_RESTORED_TOOL_OUTPUT_CHARS = 2_000
+const MAX_RESTORED_TURN_TOOL_CHARS = 8_000
+
+/** Loads an incident thread's persisted renderer messages, oldest first. */
+export type AgentRuntimeIncidentHistoryLoader = (
+  incidentThreadId: string,
+) => Promise<ReadonlyArray<Record<string, unknown>>>
 
 export interface AgentRuntimeEventPayload {
   sessionId: string
@@ -727,6 +737,64 @@ function createUserMessageContent(text: string, attachments?: AgentChatAttachmen
           },
     ),
   ]
+}
+
+function restoreThreadMessage(raw: Record<string, unknown>): ThreadChatMessage | null {
+  if (raw.kind === 'user') {
+    return { ...raw, kind: 'user', text: typeof raw.text === 'string' ? raw.text : '' } as ThreadChatMessage
+  }
+  if (raw.kind !== 'agent') return null
+
+  return {
+    ...raw,
+    iterations: Array.isArray(raw.iterations) ? raw.iterations : [],
+    activeIterationId: typeof raw.activeIterationId === 'string' ? raw.activeIterationId : null,
+    toolCalls: Array.isArray(raw.toolCalls) ? raw.toolCalls : [],
+    finalText: typeof raw.finalText === 'string' ? raw.finalText : null,
+    status: typeof raw.status === 'string' ? raw.status : 'thinking',
+  } as Extract<ThreadChatMessage, { kind: 'agent' }>
+}
+
+function truncateRestoredText(text: string, maxLength: number): string {
+  return text.length <= maxLength ? text : `${text.slice(0, maxLength)}...[truncated]`
+}
+
+function summarizeRestoredToolCalls(toolCalls: ToolCallCard[]): string {
+  let budget = MAX_RESTORED_TURN_TOOL_CHARS
+  const lines: string[] = []
+  for (const toolCall of toolCalls) {
+    if (budget <= 0) break
+    const args = toolCall.input === undefined ? '' : truncateRestoredText(JSON.stringify(toolCall.input), 200)
+    const result = toolCall.modelContext ?? toolCall.output ?? toolCall.error ?? ''
+    const line = `- ${toolCall.toolName}(${args}) [${toolCall.state}]: ${truncateRestoredText(result, MAX_RESTORED_TOOL_OUTPUT_CHARS)}`
+    const kept = truncateRestoredText(line, budget)
+    budget -= kept.length
+    lines.push(kept)
+  }
+  return lines.length === 0 ? '' : `Tool calls in this turn:\n${lines.join('\n')}`
+}
+
+function threadMessageToLlmMessage(message: ThreadChatMessage): ChatMessage | null {
+  if (message.kind === 'user') {
+    const attachments = message.attachments as AgentChatAttachment[] | undefined
+    if (message.text.trim().length === 0 && (attachments === undefined || attachments.length === 0)) return null
+    return { role: 'user', content: createUserMessageContent(message.text, attachments) }
+  }
+
+  const text = [summarizeRestoredToolCalls(message.toolCalls), message.finalText ?? message.iterations.at(-1)?.text ?? '']
+    .filter((part) => part.trim().length > 0)
+    .join('\n\n')
+  return text.length > 0 ? { role: 'assistant', content: text } : null
+}
+
+/** Keeps the system prompt and the most recent MAX_MESSAGE_HISTORY messages. */
+function trimMessageHistory(messages: ChatMessage[]): ChatMessage[] {
+  if (messages.length <= MAX_MESSAGE_HISTORY) return messages
+  const systemMessage = messages.find((m) => m.role === 'system')
+  const recentMessages = messages.slice(-MAX_MESSAGE_HISTORY)
+  return systemMessage === undefined
+    ? recentMessages
+    : [systemMessage, ...recentMessages.filter((m) => m.role !== 'system')]
 }
 
 function deviceTimeZone(): string {
@@ -1770,6 +1838,7 @@ export class AgentRuntimeService {
     private readonly onRunbooksChanged?: () => void,
     private readonly pluginRuntime?: DesktopPluginRuntimeService,
     private readonly authoringProposalStore?: RunbookAuthoringProposalPersistence,
+    private readonly loadIncidentMessages?: AgentRuntimeIncidentHistoryLoader,
   ) {}
 
   /**
@@ -1781,83 +1850,8 @@ export class AgentRuntimeService {
    * @param input - Start input with prompt and optional timeout
    * @returns Session ID (returned immediately, before loop completes)
    */
-  async start(input: AgentStartInput): Promise<string> {
-    const incidentThreadId = input.incidentThreadId
-    const rejectIfIncidentSessionActive = () => {
-      if (incidentThreadId === undefined || incidentThreadId.length === 0) {
-        return
-      }
-
-      const existingIncidentSession = this.findActiveIncidentSession(incidentThreadId)
-      if (existingIncidentSession !== null) {
-        throw new Error(
-          'An agent session is already running for this incident. Wait for it to finish or cancel it before starting another response.',
-        )
-      }
-    }
-
-    try {
-      rejectIfIncidentSessionActive()
-    } catch (error) {
-      return Promise.reject(error)
-    }
-
-    const persistedProposals = input.incidentThreadId === undefined
-      ? []
-      : await this.authoringProposalStore?.list(input.incidentThreadId) ?? []
-    try {
-      rejectIfIncidentSessionActive()
-    } catch (error) {
-      return Promise.reject(error)
-    }
-    const sessionId = randomUUID()
-    const timeoutMs = input.timeoutMs ?? DEFAULT_AGENT_SESSION_TIMEOUT_MS // 5 minutes for thinking models
-    const startedAt = new Date()
-
-    log.info(`[agent-runtime:${sessionId}] Starting session with timeout:`, timeoutMs)
-
-    const session: AgentSession = {
-      id: sessionId,
-      state: 'RUNNING',
-      startedAt,
-      expiresAt: startedAt.getTime() + timeoutMs,
-      abortController: new AbortController(),
-      timeoutHandle: null,
-      currentToolCallId: null,
-      queuedFollowUps: [],
-      windowGetter: this.windowGetter,
-      llmAdapter: this.llmAdapter,
-      runbookContext: input.runbookContext,
-      llmSelection: input.llm,
-      accessLevel: input.accessLevel,
-      traitValues: input.traitValues,
-      incidentThreadId: input.incidentThreadId,
-      runbookAuthoringProposals: persistedProposals,
-      messages: [
-        {
-          role: 'system',
-          content: this.buildSystemPrompt(input.runbookContext),
-        },
-        {
-          role: 'user',
-          content: createUserMessageContent(input.prompt, input.attachments),
-        },
-      ],
-      snapshot: createAgentThreadSnapshot({
-        sessionId,
-        startedAt: startedAt.toISOString(),
-        runtimeState: 'RUNNING',
-        prompt: input.prompt,
-        attachments: toSnapshotAttachments(input.attachments),
-      }),
-    }
-
-    this.sessions.set(sessionId, session)
-    this.armSessionTimeout(session, timeoutMs)
-
-    this.launchAgentLoop(session)
-
-    return sessionId
+  start(input: AgentStartInput): Promise<string> {
+    return this.startOrRestore(input)
   }
 
   /**
@@ -1869,21 +1863,15 @@ export class AgentRuntimeService {
    * @returns Session ID (new or existing)
    */
 
-  send(input: AgentSendInput): Promise<string> {
-    let sessionId = input.sessionId ?? randomUUID()
-
-    let session = this.sessions.get(sessionId)
+  async send(input: AgentSendInput): Promise<string> {
+    let session = this.sessions.get(input.sessionId ?? '')
 
     if (session === undefined && input.incidentThreadId !== undefined && input.incidentThreadId.length > 0) {
-      const incidentSession = this.findMostRecentIncidentSession(input.incidentThreadId)
-      if (incidentSession !== null) {
-        session = incidentSession
-        sessionId = incidentSession.id
-      }
+      session = this.findMostRecentIncidentSession(input.incidentThreadId) ?? undefined
     }
 
     if (session === undefined) {
-      return this.start({
+      return this.startOrRestore({
         prompt: input.message,
         attachments: input.attachments,
         llm: input.llm,
@@ -1891,21 +1879,114 @@ export class AgentRuntimeService {
         incidentThreadId: input.incidentThreadId,
         accessLevel: input.accessLevel,
         traitValues: input.traitValues,
-      })
+      }, input)
     }
 
+    return this.continueSession(session, input)
+  }
+
+  /**
+   * Starts a session. When the incident thread has persisted messages but no
+   * live session (app restart), the session is rebuilt from that history and
+   * the prompt continues it as a follow-up. `followUp` is the send() input.
+   */
+  private async startOrRestore(input: AgentStartInput, followUp?: AgentSendInput): Promise<string> {
+    const incidentThreadId = input.incidentThreadId !== undefined && input.incidentThreadId.length > 0
+      ? input.incidentThreadId
+      : undefined
+    const rejectIfIncidentSessionActive = () => {
+      if (incidentThreadId === undefined) return
+      if (this.findActiveIncidentSession(incidentThreadId) !== null) {
+        throw new Error(
+          'An agent session is already running for this incident. Wait for it to finish or cancel it before starting another response.',
+        )
+      }
+    }
+
+    rejectIfIncidentSessionActive()
+    const [persistedProposals, persistedMessages] = incidentThreadId === undefined
+      ? [[], []]
+      : await Promise.all([
+          this.authoringProposalStore?.list(incidentThreadId) ?? [],
+          this.loadIncidentMessages?.(incidentThreadId) ?? [],
+        ])
+    // Another send may have created the incident session while history was loading.
+    if (followUp !== undefined && incidentThreadId !== undefined
+      && this.findMostRecentIncidentSession(incidentThreadId) !== null) {
+      return this.send(followUp)
+    }
+    rejectIfIncidentSessionActive()
+
+    const history = settleInterruptedAgentTurn(
+      persistedMessages.map(restoreThreadMessage).filter((message) => message !== null),
+      new Date().toISOString(),
+    )
+    const sessionId = (history.length > 0 ? followUp?.sessionId : undefined) ?? randomUUID()
+    const timeoutMs = input.timeoutMs ?? DEFAULT_AGENT_SESSION_TIMEOUT_MS // 5 minutes for thinking models
+    const startedAt = new Date()
+
+    if (history.length > 0) {
+      log.info(`[agent-runtime:${sessionId}] Restoring incident session from ${String(history.length)} persisted messages`)
+      const session = this.createSession({
+        sessionId,
+        startedAt,
+        timeoutMs,
+        input,
+        proposals: persistedProposals,
+        history: trimMessageHistory(history.map(threadMessageToLlmMessage).filter((message) => message !== null)),
+        snapshot: {
+          sessionId,
+          startedAt: startedAt.toISOString(),
+          runtimeState: 'RUNNING',
+          threadState: 'RUNNING',
+          currentToolCallId: null,
+          messages: history,
+        },
+      })
+      return this.continueSession(session, followUp ?? { ...input, message: input.prompt }, timeoutMs)
+    }
+
+    log.info(`[agent-runtime:${sessionId}] Starting session with timeout:`, timeoutMs)
+
+    const session = this.createSession({
+      sessionId,
+      startedAt,
+      timeoutMs,
+      input,
+      proposals: persistedProposals,
+      history: [{ role: 'user', content: createUserMessageContent(input.prompt, input.attachments) }],
+      snapshot: createAgentThreadSnapshot({
+        sessionId,
+        startedAt: startedAt.toISOString(),
+        runtimeState: 'RUNNING',
+        prompt: input.prompt,
+        attachments: toSnapshotAttachments(input.attachments),
+      }),
+    })
+    this.armSessionTimeout(session, timeoutMs)
+
+    this.launchAgentLoop(session)
+
+    return sessionId
+  }
+
+  private continueSession(
+    session: AgentSession,
+    input: AgentSendInput,
+    timeoutMs = DEFAULT_AGENT_SESSION_TIMEOUT_MS,
+  ): string {
     if (session.state === 'RUNNING' && session.loopActive === true) {
       // Preserve user intent while the current model turn or runbook summary
       // owns the loop. The queued message is appended after that turn finishes.
       session.queuedFollowUps.push(input)
-      return Promise.resolve(sessionId)
+      return session.id
     }
 
     if (session.state !== 'RUNNING') {
       session = this.prepareSessionForContinuation(session)
     }
 
-    log.info(`[agent-runtime:${sessionId}] Continuing session with message:`, input.message)
+    log.info(`[agent-runtime:${session.id}] Continuing session with message:`, input.message)
 
     if (input.runbookContext !== undefined) {
       session.runbookContext = input.runbookContext
@@ -1934,11 +2015,45 @@ export class AgentRuntimeService {
       runtimeState: session.state,
     })
 
-    this.armSessionTimeout(session, DEFAULT_AGENT_SESSION_TIMEOUT_MS)
+    this.armSessionTimeout(session, timeoutMs)
 
     this.launchAgentLoop(session)
 
-    return Promise.resolve(sessionId)
+    return session.id
+  }
+
+  private createSession(params: {
+    sessionId: string
+    startedAt: Date
+    timeoutMs: number
+    input: Pick<AgentStartInput, 'runbookContext' | 'llm' | 'accessLevel' | 'traitValues' | 'incidentThreadId'>
+    proposals: RunbookAuthoringProposal[]
+    history: ChatMessage[]
+    snapshot: AgentThreadSnapshot
+  }): AgentSession {
+    const { sessionId, startedAt, input } = params
+    const session: AgentSession = {
+      id: sessionId,
+      state: 'RUNNING',
+      startedAt,
+      expiresAt: startedAt.getTime() + params.timeoutMs,
+      abortController: new AbortController(),
+      timeoutHandle: null,
+      currentToolCallId: null,
+      queuedFollowUps: [],
+      windowGetter: this.windowGetter,
+      llmAdapter: this.llmAdapter,
+      runbookContext: input.runbookContext,
+      llmSelection: input.llm,
+      accessLevel: input.accessLevel,
+      traitValues: input.traitValues,
+      incidentThreadId: input.incidentThreadId,
+      runbookAuthoringProposals: params.proposals,
+      messages: [{ role: 'system', content: this.buildSystemPrompt(input.runbookContext) }, ...params.history],
+      snapshot: params.snapshot,
+    }
+    this.sessions.set(sessionId, session)
+    return session
   }
 
   /**
@@ -2685,17 +2800,7 @@ export class AgentRuntimeService {
           ? completedToolResults
           : null
 
-        // Trim message history if it's getting too long
-        if (session.messages.length > MAX_MESSAGE_HISTORY) {
-          // Keep system message and recent messages
-          const systemMessage = session.messages.find((m) => m.role === 'system')
-          const recentMessages = session.messages.slice(-MAX_MESSAGE_HISTORY)
-          if (systemMessage !== undefined) {
-            session.messages = [systemMessage, ...recentMessages.filter((m) => m.role !== 'system')]
-          } else {
-            session.messages = recentMessages
-          }
-        }
+        session.messages = trimMessageHistory(session.messages)
       }
 
       // Max iterations reached

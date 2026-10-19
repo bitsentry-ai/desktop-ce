@@ -41,7 +41,6 @@ describe("incident persistence ownership", () => {
 
     expect(writers.sort()).toEqual([
       "packages/core/src/features/desktop-state/desktop-state.handlers.ts:incidentMessage.create",
-      "packages/core/src/features/desktop-state/desktop-state.handlers.ts:incidentMessage.create",
       "packages/core/src/features/desktop-state/desktop-state.handlers.ts:incidentMessage.deleteMany",
       "packages/core/src/features/desktop-state/desktop-state.handlers.ts:incidentThread.create",
       "packages/core/src/features/desktop-state/desktop-state.handlers.ts:incidentThread.deleteMany",
