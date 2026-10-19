@@ -1,12 +1,14 @@
-import { useState } from "react";
 import { parseHostToolError } from "@bitsentry-ce/core";
 import type { ToolCallCard } from "./types";
 import { cn } from "../lib/utils";
 import { useTranslation } from "@bitsentry-ce/i18n";
 import { ChevronDown, ChevronRight } from "lucide-react";
+import { useDisclosure } from "./disclosureStore";
 
-export function ToolCard({ card }: { card: ToolCallCard }) {
+export function ToolCard({ card, messageId }: { card: ToolCallCard; messageId: string }) {
   const { t } = useTranslation();
+  const [detailsOpen, setDetailsOpen] = useDisclosure(`${messageId}:${card.toolCallId}:details`, false);
+  const [contextOpen, setContextOpen] = useDisclosure(`${messageId}:${card.toolCallId}:context`, false);
   let dot = "bg-destructive";
   let label = t("common.incidents.toolStateFailed");
   if (card.state === "running") {
@@ -52,7 +54,11 @@ export function ToolCard({ card }: { card: ToolCallCard }) {
         <div className="min-w-0 space-y-1.5">
           <p className="break-words text-destructive">{failure.summary}</p>
           {hasFailureDetails && (
-            <details className="rounded-md border border-border/70 bg-background/70 px-2 py-1.5">
+            <details
+              className="rounded-md border border-border/70 bg-background/70 px-2 py-1.5"
+              open={detailsOpen}
+              onToggle={(e) => { setDetailsOpen(e.currentTarget.open); }}
+            >
               <summary className="cursor-pointer select-none text-[11px] font-medium text-muted-foreground">
                 {t("common.toolCallCard.viewTechnicalDetails")}
               </summary>
@@ -80,7 +86,11 @@ export function ToolCard({ card }: { card: ToolCallCard }) {
         </div>
       )}
       {modelContext !== undefined && modelContext.length > 0 && (
-        <details className="rounded-md border border-border/70 bg-background/70 px-2 py-1.5">
+        <details
+          className="rounded-md border border-border/70 bg-background/70 px-2 py-1.5"
+          open={contextOpen}
+          onToggle={(e) => { setContextOpen(e.currentTarget.open); }}
+        >
           <summary className="cursor-pointer select-none text-[11px] font-medium text-muted-foreground">
             {t("common.toolCallCard.modelContextSentToLlm")}
           </summary>
@@ -98,14 +108,17 @@ export function ToolCard({ card }: { card: ToolCallCard }) {
  * Shows a header that toggles visibility.
  */
 export function WorkLogGroup({
+  disclosureKey,
   toolCalls,
   children,
 }: {
+  /** Stable id of the group, e.g. `${messageId}:${iterationId}:group`. */
+  disclosureKey: string;
   toolCalls: ToolCallCard[];
   children: React.ReactNode;
 }) {
   const { t } = useTranslation();
-  const [isExpanded, setIsExpanded] = useState(true);
+  const [isExpanded, setIsExpanded] = useDisclosure(disclosureKey, true);
 
   if (toolCalls.length === 0) return null;
 
@@ -121,7 +134,7 @@ export function WorkLogGroup({
     <div className="rounded-lg border border-border bg-muted/30">
       <button
         type="button"
-        onClick={() => { setIsExpanded((current) => !current); }}
+        onClick={() => { setIsExpanded(!isExpanded); }}
         className="flex w-full items-center gap-2 px-3 py-2 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors"
       >
         {toggleIcon}

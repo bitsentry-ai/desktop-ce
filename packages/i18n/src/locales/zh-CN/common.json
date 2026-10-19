@@ -578,6 +578,7 @@
   "common.incidents.errorWithMessage": "— 错误：{{message}}",
   "common.incidents.hideRunbookResults": "隐藏运行手册结果",
   "common.incidents.incidentHistory": "事件历史",
+  "common.incidents.messageList": "消息",
   "common.incidents.new": "新建",
   "common.incidents.newIncident": "新建事件",
   "common.incidents.newRunbookProposal": "新运行手册提案",
