@@ -5,6 +5,7 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Composer, type ComposerProps } from "@bitsentry-ce/components/chat/Composer";
 import type { ComposerQueue } from "@bitsentry-ce/components/chat/QueuedMessagesPanel";
+import type { AssistantCitation } from "@bitsentry-ce/components/chat/citations";
 
 vi.mock("@bitsentry-ce/i18n", () => ({
   useTranslation: () => ({
@@ -133,5 +134,36 @@ describe("Composer after a stop", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "common.incidents.composer.resumeThread" }));
     expect(onResumeQueue).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("Composer message length", () => {
+  // A Chinese quote takes nine characters per character once URL-encoded in its citation link.
+  const longQuote = (sourceId: string): AssistantCitation => ({
+    threadId: "incident-1",
+    sourceId,
+    text: "磁盘空间不足".repeat(330),
+    comment: "请检查日志".repeat(400),
+    start: 0,
+    end: 1980,
+    prefix: "",
+    suffix: "",
+  });
+
+  it("refuses to send a message the IPC limit would reject, and says why", () => {
+    const { onSend, textarea } = renderComposer({ isProcessing: false, threadStatus: "idle", prompt: "Why?", citations: [longQuote("i1:text"), longQuote("i2:text")] });
+
+    expect(screen.getByRole("alert").textContent).toBe("common.chat.citations.messageTooLong");
+    expect((screen.getByRole("button", { name: "common.incidents.sendMessage" }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.keyDown(textarea, { key: "Enter" });
+    expect(onSend).not.toHaveBeenCalled();
+  });
+
+  it("sends a message with a long quote that fits", () => {
+    const { onSend, textarea } = renderComposer({ isProcessing: false, threadStatus: "idle", prompt: "Why?", citations: [longQuote("i1:text")] });
+
+    expect(screen.queryByRole("alert")).toBeNull();
+    fireEvent.keyDown(textarea, { key: "Enter" });
+    expect(onSend).toHaveBeenCalledTimes(1);
   });
 });

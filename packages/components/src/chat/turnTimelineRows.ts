@@ -36,6 +36,11 @@ function timeOf(iso: string | undefined): number {
   return Number.isNaN(ms) ? END_OF_ITERATION : ms;
 }
 
+/** The id of an iteration's text row; citations of that text name it as their source. */
+export function iterationTextSourceId(iterationId: string): string {
+  return `${iterationId}:text`;
+}
+
 function visibleIterationText(message: AgentMessage, iteration: AgentIteration, isLast: boolean): string {
   if (iteration.text.trim().length > 0) return iteration.text;
   return isLast ? message.finalText ?? "" : "";
@@ -51,7 +56,7 @@ function iterationEntries(message: AgentMessage, iteration: AgentIteration, isLa
   const ordered: Array<{ at: number; order: number; entry: TurnEntry }> = [];
   const text = visibleIterationText(message, iteration, isLast);
   if (text.trim().length > 0) {
-    ordered.push({ at: timeOf(iteration.textStartedAt), order: 0, entry: { kind: "text", key: `${iteration.id}:text`, text } });
+    ordered.push({ at: timeOf(iteration.textStartedAt), order: 0, entry: { kind: "text", key: iterationTextSourceId(iteration.id), text } });
   }
   const seen = new Set<string>();
   for (const toolCallId of iteration.toolCallIds) {

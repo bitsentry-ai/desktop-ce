@@ -26,6 +26,7 @@ import {
   setAgentThreadRuntimeState,
   settleInterruptedAgentTurn,
 } from '@bitsentry-ce/components/chat/runtimeProjection'
+import { expandCitationsForModel } from '@bitsentry-ce/components/chat/citations'
 import {
   validateToolInput,
   getTool,
@@ -801,7 +802,8 @@ function appendRunbookToolPromptLines(lines: string[], runbookId: string, hasRun
 }
 
 function createUserMessageContent(text: string, attachments?: AgentChatAttachment[]): ChatMessage['content'] {
-  const normalizedText = text.trim()
+  // The thread shows citations as chips; the model reads the quotes spelled out.
+  const normalizedText = expandCitationsForModel(text.trim())
   const normalizedAttachments = attachments ?? []
 
   if (normalizedAttachments.length === 0) {

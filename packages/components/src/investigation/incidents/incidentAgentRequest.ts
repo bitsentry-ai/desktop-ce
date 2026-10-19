@@ -1,4 +1,5 @@
 import { customerReportDisplayText } from "@bitsentry-ce/core/features/plugins";
+import { citationsToPlainText } from "../../chat/citations";
 import type { ModelCatalogProviderKey } from "../../llm/modelCatalog";
 import type { SavedProviderConfig } from "../../chat/types";
 import type {
@@ -66,7 +67,7 @@ export async function sendIncidentAgentMessage(
 
 export function resolveIncidentTitle(incident: IncidentThread | null | undefined, text: string): string {
   if (!shouldAutoTitleIncident(incident?.title)) return incident?.title ?? "New Incident";
-  return customerReportDisplayText(text).trim().slice(0, 50) || "New Incident";
+  return customerReportDisplayText(citationsToPlainText(text)).trim().slice(0, 50) || "New Incident";
 }
 
 export function listConfiguredProviderKeys(

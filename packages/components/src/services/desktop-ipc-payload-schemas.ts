@@ -1,6 +1,7 @@
 import { customerReportIntakeAnswerInputSchema, customerReportIntakeDismissInputSchema, integrationConnectionInputSchema } from "@bitsentry-ce/core/features/plugins";
 import { z } from "zod";
 import { DESKTOP_RPC_CHANNELS, type DesktopRpcChannel } from "./desktop-ipc-contract";
+import { CHAT_MESSAGE_MAX_LENGTH } from "../chat/citations";
 
 type DesktopIpcEnumValues = readonly [string, ...string[]];
 
@@ -452,7 +453,7 @@ export function createDesktopIpcPayloadValidator(
       .optional()
       .default({}),
     "agent:start": z.looseObject({
-      prompt: z.string().min(1).max(10000),
+      prompt: z.string().min(1).max(CHAT_MESSAGE_MAX_LENGTH),
       timeoutMs: z.number().int().positive().max(300000).optional(),
       attachments: z.array(attachmentSchema).max(4).optional(),
       llm: llmSchema,
@@ -464,7 +465,7 @@ export function createDesktopIpcPayloadValidator(
         .optional(),
     }),
     "agent:send": z.looseObject({
-      message: z.string().min(1).max(10000),
+      message: z.string().min(1).max(CHAT_MESSAGE_MAX_LENGTH),
       sessionId: z.uuid().optional(),
       attachments: z.array(attachmentSchema).max(4).optional(),
       llm: llmSchema,
@@ -484,7 +485,7 @@ export function createDesktopIpcPayloadValidator(
         sessionId: z.uuid(),
         action: z.literal("edit"),
         messageId: z.uuid(),
-        message: z.string().trim().min(1).max(10000),
+        message: z.string().trim().min(1).max(CHAT_MESSAGE_MAX_LENGTH),
         attachments: z.array(attachmentSchema).max(4).optional(),
       }),
       z.object({ sessionId: z.uuid(), action: z.literal("remove"), messageId: z.uuid() }),
