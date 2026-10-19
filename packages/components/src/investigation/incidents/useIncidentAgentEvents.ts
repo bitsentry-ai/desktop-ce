@@ -3,7 +3,6 @@ import {
   useEffect,
   useRef,
   type Dispatch,
-  type RefObject,
   type SetStateAction,
 } from "react";
 import type {
@@ -17,28 +16,33 @@ import {
   applyMessageUpdate,
   getIncidentPreviewFromMessages,
   reconcileMessages,
-  updateIncidentRow,
   updateIncidentTokenUsage,
 } from "./incidentNormalize";
 import { captureIncidentException } from "./incidentDesktopApi";
-import type { IncidentThread, SessionMessagesCache } from "./types";
+import { useIncidentListStore } from "./incidentListStore";
+import type { SessionMessagesCache } from "./types";
+
+function findIncidentBySession(sessionId: string) {
+  return useIncidentListStore.getState().incidents.find((item) => item.sessionId === sessionId);
+}
+
+/** A turn settles on a final, error, or cancel event; the preview changes only then, not on every streamed word. */
+function isSettlingEvent(event: unknown): boolean {
+  if (typeof event !== "object" || event === null) return false;
+  const type = (event as { type?: unknown }).type;
+  return type === "final" || type === "error" || type === "cancelled";
+}
 
 /** Applies agent snapshots and streamed message updates to the incident they belong to. */
 export function useIncidentAgentEvents({
   agent,
   activeId,
-  incidents,
-  incidentsRef,
-  setIncidents,
   setMessagesMap,
   setTokenUsageByIncident,
   setSessionTokenUsage,
 }: {
   agent: AgentServicePort;
   activeId: string | null;
-  incidents: IncidentThread[];
-  incidentsRef: RefObject<IncidentThread[]>;
-  setIncidents: Dispatch<SetStateAction<IncidentThread[]>>;
   setMessagesMap: Dispatch<SetStateAction<Record<string, ChatMessage[]>>>;
   setTokenUsageByIncident: Dispatch<SetStateAction<Record<string, AgentThreadTokenUsage>>>;
   setSessionTokenUsage: Dispatch<SetStateAction<AgentThreadTokenUsage | undefined>>;
@@ -48,6 +52,7 @@ export function useIncidentAgentEvents({
       sessionId: string;
       sequence: number;
       snapshot?: AgentThreadSnapshot;
+      settling: boolean;
     }>
   >([]);
   // Per-incident normalized messages for live sessions; streamed updates are
@@ -65,6 +70,7 @@ export function useIncidentAgentEvents({
       next: SessionMessagesCache,
       threadState: AgentSessionState,
       tokenUsage: AgentThreadTokenUsage | undefined,
+      settled: boolean,
     ) => {
       sessionMessagesRef.current.set(incidentId, next);
       setMessagesMap((prev) =>
@@ -80,10 +86,17 @@ export function useIncidentAgentEvents({
         }
       }
 
-      const preview = getIncidentPreviewFromMessages(next.messages);
-      setIncidents((prev) => updateIncidentRow(prev, incidentId, threadState, sessionId, preview));
+      const store = useIncidentListStore.getState();
+      const incident = store.incidents.find((item) => item.id === incidentId);
+      if (incident === undefined) return;
+      const preview = settled ? getIncidentPreviewFromMessages(next.messages) : null;
+      store.patch(incidentId, {
+        state: threadState,
+        sessionId: incident.sessionId ?? sessionId,
+        ...(preview !== null && { lastMessagePreview: preview }),
+      });
     },
-    [activeId],
+    [activeId, setMessagesMap, setSessionTokenUsage, setTokenUsageByIncident],
   );
 
   const applySnapshotToIncident = useCallback(
@@ -93,11 +106,13 @@ export function useIncidentAgentEvents({
       sequence: number,
       // A getSnapshot reply may repeat the sequence of the last payload.
       allowEqualSequence = false,
+      settlingEvent = false,
     ) => {
       const last = lastAppliedSequenceRef.current.get(snapshot.sessionId);
       if (last !== undefined && (allowEqualSequence ? sequence < last : sequence <= last)) return;
       const next = reconcileMessages(sessionMessagesRef.current.get(incidentId), snapshot.messages);
-      applySessionMessages(incidentId, snapshot.sessionId, next, snapshot.threadState, snapshot.tokenUsage);
+      const settled = settlingEvent || snapshot.threadState !== "RUNNING";
+      applySessionMessages(incidentId, snapshot.sessionId, next, snapshot.threadState, snapshot.tokenUsage, settled);
       lastAppliedSequenceRef.current.set(snapshot.sessionId, sequence);
     },
     [applySessionMessages],
@@ -125,9 +140,7 @@ export function useIncidentAgentEvents({
   useEffect(() => {
     const unsub = agent.onEvent((payload) => {
       const sid = payload.sessionId;
-      const incident = incidentsRef.current.find(
-        (item) => item.sessionId === sid,
-      );
+      const incident = findIncidentBySession(sid);
       if (payload.kind === "message") {
         // Unmapped sessions catch up from the next structural snapshot.
         if (!incident) return;
@@ -138,7 +151,7 @@ export function useIncidentAgentEvents({
           refetchSessionSnapshot(incident.id, sid);
           return;
         }
-        applySessionMessages(incident.id, sid, next, payload.threadState, payload.tokenUsage);
+        applySessionMessages(incident.id, sid, next, payload.threadState, payload.tokenUsage, false);
         lastAppliedSequenceRef.current.set(sid, payload.sequence);
         return;
       }
@@ -146,14 +159,16 @@ export function useIncidentAgentEvents({
       const snapshot = payload.snapshot;
       if (!snapshot) return;
       if (!incident) {
-        pendingEventsRef.current.push({ sessionId: sid, sequence: payload.sequence, snapshot });
+        pendingEventsRef.current.push({ sessionId: sid, sequence: payload.sequence, snapshot, settling: isSettlingEvent(payload.event) });
         return;
       }
-      applySnapshotToIncident(incident.id, snapshot, payload.sequence);
+      applySnapshotToIncident(incident.id, snapshot, payload.sequence, false, isSettlingEvent(payload.event));
     });
     return () => { unsub(); };
   }, [agent, applySessionMessages, applySnapshotToIncident, refetchSessionSnapshot]);
 
+  // Snapshots for a session no thread has yet apply once a thread takes the session.
+  const incidents = useIncidentListStore((state) => state.incidents);
   useEffect(() => {
     const pending = pendingEventsRef.current;
     if (pending.length === 0) return;
@@ -162,17 +177,16 @@ export function useIncidentAgentEvents({
       sessionId: string;
       sequence: number;
       snapshot?: AgentThreadSnapshot;
+      settling: boolean;
     }> = [];
 
     for (const pendingEntry of pending) {
-      const incident = incidentsRef.current.find(
-        (item) => item.sessionId === pendingEntry.sessionId,
-      );
+      const incident = findIncidentBySession(pendingEntry.sessionId);
       if (!incident || !pendingEntry.snapshot) {
         remaining.push(pendingEntry);
         continue;
       }
-      applySnapshotToIncident(incident.id, pendingEntry.snapshot, pendingEntry.sequence);
+      applySnapshotToIncident(incident.id, pendingEntry.snapshot, pendingEntry.sequence, false, pendingEntry.settling);
     }
 
     pendingEventsRef.current = remaining;
