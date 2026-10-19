@@ -1534,6 +1534,8 @@
   "common.incidents.remediation.resume": "Resume",
   "common.incidents.remediation.back": "Back",
   "common.incidents.remediation.edit": "Edit",
+  "common.incidents.remediation.savedCount": "{{count}} saved",
+  "common.incidents.remediation.noConnectionMatch": "No saved connection matches.",
   "common.incidents.customerReport.fromSender": "From {{sender}}",
   "common.incidents.customerReport.receivedOn": "received {{receivedAt}}",
   "common.incidents.customerReport.subjectLine": "Subject: {{subject}}",

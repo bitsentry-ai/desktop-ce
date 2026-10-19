@@ -1535,6 +1535,8 @@
   "common.incidents.remediation.resume": "Lanjutkan",
   "common.incidents.remediation.back": "Kembali",
   "common.incidents.remediation.edit": "Ubah",
+  "common.incidents.remediation.savedCount": "{{count}} tersimpan",
+  "common.incidents.remediation.noConnectionMatch": "Tidak ada koneksi tersimpan yang cocok.",
   "common.incidents.customerReport.fromSender": "Dari {{sender}}",
   "common.incidents.customerReport.receivedOn": "diterima {{receivedAt}}",
   "common.incidents.customerReport.subjectLine": "Subjek: {{subject}}",

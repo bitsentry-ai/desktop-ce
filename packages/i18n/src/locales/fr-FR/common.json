@@ -1535,6 +1535,8 @@
   "common.incidents.remediation.resume": "Reprendre",
   "common.incidents.remediation.back": "Retour",
   "common.incidents.remediation.edit": "Modifier",
+  "common.incidents.remediation.savedCount": "{{count}} enregistrées",
+  "common.incidents.remediation.noConnectionMatch": "Aucune connexion enregistrée ne correspond.",
   "common.incidents.customerReport.fromSender": "De {{sender}}",
   "common.incidents.customerReport.receivedOn": "reçu {{receivedAt}}",
   "common.incidents.customerReport.subjectLine": "Objet : {{subject}}",

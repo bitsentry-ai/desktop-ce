@@ -1535,6 +1535,8 @@
   "common.incidents.remediation.resume": "继续",
   "common.incidents.remediation.back": "返回",
   "common.incidents.remediation.edit": "编辑",
+  "common.incidents.remediation.savedCount": "已保存 {{count}} 个",
+  "common.incidents.remediation.noConnectionMatch": "没有匹配的已保存连接。",
   "common.incidents.customerReport.fromSender": "来自 {{sender}}",
   "common.incidents.customerReport.receivedOn": "收到于 {{receivedAt}}",
   "common.incidents.customerReport.subjectLine": "主题：{{subject}}",
