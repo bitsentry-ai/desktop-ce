@@ -200,6 +200,10 @@ export type OnDelta = (delta: {
 } | {
   type: 'token_usage'
   tokenUsage: NonNullable<ChatResponse['tokenUsage']>
+} | {
+  /** The running coding agent turn can take a steer, or no longer can when null. */
+  type: 'steer_handle'
+  steer: ((text: string) => Promise<void>) | null
 }) => void
 
 /**
@@ -737,6 +741,11 @@ function createLocalAiDeltaHandler(
         type: 'token_usage',
         tokenUsage: delta.tokenUsage,
       })
+      return
+    }
+
+    if (delta.type === 'steer_handle') {
+      onDelta?.(delta)
       return
     }
 
