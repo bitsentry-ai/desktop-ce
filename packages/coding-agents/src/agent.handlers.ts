@@ -7,6 +7,7 @@
 import type { AgentThreadSnapshot } from '@bitsentry-ce/components/chat/types'
 import { z } from 'zod'
 import type {
+  AgentQueueUpdateInput,
   AgentStartInput,
   AgentSendInput,
   AgentSessionStatus,
@@ -28,6 +29,7 @@ export interface AgentRuntimeSessionController {
   start(input: AgentStartInput): Promise<string>
   send(input: AgentSendInput): Promise<string>
   cancel(sessionId: string): void
+  updateQueue(input: AgentQueueUpdateInput): void
   destroy(): void
   getStatus(sessionId: string): AgentSessionStatus
   getSnapshot(sessionId: string): AgentThreadSnapshot
@@ -127,6 +129,12 @@ export function createDesktopAgentHandlers(
     'agent:cancel': (payload: unknown): Promise<void> => {
       const input = payload as { sessionId: string }
       agentRuntime.cancel(input.sessionId)
+      return Promise.resolve()
+    },
+
+    'agent:updateQueue': (payload: unknown): Promise<void> => {
+      // The IPC dispatcher validates the payload against its schema first.
+      agentRuntime.updateQueue(payload as AgentQueueUpdateInput)
       return Promise.resolve()
     },
 

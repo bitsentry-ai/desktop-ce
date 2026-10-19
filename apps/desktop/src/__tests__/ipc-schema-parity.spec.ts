@@ -67,6 +67,7 @@ function makeValidPayloads(): Record<DesktopRpcChannel, unknown> {
     'agent:start': { prompt: 'Inspect the local runbook.' },
     'agent:send': { message: 'Continue.' },
     'agent:cancel': { sessionId: UUID },
+    'agent:updateQueue': { sessionId: UUID, action: 'resume' },
     'agent:getStatus': { sessionId: UUID },
     'agent:getSnapshot': { sessionId: UUID },
     'agent:listRunbookAuthoringProposals': {},
