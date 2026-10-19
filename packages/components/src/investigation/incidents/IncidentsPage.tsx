@@ -294,6 +294,27 @@ export default function IncidentsPage() {
     setQueueByIncident,
   });
 
+  // A queue saved before the app last quit comes back paused, in a session rebuilt from the thread, when its
+  // incident opens. Asked once per incident and app run.
+  const restoredQueueIncidentIdsRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    if (activeId === null || agent.restoreQueue === undefined) return;
+    if (isDesktopIncidents && !desktopHydrated) return;
+    if (restoredQueueIncidentIdsRef.current.has(activeId)) return;
+    restoredQueueIncidentIdsRef.current.add(activeId);
+    const incidentId = activeId;
+    agent.restoreQueue(incidentId).then((restored) => {
+      if (restored === null) return;
+      const store = useIncidentListStore.getState();
+      const incident = store.incidents.find((item) => item.id === incidentId);
+      if (incident === undefined) return;
+      if (incident.sessionId !== restored.sessionId) store.patch(incidentId, { sessionId: restored.sessionId });
+      applySnapshotToIncident(incidentId, restored.snapshot, restored.snapshot.sequence, true);
+    }).catch((error: unknown) => {
+      captureIncidentException(error, { operation: "restoreQueue", incidentId });
+    });
+  }, [activeId, agent, applySnapshotToIncident, desktopHydrated, isDesktopIncidents]);
+
   useEffect(() => {
     if (isDesktopIncidents && !desktopHydrated) return;
 

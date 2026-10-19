@@ -57,6 +57,7 @@ export const DESKTOP_RPC_CHANNELS = [
   'agent:send',
   'agent:cancel',
   'agent:updateQueue',
+  'agent:restoreQueue',
   'agent:getStatus',
   'agent:getSnapshot',
   'agent:listRunbookAuthoringProposals',

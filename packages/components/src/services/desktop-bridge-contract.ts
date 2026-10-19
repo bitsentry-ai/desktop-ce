@@ -345,6 +345,7 @@ export interface DesktopBitsentryBridge<
     send: (input: DesktopAgentSendInput) => Promise<{ sessionId: string }>;
     cancel: (sessionId: string) => Promise<void>;
     updateQueue: (input: import("./contracts").AgentQueueUpdateRequest) => Promise<void>;
+    restoreQueue: (incidentThreadId: string) => Promise<{ sessionId: string; snapshot: TAgentSnapshot } | null>;
     getStatus: (
       sessionId: string,
     ) => Promise<DesktopAgentStatus<TAgentState> | null>;
