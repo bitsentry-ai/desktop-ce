@@ -1,9 +1,12 @@
 import { resolve } from 'path'
+import react from '@vitejs/plugin-react'
 import { defineConfig } from 'vitest/config'
 
 const desktopNodeModules = resolve(__dirname, 'node_modules')
 
 export default defineConfig({
+  // Tests run the same compiled components as the renderer build.
+  plugins: [react({ babel: { plugins: [['babel-plugin-react-compiler', {}]] } })],
   resolve: {
     dedupe: ['react', 'react-dom'],
     alias: {

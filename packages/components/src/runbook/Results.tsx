@@ -1035,27 +1035,33 @@ export default function ResultsPage() {
     [activeExecution, selectedStepKey],
   );
 
+  const activeExecutionId = activeResult?.executionId;
   const handleCancel = useCallback(async () => {
     if (cancelPending) return;
-    if (!isUuid(activeResult?.executionId)) {
+    const executionId = activeExecutionId;
+    if (!isUuid(executionId)) {
       setCancelError("This execution cannot be cancelled because its execution ID is unavailable.");
       return;
     }
 
     setCancelError(null);
     setCancelPending(true);
-    try {
-      await runbooks.cancelExecution(activeResult.executionId);
-    } catch (error) {
-      setCancelError(
-        error instanceof Error
-          ? error.message
-          : "Unable to cancel this runbook execution.",
-      );
-    } finally {
-      setCancelPending(false);
-    }
-  }, [activeResult?.executionId, cancelPending, runbooks]);
+    // A promise chain, not try/finally, which the React Compiler can't lower.
+    const cancelExecution = async () => {
+      await runbooks.cancelExecution(executionId);
+    };
+    await cancelExecution()
+      .catch((error: unknown) => {
+        setCancelError(
+          error instanceof Error
+            ? error.message
+            : "Unable to cancel this runbook execution.",
+        );
+      })
+      .finally(() => {
+        setCancelPending(false);
+      });
+  }, [activeExecutionId, cancelPending, runbooks]);
 
   // ── Filtered list view when ?runbook=<id> is present ─────────────────────
   if (runbookFilter !== null && runbookFilter.length > 0 && activeId === null) {

@@ -1385,17 +1385,12 @@ export function useRunbookResults({
     const requestId = proposalRefreshRequestRef.current + 1;
     proposalRefreshRequestRef.current = requestId;
     const requestedIncidentId = incidentId;
+    const request = { sessionId: sessionId ?? undefined, incidentThreadId: incidentId };
     try {
-      const nextProposals = await agent.listRunbookAuthoringProposals({
-        sessionId: sessionId ?? undefined,
-        incidentThreadId: incidentId,
-      });
-      if (
-        proposalRefreshRequestRef.current !== requestId ||
-        currentIncidentIdRef.current !== requestedIncidentId
-      ) {
-        return;
-      }
+      const nextProposals = await agent.listRunbookAuthoringProposals(request);
+      // Separate ifs: the React Compiler can't lower `||` inside a try.
+      if (proposalRefreshRequestRef.current !== requestId) return;
+      if (currentIncidentIdRef.current !== requestedIncidentId) return;
       setLiveProposals(nextProposals);
     } catch {
       // Message summaries still keep the artifact view available while a
