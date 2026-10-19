@@ -325,6 +325,19 @@ function actionTextContainsFindingValues(
   return false;
 }
 
+// Lookups of existing Wazuh records. Literal IDs only, so a template cannot name another action at run time.
+const EXISTING_RECORD_LOOKUPS: Readonly<Record<string, readonly string[]>> = {
+  wazuh: ["query_issues", "search_alerts"],
+};
+
+/** A query that names a finding's CVE and package reads the existing record; it does not evaluate the finding. */
+function isExistingRecordLookup(action: RunbookActionRecord): boolean {
+  return (
+    action.type === "plugin" &&
+    EXISTING_RECORD_LOOKUPS[normalizeString(action.pluginId)]?.includes(normalizeString(action.pluginActionId)) === true
+  );
+}
+
 function consumesFindings(
   actions: RunbookActionRecord[],
   normalizedFindings: unknown[],
@@ -342,6 +355,7 @@ function consumesFindings(
 
   const findingValues = collectFindingValues(normalizedFindings);
   return actions.some((action) =>
+    !isExistingRecordLookup(action) &&
     actionTextContainsFindingValues(action, findingValues),
   );
 }
