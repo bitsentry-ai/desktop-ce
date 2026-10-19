@@ -212,5 +212,8 @@
     "packages/core/src/features/jobs/desktop-job-runtime.ts": [
       "types"
     ]
-  }
+  },
+  "ignoreBinaries": [
+    "playwright"
+  ]
 }
