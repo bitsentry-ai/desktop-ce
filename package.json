@@ -79,6 +79,7 @@
   "author": "BitSentry Team",
   "license": "Apache-2.0",
   "devDependencies": {
+    "@anthropic-ai/sdk": "^0.95.1",
     "@eslint/js": "^10.0.1",
     "@typescript/native": "npm:typescript@^7.0.2",
     "esbuild": "0.27.7",
@@ -89,6 +90,7 @@
     "eslint-plugin-unicorn": "^68.0.0",
     "git-cliff": "^2.13.1",
     "globals": "^17.3.0",
+    "ts-morph": "^24.0.0",
     "typescript": "npm:@typescript/typescript6@^6.0.2",
     "typescript-eslint": "^8.63.0"
   }

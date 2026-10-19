@@ -49,11 +49,7 @@ export default defineConfig({
         },
         external: [
           'better-sqlite3',
-          'bcryptjs',
-          'speakeasy',
-          'qrcode',
-          'jsonwebtoken',
-          'node-pty', '@napi-rs/keyring',
+          '@napi-rs/keyring',
         ],
       },
     },
@@ -127,7 +123,6 @@ export default defineConfig({
       dedupe: [
         'react',
         'react-dom',
-        'react-router',
         'react-router-dom',
         '@tanstack/react-query',
       ],

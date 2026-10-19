@@ -134,7 +134,7 @@ async function ensureCliRuntimeDependencies(
     )
   }
 
-  for (const packageName of ['bindings', 'file-uri-to-path', 'node-addon-api']) {
+  for (const packageName of ['bindings', 'file-uri-to-path']) {
     await copyResolvedPackage(packageName, nativeNodeModulesDir, projectRoot)
   }
 }
