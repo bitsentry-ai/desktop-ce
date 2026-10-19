@@ -2863,9 +2863,9 @@ export class AgentRuntimeService {
   }
 
   /**
-   * Whether the running turn can take a steer. Only the direct API tool loop can: it adds the steer before its next
-   * model call. A coding agent CLI runs the whole turn as one subprocess call that cannot take input, so a steer for
-   * it is queued.
+   * Whether the running turn can take a steer. The direct API tool loop adds the steer before its next model call.
+   * Codex and Claude Code take it through their providers' mid-turn input while their turn runs. Other coding agent
+   * CLIs run the whole turn as one subprocess call that cannot take input, so a steer for them is queued.
    */
   private canSteer(session: AgentSession): boolean {
     return (
