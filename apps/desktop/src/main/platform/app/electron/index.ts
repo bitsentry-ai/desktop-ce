@@ -623,6 +623,7 @@ app
         'agent:start',
         'agent:send',
         'agent:cancel',
+        'agent:updateQueue',
         'agent:getStatus',
         'agent:getSnapshot',
         'agent:listRunbookAuthoringProposals',
