@@ -1533,7 +1533,6 @@
   "common.incidents.remediation.title": "Remediasi CVE",
   "common.incidents.remediation.close": "Tutup remediasi CVE",
   "common.incidents.remediation.resume": "Lanjutkan",
-  "common.incidents.remediation.view": "Lihat",
   "common.incidents.remediation.back": "Kembali",
   "common.incidents.remediation.edit": "Ubah",
   "common.incidents.customerReport.fromSender": "Dari {{sender}}",

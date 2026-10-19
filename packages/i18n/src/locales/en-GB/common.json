@@ -1532,7 +1532,6 @@
   "common.incidents.remediation.title": "CVE remediation",
   "common.incidents.remediation.close": "Close CVE remediation",
   "common.incidents.remediation.resume": "Resume",
-  "common.incidents.remediation.view": "View",
   "common.incidents.remediation.back": "Back",
   "common.incidents.remediation.edit": "Edit",
   "common.incidents.customerReport.fromSender": "From {{sender}}",

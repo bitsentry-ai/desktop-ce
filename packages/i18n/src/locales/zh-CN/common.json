@@ -1533,7 +1533,6 @@
   "common.incidents.remediation.title": "CVE 修复",
   "common.incidents.remediation.close": "关闭 CVE 修复",
   "common.incidents.remediation.resume": "继续",
-  "common.incidents.remediation.view": "查看",
   "common.incidents.remediation.back": "返回",
   "common.incidents.remediation.edit": "编辑",
   "common.incidents.customerReport.fromSender": "来自 {{sender}}",

@@ -39,6 +39,7 @@ import {
   Plus,
   X,
 } from "lucide-react";
+import { QuestionPrimaryButton } from "./ComposerQuestionCard";
 import { CustomerReportQuestionPanel } from "./CustomerReportPanel";
 import type { ComposerCustomerReportIntake } from "./useCustomerReportIntake";
 import {
@@ -136,16 +137,7 @@ function composerTextBinding(question: ComposerCustomerReportIntake | undefined,
 function QuestionSubmitButton({ question }: { question: ComposerCustomerReportIntake }) {
   const { t } = useTranslation();
   const label = t(question.editing ? "common.incidents.customerReport.update" : "common.incidents.customerReport.submit");
-  return (
-    <button
-      type="button"
-      onClick={question.submit}
-      disabled={!question.canSubmit}
-      className="h-8 whitespace-nowrap rounded-[10px] bg-violet-600 px-3.5 text-[13px] font-semibold text-white transition-colors hover:bg-violet-700 disabled:cursor-default disabled:bg-violet-200 dark:disabled:bg-violet-500/30"
-    >
-      {question.submitting ? <Loader2 size={14} className="animate-spin" aria-label={label} /> : label}
-    </button>
-  );
+  return <QuestionPrimaryButton label={label} run={question.submit} disabled={!question.canSubmit} submitting={question.submitting} />;
 }
 
 function composerCanSend(isBlocked: boolean, prompt: string, attachmentCount: number): boolean {
@@ -401,8 +393,7 @@ export function Composer({
         className={cn(
           "group rounded-[20px] border bg-card transition-[border-color,box-shadow] duration-200",
           !isProcessing && !isBlocked && !asking && remediation === undefined && "focus-within:border-ring/45",
-          asking && "border-violet-300 shadow-[0_0_0_3px_rgb(124_58_237_/_0.08)] dark:border-violet-500/40",
-          remediation !== undefined && "border-amber-200 shadow-[0_0_0_3px_rgb(253_230_138_/_0.35)] dark:border-amber-500/40",
+          (asking || remediation !== undefined) && "border-violet-300 shadow-[0_0_0_3px_rgb(124_58_237_/_0.08)] dark:border-violet-500/40",
           isBlocked && "opacity-60",
         )}
       >
