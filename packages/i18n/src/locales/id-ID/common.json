@@ -578,6 +578,7 @@
   "common.incidents.errorWithMessage": "— kesalahan: {{message}}",
   "common.incidents.hideRunbookResults": "Sembunyikan hasil runbook",
   "common.incidents.incidentHistory": "Riwayat insiden",
+  "common.incidents.messageList": "Pesan",
   "common.incidents.new": "Baru",
   "common.incidents.newIncident": "Insiden Baru",
   "common.incidents.newRunbookProposal": "Proposal runbook baru",
