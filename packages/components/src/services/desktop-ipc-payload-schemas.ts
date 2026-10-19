@@ -4,6 +4,12 @@ import { DESKTOP_RPC_CHANNELS, type DesktopRpcChannel } from "./desktop-ipc-cont
 
 type DesktopIpcEnumValues = readonly [string, ...string[]];
 
+/**
+ * A chat message's longest length. Citations travel in the message as links that
+ * carry the quote and comment, so this leaves room for several of them.
+ */
+const MESSAGE_MAX_LENGTH = 50_000;
+
 const DESKTOP_CE_LLM_PROVIDER_KEYS = [
   "claude_code",
   "codex",
@@ -452,7 +458,7 @@ export function createDesktopIpcPayloadValidator(
       .optional()
       .default({}),
     "agent:start": z.looseObject({
-      prompt: z.string().min(1).max(10000),
+      prompt: z.string().min(1).max(MESSAGE_MAX_LENGTH),
       timeoutMs: z.number().int().positive().max(300000).optional(),
       attachments: z.array(attachmentSchema).max(4).optional(),
       llm: llmSchema,
@@ -464,7 +470,7 @@ export function createDesktopIpcPayloadValidator(
         .optional(),
     }),
     "agent:send": z.looseObject({
-      message: z.string().min(1).max(10000),
+      message: z.string().min(1).max(MESSAGE_MAX_LENGTH),
       sessionId: z.uuid().optional(),
       attachments: z.array(attachmentSchema).max(4).optional(),
       llm: llmSchema,
@@ -484,7 +490,7 @@ export function createDesktopIpcPayloadValidator(
         sessionId: z.uuid(),
         action: z.literal("edit"),
         messageId: z.uuid(),
-        message: z.string().trim().min(1).max(10000),
+        message: z.string().trim().min(1).max(MESSAGE_MAX_LENGTH),
         attachments: z.array(attachmentSchema).max(4).optional(),
       }),
       z.object({ sessionId: z.uuid(), action: z.literal("remove"), messageId: z.uuid() }),

@@ -75,6 +75,14 @@ import {
   type SessionQueueState,
 } from "../chat/useComposerQueue";
 import type { AgentMessageDelivery } from "../services/contracts";
+import { CitationSelectionToolbar } from "../chat/CitationControls";
+import {
+  citationsToPlainText,
+  joinCitations,
+  separateCitations,
+  withCitationComment,
+  type AssistantCitation,
+} from "../chat/citations";
 import { CustomerReportIntakeChatContext, useCustomerReportIntake } from "../chat/useCustomerReportIntake";
 import { customerReportDisplayText } from "@bitsentry-ce/core/features/plugins";
 import type {
@@ -192,7 +200,7 @@ export async function sendIncidentAgentMessage(
 
 function resolveIncidentTitle(incident: IncidentThread | null | undefined, text: string): string {
   if (!shouldAutoTitleIncident(incident?.title)) return incident?.title ?? "New Incident";
-  return customerReportDisplayText(text).trim().slice(0, 50) || "New Incident";
+  return customerReportDisplayText(citationsToPlainText(text)).trim().slice(0, 50) || "New Incident";
 }
 
 // ─── Local-storage helpers ────────────────────────────────────────────────────
@@ -308,7 +316,7 @@ function normalizeIncidentPreview(
   value: string | null | undefined,
 ): string | null {
   if (typeof value !== "string") return null;
-  const normalized = customerReportDisplayText(value).replace(/\s+/g, " ").trim();
+  const normalized = customerReportDisplayText(citationsToPlainText(value)).replace(/\s+/g, " ").trim();
   if (normalized.length === 0) return null;
   return normalized;
 }
@@ -1686,6 +1694,21 @@ export default function IncidentsPage() {
 
   const activeIncident = incidents.find((i) => i.id === activeId) ?? null;
   const activeSessionId = activeIncident?.sessionId ?? null;
+  const [citations, setCitations] = useState<AssistantCitation[]>([]);
+  // The message the composer would send: its citations, then the draft.
+  const composedPrompt = joinCitations(citations, prompt);
+  const setComposedPrompt = useCallback((text: string) => {
+    const separated = separateCitations(text);
+    setCitations(separated.citations);
+    setPrompt(separated.prompt);
+  }, []);
+  // A quote only makes sense in the conversation it came from.
+  useEffect(() => {
+    setCitations((current) => {
+      const kept = current.filter((citation) => citation.threadId === activeId);
+      return kept.length === current.length ? current : kept;
+    });
+  }, [activeId]);
   const [queueByIncident, setQueueByIncident] = useState<Record<string, SessionQueueState>>({});
   const {
     composerQueue,
@@ -1697,9 +1720,9 @@ export default function IncidentsPage() {
     sessionId: activeSessionId,
     queue: (activeId === null ? undefined : queueByIncident[activeId]) ?? EMPTY_SESSION_QUEUE,
     isRunning: activeIncident?.state === "RUNNING",
-    prompt,
+    prompt: composedPrompt,
     images: composerImages,
-    setPrompt,
+    setPrompt: setComposedPrompt,
     setImages: setComposerImages,
   });
   const rawMessages = useMemo((): ChatMessage[] => {
@@ -2498,7 +2521,7 @@ export default function IncidentsPage() {
     if (selectedProviderKey !== null) {
       saveProviderLock(id, selectedProviderKey, selectedModelId, selectedAccessLevel);
     }
-    setPrompt("");
+    setComposedPrompt("");
     void navigate(`/incidents?id=${id}`);
   };
 
@@ -2643,7 +2666,7 @@ export default function IncidentsPage() {
   /** Sets the composer text and attachments, except for a customer report answer, which leaves the engineer's draft. */
   const setComposerUnlessIntake = (fromIntake: boolean, text: string, images: ComposerAttachment[]) => {
     if (fromIntake) return;
-    setPrompt(text);
+    setComposedPrompt(text);
     setComposerImages(images);
   };
 
@@ -2658,7 +2681,7 @@ export default function IncidentsPage() {
     delivery?: AgentMessageDelivery;
   }, intakeText?: string) => {
     const fromIntake = intakeText !== undefined;
-    const text = intakeText ?? prompt.trim();
+    const text = intakeText ?? composedPrompt.trim();
     const ready = canSendIncidentMessage(text, fromIntake ? 0 : composerImages.length, activeId, selectedProviderKey, selectedModelId);
     if (!ready || activeId === null || selectedProviderKey === null || activeIncident?.archived === true) return;
     const wasRunning = activeIncident?.state === "RUNNING";
@@ -2782,7 +2805,7 @@ export default function IncidentsPage() {
 
   /** The composer's send: saves a queued message being edited, queues or steers while the agent runs, else sends. */
   const handleComposerSend = async (options?: Parameters<typeof handleSend>[0]) => {
-    const text = prompt.trim();
+    const text = composedPrompt.trim();
     const ready = canSendIncidentMessage(text, composerImages.length, activeId, selectedProviderKey, selectedModelId);
     if (ready && queueEditingId !== null) {
       await saveQueuedEdit(text, composerImages);
@@ -2806,7 +2829,7 @@ export default function IncidentsPage() {
   ) => {
     if (activeId === null || selectedProviderKey === null) return;
     const outgoingImages = composerImages;
-    setPrompt("");
+    setComposedPrompt("");
     setComposerImages([]);
     const llm: { providerKey: ModelCatalogProviderKey; model: string; thinkingEnabled?: boolean } = {
       providerKey: selectedProviderKey,
@@ -2832,7 +2855,7 @@ export default function IncidentsPage() {
       if (snapshot !== null) applySnapshotToIncident(activeId, snapshot);
     } catch (err: unknown) {
       // Nothing was queued: give the engineer their message back.
-      setPrompt(text);
+      setComposedPrompt(text);
       setComposerImages(outgoingImages);
       captureIncidentException(err, {
         operation: "agent.send",
@@ -3204,6 +3227,13 @@ export default function IncidentsPage() {
           >
             {/* Messages container with floating scroll button */}
             <div className="relative flex-1 overflow-hidden">
+              {activeId !== null && (
+                <CitationSelectionToolbar
+                  viewportRef={scrollContainerRef}
+                  threadId={activeId}
+                  onCite={(citation) => { setCitations((current) => [...current, citation]); }}
+                />
+              )}
               <div
                 ref={scrollContainerRef}
                 className={cn(
@@ -3352,6 +3382,13 @@ export default function IncidentsPage() {
                 customerReportIntake={customerReportIntake.composer}
                 queue={composerQueue}
                 onResumeQueue={() => { void resumeQueue(); }}
+                citations={citations}
+                onRemoveCitation={(index) => { setCitations((current) => current.filter((_, position) => position !== index)); }}
+                onCitationCommentChange={(index, comment) => {
+                  setCitations((current) => current.map((citation, position) =>
+                    position === index ? withCitationComment(citation, comment) : citation,
+                  ));
+                }}
               />
             )}
           </div>
