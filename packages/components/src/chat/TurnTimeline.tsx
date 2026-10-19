@@ -27,6 +27,7 @@ import { cn } from "../lib/utils";
 import { formatDuration } from "./utils";
 import { dominantToolKind, summarizeToolGroup, toolDetail, toolKind, toolLabel, type ToolKind } from "./toolPresentation";
 import { deriveTurnTimeline, type TurnRow } from "./turnTimelineRows";
+import { CITATION_SOURCE_ATTRIBUTE } from "./citationDom";
 import type { ChatMessage, ToolCallCard } from "./types";
 
 type AgentMessage = Extract<ChatMessage, { kind: "agent" }>;
@@ -201,8 +202,10 @@ function TimelineRows({ rows, collapsedJsonLabel }: { rows: TurnRow[]; collapsed
     <>
       {rows.map((row) => {
         if (row.kind === "text") {
+          // The final answer of a message without iterations has no stable id, so it cannot be cited.
+          const citationSource = row.key === "final" ? {} : { [CITATION_SOURCE_ATTRIBUTE]: row.key };
           return (
-            <div key={row.key} className="py-1 text-sm leading-relaxed text-foreground">
+            <div key={row.key} {...citationSource} className="py-1 text-sm leading-relaxed text-foreground">
               <MarkdownContent content={row.text} paragraphizeSoftBreaks collapsedJsonLabel={collapsedJsonLabel} />
             </div>
           );

@@ -8,6 +8,8 @@ import {
 } from "react";
 import type { ChatMessage, AgentIteration } from "./types";
 import { TurnTimeline } from "./TurnTimeline";
+import { CitationChip } from "./CitationControls";
+import { splitCitations } from "./citations";
 import { useTranslation } from "@bitsentry-ce/i18n";
 import {
   CheckIcon,
@@ -200,7 +202,15 @@ function UserTextBubble({ msg, t }: { msg: UserMessage; t: (key: string, values?
     : null;
   const bodyText = report === null ? msg.text : report.body;
   const textContent = bodyText.length > 0
-    ? <div className="whitespace-pre-wrap break-words">{bodyText}</div>
+    ? (
+        <div className="whitespace-pre-wrap break-words">
+          {splitCitations(bodyText).map((segment, index) =>
+            segment.kind === "text"
+              ? <span key={index}>{segment.text}</span>
+              : <CitationChip key={index} citation={segment.citation} />,
+          )}
+        </div>
+      )
     : null;
 
   return (
