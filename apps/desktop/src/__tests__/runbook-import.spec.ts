@@ -137,6 +137,43 @@ describe("RunbookStore exportRunbooks", () => {
   });
 });
 
+describe("RunbookStore list", () => {
+  it("returns every runbook with its own actions in sortOrder from one action query", async () => {
+    const runbookRow = (id: string) => ({
+      id,
+      title: id,
+      revisionNumber: 1,
+      createdAt: "2026-05-31T00:00:00.000Z",
+      updatedAt: "2026-05-31T00:00:00.000Z",
+    });
+    const actionRow = (id: string, runbookId: string, sortOrder: number) => ({
+      id,
+      runbookId,
+      sortOrder,
+      type: "shell",
+      title: id,
+      command: "true",
+    });
+    const actionFindMany = vi.fn(() => [
+      actionRow("a-first", "runbook-a", 0),
+      actionRow("b-only", "runbook-b", 0),
+      actionRow("a-second", "runbook-a", 1),
+    ]);
+    const { store } = createStore({
+      runbook: { findMany: vi.fn(() => [runbookRow("runbook-a"), runbookRow("runbook-b"), runbookRow("runbook-c")]) },
+      runbookAction: { findMany: actionFindMany },
+    });
+
+    const runbooks = await store.list();
+
+    expect(runbooks.map((runbook) => [runbook.id, runbook.actions.map((action) => action.id)])).toEqual([
+      ["runbook-a", ["a-first", "a-second"]],
+      ["runbook-b", ["b-only"]],
+      ["runbook-c", []],
+    ]);
+  });
+});
+
 describe("RunbookStore importRunbooks", () => {
   it("imports a duplicate copy when actions match an existing runbook by fingerprint", async () => {
     const existingRunbookId = "runbook-existing";
@@ -162,13 +199,9 @@ describe("RunbookStore importRunbooks", () => {
         ]),
       },
       runbookAction: {
-        findMany: vi.fn(({ where }: { where: { runbookId: string } }) => {
-          if (where.runbookId === existingRunbookId) {
-            return [action];
-          }
-
-          return [];
-        }),
+        findMany: vi.fn(({ where }: { where: { runbookId: { in: string[] } } }) =>
+          where.runbookId.in.includes(existingRunbookId) ? [action] : [],
+        ),
       },
     });
     const artifact: DesktopRunbookExportArtifactV1 = {
@@ -229,13 +262,9 @@ describe("RunbookStore importRunbooks", () => {
         ]),
       },
       runbookAction: {
-        findMany: vi.fn(({ where }: { where: { runbookId: string } }) => {
-          if (where.runbookId === existingRunbookId) {
-            return [action];
-          }
-
-          return [];
-        }),
+        findMany: vi.fn(({ where }: { where: { runbookId: { in: string[] } } }) =>
+          where.runbookId.in.includes(existingRunbookId) ? [action] : [],
+        ),
       },
     });
     const artifact: DesktopRunbookExportArtifactV1 = {
@@ -300,13 +329,9 @@ describe("RunbookStore importRunbooks", () => {
         ]),
       },
       runbookAction: {
-        findMany: vi.fn(({ where }: { where: { runbookId: string } }) => {
-          if (where.runbookId === existingRunbookId) {
-            return [action];
-          }
-
-          return [];
-        }),
+        findMany: vi.fn(({ where }: { where: { runbookId: { in: string[] } } }) =>
+          where.runbookId.in.includes(existingRunbookId) ? [action] : [],
+        ),
       },
     });
     const artifact: DesktopRunbookExportArtifactV1 = {

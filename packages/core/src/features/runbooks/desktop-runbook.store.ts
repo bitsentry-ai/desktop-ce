@@ -1094,6 +1094,22 @@ function toRunbookAction(raw: Record<string, unknown>): DesktopRunbookActionReco
   });
 }
 
+function toRunbookRecord(
+  rawRunbook: Record<string, unknown>,
+  actions: DesktopRunbookActionRecord[],
+): DesktopRunbookRecord {
+  return {
+    id: asString(rawRunbook.id),
+    title: asString(rawRunbook.title, "New Runbook"),
+    description: asString(rawRunbook.description),
+    idleTimeout: normalizeRunbookIdleTimeout(rawRunbook.idleTimeout),
+    revisionNumber: Math.max(1, Number(rawRunbook.revisionNumber ?? 1)),
+    actions,
+    createdAt: asIsoString(rawRunbook.createdAt),
+    updatedAt: asIsoString(rawRunbook.updatedAt),
+  };
+}
+
 type RunbookActionPayload = DesktopRunbookContext["actions"][number]["payload"];
 
 function applySharedActionPayload(action: DesktopRunbookActionRecord, payload: RunbookActionPayload): void {
@@ -1219,18 +1235,7 @@ export class DesktopRunbookStore {
   private async hydrateRunbook(
     rawRunbook: Record<string, unknown>,
   ): Promise<DesktopRunbookRecord> {
-    const runbookId = asString(rawRunbook.id);
-    const actions = await this.listActions(runbookId);
-    return {
-      id: runbookId,
-      title: asString(rawRunbook.title, "New Runbook"),
-      description: asString(rawRunbook.description),
-      idleTimeout: normalizeRunbookIdleTimeout(rawRunbook.idleTimeout),
-      revisionNumber: Math.max(1, Number(rawRunbook.revisionNumber ?? 1)),
-      actions,
-      createdAt: asIsoString(rawRunbook.createdAt),
-      updatedAt: asIsoString(rawRunbook.updatedAt),
-    };
+    return toRunbookRecord(rawRunbook, await this.listActions(asString(rawRunbook.id)));
   }
 
   async getRunbookRow(id: string): Promise<Record<string, unknown> | null> {
@@ -1284,7 +1289,21 @@ export class DesktopRunbookStore {
       orderBy: { createdAt: "desc" },
     }));
 
-    return Promise.all(rows.map((row) => this.hydrateRunbook(row)));
+    const actionRows = await this.db.runbookAction.findMany({
+      where: { runbookId: { in: rows.map((row) => asString(row.id)) } },
+      orderBy: { sortOrder: "asc" },
+    });
+    const actionsByRunbookId = new Map<string, DesktopRunbookActionRecord[]>();
+    for (const actionRow of actionRows) {
+      const runbookId = asString(actionRow.runbookId);
+      const actions = actionsByRunbookId.get(runbookId) ?? [];
+      actions.push(toRunbookAction(actionRow));
+      actionsByRunbookId.set(runbookId, actions);
+    }
+
+    return rows.map((row) =>
+      toRunbookRecord(row, actionsByRunbookId.get(asString(row.id)) ?? []),
+    );
   }
 
   async get(id: string): Promise<DesktopRunbookRecord | null> {
