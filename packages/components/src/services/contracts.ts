@@ -1,7 +1,8 @@
 import type { IntegrationConnection, IntegrationConnectionInput } from "@bitsentry-ce/core/features/plugins";
 import type {
   AccessLevel,
-  AgentThreadSnapshot,
+  AgentEventPayload,
+  AgentSnapshotReply,
   AgentThreadTokenUsage,
   ComposerTextAttachmentMimeType,
   InteractionMode,
@@ -1276,7 +1277,7 @@ export interface AgentServicePort {
   send(input: AgentSendRequest): Promise<{ sessionId: string }>;
   cancel(sessionId: string): Promise<void>;
   getStatus(sessionId: string): Promise<AgentSessionStatus | null>;
-  getSnapshot(sessionId: string): Promise<AgentThreadSnapshot | null>;
+  getSnapshot(sessionId: string): Promise<AgentSnapshotReply | null>;
   listRunbookAuthoringProposals(input: {
     sessionId?: string;
     incidentThreadId?: string;
@@ -1305,13 +1306,7 @@ export interface AgentServicePort {
     proposalId: string;
   }): Promise<RunbookAuthoringProposalDecisionResult>;
   onEvent(
-    handler: (data: {
-      sessionId: string;
-      event: AgentEvent;
-      // Desktop includes a projected snapshot with each event, while the
-      // dashboard websocket transport only emits the raw agent event.
-      snapshot?: AgentThreadSnapshot;
-    }) => void,
+    handler: (data: AgentEventPayload<AgentEvent>) => void,
   ): () => void;
 }
 

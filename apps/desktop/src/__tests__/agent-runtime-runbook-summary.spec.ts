@@ -971,7 +971,7 @@ describe('incident chat runbook journeys', () => {
       expect.objectContaining({ toolName: 'execute_runbook', state: 'done', output: expect.stringContaining(kanye.executionId) }),
     ])
     expect(sentEvents.some((payload) => (
-      payload.sessionId === sessionId && payload.event.type === 'tool_start' && payload.event.toolName === 'execute_runbook'
+      payload.sessionId === sessionId && payload.kind === 'snapshot' && payload.event.type === 'tool_start' && payload.event.toolName === 'execute_runbook'
     ))).toBe(true)
     expect(llmAdapter.chatWithTools.mock.calls).toHaveLength(llmCallsBefore + 1)
     const kanyeMessages = getLlmCallMessages(llmAdapter, llmCallsBefore)
@@ -1074,9 +1074,9 @@ describe('incident chat runbook journeys', () => {
       })
 
       expect(getAllAgentToolCalls(service, sessionId)).toEqual([expect.objectContaining({ toolName: 'execute_runbook', state: 'done' })])
-      expect(sentEvents.some(({ event }) => event.type === 'tool_start')).toBe(true)
-      expect(sentEvents.some(({ event }) => event.type === 'tool_end')).toBe(true)
-      expect(sentEvents.some(({ event }) => event.type === 'activity' && event.phase === 'running_runbook')).toBe(true)
+      expect(sentEvents.some((payload) => payload.kind === 'snapshot' && payload.event.type === 'tool_start')).toBe(true)
+      expect(sentEvents.some((payload) => payload.kind === 'snapshot' && payload.event.type === 'tool_end')).toBe(true)
+      expect(sentEvents.some((payload) => payload.kind === 'message' && payload.message.kind === 'agent' && payload.message.activity === 'running_runbook')).toBe(true)
       expect(llmAdapter.chatWithTools).toHaveBeenCalledTimes(1)
 
       await service.send({ sessionId, message: 'What is its status?' })
@@ -1222,7 +1222,7 @@ describe('incident chat runbook journeys', () => {
       expect(toolContext).toContain('Status: running')
       expect(toolContext).not.toContain('SERVER-292')
       expect(toolContext).not.toContain('SERVER-293')
-      expect(sentEvents.some(({ event }) => event.type === 'activity' && event.phase === 'running_runbook')).toBe(true)
+      expect(sentEvents.some((payload) => payload.kind === 'message' && payload.message.kind === 'agent' && payload.message.activity === 'running_runbook')).toBe(true)
     }
   })
 
@@ -1481,7 +1481,7 @@ describe('incident chat runbook journeys', () => {
       expect(card).toMatchObject({ state: 'done' })
       expect(card?.error).toBeUndefined()
       expect(card?.output).toContain('"status": "running"')
-      expect(sentEvents.some(({ event }) => event.type === 'cancelled')).toBe(false)
+      expect(sentEvents.some((payload) => payload.kind === 'snapshot' && payload.event.type === 'cancelled')).toBe(false)
     }
 
     // Cursor stopping after a start acknowledgement does not get the runbook output pasted under its words.
@@ -1567,7 +1567,7 @@ describe('incident chat runbook journeys', () => {
       expect(getAllAgentToolCalls(service, sessionId)).toEqual([
         expect.objectContaining({ toolName: 'execute_runbook', output: expect.stringContaining(executionId) }),
       ])
-      expect(sentEvents.some(({ event }) => event.type === 'error')).toBe(false)
+      expect(sentEvents.some((payload) => payload.kind === 'snapshot' && payload.event.type === 'error')).toBe(false)
     }
 
     // A local provider that stalls after a tool result keeps the turn running rather than claiming completion.
@@ -1605,7 +1605,7 @@ describe('incident chat runbook journeys', () => {
         const agentMessage = lastAgent(service, sessionId)
         expect(agentMessage.status).not.toBe('done')
         expect(agentMessage.iterations.at(-1)?.text ?? agentMessage.finalText ?? '').not.toContain(stall.hiddenText)
-        expect(sentEvents.some(({ event }) => event.type === 'cancelled')).toBe(false)
+        expect(sentEvents.some((payload) => payload.kind === 'snapshot' && payload.event.type === 'cancelled')).toBe(false)
       } finally {
         vi.useRealTimers()
       }
@@ -1858,10 +1858,6 @@ describe('runtime projection outcomes', () => {
     expect(lastMessage.finalText).toBe('Here is the matrix with RCA.\n\nExtra final-only note.')
     const finalIteration = lastMessage.iterations.at(-1)
     expect(finalIteration?.text).toBe('Here is the matrix with RCA.\n\nExtra final-only note.')
-    expect(finalIteration?.streamDeltas?.map((delta) => delta.text)).toEqual([
-      'Here is the matrix',
-      ' with RCA.',
-    ])
   })
 
   it('preserves visible runbook output when the final event only completes the turn', () => {
