@@ -4,7 +4,7 @@ import readline from 'readline'
 import { EventEmitter } from 'events'
 import { codingAgentsLogger as log } from './logger.js'
 import { createCodingAgentsProcessEnv } from './coding-agents-process-env.js'
-import { terminateSubprocess } from './subprocess-lifecycle.js'
+import { terminateProcessTree } from '@bitsentry-ce/core/features/agent-runtime/shared/local-process'
 
 const REQUEST_TIMEOUT_MS = 300_000
 const MAX_STDERR_BUFFER = 5_000
@@ -95,6 +95,8 @@ export class CodexAppServerClient extends EventEmitter {
     this.child = spawn(this.binaryPath, args, {
       cwd: this.cwd,
       stdio: ['pipe', 'pipe', 'pipe'],
+      // POSIX process group so termination reaches Codex's own children.
+      detached: process.platform !== 'win32',
       shell: process.platform === 'win32',
       env: {
         ...createCodingAgentsProcessEnv(process.env),
@@ -247,7 +249,7 @@ export class CodexAppServerClient extends EventEmitter {
 
     this.termination = child === null
       ? Promise.resolve()
-      : terminateSubprocess(child).then((result) => {
+      : terminateProcessTree(child).then((result) => {
         if (result.outcome === 'termination-unconfirmed') {
           log.warn(`[codex-app-server] Unable to confirm process termination (pid=${String(result.pid)})`)
         }

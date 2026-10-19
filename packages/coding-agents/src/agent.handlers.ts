@@ -28,7 +28,7 @@ export interface AgentRuntimeSessionController {
   start(input: AgentStartInput): Promise<string>
   send(input: AgentSendInput): Promise<string>
   cancel(sessionId: string): void
-  destroy(): void
+  destroy(): Promise<void>
   getStatus(sessionId: string): AgentSessionStatus
   getSnapshot(sessionId: string): AgentThreadSnapshot
   listRunbookAuthoringProposals(input: { sessionId?: string; incidentThreadId?: string }): Promise<RunbookAuthoringProposalReview[]>
