@@ -327,7 +327,7 @@ function actionTextContainsFindingValues(
 
 // Lookups of existing Wazuh records. Literal IDs only, so a template cannot name another action at run time.
 const EXISTING_RECORD_LOOKUPS: Readonly<Record<string, readonly string[]>> = {
-  wazuh: ["query_issues", "search_alerts"],
+  wazuh: ["query_issues", "search_alerts", "summarize_vulnerabilities", "list_vulnerabilities"],
 };
 
 /** A query that names a finding's CVE and package reads the existing record; it does not evaluate the finding. */

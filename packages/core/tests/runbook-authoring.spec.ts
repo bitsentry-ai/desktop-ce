@@ -165,7 +165,7 @@ describe("runbook authoring", () => {
     })).toThrowError(RunbookProposalValidationError);
   });
 
-  it.each(["search_alerts", "query_issues"])(
+  it.each(["search_alerts", "query_issues", "summarize_vulnerabilities", "list_vulnerabilities"])(
     "accepts a Wazuh %s lookup that names the finding without an evaluator",
     (pluginActionId) => {
       const proposal = createRunbookCreationProposal({
