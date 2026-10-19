@@ -261,6 +261,7 @@ const incidentMessageTable = sqliteTable('IncidentMessage', {
   finalText: text('finalText'),
   status: text('status'),
   errorMsg: text('errorMsg'),
+  messageJson: text('messageJson'),
   createdAt: text('createdAt').notNull(),
   updatedAt: text('updatedAt').notNull(),
 })

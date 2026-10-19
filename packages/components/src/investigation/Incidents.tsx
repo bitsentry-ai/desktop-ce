@@ -68,6 +68,7 @@ import type {
   ThreadStatus,
 } from "../chat/types";
 import { Composer } from "../chat/Composer";
+import { settleInterruptedAgentTurn } from "../chat/runtimeProjection";
 import { CustomerReportIntakeChatContext, useCustomerReportIntake } from "../chat/useCustomerReportIntake";
 import { customerReportDisplayText } from "@bitsentry-ce/core/features/plugins";
 import type {
@@ -192,6 +193,9 @@ const INCIDENT_MESSAGES_KEY = "bitsentry_incident_messages";
 const INCIDENT_PROVIDER_LOCK_KEY = "bitsentry_incident_providers";
 const INCIDENT_TOKEN_USAGE_KEY = "bitsentry_incident_token_usage";
 const LLM_PROVIDERS_UPDATED_EVENT = "bitsentry:llm-providers-updated";
+const DESKTOP_SYNC_DEBOUNCE_MS = 150;
+// Streaming changes arrive faster than the debounce; still save this often.
+const DESKTOP_SYNC_MAX_WAIT_MS = 1000;
 
 type ProviderLockEntry = {
   providerKey: ModelCatalogProviderKey;
@@ -382,16 +386,24 @@ function loadIncidents(): IncidentThread[] {
   }
 }
 
-function saveIncidents(incidents: IncidentThread[]) {
+const localStorageWriteWarnedKeys = new Set<string>();
+
+function saveLocalStorageJson(key: string, value: unknown) {
   try {
-    localStorage.setItem(LS_KEY, JSON.stringify(incidents));
-  } catch {}
+    localStorage.setItem(key, JSON.stringify(value));
+  } catch (error) {
+    if (localStorageWriteWarnedKeys.has(key)) return;
+    localStorageWriteWarnedKeys.add(key);
+    console.warn(`Failed to save ${key} to local storage:`, error);
+  }
+}
+
+function saveIncidents(incidents: IncidentThread[]) {
+  saveLocalStorageJson(LS_KEY, incidents);
 }
 
 function saveIncidentMessages(messagesMap: Record<string, ChatMessage[]>) {
-  try {
-    localStorage.setItem(INCIDENT_MESSAGES_KEY, JSON.stringify(messagesMap));
-  } catch {}
+  saveLocalStorageJson(INCIDENT_MESSAGES_KEY, messagesMap);
 }
 
 function normalizeIncidentTokenUsageMap(
@@ -1650,6 +1662,7 @@ export default function IncidentsPage() {
   const desktopSyncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
     null,
   );
+  const desktopSyncPendingSinceRef = useRef<number | null>(null);
   const desktopStoreFallbackLoggedRef = useRef(false);
   const latestDesktopStateRef = useRef<{
     incidents: IncidentThread[];
@@ -1734,6 +1747,15 @@ export default function IncidentsPage() {
 
   const detachIncidentSession = useCallback(
     (incidentId: string, sessionId: string, nextState: AgentSessionState) => {
+      // The session is gone (app restart), so a turn it was running stops here.
+      if (incidentsRef.current.find((incident) => incident.id === incidentId)?.sessionId === sessionId) {
+        setMessagesMap((prev) => {
+          const messages = prev[incidentId];
+          if (messages === undefined) return prev;
+          const settled = settleInterruptedAgentTurn(messages, new Date().toISOString());
+          return settled === messages ? prev : { ...prev, [incidentId]: settled };
+        });
+      }
       setIncidents((prev) =>
         prev.map((incident) => {
           if (incident.id !== incidentId || incident.sessionId !== sessionId) {
@@ -1995,8 +2017,15 @@ export default function IncidentsPage() {
       if (desktopSyncTimerRef.current != null) {
         clearTimeout(desktopSyncTimerRef.current);
       }
+      const now = Date.now();
+      desktopSyncPendingSinceRef.current ??= now;
+      const delay = Math.min(
+        DESKTOP_SYNC_DEBOUNCE_MS,
+        Math.max(0, desktopSyncPendingSinceRef.current + DESKTOP_SYNC_MAX_WAIT_MS - now),
+      );
       desktopSyncTimerRef.current = setTimeout(() => {
         desktopSyncTimerRef.current = null;
+        desktopSyncPendingSinceRef.current = null;
         void saveDesktopIncidentState(incidents, messagesMap)
           .then(() => {
             window.dispatchEvent(
@@ -2023,7 +2052,7 @@ export default function IncidentsPage() {
               messageMapCount: Object.keys(messagesMap).length,
             });
           });
-      }, 150);
+      }, delay);
       window.dispatchEvent(new CustomEvent("bitsentry:incidents-updated"));
     } else {
       saveIncidents(incidents);
@@ -2036,50 +2065,55 @@ export default function IncidentsPage() {
     saveIncidentTokenUsage(tokenUsageByIncident);
   }, [tokenUsageByIncident]);
 
-  useEffect(
-    () => () => {
-      if (desktopSyncTimerRef.current != null) {
-        clearTimeout(desktopSyncTimerRef.current);
-        desktopSyncTimerRef.current = null;
+  useEffect(() => {
+    // Flush a pending debounced save on unmount and when the window goes away.
+    const flushPendingDesktopSync = () => {
+      if (desktopSyncTimerRef.current == null) return;
+      clearTimeout(desktopSyncTimerRef.current);
+      desktopSyncTimerRef.current = null;
+      desktopSyncPendingSinceRef.current = null;
 
-        const {
-          incidents: latestIncidents,
-          messagesMap: latestMessagesMap,
-        } = latestDesktopStateRef.current;
+      const {
+        incidents: latestIncidents,
+        messagesMap: latestMessagesMap,
+      } = latestDesktopStateRef.current;
 
-        saveIncidents(latestIncidents);
-        saveIncidentMessages(latestMessagesMap);
+      saveIncidents(latestIncidents);
+      saveIncidentMessages(latestMessagesMap);
 
-        if (
-          isDesktopIncidentsRef.current &&
-          desktopHydratedRef.current
-        ) {
-          void saveDesktopIncidentState(latestIncidents, latestMessagesMap)
-            .catch((error: unknown) => {
-              if (isMissingIncidentsHandlerError(error)) {
-                if (!desktopStoreFallbackLoggedRef.current) {
-                  desktopStoreFallbackLoggedRef.current = true;
-                  console.warn(
-                    "Incidents desktop IPC unavailable, falling back to local storage.",
-                  );
-                }
-                return;
+      if (
+        isDesktopIncidentsRef.current &&
+        desktopHydratedRef.current
+      ) {
+        void saveDesktopIncidentState(latestIncidents, latestMessagesMap)
+          .catch((error: unknown) => {
+            if (isMissingIncidentsHandlerError(error)) {
+              if (!desktopStoreFallbackLoggedRef.current) {
+                desktopStoreFallbackLoggedRef.current = true;
+                console.warn(
+                  "Incidents desktop IPC unavailable, falling back to local storage.",
+                );
               }
-              console.error(
-                "Failed to flush incidents to desktop store on cleanup:",
-                error,
-              );
-              captureIncidentException(error, {
-                operation: "saveDesktopIncidentState:cleanup",
-                incidentCount: latestIncidents.length,
-                messageMapCount: Object.keys(latestMessagesMap).length,
-              });
+              return;
+            }
+            console.error(
+              "Failed to flush incidents to desktop store on cleanup:",
+              error,
+            );
+            captureIncidentException(error, {
+              operation: "saveDesktopIncidentState:cleanup",
+              incidentCount: latestIncidents.length,
+              messageMapCount: Object.keys(latestMessagesMap).length,
             });
-        }
+          });
       }
-    },
-    [],
-  );
+    };
+    window.addEventListener("pagehide", flushPendingDesktopSync);
+    return () => {
+      window.removeEventListener("pagehide", flushPendingDesktopSync);
+      flushPendingDesktopSync();
+    };
+  }, []);
 
   // Auto-scroll with threshold check - only scroll if user is near bottom (within 64px)
   const scrollContainerRef = useRef<HTMLDivElement>(null);
