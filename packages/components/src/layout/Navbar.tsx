@@ -372,10 +372,8 @@ async function loadDesktopIncidentNavItems(
       setItems(readLocalIncidentNavItems());
       return;
     }
-    const snapshot = await incidentsApi.getState();
-    if (isCancelled()) return;
-    const items = normalizeIncidentNavItems(snapshot.incidents);
-    setItems(items.length === 0 ? readLocalIncidentNavItems() : items);
+    const items = normalizeIncidentNavItems(await incidentsApi.list());
+    if (!isCancelled()) setItems(keepIfSameNavItems(items));
   } catch {
     if (!isCancelled()) setItems(readLocalIncidentNavItems());
   }
@@ -454,6 +452,17 @@ function archiveIncidentRecord(
     archived: true,
     archivedAt: nextArchivedAt,
   };
+}
+
+/**
+ * Archives one thread by patching only its archive time, so a concurrent rename
+ * or state change is kept. Returns false without the desktop incidents API.
+ */
+async function archiveDesktopIncident(incidentId: string, archivedAt: string): Promise<boolean> {
+  const incidentsApi = getDesktopApi()?.incidents;
+  if (incidentsApi === undefined) return false;
+  await incidentsApi.saveThread({ id: incidentId, archivedAt });
+  return true;
 }
 
 function readLocalResultNavItems(): ResultNavItem[] {
@@ -761,20 +770,33 @@ const Navbar = ({
     IncidentNavItem[]
   >([]);
 
+  const incidentsAccordionOpen = openAccordions.has("/incidents");
   React.useEffect(() => {
-    if (!openAccordions.has("/incidents")) return;
+    if (isDesktop || !incidentsAccordionOpen) return;
     let cancelled = false;
-    const isCancelled = () => cancelled;
-    const load = isDesktop
-      ? loadDesktopIncidentNavItems(setInvestigationIncidents, isCancelled)
-      : loadWebIncidentNavItems(services, currentPath, setInvestigationIncidents, isCancelled);
-    load.catch(() => {});
+    loadWebIncidentNavItems(services, currentPath, setInvestigationIncidents, () => cancelled).catch(() => {});
     return () => {
       cancelled = true;
     };
-  }, [currentPath, openAccordions, services]);
+  }, [currentPath, incidentsAccordionOpen, services]);
+
+  // Desktop re-reads the list from main only when a thread's metadata changed.
+  React.useEffect(() => {
+    if (!isDesktop || !incidentsAccordionOpen) return;
+    let cancelled = false;
+    const reload = () => {
+      loadDesktopIncidentNavItems(setInvestigationIncidents, () => cancelled).catch(() => {});
+    };
+    reload();
+    window.addEventListener("bitsentry:incidents-updated", reload);
+    return () => {
+      cancelled = true;
+      window.removeEventListener("bitsentry:incidents-updated", reload);
+    };
+  }, [incidentsAccordionOpen]);
 
   React.useEffect(() => {
+    if (isDesktop) return;
     const reload = () => {
       setInvestigationIncidents(keepIfSameNavItems(readLocalIncidentNavItems()));
     };
@@ -817,18 +839,10 @@ const Navbar = ({
       }
 
       if (isDesktop) {
-        const incidentsApi = getDesktopApi()?.incidents;
-        if (incidentsApi === undefined) return;
-
-        const snapshot = await incidentsApi.getState();
-        const updated = snapshot.incidents.map((incident) =>
-          archiveIncidentRecord(incident, incidentId, archivedAt),
+        if (!(await archiveDesktopIncident(incidentId, archivedAt))) return;
+        setInvestigationIncidents((prev) =>
+          prev.map((incident) => (incident.id === incidentId ? { ...incident, archived: true } : incident)),
         );
-        await incidentsApi.replaceState({
-          incidents: updated,
-          incidentMessages: snapshot.incidentMessages,
-        });
-        setInvestigationIncidents(normalizeIncidentNavItems(updated));
       } else {
         const raw = localStorage.getItem("bitsentry_incidents");
         let all: unknown[] = [];

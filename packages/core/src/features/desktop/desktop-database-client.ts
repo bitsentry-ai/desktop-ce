@@ -248,6 +248,7 @@ const incidentThreadTable = sqliteTable('IncidentThread', {
   updatedAt: text('updatedAt').notNull(),
   archivedAt: text('archivedAt'),
   deletedAt: text('deletedAt'),
+  lastMessagePreview: text('lastMessagePreview'),
 })
 
 const incidentMessageTable = sqliteTable('IncidentMessage', {

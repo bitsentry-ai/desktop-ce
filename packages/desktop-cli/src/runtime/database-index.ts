@@ -769,14 +769,16 @@ async function runMigrations(): Promise<void> {
         "createdAt" DATETIME NOT NULL,
         "updatedAt" DATETIME NOT NULL,
         "archivedAt" DATETIME,
-        "deletedAt" DATETIME
+        "deletedAt" DATETIME,
+        "lastMessagePreview" TEXT
       )
     `)
     const incidentThreadColumns = await getTableColumns('IncidentThread')
-    if (!incidentThreadColumns.has('sessionId')) {
+    for (const column of ['sessionId', 'lastMessagePreview']) {
+      if (incidentThreadColumns.has(column)) continue
       try {
         await getDb().$executeRawUnsafe(`
-          ALTER TABLE "IncidentThread" ADD COLUMN "sessionId" TEXT
+          ALTER TABLE "IncidentThread" ADD COLUMN "${column}" TEXT
         `)
       } catch (error) {
         if (!isDuplicateColumnError(error)) throw error

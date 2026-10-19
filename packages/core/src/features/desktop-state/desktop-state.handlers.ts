@@ -42,12 +42,8 @@ type DesktopStateCollectionTable = DesktopStateDeleteManyTable & DesktopStateCre
 
 export interface DesktopStateDatabase {
   legacyImportLedger: DesktopStateFindUniqueTable & DesktopStateUpsertTable
-  incidentMessage: DesktopStateCollectionTable
-  incidentThread:
-    & DesktopStateCountTable
-    & DesktopStateDeleteManyTable
-    & DesktopStateCreateTable
-    & DesktopStateFindManyTable
+  incidentMessage: DesktopStateFindManyTable
+  incidentThread: DesktopStateFindManyTable
   runbook:
     & DesktopStateCountTable
     & DesktopStateDeleteManyTable
@@ -67,8 +63,10 @@ export interface DesktopStateDatabase {
   investigationReport: DesktopStateCollectionTable
   $queryRawUnsafe<T extends DesktopStateRow = DesktopStateRow>(query: string): Promise<T[]>
   $executeRawUnsafe(query: string): Promise<unknown>
-  $executeBatch?(statements: { sql: string; parameters: (string | number | null)[] }[]): Promise<void>
+  $executeBatch(statements: BatchStatement[]): Promise<void>
 }
+
+type BatchStatement = { sql: string; parameters: (string | number | null)[] }
 
 interface ToolCallRecord {
   toolCallId: string
@@ -177,8 +175,6 @@ interface ResultTraceMemory {
 }
 
 interface DesktopProductStateSnapshot {
-  incidents: IncidentThreadRecord[]
-  incidentMessages: Record<string, IncidentChatMessage[]>
   runbooks: RunbookRecord[]
   results: StoredRunResult[]
   resultTraces: Record<string, ResultTraceMemory>
@@ -187,10 +183,6 @@ interface DesktopProductStateSnapshot {
 interface DesktopStatePayload extends Partial<DesktopProductStateSnapshot> {
   investigations?: unknown[]
   investigationTraces?: Record<string, unknown>
-}
-interface DesktopIncidentStateSnapshot {
-  incidents: IncidentThreadRecord[]
-  incidentMessages: Record<string, IncidentChatMessage[]>
 }
 
 const PHASE1_IMPORT_KEY = 'phase1.localstorage.bootstrap'
@@ -394,29 +386,40 @@ function normalizeRunbookLogFilter(value: unknown): RunbookActionRecord['logFilt
   return undefined
 }
 
-function normalizeIncident(raw: unknown): IncidentThreadRecord | null {
-  const value = asObject(raw)
-  const id = asString(value.id)
-  if (id.length === 0) return null
-
-  const archivedAt = asNullableIsoString(value.archivedAt)
-  const archived = value.archived === true || archivedAt != null
-  let normalizedArchivedAt: string | undefined
-  if (archived) {
-    normalizedArchivedAt = archivedAt ?? new Date().toISOString()
+/** The thread columns a saveThread patch sets, keyed by column name. */
+function incidentThreadPatchColumns(patch: Record<string, unknown>, now: string): Map<string, string | null> {
+  const has = (key: string) => Object.prototype.hasOwnProperty.call(patch, key)
+  const columns = new Map<string, string | null>()
+  if (has('title')) columns.set('title', asString(patch.title, 'New Incident'))
+  if (has('prompt')) columns.set('prompt', asString(patch.prompt))
+  if (has('state')) columns.set('state', asString(patch.state, 'IDLE'))
+  if (has('sessionId')) columns.set('sessionId', asOptionalNonEmptyString(patch.sessionId) ?? null)
+  if (has('createdAt')) columns.set('createdAt', asIsoString(patch.createdAt))
+  if (has('archivedAt') || has('archived')) {
+    const archivedAt = asNullableIsoString(patch.archivedAt)
+    const archived = has('archivedAt') ? archivedAt != null : patch.archived === true
+    columns.set('archivedAt', archived ? (archivedAt ?? now) : null)
   }
-
-  return {
-    id,
-    title: asString(value.title, 'New Incident'),
-    createdAt: asIsoString(value.createdAt),
-    prompt: asString(value.prompt),
-    state: asString(value.state, 'IDLE'),
-    sessionId: asOptionalNonEmptyString(value.sessionId),
-    archived,
-    archivedAt: normalizedArchivedAt,
-    lastMessagePreview: normalizePreviewText(asOptionalString(value.lastMessagePreview)),
+  if (has('lastMessagePreview')) {
+    columns.set('lastMessagePreview', normalizePreviewText(asOptionalString(patch.lastMessagePreview)))
   }
+  return columns
+}
+
+/**
+ * The ON CONFLICT assignment for one patched column. createdAt is set on insert
+ * only; archiving keeps the first archive time; a missing preview keeps the
+ * stored one.
+ */
+function incidentThreadColumnUpdate(column: string): string[] {
+  if (column === 'createdAt') return []
+  if (column === 'archivedAt') {
+    return ['"archivedAt"=CASE WHEN excluded."archivedAt" IS NULL THEN NULL ELSE COALESCE("IncidentThread"."archivedAt", excluded."archivedAt") END']
+  }
+  if (column === 'lastMessagePreview') {
+    return ['"lastMessagePreview"=COALESCE(excluded."lastMessagePreview", "IncidentThread"."lastMessagePreview")']
+  }
+  return [`"${column}"=excluded."${column}"`]
 }
 
 function asOptionalNonEmptyString(value: unknown): string | undefined {
@@ -466,20 +469,6 @@ function incidentMessageColumns(message: IncidentChatMessage): IncidentMessageCo
     status: asString(message.status, 'thinking'),
     errorMsg: asOptionalString(message.errorMsg) ?? null,
   }
-}
-
-function normalizeIncidentMessages(
-  value: unknown,
-): Record<string, IncidentChatMessage[]> {
-  const input = asObject(value)
-  const output: Record<string, IncidentChatMessage[]> = {}
-  for (const [key, messages] of Object.entries(input)) {
-    if (!Array.isArray(messages)) continue
-    output[key] = messages
-      .map((message) => normalizeChatMessage(message))
-      .filter((message): message is IncidentChatMessage => message !== null)
-  }
-  return output
 }
 
 function normalizePreviewText(value: string | null | undefined): string | null {
@@ -691,20 +680,6 @@ function payloadResultTraces(payload: DesktopStatePayload): unknown {
   return {}
 }
 
-function normalizeIncidentsList(value: unknown): IncidentThreadRecord[] {
-  if (!Array.isArray(value)) return []
-
-  const incidents: IncidentThreadRecord[] = []
-  for (const item of value) {
-    const incident = normalizeIncident(item)
-    if (incident !== null) {
-      incidents.push(incident)
-    }
-  }
-
-  return incidents
-}
-
 function normalizeRunbooksList(value: unknown): RunbookRecord[] {
   if (!Array.isArray(value)) return []
 
@@ -732,26 +707,11 @@ function normalizeResultsList(value: unknown[]): StoredRunResult[] {
 }
 
 function hasImportPayload(
-  incidents: IncidentThreadRecord[],
   runbooks: RunbookRecord[],
   results: StoredRunResult[],
-  incidentMessages: Record<string, IncidentChatMessage[]>,
   resultTraces: Record<string, ResultTraceMemory>,
 ): boolean {
-  return (
-    incidents.length > 0 ||
-    runbooks.length > 0 ||
-    results.length > 0 ||
-    Object.keys(incidentMessages).length > 0 ||
-    Object.keys(resultTraces).length > 0
-  )
-}
-
-function hasIncidentPayload(
-  incidents: IncidentThreadRecord[],
-  incidentMessages: Record<string, IncidentChatMessage[]>,
-): boolean {
-  return incidents.length > 0 || Object.keys(incidentMessages).length > 0
+  return runbooks.length > 0 || hasResultPayload(results, resultTraces)
 }
 
 function hasResultPayload(
@@ -809,20 +769,6 @@ function nullableString(value: unknown): string | null {
   }
 
   return asString(value)
-}
-
-function addIncidentMessage(
-  incidentMessages: Record<string, IncidentChatMessage[]>,
-  rawMessage: unknown,
-): void {
-  const message = asObject(rawMessage)
-  const threadId = asString(message.threadId)
-  if (threadId.length === 0) return
-  if (!Object.prototype.hasOwnProperty.call(incidentMessages, threadId)) {
-    incidentMessages[threadId] = []
-  }
-
-  incidentMessages[threadId].push(normalizeIncidentMessageRow(message))
 }
 
 function addRunbookAction(
@@ -910,10 +856,7 @@ function setTraceReport(resultTraces: Record<string, ResultTraceMemory>, rawRepo
   resultTraces[resultId] = entry
 }
 
-function normalizeIncidentRow(
-  rawIncident: unknown,
-  incidentMessages: Record<string, IncidentChatMessage[]>,
-): IncidentThreadRecord {
+function normalizeIncidentRow(rawIncident: unknown): IncidentThreadRecord {
   const incident = asObject(rawIncident)
   const id = asString(incident.id)
   const prompt = asString(incident.prompt)
@@ -926,7 +869,7 @@ function normalizeIncidentRow(
     sessionId: asOptionalNonEmptyString(incident.sessionId),
     archived: incident.archivedAt != null,
     archivedAt: asNullableIsoString(incident.archivedAt),
-    lastMessagePreview: getIncidentPreviewFromMessages(incidentMessages[id] ?? []) ?? normalizePreviewText(prompt),
+    lastMessagePreview: normalizePreviewText(asOptionalString(incident.lastMessagePreview)) ?? normalizePreviewText(prompt),
   }
 }
 
@@ -1001,10 +944,8 @@ class DesktopStateStore {
   constructor(private readonly db: DesktopStateDatabase) {}
 
   async bootstrap(payload: DesktopStatePayload): Promise<DesktopProductStateSnapshot> {
-    const incidents = normalizeIncidentsList(payload.incidents)
     const runbooks = normalizeRunbooksList(payload.runbooks)
     const results = normalizeResultsList(payloadResults(payload))
-    const incidentMessages = normalizeIncidentMessages(payload.incidentMessages)
     const resultTraces = normalizeResultTraces(payloadResultTraces(payload))
 
     const importLedger = await this.db.legacyImportLedger.findUnique({
@@ -1012,23 +953,20 @@ class DesktopStateStore {
     })
 
     if (importLedger === null) {
-      await this.bootstrapFirstImport(incidents, runbooks, results, incidentMessages, resultTraces)
+      await this.bootstrapFirstImport(runbooks, results, resultTraces)
     } else {
-      await this.bootstrapExistingState(incidents, runbooks, results, incidentMessages, resultTraces)
+      await this.bootstrapExistingState(runbooks, results, resultTraces)
     }
 
     return this.readSnapshot()
   }
 
   private async bootstrapFirstImport(
-    incidents: IncidentThreadRecord[],
     runbooks: RunbookRecord[],
     results: StoredRunResult[],
-    incidentMessages: Record<string, IncidentChatMessage[]>,
     resultTraces: Record<string, ResultTraceMemory>,
   ): Promise<void> {
-    if (hasImportPayload(incidents, runbooks, results, incidentMessages, resultTraces)) {
-      await this.replaceIncidents(incidents, incidentMessages)
+    if (hasImportPayload(runbooks, results, resultTraces)) {
       await this.replaceRunbooksForLegacyImport(runbooks)
       const existingInvestigationCount = await this.db.investigationSession.count({})
       if (existingInvestigationCount === 0 && hasResultPayload(results, resultTraces)) {
@@ -1036,26 +974,19 @@ class DesktopStateStore {
       }
     }
 
-    await this.recordLegacyImport(incidents, runbooks, results)
+    await this.recordLegacyImport(runbooks, results)
   }
 
   private async bootstrapExistingState(
-    incidents: IncidentThreadRecord[],
     runbooks: RunbookRecord[],
     results: StoredRunResult[],
-    incidentMessages: Record<string, IncidentChatMessage[]>,
     resultTraces: Record<string, ResultTraceMemory>,
   ): Promise<void> {
-    const [existingIncidentCount, existingRunbookCount, existingInvestigationCount] =
+    const [existingRunbookCount, existingInvestigationCount] =
       await Promise.all([
-        this.db.incidentThread.count({}),
         this.db.runbook.count({}),
         this.db.investigationSession.count({}),
       ])
-
-    if (existingIncidentCount === 0 && hasIncidentPayload(incidents, incidentMessages)) {
-      await this.replaceIncidents(incidents, incidentMessages)
-    }
 
     if (existingRunbookCount === 0 && runbooks.length > 0) {
       await this.replaceRunbooksForLegacyImport(runbooks)
@@ -1067,12 +998,10 @@ class DesktopStateStore {
   }
 
   private async recordLegacyImport(
-    incidents: IncidentThreadRecord[],
     runbooks: RunbookRecord[],
     results: StoredRunResult[],
   ): Promise<void> {
     const payloadJson = JSON.stringify({
-      incidents: incidents.length,
       runbooks: runbooks.length,
       results: results.length,
     })
@@ -1091,19 +1020,37 @@ class DesktopStateStore {
     })
   }
 
-  async syncIncidents(payload: DesktopStatePayload): Promise<{ ok: true; count: number }> {
-    const incidents = normalizeIncidentsList(payload.incidents)
-    const incidentMessages = normalizeIncidentMessages(payload.incidentMessages)
-    await this.replaceIncidents(incidents, incidentMessages)
-    return { ok: true, count: incidents.length }
+  /** Incident threads without their messages, newest first. */
+  async listIncidentThreads(): Promise<IncidentThreadRecord[]> {
+    const rows = await this.db.incidentThread.findMany({
+      where: { deletedAt: null },
+      orderBy: { createdAt: 'desc' },
+    })
+    return rows.map((row) => normalizeIncidentRow(row))
   }
 
-  async getIncidentState(): Promise<DesktopIncidentStateSnapshot> {
-    return this.readIncidentSnapshot()
-  }
-
-  async replaceIncidentState(payload: DesktopStatePayload): Promise<{ ok: true; count: number }> {
-    return this.syncIncidents(payload)
+  /**
+   * Patches one thread's metadata with the fields present in `raw`, so a stale
+   * caller cannot overwrite fields it did not change. A missing row is created
+   * with defaults. Messages are left alone.
+   */
+  async saveThread(raw: unknown): Promise<{ ok: true }> {
+    const patch = asObject(raw)
+    const id = asString(patch.id)
+    if (id.length === 0) throw new Error('Incident thread id is required')
+    const now = new Date().toISOString()
+    const present = incidentThreadPatchColumns(patch, now)
+    const row: Record<string, string | null> = {
+      title: 'New Incident', prompt: '', state: 'IDLE', sessionId: null, createdAt: now,
+      archivedAt: null, lastMessagePreview: null, ...Object.fromEntries(present),
+    }
+    const updates = ['"updatedAt"=excluded."updatedAt"', ...[...present.keys()].flatMap(incidentThreadColumnUpdate)]
+    await this.db.$executeBatch([{
+      sql: `INSERT INTO "IncidentThread" ("id","title","prompt","state","sessionId","createdAt","updatedAt","archivedAt","lastMessagePreview")
+        VALUES (?,?,?,?,?,?,?,?,?) ON CONFLICT("id") DO UPDATE SET ${updates.join(',')}`,
+      parameters: [id, row.title, row.prompt, row.state, row.sessionId, row.createdAt, now, row.archivedAt, row.lastMessagePreview],
+    }])
+    return { ok: true }
   }
 
   async syncRunbooks(payload: DesktopStatePayload): Promise<{ ok: true; count: number }> {
@@ -1134,84 +1081,6 @@ class DesktopStateStore {
       const trace = resultTraces[result.id] ?? emptyTrace()
       await this.replaceResult(result, trace, false)
     }
-  }
-
-  private async replaceIncidents(
-    incidents: IncidentThreadRecord[],
-    incidentMessages: Record<string, IncidentChatMessage[]>,
-  ): Promise<void> {
-    if (this.db.$executeBatch !== undefined) {
-      await this.replaceIncidentsAtomically(incidents, incidentMessages)
-      return
-    }
-    // Compatibility for legacy in-memory adapters. Product SQLite always uses
-    // the atomic path, retaining threads referenced by durable operations.
-    await this.db.incidentMessage.deleteMany({})
-    await this.db.incidentThread.deleteMany({})
-
-    for (const incident of incidents) {
-      await this.db.incidentThread.create({
-        data: {
-          id: incident.id,
-          title: incident.title,
-          prompt: incident.prompt,
-          state: incident.state,
-          sessionId: incident.sessionId ?? null,
-          createdAt: incident.createdAt,
-          updatedAt: incident.createdAt,
-          archivedAt: incident.archivedAt ?? null,
-        },
-      })
-
-      const messages = incidentMessages[incident.id] ?? []
-      for (let index = 0; index < messages.length; index += 1) {
-        const message = messages[index]
-        await this.db.incidentMessage.create({
-          data: {
-            id: `${incident.id}:${message.kind}:${String(index)}`,
-            threadId: incident.id,
-            sortOrder: index,
-            kind: message.kind,
-            ...incidentMessageColumns(message),
-            messageJson: serializeIncidentMessage(message),
-            createdAt: incident.createdAt,
-            updatedAt: incident.createdAt,
-          },
-        })
-      }
-    }
-  }
-
-  private async replaceIncidentsAtomically(
-    incidents: IncidentThreadRecord[],
-    incidentMessages: Record<string, IncidentChatMessage[]>,
-  ): Promise<void> {
-    const statements: { sql: string; parameters: (string | number | null)[] }[] = [{
-      sql: 'UPDATE "IncidentThread" SET "deletedAt" = ? WHERE "deletedAt" IS NULL',
-      parameters: [new Date().toISOString()],
-    }]
-    for (const incident of incidents) {
-      statements.push({
-        sql: `INSERT INTO "IncidentThread" ("id","title","prompt","state","sessionId","createdAt","updatedAt","archivedAt","deletedAt")
-          VALUES (?,?,?,?,?,?,?,?,NULL) ON CONFLICT("id") DO UPDATE SET
-          "title"=excluded."title","prompt"=excluded."prompt","state"=excluded."state","sessionId"=excluded."sessionId",
-          "updatedAt"=excluded."updatedAt","archivedAt"=excluded."archivedAt","deletedAt"=NULL`,
-        parameters: [incident.id, incident.title, incident.prompt, incident.state, incident.sessionId ?? null,
-          incident.createdAt, new Date().toISOString(), incident.archivedAt ?? null],
-      }, { sql: 'DELETE FROM "IncidentMessage" WHERE "threadId" = ?', parameters: [incident.id] })
-      for (const [index, message] of (incidentMessages[incident.id] ?? []).entries()) {
-        const columns = incidentMessageColumns(message)
-        statements.push({
-          sql: `INSERT INTO "IncidentMessage" ("id","threadId","sortOrder","kind","text","streamText","toolCallsJson","finalText","status","errorMsg","messageJson","createdAt","updatedAt")
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-          parameters: [`${incident.id}:${message.kind}:${String(index)}`, incident.id, index, message.kind,
-            columns.text, columns.streamText, columns.toolCallsJson, columns.finalText, columns.status,
-            columns.errorMsg, serializeIncidentMessage(message), incident.createdAt, new Date().toISOString()],
-        })
-      }
-    }
-    if (this.db.$executeBatch === undefined) throw new Error('Atomic incident persistence is unavailable')
-    await this.db.$executeBatch(statements)
   }
 
   /**
@@ -1451,28 +1320,9 @@ class DesktopStateStore {
     }
   }
 
-  private async readIncidentSnapshot(): Promise<DesktopIncidentStateSnapshot> {
-    const incidents = await this.db.incidentThread.findMany({
-      where: { deletedAt: null },
-      orderBy: { createdAt: 'desc' },
-    })
-    const messages = await this.db.incidentMessage.findMany({
-      where: { threadId: { in: incidents.map((incident) => incident.id) } },
-      orderBy: { sortOrder: 'asc' },
-    })
-    const incidentMessages: Record<string, IncidentChatMessage[]> = {}
-    for (const rawMessage of messages) addIncidentMessage(incidentMessages, rawMessage)
-
-    return {
-      incidents: incidents.map((incident) => normalizeIncidentRow(incident, incidentMessages)),
-      incidentMessages,
-    }
-  }
-
   private async readSnapshot(): Promise<DesktopProductStateSnapshot> {
-    const [incidentState, runbooks, runbookActions, resultRows, traceEntries, toolRuns, reports] =
+    const [runbooks, runbookActions, resultRows, traceEntries, toolRuns, reports] =
       await Promise.all([
-        this.readIncidentSnapshot(),
         this.db.runbook.findMany({
           where: { deletedAt: null },
           orderBy: { createdAt: 'desc' },
@@ -1507,7 +1357,6 @@ class DesktopStateStore {
     }
 
     return {
-      ...incidentState,
       runbooks: runbooks.map((runbook) => normalizeRunbookRow(runbook, runbookActionsByRunbookId)),
       results: resultRows.map((result) => normalizeResultRow(result)),
       resultTraces: normalizeResultTraceEntries(resultRows, resultTraces),
@@ -1524,23 +1373,119 @@ export async function loadIncidentThreadMessages(
   return rows.map((row) => normalizeIncidentMessageRow(row))
 }
 
+// Message ids are unique across threads; an id owned by another thread is
+// ignored rather than moved, so one thread's write never rewrites another's.
+const MESSAGE_CONTENT_UPDATES = `"kind"=excluded."kind","text"=excluded."text",
+        "streamText"=excluded."streamText","toolCallsJson"=excluded."toolCallsJson","finalText"=excluded."finalText",
+        "status"=excluded."status","errorMsg"=excluded."errorMsg","messageJson"=excluded."messageJson","updatedAt"=excluded."updatedAt"`
+
+function ensureIncidentThreadStatement(threadId: string, now: string): BatchStatement {
+  // The agent can answer before the renderer saved a new thread's row.
+  return {
+    sql: `INSERT INTO "IncidentThread" ("id","title","prompt","state","createdAt","updatedAt")
+      VALUES (?,'New Incident','','IDLE',?,?) ON CONFLICT("id") DO NOTHING`,
+    parameters: [threadId, now, now],
+  }
+}
+
+/**
+ * Replaces one incident thread's messages in a single transaction. Rows are
+ * keyed by message id, so unchanged messages are not rewritten. Only the agent
+ * runtime, which owns the full list, calls this.
+ */
+export async function saveIncidentThreadMessages(
+  db: Pick<DesktopStateDatabase, '$executeBatch'>,
+  threadId: string,
+  rawMessages: readonly unknown[],
+): Promise<void> {
+  if (threadId.length === 0) throw new Error('Incident thread id is required')
+  const now = new Date().toISOString()
+  const messages = rawMessages.map(normalizeChatMessage).filter((message) => message !== null)
+  const rowIds: string[] = []
+  const statements: BatchStatement[] = [ensureIncidentThreadStatement(threadId, now)]
+  for (const [index, message] of messages.entries()) {
+    const messageId = asString(message.id)
+    const rowId = messageId.length > 0 && !rowIds.includes(messageId) ? messageId : `${threadId}:${String(index)}`
+    rowIds.push(rowId)
+    const columns = incidentMessageColumns(message)
+    statements.push({
+      sql: `INSERT INTO "IncidentMessage" ("id","threadId","sortOrder","kind","text","streamText","toolCallsJson","finalText","status","errorMsg","messageJson","createdAt","updatedAt")
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT("id") DO UPDATE SET
+        "sortOrder"=excluded."sortOrder",${MESSAGE_CONTENT_UPDATES}
+        WHERE "IncidentMessage"."threadId" = excluded."threadId"
+          AND ("IncidentMessage"."messageJson" IS NOT excluded."messageJson" OR "IncidentMessage"."sortOrder" IS NOT excluded."sortOrder")`,
+      parameters: [rowId, threadId, index, message.kind, columns.text, columns.streamText, columns.toolCallsJson,
+        columns.finalText, columns.status, columns.errorMsg, serializeIncidentMessage(message), now, now],
+    })
+  }
+  statements.push({
+    sql: 'DELETE FROM "IncidentMessage" WHERE "threadId" = ? AND "id" NOT IN (SELECT value FROM json_each(?))',
+    parameters: [threadId, JSON.stringify(rowIds)],
+  }, {
+    sql: 'UPDATE "IncidentThread" SET "lastMessagePreview" = ?, "updatedAt" = ? WHERE "id" = ?',
+    parameters: [getIncidentPreviewFromMessages(messages), now, threadId],
+  })
+  await db.$executeBatch(statements)
+}
+
+/**
+ * Appends messages after a thread's last stored message in one batch. Nothing
+ * is deleted, so a renderer that has not loaded the history cannot drop it.
+ */
+export async function appendIncidentThreadMessages(
+  db: Pick<DesktopStateDatabase, '$executeBatch'>,
+  threadId: string,
+  rawMessages: readonly unknown[],
+): Promise<void> {
+  if (threadId.length === 0) throw new Error('Incident thread id is required')
+  const messages = rawMessages.map(normalizeChatMessage).filter((message) => message !== null)
+  if (messages.length === 0) return
+  const now = new Date().toISOString()
+  const rowIds = new Set<string>()
+  const statements: BatchStatement[] = [ensureIncidentThreadStatement(threadId, now)]
+  for (const message of messages) {
+    const messageId = asString(message.id)
+    const rowId = messageId.length > 0 && !rowIds.has(messageId) ? messageId : `${threadId}:${crypto.randomUUID()}`
+    rowIds.add(rowId)
+    const columns = incidentMessageColumns(message)
+    statements.push({
+      sql: `INSERT INTO "IncidentMessage" ("id","threadId","sortOrder","kind","text","streamText","toolCallsJson","finalText","status","errorMsg","messageJson","createdAt","updatedAt")
+        VALUES (?,?,(SELECT COALESCE(MAX("sortOrder"), -1) + 1 FROM "IncidentMessage" WHERE "threadId" = ?),?,?,?,?,?,?,?,?,?,?)
+        ON CONFLICT("id") DO UPDATE SET ${MESSAGE_CONTENT_UPDATES}
+        WHERE "IncidentMessage"."threadId" = excluded."threadId" AND "IncidentMessage"."messageJson" IS NOT excluded."messageJson"`,
+      parameters: [rowId, threadId, threadId, message.kind, columns.text, columns.streamText, columns.toolCallsJson,
+        columns.finalText, columns.status, columns.errorMsg, serializeIncidentMessage(message), now, now],
+    })
+  }
+  statements.push({
+    sql: 'UPDATE "IncidentThread" SET "lastMessagePreview" = COALESCE(?, "lastMessagePreview"), "updatedAt" = ? WHERE "id" = ?',
+    parameters: [getIncidentPreviewFromMessages(messages), now, threadId],
+  })
+  await db.$executeBatch(statements)
+}
+
 export function createDesktopStateHandlers(
   db: DesktopStateDatabase,
 ): Record<string, RpcHandler> {
   const store = new DesktopStateStore(db)
 
   return {
-    'incidents:getState': async () => {
-      return store.getIncidentState()
+    'incidents:list': async () => {
+      return store.listIncidentThreads()
     },
-    'incidents:replaceState': async (payload: unknown) => {
-      return store.replaceIncidentState(asObject(payload))
+    'incidents:getThreadMessages': async (payload: unknown) => {
+      return loadIncidentThreadMessages(db, asString(asObject(payload).threadId))
+    },
+    'incidents:saveThread': async (payload: unknown) => {
+      return store.saveThread(asObject(payload).thread)
+    },
+    'incidents:appendThreadMessages': async (payload: unknown) => {
+      const { threadId, messages } = asObject(payload)
+      await appendIncidentThreadMessages(db, asString(threadId), Array.isArray(messages) ? messages : [])
+      return { ok: true }
     },
     'desktopState:bootstrap': async (payload: unknown) => {
       return store.bootstrap(asObject(payload))
-    },
-    'desktopState:syncIncidents': async (payload: unknown) => {
-      return store.syncIncidents(asObject(payload))
     },
     'desktopState:syncRunbooks': async (payload: unknown) => {
       return store.syncRunbooks(asObject(payload))

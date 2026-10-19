@@ -101,8 +101,6 @@ describe("DesktopStateBootstrap", () => {
     mockIpcInvoke.mockImplementation((channel: string) => {
       if (channel === "desktopState:bootstrap") {
         return Promise.resolve({
-          incidents: [],
-          incidentMessages: {},
           runbooks: [{ id: "server-runbook" }],
           results: [],
           resultTraces: {},
@@ -144,8 +142,6 @@ describe("DesktopStateBootstrap", () => {
     mockIpcInvoke.mockImplementation((channel: string) => {
       if (channel === "desktopState:bootstrap") {
         return Promise.resolve({
-          incidents: [],
-          incidentMessages: {},
           runbooks: [{ id: "server-runbook" }],
           results: [],
           resultTraces: {},
@@ -196,8 +192,6 @@ describe("DesktopStateBootstrap", () => {
     mockIpcInvoke.mockImplementation((channel: string) => {
       if (channel === "desktopState:bootstrap") {
         return Promise.resolve({
-          incidents: [{ id: "incident-1" }],
-          incidentMessages: { "incident-1": [{ id: "message-1" }] },
           runbooks: [{ id: "server-runbook" }],
           results: [],
           resultTraces: {},
@@ -230,8 +224,6 @@ describe("DesktopStateBootstrap", () => {
     });
 
     expect(mockIpcInvoke).toHaveBeenCalledWith("desktopState:bootstrap", {
-      incidents: [],
-      incidentMessages: {},
       runbooks: [{ id: "local-runbook" }],
       results: [{ id: "existing-result", runbookTitle: "Old" }],
       resultTraces: { "existing-result": { execution: null } },

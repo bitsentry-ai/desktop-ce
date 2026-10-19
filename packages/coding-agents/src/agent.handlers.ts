@@ -17,6 +17,7 @@ import type { RunbookContextV1 } from '@bitsentry-ce/core/features/runbooks/desk
 import type { RunbookAuthoringProposalPersistence } from '@bitsentry-ce/core/features/runbooks'
 import type {
   AgentRuntimeIncidentHistoryLoader,
+  AgentRuntimeIncidentHistorySaver,
   AgentRuntimeLlmAdapter,
   AgentRuntimeRunbookGateway,
   AgentRuntimeRunbookStore,
@@ -52,6 +53,7 @@ export interface AgentServiceDependencies {
   pluginRuntime?: DesktopPluginRuntimeService
   authoringProposalStore?: RunbookAuthoringProposalPersistence
   loadIncidentMessages?: AgentRuntimeIncidentHistoryLoader
+  saveIncidentMessages?: AgentRuntimeIncidentHistorySaver
   windowGetter: () => AgentRuntimeWindow | null
 }
 
@@ -64,13 +66,14 @@ export type AgentRuntimeServiceClass = new (
   pluginRuntime?: DesktopPluginRuntimeService,
   authoringProposalStore?: RunbookAuthoringProposalPersistence,
   loadIncidentMessages?: AgentRuntimeIncidentHistoryLoader,
+  saveIncidentMessages?: AgentRuntimeIncidentHistorySaver,
 ) => AgentRuntimeSessionController
 
 export function createDesktopAgentService(
   dependencies: AgentServiceDependencies,
   services: { AgentRuntimeService: AgentRuntimeServiceClass },
 ): AgentRuntimeSessionController {
-  const { llmAdapter, runbookGateway, runbookStore, onRunbooksChanged, pluginRuntime, authoringProposalStore, loadIncidentMessages, windowGetter } = dependencies
+  const { llmAdapter, runbookGateway, runbookStore, onRunbooksChanged, pluginRuntime, authoringProposalStore, loadIncidentMessages, saveIncidentMessages, windowGetter } = dependencies
   return new services.AgentRuntimeService(
     windowGetter,
     llmAdapter,
@@ -80,6 +83,7 @@ export function createDesktopAgentService(
     pluginRuntime,
     authoringProposalStore,
     loadIncidentMessages,
+    saveIncidentMessages,
   )
 }
 
