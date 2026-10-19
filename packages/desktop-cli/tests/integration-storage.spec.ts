@@ -54,7 +54,7 @@ describe('generic SQLite integration storage', () => {
         CREATE TABLE "IncidentThread" (id TEXT PRIMARY KEY, title TEXT, prompt TEXT, state TEXT, "sessionId" TEXT,
           "createdAt" TEXT, "updatedAt" TEXT, "archivedAt" TEXT, "deletedAt" TEXT);
         CREATE TABLE "IncidentMessage" (id TEXT PRIMARY KEY, "threadId" TEXT, "sortOrder" INTEGER, kind TEXT, text TEXT,
-          "streamText" TEXT, "toolCallsJson" TEXT, "finalText" TEXT, status TEXT, "errorMsg" TEXT, "createdAt" TEXT, "updatedAt" TEXT);
+          "streamText" TEXT, "toolCallsJson" TEXT, "finalText" TEXT, status TEXT, "errorMsg" TEXT, "messageJson" TEXT, "createdAt" TEXT, "updatedAt" TEXT);
       `)
       const sync = createDesktopStateHandlers(first)['desktopState:syncIncidents']
       if (sync === undefined) throw new Error('Missing incident sync handler')
