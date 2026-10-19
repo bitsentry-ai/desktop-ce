@@ -19,9 +19,9 @@ const INCIDENT_MESSAGES_KEY = "bitsentry_incident_messages";
 const INCIDENT_PROVIDER_LOCK_KEY = "bitsentry_incident_providers";
 const INCIDENT_TOKEN_USAGE_KEY = "bitsentry_incident_token_usage";
 export const LLM_PROVIDERS_UPDATED_EVENT = "bitsentry:llm-providers-updated";
-export const DESKTOP_SYNC_DEBOUNCE_MS = 150;
-// Streaming changes arrive faster than the debounce; still save this often.
-export const DESKTOP_SYNC_MAX_WAIT_MS = 1000;
+// Web mode only: streaming changes arrive faster than the debounce; still save this often.
+export const LOCAL_SAVE_DEBOUNCE_MS = 150;
+export const LOCAL_SAVE_MAX_WAIT_MS = 1000;
 
 export function loadProviderLocks(): Record<string, ProviderLockEntry> {
   const parsed = readJsonRecord(localStorage.getItem(INCIDENT_PROVIDER_LOCK_KEY));

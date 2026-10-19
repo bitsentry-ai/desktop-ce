@@ -12,7 +12,7 @@ const mainProcessSourceRoots = [
   "packages/core/src",
   "packages/desktop-cli/src",
 ];
-const incidentWritePattern = /\b(incident(?:Thread|Message)\.(?:create|createMany|upsert|update|updateMany|delete|deleteMany))\(/g;
+const incidentWritePattern = /\b(incident(?:Thread|Message)\.(?:create|createMany|upsert|update|updateMany|delete|deleteMany))\(|((?:INSERT INTO|UPDATE|DELETE FROM) "Incident(?:Thread|Message)")/g;
 
 async function sourceFiles(directory: string): Promise<string[]> {
   const entries = await readdir(directory, { withFileTypes: true });
@@ -34,16 +34,16 @@ describe("incident persistence ownership", () => {
       for (const file of await sourceFiles(join(repositoryRoot, sourceRoot))) {
         const contents = await readFile(file, "utf8");
         for (const match of contents.matchAll(incidentWritePattern)) {
-          writers.push(`${relative(repositoryRoot, file)}:${match[1]}`);
+          writers.push(`${relative(repositoryRoot, file)}:${match[1] ?? match[2]}`);
         }
       }
     }
 
-    expect(writers.sort()).toEqual([
-      "packages/core/src/features/desktop-state/desktop-state.handlers.ts:incidentMessage.create",
-      "packages/core/src/features/desktop-state/desktop-state.handlers.ts:incidentMessage.deleteMany",
-      "packages/core/src/features/desktop-state/desktop-state.handlers.ts:incidentThread.create",
-      "packages/core/src/features/desktop-state/desktop-state.handlers.ts:incidentThread.deleteMany",
+    expect([...new Set(writers)].sort()).toEqual([
+      'packages/core/src/features/desktop-state/desktop-state.handlers.ts:DELETE FROM "IncidentMessage"',
+      'packages/core/src/features/desktop-state/desktop-state.handlers.ts:INSERT INTO "IncidentMessage"',
+      'packages/core/src/features/desktop-state/desktop-state.handlers.ts:INSERT INTO "IncidentThread"',
+      'packages/core/src/features/desktop-state/desktop-state.handlers.ts:UPDATE "IncidentThread"',
     ]);
   });
 });

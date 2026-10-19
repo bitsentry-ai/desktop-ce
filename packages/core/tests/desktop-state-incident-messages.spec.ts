@@ -8,6 +8,7 @@ import { DbClient } from "../src/features/desktop/desktop-database-client";
 import {
   createDesktopStateHandlers,
   loadIncidentThreadMessages,
+  saveIncidentThreadMessages,
 } from "../src/features/desktop-state/desktop-state.handlers";
 
 const createdAt = "2026-10-01T10:00:00.000Z";
@@ -40,7 +41,7 @@ beforeEach(async () => {
   db = new DbClient({ datasources: { db: { url: `file:${path.join(directory, "profile.db")}` } } });
   await db.$executeRawUnsafe(`
     CREATE TABLE "IncidentThread" (id TEXT PRIMARY KEY, title TEXT, prompt TEXT, state TEXT, "sessionId" TEXT,
-      "createdAt" TEXT, "updatedAt" TEXT, "archivedAt" TEXT, "deletedAt" TEXT);
+      "createdAt" TEXT, "updatedAt" TEXT, "archivedAt" TEXT, "deletedAt" TEXT, "lastMessagePreview" TEXT);
     CREATE TABLE "IncidentMessage" (id TEXT PRIMARY KEY, "threadId" TEXT, "sortOrder" INTEGER, kind TEXT, text TEXT,
       "streamText" TEXT, "toolCallsJson" TEXT, "finalText" TEXT, status TEXT, "errorMsg" TEXT, "messageJson" TEXT,
       "createdAt" TEXT, "updatedAt" TEXT);
@@ -60,16 +61,61 @@ describe("incident message persistence", () => {
       richAgentMessage,
     ];
     const threadB = [{ id: "message-user-2", kind: "user", text: "Other thread" }];
-    await handlers["desktopState:syncIncidents"]({
-      incidents: [
-        { id: "thread-a", title: "A", prompt: "Why is api-1 down?", state: "completed", createdAt },
-        { id: "thread-b", title: "B", prompt: "Other thread", state: "completed", createdAt },
-      ],
-      incidentMessages: { "thread-a": threadA, "thread-b": threadB },
-    });
+    await handlers["incidents:saveThread"]({ thread: { id: "thread-a", title: "A", prompt: "Why is api-1 down?", state: "completed", createdAt } });
+    await handlers["incidents:appendThreadMessages"]({ threadId: "thread-a", messages: threadA });
+    await handlers["incidents:appendThreadMessages"]({ threadId: "thread-b", messages: threadB });
 
     expect(await loadIncidentThreadMessages(db, "thread-a")).toEqual(threadA);
     expect(await loadIncidentThreadMessages(db, "thread-b")).toEqual(threadB);
+    expect(await handlers["incidents:list"]({})).toMatchObject([
+      { id: "thread-b", lastMessagePreview: "Other thread" },
+      { id: "thread-a", title: "A", lastMessagePreview: "Disk is full" },
+    ]);
+  });
+
+  it("saves one thread's messages without touching another thread", async () => {
+    const threadA = [
+      { id: "a-1", kind: "user", text: "First" },
+      { id: "a-2", kind: "agent", finalText: "Answer", status: "done" },
+      { id: "a-3", kind: "user", text: "Removed later" },
+    ];
+    const threadB = [{ id: "b-1", kind: "user", text: "Untouched" }];
+    await saveIncidentThreadMessages(db, "thread-a", threadA);
+    await saveIncidentThreadMessages(db, "thread-b", threadB);
+
+    const changed = { id: "a-2", kind: "agent", finalText: "Better answer", status: "done" };
+    const added = { id: "a-4", kind: "user", text: "Follow-up" };
+    await saveIncidentThreadMessages(db, "thread-a", [threadA[0], changed, added]);
+
+    expect(await loadIncidentThreadMessages(db, "thread-a")).toEqual([threadA[0], changed, added]);
+    expect(await loadIncidentThreadMessages(db, "thread-b")).toEqual(threadB);
+  });
+
+  it("appends after the stored messages and keeps all of them", async () => {
+    const handlers = createDesktopStateHandlers(db);
+    const history = [
+      { id: "h-1", kind: "user", text: "First" },
+      { id: "h-2", kind: "agent", finalText: "Answer", status: "done" },
+    ];
+    await saveIncidentThreadMessages(db, "thread-a", history);
+
+    const failedSend = [
+      { id: "s-1", kind: "user", text: "Follow-up" },
+      { id: "s-2", kind: "agent", finalText: "Provider down", status: "error", errorMsg: "Provider down" },
+    ];
+    await handlers["incidents:appendThreadMessages"]({ threadId: "thread-a", messages: failedSend });
+
+    expect(await loadIncidentThreadMessages(db, "thread-a")).toEqual([...history, ...failedSend]);
+  });
+
+  it("patches only the thread fields it is given", async () => {
+    const handlers = createDesktopStateHandlers(db);
+    await handlers["incidents:saveThread"]({ thread: { id: "thread-a", title: "Disk full", prompt: "Why?", state: "COMPLETED", createdAt } });
+    await handlers["incidents:saveThread"]({ thread: { id: "thread-a", archivedAt: createdAt } });
+
+    expect(await handlers["incidents:list"]({})).toMatchObject([
+      { id: "thread-a", title: "Disk full", state: "COMPLETED", archived: true, archivedAt: createdAt },
+    ]);
   });
 
   it("reads rows written before messageJson from the summary columns", async () => {
