@@ -1,4 +1,9 @@
 export { classifySshError } from "./shared/ssh-journal-query-builder";
+export {
+  SqliteAgentQueueStore,
+  type AgentQueuePersistence,
+  type StoredAgentQueue,
+} from "./agent-queue.store";
 
 export type {
   AgentSessionState,

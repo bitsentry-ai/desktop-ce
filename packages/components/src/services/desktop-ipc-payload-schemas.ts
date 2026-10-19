@@ -485,6 +485,9 @@ export function createDesktopIpcPayloadValidator(
     "agent:cancel": z.object({
       sessionId: z.uuid(),
     }),
+    "agent:restoreQueue": z.object({
+      incidentThreadId: z.string().trim().min(1),
+    }),
     "agent:updateQueue": z.discriminatedUnion("action", [
       z.object({
         sessionId: z.uuid(),
