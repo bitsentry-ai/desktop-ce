@@ -587,10 +587,11 @@ export function createDesktopIpcPayloadValidator(
     "runbooks:cancelExecution": z.object({
       executionId: z.uuid(),
     }),
-    "incidents:getState": optionalLooseObjectSchema,
-    "incidents:replaceState": optionalLooseObjectSchema,
+    "incidents:list": optionalLooseObjectSchema,
+    "incidents:getThreadMessages": z.object({ threadId: z.string().min(1) }).strict(),
+    "incidents:saveThread": z.object({ thread: looseObjectSchema.extend({ id: z.string().min(1) }) }).strict(),
+    "incidents:appendThreadMessages": z.object({ threadId: z.string().min(1), messages: z.array(looseObjectSchema) }).strict(),
     "desktopState:bootstrap": optionalLooseObjectSchema,
-    "desktopState:syncIncidents": optionalLooseObjectSchema,
     "desktopState:syncRunbooks": optionalLooseObjectSchema,
     "desktopState:syncResults": optionalLooseObjectSchema,
   };

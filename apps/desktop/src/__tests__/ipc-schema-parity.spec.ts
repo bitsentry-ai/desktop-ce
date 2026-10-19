@@ -103,6 +103,9 @@ function makeValidPayloads(): Record<DesktopRpcChannel, unknown> {
     'runbooks:execute': { runbookId: 'runbook-1' },
     'runbooks:getExecution': { executionId: UUID },
     'runbooks:cancelExecution': { executionId: UUID },
+    'incidents:getThreadMessages': { threadId: 'thread-1' },
+    'incidents:saveThread': { thread: { id: 'thread-1', title: 'Disk full' } },
+    'incidents:appendThreadMessages': { threadId: 'thread-1', messages: [{ id: 'message-1', kind: 'user', text: 'Why?' }] },
   } satisfies Partial<Record<DesktopRpcChannel, unknown>>)
 
   return payloads
