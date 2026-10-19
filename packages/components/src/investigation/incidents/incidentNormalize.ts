@@ -222,6 +222,9 @@ function normalizeToolCallState(value: unknown): ToolCallCard["state"] {
   return "done";
 }
 
+// The timeline orders tool calls by startedAt and completedAt.
+const OPTIONAL_TOOL_CALL_TEXT = ["output", "error", "modelContext", "progress", "startedAt", "completedAt"] as const;
+
 function normalizeToolCalls(toolCalls: unknown): ToolCallCard[] {
   if (!Array.isArray(toolCalls)) return [];
   const normalized = new Map<string, ToolCallCard>();
@@ -240,12 +243,10 @@ function normalizeToolCalls(toolCalls: unknown): ToolCallCard[] {
     };
     const input = asRecord(record.input);
     if (input !== null) card.input = input;
-    const output = getString(record, "output");
-    if (output !== undefined) card.output = output;
-    const error = getString(record, "error");
-    if (error !== undefined) card.error = error;
-    const modelContext = getString(record, "modelContext");
-    if (modelContext !== undefined) card.modelContext = modelContext;
+    for (const key of OPTIONAL_TOOL_CALL_TEXT) {
+      const text = getString(record, key);
+      if (text !== undefined) card[key] = text;
+    }
 
     normalized.set(toolCallId, card);
   }
@@ -390,6 +391,7 @@ function normalizeAgentIterations(value: unknown): Extract<ChatMessage, { kind: 
       completedAt: getString(record, "completedAt"),
       text: getString(record, "text") ?? "",
       ...(record.hasCommandOutput === true ? { hasCommandOutput: true as const } : {}),
+      ...(typeof record.textStartedAt === "string" ? { textStartedAt: record.textStartedAt } : {}),
       toolCallIds: dedupeToolCallIds(record.toolCallIds),
       status: normalizeIterationStatus(record.status),
     };

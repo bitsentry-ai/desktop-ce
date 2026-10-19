@@ -35,6 +35,9 @@ export interface ToolCallCard {
   toolCallId: string;
   toolName: string;
   state: "running" | "done" | "failed";
+  /** When the tool started and ended; places the call among the turn's text. */
+  startedAt?: string;
+  completedAt?: string;
   error?: string;
   input?: Record<string, unknown>;
   output?: string;
@@ -72,6 +75,8 @@ export interface AgentIteration {
   text: string;
   /** Set once a command_output delta streamed into this iteration. */
   hasCommandOutput?: true;
+  /** When the iteration's first text streamed in; the timeline places the text there among its tool calls. */
+  textStartedAt?: string;
   toolCallIds: string[];
   status: "thinking" | "streaming" | "done" | "error";
 }
