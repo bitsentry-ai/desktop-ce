@@ -2,7 +2,7 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { createDesktopStateHandlers } from '@bitsentry-ce/core/features/desktop-state/desktop-state.handlers'
+import { createDesktopStateHandlers, saveIncidentThreadMessages } from '@bitsentry-ce/core/features/desktop-state/desktop-state.handlers'
 import { DbClient } from '@bitsentry-ce/core/features/desktop/desktop-database-client'
 import { ensureIntegrationStorageSchema } from '../src/runtime/integration-storage-schema.js'
 import { DesktopIntegrationOperationStore } from '../src/runtime/integration-operation-store.js'
@@ -52,15 +52,12 @@ describe('generic SQLite integration storage', () => {
     try {
       await first.$executeRawUnsafe(`
         CREATE TABLE "IncidentThread" (id TEXT PRIMARY KEY, title TEXT, prompt TEXT, state TEXT, "sessionId" TEXT,
-          "createdAt" TEXT, "updatedAt" TEXT, "archivedAt" TEXT, "deletedAt" TEXT);
+          "createdAt" TEXT, "updatedAt" TEXT, "archivedAt" TEXT, "deletedAt" TEXT, "lastMessagePreview" TEXT);
         CREATE TABLE "IncidentMessage" (id TEXT PRIMARY KEY, "threadId" TEXT, "sortOrder" INTEGER, kind TEXT, text TEXT,
           "streamText" TEXT, "toolCallsJson" TEXT, "finalText" TEXT, status TEXT, "errorMsg" TEXT, "messageJson" TEXT, "createdAt" TEXT, "updatedAt" TEXT);
       `)
-      const sync = createDesktopStateHandlers(first)['desktopState:syncIncidents']
-      if (sync === undefined) throw new Error('Missing incident sync handler')
-      const snapshot = { incidents: [{ id: 'thread', title: 'Thread', prompt: 'Investigate', state: 'completed', createdAt: new Date().toISOString() }],
-        incidentMessages: { thread: [{ kind: 'user', text: 'Preserved message' }] } }
-      await sync(snapshot)
+      await createDesktopStateHandlers(first)['incidents:saveThread']?.({ thread: { id: 'thread', title: 'Thread', prompt: 'Investigate', state: 'completed', createdAt: new Date().toISOString() } })
+      await saveIncidentThreadMessages(first, 'thread', [{ id: 'm-1', kind: 'user', text: 'Preserved message' }])
       await ensureIntegrationStorageSchema(first)
       await ensureIntegrationStorageSchema(first)
       await first.$queryRaw(`INSERT INTO "IntegrationConnection"
@@ -93,14 +90,13 @@ describe('generic SQLite integration storage', () => {
       } finally {
         await reopened.$disconnect()
       }
-      await sync(snapshot)
+      await saveIncidentThreadMessages(first, 'thread', [{ id: 'm-1', kind: 'user', text: 'Preserved message' }])
       await first.$executeRawUnsafe(`CREATE TRIGGER reject_message BEFORE INSERT ON "IncidentMessage"
         BEGIN SELECT RAISE(ABORT, 'simulated snapshot write failure'); END;`)
-      await expect(sync(snapshot)).rejects.toThrow('simulated snapshot write failure')
+      await expect(saveIncidentThreadMessages(first, 'thread', [{ id: 'm-2', kind: 'user', text: 'Replacement' }]))
+        .rejects.toThrow('simulated snapshot write failure')
       expect(await first.$queryRaw('SELECT text FROM "IncidentMessage"')).toEqual([{ text: 'Preserved message' }])
       await first.$executeRawUnsafe('DROP TRIGGER reject_message')
-      await sync({ incidents: [], incidentMessages: {} })
-      expect((await first.$queryRaw('SELECT "deletedAt" FROM "IncidentThread" WHERE id = ?', 'thread'))[0]?.deletedAt).toBeTruthy()
       expect((await first.$queryRaw('SELECT "threadId" FROM "IntegrationOperation" WHERE id = ?', 'intent'))[0]?.threadId).toBe('thread')
       await expect(async () => {
         await first.$queryRaw('DELETE FROM "IntegrationConnection" WHERE id = ? RETURNING id', 'instance')
