@@ -6,6 +6,7 @@ import type {
   AgentServicePort,
   RunbookAuthoringProposalReview,
 } from "../services/contracts";
+import { notifyIncidentAttentionChanged } from "../layout/incident-nav-status";
 import {
   Select,
   SelectContent,
@@ -150,6 +151,7 @@ export default function RunbookProposalArtifact({
       setError(messageForError(decisionError));
     } finally {
       setBusy(false);
+      notifyIncidentAttentionChanged();
     }
   };
 
