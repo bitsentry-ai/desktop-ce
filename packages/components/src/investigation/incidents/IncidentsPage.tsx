@@ -11,7 +11,7 @@ import {
   useState,
 } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
-import { ChatBubble, hasWaitingAgentIndicator } from "../../chat/ChatBubble";
+import { hasWaitingAgentIndicator } from "../../chat/ChatBubble";
 import IncidentArtifactsRail, {
   countIncidentArtifacts,
 } from "../IncidentArtifactsRail";
@@ -43,7 +43,6 @@ import type {
   InteractionMode,
   ThreadStatus,
 } from "../../chat/types";
-import { Composer } from "../../chat/Composer";
 import { settleInterruptedAgentTurn } from "../../chat/runtimeProjection";
 import { CustomerReportIntakeChatContext, useCustomerReportIntake } from "../../chat/useCustomerReportIntake";
 import {
@@ -79,6 +78,9 @@ import {
   saveProviderLock,
 } from "./incidentStorage";
 import type { IncidentThread } from "./types";
+import { IncidentComposer } from "./IncidentComposer";
+import { useIncidentDraftStore } from "./incidentDraftStore";
+import { IncidentMessageList } from "./IncidentMessageList";
 import { useIncidentAgentEvents } from "./useIncidentAgentEvents";
 import { useIncidentComposerAttachments } from "./useIncidentComposerAttachments";
 import { useIncidentPersistence } from "./useIncidentPersistence";
@@ -139,7 +141,6 @@ export default function IncidentsPage() {
   const reconciledSessionIdsRef = useRef<Set<string>>(new Set());
   const checkingSessionIdsRef = useRef<Set<string>>(new Set());
 
-  const [prompt, setPrompt] = useState("");
   const [showScrollIndicator, setShowScrollIndicator] = useState(false);
   const [isScrollingToBottom, setIsScrollingToBottom] = useState(false);
   const showScrollIndicatorRef = useRef(false);
@@ -395,7 +396,7 @@ export default function IncidentsPage() {
   // Pre-populate prompt from ?prompt= URL param (e.g. launched from Runbook page)
   useEffect(() => {
     if (urlPrompt === null || activeId === null) return;
-    setPrompt(decodeURIComponent(urlPrompt));
+    useIncidentDraftStore.getState().setDraft(activeId, decodeURIComponent(urlPrompt));
     void navigate(`/incidents?id=${activeId}`, { replace: true });
   }, [urlPrompt, activeId]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -570,7 +571,6 @@ export default function IncidentsPage() {
     if (selectedProviderKey !== null) {
       saveProviderLock(id, selectedProviderKey, selectedModelId, selectedAccessLevel);
     }
-    setPrompt("");
     void navigate(`/incidents?id=${id}`);
   };
 
@@ -620,9 +620,11 @@ export default function IncidentsPage() {
   );
 
   /** Sets the composer text and attachments, except for a customer report answer, which leaves the engineer's draft. */
-  const setComposerUnlessIntake = (fromIntake: boolean, text: string, images: ComposerAttachment[]) => {
+  const setComposerUnlessIntake = (incidentId: string, fromIntake: boolean, text: string, images: ComposerAttachment[]) => {
     if (fromIntake) return;
-    setPrompt(text);
+    const drafts = useIncidentDraftStore.getState();
+    if (text === "") drafts.clearDraft(incidentId);
+    else drafts.setDraft(incidentId, text);
     setComposerImages(images);
   };
 
@@ -636,7 +638,8 @@ export default function IncidentsPage() {
     traitValues?: Record<string, boolean | string>;
   }, intakeText?: string) => {
     const fromIntake = intakeText !== undefined;
-    const text = intakeText ?? prompt.trim();
+    const draft = activeId === null ? "" : (useIncidentDraftStore.getState().drafts[activeId] ?? "");
+    const text = intakeText ?? draft.trim();
     const ready = canSendIncidentMessage(text, fromIntake ? 0 : composerImages.length, activeId, selectedProviderKey, selectedModelId);
     if (!ready || activeId === null || selectedProviderKey === null || activeIncident?.archived === true) return;
     const wasRunning = activeIncident?.state === "RUNNING";
@@ -644,7 +647,7 @@ export default function IncidentsPage() {
     const preview = normalizeIncidentPreview(text);
     const nextTitle = resolveIncidentTitle(activeIncident, text);
     const outgoingImages = fromIntake ? [] : composerImages;
-    setComposerUnlessIntake(fromIntake, "", []);
+    setComposerUnlessIntake(activeId, fromIntake, "", []);
 
     // Persist provider, model, and access level for this thread.
     if (selectedProviderKey !== null) {
@@ -714,7 +717,7 @@ export default function IncidentsPage() {
         message.includes("already running for this incident");
 
       if (isBusyAgentError) {
-        setComposerUnlessIntake(fromIntake, text, outgoingImages);
+        setComposerUnlessIntake(activeId, fromIntake, text, outgoingImages);
         setIncidents((prev) =>
           updateIncidentById(prev, activeId, (incident) => ({ ...incident, state: "RUNNING" })),
         );
@@ -1141,15 +1144,9 @@ export default function IncidentsPage() {
                   </div>
                 )}
                 <CustomerReportIntakeChatContext.Provider value={customerReportIntake.chat}>
-                  {activeIncident !== null &&
-                    messages.map((msg, i) => (
-                      <div key={i} className="space-y-3">
-                        <ChatBubble
-                          msg={msg}
-                          providerKey={selectedProviderKey}
-                        />
-                      </div>
-                    ))}
+                  {activeIncident !== null && (
+                    <IncidentMessageList messages={messages} providerKey={selectedProviderKey} />
+                  )}
                 </CustomerReportIntakeChatContext.Provider>
                 <div ref={messagesEndRef} />
               </div>
@@ -1223,10 +1220,9 @@ export default function IncidentsPage() {
 
             {/* Composer */}
             {activeIncident !== null && (
-              <Composer
+              <IncidentComposer
                 key={activeId}
-                prompt={prompt}
-                onPromptChange={setPrompt}
+                incidentId={activeId}
                 onSend={(options) => {
                   void handleSend(options);
                 }}
@@ -1274,7 +1270,7 @@ export default function IncidentsPage() {
             messages={messages}
             incidentId={activeId}
             sessionId={activeSessionId}
-            onRevisionRequested={setPrompt}
+            onRevisionRequested={(text) => { useIncidentDraftStore.getState().setDraft(activeId, text); }}
           />
           {activeIncident !== null &&
             (integrationPorts.resources !== undefined ||
