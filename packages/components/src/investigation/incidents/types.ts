@@ -6,7 +6,7 @@ import type {
   ComposerAttachment,
   InteractionMode,
 } from "../../chat/types";
-import type { AgentLlmSelection } from "../../services/contracts";
+import type { AgentLlmSelection, AgentMessageDelivery } from "../../services/contracts";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -30,6 +30,8 @@ export interface IncidentThread {
 
 export type IncidentAgentRequestBase = {
   text: string;
+  /** For a message sent while the agent runs: queue it after the turn, or steer the turn. */
+  delivery?: AgentMessageDelivery;
   sessionId: string | null;
   attachments: ComposerAttachment[];
   llm: AgentLlmSelection;

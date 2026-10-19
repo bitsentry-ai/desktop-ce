@@ -474,10 +474,29 @@ export function createDesktopIpcPayloadValidator(
       accessLevel: z
         .enum(["auto-accept-edits", "full-access"])
         .optional(),
+      delivery: z.enum(["queue", "steer"]).optional(),
     }),
     "agent:cancel": z.object({
       sessionId: z.uuid(),
     }),
+    "agent:updateQueue": z.discriminatedUnion("action", [
+      z.object({
+        sessionId: z.uuid(),
+        action: z.literal("edit"),
+        messageId: z.uuid(),
+        message: z.string().trim().min(1).max(10000),
+        attachments: z.array(attachmentSchema).max(4).optional(),
+      }),
+      z.object({ sessionId: z.uuid(), action: z.literal("remove"), messageId: z.uuid() }),
+      z.object({
+        sessionId: z.uuid(),
+        action: z.literal("reorder"),
+        messageId: z.uuid(),
+        beforeMessageId: z.uuid().nullable(),
+      }),
+      z.object({ sessionId: z.uuid(), action: z.literal("steer"), messageId: z.uuid() }),
+      z.object({ sessionId: z.uuid(), action: z.literal("resume") }),
+    ]),
     "agent:getStatus": z.object({
       sessionId: z.uuid(),
     }),

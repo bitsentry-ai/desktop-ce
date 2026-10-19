@@ -42,6 +42,7 @@ export function buildIncidentAgentRequest(
     return {
       message: input.text,
       sessionId: input.sessionId ?? undefined,
+      delivery: input.delivery,
       ...common,
     };
   }
