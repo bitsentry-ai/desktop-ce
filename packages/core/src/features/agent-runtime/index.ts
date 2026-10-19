@@ -27,6 +27,12 @@ export {
   executeHttpRequestSchema,
 } from "./capabilities/execute-http-request.capability";
 export {
+  SqliteAgentQueueStore,
+  type AgentQueuePersistence,
+  type StoredAgentQueue,
+  type StoredQueuedMessage,
+} from "./agent-queue.store";
+export {
   buildSshJournalctlCommand,
   classifySshError,
   shellEscape,

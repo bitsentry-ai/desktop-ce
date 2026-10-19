@@ -68,6 +68,7 @@ function makeValidPayloads(): Record<DesktopRpcChannel, unknown> {
     'agent:send': { message: 'Continue.' },
     'agent:cancel': { sessionId: UUID },
     'agent:updateQueue': { sessionId: UUID, action: 'resume' },
+    'agent:restoreQueue': { incidentThreadId: 'incident-1' },
     'agent:getStatus': { sessionId: UUID },
     'agent:getSnapshot': { sessionId: UUID },
     'agent:listRunbookAuthoringProposals': {},
