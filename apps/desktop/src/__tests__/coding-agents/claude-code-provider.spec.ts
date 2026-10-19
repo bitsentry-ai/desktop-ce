@@ -41,8 +41,13 @@ interface ClaudeQueryOptions {
 }
 
 interface ClaudeQueryInput {
-  prompt: string
+  prompt: AsyncIterable<{ message: { content: string }; priority?: string }>
   options?: ClaudeQueryOptions
+}
+
+async function firstPromptText(prompt: ClaudeQueryInput['prompt']): Promise<string | undefined> {
+  for await (const message of prompt) return message.message.content
+  return undefined
 }
 
 const closeMock = vi.fn()
@@ -111,6 +116,47 @@ describe('executeClaudeCode', () => {
     logMock.info.mockReset()
     restorePlatform()
     vi.resetModules()
+  })
+
+  it('steers the running turn with a next-priority message and refuses a steer after its result', async () => {
+    const received: Array<{ content: string; priority?: string }> = []
+    queryMock.mockImplementation(({ prompt }) => ({
+      async *[Symbol.asyncIterator]() {
+        for await (const message of prompt) {
+          received.push({ content: message.message.content, priority: message.priority })
+          if (received.length === 2) break
+        }
+        yield { type: 'result', subtype: 'success', result: 'Only nginx returns 502s.' }
+      },
+      getContextUsage: getContextUsageMock.mockResolvedValue({ totalTokens: 0, maxTokens: 0 }),
+      close: closeMock,
+    }))
+    const { executeClaudeCode } =
+      await import('@bitsentry-ce/desktop-cli/runtime/desktop-coding-agents')
+
+    let steer: ((text: string) => Promise<void>) | null = null
+    const handles: Array<unknown> = []
+    const result = await executeClaudeCode({
+      prompt: 'Investigate the 502s.',
+      binaryPath: 'claude',
+      abortController: new AbortController(),
+      onDelta: (delta) => {
+        if (delta.type !== 'steer_handle') return
+        handles.push(delta.steer)
+        if (delta.steer !== null) {
+          steer = delta.steer
+          void delta.steer('Focus on nginx only.')
+        }
+      },
+    })
+
+    expect(received).toEqual([
+      { content: 'Investigate the 502s.', priority: undefined },
+      { content: 'Focus on nginx only.', priority: 'next' },
+    ])
+    expect(result.output).toBe('Only nginx returns 502s.')
+    expect(handles.at(-1)).toBeNull()
+    await expect(steer!('Too late.')).rejects.toThrow(/already ended/)
   })
 
   it('streams leading text blocks and ignores transport-close context usage errors', async () => {
@@ -354,10 +400,11 @@ describe('executeClaudeCode', () => {
 
     queryMock.mockImplementation(({ prompt }) => ({
       async *[Symbol.asyncIterator]() {
-        if (prompt === 'first turn') await releaseFirst.promise
-        if (prompt === 'second turn') await releaseSecond.promise
+        const text = await firstPromptText(prompt)
+        if (text === 'first turn') await releaseFirst.promise
+        if (text === 'second turn') await releaseSecond.promise
         let result = 'turn-second'
-        if (prompt === 'first turn') {
+        if (text === 'first turn') {
           result = 'turn-first'
         }
         yield {
