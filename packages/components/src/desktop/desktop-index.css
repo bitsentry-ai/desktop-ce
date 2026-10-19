@@ -2,6 +2,7 @@
 @import "@bitsentry-ce/components/tutorial/driver-theme.css";
 @import "@bitsentry-ce/components/theme/colors.css";
 @import "@bitsentry-ce/components/styles/chat-markdown.css";
+@import "@bitsentry-ce/components/styles/chat-timeline.css";
 
 @tailwind base;
 @tailwind components;

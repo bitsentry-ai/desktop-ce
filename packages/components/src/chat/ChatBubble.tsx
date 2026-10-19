@@ -6,11 +6,9 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import type { ChatMessage, AgentIteration, ToolCallCard } from "./types";
-import { ToolCard, WorkLogGroup } from "./ToolCallCard";
-import { formatDuration } from "./utils";
+import type { ChatMessage, AgentIteration } from "./types";
+import { TurnTimeline } from "./TurnTimeline";
 import { useTranslation } from "@bitsentry-ce/i18n";
-import { MarkdownContent } from "../markdown";
 import {
   CheckIcon,
   CopyIcon,
@@ -19,7 +17,6 @@ import {
   MessageSquareText,
   Pencil,
   ShieldAlert,
-  Loader2,
 } from "lucide-react";
 import {
   editableIntakeFields,
@@ -36,14 +33,6 @@ import { useCustomerReportIntakeChat } from "./useCustomerReportIntake";
 import { getProviderLogo } from "./ProviderLogos";
 import { Tooltip, TooltipContent, TooltipTrigger } from "../ui/tooltip";
 import { cn } from "../lib/utils";
-
-function dedupeToolCalls(toolCalls: ToolCallCard[]): ToolCallCard[] {
-  return Array.from(
-    new Map(
-      toolCalls.map((toolCall) => [toolCall.toolCallId, toolCall]),
-    ).values(),
-  );
-}
 
 type AgentMessage = Extract<ChatMessage, { kind: "agent" }>;
 type UserMessage = Extract<ChatMessage, { kind: "user" }>;
@@ -332,29 +321,6 @@ function CopyMarkdownResponseButton({ content }: { content: string }) {
   );
 }
 
-function AssistantWaitingIndicator({
-  label,
-  elapsedMs,
-}: {
-  label: string;
-  elapsedMs?: number;
-}) {
-  let elapsedText = "";
-  if (elapsedMs !== undefined) {
-    elapsedText = ` ${formatDuration(elapsedMs)}`;
-  }
-
-  return (
-    <div className="inline-flex items-center gap-2 rounded-full border border-border/70 bg-muted/35 px-2.5 py-1 text-xs text-muted-foreground">
-      <Loader2 size={12} className="animate-spin" aria-hidden="true" />
-      <span>
-        {label}
-        {elapsedText}
-      </span>
-    </div>
-  );
-}
-
 export const ChatBubble = memo(function ChatBubble({
   msg,
   providerKey,
@@ -389,19 +355,6 @@ export const ChatBubble = memo(function ChatBubble({
   }
 
   const copyableMarkdown = getCopyableMarkdown(msg);
-  const toolCallMap = Object.fromEntries(
-    msg.toolCalls.map((tc) => [tc.toolCallId, tc]),
-  );
-
-  const formatTime = (iso: string) => {
-    const date = new Date(iso);
-    return date.toLocaleTimeString("en-US", {
-      hour: "numeric",
-      minute: "2-digit",
-      second: "2-digit",
-      hour12: true,
-    });
-  };
 
   let providerLogoContent: ReactNode = (
     <ShieldAlert size={14} className="text-muted-foreground" />
@@ -453,104 +406,7 @@ export const ChatBubble = memo(function ChatBubble({
       </div>
       <div className="min-w-0 flex-1 pt-0.5">
         <div className="min-w-0 flex-1 space-y-3">
-          {/* Render each iteration */}
-          {msg.iterations.map((iter, index) => {
-            const iterTools = dedupeToolCalls(
-              iter.toolCallIds
-                .map((id) => toolCallMap[id])
-                .filter((toolCall): toolCall is ToolCallCard => toolCall !== undefined),
-            );
-            let duration: string | null = null;
-            if (iter.completedAt !== undefined) {
-              duration = formatDuration(
-                new Date(iter.completedAt).getTime() -
-                  new Date(iter.startedAt).getTime(),
-              );
-            }
-            const isActive = iter.id === msg.activeIterationId;
-            const elapsedMs = nowMs - new Date(iter.startedAt).getTime();
-            const isLastIteration = index === msg.iterations.length - 1;
-            let visibleText = "";
-            if (shouldRenderIterationText(msg, isLastIteration)) {
-              visibleText = getVisibleIterationText(msg, iter, isLastIteration);
-            }
-            const hasVisibleText =
-              visibleText.trim().length > 0;
-            const shouldShowWaitingIndicator = isActive && isWaitingForAssistant;
-
-            // Show timestamp when iteration completes
-            const showTimestamp =
-              !shouldShowWaitingIndicator &&
-              iter.completedAt !== undefined &&
-              iter.status !== "thinking" &&
-              (hasVisibleText || iterTools.length > 0);
-
-            if (
-              !hasVisibleText &&
-              iterTools.length === 0 &&
-              !shouldShowWaitingIndicator
-            ) {
-              return null;
-            }
-
-            let timestampContent: ReactNode = null;
-            if (showTimestamp && duration !== null && iter.completedAt !== undefined) {
-              timestampContent = (
-                <p className="text-xs text-muted-foreground">
-                  {formatTime(iter.completedAt)} • {duration}
-                </p>
-              );
-            }
-
-            return (
-              <div key={iter.id} className="space-y-1">
-                {shouldShowWaitingIndicator && (
-                  <AssistantWaitingIndicator
-                    label={t("common.incidents.workingFor")}
-                    elapsedMs={elapsedMs}
-                  />
-                )}
-
-                {hasVisibleText && (
-                  <div className="text-sm leading-relaxed text-foreground">
-                    <MarkdownContent
-                      content={visibleText}
-                      paragraphizeSoftBreaks
-                      collapsedJsonLabel={collapsedJsonLabel}
-                    />
-                  </div>
-                )}
-
-                {timestampContent}
-
-                {iterTools.length > 0 && (
-                  <WorkLogGroup toolCalls={iterTools}>
-                    <div className="flex flex-wrap gap-1.5">
-                      {iterTools.map((tc) => (
-                        <ToolCard key={tc.toolCallId} card={tc} />
-                      ))}
-                    </div>
-                  </WorkLogGroup>
-                )}
-              </div>
-            );
-          })}
-
-          {msg.iterations.length === 0 && isWaitingForAssistant && (
-            <AssistantWaitingIndicator
-              label={t("common.incidents.aiIsResponding")}
-            />
-          )}
-
-          {msg.iterations.length === 0 && msg.finalText && (
-            <div className="text-sm leading-relaxed text-foreground">
-              <MarkdownContent
-                content={msg.finalText}
-                paragraphizeSoftBreaks
-                collapsedJsonLabel={collapsedJsonLabel}
-              />
-            </div>
-          )}
+          <TurnTimeline msg={msg} nowMs={nowMs} collapsedJsonLabel={collapsedJsonLabel} />
 
           {errorStatusContent}
 
