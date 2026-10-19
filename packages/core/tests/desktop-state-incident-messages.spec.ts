@@ -22,8 +22,9 @@ const persistedIteration = {
 };
 
 const richAgentMessage = {
+  id: "message-agent-1",
   kind: "agent",
-  iterations: [{ ...persistedIteration, streamDeltas: [{ timestamp: createdAt, text: "Disk is full", kind: "text" }] }],
+  iterations: [persistedIteration],
   activeIterationId: null,
   toolCalls: [{ toolCallId: "tool-1", toolName: "execute_shell_command", state: "done", output: "100%", modelContext: "df" }],
   finalText: "Disk is full",
@@ -55,10 +56,10 @@ describe("incident message persistence", () => {
   it("round-trips chat message fields through SQLite", async () => {
     const handlers = createDesktopStateHandlers(db);
     const threadA = [
-      { kind: "user", text: "Why is api-1 down?", attachments: [{ id: "a-1", type: "text", name: "log.txt" }] },
+      { id: "message-user-1", kind: "user", text: "Why is api-1 down?", attachments: [{ id: "a-1", type: "text", name: "log.txt" }] },
       richAgentMessage,
     ];
-    const threadB = [{ kind: "user", text: "Other thread" }];
+    const threadB = [{ id: "message-user-2", kind: "user", text: "Other thread" }];
     await handlers["desktopState:syncIncidents"]({
       incidents: [
         { id: "thread-a", title: "A", prompt: "Why is api-1 down?", state: "completed", createdAt },
@@ -67,11 +68,7 @@ describe("incident message persistence", () => {
       incidentMessages: { "thread-a": threadA, "thread-b": threadB },
     });
 
-    // Per-token stream deltas are not persisted; everything else round-trips.
-    expect(await loadIncidentThreadMessages(db, "thread-a")).toEqual([
-      threadA[0],
-      { ...richAgentMessage, iterations: [persistedIteration] },
-    ]);
+    expect(await loadIncidentThreadMessages(db, "thread-a")).toEqual(threadA);
     expect(await loadIncidentThreadMessages(db, "thread-b")).toEqual(threadB);
   });
 
@@ -84,8 +81,8 @@ describe("incident message persistence", () => {
     `);
 
     expect(await loadIncidentThreadMessages(db, "thread-a")).toEqual([
-      { kind: "user", text: "Legacy question" },
-      { kind: "agent", streamText: "Legacy answer", toolCalls: [], finalText: "Legacy answer", status: "done", errorMsg: undefined },
+      { id: "m-0", kind: "user", text: "Legacy question" },
+      { id: "m-1", kind: "agent", streamText: "Legacy answer", toolCalls: [], finalText: "Legacy answer", status: "done", errorMsg: undefined },
     ]);
   });
 });
