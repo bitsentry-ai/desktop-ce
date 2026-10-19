@@ -55,6 +55,7 @@ import { useTranslation } from "@bitsentry-ce/i18n";
 import type {
   AccessLevel,
   AgentActivityPhase,
+  AgentMessageUpdatePayload,
   AgentSessionState,
   AgentThreadSnapshot,
   AgentThreadTokenUsage,
@@ -63,7 +64,6 @@ import type {
   ComposerTextAttachmentMimeType,
   InteractionMode,
   SavedProviderConfig,
-  StreamDeltaRecord,
   ToolCallCard,
   ThreadStatus,
 } from "../chat/types";
@@ -458,7 +458,11 @@ export function updateIncidentTokenUsage(
   incidentId: string,
   tokenUsage: AgentThreadTokenUsage,
 ): Record<string, AgentThreadTokenUsage> {
-  if (tokenUsage.kind === "estimate" && tokenUsageByIncident[incidentId] !== undefined) {
+  const current = tokenUsageByIncident[incidentId];
+  if (tokenUsage.kind === "estimate" && current !== undefined) {
+    return tokenUsageByIncident;
+  }
+  if (current !== undefined && JSON.stringify(current) === JSON.stringify(tokenUsage)) {
     return tokenUsageByIncident;
   }
   return { ...tokenUsageByIncident, [incidentId]: tokenUsage };
@@ -514,26 +518,6 @@ function dedupeToolCallIds(toolCallIds: unknown): string[] {
   return Array.from(
     new Set(toolCallIds.filter((toolCallId) => typeof toolCallId === "string")),
   );
-}
-
-function normalizeStreamDeltas(value: unknown): StreamDeltaRecord[] {
-  if (!Array.isArray(value)) return [];
-  return value
-    .map((delta): StreamDeltaRecord | null => {
-      const record = asRecord(delta);
-      if (record === null) return null;
-      const timestamp = getString(record, "timestamp");
-      const text = getString(record, "text");
-      if (timestamp === undefined || text === undefined) return null;
-      if (record.kind === "command_output") {
-        return { timestamp, text, kind: "command_output" };
-      }
-      if (record.kind === "text") {
-        return { timestamp, text, kind: "text" };
-      }
-      return { timestamp, text };
-    })
-    .filter((delta): delta is StreamDeltaRecord => delta !== null);
 }
 
 function isSupportedTextAttachmentMimeType(
@@ -655,7 +639,6 @@ function normalizeAgentIterations(value: unknown): Extract<ChatMessage, { kind: 
         id: `iteration-${String(index)}`,
         startedAt: new Date(0).toISOString(),
         text: "",
-        streamDeltas: [],
         toolCallIds: [],
         status: "done",
       };
@@ -666,19 +649,25 @@ function normalizeAgentIterations(value: unknown): Extract<ChatMessage, { kind: 
       startedAt: getString(record, "startedAt") ?? new Date(0).toISOString(),
       completedAt: getString(record, "completedAt"),
       text: getString(record, "text") ?? "",
-      streamDeltas: normalizeStreamDeltas(record.streamDeltas),
+      ...(record.hasCommandOutput === true ? { hasCommandOutput: true as const } : {}),
       toolCallIds: dedupeToolCallIds(record.toolCallIds),
       status: normalizeIterationStatus(record.status),
     };
   });
 }
 
+/** Normalizes a stored or IPC message, keeping its id or assigning one. */
+function migrateMessage(msg: unknown, fallbackId: string = crypto.randomUUID()): ChatMessage {
+  const record = asRecord(msg);
+  const id = (record === null ? undefined : getString(record, "id")) ?? fallbackId;
+  return { ...migrateMessageBody(record), id };
+}
+
 /**
  * Migrate legacy ChatMessage format to new iterations-based format.
  * Legacy messages had streamText/startedAt directly on agent message.
  */
-function migrateMessage(msg: unknown): ChatMessage {
-  const record = asRecord(msg);
+function migrateMessageBody(record: Record<string, unknown> | null): ChatMessage {
   if (record === null) {
     return { kind: "user", text: "" };
   }
@@ -708,7 +697,6 @@ function migrateMessage(msg: unknown): ChatMessage {
             getString(record, "finalText") ??
             getString(record, "streamText") ??
             "",
-          streamDeltas: [],
           toolCallIds: dedupeToolCallIds(toolCalls.map((tc) => tc.toolCallId)),
           status: "done",
         },
@@ -741,13 +729,83 @@ function normalizeIncidentMessagesMap(
   const migrated: Record<string, ChatMessage[]> = {};
   for (const [key, msgs] of Object.entries(input)) {
     if (!Array.isArray(msgs)) continue;
-    migrated[key] = msgs.map(migrateMessage);
+    migrated[key] = msgs.map((message, index) => migrateMessage(message, `${key}:${String(index)}`));
   }
   return migrated;
 }
 
-function normalizeChatMessages(messages: ChatMessage[]): ChatMessage[] {
-  return messages.map((message) => migrateMessage(message));
+/** Normalized messages for a session plus the raw JSON they were built from. */
+interface SessionMessagesCache {
+  messages: ChatMessage[];
+  json: string[];
+}
+
+/**
+ * Applies a full snapshot, reusing the previous message object wherever the
+ * raw message is unchanged, so only changed messages are normalized and
+ * unchanged rows keep their identity.
+ */
+function reconcileMessages(
+  previous: SessionMessagesCache | undefined,
+  next: ChatMessage[],
+): SessionMessagesCache {
+  const json = next.map((message) => JSON.stringify(message));
+  let changed = previous === undefined || previous.messages.length !== next.length;
+  const messages = next.map((message, index) => {
+    const reused = previous?.messages[index];
+    if (reused !== undefined && previous?.json[index] === json[index]) return reused;
+    changed = true;
+    return migrateMessage(message);
+  });
+  if (!changed && previous !== undefined) return previous;
+  return { messages, json };
+}
+
+/** Replaces the one streamed message, or returns null when the cache is out of step. */
+function applyMessageUpdate(
+  previous: SessionMessagesCache | undefined,
+  update: AgentMessageUpdatePayload,
+): SessionMessagesCache | null {
+  const current = previous?.messages[update.messageIndex];
+  if (
+    previous === undefined ||
+    previous.messages.length !== update.messageCount ||
+    current?.id === undefined ||
+    current.id !== update.message.id
+  ) {
+    return null;
+  }
+  const messages = [...previous.messages];
+  const json = [...previous.json];
+  messages[update.messageIndex] = migrateMessage(update.message);
+  json[update.messageIndex] = JSON.stringify(update.message);
+  return { messages, json };
+}
+
+function updateIncidentRow(
+  incidents: IncidentThread[],
+  incidentId: string,
+  state: AgentSessionState,
+  sessionId: string,
+  preview: string | null,
+): IncidentThread[] {
+  const incident = incidents.find((item) => item.id === incidentId);
+  if (incident === undefined) return incidents;
+  const nextSessionId = incident.sessionId ?? sessionId;
+  const nextPreview = preview ?? incident.lastMessagePreview;
+  if (
+    incident.state === state &&
+    incident.sessionId === nextSessionId &&
+    incident.lastMessagePreview === nextPreview
+  ) {
+    return incidents;
+  }
+  return updateIncidentById(incidents, incidentId, (item) => ({
+    ...item,
+    state,
+    sessionId: nextSessionId,
+    lastMessagePreview: nextPreview,
+  }));
 }
 
 function getChatMessagePreview(
@@ -1655,9 +1713,17 @@ export default function IncidentsPage() {
   const pendingEventsRef = useRef<
     Array<{
       sessionId: string;
+      sequence: number;
       snapshot?: AgentThreadSnapshot;
     }>
   >([]);
+  // Per-incident normalized messages for live sessions; streamed updates are
+  // applied against this so unchanged messages keep their identity.
+  const sessionMessagesRef = useRef(new Map<string, SessionMessagesCache>());
+  const snapshotFetchesRef = useRef(new Set<string>());
+  // Sequence of the last payload applied per session. A getSnapshot reply can
+  // be overtaken by a newer payload, so older state is never applied over it.
+  const lastAppliedSequenceRef = useRef(new Map<string, number>());
   const autoOpenedArtifactsThreadRef = useRef<string | null>(null);
   const desktopSyncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
     null,
@@ -2010,55 +2076,49 @@ export default function IncidentsPage() {
   useEffect(() => {
     if (isDesktopIncidents && !desktopHydrated) return;
 
-    if (isDesktopIncidents) {
-      saveIncidents(incidents);
-      saveIncidentMessages(messagesMap);
-
-      if (desktopSyncTimerRef.current != null) {
-        clearTimeout(desktopSyncTimerRef.current);
-      }
-      const now = Date.now();
-      desktopSyncPendingSinceRef.current ??= now;
-      const delay = Math.min(
-        DESKTOP_SYNC_DEBOUNCE_MS,
-        Math.max(0, desktopSyncPendingSinceRef.current + DESKTOP_SYNC_MAX_WAIT_MS - now),
-      );
-      desktopSyncTimerRef.current = setTimeout(() => {
-        desktopSyncTimerRef.current = null;
-        desktopSyncPendingSinceRef.current = null;
-        void saveDesktopIncidentState(incidents, messagesMap)
-          .then(() => {
-            window.dispatchEvent(
-              new CustomEvent("bitsentry:incidents-updated"),
-            );
-          })
-          .catch((error: unknown) => {
-            if (isMissingIncidentsHandlerError(error)) {
-              if (!desktopStoreFallbackLoggedRef.current) {
-                desktopStoreFallbackLoggedRef.current = true;
-                console.warn(
-                  "Incidents desktop IPC unavailable, falling back to local storage.",
-                );
-              }
-              saveIncidents(incidents);
-              saveIncidentMessages(messagesMap);
-              setDesktopStoreMode("local");
-              return;
-            }
-            console.error("Failed to save incidents to desktop store:", error);
-            captureIncidentException(error, {
-              operation: "saveDesktopIncidentState",
-              incidentCount: incidents.length,
-              messageMapCount: Object.keys(messagesMap).length,
-            });
-          });
-      }, delay);
-      window.dispatchEvent(new CustomEvent("bitsentry:incidents-updated"));
-    } else {
-      saveIncidents(incidents);
-      saveIncidentMessages(messagesMap);
-      window.dispatchEvent(new CustomEvent("bitsentry:incidents-updated"));
+    // Streaming changes messagesMap many times a second, so local storage,
+    // listeners and the desktop store all save on the debounce.
+    if (desktopSyncTimerRef.current != null) {
+      clearTimeout(desktopSyncTimerRef.current);
     }
+    const now = Date.now();
+    desktopSyncPendingSinceRef.current ??= now;
+    const delay = Math.min(
+      DESKTOP_SYNC_DEBOUNCE_MS,
+      Math.max(0, desktopSyncPendingSinceRef.current + DESKTOP_SYNC_MAX_WAIT_MS - now),
+    );
+    desktopSyncTimerRef.current = setTimeout(() => {
+      desktopSyncTimerRef.current = null;
+      desktopSyncPendingSinceRef.current = null;
+      saveIncidents(incidents);
+      saveIncidentMessages(messagesMap);
+      window.dispatchEvent(new CustomEvent("bitsentry:incidents-updated"));
+      if (!isDesktopIncidents) return;
+      void saveDesktopIncidentState(incidents, messagesMap)
+        .then(() => {
+          window.dispatchEvent(
+            new CustomEvent("bitsentry:incidents-updated"),
+          );
+        })
+        .catch((error: unknown) => {
+          if (isMissingIncidentsHandlerError(error)) {
+            if (!desktopStoreFallbackLoggedRef.current) {
+              desktopStoreFallbackLoggedRef.current = true;
+              console.warn(
+                "Incidents desktop IPC unavailable, falling back to local storage.",
+              );
+            }
+            setDesktopStoreMode("local");
+            return;
+          }
+          console.error("Failed to save incidents to desktop store:", error);
+          captureIncidentException(error, {
+            operation: "saveDesktopIncidentState",
+            incidentCount: incidents.length,
+            messageMapCount: Object.keys(messagesMap).length,
+          });
+        });
+    }, delay);
   }, [desktopHydrated, incidents, isDesktopIncidents, messagesMap]);
 
   useEffect(() => {
@@ -2079,6 +2139,7 @@ export default function IncidentsPage() {
       } = latestDesktopStateRef.current;
 
       saveIncidents(latestIncidents);
+      window.dispatchEvent(new CustomEvent("bitsentry:incidents-updated"));
       saveIncidentMessages(latestMessagesMap);
 
       if (
@@ -2272,55 +2333,101 @@ export default function IncidentsPage() {
     void navigate(`/incidents?id=${activeId}`, { replace: true });
   }, [urlPrompt, activeId]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const applySnapshotToIncident = useCallback(
-    (incidentId: string, snapshot: AgentThreadSnapshot) => {
-      const normalizedMessages = normalizeChatMessages(snapshot.messages);
-
-      setMessagesMap((prev) => ({
-        ...prev,
-        [incidentId]: normalizedMessages,
-      }));
-      if (snapshot.tokenUsage !== undefined) {
-        const tokenUsage = snapshot.tokenUsage;
+  const applySessionMessages = useCallback(
+    (
+      incidentId: string,
+      sessionId: string,
+      next: SessionMessagesCache,
+      threadState: AgentSessionState,
+      tokenUsage: AgentThreadTokenUsage | undefined,
+    ) => {
+      sessionMessagesRef.current.set(incidentId, next);
+      setMessagesMap((prev) =>
+        prev[incidentId] === next.messages ? prev : { ...prev, [incidentId]: next.messages },
+      );
+      if (tokenUsage !== undefined) {
         setTokenUsageByIncident((prev) => updateIncidentTokenUsage(prev, incidentId, tokenUsage));
         if (incidentId === activeId) {
-          setSessionTokenUsage((current) =>
-            tokenUsage.kind === "estimate" ? current ?? tokenUsage : tokenUsage,
-          );
+          setSessionTokenUsage((current) => {
+            if (tokenUsage.kind === "estimate") return current ?? tokenUsage;
+            return JSON.stringify(current) === JSON.stringify(tokenUsage) ? current : tokenUsage;
+          });
         }
       }
 
-      const preview = getIncidentPreviewFromMessages(normalizedMessages);
-      setIncidents((prev) =>
-        prev.map((incident) => {
-          if (incident.id !== incidentId) return incident;
-          return {
-            ...incident,
-            state: snapshot.threadState,
-            sessionId: incident.sessionId ?? snapshot.sessionId,
-            lastMessagePreview: preview ?? incident.lastMessagePreview,
-          };
-        }),
-      );
+      const preview = getIncidentPreviewFromMessages(next.messages);
+      setIncidents((prev) => updateIncidentRow(prev, incidentId, threadState, sessionId, preview));
     },
     [activeId],
   );
 
-  useEffect(() => {
-    const unsub = agent.onEvent(({ sessionId: sid, snapshot }) => {
-      if (!snapshot) return;
+  const applySnapshotToIncident = useCallback(
+    (
+      incidentId: string,
+      snapshot: AgentThreadSnapshot,
+      sequence: number,
+      // A getSnapshot reply may repeat the sequence of the last payload.
+      allowEqualSequence = false,
+    ) => {
+      const last = lastAppliedSequenceRef.current.get(snapshot.sessionId);
+      if (last !== undefined && (allowEqualSequence ? sequence < last : sequence <= last)) return;
+      const next = reconcileMessages(sessionMessagesRef.current.get(incidentId), snapshot.messages);
+      applySessionMessages(incidentId, snapshot.sessionId, next, snapshot.threadState, snapshot.tokenUsage);
+      lastAppliedSequenceRef.current.set(snapshot.sessionId, sequence);
+    },
+    [applySessionMessages],
+  );
 
+  const refetchSessionSnapshot = useCallback(
+    (incidentId: string, sessionId: string) => {
+      if (snapshotFetchesRef.current.has(sessionId)) return;
+      snapshotFetchesRef.current.add(sessionId);
+      void agent
+        .getSnapshot(sessionId)
+        .then((snapshot) => {
+          if (snapshot !== null) applySnapshotToIncident(incidentId, snapshot, snapshot.sequence, true);
+        })
+        .catch((error: unknown) => {
+          captureIncidentException(error, { operation: "getSnapshot", source: "stream-resync", incidentId, sessionId });
+        })
+        .finally(() => {
+          snapshotFetchesRef.current.delete(sessionId);
+        });
+    },
+    [agent, applySnapshotToIncident],
+  );
+
+  useEffect(() => {
+    const unsub = agent.onEvent((payload) => {
+      const sid = payload.sessionId;
       const incident = incidentsRef.current.find(
         (item) => item.sessionId === sid,
       );
-      if (!incident) {
-        pendingEventsRef.current.push({ sessionId: sid, snapshot });
+      if (payload.kind === "message") {
+        // Unmapped sessions catch up from the next structural snapshot.
+        if (!incident) return;
+        const last = lastAppliedSequenceRef.current.get(sid);
+        if (last !== undefined && payload.sequence <= last) return;
+        const next = applyMessageUpdate(sessionMessagesRef.current.get(incident.id), payload);
+        if (next === null) {
+          refetchSessionSnapshot(incident.id, sid);
+          return;
+        }
+        applySessionMessages(incident.id, sid, next, payload.threadState, payload.tokenUsage);
+        lastAppliedSequenceRef.current.set(sid, payload.sequence);
         return;
       }
-      applySnapshotToIncident(incident.id, snapshot);
+
+      const snapshot = payload.snapshot;
+      if (!snapshot) return;
+      if (!incident) {
+        pendingEventsRef.current.push({ sessionId: sid, sequence: payload.sequence, snapshot });
+        return;
+      }
+      applySnapshotToIncident(incident.id, snapshot, payload.sequence);
     });
     return () => { unsub(); };
-  }, [agent, applySnapshotToIncident]);
+  }, [agent, applySessionMessages, applySnapshotToIncident, refetchSessionSnapshot]);
 
   useEffect(() => {
     const pending = pendingEventsRef.current;
@@ -2328,6 +2435,7 @@ export default function IncidentsPage() {
 
     const remaining: Array<{
       sessionId: string;
+      sequence: number;
       snapshot?: AgentThreadSnapshot;
     }> = [];
 
@@ -2339,7 +2447,7 @@ export default function IncidentsPage() {
         remaining.push(pendingEntry);
         continue;
       }
-      applySnapshotToIncident(incident.id, pendingEntry.snapshot);
+      applySnapshotToIncident(incident.id, pendingEntry.snapshot, pendingEntry.sequence);
     }
 
     pendingEventsRef.current = remaining;
@@ -2389,7 +2497,7 @@ export default function IncidentsPage() {
             return null;
           });
           if (snapshot !== null) {
-            applySnapshotToIncident(incident.id, snapshot);
+            applySnapshotToIncident(incident.id, snapshot, snapshot.sequence, true);
           }
         })
         .catch((error: unknown) => {
@@ -2455,7 +2563,7 @@ export default function IncidentsPage() {
           return null;
         });
         if (!cancelled && snapshot !== null) {
-          applySnapshotToIncident(activeId, snapshot);
+          applySnapshotToIncident(activeId, snapshot, snapshot.sequence, true);
         }
       })
       .catch((error: unknown) => {
@@ -2719,7 +2827,7 @@ export default function IncidentsPage() {
       try {
         const snapshot = await agent.getSnapshot(result.sessionId);
         if (snapshot !== null) {
-          applySnapshotToIncident(activeId, snapshot);
+          applySnapshotToIncident(activeId, snapshot, snapshot.sequence, true);
         }
       } catch (snapshotError: unknown) {
         console.warn(
@@ -2768,8 +2876,9 @@ export default function IncidentsPage() {
         ...prev,
         [activeId]: [
           ...(prev[activeId] ?? []),
-          { kind: "user", text, attachments: outgoingImages },
+          { id: crypto.randomUUID(), kind: "user", text, attachments: outgoingImages },
           {
+            id: crypto.randomUUID(),
             kind: "agent",
             iterations: [],
             activeIterationId: null,

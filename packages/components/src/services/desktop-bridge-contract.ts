@@ -116,14 +116,10 @@ export type DesktopUnknownAgentEvent = {
   [key: string]: unknown;
 };
 
-export interface DesktopAgentEventEnvelope<
+export type DesktopAgentEventEnvelope<
   TEvent = DesktopUnknownAgentEvent,
   TSnapshot = unknown,
-> {
-  sessionId: string;
-  event: TEvent;
-  snapshot?: TSnapshot;
-}
+> = import("../chat/types").AgentEventPayload<TEvent, TSnapshot>;
 
 export interface DesktopRunbookTriggerContext {
   entrypoint:
