@@ -65,7 +65,7 @@ import type {
 import type { RunbookGateway } from '@bitsentry-ce/core/features/runbooks'
 import type { RunbookAuthoringProposalPersistence } from '@bitsentry-ce/core/features/runbooks'
 import type { DesktopPluginRuntimeService } from '@bitsentry-ce/core/features/plugins'
-import { CUSTOMER_REPORT_INTAKE_PROMPT, type CustomerReportIntakePort } from '@bitsentry-ce/core/features/agent-runtime'
+import { CUSTOMER_REPORT_INTAKE_PROMPT, type AgentQueuePersistence, type CustomerReportIntakePort, type StoredAgentQueue } from '@bitsentry-ce/core/features/agent-runtime'
 import { approveRunbookAuthoringProposal, getRunbookAuthoringRevisionHash, rejectRunbookAuthoringProposal, requestRunbookAuthoringRevision, restoreRunbookAuthoringProposal, type RunbookAuthoringProposal } from '@bitsentry-ce/core/features/runbooks/authoring'
 import {
   createAgentToolResultEnvelope,
@@ -527,6 +527,17 @@ function releaseHoldIfNothingWaits(session: Pick<AgentSession, 'queuedFollowUps'
   if (session.queuedFollowUps.length === 0 && session.pendingSteers.length === 0) {
     session.queueHeld = false
   }
+}
+
+/** A queue from the store waits for a resume: the turn it was waiting for ended with the app. */
+function adoptStoredQueue(session: AgentSession, stored: StoredAgentQueue): void {
+  session.queuedFollowUps = stored.messages.map((message) => ({
+    id: message.id,
+    input: message.input,
+    queuedAt: message.queuedAt,
+    runAfterHold: false,
+  }))
+  session.queueHeld = session.queuedFollowUps.length > 0
 }
 
 function removeEntry(list: QueuedFollowUp[], entry: QueuedFollowUp): void {
@@ -1842,7 +1853,11 @@ export class AgentRuntimeService {
     private readonly onRunbooksChanged?: () => void,
     private readonly pluginRuntime?: DesktopPluginRuntimeService,
     private readonly authoringProposalStore?: RunbookAuthoringProposalPersistence,
+    private readonly queueStore?: AgentQueuePersistence,
   ) {}
+
+  /** Per incident: the last queue written to the store, and the write in progress. Writes for one incident run in order. */
+  private readonly queuePersistence = new Map<string, { signature: string; write: Promise<void> }>()
 
   /**
    * Start a new agent session.
@@ -1877,6 +1892,8 @@ export class AgentRuntimeService {
     const persistedProposals = input.incidentThreadId === undefined
       ? []
       : await this.authoringProposalStore?.list(input.incidentThreadId) ?? []
+    const hasEarlierSession = incidentThreadId !== undefined && this.findMostRecentIncidentSession(incidentThreadId) !== null
+    const storedQueue = hasEarlierSession ? null : await this.loadStoredQueue(input.incidentThreadId)
     try {
       rejectIfIncidentSessionActive()
     } catch (error) {
@@ -1926,6 +1943,15 @@ export class AgentRuntimeService {
       }),
     }
 
+    // One session holds an incident's queue: the newest takes it over.
+    const earlierSession = incidentThreadId === undefined ? null : this.findMostRecentIncidentSession(incidentThreadId)
+    if (earlierSession !== null && earlierSession.loopActive !== true) {
+      session.queuedFollowUps = earlierSession.queuedFollowUps.splice(0)
+      session.queueHeld = earlierSession.queueHeld && session.queuedFollowUps.length > 0
+      earlierSession.queueHeld = false
+    } else if (storedQueue !== null) {
+      adoptStoredQueue(session, storedQueue)
+    }
     this.sessions.set(sessionId, session)
     this.armSessionTimeout(session, timeoutMs)
 
@@ -3053,6 +3079,105 @@ export class AgentRuntimeService {
       type: 'queue_updated',
       timestamp: new Date().toISOString(),
     })
+    this.persistQueue(session)
+  }
+
+  /** Keeps an incident's queue in the store, so it survives the app quitting, like T3 Code's queued runs. */
+  private persistQueue(session: AgentSession): void {
+    const store = this.queueStore
+    const incidentThreadId = session.incidentThreadId
+    if (store === undefined || incidentThreadId === undefined || incidentThreadId.length === 0) {
+      return
+    }
+    const queue: StoredAgentQueue = {
+      held: session.queueHeld,
+      messages: [...session.pendingSteers, ...session.queuedFollowUps].map((entry) => ({
+        id: entry.id,
+        input: entry.input,
+        queuedAt: entry.queuedAt,
+      })),
+    }
+    const signature = JSON.stringify(queue)
+    const previous = this.queuePersistence.get(incidentThreadId)
+    if (previous?.signature === signature) {
+      return
+    }
+    const write = (previous?.write ?? Promise.resolve())
+      .then(() => store.save(incidentThreadId, queue))
+      .catch((error: unknown) => {
+        log.warn(`[agent-runtime:${session.id}] Could not save the queue:`, getErrorMessage(error))
+      })
+    this.queuePersistence.set(incidentThreadId, { signature, write })
+  }
+
+  private async loadStoredQueue(incidentThreadId: string | undefined): Promise<StoredAgentQueue | null> {
+    if (this.queueStore === undefined || incidentThreadId === undefined || incidentThreadId.length === 0) {
+      return null
+    }
+    // A write still in progress is newer than what the store holds.
+    await this.queuePersistence.get(incidentThreadId)?.write
+    try {
+      return await this.queueStore.load(incidentThreadId)
+    } catch (error) {
+      log.warn(`[agent-runtime] Could not load the queue for incident ${incidentThreadId}:`, getErrorMessage(error))
+      return null
+    }
+  }
+
+  /**
+   * The incident's queue, after an app restart too. A stored queue comes back
+   * paused in a new idle session: the turn it was waiting for ended with the
+   * app, so nothing runs until the engineer resumes it.
+   */
+  async restoreQueue(incidentThreadId: string): Promise<{ sessionId: string; snapshot: AgentThreadSnapshot } | null> {
+    const live = this.findMostRecentIncidentSession(incidentThreadId)
+    if (live !== null) {
+      return { sessionId: live.id, snapshot: this.getSnapshot(live.id) }
+    }
+    const storedQueue = await this.loadStoredQueue(incidentThreadId)
+    if (storedQueue === null) {
+      return null
+    }
+    const raced = this.findMostRecentIncidentSession(incidentThreadId)
+    if (raced !== null) {
+      return { sessionId: raced.id, snapshot: this.getSnapshot(raced.id) }
+    }
+
+    const sessionId = randomUUID()
+    const startedAt = new Date()
+    const firstInput = storedQueue.messages[0]?.input
+    const session: AgentSession = {
+      id: sessionId,
+      state: 'COMPLETED',
+      startedAt,
+      expiresAt: startedAt.getTime(),
+      abortController: new AbortController(),
+      timeoutHandle: null,
+      currentToolCallId: null,
+      queuedFollowUps: [],
+      pendingSteers: [],
+      queueHeld: true,
+      windowGetter: this.windowGetter,
+      llmAdapter: this.llmAdapter,
+      runbookContext: firstInput?.runbookContext,
+      llmSelection: firstInput?.llm,
+      accessLevel: firstInput?.accessLevel,
+      traitValues: firstInput?.traitValues,
+      incidentThreadId,
+      runbookAuthoringProposals: await this.authoringProposalStore?.list(incidentThreadId) ?? [],
+      messages: [{ role: 'system', content: this.buildSystemPrompt(firstInput?.runbookContext) }],
+      snapshot: {
+        sessionId,
+        startedAt: startedAt.toISOString(),
+        runtimeState: 'COMPLETED',
+        threadState: 'COMPLETED',
+        currentToolCallId: null,
+        messages: [],
+      },
+    }
+    adoptStoredQueue(session, storedQueue)
+    this.sessions.set(sessionId, session)
+    return { sessionId, snapshot: this.getSnapshot(sessionId) }
   }
 
   /**

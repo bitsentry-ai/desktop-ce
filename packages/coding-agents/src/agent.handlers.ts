@@ -16,6 +16,7 @@ import type {
 import type { DesktopPluginRuntimeService } from '@bitsentry-ce/core/features/plugins'
 import type { RunbookContextV1 } from '@bitsentry-ce/core/features/runbooks/desktop-runbook.types'
 import type { RunbookAuthoringProposalPersistence } from '@bitsentry-ce/core/features/runbooks'
+import type { AgentQueuePersistence } from '@bitsentry-ce/core/features/agent-runtime'
 import type {
   AgentRuntimeLlmAdapter,
   AgentRuntimeRunbookGateway,
@@ -30,6 +31,7 @@ export interface AgentRuntimeSessionController {
   send(input: AgentSendInput): Promise<string>
   cancel(sessionId: string): void
   updateQueue(input: AgentQueueUpdateInput): void
+  restoreQueue(incidentThreadId: string): Promise<{ sessionId: string; snapshot: AgentThreadSnapshot } | null>
   destroy(): void
   getStatus(sessionId: string): AgentSessionStatus
   getSnapshot(sessionId: string): AgentThreadSnapshot
@@ -52,6 +54,7 @@ export interface AgentServiceDependencies {
   onRunbooksChanged?: () => void
   pluginRuntime?: DesktopPluginRuntimeService
   authoringProposalStore?: RunbookAuthoringProposalPersistence
+  queueStore?: AgentQueuePersistence
   windowGetter: () => AgentRuntimeWindow | null
 }
 
@@ -63,13 +66,14 @@ export type AgentRuntimeServiceClass = new (
   onRunbooksChanged?: () => void,
   pluginRuntime?: DesktopPluginRuntimeService,
   authoringProposalStore?: RunbookAuthoringProposalPersistence,
+  queueStore?: AgentQueuePersistence,
 ) => AgentRuntimeSessionController
 
 export function createDesktopAgentService(
   dependencies: AgentServiceDependencies,
   services: { AgentRuntimeService: AgentRuntimeServiceClass },
 ): AgentRuntimeSessionController {
-  const { llmAdapter, runbookGateway, runbookStore, onRunbooksChanged, pluginRuntime, authoringProposalStore, windowGetter } = dependencies
+  const { llmAdapter, runbookGateway, runbookStore, onRunbooksChanged, pluginRuntime, authoringProposalStore, queueStore, windowGetter } = dependencies
   return new services.AgentRuntimeService(
     windowGetter,
     llmAdapter,
@@ -78,6 +82,7 @@ export function createDesktopAgentService(
     onRunbooksChanged,
     pluginRuntime,
     authoringProposalStore,
+    queueStore,
   )
 }
 
@@ -136,6 +141,11 @@ export function createDesktopAgentHandlers(
       // The IPC dispatcher validates the payload against its schema first.
       agentRuntime.updateQueue(payload as AgentQueueUpdateInput)
       return Promise.resolve()
+    },
+
+    'agent:restoreQueue': (payload: unknown): Promise<{ sessionId: string; snapshot: AgentThreadSnapshot } | null> => {
+      const input = payload as { incidentThreadId: string }
+      return agentRuntime.restoreQueue(input.incidentThreadId)
     },
 
     'agent:getStatus': (

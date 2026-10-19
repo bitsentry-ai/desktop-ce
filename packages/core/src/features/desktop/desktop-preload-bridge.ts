@@ -319,6 +319,9 @@ function createAgentBridge(bridge: DesktopPreloadBridgePort) {
     cancel: async (sessionId: string): Promise<void> => {
       await bridge.invoke('agent:cancel', { sessionId })
     },
+    restoreQueue: async (incidentThreadId: string): Promise<{ sessionId: string; snapshot: AgentSnapshot } | null> => {
+      return bridge.invoke('agent:restoreQueue', { incidentThreadId }) as Promise<{ sessionId: string; snapshot: AgentSnapshot } | null>
+    },
     updateQueue: async (
       input: { sessionId: string; action: 'edit' | 'remove' | 'reorder' | 'steer' | 'resume' } & Record<string, unknown>,
     ): Promise<void> => {
