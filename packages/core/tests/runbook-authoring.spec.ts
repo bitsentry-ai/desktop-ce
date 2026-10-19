@@ -165,6 +165,54 @@ describe("runbook authoring", () => {
     })).toThrowError(RunbookProposalValidationError);
   });
 
+  it.each(["search_alerts", "query_issues"])(
+    "accepts a Wazuh %s lookup that names the finding without an evaluator",
+    (pluginActionId) => {
+      const proposal = createRunbookCreationProposal({
+        prompt: "Look up the existing Wazuh record for this finding.",
+        normalizedFindings: findings,
+        draftRunbook: {
+          title: "Wazuh lookup",
+          description: "Read the existing Wazuh record.",
+          actions: [
+            {
+              id: "action-lookup",
+              type: "plugin",
+              title: "Read the existing Wazuh record",
+              pluginId: "wazuh",
+              pluginActionId,
+              pluginInput: JSON.stringify({ query: "package.name:openssl AND vulnerability.id:CVE-2024-0727" }),
+            },
+          ],
+        },
+      });
+
+      expect(proposal.proposedRunbook.actions.map((action) => action.pluginActionId)).toEqual([pluginActionId]);
+    },
+  );
+
+  it("rejects a Wazuh lookup that takes the findings as input without an evaluator", () => {
+    expect(() => createRunbookCreationProposal({
+      prompt: "Look up the existing Wazuh records for these findings.",
+      normalizedFindings: findings,
+      draftRunbook: {
+        title: "Wazuh lookup",
+        description: "Read the existing Wazuh records.",
+        actions: [
+          {
+            id: "action-lookup",
+            type: "plugin",
+            title: "Read the existing Wazuh records",
+            pluginId: "wazuh",
+            pluginActionId: "search_alerts",
+            pluginInput: "{{findings}}",
+            parameters: [{ id: "findings", key: "findings", required: true }],
+          },
+        ],
+      },
+    })).toThrowError(RunbookProposalValidationError);
+  });
+
   it("accepts a plugin evaluation followed by an LLM summary", () => {
     const proposal = createRunbookCreationProposal({
       prompt: "Create a CVE analysis runbook.",
