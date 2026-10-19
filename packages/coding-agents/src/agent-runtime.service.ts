@@ -99,6 +99,12 @@ export type AgentRuntimeIncidentHistoryLoader = (
   incidentThreadId: string,
 ) => Promise<ReadonlyArray<Record<string, unknown>>>
 
+/** Persists an incident thread's messages; the runtime owns what its agent produced. */
+export type AgentRuntimeIncidentHistorySaver = (
+  incidentThreadId: string,
+  messages: ThreadChatMessage[],
+) => Promise<void>
+
 export type AgentRuntimeEventPayload = AgentEventPayload<AgentEventData>
 
 export interface AgentRuntimeWindow {
@@ -528,6 +534,12 @@ interface AgentSession {
   lastSentMessageCount?: number
   /** Sequence of the last payload sent; lets the renderer drop stale ones. */
   sequence: number
+  /** Running incident message write; at most one per session. */
+  incidentSave?: Promise<void>
+  /** Latest messages requested while a write runs; written once it finishes. */
+  pendingIncidentMessages?: ThreadChatMessage[]
+  /** Messages array of the last successful write, to skip writes when nothing changed. */
+  persistedMessages?: ThreadChatMessage[]
 }
 
 type ExecuteRunbookInput = ExecuteRunbookHostToolInput
@@ -1849,6 +1861,8 @@ function formatVisibleRunbookListEntry(runbook: Record<string, unknown>): { titl
 
 export class AgentRuntimeService {
   private sessions = new Map<string, AgentSession>()
+  // True while destroy() runs: nothing may start or continue mid-shutdown.
+  private shuttingDown = false
   private activeLoops = new Set<Promise<void>>()
   private readonly authoringPersistence = new Map<string, Promise<RunbookRecord>>()
 
@@ -1862,6 +1876,7 @@ export class AgentRuntimeService {
     private readonly pluginRuntime?: DesktopPluginRuntimeService,
     private readonly authoringProposalStore?: RunbookAuthoringProposalPersistence,
     private readonly loadIncidentMessages?: AgentRuntimeIncidentHistoryLoader,
+    private readonly saveIncidentMessages?: AgentRuntimeIncidentHistorySaver,
   ) {}
 
   /**
@@ -1887,6 +1902,7 @@ export class AgentRuntimeService {
    */
 
   async send(input: AgentSendInput): Promise<string> {
+    if (this.shuttingDown) throw new Error('Agent runtime is shutting down')
     let session = this.sessions.get(input.sessionId ?? '')
 
     if (session === undefined && input.incidentThreadId !== undefined && input.incidentThreadId.length > 0) {
@@ -1914,6 +1930,7 @@ export class AgentRuntimeService {
    * the prompt continues it as a follow-up. `followUp` is the send() input.
    */
   private async startOrRestore(input: AgentStartInput, followUp?: AgentSendInput): Promise<string> {
+    if (this.shuttingDown) throw new Error('Agent runtime is shutting down')
     const incidentThreadId = input.incidentThreadId !== undefined && input.incidentThreadId.length > 0
       ? input.incidentThreadId
       : undefined
@@ -2989,6 +3006,32 @@ export class AgentRuntimeService {
       event,
       snapshot: session.snapshot,
     }, event.type)
+    this.persistIncidentMessages(session)
+  }
+
+  /** Writes the snapshot messages; requests during a running write collapse into one write of the latest. */
+  private persistIncidentMessages(session: AgentSession): void {
+    const save = this.saveIncidentMessages
+    if (save === undefined || session.incidentThreadId === undefined) return
+    if (session.snapshot.messages === session.persistedMessages) return
+    session.pendingIncidentMessages = session.snapshot.messages
+    session.incidentSave ??= this.writeIncidentMessages(session, save)
+  }
+
+  private async writeIncidentMessages(session: AgentSession, save: AgentRuntimeIncidentHistorySaver): Promise<void> {
+    let messages = session.pendingIncidentMessages
+    while (messages !== undefined) {
+      session.pendingIncidentMessages = undefined
+      try {
+        await save(session.incidentThreadId ?? '', messages)
+        // Set only on success, so a failed write is retried by the next request or destroy().
+        session.persistedMessages = messages
+      } catch (error) {
+        log.warn(`[agent-runtime:${session.id}] Failed to persist incident messages:`, error)
+      }
+      messages = session.pendingIncidentMessages
+    }
+    session.incidentSave = undefined
   }
 
   private flushStreamUpdate(session: AgentSession): void {
@@ -3022,6 +3065,9 @@ export class AgentRuntimeService {
       tokenUsage: snapshot.tokenUsage,
       currentToolCallId: snapshot.currentToolCallId,
     }, 'message')
+    // Text-only answers have no structural events, so persist every coalesced update;
+    // a write in flight collapses later requests into one write of the latest messages.
+    this.persistIncidentMessages(session)
   }
 
   private postToRenderer(payload: AgentRuntimeEventPayload, label: string): void {
@@ -3075,12 +3121,19 @@ export class AgentRuntimeService {
    */
   async destroy(): Promise<void> {
     log.info('[agent-runtime] Destroying all sessions')
+    this.shuttingDown = true
+    const incidentSaves: Promise<void>[] = []
     for (const session of this.sessions.values()) {
       this.clearSessionTimeout(session)
       clearTimeout(session.streamFlushTimer)
       session.streamFlushTimer = undefined
       session.pendingStreamEvent = undefined
+      // A queued follow-up would otherwise restore a fresh session once the loop unwinds.
+      session.queuedFollowUps = []
       session.abortController.abort()
+      // Streamed text since the last structural event is only in the snapshot.
+      this.persistIncidentMessages(session)
+      if (session.incidentSave !== undefined) incidentSaves.push(session.incidentSave)
     }
     this.sessions.clear()
 
@@ -3093,6 +3146,9 @@ export class AgentRuntimeService {
     if (!settled) {
       log.warn(`[agent-runtime] ${String(this.activeLoops.size)} session loop(s) still running after shutdown wait`)
     }
+    await Promise.all(incidentSaves)
+    // A failed update install keeps the app running, so the runtime must be usable again.
+    this.shuttingDown = false
   }
 
   private hasRunbookTools(): boolean {

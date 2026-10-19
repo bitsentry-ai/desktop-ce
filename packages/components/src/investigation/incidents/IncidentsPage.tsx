@@ -93,16 +93,17 @@ export default function IncidentsPage() {
   const agent = useAgentService();
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
+  const activeId = searchParams.get("id");
   const {
     incidents,
     setIncidents,
     messagesMap,
     setMessagesMap,
+    appendThreadMessages,
     desktopHydrated,
     isDesktopIncidents,
-  } = useIncidentPersistence();
+  } = useIncidentPersistence(activeId);
 
-  const activeId = searchParams.get("id");
   const viewMode = searchParams.get("view");
   const urlPrompt = searchParams.get("prompt");
   const isHistoryContext = viewMode === "history";
@@ -176,10 +177,13 @@ export default function IncidentsPage() {
     handleRemoveComposerImage,
   } = useIncidentComposerAttachments(selectedModelCapability, composerSupportsFiles);
 
+  // Desktop loads a thread's messages when it opens; until then there is nothing to explain.
+  const activeMessagesLoaded = !isDesktopIncidents || (activeId !== null && messagesMap[activeId] !== undefined);
   // For past incidents with no in-memory messages, show the original prompt + a note
   const messages = useMemo((): ChatMessage[] => {
     if (
       activeIncident !== null &&
+      activeMessagesLoaded &&
       rawMessages.length === 0 &&
       activeIncident.state !== "IDLE"
     ) {
@@ -198,13 +202,14 @@ export default function IncidentsPage() {
       return result;
     }
     return rawMessages;
-  }, [activeIncident, rawMessages]);
+  }, [activeIncident, activeMessagesLoaded, rawMessages]);
 
   incidentsRef.current = incidents;
 
   const detachIncidentSession = useCallback(
     (incidentId: string, sessionId: string, nextState: AgentSessionState) => {
-      // The session is gone (app restart), so a turn it was running stops here.
+      // The session is gone (app restart), so a turn it was running stops here. This is display
+      // only: loading the thread without a session settles it again, and main settles on resume.
       if (incidentsRef.current.find((incident) => incident.id === incidentId)?.sessionId === sessionId) {
         setMessagesMap((prev) => {
           const messages = prev[incidentId];
@@ -226,7 +231,7 @@ export default function IncidentsPage() {
         }),
       );
     },
-    [],
+    [setMessagesMap],
   );
 
   useEffect(() => {
@@ -641,7 +646,8 @@ export default function IncidentsPage() {
     const draft = activeId === null ? "" : (useIncidentDraftStore.getState().drafts[activeId] ?? "");
     const text = intakeText ?? draft.trim();
     const ready = canSendIncidentMessage(text, fromIntake ? 0 : composerImages.length, activeId, selectedProviderKey, selectedModelId);
-    if (!ready || activeId === null || selectedProviderKey === null || activeIncident?.archived === true) return;
+    // Sending waits for the thread's history so the reply never lands on a thread shown as empty.
+    if (!ready || !activeMessagesLoaded || activeId === null || selectedProviderKey === null || activeIncident?.archived === true) return;
     const wasRunning = activeIncident?.state === "RUNNING";
     const shouldContinueSession = activeSessionId !== null || wasRunning;
     const preview = normalizeIncidentPreview(text);
@@ -739,23 +745,19 @@ export default function IncidentsPage() {
         promptLength: text.length,
         attachmentCount: outgoingImages.length,
       });
-      setMessagesMap((prev) => ({
-        ...prev,
-        [activeId]: [
-          ...(prev[activeId] ?? []),
-          { id: crypto.randomUUID(), kind: "user", text, attachments: outgoingImages },
-          {
-            id: crypto.randomUUID(),
-            kind: "agent",
-            iterations: [],
-            activeIterationId: null,
-            toolCalls: [],
-            finalText: message,
-            status: "error",
-            errorMsg: message,
-          },
-        ],
-      }));
+      appendThreadMessages(activeId, [
+        { id: crypto.randomUUID(), kind: "user", text, attachments: outgoingImages },
+        {
+          id: crypto.randomUUID(),
+          kind: "agent",
+          iterations: [],
+          activeIterationId: null,
+          toolCalls: [],
+          finalText: message,
+          status: "error",
+          errorMsg: message,
+        },
+      ]);
       setIncidents((prev) =>
         updateIncidentById(prev, activeId, (incident) => ({ ...incident, state: "FAILED", sessionId: undefined })),
       );

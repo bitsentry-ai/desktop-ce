@@ -7,7 +7,7 @@ import {
   normalizeIncidentMessagesMap,
   normalizeIncidents,
 } from "./incidentNormalize";
-import { loadIncidentMessages, loadIncidents } from "./incidentStorage";
+import { loadIncidents } from "./incidentStorage";
 import type { DesktopIpcError, IncidentThread } from "./types";
 
 export function hasDesktopIncidentsApi(): boolean {
@@ -34,8 +34,8 @@ export function errorMessage(error: unknown): string {
 export function isMissingIncidentsHandlerError(error: unknown): boolean {
   const message = errorMessage(error);
   return (
-    message.includes("No handler registered for 'incidents:getState'") ||
-    message.includes("No handler registered for 'incidents:replaceState'")
+    message.includes("No handler registered for 'incidents:list'") ||
+    message.includes("No handler registered for 'incidents:saveThread'")
   );
 }
 
@@ -79,41 +79,24 @@ export function captureIncidentException(
   } catch {}
 }
 
-export async function loadDesktopIncidentState(): Promise<{
-  incidents: IncidentThread[];
-  messagesMap: Record<string, ChatMessage[]>;
-}> {
+export async function loadDesktopIncidents(): Promise<IncidentThread[]> {
   const incidentsApi = getDesktopApi()?.incidents;
-  if (incidentsApi === undefined) {
-    return {
-      incidents: loadIncidents(),
-      messagesMap: loadIncidentMessages(),
-    };
-  }
-
-  const snapshot = await incidentsApi.getState();
-  const incidents = normalizeIncidents(snapshot.incidents);
-  const messagesMap = normalizeIncidentMessagesMap(snapshot.incidentMessages);
-
-  if (incidents.length > 0 || Object.keys(messagesMap).length > 0) {
-    return { incidents, messagesMap };
-  }
-
-  return {
-    incidents: loadIncidents(),
-    messagesMap: loadIncidentMessages(),
-  };
+  if (incidentsApi === undefined) return loadIncidents();
+  return normalizeIncidents(await incidentsApi.list());
 }
 
-export async function saveDesktopIncidentState(
-  incidents: IncidentThread[],
-  messagesMap: Record<string, ChatMessage[]>,
-): Promise<void> {
+export async function loadDesktopIncidentMessages(threadId: string): Promise<ChatMessage[]> {
   const incidentsApi = getDesktopApi()?.incidents;
-  if (incidentsApi === undefined) return;
+  if (incidentsApi === undefined) return [];
+  const messages = await incidentsApi.getThreadMessages(threadId);
+  return normalizeIncidentMessagesMap({ [threadId]: messages })[threadId] ?? [];
+}
 
-  await incidentsApi.replaceState({
-    incidents,
-    incidentMessages: messagesMap,
-  });
+/** Saves only the fields in `patch`; `archivedAt: null` unarchives. */
+export async function saveDesktopIncidentThread(patch: { id: string } & Record<string, unknown>): Promise<void> {
+  await getDesktopApi()?.incidents?.saveThread(patch);
+}
+
+export async function appendDesktopIncidentMessages(threadId: string, messages: ChatMessage[]): Promise<void> {
+  await getDesktopApi()?.incidents?.appendThreadMessages(threadId, messages);
 }
