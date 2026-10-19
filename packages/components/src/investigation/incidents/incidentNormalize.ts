@@ -13,24 +13,6 @@ import type {
 } from "../../chat/types";
 import type { IncidentThread, SessionMessagesCache, UnknownRecord } from "./types";
 
-export function setIncidentArchiveState(
-  incidents: IncidentThread[],
-  incidentId: string,
-  archived: boolean,
-): IncidentThread[] {
-  return incidents.map((incident) =>
-    incident.id === incidentId ? { ...incident, archived } : incident,
-  );
-}
-
-export function updateIncidentById(
-  incidents: IncidentThread[],
-  incidentId: string,
-  update: (incident: IncidentThread) => IncidentThread,
-): IncidentThread[] {
-  return incidents.map((incident) => incident.id === incidentId ? update(incident) : incident);
-}
-
 export function asRecord(value: unknown): UnknownRecord | null {
   if (value === null || typeof value !== "object" || Array.isArray(value)) {
     return null;
@@ -156,7 +138,7 @@ export function normalizeIncidents(parsed: unknown[]): IncidentThread[] {
       // Preserve running incidents only when a resumable agent session is attached.
       state: normalizeIncidentState(record.state, sessionId),
       sessionId,
-      archived: record.archived === true,
+      archived: record.archived === true || getString(record, "archivedAt") !== undefined,
       lastMessagePreview:
         normalizeIncidentPreview(getString(record, "lastMessagePreview")) ??
         normalizeIncidentPreview(prompt),
@@ -532,32 +514,6 @@ export function applyMessageUpdate(
   messages[update.messageIndex] = migrateMessage(update.message);
   json[update.messageIndex] = JSON.stringify(update.message);
   return { messages, json };
-}
-
-export function updateIncidentRow(
-  incidents: IncidentThread[],
-  incidentId: string,
-  state: AgentSessionState,
-  sessionId: string,
-  preview: string | null,
-): IncidentThread[] {
-  const incident = incidents.find((item) => item.id === incidentId);
-  if (incident === undefined) return incidents;
-  const nextSessionId = incident.sessionId ?? sessionId;
-  const nextPreview = preview ?? incident.lastMessagePreview;
-  if (
-    incident.state === state &&
-    incident.sessionId === nextSessionId &&
-    incident.lastMessagePreview === nextPreview
-  ) {
-    return incidents;
-  }
-  return updateIncidentById(incidents, incidentId, (item) => ({
-    ...item,
-    state,
-    sessionId: nextSessionId,
-    lastMessagePreview: nextPreview,
-  }));
 }
 
 export function getChatMessagePreview(
