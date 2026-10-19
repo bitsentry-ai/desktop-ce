@@ -119,7 +119,10 @@ export default defineConfig({
         include: [/packages\/components/, /packages\/core/, /node_modules/],
       },
     },
-    plugins: [react()],
+    // The React Compiler memoizes components and hooks, including the components
+    // and core packages resolved to source below. react-compiler-coverage.spec.ts
+    // fails when a file stops compiling.
+    plugins: [react({ babel: { plugins: [['babel-plugin-react-compiler', {}]] } })],
     resolve: {
       dedupe: [
         'react',

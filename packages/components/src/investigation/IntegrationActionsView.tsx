@@ -7,6 +7,7 @@ import { formatCustomerReportReceivedAt } from "../chat/ChatBubble";
 import { cn } from "../lib/utils";
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
+import { useNow } from "../hooks/useNow";
 import { relativeTime } from "./relative-time";
 export interface IntegrationOperationsPort {
   renew?(threadId: string, id: string): Promise<unknown>;
@@ -83,6 +84,7 @@ export function StatusBadges({ row }: { row: IntegrationOperation }) {
 
 function OperationListItem({ row, isSelected, onSelect }: { row: IntegrationOperation; isSelected: boolean; onSelect: () => void }) {
   const { t } = useTranslation();
+  const now = useNow();
   const Icon = row.ticketOperation === undefined ? FileText : Ticket;
   return <button type="button" aria-pressed={isSelected} onClick={onSelect}
     className={cn("w-full rounded-2xl border p-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring", isSelected ? "border-primary bg-primary/5" : "border-border bg-muted/10 hover:bg-muted/20")}>
@@ -94,7 +96,7 @@ function OperationListItem({ row, isSelected, onSelect }: { row: IntegrationOper
           <StatusBadges row={row} />
         </div>
         <div className="mt-1 truncate text-xs text-muted-foreground">
-          {row.connectionName} · <time dateTime={row.updatedAt} title={new Date(row.updatedAt).toLocaleString()}>{relativeTime(row.updatedAt)}</time>
+          {row.connectionName} · <time dateTime={row.updatedAt} title={new Date(row.updatedAt).toLocaleString()}>{relativeTime(row.updatedAt, now)}</time>
         </div>
       </div>
     </div>

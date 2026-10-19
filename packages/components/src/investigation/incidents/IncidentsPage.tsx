@@ -6,6 +6,7 @@ import IncidentIntegrationsRail, {
 import {
   useCallback,
   useEffect,
+  useEffectEvent,
   useMemo,
   useRef,
   useState,
@@ -32,6 +33,7 @@ import {
   TooltipTrigger,
 } from "../../ui/tooltip";
 import { useAgentService } from "../../services/hooks";
+import { useNow } from "../../hooks/useNow";
 import { type ModelCatalogProviderKey } from "../../llm/modelCatalog";
 import { useTranslation } from "@bitsentry-ce/i18n";
 import type {
@@ -88,6 +90,7 @@ import { useIncidentProviderSelection } from "./useIncidentProviderSelection";
 
 export default function IncidentsPage() {
   const { t } = useTranslation();
+  const now = useNow();
   const agent = useAgentService();
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
@@ -321,11 +324,14 @@ export default function IncidentsPage() {
   }, [activeId, tokenUsageByIncident]);
 
   // Pre-populate prompt from ?prompt= URL param (e.g. launched from Runbook page)
+  const applyUrlPrompt = useEffectEvent((prompt: string, incidentId: string) => {
+    useIncidentDraftStore.getState().setDraft(incidentId, decodeURIComponent(prompt));
+    void navigate(`/incidents?id=${incidentId}`, { replace: true });
+  });
   useEffect(() => {
     if (urlPrompt === null || activeId === null) return;
-    useIncidentDraftStore.getState().setDraft(activeId, decodeURIComponent(urlPrompt));
-    void navigate(`/incidents?id=${activeId}`, { replace: true });
-  }, [urlPrompt, activeId]); // eslint-disable-line react-hooks/exhaustive-deps
+    applyUrlPrompt(urlPrompt, activeId);
+  }, [urlPrompt, activeId]);
 
   const { applySnapshotToIncident } = useIncidentAgentEvents({
     agent,
@@ -569,51 +575,31 @@ export default function IncidentsPage() {
       ...(preview !== null && { lastMessagePreview: preview }),
     });
 
-    try {
-      const llm: {
-        providerKey: ModelCatalogProviderKey;
-        model: string;
-        thinkingEnabled?: boolean;
-      } = {
-        providerKey: selectedProviderKey,
-        model: selectedModelId,
-      };
-      if (selectedModelCapability?.supportsThinking === true) {
-        llm.thinkingEnabled = thinkingEnabled;
-      }
+    const llm: {
+      providerKey: ModelCatalogProviderKey;
+      model: string;
+      thinkingEnabled?: boolean;
+    } = {
+      providerKey: selectedProviderKey,
+      model: selectedModelId,
+    };
+    if (selectedModelCapability?.supportsThinking === true) {
+      llm.thinkingEnabled = thinkingEnabled;
+    }
+    const sendInput = {
+      continueSession: shouldContinueSession,
+      text,
+      sessionId: activeSessionId,
+      attachments: outgoingImages,
+      llm,
+      incidentThreadId: activeId,
+      accessLevel: options?.accessLevel ?? selectedAccessLevel,
+      interactionMode: options?.interactionMode,
+      traitValues: options?.traitValues,
+    };
 
-      const result = await sendIncidentAgentMessage(agent, {
-        continueSession: shouldContinueSession,
-        text,
-        sessionId: activeSessionId,
-        attachments: outgoingImages,
-        llm,
-        incidentThreadId: activeId,
-        accessLevel: options?.accessLevel ?? selectedAccessLevel,
-        interactionMode: options?.interactionMode,
-        traitValues: options?.traitValues,
-      });
-      useIncidentListStore.getState().patch(activeId, { sessionId: result.sessionId });
-      try {
-        const snapshot = await agent.getSnapshot(result.sessionId);
-        if (snapshot !== null) {
-          applySnapshotToIncident(activeId, snapshot, snapshot.sequence, true);
-        }
-      } catch (snapshotError: unknown) {
-        console.warn(
-          "Agent session started but initial snapshot retrieval failed:",
-          snapshotError,
-        );
-        captureIncidentException(snapshotError, {
-          operation: "getSnapshot",
-          source: "handleSend:start",
-          incidentId: activeId,
-          sessionId: result.sessionId,
-          providerKey: selectedProviderKey,
-          modelId: selectedModelId,
-        });
-      }
-    } catch (err: unknown) {
+    // Lives outside the try so the React Compiler can lower its conditionals.
+    const handleStartFailure = (err: unknown) => {
       const message = errorMessage(err);
       const isBusyAgentError =
         message.includes("still responding") ||
@@ -661,6 +647,32 @@ export default function IncidentsPage() {
         sessionId: undefined,
         ...(failedPreview !== null && { lastMessagePreview: failedPreview }),
       });
+    };
+
+    try {
+      const result = await sendIncidentAgentMessage(agent, sendInput);
+      useIncidentListStore.getState().patch(activeId, { sessionId: result.sessionId });
+      try {
+        const snapshot = await agent.getSnapshot(result.sessionId);
+        if (snapshot !== null) {
+          applySnapshotToIncident(activeId, snapshot, snapshot.sequence, true);
+        }
+      } catch (snapshotError: unknown) {
+        console.warn(
+          "Agent session started but initial snapshot retrieval failed:",
+          snapshotError,
+        );
+        captureIncidentException(snapshotError, {
+          operation: "getSnapshot",
+          source: "handleSend:start",
+          incidentId: activeId,
+          sessionId: result.sessionId,
+          providerKey: selectedProviderKey,
+          modelId: selectedModelId,
+        });
+      }
+    } catch (err: unknown) {
+      handleStartFailure(err);
     }
   };
 
@@ -931,7 +943,7 @@ export default function IncidentsPage() {
                             </div>
                           )}
                           <div className="text-[11px] text-muted-foreground/70">
-                            {relativeTime(inc.createdAt)}
+                            {relativeTime(inc.createdAt, now)}
                           </div>
                         </div>
                         <StatusPill state={inc.state} />

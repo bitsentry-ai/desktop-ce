@@ -76,6 +76,10 @@ export function OperationDiffApprovalCheckbox({
   );
 }
 
+function withSavedTitle(proposalId: string, title: string) {
+  return (previous: Record<string, string>) => ({ ...previous, [proposalId]: title });
+}
+
 export function RunbookAuthoringProposalCards({
   agent,
   incidentId,
@@ -192,7 +196,8 @@ export function RunbookAuthoringProposalCards({
           if (!canDecideProposals) return;
           setPendingProposalId(proposal.proposalId);
           setErrorByProposalId((prev) => ({ ...prev, [proposal.proposalId]: "" }));
-          try {
+          // Promise chains, not try/finally, which the React Compiler can't lower.
+          const approveProposal = async () => {
             const result = await agent.approveRunbookAuthoringProposal({
               sessionId: decisionSessionId,
               incidentThreadId: incidentId,
@@ -201,10 +206,7 @@ export function RunbookAuthoringProposalCards({
             });
             setDecisionProposal(result.proposal);
             if (result.savedRunbook !== undefined) {
-              setSavedTitleByProposalId((previous) => ({
-                ...previous,
-                [proposal.proposalId]: result.savedRunbook!.title,
-              }));
+              setSavedTitleByProposalId(withSavedTitle(proposal.proposalId, result.savedRunbook.title));
               window.dispatchEvent(
                 new CustomEvent("bitsentry:runbooks-updated", {
                   detail: { runbook: result.savedRunbook },
@@ -212,18 +214,18 @@ export function RunbookAuthoringProposalCards({
               );
             }
             await refreshLiveProposals();
-          } catch (err: unknown) {
-            await recoverDecidedProposal(proposal.proposalId, err);
-          } finally {
-            setPendingProposalId(null);
-          }
+          };
+          await approveProposal()
+            .catch((err: unknown) => recoverDecidedProposal(proposal.proposalId, err))
+            .finally(() => { setPendingProposalId(null); });
         };
 
         const handleReject = async () => {
           if (!canDecideProposals) return;
           setPendingProposalId(proposal.proposalId);
           setErrorByProposalId((prev) => ({ ...prev, [proposal.proposalId]: "" }));
-          try {
+          // Promise chains, not try/finally, which the React Compiler can't lower.
+          const rejectProposal = async () => {
             const result = await agent.rejectRunbookAuthoringProposal({
               sessionId: decisionSessionId,
               incidentThreadId: incidentId,
@@ -232,11 +234,10 @@ export function RunbookAuthoringProposalCards({
             });
             setDecisionProposal(result.proposal);
             await refreshLiveProposals();
-          } catch (err: unknown) {
-            await recoverDecidedProposal(proposal.proposalId, err);
-          } finally {
-            setPendingProposalId(null);
-          }
+          };
+          await rejectProposal()
+            .catch((err: unknown) => recoverDecidedProposal(proposal.proposalId, err))
+            .finally(() => { setPendingProposalId(null); });
         };
 
         const handleRequestRevision = async () => {
@@ -244,7 +245,8 @@ export function RunbookAuthoringProposalCards({
           const requestedEdit = revisionDraft.trim();
           setPendingProposalId(proposal.proposalId);
           setErrorByProposalId((prev) => ({ ...prev, [proposal.proposalId]: "" }));
-          try {
+          // Promise chains, not try/finally, which the React Compiler can't lower.
+          const requestRevision = async () => {
             const result = await agent.requestRunbookAuthoringRevision({
               sessionId: decisionSessionId,
               incidentThreadId: incidentId,
@@ -265,11 +267,10 @@ export function RunbookAuthoringProposalCards({
               ),
             );
             await refreshLiveProposals();
-          } catch (err: unknown) {
-            await recoverDecidedProposal(proposal.proposalId, err);
-          } finally {
-            setPendingProposalId(null);
-          }
+          };
+          await requestRevision()
+            .catch((err: unknown) => recoverDecidedProposal(proposal.proposalId, err))
+            .finally(() => { setPendingProposalId(null); });
         };
 
         return (

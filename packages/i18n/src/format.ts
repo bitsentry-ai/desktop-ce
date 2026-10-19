@@ -133,10 +133,10 @@ const RTF_THRESHOLDS: Array<[Intl.RelativeTimeFormatUnit, number]> = [
 export function formatRelativeTime(
   value: DateInput,
   locale: SupportedLocale = DEFAULT_LOCALE,
+  nowMs: number = Date.now(),
 ): string {
   const target = toDate(value).getTime();
-  const now = Date.now();
-  const diffSec = Math.round((target - now) / 1000);
+  const diffSec = Math.round((target - nowMs) / 1000);
   const absSec = Math.abs(diffSec);
   for (const [unit, threshold] of RTF_THRESHOLDS) {
     if (absSec >= threshold || unit === "second") {
@@ -157,7 +157,7 @@ export interface Formatters {
   number: (value: number, options?: Intl.NumberFormatOptions) => string;
   percent: (value: number, fractionDigits?: number) => string;
   compact: (value: number) => string;
-  relativeTime: (value: Date | string | number) => string;
+  relativeTime: (value: Date | string | number, nowMs?: number) => string;
   locale: SupportedLocale;
 }
 
@@ -175,7 +175,7 @@ export function useFormatters(): Formatters {
       number: (v, o) => formatNumber(v, locale, o),
       percent: (v, f) => formatPercent(v, locale, f),
       compact: (v) => formatCompact(v, locale),
-      relativeTime: (v) => formatRelativeTime(v, locale),
+      relativeTime: (v, n) => formatRelativeTime(v, locale, n),
       locale,
     }),
     [locale],
