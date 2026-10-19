@@ -208,23 +208,15 @@ export function appendSteerToThreadSnapshot(
     timestamp: string;
   },
 ): AgentThreadSnapshot {
-  const messages = mapLastAgentMessage(snapshot.messages, (message) => ({
-    ...message,
-    status: "done",
-    activity: undefined,
-    activeIterationId: null,
-    iterations: message.iterations.map((iteration) => {
-      if (iteration.status === "done" || iteration.status === "error") {
-        return iteration;
-      }
-
-      return {
-        ...iteration,
-        status: "done",
-        completedAt: iteration.completedAt ?? input.timestamp,
-      };
-    }),
-  }));
+  let messages = snapshot.messages;
+  const last = messages[messages.length - 1];
+  if (last?.kind === "agent") {
+    // Work that has not shown anything yet continues after the steer instead
+    // of leaving an empty agent message behind.
+    messages = hasVisibleAgentWork(last)
+      ? [...messages.slice(0, -1), closeAgentMessage(last, input.timestamp)]
+      : messages.slice(0, -1);
+  }
 
   return {
     ...snapshot,
@@ -239,6 +231,40 @@ export function appendSteerToThreadSnapshot(
       createAgentMessage(),
     ],
   };
+}
+
+function closeAgentMessage(
+  message: Extract<ChatMessage, { kind: "agent" }>,
+  timestamp: string,
+): Extract<ChatMessage, { kind: "agent" }> {
+  return {
+    ...message,
+    status: "done",
+    activity: undefined,
+    activeIterationId: null,
+    iterations: message.iterations.map((iteration) => {
+      if (iteration.status === "done" || iteration.status === "error") {
+        return iteration;
+      }
+
+      return { ...iteration, status: "done", completedAt: iteration.completedAt ?? timestamp };
+    }),
+  };
+}
+
+function hasVisibleAgentWork(message: Extract<ChatMessage, { kind: "agent" }>): boolean {
+  return message.toolCalls.length > 0 || message.iterations.some((iteration) => iteration.text.trim().length > 0);
+}
+
+/** A steer the provider accepted just as its turn ended: it shows before that turn's answer. */
+export function insertUserMessageBeforeLastAgentMessage(
+  snapshot: AgentThreadSnapshot,
+  prompt: string,
+): AgentThreadSnapshot {
+  const index = snapshot.messages.map((message) => message.kind).lastIndexOf("agent");
+  const messages = [...snapshot.messages];
+  messages.splice(index === -1 ? messages.length : index, 0, { kind: "user", text: prompt });
+  return { ...snapshot, messages };
 }
 
 export function setAgentThreadRuntimeState(

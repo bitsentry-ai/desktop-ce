@@ -20,6 +20,7 @@ import type { AgentQueuedMessage, AgentThreadSnapshot, ComposerAttachment } from
 import {
   appendPromptToThreadSnapshot,
   appendSteerToThreadSnapshot,
+  insertUserMessageBeforeLastAgentMessage,
   createAgentThreadSnapshot,
   reduceAgentThreadSnapshot,
   setAgentThreadRuntimeState,
@@ -502,6 +503,8 @@ interface AgentSession {
   pendingSteers: QueuedFollowUp[]
   /** Set when a turn is stopped, times out or fails with follow-ups queued; they wait for a resume. */
   queueHeld: boolean
+  /** A coding agent turn that takes steers through its provider's mid-turn input API. */
+  activeTurnSteer?: (text: string) => Promise<void>
   loopActive?: boolean
   snapshot: AgentThreadSnapshot
 }
@@ -515,6 +518,22 @@ type QueuedFollowUp = {
    * stop holds the queue, because the engineer sent it after deciding to stop.
    */
   runAfterHold: boolean
+  /** Sent to a coding agent's running turn and waiting for the provider to accept it. */
+  delivering?: boolean
+}
+
+/** A hold only matters while something waits; with nothing queued or in flight, the next message runs normally. */
+function releaseHoldIfNothingWaits(session: Pick<AgentSession, 'queuedFollowUps' | 'pendingSteers' | 'queueHeld'>): void {
+  if (session.queuedFollowUps.length === 0 && session.pendingSteers.length === 0) {
+    session.queueHeld = false
+  }
+}
+
+function removeEntry(list: QueuedFollowUp[], entry: QueuedFollowUp): void {
+  const index = list.indexOf(entry)
+  if (index !== -1) {
+    list.splice(index, 1)
+  }
 }
 
 type FoundQueuedEntry = { list: QueuedFollowUp[]; index: number; entry: QueuedFollowUp }
@@ -2044,6 +2063,9 @@ export class AgentRuntimeService {
     }
 
     const found = findQueuedEntry(session, input.messageId)
+    if (found.entry.delivering === true) {
+      throw new Error('This steer is already on its way to the running turn.')
+    }
     switch (input.action) {
       case 'edit':
         found.entry.input = { ...found.entry.input, message: input.message, attachments: input.attachments }
@@ -2056,18 +2078,16 @@ export class AgentRuntimeService {
         break
       case 'steer':
         if (found.list === session.queuedFollowUps) {
-          if (!this.canSteer(session)) {
+          if (!this.canSteer(session) || !this.canSteerMessage(session, found.entry.input)) {
             throw new Error('The running turn cannot take a steer.')
           }
           session.queuedFollowUps.splice(found.index, 1)
-          session.pendingSteers.push(found.entry)
+          this.steerEntry(session, found.entry)
         }
         break
     }
 
-    if (session.queuedFollowUps.length === 0) {
-      session.queueHeld = false
-    }
+    releaseHoldIfNothingWaits(session)
     this.publishQueue(session)
   }
 
@@ -2569,6 +2589,8 @@ export class AgentRuntimeService {
                     })
                   }
                 }
+              } else if (delta.type === 'steer_handle') {
+                this.acceptSteerHandle(session, delta.steer)
               } else if (delta.type === 'token_usage') {
                 observedIteration.tokenUsage = delta.tokenUsage
                 this.sendEvent(sessionId, {
@@ -2849,8 +2871,66 @@ export class AgentRuntimeService {
     return (
       session.loopActive === true &&
       session.state === 'RUNNING' &&
-      getLocalCodingAgentProviderKey(session.llmSelection) === null
+      (getLocalCodingAgentProviderKey(session.llmSelection) === null || session.activeTurnSteer !== undefined)
     )
+  }
+
+  /**
+   * Steers the running turn. The direct API loop takes the steer before its
+   * next model call. A coding agent takes it through its provider right away;
+   * the steer joins the history only once the provider accepts it, and goes
+   * back to the front of the queue if the provider refuses it, so it is never
+   * lost and never sent twice.
+   */
+  private steerEntry(session: AgentSession, entry: QueuedFollowUp): void {
+    session.pendingSteers.push(entry)
+    const deliver = session.activeTurnSteer
+    if (deliver === undefined) {
+      return
+    }
+
+    entry.delivering = true
+    const turnId = session.currentTurnId
+    deliver(entry.input.message).then(
+      () => {
+        entry.delivering = false
+        removeEntry(session.pendingSteers, entry)
+        releaseHoldIfNothingWaits(session)
+        this.recordDeliveredSteer(session, entry, turnId)
+        this.publishQueue(session)
+      },
+      (error: unknown) => {
+        log.warn(`[agent-runtime:${session.id}] Steer refused by the provider; queueing it instead:`, getErrorMessage(error))
+        entry.delivering = false
+        removeEntry(session.pendingSteers, entry)
+        session.queuedFollowUps.unshift(entry)
+        if (session.loopActive !== true) {
+          this.startNextQueuedFollowUp(session)
+        }
+        this.publishQueue(session)
+      },
+    )
+  }
+
+  private recordDeliveredSteer(session: AgentSession, entry: QueuedFollowUp, turnId: string | undefined): void {
+    const userMessage: ChatMessage = {
+      role: 'user',
+      content: createUserMessageContent(entry.input.message, entry.input.attachments),
+    }
+    if (turnId !== undefined && session.currentTurnId === turnId) {
+      session.messages.push(userMessage)
+      session.snapshot = appendSteerToThreadSnapshot(session.snapshot, {
+        prompt: entry.input.message,
+        timestamp: new Date().toISOString(),
+      })
+      return
+    }
+
+    // The turn ended while the provider accepted the steer, so the steer
+    // belongs before that turn's answer.
+    const lastAssistantIndex = session.messages.map((message) => message.role).lastIndexOf('assistant')
+    session.messages.splice(lastAssistantIndex === -1 ? session.messages.length : lastAssistantIndex, 0, userMessage)
+    session.snapshot = insertUserMessageBeforeLastAgentMessage(session.snapshot, entry.input.message)
   }
 
   private queueWhileLoopActive(session: AgentSession, input: AgentSendInput): void {
@@ -2860,12 +2940,24 @@ export class AgentRuntimeService {
       queuedAt: new Date().toISOString(),
       runAfterHold: session.state !== 'RUNNING',
     }
-    if (input.delivery === 'steer' && this.canSteer(session)) {
-      session.pendingSteers.push(entry)
+    if (input.delivery === 'steer' && this.canSteer(session) && this.canSteerMessage(session, input)) {
+      this.steerEntry(session, entry)
     } else {
       session.queuedFollowUps.push(entry)
     }
     this.publishQueue(session)
+  }
+
+  /** Holds the running coding agent turn's steer handle. A handle from a turn that ended or was stopped is stale. */
+  private acceptSteerHandle(session: AgentSession, steer: ((text: string) => Promise<void>) | null): void {
+    const turnIsLive = session.loopActive === true && session.state === 'RUNNING'
+    session.activeTurnSteer = steer !== null && turnIsLive ? steer : undefined
+    this.publishQueue(session)
+  }
+
+  /** A coding agent steer carries text only, so a message with attachments waits for the next turn. */
+  private canSteerMessage(session: AgentSession, input: AgentSendInput): boolean {
+    return session.activeTurnSteer === undefined || (input.attachments?.length ?? 0) === 0
   }
 
   /**
@@ -2874,10 +2966,11 @@ export class AgentRuntimeService {
    * their results.
    */
   private applyPendingSteers(session: AgentSession): void {
-    const steers = session.pendingSteers.splice(0)
+    const steers = session.pendingSteers.filter((entry) => entry.delivering !== true)
     if (steers.length === 0) {
       return
     }
+    session.pendingSteers = session.pendingSteers.filter((entry) => entry.delivering === true)
 
     const timestamp = new Date().toISOString()
     for (const steer of steers) {
@@ -2901,8 +2994,14 @@ export class AgentRuntimeService {
    * against a turn the engineer stopped or a provider that just failed.
    */
   private settleQueueAfterTurn(session: AgentSession): void {
-    session.queuedFollowUps.unshift(...session.pendingSteers.splice(0))
-    if (session.queuedFollowUps.length > 0 && (session.state === 'CANCELLED' || session.state === 'FAILED')) {
+    session.activeTurnSteer = undefined
+    // A steer still on its way to the provider settles by itself.
+    const missedSteers = session.pendingSteers.filter((entry) => entry.delivering !== true)
+    session.pendingSteers = session.pendingSteers.filter((entry) => entry.delivering === true)
+    session.queuedFollowUps.unshift(...missedSteers)
+    // A steer still in flight may come back refused; after a stop it must wait too.
+    const waiting = session.queuedFollowUps.length + session.pendingSteers.length
+    if (waiting > 0 && (session.state === 'CANCELLED' || session.state === 'FAILED')) {
       session.queueHeld = true
     }
     this.startNextQueuedFollowUp(session)
@@ -2921,9 +3020,7 @@ export class AgentRuntimeService {
     }
 
     const [next] = session.queuedFollowUps.splice(nextIndex, 1)
-    if (session.queuedFollowUps.length === 0) {
-      session.queueHeld = false
-    }
+    releaseHoldIfNothingWaits(session)
     void this.send({ ...next.input, sessionId: session.id, delivery: undefined }).catch((error: unknown) => {
       log.error(`[agent-runtime:${session.id}] Queued follow-up failed to start:`, error)
       session.queuedFollowUps.unshift(next)

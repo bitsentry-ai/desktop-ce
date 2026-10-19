@@ -108,7 +108,9 @@ export type LocalAiStreamDelta =
   | {
       type: "token_usage";
       tokenUsage: LocalAiTokenUsage;
-    };
+    }
+  // Steering a running coding agent turn; runbook steps ignore it.
+  | { type: "steer_handle"; steer: ((text: string) => Promise<void>) | null };
 
 export interface LocalAiExecutionResult {
   output: string;
@@ -170,7 +172,9 @@ export type RunbookExecutionOnDelta = (
     | {
         type: "token_usage";
         tokenUsage: NonNullable<ChatResponse["tokenUsage"]>;
-      },
+      }
+    // A runbook step never steers its coding agent, so it ignores this.
+    | { type: "steer_handle"; steer: ((text: string) => Promise<void>) | null },
 ) => void;
 
 export interface RunbookExecutionLlmAdapter {
