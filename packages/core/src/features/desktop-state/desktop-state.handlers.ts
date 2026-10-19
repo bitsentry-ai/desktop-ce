@@ -87,6 +87,8 @@ interface IncidentThreadRecord {
   archived?: boolean
   archivedAt?: string
   lastMessagePreview?: string | null
+  /** When main last saved the thread's messages or preview. */
+  updatedAt: string
 }
 
 // Renderer chat messages are stored verbatim in "messageJson"; the summary
@@ -870,6 +872,7 @@ function normalizeIncidentRow(rawIncident: unknown): IncidentThreadRecord {
     archived: incident.archivedAt != null,
     archivedAt: asNullableIsoString(incident.archivedAt),
     lastMessagePreview: normalizePreviewText(asOptionalString(incident.lastMessagePreview)) ?? normalizePreviewText(prompt),
+    updatedAt: asIsoString(incident.updatedAt),
   }
 }
 
@@ -1032,7 +1035,8 @@ class DesktopStateStore {
   /**
    * Patches one thread's metadata with the fields present in `raw`, so a stale
    * caller cannot overwrite fields it did not change. A missing row is created
-   * with defaults. Messages are left alone.
+   * with defaults. Messages are left alone. "updatedAt" moves only with the
+   * preview, so a renderer can tell whether main's preview is newer than its own.
    */
   async saveThread(raw: unknown): Promise<{ ok: true }> {
     const patch = asObject(raw)
@@ -1044,10 +1048,14 @@ class DesktopStateStore {
       title: 'New Incident', prompt: '', state: 'IDLE', sessionId: null, createdAt: now,
       archivedAt: null, lastMessagePreview: null, ...Object.fromEntries(present),
     }
-    const updates = ['"updatedAt"=excluded."updatedAt"', ...[...present.keys()].flatMap(incidentThreadColumnUpdate)]
+    const updates = [
+      ...(present.has('lastMessagePreview') ? ['"updatedAt"=excluded."updatedAt"'] : []),
+      ...[...present.keys()].flatMap(incidentThreadColumnUpdate),
+    ]
+    const onConflict = updates.length > 0 ? `DO UPDATE SET ${updates.join(',')}` : 'DO NOTHING'
     await this.db.$executeBatch([{
       sql: `INSERT INTO "IncidentThread" ("id","title","prompt","state","sessionId","createdAt","updatedAt","archivedAt","lastMessagePreview")
-        VALUES (?,?,?,?,?,?,?,?,?) ON CONFLICT("id") DO UPDATE SET ${updates.join(',')}`,
+        VALUES (?,?,?,?,?,?,?,?,?) ON CONFLICT("id") ${onConflict}`,
       parameters: [id, row.title, row.prompt, row.state, row.sessionId, row.createdAt, now, row.archivedAt, row.lastMessagePreview],
     }])
     return { ok: true }

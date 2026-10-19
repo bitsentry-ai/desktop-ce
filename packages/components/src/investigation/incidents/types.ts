@@ -23,6 +23,8 @@ export interface IncidentThread {
   state: AgentSessionState;
   sessionId?: string;
   archived?: boolean;
+  /** Set when archived in this session, so a later save sends the same time. */
+  archivedAt?: string;
   lastMessagePreview?: string | null;
 }
 
