@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { CheckIcon, ChevronRight, Loader2, X } from "lucide-react";
 import { useTranslation } from "@bitsentry-ce/i18n";
 import { cn } from "../lib/utils";
@@ -11,6 +11,8 @@ export type RemediationFlowTone = "neutral" | "success" | "destructive";
 export interface RemediationFlowOption {
   label: string;
   hint?: string;
+  /** Shown below the other options with no number key, such as "New SSH connection". Keep it last. */
+  pinned?: boolean;
 }
 
 export interface RemediationFlowRow {
@@ -41,6 +43,10 @@ export interface ComposerRemediationFlow {
   step?: { index: number; total: number };
   question?: string;
   options: RemediationFlowOption[];
+  /** Compact shows one line for each option in a scroll box, for a list that can be long. */
+  optionLayout?: "list" | "compact";
+  /** How many saved items the options come from, shown next to the step in the compact layout. */
+  count?: number;
   selected?: number;
   select: (index: number) => void;
   rows?: RemediationFlowRow[];
@@ -69,6 +75,23 @@ function StatusBadge({ status }: { status: ComposerRemediationFlow["status"] }) 
 function isTextField(target: EventTarget | null): boolean {
   if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement) return true;
   return target instanceof HTMLElement && target.closest('[contenteditable]:not([contenteditable="false"])') !== null;
+}
+
+/** The options with a number key, in order, by their index in `flow.options`. */
+function keyedOptions(flow: ComposerRemediationFlow): number[] {
+  return flow.options.flatMap((option, index) => (option.pinned === true ? [] : [index]));
+}
+
+/** ArrowUp and ArrowDown move the pick through the options with a number key, in the compact layout. */
+export function moveRemediationSelection(flow: ComposerRemediationFlow, key: string): boolean {
+  if (flow.optionLayout !== "compact" || flow.submitting || (key !== "ArrowUp" && key !== "ArrowDown")) return false;
+  const keyed = keyedOptions(flow);
+  if (keyed.length === 0) return false;
+  const at = flow.selected === undefined ? -1 : keyed.indexOf(flow.selected);
+  let next = Math.min(keyed.length - 1, at + 1);
+  if (key === "ArrowUp") next = at < 0 ? 0 : Math.max(0, at - 1);
+  flow.select(keyed[next]);
+  return true;
 }
 
 /** Shown above the composer while the remediation card is closed. */
@@ -139,6 +162,76 @@ function ContextLine({ context }: { context: string[] }) {
 }
 
 /**
+ * The options as one-line rows in a scroll box about four rows high, with pinned options below it. A fade at the
+ * bottom shows while more rows are below, and the picked row scrolls into view.
+ */
+function CompactOptions({ flow, label }: { flow: ComposerRemediationFlow; label: string }) {
+  const { t } = useTranslation();
+  const scroll = useRef<HTMLDivElement>(null);
+  const [more, setMore] = useState(false);
+  const keyed = keyedOptions(flow);
+  const pinned = flow.options.flatMap((option, index) => (option.pinned === true ? [index] : []));
+  const searching = flow.input !== undefined && flow.input.value.trim() !== "";
+
+  useEffect(() => {
+    const element = scroll.current;
+    if (element === null) return;
+    const check = () => { setMore(element.scrollHeight - element.scrollTop - element.clientHeight > 4); };
+    check();
+    element.addEventListener("scroll", check);
+    const observer = typeof ResizeObserver === "undefined" ? undefined : new ResizeObserver(check);
+    observer?.observe(element);
+    return () => {
+      element.removeEventListener("scroll", check);
+      observer?.disconnect();
+    };
+  }, [keyed.length]);
+
+  const position = flow.selected === undefined ? -1 : keyed.indexOf(flow.selected);
+  useEffect(() => {
+    if (position < 0) return;
+    scroll.current?.children[position]?.scrollIntoView({ block: "nearest" });
+  }, [position]);
+
+  const option = (index: number, keyIndex: number) => {
+    const item = flow.options[index];
+    return (
+      <QuestionOption
+        key={`${item.label}:${item.hint ?? ""}`}
+        label={item.label}
+        hint={item.hint}
+        index={keyIndex}
+        selected={flow.selected === index}
+        disabled={flow.submitting}
+        onSelect={() => { flow.select(index); }}
+        compact
+        pinned={item.pinned}
+      />
+    );
+  };
+  return (
+    <div role="group" aria-label={label} className="mt-2.5">
+      {keyed.length === 0 && searching && <p className="px-3 py-2.5 text-[13px] text-muted-foreground">{t("common.incidents.remediation.noConnectionMatch")}</p>}
+      {keyed.length > 0 && (
+        <div className="relative">
+          <div ref={scroll} className="grid max-h-[9.75rem] gap-1 overflow-y-auto pr-0.5 [scrollbar-color:theme(colors.violet.300)_transparent] [scrollbar-width:thin]">
+            {keyed.map((index, keyIndex) => option(index, keyIndex))}
+          </div>
+          <div
+            aria-hidden="true"
+            className={cn(
+              "pointer-events-none absolute inset-x-0 bottom-0 h-[34px] rounded-b-lg bg-gradient-to-b from-transparent to-violet-50 transition-opacity duration-150 dark:to-background",
+              more ? "opacity-100" : "opacity-0",
+            )}
+          />
+        </div>
+      )}
+      {pinned.length > 0 && <div className="mt-1.5 grid gap-1">{pinned.map((index) => option(index, -1))}</div>}
+    </div>
+  );
+}
+
+/**
  * One CVE remediation step above the composer text, built from the customer report card's parts. Number keys pick an
  * option and Enter runs the primary button while focus is outside a text field; Escape closes the card.
  */
@@ -168,34 +261,50 @@ export function RemediationQuestionPanel({ flow }: { flow: ComposerRemediationFl
         current.primary.run();
         return;
       }
+      if (moveRemediationSelection(current, event.key)) {
+        event.preventDefault();
+        return;
+      }
+      const keyed = keyedOptions(current);
       const digit = Number.parseInt(event.key, 10);
-      if (Number.isNaN(digit) || digit < 1 || digit > Math.min(current.options.length, 9)) return;
+      if (Number.isNaN(digit) || digit < 1 || digit > Math.min(keyed.length, 9)) return;
       event.preventDefault();
-      current.select(digit - 1);
+      current.select(keyed[digit - 1]);
     };
     document.addEventListener("keydown", onKeyDown);
     return () => { document.removeEventListener("keydown", onKeyDown); };
   }, []);
 
   const title = t("common.incidents.remediation.title");
+  const compact = flow.optionLayout === "compact";
+  const keyed = keyedOptions(flow);
   const step = flow.step === undefined
     ? <StatusBadge status={flow.status} />
     : <span className="text-[11px] tabular-nums text-muted-foreground">{`${String(flow.step.index)}/${String(flow.step.total)}`}</span>;
+  const aside = compact && flow.count !== undefined ? (
+    <>
+      {step}
+      <Badge variant="secondary" className="shrink-0 whitespace-nowrap px-1.5 py-0 text-[10px] font-semibold">
+        {t("common.incidents.remediation.savedCount", { count: flow.count })}
+      </Badge>
+    </>
+  ) : step;
   return (
-    <ComposerQuestionCard label={title} aside={step} close={{ label: t("common.incidents.remediation.close"), run: flow.close }} divided={flow.input !== undefined}>
+    <ComposerQuestionCard label={title} aside={aside} close={{ label: t("common.incidents.remediation.close"), run: flow.close }} divided={flow.input !== undefined}>
       {flow.question !== undefined && <p className="text-sm text-foreground/90">{flow.question}</p>}
       {flow.context.length > 0 && <ContextLine context={flow.context} />}
-      {flow.options.length > 0 && (
+      {compact ? <CompactOptions flow={flow} label={flow.question ?? title} /> : flow.options.length > 0 && (
         <div role="group" aria-label={flow.question ?? title} className="mt-2.5 grid gap-1.5">
           {flow.options.map((option, index) => (
             <QuestionOption
               key={`${option.label}:${option.hint ?? ""}`}
               label={option.label}
               hint={option.hint}
-              index={index}
+              index={keyed.indexOf(index)}
               selected={flow.selected === index}
               disabled={flow.submitting}
               onSelect={() => { flow.select(index); }}
+              pinned={option.pinned}
             />
           ))}
         </div>

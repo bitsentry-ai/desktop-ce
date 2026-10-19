@@ -45,6 +45,7 @@ import type { ComposerCustomerReportIntake } from "./useCustomerReportIntake";
 import {
   RemediationFlowButtons,
   RemediationQuestionPanel,
+  moveRemediationSelection,
   RemediationResumeChip,
   type ComposerRemediationFlow,
 } from "./RemediationQuestionPanel";
@@ -298,6 +299,11 @@ export function Composer({
   // ── Keyboard: Enter sends, Shift+Enter newline ─────────────────────────────
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+      // In a compact remediation list, the arrow keys move the pick while the search text keeps the focus.
+      if (remediation !== undefined && moveRemediationSelection(remediation, e.key)) {
+        e.preventDefault();
+        return;
+      }
       if (e.key !== "Enter" || e.shiftKey || e.nativeEvent.isComposing) return;
       if (question !== undefined) {
         e.preventDefault();

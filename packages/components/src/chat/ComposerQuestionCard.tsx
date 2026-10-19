@@ -38,33 +38,50 @@ export function ComposerQuestionCard({ label, aside, close, divided = true, chil
   );
 }
 
-/** One answer to pick: its number key shows until it is picked, then a check. */
-export function QuestionOption({ label, hint, index, selected, disabled, onSelect }: {
+const OPTION = "group flex w-full items-center gap-3 rounded-lg border px-3 py-2 text-left outline-none transition-colors duration-150 focus-visible:border-violet-400 focus-visible:ring-2 focus-visible:ring-violet-500/20 disabled:cursor-not-allowed disabled:opacity-60";
+const OPTION_COMPACT = "group flex h-9 w-full shrink-0 items-center gap-3 rounded-lg border px-3 text-left outline-none transition-colors duration-150 focus-visible:border-violet-400 focus-visible:ring-2 focus-visible:ring-violet-500/20 disabled:cursor-not-allowed disabled:opacity-60";
+const OPTION_SELECTED = "border-violet-300 bg-violet-100/70 dark:border-violet-400/40 dark:bg-violet-500/15";
+const OPTION_PINNED = "border-dashed border-violet-300 text-violet-700 hover:bg-violet-50 dark:border-violet-500/40 dark:text-violet-300 dark:hover:bg-violet-500/10";
+
+/**
+ * One answer to pick: its number key shows until it is picked, then a check. A compact option is one line, with the
+ * hint after the label. A pinned option, such as "New SSH connection", has a dashed border and no number key.
+ */
+export function QuestionOption({ label, hint, index, selected, disabled, onSelect, compact = false, pinned = false }: {
   label: string;
   hint?: string;
   index: number;
   selected: boolean;
   disabled: boolean;
   onSelect: () => void;
+  compact?: boolean;
+  pinned?: boolean;
 }) {
+  let tone = "border-transparent bg-muted/60 hover:bg-muted";
+  if (selected) tone = OPTION_SELECTED;
+  else if (pinned) tone = OPTION_PINNED;
   return (
     <button
       type="button"
       aria-pressed={selected}
       disabled={disabled}
       onClick={onSelect}
-      className={cn(
-        "group flex w-full items-center gap-3 rounded-lg border px-3 py-2 text-left outline-none transition-colors duration-150 focus-visible:border-violet-400 focus-visible:ring-2 focus-visible:ring-violet-500/20 disabled:cursor-not-allowed disabled:opacity-60",
-        selected ? "border-violet-300 bg-violet-100/70 dark:border-violet-400/40 dark:bg-violet-500/15" : "border-transparent bg-muted/60 hover:bg-muted",
-      )}
+      className={cn(compact ? OPTION_COMPACT : OPTION, tone)}
     >
-      <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-        <span className="text-sm font-medium text-foreground">{label}</span>
-        {hint !== undefined && <span className="truncate text-xs text-muted-foreground">{hint}</span>}
-      </span>
+      {compact ? (
+        <span className="flex min-w-0 flex-1 items-baseline gap-3">
+          <span className={cn("whitespace-nowrap text-sm font-medium", !pinned && "text-foreground")}>{label}</span>
+          {hint !== undefined && <span className="min-w-0 flex-1 truncate font-mono text-xs text-muted-foreground">{hint}</span>}
+        </span>
+      ) : (
+        <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+          <span className="text-sm font-medium text-foreground">{label}</span>
+          {hint !== undefined && <span className="truncate text-xs text-muted-foreground">{hint}</span>}
+        </span>
+      )}
       {selected ? (
         <CheckIcon className="size-3.5 shrink-0 text-violet-600 dark:text-violet-300" aria-hidden="true" />
-      ) : index < 9 ? (
+      ) : !pinned && index < 9 ? (
         <kbd className="flex size-5 shrink-0 items-center justify-center rounded border border-border bg-background text-[11px] font-medium tabular-nums text-muted-foreground">
           {index + 1}
         </kbd>

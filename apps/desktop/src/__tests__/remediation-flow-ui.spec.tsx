@@ -12,6 +12,8 @@ vi.mock("@bitsentry-ce/i18n", () => ({
 }));
 
 afterEach(cleanup);
+// jsdom has no layout, so it has no scrollIntoView.
+Element.prototype.scrollIntoView = () => undefined;
 
 const K = "common.incidents.remediation";
 
@@ -80,6 +82,31 @@ const connectionStep: Step = ({ next, selected }) => ({
   primary: { label: "Next", disabled: selected === undefined, run: next },
 });
 
+const SAVED = [
+  ["Bitsentry Biznet Gio", "ubuntu@103.89.5.97"],
+  ["BitSentry OVH", "ubuntu@135.125.152.59"],
+  ["Sandbox Worker", "dev@129.212.227.169"],
+  ["Elitery VM", "deploy@192.168.60.10"],
+  ["Staging API", "ubuntu@10.20.1.14"],
+  ["Prod DB replica", "admin@10.20.2.31"],
+  ["Bastion Singapore", "ops@52.77.12.9"],
+  ["Edge proxy 01", "ubuntu@10.20.4.11"],
+];
+
+// Eight saved connections, filtered by the search text as the Dashboard does.
+const manyConnectionsStep: Step = ({ next, selected, text, setText }) => ({
+  step: { index: 1, total: 3 },
+  question: "Which SSH connection should run the fix?",
+  optionLayout: "compact",
+  count: SAVED.length,
+  options: [
+    ...SAVED.filter(([name, host]) => `${name} ${host}`.toLowerCase().includes(text.trim().toLowerCase())).map(([label, hint]) => ({ label, hint })),
+    { label: "New SSH connection", pinned: true },
+  ],
+  input: { value: text, placeholder: "Search saved connections", onChange: setText },
+  primary: { label: "Next", disabled: selected === undefined, run: next },
+});
+
 const hostnameStep: Step = ({ next, selected, text, setText }) => ({
   step: { index: 2, total: 3 },
   question: "Which hostname must the server report before the fix runs?",
@@ -144,6 +171,41 @@ describe("CVE remediation in the composer", () => {
 
     expect(screen.getByText("Which hostname must the server report before the fix runs?")).toBeTruthy();
     expect(within(card()).getByText("2/3")).toBeTruthy();
+  });
+
+  it("shows many saved connections as one-line rows with the new connection last and no number key", () => {
+    render(<Page steps={[manyConnectionsStep, hostnameStep]} />);
+
+    expect(within(card()).getByText(`${K}.savedCount`)).toBeTruthy();
+    expect(option(/^New SSH connection/).textContent).toBe("New SSH connection");
+    fireEvent.keyDown(document.body, { key: "9" });
+    expect(pressed()).toEqual([]);
+    fireEvent.keyDown(document.body, { key: "8" });
+    expect(pressed()).toEqual(["Edge proxy 01ubuntu@10.20.4.11"]);
+  });
+
+  it("moves the pick with the arrow keys in the search text and goes on with Enter", () => {
+    render(<Page steps={[manyConnectionsStep, hostnameStep]} />);
+    const search = screen.getByPlaceholderText("Search saved connections");
+
+    fireEvent.change(search, { target: { value: "ubuntu" } });
+    fireEvent.keyDown(search, { key: "ArrowDown" });
+    fireEvent.keyDown(search, { key: "ArrowDown" });
+    expect(pressed()).toEqual(["BitSentry OVHubuntu@135.125.152.59"]);
+    fireEvent.keyDown(search, { key: "ArrowUp" });
+    expect(pressed()).toEqual(["Bitsentry Biznet Gioubuntu@103.89.5.97"]);
+    fireEvent.keyDown(search, { key: "Enter" });
+
+    expect(screen.getByText("Which hostname must the server report before the fix runs?")).toBeTruthy();
+  });
+
+  it("says when no saved connection matches the search and keeps the new connection", () => {
+    render(<Page steps={[manyConnectionsStep]} />);
+
+    fireEvent.change(screen.getByPlaceholderText("Search saved connections"), { target: { value: "nowhere" } });
+
+    expect(within(card()).getByText(`${K}.noConnectionMatch`)).toBeTruthy();
+    expect(within(card()).getAllByRole("button", { pressed: false }).map((element) => element.textContent)).toEqual(["New SSH connection"]);
   });
 
   it("keeps typed digits in the text area and sends the typed answer with Enter", () => {
