@@ -39,6 +39,8 @@ export interface ToolCallCard {
   input?: Record<string, unknown>;
   output?: string;
   modelContext?: string;
+  /** Latest progress line of a running tool, such as checked and remaining counts. */
+  progress?: string;
 }
 
 export interface StreamDeltaRecord {
