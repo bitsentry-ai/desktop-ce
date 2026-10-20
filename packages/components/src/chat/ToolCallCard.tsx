@@ -18,6 +18,11 @@ export function ToolCard({ card }: { card: ToolCallCard }) {
     label = t("common.incidents.toolStateDone");
   }
   const modelContext = card.modelContext?.trim();
+  const progressText = card.progress?.trim() ?? "";
+  const progress =
+    card.state === "running" && progressText.length > 0
+      ? progressText
+      : undefined;
   // Host tools fail with a JSON payload aimed at the model. Show the sentence
   // and keep the codes and field paths behind the details disclosure.
   const failure =
@@ -29,7 +34,8 @@ export function ToolCard({ card }: { card: ToolCallCard }) {
   let containerClassName = "flex w-fit max-w-xs items-center gap-2";
   if (
     (modelContext !== undefined && modelContext.length > 0) ||
-    failure !== undefined
+    failure !== undefined ||
+    progress !== undefined
   ) {
     containerClassName = "w-full max-w-full space-y-2";
   }
@@ -48,6 +54,11 @@ export function ToolCard({ card }: { card: ToolCallCard }) {
           <span className="text-muted-foreground shrink-0">{label}</span>
         )}
       </div>
+      {progress !== undefined && (
+        <p className="break-words text-muted-foreground" aria-live="polite">
+          {progress}
+        </p>
+      )}
       {failure !== undefined && (
         <div className="min-w-0 space-y-1.5">
           <p className="break-words text-destructive">{failure.summary}</p>
