@@ -35,6 +35,9 @@ export interface ToolCallCard {
   toolCallId: string;
   toolName: string;
   state: "running" | "done" | "failed";
+  /** When the tool started and ended; places the call among the turn's text. */
+  startedAt?: string;
+  completedAt?: string;
   error?: string;
   input?: Record<string, unknown>;
   output?: string;

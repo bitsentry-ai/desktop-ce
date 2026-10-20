@@ -357,6 +357,7 @@ export function reduceAgentThreadSnapshot(
               toolName: event.toolName,
               state: "running" as const,
               input: event.input,
+              startedAt: event.timestamp,
             },
           ];
           if (existingToolCall !== undefined) {
@@ -370,6 +371,7 @@ export function reduceAgentThreadSnapshot(
                 toolName: event.toolName,
                 state: "running",
                 input: event.input,
+                startedAt: toolCall.startedAt ?? event.timestamp,
               };
             });
           }
@@ -424,6 +426,7 @@ export function reduceAgentThreadSnapshot(
               output: event.output,
               modelContext: event.modelContext,
               error: event.error,
+              completedAt: event.timestamp,
             };
           }),
         })),

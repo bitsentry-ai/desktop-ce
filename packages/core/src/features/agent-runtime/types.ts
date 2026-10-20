@@ -178,6 +178,8 @@ export interface ToolCallCard {
   toolCallId: string
   toolName: string
   state: 'running' | 'done' | 'failed'
+  startedAt?: string
+  completedAt?: string
   error?: string
   input?: Record<string, unknown>
   output?: string
