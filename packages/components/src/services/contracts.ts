@@ -1289,6 +1289,8 @@ export interface AgentServicePort {
   cancel(sessionId: string): Promise<void>;
   /** Edits, removes, reorders or steers a queued follow-up, or resumes a held queue. Absent where queues are not supported. */
   updateQueue?(input: AgentQueueUpdateRequest): Promise<void>;
+  /** The incident's queue, after an app restart too, in the session that holds it. Absent where queues are not supported. */
+  restoreQueue?(incidentThreadId: string): Promise<{ sessionId: string; snapshot: AgentThreadSnapshot } | null>;
   getStatus(sessionId: string): Promise<AgentSessionStatus | null>;
   getSnapshot(sessionId: string): Promise<AgentThreadSnapshot | null>;
   listRunbookAuthoringProposals(input: {
