@@ -18,6 +18,7 @@ import { useTranslation } from "@bitsentry-ce/i18n";
 import { cn } from "../lib/utils";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "../ui/tooltip";
 import type { AgentQueuedMessage } from "./types";
+import { citationsToPlainText } from "./citations";
 
 export interface ComposerQueue {
   messages: AgentQueuedMessage[];
@@ -290,8 +291,8 @@ function QueuedRowText({ message }: { message: AgentQueuedMessage }) {
           ))}
         </span>
       )}
-      <QueueTooltip label={message.text}>
-        <span className="min-w-0 flex-1 truncate">{message.text}</span>
+      <QueueTooltip label={citationsToPlainText(message.text)}>
+        <span className="min-w-0 flex-1 truncate">{citationsToPlainText(message.text)}</span>
       </QueueTooltip>
     </>
   );

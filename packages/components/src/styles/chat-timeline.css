@@ -25,3 +25,8 @@
     animation: live-tool-shine 2.2s steps(30) infinite;
   }
 }
+
+/* A cited quote, briefly highlighted when the engineer goes to its source. */
+::highlight(bitsentry-citation) {
+  background-color: hsl(var(--primary) / 0.25);
+}
