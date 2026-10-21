@@ -53,6 +53,19 @@ function harness() {
   return { row, runtime, execute };
 }
 
+function settleOnAbort(settle: "resolve" | "reject") {
+  const state = { started: false, finished: false };
+  const handler = async (_payload: unknown, signal: AbortSignal) => {
+    state.started = true;
+    await new Promise((resolve) => { signal.addEventListener("abort", resolve, { once: true }); });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    state.finished = true;
+    if (settle === "reject") throw signal.reason;
+    return "done";
+  };
+  return { state, handler };
+}
+
 describe("desktop job state races", () => {
   it("does not requeue a job claimed while a retry request was awaiting its read", async () => {
     const { row, runtime } = harness();
@@ -101,6 +114,29 @@ describe("desktop job state races", () => {
     expect(handler).toHaveBeenCalledOnce();
     finish("done");
     await Promise.all([first, second]);
+    expect(row.status).toBe("completed");
+    expect(row.attempt).toBe(1);
+  });
+
+  it("stop() waits for a running handler and re-queues it", async () => {
+    const { row, runtime, execute } = harness();
+    const { state, handler } = settleOnAbort("reject");
+    runtime.registerHandler("test", handler);
+    void execute();
+    await vi.waitFor(() => expect(state.started).toBe(true));
+    await runtime.stop();
+    expect(state.finished).toBe(true);
+    expect(row.status).toBe("queued");
+    expect(row.attempt).toBe(0);
+  });
+
+  it("a handler that resolves after the shutdown abort is completed, not re-queued", async () => {
+    const { row, runtime, execute } = harness();
+    const { state, handler } = settleOnAbort("resolve");
+    runtime.registerHandler("test", handler);
+    void execute();
+    await vi.waitFor(() => expect(state.started).toBe(true));
+    await runtime.stop();
     expect(row.status).toBe("completed");
     expect(row.attempt).toBe(1);
   });

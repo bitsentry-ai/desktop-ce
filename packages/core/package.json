@@ -157,6 +157,10 @@
       "types": "./dist/features/agent-runtime/shared/effect-orchestration.d.ts",
       "default": "./dist/features/agent-runtime/shared/effect-orchestration.js"
     },
+    "./features/agent-runtime/shared/local-process": {
+      "types": "./dist/features/agent-runtime/shared/local-process.d.ts",
+      "default": "./dist/features/agent-runtime/shared/local-process.js"
+    },
     "./features/agent-runtime/shared/ssh-journal-query-builder": {
       "types": "./dist/features/agent-runtime/shared/ssh-journal-query-builder.d.ts",
       "default": "./dist/features/agent-runtime/shared/ssh-journal-query-builder.js"
