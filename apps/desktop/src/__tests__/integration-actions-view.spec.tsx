@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
-import type { IntegrationOperation } from '@bitsentry-ce/core/features/plugins'
+import type { IntegrationOperationWithPolicy as IntegrationOperation } from '@bitsentry-ce/components/services/contracts'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('@bitsentry-ce/i18n', () => ({
@@ -121,7 +121,7 @@ describe('the ticket actions view', () => {
     const port = renderView([row])
 
     fireEvent.click(screen.getByRole('button', { name: label('approve') }))
-    await waitFor(() => { expect(port.approve).toHaveBeenCalledWith('thread-1', row.id, false) })
+    await waitFor(() => { expect(port.approve).toHaveBeenCalledWith('thread-1', row.id, false, undefined) })
 
     fireEvent.click(screen.getByRole('button', { name: label('cancel') }))
     await waitFor(() => { expect(port.cancel).toHaveBeenCalledWith('thread-1', row.id) })
@@ -151,7 +151,7 @@ describe('the ticket actions view', () => {
     fireEvent.click(screen.getByRole('checkbox'))
     expect(approve.disabled).toBe(false)
     fireEvent.click(approve)
-    await waitFor(() => { expect(port.approve).toHaveBeenCalledWith('thread-1', row.id, true) })
+    await waitFor(() => { expect(port.approve).toHaveBeenCalledWith('thread-1', row.id, true, undefined) })
   })
 
   it('disables both decisions in an archived conversation', () => {
@@ -337,5 +337,41 @@ describe('why a write did not apply', () => {
     expect(within(region).getByText(/Inspect the remote resource/)).toBeTruthy()
     expect(within(region).queryByRole('alert')).toBeNull()
     expect(within(region).queryByText(label('succeeded'))).toBeNull()
+  })
+})
+
+
+describe('action approval policies', () => {
+  it('requires a reference before a listed approver can approve', async () => {
+    const row = operation({ requiredApproval: { mode: 'restricted', approverUserIds: [7] } })
+    const port = portWith([row])
+    port.currentUserId = 7
+    renderView([row], { port })
+    const approve = screen.getByRole('button', { name: label('approve') }) as HTMLButtonElement
+    expect(approve.disabled).toBe(true)
+    const input = screen.getByLabelText(label('approvalReference'))
+    fireEvent.change(input, { target: { value: 'CHG-1' } })
+    expect(approve.disabled).toBe(false)
+    fireEvent.click(approve)
+    await waitFor(() => { expect(port.approve).toHaveBeenCalledWith('thread-1', row.id, false, 'CHG-1') })
+  })
+
+  it('checks eligibility when the current user is 8', () => {
+    const row = operation({ requiredApproval: { mode: 'restricted', approverUserIds: [7] } })
+    const port = portWith([row])
+    port.currentUserId = 8
+    renderView([row], { port })
+    fireEvent.change(screen.getByLabelText(label('approvalReference')), { target: { value: 'CHG-123' } })
+    const approve = screen.getByRole('button', { name: label('approve') }) as HTMLButtonElement
+    expect(approve.disabled).toBe(true)
+    fireEvent.click(approve)
+    expect(port.approve).not.toHaveBeenCalled()
+  })
+
+  it('blocks a policy-denied proposal while keeping cancellation available', () => {
+    renderView([operation({ requiredApproval: { mode: 'deny', approverUserIds: [] } })])
+    expect(screen.getByText(label('policyDenied'))).toBeTruthy()
+    expect((screen.getByRole('button', { name: label('approve') }) as HTMLButtonElement).disabled).toBe(true)
+    expect((screen.getByRole('button', { name: label('cancel') }) as HTMLButtonElement).disabled).toBe(false)
   })
 })
