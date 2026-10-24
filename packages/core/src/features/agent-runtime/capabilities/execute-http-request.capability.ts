@@ -15,7 +15,7 @@ import {
 const HTTP_TIMEOUT_MS = 30_000
 const MAX_RESPONSE_LENGTH = 50_000
 
-export const executeHttpRequestSchema = z.object({
+const executeHttpRequestSchema = z.object({
   url: z.url(),
   method: z.enum(['GET', 'POST', 'PUT', 'PATCH', 'DELETE']).default('GET'),
   headers: z.record(z.string(), z.string()).optional(),

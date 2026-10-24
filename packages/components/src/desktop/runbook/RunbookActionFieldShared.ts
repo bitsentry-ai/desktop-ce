@@ -17,7 +17,7 @@ type RunbookActionFieldMeta = {
   fieldPlaceholderKey: string;
 };
 
-export type RunbookActionTypeFieldMeta = Record<
+type RunbookActionTypeFieldMeta = Record<
   SupportedActionType,
   RunbookActionFieldMeta
 >;

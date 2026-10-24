@@ -2,9 +2,9 @@ import type { CurrentUser as ApiCurrentUser } from "./api.types";
 
 // Shared authentication types across frontend components
 
-export type User = ApiCurrentUser;
+type User = ApiCurrentUser;
 
-export interface PasswordLoginResult {
+interface PasswordLoginResult {
   token?: string;
   refreshToken?: string;
   user: User;
@@ -14,7 +14,7 @@ export interface PasswordLoginResult {
   emailOtpEnabled?: boolean;
 }
 
-export interface TwoFactorAuthResult {
+interface TwoFactorAuthResult {
   token: string;
   refreshToken?: string;
   rememberMeExpiryHours?: number;
@@ -28,31 +28,4 @@ export interface TotpSetupData {
   qrCode: string;
   manualEntryKey: string;
   backupCodes: string[];
-}
-
-// Common component props interfaces
-export interface TotpSetupProps {
-  onSuccess?: () => void;
-  onCancel?: () => void;
-}
-
-export interface TwoFactorAuthProps {
-  email: string;
-  tempToken?: string;
-  passwordLoginResult?: PasswordLoginResult;
-  onSuccess?: (result: TwoFactorAuthResult) => void;
-  onError?: (error: string) => void;
-  onBack?: () => void;
-}
-
-// Form validation types
-export interface TotpFormData {
-  password: string;
-  totpCode?: string;
-}
-
-export interface TotpFormErrors {
-  password?: string;
-  totpCode?: string;
-  general?: string;
 }

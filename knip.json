@@ -1,0 +1,214 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  "ignoreWorkspaces": [
+    "packages/electron-trpc/**",
+    "packages/plugin-sdk",
+    "packages/plugins/**"
+  ],
+  "workspaces": {
+    ".": {
+      "entry": [
+        "scripts/i18n/{audit-hardcoded,consolidate-duplicates,extract-strings,move-keys,translate-locales}.mjs"
+      ],
+      "project": [
+        "scripts/**/*.{js,mjs,cjs,ts}"
+      ]
+    },
+    "apps/desktop": {
+      "entry": [
+        "src/renderer/src/App.tsx",
+        "src/renderer/src/pages/app-settings/AppSettings.tsx",
+        "src/main/platform/runbooks/desktop-runbook-runtime.ts",
+        "scripts/{after-pack,cli-smoke-test,cli-stress-test,notarize,packaged-cli-smoke,real-provider-canary,rewrite-update-manifest,run-smoke-runbook,smoke-test,upload-r2-artifacts,verify-r2-artifacts,verify-update-manifest}.ts",
+        "scripts/electron-builder-after-pack.js",
+        "src/__tests__/**/*.test.ts"
+      ],
+      "project": [
+        "src/**/*.{ts,tsx,css}",
+        "scripts/**/*.{ts,js,mjs}",
+        "*.{ts,mjs,cjs}"
+      ],
+      "ignoreDependencies": [
+        "@electron/rebuild",
+        "@bitsentry-ce/desktop-cli"
+      ]
+    },
+    "packages/core": {
+      "entry": [
+        "src/**/__tests__/**/*.test.ts",
+        "src/features/agent-runtime/shared/effect-orchestration.ts",
+        "src/features/agent-runtime/{customer-report-intake-tool,host-tools,integration-tools}.ts",
+        "src/features/analytics/index.ts",
+        "src/features/auth/{auth.schemas,index}.ts",
+        "src/features/desktop-state/desktop-state.handlers.ts",
+        "src/features/desktop/{desktop-database-client,desktop-database-seeding,desktop-edition-identity,desktop-electron-shell,desktop-llm-provider-settings,desktop-oauth-callback-bindings,desktop-preload-runtime}.ts",
+        "src/features/diagnosis-workflow/domain/entities/DiagnosisRecord.ts",
+        "src/features/diagnosis-workflow/domain/value-objects/index.ts",
+        "src/features/diagnosis-workflow/index.ts",
+        "src/features/diagnosis/application/ports/index.ts",
+        "src/features/diagnosis/contracts/index.ts",
+        "src/features/error-sources/{desktop-error-sources.handlers,desktop-error-sources.types,desktop-external-source-runbook-query-service,desktop-oauth-callback,desktop-oauth-manager,desktop-sqlite-error-sources.adapter,error-sources.schemas,external-source-query.schemas,index,posthog-base-url,posthog-hogql,posthog-query-format,sentry-query-format}.ts",
+        "src/features/plugins/{desktop-plugin-registry,desktop-plugin-runtime.node,index,node}.ts",
+        "src/features/runbooks/shared/index.ts",
+        "src/features/runbooks/{authoring,desktop-dialog.handlers,desktop-runbook-artifact-file-yaml,desktop-runbook-execution.service,desktop-runbook-handler-yaml-bindings,desktop-runbook-pro.types,desktop-runbook-result.store,desktop-runbook.store,desktop-runbook.types,desktop-trusted-runbook-paths,index}.ts",
+        "src/features/settings/index.ts",
+        "src/features/updater/desktop-updater-policy.ts",
+        "src/kernel/{di-tokens,errors,http-contract,index,pagination,result}.ts",
+        "src/shared/host-tool-error.ts",
+        "src/{index,ports}.ts"
+      ],
+      "project": [
+        "src/**/*.{ts,tsx}",
+        "tests/**/*.ts",
+        "*.{ts,mjs}"
+      ],
+      "ignoreDependencies": [
+        "electron"
+      ]
+    },
+    "packages/components": {
+      "entry": [
+        "src/chat/{AccessSelector,ChatBubble,Composer,CustomerReportPanel,ModeToggle,ModelPicker,ProviderLogos,RemediationQuestionPanel,SendButton,StreamDeltaInspector,ToolCallCard,TraitsDropdown}.tsx",
+        "src/chat/{customerReport,runtimeProjection,types,useCustomerReportIntake}.ts",
+        "src/desktop/desktop-app.css",
+        "src/desktop/runbook/editorStateHelpers.ts",
+        "src/desktop/runbook/{RunbookActionList,RunbookActionLogFilterSection,RunbookActionParametersSection,RunbookCollapsedActionCard,RunbookEditorHeader,RunbookExpandedActionCard,RunbookExternalSourceActionFields,RunbookHttpActionFields,RunbookLlmActionFields,RunbookPluginActionFields,RunbookShellActionFields,actionHelpers}.tsx",
+        "src/desktop/{DesktopAppSettingsPage,DesktopRendererApp,DesktopRendererBrowserEntry}.tsx",
+        "src/desktop/{DesktopPosthog,DesktopPosthogRenderer,useDesktopCodingAgentPrimary}.ts",
+        "src/hooks/{use-toast,useDebouncedAutoSave}.ts",
+        "src/icons/index.ts",
+        "src/integrations/DataSourcesManager.tsx",
+        "src/investigation/artifacts-panel-state.ts",
+        "src/investigation/{IncidentArtifactsPanel,Incidents,IntegrationActionsView,IntegrationDeliveriesView,IntegrationSourcesView,RunbookProposalArtifact}.tsx",
+        "src/layout/runbook-nav.ts",
+        "src/layout/{DashboardLayout,Navbar,TopBar}.tsx",
+        "src/lib/utils.ts",
+        "src/llm/modelCatalog.ts",
+        "src/markdown.tsx",
+        "src/runbook/{RunbookImportDialog,StructuredOutputDisplay}.tsx",
+        "src/services/context.tsx",
+        "src/services/{contracts,desktop-api,hooks}.ts",
+        "src/settings/{AppearanceSettingsSection,CodingAgentProvidersSection,GlobalVariablesSettingsSection}.tsx",
+        "src/tutorial/previews/{TourDashboardPreview,TourIncidentsPreview,TourResultsPreview,TourRunbooksPreview}.tsx",
+        "src/tutorial/{index,useTour}.ts",
+        "src/types/api.types.ts",
+        "src/ui/{alert-dialog,alert,badge,button,dialog,dropdown-menu,input,label,select,sonner,textarea,tooltip}.tsx",
+        "src/{index,services,theme}.ts",
+        "types/**/*.d.ts"
+      ],
+      "project": [
+        "src/**/*.{ts,tsx,css}",
+        "*.{ts,mjs}",
+        "types/**/*.d.ts"
+      ],
+      "ignoreDependencies": [
+        "@bitsentry-desktop/renderer-app"
+      ]
+    },
+    "packages/i18n": {
+      "entry": [
+        "src/{backend,index}.ts"
+      ],
+      "project": [
+        "src/**/*.{ts,tsx}",
+        "*.{ts,mjs}"
+      ],
+      "ignoreDependencies": [
+        "react"
+      ]
+    },
+    "packages/coding-agents": {
+      "entry": [
+        "src/{agent-llm-adapter.service,agent-runtime.service,agent.handlers,coding-agents.handlers,index}.ts"
+      ],
+      "project": [
+        "src/**/*.{ts,tsx}",
+        "*.{ts,mjs}"
+      ]
+    },
+    "packages/desktop-cli": {
+      "entry": [
+        "src/index.ts",
+        "src/runtime/{database-index,desktop-agent-runtime,desktop-coding-agents,desktop-menu-builder,desktop-posthog,desktop-runbook-runtime,desktop-runtime-paths,desktop-sentry,desktop-settings-services,desktop-updater,keychain-plugin-cipher,plugin-credentials-store,sqlite-integration-storage}.ts",
+        "src/types/desktop-runbook-runtime.ts"
+      ],
+      "project": [
+        "src/**/*.{ts,tsx}",
+        "tests/**/*.ts",
+        "*.{ts,mjs}"
+      ],
+      "ignoreDependencies": [
+        "@napi-rs/keyring",
+        "@bitsentry-desktop/runbook-runtime"
+      ]
+    }
+  },
+  "ignoreIssues": {
+    "packages/core/src/features/agent-runtime/index.ts": [
+      "exports",
+      "types"
+    ],
+    "packages/core/src/features/runbooks/desktop-runbook-ce.types.ts": [
+      "exports",
+      "types"
+    ],
+    "packages/core/src/features/agent-runtime/types.ts": [
+      "exports",
+      "types"
+    ],
+    "packages/components/src/desktop/DesktopBetaFeedbackPrompts.tsx": [
+      "exports",
+      "types",
+      "duplicates"
+    ],
+    "apps/desktop/src/main/features/error-sources/services/oauth-manager.service.ts": [
+      "exports",
+      "types"
+    ],
+    "packages/components/src/desktop/DesktopSentry.tsx": [
+      "exports",
+      "types"
+    ],
+    "apps/desktop/package.json": [
+      "dependencies"
+    ],
+    "packages/components/package.json": [
+      "dependencies"
+    ],
+    "packages/i18n/package.json": [
+      "devDependencies"
+    ],
+    "packages/core/src/features/diagnosis-workflow/application/ports/outbound/EvidenceVerificationService.ts": [
+      "types"
+    ],
+    "packages/core/src/features/agent-runtime/shared/capability-registry.ts": [
+      "exports",
+      "types"
+    ],
+    "packages/core/src/features/agent-runtime/tool-protocol.ts": [
+      "exports",
+      "types"
+    ],
+    "packages/components/src/markdown.tsx": [
+      "duplicates"
+    ],
+    "packages/core/src/features/runbooks/runbooks.schemas.ts": [
+      "duplicates"
+    ],
+    "packages/components/src/chat/ProviderLogos.tsx": [
+      "duplicates"
+    ],
+    "packages/components/src/settings/AppearanceSettingsSection.tsx": [
+      "duplicates"
+    ],
+    "packages/core/src/features/runbooks/export.schemas.ts": [
+      "duplicates"
+    ],
+    "packages/core/src/features/error-sources/error-sources.schemas.ts": [
+      "duplicates"
+    ],
+    "packages/core/src/features/jobs/desktop-job-runtime.ts": [
+      "types"
+    ]
+  }
+}
