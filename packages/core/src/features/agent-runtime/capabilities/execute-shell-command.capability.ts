@@ -13,7 +13,7 @@ const CLI_WRAPPER_NODE_PATH_ENV = 'BITSENTRY_CLI_WRAPPER_NODE_PATH'
 const log = console
 type ShellChildProcess = ChildProcessByStdio<null, Readable, Readable>
 
-export const executeShellCommandSchema = z.object({
+const executeShellCommandSchema = z.object({
   command: z.string().min(1),
   timeoutMs: z.number().int().positive().max(300000).nullable().optional(),
   maxOutputBytes: z.number().int().positive().max(1_000_000).optional(),

@@ -25,12 +25,12 @@ const sharedIgnores = [
   "**/*.d.ts",
 ];
 
-export const sharedStyleRules = {
+const sharedStyleRules = {
   eqeqeq: ["error", "always", { null: "ignore" }],
   "no-var": "error",
 };
 
-export const sharedTypeScriptRules = {
+const sharedTypeScriptRules = {
   ...sharedStyleRules,
   "@typescript-eslint/no-require-imports": "off",
   "no-empty": "off",

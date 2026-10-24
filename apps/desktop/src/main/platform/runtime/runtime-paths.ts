@@ -8,5 +8,3 @@ export const setRuntimeUserDataPath: typeof runtimePaths.setRuntimeUserDataPath 
 ) => {
   runtimePaths.setRuntimeUserDataPath(userDataPath)
 }
-export const getRuntimeUserDataPath: typeof runtimePaths.getRuntimeUserDataPath =
-  () => runtimePaths.getRuntimeUserDataPath()

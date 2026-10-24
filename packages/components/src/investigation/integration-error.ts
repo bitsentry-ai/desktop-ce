@@ -15,10 +15,6 @@ const KEY_BY_CODE: Record<string, string> = {
 };
 const GENERIC_KEY = "incidents.integrationWrites.error";
 
-export function integrationErrorKeyForCode(code: string): string {
-  return KEY_BY_CODE[code] ?? GENERIC_KEY;
-}
-
 export function integrationErrorKey(error: unknown): string {
   if (error instanceof Error && error.name === "AbortError") return KEY_BY_CODE.INTEGRATION_READ_CANCELLED!;
   const message = error instanceof Error ? error.message.toLowerCase() : "";
