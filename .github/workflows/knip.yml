@@ -1,6 +1,9 @@
 name: Knip
 on:
   pull_request:
+    # edited: a PR whose base changes (for example retargeted to main after the
+    # PR below it merges) is checked again.
+    types: [opened, synchronize, reopened, edited]
   workflow_dispatch:
 permissions:
   contents: read
@@ -48,16 +51,19 @@ jobs:
           run_install: false
       - run: pnpm install --frozen-lockfile
       - run: pnpm --dir packages/electron-trpc install --frozen-lockfile
-      - name: Find PRs stacked on this one
+      - name: Check whether this PR is part of a stack
         id: stack
         if: github.event_name == 'pull_request'
         env:
           GH_TOKEN: ${{ github.token }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
         run: |
           count=$(gh pr list --repo "$GITHUB_REPOSITORY" --base "$GITHUB_HEAD_REF" --state open --json number --jq length)
-          echo "stacked=$([ "$count" -gt 0 ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
-      # Lower PRs in a stack may add code that a later PR uses, so only the top
-      # of a stack (or a standalone PR) must pass.
+          stacked=false
+          if [ "$GITHUB_BASE_REF" != "$DEFAULT_BRANCH" ] || [ "$count" -gt 0 ]; then stacked=true; fi
+          echo "stacked=$stacked" >> "$GITHUB_OUTPUT"
+      # A PR in a stack (based on another PR, or with a PR based on it) may add code
+      # that another PR in the stack uses, so only standalone PRs must pass.
       - name: Knip
         run: pnpm knip
         continue-on-error: ${{ steps.stack.outputs.stacked == 'true' }}
