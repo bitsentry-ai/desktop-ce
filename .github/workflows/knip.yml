@@ -52,19 +52,18 @@ jobs:
           run_install: false
       - run: pnpm install --frozen-lockfile
       - run: pnpm --dir packages/electron-trpc install --frozen-lockfile
-      - name: Check whether this PR is part of a stack
+      - name: Check whether a PR is stacked on this one
         id: stack
         if: github.event_name == 'pull_request'
         env:
           GH_TOKEN: ${{ github.token }}
-          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
         run: |
           count=$(gh pr list --repo "$GITHUB_REPOSITORY" --base "$GITHUB_HEAD_REF" --state open --json number --jq length)
           stacked=false
-          if [ "$GITHUB_BASE_REF" != "$DEFAULT_BRANCH" ] || [ "$count" -gt 0 ]; then stacked=true; fi
+          if [ "$count" -gt 0 ]; then stacked=true; fi
           echo "stacked=$stacked" >> "$GITHUB_OUTPUT"
-      # A PR in a stack (based on another PR, or with a PR based on it) may add code
-      # that another PR in the stack uses, so only standalone PRs must pass.
+      # A PR with another PR stacked on it may add code that a PR higher in the
+      # stack uses, so it only warns. The top of a stack and standalone PRs must pass.
       - name: Knip
         run: pnpm knip
         continue-on-error: ${{ steps.stack.outputs.stacked == 'true' }}
