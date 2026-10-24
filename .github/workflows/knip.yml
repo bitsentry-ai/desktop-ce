@@ -2,8 +2,8 @@ name: Knip
 on:
   pull_request:
     # edited: a PR whose base changes (for example retargeted to main after the
-    # PR below it merges) is checked again.
-    types: [opened, synchronize, reopened, edited]
+    # PR below it merges) is checked again. closed: see recheck-base below.
+    types: [opened, synchronize, reopened, edited, closed]
   workflow_dispatch:
 permissions:
   contents: read
@@ -13,6 +13,7 @@ concurrency:
   cancel-in-progress: true
 jobs:
   knip:
+    if: github.event.action != 'closed'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -67,3 +68,23 @@ jobs:
       - name: Knip
         run: pnpm knip
         continue-on-error: ${{ steps.stack.outputs.stacked == 'true' }}
+  # Opening or closing a PR on top of another PR turns the PR below into a
+  # stacked or standalone PR, so its last Knip run is re-run to pick that up.
+  recheck-base:
+    if: >-
+      github.event_name == 'pull_request' &&
+      github.base_ref != github.event.repository.default_branch &&
+      contains(fromJSON('["opened", "reopened", "closed"]'), github.event.action)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      actions: write
+    steps:
+      - name: Re-run Knip on the PR below
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BASE_BRANCH: ${{ github.base_ref }}
+        run: |
+          id=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow knip.yml --branch "$BASE_BRANCH" --event pull_request --limit 1 --json databaseId --jq '.[0].databaseId // empty')
+          if [ -z "$id" ]; then echo "No Knip run for $BASE_BRANCH"; exit 0; fi
+          gh run rerun "$id" --repo "$GITHUB_REPOSITORY" || echo "Could not re-run $id (it may still be running)"
