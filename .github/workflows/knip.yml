@@ -1,0 +1,89 @@
+name: Knip
+on:
+  pull_request:
+    # edited: a PR whose base changes (for example retargeted to main after the
+    # PR below it merges) is checked again. closed: see recheck-base below.
+    types: [opened, synchronize, reopened, edited, closed]
+  workflow_dispatch:
+permissions:
+  contents: read
+  pull-requests: read
+concurrency:
+  group: knip-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  knip:
+    if: github.event.action != 'closed'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Initialize package submodules
+        run: |
+          git config submodule.packages/electron-trpc.url https://github.com/bitsentry-ai/electron-trpc.git
+          git config submodule.packages/plugin-sdk.url https://github.com/bitsentry-ai/-bitsentry-plugin-sdk.git
+          git config submodule.packages/plugins/github.url https://github.com/bitsentry-ai/bitsentry-plugin-github.git
+          git config submodule.packages/plugins/linux-cve-remediate.url https://github.com/bitsentry-ai/bitsentry-plugin-linux-cve-remediate.git
+          git config submodule.packages/plugins/linux-cve-status.url https://github.com/bitsentry-ai/bitsentry-plugin-linux-cve-status.git
+          git config submodule.packages/plugins/posthog.url https://github.com/bitsentry-ai/bitsentry-plugin-posthog.git
+          git config submodule.packages/plugins/sentry.url https://github.com/bitsentry-ai/bitsentry-plugin-sentry.git
+          git config submodule.packages/plugins/wazuh.url https://github.com/bitsentry-ai/bitsentry-plugin-wazuh.git
+          git config submodule.packages/plugins/itop.url https://github.com/bitsentry-ai/bitsentry-plugin-itop.git
+          git config submodule.packages/plugins/outline.url https://github.com/bitsentry-ai/bitsentry-plugin-outline.git
+          git submodule update --init --depth 1 \
+            packages/electron-trpc \
+            packages/plugin-sdk \
+            packages/plugins/github \
+            packages/plugins/linux-cve-remediate \
+            packages/plugins/linux-cve-status \
+            packages/plugins/posthog \
+            packages/plugins/sentry \
+            packages/plugins/wazuh \
+            packages/plugins/itop \
+            packages/plugins/outline
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: '.nvmrc'
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.32.1
+          run_install: false
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --dir packages/electron-trpc install --frozen-lockfile
+      - name: Check whether a PR is stacked on this one
+        id: stack
+        if: github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          count=$(gh pr list --repo "$GITHUB_REPOSITORY" --base "$GITHUB_HEAD_REF" --state open --json number --jq length)
+          stacked=false
+          if [ "$count" -gt 0 ]; then stacked=true; fi
+          echo "stacked=$stacked" >> "$GITHUB_OUTPUT"
+      # A PR with another PR stacked on it may add code that a PR higher in the
+      # stack uses, so it only warns. The top of a stack and standalone PRs must pass.
+      - name: Knip
+        run: pnpm knip
+        continue-on-error: ${{ steps.stack.outputs.stacked == 'true' }}
+  # Opening or closing a PR on top of another PR turns the PR below into a
+  # stacked or standalone PR, so its last Knip run is re-run to pick that up.
+  recheck-base:
+    if: >-
+      github.event_name == 'pull_request' &&
+      github.base_ref != github.event.repository.default_branch &&
+      contains(fromJSON('["opened", "reopened", "closed"]'), github.event.action)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      actions: write
+    steps:
+      - name: Re-run Knip on the PR below
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BASE_BRANCH: ${{ github.base_ref }}
+        run: |
+          id=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow knip.yml --branch "$BASE_BRANCH" --event pull_request --limit 1 --json databaseId --jq '.[0].databaseId // empty')
+          if [ -z "$id" ]; then echo "No Knip run for $BASE_BRANCH"; exit 0; fi
+          gh run rerun "$id" --repo "$GITHUB_REPOSITORY" || echo "Could not re-run $id (it may still be running)"
