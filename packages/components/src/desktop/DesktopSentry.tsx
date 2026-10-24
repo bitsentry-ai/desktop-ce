@@ -165,7 +165,7 @@ async function loadAnalyticsContext(): Promise<AnalyticsContext | undefined> {
   }
 }
 
-export async function initSentryRenderer(): Promise<void> {
+async function initSentryRenderer(): Promise<void> {
   if (initialized) return
 
   const sentryRuntime = getSentryRuntime()
@@ -228,7 +228,7 @@ export async function initSentryRenderer(): Promise<void> {
   }
 }
 
-export function syncSentryUser(user: { id: number; email: string | null } | null): void {
+function syncSentryUser(user: { id: number; email: string | null } | null): void {
   if (!initialized) {
     return
   }
@@ -284,7 +284,7 @@ export function captureRendererException(
   }
 }
 
-export function captureRendererMessage(
+function captureRendererMessage(
   message: string,
   level: 'info' | 'warning' | 'error' = 'info',
   context?: Record<string, unknown>,
@@ -308,7 +308,7 @@ export function captureRendererMessage(
   }
 }
 
-export function DesktopRouteTracing(): null {
+function DesktopRouteTracing(): null {
   const location = useLocation()
   const previousRouteRef = useRef<string | null>(null)
 

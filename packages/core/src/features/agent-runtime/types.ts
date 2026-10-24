@@ -16,12 +16,12 @@ export type AgentActivityPhase = 'asking_model' | 'running_runbook' | 'waiting_f
 /**
  * Tool execution lifecycle state.
  */
-export type ToolExecutionState = 'PENDING' | 'RUNNING' | 'COMPLETED' | 'FAILED' | 'CANCELLED'
+type ToolExecutionState = 'PENDING' | 'RUNNING' | 'COMPLETED' | 'FAILED' | 'CANCELLED'
 
 /**
  * Agent event types streamed to renderer.
  */
-export type AgentEventType =
+type AgentEventType =
   | 'assistant_delta'  // Streaming assistant response chunks
   | 'token_usage'      // Live token/context usage update
   | 'thinking_start'   // AI started reasoning (before LLM call)
@@ -48,7 +48,7 @@ export interface AgentEvent {
 /**
  * Streaming assistant delta (text chunks).
  */
-export interface AssistantDeltaEvent extends AgentEvent {
+interface AssistantDeltaEvent extends AgentEvent {
   type: 'assistant_delta'
   delta: string
   kind?: 'text' | 'command_output'
@@ -81,7 +81,7 @@ export interface SandboxTokenBudgetMetadata {
   }>
 }
 
-export interface TokenUsageEvent extends AgentEvent {
+interface TokenUsageEvent extends AgentEvent {
   type: 'token_usage'
   tokenUsage: {
     kind?: 'estimate' | 'actual'
@@ -97,14 +97,14 @@ export interface TokenUsageEvent extends AgentEvent {
 /**
  * AI started reasoning (before LLM call).
  */
-export interface ThinkingStartEvent extends AgentEvent {
+interface ThinkingStartEvent extends AgentEvent {
   type: 'thinking_start'
 }
 
 /**
  * Streaming thinking content (optional detailed reasoning).
  */
-export interface ThinkingDeltaEvent extends AgentEvent {
+interface ThinkingDeltaEvent extends AgentEvent {
   type: 'thinking_delta'
   delta: string
 }
@@ -112,16 +112,16 @@ export interface ThinkingDeltaEvent extends AgentEvent {
 /**
  * AI finished reasoning.
  */
-export interface ThinkingEndEvent extends AgentEvent {
+interface ThinkingEndEvent extends AgentEvent {
   type: 'thinking_end'
 }
 
-export interface AgentActivityEvent extends AgentEvent {
+interface AgentActivityEvent extends AgentEvent {
   type: 'activity'
   phase: AgentActivityPhase | null
 }
 
-export interface AgentChatImageAttachment {
+interface AgentChatImageAttachment {
   id: string
   type: 'image'
   name: string
@@ -130,7 +130,7 @@ export interface AgentChatImageAttachment {
   dataUrl: string
 }
 
-export interface AgentChatCsvAttachment {
+interface AgentChatCsvAttachment {
   id: string
   type: 'csv'
   name: string
@@ -141,7 +141,7 @@ export interface AgentChatCsvAttachment {
   totalRowCount: number
 }
 
-export type AgentChatTextAttachmentMimeType =
+type AgentChatTextAttachmentMimeType =
   | 'text/plain'
   | 'text/yaml'
   | 'text/x-yaml'
@@ -151,7 +151,7 @@ export type AgentChatTextAttachmentMimeType =
   | 'text/x-markdown'
   | 'application/json'
 
-export interface AgentChatTextAttachment {
+interface AgentChatTextAttachment {
   id: string
   type: 'text'
   name: string
@@ -183,7 +183,7 @@ export interface ToolCallCard {
   modelContext?: string
 }
 
-export interface StreamDeltaRecord {
+interface StreamDeltaRecord {
   timestamp: string
   text: string
   kind?: 'text' | 'command_output'
@@ -240,7 +240,7 @@ export interface AgentThreadSnapshot {
 /**
  * Tool execution started.
  */
-export interface ToolStartEvent extends AgentEvent {
+interface ToolStartEvent extends AgentEvent {
   type: 'tool_start'
   toolName: string
   toolCallId: string
@@ -250,7 +250,7 @@ export interface ToolStartEvent extends AgentEvent {
 /**
  * Tool output update (for streaming tools).
  */
-export interface ToolUpdateEvent extends AgentEvent {
+interface ToolUpdateEvent extends AgentEvent {
   type: 'tool_update'
   toolCallId: string
   chunk: string
@@ -260,7 +260,7 @@ export interface ToolUpdateEvent extends AgentEvent {
 /**
  * Tool execution ended.
  */
-export interface ToolEndEvent extends AgentEvent {
+interface ToolEndEvent extends AgentEvent {
   type: 'tool_end'
   toolCallId: string
   state: ToolExecutionState
@@ -273,7 +273,7 @@ export interface ToolEndEvent extends AgentEvent {
 /**
  * Final assistant response (complete).
  */
-export interface FinalEvent extends AgentEvent {
+interface FinalEvent extends AgentEvent {
   type: 'final'
   response: string
   llm?: AgentLlmSelection
@@ -288,7 +288,7 @@ export interface FinalEvent extends AgentEvent {
 /**
  * Session cancelled by user or timeout.
  */
-export interface CancelledEvent extends AgentEvent {
+interface CancelledEvent extends AgentEvent {
   type: 'cancelled'
   message: string
 }
@@ -296,7 +296,7 @@ export interface CancelledEvent extends AgentEvent {
 /**
  * Agent-level error.
  */
-export interface AgentErrorEvent extends AgentEvent {
+interface AgentErrorEvent extends AgentEvent {
   type: 'error'
   message: string
   code?: AgentErrorCode
@@ -450,8 +450,8 @@ export interface RunbookContext {
 /**
  * Allowlisted journalctl priorities.
  */
-export const JOURNALCTL_PRIORITIES = ['emerg', 'alert', 'crit', 'err', 'warning', 'notice', 'info', 'debug'] as const
-export type JournalctlPriority = (typeof JOURNALCTL_PRIORITIES)[number]
+const JOURNALCTL_PRIORITIES = ['emerg', 'alert', 'crit', 'err', 'warning', 'notice', 'info', 'debug'] as const
+type JournalctlPriority = (typeof JOURNALCTL_PRIORITIES)[number]
 
 /**
  * SSH journal query tool input (strictly typed).

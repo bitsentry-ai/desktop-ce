@@ -6,10 +6,7 @@ import type {
 } from "./desktop-runbook.types";
 
 export {
-  DEFAULT_RUNBOOK_IDLE_TIMEOUT_MINUTES,
-  MAX_RUNBOOK_IDLE_TIMEOUT_MINUTES,
   normalizeJournalTimeWindowParameterValues,
-  normalizeRunbookActionType,
   normalizeRunbookIdleTimeout,
   normalizeRunbookParameterValues,
   normalizeRunbookTriggerContext,
@@ -18,22 +15,11 @@ export {
 } from "./desktop-runbook.types";
 
 export type {
-  DesktopExportedRunbookV1,
   DesktopRunbookExportArtifactV1,
-  RunbookActionParameter,
   RunbookActionType,
-  RunbookExecutionCompletionReason,
   RunbookExecutionRecord,
-  RunbookExecutionSource,
-  RunbookExecutionStatus,
   RunbookExecutionStepRecord,
-  RunbookExecutionStepStatus,
-  RunbookHttpHeader,
-  RunbookHttpMethod,
-  RunbookLlmProviderKey,
   RunbookParameterValues,
-  RunbookTriggerContext,
-  RunbookTriggerSurface,
 } from "./desktop-runbook.types";
 
 export type RunbookActionRecord =
