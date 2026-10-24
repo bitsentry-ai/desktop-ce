@@ -1,4 +1,4 @@
-export type DesktopManagedLlmProviderKey =
+type DesktopManagedLlmProviderKey =
   | 'groq'
   | 'kilocode'
   | 'openai'
@@ -6,12 +6,12 @@ export type DesktopManagedLlmProviderKey =
   | 'gemini'
   | 'openrouter'
 
-export interface DesktopManagedLlmListModelsConfig {
+interface DesktopManagedLlmListModelsConfig {
   apiKey?: string
   baseUrl?: string
 }
 
-export interface DesktopManagedLlmListModelsResult {
+interface DesktopManagedLlmListModelsResult {
   providerKey: DesktopManagedLlmProviderKey
   models: string[]
   count: number
@@ -165,7 +165,7 @@ async function listAnthropicModels(baseUrl: string, apiKey: string): Promise<str
   return models
 }
 
-export async function listDesktopManagedModels(
+async function listDesktopManagedModels(
   rawProviderKey: string,
   config: DesktopManagedLlmListModelsConfig = {},
 ): Promise<DesktopManagedLlmListModelsResult> {

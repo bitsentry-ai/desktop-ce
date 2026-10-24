@@ -49,10 +49,6 @@ export default defineConfig({
         },
         external: [
           'better-sqlite3',
-          'bcryptjs',
-          'speakeasy',
-          'qrcode',
-          'jsonwebtoken',
           'node-pty', '@napi-rs/keyring',
         ],
       },

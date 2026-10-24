@@ -7,12 +7,12 @@ import {
 } from '@bitsentry-ce/core/features/agent-runtime'
 import { z } from 'zod'
 
-export interface HostToolCallResult extends Record<string, unknown> {
+interface HostToolCallResult extends Record<string, unknown> {
   content: Array<{ type: 'text'; text: string }>
   isError?: boolean
 }
 
-export type HostToolDefinition = HostToolSpec<unknown>
+type HostToolDefinition = HostToolSpec<unknown>
 
 export interface HostToolCore {
   readonly tools: readonly HostToolDefinition[]

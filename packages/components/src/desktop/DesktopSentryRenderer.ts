@@ -36,9 +36,7 @@ const sentryReactInit: DesktopSentryRuntimeConfig['reactInit'] = (options) => {
 
 export const {
   initSentryRenderer,
-  syncSentryUser,
   captureRendererException,
-  captureRendererMessage,
   DesktopRouteTracing,
 } = configureDesktopSentryRuntime({
   sentryRuntime,

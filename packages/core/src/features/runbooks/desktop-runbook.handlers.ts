@@ -43,7 +43,7 @@ type RunbookImportIssue = z.core.$ZodIssue;
 export type DesktopRunbookImportEdition =
   keyof typeof SUPPORTED_RUNBOOK_IMPORT_LLM_PROVIDERS;
 
-export interface DesktopRunbookHandlerExecutionService {
+interface DesktopRunbookHandlerExecutionService {
   start(
     runbookId: string,
     input: {
@@ -70,17 +70,17 @@ export interface DesktopRunbookArtifactIo {
   ): string;
 }
 
-export interface DesktopRunbookHandlerFileSystem {
+interface DesktopRunbookHandlerFileSystem {
   readFile(path: string, encoding: "utf-8"): Promise<string>;
   writeFile(path: string, data: string, encoding: "utf-8"): Promise<void>;
 }
 
-export interface DesktopRunbookTrustedPathRuntime {
+interface DesktopRunbookTrustedPathRuntime {
   consumeApprovedRunbookImportPath(path: string): string;
   consumeApprovedRunbookExportPath(path: string): string;
 }
 
-export interface DesktopRunbookHandlerLogger {
+interface DesktopRunbookHandlerLogger {
   warn(message: string, ...args: unknown[]): void;
 }
 

@@ -24,7 +24,7 @@ export interface IntegrationsRailSummary {
   /** Operations awaiting approval, sorted; the host notices a new proposal by an ID it has not seen for this incident. */
   pendingIds: string[];
 }
-export const EMPTY_INTEGRATIONS_SUMMARY: IntegrationsRailSummary = { resourceCount: 0, selectedCount: 0, operationCount: 0, pendingCount: 0, deliveryCount: 0, attentionCount: 0, pendingIds: [] };
+const EMPTY_INTEGRATIONS_SUMMARY: IntegrationsRailSummary = { resourceCount: 0, selectedCount: 0, operationCount: 0, pendingCount: 0, deliveryCount: 0, attentionCount: 0, pendingIds: [] };
 const summaryKey = (summary: IntegrationsRailSummary) =>
   [summary.resourceCount, summary.selectedCount, summary.operationCount, summary.pendingCount, summary.deliveryCount, summary.attentionCount, summary.pendingIds.join(",")].join("|");
 

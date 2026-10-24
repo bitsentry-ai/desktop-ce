@@ -34,7 +34,7 @@ import RunbookProposalArtifact, {
 
 type IncidentArtifactsToolCallState = "running" | "done" | "failed";
 
-export interface IncidentArtifactsToolCall {
+interface IncidentArtifactsToolCall {
   toolCallId: string;
   toolName: string;
   state: IncidentArtifactsToolCallState;
