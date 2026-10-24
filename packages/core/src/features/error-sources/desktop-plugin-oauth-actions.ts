@@ -68,7 +68,7 @@ function buildOAuthAuth(baseUrl: string | undefined): Record<string, unknown> {
   return auth;
 }
 
-export function resolveErrorSourcePluginId(input: {
+function resolveErrorSourcePluginId(input: {
   sourceType: ErrorSourceType;
   pluginId?: string;
   additionalMetadata?: unknown;

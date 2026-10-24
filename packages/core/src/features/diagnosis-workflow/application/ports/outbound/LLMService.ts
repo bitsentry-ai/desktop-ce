@@ -24,7 +24,7 @@ export interface LLMAnalysisResult {
 }
 
 /** Internal operation context; it is not serialized into LLM prompts. */
-export interface LLMOperationOptions {
+interface LLMOperationOptions {
   signal?: AbortSignal;
   executionId?: string;
 }

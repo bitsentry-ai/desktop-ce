@@ -74,7 +74,8 @@
     "desktop:predev": "pnpm --filter @bitsentry-ce/desktop run predev",
     "desktop:verify:mac-app": "pnpm --filter @bitsentry-ce/desktop run verify:mac-app",
     "plugins:standalone": "node scripts/plugins/standalone.mjs",
-    "plugins:typecheck": "pnpm run plugins:standalone typecheck"
+    "plugins:typecheck": "pnpm run plugins:standalone typecheck",
+    "knip": "knip"
   },
   "author": "BitSentry Team",
   "license": "Apache-2.0",
@@ -90,6 +91,9 @@
     "git-cliff": "^2.13.1",
     "globals": "^17.3.0",
     "typescript": "npm:@typescript/typescript6@^6.0.2",
-    "typescript-eslint": "^8.63.0"
+    "typescript-eslint": "^8.63.0",
+    "knip": "6.42.1",
+    "@anthropic-ai/sdk": "^0.95.1",
+    "ts-morph": "^24.0.0"
   }
 }

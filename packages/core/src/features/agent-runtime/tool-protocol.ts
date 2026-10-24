@@ -4,7 +4,7 @@ import { z } from 'zod'
  * Versioned envelope shared by every provider boundary before a host operation
  * is allowed to reach the agent runtime.
  */
-export const AGENT_TOOL_PROTOCOL_VERSION = 1 as const
+const AGENT_TOOL_PROTOCOL_VERSION = 1 as const
 
 export const agentToolCallSchema = z.object({
   id: z.string().min(1),
@@ -13,20 +13,20 @@ export const agentToolCallSchema = z.object({
   thoughtSignature: z.string().optional(),
 }).strict()
 
-export const agentToolResultSchema = z.object({
+const agentToolResultSchema = z.object({
   output: z.string().optional(),
   artifactId: z.string().min(1).optional(),
   error: z.string().min(1).optional(),
 }).strict()
 
-export const agentToolResultEnvelopeSchema = z.object({
+const agentToolResultEnvelopeSchema = z.object({
   version: z.literal(AGENT_TOOL_PROTOCOL_VERSION),
   toolCallId: z.string().min(1),
   toolName: z.string().min(1),
   result: agentToolResultSchema,
 }).strict()
 
-export const agentToolProtocolSchema = z.enum([
+const agentToolProtocolSchema = z.enum([
   'native_function_calling',
   'mcp',
   'none',

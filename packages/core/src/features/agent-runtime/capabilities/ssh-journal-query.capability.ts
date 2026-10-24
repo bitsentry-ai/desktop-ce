@@ -32,7 +32,7 @@ const SSH_JOURNAL_QUERY_TIMEOUT_MS = 60_000
  * Zod schema for ssh_journal_query tool input.
  * Provides runtime validation and type safety.
  */
-export const sshJournalQuerySchema = z.object({
+const sshJournalQuerySchema = z.object({
   sourceId: z.string().optional(),
   host: z.string().min(1).max(253).regex(/^[a-zA-Z0-9][a-zA-Z0-9._-]*[a-zA-Z0-9]$|^[a-zA-Z0-9]$/, 'Invalid hostname format'),
   username: z.string().min(1).max(32).regex(/^[a-zA-Z0-9._-]+$/, 'Invalid username format'),
