@@ -61,6 +61,8 @@ import { SendButton } from "./SendButton";
 import { ContextIndicator } from "./ContextIndicator";
 import { QueuedMessagesPanel, type ComposerQueue } from "./QueuedMessagesPanel";
 import { resolveComposerDispatchMode } from "./composerDispatch";
+import { CitationChip } from "./CitationControls";
+import type { AssistantCitation } from "./citations";
 import type { AgentMessageDelivery } from "../services/contracts";
 
 export interface ComposerProps {
@@ -78,6 +80,10 @@ export interface ComposerProps {
   queue?: ComposerQueue;
   /** Releases a queue that a stop, timeout or failure paused. */
   onResumeQueue?: () => void;
+  /** Quotes of the agent's answers that the message will cite. */
+  citations?: AssistantCitation[];
+  onRemoveCitation?: (index: number) => void;
+  onCitationCommentChange?: (index: number, comment: string | undefined) => void;
   isProcessing: boolean;
   isBlocked: boolean;
   isArchived: boolean;
@@ -224,6 +230,9 @@ export function Composer({
   remediationFlow,
   queue,
   onResumeQueue,
+  citations = [],
+  onRemoveCitation,
+  onCitationCommentChange,
 }: ComposerProps) {
   const { t } = useTranslation();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -254,7 +263,7 @@ export function Composer({
   const hidesText = remediation !== undefined && remediation.input === undefined;
   const hasAttachOptions =
     composerSupportsPhotos || composerFileAccept?.includes(".csv") === true;
-  const canSend = composerCanSend(isBlocked, prompt, composerImages.length);
+  const canSend = composerCanSend(isBlocked, prompt, composerImages.length + citations.length);
 
   const composerOptions = useMemo(
     () => {
@@ -456,6 +465,18 @@ export function Composer({
         {remediation !== undefined && <RemediationQuestionPanel flow={remediation} />}
         {/* Textarea area with optional attach button */}
         <div className="relative px-3 pb-2 pt-3.5 sm:px-4 sm:pt-4" hidden={hidesText}>
+          {citations.length > 0 && question === undefined && (
+            <div className="mb-2 flex flex-wrap gap-1.5">
+              {citations.map((citation, index) => (
+                <CitationChip
+                  key={`${citation.sourceId}:${String(citation.start)}:${String(index)}`}
+                  citation={citation}
+                  onRemove={() => { onRemoveCitation?.(index); }}
+                  onCommentChange={(comment) => { onCitationCommentChange?.(index, comment); }}
+                />
+              ))}
+            </div>
+          )}
           {composerImages.length > 0 && (
             <div className="mb-3 flex flex-wrap gap-2">
               {composerImages.map((image) =>
