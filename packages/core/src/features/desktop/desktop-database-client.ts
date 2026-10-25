@@ -275,6 +275,15 @@ const runbookAuthoringProposalTable = sqliteTable('RunbookAuthoringProposal', {
   updatedAt: text('updatedAt').notNull(),
 })
 
+const agentQueuedMessageTable = sqliteTable('AgentQueuedMessage', {
+  id: text('id').primaryKey(),
+  incidentThreadId: text('incidentThreadId').notNull(),
+  position: integer('position').notNull(),
+  inputJson: text('inputJson').notNull(),
+  queuedAt: text('queuedAt').notNull(),
+  held: integer('held', { mode: 'boolean' }).notNull(),
+})
+
 const globalVariableTable = sqliteTable('GlobalVariable', {
   id: text('id').primaryKey(),
   key: text('key').notNull(),
@@ -403,6 +412,7 @@ const modelTables = {
   incidentThread: incidentThreadTable,
   incidentMessage: incidentMessageTable,
   runbookAuthoringProposal: runbookAuthoringProposalTable,
+  agentQueuedMessage: agentQueuedMessageTable,
   globalVariable: globalVariableTable,
   runbook: runbookTable,
   runbookAction: runbookActionTable,
@@ -648,6 +658,7 @@ const modelColumns: Record<ModelName, Record<string, AnySQLiteColumn>> = {
   incidentThread: getTableColumns(incidentThreadTable),
   incidentMessage: getTableColumns(incidentMessageTable),
   runbookAuthoringProposal: getTableColumns(runbookAuthoringProposalTable),
+  agentQueuedMessage: getTableColumns(agentQueuedMessageTable),
   globalVariable: getTableColumns(globalVariableTable),
   runbook: getTableColumns(runbookTable),
   runbookAction: getTableColumns(runbookActionTable),
@@ -674,6 +685,7 @@ const dateColumnsByModel: Record<ModelName, Set<string>> = {
   incidentThread: new Set(['createdAt', 'updatedAt', 'archivedAt', 'deletedAt']),
   incidentMessage: new Set(['createdAt', 'updatedAt']),
   runbookAuthoringProposal: new Set(['createdAt', 'updatedAt']),
+  agentQueuedMessage: new Set(),
   globalVariable: new Set(['createdAt', 'updatedAt']),
   runbook: new Set(['createdAt', 'updatedAt', 'deletedAt']),
   runbookAction: new Set(['createdAt', 'updatedAt']),
@@ -700,6 +712,7 @@ const booleanColumnsByModel: Record<ModelName, Set<string>> = {
   incidentThread: new Set(),
   incidentMessage: new Set(),
   runbookAuthoringProposal: new Set(),
+  agentQueuedMessage: new Set(['held']),
   globalVariable: new Set(['secure']),
   runbook: new Set(),
   runbookAction: new Set(),
@@ -745,6 +758,7 @@ export class DbClient {
   readonly incidentThread = this.createDelegate('incidentThread')
   readonly incidentMessage = this.createDelegate('incidentMessage')
   readonly runbookAuthoringProposal = this.createDelegate('runbookAuthoringProposal')
+  readonly agentQueuedMessage = this.createDelegate('agentQueuedMessage')
   readonly globalVariable = this.createDelegate('globalVariable')
   readonly runbook = this.createDelegate('runbook')
   readonly runbookAction = this.createDelegate('runbookAction')
