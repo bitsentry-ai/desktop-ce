@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { EventEmitter } from 'node:events'
 import { PassThrough } from 'node:stream'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const spawnMock = vi.hoisted(() => vi.fn())
 
@@ -9,7 +9,9 @@ vi.mock('child_process', () => ({ spawn: spawnMock }))
 
 import { sshJournalQueryTool } from '../src/features/agent-runtime/capabilities/ssh-journal-query.capability'
 
-let nextMockPid = 1
+// High fake PIDs, and process.kill is always mocked: a fake PID of 1 once
+// reached process.kill(-1, 'SIGTERM') and signalled every user process.
+let nextMockPid = 900_000
 
 function createSshChild() {
   const child = new EventEmitter() as EventEmitter & {
@@ -30,7 +32,14 @@ function createSshChild() {
 }
 
 describe('sshJournalQueryTool', () => {
-  afterEach(() => spawnMock.mockReset())
+  beforeEach(() => {
+    vi.spyOn(process, 'kill').mockImplementation(() => true)
+  })
+
+  afterEach(() => {
+    spawnMock.mockReset()
+    vi.restoreAllMocks()
+  })
 
   it('starts SSH queries detached so interactive prompts cannot attach to the desktop terminal', async () => {
     const child = createSshChild()
