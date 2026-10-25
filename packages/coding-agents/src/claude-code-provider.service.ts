@@ -18,7 +18,7 @@ import {
   getWindowsCmdExecutable,
   isWindowsCmdShim,
 } from './windows-cmd.js'
-import { linkSubprocessAbort } from './subprocess-lifecycle.js'
+import { terminateProcessTree, waitForProcessExit } from '@bitsentry-ce/core/features/agent-runtime/shared/local-process'
 import type { CodingAgentsDebugRecorder } from './coding-agents-debug-recorder.js'
 
 export type ClaudeCodeAccessLevel = 'auto-accept-edits' | 'full-access'
@@ -173,9 +173,28 @@ async function createNeutralClaudeScratchDirectory(): Promise<string> {
   return await mkdtemp(join(tmpdir(), 'bitsentry-claude-'))
 }
 
+// Matches the SDK's own grace between closing stdin and signalling the CLI.
+const CLAUDE_CLOSE_GRACE_MS = 2_000
+
 function attachSubprocessTermination(child: ChildProcess, signal: AbortSignal | undefined): void {
-  const disposeAbort = linkSubprocessAbort(child, signal)
-  child.once('close', disposeAbort)
+  if (signal === undefined) return
+  const abort = (): void => { void terminateProcessTree(child) }
+  if (signal.aborted) {
+    abort()
+    return
+  }
+  signal.addEventListener('abort', abort, { once: true })
+  child.once('close', () => { signal.removeEventListener('abort', abort) })
+}
+
+async function settleClaudeProcesses(children: Iterable<ChildProcess>): Promise<void> {
+  await Promise.all([...children].map(async (child) => {
+    await waitForProcessExit(child, CLAUDE_CLOSE_GRACE_MS)
+    const result = await terminateProcessTree(child)
+    if (result.outcome === 'termination-unconfirmed') {
+      log.warn(`[claude-code-provider] Unable to confirm process termination (pid=${String(result.pid)})`)
+    }
+  }))
 }
 
 function resolveClaudePermissionMode(
@@ -186,21 +205,40 @@ function resolveClaudePermissionMode(
   return undefined
 }
 
-function createWindowsCmdShimSpawner(): (
-  options: ClaudeCodeSpawnOptions,
-) => ClaudeCodeSpawnedProcess {
+// Same truthiness rule the SDK applies to DEBUG_CLAUDE_AGENT_SDK.
+function isTruthyEnvFlag(value: string | undefined): boolean {
+  return value !== undefined && ['1', 'true', 'yes', 'on'].includes(value.toLowerCase().trim())
+}
+
+/**
+ * Spawns the Claude Code CLI ourselves (mirroring the SDK's default spawn) so
+ * it leads its own POSIX process group and can be terminated as a tree.
+ * Like the SDK, stderr is only piped (and logged) when
+ * DEBUG_CLAUDE_AGENT_SDK is set; no `stderr` query callback is configured.
+ */
+function createClaudeCodeSpawner(
+  wrapWindowsCmdShim: boolean,
+  children: Set<ChildProcess>,
+): (options: ClaudeCodeSpawnOptions) => ClaudeCodeSpawnedProcess {
   return (options: ClaudeCodeSpawnOptions): ClaudeCodeSpawnedProcess => {
     const env = options.env ?? process.env
-    const child = spawn(
-      getWindowsCmdExecutable(env),
-      ['/d', '/s', '/c', buildWindowsCmdCommandLine(options.command, options.args)],
-      {
-        cwd: options.cwd,
-        env,
-        stdio: ['pipe', 'pipe', 'ignore'],
-        windowsHide: true,
-      },
-    )
+    const debugStderr = isTruthyEnvFlag(env.DEBUG_CLAUDE_AGENT_SDK)
+    const spawnOptions = {
+      cwd: options.cwd,
+      env,
+      stdio: ['pipe', 'pipe', debugStderr ? 'pipe' : 'ignore'] as ['pipe', 'pipe', 'pipe' | 'ignore'],
+      windowsHide: true,
+      detached: process.platform !== 'win32',
+    }
+    const child = wrapWindowsCmdShim
+      ? spawn(
+        getWindowsCmdExecutable(env),
+        ['/d', '/s', '/c', buildWindowsCmdCommandLine(options.command, options.args)],
+        spawnOptions,
+      )
+      : spawn(options.command, options.args, spawnOptions)
+    children.add(child)
+    child.stderr?.on('data', (chunk: Buffer) => { log.info(`[claude-code-provider] stderr: ${chunk.toString()}`) })
     attachSubprocessTermination(child, options.signal)
 
     return child
@@ -558,6 +596,7 @@ function buildClaudeCodeQueryOptions(
   effectiveAccessLevel: ClaudeCodeAccessLevel,
   cwd: string,
   mcpServer: unknown | undefined,
+  children: Set<ChildProcess>,
 ): ClaudeCodeQueryOptions {
   const resolvedTools = resolveClaudeAllowedTools(
     effectiveAccessLevel,
@@ -582,7 +621,7 @@ function buildClaudeCodeQueryOptions(
   applyClaudePermissionOptions(queryOptions, permissionMode)
   applyClaudeContextWindowOption(queryOptions, options.contextWindow)
   applyClaudeToolOptions(queryOptions, resolvedTools)
-  applyClaudeSpawnerOption(queryOptions, shouldWrapWindowsCmdShim)
+  queryOptions.spawnClaudeCodeProcess = createClaudeCodeSpawner(shouldWrapWindowsCmdShim, children)
   if (mcpServer !== undefined) {
     queryOptions.mcpServers = { [HOST_MCP_SERVER_NAME]: mcpServer }
     queryOptions.tools = []
@@ -636,14 +675,6 @@ function applyClaudeToolOptions(
   }
 }
 
-function applyClaudeSpawnerOption(
-  queryOptions: ClaudeCodeQueryOptions,
-  shouldWrapWindowsCmdShim: boolean,
-): void {
-  if (shouldWrapWindowsCmdShim) {
-    queryOptions.spawnClaudeCodeProcess = createWindowsCmdShimSpawner()
-  }
-}
 
 async function runClaudeCodeSession(
   session: AsyncIterable<unknown>,
@@ -761,11 +792,13 @@ export async function executeClaudeCode(
   const mcpServer = options.hostToolContext === undefined
     ? undefined
     : await createClaudeHostMcpServer(options.hostToolContext)
+  const children = new Set<ChildProcess>()
   const queryOptions = buildClaudeCodeQueryOptions(
     options,
     effectiveAccessLevel,
     scratchDirectory,
     mcpServer,
+    children,
   )
 
   // Each turn runs a fresh Claude Code session. The agent-runtime tracks the
@@ -801,6 +834,7 @@ export async function executeClaudeCode(
     if (session !== undefined) {
       closeClaudeSession(session)
     }
+    await settleClaudeProcesses(children)
     await rm(scratchDirectory, { recursive: true, force: true })
   }
 

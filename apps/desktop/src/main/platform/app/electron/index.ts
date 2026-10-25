@@ -75,7 +75,7 @@ import { ExternalSourceRunbookQueryService } from '@bitsentry-ce/core/features/e
 import { SqliteRunbookResultStore } from '@bitsentry-ce/core/features/runbooks/desktop-runbook-result.store'
 import { SqliteRunbookAuthoringProposalStore } from '@bitsentry-ce/core/features/runbooks'
 import { SqliteErrorSourcesRepositoryAdapter } from '@bitsentry-ce/core/features/error-sources/desktop-sqlite-error-sources.adapter'
-import { createDesktopErrorSourcesHandlers } from '@bitsentry-ce/core/features/error-sources/desktop-error-sources.handlers'
+import { createDesktopErrorSourcesHandlers, stopDesktopErrorSourcesSyncScheduler } from '@bitsentry-ce/core/features/error-sources/desktop-error-sources.handlers'
 import { AgentRuntimeService } from '@bitsentry-ce/desktop-cli/runtime/desktop-agent-runtime'
 import { RunbookExecutionService } from '../../../features/runbooks/services/runbook-execution.service'
 import { CodingAgentsProviderService } from '@bitsentry-ce/desktop-cli/runtime/desktop-coding-agents'
@@ -390,7 +390,7 @@ const createWindow = async () => {
       beforeInstall: async () => {
         log.info('[updater] tearing down runtime before install...')
         try {
-          agentRuntime?.destroy()
+          await agentRuntime?.destroy()
           await localRunbookExecutionHost?.close()
           localRunbookExecutionHost = null
           await runbookExecutionService?.destroy()
@@ -398,6 +398,7 @@ const createWindow = async () => {
           await localAiProvider?.destroy()
           unregisterCodingAgentsHandlers(ipcMain)
           localAiProvider = null
+          await stopDesktopErrorSourcesSyncScheduler()
           if (services !== null) {
             await services.jobRuntime.stop()
           }
@@ -433,6 +434,7 @@ const shutdownCoordinator = new DesktopShutdownCoordinator({
     await runbookExecutionService?.destroy()
     runbookExecutionService = null
   },
+  stopErrorSourceSync: stopDesktopErrorSourcesSyncScheduler,
   stopJobRuntime: async () => {
     await services?.jobRuntime.stop()
   },

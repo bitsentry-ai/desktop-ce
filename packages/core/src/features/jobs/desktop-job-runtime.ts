@@ -52,6 +52,9 @@ const MAX_CONCURRENT = 2
 const DEFAULT_MAX_ATTEMPTS = 3
 const DEFAULT_TIMEOUT_MS = 300_000
 const DEFAULT_CATCHUP_WINDOW_HOURS = 24
+const STOP_WAIT_MS = 5_000
+// Abort reason for jobs interrupted by stop(); they are re-queued, not failed.
+const SHUTDOWN_ABORT_REASON = new DOMException('Job runtime stopped', 'AbortError')
 
 interface ExecutableJob {
   id: string
@@ -206,7 +209,10 @@ function shouldSkipQueuedScheduleRun(
 
 export class DesktopJobRuntime {
   private handlers = new Map<string, JobHandler>()
-  private runningJobs = new Map<string, AbortController>()
+  private runningJobs = new Map<string, { controller: AbortController; job: ExecutableJob }>()
+  private activeRuns = new Set<Promise<void>>()
+  // Bumped by stop(); runs from an older generation make no further DB writes.
+  private generation = 0
   private scheduledTasks = new Map<string, DesktopJobScheduledTask>()
   private tickTimer: ReturnType<typeof setInterval> | null = null
   private paused = false
@@ -250,10 +256,7 @@ export class DesktopJobRuntime {
       return this.toDomain(job)
     }
 
-    const controller = this.runningJobs.get(id)
-    if (controller !== undefined) {
-      controller.abort()
-    }
+    this.runningJobs.get(id)?.controller.abort()
 
     await this.db.jobRun.updateMany({
       where: { id, status: { in: ['queued', 'running'] } },
@@ -395,7 +398,7 @@ export class DesktopJobRuntime {
     this.dependencies.logger.info('[jobs] Job runtime started')
   }
 
-  stop(): Promise<void> {
+  async stop(): Promise<void> {
     if (this.tickTimer !== null) {
       clearInterval(this.tickTimer)
       this.tickTimer = null
@@ -407,14 +410,29 @@ export class DesktopJobRuntime {
     this.scheduledTasks.clear()
     this.catchUpComplete = false
 
-    for (const [id, controller] of this.runningJobs) {
-      controller.abort()
+    for (const [id, { controller }] of this.runningJobs) {
+      controller.abort(SHUTDOWN_ABORT_REASON)
       this.dependencies.logger.info(`[jobs] Aborted running job ${id} on shutdown`)
     }
-    this.runningJobs.clear()
+
+    if (this.activeRuns.size > 0) {
+      let timer: ReturnType<typeof setTimeout> | undefined
+      const settled = await Promise.race([
+        Promise.allSettled(this.activeRuns).then(() => true),
+        new Promise<false>((resolve) => { timer = setTimeout(() => { resolve(false) }, STOP_WAIT_MS) }),
+      ])
+      clearTimeout(timer)
+      if (!settled) {
+        this.dependencies.logger.warn(
+          `[jobs] ${String(this.activeRuns.size)} job(s) still running ${String(STOP_WAIT_MS)}ms after shutdown`,
+        )
+        // Fence the stragglers and hand their attempts back while the DB is open.
+        this.generation += 1
+        await Promise.allSettled([...this.runningJobs.values()].map(({ job }) => this.requeueAfterShutdown(job)))
+      }
+    }
 
     this.dependencies.logger.info('[jobs] Job runtime stopped')
-    return Promise.resolve()
   }
 
   pause(): void {
@@ -445,7 +463,7 @@ export class DesktopJobRuntime {
       })
 
       for (const candidate of candidates) {
-        if (this.runningJobs.size >= MAX_CONCURRENT) break
+        if (this.tickTimer === null || this.runningJobs.size >= MAX_CONCURRENT) break
         void this.executeJob(candidate).catch((error: unknown) => {
           this.dependencies.logger.error('[jobs] Execution failed:', error)
         })
@@ -455,11 +473,20 @@ export class DesktopJobRuntime {
     }
   }
 
-  private async executeJob(row: DesktopJobRuntimeRow): Promise<void> {
+  private executeJob(row: DesktopJobRuntimeRow): Promise<void> {
+    const run: Promise<void> = this.runJob(row).finally(() => {
+      this.activeRuns.delete(run)
+    })
+    this.activeRuns.add(run)
+    return run
+  }
+
+  private async runJob(row: DesktopJobRuntimeRow): Promise<void> {
     const job = this.toExecutableJob(row)
     if (this.runningJobs.has(job.id)) return
     const controller = new AbortController()
-    this.runningJobs.set(job.id, controller)
+    const generation = this.generation
+    this.runningJobs.set(job.id, { controller, job })
     let timeout: ReturnType<typeof setTimeout> | undefined
     try {
       const claimed = await this.markJobRunning(job)
@@ -470,21 +497,18 @@ export class DesktopJobRuntime {
         return
       }
       if (controller.signal.aborted) {
-        await this.failAbortedJob(job)
+        await this.failAbortedJob(job, controller)
         return
       }
       timeout = setTimeout(() => controller.abort(), job.timeoutMs)
       const result = await handler(job.payload, controller.signal)
-      if (controller.signal.aborted) {
-        await this.failAbortedJob(job)
-        return
-      }
-      await this.completeJob(job, result)
+      // A resolved handler finished its work: never re-run it, even if aborted late.
+      if (generation === this.generation) await this.completeJob(job, result)
     } catch (error: unknown) {
-      await this.handleJobError(job, controller, error)
+      if (generation === this.generation) await this.handleJobError(job, controller, error)
     } finally {
       clearTimeout(timeout)
-      this.runningJobs.delete(job.id)
+      if (this.runningJobs.get(job.id)?.controller === controller) this.runningJobs.delete(job.id)
     }
   }
 
@@ -539,7 +563,7 @@ export class DesktopJobRuntime {
     error: unknown,
   ): Promise<void> {
     if (this.isJobAbort(controller, error)) {
-      await this.failAbortedJob(job)
+      await this.failAbortedJob(job, controller)
       return
     }
 
@@ -556,7 +580,12 @@ export class DesktopJobRuntime {
     return controller.signal.aborted || (error instanceof Error && error.name === 'AbortError')
   }
 
-  private async failAbortedJob(job: ExecutableJob): Promise<void> {
+  private async failAbortedJob(job: ExecutableJob, controller: AbortController): Promise<void> {
+    if (controller.signal.reason === SHUTDOWN_ABORT_REASON) {
+      await this.requeueAfterShutdown(job)
+      return
+    }
+
     await this.db.jobRun.updateMany({
       where: { id: job.id, status: 'running', attempt: job.attempt },
       data: {
@@ -566,6 +595,15 @@ export class DesktopJobRuntime {
       },
     })
     this.dependencies.logger.warn(`[jobs] Job ${job.id} (${job.type}) aborted/timed out`)
+  }
+
+  /** Interrupted by shutdown: hand the attempt back so resumePending() reruns it. */
+  private async requeueAfterShutdown(job: ExecutableJob): Promise<void> {
+    await this.db.jobRun.updateMany({
+      where: { id: job.id, status: 'running', attempt: job.attempt },
+      data: { status: 'queued', attempt: job.attempt - 1, startedAt: null },
+    })
+    this.dependencies.logger.info(`[jobs] Job ${job.id} (${job.type}) re-queued after shutdown`)
   }
 
   private async requeueFailedJob(job: ExecutableJob, errorMessage: string): Promise<void> {
