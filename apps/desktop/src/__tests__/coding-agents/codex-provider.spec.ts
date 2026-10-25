@@ -156,7 +156,63 @@ afterEach(async () => {
   setCodingAgentsLoggerForTesting({ info: () => {}, warn: () => {}, error: () => {} })
 })
 
+async function createSteerableCodexAppServer(): Promise<{ binaryPath: string; cwd: string; logPath: string }> {
+  const cwd = await mkdtemp(path.join(os.tmpdir(), 'codex-provider-steer-'))
+  tempDirs.push(cwd)
+  const scriptPath = path.join(cwd, 'mock-codex-app-server.cjs')
+  const logPath = path.join(cwd, 'messages.jsonl')
+  const script = `
+const fs = require('fs')
+const readline = require('readline')
+const respond = (id, result) => process.stdout.write(JSON.stringify({ id, result }) + '\\n')
+const notify = (method, params) => process.stdout.write(JSON.stringify({ method, params }) + '\\n')
+if (!process.argv.slice(2).includes('app-server')) process.exit(64)
+readline.createInterface({ input: process.stdin }).on('line', (line) => {
+  const message = JSON.parse(line)
+  fs.appendFileSync(${JSON.stringify(logPath)}, JSON.stringify(message) + '\\n')
+  if (message.method === 'initialize') return respond(message.id, {})
+  if (message.method === 'thread/start') return respond(message.id, { thread: { id: 'thread-steer' } })
+  if (message.method === 'turn/start') return respond(message.id, { turn: { id: 'turn-steer' } })
+  if (message.method === 'turn/steer') {
+    respond(message.id, { turnId: 'turn-steer' })
+    notify('item/completed', { item: { id: 'answer', type: 'agentMessage', text: 'Only nginx returns 502s.' } })
+    notify('turn/completed', { turn: { id: 'turn-steer' } })
+  }
+})
+`
+  await writeFile(scriptPath, script)
+  const binaryPath = path.join(cwd, 'codex')
+  await writeFile(binaryPath, `#!/usr/bin/env node\nrequire(${JSON.stringify(scriptPath)})\n`)
+  await chmod(binaryPath, 0o755)
+  return { binaryPath, cwd, logPath }
+}
+
 describe('Codex provider behavior', () => {
+  it('steers the running turn with turn/steer for the active turn', async () => {
+    const mock = await createSteerableCodexAppServer()
+    const handles: Array<((text: string) => Promise<void>) | null> = []
+    const result = await executeCodex({
+      prompt: 'Investigate the 502s.',
+      binaryPath: mock.binaryPath,
+      cwd: mock.cwd,
+      abortController: new AbortController(),
+      onDelta: (delta) => {
+        if (delta.type !== 'steer_handle') return
+        handles.push(delta.steer)
+        void delta.steer?.('Focus on nginx only.')
+      },
+    })
+
+    const turnSteer = (await readLoggedCodexMessages(mock.logPath)).find((message) => message.method === 'turn/steer')
+    expect(turnSteer?.params).toEqual({
+      threadId: 'thread-steer',
+      expectedTurnId: 'turn-steer',
+      input: [{ type: 'text', text: 'Focus on nginx only.', text_elements: [] }],
+    })
+    expect(handles.at(-1)).toBeNull()
+    expect(result.output).toContain('Only nginx returns 502s.')
+  })
+
   it('sends the Safe Tools policy that gates workspace shell execution', async () => {
     const mock = await createMultiItemCodexAppServer()
     await executeCodex({
