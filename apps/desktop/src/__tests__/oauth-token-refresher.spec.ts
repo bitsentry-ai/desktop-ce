@@ -296,16 +296,19 @@ describe('refreshSourceAccessToken', () => {
         }),
       ).resolves.toBe('refreshed-access-token')
 
-      expect(executeAction).toHaveBeenCalledWith({
-        pluginId: 'vendor-posthog',
-        actionId: 'refresh_token',
-        auth: {},
-        input: {
-          clientId: 'vendor-client-id',
-          clientSecret: 'vendor-client-secret',
-          refreshToken: 'refresh-token-1',
+      expect(executeAction).toHaveBeenCalledWith(
+        {
+          pluginId: 'vendor-posthog',
+          actionId: 'refresh_token',
+          auth: {},
+          input: {
+            clientId: 'vendor-client-id',
+            clientSecret: 'vendor-client-secret',
+            refreshToken: 'refresh-token-1',
+          },
         },
-      })
+        expect.objectContaining({}),
+      )
       expect(sourcesRepository.update).toHaveBeenCalledWith(
         expect.objectContaining({
           id: 'source-2',

@@ -711,8 +711,16 @@ describe('executeClaudeCode', () => {
         windowsHide: true,
       }),
     )
+    const taskkill = new EventEmitter()
+    spawnMock.mockReturnValueOnce(taskkill)
     abortController.abort()
-    expect(spawned.kill).toHaveBeenCalledWith('SIGTERM')
-    spawnedProcess.emit('close', 0)
+    expect(spawnMock).toHaveBeenCalledWith(
+      'C:\\Windows\\System32\\taskkill.exe',
+      ['/pid', '1234', '/T', '/F'],
+      expect.anything(),
+    )
+    taskkill.emit('exit', 0)
+    spawnedProcess.emit('exit', 1)
+    spawnedProcess.emit('close', 1)
   })
 })

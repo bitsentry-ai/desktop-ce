@@ -11,6 +11,7 @@ import {
   OrchestrationError,
   runOrchestratedOperation,
 } from '../shared/effect-orchestration'
+import { readBoundedResponseText } from '../../../shared/bounded-response'
 
 const HTTP_TIMEOUT_MS = 30_000
 const MAX_RESPONSE_LENGTH = 50_000
@@ -61,26 +62,16 @@ function formatContentTypeLine(contentType: string): string {
   return `Content-Type: ${contentType}`
 }
 
-function formatTruncationNotice(responseBody: string, truncatedBody: string): string | null {
-  if (truncatedBody.length >= responseBody.length) {
-    return null
-  }
-
-  return `\n[Response truncated to ${String(MAX_RESPONSE_LENGTH)} characters]`
-}
-
-function buildOutput(response: Response, responseBody: string): string {
-  const truncatedBody = responseBody.slice(0, MAX_RESPONSE_LENGTH)
+function buildOutput(response: Response, body: string, truncated: boolean): string {
   const contentType = getContentType(response)
   const lines = [
     `HTTP ${String(response.status)} ${response.statusText}`,
     formatContentTypeLine(contentType),
     '',
-    formatResponseBody(truncatedBody, contentType),
+    formatResponseBody(body, contentType),
   ]
-  const truncationNotice = formatTruncationNotice(responseBody, truncatedBody)
-  if (truncationNotice !== null) {
-    lines.push(truncationNotice)
+  if (truncated) {
+    lines.push(`\n[Response truncated to ${String(MAX_RESPONSE_LENGTH)} characters]`)
   }
 
   return lines.join('\n')
@@ -121,8 +112,8 @@ async function executeHttpRequest(
           signal,
         })
 
-        const responseBody = await response.text()
-        return { output: buildOutput(response, responseBody) }
+        const { text, truncated } = await readBoundedResponseText(response, MAX_RESPONSE_LENGTH)
+        return { output: buildOutput(response, text, truncated) }
       },
     })
   } catch (error) {
