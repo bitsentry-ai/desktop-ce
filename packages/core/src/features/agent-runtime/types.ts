@@ -450,8 +450,7 @@ export interface RunbookContext {
 /**
  * Allowlisted journalctl priorities.
  */
-const JOURNALCTL_PRIORITIES = ['emerg', 'alert', 'crit', 'err', 'warning', 'notice', 'info', 'debug'] as const
-type JournalctlPriority = (typeof JOURNALCTL_PRIORITIES)[number]
+type JournalctlPriority = 'emerg' | 'alert' | 'crit' | 'err' | 'warning' | 'notice' | 'info' | 'debug'
 
 /**
  * SSH journal query tool input (strictly typed).
