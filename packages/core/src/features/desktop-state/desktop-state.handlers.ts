@@ -195,10 +195,6 @@ interface DesktopIncidentStateSnapshot {
 
 const PHASE1_IMPORT_KEY = 'phase1.localstorage.bootstrap'
 
-function isDuplicateColumnError(error: unknown): boolean {
-  return error instanceof Error && /duplicate column name/i.test(error.message)
-}
-
 function asObject(value: unknown): Record<string, unknown> {
   if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
     return value as Record<string, unknown>
@@ -999,8 +995,6 @@ function normalizeResultTraceEntries(
 }
 
 class DesktopStateStore {
-  private incidentSessionIdColumnEnsured = false
-
   constructor(private readonly db: DesktopStateDatabase) {}
 
   async bootstrap(payload: DesktopStatePayload): Promise<DesktopProductStateSnapshot> {
@@ -1102,11 +1096,7 @@ class DesktopStateStore {
   }
 
   async getIncidentState(): Promise<DesktopIncidentStateSnapshot> {
-    const snapshot = await this.readSnapshot()
-    return {
-      incidents: snapshot.incidents,
-      incidentMessages: snapshot.incidentMessages,
-    }
+    return this.readIncidentSnapshot()
   }
 
   async replaceIncidentState(payload: DesktopStatePayload): Promise<{ ok: true; count: number }> {
@@ -1130,13 +1120,13 @@ class DesktopStateStore {
     results: StoredRunResult[],
     resultTraces: Record<string, ResultTraceMemory>,
   ): Promise<void> {
+    if (results.length === 0) return
+    const existingRows = await this.db.investigationSession.findMany({
+      where: { id: { in: results.map((result) => result.id) } },
+    })
+    const existingIds = new Set(existingRows.map((row) => row.id))
     for (const result of results) {
-      const existingResult = await this.db.investigationSession.findUnique({
-        where: { id: result.id },
-      })
-      if (existingResult !== null) {
-        continue
-      }
+      if (existingIds.has(result.id)) continue
 
       const trace = resultTraces[result.id] ?? emptyTrace()
       await this.replaceResult(result, trace, false)
@@ -1147,7 +1137,6 @@ class DesktopStateStore {
     incidents: IncidentThreadRecord[],
     incidentMessages: Record<string, IncidentChatMessage[]>,
   ): Promise<void> {
-    await this.ensureIncidentThreadSessionIdColumn()
     if (this.db.$executeBatch !== undefined) {
       await this.replaceIncidentsAtomically(incidents, incidentMessages)
       return
@@ -1459,12 +1448,28 @@ class DesktopStateStore {
     }
   }
 
+  private async readIncidentSnapshot(): Promise<DesktopIncidentStateSnapshot> {
+    const incidents = await this.db.incidentThread.findMany({
+      where: { deletedAt: null },
+      orderBy: { createdAt: 'desc' },
+    })
+    const messages = await this.db.incidentMessage.findMany({
+      where: { threadId: { in: incidents.map((incident) => incident.id) } },
+      orderBy: { sortOrder: 'asc' },
+    })
+    const incidentMessages: Record<string, IncidentChatMessage[]> = {}
+    for (const rawMessage of messages) addIncidentMessage(incidentMessages, rawMessage)
+
+    return {
+      incidents: incidents.map((incident) => normalizeIncidentRow(incident, incidentMessages)),
+      incidentMessages,
+    }
+  }
+
   private async readSnapshot(): Promise<DesktopProductStateSnapshot> {
-    await this.ensureIncidentThreadSessionIdColumn()
-    const [incidents, messages, runbooks, runbookActions, resultRows, traceEntries, toolRuns, reports] =
+    const [incidentState, runbooks, runbookActions, resultRows, traceEntries, toolRuns, reports] =
       await Promise.all([
-        this.db.incidentThread.findMany({ where: { deletedAt: null }, orderBy: { createdAt: 'desc' } }),
-        this.db.incidentMessage.findMany({ orderBy: { sortOrder: 'asc' } }),
+        this.readIncidentSnapshot(),
         this.db.runbook.findMany({
           where: { deletedAt: null },
           orderBy: { createdAt: 'desc' },
@@ -1475,12 +1480,6 @@ class DesktopStateStore {
         this.db.investigationToolRun.findMany({ orderBy: { sortOrder: 'asc' } }),
         this.db.investigationReport.findMany({}),
       ])
-
-    const incidentMessages: Record<string, IncidentChatMessage[]> = {}
-    const visibleThreadIds = new Set(incidents.map((incident) => incident.id))
-    for (const rawMessage of messages) {
-      if (visibleThreadIds.has(rawMessage.threadId)) addIncidentMessage(incidentMessages, rawMessage)
-    }
 
     const runbookActionsByRunbookId = new Map<string, RunbookActionRecord[]>()
     for (const rawAction of runbookActions) {
@@ -1504,40 +1503,12 @@ class DesktopStateStore {
       setTraceReport(resultTraces, rawReport)
     }
 
-    const normalizedIncidents = incidents.map((incident) => normalizeIncidentRow(incident, incidentMessages))
-
     return {
-      incidents: normalizedIncidents,
-      incidentMessages,
+      ...incidentState,
       runbooks: runbooks.map((runbook) => normalizeRunbookRow(runbook, runbookActionsByRunbookId)),
       results: resultRows.map((result) => normalizeResultRow(result)),
       resultTraces: normalizeResultTraceEntries(resultRows, resultTraces),
     }
-  }
-
-  private async ensureIncidentThreadSessionIdColumn(): Promise<void> {
-    if (this.incidentSessionIdColumnEnsured) return
-
-    const rows = await this.db.$queryRawUnsafe<{ name?: unknown }>(
-      'PRAGMA table_info("IncidentThread")',
-    )
-    const hasSessionIdColumn = rows.some(
-      (row) => asString(row.name).trim() === 'sessionId',
-    )
-
-    if (!hasSessionIdColumn) {
-      try {
-        await this.db.$executeRawUnsafe(`
-          ALTER TABLE "IncidentThread" ADD COLUMN "sessionId" TEXT
-        `)
-      } catch (error) {
-        if (!isDuplicateColumnError(error)) {
-          throw error
-        }
-      }
-    }
-
-    this.incidentSessionIdColumnEnsured = true
   }
 }
 
