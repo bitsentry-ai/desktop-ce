@@ -815,6 +815,7 @@ export interface RunbookContextV1 {
 }
 
 export type RunbookExecutionStatus =
+  | "awaiting_approval"
   | "queued"
   | "pending"
   | "running"
@@ -832,6 +833,8 @@ export type RunbookExecutionCompletionReason =
   | "lease_expired";
 
 export type RunbookExecutionStepStatus =
+  | "awaiting_approval"
+  | "skipped"
   | "pending"
   | "running"
   | "completed"
