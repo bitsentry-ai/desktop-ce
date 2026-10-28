@@ -16,10 +16,11 @@ import { createHash, randomUUID } from 'crypto'
 import { zodToJsonSchema } from '@alcyone-labs/zod-to-json-schema'
 import { z } from 'zod'
 import { getErrorMessage } from '@bitsentry-ce/core'
-import type { AgentThreadSnapshot, ChatMessage as ThreadChatMessage, ComposerAttachment, ToolCallCard } from '@bitsentry-ce/components/chat/types'
+import type { AgentEventPayload, AgentSnapshotReply, AgentThreadSnapshot, ChatMessage as ThreadChatMessage, ComposerAttachment, ToolCallCard } from '@bitsentry-ce/components/chat/types'
 import {
   appendPromptToThreadSnapshot,
   createAgentThreadSnapshot,
+  findLastAgentMessageIndex,
   reduceAgentThreadSnapshot,
   setAgentThreadRuntimeState,
   settleInterruptedAgentTurn,
@@ -76,6 +77,16 @@ import {
 } from '@bitsentry-ce/core/features/agent-runtime'
 
 const CHANNEL_EVENT = 'bitsentry:agent:event'
+// Streaming events reduce into the snapshot immediately but reach the renderer
+// as one changed-message update per window (T3 Code coalesces at 50 ms too).
+const STREAM_FLUSH_INTERVAL_MS = 50
+const COALESCED_EVENT_TYPES = new Set<AgentEventData['type']>([
+  'assistant_delta',
+  'tool_update',
+  'token_usage',
+  'activity',
+  'thinking_delta',
+])
 const NO_LLM_PROVIDER_CONFIGURED_MESSAGE =
   'No LLM provider configured. Please configure a provider in Settings.'
 
@@ -88,11 +99,7 @@ export type AgentRuntimeIncidentHistoryLoader = (
   incidentThreadId: string,
 ) => Promise<ReadonlyArray<Record<string, unknown>>>
 
-export interface AgentRuntimeEventPayload {
-  sessionId: string
-  event: AgentEventData
-  snapshot?: AgentThreadSnapshot
-}
+export type AgentRuntimeEventPayload = AgentEventPayload<AgentEventData>
 
 export interface AgentRuntimeWindow {
   isDestroyed(): boolean
@@ -196,6 +203,13 @@ const INTEGRATION_READ_TIMEOUT_MS = 30_000
 const AGENT_LOOP_SHUTDOWN_WAIT_MS = 5_000
 const MAX_TOOL_ITERATIONS = 10 // Prevent infinite loops
 const MAX_MESSAGE_HISTORY = 50 // Limit conversation history
+// Payload sequences are process-wide and clock-seeded, so a session recreated
+// under the same id (restore, runtime restart) always continues above the old one.
+let lastPayloadSequence = Date.now() * 1000
+function nextPayloadSequence(): number {
+  lastPayloadSequence += 1
+  return lastPayloadSequence
+}
 const JOURNAL_TIME_WINDOW_PADDING_MS = 5 * 60 * 1000
 const MAX_ACTIONABLE_JOURNAL_TIME_WINDOWS = 5
 const MAX_STRUCTURED_RUNBOOK_ISSUES = 10
@@ -507,6 +521,13 @@ interface AgentSession {
   queuedFollowUps: AgentSendInput[]
   loopActive?: boolean
   snapshot: AgentThreadSnapshot
+  streamFlushTimer?: ReturnType<typeof setTimeout>
+  /** Last coalesced event, reported with a flush that has to send the full snapshot. */
+  pendingStreamEvent?: AgentEventData
+  /** Message count of the last payload sent; a change forces a full snapshot. */
+  lastSentMessageCount?: number
+  /** Sequence of the last payload sent; lets the renderer drop stale ones. */
+  sequence: number
 }
 
 type ExecuteRunbookInput = ExecuteRunbookHostToolInput
@@ -740,13 +761,15 @@ function createUserMessageContent(text: string, attachments?: AgentChatAttachmen
 }
 
 function restoreThreadMessage(raw: Record<string, unknown>): ThreadChatMessage | null {
+  const id = typeof raw.id === 'string' && raw.id.length > 0 ? raw.id : randomUUID()
   if (raw.kind === 'user') {
-    return { ...raw, kind: 'user', text: typeof raw.text === 'string' ? raw.text : '' } as ThreadChatMessage
+    return { ...raw, id, kind: 'user', text: typeof raw.text === 'string' ? raw.text : '' } as ThreadChatMessage
   }
   if (raw.kind !== 'agent') return null
 
   return {
     ...raw,
+    id,
     iterations: Array.isArray(raw.iterations) ? raw.iterations : [],
     activeIterationId: typeof raw.activeIterationId === 'string' ? raw.activeIterationId : null,
     toolCalls: Array.isArray(raw.toolCalls) ? raw.toolCalls : [],
@@ -2051,6 +2074,7 @@ export class AgentRuntimeService {
       runbookAuthoringProposals: params.proposals,
       messages: [{ role: 'system', content: this.buildSystemPrompt(input.runbookContext) }, ...params.history],
       snapshot: params.snapshot,
+      sequence: nextPayloadSequence(),
     }
     this.sessions.set(sessionId, session)
     return session
@@ -2100,13 +2124,13 @@ export class AgentRuntimeService {
     }
   }
 
-  getSnapshot(sessionId: string): AgentThreadSnapshot {
+  getSnapshot(sessionId: string): AgentSnapshotReply {
     const session = this.sessions.get(sessionId)
     if (session === undefined) {
       throw new Error(`Session not found: ${sessionId}`)
     }
 
-    return session.snapshot
+    return { ...session.snapshot, sequence: session.sequence }
   }
 
   async listRunbookAuthoringProposals(input: { sessionId?: string; incidentThreadId?: string }): Promise<RunbookAuthoringProposalReview[]> {
@@ -2929,22 +2953,83 @@ export class AgentRuntimeService {
   private sendEvent(sessionId: string, event: AgentEventData): void {
     const session = this.sessions.get(sessionId)
     if (session !== undefined) {
-      session.snapshot = reduceAgentThreadSnapshot(setAgentThreadRuntimeState(session.snapshot, session.state), event)
-      session.snapshot = {
-        ...session.snapshot,
-        currentToolCallId: session.currentToolCallId,
+      const previous = session.snapshot
+      let next = reduceAgentThreadSnapshot(setAgentThreadRuntimeState(previous, session.state), event)
+      if (next.currentToolCallId !== session.currentToolCallId) {
+        next = { ...next, currentToolCallId: session.currentToolCallId }
       }
+      session.snapshot = next
+
+      if (COALESCED_EVENT_TYPES.has(event.type)) {
+        if (next === previous) return
+        session.pendingStreamEvent = event
+        session.streamFlushTimer ??= setTimeout(() => { this.flushStreamUpdate(session) }, STREAM_FLUSH_INTERVAL_MS)
+        return
+      }
+      // Keep ordering: the pending streamed text goes out before this event.
+      this.flushStreamUpdate(session)
+      this.sendSnapshot(session, event)
+      return
     }
 
+    this.postToRenderer({ sessionId, kind: 'snapshot', sequence: 0, event }, event.type)
+  }
+
+  private stampSequence(session: AgentSession): number {
+    session.sequence = nextPayloadSequence()
+    return session.sequence
+  }
+
+  private sendSnapshot(session: AgentSession, event: AgentEventData): void {
+    session.lastSentMessageCount = session.snapshot.messages.length
+    this.postToRenderer({
+      sessionId: session.id,
+      kind: 'snapshot',
+      sequence: this.stampSequence(session),
+      event,
+      snapshot: session.snapshot,
+    }, event.type)
+  }
+
+  private flushStreamUpdate(session: AgentSession): void {
+    if (session.streamFlushTimer === undefined) return
+    clearTimeout(session.streamFlushTimer)
+    session.streamFlushTimer = undefined
+
+    const event = session.pendingStreamEvent
+    session.pendingStreamEvent = undefined
+
+    const { snapshot } = session
+    // A queued follow-up appends messages without a structural event, and a
+    // single-message update can't apply to a renderer cache of another length.
+    if (event !== undefined && snapshot.messages.length !== session.lastSentMessageCount) {
+      this.sendSnapshot(session, event)
+      return
+    }
+    const messageIndex = findLastAgentMessageIndex(snapshot.messages)
+    const message = snapshot.messages[messageIndex]
+    if (message === undefined) return
+    session.lastSentMessageCount = snapshot.messages.length
+    this.postToRenderer({
+      sessionId: session.id,
+      kind: 'message',
+      sequence: this.stampSequence(session),
+      messageCount: snapshot.messages.length,
+      messageIndex,
+      message,
+      threadState: snapshot.threadState,
+      runtimeState: snapshot.runtimeState,
+      tokenUsage: snapshot.tokenUsage,
+      currentToolCallId: snapshot.currentToolCallId,
+    }, 'message')
+  }
+
+  private postToRenderer(payload: AgentRuntimeEventPayload, label: string): void {
     const win = this.windowGetter()
     if (win !== null && !win.isDestroyed()) {
-      win.webContents.send(CHANNEL_EVENT, {
-        sessionId,
-        event,
-        snapshot: session?.snapshot,
-      })
+      win.webContents.send(CHANNEL_EVENT, payload)
     } else {
-      log.warn(`[agent-runtime:${sessionId}] No window to send event:`, event.type)
+      log.warn(`[agent-runtime:${payload.sessionId}] No window to send event:`, label)
     }
   }
 
@@ -2992,6 +3077,9 @@ export class AgentRuntimeService {
     log.info('[agent-runtime] Destroying all sessions')
     for (const session of this.sessions.values()) {
       this.clearSessionTimeout(session)
+      clearTimeout(session.streamFlushTimer)
+      session.streamFlushTimer = undefined
+      session.pendingStreamEvent = undefined
       session.abortController.abort()
     }
     this.sessions.clear()
