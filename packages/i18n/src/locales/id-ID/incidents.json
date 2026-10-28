@@ -249,5 +249,8 @@
   "incidents.integrationWrites.customerReport.unverified": "Diisi oleh engineer, tidak diverifikasi",
   "incidents.integrationWrites.customerReport.notProvided": "Tidak diisi",
   "incidents.integrationWrites.customerReport.subject": "Subjek",
-  "incidents.integrationRecovery.refusedBeforeWrite": "iTop menolak permintaan ini sebelum menulis apa pun. Periksa koneksi dan izinnya, lalu ajukan perubahan lagi."
+  "incidents.integrationRecovery.refusedBeforeWrite": "iTop menolak permintaan ini sebelum menulis apa pun. Periksa koneksi dan izinnya, lalu ajukan perubahan lagi.",
+  "incidents.integrationWrites.restricted": "Tindakan terbatas: memerlukan pemberi persetujuan terdaftar dan referensi perubahan atau tiket",
+  "incidents.integrationWrites.approvalReference": "Referensi perubahan atau tiket (3–200 karakter)",
+  "incidents.integrationWrites.policyDenied": "Dilarang oleh kebijakan"
 }
