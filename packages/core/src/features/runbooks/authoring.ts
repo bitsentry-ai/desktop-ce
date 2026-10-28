@@ -855,6 +855,7 @@ function validateLlmActionFields(action: RunbookActionRecord, errors: string[]):
   validateRequiredActionField(action.prompt, `LLM action "${action.title}" is missing a prompt.`, errors);
   const model = normalizeString(action.llmModel);
   if (model.length === 0 || /^\{\{[^{}]+\}\}$/.test(model)) return;
+  if (action.llmProviderKey === "openai_compatible") return;
 
   const resolved = action.llmProviderKey === undefined
     ? resolveCatalogModel(model)
