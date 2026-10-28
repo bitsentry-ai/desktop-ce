@@ -45,6 +45,13 @@ import {
 } from "../ui/alert-dialog";
 import { useFormatters, useTranslation } from "@bitsentry-ce/i18n";
 import { useNavbarSubNavigation } from "./navigation-context";
+import { useShallow } from "zustand/react/shallow";
+import { useIncidentListStore } from "../investigation/incidents/incidentListStore";
+import { loadDesktopIncidentList, refreshDesktopIncidentPreviews } from "../investigation/incidents/incidentListPersistence";
+import { hasDesktopIncidentsApi, saveDesktopIncidentThread } from "../investigation/incidents/incidentDesktopApi";
+import { normalizeIncidents } from "../investigation/incidents/incidentNormalize";
+import { loadIncidents } from "../investigation/incidents/incidentStorage";
+import type { IncidentThread } from "../investigation/incidents/types";
 import {
   loadRunbookNavItems,
   readLocalRunbookNavItems,
@@ -151,9 +158,34 @@ type IncidentNavItem = {
   id: string;
   title: string;
   createdAt: string;
-  archived?: boolean;
-  lastMessagePreview?: string | null;
+  archived: boolean;
+  lastMessagePreview: string | null;
 };
+
+// The last nav item per thread, reused while the fields the navbar shows are unchanged.
+const incidentNavItemCache = new Map<string, IncidentNavItem>();
+
+function toIncidentNavItem(incident: IncidentThread): IncidentNavItem {
+  const cached = incidentNavItemCache.get(incident.id);
+  const archived = incident.archived === true;
+  const lastMessagePreview = incident.lastMessagePreview ?? null;
+  if (
+    cached?.title === incident.title &&
+    cached.createdAt === incident.createdAt &&
+    cached.archived === archived &&
+    cached.lastMessagePreview === lastMessagePreview
+  ) {
+    return cached;
+  }
+  const item = { id: incident.id, title: incident.title, createdAt: incident.createdAt, archived, lastMessagePreview };
+  incidentNavItemCache.set(incident.id, item);
+  return item;
+}
+
+/** Nav items from the shared list; with `useShallow` the navbar renders only when a shown field changes. */
+function selectIncidentNavItems(state: { incidents: IncidentThread[] }): IncidentNavItem[] {
+  return state.incidents.map(toIncidentNavItem);
+}
 
 type UnknownRecord = Record<string, unknown>;
 
@@ -272,49 +304,6 @@ function readDebugUpdateIslandState(): "available" | "downloaded" | null {
   return null;
 }
 
-function normalizeIncidentNavItems(items: unknown[]): IncidentNavItem[] {
-  return items
-    .map((item): IncidentNavItem | null => {
-      if (!isRecord(item)) return null;
-      const record = item;
-      if (typeof record.id !== "string" || record.id.length === 0) return null;
-
-      let title = "New Incident";
-      if (typeof record.title === "string" && record.title.trim().length > 0) {
-        title = record.title.trim();
-      }
-
-      let createdAt = new Date().toISOString();
-      if (typeof record.createdAt === "string" && record.createdAt.length > 0) {
-        createdAt = record.createdAt;
-      }
-
-      let archived: boolean | undefined;
-      if (
-        record.archived === true ||
-        (typeof record.archivedAt === "string" && record.archivedAt.length > 0)
-      ) {
-        archived = true;
-      }
-
-      let lastMessagePreview: string | null = null;
-      if (typeof record.lastMessagePreview === "string") {
-        lastMessagePreview = normalizeIncidentPreview(
-          record.lastMessagePreview,
-        );
-      }
-
-      return {
-        id: record.id,
-        title,
-        createdAt,
-        lastMessagePreview,
-        archived,
-      };
-    })
-    .filter((item): item is IncidentNavItem => item !== null);
-}
-
 /** Keeps the current list when a reload reads the same rows, so the navbar does not re-render. */
 function keepIfSameNavItems<T extends object>(next: T[]): (prev: T[]) => T[] {
   return (prev) => {
@@ -328,54 +317,29 @@ function keepIfSameNavItems<T extends object>(next: T[]): (prev: T[]) => T[] {
   };
 }
 
-function readLocalIncidentNavItems(): IncidentNavItem[] {
-  try {
-    const raw = localStorage.getItem("bitsentry_incidents");
-    if (raw === null) return [];
-    const parsed: unknown = JSON.parse(raw);
-    if (!Array.isArray(parsed)) return [];
-    return normalizeIncidentNavItems(parsed);
-  } catch {
-    return [];
-  }
-}
-
 type NavbarServices = ReturnType<typeof useBitsentryServices>;
-type SetIncidentNavItems = React.Dispatch<React.SetStateAction<IncidentNavItem[]>>;
 
-async function loadWebIncidentNavItems(
+/** Web mode: the incidents page owns the list on its own route; elsewhere the navbar loads it into the store. */
+async function loadWebIncidentList(
   services: NavbarServices,
   currentPath: string,
-  setItems: SetIncidentNavItems,
   isCancelled: () => boolean,
 ): Promise<void> {
+  const { loaded, setAll } = useIncidentListStore.getState();
+  if (currentPath.startsWith("/incidents")) {
+    if (!loaded) setAll(loadIncidents());
+    return;
+  }
   const incidents = services.incidents;
-  if (currentPath.startsWith("/incidents") || incidents === undefined) {
-    setItems(readLocalIncidentNavItems());
+  if (incidents === undefined) {
+    setAll(loadIncidents());
     return;
   }
   try {
     const response = await incidents.listThreads({ limit: 100, includeArchived: true });
-    if (!isCancelled()) setItems(normalizeIncidentNavItems(response.threads));
+    if (!isCancelled()) setAll(normalizeIncidents(response.threads));
   } catch {
-    if (!isCancelled()) setItems(readLocalIncidentNavItems());
-  }
-}
-
-async function loadDesktopIncidentNavItems(
-  setItems: SetIncidentNavItems,
-  isCancelled: () => boolean,
-): Promise<void> {
-  try {
-    const incidentsApi = getDesktopApi()?.incidents;
-    if (incidentsApi === undefined) {
-      setItems(readLocalIncidentNavItems());
-      return;
-    }
-    const items = normalizeIncidentNavItems(await incidentsApi.list());
-    if (!isCancelled()) setItems(keepIfSameNavItems(items));
-  } catch {
-    if (!isCancelled()) setItems(readLocalIncidentNavItems());
+    if (!isCancelled()) setAll(loadIncidents());
   }
 }
 
@@ -434,6 +398,15 @@ function normalizeResultNavItems(items: unknown[]): ResultNavItem[] {
     .filter((item): item is ResultNavItem => item !== null);
 }
 
+/** Archives the thread in the web mode local-storage list, keeping a first archive time. */
+function archiveLocalIncident(incidentId: string, archivedAt: string): void {
+  const raw = localStorage.getItem("bitsentry_incidents");
+  const parsed: unknown = raw === null ? [] : JSON.parse(raw);
+  const all: unknown[] = Array.isArray(parsed) ? parsed : [];
+  const updated = all.map((incident) => archiveIncidentRecord(incident, incidentId, archivedAt));
+  localStorage.setItem("bitsentry_incidents", JSON.stringify(updated));
+}
+
 function archiveIncidentRecord(
   value: unknown,
   incidentId: string,
@@ -452,17 +425,6 @@ function archiveIncidentRecord(
     archived: true,
     archivedAt: nextArchivedAt,
   };
-}
-
-/**
- * Archives one thread by patching only its archive time, so a concurrent rename
- * or state change is kept. Returns false without the desktop incidents API.
- */
-async function archiveDesktopIncident(incidentId: string, archivedAt: string): Promise<boolean> {
-  const incidentsApi = getDesktopApi()?.incidents;
-  if (incidentsApi === undefined) return false;
-  await incidentsApi.saveThread({ id: incidentId, archivedAt });
-  return true;
 }
 
 function readLocalResultNavItems(): ResultNavItem[] {
@@ -766,45 +728,27 @@ const Navbar = ({
   }, [deleteConfirmText, location.search, navigate, runbookToDelete, runbooks]);
 
   // ── Incidents ────────────────────────────────────────────────────────────
-  const [investigationIncidents, setInvestigationIncidents] = React.useState<
-    IncidentNavItem[]
-  >([]);
+  const investigationIncidents = useIncidentListStore(useShallow(selectIncidentNavItems));
 
   const incidentsAccordionOpen = openAccordions.has("/incidents");
   React.useEffect(() => {
     if (isDesktop || !incidentsAccordionOpen) return;
     let cancelled = false;
-    loadWebIncidentNavItems(services, currentPath, setInvestigationIncidents, () => cancelled).catch(() => {});
+    loadWebIncidentList(services, currentPath, () => cancelled).catch(() => {});
     return () => {
       cancelled = true;
     };
   }, [currentPath, incidentsAccordionOpen, services]);
 
-  // Desktop re-reads the list from main only when a thread's metadata changed.
+  // The navbar is global, so it loads the desktop list until a load from main succeeds. After that, opening the
+  // accordion refreshes previews of turns that settled while no incidents page was listening.
   React.useEffect(() => {
-    if (!isDesktop || !incidentsAccordionOpen) return;
-    let cancelled = false;
-    const reload = () => {
-      loadDesktopIncidentNavItems(setInvestigationIncidents, () => cancelled).catch(() => {});
-    };
-    reload();
-    window.addEventListener("bitsentry:incidents-updated", reload);
-    return () => {
-      cancelled = true;
-      window.removeEventListener("bitsentry:incidents-updated", reload);
-    };
+    if (!isDesktop || !incidentsAccordionOpen || !hasDesktopIncidentsApi()) return;
+    const load = useIncidentListStore.getState().loadedFrom === "desktop" ? refreshDesktopIncidentPreviews() : loadDesktopIncidentList();
+    load.catch((error: unknown) => {
+      console.error("Failed to load incidents for the navbar:", error);
+    });
   }, [incidentsAccordionOpen]);
-
-  React.useEffect(() => {
-    if (isDesktop) return;
-    const reload = () => {
-      setInvestigationIncidents(keepIfSameNavItems(readLocalIncidentNavItems()));
-    };
-    window.addEventListener("bitsentry:incidents-updated", reload);
-    return () => {
-      window.removeEventListener("bitsentry:incidents-updated", reload);
-    };
-  }, []);
 
   const handleArchiveIncidentNavItem = React.useCallback(
     async (incidentId: string) => {
@@ -812,63 +756,21 @@ const Navbar = ({
 
       if (services.incidents) {
         await services.incidents.archiveThread(incidentId);
-        const raw = localStorage.getItem("bitsentry_incidents");
-        let all: unknown[] = [];
-        if (raw !== null) {
-          const parsed: unknown = JSON.parse(raw);
-          if (Array.isArray(parsed)) {
-            all = parsed;
-          }
-        }
-        const updated = all.map((incident) =>
-          archiveIncidentRecord(incident, incidentId, archivedAt),
-        );
-        localStorage.setItem("bitsentry_incidents", JSON.stringify(updated));
-        setInvestigationIncidents((prev) =>
-          prev.map((incident) => {
-            if (incident.id !== incidentId) return incident;
-            return { ...incident, archived: true };
-          }),
-        );
-        window.dispatchEvent(
-          new CustomEvent("bitsentry:incidents-updated", {
-            detail: { action: "archive", incidentId, archivedAt },
-          }),
-        );
+        archiveLocalIncident(incidentId, archivedAt);
+      } else if (isDesktop && hasDesktopIncidentsApi()) {
+        // Once main's list is loaded, the store subscription saves the archive. Only the archive time is
+        // patched, so a concurrent rename or state change is kept.
+        if (useIncidentListStore.getState().loadedFrom !== "desktop") await saveDesktopIncidentThread({ id: incidentId, archivedAt });
+      } else if (!isDesktop) {
+        archiveLocalIncident(incidentId, archivedAt);
+      } else {
         return;
       }
-
-      if (isDesktop) {
-        if (!(await archiveDesktopIncident(incidentId, archivedAt))) return;
-        setInvestigationIncidents((prev) =>
-          prev.map((incident) => (incident.id === incidentId ? { ...incident, archived: true } : incident)),
-        );
-      } else {
-        const raw = localStorage.getItem("bitsentry_incidents");
-        let all: unknown[] = [];
-        if (raw !== null) {
-          const parsed: unknown = JSON.parse(raw);
-          if (Array.isArray(parsed)) {
-            all = parsed;
-          }
-        }
-        const updated = all.map((incident) =>
-          archiveIncidentRecord(incident, incidentId, archivedAt),
-        );
-        localStorage.setItem("bitsentry_incidents", JSON.stringify(updated));
-        setInvestigationIncidents(normalizeIncidentNavItems(updated));
-      }
-
-      window.dispatchEvent(
-        new CustomEvent("bitsentry:incidents-updated", {
-          detail: { action: "archive", incidentId, archivedAt },
-        }),
-      );
+      useIncidentListStore.getState().archive(incidentId, archivedAt);
     },
     [services.incidents],
   );
 
-  // ── Runbooks ─────────────────────────────────────────────────────────────
   const [runbookItems, setRunbookItems] = React.useState<RunbookNavItem[]>([]);
 
   React.useEffect(() => {

@@ -85,6 +85,15 @@ export async function loadDesktopIncidents(): Promise<IncidentThread[]> {
   return normalizeIncidents(await incidentsApi.list());
 }
 
+/** Each desktop thread's preview and when main last saved it, in ms (0 when unknown). */
+export async function loadDesktopIncidentPreviews(): Promise<Array<{ id: string; lastMessagePreview: string | null; updatedAt: number }>> {
+  const rows = (await getDesktopApi()?.incidents?.list()) ?? [];
+  return normalizeIncidents(rows).map((thread, index) => {
+    const updatedAt = Date.parse(getString(asRecord(rows[index]) ?? {}, "updatedAt") ?? "");
+    return { id: thread.id, lastMessagePreview: thread.lastMessagePreview ?? null, updatedAt: Number.isNaN(updatedAt) ? 0 : updatedAt };
+  });
+}
+
 export async function loadDesktopIncidentMessages(threadId: string): Promise<ChatMessage[]> {
   const incidentsApi = getDesktopApi()?.incidents;
   if (incidentsApi === undefined) return [];
