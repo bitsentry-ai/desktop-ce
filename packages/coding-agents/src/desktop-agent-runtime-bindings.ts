@@ -2,6 +2,7 @@ import {
   AgentRuntimeService as SharedAgentRuntimeService,
   type AgentRuntimeDebugHooks,
   type AgentRuntimeIncidentHistoryLoader,
+  type AgentRuntimeIncidentHistorySaver,
   type AgentRuntimeLlmAdapter,
   type AgentRuntimeRunbookGateway,
   type AgentRuntimeRunbookStore,
@@ -22,6 +23,7 @@ export function createDesktopAgentRuntimeBindings(
     pluginRuntime?: DesktopPluginRuntimeService,
     authoringProposalStore?: RunbookAuthoringProposalPersistence,
     loadIncidentMessages?: AgentRuntimeIncidentHistoryLoader,
+    saveIncidentMessages?: AgentRuntimeIncidentHistorySaver,
   ) => SharedAgentRuntimeService
 } {
   return {
@@ -35,6 +37,7 @@ export function createDesktopAgentRuntimeBindings(
         pluginRuntime?: DesktopPluginRuntimeService,
         authoringProposalStore?: RunbookAuthoringProposalPersistence,
         loadIncidentMessages?: AgentRuntimeIncidentHistoryLoader,
+        saveIncidentMessages?: AgentRuntimeIncidentHistorySaver,
       ) {
         super(
           windowGetter,
@@ -46,6 +49,7 @@ export function createDesktopAgentRuntimeBindings(
           pluginRuntime,
           authoringProposalStore,
           loadIncidentMessages,
+          saveIncidentMessages,
         )
       }
     },

@@ -58,6 +58,24 @@ interface UpdaterState {
 
 type IpcListener = (event: unknown, payload: unknown) => void
 
+type IncidentThreadMetadata = {
+  id: string
+  title: string
+  createdAt: string
+  prompt: string
+  state: string
+  sessionId?: string
+  archived?: boolean
+  archivedAt?: string
+  lastMessagePreview?: string | null
+}
+
+/** Only the fields present are written; `archivedAt: null` unarchives. */
+type IncidentThreadPatch = { id: string } & Partial<Omit<IncidentThreadMetadata, 'id' | 'archivedAt' | 'sessionId'>> & {
+  archivedAt?: string | null
+  sessionId?: string | null
+}
+
 export interface DesktopPreloadBridgePort {
   platform: string
   versions: {
@@ -525,52 +543,17 @@ export function createDesktopBitsentryApi({
       },
     },
     incidents: {
-      getState: async (): Promise<{
-        incidents: Array<{
-          id: string
-          title: string
-          createdAt: string
-          prompt: string
-          state: string
-          archived?: boolean
-          archivedAt?: string
-          lastMessagePreview?: string | null
-        }>
-        incidentMessages: Record<string, unknown[]>
-      }> => {
-        return bridge.invoke('incidents:getState', {}) as Promise<{
-          incidents: Array<{
-            id: string
-            title: string
-            createdAt: string
-            prompt: string
-            state: string
-            archived?: boolean
-            archivedAt?: string
-            lastMessagePreview?: string | null
-          }>
-          incidentMessages: Record<string, unknown[]>
-        }>
+      list: async (): Promise<IncidentThreadMetadata[]> => {
+        return bridge.invoke('incidents:list', {}) as Promise<IncidentThreadMetadata[]>
       },
-      replaceState: async (
-        snapshot: {
-          incidents: Array<{
-            id: string
-            title: string
-            createdAt: string
-            prompt: string
-            state: string
-            archived?: boolean
-            archivedAt?: string
-            lastMessagePreview?: string | null
-          }>
-          incidentMessages: Record<string, unknown[]>
-        },
-      ): Promise<{ ok: true; count: number }> => {
-        return bridge.invoke('incidents:replaceState', snapshot) as Promise<{
-          ok: true
-          count: number
-        }>
+      getThreadMessages: async (threadId: string): Promise<unknown[]> => {
+        return bridge.invoke('incidents:getThreadMessages', { threadId }) as Promise<unknown[]>
+      },
+      saveThread: async (thread: IncidentThreadPatch): Promise<{ ok: true }> => {
+        return bridge.invoke('incidents:saveThread', { thread }) as Promise<{ ok: true }>
+      },
+      appendThreadMessages: async (threadId: string, messages: unknown[]): Promise<{ ok: true }> => {
+        return bridge.invoke('incidents:appendThreadMessages', { threadId, messages }) as Promise<{ ok: true }>
       },
     },
     updater: {
