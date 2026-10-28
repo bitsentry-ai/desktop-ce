@@ -4,7 +4,9 @@
  * Toolbar layout:
  *   [ModelPicker v] [Traits v] [Mode] [Access v]           [Send/Stop]
  *
- * Keyboard: Enter sends (IME-guarded), Shift+Enter = newline.
+ * Keyboard: Enter sends (IME-guarded), Shift+Enter = newline. While the agent
+ * runs, Enter queues and Ctrl/⌘+Enter steers (T3 Code's defaults); Alt+↑ edits
+ * the last queued message and Ctrl/⌘+Shift+Enter steers the next one.
  * Attachments: plus icon left of textarea for images/files.
  */
 
@@ -57,6 +59,9 @@ import { ModeToggle } from "./ModeToggle";
 import { AccessSelector } from "./AccessSelector";
 import { SendButton } from "./SendButton";
 import { ContextIndicator } from "./ContextIndicator";
+import { QueuedMessagesPanel, type ComposerQueue } from "./QueuedMessagesPanel";
+import { resolveComposerDispatchMode } from "./composerDispatch";
+import type { AgentMessageDelivery } from "../services/contracts";
 
 export interface ComposerProps {
   prompt: string;
@@ -65,8 +70,14 @@ export interface ComposerProps {
     accessLevel?: AccessLevel;
     interactionMode?: InteractionMode;
     traitValues?: Record<string, string | boolean>;
+    /** Set while the agent runs: queue after the turn, or steer into it. */
+    delivery?: AgentMessageDelivery;
   }) => void;
   onCancel: () => void;
+  /** The follow-ups waiting for the running turn. While one is being edited, sending saves the edit. */
+  queue?: ComposerQueue;
+  /** Releases a queue that a stop, timeout or failure paused. */
+  onResumeQueue?: () => void;
   isProcessing: boolean;
   isBlocked: boolean;
   isArchived: boolean;
@@ -141,6 +152,24 @@ function QuestionSubmitButton({ question }: { question: ComposerCustomerReportIn
   return <QuestionPrimaryButton label={label} run={question.submit} disabled={!question.canSubmit} submitting={question.submitting} />;
 }
 
+/** Alt+↑ edits the last queued message; Ctrl/⌘+Shift+Enter steers the next one. True when the key was handled. */
+function handleQueueShortcut(e: React.KeyboardEvent<HTMLTextAreaElement>, queue: ComposerQueue): boolean {
+  const queued = queue.messages.filter((message) => message.steer !== true);
+  if (queued.length === 0) return false;
+  const caretAtStart = e.currentTarget.selectionStart === 0 && e.currentTarget.selectionEnd === 0;
+  if (e.key === "ArrowUp" && e.altKey && caretAtStart && queue.editingId === null) {
+    e.preventDefault();
+    queue.onEdit(queued[queued.length - 1]);
+    return true;
+  }
+  if (e.key === "Enter" && e.shiftKey && (e.metaKey || e.ctrlKey) && queue.canSteer) {
+    e.preventDefault();
+    void queue.onSteer(queued[0].id);
+    return true;
+  }
+  return false;
+}
+
 function composerCanSend(isBlocked: boolean, prompt: string, attachmentCount: number): boolean {
   if (isBlocked) return false;
   return prompt.trim().length > 0 || attachmentCount > 0;
@@ -193,6 +222,8 @@ export function Composer({
   onAccessLevelChange,
   customerReportIntake,
   remediationFlow,
+  queue,
+  onResumeQueue,
 }: ComposerProps) {
   const { t } = useTranslation();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -296,6 +327,20 @@ export function Composer({
     return () => { document.removeEventListener("mousedown", handleClickOutside); };
   }, [attachMenuOpen]);
 
+  const isEditingQueuedMessage = queue?.editingId != null;
+  const canSteer = queue?.canSteer === true;
+  const submit = useCallback(
+    (alternate: boolean) => {
+      let delivery: AgentMessageDelivery | undefined;
+      if (isProcessing && !isEditingQueuedMessage) {
+        const mode = resolveComposerDispatchMode({ running: true, canSteer, alternateModifier: alternate });
+        delivery = mode === "steer" ? "steer" : "queue";
+      }
+      onSend({ accessLevel, interactionMode, traitValues, delivery });
+    },
+    [onSend, isProcessing, isEditingQueuedMessage, canSteer, accessLevel, interactionMode, traitValues],
+  );
+
   // ── Keyboard: Enter sends, Shift+Enter newline ─────────────────────────────
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -304,7 +349,10 @@ export function Composer({
         e.preventDefault();
         return;
       }
-      if (e.key !== "Enter" || e.shiftKey || e.nativeEvent.isComposing) return;
+      if (e.nativeEvent.isComposing) return;
+      const modifier = e.metaKey || e.ctrlKey;
+      if (queue !== undefined && question === undefined && remediation === undefined && handleQueueShortcut(e, queue)) return;
+      if (e.key !== "Enter" || e.shiftKey) return;
       if (question !== undefined) {
         e.preventDefault();
         if (question.canSubmit) question.submit();
@@ -315,12 +363,12 @@ export function Composer({
         if (remediation.primary !== undefined && remediation.primary.disabled !== true && !remediation.submitting) remediation.primary.run();
         return;
       }
-      if (!isProcessing && canSend) {
+      if (canSend) {
         e.preventDefault();
-        onSend({ accessLevel, interactionMode, traitValues });
+        submit(modifier);
       }
     },
-    [onSend, isProcessing, canSend, accessLevel, interactionMode, traitValues, question, remediation],
+    [submit, canSend, question, remediation, queue],
   );
 
   const handleTraitChange = useCallback((id: string, value: string | boolean) => {
@@ -330,7 +378,7 @@ export function Composer({
   if (isArchived) return null;
 
   const placeholderText = composerPlaceholder(t, isBlocked, threadStatus, question, remediation, placeholder);
-  const textBinding = composerTextBinding(question, remediation, prompt, onPromptChange, onPaste, isProcessing || isBlocked);
+  const textBinding = composerTextBinding(question, remediation, prompt, onPromptChange, onPaste, isBlocked);
 
   let accessSelector: ReactNode = null;
   const shouldShowAccessSelector = selectedProviderKey !== null;
@@ -394,11 +442,12 @@ export function Composer({
           event.currentTarget.value = "";
         }}
       />
+      {queue !== undefined && question === undefined && remediation === undefined && <QueuedMessagesPanel queue={queue} />}
       <div
         data-tour="incidents-composer"
         className={cn(
-          "group rounded-[20px] border bg-card transition-[border-color,box-shadow] duration-200",
-          !isProcessing && !isBlocked && !asking && remediation === undefined && "focus-within:border-ring/45",
+          "group relative z-10 rounded-[20px] border bg-card transition-[border-color,box-shadow] duration-200",
+          !isBlocked && !asking && remediation === undefined && "focus-within:border-ring/45",
           (asking || remediation !== undefined) && "border-violet-300 shadow-[0_0_0_3px_rgb(124_58_237_/_0.08)] dark:border-violet-500/40",
           isBlocked && "opacity-60",
         )}
@@ -472,7 +521,7 @@ export function Composer({
                 <button
                   type="button"
                   onClick={() => { setAttachMenuOpen((v) => !v); }}
-                  disabled={isProcessing || isBlocked}
+                  disabled={isBlocked}
                   className={cn(
                     "flex size-8 items-center justify-center rounded-full text-muted-foreground transition-colors",
                     "hover:bg-accent hover:text-foreground/80 disabled:cursor-not-allowed disabled:opacity-50",
@@ -586,10 +635,14 @@ export function Composer({
             {remediation !== undefined && <RemediationFlowButtons flow={remediation} />}
             {question === undefined && remediation === undefined && (
               <SendButton
-                isProcessing={isProcessing}
+                isRunning={isProcessing}
                 canSend={canSend}
-                onSend={() => { onSend({ accessLevel, interactionMode, traitValues }); }}
-                onCancel={onCancel}
+                canSteer={canSteer}
+                canResume={!isProcessing && queue?.held === true && queue.messages.length > 0}
+                isEditingQueuedMessage={isEditingQueuedMessage}
+                onSubmit={submit}
+                onResume={() => { onResumeQueue?.(); }}
+                onInterrupt={onCancel}
               />
             )}
           </div>
