@@ -7,6 +7,7 @@ import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
 import { buttonVariants } from "../ui/button.variants";
 import { KnowledgeExecutionPanel } from "./KnowledgeExecutionPanel";
+import { useNow } from "../hooks/useNow";
 import { relativeTime } from "./relative-time";
 export interface IntegrationResourcesPort { refresh?(resource: IntegrationResource): Promise<unknown>; select?(resource: IntegrationResource, selected: boolean): Promise<unknown>; list(threadId: string): Promise<IntegrationResource[]>; }
 
@@ -76,16 +77,6 @@ function documentView(row: IntegrationResource, t: Translate): CardView {
   };
 }
 
-/** The current time, moved on every `intervalMs`, so a countdown keeps running between refreshes. */
-function useNow(intervalMs: number): number {
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    const id = setInterval(() => { setNow(Date.now()); }, intervalMs);
-    return () => { clearInterval(id); };
-  }, [intervalMs]);
-  return now;
-}
-
 /** A deadline time: the clock time today, with the date on any other day. */
 export function deadlineTime(iso: string, now: number): string {
   const date = new Date(iso);
@@ -136,12 +127,13 @@ function TicketDeadlines({ row }: { row: IntegrationResource }) {
 
 function ResourceCard({ row, disabled, onToggle, onRefresh }: { row: IntegrationResource; disabled: boolean; onToggle?: (selected: boolean) => void; onRefresh?: () => void }) {
   const { t } = useTranslation();
+  const now = useNow();
   const selected = row.selected === true;
   const Icon = row.resourceType === "ticket" ? Ticket : FileText;
   const { referenceLine, badge, facts, openLabel } = row.resourceType === "ticket" ? ticketView(row, t) : documentView(row, t);
   const shownFacts = facts.filter(([, value]) => value !== "");
   const deleted = row.state.deleted === true;
-  const stale = !deleted && Date.now() - Date.parse(row.observedAt) > STALE_AFTER_MS;
+  const stale = !deleted && now - Date.parse(row.observedAt) > STALE_AFTER_MS;
   return <article aria-label={row.title} className={cn("flex min-w-0 flex-col gap-2 rounded-2xl border border-border bg-card p-3 transition-colors hover:border-primary/40", selected && "bg-primary/5 ring-1 ring-primary")}>
     <div className="flex items-center gap-2 text-xs text-muted-foreground">
       <Icon className="size-4 shrink-0" aria-hidden="true" />
@@ -161,7 +153,7 @@ function ResourceCard({ row, disabled, onToggle, onRefresh }: { row: Integration
     {shownFacts.length > 0 && <dl className="grid grid-cols-2 gap-x-3 gap-y-1">{shownFacts.map(([label, value]) => <Fact key={label} label={label}>{value}</Fact>)}</dl>}
     {row.resourceType === "ticket" && <TicketDeadlines row={row} />}
     <div className="mt-auto flex items-center justify-between gap-2 border-t border-border pt-2">
-      <time className="min-w-0 truncate text-xs text-muted-foreground" dateTime={row.observedAt} title={new Date(row.observedAt).toLocaleString()}>{t("incidents.integrationResources.observedAt", { time: relativeTime(row.observedAt) })}</time>
+      <time className="min-w-0 truncate text-xs text-muted-foreground" dateTime={row.observedAt} title={new Date(row.observedAt).toLocaleString()}>{t("incidents.integrationResources.observedAt", { time: relativeTime(row.observedAt, now) })}</time>
       <div className="flex shrink-0 items-center gap-1.5">
       {onRefresh !== undefined && <Button type="button" size="sm" variant="ghost" disabled={disabled} onClick={onRefresh} title={t("incidents.integrationRecovery.refresh")}>
         <RefreshCw aria-hidden="true" /><span className="sr-only">{t("incidents.integrationRecovery.refresh")}</span>

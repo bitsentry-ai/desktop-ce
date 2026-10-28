@@ -50,6 +50,7 @@ import { useIncidentListStore } from "../investigation/incidents/incidentListSto
 import { loadDesktopIncidentList, refreshDesktopIncidentPreviews } from "../investigation/incidents/incidentListPersistence";
 import { hasDesktopIncidentsApi, saveDesktopIncidentThread } from "../investigation/incidents/incidentDesktopApi";
 import { normalizeIncidents } from "../investigation/incidents/incidentNormalize";
+import { useNow } from "../hooks/useNow";
 import { loadIncidents } from "../investigation/incidents/incidentStorage";
 import type { IncidentThread } from "../investigation/incidents/types";
 import {
@@ -84,6 +85,17 @@ const navbarAccordionState: {
   open: Set<string>;
   autoOpenedPath: string | null;
 } = { open: new Set(), autoOpenedPath: null };
+
+function toggleNavbarAccordion(key: string): Set<string> {
+  const next = new Set(navbarAccordionState.open);
+  if (next.has(key)) {
+    next.delete(key);
+  } else {
+    next.add(key);
+  }
+  navbarAccordionState.open = next;
+  return next;
+}
 
 const ACCORDION_PAGES = [
   "/app-settings",
@@ -238,6 +250,7 @@ function IncidentSubNavigation({
   t: ReturnType<typeof useTranslation>["t"];
   onArchive: (incidentId: string, shouldNavigate: boolean) => Promise<void>;
 }) {
+  const now = useNow();
   const currentId = new URLSearchParams(search).get("id");
   const active = incidents.filter((incident) => incident.archived !== true);
   const shown = active.slice(0, 7);
@@ -249,7 +262,7 @@ function IncidentSubNavigation({
         <Link to={`/incidents?id=${incident.id}`} className={cn("block px-3 py-1.5 pr-8 text-xs text-muted-foreground hover:text-foreground hover:bg-neutral-100/50 dark:hover:bg-white/10 rounded-md transition-colors", currentId === incident.id && "text-foreground font-medium bg-neutral-100/50 dark:bg-white/10")}>
           <div className="truncate">{incident.title}</div>
           {preview !== null && <div className="truncate text-[10px] text-muted-foreground/60">{translateIncidentPreview(preview, t)}</div>}
-          <div className="text-[10px] text-muted-foreground/50">{formatters.relativeTime(incident.createdAt)}</div>
+          <div className="text-[10px] text-muted-foreground/50">{formatters.relativeTime(incident.createdAt, now)}</div>
         </Link>
         <button onClick={(event) => { event.preventDefault(); event.stopPropagation(); onArchive(incident.id, currentId === incident.id).catch(console.error); }} className="absolute right-1 top-1/2 -translate-y-1/2 hidden group-hover:flex size-5 items-center justify-center rounded text-muted-foreground hover:text-foreground hover:bg-muted transition-colors" title={t("common.navbar.archiveIncident")}>
           <Archive size={11} />
@@ -627,15 +640,17 @@ function UpdateIslandButton() {
     if (api === undefined) return;
 
     setBusy(true);
-    try {
+    // A promise chain, not try/finally, which the React Compiler can't lower.
+    const runUpdate = async () => {
       if (isDownloaded) {
         await api.install();
       } else {
         await api.download();
       }
-    } finally {
+    };
+    await runUpdate().finally(() => {
       setBusy(false);
-    }
+    });
   };
 
   return (
@@ -675,6 +690,7 @@ const Navbar = ({
 }: NavbarProps) => {
   const { t } = useTranslation();
   const formatters = useFormatters();
+  const now = useNow();
   const location = useLocation();
   const navigate = useNavigate();
   const currentPath = location.pathname;
@@ -699,6 +715,7 @@ const Navbar = ({
   } | null>(null);
   const [deleteConfirmText, setDeleteConfirmText] = React.useState("");
   const [isDeletingRunbook, setIsDeletingRunbook] = React.useState(false);
+  const [runbookItems, setRunbookItems] = React.useState<RunbookNavItem[]>([]);
 
   const handleConfirmDeleteRunbook = React.useCallback(async () => {
     if (runbookToDelete === null) return;
@@ -722,9 +739,9 @@ const Navbar = ({
       setDeleteConfirmText("");
     } catch (error) {
       console.error("Failed to delete runbook from navbar:", error);
-    } finally {
-      setIsDeletingRunbook(false);
     }
+    // No finally (the React Compiler can't lower one); the catch above never throws.
+    setIsDeletingRunbook(false);
   }, [deleteConfirmText, location.search, navigate, runbookToDelete, runbooks]);
 
   // ── Incidents ────────────────────────────────────────────────────────────
@@ -770,8 +787,6 @@ const Navbar = ({
     },
     [services.incidents],
   );
-
-  const [runbookItems, setRunbookItems] = React.useState<RunbookNavItem[]>([]);
 
   React.useEffect(() => {
     if (!openAccordions.has("/runbooks")) return;
@@ -858,14 +873,7 @@ const Navbar = ({
 
   // ── Accordion helpers ─────────────────────────────────────────────────────
   const toggleAccordion = (key: string) => {
-    const next = new Set(navbarAccordionState.open);
-    if (next.has(key)) {
-      next.delete(key);
-    } else {
-      next.add(key);
-    }
-    navbarAccordionState.open = next;
-    setOpenAccordions(next);
+    setOpenAccordions(toggleNavbarAccordion(key));
   };
 
   React.useEffect(() => {
@@ -1065,7 +1073,7 @@ const Navbar = ({
                                 {result.runbookTitle}
                               </div>
                               <div className="text-[10px] text-muted-foreground/60">
-                                {formatters.relativeTime(result.startedAt)}
+                                {formatters.relativeTime(result.startedAt, now)}
                               </div>
                             </div>
                           </Link>

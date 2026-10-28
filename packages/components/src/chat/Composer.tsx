@@ -11,6 +11,7 @@
 import {
   useCallback,
   useEffect,
+  useEffectEvent,
   useMemo,
   useRef,
   useState,
@@ -250,20 +251,24 @@ export function Composer({
 
   // Reset traitValues to new model's defaults when selectedModelCapability changes
   const prevCapabilityRef = useRef(selectedModelCapability);
-  const thinkingEnabledRef = useRef(thinkingEnabled);
-  thinkingEnabledRef.current = thinkingEnabled;
+  const seedTraitValues = useEffectEvent((capability: typeof selectedModelCapability) => {
+    setTraitValues(getSeededTraitValues(capability, thinkingEnabled));
+  });
   useEffect(() => {
     if (prevCapabilityRef.current === selectedModelCapability) return;
     prevCapabilityRef.current = selectedModelCapability;
-    setTraitValues(getSeededTraitValues(selectedModelCapability, thinkingEnabledRef.current));
+    seedTraitValues(selectedModelCapability);
   }, [selectedModelCapability]);
 
   // traitValues.thinking → onThinkingToggle (user changes via TraitsDropdown)
-  useEffect(() => {
-    if (traitValues.thinking !== undefined && traitValues.thinking !== thinkingEnabled) {
+  const syncThinkingToggle = useEffectEvent((thinking: typeof traitValues.thinking) => {
+    if (thinking !== undefined && thinking !== thinkingEnabled) {
       onThinkingToggle();
     }
-  }, [traitValues.thinking]); // eslint-disable-line react-hooks/exhaustive-deps
+  });
+  useEffect(() => {
+    syncThinkingToggle(traitValues.thinking);
+  }, [traitValues.thinking]);
 
   // thinkingEnabled prop → traitValues.thinking (external reset on model switch)
   useEffect(() => {
