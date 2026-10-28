@@ -112,6 +112,18 @@ export interface ComposerProps {
   customerReportIntake?: ComposerCustomerReportIntake;
   // The CVE remediation steps for this incident. A customer report question shows first; one card shows at a time.
   remediationFlow?: ComposerRemediationFlow;
+  // A card the host owns, shown in the composer above the text while no question or remediation step is open and the
+  // agent is idle. `chip` shows above the composer while the host keeps the card closed.
+  hostPanel?: { card?: ReactNode; chip?: ReactNode };
+}
+
+/** The host card shows while no question or step is open and the composer is idle; otherwise its chip shows. */
+function hostPanelParts(
+  hostPanel: ComposerProps["hostPanel"],
+  { open, busy }: { open: unknown; busy: boolean },
+): { card?: ReactNode; chip?: ReactNode } {
+  if (hostPanel === undefined || open !== undefined) return {};
+  return !busy && hostPanel.card !== undefined ? { card: hostPanel.card } : { chip: hostPanel.chip };
 }
 
 function getSeededTraitValues(
@@ -193,6 +205,7 @@ export function Composer({
   onAccessLevelChange,
   customerReportIntake,
   remediationFlow,
+  hostPanel,
 }: ComposerProps) {
   const { t } = useTranslation();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -220,6 +233,8 @@ export function Composer({
   const remediation = question === undefined && !isBlocked && !isProcessing && remediationFlow?.open === true ? remediationFlow : undefined;
   const showResumeChip = remediationFlow !== undefined && question === undefined && remediation === undefined;
   const asking = question !== undefined;
+  const host = hostPanelParts(hostPanel, { open: question ?? remediation, busy: isBlocked || isProcessing });
+  const highlighted = asking || remediation !== undefined || host.card !== undefined;
   const hidesText = remediation !== undefined && remediation.input === undefined;
   const hasAttachOptions =
     composerSupportsPhotos || composerFileAccept?.includes(".csv") === true;
@@ -383,6 +398,7 @@ export function Composer({
         />
       )}
       {showResumeChip && <RemediationResumeChip flow={remediationFlow} disabled={isProcessing || isBlocked} />}
+      {host.chip}
       <input
         ref={fileInputRef}
         type="file"
@@ -398,13 +414,14 @@ export function Composer({
         data-tour="incidents-composer"
         className={cn(
           "group rounded-[20px] border bg-card transition-[border-color,box-shadow] duration-200",
-          !isProcessing && !isBlocked && !asking && remediation === undefined && "focus-within:border-ring/45",
-          (asking || remediation !== undefined) && "border-violet-300 shadow-[0_0_0_3px_rgb(124_58_237_/_0.08)] dark:border-violet-500/40",
+          !isProcessing && !isBlocked && !highlighted && "focus-within:border-ring/45",
+          highlighted && "border-violet-300 shadow-[0_0_0_3px_rgb(124_58_237_/_0.08)] dark:border-violet-500/40",
           isBlocked && "opacity-60",
         )}
       >
         {question !== undefined && <CustomerReportQuestionPanel key={question.question.key} intake={question} />}
         {remediation !== undefined && <RemediationQuestionPanel flow={remediation} />}
+        {host.card}
         {/* Textarea area with optional attach button */}
         <div className="relative px-3 pb-2 pt-3.5 sm:px-4 sm:pt-4" hidden={hidesText}>
           {composerImages.length > 0 && (
