@@ -1,17 +1,18 @@
 import {
   Children,
+  createContext,
   isValidElement,
+  useContext,
   useCallback,
   useEffect,
   memo,
   useMemo,
   useRef,
   useState,
-  type ComponentPropsWithoutRef,
   type ReactNode,
 } from "react";
 import { CheckIcon, CopyIcon } from "lucide-react";
-import ReactMarkdown from "react-markdown";
+import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { cn } from "./lib/utils";
 import { useTranslation } from "@bitsentry-ce/i18n";
@@ -734,6 +735,55 @@ export function getCodeText(children: ReactNode): string {
   return getNestedText(codeElement.props.children);
 }
 
+interface MarkdownRendererContextValue {
+  scrollableTableLabel: string;
+  collapsedJsonLabel: string | undefined;
+}
+
+// Per-render values the hoisted renderers need; the renderers themselves stay module-level.
+const MarkdownRendererContext = createContext<MarkdownRendererContextValue>({
+  scrollableTableLabel: "",
+  collapsedJsonLabel: undefined,
+});
+
+const MARKDOWN_REMARK_PLUGINS = [remarkGfm];
+
+// Keep renderer component types stable across renders, so code blocks and tables are not remounted.
+const MARKDOWN_COMPONENTS = {
+  a: function MarkdownLink({ href, node: _node, ref: _ref, ...props }) {
+    return <a {...props} href={href} target="_blank" rel="noreferrer noopener" />;
+  },
+  pre: function MarkdownPre({ children, node: _node, ...props }) {
+    const { collapsedJsonLabel } = useContext(MarkdownRendererContext);
+    const block = (
+      <MarkdownCodeBlock code={getCodeText(children)}>
+        <pre {...props}>{children}</pre>
+      </MarkdownCodeBlock>
+    );
+    const child = Children.toArray(children)[0];
+    const isJson =
+      isValidElement<{ className?: string }>(child) &&
+      child.props.className?.split(" ").includes("language-json");
+    if (!collapsedJsonLabel || !isJson) return block;
+    return (
+      <details className="my-3 min-w-0 rounded-lg border border-border bg-muted/30 p-3">
+        <summary className="cursor-pointer text-sm font-medium text-muted-foreground">
+          {collapsedJsonLabel}
+        </summary>
+        {block}
+      </details>
+    );
+  },
+  table: function MarkdownTable({ children, node: _node, ref: _ref, ...props }) {
+    const { scrollableTableLabel } = useContext(MarkdownRendererContext);
+    return (
+      <div className="chat-markdown-table-scroll" role="region" aria-label={scrollableTableLabel} tabIndex={0}>
+        <table {...props}>{children}</table>
+      </div>
+    );
+  },
+} satisfies Components;
+
 export const MarkdownContent = memo(function MarkdownContent({
   content,
   className,
@@ -741,6 +791,11 @@ export const MarkdownContent = memo(function MarkdownContent({
   collapsedJsonLabel,
 }: MarkdownContentProps) {
   const { t } = useTranslation();
+  const scrollableTableLabel = t("common.markdown.scrollableTable");
+  const rendererContext = useMemo(
+    () => ({ scrollableTableLabel, collapsedJsonLabel }),
+    [scrollableTableLabel, collapsedJsonLabel],
+  );
   const normalizedContent = useMemo(() => {
     let sourceContent = content;
     if (paragraphizeSoftBreaks) {
@@ -757,52 +812,11 @@ export const MarkdownContent = memo(function MarkdownContent({
         className,
       )}
     >
-      <ReactMarkdown
-        remarkPlugins={[remarkGfm]}
-        components={{
-          a: ({ href, node: _node, ref: _ref, ...props }) => (
-            <a
-              {...props}
-              href={href}
-              target="_blank"
-              rel="noreferrer noopener"
-            />
-          ),
-          pre: ({ children, ...props }: ComponentPropsWithoutRef<"pre">) => {
-            const code = getCodeText(children);
-            const block = (
-              <MarkdownCodeBlock code={code}>
-                <pre {...props}>{children}</pre>
-              </MarkdownCodeBlock>
-            );
-            const child = Children.toArray(children)[0];
-            const isJson =
-              isValidElement<{ className?: string }>(child) &&
-              child.props.className?.split(" ").includes("language-json");
-            if (!collapsedJsonLabel || !isJson) return block;
-            return (
-              <details className="my-3 min-w-0 rounded-lg border border-border bg-muted/30 p-3">
-                <summary className="cursor-pointer text-sm font-medium text-muted-foreground">
-                  {collapsedJsonLabel}
-                </summary>
-                {block}
-              </details>
-            );
-          },
-          table: ({ children, node: _node, ref: _ref, ...props }) => (
-            <div
-              className="chat-markdown-table-scroll"
-              role="region"
-              aria-label={t("common.markdown.scrollableTable")}
-              tabIndex={0}
-            >
-              <table {...props}>{children}</table>
-            </div>
-          ),
-        }}
-      >
-        {normalizedContent}
-      </ReactMarkdown>
+      <MarkdownRendererContext.Provider value={rendererContext}>
+        <ReactMarkdown remarkPlugins={MARKDOWN_REMARK_PLUGINS} components={MARKDOWN_COMPONENTS}>
+          {normalizedContent}
+        </ReactMarkdown>
+      </MarkdownRendererContext.Provider>
     </div>
   );
 });
