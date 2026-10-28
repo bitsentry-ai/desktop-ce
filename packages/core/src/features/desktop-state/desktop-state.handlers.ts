@@ -91,16 +91,18 @@ interface IncidentThreadRecord {
   lastMessagePreview?: string | null
 }
 
-type ChatMessage =
-  | { kind: 'user'; text: string }
-  | {
-      kind: 'agent'
-      streamText: string
-      toolCalls: ToolCallRecord[]
-      finalText: string | null
-      status: 'thinking' | 'streaming' | 'done' | 'error' | 'cancelled'
-      errorMsg?: string
-    }
+// Renderer chat messages are stored verbatim in "messageJson"; the summary
+// columns are derived from them for readers that predate that column.
+export type IncidentChatMessage = Record<string, unknown> & { kind: 'user' | 'agent' }
+
+interface IncidentMessageColumns {
+  text: string | null
+  streamText: string | null
+  toolCallsJson: string | null
+  finalText: string | null
+  status: string | null
+  errorMsg: string | null
+}
 
 interface RunbookActionRecord {
   id: string
@@ -176,7 +178,7 @@ interface ResultTraceMemory {
 
 interface DesktopProductStateSnapshot {
   incidents: IncidentThreadRecord[]
-  incidentMessages: Record<string, ChatMessage[]>
+  incidentMessages: Record<string, IncidentChatMessage[]>
   runbooks: RunbookRecord[]
   results: StoredRunResult[]
   resultTraces: Record<string, ResultTraceMemory>
@@ -188,7 +190,7 @@ interface DesktopStatePayload extends Partial<DesktopProductStateSnapshot> {
 }
 interface DesktopIncidentStateSnapshot {
   incidents: IncidentThreadRecord[]
-  incidentMessages: Record<string, ChatMessage[]>
+  incidentMessages: Record<string, IncidentChatMessage[]>
 }
 
 const PHASE1_IMPORT_KEY = 'phase1.localstorage.bootstrap'
@@ -448,43 +450,38 @@ function normalizeAgentFinalText(value: Record<string, unknown>, fallbackText: s
   return null
 }
 
-function normalizeChatMessage(raw: unknown): ChatMessage | null {
+function normalizeChatMessage(raw: unknown): IncidentChatMessage | null {
   const value = asObject(raw)
-  const kind = asString(value.kind)
-  if (kind === 'user') {
-    return {
-      kind: 'user',
-      text: asString(value.text),
-    }
-  }
-
-  if (kind === 'agent') {
-    const fallbackText = latestIterationText(value)
-    const toolCalls = dedupeToolCalls(value.toolCalls)
-
-    return {
-      kind: 'agent',
-      streamText: asString(value.streamText, fallbackText),
-      toolCalls,
-      finalText: normalizeAgentFinalText(value, fallbackText),
-      status: asString(value.status, 'thinking') as Exclude<ChatMessage, { kind: 'user' }>['status'],
-      errorMsg: asOptionalString(value.errorMsg),
-    }
-  }
-
+  if (value.kind === 'user' || value.kind === 'agent') return value as IncidentChatMessage
   return null
+}
+
+function incidentMessageColumns(message: IncidentChatMessage): IncidentMessageColumns {
+  if (message.kind === 'user') {
+    return { text: asString(message.text), streamText: null, toolCallsJson: null, finalText: null, status: null, errorMsg: null }
+  }
+
+  const fallbackText = latestIterationText(message)
+  return {
+    text: null,
+    streamText: asString(message.streamText, fallbackText),
+    toolCallsJson: JSON.stringify(dedupeToolCalls(message.toolCalls)),
+    finalText: normalizeAgentFinalText(message, fallbackText),
+    status: asString(message.status, 'thinking'),
+    errorMsg: asOptionalString(message.errorMsg) ?? null,
+  }
 }
 
 function normalizeIncidentMessages(
   value: unknown,
-): Record<string, ChatMessage[]> {
+): Record<string, IncidentChatMessage[]> {
   const input = asObject(value)
-  const output: Record<string, ChatMessage[]> = {}
+  const output: Record<string, IncidentChatMessage[]> = {}
   for (const [key, messages] of Object.entries(input)) {
     if (!Array.isArray(messages)) continue
     output[key] = messages
       .map((message) => normalizeChatMessage(message))
-      .filter((message): message is ChatMessage => message !== null)
+      .filter((message): message is IncidentChatMessage => message !== null)
   }
   return output
 }
@@ -499,17 +496,25 @@ function normalizePreviewText(value: string | null | undefined): string | null {
   return null
 }
 
-function getIncidentPreviewFromMessages(messages: ChatMessage[]): string | null {
-  let lastMessage: ChatMessage | undefined
+function getIncidentPreviewFromMessages(messages: IncidentChatMessage[]): string | null {
+  let lastMessage: IncidentChatMessage | undefined
   if (messages.length > 0) {
     lastMessage = messages[messages.length - 1]
   }
   if (lastMessage === undefined) return null
   if (lastMessage.kind === 'user') {
-    return normalizePreviewText(lastMessage.text)
+    return normalizePreviewText(asString(lastMessage.text))
   }
 
-  return normalizePreviewText(lastMessage.finalText ?? lastMessage.streamText)
+  return normalizePreviewText(
+    asString(lastMessage.finalText) || latestIterationText(lastMessage) || asString(lastMessage.streamText),
+  )
+}
+
+// Iteration streamDeltas hold one record per token chunk and are only read
+// while a turn streams, so they are not persisted.
+function serializeIncidentMessage(message: IncidentChatMessage): string {
+  return JSON.stringify(message, (key, value: unknown) => (key === 'streamDeltas' ? undefined : value))
 }
 
 function normalizeRevisionNumber(value: unknown): number {
@@ -736,7 +741,7 @@ function hasImportPayload(
   incidents: IncidentThreadRecord[],
   runbooks: RunbookRecord[],
   results: StoredRunResult[],
-  incidentMessages: Record<string, ChatMessage[]>,
+  incidentMessages: Record<string, IncidentChatMessage[]>,
   resultTraces: Record<string, ResultTraceMemory>,
 ): boolean {
   return (
@@ -750,7 +755,7 @@ function hasImportPayload(
 
 function hasIncidentPayload(
   incidents: IncidentThreadRecord[],
-  incidentMessages: Record<string, ChatMessage[]>,
+  incidentMessages: Record<string, IncidentChatMessage[]>,
 ): boolean {
   return incidents.length > 0 || Object.keys(incidentMessages).length > 0
 }
@@ -778,8 +783,10 @@ function nullableValue<T>(value: T | undefined): T | null {
   return value
 }
 
-function normalizeIncidentMessageRow(rawMessage: unknown): ChatMessage {
+function normalizeIncidentMessageRow(rawMessage: unknown): IncidentChatMessage {
   const message = asObject(rawMessage)
+  const stored = normalizeChatMessage(safeJsonParse<unknown>(message.messageJson, null))
+  if (stored !== null) return stored
   if (asString(message.kind) === 'user') {
     return {
       kind: 'user',
@@ -792,7 +799,7 @@ function normalizeIncidentMessageRow(rawMessage: unknown): ChatMessage {
     streamText: asString(message.streamText),
     toolCalls: dedupeToolCalls(safeJsonParse(message.toolCallsJson, [])),
     finalText: nullableString(message.finalText),
-    status: asString(message.status, 'thinking') as Exclude<ChatMessage, { kind: 'user' }>['status'],
+    status: asString(message.status, 'thinking'),
     errorMsg: asOptionalString(message.errorMsg),
   }
 }
@@ -806,7 +813,7 @@ function nullableString(value: unknown): string | null {
 }
 
 function addIncidentMessage(
-  incidentMessages: Record<string, ChatMessage[]>,
+  incidentMessages: Record<string, IncidentChatMessage[]>,
   rawMessage: unknown,
 ): void {
   const message = asObject(rawMessage)
@@ -906,7 +913,7 @@ function setTraceReport(resultTraces: Record<string, ResultTraceMemory>, rawRepo
 
 function normalizeIncidentRow(
   rawIncident: unknown,
-  incidentMessages: Record<string, ChatMessage[]>,
+  incidentMessages: Record<string, IncidentChatMessage[]>,
 ): IncidentThreadRecord {
   const incident = asObject(rawIncident)
   const id = asString(incident.id)
@@ -1020,7 +1027,7 @@ class DesktopStateStore {
     incidents: IncidentThreadRecord[],
     runbooks: RunbookRecord[],
     results: StoredRunResult[],
-    incidentMessages: Record<string, ChatMessage[]>,
+    incidentMessages: Record<string, IncidentChatMessage[]>,
     resultTraces: Record<string, ResultTraceMemory>,
   ): Promise<void> {
     if (hasImportPayload(incidents, runbooks, results, incidentMessages, resultTraces)) {
@@ -1039,7 +1046,7 @@ class DesktopStateStore {
     incidents: IncidentThreadRecord[],
     runbooks: RunbookRecord[],
     results: StoredRunResult[],
-    incidentMessages: Record<string, ChatMessage[]>,
+    incidentMessages: Record<string, IncidentChatMessage[]>,
     resultTraces: Record<string, ResultTraceMemory>,
   ): Promise<void> {
     const [existingIncidentCount, existingRunbookCount, existingInvestigationCount] =
@@ -1138,7 +1145,7 @@ class DesktopStateStore {
 
   private async replaceIncidents(
     incidents: IncidentThreadRecord[],
-    incidentMessages: Record<string, ChatMessage[]>,
+    incidentMessages: Record<string, IncidentChatMessage[]>,
   ): Promise<void> {
     await this.ensureIncidentThreadSessionIdColumn()
     if (this.db.$executeBatch !== undefined) {
@@ -1167,32 +1174,14 @@ class DesktopStateStore {
       const messages = incidentMessages[incident.id] ?? []
       for (let index = 0; index < messages.length; index += 1) {
         const message = messages[index]
-        if (message.kind === 'user') {
-          await this.db.incidentMessage.create({
-            data: {
-              id: `${incident.id}:user:${String(index)}`,
-              threadId: incident.id,
-              sortOrder: index,
-              kind: 'user',
-              text: message.text,
-              createdAt: incident.createdAt,
-              updatedAt: incident.createdAt,
-            },
-          })
-          continue
-        }
-
         await this.db.incidentMessage.create({
           data: {
-            id: `${incident.id}:agent:${String(index)}`,
+            id: `${incident.id}:${message.kind}:${String(index)}`,
             threadId: incident.id,
             sortOrder: index,
-            kind: 'agent',
-            streamText: message.streamText,
-            toolCallsJson: JSON.stringify(message.toolCalls),
-            finalText: message.finalText,
-            status: message.status,
-            errorMsg: message.errorMsg,
+            kind: message.kind,
+            ...incidentMessageColumns(message),
+            messageJson: serializeIncidentMessage(message),
             createdAt: incident.createdAt,
             updatedAt: incident.createdAt,
           },
@@ -1203,7 +1192,7 @@ class DesktopStateStore {
 
   private async replaceIncidentsAtomically(
     incidents: IncidentThreadRecord[],
-    incidentMessages: Record<string, ChatMessage[]>,
+    incidentMessages: Record<string, IncidentChatMessage[]>,
   ): Promise<void> {
     const statements: { sql: string; parameters: (string | number | null)[] }[] = [{
       sql: 'UPDATE "IncidentThread" SET "deletedAt" = ? WHERE "deletedAt" IS NULL',
@@ -1219,14 +1208,13 @@ class DesktopStateStore {
           incident.createdAt, new Date().toISOString(), incident.archivedAt ?? null],
       }, { sql: 'DELETE FROM "IncidentMessage" WHERE "threadId" = ?', parameters: [incident.id] })
       for (const [index, message] of (incidentMessages[incident.id] ?? []).entries()) {
-        const agent = message.kind === 'agent' ? message : undefined
+        const columns = incidentMessageColumns(message)
         statements.push({
-          sql: `INSERT INTO "IncidentMessage" ("id","threadId","sortOrder","kind","text","streamText","toolCallsJson","finalText","status","errorMsg","createdAt","updatedAt")
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
+          sql: `INSERT INTO "IncidentMessage" ("id","threadId","sortOrder","kind","text","streamText","toolCallsJson","finalText","status","errorMsg","messageJson","createdAt","updatedAt")
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
           parameters: [`${incident.id}:${message.kind}:${String(index)}`, incident.id, index, message.kind,
-            message.kind === 'user' ? message.text : null, agent?.streamText ?? null,
-            agent === undefined ? null : JSON.stringify(agent.toolCalls), agent?.finalText ?? null,
-            agent?.status ?? null, agent?.errorMsg ?? null, incident.createdAt, new Date().toISOString()],
+            columns.text, columns.streamText, columns.toolCallsJson, columns.finalText, columns.status,
+            columns.errorMsg, serializeIncidentMessage(message), incident.createdAt, new Date().toISOString()],
         })
       }
     }
@@ -1488,7 +1476,7 @@ class DesktopStateStore {
         this.db.investigationReport.findMany({}),
       ])
 
-    const incidentMessages: Record<string, ChatMessage[]> = {}
+    const incidentMessages: Record<string, IncidentChatMessage[]> = {}
     const visibleThreadIds = new Set(incidents.map((incident) => incident.id))
     for (const rawMessage of messages) {
       if (visibleThreadIds.has(rawMessage.threadId)) addIncidentMessage(incidentMessages, rawMessage)
@@ -1551,6 +1539,15 @@ class DesktopStateStore {
 
     this.incidentSessionIdColumnEnsured = true
   }
+}
+
+/** Loads one incident thread's persisted chat messages in display order. */
+export async function loadIncidentThreadMessages(
+  db: Pick<DesktopStateDatabase, 'incidentMessage'>,
+  threadId: string,
+): Promise<IncidentChatMessage[]> {
+  const rows = await db.incidentMessage.findMany({ where: { threadId }, orderBy: { sortOrder: 'asc' } })
+  return rows.map((row) => normalizeIncidentMessageRow(row))
 }
 
 export function createDesktopStateHandlers(
