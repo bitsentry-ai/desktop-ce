@@ -12,6 +12,7 @@ import {
   useState,
 } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
+import type { LegendListRef } from "@legendapp/list/react";
 import { hasWaitingAgentIndicator } from "../../chat/ChatBubble";
 import IncidentArtifactsRail, {
   countIncidentArtifacts,
@@ -141,12 +142,11 @@ export default function IncidentsPage() {
   const reconciledSessionIdsRef = useRef<Set<string>>(new Set());
   const checkingSessionIdsRef = useRef<Set<string>>(new Set());
 
-  const [showScrollIndicator, setShowScrollIndicator] = useState(false);
-  const [isScrollingToBottom, setIsScrollingToBottom] = useState(false);
-  const showScrollIndicatorRef = useRef(false);
-  const scrollButtonRef = useRef<HTMLButtonElement>(null);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
-  const scrollAnimationRef = useRef<number | null>(null);
+  // The id of the incident whose reader has scrolled up from the newest message, if any.
+  const [scrolledUpIncidentId, setScrolledUpIncidentId] = useState<string | null>(null);
+  const messageListRef = useRef<LegendListRef>(null);
+  /** Resumes following the newest output and scrolls to it. */
+  const scrollMessagesToEndRef = useRef<((options: { animated: boolean }) => void) | null>(null);
 
   const activeIncident = incidents.find((i) => i.id === activeId) ?? null;
   const activeSessionId = activeIncident?.sessionId ?? null;
@@ -233,85 +233,6 @@ export default function IncidentsPage() {
   useEffect(() => {
     saveIncidentTokenUsage(tokenUsageByIncident);
   }, [tokenUsageByIncident]);
-
-  // Auto-scroll with threshold check - only scroll if user is near bottom (within 64px)
-  const scrollContainerRef = useRef<HTMLDivElement>(null);
-  const userScrolledUpRef = useRef(false);
-  const suppressNextAutoScrollRef = useRef(false);
-
-  useEffect(() => {
-    const container = scrollContainerRef.current;
-    if (!container) return;
-
-    const checkScrollPosition = () => {
-      // Don't update indicator state during programmatic scroll animation
-      if (isScrollingToBottom) return;
-
-      const { scrollTop, scrollHeight, clientHeight } = container;
-      const distanceFromBottom = scrollHeight - scrollTop - clientHeight;
-      // User has scrolled up if more than 64px from bottom
-      userScrolledUpRef.current = distanceFromBottom > 64;
-      const shouldShowScrollIndicator =
-        userScrolledUpRef.current &&
-        activeId !== null &&
-        rawMessages.length > 0;
-
-      if (showScrollIndicatorRef.current !== shouldShowScrollIndicator) {
-        showScrollIndicatorRef.current = shouldShowScrollIndicator;
-        setShowScrollIndicator(shouldShowScrollIndicator);
-      }
-    };
-
-    checkScrollPosition();
-
-    // Track user scroll position
-    container.addEventListener("scroll", checkScrollPosition);
-    return () => {
-      container.removeEventListener("scroll", checkScrollPosition);
-    };
-  }, [activeId, rawMessages.length, isScrollingToBottom]);
-
-  useEffect(() => {
-    const container = scrollContainerRef.current;
-
-    if (
-      container === null ||
-      activeId === null ||
-      userScrolledUpRef.current
-    ) {
-      suppressNextAutoScrollRef.current = false;
-      return;
-    }
-
-    if (suppressNextAutoScrollRef.current) {
-      suppressNextAutoScrollRef.current = false;
-      return;
-    }
-
-    container.scrollTop = container.scrollHeight - container.clientHeight;
-  }, [rawMessages, activeId]);
-
-  // Per-thread transient state reset is handled in the provider lock restoration
-  // effect above (which also runs on activeId change).
-
-  // Reset scroll state when thread changes - NO AUTO SCROLL
-  useEffect(() => {
-    suppressNextAutoScrollRef.current = true;
-    userScrolledUpRef.current = false;
-    showScrollIndicatorRef.current = false;
-    setShowScrollIndicator(false);
-    setIsScrollingToBottom(false);
-    // Reset button style
-    if (scrollButtonRef.current !== null) {
-      scrollButtonRef.current.style.transform = "translateX(-50%)";
-      scrollButtonRef.current.style.opacity = "1";
-    }
-    // Cancel any ongoing scroll animation
-    if (scrollAnimationRef.current !== null) {
-      cancelAnimationFrame(scrollAnimationRef.current);
-      scrollAnimationRef.current = null;
-    }
-  }, [activeId]);
 
   // Access level is saved to the provider lock on handleSend and handleNewIncident.
   // No intermediate saves — changes before a send are in-memory only.
@@ -555,6 +476,8 @@ export default function IncidentsPage() {
     const ready = canSendIncidentMessage(text, fromIntake ? 0 : composerImages.length, activeId, selectedProviderKey, selectedModelId);
     // Sending waits for the thread's history so the reply never lands on a thread shown as empty.
     if (!ready || !activeMessagesLoaded || activeId === null || selectedProviderKey === null || activeIncident?.archived === true) return;
+    // Jump to the end and follow again, so the new message and its reply show even if the reader had scrolled up.
+    scrollMessagesToEndRef.current?.({ animated: false });
     const wasRunning = activeIncident?.state === "RUNNING";
     const shouldContinueSession = activeSessionId !== null || wasRunning;
     const preview = normalizeIncidentPreview(text);
@@ -981,10 +904,9 @@ export default function IncidentsPage() {
   }
 
   // ── Chat view ─────────────────────────────────────────────────────────────
-  let messagesTopPaddingClass = "pt-6";
-  if (activeIncident !== null && isArchivedIncident) {
-    messagesTopPaddingClass = "pt-28";
-  }
+  const messagesTopSpacerClass = isArchivedIncident ? "h-28" : "h-6";
+  const showScrollIndicator =
+    scrolledUpIncidentId !== null && scrolledUpIncidentId === activeId && rawMessages.length > 0;
 
   return (
     <PageShell>
@@ -1030,15 +952,9 @@ export default function IncidentsPage() {
           >
             {/* Messages container with floating scroll button */}
             <div className="relative flex-1 overflow-hidden">
-              <div
-                ref={scrollContainerRef}
-                className={cn(
-                  "absolute inset-0 overflow-y-auto overflow-x-hidden px-6 pb-6 space-y-5 page-enter",
-                  messagesTopPaddingClass,
-                )}
-              >
+              <div className="absolute inset-0">
                 {activeIncident === null && (
-                  <div className="flex h-full flex-col items-center justify-center gap-3 text-center text-muted-foreground">
+                  <div className="page-enter flex h-full flex-col items-center justify-center gap-3 px-6 pb-6 pt-6 text-center text-muted-foreground">
                     <ShieldAlert size={36} className="opacity-25" />
                     <p className="text-sm">
                       {t("common.incidents.createOrOpenAnIncident")}
@@ -1054,10 +970,19 @@ export default function IncidentsPage() {
                 )}
                 <CustomerReportIntakeChatContext.Provider value={customerReportIntake.chat}>
                   {activeIncident !== null && (
-                    <IncidentMessageList messages={messages} providerKey={selectedProviderKey} />
+                    <IncidentMessageList
+                      key={activeId}
+                      messages={messages}
+                      providerKey={selectedProviderKey}
+                      listRef={messageListRef}
+                      headerClassName={messagesTopSpacerClass}
+                      onAtEndChange={(atEnd) => {
+                        setScrolledUpIncidentId(atEnd ? null : activeId);
+                      }}
+                      scrollToEndRef={scrollMessagesToEndRef}
+                    />
                   )}
                 </CustomerReportIntakeChatContext.Provider>
-                <div ref={messagesEndRef} />
               </div>
 
               {activeIncident !== null && isArchivedIncident && (
@@ -1069,54 +994,9 @@ export default function IncidentsPage() {
               {/* Scroll button - OUTSIDE scroll container to avoid clipping */}
               {showScrollIndicator && (
                 <button
-                  ref={scrollButtonRef}
                   type="button"
                   onClick={() => {
-                    const container = scrollContainerRef.current;
-                    const button = scrollButtonRef.current;
-                    if (container === null || button === null) return;
-
-                    if (scrollAnimationRef.current !== null) {
-                      cancelAnimationFrame(scrollAnimationRef.current);
-                    }
-
-                    const targetScroll =
-                      container.scrollHeight - container.clientHeight;
-                    const startScroll = container.scrollTop;
-                    const distance = targetScroll - startScroll;
-                    const duration = 300;
-                    const buttonMoveDistance = 100;
-
-                    setIsScrollingToBottom(true);
-
-                    const startTime = performance.now();
-
-                    const animateScroll = (currentTime: number) => {
-                      const elapsed = currentTime - startTime;
-                      const progress = Math.min(elapsed / duration, 1);
-                      const easeOut = 1 - Math.pow(1 - progress, 3);
-
-                      container.scrollTop = startScroll + distance * easeOut;
-
-                      const translateY = easeOut * buttonMoveDistance;
-                      const opacity = 1 - translateY / 80;
-                      button.style.transform = `translateX(-50%) translateY(${String(translateY)}px)`;
-                      button.style.opacity = String(Math.max(0, opacity));
-
-                      if (progress < 1) {
-                        scrollAnimationRef.current =
-                          requestAnimationFrame(animateScroll);
-                      } else {
-                        userScrolledUpRef.current = false;
-                        showScrollIndicatorRef.current = false;
-                        setShowScrollIndicator(false);
-                        setIsScrollingToBottom(false);
-                        scrollAnimationRef.current = null;
-                      }
-                    };
-
-                    scrollAnimationRef.current =
-                      requestAnimationFrame(animateScroll);
+                    scrollMessagesToEndRef.current?.({ animated: true });
                   }}
                   className="absolute left-1/2 -translate-x-1/2 z-10 rounded-full bg-foreground p-2.5 shadow-lg hover:bg-foreground/90"
                   style={{ bottom: "1.5rem" }}
