@@ -263,6 +263,9 @@ function CompactOptions({ flow, label }: { flow: ComposerRemediationFlow; label:
  * One CVE remediation step above the composer text, built from the customer report card's parts. Number keys pick an
  * option and Enter runs the primary button while focus is outside a text field; Escape closes the card.
  */
+// At most half the visible height, so the conversation stays usable on a phone; one scroll, with no nested boxes.
+const STEP_SCROLL = "-mr-2 max-h-[min(50dvh,32rem)] overflow-y-auto overscroll-y-contain pr-2 outline-none focus-visible:ring-2 focus-visible:ring-violet-500/30 [scrollbar-color:theme(colors.violet.300)_transparent] [scrollbar-width:thin]";
+
 const RESULT_TONES: Record<RemediationFlowTone, string> = {
   success: "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-400",
   destructive: "bg-destructive/10 text-destructive",
@@ -331,79 +334,82 @@ export function RemediationQuestionPanel({ flow }: { flow: ComposerRemediationFl
   ) : step;
   return (
     <ComposerQuestionCard label={title} aside={aside} close={{ label: t("common.incidents.remediation.close"), run: flow.close }} divided={flow.input !== undefined}>
-      {flow.question !== undefined && <p className="text-sm text-foreground/90">{flow.question}</p>}
-      {flow.context.length > 0 && <ContextLine context={flow.context} />}
-      {compact ? <CompactOptions flow={flow} label={flow.question ?? title} /> : flow.options.length > 0 && (
-        <div role="group" aria-label={flow.question ?? title} className="mt-2.5 grid gap-1.5">
-          {flow.options.map((option, index) => (
-            <QuestionOption
-              key={`${option.label}:${option.hint ?? ""}`}
-              label={option.label}
-              hint={option.hint}
-              index={keyed.indexOf(index)}
-              selected={flow.selected === index}
-              disabled={flow.submitting}
-              onSelect={() => { flow.select(index); }}
-              pinned={option.pinned}
-              trailing={<OptionBadges badges={option.badges} />}
-            />
-          ))}
-        </div>
-      )}
-      {flow.rows !== undefined && flow.rows.length > 0 && (
-        <dl className="mt-2.5 overflow-hidden rounded-lg border border-border bg-muted/40 text-sm">
-          {flow.rows.map((row) => (
-            <div key={row.label} className="grid grid-cols-[8rem_1fr_auto] items-center gap-2 border-b border-border px-3 py-1.5 last:border-b-0">
-              <dt className="text-xs text-muted-foreground">{row.label}</dt>
-              <dd className="min-w-0 truncate">
-                {row.value}
-                {row.detail !== undefined && <span className="ml-1.5 text-xs text-muted-foreground">{row.detail}</span>}
-              </dd>
-              {row.edit !== undefined ? (
-                <button
-                  type="button"
-                  onClick={row.edit}
-                  disabled={flow.submitting}
-                  aria-label={`${t("common.incidents.remediation.edit")} ${row.label}`}
-                  className="text-xs font-medium text-violet-700 hover:underline disabled:opacity-50 dark:text-violet-300"
-                >
-                  {t("common.incidents.remediation.edit")}
-                </button>
-              ) : <span />}
-            </div>
-          ))}
-        </dl>
-      )}
-      {flow.running !== undefined && (
-        <p role="status" className="mt-2.5 flex items-center gap-2 rounded-lg border border-border bg-muted/40 px-3 py-2 text-sm">
-          <Loader2 size={14} className="animate-spin text-violet-600 dark:text-violet-300" aria-hidden="true" />
-          {flow.running}
-        </p>
-      )}
-      {flow.result !== undefined && (
-        <div className="mt-2 flex items-center gap-3">
-          <span
-            className={cn(
-              "flex size-[30px] shrink-0 items-center justify-center rounded-full",
-              RESULT_TONES[flow.result.tone],
-            )}
-          >
-            <ResultIcon tone={flow.result.tone} />
-          </span>
-          <div className="min-w-0">
-            <p className="text-sm font-semibold">{flow.result.title}</p>
-            {flow.result.detail !== undefined && <p className="truncate text-xs text-muted-foreground">{flow.result.detail}</p>}
+      {/* One bounded scroll for the whole step, so the card never pushes the composer and its buttons off screen. */}
+      <div role="region" aria-label={`${title}: ${flow.status.label}`} tabIndex={0} className={STEP_SCROLL}>
+        {flow.question !== undefined && <p className="text-sm text-foreground/90">{flow.question}</p>}
+        {flow.context.length > 0 && <ContextLine context={flow.context} />}
+        {compact ? <CompactOptions flow={flow} label={flow.question ?? title} /> : flow.options.length > 0 && (
+          <div role="group" aria-label={flow.question ?? title} className="mt-2.5 grid gap-1.5">
+            {flow.options.map((option, index) => (
+              <QuestionOption
+                key={`${option.label}:${option.hint ?? ""}`}
+                label={option.label}
+                hint={option.hint}
+                index={keyed.indexOf(index)}
+                selected={flow.selected === index}
+                disabled={flow.submitting}
+                onSelect={() => { flow.select(index); }}
+                pinned={option.pinned}
+                trailing={<OptionBadges badges={option.badges} />}
+              />
+            ))}
           </div>
-        </div>
-      )}
-      {flow.notice !== undefined && <p className="mt-2 text-xs text-muted-foreground">{flow.notice}</p>}
-      {flow.details?.map((detail) => (
-        <details key={detail.label} className="mt-2 text-xs">
-          <summary className="cursor-pointer text-muted-foreground">{detail.label}</summary>
-          <pre className="mt-1.5 max-h-32 overflow-auto whitespace-pre-wrap rounded-md bg-muted px-3 py-2 font-mono text-muted-foreground">{detail.text}</pre>
-        </details>
-      ))}
-      {flow.error !== undefined && flow.error !== null && <p role="alert" className="mt-2 whitespace-pre-line text-xs text-destructive">{flow.error}</p>}
+        )}
+        {flow.rows !== undefined && flow.rows.length > 0 && (
+          <dl className="mt-2.5 overflow-hidden rounded-lg border border-border bg-muted/40 text-sm">
+            {flow.rows.map((row) => (
+              <div key={row.label} className="grid grid-cols-[8rem_1fr_auto] items-center gap-2 border-b border-border px-3 py-1.5 last:border-b-0">
+                <dt className="text-xs text-muted-foreground">{row.label}</dt>
+                <dd className="min-w-0 truncate">
+                  {row.value}
+                  {row.detail !== undefined && <span className="ml-1.5 text-xs text-muted-foreground">{row.detail}</span>}
+                </dd>
+                {row.edit !== undefined ? (
+                  <button
+                    type="button"
+                    onClick={row.edit}
+                    disabled={flow.submitting}
+                    aria-label={`${t("common.incidents.remediation.edit")} ${row.label}`}
+                    className="text-xs font-medium text-violet-700 hover:underline disabled:opacity-50 dark:text-violet-300"
+                  >
+                    {t("common.incidents.remediation.edit")}
+                  </button>
+                ) : <span />}
+              </div>
+            ))}
+          </dl>
+        )}
+        {flow.running !== undefined && (
+          <p role="status" className="mt-2.5 flex items-center gap-2 rounded-lg border border-border bg-muted/40 px-3 py-2 text-sm">
+            <Loader2 size={14} className="animate-spin text-violet-600 dark:text-violet-300" aria-hidden="true" />
+            {flow.running}
+          </p>
+        )}
+        {flow.result !== undefined && (
+          <div className="mt-2 flex items-center gap-3">
+            <span
+              className={cn(
+                "flex size-[30px] shrink-0 items-center justify-center rounded-full",
+                RESULT_TONES[flow.result.tone],
+              )}
+            >
+              <ResultIcon tone={flow.result.tone} />
+            </span>
+            <div className="min-w-0">
+              <p className="text-sm font-semibold">{flow.result.title}</p>
+              {flow.result.detail !== undefined && <p className="truncate text-xs text-muted-foreground">{flow.result.detail}</p>}
+            </div>
+          </div>
+        )}
+        {flow.notice !== undefined && <p className="mt-2 text-xs text-muted-foreground">{flow.notice}</p>}
+        {flow.details?.map((detail) => (
+          <details key={detail.label} className="mt-2 text-xs">
+            <summary className="cursor-pointer text-muted-foreground">{detail.label}</summary>
+            <pre className="mt-1.5 whitespace-pre-wrap rounded-md bg-muted px-3 py-2 font-mono text-muted-foreground [overflow-wrap:anywhere]">{detail.text}</pre>
+          </details>
+        ))}
+        {flow.error !== undefined && flow.error !== null && <p role="alert" className="mt-2 whitespace-pre-line text-xs text-destructive">{flow.error}</p>}
+      </div>
     </ComposerQuestionCard>
   );
 }
