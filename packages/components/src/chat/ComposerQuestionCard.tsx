@@ -47,7 +47,7 @@ const OPTION_PINNED = "border-dashed border-violet-300 text-violet-700 hover:bg-
  * One answer to pick: its number key shows until it is picked, then a check. A compact option is one line, with the
  * hint after the label. A pinned option, such as "New SSH connection", has a dashed border and no number key.
  */
-export function QuestionOption({ label, hint, index, selected, disabled, onSelect, compact = false, pinned = false }: {
+export function QuestionOption({ label, hint, index, selected, disabled, onSelect, compact = false, pinned = false, trailing }: {
   label: string;
   hint?: string;
   index: number;
@@ -56,6 +56,8 @@ export function QuestionOption({ label, hint, index, selected, disabled, onSelec
   onSelect: () => void;
   compact?: boolean;
   pinned?: boolean;
+  /** Shown before the number key, as the states of a listed item. */
+  trailing?: ReactNode;
 }) {
   let tone = "border-transparent bg-muted/60 hover:bg-muted";
   if (selected) tone = OPTION_SELECTED;
@@ -79,6 +81,7 @@ export function QuestionOption({ label, hint, index, selected, disabled, onSelec
           {hint !== undefined && <span className="truncate text-xs text-muted-foreground">{hint}</span>}
         </span>
       )}
+      {trailing}
       {selected ? (
         <CheckIcon className="size-3.5 shrink-0 text-violet-600 dark:text-violet-300" aria-hidden="true" />
       ) : !pinned && index < 9 ? (
