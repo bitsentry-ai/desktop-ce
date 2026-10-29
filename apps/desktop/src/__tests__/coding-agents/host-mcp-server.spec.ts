@@ -11,15 +11,15 @@ import type { RunbookExecutionRecord } from '@bitsentry-ce/core/features/runbook
 const servers: HostMcpServerService[] = []
 const MCP_PROTOCOL_VERSION = '2026-07-28'
 
-function modernMcpRequest(body: Record<string, unknown>, contextId: string): Record<string, unknown> {
-  const params = body.params !== null && typeof body.params === 'object' && !Array.isArray(body.params)
-    ? body.params as Record<string, unknown>
+function asRecord(value: unknown): Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
     : {}
-  const toolArguments = body.method === 'tools/call'
-    ? (params.arguments !== null && typeof params.arguments === 'object' && !Array.isArray(params.arguments)
-      ? params.arguments as Record<string, unknown>
-      : {})
-    : undefined
+}
+
+function modernMcpRequest(body: Record<string, unknown>, contextId: string): Record<string, unknown> {
+  const params = asRecord(body.params)
+  const toolArguments = body.method === 'tools/call' ? asRecord(params.arguments) : undefined
   const modernParams = {
     ...params,
     ...(toolArguments === undefined ? {} : {

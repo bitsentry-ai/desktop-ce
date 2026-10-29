@@ -136,7 +136,9 @@ function loadResults(): StoredRunResult[] {
 function saveResults(list: StoredRunResult[]) {
   try {
     localStorage.setItem(RESULTS_KEY, JSON.stringify(list));
-  } catch {}
+  } catch {
+    // Storage can be unavailable (private mode or full quota); persistence is best effort.
+  }
 }
 
 function loadResultTraces(): Record<string, ResultTraceMemory> {
@@ -165,7 +167,9 @@ function loadResultTraces(): Record<string, ResultTraceMemory> {
 function saveResultTraces(traceMap: Record<string, ResultTraceMemory>) {
   try {
     localStorage.setItem(RESULT_TRACES_KEY, JSON.stringify(traceMap));
-  } catch {}
+  } catch {
+    // Storage can be unavailable (private mode or full quota); persistence is best effort.
+  }
 }
 
 const RUN_RESULT_STATUSES = new Set<string>([

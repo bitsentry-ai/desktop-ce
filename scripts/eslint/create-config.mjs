@@ -30,20 +30,98 @@ const sharedStyleRules = {
   "no-var": "error",
 };
 
+// Correctness: catch dead code, lost error causes, and impossible control flow.
+const correctnessRules = {
+  "array-callback-return": "error",
+  "default-case-last": "error",
+  "no-constructor-return": "error",
+  "no-empty": "error",
+  "no-self-compare": "error",
+  "no-sequences": "error",
+  "no-throw-literal": "error",
+  "no-unmodified-loop-condition": "error",
+  "no-unreachable-loop": "error",
+  "no-useless-assignment": "error",
+  "no-useless-catch": "error",
+  "preserve-caught-error": "error",
+  "prefer-promise-reject-errors": "error",
+  radix: "error",
+  "require-yield": "error",
+  "@typescript-eslint/no-loop-func": "error",
+  "@typescript-eslint/no-non-null-assertion": "error",
+  "@typescript-eslint/no-unused-vars": [
+    "error",
+    {
+      argsIgnorePattern: "^_",
+      caughtErrors: "none",
+      destructuredArrayIgnorePattern: "^_",
+      ignoreRestSiblings: true,
+      varsIgnorePattern: "^_",
+    },
+  ],
+  "unicorn/error-message": "error",
+  "unicorn/no-instanceof-array": "error",
+  "unicorn/prefer-number-properties": "error",
+  "unicorn/throw-new-error": "error",
+};
+
+// Readability: one obvious way to express a branch, loop, or lookup.
+const readabilityRules = {
+  "no-case-declarations": "error",
+  "no-else-return": "error",
+  "no-implicit-coercion": "error",
+  "no-lonely-if": "error",
+  "no-return-assign": "error",
+  "no-unneeded-ternary": "error",
+  "no-useless-computed-key": "error",
+  "no-useless-concat": "error",
+  "no-useless-escape": "error",
+  "no-useless-rename": "error",
+  "no-useless-return": "error",
+  "object-shorthand": "error",
+  "prefer-arrow-callback": ["error", { allowNamedFunctions: true }],
+  "prefer-const": "error",
+  "prefer-exponentiation-operator": "error",
+  "prefer-object-spread": "error",
+  "@typescript-eslint/consistent-generic-constructors": "error",
+  "@typescript-eslint/default-param-last": "error",
+  "@typescript-eslint/no-confusing-non-null-assertion": "error",
+  "@typescript-eslint/no-empty-object-type": "error",
+  "@typescript-eslint/no-inferrable-types": "error",
+  "@typescript-eslint/no-useless-empty-export": "error",
+  "@typescript-eslint/prefer-for-of": "error",
+  "@typescript-eslint/prefer-function-type": "error",
+  "sonarjs/cognitive-complexity": ["error", 15],
+  "sonarjs/no-nested-conditional": "error",
+  "unicorn/no-unnecessary-boolean-comparison": "error",
+  "unicorn/no-unreadable-iife": "error",
+  "unicorn/no-useless-boolean-cast": "error",
+  "unicorn/no-useless-fallback-in-spread": "error",
+  "unicorn/no-useless-promise-resolve-reject": "error",
+  "unicorn/no-useless-switch-case": "error",
+  "unicorn/no-zero-fractions": "error",
+  "unicorn/prefer-array-find": "error",
+  "unicorn/prefer-array-flat": "error",
+  "unicorn/prefer-array-flat-map": "error",
+  "unicorn/prefer-array-index-of": "error",
+  "unicorn/prefer-array-some": "error",
+  "unicorn/prefer-date-now": "error",
+  "unicorn/prefer-default-parameters": "error",
+  "unicorn/prefer-else-if": "error",
+  "unicorn/prefer-includes": "error",
+  "unicorn/prefer-logical-operator-over-ternary": "error",
+  "unicorn/prefer-optional-catch-binding": "error",
+  "unicorn/prefer-regexp-test": "error",
+  "unicorn/prefer-single-call": "error",
+  "unicorn/prefer-string-slice": "error",
+  "unicorn/prefer-string-starts-ends-with": "error",
+};
+
 const sharedTypeScriptRules = {
   ...sharedStyleRules,
-  "@typescript-eslint/no-require-imports": "off",
-  "no-empty": "off",
-  "no-case-declarations": "off",
+  ...correctnessRules,
+  ...readabilityRules,
   "no-unused-vars": "off",
-  "no-useless-catch": "off",
-  "no-useless-assignment": "off",
-  "no-useless-escape": "off",
-  "prefer-const": "off",
-  "preserve-caught-error": "off",
-  "@typescript-eslint/no-empty-object-type": "off",
-  "@typescript-eslint/no-unused-vars": "off",
-  "require-yield": "off",
   "@typescript-eslint/no-explicit-any": [
     "error",
     {
@@ -51,21 +129,6 @@ const sharedTypeScriptRules = {
       ignoreRestArgs: false,
     },
   ],
-  "@typescript-eslint/consistent-type-assertions": "off",
-  "@typescript-eslint/no-non-null-assertion": "off",
-  "@typescript-eslint/strict-boolean-expressions": "off",
-  "no-ternary": "off",
-  "no-nested-ternary": "off",
-  "no-unneeded-ternary": "off",
-  "no-restricted-syntax": "off",
-  "unicorn/filename-case": "off",
-  "unicorn/no-nested-ternary": "off",
-  "unicorn/no-null": "off",
-  "unicorn/no-useless-undefined": "off",
-  "unicorn/prefer-optional-catch-binding": "warn",
-  "unicorn/prevent-abbreviations": "off",
-  "sonarjs/cognitive-complexity": ["error", 15],
-  "sonarjs/no-nested-conditional": "off",
 };
 
 const sharedGlobals = {
@@ -75,19 +138,26 @@ const sharedGlobals = {
 };
 
 const testStyleRuleOverrides = {
-  files: ["**/*.{spec,test}.{ts,tsx}", "**/*.e2e-spec.ts", "**/__tests__/**/*.{ts,tsx}"],
+  files: [
+    "**/*.{spec,test}.{ts,tsx}",
+    "**/*.e2e-spec.ts",
+    "**/__tests__/**/*.{ts,tsx}",
+  ],
   rules: {
     "@typescript-eslint/consistent-type-assertions": "off",
     "@typescript-eslint/no-extraneous-class": "off",
     "@typescript-eslint/no-non-null-assertion": "off",
-    "no-nested-ternary": "off",
-    "no-restricted-syntax": "off",
-    "no-ternary": "off",
-    "no-unneeded-ternary": "off",
-    "unicorn/no-nested-ternary": "off",
-    "unicorn/no-useless-undefined": "off",
+    "sonarjs/no-clear-text-protocols": "off",
     "sonarjs/no-hardcoded-ip": "off",
     "sonarjs/no-hardcoded-passwords": "off",
+  },
+};
+
+// Build and smoke scripts load compiled CommonJS output at runtime.
+const scriptRequireOverride = {
+  files: ["**/scripts/**/*.{ts,mts,cts}"],
+  rules: {
+    "@typescript-eslint/no-require-imports": "off",
   },
 };
 
@@ -157,6 +227,7 @@ export function createPackageConfig({
       },
     },
     testStyleRuleOverrides,
+    scriptRequireOverride,
     workosWebhookIpOverride,
     demoFixtureIpOverride,
     ...overrides,

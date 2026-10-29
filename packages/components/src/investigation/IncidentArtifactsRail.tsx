@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   AlertCircle,
   ArrowRight,
@@ -1821,16 +1828,19 @@ export function RunbookResultsView({
     </div>
   );
 
-  const details =
-    !showProposalDetails || selectedProposal === null ? (
-      <ArtifactDetails artifact={selectedArtifact} layout={layout} />
-    ) : agent === undefined ? (
+  let details: ReactNode;
+  if (!showProposalDetails || selectedProposal === null) {
+    details = <ArtifactDetails artifact={selectedArtifact} layout={layout} />;
+  } else if (agent === undefined) {
+    details = (
       <div className="rounded-2xl border border-border p-4 text-sm text-muted-foreground">
         {t(
           "common.incidentArtifactsRail.proposal.actionsUnavailableInClient",
         )}
       </div>
-    ) : (
+    );
+  } else {
+    details = (
       <RunbookProposalArtifact
         agent={agent}
         incidentId={incidentId ?? ""}
@@ -1842,6 +1852,7 @@ export function RunbookResultsView({
         onRevisionRequested={onRevisionRequested}
       />
     );
+  }
 
   if (layout === "flow") {
     return (

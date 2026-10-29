@@ -320,7 +320,7 @@ function normalizedDataWithProviderFields(
   const existingProviderNativeId = sourceText(input.normalizedData?.provider_native_id);
 
   return {
-    ...(input.normalizedData ?? {}),
+    ...input.normalizedData,
     provider_native_severity:
       providerNative.providerNativeSeverity ?? existingProviderNativeSeverity,
     provider_native_id: providerNative.providerNativeId ?? existingProviderNativeId,

@@ -131,7 +131,7 @@ export function OperationBody({ row, disabled, busy, refusal, closeRequested, on
           </li>)}
         </ul>}
     </div>
-    {row.status === "failed" && row.message !== undefined && REFUSAL_KEYS[row.message] !== undefined && <p role="alert" className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">{t(REFUSAL_KEYS[row.message]!)}</p>}
+    {row.status === "failed" && row.message !== undefined && REFUSAL_KEYS[row.message] !== undefined && <p role="alert" className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">{t(REFUSAL_KEYS[row.message])}</p>}
     {(row.status === "uncertain" || row.status === "executing") && <p className="text-sm text-muted-foreground">{row.message ?? t("incidents.integrationWrites.inspect")}</p>}
     <details className="text-xs">
       <summary className="cursor-pointer text-muted-foreground">{t("incidents.integrationWrites.details")}</summary>
@@ -273,9 +273,9 @@ function OperationRecoveryControls({ row, service, disabled, onRefresh }: { row:
     {row.status === "uncertain" && service.reconcile && <>
       <label className="flex items-center gap-2 text-sm"><input type="checkbox" className="accent-primary" checked={confirmed} disabled={disabled || busy} onChange={(event) => setConfirmed(event.target.checked)} /> {t("incidents.integrationWrites.inspected")}</label>
       <input className="w-full rounded border border-border bg-background px-2 py-1 text-sm" aria-label={t("incidents.integrationWrites.externalId")} placeholder={t("incidents.integrationWrites.externalId")} value={externalId} onChange={(event) => setExternalId(event.target.value)} disabled={disabled || busy} />
-      <Button size="sm" disabled={disabled || busy || !confirmed || !externalId.trim()} onClick={() => { void perform(() => service.reconcile!(row.threadId, row.id, true, confirmed, externalId.trim())); }}>{t("incidents.integrationWrites.confirmApplied")}</Button>
-      <Button size="sm" variant="outline" disabled={disabled || busy || !confirmed} onClick={() => { void perform(() => service.reconcile!(row.threadId, row.id, false, confirmed)); }}>{t("incidents.integrationWrites.confirmNotApplied")}</Button>
+      <Button size="sm" disabled={disabled || busy || !confirmed || !externalId.trim()} onClick={() => { void perform(async () => service.reconcile?.(row.threadId, row.id, true, confirmed, externalId.trim())); }}>{t("incidents.integrationWrites.confirmApplied")}</Button>
+      <Button size="sm" variant="outline" disabled={disabled || busy || !confirmed} onClick={() => { void perform(async () => service.reconcile?.(row.threadId, row.id, false, confirmed)); }}>{t("incidents.integrationWrites.confirmNotApplied")}</Button>
     </>}
-    {terminal && service.renew && <Button size="sm" variant="outline" disabled={disabled || busy} onClick={() => { void perform(() => service.renew!(row.threadId, row.id)); }}>{t("incidents.integrationWrites.renew")}</Button>}
+    {terminal && service.renew && <Button size="sm" variant="outline" disabled={disabled || busy} onClick={() => { void perform(async () => service.renew?.(row.threadId, row.id)); }}>{t("incidents.integrationWrites.renew")}</Button>}
   </div>;
 }

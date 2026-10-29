@@ -139,7 +139,7 @@ function buildPostHogAuth(
   accessTokenRef: string | null | undefined,
   configuration: Record<string, unknown> | undefined,
 ): Record<string, unknown> {
-  const auth = { ...(configuration ?? {}) };
+  const auth = { ...configuration };
   const accessToken = readString(accessTokenRef);
   if (accessToken.length > 0) {
     auth.accessToken = accessToken;

@@ -20,7 +20,7 @@ export interface DesktopAnalyticsContext {
   platform: NodeJS.Platform
 }
 
-export interface DesktopAnalyticsSettingsDb extends DesktopTelemetrySettingsDb {}
+export type DesktopAnalyticsSettingsDb = DesktopTelemetrySettingsDb;
 
 export interface DesktopAnalyticsRuntime {
   getRuntimeAppVersion(): string

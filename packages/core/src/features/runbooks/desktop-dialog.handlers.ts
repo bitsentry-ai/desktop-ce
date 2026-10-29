@@ -92,6 +92,7 @@ function defaultDialogDirectory(
         return resolvedPath
       }
     } catch {
+      // Electron rejects unknown locations; try the next candidate.
     }
   }
 

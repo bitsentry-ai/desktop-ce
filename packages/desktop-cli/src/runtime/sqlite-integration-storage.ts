@@ -75,8 +75,7 @@ export class SqliteIntegrationResources {
       const snapshot = { ...row }; delete snapshot.selected; Reflect.deleteProperty(snapshot, "threadId")
       const encrypted = await this.secrets.sealPayload(`resource:${id}`, JSON.stringify(snapshot))
       statements.push({ sql: `INSERT INTO "ExternalResource" (id,"connectionId","resourceType","externalId","snapshotCiphertext","stateVersion","observedAt","createdAt","updatedAt") VALUES (?,?,?,?,?,?,?,?,?)
-        ON CONFLICT("connectionId","resourceType","externalId") DO UPDATE SET "snapshotCiphertext"=excluded."snapshotCiphertext","stateVersion"=excluded."stateVersion","observedAt"=excluded."observedAt","updatedAt"=excluded."updatedAt" WHERE "ExternalResource"."observedAt"<=excluded."observedAt"`, parameters: [id, row.connectionId, row.resourceType, row.externalId, encrypted, row.stateVersion ?? 1, row.observedAt, now(), now()] })
-      statements.push({ sql: `INSERT INTO "ResourceLink" (id,"resourceId","subjectType","subjectId",role,"createdAt") VALUES (?,?,'thread',?,'referenced',?) ON CONFLICT("resourceId","subjectType","subjectId") DO UPDATE SET "removedAt"=NULL`, parameters: [randomUUID(), id, threadId, now()] })
+        ON CONFLICT("connectionId","resourceType","externalId") DO UPDATE SET "snapshotCiphertext"=excluded."snapshotCiphertext","stateVersion"=excluded."stateVersion","observedAt"=excluded."observedAt","updatedAt"=excluded."updatedAt" WHERE "ExternalResource"."observedAt"<=excluded."observedAt"`, parameters: [id, row.connectionId, row.resourceType, row.externalId, encrypted, row.stateVersion ?? 1, row.observedAt, now(), now()] }, { sql: `INSERT INTO "ResourceLink" (id,"resourceId","subjectType","subjectId",role,"createdAt") VALUES (?,?,'thread',?,'referenced',?) ON CONFLICT("resourceId","subjectType","subjectId") DO UPDATE SET "removedAt"=NULL`, parameters: [randomUUID(), id, threadId, now()] })
     }
     return statements
   }

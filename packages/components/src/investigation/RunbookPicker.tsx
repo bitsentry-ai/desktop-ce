@@ -97,8 +97,8 @@ export function RunbookPicker({ runbooks, selectedId, loading, loadFailed, disab
     const current = active === null ? 0 : results.findIndex((row) => row.id === active.id);
     let next = current + (typeof step === "number" ? step : 0);
     if (step === "first") next = 0;
-    if (step === "last") next = results.length - 1;
-    setActiveId(results[Math.min(Math.max(next, 0), results.length - 1)]!.id);
+    else if (step === "last") next = results.length - 1;
+    setActiveId(results[Math.min(Math.max(next, 0), results.length - 1)].id);
   }
   function handleSearchKeyDown(event: KeyboardEvent<HTMLInputElement>) {
     const moves: Record<string, number | "first" | "last"> = { ArrowDown: 1, ArrowUp: -1, Home: "first", End: "last" };

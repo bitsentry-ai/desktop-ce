@@ -26,16 +26,10 @@ const agentToolResultEnvelopeSchema = z.object({
   result: agentToolResultSchema,
 }).strict()
 
-const agentToolProtocolSchema = z.enum([
-  'native_function_calling',
-  'mcp',
-  'none',
-])
-
 export type AgentToolCall = z.infer<typeof agentToolCallSchema>
 export type AgentToolResult = z.infer<typeof agentToolResultSchema>
 export type AgentToolResultEnvelope = z.infer<typeof agentToolResultEnvelopeSchema>
-export type AgentToolProtocol = z.infer<typeof agentToolProtocolSchema>
+export type AgentToolProtocol = 'native_function_calling' | 'mcp' | 'none'
 
 export function createAgentToolResultEnvelope(
   toolCall: AgentToolCall,

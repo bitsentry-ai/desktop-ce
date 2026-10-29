@@ -79,14 +79,18 @@ export function QuestionOption({ label, hint, index, selected, disabled, onSelec
           {hint !== undefined && <span className="truncate text-xs text-muted-foreground">{hint}</span>}
         </span>
       )}
-      {selected ? (
-        <CheckIcon className="size-3.5 shrink-0 text-violet-600 dark:text-violet-300" aria-hidden="true" />
-      ) : !pinned && index < 9 ? (
-        <kbd className="flex size-5 shrink-0 items-center justify-center rounded border border-border bg-background text-[11px] font-medium tabular-nums text-muted-foreground">
-          {index + 1}
-        </kbd>
-      ) : null}
+      <OptionShortcut selected={selected} pinned={pinned} index={index} />
     </button>
+  );
+}
+
+function OptionShortcut({ selected, pinned, index }: { selected: boolean; pinned: boolean; index: number }) {
+  if (selected) return <CheckIcon className="size-3.5 shrink-0 text-violet-600 dark:text-violet-300" aria-hidden="true" />;
+  if (pinned || index >= 9) return null;
+  return (
+    <kbd className="flex size-5 shrink-0 items-center justify-center rounded border border-border bg-background text-[11px] font-medium tabular-nums text-muted-foreground">
+      {index + 1}
+    </kbd>
   );
 }
 

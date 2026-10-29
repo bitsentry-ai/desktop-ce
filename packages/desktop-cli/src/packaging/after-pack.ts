@@ -105,6 +105,11 @@ async function resolvePackageJsonPath(
   throw new Error(`Unable to locate package.json for ${packageName}`)
 }
 
+function keyringTargetSuffix(platform: string, architecture: string): string {
+  if (platform === 'linux') return architecture === 'arm' ? '-gnueabihf' : '-gnu'
+  return platform === 'win32' ? '-msvc' : ''
+}
+
 async function ensureCliRuntimeDependencies(
   nativeNodeModulesDir: string,
   projectRoot: string,
@@ -124,9 +129,7 @@ async function ensureCliRuntimeDependencies(
   if (targetArch === undefined) throw new Error('Unsupported keyring target architecture')
   const architectures = targetArch === 'universal' ? ['x64', 'arm64'] : [targetArch]
   for (const architecture of architectures) {
-    const suffix = context.electronPlatformName === 'linux' ?
-      architecture === 'arm' ? '-gnueabihf' : '-gnu' :
-      context.electronPlatformName === 'win32' ? '-msvc' : ''
+    const suffix = keyringTargetSuffix(context.electronPlatformName, architecture)
     await copyResolvedPackage(
       `@napi-rs/keyring-${context.electronPlatformName}-${architecture}${suffix}`,
       nativeNodeModulesDir,
