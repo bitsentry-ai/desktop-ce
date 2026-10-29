@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { CheckIcon, ChevronRight, Loader2, X } from "lucide-react";
+import { CheckIcon, ChevronRight, Loader2, Minus, X } from "lucide-react";
 import { useTranslation } from "@bitsentry-ce/i18n";
 import { cn } from "../lib/utils";
 import { Badge } from "../ui/badge";
@@ -8,11 +8,20 @@ import { ComposerQuestionCard, QuestionOption, QuestionPrimaryButton } from "./C
 /** Success marks a finished fix and destructive a failed or rejected one; every other status is neutral. */
 export type RemediationFlowTone = "neutral" | "success" | "destructive";
 
+/** A short state shown on an option. A check badge, as a Wazuh check, has a dashed border to tell it apart. */
+export interface RemediationFlowBadge {
+  label: string;
+  tone: RemediationFlowTone;
+  check?: boolean;
+}
+
 export interface RemediationFlowOption {
   label: string;
   hint?: string;
   /** Shown below the other options with no number key, such as "New SSH connection". Keep it last. */
   pinned?: boolean;
+  /** States shown at the end of the option, in order. */
+  badges?: RemediationFlowBadge[];
 }
 
 export interface RemediationFlowRow {
@@ -52,7 +61,8 @@ export interface ComposerRemediationFlow {
   rows?: RemediationFlowRow[];
   /** Shown with a spinner while the fix runs. */
   running?: string;
-  result?: { tone: Exclude<RemediationFlowTone, "neutral">; title: string; detail?: string };
+  /** A neutral result, as a package that was already patched, changed nothing. */
+  result?: { tone: RemediationFlowTone; title: string; detail?: string };
   notice?: string;
   details?: { label: string; text: string }[];
   error?: string | null;
@@ -69,6 +79,23 @@ function StatusBadge({ status }: { status: ComposerRemediationFlow["status"] }) 
     <Badge variant={status.tone === "neutral" ? "secondary" : status.tone} className="shrink-0 whitespace-nowrap px-1.5 py-0 text-[10px] font-semibold">
       {status.label}
     </Badge>
+  );
+}
+
+function OptionBadges({ badges }: { badges: RemediationFlowBadge[] | undefined }) {
+  if (badges === undefined || badges.length === 0) return null;
+  return (
+    <span className="flex shrink-0 flex-wrap items-center justify-end gap-1">
+      {badges.map((badge) => (
+        <Badge
+          key={badge.label}
+          variant={badge.tone === "neutral" ? "secondary" : badge.tone}
+          className={cn("whitespace-nowrap px-1.5 py-0 text-[10px] font-semibold", badge.check === true && "border-dashed border-foreground/25")}
+        >
+          {badge.label}
+        </Badge>
+      ))}
+    </span>
   );
 }
 
@@ -206,6 +233,7 @@ function CompactOptions({ flow, label }: { flow: ComposerRemediationFlow; label:
         onSelect={() => { flow.select(index); }}
         compact
         pinned={item.pinned}
+        trailing={<OptionBadges badges={item.badges} />}
       />
     );
   };
@@ -235,6 +263,18 @@ function CompactOptions({ flow, label }: { flow: ComposerRemediationFlow; label:
  * One CVE remediation step above the composer text, built from the customer report card's parts. Number keys pick an
  * option and Enter runs the primary button while focus is outside a text field; Escape closes the card.
  */
+const RESULT_TONES: Record<RemediationFlowTone, string> = {
+  success: "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-400",
+  destructive: "bg-destructive/10 text-destructive",
+  neutral: "bg-muted text-muted-foreground",
+};
+
+function ResultIcon({ tone }: { tone: RemediationFlowTone }) {
+  if (tone === "success") return <CheckIcon size={16} aria-hidden="true" />;
+  if (tone === "neutral") return <Minus size={16} aria-hidden="true" />;
+  return <X size={16} aria-hidden="true" />;
+}
+
 export function RemediationQuestionPanel({ flow }: { flow: ComposerRemediationFlow }) {
   const { t } = useTranslation();
   const latest = useRef(flow);
@@ -305,6 +345,7 @@ export function RemediationQuestionPanel({ flow }: { flow: ComposerRemediationFl
               disabled={flow.submitting}
               onSelect={() => { flow.select(index); }}
               pinned={option.pinned}
+              trailing={<OptionBadges badges={option.badges} />}
             />
           ))}
         </div>
@@ -344,10 +385,10 @@ export function RemediationQuestionPanel({ flow }: { flow: ComposerRemediationFl
           <span
             className={cn(
               "flex size-[30px] shrink-0 items-center justify-center rounded-full",
-              flow.result.tone === "success" ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-400" : "bg-destructive/10 text-destructive",
+              RESULT_TONES[flow.result.tone],
             )}
           >
-            {flow.result.tone === "success" ? <CheckIcon size={16} aria-hidden="true" /> : <X size={16} aria-hidden="true" />}
+            <ResultIcon tone={flow.result.tone} />
           </span>
           <div className="min-w-0">
             <p className="text-sm font-semibold">{flow.result.title}</p>
