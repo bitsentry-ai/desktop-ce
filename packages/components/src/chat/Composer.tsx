@@ -114,16 +114,45 @@ export interface ComposerProps {
   remediationFlow?: ComposerRemediationFlow;
   // A card the host owns, shown in the composer above the text while no question or remediation step is open and the
   // agent is idle. `chip` shows above the composer while the host keeps the card closed.
-  hostPanel?: { card?: ReactNode; chip?: ReactNode };
+  hostPanel?: ComposerHostPanel;
+}
+
+export interface ComposerHostButton {
+  label: string;
+  run: () => void;
+}
+
+export interface ComposerHostPanel {
+  card?: ReactNode;
+  chip?: ReactNode;
+  /** While the card shows, these replace the send button and the text area hides; the typed prompt stays for later. */
+  buttons?: { back?: ComposerHostButton; primary: ComposerHostButton };
 }
 
 /** The host card shows while no question or step is open and the composer is idle; otherwise its chip shows. */
 function hostPanelParts(
-  hostPanel: ComposerProps["hostPanel"],
+  hostPanel: ComposerHostPanel | undefined,
   { open, busy }: { open: unknown; busy: boolean },
-): { card?: ReactNode; chip?: ReactNode } {
+): ComposerHostPanel {
   if (hostPanel === undefined || open !== undefined) return {};
-  return !busy && hostPanel.card !== undefined ? { card: hostPanel.card } : { chip: hostPanel.chip };
+  return !busy && hostPanel.card !== undefined ? { card: hostPanel.card, buttons: hostPanel.buttons } : { chip: hostPanel.chip };
+}
+
+function HostPanelButtons({ buttons }: { buttons: NonNullable<ComposerHostPanel["buttons"]> }) {
+  return (
+    <div className="flex items-center gap-1.5">
+      {buttons.back !== undefined && (
+        <button
+          type="button"
+          onClick={buttons.back.run}
+          className="h-8 whitespace-nowrap rounded-[10px] px-3 text-[13px] font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+        >
+          {buttons.back.label}
+        </button>
+      )}
+      <QuestionPrimaryButton label={buttons.primary.label} run={buttons.primary.run} disabled={false} submitting={false} />
+    </div>
+  );
 }
 
 function getSeededTraitValues(
@@ -235,7 +264,7 @@ export function Composer({
   const asking = question !== undefined;
   const host = hostPanelParts(hostPanel, { open: question ?? remediation, busy: isBlocked || isProcessing });
   const highlighted = asking || remediation !== undefined || host.card !== undefined;
-  const hidesText = remediation !== undefined && remediation.input === undefined;
+  const hidesText = (remediation !== undefined && remediation.input === undefined) || host.buttons !== undefined;
   const hasAttachOptions =
     composerSupportsPhotos || composerFileAccept?.includes(".csv") === true;
   const canSend = composerCanSend(isBlocked, prompt, composerImages.length);
@@ -601,7 +630,8 @@ export function Composer({
             {contextIndicator}
             {question !== undefined && <QuestionSubmitButton question={question} />}
             {remediation !== undefined && <RemediationFlowButtons flow={remediation} />}
-            {question === undefined && remediation === undefined && (
+            {host.buttons !== undefined && <HostPanelButtons buttons={host.buttons} />}
+            {question === undefined && remediation === undefined && host.buttons === undefined && (
               <SendButton
                 isProcessing={isProcessing}
                 canSend={canSend}
