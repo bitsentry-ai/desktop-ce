@@ -36,7 +36,7 @@
     "packages/core": {
       "entry": [
         "src/**/__tests__/**/*.test.ts",
-        "src/features/agent-runtime/shared/effect-orchestration.ts",
+        "src/features/agent-runtime/shared/{effect-orchestration,local-process}.ts",
         "src/features/agent-runtime/{customer-report-intake-tool,host-tools,integration-tools}.ts",
         "src/features/analytics/index.ts",
         "src/features/auth/{auth.schemas,index}.ts",

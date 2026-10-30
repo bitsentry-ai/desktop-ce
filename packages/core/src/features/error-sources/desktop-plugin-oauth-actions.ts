@@ -193,7 +193,7 @@ export async function refreshPluginAccessToken(input: {
       clientSecret: input.refresh.clientSecret,
       refreshToken: input.refresh.refreshToken,
     },
-  });
+  }, { signal: input.refresh.signal });
 
   if (!result.ok) {
     throw new Error(result.summary);
