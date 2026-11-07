@@ -15,8 +15,9 @@ async function waitForCondition(predicate: () => boolean): Promise<void> {
 }
 
 const persistedThread = [
-  { kind: 'user', text: 'Why is api-1 returning 502?' },
+  { id: 'm-0', kind: 'user', text: 'Why is api-1 returning 502?' },
   {
+    id: 'm-1',
     kind: 'agent',
     iterations: [{ id: 'it-1', startedAt: '2026-10-01T10:00:00.000Z', text: 'Disk is full', toolCallIds: [], status: 'done' }],
     activeIterationId: null,
@@ -25,8 +26,9 @@ const persistedThread = [
     status: 'done',
     customerReport: { title: 'Disk usage' },
   },
-  { kind: 'user', text: 'Which directory?' },
+  { id: 'm-2', kind: 'user', text: 'Which directory?' },
   {
+    id: 'm-3',
     kind: 'agent',
     iterations: [{ id: 'it-2', startedAt: '2026-10-01T10:01:00.000Z', text: 'Checking', toolCallIds: ['tool-1'], status: 'streaming' }],
     activeIterationId: 'it-2',
