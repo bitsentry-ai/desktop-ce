@@ -1,3 +1,4 @@
+import { useActionPermissions } from "../../services/context";
 import type { ReactNode } from "react";
 
 import {
@@ -68,6 +69,7 @@ export function RunbookEditorHeader({
   extraActions,
   t,
 }: RunbookEditorHeaderProps) {
+  const { canOperate, operatorTitle } = useActionPermissions();
   const hasMetaIssue =
     metaIssues.titleIssue !== null || metaIssues.descriptionIssue !== null;
 
@@ -203,7 +205,8 @@ export function RunbookEditorHeader({
           <button
             data-tour="runbooks-run-btn"
             onClick={onRun}
-            disabled={runbook.actions.length === 0}
+            title={operatorTitle}
+            disabled={!canOperate || runbook.actions.length === 0}
             aria-label={t("runbooks.runbook.runRunbook")}
             className="flex size-7 shrink-0 items-center justify-center rounded-md border border-primary text-primary transition-colors hover:bg-primary/10 disabled:opacity-40"
           >

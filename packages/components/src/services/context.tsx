@@ -5,7 +5,19 @@ import type { BitsentryServicePorts } from "./contracts";
 interface BitsentryServicesProviderProps {
   services: BitsentryServicePorts;
   children: React.ReactNode;
+  permissions?: ActionPermissions;
 }
+
+interface ActionPermissions {
+  canOperate: boolean;
+  operatorTitle?: string;
+}
+
+// Local desktop execution has no organization roles; Dashboard supplies its policy.
+const localPermissions: ActionPermissions = { canOperate: true };
+const ActionPermissionsContext = createContext<ActionPermissions>(localPermissions);
+
+export const useActionPermissions = () => useContext(ActionPermissionsContext);
 
 const BitsentryServicesContext = createContext<BitsentryServicePorts | null>(
   null,
@@ -14,10 +26,13 @@ const BitsentryServicesContext = createContext<BitsentryServicePorts | null>(
 export function BitsentryServicesProvider({
   services,
   children,
+  permissions,
 }: BitsentryServicesProviderProps) {
   return (
     <BitsentryServicesContext.Provider value={services}>
-      {children}
+      <ActionPermissionsContext.Provider value={permissions ?? localPermissions}>
+        {children}
+      </ActionPermissionsContext.Provider>
     </BitsentryServicesContext.Provider>
   );
 }
