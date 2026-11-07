@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type RefObject } from "react";
 import type { ChatMessage } from "../../chat/types";
 import {
   captureIncidentException,
@@ -18,6 +18,13 @@ import {
 import type { IncidentThread } from "./types";
 
 /** Loads incidents and messages from the desktop store or local storage and saves them back. */
+/** Tells listeners (the navbar) the incident list changed. Streamed message text alone keeps the same list. */
+function announceIfListChanged(announced: RefObject<IncidentThread[] | null>, next: IncidentThread[]) {
+  if (announced.current === next) return;
+  announced.current = next;
+  window.dispatchEvent(new CustomEvent("bitsentry:incidents-updated"));
+}
+
 export function useIncidentPersistence() {
   const [desktopStoreMode, setDesktopStoreMode] = useState<"desktop" | "local">(
     () => {
@@ -43,6 +50,8 @@ export function useIncidentPersistence() {
   );
   const desktopSyncPendingSinceRef = useRef<number | null>(null);
   const desktopStoreFallbackLoggedRef = useRef(false);
+  // The incident list last announced to listeners (the navbar); message text alone does not change it.
+  const announcedIncidentsRef = useRef<IncidentThread[] | null>(null);
   const latestDesktopStateRef = useRef<{
     incidents: IncidentThread[];
     messagesMap: Record<string, ChatMessage[]>;
@@ -121,13 +130,12 @@ export function useIncidentPersistence() {
       desktopSyncPendingSinceRef.current = null;
       saveIncidents(incidents);
       saveIncidentMessages(messagesMap);
-      window.dispatchEvent(new CustomEvent("bitsentry:incidents-updated"));
+      const listChanged = announcedIncidentsRef.current !== incidents;
+      announceIfListChanged(announcedIncidentsRef, incidents);
       if (!isDesktopIncidents) return;
       void saveDesktopIncidentState(incidents, messagesMap)
         .then(() => {
-          window.dispatchEvent(
-            new CustomEvent("bitsentry:incidents-updated"),
-          );
+          if (listChanged) window.dispatchEvent(new CustomEvent("bitsentry:incidents-updated"));
         })
         .catch((error: unknown) => {
           if (isMissingIncidentsHandlerError(error)) {
@@ -164,7 +172,7 @@ export function useIncidentPersistence() {
       } = latestDesktopStateRef.current;
 
       saveIncidents(latestIncidents);
-      window.dispatchEvent(new CustomEvent("bitsentry:incidents-updated"));
+      announceIfListChanged(announcedIncidentsRef, latestIncidents);
       saveIncidentMessages(latestMessagesMap);
 
       if (
