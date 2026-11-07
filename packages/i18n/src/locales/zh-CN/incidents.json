@@ -249,5 +249,8 @@
   "incidents.integrationWrites.customerReport.unverified": "由工程师提供，未经验证",
   "incidents.integrationWrites.customerReport.notProvided": "未提供",
   "incidents.integrationWrites.customerReport.subject": "主题",
-  "incidents.integrationRecovery.refusedBeforeWrite": "iTop 在写入任何内容之前拒绝了此请求。请检查连接及其权限，然后重新提出更改。"
+  "incidents.integrationRecovery.refusedBeforeWrite": "iTop 在写入任何内容之前拒绝了此请求。请检查连接及其权限，然后重新提出更改。",
+  "incidents.integrationWrites.restricted": "受限操作：需要指定批准人和变更或工单引用",
+  "incidents.integrationWrites.approvalReference": "变更或工单引用（3–200 个字符）",
+  "incidents.integrationWrites.policyDenied": "策略已禁止"
 }

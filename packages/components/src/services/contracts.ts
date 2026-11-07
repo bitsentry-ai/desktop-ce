@@ -520,14 +520,35 @@ export interface PluginInstallSummary {
   name?: string;
 }
 
+export type IntegrationActionMode = "allow" | "approve" | "restricted" | "deny";
+export interface IntegrationActionPolicy {
+  actionId: string;
+  label?: string;
+  riskLevel: "read" | "write";
+  mode: IntegrationActionMode;
+  approverUserIds: number[];
+  hardDenied: boolean;
+}
+export interface IntegrationActionPoliciesPort {
+  canEdit: boolean;
+  list(connectionId: string): Promise<IntegrationActionPolicy[]>;
+  save(input: { connectionId: string; actionId: string; mode: IntegrationActionMode; approverUserIds: number[] }): Promise<unknown>;
+  listUsers?(): Promise<{ id: number; name?: string; email?: string }[]>;
+}
+export type IntegrationOperationWithPolicy = import("@bitsentry-ce/core/features/plugins").IntegrationOperation & {
+  requiredApproval?: { mode: IntegrationActionMode; approverUserIds: number[] };
+};
+
 export interface PluginsServicePort {
+  actionPolicies?: IntegrationActionPoliciesPort;
+  currentUserId?: number;
   refreshResource?(resource: import("@bitsentry-ce/core/features/plugins").LinkedResourceInput): Promise<unknown>;
   selectResource?(resource: import("@bitsentry-ce/core/features/plugins").IntegrationResource, selected: boolean): Promise<unknown>;
   renewOperation?(threadId: string, id: string): Promise<unknown>;
   reconcileOperation?(threadId: string, id: string, applied: boolean, confirmed: boolean, externalId?: string): Promise<unknown>;
   listResources?(threadId: string): Promise<import("@bitsentry-ce/core/features/plugins").IntegrationResource[]>;
-  listOperations?(threadId: string): Promise<import('@bitsentry-ce/core/features/plugins').IntegrationOperation[]>;
-  approveOperation?(threadId: string, id: string, closeRequested: boolean): Promise<unknown>;
+  listOperations?(threadId: string): Promise<IntegrationOperationWithPolicy[]>;
+  approveOperation?(threadId: string, id: string, closeRequested: boolean, approvalReference?: string): Promise<unknown>;
   cancelOperation?(threadId: string, id: string): Promise<unknown>;
   /** The conversation's newest customer report intake, or null. */
   getCustomerReportIntake?(threadId: string): Promise<import('@bitsentry-ce/core/features/plugins').CustomerReportIntake | null>;

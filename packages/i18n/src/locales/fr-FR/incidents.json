@@ -249,5 +249,8 @@
   "incidents.integrationWrites.customerReport.unverified": "Fourni par l'ingénieur, non vérifié",
   "incidents.integrationWrites.customerReport.notProvided": "Non fourni",
   "incidents.integrationWrites.customerReport.subject": "Objet",
-  "incidents.integrationRecovery.refusedBeforeWrite": "iTop a refusé cette requête avant toute écriture. Vérifiez la connexion et ses autorisations, puis proposez à nouveau la modification."
+  "incidents.integrationRecovery.refusedBeforeWrite": "iTop a refusé cette requête avant toute écriture. Vérifiez la connexion et ses autorisations, puis proposez à nouveau la modification.",
+  "incidents.integrationWrites.restricted": "Action restreinte : nécessite un approbateur désigné et une référence de changement ou de ticket",
+  "incidents.integrationWrites.approvalReference": "Référence de changement ou de ticket (3 à 200 caractères)",
+  "incidents.integrationWrites.policyDenied": "Interdite par la politique"
 }
