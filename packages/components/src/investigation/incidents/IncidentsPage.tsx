@@ -69,17 +69,15 @@ import {
   getIncidentPreviewFromMessages,
   normalizeIncidentPreview,
   selectIncidentTokenUsage,
-  setIncidentArchiveState,
-  updateIncidentById,
 } from "./incidentNormalize";
 import {
   loadIncidentTokenUsage,
   saveIncidentTokenUsage,
   saveProviderLock,
 } from "./incidentStorage";
-import type { IncidentThread } from "./types";
 import { IncidentComposer } from "./IncidentComposer";
 import { useIncidentDraftStore } from "./incidentDraftStore";
+import { useIncidentListStore } from "./incidentListStore";
 import { IncidentMessageList } from "./IncidentMessageList";
 import { useIncidentAgentEvents } from "./useIncidentAgentEvents";
 import { useIncidentComposerAttachments } from "./useIncidentComposerAttachments";
@@ -96,7 +94,6 @@ export default function IncidentsPage() {
   const activeId = searchParams.get("id");
   const {
     incidents,
-    setIncidents,
     messagesMap,
     setMessagesMap,
     appendThreadMessages,
@@ -138,7 +135,6 @@ export default function IncidentsPage() {
     closeRunbookRail,
   });
   const autoOpenedArtifactsThreadRef = useRef<string | null>(null);
-  const incidentsRef = useRef<IncidentThread[]>([]);
   const reconciledSessionIdsRef = useRef<Set<string>>(new Set());
   const checkingSessionIdsRef = useRef<Set<string>>(new Set());
 
@@ -204,106 +200,32 @@ export default function IncidentsPage() {
     return rawMessages;
   }, [activeIncident, activeMessagesLoaded, rawMessages]);
 
-  incidentsRef.current = incidents;
-
   const detachIncidentSession = useCallback(
     (incidentId: string, sessionId: string, nextState: AgentSessionState) => {
       // The session is gone (app restart), so a turn it was running stops here. This is display
       // only: loading the thread without a session settles it again, and main settles on resume.
-      if (incidentsRef.current.find((incident) => incident.id === incidentId)?.sessionId === sessionId) {
-        setMessagesMap((prev) => {
-          const messages = prev[incidentId];
-          if (messages === undefined) return prev;
-          const settled = settleInterruptedAgentTurn(messages, new Date().toISOString());
-          return settled === messages ? prev : { ...prev, [incidentId]: settled };
-        });
-      }
-      setIncidents((prev) =>
-        prev.map((incident) => {
-          if (incident.id !== incidentId || incident.sessionId !== sessionId) {
-            return incident;
-          }
-          return {
-            ...incident,
-            state: nextState,
-            sessionId: undefined,
-          };
-        }),
-      );
+      const store = useIncidentListStore.getState();
+      if (store.incidents.find((incident) => incident.id === incidentId)?.sessionId !== sessionId) return;
+      setMessagesMap((prev) => {
+        const messages = prev[incidentId];
+        if (messages === undefined) return prev;
+        const settled = settleInterruptedAgentTurn(messages, new Date().toISOString());
+        return settled === messages ? prev : { ...prev, [incidentId]: settled };
+      });
+      store.patch(incidentId, { state: nextState, sessionId: undefined });
     },
     [setMessagesMap],
   );
 
+  // Fills in a missing preview from loaded history; live turns set it when they settle.
   useEffect(() => {
-    setIncidents((prev) => {
-      let changed = false;
-      const next = prev.map((incident) => {
-        if (normalizeIncidentPreview(incident.lastMessagePreview)) {
-          return incident;
-        }
-
-        const preview =
-          getIncidentPreviewFromMessages(messagesMap[incident.id]) ??
-          normalizeIncidentPreview(incident.prompt);
-
-        if (preview === null) {
-          return incident;
-        }
-
-        changed = true;
-        return {
-          ...incident,
-          lastMessagePreview: preview,
-        };
-      });
-
-      if (changed) return next;
-      return prev;
-    });
+    const store = useIncidentListStore.getState();
+    for (const incident of store.incidents) {
+      if (normalizeIncidentPreview(incident.lastMessagePreview) !== null) continue;
+      const preview = getIncidentPreviewFromMessages(messagesMap[incident.id]) ?? normalizeIncidentPreview(incident.prompt);
+      if (preview !== null) store.patch(incident.id, { lastMessagePreview: preview });
+    }
   }, [messagesMap]);
-
-  useEffect(() => {
-    const handleIncidentStoreUpdate = (event: Event) => {
-      const detail = (
-        event as CustomEvent<{
-          action?: string;
-          incidentId?: string;
-          archivedAt?: string;
-        }>
-      ).detail;
-
-      const incidentId = detail?.incidentId;
-      if (incidentId === undefined) return;
-
-      if (detail.action === "archive") {
-        setIncidents((prev) =>
-          setIncidentArchiveState(prev, incidentId, true),
-        );
-
-        if (activeId === incidentId && !isHistoryContext) {
-          void navigate("/incidents");
-        }
-        return;
-      }
-
-      if (detail.action === "unarchive") {
-        setIncidents((prev) =>
-          setIncidentArchiveState(prev, incidentId, false),
-        );
-      }
-    };
-
-    window.addEventListener(
-      "bitsentry:incidents-updated",
-      handleIncidentStoreUpdate,
-    );
-    return () => {
-      window.removeEventListener(
-        "bitsentry:incidents-updated",
-        handleIncidentStoreUpdate,
-      );
-    };
-  }, [activeId, isHistoryContext, navigate]);
 
   useEffect(() => {
     saveIncidentTokenUsage(tokenUsageByIncident);
@@ -408,9 +330,6 @@ export default function IncidentsPage() {
   const { applySnapshotToIncident } = useIncidentAgentEvents({
     agent,
     activeId,
-    incidents,
-    incidentsRef,
-    setIncidents,
     setMessagesMap,
     setTokenUsageByIncident,
     setSessionTokenUsage,
@@ -567,10 +486,7 @@ export default function IncidentsPage() {
   const handleNewIncident = () => {
     const id = crypto.randomUUID();
     const now = new Date().toISOString();
-    setIncidents((prev) => [
-      { id, title: "New Incident", createdAt: now, prompt: "", state: "IDLE" },
-      ...prev,
-    ]);
+    useIncidentListStore.getState().upsert({ id, title: "New Incident", createdAt: now, prompt: "", state: "IDLE" });
     // Pre-seed with current settings so new chats inherit the last used
     // provider/model/accessLevel rather than resetting to defaults.
     if (selectedProviderKey !== null) {
@@ -582,12 +498,9 @@ export default function IncidentsPage() {
   const handleArchiveIncident = () => {
     if (activeId === null || activeIncident === null) return;
 
-    const nextIncidents = incidents.map((incident) => {
-      if (incident.id !== activeId) return incident;
-      return { ...incident, archived: true };
-    });
-
-    setIncidents(nextIncidents);
+    const store = useIncidentListStore.getState();
+    store.archive(activeId, new Date().toISOString());
+    const nextIncidents = useIncidentListStore.getState().incidents;
 
     if (isHistoryContext) {
       void navigate("/incidents?view=history");
@@ -606,19 +519,7 @@ export default function IncidentsPage() {
 
   const handleUnarchiveIncident = useCallback(
     (incidentId: string) => {
-      setIncidents((prev) =>
-        prev.map((incident) => {
-          if (incident.id !== incidentId) return incident;
-          return { ...incident, archived: false };
-        }),
-      );
-
-      window.dispatchEvent(
-        new CustomEvent("bitsentry:incidents-updated", {
-          detail: { action: "unarchive", incidentId },
-        }),
-      );
-
+      useIncidentListStore.getState().unarchive(incidentId);
       void navigate(`/incidents?id=${incidentId}`);
     },
     [navigate],
@@ -660,15 +561,13 @@ export default function IncidentsPage() {
       saveProviderLock(activeId, selectedProviderKey, selectedModelId, options?.accessLevel ?? selectedAccessLevel);
     }
 
-    setIncidents((prev) =>
-      updateIncidentById(prev, activeId, (incident) => ({
-          ...incident,
-          title: nextTitle,
-          prompt: text,
-          state: "RUNNING",
-          lastMessagePreview: preview ?? incident.lastMessagePreview,
-      })),
-    );
+    // The preview follows the user's prompt now, and the agent's reply once the turn settles.
+    useIncidentListStore.getState().patch(activeId, {
+      title: nextTitle,
+      prompt: text,
+      state: "RUNNING",
+      ...(preview !== null && { lastMessagePreview: preview }),
+    });
 
     try {
       const llm: {
@@ -694,9 +593,7 @@ export default function IncidentsPage() {
         interactionMode: options?.interactionMode,
         traitValues: options?.traitValues,
       });
-      setIncidents((prev) =>
-        updateIncidentById(prev, activeId, (incident) => ({ ...incident, sessionId: result.sessionId })),
-      );
+      useIncidentListStore.getState().patch(activeId, { sessionId: result.sessionId });
       try {
         const snapshot = await agent.getSnapshot(result.sessionId);
         if (snapshot !== null) {
@@ -724,9 +621,7 @@ export default function IncidentsPage() {
 
       if (isBusyAgentError) {
         setComposerUnlessIntake(activeId, fromIntake, text, outgoingImages);
-        setIncidents((prev) =>
-          updateIncidentById(prev, activeId, (incident) => ({ ...incident, state: "RUNNING" })),
-        );
+        useIncidentListStore.getState().patch(activeId, { state: "RUNNING" });
         return;
       }
 
@@ -745,7 +640,7 @@ export default function IncidentsPage() {
         promptLength: text.length,
         attachmentCount: outgoingImages.length,
       });
-      appendThreadMessages(activeId, [
+      const failedTurn: ChatMessage[] = [
         { id: crypto.randomUUID(), kind: "user", text, attachments: outgoingImages },
         {
           id: crypto.randomUUID(),
@@ -757,10 +652,15 @@ export default function IncidentsPage() {
           status: "error",
           errorMsg: message,
         },
-      ]);
-      setIncidents((prev) =>
-        updateIncidentById(prev, activeId, (incident) => ({ ...incident, state: "FAILED", sessionId: undefined })),
-      );
+      ];
+      appendThreadMessages(activeId, failedTurn);
+      // Main stores the error bubble as the preview, so show the same.
+      const failedPreview = getIncidentPreviewFromMessages(failedTurn);
+      useIncidentListStore.getState().patch(activeId, {
+        state: "FAILED",
+        sessionId: undefined,
+        ...(failedPreview !== null && { lastMessagePreview: failedPreview }),
+      });
     }
   };
 
@@ -1086,13 +986,8 @@ export default function IncidentsPage() {
                   value={activeIncident.title}
                   disabled={isArchivedIncident}
                   onChange={(title) => {
-                    if (isArchivedIncident) return;
-                    setIncidents((prev) =>
-                      prev.map((incident) => {
-                        if (incident.id !== activeId) return incident;
-                        return { ...incident, title };
-                      }),
-                    );
+                    if (isArchivedIncident || activeId === null) return;
+                    useIncidentListStore.getState().patch(activeId, { title });
                   }}
                 />
               </div>
