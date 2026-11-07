@@ -1251,9 +1251,13 @@ export interface AgentStartRequest {
   traitValues?: Record<string, string | boolean>;
 }
 
+/** How a message sent while a turn runs is delivered: after the turn, or into it when the turn can take a steer. */
+export type AgentMessageDelivery = "queue" | "steer";
+
 export interface AgentSendRequest {
   message: string;
   sessionId?: string;
+  delivery?: AgentMessageDelivery;
   attachments?: AgentChatAttachment[];
   llm?: AgentLlmSelection;
   runbookId?: string;
@@ -1263,6 +1267,14 @@ export interface AgentSendRequest {
   interactionMode?: InteractionMode;
   traitValues?: Record<string, string | boolean>;
 }
+
+/** A change to a session's queued follow-ups. */
+export type AgentQueueUpdateRequest =
+  | { sessionId: string; action: "edit"; messageId: string; message: string; attachments?: AgentChatAttachment[] }
+  | { sessionId: string; action: "remove"; messageId: string }
+  | { sessionId: string; action: "reorder"; messageId: string; beforeMessageId: string | null }
+  | { sessionId: string; action: "steer"; messageId: string }
+  | { sessionId: string; action: "resume" };
 
 export interface AgentSessionStatus {
   sessionId: string;
@@ -1275,6 +1287,8 @@ export interface AgentServicePort {
   start(input: AgentStartRequest): Promise<{ sessionId: string }>;
   send(input: AgentSendRequest): Promise<{ sessionId: string }>;
   cancel(sessionId: string): Promise<void>;
+  /** Edits, removes, reorders or steers a queued follow-up, or resumes a held queue. Absent where queues are not supported. */
+  updateQueue?(input: AgentQueueUpdateRequest): Promise<void>;
   getStatus(sessionId: string): Promise<AgentSessionStatus | null>;
   getSnapshot(sessionId: string): Promise<AgentThreadSnapshot | null>;
   listRunbookAuthoringProposals(input: {

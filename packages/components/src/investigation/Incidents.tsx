@@ -68,6 +68,13 @@ import type {
   ThreadStatus,
 } from "../chat/types";
 import { Composer } from "../chat/Composer";
+import {
+  EMPTY_SESSION_QUEUE,
+  sessionQueueFromSnapshot,
+  useComposerQueue,
+  type SessionQueueState,
+} from "../chat/useComposerQueue";
+import type { AgentMessageDelivery } from "../services/contracts";
 import { CustomerReportIntakeChatContext, useCustomerReportIntake } from "../chat/useCustomerReportIntake";
 import { customerReportDisplayText } from "@bitsentry-ce/core/features/plugins";
 import type {
@@ -128,6 +135,8 @@ function canSendIncidentMessage(
 
 type IncidentAgentRequestBase = {
   text: string;
+  /** For a message sent while the agent runs: queue it after the turn, or steer the turn. */
+  delivery?: AgentMessageDelivery;
   sessionId: string | null;
   attachments: ComposerAttachment[];
   llm: AgentLlmSelection;
@@ -159,6 +168,7 @@ export function buildIncidentAgentRequest(
     return {
       message: input.text,
       sessionId: input.sessionId ?? undefined,
+      delivery: input.delivery,
       ...common,
     };
   }
@@ -1676,6 +1686,22 @@ export default function IncidentsPage() {
 
   const activeIncident = incidents.find((i) => i.id === activeId) ?? null;
   const activeSessionId = activeIncident?.sessionId ?? null;
+  const [queueByIncident, setQueueByIncident] = useState<Record<string, SessionQueueState>>({});
+  const {
+    composerQueue,
+    editingId: queueEditingId,
+    saveEdit: saveQueuedEdit,
+    resume: resumeQueue,
+  } = useComposerQueue({
+    agent,
+    sessionId: activeSessionId,
+    queue: (activeId === null ? undefined : queueByIncident[activeId]) ?? EMPTY_SESSION_QUEUE,
+    isRunning: activeIncident?.state === "RUNNING",
+    prompt,
+    images: composerImages,
+    setPrompt,
+    setImages: setComposerImages,
+  });
   const rawMessages = useMemo((): ChatMessage[] => {
     if (activeId === null) return [];
     return messagesMap[activeId] ?? [];
@@ -2246,6 +2272,7 @@ export default function IncidentsPage() {
         ...prev,
         [incidentId]: normalizedMessages,
       }));
+      setQueueByIncident((prev) => ({ ...prev, [incidentId]: sessionQueueFromSnapshot(snapshot) }));
       if (snapshot.tokenUsage !== undefined) {
         const tokenUsage = snapshot.tokenUsage;
         setTokenUsageByIncident((prev) => updateIncidentTokenUsage(prev, incidentId, tokenUsage));
@@ -2628,6 +2655,7 @@ export default function IncidentsPage() {
     accessLevel?: AccessLevel;
     interactionMode?: InteractionMode;
     traitValues?: Record<string, boolean | string>;
+    delivery?: AgentMessageDelivery;
   }, intakeText?: string) => {
     const fromIntake = intakeText !== undefined;
     const text = intakeText ?? prompt.trim();
@@ -2749,6 +2777,71 @@ export default function IncidentsPage() {
       setIncidents((prev) =>
         updateIncidentById(prev, activeId, (incident) => ({ ...incident, state: "FAILED", sessionId: undefined })),
       );
+    }
+  };
+
+  /** The composer's send: saves a queued message being edited, queues or steers while the agent runs, else sends. */
+  const handleComposerSend = async (options?: Parameters<typeof handleSend>[0]) => {
+    const text = prompt.trim();
+    const ready = canSendIncidentMessage(text, composerImages.length, activeId, selectedProviderKey, selectedModelId);
+    if (ready && queueEditingId !== null) {
+      await saveQueuedEdit(text, composerImages);
+      return;
+    }
+    if (ready && activeIncident?.state === "RUNNING" && activeSessionId !== null && activeIncident.archived !== true) {
+      await handleSendWhileRunning(text, activeSessionId, options);
+      return;
+    }
+    await handleSend(options);
+  };
+
+  /**
+   * Queues the message after the running turn, or steers the turn with it. The runtime decides which: a turn that
+   * cannot take a steer queues it. Nothing changes in the thread until the runtime's snapshot shows the message.
+   */
+  const handleSendWhileRunning = async (
+    text: string,
+    sessionId: string,
+    options: { accessLevel?: AccessLevel; interactionMode?: InteractionMode; traitValues?: Record<string, boolean | string>; delivery?: AgentMessageDelivery } | undefined,
+  ) => {
+    if (activeId === null || selectedProviderKey === null) return;
+    const outgoingImages = composerImages;
+    setPrompt("");
+    setComposerImages([]);
+    const llm: { providerKey: ModelCatalogProviderKey; model: string; thinkingEnabled?: boolean } = {
+      providerKey: selectedProviderKey,
+      model: selectedModelId,
+    };
+    if (selectedModelCapability?.supportsThinking === true) {
+      llm.thinkingEnabled = thinkingEnabled;
+    }
+    try {
+      await sendIncidentAgentMessage(agent, {
+        continueSession: true,
+        text,
+        delivery: options?.delivery ?? "queue",
+        sessionId,
+        attachments: outgoingImages,
+        llm,
+        incidentThreadId: activeId,
+        accessLevel: options?.accessLevel ?? selectedAccessLevel,
+        interactionMode: options?.interactionMode,
+        traitValues: options?.traitValues,
+      });
+      const snapshot = await agent.getSnapshot(sessionId);
+      if (snapshot !== null) applySnapshotToIncident(activeId, snapshot);
+    } catch (err: unknown) {
+      // Nothing was queued: give the engineer their message back.
+      setPrompt(text);
+      setComposerImages(outgoingImages);
+      captureIncidentException(err, {
+        operation: "agent.send",
+        source: "handleSendWhileRunning",
+        incidentId: activeId,
+        providerKey: selectedProviderKey,
+        modelId: selectedModelId,
+        delivery: options?.delivery ?? "queue",
+      });
     }
   };
 
@@ -3221,7 +3314,7 @@ export default function IncidentsPage() {
                 prompt={prompt}
                 onPromptChange={setPrompt}
                 onSend={(options) => {
-                  void handleSend(options);
+                  void handleComposerSend(options);
                 }}
                 onCancel={() => {
                   void handleCancel();
@@ -3257,6 +3350,8 @@ export default function IncidentsPage() {
                 accessLevel={selectedAccessLevel}
                 onAccessLevelChange={setSelectedAccessLevel}
                 customerReportIntake={customerReportIntake.composer}
+                queue={composerQueue}
+                onResumeQueue={() => { void resumeQueue(); }}
               />
             )}
           </div>
