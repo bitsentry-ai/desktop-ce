@@ -30,7 +30,9 @@
       ],
       "ignoreDependencies": [
         "@electron/rebuild",
-        "@bitsentry-ce/desktop-cli"
+        "@bitsentry-ce/desktop-cli",
+        "@babel/core",
+        "babel-plugin-react-compiler"
       ]
     },
     "packages/core": {

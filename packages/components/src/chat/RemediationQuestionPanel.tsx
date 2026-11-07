@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useEffectEvent, useRef, useState } from "react";
 import { CheckIcon, ChevronRight, Loader2, Minus, X } from "lucide-react";
 import { useTranslation } from "@bitsentry-ce/i18n";
 import { cn } from "../lib/utils";
@@ -280,8 +280,8 @@ function ResultIcon({ tone }: { tone: RemediationFlowTone }) {
 
 export function RemediationQuestionPanel({ flow }: { flow: ComposerRemediationFlow }) {
   const { t } = useTranslation();
-  const latest = useRef(flow);
-  latest.current = flow;
+  // Reads the committed flow from the document key listener.
+  const readFlow = useEffectEvent(() => flow);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -289,7 +289,7 @@ export function RemediationQuestionPanel({ flow }: { flow: ComposerRemediationFl
       const target = event.target;
       // A dialog over the page, such as the new SSH connection form, keeps its own keys.
       if (target instanceof Element && target.closest('[role="dialog"]') !== null) return;
-      const current = latest.current;
+      const current = readFlow();
       if (event.key === "Escape") {
         event.preventDefault();
         current.close();

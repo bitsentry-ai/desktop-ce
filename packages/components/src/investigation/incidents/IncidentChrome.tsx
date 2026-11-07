@@ -6,13 +6,13 @@ import TopBar from "../../layout/TopBar";
 import { cn } from "../../lib/utils";
 import type { AgentSessionState } from "../../chat/types";
 
-export function relativeTime(iso: string): string {
+export function relativeTime(iso: string, nowMs: number = Date.now()): string {
   if (iso.length === 0) return "unknown time";
 
   const timestamp = new Date(iso).getTime();
   if (Number.isNaN(timestamp)) return "unknown time";
 
-  const diff = Date.now() - timestamp;
+  const diff = nowMs - timestamp;
   if (diff < 0) return "just now"; // Future dates
 
   const mins = Math.floor(diff / 60_000);
