@@ -9,13 +9,18 @@ type ScriptedResponse = Omit<LlmChatResponse, 'toolProtocol'>
 
 /** An LLM whose calls wait until the test answers them, in order. */
 function createScriptedLlm() {
-  const calls: Array<{ messages: LlmChatRequest['messages']; respond: (response: ScriptedResponse) => void }> = []
+  const calls: Array<{
+    messages: LlmChatRequest['messages']
+    onDelta: LlmChatRequest['onDelta']
+    respond: (response: ScriptedResponse) => void
+  }> = []
   const adapter = {
     chatWithTools: vi.fn((request: LlmChatRequest) => new Promise<LlmChatResponse>((resolve, reject) => {
       request.signal?.addEventListener('abort', () => { reject(new Error('aborted')) })
       // The runtime keeps appending to the same array, so keep what this call saw.
       calls.push({
         messages: [...request.messages],
+        onDelta: request.onDelta,
         respond: (response) => { resolve({ toolProtocol: 'native_function_calling', ...response }) },
       })
     })),
@@ -124,6 +129,70 @@ describe('agent runtime queue and steer', () => {
     llm.calls[0].respond({ content: 'Logs checked.', toolCalls: [] })
     await waitFor(() => llm.calls.length === 2)
     expect(userTexts(llm.calls[1].messages).at(-1)).toBe('Only the last hour.')
+  })
+
+  it('steers a Codex turn through turn/steer and records the steer before the answer', async () => {
+    const steer = vi.fn(async () => {})
+    const llm = createScriptedLlm()
+    const runtime = new AgentRuntimeService(() => null, llm.adapter)
+    const sessionId = await runtime.start({ prompt: 'Check the logs.', llm: { providerKey: 'codex', model: 'gpt-test' } })
+    await waitFor(() => llm.calls.length === 1)
+    llm.calls[0].onDelta?.({ type: 'steer_handle', steer })
+    expect(runtime.getSnapshot(sessionId).canSteer).toBe(true)
+
+    await runtime.send({ sessionId, message: 'Only the last hour.', delivery: 'steer' })
+    expect(steer).toHaveBeenCalledWith('Only the last hour.')
+    await waitFor(() => runtime.getSnapshot(sessionId).queuedMessages?.length === 0)
+
+    llm.calls[0].onDelta?.({ type: 'steer_handle', steer: null })
+    llm.calls[0].respond({ content: 'Nothing unusual in the last hour.', toolCalls: [] })
+    await waitFor(() => runtime.getSnapshot(sessionId).threadState === 'COMPLETED')
+    expect(runtime.getSnapshot(sessionId).messages.map((message) => message.kind)).toEqual(['user', 'user', 'agent'])
+
+    await runtime.send({ sessionId, message: 'Thanks.' })
+    await waitFor(() => llm.calls.length === 2)
+    expect(llm.calls[1].messages.filter((message) => message.role !== 'system').map((message) => message.role))
+      .toEqual(['user', 'user', 'assistant', 'user'])
+  })
+
+  it('queues a Codex steer the provider refuses', async () => {
+    const llm = createScriptedLlm()
+    const runtime = new AgentRuntimeService(() => null, llm.adapter)
+    const sessionId = await runtime.start({ prompt: 'Check the logs.', llm: { providerKey: 'codex', model: 'gpt-test' } })
+    await waitFor(() => llm.calls.length === 1)
+    llm.calls[0].onDelta?.({ type: 'steer_handle', steer: async () => { throw new Error('turn already finished') } })
+
+    await runtime.send({ sessionId, message: 'Only the last hour.', delivery: 'steer' })
+    await waitFor(() => runtime.getSnapshot(sessionId).queuedMessages?.[0]?.steer === false)
+
+    llm.calls[0].respond({ content: 'Logs checked.', toolCalls: [] })
+    await waitFor(() => llm.calls.length === 2)
+    expect(userTexts(llm.calls[1].messages).at(-1)).toBe('Only the last hour.')
+  })
+
+  it('holds a Codex steer refused after a stop instead of running it', async () => {
+    let refuse: ((error: Error) => void) | undefined
+    const llm = createScriptedLlm()
+    const runtime = new AgentRuntimeService(() => null, llm.adapter)
+    const sessionId = await runtime.start({ prompt: 'Check the logs.', llm: { providerKey: 'codex', model: 'gpt-test' } })
+    await waitFor(() => llm.calls.length === 1)
+    llm.calls[0].onDelta?.({
+      type: 'steer_handle',
+      steer: () => new Promise<void>((_resolve, reject) => { refuse = reject }),
+    })
+    await runtime.send({ sessionId, message: 'Only the last hour.', delivery: 'steer' })
+
+    await runtime.send({ sessionId, message: 'Then summarize.' })
+    runtime.cancel(sessionId)
+    await waitFor(() => runtime.getSnapshot(sessionId).threadState === 'CANCELLED')
+    const queued = runtime.getSnapshot(sessionId).queuedMessages?.find((message) => message.text === 'Then summarize.')
+    runtime.updateQueue({ sessionId, action: 'remove', messageId: queued!.id })
+    refuse?.(new Error('app-server closed'))
+    await waitFor(() => runtime.getSnapshot(sessionId).queuedMessages?.[0]?.steer === false)
+    await new Promise((resolve) => setTimeout(resolve, 20))
+
+    expect(llm.calls).toHaveLength(1)
+    expect(runtime.getSnapshot(sessionId).queueHeld).toBe(true)
   })
 
   it('holds the queue after a stop until it is resumed', async () => {
