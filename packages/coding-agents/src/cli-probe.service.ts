@@ -14,7 +14,7 @@ import {
   isWindowsCmdShim,
 } from './windows-cmd.js'
 import { codingAgentsLogger as log } from './logger.js'
-import { terminateSubprocess } from './subprocess-lifecycle.js'
+import { terminateProcessTree } from '@bitsentry-ce/core/features/agent-runtime/shared/local-process'
 export { setCodingAgentsLoggerForTesting } from './logger.js'
 
 const WINDOWS_PREFERRED_PATHEXT = ['.cmd', '.exe', '.bat']
@@ -1349,7 +1349,7 @@ function createProbeCleanup(
     output.removeAllListeners()
     output.close()
     child.removeAllListeners()
-      await terminateSubprocess(child)
+      await terminateProcessTree(child)
     })()
     return cleanup
   }
@@ -1399,6 +1399,7 @@ function probeCursorAcp(binaryPath: string): Promise<void> {
   return new Promise((resolve, reject) => {
     const child = spawn(binaryPath, ['acp'], {
       stdio: ['pipe', 'pipe', 'pipe'],
+      detached: process.platform !== 'win32',
       shell: process.platform === 'win32',
       env: createCodingAgentsProcessEnv(process.env),
     })
@@ -1479,6 +1480,7 @@ function probeCodexAccount(
     }
     const child = spawn(invocation.command, invocation.args, {
       stdio: ['pipe', 'pipe', 'pipe'],
+      detached: process.platform !== 'win32',
       env: commandEnv,
     })
 

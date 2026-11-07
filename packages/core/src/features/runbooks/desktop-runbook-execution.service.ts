@@ -1,5 +1,6 @@
 import { randomUUID } from "crypto";
 import { getErrorMessage } from "../../shared/errors";
+import { readBoundedResponseText } from "../../shared/bounded-response";
 import {
   addStepTemplateWarnings as addSharedStepTemplateWarnings,
   bumpExecutionSnapshotVersion,
@@ -1324,8 +1325,8 @@ export class RunbookExecutionService {
     this.recordActivity(session);
     await this.emitSnapshot(session);
 
-    const response = await this.sendHttpRequest(session, request);
-    return this.buildHttpResult(response);
+    const { response, body } = await this.sendHttpRequest(session, request);
+    return this.buildHttpResult(response, body);
   }
 
   private prepareHttpRequest(
@@ -1413,22 +1414,29 @@ export class RunbookExecutionService {
   private async sendHttpRequest(
     session: RunbookExecutionSession,
     request: PreparedHttpRequest,
-  ): Promise<Response> {
+  ): Promise<{ response: Response; body: string }> {
     try {
-      const response = await runOrchestratedOperation({
+      // The body is read under the same deadline and cancellation signal.
+      const result = await runOrchestratedOperation({
         operation: "HTTP request",
         signal: session.abortController.signal,
         timeoutMs: this.httpTimeoutMs,
-        execute: (signal) =>
-          fetch(request.url.toString(), {
+        execute: async (signal) => {
+          const response = await fetch(request.url.toString(), {
             method: request.method,
             headers: request.headers.requestHeaders,
             body: this.getHttpRequestBody(request),
             signal,
-          }),
+          });
+          const { text } = await readBoundedResponseText(
+            response,
+            MAX_STEP_OUTPUT_LENGTH,
+          );
+          return { response, body: text };
+        },
       });
       this.recordActivity(session);
-      return response;
+      return result;
     } catch (error) {
       if (error instanceof OrchestrationError) {
         if (error.kind === "timeout") {
@@ -1456,10 +1464,10 @@ export class RunbookExecutionService {
     return request.body?.value;
   }
 
-  private async buildHttpResult(
+  private buildHttpResult(
     response: Response,
-  ): Promise<ExecutedStepResult> {
-    const responseBody = await this.readHttpBody(response);
+    responseBody: string,
+  ): ExecutedStepResult {
     const contentType = response.headers.get("content-type");
     const formattedBody = this.formatHttpBody(contentType, responseBody);
 
@@ -1580,11 +1588,6 @@ export class RunbookExecutionService {
       key: normalizedKey,
       warnings: key?.warnings ?? [],
     };
-  }
-
-  private async readHttpBody(response: Response): Promise<string> {
-    const bodyText = await response.text();
-    return bodyText.slice(0, MAX_STEP_OUTPUT_LENGTH);
   }
 
   private formatHttpBody(contentType: string | null, body: string): string {

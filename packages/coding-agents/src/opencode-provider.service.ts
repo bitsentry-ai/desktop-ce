@@ -14,7 +14,7 @@ import {
   type AccessLevel,
   DEFAULT_ACCESS_LEVEL,
 } from './composer.js'
-import { terminateSubprocess } from './subprocess-lifecycle.js'
+import { terminateProcessTree } from '@bitsentry-ce/core/features/agent-runtime/shared/local-process'
 import { HOST_MCP_SERVER_NAME, type HostMcpEndpoint } from './host-mcp-server.service.js'
 import { getHostTools } from '@bitsentry-ce/core/features/agent-runtime'
 import { prependRunbookOnlyScope } from './runbook-only-scope.js'
@@ -572,6 +572,8 @@ function createOpenCodeProcess(
   const child = spawn(invocation.command, invocation.args, {
     cwd,
     stdio: ['ignore', 'pipe', 'pipe'],
+    // POSIX process group so termination reaches OpenCode's own children.
+    detached: process.platform !== 'win32',
     env: {
       ...createCodingAgentsProcessEnv(process.env),
       ...createOpenCodePermissionEnv(accessLevel),
@@ -638,7 +640,7 @@ function createOpenCodeAbortHandler(
     if (state.wasAborted) return
     state.wasAborted = true
     options.onDelta?.({ type: 'status', status: 'cancelled' })
-    state.termination = terminateSubprocess(child).then(() => undefined)
+    state.termination = terminateProcessTree(child).then(() => undefined)
   }
 }
 

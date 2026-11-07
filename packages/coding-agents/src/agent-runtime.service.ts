@@ -183,6 +183,7 @@ function getAgentErrorCode(message: string): AgentErrorCode | undefined {
 
 const DEFAULT_AGENT_SESSION_TIMEOUT_MS = 300_000
 const INTEGRATION_READ_TIMEOUT_MS = 30_000
+const AGENT_LOOP_SHUTDOWN_WAIT_MS = 5_000
 const MAX_TOOL_ITERATIONS = 10 // Prevent infinite loops
 const MAX_MESSAGE_HISTORY = 50 // Limit conversation history
 const JOURNAL_TIME_WINDOW_PADDING_MS = 5 * 60 * 1000
@@ -1757,6 +1758,7 @@ function formatVisibleRunbookListEntry(runbook: Record<string, unknown>): { titl
 
 export class AgentRuntimeService {
   private sessions = new Map<string, AgentSession>()
+  private activeLoops = new Set<Promise<void>>()
   private readonly authoringPersistence = new Map<string, Promise<RunbookRecord>>()
 
   constructor(
@@ -1853,10 +1855,7 @@ export class AgentRuntimeService {
     this.sessions.set(sessionId, session)
     this.armSessionTimeout(session, timeoutMs)
 
-    this.runAgentLoop(session)
-      .catch((error: unknown) => {
-        log.error(`[agent-runtime:${sessionId}] Unhandled loop error:`, error)
-      })
+    this.launchAgentLoop(session)
 
     return sessionId
   }
@@ -1937,9 +1936,7 @@ export class AgentRuntimeService {
 
     this.armSessionTimeout(session, DEFAULT_AGENT_SESSION_TIMEOUT_MS)
 
-    this.runAgentLoop(session).catch((error: unknown) => {
-      log.error(`[agent-runtime:${sessionId}] Unhandled loop error:`, error)
-    })
+    this.launchAgentLoop(session)
 
     return Promise.resolve(sessionId)
   }
@@ -2871,16 +2868,38 @@ export class AgentRuntimeService {
     this.cancel(sessionId)
   }
 
+  private launchAgentLoop(session: AgentSession): void {
+    const loop: Promise<void> = this.runAgentLoop(session)
+      .catch((error: unknown) => {
+        log.error(`[agent-runtime:${session.id}] Unhandled loop error:`, error)
+      })
+      .finally(() => {
+        this.activeLoops.delete(loop)
+      })
+    this.activeLoops.add(loop)
+  }
+
   /**
-   * Cleanup on app shutdown.
+   * Cleanup on app shutdown: aborts every session and waits (bounded) for the
+   * running loops, including their tool subprocesses, to finish.
    */
-  destroy(): void {
+  async destroy(): Promise<void> {
     log.info('[agent-runtime] Destroying all sessions')
     for (const session of this.sessions.values()) {
       this.clearSessionTimeout(session)
       session.abortController.abort()
     }
     this.sessions.clear()
+
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const settled = await Promise.race([
+      Promise.allSettled(this.activeLoops).then(() => true),
+      new Promise<false>((resolve) => { timer = setTimeout(() => { resolve(false) }, AGENT_LOOP_SHUTDOWN_WAIT_MS) }),
+    ])
+    clearTimeout(timer)
+    if (!settled) {
+      log.warn(`[agent-runtime] ${String(this.activeLoops.size)} session loop(s) still running after shutdown wait`)
+    }
   }
 
   private hasRunbookTools(): boolean {

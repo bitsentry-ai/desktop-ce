@@ -7,7 +7,7 @@ import {
   OrchestrationError,
   runOrchestratedOperation,
 } from '../shared/effect-orchestration'
-import { terminateLocalProcessTree } from '../shared/local-process'
+import { terminateProcessTree } from '../shared/local-process'
 
 const CLI_WRAPPER_NODE_PATH_ENV = 'BITSENTRY_CLI_WRAPPER_NODE_PATH'
 const log = console
@@ -31,7 +31,7 @@ interface ShellExecutionState {
   outputLimitReached: boolean
   forcedTermination: boolean
   childExited: boolean
-  terminationTimer: ReturnType<typeof setTimeout> | null
+  termination: Promise<unknown> | null
 }
 
 function resolveTimeoutMs(value: number | null | undefined): number | null {
@@ -71,30 +71,15 @@ function terminateChildProcess(
   child: ShellChildProcess,
   state: ShellExecutionState,
 ): void {
-  if (
-    state.forcedTermination ||
-    state.childExited ||
-    child.exitCode !== null ||
-    child.signalCode !== null
-  ) {
+  // The shell may have exited while a backgrounded descendant (`sleep 600 &`)
+  // still holds its pipes, so the group is terminated regardless; the
+  // termination probes group liveness itself.
+  if (state.forcedTermination) {
     return
   }
 
   state.forcedTermination = true
-  terminateLocalProcessTree(child, 'SIGTERM')
-  state.terminationTimer = setTimeout(() => {
-    if (!state.childExited && child.exitCode === null && child.signalCode === null) {
-      terminateLocalProcessTree(child, 'SIGKILL')
-    }
-  }, 2000)
-}
-
-function markChildExited(state: ShellExecutionState): void {
-  state.childExited = true
-  if (state.terminationTimer !== null) {
-    clearTimeout(state.terminationTimer)
-    state.terminationTimer = null
-  }
+  state.termination = terminateProcessTree(child)
 }
 
 function appendOutputChunk(input: {
@@ -200,9 +185,9 @@ async function executeShellCommand(
     outputLimitReached: false,
     forcedTermination: false,
     childExited: false,
-    terminationTimer: null,
+    termination: null,
   }
-  child.once('exit', () => markChildExited(state))
+  child.once('exit', () => { state.childExited = true })
 
   const terminateChild = (): void => {
     terminateChildProcess(child, state)
@@ -336,7 +321,12 @@ async function executeShellCommand(
       output: optionalOutput(output),
     }
   } finally {
-    terminateChild()
+    // Safety net for a still-running shell only: after a normal exit with
+    // closed pipes, anything it deliberately backgrounded is left alone.
+    if (!state.childExited) {
+      terminateChild()
+    }
+    await state.termination
   }
 }
 

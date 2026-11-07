@@ -15,6 +15,7 @@ describe('DesktopShutdownCoordinator', () => {
       destroyCodingAgents: vi.fn(() => { calls.push('coding-agents') }),
       closeSentry: vi.fn(() => { calls.push('sentry') }),
       destroyRunbookExecution: vi.fn(() => { calls.push('runbook-execution') }),
+      stopErrorSourceSync: vi.fn(() => { calls.push('error-source-sync') }),
       stopJobRuntime: vi.fn(() => { calls.push('job-runtime') }),
       closeDatabase: vi.fn(async () => {
         calls.push('database')
@@ -38,6 +39,7 @@ describe('DesktopShutdownCoordinator', () => {
       'coding-agents',
       'sentry',
       'runbook-execution',
+      'error-source-sync',
       'job-runtime',
       'database',
     ])
@@ -55,6 +57,7 @@ describe('DesktopShutdownCoordinator', () => {
       destroyCodingAgents: vi.fn(),
       closeSentry: vi.fn(),
       destroyRunbookExecution: vi.fn(),
+      stopErrorSourceSync: vi.fn(),
       stopJobRuntime: vi.fn(),
       closeDatabase: vi.fn(),
     }
@@ -84,6 +87,7 @@ describe('DesktopShutdownCoordinator', () => {
       }),
       closeSentry: vi.fn(),
       destroyRunbookExecution: vi.fn(),
+      stopErrorSourceSync: vi.fn(),
       stopJobRuntime: vi.fn(),
       closeDatabase: vi.fn(),
       onShutdownError,
