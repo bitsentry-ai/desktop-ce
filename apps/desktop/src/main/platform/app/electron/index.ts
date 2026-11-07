@@ -74,6 +74,7 @@ import type { LocalAiProviderKey } from '@bitsentry-ce/coding-agents'
 import { ExternalSourceRunbookQueryService } from '@bitsentry-ce/core/features/error-sources'
 import { SqliteRunbookResultStore } from '@bitsentry-ce/core/features/runbooks/desktop-runbook-result.store'
 import { SqliteRunbookAuthoringProposalStore } from '@bitsentry-ce/core/features/runbooks'
+import { SqliteAgentQueueStore } from '@bitsentry-ce/core/features/agent-runtime'
 import { SqliteErrorSourcesRepositoryAdapter } from '@bitsentry-ce/core/features/error-sources/desktop-sqlite-error-sources.adapter'
 import { createDesktopErrorSourcesHandlers } from '@bitsentry-ce/core/features/error-sources/desktop-error-sources.handlers'
 import { AgentRuntimeService } from '@bitsentry-ce/desktop-cli/runtime/desktop-agent-runtime'
@@ -611,6 +612,7 @@ app
           onRunbooksChanged: publishRunbooksChanged,
           pluginRuntime,
           authoringProposalStore: new SqliteRunbookAuthoringProposalStore(db),
+          queueStore: new SqliteAgentQueueStore(db),
           windowGetter: () => desktopShell.mainWindow,
         },
         { AgentRuntimeService },
@@ -624,6 +626,7 @@ app
         'agent:send',
         'agent:cancel',
         'agent:updateQueue',
+        'agent:restoreQueue',
         'agent:getStatus',
         'agent:getSnapshot',
         'agent:listRunbookAuthoringProposals',

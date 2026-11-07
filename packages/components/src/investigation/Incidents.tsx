@@ -68,6 +68,7 @@ import type {
   ThreadStatus,
 } from "../chat/types";
 import { Composer } from "../chat/Composer";
+import { rememberSessionStart, sessionHistoryLength } from "./incident-session-history";
 import {
   EMPTY_SESSION_QUEUE,
   sessionQueueFromSnapshot,
@@ -129,6 +130,10 @@ function updateIncidentById(
   update: (incident: IncidentThread) => IncidentThread,
 ): IncidentThread[] {
   return incidents.map((incident) => incident.id === incidentId ? update(incident) : incident);
+}
+
+function withIncidentSession(incidents: IncidentThread[], incidentId: string, sessionId: string): IncidentThread[] {
+  return updateIncidentById(incidents, incidentId, (incident) => ({ ...incident, sessionId }));
 }
 
 function canSendIncidentMessage(
@@ -1710,6 +1715,7 @@ export default function IncidentsPage() {
     });
   }, [activeId]);
   const [queueByIncident, setQueueByIncident] = useState<Record<string, SessionQueueState>>({});
+  const restoredQueueIncidentIdsRef = useRef<Set<string>>(new Set());
   const {
     composerQueue,
     editingId: queueEditingId,
@@ -2289,7 +2295,14 @@ export default function IncidentsPage() {
 
   const applySnapshotToIncident = useCallback(
     (incidentId: string, snapshot: AgentThreadSnapshot) => {
-      const normalizedMessages = normalizeChatMessages(snapshot.messages);
+      const incident = incidentsRef.current.find((item) => item.id === incidentId);
+      if (incident !== undefined && incident.sessionId === undefined) {
+        rememberSessionStart(incidentId, snapshot.sessionId, (latestDesktopStateRef.current.messagesMap[incidentId] ?? []).length);
+      }
+      // A session's snapshot holds only its own messages; earlier ones in the thread stay before them.
+      const historyLength = sessionHistoryLength(incidentId, snapshot.sessionId);
+      const history = (latestDesktopStateRef.current.messagesMap[incidentId] ?? []).slice(0, historyLength);
+      const normalizedMessages = [...history, ...normalizeChatMessages(snapshot.messages)];
 
       setMessagesMap((prev) => ({
         ...prev,
@@ -2321,6 +2334,25 @@ export default function IncidentsPage() {
     },
     [activeId],
   );
+
+  // A queue saved before the app last quit comes back paused when its incident opens.
+  useEffect(() => {
+    if (activeId === null || agent.restoreQueue === undefined) return;
+    if (isDesktopIncidents && !desktopHydrated) return;
+    if (restoredQueueIncidentIdsRef.current.has(activeId)) return;
+    restoredQueueIncidentIdsRef.current.add(activeId);
+    const incidentId = activeId;
+    agent.restoreQueue(incidentId).then((restored) => {
+      if (restored === null) return;
+      setQueueByIncident((prev) => ({ ...prev, [incidentId]: sessionQueueFromSnapshot(restored.snapshot) }));
+      const incident = incidentsRef.current.find((item) => item.id === incidentId);
+      if (incident === undefined || incident.sessionId === restored.sessionId) return;
+      rememberSessionStart(incidentId, restored.sessionId, (latestDesktopStateRef.current.messagesMap[incidentId] ?? []).length);
+      setIncidents((prev) => withIncidentSession(prev, incidentId, restored.sessionId));
+    }).catch((error: unknown) => {
+      captureIncidentException(error, { operation: "restoreQueue", incidentId });
+    });
+  }, [activeId, agent, desktopHydrated, isDesktopIncidents]);
 
   useEffect(() => {
     const unsub = agent.onEvent(({ sessionId: sid, snapshot }) => {
@@ -2730,6 +2762,10 @@ export default function IncidentsPage() {
         interactionMode: options?.interactionMode,
         traitValues: options?.traitValues,
       });
+      if (result.sessionId !== activeSessionId) {
+        // A new session's snapshot starts empty; the thread so far stays before it.
+        rememberSessionStart(activeId, result.sessionId, (latestDesktopStateRef.current.messagesMap[activeId] ?? []).length);
+      }
       setIncidents((prev) =>
         updateIncidentById(prev, activeId, (incident) => ({ ...incident, sessionId: result.sessionId })),
       );
