@@ -26,6 +26,7 @@ import {
   ShieldAlert,
   BookOpen,
   Ticket,
+  Check,
   CheckCircle2,
   Archive,
   FileText,
@@ -51,6 +52,16 @@ import {
   writeLocalRunbookNavItems,
   type RunbookNavItem,
 } from "./runbook-nav";
+import {
+  INCIDENT_ATTENTION_CHANGED_EVENT,
+  clearUnseenIncidentOutcome,
+  findIncidentsNeedingInput,
+  finishedRunOutcome,
+  readUnseenIncidentOutcomes,
+  recordUnseenIncidentOutcome,
+  resolveIncidentNavStatus,
+  type IncidentNavStatus,
+} from "./incident-nav-status";
 
 function getLatestDiagnosisState(record: DiagnosisRecord): string {
   if (record.state_history.length === 0) return "pending";
@@ -71,6 +82,10 @@ function getResultDotClass(status: string): string {
   if (status === "completed") return "bg-emerald-400";
   return "bg-muted-foreground/30";
 }
+
+// The state each incident was last seen in, so a run that ends while the Navbar
+// is remounted between pages still counts as finished.
+const observedIncidentStates = new Map<string, string | undefined>();
 
 // Module-level so the accordion state survives Navbar remounts within a window.
 const navbarAccordionState: {
@@ -151,9 +166,45 @@ type IncidentNavItem = {
   id: string;
   title: string;
   createdAt: string;
+  state?: string;
+  sessionId?: string;
   archived?: boolean;
   lastMessagePreview?: string | null;
 };
+
+const SHOWN_INCIDENT_LIMIT = 7;
+
+function shownIncidentNavItems(incidents: IncidentNavItem[]): IncidentNavItem[] {
+  return incidents.filter((incident) => incident.archived !== true).slice(0, SHOWN_INCIDENT_LIMIT);
+}
+
+const INCIDENT_STATUS_LABEL_KEYS: Record<IncidentNavStatus, string> = {
+  working: "navigation.navbar.incidentStatus.working",
+  "needs-input": "navigation.navbar.incidentStatus.needsInput",
+  failed: "navigation.navbar.incidentStatus.failed",
+  completed: "navigation.navbar.incidentStatus.completed",
+};
+
+const INCIDENT_STATUS_MARK_CLASSES: Record<Exclude<IncidentNavStatus, "completed">, string> = {
+  working: "size-2 rounded-[2px] bg-amber-400 motion-safe:animate-pulse",
+  "needs-input": "size-2 rounded-full bg-violet-500 dark:bg-violet-400",
+  failed: "size-2 rounded-full bg-red-500 dark:bg-red-400",
+};
+
+function IncidentStatusIndicator({
+  status,
+  t,
+}: {
+  status: IncidentNavStatus;
+  t: ReturnType<typeof useTranslation>["t"];
+}) {
+  const label = t(INCIDENT_STATUS_LABEL_KEYS[status]);
+  return <span role="img" aria-label={label} title={label} className="inline-flex size-3 shrink-0 items-center justify-center">
+    {status === "completed"
+      ? <Check size={11} strokeWidth={3} className="text-emerald-500 dark:text-emerald-400" />
+      : <span className={INCIDENT_STATUS_MARK_CLASSES[status]} />}
+  </span>;
+}
 
 type UnknownRecord = Record<string, unknown>;
 
@@ -195,12 +246,14 @@ type ResultNavItem = {
 
 function IncidentSubNavigation({
   incidents,
+  statuses,
   search,
   formatters,
   t,
   onArchive,
 }: {
   incidents: IncidentNavItem[];
+  statuses: ReadonlyMap<string, IncidentNavStatus>;
   search: string;
   formatters: ReturnType<typeof useFormatters>;
   t: ReturnType<typeof useTranslation>["t"];
@@ -208,15 +261,21 @@ function IncidentSubNavigation({
 }) {
   const currentId = new URLSearchParams(search).get("id");
   const active = incidents.filter((incident) => incident.archived !== true);
-  const shown = active.slice(0, 7);
+  const shown = shownIncidentNavItems(incidents);
   const overflow = active.length - shown.length;
   return <div className="ml-4 mt-1 space-y-0.5">
     {shown.map((incident) => {
+      const status = statuses.get(incident.id) ?? null;
       const preview = normalizeIncidentPreview(incident.lastMessagePreview);
       return <div key={incident.id} className="group relative">
         <Link to={`/incidents?id=${incident.id}`} className={cn("block px-3 py-1.5 pr-8 text-xs text-muted-foreground hover:text-foreground hover:bg-neutral-100/50 dark:hover:bg-white/10 rounded-md transition-colors", currentId === incident.id && "text-foreground font-medium bg-neutral-100/50 dark:bg-white/10")}>
-          <div className="truncate">{incident.title}</div>
-          {preview !== null && <div className="truncate text-[10px] text-muted-foreground/60">{translateIncidentPreview(preview, t)}</div>}
+          <div className="flex items-center gap-1.5">
+            <span className="min-w-0 flex-1 truncate">{incident.title}</span>
+            {status !== null && <IncidentStatusIndicator status={status} t={t} />}
+          </div>
+          {status === "needs-input"
+            ? <div className="truncate text-[10px] text-violet-600 dark:text-violet-400">{t("navigation.navbar.incidentStatus.needsInput")}</div>
+            : preview !== null && <div className={cn("truncate text-[10px] text-muted-foreground/60", status === "working" && "text-muted-foreground/35")}>{translateIncidentPreview(preview, t)}</div>}
           <div className="text-[10px] text-muted-foreground/50">{formatters.relativeTime(incident.createdAt)}</div>
         </Link>
         <button onClick={(event) => { event.preventDefault(); event.stopPropagation(); onArchive(incident.id, currentId === incident.id).catch(console.error); }} className="absolute right-1 top-1/2 -translate-y-1/2 hidden group-hover:flex size-5 items-center justify-center rounded text-muted-foreground hover:text-foreground hover:bg-muted transition-colors" title={t("common.navbar.archiveIncident")}>
@@ -308,11 +367,31 @@ function normalizeIncidentNavItems(items: unknown[]): IncidentNavItem[] {
         id: record.id,
         title,
         createdAt,
+        state: typeof record.state === "string" ? record.state : undefined,
+        sessionId:
+          typeof record.sessionId === "string" && record.sessionId.length > 0
+            ? record.sessionId
+            : undefined,
         lastMessagePreview,
         archived,
       };
     })
     .filter((item): item is IncidentNavItem => item !== null);
+}
+
+/** The items with the session's incident in its new state; the same array when nothing changed. */
+function withSessionState(
+  items: IncidentNavItem[],
+  sessionId: string,
+  state: string,
+): IncidentNavItem[] {
+  const index = items.findIndex(
+    (incident) => incident.sessionId === sessionId && incident.state !== state,
+  );
+  if (index === -1) return items;
+  const next = [...items];
+  next[index] = { ...items[index], state };
+  return next;
 }
 
 function readLocalIncidentNavItems(): IncidentNavItem[] {
@@ -771,6 +850,97 @@ const Navbar = ({
     };
   }, []);
 
+  // Off the Incidents page nothing saves agent progress, so follow it here to
+  // keep the sidebar status live.
+  React.useEffect(() => {
+    const agent = services.agent;
+    if (agent === undefined) return;
+    return agent.onEvent(({ sessionId, snapshot }) => {
+      if (snapshot === undefined) return;
+      setInvestigationIncidents((prev) =>
+        withSessionState(prev, sessionId, snapshot.threadState),
+      );
+    });
+  }, [services.agent]);
+
+  const currentIncidentId = currentPath.startsWith("/incidents")
+    ? new URLSearchParams(location.search).get("id")
+    : null;
+  const [unseenOutcomes, setUnseenOutcomes] = React.useState(readUnseenIncidentOutcomes);
+
+  React.useEffect(() => {
+    let changed = false;
+    for (const incident of investigationIncidents) {
+      const outcome = finishedRunOutcome(observedIncidentStates.get(incident.id), incident.state);
+      observedIncidentStates.set(incident.id, incident.state);
+      if (outcome !== null && incident.id !== currentIncidentId) {
+        recordUnseenIncidentOutcome(incident.id, outcome);
+        changed = true;
+      }
+    }
+    if (currentIncidentId !== null && clearUnseenIncidentOutcome(currentIncidentId)) {
+      changed = true;
+    }
+    if (changed) setUnseenOutcomes(readUnseenIncidentOutcomes());
+  }, [currentIncidentId, investigationIncidents]);
+
+  const [needsInputIds, setNeedsInputIds] = React.useState<ReadonlySet<string>>(
+    () => new Set(),
+  );
+  const [attentionVersion, setAttentionVersion] = React.useState(0);
+
+  React.useEffect(() => {
+    const recheck = () => setAttentionVersion((version) => version + 1);
+    window.addEventListener(INCIDENT_ATTENTION_CHANGED_EVENT, recheck);
+    return () => {
+      window.removeEventListener(INCIDENT_ATTENTION_CHANGED_EVENT, recheck);
+    };
+  }, []);
+
+  // A draft or question arrives when a run ends, so look again whenever a
+  // shown incident changes state rather than on every streamed update.
+  const shownIncidents = shownIncidentNavItems(investigationIncidents);
+  const settledIncidentIds = shownIncidents
+    .filter((incident) => incident.state !== "RUNNING")
+    .map((incident) => incident.id)
+    .join(",");
+  const shownIncidentStates = shownIncidents
+    .map((incident) => incident.state ?? "")
+    .join(",");
+  const incidentsOpen = openAccordions.has("/incidents");
+
+  React.useEffect(() => {
+    if (!incidentsOpen || settledIncidentIds.length === 0) return;
+    let cancelled = false;
+    void findIncidentsNeedingInput(settledIncidentIds.split(","), {
+      agent: services.agent,
+      plugins: services.plugins,
+    }).then((ids) => {
+      if (!cancelled) setNeedsInputIds(ids);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    attentionVersion,
+    incidentsOpen,
+    services.agent,
+    services.plugins,
+    settledIncidentIds,
+    shownIncidentStates,
+  ]);
+
+  const incidentStatuses = new Map<string, IncidentNavStatus>();
+  for (const incident of shownIncidents) {
+    const status = resolveIncidentNavStatus({
+      state: incident.state,
+      needsInput: needsInputIds.has(incident.id),
+      unseenOutcome:
+        incident.id === currentIncidentId ? undefined : unseenOutcomes[incident.id],
+    });
+    if (status !== null) incidentStatuses.set(incident.id, status);
+  }
+
   const handleArchiveIncidentNavItem = React.useCallback(
     async (incidentId: string) => {
       const archivedAt = new Date().toISOString();
@@ -1098,7 +1268,7 @@ const Navbar = ({
               {/* Incidents Sub-Navigation */}
               {canShowSubNav &&
                 isIncidents &&
-                <IncidentSubNavigation incidents={investigationIncidents} search={location.search} formatters={formatters} t={t} onArchive={async (incidentId, shouldNavigate) => { await handleArchiveIncidentNavItem(incidentId); if (shouldNavigate) navigate("/incidents"); }} />}
+                <IncidentSubNavigation incidents={investigationIncidents} statuses={incidentStatuses} search={location.search} formatters={formatters} t={t} onArchive={async (incidentId, shouldNavigate) => { await handleArchiveIncidentNavItem(incidentId); if (shouldNavigate) navigate("/incidents"); }} />}
 
               {/* Runbooks Sub-Navigation */}
               {canShowSubNav &&

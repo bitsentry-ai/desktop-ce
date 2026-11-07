@@ -78,6 +78,7 @@ import type {
   RunbookAuthoringProposalReview,
 } from "../services/contracts";
 import { CODING_AGENT_PRIORITY } from "../desktop/codingAgentPriority";
+import { notifyIncidentAttentionChanged } from "../layout/incident-nav-status";
 import { resolveSyncedModelId } from "./provider-selection";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -1299,6 +1300,7 @@ export function RunbookAuthoringProposalCards({
       ...prev,
       [proposal.proposalId]: proposal,
     }));
+    notifyIncidentAttentionChanged();
   };
 
   const setProposalError = (proposalId: string, error: unknown) => {
