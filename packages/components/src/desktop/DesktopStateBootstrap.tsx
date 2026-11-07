@@ -610,7 +610,9 @@ export function DesktopStateBootstrap({
     let active = true;
     let refreshSequence = 0;
 
-    const handleRunbooksUpdated = () => {
+    const handleRunbooksUpdated = (event: Event) => {
+      // Runbooks refreshed from main are already persisted there.
+      if ((event as CustomEvent<{ source?: string }>).detail?.source === "main-refresh") return;
       scheduleDesktopStateSync(runbookTimerRef, hydrateInProgressRef, syncFns.syncRunbooks);
     };
     const handleResultsUpdated = (event: Event) => {
@@ -643,17 +645,10 @@ export function DesktopStateBootstrap({
       const sequence = ++refreshSequence;
       void (async () => {
         try {
-          const snapshot = await ipcInvoke<DesktopProductStateSnapshot>(
-            "desktopState:bootstrap",
-            readLocalSnapshot(),
-          );
+          const runbooks = await ipcInvoke<unknown[]>("runbooks:list", {});
           if (!active || sequence !== refreshSequence || hydrateInProgressRef.current) return;
 
-          const localSnapshot = readLocalSnapshot();
-          writeLocalSnapshot({
-            ...localSnapshot,
-            runbooks: snapshot.runbooks,
-          });
+          saveJson(RUNBOOKS_KEY, runbooks);
           window.dispatchEvent(
             new CustomEvent("bitsentry:runbooks-updated", {
               detail: { source: "main-refresh" },
