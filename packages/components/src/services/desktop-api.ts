@@ -73,14 +73,11 @@ export type DesktopBitsentryApi = {
     reset: () => Promise<{ ok: boolean }>;
   };
   incidents?: {
-    getState: () => Promise<{
-      incidents: unknown[];
-      incidentMessages: Record<string, unknown[]>;
-    }>;
-    replaceState: (snapshot: {
-      incidents: unknown[];
-      incidentMessages: Record<string, unknown[]>;
-    }) => Promise<{ ok: true; count: number }>;
+    list: () => Promise<unknown[]>;
+    getThreadMessages: (threadId: string) => Promise<unknown[]>;
+    /** Writes only the fields present; `archivedAt: null` unarchives. */
+    saveThread: (thread: { id: string } & Record<string, unknown>) => Promise<{ ok: true }>;
+    appendThreadMessages: (threadId: string, messages: unknown[]) => Promise<{ ok: true }>;
   };
   llm?: {
     getProviders: () => Promise<Record<string, DesktopSavedLlmProviderConfig>>;
@@ -176,8 +173,8 @@ function isDesktopBitsentryApi(value: unknown): value is DesktopBitsentryApi {
 
   if (
     maybeApi.incidents !== undefined &&
-    (typeof maybeApi.incidents.getState !== "function" ||
-      typeof maybeApi.incidents.replaceState !== "function")
+    (typeof maybeApi.incidents.list !== "function" ||
+      typeof maybeApi.incidents.saveThread !== "function")
   ) {
     return false;
   }
