@@ -69,6 +69,10 @@ jobs:
         run: pnpm run lint:ts6
       - run: pnpm --dir apps/desktop exec node node_modules/electron/install.js
       - run: pnpm --filter @bitsentry-ce/desktop test
+      - name: Run browser tests in headless Chromium
+        run: |
+          pnpm --dir apps/desktop exec playwright install --with-deps --only-shell chromium
+          pnpm --filter @bitsentry-ce/desktop test:browser
       - run: pnpm --filter @bitsentry-ce/core test
       - name: Verify encrypted plugin credential migration
         run: pnpm --filter @bitsentry-ce/desktop-cli test

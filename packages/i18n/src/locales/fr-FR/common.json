@@ -578,6 +578,7 @@
   "common.incidents.errorWithMessage": "— erreur : {{message}}",
   "common.incidents.hideRunbookResults": "Masquer les résultats du runbook",
   "common.incidents.incidentHistory": "Historique des incidents",
+  "common.incidents.messageList": "Messages",
   "common.incidents.new": "Nouveau",
   "common.incidents.newIncident": "Nouvel incident",
   "common.incidents.newRunbookProposal": "Nouvelle proposition de runbook",
