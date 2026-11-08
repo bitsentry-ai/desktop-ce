@@ -871,8 +871,8 @@ describe("desktop error source handlers", () => {
           dataSource: {
             sourceType: "wazuh",
             setupFields: [
-              { key: "authToken", target: "authToken", storage: "accessTokenRef", label: "Auth Token", required: false, control: "password" },
-              { key: "tenantCode", storage: "configuration", configurationKey: "tenantCode", label: "Tenant Code", required: true, control: "text" },
+              { key: "authToken", label: "Auth Token", required: false, control: "password" },
+              { key: "tenantCode", label: "Tenant Code", required: true, control: "text" },
             ],
           },
         },
