@@ -1,14 +1,14 @@
-import { DiagnoseEntryUseCaseImpl } from "../application/use-cases/DiagnoseEntryUseCaseImpl";
-import { VerifyDiagnosisUseCaseImpl } from "../application/use-cases/VerifyDiagnosisUseCaseImpl";
+import { DiagnoseEntryUseCaseImpl } from "../src/features/diagnosis-workflow/application/use-cases/DiagnoseEntryUseCaseImpl";
+import { VerifyDiagnosisUseCaseImpl } from "../src/features/diagnosis-workflow/application/use-cases/VerifyDiagnosisUseCaseImpl";
 import type {
   DiagnosisRepository,
   LLMService,
   EvidenceVerificationService,
   TelemetryEntryData,
   TelemetryQueryService,
-} from "../application/ports/outbound";
-import { DiagnosisRecord } from "../domain/entities/DiagnosisRecord";
-import { DiagnosisState } from "../domain/value-objects/DiagnosisState";
+} from "../src/features/diagnosis-workflow/application/ports/outbound";
+import { DiagnosisRecord } from "../src/features/diagnosis-workflow/domain/entities/DiagnosisRecord";
+import { DiagnosisState } from "../src/features/diagnosis-workflow/domain/value-objects/DiagnosisState";
 import { expect, it } from "vitest";
 
 const assert = (condition: boolean, message: string): void => {

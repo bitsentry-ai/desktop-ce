@@ -1,4 +1,4 @@
-import { SecureRedactor } from "../redactor";
+import { SecureRedactor } from "../src/features/runbooks/redactor";
 import { expect, it } from "vitest";
 
 const assertEqual = <T>(actual: T, expected: T, message: string): void => {

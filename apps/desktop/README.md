@@ -29,10 +29,8 @@ Run from repo root:
 
 ```bash
 pnpm --filter @bitsentry-ce/desktop run test
-pnpm --filter @bitsentry-ce/desktop run test:contracts
+pnpm --filter @bitsentry-ce/desktop run typecheck:test
 pnpm --filter @bitsentry-ce/desktop run test:smoke
-pnpm --filter @bitsentry-ce/desktop run typecheck:contract
-pnpm --filter @bitsentry-ce/desktop run test:error-sources
 pnpm --filter @bitsentry-ce/desktop run typecheck
 pnpm --filter @bitsentry-ce/desktop run build
 pnpm --filter @bitsentry-ce/desktop run package:mac:arm64
@@ -48,7 +46,7 @@ Additional cross-workspace quality gates:
 
 ```bash
 pnpm run desktop:test
-pnpm run desktop:test:contracts
+pnpm run desktop:typecheck:test
 pnpm run desktop:test:smoke
 pnpm run desktop:typecheck
 pnpm run typecheck
@@ -128,7 +126,7 @@ pnpm run lint
 - Runbook handlers: `apps/desktop/src/main/features/runbooks/runbooks.handlers.ts`
 - Main router wiring: `apps/desktop/src/main/trpc/router.ts`
 - Dispatcher/security boundary: `apps/desktop/src/main/ipc/dispatcher.ts`
-- Desktop contract tests: `apps/desktop/src/__tests__/*.test.ts`
+- Desktop tests: `apps/desktop/src/__tests__/**/*.spec.ts(x)`
 
 ## Documentation
 

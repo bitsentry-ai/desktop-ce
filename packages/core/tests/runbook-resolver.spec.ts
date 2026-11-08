@@ -2,7 +2,7 @@ import {
   resolveRequiredRunbookTemplate,
   TemplateResolutionError,
   TemplateResolver,
-} from "../resolver";
+} from "../src/features/runbooks/resolver";
 import { expect, it } from "vitest";
 
 const assert = (condition: boolean, message: string): void => {
