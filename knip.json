@@ -20,8 +20,7 @@
         "src/renderer/src/pages/app-settings/AppSettings.tsx",
         "src/main/platform/runbooks/desktop-runbook-runtime.ts",
         "scripts/{after-pack,cli-smoke-test,cli-stress-test,notarize,packaged-cli-smoke,real-provider-canary,rewrite-update-manifest,run-smoke-runbook,smoke-test,upload-r2-artifacts,verify-r2-artifacts,verify-update-manifest}.ts",
-        "scripts/electron-builder-after-pack.js",
-        "src/__tests__/**/*.test.ts"
+        "scripts/electron-builder-after-pack.js"
       ],
       "project": [
         "src/**/*.{ts,tsx,css}",
@@ -35,7 +34,6 @@
     },
     "packages/core": {
       "entry": [
-        "src/**/__tests__/**/*.test.ts",
         "src/features/agent-runtime/shared/effect-orchestration.ts",
         "src/features/agent-runtime/{customer-report-intake-tool,host-tools,integration-tools}.ts",
         "src/features/analytics/index.ts",

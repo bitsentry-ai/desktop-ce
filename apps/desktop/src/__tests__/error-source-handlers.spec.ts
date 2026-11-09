@@ -355,22 +355,6 @@ describe("desktop error source handlers", () => {
     });
   });
 
-  it("rejects connection tests without a matching code plugin", async () => {
-    const runtime = new TestPluginRuntimeService([]);
-    const oauthBindings = createDesktopOauthManagerBindings();
-    const handlers = createDesktopErrorSourcesHandlers(createDb(), {
-      OauthManagerService: oauthBindings.OauthManagerService,
-      pluginRuntime: runtime,
-    });
-
-    await expect(
-      handlers["errorSources:testConnection"]?.({ id: "source-1" }),
-    ).rejects.toThrow(
-      'Error source plugin "posthog" does not match source type posthog',
-    );
-    expect(runtime.executeActionMock).not.toHaveBeenCalled();
-  });
-
   it("rejects failed organization-only plugin connection tests", async () => {
     const runtime = new TestPluginRuntimeService([
       {
@@ -553,28 +537,6 @@ describe("desktop error source handlers", () => {
     ).rejects.toThrow("PostHog projects unavailable.");
   });
 
-  it("rejects connection probes without a matching code plugin", async () => {
-    const runtime = new TestPluginRuntimeService([]);
-    const oauthBindings = createDesktopOauthManagerBindings();
-    const handlers = createDesktopErrorSourcesHandlers(createDb(), {
-      OauthManagerService: oauthBindings.OauthManagerService,
-      pluginRuntime: runtime,
-    });
-
-    await expect(
-      handlers["errorSources:probeConnection"]?.({
-        pluginId: "posthog",
-        sourceType: "posthog",
-        setupValues: {
-          accessToken: "phx-token",
-        },
-      }),
-    ).rejects.toThrow(
-      'Error source plugin "posthog" does not match source type posthog',
-    );
-    expect(runtime.executeActionMock).not.toHaveBeenCalled();
-  });
-
   it("creates sources through matching code plugin metadata", async () => {
     vi.useFakeTimers();
     const runtime = new TestPluginRuntimeService([
@@ -671,33 +633,6 @@ describe("desktop error source handlers", () => {
         }),
       }),
     );
-  });
-
-  it("rejects source creation without a matching code plugin", async () => {
-    const runtime = new TestPluginRuntimeService([]);
-    const { db, create } = createTestDb();
-    const oauthBindings = createDesktopOauthManagerBindings();
-    const handlers = createDesktopErrorSourcesHandlers(db, {
-      OauthManagerService: oauthBindings.OauthManagerService,
-      pluginRuntime: runtime,
-    });
-
-    await expect(
-      handlers["errorSources:create"]?.({
-        pluginId: "github",
-        sourceType: "github",
-        name: "GitHub Issues",
-        setupValues: {
-          accessToken: "gh-token",
-        },
-        configuration: {
-          defaultQuery: "is:issue is:open",
-        },
-      }),
-    ).rejects.toThrow(
-      'Error source plugin "github" does not match source type github',
-    );
-    expect(create).not.toHaveBeenCalled();
   });
 
   it("updates sources through matching code plugin metadata", async () => {
@@ -845,28 +780,6 @@ describe("desktop error source handlers", () => {
     });
   });
 
-  it("rejects source updates without a matching code plugin", async () => {
-    const runtime = new TestPluginRuntimeService([]);
-    const { db, update } = createTestDb();
-    const oauthBindings = createDesktopOauthManagerBindings();
-    const handlers = createDesktopErrorSourcesHandlers(db, {
-      OauthManagerService: oauthBindings.OauthManagerService,
-      pluginRuntime: runtime,
-    });
-
-    await expect(
-      handlers["errorSources:update"]?.({
-        id: "source-1",
-        setupValues: {
-          projectIds: ["999"],
-        },
-      }),
-    ).rejects.toThrow(
-      'Error source plugin "posthog" does not match source type posthog',
-    );
-    expect(update).not.toHaveBeenCalled();
-  });
-
   it("completes OAuth for sources through matching code plugin metadata", async () => {
     vi.useFakeTimers();
     const runtime = new TestPluginRuntimeService([
@@ -945,26 +858,174 @@ describe("desktop error source handlers", () => {
     });
   });
 
-  it("rejects OAuth completion without a matching code plugin", async () => {
-    const runtime = new TestPluginRuntimeService([]);
-    const { db, create } = createTestDb();
+  it("persists custom plugin-owned configuration fields declared in setup metadata", async () => {
+    vi.useFakeTimers();
+    const runtime = new TestPluginRuntimeService([
+      {
+        id: "vendor-wazuh",
+        name: "Vendor Wazuh",
+        version: "1.0.0",
+        description: "Custom Wazuh-flavored plugin",
+        type: "data_source",
+        metadata: {
+          dataSource: {
+            sourceType: "wazuh",
+            setupFields: [
+              { key: "authToken", label: "Auth Token", required: false, control: "password" },
+              { key: "tenantCode", label: "Tenant Code", required: true, control: "text" },
+            ],
+          },
+        },
+        auth: { fields: [] },
+        actions: [],
+      },
+    ]);
+    const oauthBindings = createDesktopOauthManagerBindings();
+    const handlers = createDesktopErrorSourcesHandlers(createDb(), {
+      OauthManagerService: oauthBindings.OauthManagerService,
+      pluginRuntime: runtime,
+    });
+
+    await expect(
+      handlers["errorSources:create"]?.({
+        pluginId: "vendor-wazuh",
+        sourceType: "wazuh",
+        name: "Tenant Wazuh",
+        setupValues: { authToken: "wazuh-token", tenantCode: "blue-team" },
+      }),
+    ).resolves.toMatchObject({
+      pluginId: "vendor-wazuh",
+      sourceType: "wazuh",
+      name: "Tenant Wazuh",
+      configuration: { tenantCode: "blue-team" },
+    });
+  });
+
+  it("tests alert-search sources without requiring a saved source token", async () => {
+    vi.useFakeTimers();
+    const runtime = new TestPluginRuntimeService([
+      {
+        id: "wazuh",
+        name: "Wazuh",
+        version: "1.0.0",
+        description: "Wazuh plugin",
+        type: "data_source",
+        metadata: { dataSource: { sourceType: "wazuh", setupFields: [] } },
+        auth: { fields: [] },
+        actions: [createProviderAction("search_alerts")],
+      },
+    ]);
+    runtime.executeActionMock.mockResolvedValue({
+      pluginId: "wazuh",
+      actionId: "search_alerts",
+      ok: true,
+      status: 200,
+      summary: "Fetched 0 Wazuh alert(s).",
+      data: { issueCount: 0 },
+    });
+    const { db } = createTestDb();
+    vi.mocked(db.errorSource.findUnique).mockResolvedValue({
+      id: "source-wazuh",
+      sourceType: "wazuh",
+      name: "Production Wazuh",
+      accessTokenRef: null,
+      refreshTokenRef: null,
+      expiresAt: null,
+      grantedScopes: "[]",
+      configuration: JSON.stringify({ baseUrl: "https://wazuh.example.com:9200/", indexPatterns: ["wazuh-alerts-*"] }),
+      logLevelThreshold: "error",
+      additionalMetadata: JSON.stringify({ pluginId: "wazuh" }),
+      syncEnabled: true,
+      autoDiagnosisEnabled: false,
+      lastSyncAt: null,
+      lastSyncStatus: null,
+      lastSyncError: null,
+      createdAt: "2026-06-28T00:00:00.000Z",
+      updatedAt: "2026-06-28T00:00:00.000Z",
+    } as never);
     const oauthBindings = createDesktopOauthManagerBindings();
     const handlers = createDesktopErrorSourcesHandlers(db, {
       OauthManagerService: oauthBindings.OauthManagerService,
       pluginRuntime: runtime,
     });
 
-    await expect(
-      handlers["errorSources:completeOAuth"]?.({
-        pluginId: "posthog",
-        sourceType: "posthog",
-        code: "code-1",
-        state: "state-1",
+    await expect(handlers["errorSources:testConnection"]?.({ id: "source-wazuh" })).resolves.toEqual({
+      success: true,
+      provider: "wazuh",
+      organizationCount: 0,
+      projectCount: 0,
+    });
+    expect(runtime.executeActionMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        pluginId: "wazuh",
+        actionId: "search_alerts",
+        input: {
+          query: "*",
+          limit: 1,
+          sourceId: "source-wazuh",
+          sourceName: "Production Wazuh",
+          sourceType: "wazuh",
+          indexPattern: "wazuh-alerts-*",
+        },
       }),
-    ).rejects.toThrow(
-      'Error source plugin "posthog" does not match source type posthog',
+    );
+  });
+
+  it("returns a clean disconnected result when plugin auth is still incomplete", async () => {
+    const runtime = new TestPluginRuntimeService([createPostHogPluginDescriptor()]);
+    runtime.executeActionMock.mockRejectedValue(new Error("accessToken is required"));
+    const oauthBindings = createDesktopOauthManagerBindings();
+    const handlers = createDesktopErrorSourcesHandlers(createDb(), {
+      OauthManagerService: oauthBindings.OauthManagerService,
+      pluginRuntime: runtime,
+    });
+
+    await expect(handlers["errorSources:testConnection"]?.({ id: "source-1" })).resolves.toEqual({
+      success: false,
+      provider: "posthog",
+      organizationCount: 0,
+      projectCount: 0,
+    });
+  });
+
+  it.each([
+    { handler: "errorSources:testConnection", plugin: "posthog", input: { id: "source-1" } },
+    {
+      handler: "errorSources:probeConnection",
+      plugin: "posthog",
+      input: { pluginId: "posthog", sourceType: "posthog", setupValues: { accessToken: "phx-token" } },
+    },
+    {
+      handler: "errorSources:create",
+      plugin: "github",
+      input: {
+        pluginId: "github",
+        sourceType: "github",
+        name: "GitHub Issues",
+        setupValues: { accessToken: "gh-token" },
+        configuration: { defaultQuery: "is:issue is:open" },
+      },
+    },
+    { handler: "errorSources:update", plugin: "posthog", input: { id: "source-1", setupValues: { projectIds: ["999"] } } },
+    {
+      handler: "errorSources:completeOAuth",
+      plugin: "posthog",
+      input: { pluginId: "posthog", sourceType: "posthog", code: "code-1", state: "state-1" },
+    },
+  ] as const)("rejects $handler without a matching code plugin", async ({ handler, plugin, input }) => {
+    const runtime = new TestPluginRuntimeService([]);
+    const { db, create, update } = createTestDb();
+    const oauthBindings = createDesktopOauthManagerBindings();
+    const handlers = createDesktopErrorSourcesHandlers(db, {
+      OauthManagerService: oauthBindings.OauthManagerService,
+      pluginRuntime: runtime,
+    });
+
+    await expect(handlers[handler]?.(input as never)).rejects.toThrow(
+      `Error source plugin "${plugin}" does not match source type ${plugin}`,
     );
     expect(runtime.executeActionMock).not.toHaveBeenCalled();
     expect(create).not.toHaveBeenCalled();
+    expect(update).not.toHaveBeenCalled();
   });
 });

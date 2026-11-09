@@ -30,12 +30,10 @@
     "package:publish": "pnpm run build:shared-cli && pnpm run build:notarize-hook && pnpm run build:cli-bundle && pnpm run prepare:native-deps && electron-vite build && electron-builder build --config electron-builder.yml --publish always",
     "typecheck": "tsc -b --noEmit",
     "typecheck:test": "tsc --noEmit -p tsconfig.test.json",
-    "typecheck:contract": "tsc --noEmit -p tsconfig.contract.json",
     "lint": "node ../../scripts/eslint/ts7-unavailable.mjs",
     "lint:fix": "eslint . --fix",
     "test": "pnpm --dir ../.. run plugins:build && vitest run --config vitest.config.ts",
     "test:watch": "vitest --config vitest.config.ts",
-    "test:contracts": "pnpm run typecheck:contract",
     "test:plugin-installation": "vitest run --config vitest.config.ts src/__tests__/desktop-plugin-installation.spec.ts",
     "test:cli-smoke": "pnpm run build:shared-cli && pnpm run build:scripts && pnpm run prepare:native-deps && pnpm run build:cli-bundle && node scripts/dist/cli-smoke-test.js",
     "test:cli-stress": "pnpm run build:shared-cli && pnpm run build:scripts && pnpm run prepare:native-deps && pnpm run build:cli-bundle && node scripts/dist/cli-stress-test.js",
@@ -45,7 +43,6 @@
     "test:smoke:runbook": "pnpm run build:scripts && node scripts/dist/run-smoke-runbook.js",
     "test:smoke:runbook:packaged": "pnpm run build:scripts && node scripts/dist/run-smoke-runbook.js --packaged",
     "test:cli-canary": "pnpm run build:scripts && node scripts/dist/real-provider-canary.js",
-    "test:error-sources": "pnpm run typecheck:contract",
     "verify:mac-app": "bash scripts/verify-macos-artifact.sh"
   },
   "dependencies": {

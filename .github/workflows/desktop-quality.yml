@@ -67,11 +67,19 @@ jobs:
       - run: pnpm --dir packages/electron-trpc install --frozen-lockfile
       - name: Run TypeScript 6 ESLint bridge
         run: pnpm run lint:ts6
+      - name: Verify locale integrity
+        run: pnpm --filter @bitsentry-ce/i18n audit:integrity
       - run: pnpm --dir apps/desktop exec node node_modules/electron/install.js
       - run: pnpm --filter @bitsentry-ce/desktop test
+      - name: Test plugin packages
+        run: pnpm run plugins:test
       - run: pnpm --filter @bitsentry-ce/core test
       - name: Verify encrypted plugin credential migration
         run: pnpm --filter @bitsentry-ce/desktop-cli test
+      - name: Typecheck desktop sources and tests
+        run: |
+          pnpm --dir packages/electron-trpc --filter electron-trpc build
+          pnpm run desktop:typecheck:test
       # Vitest executes under Node, whereas Electron needs a separately rebuilt
       # native module ABI. Rebuild only after deterministic Node tests finish.
       - run: pnpm --dir apps/desktop run prepare:native-deps

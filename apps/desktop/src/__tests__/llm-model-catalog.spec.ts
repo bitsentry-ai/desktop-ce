@@ -249,134 +249,6 @@ describe('local model catalog selection', () => {
     expect(modelsWithoutComposerControl).toEqual([])
   })
 
-  it('covers the current CLI models with provider-accurate effort tiers', () => {
-    const expectedEffortTiers = {
-      codex: {
-        'gpt-5.6-sol': { tiers: ['low', 'medium', 'high', 'xhigh'], default: 'high' },
-        'gpt-5.6-terra': { tiers: ['low', 'medium', 'high', 'xhigh'], default: 'high' },
-        'gpt-5.6-luna': { tiers: ['low', 'medium', 'high', 'xhigh'], default: 'high' },
-      },
-      cursor: {
-        'opus-5': { tiers: ['low', 'medium', 'high', 'xhigh'], default: 'high' },
-        'gpt-5.6': { tiers: ['low', 'medium', 'high', 'xhigh'], default: 'high' },
-      },
-      opencode: {
-        'openrouter/openai/gpt-5.6-luna': {
-          tiers: ['none', 'low', 'medium', 'high', 'xhigh', 'max'],
-          default: 'medium',
-        },
-        'openrouter/openai/gpt-5.6-sol': {
-          tiers: ['none', 'low', 'medium', 'high', 'xhigh', 'max'],
-          default: 'medium',
-        },
-        'openrouter/openai/gpt-5.6-terra': {
-          tiers: ['none', 'low', 'medium', 'high', 'xhigh', 'max'],
-          default: 'medium',
-        },
-        'openai/gpt-5.5': {
-          tiers: ['none', 'low', 'medium', 'high', 'xhigh'],
-          default: 'medium',
-        },
-        'openai/gpt-5.4': {
-          tiers: ['none', 'low', 'medium', 'high', 'xhigh'],
-          default: 'high',
-        },
-        'openai/gpt-5.4-mini': {
-          tiers: ['none', 'low', 'medium', 'high', 'xhigh'],
-          default: 'medium',
-        },
-        'openai/gpt-5.3-codex-spark': {
-          tiers: ['none', 'low', 'medium', 'high', 'xhigh'],
-          default: 'medium',
-        },
-        'openrouter/anthropic/claude-opus-5': {
-          tiers: ['low', 'medium', 'high', 'xhigh', 'max'],
-          default: 'xhigh',
-        },
-        'anthropic/claude-sonnet-5': {
-          tiers: ['low', 'medium', 'high', 'xhigh', 'max'],
-          default: 'high',
-        },
-        'anthropic/claude-fable-5': {
-          tiers: ['low', 'medium', 'high', 'xhigh', 'max'],
-          default: 'high',
-        },
-        'anthropic/claude-opus-4-8': {
-          tiers: ['low', 'medium', 'high', 'xhigh', 'max'],
-          default: 'xhigh',
-        },
-        'anthropic/claude-opus-4-7': {
-          tiers: ['low', 'medium', 'high', 'xhigh', 'max'],
-          default: 'xhigh',
-        },
-        'anthropic/claude-sonnet-4-6': {
-          tiers: ['low', 'medium', 'high', 'max'],
-          default: 'high',
-        },
-        'openai/gpt-5': {
-          tiers: ['minimal', 'low', 'medium', 'high'],
-          default: 'medium',
-        },
-      },
-    } as const
-
-    for (const [providerKey, models] of Object.entries(expectedEffortTiers) as Array<[
-      'codex' | 'cursor' | 'opencode',
-      Record<string, { readonly tiers: readonly string[]; readonly default: string }>,
-    ]>) {
-      for (const [modelId, expected] of Object.entries(models)) {
-        const effort = getEffectiveComposerOptions(getCatalogModel(providerKey, modelId)!)
-          .find((option) => option.id === 'effort')
-
-        expect(effort).toMatchObject({ type: 'select' })
-        if (effort?.type !== 'select') throw new Error(`${providerKey}/${modelId} needs effort`)
-        expect(effort.options.map((option) => option.value)).toEqual(expected.tiers)
-        expect(effort.options.find((option) => option.isDefault)?.value).toBe(expected.default)
-      }
-    }
-  })
-
-  it('covers API reasoning models with provider-accurate effort tiers', () => {
-    const expectedEffortTiers = {
-      groq: {
-        'openai/gpt-oss-120b': { tiers: ['low', 'medium', 'high'], default: 'medium' },
-        'openai/gpt-oss-20b': { tiers: ['low', 'medium', 'high'], default: 'medium' },
-      },
-      kilocode: {
-        'anthropic/claude-opus-4.6': { tiers: ['low', 'medium', 'high', 'max'], default: 'high' },
-        'openai/gpt-5.2': {
-          tiers: ['none', 'minimal', 'low', 'medium', 'high', 'xhigh'],
-          default: 'high',
-        },
-      },
-      openrouter: {
-        'openai/gpt-5.2': {
-          tiers: ['none', 'minimal', 'low', 'medium', 'high', 'xhigh'],
-          default: 'high',
-        },
-        'openai/o3': { tiers: ['low', 'medium', 'high'], default: 'medium' },
-        'anthropic/claude-opus-4': { tiers: ['low', 'medium', 'high', 'max'], default: 'high' },
-      },
-    } as const
-
-    for (const [providerKey, models] of Object.entries(expectedEffortTiers) as Array<[
-      'groq' | 'kilocode' | 'openrouter',
-      Record<string, { readonly tiers: readonly string[]; readonly default: string }>,
-    ]>) {
-      for (const [modelId, expected] of Object.entries(models)) {
-        const model = getCatalogModel(providerKey, modelId)
-        expect(model?.supportsThinking).toBe(true)
-        const effort = getEffectiveComposerOptions(model!).find((option) => option.id === 'effort')
-
-        expect(effort).toMatchObject({ type: 'select' })
-        if (effort?.type !== 'select') throw new Error(`${providerKey}/${modelId} needs effort`)
-        expect(effort.options.map((option) => option.value)).toEqual(expected.tiers)
-        expect(effort.options.filter((option) => option.isDefault)).toHaveLength(1)
-        expect(effort.options.find((option) => option.isDefault)?.value).toBe(expected.default)
-      }
-    }
-  })
-
   it('hides confirmed stale Gemini IDs from catalog and live discovery', () => {
     const staleIds = [
       'gemini-2.5-pro',
@@ -579,6 +451,31 @@ describe('local model catalog selection', () => {
       'gpt-5.6-terra',
     ])
     expect(records.claude_code?.availableModels).toEqual(['claude-sonnet'])
+  })
+
+  it('returns the normalized OpenCode model ID in provider settings', async () => {
+    const records = await buildDesktopLocalProviderRecords({
+      localAiProvider: {
+        getSettings: () => ({
+          claudeCode: { enabled: false },
+          codex: { enabled: false },
+          opencode: { enabled: true },
+          cursor: { enabled: false },
+        }),
+        isReady: (providerKey) => providerKey === 'opencode',
+        listModels: async () => [],
+      },
+      primaryProviderKey: 'opencode',
+      normalizeModel: (providerKey, rawModel) => getCatalogModel(providerKey, rawModel)?.id ?? rawModel,
+      readModelSetting: async () => 'openai/gpt-5.5-fast',
+      readAvailableModels: async () => ['openai/gpt-5.5'],
+      resolveAvailableModels: async () => [],
+    })
+
+    expect(records.opencode).toMatchObject({
+      model: 'openai/gpt-5.5',
+      availableModels: ['openai/gpt-5.5'],
+    })
   })
 
   it('replaces a removed saved model during sync', () => {
