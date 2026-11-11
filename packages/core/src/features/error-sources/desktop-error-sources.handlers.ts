@@ -791,6 +791,13 @@ function recoverInterruptedSyncs(
   return interruptedSyncRecovery;
 }
 
+/** Stops the scheduled error-source sync and waits for an in-flight sync. */
+export async function stopDesktopErrorSourcesSyncScheduler(): Promise<void> {
+  const scheduler = syncScheduler;
+  syncScheduler = null;
+  await scheduler?.stop();
+}
+
 export function createDesktopErrorSourcesHandlers(
   db: DbClient,
   dependencies: {
@@ -817,9 +824,10 @@ export function createDesktopErrorSourcesHandlers(
   const syncRecovery = recoverInterruptedSyncs(sourcesRepository);
 
   if (syncScheduler === null) {
-    syncScheduler = new SyncSchedulerService(syncService, 10 * 60 * 1000);
+    const scheduler = new SyncSchedulerService(syncService, 10 * 60 * 1000);
+    syncScheduler = scheduler;
     void syncRecovery.finally(() => {
-      syncScheduler?.start();
+      if (syncScheduler === scheduler) scheduler.start();
     });
   }
 
