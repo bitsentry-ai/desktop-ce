@@ -205,6 +205,21 @@ export function setAgentThreadRuntimeState(
   };
 }
 
+const INTERRUPTED_TURN_MESSAGE = "Interrupted before the response finished.";
+
+/**
+ * Settles the last agent turn like a cancellation when its session is gone
+ * (app restart), so a persisted thinking/streaming turn stops spinning.
+ */
+export function settleInterruptedAgentTurn(messages: ChatMessage[], timestamp: string): ChatMessage[] {
+  const lastAgent = [...messages].reverse().find((message) => message.kind === "agent");
+  if (lastAgent?.kind !== "agent" || (lastAgent.status !== "thinking" && lastAgent.status !== "streaming")) {
+    return messages;
+  }
+  const snapshot = { messages } as AgentThreadSnapshot;
+  return reduceAgentThreadSnapshot(snapshot, { type: "cancelled", timestamp, message: INTERRUPTED_TURN_MESSAGE }).messages;
+}
+
 export function reduceAgentThreadSnapshot(
   snapshot: AgentThreadSnapshot,
   event: RuntimeProjectionEvent,

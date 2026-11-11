@@ -53,7 +53,7 @@ import {
   createDesktopPluginHandlers,
 } from '@bitsentry-ce/core/features/plugins/node'
 import { createDesktopYamlRunbookHandlers as createRunbookHandlers } from '@bitsentry-ce/core/features/runbooks/desktop-runbook-handler-yaml-bindings'
-import { createDesktopStateHandlers } from '@bitsentry-ce/core/features/desktop-state/desktop-state.handlers'
+import { createDesktopStateHandlers, loadIncidentThreadMessages } from '@bitsentry-ce/core/features/desktop-state/desktop-state.handlers'
 import {
   approveRunbookExportPath,
   approveRunbookImportPaths,
@@ -613,6 +613,7 @@ app
           onRunbooksChanged: publishRunbooksChanged,
           pluginRuntime,
           authoringProposalStore: new SqliteRunbookAuthoringProposalStore(db),
+          loadIncidentMessages: (incidentThreadId) => loadIncidentThreadMessages(db, incidentThreadId),
           windowGetter: () => desktopShell.mainWindow,
         },
         { AgentRuntimeService },
