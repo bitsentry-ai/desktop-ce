@@ -507,10 +507,8 @@ function getIncidentPreviewFromMessages(messages: IncidentChatMessage[]): string
   )
 }
 
-// Iteration streamDeltas hold one record per token chunk and are only read
-// while a turn streams, so they are not persisted.
 function serializeIncidentMessage(message: IncidentChatMessage): string {
-  return JSON.stringify(message, (key, value: unknown) => (key === 'streamDeltas' ? undefined : value))
+  return JSON.stringify(message)
 }
 
 function normalizeRevisionNumber(value: unknown): number {
@@ -779,18 +777,23 @@ function nullableValue<T>(value: T | undefined): T | null {
   return value
 }
 
+// Messages keep the id they were created with; older rows fall back to the row
+// id, or to threadId + sortOrder, so renderer reconciliation has a stable key.
 function normalizeIncidentMessageRow(rawMessage: unknown): IncidentChatMessage {
   const message = asObject(rawMessage)
+  const id = asString(message.id) || `${asString(message.threadId)}:${String(message.sortOrder)}`
   const stored = normalizeChatMessage(safeJsonParse<unknown>(message.messageJson, null))
-  if (stored !== null) return stored
+  if (stored !== null) return typeof stored.id === 'string' && stored.id.length > 0 ? stored : { ...stored, id }
   if (asString(message.kind) === 'user') {
     return {
+      id,
       kind: 'user',
       text: asString(message.text),
     }
   }
 
   return {
+    id,
     kind: 'agent',
     streamText: asString(message.streamText),
     toolCalls: dedupeToolCalls(safeJsonParse(message.toolCallsJson, [])),
