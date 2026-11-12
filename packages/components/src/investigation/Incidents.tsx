@@ -1,3 +1,4 @@
+import { useActionPermissions } from "../services/context";
 import IncidentIntegrationsRail, {
   IntegrationsRailTriggers,
   useDesktopIntegrationPorts,
@@ -1259,6 +1260,7 @@ export function RunbookAuthoringProposalCards({
   onRevisionRequested: (requestedEdit: string) => void;
 }) {
   const { t } = useTranslation();
+  const { canOperate, operatorTitle } = useActionPermissions();
   const proposals = getRunbookAuthoringProposalsFromMessage(message);
   const [decisionStateByProposalId, setDecisionStateByProposalId] = useState<
     Record<string, RunbookAuthoringProposalReview>
@@ -1476,7 +1478,8 @@ export function RunbookAuthoringProposalCards({
                   <button
                     type="button"
                     onClick={handleApprove}
-                    disabled={isBusy || !canDecideProposals || !proposal.validation.valid || (proposal.kind === "edit_existing_runbook" && selectedOperationIds.length === 0)}
+                    title={operatorTitle}
+                    disabled={!canOperate || isBusy || !canDecideProposals || !proposal.validation.valid || (proposal.kind === "edit_existing_runbook" && selectedOperationIds.length === 0)}
                     className="inline-flex h-8 items-center gap-1.5 rounded-md border border-emerald-500/40 bg-emerald-500/10 px-2.5 text-xs font-medium text-emerald-700 transition-colors hover:bg-emerald-500/15 disabled:cursor-not-allowed disabled:opacity-50 dark:text-emerald-300"
                   >
                     <Check size={13} />
@@ -1485,7 +1488,8 @@ export function RunbookAuthoringProposalCards({
                   <button
                     type="button"
                     onClick={handleReject}
-                    disabled={isBusy || !canDecideProposals}
+                    title={operatorTitle}
+                    disabled={!canOperate || isBusy || !canDecideProposals}
                     className="inline-flex h-8 items-center gap-1.5 rounded-md border border-border bg-muted/60 px-2.5 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     <Ban size={13} />
@@ -1572,7 +1576,8 @@ export function RunbookAuthoringProposalCards({
                 <button
                   type="button"
                   onClick={handleRequestRevision}
-                  disabled={isBusy || !canDecideProposals || revisionDraft.trim().length === 0}
+                  title={operatorTitle}
+                  disabled={!canOperate || isBusy || !canDecideProposals || revisionDraft.trim().length === 0}
                   className="inline-flex h-8 shrink-0 items-center justify-center gap-1.5 rounded-md border border-border bg-muted/60 px-2.5 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   <RefreshCw size={13} />

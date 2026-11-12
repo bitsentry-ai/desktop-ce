@@ -1,3 +1,4 @@
+import { useActionPermissions } from "../services/context";
 import {
   useCallback,
   useEffect,
@@ -878,6 +879,7 @@ export default function ResultsPage() {
   const [traceMap, setTraceMap] =
     useState<Record<string, ResultTraceMemory>>(loadResultTraces);
   const [selectedStepKey, setSelectedStepKey] = useState<string | null>(null);
+  const { canOperate, operatorTitle } = useActionPermissions();
   const [cancelPending, setCancelPending] = useState(false);
   const [cancelError, setCancelError] = useState<string | null>(null);
 
@@ -1236,7 +1238,8 @@ export default function ResultsPage() {
                 {activeResult.status === "running" && (
                   <button
                     onClick={() => { void handleCancel(); }}
-                    disabled={cancelPending}
+                    title={operatorTitle}
+                    disabled={!canOperate || cancelPending}
                     className="flex items-center gap-1.5 rounded-md border border-border px-2 py-1 text-xs hover:bg-muted transition-colors disabled:opacity-50"
                   >
                     {cancelPending && <Loader2 size={11} className="animate-spin" />}
