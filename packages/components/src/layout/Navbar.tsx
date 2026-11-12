@@ -315,6 +315,19 @@ function normalizeIncidentNavItems(items: unknown[]): IncidentNavItem[] {
     .filter((item): item is IncidentNavItem => item !== null);
 }
 
+/** Keeps the current list when a reload reads the same rows, so the navbar does not re-render. */
+function keepIfSameNavItems<T extends object>(next: T[]): (prev: T[]) => T[] {
+  return (prev) => {
+    const same = prev.length === next.length && prev.every((item, index) => {
+      const a = item as Record<string, unknown>;
+      const b = next[index] as Record<string, unknown>;
+      const keys = Object.keys(a);
+      return keys.length === Object.keys(b).length && keys.every((key) => a[key] === b[key]);
+    });
+    return same ? prev : next;
+  };
+}
+
 function readLocalIncidentNavItems(): IncidentNavItem[] {
   try {
     const raw = localStorage.getItem("bitsentry_incidents");
@@ -763,7 +776,7 @@ const Navbar = ({
 
   React.useEffect(() => {
     const reload = () => {
-      setInvestigationIncidents(readLocalIncidentNavItems());
+      setInvestigationIncidents(keepIfSameNavItems(readLocalIncidentNavItems()));
     };
     window.addEventListener("bitsentry:incidents-updated", reload);
     return () => {
@@ -919,12 +932,7 @@ const Navbar = ({
 
   React.useEffect(() => {
     const reload = () => {
-      if (isDesktop) {
-        setResultItems(readLocalResultNavItems());
-        return;
-      }
-
-      setResultItems(readLocalResultNavItems());
+      setResultItems(keepIfSameNavItems(readLocalResultNavItems()));
     };
     window.addEventListener("bitsentry:results-updated", reload);
     return () => {
