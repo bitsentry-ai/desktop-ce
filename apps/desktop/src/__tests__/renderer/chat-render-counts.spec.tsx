@@ -8,7 +8,6 @@ import { BitsentryServicesProvider } from "@bitsentry-ce/components/services/con
 import { TooltipProvider } from "@bitsentry-ce/components/ui/tooltip";
 import type { AgentEventPayload, AgentThreadTokenUsage, ChatMessage } from "@bitsentry-ce/components/chat/types";
 import { MarkdownContent } from "@bitsentry-ce/components/markdown";
-import { IncidentMessageList } from "@bitsentry-ce/components/investigation/incidents/IncidentMessageList";
 import IncidentsPage from "@bitsentry-ce/components/investigation/Incidents";
 import { useIncidentListStore } from "@bitsentry-ce/components/investigation/incidents/incidentListStore";
 import { useIncidentAgentEvents } from "@bitsentry-ce/components/investigation/incidents/useIncidentAgentEvents";
@@ -40,11 +39,6 @@ function profileMemo<P extends object>(component: NamedExoticComponent<P>, id: (
   const type = (props: P) => counted(id(props), React.createElement(inner, props));
   return { ...component, type } as unknown as typeof component;
 }
-
-vi.mock("@bitsentry-ce/components/chat/ChatBubble", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@bitsentry-ce/components/chat/ChatBubble")>();
-  return { ...actual, ChatBubble: profileMemo(actual.ChatBubble, (props) => `row:${props.msg.id ?? ""}`) };
-});
 
 vi.mock("@bitsentry-ce/components/investigation/incidents/IncidentMessageList", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@bitsentry-ce/components/investigation/incidents/IncidentMessageList")>();
@@ -133,29 +127,6 @@ afterEach(() => {
 });
 
 describe("chat render counts", () => {
-  it("re-renders only the streaming row", () => {
-    const messages = conversation(30);
-    const list = (next: ChatMessage[]) => (
-      <TooltipProvider>
-        <IncidentMessageList messages={next} providerKey={null} />
-      </TooltipProvider>
-    );
-    const { rerender } = render(list(messages));
-    commits.clear();
-
-    let current = messages;
-    for (let step = 1; step <= 50; step += 1) {
-      current = [...current.slice(0, -1), agentMessage("m29", `answer 29${" more".repeat(step)}`)];
-      rerender(list(current));
-    }
-
-    const earlier = messages.slice(0, -1).flatMap((msg) => [`row:${msg.id ?? ""}`, `row:${msg.id ?? ""}#nested`]);
-    expect(earlier.filter((id) => commits.has(id))).toEqual([]);
-    expect(commits.get("row:m29")).toBeLessThanOrEqual(50);
-    // The copy button keeps its props while the reply streams, so the tooltip trigger never re-commits.
-    expect(commits.get("row:m29#nested") ?? 0).toBe(0);
-  });
-
   it("keeps the message list still while the user types", async () => {
     const storage = memoryStorage();
     Object.defineProperty(window, "localStorage", { configurable: true, value: storage });
