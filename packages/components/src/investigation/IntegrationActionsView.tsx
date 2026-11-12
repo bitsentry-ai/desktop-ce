@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { AlertCircle, FileText, Ticket } from "lucide-react";
 import { useTranslation } from "@bitsentry-ce/i18n";
-import { customerReportMarker, type IntegrationOperation } from "@bitsentry-ce/core/features/plugins";
+import { customerReportMarker } from "@bitsentry-ce/core/features/plugins";
+import type { IntegrationOperationWithPolicy as IntegrationOperation } from "../services/contracts";
+import { Input } from "../ui/input";
 import { CustomerReportInternalBadge } from "../chat/CustomerReportPanel";
 import { formatCustomerReportReceivedAt } from "../chat/ChatBubble";
 import { cn } from "../lib/utils";
@@ -9,10 +11,11 @@ import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
 import { relativeTime } from "./relative-time";
 export interface IntegrationOperationsPort {
+  currentUserId?: number;
   renew?(threadId: string, id: string): Promise<unknown>;
   reconcile?(threadId: string, id: string, applied: boolean, confirmed: boolean, externalId?: string): Promise<unknown>;
   list(threadId: string): Promise<IntegrationOperation[]>;
-  approve(threadId: string, id: string, closeRequested: boolean): Promise<unknown>;
+  approve(threadId: string, id: string, closeRequested: boolean, approvalReference?: string): Promise<unknown>;
   cancel(threadId: string, id: string): Promise<unknown>;
 }
 type StatusVariant = "warning" | "info" | "success" | "destructive" | "secondary";
@@ -103,7 +106,7 @@ function OperationListItem({ row, isSelected, onSelect }: { row: IntegrationOper
 
 interface OperationBodyProps {
   row: IntegrationOperation; disabled: boolean; busy: boolean; refusal: string | undefined; closeRequested: boolean;
-  onCloseRequestedChange(value: boolean): void; onApprove(): void; onReject(): void; service: IntegrationOperationsPort; onRefresh(): Promise<void>;
+  onCloseRequestedChange(value: boolean): void; onApprove(approvalReference?: string): void; onReject(): void; service: IntegrationOperationsPort; onRefresh(): Promise<void>;
 }
 const RAIL_BODY_CLASS = "min-h-0 min-w-0 flex-1 space-y-3 overflow-y-auto overflow-x-hidden px-4 py-4";
 
@@ -112,6 +115,12 @@ export function OperationBody({ row, disabled, busy, refusal, closeRequested, on
   const { t } = useTranslation();
   const { changes, facts } = summarizeOperation(row);
   const awaiting = row.status === "proposed";
+  const [reference, setReference] = useState("");
+  const trimmedReference = reference.trim();
+  const restricted = row.requiredApproval?.mode === "restricted";
+  const policyDenied = row.requiredApproval?.mode === "deny";
+  const eligible = service.currentUserId === undefined || row.requiredApproval?.approverUserIds.includes(service.currentUserId);
+  const approvalBlocked = policyDenied || (restricted && (!eligible || trimmedReference.length < 3 || trimmedReference.length > 200));
   return <div className={className}>
     {row.publicUpdate && <p role="note" className="rounded-md border border-amber-500/30 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-700 dark:bg-amber-950/30 dark:text-amber-400">{t("incidents.integrationWrites.public")}</p>}
     <dl className="grid grid-cols-1 gap-3">
@@ -143,9 +152,16 @@ export function OperationBody({ row, disabled, busy, refusal, closeRequested, on
       </>}
     </details>
     {awaiting && refusal !== undefined && <p role="alert" className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">{refusal}</p>}
+    {awaiting && policyDenied && <p role="alert" className="text-sm text-destructive">{t("incidents.integrationWrites.policyDenied")}</p>}
+    {awaiting && restricted && <div className="space-y-2">
+      <p className="text-sm text-muted-foreground">{t("incidents.integrationWrites.restricted")}</p>
+      <label className="block text-sm">{t("incidents.integrationWrites.approvalReference")}
+        <Input value={reference} disabled={disabled || busy} onChange={(event) => { setReference(event.target.value); }} />
+      </label>
+    </div>}
     {awaiting && <div className="flex flex-wrap items-center gap-2 border-t border-border pt-3">
       {row.requiresCloseRequest && <label className="mr-auto flex items-center gap-2 text-sm"><input type="checkbox" className="accent-primary" checked={closeRequested} disabled={disabled || busy} onChange={(event) => { onCloseRequestedChange(event.target.checked); }} /> {t("incidents.integrationWrites.closeRequest")}</label>}
-      <Button size="sm" disabled={disabled || busy || (row.requiresCloseRequest && !closeRequested)} onClick={onApprove}>{t("incidents.integrationWrites.approve")}</Button>
+      <Button size="sm" disabled={disabled || busy || approvalBlocked || (row.requiresCloseRequest && !closeRequested)} onClick={() => { onApprove(restricted ? trimmedReference : undefined); }}>{t("incidents.integrationWrites.approve")}</Button>
       <Button size="sm" variant="outline" disabled={disabled || busy} onClick={onReject}>{t("incidents.integrationWrites.cancel")}</Button>
     </div>}
     <OperationRecoveryControls row={row} service={service} disabled={disabled || busy} onRefresh={onRefresh} />
@@ -175,7 +191,7 @@ export interface OperationDecisions {
   setCloseRequested(id: string, value: boolean): void;
   /** What the remote system refused for. It stays with its operation across list refreshes. */
   refusal(id: string): string | undefined;
-  decide(row: IntegrationOperation, approve: boolean): Promise<void>;
+  decide(row: IntegrationOperation, approve: boolean, approvalReference?: string): Promise<void>;
 }
 
 /** Approve and reject for the operations of one incident, shared by every list that shows them. A client without ticket actions has nothing to decide. */
@@ -186,12 +202,12 @@ export function useOperationDecisions({ threadId, service, onRefresh }: {
   const [failed, setFailed] = useState(false);
   const [closeRequests, setCloseRequests] = useState<Record<string, boolean>>({});
   const [refusals, setRefusals] = useState<Record<string, string>>({});
-  async function decide(row: IntegrationOperation, approve: boolean) {
+  async function decide(row: IntegrationOperation, approve: boolean, approvalReference?: string) {
     if (service === undefined) return;
     setBusy(true); setFailed(false);
     setRefusals((old) => Object.fromEntries(Object.entries(old).filter(([id]) => id !== row.id)));
     try {
-      if (approve) await service.approve(threadId, row.id, closeRequests[row.id] === true);
+      if (approve) await service.approve(threadId, row.id, closeRequests[row.id] === true, approvalReference);
       else await service.cancel(threadId, row.id);
       await onRefresh();
     } catch (caught) {
@@ -242,7 +258,7 @@ export function IntegrationActionsView({ threadId, rows, failed, disabled, servi
     <div className="min-h-0 flex-1 px-4 pb-4">
       {selected !== null && <OperationDetails key={selected.id} row={selected} disabled={disabled} busy={decisions.busy} refusal={decisions.refusal(selected.id)} closeRequested={decisions.closeRequested(selected.id)}
         onCloseRequestedChange={(value) => { decisions.setCloseRequested(selected.id, value); }}
-        onApprove={() => { void decisions.decide(selected, true); }} onReject={() => { void decisions.decide(selected, false); }} service={service} onRefresh={onRefresh} />}
+        onApprove={(reference) => { void decisions.decide(selected, true, reference); }} onReject={() => { void decisions.decide(selected, false); }} service={service} onRefresh={onRefresh} />}
       {selected === null && ordered.length > 0 && <div className="flex h-full items-center justify-center rounded-2xl border border-dashed border-border/70 bg-muted/10 px-6 text-center text-sm text-muted-foreground">{t("incidents.integrationRail.selectAction")}</div>}
     </div>
   </div>;

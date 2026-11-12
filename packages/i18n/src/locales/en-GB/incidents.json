@@ -249,5 +249,8 @@
   "incidents.integrationWrites.customerReport.unverified": "Engineer-provided, not verified",
   "incidents.integrationWrites.customerReport.notProvided": "Not provided",
   "incidents.integrationWrites.customerReport.subject": "Subject",
-  "incidents.integrationRecovery.refusedBeforeWrite": "iTop refused this request before writing anything. Check the connection and its permissions, then propose the change again."
+  "incidents.integrationRecovery.refusedBeforeWrite": "iTop refused this request before writing anything. Check the connection and its permissions, then propose the change again.",
+  "incidents.integrationWrites.restricted": "Restricted action: requires a listed approver and a change or ticket reference",
+  "incidents.integrationWrites.approvalReference": "Change or ticket reference (3–200 characters)",
+  "incidents.integrationWrites.policyDenied": "Denied by policy"
 }
