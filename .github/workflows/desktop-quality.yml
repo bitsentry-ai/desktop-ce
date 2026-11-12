@@ -90,6 +90,8 @@ jobs:
           node --test scripts/security/keyring-packaging.test.mjs
       - name: Verify cross-process credential coordination
         run: node --test scripts/security/credential-lock.test.mjs
+      - name: Verify isolated QA launch guards
+        run: node --test scripts/qa/isolated-dev-launch.test.mjs
       - name: Run local runbook smoke scenario
         env:
           BITSENTRY_DESKTOP_SMOKE_NO_SANDBOX: '1'

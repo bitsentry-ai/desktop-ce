@@ -53,6 +53,26 @@ pnpm run typecheck
 pnpm run lint
 ```
 
+## Isolated App QA
+
+Use this to run the real dev app for QA or automation without touching any existing profile:
+
+```bash
+pnpm --filter @bitsentry/plugin-sdk build   # once per fresh checkout
+pnpm run desktop:qa:isolated --exec "<your QA command>"
+```
+
+The launcher runs the `desktop:dev` chain against a new temporary profile, with a mock keychain and a CDP port
+(`--port`, default 9339). Before it prints `READY` or starts `--exec`, it proves that:
+
+- the Electron process it started carries the isolation switches, with no `--` in front of them;
+- the app reports that temporary folder as its user data, and opened SQLite inside it;
+- no file in the standard CE, Pro or Electron profile folders changed since launch.
+
+If any check fails, it stops the instance it started and exits non-zero. `--exec` gets `QA_CDP_URL` and
+`QA_USER_DATA_DIR`. The dev build still appends to its own electron-log file in the platform log folder.
+Never pass extra `--` separators by hand: pnpm forwards them verbatim, and Chromium ignores every switch after one.
+
 ## Desktop Feature Surface (Current)
 
 - Auth/session:
