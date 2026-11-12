@@ -6,6 +6,7 @@ import { syncBuiltinESMExports } from 'node:module';
 import os from 'node:os';
 import path from 'node:path';
 import { after, test } from 'node:test';
+import { pathToFileURL } from 'node:url';
 import {
   buildDevArgs,
   findChangedFiles,
@@ -13,6 +14,7 @@ import {
   platformConfigRoot,
   processGroupAlive,
   profileRoots,
+  runOwnedSession,
   stopProcessGroup,
   validateDevArgs,
   validateElectronArgv,
@@ -126,6 +128,7 @@ function withPatchedFs(name, replacement, body) {
 }
 
 const fsError = (code) => Object.assign(new Error(code), { code });
+const sleep = (ms) => new Promise((resolve) => { setTimeout(resolve, ms); });
 
 test('an unreadable profile folder refuses instead of passing as unchanged', () => {
   const locked = path.join(sandbox, 'locked-profile');
@@ -231,4 +234,88 @@ test('an inspection error inside the owned section still stops the group', async
   );
   assert.equal(processGroupAlive(leader.pid), false);
   assert.equal(alive(descendantPid), false);
+});
+
+// A command line the shell runs as a QA driver that never finishes and ignores SIGTERM.
+const HANGING_DRIVER = `"${process.execPath}" -e "process.on('SIGTERM', () => {}); setInterval(() => {}, 1000)"`;
+const startApp = (script) => spawn(process.execPath, ['-e', script], { detached: true, stdio: 'ignore' });
+const fastStop = { termGraceMs: 300, killGraceMs: 3000 };
+
+test('SIGTERM to the launcher alone stops a hanging driver and the app, and exits non-zero', async () => {
+  const moduleUrl = pathToFileURL(path.resolve(import.meta.dirname, 'isolated-dev-launch.mjs')).href;
+  const harness = spawn(process.execPath, ['--input-type=module', '-e', `
+    import { spawn } from 'node:child_process';
+    import { runOwnedSession } from ${JSON.stringify(moduleUrl)};
+    const app = spawn(process.execPath, ['-e', ${JSON.stringify(IGNORE_TERM_CHILD)}], { detached: true, stdio: 'ignore' });
+    const result = await runOwnedSession({
+      child: app,
+      verifyLaunch: async () => null,
+      exec: ${JSON.stringify(HANGING_DRIVER)},
+      execEnv: process.env,
+      stopOptions: { termGraceMs: 300, killGraceMs: 3000 },
+      onDriverStart: (driver) => { console.log(JSON.stringify({ app: app.pid, driver })); },
+    });
+    console.log(JSON.stringify(result));
+    process.exitCode = result.failures.length > 0 ? 1 : result.exitCode;
+  `], { stdio: ['ignore', 'pipe', 'inherit'] });
+  const lines = [];
+  harness.stdout.on('data', (chunk) => { lines.push(...chunk.toString().trim().split('\n')); });
+  for (const deadline = Date.now() + 10_000; lines.length === 0 && Date.now() < deadline;) await sleep(50);
+  const { app, driver } = JSON.parse(lines[0]);
+  assert.equal(processGroupAlive(app), true);
+  assert.equal(processGroupAlive(driver), true);
+  const startedStop = Date.now();
+  harness.kill('SIGTERM');
+  const code = await new Promise((resolve) => { harness.once('exit', resolve); });
+  assert.ok(Date.now() - startedStop < 10_000, 'the launcher must exit within the bounded stop time');
+  assert.notEqual(code, 0);
+  assert.match(lines.at(-1), /interrupted while the QA command was running/);
+  assert.equal(processGroupAlive(driver), false);
+  assert.equal(processGroupAlive(app), false);
+});
+
+test('the app exiting while the driver hangs fails the run and stops the driver group', async () => {
+  let driverPid;
+  const result = await runOwnedSession({
+    child: startApp('setTimeout(() => process.exit(0), 400)'),
+    verifyLaunch: async () => null,
+    exec: HANGING_DRIVER,
+    execEnv: process.env,
+    stopOptions: fastStop,
+    onDriverStart: (pid) => { driverPid = pid; },
+  });
+  assert.deepEqual(result.failures, ['the app exited while the QA command was running']);
+  assert.equal(processGroupAlive(driverPid), false);
+});
+
+test('a failing driver gives a non-zero exit and both groups are stopped', async () => {
+  const app = startApp(IGNORE_TERM_CHILD);
+  let driverPid;
+  const result = await runOwnedSession({
+    child: app,
+    verifyLaunch: async () => null,
+    exec: `"${process.execPath}" -e "process.exit(7)"`,
+    execEnv: process.env,
+    stopOptions: fastStop,
+    onDriverStart: (pid) => { driverPid = pid; },
+  });
+  assert.deepEqual(result, { failures: [], exitCode: 7 });
+  assert.equal(processGroupAlive(driverPid), false);
+  assert.equal(processGroupAlive(app.pid), false);
+});
+
+test('a successful driver exits zero and both groups are stopped', async () => {
+  const app = startApp('setInterval(() => {}, 1000)');
+  let driverPid;
+  const result = await runOwnedSession({
+    child: app,
+    verifyLaunch: async () => null,
+    exec: `"${process.execPath}" -e "process.exit(0)"`,
+    execEnv: process.env,
+    stopOptions: fastStop,
+    onDriverStart: (pid) => { driverPid = pid; },
+  });
+  assert.deepEqual(result, { failures: [], exitCode: 0 });
+  assert.equal(processGroupAlive(driverPid), false);
+  assert.equal(processGroupAlive(app.pid), false);
 });

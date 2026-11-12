@@ -191,6 +191,66 @@ export async function withOwnedGroup(child, body, stopOptions) {
   }
 }
 
+const waitUntil = (condition) => new Promise((resolve) => {
+  if (condition()) {
+    resolve();
+    return;
+  }
+  const watch = setInterval(() => {
+    if (!condition()) return;
+    clearInterval(watch);
+    resolve();
+  }, 100);
+});
+
+/**
+ * Supervises one verified launch from start to stop. The app (`child`, a detached group) and the QA command (its own
+ * detached group) are both owned: whichever happens first, the QA command finishing, SIGINT/SIGTERM to the launcher,
+ * or the app exiting, both groups are stopped, the QA command's first. An interruption or an app exit while the QA
+ * command runs is a failure even if the command later reports success. Never signals any other process group.
+ */
+export async function runOwnedSession({ child, verifyLaunch, exec, execEnv, stopOptions, onReady = () => {}, onDriverStart = () => {} }) {
+  const state = { interrupted: false, appExited: child.exitCode !== null || child.signalCode !== null };
+  child.once('exit', () => { state.appExited = true; });
+  const onSignal = () => { state.interrupted = true; };
+  process.on('SIGINT', onSignal);
+  process.on('SIGTERM', onSignal);
+  const failures = [];
+  let exitCode = 0;
+  try {
+    await withOwnedGroup(child, async () => {
+      const verdict = await verifyLaunch(state);
+      if (verdict !== null) {
+        failures.push(verdict);
+        return;
+      }
+      onReady();
+      if (exec === undefined) {
+        await waitUntil(() => state.interrupted || state.appExited);
+        return;
+      }
+      const driver = spawn(exec, { shell: true, detached: true, stdio: 'inherit', env: execEnv });
+      let driverExit;
+      driver.once('exit', (code, signal) => { driverExit = { code, signal }; });
+      onDriverStart(driver.pid);
+      try {
+        await waitUntil(() => driverExit !== undefined || state.interrupted || state.appExited);
+        if (state.interrupted) failures.push('interrupted while the QA command was running');
+        else if (driverExit === undefined) failures.push('the app exited while the QA command was running');
+        else if (driverExit.code !== 0) exitCode = driverExit.code ?? 1;
+      } finally {
+        await stopProcessGroup(driver.pid, stopOptions);
+      }
+    }, stopOptions);
+  } catch (error) {
+    failures.push(error instanceof Error ? error.message : String(error));
+  } finally {
+    process.off('SIGINT', onSignal);
+    process.off('SIGTERM', onSignal);
+  }
+  return { failures, exitCode };
+}
+
 /** Parses a NUL-separated /proc cmdline or a whitespace-separated `ps` command line into arguments. */
 export function parseCommandLine(raw) {
   const separator = raw.includes('\0') ? '\0' : /\s+/;
@@ -317,17 +377,10 @@ async function main() {
   };
   child.stdout.on('data', onOutput);
   child.stderr.on('data', onOutput);
-  let leaderExited = false;
-  child.once('exit', () => { leaderExited = true; });
-  let interrupted = false;
-  const onSignal = () => { interrupted = true; };
-  process.on('SIGINT', onSignal);
-  process.on('SIGTERM', onSignal);
-
-  const verifyLaunch = async () => {
+  const verifyLaunch = async (state) => {
     for (const deadline = Date.now() + STARTUP_TIMEOUT_MS; Date.now() < deadline;) {
-      if (interrupted) return 'interrupted before the app was verified';
-      if (leaderExited) return 'the app exited before it could be verified';
+      if (state.interrupted) return 'interrupted before the app was verified';
+      if (state.appExited) return 'the app exited before it could be verified';
       const untouched = verifyProfilesUntouched();
       if (untouched !== null) return untouched;
       const pid = listenerPid(options.port);
@@ -343,34 +396,15 @@ async function main() {
     return 'timed out waiting for the app to report its profile, database and CDP port';
   };
 
-  const failures = [];
-  let exitCode = 0;
-  try {
-    await withOwnedGroup(child, async () => {
-      const verdict = await verifyLaunch();
-      if (verdict !== null) {
-        failures.push(verdict);
-        return;
-      }
-      const cdpUrl = `http://127.0.0.1:${String(options.port)}`;
-      console.log(`[isolated-launch] READY ${cdpUrl} (argv, user-data, SQLite and profile folders verified)`);
-      if (options.exec === undefined) {
-        await new Promise((resolve) => {
-          const done = () => { clearInterval(watch); resolve(); };
-          const watch = setInterval(() => { if (interrupted || leaderExited) done(); }, POLL_MS);
-        });
-        return;
-      }
-      const qa = spawn(options.exec, { shell: true, stdio: 'inherit', env: { ...process.env, QA_CDP_URL: cdpUrl, QA_USER_DATA_DIR: userDataDir } });
-      exitCode = (await new Promise((resolve) => { qa.once('exit', resolve); })) ?? 1;
-    });
-  } catch (error) {
-    failures.push(error instanceof Error ? error.message : String(error));
-  } finally {
-    process.off('SIGINT', onSignal);
-    process.off('SIGTERM', onSignal);
-  }
-  // The instance is fully stopped here, so this is the final word on the profile folders.
+  const cdpUrl = `http://127.0.0.1:${String(options.port)}`;
+  const { failures, exitCode } = await runOwnedSession({
+    child,
+    verifyLaunch,
+    exec: options.exec,
+    execEnv: { ...process.env, QA_CDP_URL: cdpUrl, QA_USER_DATA_DIR: userDataDir },
+    onReady: () => { console.log(`[isolated-launch] READY ${cdpUrl} (argv, user-data, SQLite and profile folders verified)`); },
+  });
+  // The app and the QA command are both fully stopped here, so this is the final word on the profile folders.
   try {
     const after = verifyProfilesUntouched();
     if (after !== null) failures.push(after);
