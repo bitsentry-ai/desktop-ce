@@ -18,6 +18,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const SEPARATOR = '--';
+const sleep = (ms) => new Promise((resolve) => { setTimeout(resolve, ms); });
 const MOCK_KEYCHAIN = '--use-mock-keychain';
 const SQLITE_LOG_PATTERN = /Initializing SQLite at (\S+)/;
 const STARTUP_TIMEOUT_MS = 180_000;
@@ -109,32 +110,85 @@ export function validateRuntimePaths({ reportedUserData, sqlitePath }, userDataD
   return null;
 }
 
-/** Lists files under the given roots modified at or after `sinceMs`. Reads metadata only, never file contents. */
+/**
+ * Lists files under the given roots modified at or after `sinceMs`. Reads metadata only, never file contents.
+ * Only a missing root or an entry removed mid-walk is skipped; any other error (permission, I/O) throws, so an
+ * unreadable profile can never pass as unchanged.
+ */
 export function findChangedFiles(roots, sinceMs, limit = 20) {
   const changed = [];
-  const visit = (directory) => {
-    let entries;
+  const inspect = (target, read) => {
     try {
-      entries = readdirSync(directory, { withFileTypes: true });
-    } catch {
-      return;
+      return read();
+    } catch (error) {
+      if (error?.code === 'ENOENT') return undefined;
+      throw new Error(`cannot inspect ${target} (${String(error?.code ?? error)})`);
     }
+  };
+  const visit = (directory) => {
+    const entries = inspect(directory, () => readdirSync(directory, { withFileTypes: true })) ?? [];
     for (const entry of entries) {
       if (changed.length >= limit) return;
       const entryPath = path.join(directory, entry.name);
       if (entry.isDirectory()) {
         visit(entryPath);
       } else {
-        try {
-          if (statSync(entryPath).mtimeMs >= sinceMs) changed.push(entryPath);
-        } catch {
-          // A file that vanished mid-walk is not a write into the profile.
-        }
+        const stats = inspect(entryPath, () => statSync(entryPath));
+        if (stats !== undefined && stats.mtimeMs >= sinceMs) changed.push(entryPath);
       }
     }
   };
   for (const root of roots) visit(root);
   return changed;
+}
+
+/** Whether any process is still in the group. Only "no such process" means gone; anything else counts as alive. */
+export function processGroupAlive(pgid, kill = process.kill) {
+  try {
+    kill(-pgid, 0);
+    return true;
+  } catch (error) {
+    if (error?.code === 'ESRCH') return false;
+    if (error?.code === 'EPERM') return true;
+    throw error;
+  }
+}
+
+/**
+ * Stops every process in the launcher's own process group, including descendants whose leader already exited:
+ * SIGTERM, a bounded wait, then SIGKILL and a bounded wait. Throws if the group survives, so callers never report a
+ * clean stop that did not happen. Only the negative group id of a group this launcher created is ever signalled.
+ */
+export async function stopProcessGroup(pgid, { termGraceMs = 10_000, killGraceMs = 5_000, kill = process.kill } = {}) {
+  const waitGone = async (ms) => {
+    for (const deadline = Date.now() + ms; Date.now() < deadline;) {
+      if (!processGroupAlive(pgid, kill)) return true;
+      await sleep(100);
+    }
+    return !processGroupAlive(pgid, kill);
+  };
+  const signal = (name) => {
+    try {
+      kill(-pgid, name);
+    } catch (error) {
+      if (error?.code !== 'ESRCH') throw error;
+    }
+  };
+  if (!processGroupAlive(pgid, kill)) return 'gone';
+  signal('SIGTERM');
+  if (await waitGone(termGraceMs)) return 'terminated';
+  signal('SIGKILL');
+  if (await waitGone(killGraceMs)) return 'killed';
+  throw new Error(`process group ${String(pgid)} is still running after SIGKILL`);
+}
+
+/** Runs `body` while the child's process group is owned, and always stops that whole group afterwards. */
+export async function withOwnedGroup(child, body, stopOptions) {
+  try {
+    return await body();
+  } finally {
+    await stopProcessGroup(child.pid, stopOptions);
+  }
 }
 
 /** Parses a NUL-separated /proc cmdline or a whitespace-separated `ps` command line into arguments. */
@@ -222,51 +276,36 @@ function readReportedUserData(userDataDir) {
   }
 }
 
-const sleep = (ms) => new Promise((resolve) => { setTimeout(resolve, ms); });
-
 async function main() {
   const options = parseOptions(process.argv.slice(2));
   const desktopDir = path.join(options.repo, 'apps', 'desktop');
-  const fail = (message) => {
-    console.error(`[isolated-launch] REFUSED: ${message}`);
-    process.exitCode = 1;
-  };
-
+  if (process.platform === 'win32') throw new Error('the runtime checks need lsof and ps; use macOS or Linux');
   if (!existsSync(path.join(options.repo, 'packages', 'plugin-sdk', 'dist'))) {
-    fail('packages/plugin-sdk/dist is missing; run `pnpm --filter @bitsentry/plugin-sdk build` once in this checkout');
-    return;
+    throw new Error('packages/plugin-sdk/dist is missing; run `pnpm --filter @bitsentry/plugin-sdk build` once in this checkout');
   }
-  if (!(await portIsFree(options.port))) {
-    fail(`port ${String(options.port)} is already in use`);
-    return;
-  }
+  if (!(await portIsFree(options.port))) throw new Error(`port ${String(options.port)} is already in use`);
 
   const roots = profileRoots();
   // Another BitSentry or Electron app writing to a standard profile would make the after-launch check ambiguous.
   const busy = findChangedFiles(roots, Date.now() - ACTIVE_PROFILE_WINDOW_MS, 3);
   if (busy.length > 0) {
-    fail(`a standard profile folder is in use by another app (recent writes: ${busy.join(', ')}); close it first`);
-    return;
+    throw new Error(`a standard profile folder is in use by another app (recent writes: ${busy.join(', ')}); close it first`);
   }
   const userDataDir = realpathSync(mkdtempSync(path.join(realpathSync(os.tmpdir()), 'bitsentry-qa-')));
   const args = buildDevArgs(userDataDir, options.port);
   const preflight = validateUserDataDir(userDataDir, roots) ?? validateDevArgs(args, userDataDir, options.port);
-  if (preflight !== null) {
-    fail(preflight);
-    return;
-  }
+  if (preflight !== null) throw new Error(preflight);
 
   const launchedAtMs = Date.now() - 1000;
+  const verifyProfilesUntouched = () => {
+    const changed = findChangedFiles(roots, launchedAtMs);
+    return changed.length === 0 ? null : `profile folders changed since launch: ${changed.join(', ')}`;
+  };
   console.log(`[isolated-launch] profile ${userDataDir}`);
   console.log('[isolated-launch] note: the dev build appends to its own electron-log file in the platform log folder');
   const env = { ...process.env, BITSENTRY_USER_DATA_DIR: userDataDir };
   delete env.ELECTRON_RUN_AS_NODE;
-  const child = spawn('pnpm', args, {
-    cwd: desktopDir,
-    detached: process.platform !== 'win32',
-    stdio: ['ignore', 'pipe', 'pipe'],
-    env,
-  });
+  const child = spawn('pnpm', args, { cwd: desktopDir, detached: true, stdio: ['ignore', 'pipe', 'pipe'], env });
   let sqlitePath;
   let pending = '';
   const onOutput = (chunk) => {
@@ -278,67 +317,75 @@ async function main() {
   };
   child.stdout.on('data', onOutput);
   child.stderr.on('data', onOutput);
-  let exited = false;
-  child.once('exit', () => { exited = true; });
-  const stop = () => {
-    if (exited) return;
-    try {
-      if (process.platform === 'win32') child.kill('SIGTERM');
-      else process.kill(-child.pid, 'SIGTERM');
-    } catch {
-      // Already gone.
-    }
-  };
-  process.once('SIGINT', stop);
-  process.once('SIGTERM', stop);
-  const verifyProfilesUntouched = () => {
-    const changed = findChangedFiles(roots, launchedAtMs);
-    return changed.length === 0 ? null : `profile folders changed since launch: ${changed.join(', ')}`;
-  };
+  let leaderExited = false;
+  child.once('exit', () => { leaderExited = true; });
+  let interrupted = false;
+  const onSignal = () => { interrupted = true; };
+  process.on('SIGINT', onSignal);
+  process.on('SIGTERM', onSignal);
 
-  const deadline = Date.now() + STARTUP_TIMEOUT_MS;
-  let verdict = 'timed out waiting for the app to report its profile, database and CDP port';
-  while (Date.now() < deadline && !exited) {
-    const untouched = verifyProfilesUntouched();
-    if (untouched !== null) {
-      verdict = untouched;
-      break;
-    }
-    const pid = listenerPid(options.port);
-    const reportedUserData = readReportedUserData(userDataDir);
-    if (pid !== undefined && reportedUserData !== undefined && sqlitePath !== undefined) {
-      verdict = isDescendant(pid, child.pid)
-        ? validateElectronArgv(commandLine(pid), userDataDir, options.port)
+  const verifyLaunch = async () => {
+    for (const deadline = Date.now() + STARTUP_TIMEOUT_MS; Date.now() < deadline;) {
+      if (interrupted) return 'interrupted before the app was verified';
+      if (leaderExited) return 'the app exited before it could be verified';
+      const untouched = verifyProfilesUntouched();
+      if (untouched !== null) return untouched;
+      const pid = listenerPid(options.port);
+      const reportedUserData = readReportedUserData(userDataDir);
+      if (pid !== undefined && reportedUserData !== undefined && sqlitePath !== undefined) {
+        if (!isDescendant(pid, child.pid)) return `port ${String(options.port)} is served by a process this launcher did not start`;
+        return validateElectronArgv(commandLine(pid), userDataDir, options.port)
           ?? validateRuntimePaths({ reportedUserData, sqlitePath }, userDataDir)
-          ?? verifyProfilesUntouched()
-        : `port ${String(options.port)} is served by a process this launcher did not start`;
-      break;
+          ?? verifyProfilesUntouched();
+      }
+      await sleep(POLL_MS);
     }
-    await sleep(POLL_MS);
-  }
-  if (exited && verdict.startsWith('timed out')) verdict = 'the app exited before it could be verified';
-  if (verdict !== null) {
-    stop();
-    fail(verdict);
-    return;
-  }
+    return 'timed out waiting for the app to report its profile, database and CDP port';
+  };
 
-  const cdpUrl = `http://127.0.0.1:${String(options.port)}`;
-  console.log(`[isolated-launch] READY ${cdpUrl} (argv, user-data, SQLite and profile folders verified)`);
-  if (options.exec !== undefined) {
-    const qa = spawn(options.exec, { shell: true, stdio: 'inherit', env: { ...process.env, QA_CDP_URL: cdpUrl, QA_USER_DATA_DIR: userDataDir } });
-    const code = await new Promise((resolve) => { qa.once('exit', resolve); });
-    const after = verifyProfilesUntouched();
-    stop();
-    if (after !== null) fail(after);
-    else if (code !== 0) process.exitCode = code ?? 1;
-    return;
+  const failures = [];
+  let exitCode = 0;
+  try {
+    await withOwnedGroup(child, async () => {
+      const verdict = await verifyLaunch();
+      if (verdict !== null) {
+        failures.push(verdict);
+        return;
+      }
+      const cdpUrl = `http://127.0.0.1:${String(options.port)}`;
+      console.log(`[isolated-launch] READY ${cdpUrl} (argv, user-data, SQLite and profile folders verified)`);
+      if (options.exec === undefined) {
+        await new Promise((resolve) => {
+          const done = () => { clearInterval(watch); resolve(); };
+          const watch = setInterval(() => { if (interrupted || leaderExited) done(); }, POLL_MS);
+        });
+        return;
+      }
+      const qa = spawn(options.exec, { shell: true, stdio: 'inherit', env: { ...process.env, QA_CDP_URL: cdpUrl, QA_USER_DATA_DIR: userDataDir } });
+      exitCode = (await new Promise((resolve) => { qa.once('exit', resolve); })) ?? 1;
+    });
+  } catch (error) {
+    failures.push(error instanceof Error ? error.message : String(error));
+  } finally {
+    process.off('SIGINT', onSignal);
+    process.off('SIGTERM', onSignal);
   }
-  await new Promise((resolve) => { child.once('exit', resolve); });
-  const after = verifyProfilesUntouched();
-  if (after !== null) fail(after);
+  // The instance is fully stopped here, so this is the final word on the profile folders.
+  try {
+    const after = verifyProfilesUntouched();
+    if (after !== null) failures.push(after);
+  } catch (error) {
+    failures.push(error instanceof Error ? error.message : String(error));
+  }
+  if (failures.length > 0) throw new Error(failures.join('; '));
+  process.exitCode = exitCode;
 }
 
 if (process.argv[1] !== undefined && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  await main();
+  try {
+    await main();
+  } catch (error) {
+    console.error(`[isolated-launch] REFUSED: ${error instanceof Error ? error.message : String(error)}`);
+    process.exitCode = 1;
+  }
 }

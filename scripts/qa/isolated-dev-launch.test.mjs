@@ -1,6 +1,8 @@
 // Pure checks only: nothing here starts the app, so a malformed launch can never reach a real profile.
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
+import { spawn } from 'node:child_process';
+import fs, { chmodSync, mkdirSync, mkdtempSync, realpathSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
+import { syncBuiltinESMExports } from 'node:module';
 import os from 'node:os';
 import path from 'node:path';
 import { after, test } from 'node:test';
@@ -9,11 +11,14 @@ import {
   findChangedFiles,
   parseCommandLine,
   platformConfigRoot,
+  processGroupAlive,
   profileRoots,
+  stopProcessGroup,
   validateDevArgs,
   validateElectronArgv,
   validateRuntimePaths,
   validateUserDataDir,
+  withOwnedGroup,
 } from './isolated-dev-launch.mjs';
 
 const tempRoot = realpathSync(os.tmpdir());
@@ -105,4 +110,125 @@ test('a file written into a profile folder after launch is reported, older files
   const fresh = path.join(root, 'Local Storage', '000003.log');
   writeFileSync(fresh, 'x');
   assert.deepEqual(findChangedFiles([root], launchedAt), [fresh]);
+});
+
+/** Replaces one fs function for the duration of `body`, including the module's named ESM import of it. */
+function withPatchedFs(name, replacement, body) {
+  const original = fs[name];
+  fs[name] = replacement(original);
+  syncBuiltinESMExports();
+  try {
+    return body();
+  } finally {
+    fs[name] = original;
+    syncBuiltinESMExports();
+  }
+}
+
+const fsError = (code) => Object.assign(new Error(code), { code });
+
+test('an unreadable profile folder refuses instead of passing as unchanged', () => {
+  const locked = path.join(sandbox, 'locked-profile');
+  mkdirSync(path.join(locked, 'Local Storage'), { recursive: true });
+  chmodSync(locked, 0o000);
+  try {
+    if (process.getuid?.() !== 0) assert.throws(() => findChangedFiles([locked], 0), /cannot inspect .*EACCES/);
+  } finally {
+    chmodSync(locked, 0o700);
+  }
+  const denied = path.join(sandbox, 'denied-profile');
+  mkdirSync(denied);
+  withPatchedFs('readdirSync', (original) => (target, ...rest) => {
+    if (target === denied) throw fsError('EPERM');
+    return original(target, ...rest);
+  }, () => {
+    assert.throws(() => findChangedFiles([denied], 0), /cannot inspect .*EPERM/);
+  });
+  withPatchedFs('statSync', (original) => (target, ...rest) => {
+    if (path.basename(target) === 'Preferences') throw fsError('EIO');
+    return original(target, ...rest);
+  }, () => {
+    const root = path.join(sandbox, 'io-profile');
+    mkdirSync(root);
+    writeFileSync(path.join(root, 'Preferences'), '{}');
+    assert.throws(() => findChangedFiles([root], 0), /cannot inspect .*EIO/);
+  });
+});
+
+test('an absent profile root or an entry removed mid-walk is not a change', () => {
+  const root = path.join(sandbox, 'racing-profile');
+  mkdirSync(root);
+  writeFileSync(path.join(root, 'vanished.log'), 'x');
+  writeFileSync(path.join(root, 'written.log'), 'x');
+  withPatchedFs('statSync', (original) => (target, ...rest) => {
+    if (path.basename(target) === 'vanished.log') throw fsError('ENOENT');
+    return original(target, ...rest);
+  }, () => {
+    assert.deepEqual(findChangedFiles([path.join(sandbox, 'never-created'), root], 0), [path.join(root, 'written.log')]);
+  });
+});
+
+/** Starts a detached synthetic process group whose leader prints the pid of a descendant it keeps in the group. */
+function startGroup(leaderScript) {
+  const leader = spawn(process.execPath, ['-e', leaderScript], { detached: true, stdio: ['ignore', 'pipe', 'ignore'] });
+  const descendant = new Promise((resolve) => {
+    leader.stdout.once('data', (chunk) => { resolve(Number(chunk.toString().trim())); });
+  });
+  return { leader, descendant };
+}
+
+const IGNORE_TERM_CHILD = "process.on('SIGTERM', () => {}); setInterval(() => {}, 1000)";
+const alive = (pid) => {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+test('a descendant that ignores SIGTERM is killed and the whole group is confirmed gone', async () => {
+  const { leader, descendant } = startGroup(`
+    const { spawn } = require('node:child_process');
+    process.on('SIGTERM', () => {});
+    const child = spawn(process.execPath, ['-e', ${JSON.stringify(IGNORE_TERM_CHILD)}], { stdio: 'ignore' });
+    process.stdout.write(String(child.pid) + '\\n');
+    setInterval(() => {}, 1000);
+  `);
+  const descendantPid = await descendant;
+  assert.equal(processGroupAlive(leader.pid), true);
+  assert.equal(await stopProcessGroup(leader.pid, { termGraceMs: 300, killGraceMs: 3000 }), 'killed');
+  assert.equal(processGroupAlive(leader.pid), false);
+  assert.equal(alive(descendantPid), false);
+});
+
+test('a descendant left behind after its leader exited is still stopped', async () => {
+  const { leader, descendant } = startGroup(`
+    const { spawn } = require('node:child_process');
+    const child = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { stdio: 'ignore' });
+    child.unref();
+    process.stdout.write(String(child.pid) + '\\n', () => process.exit(0));
+  `);
+  const descendantPid = await descendant;
+  await new Promise((resolve) => { if (leader.exitCode === null) leader.once('exit', resolve); else resolve(); });
+  assert.equal(processGroupAlive(leader.pid), true);
+  assert.equal(await stopProcessGroup(leader.pid, { termGraceMs: 3000, killGraceMs: 3000 }), 'terminated');
+  assert.equal(alive(descendantPid), false);
+  assert.equal(processGroupAlive(leader.pid), false);
+});
+
+test('an inspection error inside the owned section still stops the group', async () => {
+  const { leader, descendant } = startGroup(`
+    const { spawn } = require('node:child_process');
+    const child = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { stdio: 'ignore' });
+    process.stdout.write(String(child.pid) + '\\n');
+    setInterval(() => {}, 1000);
+  `);
+  const descendantPid = await descendant;
+  await assert.rejects(
+    withOwnedGroup(leader, () => { throw new Error('ps failed while reading the Electron command line'); }, { termGraceMs: 3000 }),
+    /ps failed/,
+  );
+  assert.equal(processGroupAlive(leader.pid), false);
+  assert.equal(alive(descendantPid), false);
 });
