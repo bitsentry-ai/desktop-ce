@@ -43,6 +43,7 @@
     "coding-agents:build": "pnpm --filter @bitsentry-ce/coding-agents build",
     "electron-trpc:build": "pnpm --filter electron-trpc run build",
     "desktop:dev": "pnpm --filter @bitsentry-ce/desktop dev",
+    "desktop:qa:isolated": "node scripts/qa/isolated-dev-launch.mjs",
     "desktop:clean-macos-dev": "pnpm --filter @bitsentry-ce/desktop clean-macos-dev",
     "desktop:build": "pnpm --filter @bitsentry-ce/desktop build",
     "desktop:start": "pnpm --filter @bitsentry-ce/desktop start",
