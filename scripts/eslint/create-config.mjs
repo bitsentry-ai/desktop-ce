@@ -118,6 +118,15 @@ export function createPackageConfig({
     ? {
         "react-hooks/rules-of-hooks": "error",
         "react-hooks/exhaustive-deps": "warn",
+        // React Compiler rules. A violation makes the compiler skip that component. Rules still at warn have
+        // existing violations; raise them to error once those are fixed.
+        "react-hooks/set-state-in-effect": "warn",
+        "react-hooks/refs": "warn",
+        "react-hooks/purity": "warn",
+        "react-hooks/immutability": "warn",
+        "react-hooks/static-components": "warn",
+        "react-hooks/set-state-in-render": "error",
+        "react-hooks/preserve-manual-memoization": "warn",
         "react-refresh/only-export-components": [
           "warn",
           { allowConstantExport: true },

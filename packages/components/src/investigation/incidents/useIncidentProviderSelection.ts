@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useEffectEvent, useMemo, useState } from "react";
 import {
   type ModelCatalogEntry,
   type ModelCatalogProviderKey,
@@ -68,10 +68,10 @@ export function useIncidentProviderSelection(activeId: string | null) {
             source: "incidents",
           });
         }
-      } finally {
-        if (!cancelled) {
-          setProviderConfigsLoaded(true);
-        }
+      }
+      // No finally: the compiler can't lower one, and nothing above can throw past the catch.
+      if (!cancelled) {
+        setProviderConfigsLoaded(true);
       }
     };
     const refreshProviderConfigs = () => {
@@ -169,9 +169,8 @@ export function useIncidentProviderSelection(activeId: string | null) {
 
   // Restore provider/model/accessLevel for this incident thread on tab switch.
   // Also resets per-session transient UI state (access level).
-  useEffect(() => {
-    if (activeId === null) return;
-
+  // An effect event, so the restore reads the latest configs but only runs on the listed changes.
+  const restoreProviderLock = useEffectEvent((incidentId: string) => {
     // Default access level for the new chat
     const defaultLevel: AccessLevel = "auto-accept-edits";
 
@@ -180,7 +179,7 @@ export function useIncidentProviderSelection(activeId: string | null) {
       return;
     }
 
-    const lock = loadProviderLocks()[activeId];
+    const lock = loadProviderLocks()[incidentId];
     if (lock === undefined) {
       // No saved lock — reset access level to default so it doesn't leak from the
       // previous tab. Provider/model stay with the global primary selection.
@@ -219,8 +218,9 @@ export function useIncidentProviderSelection(activeId: string | null) {
     // Restore the supported persisted access level, defaulting to Safe Tools.
     const savedLevel = lock.accessLevel ?? defaultLevel;
     setSelectedAccessLevel(savedLevel);
-
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+  });
+  useEffect(() => {
+    if (activeId !== null) restoreProviderLock(activeId);
   }, [
     activeId,
     configuredProviderKeys.length,
