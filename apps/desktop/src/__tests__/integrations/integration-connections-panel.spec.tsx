@@ -15,7 +15,7 @@ vi.mock('@bitsentry-ce/i18n', () => ({
   useTranslation: () => ({ t: mocks.t }),
 }))
 
-import { IntegrationConnectionsPanel, type IntegrationConnectionsPort } from '@bitsentry-ce/components/integrations/IntegrationConnectionsPanel'
+import { IntegrationConnectionInputError, IntegrationConnectionsPanel, type IntegrationConnectionsPort } from '@bitsentry-ce/components/integrations/IntegrationConnectionsPanel'
 
 beforeAll(() => {
   // Radix Select needs pointer capture and scrolling, which jsdom does not provide.
@@ -238,6 +238,21 @@ describe('IntegrationConnectionsPanel', () => {
 
     expect((await screen.findByRole('alert')).textContent).toBe('settings.integrationConnections.invalidJson:Field mapping')
     expect(rows).toHaveLength(0)
+  })
+
+  it('shows the reason a host gives for refusing a save, and a generic message otherwise', async () => {
+    const { service } = createConnectionService()
+    let refusal: Error = new IntegrationConnectionInputError('Mapping: stimuli.close is invalid')
+    render(<IntegrationConnectionsPanel service={{ ...service, save: async () => { throw refusal } }} />)
+    await screen.findByLabelText('Service URL')
+    fill('settings.integrationConnections.name', 'Acme production')
+    fill('Service URL', 'https://tickets.example/api')
+    save()
+    expect((await screen.findByRole('alert')).textContent).toBe('Mapping: stimuli.close is invalid')
+
+    refusal = new Error('database is locked')
+    save()
+    await waitFor(() => expect(screen.getByRole('alert').textContent).toBe('settings.integrationConnections.saveFailed'))
   })
 
   it('offers each declared credential set and sends only the chosen one', async () => {

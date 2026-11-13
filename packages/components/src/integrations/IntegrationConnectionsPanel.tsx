@@ -18,6 +18,9 @@ export interface IntegrationConnectionsPort {
   remove(id: string): Promise<unknown>;
 }
 
+/** A save the host refuses for a reason the user can fix, such as an invalid mapping; its message is shown as is. */
+export class IntegrationConnectionInputError extends Error {}
+
 export interface IntegrationConnectionsPanelProps {
   service: IntegrationConnectionsPort;
   /** The host's next step when no plugin supports named connections, such as a link to plugin management. */
@@ -183,7 +186,9 @@ export function IntegrationConnectionsPanel({ service, emptyAction, editConnecti
     void service.save(input).then(() => {
       finishEdit();
       return refreshRows();
-    }, () => { setError(t("settings.integrationConnections.saveFailed")); }).finally(() => { setBusy(false); });
+    }, (reason: unknown) => {
+      setError(reason instanceof IntegrationConnectionInputError ? reason.message : t("settings.integrationConnections.saveFailed"));
+    }).finally(() => { setBusy(false); });
   }
 
   function remove(id: string) {
