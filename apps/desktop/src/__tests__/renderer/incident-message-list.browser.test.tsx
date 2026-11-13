@@ -241,7 +241,7 @@ describe("incident message list", () => {
     expect(Math.abs(offset() - before)).toBeLessThanOrEqual(2);
   });
 
-  it("keeps a failed tool card's details open when its row scrolls out and back", async () => {
+  it("keeps a failed tool call's details open when its row scrolls out and back", async () => {
     const failed: ChatMessage = {
       id: "m1",
       kind: "agent",
@@ -255,14 +255,22 @@ describe("incident message list", () => {
     const viewport = list.viewport();
     await vi.waitFor(() => { expect(atBottom(viewport)).toBe(true); });
     // Scrolls to the top until the failed row is mounted; rows measured late can still move the offset.
-    const detailsAtTop = () => vi.waitFor(() => {
+    const rowAtTop = () => vi.waitFor(() => {
       viewport.scrollTop = 0;
-      const found = rowFor("m1")?.querySelector("details");
-      if (found === null || found === undefined) throw new Error("failed tool card not mounted");
-      return found;
+      const row = rowFor("m1");
+      if (row === null || row === undefined) throw new Error("failed tool row not mounted");
+      return row;
     });
 
-    const details = await detailsAtTop();
+    // The timeline shows the call as one line; its details open below it.
+    const toolLine = (await rowAtTop()).querySelector<HTMLElement>('[role="button"][aria-expanded]');
+    if (toolLine === null) throw new Error("tool call line not rendered");
+    await userEvent.click(toolLine);
+    const details = await vi.waitFor(() => {
+      const found = rowFor("m1")?.querySelector("details");
+      if (found === null || found === undefined) throw new Error("tool call details not shown");
+      return found;
+    });
     const summary = details.querySelector("summary");
     if (summary === null) throw new Error("details summary not rendered");
     await userEvent.click(summary);
@@ -270,6 +278,6 @@ describe("incident message list", () => {
 
     await scrollTo(viewport, viewport.scrollHeight);
     await vi.waitFor(() => { expect(rowFor("m1")).toBeNull(); });
-    expect((await detailsAtTop()).open).toBe(true);
+    expect((await rowAtTop()).querySelector("details")?.open).toBe(true);
   });
 });
