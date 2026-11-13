@@ -831,3 +831,164 @@ describe("IncidentArtifactsRail", () => {
     );
   });
 });
+
+// Task 730: the rail used to ask the main process for the proposal list on every streamed update, which hit the IPC
+// limit of 240 requests a minute. It now asks when something that can change the list happens.
+describe("IncidentArtifactsRail proposal refresh while a reply streams", () => {
+  type Messages = React.ComponentProps<typeof IncidentArtifactsRail>["messages"];
+  type Rail = ReturnType<typeof renderRail>;
+
+  function proposalReview(proposalId: string, artifactVersion: number, title: string): RunbookAuthoringProposalReview {
+    return {
+      proposalId,
+      artifactId: "artifact-stream",
+      artifactVersion,
+      parentProposalId: artifactVersion === 1 ? undefined : "proposal-stream-v1",
+      isLatest: true,
+      status: "pending_approval",
+      approvalRequired: true,
+      saved: false,
+      supportsOperationApproval: false,
+      kind: "create_new_runbook",
+      incidentThreadId: INCIDENT_ID,
+      proposedRunbook: {
+        id: "draft-stream",
+        title,
+        description: "Collect API health evidence.",
+        revisionNumber: 1,
+        actionCount: 1,
+        actions: [{ id: "health", type: "http", title: "Check health" }],
+      },
+      validation: { valid: true, errors: [], warnings: [] },
+      operationDiffs: [{
+        operationId: "create-runbook",
+        type: "create_runbook",
+        rationale: "Create the runbook.",
+        riskLabels: [],
+        before: null,
+        after: {},
+      }],
+      nextStep: "Review the proposal.",
+    };
+  }
+
+  const proposalCall = (proposal: RunbookAuthoringProposalReview) => ({
+    toolCallId: `tool-${proposal.proposalId}`,
+    toolName: "propose_runbook_create",
+    state: "done" as const,
+    output: JSON.stringify(proposal),
+  });
+  const userMessage: Messages[number] = { kind: "user" };
+  /** Every call returns a new list and a new message object, like each streamed update does. */
+  const turn = (status: "thinking" | "streaming" | "done", toolCalls: Messages[number]["toolCalls"] = []): Messages => [
+    userMessage,
+    { kind: "agent", status, toolCalls: [...toolCalls] },
+  ];
+
+  function update(rail: Rail, messages: Messages, incidentId = INCIDENT_ID) {
+    rail.rerender(
+      <BitsentryServicesProvider services={rail.services}>
+        <IncidentArtifactsRail isOpen onClose={() => {}} messages={messages} incidentId={incidentId} />
+      </BitsentryServicesProvider>,
+    );
+  }
+  const flush = () => act(async () => { await Promise.resolve(); });
+  const agentWith = (listRunbookAuthoringProposals: ReturnType<typeof vi.fn>) =>
+    ({ listRunbookAuthoringProposals } as unknown as AgentServicePort);
+
+  it("asks once for a whole streamed reply, then again when the turn finishes, and shows the final proposals", async () => {
+    const final = proposalReview("proposal-stream-v1", 1, "Streamed runbook");
+    const list = vi.fn().mockResolvedValue([]);
+    const rail = renderRail({ agent: agentWith(list), messages: turn("thinking") });
+    await waitFor(() => { expect(list).toHaveBeenCalledTimes(1); });
+    expect(list).toHaveBeenCalledWith({ sessionId: undefined, incidentThreadId: INCIDENT_ID });
+
+    // The measured flood was about 110 requests for one streamed reply. Many updates must add none.
+    for (let delta = 0; delta < 300; delta += 1) update(rail, turn("streaming"));
+    await flush();
+    expect(list).toHaveBeenCalledTimes(1);
+
+    list.mockResolvedValue([final]);
+    update(rail, turn("done"));
+    await waitFor(() => { expect(list).toHaveBeenCalledTimes(2); });
+    expect((await screen.findAllByText("Streamed runbook")).length).toBeGreaterThan(0);
+
+    // Later renders with the same finished messages stay quiet.
+    update(rail, turn("done"));
+    await flush();
+    expect(list).toHaveBeenCalledTimes(2);
+  });
+
+  it("refreshes once when a proposal lands mid-stream and not again for the updates after it", async () => {
+    const v1 = proposalReview("proposal-stream-v1", 1, "Mid-stream runbook");
+    const list = vi.fn().mockResolvedValue([v1]);
+    const rail = renderRail({ agent: agentWith(list), messages: turn("streaming") });
+    await waitFor(() => { expect(list).toHaveBeenCalledTimes(1); });
+
+    update(rail, turn("streaming", [proposalCall(v1)]));
+    await waitFor(() => { expect(list).toHaveBeenCalledTimes(2); });
+    for (let delta = 0; delta < 200; delta += 1) update(rail, turn("streaming", [proposalCall(v1)]));
+    await flush();
+    expect(list).toHaveBeenCalledTimes(2);
+
+    // A new version of the same artifact is a change; the turn ending is another.
+    const v2 = proposalReview("proposal-stream-v2", 2, "Mid-stream runbook v2");
+    update(rail, turn("streaming", [proposalCall(v1), proposalCall(v2)]));
+    await waitFor(() => { expect(list).toHaveBeenCalledTimes(3); });
+    update(rail, turn("done", [proposalCall(v1), proposalCall(v2)]));
+    await waitFor(() => { expect(list).toHaveBeenCalledTimes(4); });
+  });
+
+  it("loads on open and on an incident change even while a reply is streaming", async () => {
+    const list = vi.fn().mockResolvedValue([]);
+    const rail = renderRail({ agent: agentWith(list), messages: turn("streaming") });
+    await waitFor(() => { expect(list).toHaveBeenCalledTimes(1); });
+    expect(list).toHaveBeenLastCalledWith({ sessionId: undefined, incidentThreadId: INCIDENT_ID });
+
+    update(rail, turn("streaming"), OTHER_INCIDENT_ID);
+    await waitFor(() => { expect(list).toHaveBeenCalledTimes(2); });
+    expect(list).toHaveBeenLastCalledWith({ sessionId: undefined, incidentThreadId: OTHER_INCIDENT_ID });
+    for (let delta = 0; delta < 100; delta += 1) update(rail, turn("streaming"), OTHER_INCIDENT_ID);
+    await flush();
+    expect(list).toHaveBeenCalledTimes(2);
+  });
+
+  it("still refreshes at once after a proposal action while a reply is streaming", async () => {
+    const v1 = proposalReview("proposal-stream-v1", 1, "Action runbook v1");
+    const v2 = { ...proposalReview("proposal-stream-v2", 2, "Action runbook v2"), isLatest: true };
+    const v3 = { ...proposalReview("proposal-stream-v3", 3, "Action runbook v3"), restoredFromProposalId: v1.proposalId };
+    const list = vi.fn().mockResolvedValueOnce([{ ...v1, isLatest: false }, v2]).mockResolvedValue([{ ...v1, isLatest: false }, { ...v2, isLatest: false }, v3]);
+    const restore = vi.fn().mockResolvedValue({ proposal: v3 });
+    const agent = { listRunbookAuthoringProposals: list, restoreRunbookAuthoringProposal: restore } as unknown as AgentServicePort;
+    const rail = renderRail({ agent, messages: turn("streaming", [proposalCall(v2)]) });
+    expect((await screen.findAllByText("Action runbook v2")).length).toBeGreaterThan(0);
+    const before = list.mock.calls.length;
+    for (let delta = 0; delta < 100; delta += 1) update(rail, turn("streaming", [proposalCall(v2)]));
+    await flush();
+    expect(list).toHaveBeenCalledTimes(before);
+
+    fireEvent.click(screen.getByLabelText("Artifact version"));
+    fireEvent.click(await screen.findByRole("option", { name: "v1" }));
+    fireEvent.click(screen.getByRole("button", { name: "Restore" }));
+    await waitFor(() => { expect(restore).toHaveBeenCalled(); });
+    expect((await screen.findAllByText("Action runbook v3")).length).toBeGreaterThan(0);
+    expect(list).toHaveBeenCalledTimes(before + 1);
+  });
+
+  it("never lets an older response overwrite a newer one when two refreshes overlap", async () => {
+    const older = proposalReview("proposal-stream-old", 1, "Older response runbook");
+    const newer = proposalReview("proposal-stream-new", 2, "Newer response runbook");
+    const resolvers: Array<(proposals: RunbookAuthoringProposalReview[]) => void> = [];
+    const list = vi.fn(() => new Promise<RunbookAuthoringProposalReview[]>((resolve) => { resolvers.push(resolve); }));
+    const rail = renderRail({ agent: agentWith(list), messages: turn("streaming") });
+    await waitFor(() => { expect(list).toHaveBeenCalledTimes(1); });
+    update(rail, turn("done"));
+    await waitFor(() => { expect(list).toHaveBeenCalledTimes(2); });
+
+    await act(async () => { resolvers[1]?.([newer]); });
+    expect((await screen.findAllByText("Newer response runbook")).length).toBeGreaterThan(0);
+    await act(async () => { resolvers[0]?.([older]); });
+    expect(screen.queryByText("Older response runbook")).toBeNull();
+    expect(screen.getAllByText("Newer response runbook").length).toBeGreaterThan(0);
+  });
+});
