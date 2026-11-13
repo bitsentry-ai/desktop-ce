@@ -7,6 +7,7 @@ import type {
   RunbookAuthoringProposalReview,
 } from "../../services/contracts";
 import { errorMessage } from "./incidentDesktopApi";
+import { notifyIncidentAttentionChanged } from "../../layout/incident-nav-status";
 
 function parseRunbookAuthoringProposal(
   toolCall: ToolCallCard,
@@ -146,6 +147,7 @@ export function RunbookAuthoringProposalCards({
       ...prev,
       [proposal.proposalId]: proposal,
     }));
+    notifyIncidentAttentionChanged();
   };
 
   const setProposalError = (proposalId: string, error: unknown) => {

@@ -172,8 +172,13 @@ describe("chat render counts", () => {
     await renderNavbar();
     expect(screen.getByText("Disk alert")).not.toBeNull();
 
-    act(() => { useIncidentListStore.getState().patch("incident-1", { sessionId: "session-1", state: "RUNNING", prompt: "why?" }); });
+    act(() => { useIncidentListStore.getState().patch("incident-1", { sessionId: "session-1", prompt: "why?" }); });
     expect(commits.get("navbar") ?? 0).toBe(0);
+
+    // The sidebar shows each incident's run state, so a state change renders it once.
+    act(() => { useIncidentListStore.getState().patch("incident-1", { state: "RUNNING" }); });
+    expect(commits.get("navbar")).toBe(1);
+    commits.clear();
 
     act(() => { useIncidentListStore.getState().patch("incident-1", { title: "Disk full on prod-db" }); });
     expect(commits.get("navbar")).toBe(1);
