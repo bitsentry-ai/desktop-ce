@@ -107,12 +107,16 @@ A profile is reused only if all of this holds, and otherwise the launcher refuse
   this very folder (same path, device and inode, so a copied or moved marker fails). A `bitsentry-qa-*` name alone is not enough;
 - the path is canonical (no link on the way), inside the temporary directory, clear of every real profile folder,
   owned by you and not writable by group or others;
-- it holds no symbolic links, except Chromium's own single-instance links at the top level;
+- it holds no symbolic links (except Chromium's own single-instance links at the top level) and no hard-linked files,
+  because a link could send the app's writes to a file outside the profile. The launcher reads only metadata for this;
 - nothing uses it: no running process with that `--user-data-dir`, no live Chromium single-instance lock (a stale one left
-  by the killed app is fine), no live launcher lock.
+  by the killed app is fine), no live launcher lock. Every launch, new or reused, takes an exclusive lock on its profile
+  before the app starts (a new profile is locked before its marker is written) and releases it at the end.
 
-Every check of a normal launch still runs on the relaunch, and the app's startup report must be newer than the launch, so
-a report left by the previous session never counts. The launcher never deletes a profile.
+Every check of a normal launch still runs on the relaunch, and the app's startup report must be newer than the moment the
+launcher started the app, so a report left by the previous session never counts, even one written a moment earlier. A force
+close request is honoured even if the QA command exits right after making it; if it cannot be performed the run fails. The
+launcher never deletes a profile.
 
 ## Desktop Feature Surface (Current)
 

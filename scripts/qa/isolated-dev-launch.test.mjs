@@ -1,7 +1,7 @@
 // Pure checks only: nothing here starts the app, so a malformed launch can never reach a real profile.
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import fs, { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs';
+import fs, { chmodSync, existsSync, linkSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:net';
 import { syncBuiltinESMExports } from 'node:module';
 import os from 'node:os';
@@ -19,6 +19,7 @@ import {
   parseOptions,
   pidAlive,
   platformConfigRoot,
+  prepareProfile,
   processGroupAlive,
   profileInUse,
   profileRoots,
@@ -523,7 +524,7 @@ test('symbolic links inside a profile are refused, except Chromium single-instan
 
   mkdirSync(path.join(dir, 'Local Storage'));
   symlinkSync(realRoots[0], path.join(dir, 'Local Storage', 'leveldb'));
-  assert.match(reusable(dir), /symbolic links: Local Storage\/leveldb/);
+  assert.match(reusable(dir), /links that could redirect its writes: Local Storage\/leveldb/);
 
   const nested = makeProfile();
   mkdirSync(path.join(nested, 'Cache'));
@@ -580,16 +581,104 @@ test('a new launch still refuses a populated folder, even one the launcher marke
   assert.match(validateUserDataDir(dir, realRoots, tempRoot), /new and empty/);
 });
 
-test('an app report older than this launch does not count as the app reporting its profile', () => {
+test('only an app report written at or after the actual start counts, even one written a moment earlier', () => {
   const dir = makeProfile();
   mkdirSync(path.join(dir, 'diagnostics'));
   const report = path.join(dir, 'diagnostics', 'startup-diagnostics.json');
-  writeFileSync(report, JSON.stringify({ paths: { userData: dir } }));
-  const old = new Date(Date.now() - 60_000);
-  utimesSync(report, old, old);
-  assert.equal(readReportedUserData(dir, Date.now() - 1000), undefined);
-  writeFileSync(report, JSON.stringify({ paths: { userData: dir } }));
-  assert.equal(readReportedUserData(dir, Date.now() - 1000), dir);
+  const startedAt = Date.now();
+  const stamp = (offsetMs) => { writeFileSync(report, JSON.stringify({ paths: { userData: dir } })); const at = new Date(startedAt + offsetMs); utimesSync(report, at, at); };
+  stamp(-60_000);
+  assert.equal(readReportedUserData(dir, startedAt), undefined);
+  // The previous session's report, written half a second before this launch, must not pass either.
+  stamp(-500);
+  assert.equal(readReportedUserData(dir, startedAt), undefined);
+  stamp(-1);
+  assert.equal(readReportedUserData(dir, startedAt), undefined);
+  // utimes takes float seconds, so keep a few ms clear of the boundary on either side.
+  stamp(5);
+  assert.equal(readReportedUserData(dir, startedAt), dir);
+  stamp(50);
+  assert.equal(readReportedUserData(dir, startedAt), dir);
+  assert.equal(readReportedUserData(path.join(sandbox, 'no-such-profile'), startedAt), undefined);
+});
+
+test('a hard-linked file in a profile is refused without reading or changing the file it aliases', () => {
+  const dir = makeProfile();
+  const sentinel = path.join(sandbox, 'outside-sentinel.db');
+  writeFileSync(sentinel, 'outside data that must never be touched');
+  const before = fs.statSync(sentinel).mtimeMs;
+  linkSync(sentinel, path.join(dir, 'bitsentry.db'));
+  assert.match(reusable(dir), /links that could redirect its writes: bitsentry\.db \(hard link, 2 links\)/);
+  assert.deepEqual(findUnsafeLinks(dir), ['bitsentry.db (hard link, 2 links)']);
+  assert.equal(readFileSync(sentinel, 'utf8'), 'outside data that must never be touched');
+  assert.equal(fs.statSync(sentinel).mtimeMs, before);
+  // The same inside a subfolder.
+  const nested = makeProfile();
+  mkdirSync(path.join(nested, 'IndexedDB'));
+  linkSync(sentinel, path.join(nested, 'IndexedDB', 'data.ldb'));
+  assert.deepEqual(findUnsafeLinks(nested), ['IndexedDB/data.ldb (hard link, 3 links)']);
+  // Once the alias is gone the profile is accepted again.
+  fs.unlinkSync(path.join(dir, 'bitsentry.db'));
+  assert.equal(reusable(dir), null);
+});
+
+test('a hard-linked launcher marker is refused before its content is read', () => {
+  const dir = makeProfile();
+  const marker = path.join(dir, '.bitsentry-qa-profile.json');
+  // Not even valid JSON: a refusal for the hard link, not for the content, shows the content was never read.
+  writeFileSync(marker, '{garbage');
+  linkSync(marker, path.join(sandbox, 'marker-alias.json'));
+  assert.match(reusable(dir), /launcher marker is a hard link/);
+  assert.match(inspectProfileMarker(dir, { target: 'ce' }).refusal, /hard link/);
+});
+
+test('a profile prepared for a fresh launch holds the launcher lock before its marker exists, and blocks a reuse', () => {
+  const order = [];
+  const writes = fs.writeFileSync;
+  withPatchedFs('writeFileSync', (original) => (target, ...rest) => {
+    order.push(path.basename(String(target)));
+    return original(target, ...rest);
+  }, () => {
+    const tmp = realpathSync(mkdtempSync(path.join(sandbox, 'prepare-tmp-')));
+    const fresh = prepareProfile({ target: 'ce' }, { roots: realRoots, tmp, commands: [] });
+    try {
+      assert.equal(fresh.reused, false);
+      assert.deepEqual(order, ['.bitsentry-qa-launcher.lock', '.bitsentry-qa-profile.json']);
+      const lock = JSON.parse(readFileSync(path.join(fresh.userDataDir, '.bitsentry-qa-launcher.lock'), 'utf8'));
+      assert.equal(lock.pid, process.pid);
+      // A second launcher cannot take the profile while this one holds it, even before any app runs.
+      assert.throws(() => prepareProfile({ target: 'ce', reuseProfile: fresh.userDataDir }, { roots: realRoots, tmp, commands: [] }), /held by launcher process/);
+      assert.equal(existsSync(path.join(fresh.userDataDir, '.bitsentry-qa-profile.json')), true);
+      fresh.release();
+      assert.equal(existsSync(path.join(fresh.userDataDir, '.bitsentry-qa-launcher.lock')), false);
+      const again = prepareProfile({ target: 'ce', reuseProfile: fresh.userDataDir }, { roots: realRoots, tmp, commands: [] });
+      assert.equal(again.reused, true);
+      assert.equal(again.marker.nonce, fresh.marker.nonce);
+      assert.equal(existsSync(path.join(again.userDataDir, '.bitsentry-qa-launcher.lock')), true);
+      again.release();
+    } finally {
+      fresh.release();
+    }
+  });
+  assert.equal(fs.writeFileSync, writes);
+});
+
+test('preparing a profile leaves nothing locked when it is refused or fails', () => {
+  const tmp = realpathSync(mkdtempSync(path.join(sandbox, 'prepare-fail-')));
+  const stranger = path.join(tmp, 'bitsentry-qa-stranger');
+  mkdirSync(stranger, { mode: 0o700 });
+  assert.throws(() => prepareProfile({ target: 'ce', reuseProfile: stranger }, { roots: realRoots, tmp, commands: [] }), /no launcher marker/);
+  assert.deepEqual(readdirSync(stranger), []);
+
+  withPatchedFs('writeFileSync', (original) => (target, ...rest) => {
+    if (path.basename(String(target)) === '.bitsentry-qa-profile.json') throw fsError('ENOSPC');
+    return original(target, ...rest);
+  }, () => {
+    assert.throws(() => prepareProfile({ target: 'ce' }, { roots: realRoots, tmp, commands: [] }), /ENOSPC/);
+  });
+  for (const name of readdirSync(tmp)) {
+    assert.equal(existsSync(path.join(tmp, name, '.bitsentry-qa-launcher.lock')), false, `${name} stays locked`);
+  }
 });
 
 test('a forced kill ends the whole group at once with no SIGTERM first', async () => {
@@ -626,6 +715,42 @@ test('the QA command can force-close the verified app once, and that exit is exp
   assert.deepEqual(result, { failures: [], exitCode: 0, forcedClose: true });
   assert.equal(processGroupAlive(app.pid), false);
   assert.equal(processGroupAlive(driverPid), false);
+});
+
+test('a force-close request is honoured even when the QA command exits at once after making it', async () => {
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const request = path.join(sandbox, `force-close-immediate-${String(attempt)}`);
+    const termFile = path.join(sandbox, `term-immediate-${String(attempt)}`);
+    const app = startApp(`process.on('SIGTERM', () => { require('node:fs').writeFileSync(${JSON.stringify(termFile)}, 'term'); process.exit(0); }); setInterval(() => {}, 1000)`);
+    await sleep(300);
+    const result = await runOwnedSession({
+      child: app,
+      verifyLaunch: async () => null,
+      // The command creates the request and ends in the same instant, before any poll can see the request first.
+      exec: `"${process.execPath}" -e "require('node:fs').writeFileSync(${JSON.stringify(request).replaceAll('"', '\\"')}, 'now')"`,
+      execEnv: process.env,
+      stopOptions: fastStop,
+      forceClose: { requested: () => existsSync(request), perform: () => forceKillProcessGroup(app.pid) },
+    });
+    assert.deepEqual(result, { failures: [], exitCode: 0, forcedClose: true });
+    assert.equal(existsSync(termFile), false, 'the app must be force-closed, not shut down gracefully by the cleanup');
+    assert.equal(processGroupAlive(app.pid), false);
+  }
+});
+
+test('a force-close request that could not be performed fails the run instead of passing quietly', async () => {
+  const app = startApp('process.exit(0)');
+  await new Promise((resolve) => { app.once('exit', resolve); });
+  const result = await runOwnedSession({
+    child: app,
+    verifyLaunch: async () => null,
+    exec: `"${process.execPath}" -e "process.exit(0)"`,
+    execEnv: process.env,
+    stopOptions: fastStop,
+    forceClose: { requested: () => true, perform: async () => { throw new Error('must not run on a dead app'); } },
+  });
+  assert.ok(result.failures.some((failure) => /force close that was not performed/.test(failure)), JSON.stringify(result));
+  assert.equal(result.forcedClose, undefined);
 });
 
 test('a force-close request cannot excuse an unexpected app exit, an interrupted run or a failed verification', async () => {
@@ -724,6 +849,8 @@ function writeFakeApp() {
   writeFileSync(first, `
     const fs = require('node:fs');
     const history = require('node:path').join(process.env.QA_USER_DATA_DIR, 'history.log');
+    const lock = require('node:path').join(process.env.QA_USER_DATA_DIR, '.bitsentry-qa-launcher.lock');
+    fs.writeFileSync(process.env.QA_LOCK_SEEN, fs.existsSync(lock) ? fs.readFileSync(lock, 'utf8') : 'missing');
     const poll = () => {
       const lines = fs.existsSync(history) ? fs.readFileSync(history, 'utf8').split('\\n').filter(Boolean).length : 0;
       if (lines < 4) return setTimeout(poll, 100);
@@ -746,11 +873,11 @@ function runLauncher(args, root) {
   const launcher = path.resolve(import.meta.dirname, 'isolated-dev-launch.mjs');
   const env = { ...process.env, HOME: path.join(root, 'home'), XDG_CONFIG_HOME: path.join(root, 'home', '.config'), APPDATA: path.join(root, 'home', '.config'), TMPDIR: path.join(root, 'tmp') };
   return new Promise((resolve) => {
-    const child = spawn(process.execPath, [launcher, ...args], { env, stdio: ['ignore', 'pipe', 'pipe'] });
+    const child = spawn(process.execPath, [launcher, ...args], { env: { ...env, QA_LOCK_SEEN: path.join(root, 'lock-seen.txt') }, stdio: ['ignore', 'pipe', 'pipe'] });
     let output = '';
     child.stdout.on('data', (chunk) => { output += chunk.toString(); });
     child.stderr.on('data', (chunk) => { output += chunk.toString(); });
-    child.once('exit', (code) => { resolve({ code, output }); });
+    child.once('exit', (code) => { resolve({ code, output, pid: child.pid }); });
   });
 }
 
@@ -760,6 +887,8 @@ test('end to end: force close mid-run, then relaunch the same launcher-created p
   const forced = await runLauncher(['--repo', repo, '--port', String(portOne), '--allow-force-close', '--exec', `node ${first}`], root);
   assert.equal(forced.code, 0, forced.output);
   assert.match(forced.output, /profile \S+ \(new, marker [0-9a-f]{8}\)/);
+  // A fresh launch holds the exclusive profile lock while the app and the QA command run.
+  assert.equal(JSON.parse(readFileSync(path.join(root, 'lock-seen.txt'), 'utf8')).pid, forced.pid);
   assert.match(forced.output, /READY /);
   assert.match(forced.output, /FORCE-CLOSE requested by the QA command; killing only the app process group/);
   assert.match(forced.output, /FORCE-CLOSE killed; this exit is expected/);
