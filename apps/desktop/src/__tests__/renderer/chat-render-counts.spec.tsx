@@ -10,6 +10,7 @@ import type { AgentEventPayload, AgentThreadTokenUsage, ChatMessage } from "@bit
 import { MarkdownContent } from "@bitsentry-ce/components/markdown";
 import IncidentsPage from "@bitsentry-ce/components/investigation/Incidents";
 import { useIncidentListStore } from "@bitsentry-ce/components/investigation/incidents/incidentListStore";
+import type { SessionQueueState } from "@bitsentry-ce/components/chat/useComposerQueue";
 import { useIncidentAgentEvents } from "@bitsentry-ce/components/investigation/incidents/useIncidentAgentEvents";
 import type { IncidentThread } from "@bitsentry-ce/components/investigation/incidents/types";
 
@@ -114,7 +115,8 @@ function StreamedIncident({ agent }: { agent: never }) {
   const [messagesMap, setMessagesMap] = useState<Record<string, ChatMessage[]>>({});
   const [, setTokenUsageByIncident] = useState<Record<string, AgentThreadTokenUsage>>({});
   const [, setSessionTokenUsage] = useState<AgentThreadTokenUsage | undefined>();
-  useIncidentAgentEvents({ agent, activeId: "incident-1", setMessagesMap, setTokenUsageByIncident, setSessionTokenUsage });
+  const [, setQueueByIncident] = useState<Record<string, SessionQueueState>>({});
+  useIncidentAgentEvents({ agent, activeId: "incident-1", setMessagesMap, setTokenUsageByIncident, setSessionTokenUsage, setQueueByIncident });
   const last = messagesMap["incident-1"]?.at(-1);
   return <p data-testid="streamed">{last?.kind === "agent" ? last.finalText : ""}</p>;
 }

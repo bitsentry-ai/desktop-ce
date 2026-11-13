@@ -49,6 +49,12 @@ import type {
 import { settleInterruptedAgentTurn } from "../../chat/runtimeProjection";
 import { CustomerReportIntakeChatContext, useCustomerReportIntake } from "../../chat/useCustomerReportIntake";
 import {
+  EMPTY_SESSION_QUEUE,
+  useComposerQueue,
+  type SessionQueueState,
+} from "../../chat/useComposerQueue";
+import type { AgentMessageDelivery } from "../../services/contracts";
+import {
   canSendIncidentMessage,
   resolveIncidentTitle,
   sendIncidentAgentMessage,
@@ -176,6 +182,33 @@ export default function IncidentsPage() {
     handleRemoveComposerImage,
   } = useIncidentComposerAttachments(selectedModelCapability, composerSupportsFiles);
 
+  const [queueByIncident, setQueueByIncident] = useState<Record<string, SessionQueueState>>({});
+  const setActiveDraft = useCallback((text: string) => {
+    if (activeId === null) return;
+    const drafts = useIncidentDraftStore.getState();
+    if (text === "") drafts.clearDraft(activeId);
+    else drafts.setDraft(activeId, text);
+  }, [activeId]);
+  const getActiveDraft = useCallback(
+    () => (activeId === null ? "" : (useIncidentDraftStore.getState().drafts[activeId] ?? "")),
+    [activeId],
+  );
+  const {
+    composerQueue,
+    editingId: queueEditingId,
+    saveEdit: saveQueuedEdit,
+    resume: resumeQueue,
+  } = useComposerQueue({
+    agent,
+    sessionId: activeSessionId,
+    queue: (activeId === null ? undefined : queueByIncident[activeId]) ?? EMPTY_SESSION_QUEUE,
+    isRunning: activeIncident?.state === "RUNNING",
+    getPrompt: getActiveDraft,
+    images: composerImages,
+    setPrompt: setActiveDraft,
+    setImages: setComposerImages,
+  });
+
   // Desktop loads a thread's messages when it opens; until then there is nothing to explain.
   const activeMessagesLoaded = !isDesktopIncidents || (activeId !== null && messagesMap[activeId] !== undefined);
   // For past incidents with no in-memory messages, show the original prompt + a note
@@ -260,6 +293,7 @@ export default function IncidentsPage() {
     setMessagesMap,
     setTokenUsageByIncident,
     setSessionTokenUsage,
+    setQueueByIncident,
   });
 
   useEffect(() => {
@@ -597,6 +631,76 @@ export default function IncidentsPage() {
     } catch (err: unknown) {
       handleStartFailure(err);
     }
+  };
+
+  /**
+   * Queues the message after the running turn, or steers the turn with it. The runtime decides which: a turn that
+   * cannot take a steer queues it. Nothing changes in the thread until the runtime's snapshot shows the message.
+   */
+  const handleSendWhileRunning = async (
+    text: string,
+    sessionId: string,
+    options: { accessLevel?: AccessLevel; interactionMode?: InteractionMode; traitValues?: Record<string, boolean | string>; delivery?: AgentMessageDelivery } | undefined,
+  ) => {
+    if (activeId === null || selectedProviderKey === null) return;
+    const incidentId = activeId;
+    const outgoingImages = composerImages;
+    const delivery = options?.delivery ?? "queue";
+    setComposerUnlessIntake(incidentId, false, "", []);
+    const llm: { providerKey: ModelCatalogProviderKey; model: string; thinkingEnabled?: boolean } = {
+      providerKey: selectedProviderKey,
+      model: selectedModelId,
+    };
+    if (selectedModelCapability?.supportsThinking === true) {
+      llm.thinkingEnabled = thinkingEnabled;
+    }
+    // Lives outside the try so the React Compiler can lower its conditionals.
+    const handleQueueFailure = (err: unknown) => {
+      // Nothing was queued: give the engineer their message back.
+      setComposerUnlessIntake(incidentId, false, text, outgoingImages);
+      captureIncidentException(err, {
+        operation: "agent.send",
+        source: "handleSendWhileRunning",
+        incidentId,
+        providerKey: selectedProviderKey,
+        modelId: selectedModelId,
+        delivery,
+      });
+    };
+    const sendInput = {
+      continueSession: true,
+      text,
+      delivery,
+      sessionId,
+      attachments: outgoingImages,
+      llm,
+      incidentThreadId: incidentId,
+      accessLevel: options?.accessLevel ?? selectedAccessLevel,
+      interactionMode: options?.interactionMode,
+      traitValues: options?.traitValues,
+    };
+    try {
+      await sendIncidentAgentMessage(agent, sendInput);
+      const snapshot = await agent.getSnapshot(sessionId);
+      if (snapshot !== null) applySnapshotToIncident(incidentId, snapshot, snapshot.sequence, true);
+    } catch (err: unknown) {
+      handleQueueFailure(err);
+    }
+  };
+
+  /** The composer's send: saves a queued message being edited, queues or steers while the agent runs, else sends. */
+  const handleComposerSend = async (options?: Parameters<typeof handleSend>[0] & { delivery?: AgentMessageDelivery }) => {
+    const text = getActiveDraft().trim();
+    const ready = canSendIncidentMessage(text, composerImages.length, activeId, selectedProviderKey, selectedModelId);
+    if (ready && queueEditingId !== null) {
+      await saveQueuedEdit(text, composerImages);
+      return;
+    }
+    if (ready && activeIncident?.state === "RUNNING" && activeSessionId !== null && activeIncident.archived !== true) {
+      await handleSendWhileRunning(text, activeSessionId, options);
+      return;
+    }
+    await handleSend(options);
   };
 
   const handleCancel = async () => {
@@ -1013,7 +1117,7 @@ export default function IncidentsPage() {
                 key={activeId}
                 incidentId={activeId}
                 onSend={(options) => {
-                  void handleSend(options);
+                  void handleComposerSend(options);
                 }}
                 onCancel={() => {
                   void handleCancel();
@@ -1049,6 +1153,8 @@ export default function IncidentsPage() {
                 accessLevel={selectedAccessLevel}
                 onAccessLevelChange={setSelectedAccessLevel}
                 customerReportIntake={customerReportIntake.composer}
+                queue={composerQueue}
+                onResumeQueue={() => { void resumeQueue(); }}
               />
             )}
           </div>

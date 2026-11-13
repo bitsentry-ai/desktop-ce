@@ -12,6 +12,7 @@ import type {
   ChatMessage,
 } from "../../chat/types";
 import type { AgentServicePort } from "../../services/contracts";
+import { sameSessionQueue, sessionQueueFromSnapshot, type SessionQueueState } from "../../chat/useComposerQueue";
 import {
   applyMessageUpdate,
   getIncidentPreviewFromMessages,
@@ -40,12 +41,15 @@ export function useIncidentAgentEvents({
   setMessagesMap,
   setTokenUsageByIncident,
   setSessionTokenUsage,
+  setQueueByIncident,
 }: {
   agent: AgentServicePort;
   activeId: string | null;
   setMessagesMap: Dispatch<SetStateAction<Record<string, ChatMessage[]>>>;
   setTokenUsageByIncident: Dispatch<SetStateAction<Record<string, AgentThreadTokenUsage>>>;
   setSessionTokenUsage: Dispatch<SetStateAction<AgentThreadTokenUsage | undefined>>;
+  /** Full snapshots carry the session's message queue; changed-message updates do not. */
+  setQueueByIncident: Dispatch<SetStateAction<Record<string, SessionQueueState>>>;
 }) {
   const pendingEventsRef = useRef<
     Array<{
@@ -113,9 +117,11 @@ export function useIncidentAgentEvents({
       const next = reconcileMessages(sessionMessagesRef.current.get(incidentId), snapshot.messages);
       const settled = settlingEvent || snapshot.threadState !== "RUNNING";
       applySessionMessages(incidentId, snapshot.sessionId, next, snapshot.threadState, snapshot.tokenUsage, settled);
+      const queue = sessionQueueFromSnapshot(snapshot);
+      setQueueByIncident((prev) => (sameSessionQueue(prev[incidentId], queue) ? prev : { ...prev, [incidentId]: queue }));
       lastAppliedSequenceRef.current.set(snapshot.sessionId, sequence);
     },
-    [applySessionMessages],
+    [applySessionMessages, setQueueByIncident],
   );
 
   const refetchSessionSnapshot = useCallback(
