@@ -46,6 +46,13 @@ interface IncidentArtifactsToolCall {
 export interface IncidentArtifactsMessage {
   kind: "user" | "agent";
   toolCalls?: IncidentArtifactsToolCall[];
+  /** An agent message's progress: "thinking" and "streaming" mean it is still being produced. */
+  status?: string;
+}
+
+/** An agent message still being produced. Its host gets a new message list on every streamed update. */
+function isAgentMessageInProgress(message: IncidentArtifactsMessage): boolean {
+  return message.kind === "agent" && (message.status === "thinking" || message.status === "streaming");
 }
 
 function collectRunbookProposalArtifacts(
@@ -1408,9 +1415,20 @@ export function useRunbookResults({
     viewingProposalHistoryRef.current = false;
   }, [incidentId]);
 
+  // What can change the proposal list, as values that stay the same while a reply streams: the proposals the messages
+  // already carry, and how many agent turns have finished. A request per streamed update would flood the IPC channel
+  // (240 requests a minute are allowed). Actions on a proposal refresh through `refreshProposals` directly.
+  const proposalKey = useMemo(
+    () => messageProposals.map((proposal) => `${proposal.proposalId}@${String(proposal.artifactVersion)}`).join("|"),
+    [messageProposals],
+  );
+  const finishedAgentTurns = useMemo(
+    () => messages.filter((message) => message.kind === "agent" && !isAgentMessageInProgress(message)).length,
+    [messages],
+  );
   useEffect(() => {
     void refreshProposals();
-  }, [messages, refreshProposals]);
+  }, [refreshProposals, proposalKey, finishedAgentTurns]);
 
   useEffect(() => {
     const proposalCountIncreased = proposals.length > previousProposalCountRef.current;
