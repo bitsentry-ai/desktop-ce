@@ -237,7 +237,7 @@
   "settings.updateSettingsSection.versionReadyToInstall": "BitSentry Desktop {{version}} is ready to install.",
   "settings.dataPolicy.policyManagedDescription": "Data handling and redaction controls are managed by platform policy and cannot be changed from settings.",
   "settings.integrationConnections.title": "Chat integration connections",
-  "settings.integrationConnections.description": "Name each iTop or Outline instance for chat. Credentials stay in this product. Saving does not test connectivity. Re-enter credentials when editing.",
+  "settings.integrationConnections.description": "Name each iTop or Outline instance for chat. Credentials stay in this product. Saving does not test connectivity. When editing, leave a credential blank to keep the stored one.",
   "settings.integrationConnections.plugin": "Integration",
   "settings.integrationConnections.name": "Connection name",
   "settings.integrationConnections.endpoint": "Instance or API URL",

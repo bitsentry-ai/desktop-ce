@@ -237,7 +237,7 @@
   "settings.updateSettingsSection.versionReadyToInstall": "BitSentry Desktop {{version}} siap dipasang.",
   "settings.dataPolicy.policyManagedDescription": "Kontrol penanganan dan redaksi data dikelola oleh kebijakan platform dan tidak dapat diubah dari pengaturan.",
   "settings.integrationConnections.title": "Koneksi integrasi chat",
-  "settings.integrationConnections.description": "Beri nama setiap instans iTop atau Outline untuk chat. Kredensial tetap berada dalam produk ini. Menyimpan tidak menguji konektivitas. Masukkan kembali kredensial saat mengedit.",
+  "settings.integrationConnections.description": "Beri nama setiap instans iTop atau Outline untuk chat. Kredensial tetap berada dalam produk ini. Menyimpan tidak menguji konektivitas. Saat mengedit, kosongkan kredensial untuk tetap memakai yang tersimpan.",
   "settings.integrationConnections.plugin": "Integrasi",
   "settings.integrationConnections.name": "Nama koneksi",
   "settings.integrationConnections.endpoint": "URL instans atau API",

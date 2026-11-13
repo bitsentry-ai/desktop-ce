@@ -255,6 +255,32 @@ describe('IntegrationConnectionsPanel', () => {
     await waitFor(() => expect(screen.getByRole('alert').textContent).toBe('settings.integrationConnections.saveFailed'))
   })
 
+  it('does not ask for an optional credential that has a default, such as a legacy API base', async () => {
+    const docs: PluginDescriptor = {
+      ...ticketing,
+      id: 'acme.docs',
+      name: 'Acme docs',
+      auth: {
+        fields: [
+          { key: 'accessToken', label: 'Access token', type: 'string', required: true, secret: true },
+          { key: 'apiBase', label: 'Docs API URL', type: 'string', required: false, defaultValue: 'https://docs.example/api' },
+        ],
+      },
+    }
+    const { rows, service } = createConnectionService([docs])
+    render(<IntegrationConnectionsPanel service={service} />)
+    await screen.findByLabelText('Access token')
+
+    expect(screen.queryByLabelText('Docs API URL')).toBeNull()
+    fill('settings.integrationConnections.name', 'Docs')
+    fill('Service URL', 'https://docs.example/api')
+    fill('Access token', 'private-token')
+    save()
+
+    await waitFor(() => expect(rows).toHaveLength(1))
+    expect(rows[0]?.auth).toEqual({ accessToken: 'private-token' })
+  })
+
   it('offers each declared credential set and sends only the chosen one', async () => {
     const { rows, service } = createConnectionService([helpdesk])
     render(<IntegrationConnectionsPanel service={service} />)

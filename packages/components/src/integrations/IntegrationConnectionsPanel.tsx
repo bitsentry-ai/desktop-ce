@@ -109,7 +109,13 @@ export function IntegrationConnectionsPanel({ service, emptyAction, editConnecti
   const contract = plugin?.metadata?.persistence;
   const sets = credentialSets(plugin);
   const chosenSet = new Set(sets[credentialSet] ?? sets[0] ?? []);
-  const authFields = (plugin?.auth.fields ?? []).filter((field) => sets.length === 0 || chosenSet.has(field.key) || field.required === true);
+  // Asked for: the chosen credential set, plus required fields. An optional field with a declared default is not
+  // asked for (the plugin uses its default); such fields are legacy settings, like a base URL the connection's
+  // destination already gives.
+  const authFields = (plugin?.auth.fields ?? []).filter((field) => {
+    if (chosenSet.has(field.key) || field.required === true) return true;
+    return sets.length === 0 && field.defaultValue === undefined;
+  });
 
   useEffect(() => {
     const requestVersion = ++listRequestVersion.current;
