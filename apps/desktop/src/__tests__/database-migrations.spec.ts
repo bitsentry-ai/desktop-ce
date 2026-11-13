@@ -10,6 +10,7 @@ import {
   initializeDatabase,
 } from '@bitsentry-ce/desktop-cli/runtime/database-index'
 import { setRuntimeUserDataPath } from '@bitsentry-ce/desktop-cli/runtime/runtime-paths'
+import { SqliteAgentQueueStore } from '@bitsentry-ce/core/features/agent-runtime'
 
 type BetterSqlite3Constructor = typeof import('better-sqlite3')
 
@@ -127,6 +128,25 @@ describeSqliteMigrations('desktop SQLite upgrades', () => {
     await initializeDatabase()
 
     expect(await migrationLedgerVersions()).toEqual(firstVersions)
+  })
+
+  it('keeps a queued agent message across a restart', async () => {
+    const { directory } = await makeDatabaseDirectory()
+    configureNoopSeeders()
+    setRuntimeUserDataPath(directory)
+    await initializeDatabase()
+    await new SqliteAgentQueueStore(getDatabase()).save('incident-1', {
+      held: true,
+      messages: [{ id: 'queued-1', input: { message: 'Then check memory.' }, queuedAt: '2026-10-19T10:00:00.000Z' }],
+    })
+    await closeDatabase()
+
+    await initializeDatabase()
+
+    expect(await new SqliteAgentQueueStore(getDatabase()).load('incident-1')).toEqual({
+      held: true,
+      messages: [{ id: 'queued-1', input: { message: 'Then check memory.' }, queuedAt: '2026-10-19T10:00:00.000Z' }],
+    })
   })
 
   it('applies the immediately previous migration exactly once', async () => {

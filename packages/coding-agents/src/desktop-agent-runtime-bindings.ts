@@ -10,6 +10,7 @@ import {
 } from './agent-runtime.service.js'
 import type { DesktopPluginRuntimeService } from '@bitsentry-ce/core/features/plugins'
 import type { RunbookAuthoringProposalPersistence } from '@bitsentry-ce/core/features/runbooks'
+import type { AgentQueuePersistence } from '@bitsentry-ce/core/features/agent-runtime'
 
 export function createDesktopAgentRuntimeBindings(
   debugHooks: AgentRuntimeDebugHooks,
@@ -24,6 +25,7 @@ export function createDesktopAgentRuntimeBindings(
     authoringProposalStore?: RunbookAuthoringProposalPersistence,
     loadIncidentMessages?: AgentRuntimeIncidentHistoryLoader,
     saveIncidentMessages?: AgentRuntimeIncidentHistorySaver,
+    queueStore?: AgentQueuePersistence,
   ) => SharedAgentRuntimeService
 } {
   return {
@@ -38,6 +40,7 @@ export function createDesktopAgentRuntimeBindings(
         authoringProposalStore?: RunbookAuthoringProposalPersistence,
         loadIncidentMessages?: AgentRuntimeIncidentHistoryLoader,
         saveIncidentMessages?: AgentRuntimeIncidentHistorySaver,
+        queueStore?: AgentQueuePersistence,
       ) {
         super(
           windowGetter,
@@ -50,6 +53,7 @@ export function createDesktopAgentRuntimeBindings(
           authoringProposalStore,
           loadIncidentMessages,
           saveIncidentMessages,
+          queueStore,
         )
       }
     },
