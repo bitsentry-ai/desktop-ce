@@ -1,11 +1,13 @@
 #!/usr/bin/env node
 /**
- * Launches the Desktop CE dev app (the `desktop:dev` chain) against a fresh, temporary profile and proves the
- * isolation at runtime before anything may interact with it. Every check fails closed: on any missing or unexpected
- * evidence the launcher stops the instance it started and exits non-zero, so a QA driver never reaches a window that
- * is using a real profile.
+ * Launches a desktop dev app against a fresh, temporary profile and proves the isolation at runtime before anything
+ * may interact with it. Every check fails closed: on any missing or unexpected evidence the launcher stops the
+ * instance it started and exits non-zero, so a QA driver never reaches a window that is using a real profile.
  *
- * Usage: node scripts/qa/isolated-dev-launch.mjs [--repo <checkout>] [--port <cdp-port>] [--exec <command>]
+ * Usage: node scripts/qa/isolated-dev-launch.mjs [--target ce|pro] [--repo <checkout>] [--port <cdp-port>] [--exec <command>]
+ *
+ * --target ce (the default) launches Desktop CE from a desktop-ce checkout. --target pro launches Desktop Pro and
+ * needs --repo pointing at a monorepo checkout, where desktop-ce is the apps/desktop-ce submodule.
  *
  * Without --exec the instance stays up after READY until Ctrl-C. With --exec the command runs only after every check
  * passed, with QA_CDP_URL and QA_USER_DATA_DIR in its environment, and the instance stops when it exits.
@@ -34,6 +36,45 @@ export const PROFILE_FOLDER_NAMES = Object.freeze([
   'BitSentry',
   'Electron',
 ]);
+
+// The dev app each target runs from <repo>/apps/desktop, and where that checkout keeps the plugin SDK build.
+export const TARGETS = Object.freeze({
+  ce: Object.freeze({
+    packageName: '@bitsentry-ce/desktop',
+    sdkDist: Object.freeze(['packages', 'plugin-sdk', 'dist']),
+    sdkBuild: 'pnpm --filter @bitsentry/plugin-sdk build',
+  }),
+  pro: Object.freeze({
+    packageName: '@bitsentry/desktop',
+    sdkDist: Object.freeze(['apps', 'desktop-ce', 'packages', 'plugin-sdk', 'dist']),
+    sdkBuild: 'pnpm --dir apps/desktop-ce --filter @bitsentry/plugin-sdk build',
+  }),
+});
+
+/**
+ * Resolves the dev app directory for a target. Throws unless <repo>/apps/desktop is exactly that target's package and
+ * its plugin SDK build exists, so a wrong --repo or --target can never launch the other product.
+ */
+export function resolveTarget(target, repo) {
+  if (!Object.hasOwn(TARGETS, target)) throw new Error(`unknown --target ${String(target)}; expected ce or pro`);
+  const { packageName, sdkDist, sdkBuild } = TARGETS[target];
+  const desktopDir = path.join(repo, 'apps', 'desktop');
+  const manifest = path.join(desktopDir, 'package.json');
+  let name;
+  try {
+    name = JSON.parse(readFileSync(manifest, 'utf8'))?.name;
+  } catch (error) {
+    throw new Error(`cannot read ${manifest} (${String(error?.code ?? error)})`);
+  }
+  if (name !== packageName) {
+    throw new Error(`--target ${target} needs apps/desktop to be ${packageName}, but ${repo} has ${String(name)}`);
+  }
+  const sdkDistDir = path.join(repo, ...sdkDist);
+  if (!existsSync(sdkDistDir)) {
+    throw new Error(`${sdkDist.join('/')} is missing; run \`${sdkBuild}\` once in this checkout`);
+  }
+  return { desktopDir, sdkDistDir };
+}
 
 export function platformConfigRoot(platform = process.platform, env = process.env, home = os.homedir()) {
   if (platform === 'darwin') return path.join(home, 'Library', 'Application Support');
@@ -270,18 +311,25 @@ function canonical(target) {
   }
 }
 
-function parseOptions(rawArgv) {
+export function parseOptions(rawArgv) {
   // Tolerate the one separator `pnpm run <script> -- <options>` forwards; the options themselves never contain one.
   const argv = rawArgv[0] === SEPARATOR ? rawArgv.slice(1) : rawArgv;
-  const options = { repo: path.resolve(fileURLToPath(new URL('../..', import.meta.url))), port: 9339, exec: undefined };
+  const options = {
+    target: 'ce',
+    repo: path.resolve(fileURLToPath(new URL('../..', import.meta.url))),
+    port: 9339,
+    exec: undefined,
+  };
   for (let index = 0; index < argv.length; index += 2) {
     const [flag, value] = [argv[index], argv[index + 1]];
     if (value === undefined) throw new Error(`missing value for ${flag}`);
-    if (flag === '--repo') options.repo = path.resolve(value);
+    if (flag === '--target') options.target = value;
+    else if (flag === '--repo') options.repo = path.resolve(value);
     else if (flag === '--port') options.port = Number(value);
     else if (flag === '--exec') options.exec = value;
     else throw new Error(`unknown option ${flag}`);
   }
+  if (!Object.hasOwn(TARGETS, options.target)) throw new Error(`unknown --target ${options.target}; expected ce or pro`);
   if (!Number.isInteger(options.port) || options.port < 1024 || options.port > 65535) throw new Error('invalid --port');
   return options;
 }
@@ -338,11 +386,9 @@ function readReportedUserData(userDataDir) {
 
 async function main() {
   const options = parseOptions(process.argv.slice(2));
-  const desktopDir = path.join(options.repo, 'apps', 'desktop');
   if (process.platform === 'win32') throw new Error('the runtime checks need lsof and ps; use macOS or Linux');
-  if (!existsSync(path.join(options.repo, 'packages', 'plugin-sdk', 'dist'))) {
-    throw new Error('packages/plugin-sdk/dist is missing; run `pnpm --filter @bitsentry/plugin-sdk build` once in this checkout');
-  }
+  const { desktopDir } = resolveTarget(options.target, options.repo);
+  console.log(`[isolated-launch] target ${options.target} (${TARGETS[options.target].packageName}) at ${desktopDir}`);
   if (!(await portIsFree(options.port))) throw new Error(`port ${String(options.port)} is already in use`);
 
   const roots = profileRoots();

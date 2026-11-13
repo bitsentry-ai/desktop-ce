@@ -11,11 +11,14 @@ import {
   buildDevArgs,
   findChangedFiles,
   parseCommandLine,
+  parseOptions,
   platformConfigRoot,
   processGroupAlive,
   profileRoots,
+  resolveTarget,
   runOwnedSession,
   stopProcessGroup,
+  TARGETS,
   validateDevArgs,
   validateElectronArgv,
   validateRuntimePaths,
@@ -318,4 +321,84 @@ test('a successful driver exits zero and both groups are stopped', async () => {
   assert.deepEqual(result, { failures: [], exitCode: 0 });
   assert.equal(processGroupAlive(driverPid), false);
   assert.equal(processGroupAlive(app.pid), false);
+});
+
+/** A fake checkout whose apps/desktop is `packageName`, with the plugin SDK build at each of `sdkDists`. */
+function fakeCheckout(name, packageName, sdkDists) {
+  const repo = path.join(sandbox, name);
+  mkdirSync(path.join(repo, 'apps', 'desktop'), { recursive: true });
+  if (packageName !== undefined) {
+    writeFileSync(path.join(repo, 'apps', 'desktop', 'package.json'), JSON.stringify({ name: packageName }));
+  }
+  for (const dist of sdkDists) mkdirSync(path.join(repo, ...dist), { recursive: true });
+  return repo;
+}
+const ceSdk = ['packages', 'plugin-sdk', 'dist'];
+const proSdk = ['apps', 'desktop-ce', 'packages', 'plugin-sdk', 'dist'];
+
+test('the target defaults to ce and only ce or pro is accepted', () => {
+  const scriptCheckout = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..', '..');
+  assert.deepEqual(parseOptions([]), { target: 'ce', repo: scriptCheckout, port: 9339, exec: undefined });
+  assert.equal(parseOptions(['--', '--target', 'pro', '--repo', '/m']).target, 'pro');
+  assert.equal(parseOptions(['--target', 'pro', '--repo', '/m']).repo, path.resolve('/m'));
+  assert.throws(() => parseOptions(['--target', 'Pro']), /unknown --target Pro/);
+  assert.throws(() => parseOptions(['--target', 'dashboard']), /unknown --target dashboard/);
+  assert.throws(() => parseOptions(['--target']), /missing value for --target/);
+  assert.throws(() => resolveTarget('toString', sandbox), /unknown --target toString/);
+});
+
+test('ce resolves the desktop-ce checkout app and its own plugin SDK build', () => {
+  const repo = fakeCheckout('ce-checkout', '@bitsentry-ce/desktop', [ceSdk]);
+  assert.deepEqual(resolveTarget('ce', repo), {
+    desktopDir: path.join(repo, 'apps', 'desktop'),
+    sdkDistDir: path.join(repo, ...ceSdk),
+  });
+});
+
+test('pro resolves the monorepo app and the plugin SDK build inside the desktop-ce submodule', () => {
+  const repo = fakeCheckout('monorepo-checkout', '@bitsentry/desktop', [proSdk]);
+  assert.deepEqual(resolveTarget('pro', repo), {
+    desktopDir: path.join(repo, 'apps', 'desktop'),
+    sdkDistDir: path.join(repo, ...proSdk),
+  });
+});
+
+test('a checkout whose app is the other product is refused for either target', () => {
+  const ce = fakeCheckout('ce-only', '@bitsentry-ce/desktop', [ceSdk, proSdk]);
+  const pro = fakeCheckout('pro-only', '@bitsentry/desktop', [ceSdk, proSdk]);
+  assert.throws(() => resolveTarget('pro', ce), /--target pro needs apps\/desktop to be @bitsentry\/desktop.*has @bitsentry-ce\/desktop/);
+  assert.throws(() => resolveTarget('ce', pro), /--target ce needs apps\/desktop to be @bitsentry-ce\/desktop.*has @bitsentry\/desktop/);
+  const unnamed = fakeCheckout('unnamed', undefined, [ceSdk]);
+  writeFileSync(path.join(unnamed, 'apps', 'desktop', 'package.json'), '{}');
+  assert.throws(() => resolveTarget('ce', unnamed), /has undefined/);
+});
+
+test('a missing or unreadable app manifest is refused', () => {
+  assert.throws(() => resolveTarget('ce', fakeCheckout('no-manifest', undefined, [ceSdk])), /cannot read .*package\.json \(ENOENT\)/);
+  const broken = fakeCheckout('broken-manifest', undefined, [ceSdk]);
+  writeFileSync(path.join(broken, 'apps', 'desktop', 'package.json'), '{');
+  assert.throws(() => resolveTarget('ce', broken), /cannot read .*package\.json/);
+});
+
+test('each target needs its own plugin SDK build, not the other layout', () => {
+  const proWithCeLayout = fakeCheckout('pro-ce-layout', '@bitsentry/desktop', [ceSdk]);
+  assert.throws(
+    () => resolveTarget('pro', proWithCeLayout),
+    /apps\/desktop-ce\/packages\/plugin-sdk\/dist is missing; run `pnpm --dir apps\/desktop-ce --filter @bitsentry\/plugin-sdk build`/,
+  );
+  const ceWithProLayout = fakeCheckout('ce-pro-layout', '@bitsentry-ce/desktop', [proSdk]);
+  assert.throws(
+    () => resolveTarget('ce', ceWithProLayout),
+    /^Error: packages\/plugin-sdk\/dist is missing; run `pnpm --filter @bitsentry\/plugin-sdk build`/,
+  );
+});
+
+test('the ce target names this checkout app, and the Pro dev profile stays a guarded root', () => {
+  const scriptCheckout = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..', '..');
+  const manifest = JSON.parse(fs.readFileSync(path.join(scriptCheckout, 'apps', 'desktop', 'package.json'), 'utf8'));
+  assert.equal(manifest.name, TARGETS.ce.packageName);
+  const configRoot = path.join(sandbox, 'config-pro');
+  const roots = profileRoots(configRoot);
+  assert.ok(roots.includes(path.join(configRoot, TARGETS.pro.packageName)));
+  assert.match(validateUserDataDir(path.join(configRoot, '@bitsentry/desktop'), roots, tempRoot), /overlaps a profile folder/);
 });

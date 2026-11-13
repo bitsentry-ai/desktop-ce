@@ -73,6 +73,17 @@ If any check fails, it stops the instance it started and exits non-zero. `--exec
 `QA_USER_DATA_DIR`. The dev build still appends to its own electron-log file in the platform log folder.
 Never pass extra `--` separators by hand: pnpm forwards them verbatim, and Chromium ignores every switch after one.
 
+To launch Desktop Pro instead, point `--repo` at a monorepo checkout and pass `--target pro`:
+
+```bash
+pnpm --dir <monorepo>/apps/desktop-ce --filter @bitsentry/plugin-sdk build   # once per fresh checkout
+node scripts/qa/isolated-dev-launch.mjs --target pro --repo <monorepo> --exec "<your QA command>"
+```
+
+The target defaults to `ce`. The launcher refuses to start unless `<repo>/apps/desktop` is that target's package
+(`@bitsentry-ce/desktop` or `@bitsentry/desktop`) and its plugin SDK build exists, so a wrong `--repo` never
+launches the other product. Every other check above applies unchanged.
+
 ## Desktop Feature Surface (Current)
 
 - Auth/session:
