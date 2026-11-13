@@ -776,6 +776,21 @@ export async function executeCodex(
     activeTurnId =
       readStringField(turn, 'id') ??
       readStringField(turnResult, 'turnId')
+    if (threadId !== undefined && activeTurnId !== undefined) {
+      const steerThreadId = threadId
+      const steerTurnId = activeTurnId
+      // `expectedTurnId` makes Codex reject a steer that arrives after this turn ended.
+      options.onDelta?.({
+        type: 'steer_handle',
+        steer: async (text) => {
+          await client.sendRequest('turn/steer', {
+            threadId: steerThreadId,
+            expectedTurnId: steerTurnId,
+            input: [{ type: 'text', text, text_elements: [] }],
+          })
+        },
+      })
+    }
 
     // Wait for turn completion
     await turnCompletion
@@ -795,6 +810,7 @@ export async function executeCodex(
       throw normalizedError
     }
   } finally {
+    options.onDelta?.({ type: 'steer_handle', steer: null })
     options.abortController.signal.removeEventListener('abort', onAbort)
     const stderrTail = client.getStderrTail().trim()
     if (stderrTail.length > 0) {
