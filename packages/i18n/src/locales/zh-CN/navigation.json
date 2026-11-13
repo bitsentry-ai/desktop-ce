@@ -39,5 +39,6 @@
   "navigation.navbar.toDeleteThisRunbookType": "要删除此运行手册，请输入",
   "navigation.navbar.userManagement": "用户管理",
   "navigation.topBar.connected": "已连接",
-  "navigation.topBar.offline": "离线"
+  "navigation.topBar.offline": "离线",
+  "navigation.navbar.integrations": "集成"
 }

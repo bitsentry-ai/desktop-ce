@@ -39,5 +39,6 @@
   "navigation.navbar.toDeleteThisRunbookType": "To delete this runbook, type",
   "navigation.navbar.userManagement": "User Management",
   "navigation.topBar.connected": "Connected",
-  "navigation.topBar.offline": "Offline"
+  "navigation.topBar.offline": "Offline",
+  "navigation.navbar.integrations": "Integrations"
 }

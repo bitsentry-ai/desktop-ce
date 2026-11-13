@@ -493,6 +493,8 @@ export interface PluginDescriptor {
   metadata?: PluginDescriptorMetadata;
   auth: {
     fields: PluginFieldDefinition[];
+    /** Alternative credential sets, any one of which is enough (for example a token, or a username and password). */
+    requiredSets?: string[][];
   };
   actions: PluginActionDefinition[];
 }

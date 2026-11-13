@@ -260,5 +260,16 @@
   "settings.integrationConnections.availability.plugin_unavailable": "插件不可用",
   "settings.integrationConnections.availability.credentials_missing": "缺少凭据",
   "settings.integrationConnections.availability.destination_blocked": "目标被主机策略阻止",
-  "settings.integrationConnections.targetImmutable": "连接目标不可更改。其他实例请创建新连接；可在此更新凭据。"
+  "settings.integrationConnections.targetImmutable": "连接目标不可更改。其他实例请创建新连接；可在此更新凭据。",
+  "settings.integrationConnections.pageDescription": "连接聊天可使用的工单和知识库工具。凭据保留在本产品中。",
+  "settings.integrationConnections.loading": "正在加载集成…",
+  "settings.integrationConnections.noPlugins": "尚无已安装的插件支持命名连接。",
+  "settings.integrationConnections.noPluginsHint": "请安装支持连接的插件（例如 iTop 或 Outline），然后在此添加连接。",
+  "settings.integrationConnections.openPlugins": "打开插件设置",
+  "settings.integrationConnections.unavailable": "此处无法使用集成连接。",
+  "settings.integrationConnections.retry": "重试",
+  "settings.integrationConnections.active": "已启用",
+  "settings.integrationConnections.inactive": "已停用",
+  "settings.integrationConnections.activeHint": "停用的连接仍会保存，但不会提供给聊天。",
+  "settings.integrationConnections.invalidJson": "{{field}} 必须是有效的 JSON。"
 }

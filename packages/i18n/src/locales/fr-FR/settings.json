@@ -260,5 +260,16 @@
   "settings.integrationConnections.availability.plugin_unavailable": "Plugin indisponible",
   "settings.integrationConnections.availability.credentials_missing": "Identifiants manquants",
   "settings.integrationConnections.availability.destination_blocked": "Destination bloquée par la politique hôte",
-  "settings.integrationConnections.targetImmutable": "Les cibles sont permanentes. Créez une nouvelle connexion pour une autre instance ; les identifiants restent modifiables ici."
+  "settings.integrationConnections.targetImmutable": "Les cibles sont permanentes. Créez une nouvelle connexion pour une autre instance ; les identifiants restent modifiables ici.",
+  "settings.integrationConnections.pageDescription": "Connectez les outils de tickets et de connaissances que le chat peut utiliser. Les identifiants restent dans ce produit.",
+  "settings.integrationConnections.loading": "Chargement des intégrations…",
+  "settings.integrationConnections.noPlugins": "Aucun plugin installé ne prend encore en charge les connexions nommées.",
+  "settings.integrationConnections.noPluginsHint": "Installez un plugin qui prend en charge les connexions, comme iTop ou Outline, puis ajoutez une connexion ici.",
+  "settings.integrationConnections.openPlugins": "Ouvrir les paramètres des plugins",
+  "settings.integrationConnections.unavailable": "Les connexions d'intégration ne sont pas disponibles ici.",
+  "settings.integrationConnections.retry": "Réessayer",
+  "settings.integrationConnections.active": "Active",
+  "settings.integrationConnections.inactive": "Inactive",
+  "settings.integrationConnections.activeHint": "Une connexion inactive reste enregistrée mais n'est pas proposée au chat.",
+  "settings.integrationConnections.invalidJson": "{{field}} doit être un JSON valide."
 }

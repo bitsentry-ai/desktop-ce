@@ -260,5 +260,16 @@
   "settings.integrationConnections.availability.plugin_unavailable": "Plugin tidak tersedia",
   "settings.integrationConnections.availability.credentials_missing": "Kredensial belum diisi",
   "settings.integrationConnections.availability.destination_blocked": "Tujuan diblokir kebijakan host",
-  "settings.integrationConnections.targetImmutable": "Target koneksi tetap. Buat koneksi baru untuk instans lain; kredensial dapat diperbarui di sini."
+  "settings.integrationConnections.targetImmutable": "Target koneksi tetap. Buat koneksi baru untuk instans lain; kredensial dapat diperbarui di sini.",
+  "settings.integrationConnections.pageDescription": "Hubungkan alat tiket dan basis pengetahuan yang dapat dipakai chat. Kredensial tetap di produk ini.",
+  "settings.integrationConnections.loading": "Memuat integrasi…",
+  "settings.integrationConnections.noPlugins": "Belum ada plugin terpasang yang mendukung koneksi bernama.",
+  "settings.integrationConnections.noPluginsHint": "Pasang plugin yang mendukung koneksi, seperti iTop atau Outline, lalu tambahkan koneksi di sini.",
+  "settings.integrationConnections.openPlugins": "Buka pengaturan plugin",
+  "settings.integrationConnections.unavailable": "Koneksi integrasi tidak tersedia di sini.",
+  "settings.integrationConnections.retry": "Coba lagi",
+  "settings.integrationConnections.active": "Aktif",
+  "settings.integrationConnections.inactive": "Nonaktif",
+  "settings.integrationConnections.activeHint": "Koneksi nonaktif tetap tersimpan tetapi tidak ditawarkan ke chat.",
+  "settings.integrationConnections.invalidJson": "{{field}} harus berupa JSON yang valid."
 }

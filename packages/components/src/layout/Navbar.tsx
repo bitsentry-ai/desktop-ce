@@ -32,6 +32,7 @@ import {
   Trash2,
   Download,
   RefreshCw,
+  Plug,
 } from "lucide-react";
 import {
   AlertDialog,
@@ -471,6 +472,13 @@ const primaryNav: NavItem[] = [
     href: "/incidents",
   },
   { icon: BookOpen, labelKey: "navigation.navbar.runbooks", href: "/runbooks" },
+  // The Dashboard renders its own navbar; this entry is the Desktop Integrations page.
+  {
+    icon: Plug,
+    labelKey: "navigation.navbar.integrations",
+    href: "/integrations",
+    desktopOnly: true,
+  },
   { icon: FileText, labelKey: "navigation.navbar.results", href: "/results" },
   // Ticket/Resolution are Dashboard-only surfaces. They remain in primaryNav so
   // the web Dashboard renders them, and are listed in desktopHiddenHrefs below so

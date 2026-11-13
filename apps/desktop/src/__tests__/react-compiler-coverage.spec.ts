@@ -33,7 +33,6 @@ const KNOWN_BAILOUTS: Record<string, string> = {
   'packages/components/src/investigation/RunbookProposalArtifact.tsx': 'try/finally',
   'packages/components/src/settings/CodingAgentProvidersSection.tsx': 'conditional or optional chaining inside try',
   'packages/components/src/settings/GlobalVariablesSettingsSection.tsx': 'conditional or optional chaining inside try',
-  'packages/components/src/settings/IntegrationConnectionsSection.tsx': 'try/finally',
   'packages/components/src/settings/TelemetrySection.tsx': 'try/finally and throw inside try',
   'packages/components/src/settings/UpdateSettingsSection.tsx': 'try/finally',
   'packages/components/src/tutorial/HelpSection.tsx': 'manual memoization the compiler cannot preserve',

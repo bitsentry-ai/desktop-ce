@@ -260,5 +260,16 @@
   "settings.integrationConnections.availability.plugin_unavailable": "Plugin unavailable",
   "settings.integrationConnections.availability.credentials_missing": "Credentials missing",
   "settings.integrationConnections.availability.destination_blocked": "Destination blocked by host policy",
-  "settings.integrationConnections.targetImmutable": "Connection targets are permanent. Create a new named connection for another instance; credentials can be updated here."
+  "settings.integrationConnections.targetImmutable": "Connection targets are permanent. Create a new named connection for another instance; credentials can be updated here.",
+  "settings.integrationConnections.pageDescription": "Connect the ticketing and knowledge tools that chat can use. Credentials stay in this product.",
+  "settings.integrationConnections.loading": "Loading integrations…",
+  "settings.integrationConnections.noPlugins": "No installed plugin supports named connections yet.",
+  "settings.integrationConnections.noPluginsHint": "Install a plugin that supports connections, such as iTop or Outline, then add a connection here.",
+  "settings.integrationConnections.openPlugins": "Open plugin settings",
+  "settings.integrationConnections.unavailable": "Integration connections are not available here.",
+  "settings.integrationConnections.retry": "Try again",
+  "settings.integrationConnections.active": "Active",
+  "settings.integrationConnections.inactive": "Inactive",
+  "settings.integrationConnections.activeHint": "An inactive connection stays saved but is not offered to chat.",
+  "settings.integrationConnections.invalidJson": "{{field}} must be valid JSON."
 }
