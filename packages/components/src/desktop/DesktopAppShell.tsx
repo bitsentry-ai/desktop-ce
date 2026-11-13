@@ -5,6 +5,7 @@ import { Toaster as Sonner } from '../ui/sonner'
 import { TooltipProvider } from '../ui/tooltip'
 import IncidentsPage from '../investigation/Incidents'
 import RunbookResultsPage from '../runbook/Results'
+import DesktopIntegrationsPage from './DesktopIntegrationsPage'
 import { getDesktopConnectionStatus } from '../services/desktop-local-services'
 import {
   TourDataSourcesPreview,
@@ -77,6 +78,7 @@ export function DesktopAppShell({
         <Route path="/incidents" element={<IncidentsPage />} />
         <Route path="/runbooks" element={<RunbookPage />} />
         <Route path="/results" element={<RunbookResultsPage />} />
+        <Route path="/integrations" element={<DesktopIntegrationsPage />} />
 
         <Route path="/tour/incidents" element={<TourIncidentsPreview />} />
         <Route path="/tour/runbooks" element={<TourRunbooksPreview />} />

@@ -39,5 +39,6 @@
   "navigation.navbar.toDeleteThisRunbookType": "Untuk menghapus runbook ini, ketik",
   "navigation.navbar.userManagement": "Manajemen Pengguna",
   "navigation.topBar.connected": "Terhubung",
-  "navigation.topBar.offline": "Luring"
+  "navigation.topBar.offline": "Luring",
+  "navigation.navbar.integrations": "Integrasi"
 }
