@@ -212,20 +212,26 @@ describe("incident message list", () => {
     const list = mountList(messages);
     const viewport = list.viewport();
     await vi.waitFor(() => { expect(atBottom(viewport)).toBe(true); });
-    await scrollTo(viewport, viewport.scrollHeight / 2);
+    // Scroll up like a reader. A programmatic scroll leaves live follow on, so a late re-pin to the end could move the
+    // view away from the rows picked below before the test changes anything.
+    await wheel(viewport, -viewport.scrollHeight / 2);
 
     const top = () => viewport.getBoundingClientRect().top;
     const rows = () => [...mountedRows()] as HTMLElement[];
-    // A mounted row entirely above the viewport, and the first row inside it.
-    const above = rows().filter((row) => row.getBoundingClientRect().bottom < top()).at(-1);
-    const anchor = rows().find((row) => row.getBoundingClientRect().top >= top());
-    const aboveId = above?.dataset.messageId ?? "";
-    const anchorId = anchor?.dataset.messageId ?? "";
-    expect(aboveId).not.toBe("");
-    expect(anchorId).not.toBe("");
+    // The first visible row (the one spanning the top edge) and a mounted row entirely above it.
+    let aboveId = "";
+    let anchorId = "";
+    await vi.waitFor(() => {
+      expect(atBottom(viewport)).toBe(false);
+      const anchorIndex = rows().findIndex((row) => row.getBoundingClientRect().bottom > top());
+      aboveId = rows()[anchorIndex - 1]?.dataset.messageId ?? "";
+      anchorId = rows()[anchorIndex]?.dataset.messageId ?? "";
+      expect(aboveId).not.toBe("");
+      expect(anchorId).not.toBe("");
+    });
     const offset = () => (rowFor(anchorId)?.getBoundingClientRect().top ?? Number.NaN) - top();
     const before = offset();
-    const aboveHeight = above?.getBoundingClientRect().height ?? 0;
+    const aboveHeight = rowFor(aboveId)?.getBoundingClientRect().height ?? 0;
 
     const longer = "Much longer now. ".repeat(200);
     list.rerender(messages.map((msg) => (msg.id !== aboveId ? msg : msg.kind === "user" ? { ...msg, text: longer } : agentMessage(aboveId, longer))));
