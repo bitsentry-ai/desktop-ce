@@ -54,6 +54,7 @@ import {
   type SessionQueueState,
 } from "../../chat/useComposerQueue";
 import type { AgentMessageDelivery } from "../../services/contracts";
+import { CitationSelectionToolbar } from "../../chat/CitationControls";
 import {
   canSendIncidentMessage,
   resolveIncidentTitle,
@@ -85,7 +86,7 @@ import {
   saveProviderLock,
 } from "./incidentStorage";
 import { IncidentComposer } from "./IncidentComposer";
-import { useIncidentDraftStore } from "./incidentDraftStore";
+import { readComposedDraft, useIncidentDraftStore } from "./incidentDraftStore";
 import { useIncidentListStore } from "./incidentListStore";
 import { IncidentMessageList } from "./IncidentMessageList";
 import { useIncidentAgentEvents } from "./useIncidentAgentEvents";
@@ -183,16 +184,13 @@ export default function IncidentsPage() {
   } = useIncidentComposerAttachments(selectedModelCapability, composerSupportsFiles);
 
   const [queueByIncident, setQueueByIncident] = useState<Record<string, SessionQueueState>>({});
+  // The composer's whole message: its citations, then the draft.
   const setActiveDraft = useCallback((text: string) => {
     if (activeId === null) return;
-    const drafts = useIncidentDraftStore.getState();
-    if (text === "") drafts.clearDraft(activeId);
-    else drafts.setDraft(activeId, text);
+    useIncidentDraftStore.getState().setComposedDraft(activeId, text);
   }, [activeId]);
-  const getActiveDraft = useCallback(
-    () => (activeId === null ? "" : (useIncidentDraftStore.getState().drafts[activeId] ?? "")),
-    [activeId],
-  );
+  const getActiveDraft = useCallback(() => (activeId === null ? "" : readComposedDraft(activeId)), [activeId]);
+  const getMessageViewport = useCallback(() => messageListRef.current?.getScrollableNode() ?? null, []);
   const {
     composerQueue,
     editingId: queueEditingId,
@@ -489,9 +487,7 @@ export default function IncidentsPage() {
   /** Sets the composer text and attachments, except for a customer report answer, which leaves the engineer's draft. */
   const setComposerUnlessIntake = (incidentId: string, fromIntake: boolean, text: string, images: ComposerAttachment[]) => {
     if (fromIntake) return;
-    const drafts = useIncidentDraftStore.getState();
-    if (text === "") drafts.clearDraft(incidentId);
-    else drafts.setDraft(incidentId, text);
+    useIncidentDraftStore.getState().setComposedDraft(incidentId, text);
     setComposerImages(images);
   };
 
@@ -505,7 +501,7 @@ export default function IncidentsPage() {
     traitValues?: Record<string, boolean | string>;
   }, intakeText?: string) => {
     const fromIntake = intakeText !== undefined;
-    const draft = activeId === null ? "" : (useIncidentDraftStore.getState().drafts[activeId] ?? "");
+    const draft = activeId === null ? "" : readComposedDraft(activeId);
     const text = intakeText ?? draft.trim();
     const ready = canSendIncidentMessage(text, fromIntake ? 0 : composerImages.length, activeId, selectedProviderKey, selectedModelId);
     // Sending waits for the thread's history so the reply never lands on a thread shown as empty.
@@ -1073,6 +1069,16 @@ export default function IncidentsPage() {
                   </div>
                 )}
                 <CustomerReportIntakeChatContext.Provider value={customerReportIntake.chat}>
+                  {activeIncident !== null && (
+                    <CitationSelectionToolbar
+                      getViewport={getMessageViewport}
+                      threadId={activeIncident.id}
+                      onCite={(citation) => {
+                        const drafts = useIncidentDraftStore.getState();
+                        drafts.setCitations(activeIncident.id, [...(drafts.citations[activeIncident.id] ?? []), citation]);
+                      }}
+                    />
+                  )}
                   {activeIncident !== null && (
                     <IncidentMessageList
                       key={activeId}

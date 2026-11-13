@@ -1,3 +1,4 @@
+import { citationsToPlainText } from "../../chat/citations";
 import { customerReportDisplayText } from "@bitsentry-ce/core/features/plugins";
 import type { ModelCatalogProviderKey } from "../../llm/modelCatalog";
 import type {
@@ -74,7 +75,7 @@ export function normalizeIncidentPreview(
   value: string | null | undefined,
 ): string | null {
   if (typeof value !== "string") return null;
-  const normalized = customerReportDisplayText(value).replace(/\s+/g, " ").trim();
+  const normalized = customerReportDisplayText(citationsToPlainText(value)).replace(/\s+/g, " ").trim();
   if (normalized.length === 0) return null;
   return normalized;
 }

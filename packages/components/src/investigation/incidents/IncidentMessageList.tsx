@@ -1,8 +1,12 @@
-import { memo, useEffect, useImperativeHandle, useRef, useState, type RefObject } from "react";
+import { memo, useCallback, useEffect, useImperativeHandle, useRef, useState, type RefObject } from "react";
 import { LegendList, type LegendListRef, type MaintainScrollAtEndOptions } from "@legendapp/list/react";
 import { useTranslation } from "@bitsentry-ce/i18n";
 import { ChatBubble } from "../../chat/ChatBubble";
+import { CitationRevealContext } from "../../chat/CitationControls";
+import { revealCitation } from "../../chat/citationDom";
+import type { AssistantCitation } from "../../chat/citations";
 import type { ChatMessage } from "../../chat/types";
+import { iterationTextSourceId } from "../../chat/turnTimelineRows";
 
 // Same pinning as T3 Code's timeline: follow the newest output on every trigger, without animating.
 const MAINTAIN_SCROLL_AT_END = {
@@ -15,6 +19,9 @@ const MAINTAIN_SCROLL_AT_END = {
 const FOLLOW_REARM_THRESHOLD_PX = 40;
 // Back at the very end, following resumes even when a small move up never left the band.
 const END_EPSILON_PX = 1;
+
+// Frames to wait for a citation's source row to mount after scrolling to it.
+const REVEAL_MOUNT_FRAMES = 60;
 
 const UP_KEYS = ["PageUp", "Home", "ArrowUp"];
 const DOWN_KEYS = ["PageDown", "End", "ArrowDown"];
@@ -91,6 +98,24 @@ export const IncidentMessageList = memo(function IncidentMessageList({
     void listRef.current?.scrollToEnd({ animated });
   }, [listRef]);
 
+  // Going to a citation's source leaves the end, so following stops first. A source row outside the render window
+  // is not mounted, so the list scrolls to its message and highlights the quote once the row mounts.
+  const revealSource = useCallback((citation: AssistantCitation) => {
+    liveFollowRef.current = false;
+    leftEndRef.current = true;
+    setLiveFollow(false);
+    if (revealCitation(document, citation)) return;
+    const index = messages.findIndex((msg) =>
+      msg.kind === "agent" && msg.iterations.some((iteration) => iterationTextSourceId(iteration.id) === citation.sourceId));
+    if (index === -1) return;
+    void listRef.current?.scrollToIndex({ index, animated: false, viewPosition: 0.5 });
+    const retry = (frame: number) => {
+      if (revealCitation(document, citation) || frame >= REVEAL_MOUNT_FRAMES) return;
+      requestAnimationFrame(() => { retry(frame + 1); });
+    };
+    requestAnimationFrame(() => { retry(1); });
+  }, [listRef, messages]);
+
   useEffect(() => {
     const node = listRef.current?.getScrollableNode();
     if (node === undefined) return;
@@ -147,50 +172,52 @@ export const IncidentMessageList = memo(function IncidentMessageList({
     };
   }, [listRef]);
   return (
-    <LegendList<ChatMessage>
-      ref={listRef}
-      data={messages}
-      extraData={providerKey}
-      keyExtractor={keyExtractor}
-      getItemType={getItemType}
-      renderItem={({ item }) => (
-        <div className="space-y-3 pb-5" data-message-id={item.id}>
-          <ChatBubble msg={item} providerKey={providerKey} />
-        </div>
-      )}
-      estimatedItemSize={90}
-      initialScrollAtEnd
-      // Off while the reader is away from the end; within a whole viewport of the end Legend would otherwise re-pin.
-      maintainScrollAtEnd={liveFollow ? MAINTAIN_SCROLL_AT_END : false}
-      maintainScrollAtEndThreshold={1}
-      maintainVisibleContentPosition
-      // Rows hold local UI state, so a reused container remounts its row instead of handing it another message.
-      recycleItems={false}
-      onScroll={() => {
-        const gap = endGap(listRef.current?.getState());
-        if (gap === undefined) return;
-        const inBand = gap <= FOLLOW_REARM_THRESHOLD_PX;
-        const atVeryEnd = gap <= END_EPSILON_PX;
-        const enteredBand = inBand && !inBandRef.current;
-        inBandRef.current = inBand;
-        if (!liveFollowRef.current) {
-          if (!atVeryEnd) leftEndRef.current = true;
-          if (enteredBand || (atVeryEnd && leftEndRef.current)) {
-            liveFollowRef.current = true;
-            setLiveFollow(true);
+    <CitationRevealContext value={revealSource}>
+      <LegendList<ChatMessage>
+        ref={listRef}
+        data={messages}
+        extraData={providerKey}
+        keyExtractor={keyExtractor}
+        getItemType={getItemType}
+        renderItem={({ item }) => (
+          <div className="space-y-3 pb-5" data-message-id={item.id}>
+            <ChatBubble msg={item} providerKey={providerKey} />
+          </div>
+        )}
+        estimatedItemSize={90}
+        initialScrollAtEnd
+        // Off while the reader is away from the end; within a whole viewport of the end Legend would otherwise re-pin.
+        maintainScrollAtEnd={liveFollow ? MAINTAIN_SCROLL_AT_END : false}
+        maintainScrollAtEndThreshold={1}
+        maintainVisibleContentPosition
+        // Rows hold local UI state, so a reused container remounts its row instead of handing it another message.
+        recycleItems={false}
+        onScroll={() => {
+          const gap = endGap(listRef.current?.getState());
+          if (gap === undefined) return;
+          const inBand = gap <= FOLLOW_REARM_THRESHOLD_PX;
+          const atVeryEnd = gap <= END_EPSILON_PX;
+          const enteredBand = inBand && !inBandRef.current;
+          inBandRef.current = inBand;
+          if (!liveFollowRef.current) {
+            if (!atVeryEnd) leftEndRef.current = true;
+            if (enteredBand || (atVeryEnd && leftEndRef.current)) {
+              liveFollowRef.current = true;
+              setLiveFollow(true);
+            }
           }
-        }
-        onAtEndChange(liveFollowRef.current ? inBand : atVeryEnd);
-      }}
-      // Legend sets overflow-x inline, so a class can't hide it; without this a long token scrolls the whole chat sideways.
-      showsHorizontalScrollIndicator={false}
-      // The list is the scroll container, so it takes focus for keyboard scrolling.
-      tabIndex={0}
-      aria-label={t("common.incidents.messageList")}
-      className="page-enter absolute inset-0"
-      contentContainerClassName="px-6"
-      ListHeaderComponent={<div className={headerClassName} />}
-      ListFooterComponent={<div className="h-1" />}
-    />
+          onAtEndChange(liveFollowRef.current ? inBand : atVeryEnd);
+        }}
+        // Legend sets overflow-x inline, so a class can't hide it; without this a long token scrolls the whole chat sideways.
+        showsHorizontalScrollIndicator={false}
+        // The list is the scroll container, so it takes focus for keyboard scrolling.
+        tabIndex={0}
+        aria-label={t("common.incidents.messageList")}
+        className="page-enter absolute inset-0"
+        contentContainerClassName="px-6"
+        ListHeaderComponent={<div className={headerClassName} />}
+        ListFooterComponent={<div className="h-1" />}
+      />
+    </CitationRevealContext>
   );
 });
