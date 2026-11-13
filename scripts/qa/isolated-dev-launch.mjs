@@ -5,15 +5,23 @@
  * instance it started and exits non-zero, so a QA driver never reaches a window that is using a real profile.
  *
  * Usage: node scripts/qa/isolated-dev-launch.mjs [--target ce|pro] [--repo <checkout>] [--port <cdp-port>] [--exec <command>]
+ *        [--reuse-profile <dir>] [--allow-force-close]
  *
  * --target ce (the default) launches Desktop CE from a desktop-ce checkout. --target pro launches Desktop Pro and
  * needs --repo pointing at a monorepo checkout, where desktop-ce is the apps/desktop-ce submodule.
+ *
+ * Every launch uses a new, empty temporary profile and marks it as launcher-created. --reuse-profile <dir> relaunches such a
+ * profile (for example after a forced close) and is refused for anything else: the folder must carry this launcher's
+ * marker for the same target, sit canonically inside the temporary directory, be owned by the current user, hold no
+ * unsafe links and not be in use. --allow-force-close lets the QA command end the app on purpose by creating the file
+ * named in QA_FORCE_CLOSE_FILE; the launcher then kills only its own app process group and treats the exit as expected.
  *
  * Without --exec the instance stays up after READY until Ctrl-C. With --exec the command runs only after every check
  * passed, with QA_CDP_URL and QA_USER_DATA_DIR in its environment, and the instance stops when it exits.
  */
 import { spawn, execFileSync } from 'node:child_process';
-import { existsSync, mkdtempSync, readdirSync, readFileSync, realpathSync, statSync } from 'node:fs';
+import { randomBytes } from 'node:crypto';
+import { existsSync, lstatSync, mkdtempSync, readdirSync, readFileSync, readlinkSync, realpathSync, rmSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
@@ -26,6 +34,15 @@ const SQLITE_LOG_PATTERN = /Initializing SQLite at (\S+)/;
 const STARTUP_TIMEOUT_MS = 180_000;
 const POLL_MS = 500;
 const ACTIVE_PROFILE_WINDOW_MS = 10_000;
+const PROFILE_PREFIX = 'bitsentry-qa-';
+const CONTROL_PREFIX = 'bitsentry-qactl-';
+const MARKER_NAME = '.bitsentry-qa-profile.json';
+const LOCK_NAME = '.bitsentry-qa-launcher.lock';
+const MARKER_KIND = 'bitsentry-isolated-qa-profile';
+const MAX_MARKER_BYTES = 4096;
+const MAX_PROFILE_ENTRIES = 200_000;
+// Chromium's own single-instance links, the only symbolic links a profile may hold (top level only).
+const CHROMIUM_SINGLETONS = Object.freeze(['SingletonLock', 'SingletonSocket', 'SingletonCookie']);
 
 // Every folder an unisolated CE or Pro build, packaged or dev, may fall back to inside the platform config root.
 export const PROFILE_FOLDER_NAMES = Object.freeze([
@@ -111,16 +128,207 @@ export function validateDevArgs(args, userDataDir, port) {
   return null;
 }
 
-/** Refuses a profile directory that could alias a real profile, already holds data, or cannot be split safely from argv. */
-export function validateUserDataDir(userDataDir, roots = profileRoots(), tempRoot = realpathSync(os.tmpdir())) {
-  const resolved = path.resolve(userDataDir);
+/** The rules every profile directory follows, fresh or reused: splittable from argv, inside the temp folder, clear of real profiles. */
+function validateProfilePath(resolved, roots, tempRoot) {
   if (/\s/.test(resolved)) return 'the user-data directory path must not contain whitespace';
   if (!isInside(resolved, tempRoot)) return 'the user-data directory must be inside the system temporary directory';
   for (const root of roots) {
     if (isInside(resolved, root) || isInside(root, resolved)) return `the user-data directory overlaps a profile folder: ${root}`;
   }
+  return null;
+}
+
+/** Refuses a profile directory that could alias a real profile, already holds data, or cannot be split safely from argv. */
+export function validateUserDataDir(userDataDir, roots = profileRoots(), tempRoot = realpathSync(os.tmpdir())) {
+  const resolved = path.resolve(userDataDir);
+  const refusal = validateProfilePath(resolved, roots, tempRoot);
+  if (refusal !== null) return refusal;
   if (existsSync(resolved) && readdirSync(resolved).length > 0) return 'the user-data directory must be new and empty';
   return null;
+}
+
+const currentUid = () => process.getuid?.() ?? -1;
+
+/** Binds a new profile to this launcher: a random nonce, the target, the owner, and where the folder really is. */
+export function writeProfileMarker(userDataDir, target, uid = currentUid()) {
+  const dir = canonical(userDataDir);
+  const stats = statSync(dir, { bigint: true });
+  const marker = {
+    schema: 1,
+    kind: MARKER_KIND,
+    target,
+    nonce: randomBytes(16).toString('hex'),
+    uid,
+    dir,
+    dev: String(stats.dev),
+    ino: String(stats.ino),
+    createdAt: new Date().toISOString(),
+  };
+  writeFileSync(path.join(dir, MARKER_NAME), `${JSON.stringify(marker)}\n`, { flag: 'wx', mode: 0o600 });
+  return marker;
+}
+
+/**
+ * Reads and checks a profile's launcher marker. The folder name alone proves nothing: the marker must be a regular file
+ * this user owns, well formed, for the same target, and written for this very folder (same path, device and inode), so
+ * a marker copied from another folder never validates.
+ */
+export function inspectProfileMarker(resolved, { target, uid = currentUid() } = {}) {
+  const markerPath = path.join(resolved, MARKER_NAME);
+  let stats;
+  try {
+    stats = lstatSync(markerPath, { bigint: true });
+  } catch (error) {
+    if (error?.code === 'ENOENT') return { refusal: 'the folder has no launcher marker, so it was not created by this launcher' };
+    return { refusal: `cannot inspect the launcher marker (${String(error?.code ?? error)})` };
+  }
+  if (!stats.isFile()) return { refusal: 'the launcher marker is not a regular file' };
+  // Checked before anything is read: a hard link would make the marker (and what it vouches for) another file's alias.
+  if (stats.nlink > 1n) return { refusal: 'the launcher marker is a hard link' };
+  if (stats.size > BigInt(MAX_MARKER_BYTES)) return { refusal: 'the launcher marker is too large' };
+  if (Number(stats.uid) !== uid) return { refusal: 'the launcher marker is not owned by the current user' };
+  let marker;
+  try {
+    marker = JSON.parse(readFileSync(markerPath, 'utf8'));
+  } catch {
+    return { refusal: 'the launcher marker is not valid JSON' };
+  }
+  if (marker === null || typeof marker !== 'object' || marker.schema !== 1 || marker.kind !== MARKER_KIND) {
+    return { refusal: 'the launcher marker has an unknown format' };
+  }
+  if (typeof marker.nonce !== 'string' || !/^[0-9a-f]{32}$/.test(marker.nonce)) return { refusal: 'the launcher marker has no valid nonce' };
+  if (marker.target !== target) return { refusal: `the profile was created for target ${String(marker.target)}, not ${String(target)}` };
+  if (marker.uid !== uid) return { refusal: 'the launcher marker was written for another user' };
+  const dirStats = statSync(resolved, { bigint: true });
+  if (marker.dir !== resolved || marker.dev !== String(dirStats.dev) || marker.ino !== String(dirStats.ino)) {
+    return { refusal: 'the launcher marker was written for a different folder (moved, copied or replaced)' };
+  }
+  return { marker };
+}
+
+/** Whether a process id is alive. Only "no such process" means gone. */
+export function pidAlive(pid, kill = process.kill) {
+  try {
+    kill(pid, 0);
+    return true;
+  } catch (error) {
+    if (error?.code === 'ESRCH') return false;
+    if (error?.code === 'EPERM') return true;
+    throw error;
+  }
+}
+
+/** Every process command line on this machine, as `pid command` lines. Fails closed: a failing ps is an error. */
+export function listProcessCommands() {
+  return execFileSync('ps', ['-axww', '-o', 'pid=,command='], { encoding: 'utf8', maxBuffer: 256 * 1024 * 1024 }).split('\n');
+}
+
+/** Why the profile may be in use right now, or null. Reads process lines and Chromium's single-instance link only. */
+export function profileInUse(resolved, { commands, isAlive = pidAlive }) {
+  const switchText = `--user-data-dir=${resolved}`;
+  for (const line of commands) {
+    if (parseCommandLine(line).includes(switchText)) return `a running process already uses this profile (${line.trim().split(/\s+/)[0]})`;
+  }
+  const lockPath = path.join(resolved, 'SingletonLock');
+  let target;
+  try {
+    target = readlinkSync(lockPath);
+  } catch (error) {
+    if (error?.code === 'ENOENT' || error?.code === 'EINVAL') return null;
+    return `cannot inspect Chromium's single-instance lock (${String(error?.code ?? error)})`;
+  }
+  const pid = Number(/-(\d+)$/.exec(target)?.[1]);
+  if (!Number.isInteger(pid) || pid <= 0) return "Chromium's single-instance lock is unreadable";
+  return isAlive(pid) ? `Chromium's single-instance lock is held by live process ${String(pid)}` : null;
+}
+
+/**
+ * Links inside a profile could redirect the app's writes to a file outside it: a symbolic link, or a regular file with
+ * more than one hard link (an alias of a file elsewhere). Only Chromium's own single-instance symbolic links at the top
+ * level are allowed. Reads metadata only, never file contents. Throws if the tree cannot be inspected completely.
+ */
+export function findUnsafeLinks(directory, limit = MAX_PROFILE_ENTRIES) {
+  const unsafe = [];
+  let seen = 0;
+  const visit = (current, top) => {
+    for (const entry of inspectPath(current, () => readdirSync(current, { withFileTypes: true })) ?? []) {
+      seen += 1;
+      if (seen > limit) throw new Error(`the profile holds more than ${String(limit)} entries and cannot be inspected completely`);
+      const entryPath = path.join(current, entry.name);
+      if (entry.isSymbolicLink()) {
+        if (!(top && CHROMIUM_SINGLETONS.includes(entry.name))) unsafe.push(path.relative(directory, entryPath));
+      } else if (entry.isDirectory()) {
+        visit(entryPath, false);
+      } else if (entry.isFile()) {
+        const stats = inspectPath(entryPath, () => lstatSync(entryPath));
+        if (stats !== undefined && stats.nlink > 1) unsafe.push(`${path.relative(directory, entryPath)} (hard link, ${String(stats.nlink)} links)`);
+      }
+    }
+  };
+  visit(directory, true);
+  return unsafe;
+}
+
+/**
+ * Refuses to relaunch anything but a profile this launcher created: canonical and inside the temporary folder, clear of
+ * real profiles, owned by the current user and not writable by others, carrying a valid marker for the same target,
+ * free of unsafe links, and not in use. Returns the reason, or null. The default fresh-empty-profile launch is separate.
+ */
+export function validateReusableProfile(userDataDir, {
+  target,
+  roots = profileRoots(),
+  tempRoot = realpathSync(os.tmpdir()),
+  uid = currentUid(),
+  commands = listProcessCommands(),
+  isAlive = pidAlive,
+} = {}) {
+  const resolved = path.resolve(userDataDir);
+  const refusal = validateProfilePath(resolved, roots, tempRoot);
+  if (refusal !== null) return refusal;
+  if (!path.basename(resolved).startsWith(PROFILE_PREFIX)) return `the folder name does not start with ${PROFILE_PREFIX}`;
+  let stats;
+  try {
+    stats = lstatSync(resolved);
+  } catch (error) {
+    return error?.code === 'ENOENT' ? 'the profile folder does not exist' : `cannot inspect the profile folder (${String(error?.code ?? error)})`;
+  }
+  if (stats.isSymbolicLink() || !stats.isDirectory()) return 'the profile path must be a real directory, not a link or file';
+  if (canonical(resolved) !== resolved) return 'a component of the profile path is a symbolic link; use the canonical path the launcher printed';
+  if (stats.uid !== uid) return 'the profile folder is not owned by the current user';
+  if ((stats.mode & 0o022) !== 0) return 'the profile folder is writable by group or others';
+  const inspected = inspectProfileMarker(resolved, { target, uid });
+  if (inspected.refusal !== undefined) return inspected.refusal;
+  const links = findUnsafeLinks(resolved);
+  if (links.length > 0) return `the profile holds links that could redirect its writes: ${links.slice(0, 3).join(', ')}`;
+  return profileInUse(resolved, { commands, isAlive });
+}
+
+/** Takes the profile for this launcher process. A lock left by a dead launcher is replaced; a live one refuses. */
+export function acquireProfileLock(userDataDir, { pid = process.pid, isAlive = pidAlive } = {}) {
+  const lockPath = path.join(userDataDir, LOCK_NAME);
+  const claim = () => { writeFileSync(lockPath, `${JSON.stringify({ pid, at: new Date().toISOString() })}\n`, { flag: 'wx', mode: 0o600 }); };
+  try {
+    claim();
+  } catch (error) {
+    if (error?.code !== 'EEXIST') throw error;
+    let holder;
+    try {
+      holder = JSON.parse(readFileSync(lockPath, 'utf8'))?.pid;
+    } catch {
+      throw new Error('the profile lock is unreadable; refusing to take over the profile');
+    }
+    if (!Number.isInteger(holder) || holder <= 0) throw new Error('the profile lock names no process; refusing to take over the profile');
+    if (isAlive(holder)) throw new Error(`the profile is held by launcher process ${String(holder)}`);
+    unlinkSync(lockPath);
+    claim();
+  }
+  return () => {
+    try {
+      unlinkSync(lockPath);
+    } catch (error) {
+      if (error?.code !== 'ENOENT') throw error;
+    }
+  };
 }
 
 /**
@@ -151,6 +359,16 @@ export function validateRuntimePaths({ reportedUserData, sqlitePath }, userDataD
   return null;
 }
 
+/** Runs a read of `target`: a missing entry gives undefined, any other error throws, so inspection fails closed. */
+function inspectPath(target, read) {
+  try {
+    return read();
+  } catch (error) {
+    if (error?.code === 'ENOENT') return undefined;
+    throw new Error(`cannot inspect ${target} (${String(error?.code ?? error)})`);
+  }
+}
+
 /**
  * Lists files under the given roots modified at or after `sinceMs`. Reads metadata only, never file contents.
  * Only a missing root or an entry removed mid-walk is skipped; any other error (permission, I/O) throws, so an
@@ -158,14 +376,7 @@ export function validateRuntimePaths({ reportedUserData, sqlitePath }, userDataD
  */
 export function findChangedFiles(roots, sinceMs, limit = 20) {
   const changed = [];
-  const inspect = (target, read) => {
-    try {
-      return read();
-    } catch (error) {
-      if (error?.code === 'ENOENT') return undefined;
-      throw new Error(`cannot inspect ${target} (${String(error?.code ?? error)})`);
-    }
-  };
+  const inspect = inspectPath;
   const visit = (directory) => {
     const entries = inspect(directory, () => readdirSync(directory, { withFileTypes: true })) ?? [];
     for (const entry of entries) {
@@ -223,6 +434,49 @@ export async function stopProcessGroup(pgid, { termGraceMs = 10_000, killGraceMs
   throw new Error(`process group ${String(pgid)} is still running after SIGKILL`);
 }
 
+/**
+ * Gets the profile for one launch and returns it with the exclusive launcher lock held, in both modes and before the
+ * app can start. Fresh: a new empty folder is validated, locked, and only then marked, so no other launcher can see a
+ * valid marker without the lock. Reuse: the folder is validated as launcher-created and not in use, then locked.
+ * `release` drops the lock. Nothing is left locked when this throws.
+ */
+export function prepareProfile(options, { roots = profileRoots(), tmp = realpathSync(os.tmpdir()), ...checks } = {}) {
+  const reused = options.reuseProfile !== undefined;
+  // Not resolved through links on purpose: the validation refuses a path that goes through one.
+  const userDataDir = reused ? path.resolve(options.reuseProfile) : realpathSync(mkdtempSync(path.join(tmp, PROFILE_PREFIX)));
+  const refusal = reused
+    ? validateReusableProfile(userDataDir, { target: options.target, roots, tempRoot: tmp, ...checks })
+    : validateUserDataDir(userDataDir, roots, tmp);
+  if (refusal !== null) throw new Error(refusal);
+  const release = acquireProfileLock(userDataDir, { pid: checks.pid, isAlive: checks.isAlive });
+  try {
+    const marker = reused ? inspectProfileMarker(userDataDir, { target: options.target }).marker : writeProfileMarker(userDataDir, options.target);
+    return { userDataDir, reused, marker, release };
+  } catch (error) {
+    release();
+    throw error;
+  }
+}
+
+/**
+ * Ends the launcher's own process group at once with SIGKILL and no SIGTERM first, like a crash or a force quit, and
+ * confirms the group is gone. Throws if it survives. Only the negative group id of a group this launcher created is signalled.
+ */
+export async function forceKillProcessGroup(pgid, { killGraceMs = 5_000, kill = process.kill } = {}) {
+  if (!processGroupAlive(pgid, kill)) return 'gone';
+  try {
+    kill(-pgid, 'SIGKILL');
+  } catch (error) {
+    if (error?.code !== 'ESRCH') throw error;
+  }
+  for (const deadline = Date.now() + killGraceMs; Date.now() < deadline;) {
+    if (!processGroupAlive(pgid, kill)) return 'killed';
+    await sleep(100);
+  }
+  if (!processGroupAlive(pgid, kill)) return 'killed';
+  throw new Error(`process group ${String(pgid)} is still running after SIGKILL`);
+}
+
 /** Runs `body` while the child's process group is owned, and always stops that whole group afterwards. */
 export async function withOwnedGroup(child, body, stopOptions) {
   try {
@@ -249,8 +503,11 @@ const waitUntil = (condition) => new Promise((resolve) => {
  * detached group) are both owned: whichever happens first, the QA command finishing, SIGINT/SIGTERM to the launcher,
  * or the app exiting, both groups are stopped, the QA command's first. An interruption or an app exit while the QA
  * command runs is a failure even if the command later reports success. Never signals any other process group.
+ *
+ * With `forceClose` ({ requested(), perform() }) the QA command may end the app on purpose once, after the launch was
+ * verified: `perform` kills the app group, and that one exit is expected rather than a failure.
  */
-export async function runOwnedSession({ child, verifyLaunch, exec, execEnv, stopOptions, onReady = () => {}, onDriverStart = () => {} }) {
+export async function runOwnedSession({ child, verifyLaunch, exec, execEnv, stopOptions, forceClose, onReady = () => {}, onDriverStart = () => {} }) {
   const state = { interrupted: false, appExited: child.exitCode !== null || child.signalCode !== null };
   child.once('exit', () => { state.appExited = true; });
   const onSignal = () => { state.interrupted = true; };
@@ -258,6 +515,7 @@ export async function runOwnedSession({ child, verifyLaunch, exec, execEnv, stop
   process.on('SIGTERM', onSignal);
   const failures = [];
   let exitCode = 0;
+  let forcedClose = false;
   try {
     await withOwnedGroup(child, async () => {
       const verdict = await verifyLaunch(state);
@@ -275,7 +533,17 @@ export async function runOwnedSession({ child, verifyLaunch, exec, execEnv, stop
       driver.once('exit', (code, signal) => { driverExit = { code, signal }; });
       onDriverStart(driver.pid);
       try {
-        await waitUntil(() => driverExit !== undefined || state.interrupted || state.appExited);
+        const wantsForceClose = () => forceClose !== undefined && !forcedClose && forceClose.requested();
+        for (;;) {
+          await waitUntil(() => driverExit !== undefined || state.interrupted || (state.appExited && !forcedClose) || wantsForceClose());
+          // A request made just before the driver exited is still honoured while the verified app is alive.
+          if (!wantsForceClose() || state.interrupted || state.appExited) break;
+          forcedClose = true;
+          await forceClose.perform();
+        }
+        if (forceClose !== undefined && !forcedClose && !state.interrupted && forceClose.requested()) {
+          failures.push('the QA command asked for a force close that was not performed (the app had already exited)');
+        }
         if (state.interrupted) failures.push('interrupted while the QA command was running');
         else if (driverExit === undefined) failures.push('the app exited while the QA command was running');
         else if (driverExit.code !== 0) exitCode = driverExit.code ?? 1;
@@ -289,7 +557,7 @@ export async function runOwnedSession({ child, verifyLaunch, exec, execEnv, stop
     process.off('SIGINT', onSignal);
     process.off('SIGTERM', onSignal);
   }
-  return { failures, exitCode };
+  return forcedClose ? { failures, exitCode, forcedClose } : { failures, exitCode };
 }
 
 /** Parses a NUL-separated /proc cmdline or a whitespace-separated `ps` command line into arguments. */
@@ -319,18 +587,27 @@ export function parseOptions(rawArgv) {
     repo: path.resolve(fileURLToPath(new URL('../..', import.meta.url))),
     port: 9339,
     exec: undefined,
+    reuseProfile: undefined,
+    allowForceClose: false,
   };
   for (let index = 0; index < argv.length; index += 2) {
     const [flag, value] = [argv[index], argv[index + 1]];
+    if (flag === '--allow-force-close') {
+      options.allowForceClose = true;
+      index -= 1;
+      continue;
+    }
     if (value === undefined) throw new Error(`missing value for ${flag}`);
     if (flag === '--target') options.target = value;
     else if (flag === '--repo') options.repo = path.resolve(value);
     else if (flag === '--port') options.port = Number(value);
     else if (flag === '--exec') options.exec = value;
+    else if (flag === '--reuse-profile') options.reuseProfile = value;
     else throw new Error(`unknown option ${flag}`);
   }
   if (!Object.hasOwn(TARGETS, options.target)) throw new Error(`unknown --target ${options.target}; expected ce or pro`);
   if (!Number.isInteger(options.port) || options.port < 1024 || options.port > 65535) throw new Error('invalid --port');
+  if (options.reuseProfile !== undefined && !path.isAbsolute(options.reuseProfile)) throw new Error('--reuse-profile needs the absolute profile path the launcher printed');
   return options;
 }
 
@@ -375,9 +652,15 @@ function commandLine(pid) {
   return parseCommandLine(execFileSync('ps', ['-ww', '-o', 'command=', '-p', String(pid)], { encoding: 'utf8' }));
 }
 
-function readReportedUserData(userDataDir) {
+/**
+ * The user-data folder the app reported. Only a report written at or after `startedAtMs` (the moment just before this
+ * launch started the app) counts: a reused profile keeps the previous session's report, even one written a moment earlier.
+ */
+export function readReportedUserData(userDataDir, startedAtMs) {
   try {
-    const artifact = JSON.parse(readFileSync(path.join(userDataDir, 'diagnostics', 'startup-diagnostics.json'), 'utf8'));
+    const reportPath = path.join(userDataDir, 'diagnostics', 'startup-diagnostics.json');
+    if (statSync(reportPath, { bigint: true }).mtimeNs < BigInt(Math.floor(startedAtMs)) * 1_000_000n) return undefined;
+    const artifact = JSON.parse(readFileSync(reportPath, 'utf8'));
     return typeof artifact?.paths?.userData === 'string' ? artifact.paths.userData : undefined;
   } catch {
     return undefined;
@@ -397,68 +680,95 @@ async function main() {
   if (busy.length > 0) {
     throw new Error(`a standard profile folder is in use by another app (recent writes: ${busy.join(', ')}); close it first`);
   }
-  const userDataDir = realpathSync(mkdtempSync(path.join(realpathSync(os.tmpdir()), 'bitsentry-qa-')));
-  const args = buildDevArgs(userDataDir, options.port);
-  const preflight = validateUserDataDir(userDataDir, roots) ?? validateDevArgs(args, userDataDir, options.port);
-  if (preflight !== null) throw new Error(preflight);
-
-  const launchedAtMs = Date.now() - 1000;
-  const verifyProfilesUntouched = () => {
-    const changed = findChangedFiles(roots, launchedAtMs);
-    return changed.length === 0 ? null : `profile folders changed since launch: ${changed.join(', ')}`;
-  };
-  console.log(`[isolated-launch] profile ${userDataDir}`);
-  console.log('[isolated-launch] note: the dev build appends to its own electron-log file in the platform log folder');
-  const env = { ...process.env, BITSENTRY_USER_DATA_DIR: userDataDir };
-  delete env.ELECTRON_RUN_AS_NODE;
-  const child = spawn('pnpm', args, { cwd: desktopDir, detached: true, stdio: ['ignore', 'pipe', 'pipe'], env });
-  let sqlitePath;
-  let pending = '';
-  const onOutput = (chunk) => {
-    const text = chunk.toString();
-    process.stdout.write(text);
-    const lines = (pending + text).split('\n');
-    pending = lines.pop() ?? '';
-    for (const line of lines) sqlitePath ??= SQLITE_LOG_PATTERN.exec(line)?.[1];
-  };
-  child.stdout.on('data', onOutput);
-  child.stderr.on('data', onOutput);
-  const verifyLaunch = async (state) => {
-    for (const deadline = Date.now() + STARTUP_TIMEOUT_MS; Date.now() < deadline;) {
-      if (state.interrupted) return 'interrupted before the app was verified';
-      if (state.appExited) return 'the app exited before it could be verified';
-      const untouched = verifyProfilesUntouched();
-      if (untouched !== null) return untouched;
-      const pid = listenerPid(options.port);
-      const reportedUserData = readReportedUserData(userDataDir);
-      if (pid !== undefined && reportedUserData !== undefined && sqlitePath !== undefined) {
-        if (!isDescendant(pid, child.pid)) return `port ${String(options.port)} is served by a process this launcher did not start`;
-        return validateElectronArgv(commandLine(pid), userDataDir, options.port)
-          ?? validateRuntimePaths({ reportedUserData, sqlitePath }, userDataDir)
-          ?? verifyProfilesUntouched();
-      }
-      await sleep(POLL_MS);
-    }
-    return 'timed out waiting for the app to report its profile, database and CDP port';
-  };
-
-  const cdpUrl = `http://127.0.0.1:${String(options.port)}`;
-  const { failures, exitCode } = await runOwnedSession({
-    child,
-    verifyLaunch,
-    exec: options.exec,
-    execEnv: { ...process.env, QA_CDP_URL: cdpUrl, QA_USER_DATA_DIR: userDataDir },
-    onReady: () => { console.log(`[isolated-launch] READY ${cdpUrl} (argv, user-data, SQLite and profile folders verified)`); },
-  });
-  // The app and the QA command are both fully stopped here, so this is the final word on the profile folders.
+  let releaseProfile = () => {};
+  let controlDir;
   try {
-    const after = verifyProfilesUntouched();
-    if (after !== null) failures.push(after);
-  } catch (error) {
-    failures.push(error instanceof Error ? error.message : String(error));
+    const prepared = prepareProfile(options, { roots });
+    const { userDataDir, reused, marker } = prepared;
+    releaseProfile = prepared.release;
+    const args = buildDevArgs(userDataDir, options.port);
+    const preflight = validateDevArgs(args, userDataDir, options.port);
+    if (preflight !== null) throw new Error(preflight);
+
+    let forceCloseFile;
+    if (options.allowForceClose) {
+      controlDir = realpathSync(mkdtempSync(path.join(realpathSync(os.tmpdir()), CONTROL_PREFIX)));
+      forceCloseFile = path.join(controlDir, 'force-close');
+    }
+    const launchedAtMs = Date.now() - 1000;
+    const verifyProfilesUntouched = () => {
+      const changed = findChangedFiles(roots, launchedAtMs);
+      return changed.length === 0 ? null : `profile folders changed since launch: ${changed.join(', ')}`;
+    };
+    console.log(`[isolated-launch] profile ${userDataDir} (${reused ? 'reused' : 'new'}, marker ${marker.nonce.slice(0, 8)})`);
+    console.log('[isolated-launch] note: the dev build appends to its own electron-log file in the platform log folder');
+    const env = { ...process.env, BITSENTRY_USER_DATA_DIR: userDataDir };
+    delete env.ELECTRON_RUN_AS_NODE;
+    // The profile metadata check above keeps a one second margin; the app's own report must be newer than this moment.
+    const startedAtMs = Date.now();
+    const child = spawn('pnpm', args, { cwd: desktopDir, detached: true, stdio: ['ignore', 'pipe', 'pipe'], env });
+    let sqlitePath;
+    let pending = '';
+    const onOutput = (chunk) => {
+      const text = chunk.toString();
+      process.stdout.write(text);
+      const lines = (pending + text).split('\n');
+      pending = lines.pop() ?? '';
+      for (const line of lines) sqlitePath ??= SQLITE_LOG_PATTERN.exec(line)?.[1];
+    };
+    child.stdout.on('data', onOutput);
+    child.stderr.on('data', onOutput);
+    const verifyLaunch = async (state) => {
+      for (const deadline = Date.now() + STARTUP_TIMEOUT_MS; Date.now() < deadline;) {
+        if (state.interrupted) return 'interrupted before the app was verified';
+        if (state.appExited) return 'the app exited before it could be verified';
+        const untouched = verifyProfilesUntouched();
+        if (untouched !== null) return untouched;
+        const pid = listenerPid(options.port);
+        const reportedUserData = readReportedUserData(userDataDir, startedAtMs);
+        if (pid !== undefined && reportedUserData !== undefined && sqlitePath !== undefined) {
+          if (!isDescendant(pid, child.pid)) return `port ${String(options.port)} is served by a process this launcher did not start`;
+          return validateElectronArgv(commandLine(pid), userDataDir, options.port)
+            ?? validateRuntimePaths({ reportedUserData, sqlitePath }, userDataDir)
+            ?? verifyProfilesUntouched();
+        }
+        await sleep(POLL_MS);
+      }
+      return 'timed out waiting for the app to report its profile, database and CDP port';
+    };
+
+    const cdpUrl = `http://127.0.0.1:${String(options.port)}`;
+    const execEnv = { ...process.env, QA_CDP_URL: cdpUrl, QA_USER_DATA_DIR: userDataDir, QA_PROFILE_MODE: reused ? 'reused' : 'new' };
+    if (forceCloseFile !== undefined) execEnv.QA_FORCE_CLOSE_FILE = forceCloseFile;
+    const { failures, exitCode, forcedClose } = await runOwnedSession({
+      child,
+      verifyLaunch,
+      exec: options.exec,
+      execEnv,
+      forceClose: forceCloseFile === undefined ? undefined : {
+        requested: () => existsSync(forceCloseFile),
+        perform: async () => {
+          console.log(`[isolated-launch] FORCE-CLOSE requested by the QA command; killing only the app process group ${String(child.pid)} with SIGKILL`);
+          console.log(`[isolated-launch] FORCE-CLOSE ${await forceKillProcessGroup(child.pid)}; this exit is expected`);
+        },
+      },
+      onReady: () => { console.log(`[isolated-launch] READY ${cdpUrl} (argv, user-data, SQLite and profile folders verified)`); },
+    });
+    // The app and the QA command are both fully stopped here, so this is the final word on the profile folders.
+    try {
+      const after = verifyProfilesUntouched();
+      if (after !== null) failures.push(after);
+    } catch (error) {
+      failures.push(error instanceof Error ? error.message : String(error));
+    }
+    if (failures.length > 0) throw new Error(failures.join('; '));
+    console.log(`[isolated-launch] DONE profile ${userDataDir} kept for relaunch with --reuse-profile${forcedClose ? ' (the app was force-closed on purpose)' : ''}`);
+    process.exitCode = exitCode;
+  } finally {
+    releaseProfile();
+    // Only the control folder this launcher just created, never anything the QA command made elsewhere.
+    if (controlDir !== undefined) rmSync(controlDir, { recursive: true, force: true });
   }
-  if (failures.length > 0) throw new Error(failures.join('; '));
-  process.exitCode = exitCode;
 }
 
 if (process.argv[1] !== undefined && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

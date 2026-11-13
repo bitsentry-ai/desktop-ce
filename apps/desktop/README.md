@@ -84,6 +84,40 @@ The target defaults to `ce`. The launcher refuses to start unless `<repo>/apps/d
 (`@bitsentry-ce/desktop` or `@bitsentry/desktop`) and its plugin SDK build exists, so a wrong `--repo` never
 launches the other product. Every other check above applies unchanged.
 
+### Force close and relaunch the same profile
+
+To test what the app shows after a forced close, relaunch the profile the first launch created. Both options are opt-in;
+by default every launch uses a new, empty temporary profile.
+
+1. First session: add `--allow-force-close`. The QA command gets `QA_FORCE_CLOSE_FILE`. Start a reply, then create that file.
+   The launcher kills only its own app process group with SIGKILL (no graceful shutdown) and records the exit as
+   expected. The profile is kept, and the launcher prints `DONE profile <dir> kept for relaunch`.
+2. Second session: pass that exact printed path with `--reuse-profile <dir>`. The QA command gets `QA_PROFILE_MODE=reused`
+   and checks the recovered history in the UI. Reading the database file directly does not prove what the app shows.
+
+```bash
+node scripts/qa/isolated-dev-launch.mjs --allow-force-close --exec "<first QA command>"
+node scripts/qa/isolated-dev-launch.mjs --reuse-profile <printed profile dir> --exec "<second QA command>"
+# Pro: add --target pro --repo <monorepo> to both
+```
+
+A profile is reused only if all of this holds, and otherwise the launcher refuses before starting anything:
+
+- it carries the marker this launcher wrote when it created it (`.bitsentry-qa-profile.json`), for the same target, written for
+  this very folder (same path, device and inode, so a copied or moved marker fails). A `bitsentry-qa-*` name alone is not enough;
+- the path is canonical (no link on the way), inside the temporary directory, clear of every real profile folder,
+  owned by you and not writable by group or others;
+- it holds no symbolic links (except Chromium's own single-instance links at the top level) and no hard-linked files,
+  because a link could send the app's writes to a file outside the profile. The launcher reads only metadata for this;
+- nothing uses it: no running process with that `--user-data-dir`, no live Chromium single-instance lock (a stale one left
+  by the killed app is fine), no live launcher lock. Every launch, new or reused, takes an exclusive lock on its profile
+  before the app starts (a new profile is locked before its marker is written) and releases it at the end.
+
+Every check of a normal launch still runs on the relaunch, and the app's startup report must be newer than the moment the
+launcher started the app, so a report left by the previous session never counts, even one written a moment earlier. A force
+close request is honoured even if the QA command exits right after making it; if it cannot be performed the run fails. The
+launcher never deletes a profile.
+
 ## Desktop Feature Surface (Current)
 
 - Auth/session:
