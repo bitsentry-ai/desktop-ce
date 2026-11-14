@@ -82,32 +82,26 @@ export function useComposerQueue(input: {
     setEditingId(null);
   }, [editedMessageGone, restoreDraft]);
 
-  const update = useCallback(
-    async (request: Parameters<NonNullable<AgentServicePort["updateQueue"]>>[0]) => {
-      if (agent.updateQueue === undefined) return;
-      try {
-        await agent.updateQueue(request);
-      } catch (error) {
-        // The runtime already ran or removed the message; the next snapshot shows the queue as it is.
-        console.warn("Queued message update failed:", error);
-      }
-    },
-    [agent],
-  );
+  const update = async (request: Parameters<NonNullable<AgentServicePort["updateQueue"]>>[0]) => {
+    if (agent.updateQueue === undefined) return;
+    try {
+      await agent.updateQueue(request);
+    } catch (error) {
+      // The runtime already ran or removed the message; the next snapshot shows the queue as it is.
+      console.warn("Queued message update failed:", error);
+    }
+  };
 
-  const saveEdit = useCallback(
-    async (text: string, editedImages: ComposerAttachment[]) => {
-      if (sessionId === null || editingId === null) return;
-      await update({ sessionId, action: "edit", messageId: editingId, message: text, attachments: editedImages });
-      restoreDraft();
-    },
-    [editingId, restoreDraft, sessionId, update],
-  );
+  const saveEdit = async (text: string, editedImages: ComposerAttachment[]) => {
+    if (sessionId === null || editingId === null) return;
+    await update({ sessionId, action: "edit", messageId: editingId, message: text, attachments: editedImages });
+    restoreDraft();
+  };
 
-  const resume = useCallback(async () => {
+  const resume = async () => {
     if (sessionId === null) return;
     await update({ sessionId, action: "resume" });
-  }, [sessionId, update]);
+  };
 
   if (sessionId === null || agent.updateQueue === undefined) {
     return { composerQueue: undefined, editingId: null, saveEdit, resume };

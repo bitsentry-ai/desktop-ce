@@ -1399,22 +1399,29 @@ function ensureIncidentThreadStatement(threadId: string, now: string): BatchStat
 /**
  * Replaces one incident thread's messages in a single transaction. Rows are
  * keyed by message id, so unchanged messages are not rewritten. Only the agent
- * runtime, which owns the full list, calls this.
+ * runtime, which owns the full list, calls this; `changedIndexes` upserts only those rows.
  */
 export async function saveIncidentThreadMessages(
   db: Pick<DesktopStateDatabase, '$executeBatch'>,
   threadId: string,
   rawMessages: readonly unknown[],
+  changedIndexes?: readonly number[],
 ): Promise<void> {
   if (threadId.length === 0) throw new Error('Incident thread id is required')
   const now = new Date().toISOString()
-  const messages = rawMessages.map(normalizeChatMessage).filter((message) => message !== null)
-  const rowIds: string[] = []
+  const indexes = changedIndexes ?? rawMessages.map((_, index) => index)
+  const rowIds = new Set<string>()
   const statements: BatchStatement[] = [ensureIncidentThreadStatement(threadId, now)]
-  for (const [index, message] of messages.entries()) {
+  for (const index of indexes) {
+    const message = normalizeChatMessage(rawMessages[index])
+    if (message === null) continue
     const messageId = asString(message.id)
-    const rowId = messageId.length > 0 && !rowIds.includes(messageId) ? messageId : `${threadId}:${String(index)}`
-    rowIds.push(rowId)
+    // A repeated id gets a positional row id, so a partial save must look at the earlier messages.
+    const duplicate = changedIndexes === undefined
+      ? rowIds.has(messageId)
+      : rawMessages.slice(0, index).some((raw) => asString(normalizeChatMessage(raw)?.id) === messageId)
+    const rowId = messageId.length > 0 && !duplicate ? messageId : `${threadId}:${String(index)}`
+    rowIds.add(rowId)
     const columns = incidentMessageColumns(message)
     statements.push({
       sql: `INSERT INTO "IncidentMessage" ("id","threadId","sortOrder","kind","text","streamText","toolCallsJson","finalText","status","errorMsg","messageJson","createdAt","updatedAt")
@@ -1426,12 +1433,14 @@ export async function saveIncidentThreadMessages(
         columns.finalText, columns.status, columns.errorMsg, serializeIncidentMessage(message), now, now],
     })
   }
-  statements.push({
+  const lastMessage = normalizeChatMessage(rawMessages[rawMessages.length - 1])
+  if (changedIndexes === undefined) statements.push({
     sql: 'DELETE FROM "IncidentMessage" WHERE "threadId" = ? AND "id" NOT IN (SELECT value FROM json_each(?))',
-    parameters: [threadId, JSON.stringify(rowIds)],
-  }, {
+    parameters: [threadId, JSON.stringify([...rowIds])],
+  })
+  statements.push({
     sql: 'UPDATE "IncidentThread" SET "lastMessagePreview" = ?, "updatedAt" = ? WHERE "id" = ?',
-    parameters: [getIncidentPreviewFromMessages(messages), now, threadId],
+    parameters: [getIncidentPreviewFromMessages(lastMessage === null ? [] : [lastMessage]), now, threadId],
   })
   await db.$executeBatch(statements)
 }

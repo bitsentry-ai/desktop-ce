@@ -139,7 +139,7 @@ export default function IncidentsPage() {
   >();
   const [artifactsOpen, setArtifactsOpen] = useState(false);
   const integrationPorts = useDesktopIntegrationPorts();
-  const closeRunbookRail = useCallback(() => { setArtifactsOpen(false); }, []);
+  const closeRunbookRail = () => { setArtifactsOpen(false); };
   const integrationsRail = useIntegrationsRailState({
     incidentId: activeId,
     runbookRailOpen: artifactsOpen,
@@ -162,15 +162,13 @@ export default function IncidentsPage() {
     return messagesMap[activeId] ?? [];
   }, [activeId, messagesMap]);
   const composerSupportsFiles = selectedModelCapability !== undefined;
-  const composerFileAccept = useMemo(() => {
-    if (selectedModelCapability === undefined) return "";
-
-    return [
-      ".csv", "text/csv", ".txt", "text/plain", ".md", ".markdown",
-      "text/markdown", ".json", "application/json", ".yaml", ".yml",
-      "text/yaml", "application/yaml",
-    ].join(",");
-  }, [selectedModelCapability]);
+  const composerFileAccept = composerSupportsFiles
+    ? [
+        ".csv", "text/csv", ".txt", "text/plain", ".md", ".markdown",
+        "text/markdown", ".json", "application/json", ".yaml", ".yml",
+        "text/yaml", "application/yaml",
+      ].join(",")
+    : "";
   const {
     composerImages,
     setComposerImages,
@@ -185,12 +183,12 @@ export default function IncidentsPage() {
 
   const [queueByIncident, setQueueByIncident] = useState<Record<string, SessionQueueState>>({});
   // The composer's whole message: its citations, then the draft.
-  const setActiveDraft = useCallback((text: string) => {
+  const setActiveDraft = (text: string) => {
     if (activeId === null) return;
     useIncidentDraftStore.getState().setComposedDraft(activeId, text);
-  }, [activeId]);
-  const getActiveDraft = useCallback(() => (activeId === null ? "" : readComposedDraft(activeId)), [activeId]);
-  const getMessageViewport = useCallback(() => messageListRef.current?.getScrollableNode() ?? null, []);
+  };
+  const getActiveDraft = () => (activeId === null ? "" : readComposedDraft(activeId));
+  const getMessageViewport = () => messageListRef.current?.getScrollableNode() ?? null;
   const {
     composerQueue,
     editingId: queueEditingId,
@@ -497,13 +495,10 @@ export default function IncidentsPage() {
     }
   };
 
-  const handleUnarchiveIncident = useCallback(
-    (incidentId: string) => {
-      useIncidentListStore.getState().unarchive(incidentId);
-      void navigate(`/incidents?id=${incidentId}`);
-    },
-    [navigate],
-  );
+  const handleUnarchiveIncident = (incidentId: string) => {
+    useIncidentListStore.getState().unarchive(incidentId);
+    void navigate(`/incidents?id=${incidentId}`);
+  };
 
   /** Sets the composer text and attachments, except for a customer report answer, which leaves the engineer's draft. */
   const setComposerUnlessIntake = (incidentId: string, fromIntake: boolean, text: string, images: ComposerAttachment[]) => {
@@ -727,15 +722,11 @@ export default function IncidentsPage() {
 
   const incidentState: AgentSessionState = activeIncident?.state ?? "IDLE";
   const isArchivedIncident = activeIncident?.archived === true;
-  const artifactCount = useMemo(
-    () => countIncidentArtifacts(messages, activeId),
-    [activeId, messages],
-  );
+  const artifactCount = countIncidentArtifacts(messages, activeId);
   const hasWaitingAgentBubble = messages.some(hasWaitingAgentIndicator);
-  const visibleIncidents = useMemo(() => {
-    if (isHistoryContext) return incidents;
-    return incidents.filter((incident) => incident.archived !== true);
-  }, [incidents, isHistoryContext]);
+  const visibleIncidents = isHistoryContext
+    ? incidents
+    : incidents.filter((incident) => incident.archived !== true);
 
   useEffect(() => {
     if (activeId === null) {
@@ -768,7 +759,7 @@ export default function IncidentsPage() {
     selectedModelId.length > 0;
   // ── Callbacks must be declared before early returns (React hooks rule) ──────
 
-  const handleNavigateToSettings = useCallback(() => {
+  const handleNavigateToSettings = () => {
     let hash = "#coding-agents";
     if (hasManagedDesktopLlmApi()) {
       hash = "#llm-providers";
@@ -778,7 +769,7 @@ export default function IncidentsPage() {
       pathname: "/app-settings",
       hash,
     });
-  }, [navigate]);
+  };
 
   const isBlocked =
     activeIncident !== null &&

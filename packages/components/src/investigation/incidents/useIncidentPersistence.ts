@@ -166,7 +166,7 @@ export function useIncidentPersistence(activeId: string | null) {
    * those. Main appends after its stored rows, so history the renderer has not
    * loaded is never dropped.
    */
-  const appendThreadMessages = useCallback((incidentId: string, added: ChatMessage[]) => {
+  const appendThreadMessages = (incidentId: string, added: ChatMessage[]) => {
     const next = [...(messagesMapRef.current[incidentId] ?? []), ...added];
     messagesMapRef.current = { ...messagesMapRef.current, [incidentId]: next };
     setMessagesMap((prev) => ({ ...prev, [incidentId]: [...(prev[incidentId] ?? []), ...added] }));
@@ -175,7 +175,7 @@ export function useIncidentPersistence(activeId: string | null) {
       console.error("Failed to save incident messages to desktop store:", error);
       captureIncidentException(error, { operation: "appendDesktopIncidentMessages", incidentId });
     });
-  }, []);
+  };
 
   return {
     incidents,

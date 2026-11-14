@@ -1,4 +1,4 @@
-import { useCallback, useId, useState, type ElementType, type ReactNode } from "react";
+import { useId, useState, type ElementType, type ReactNode } from "react";
 import { ChevronDown, ChevronRight, FileText, Ticket, Webhook } from "lucide-react";
 import { useTranslation } from "@bitsentry-ce/i18n";
 import type { IntegrationOperation } from "@bitsentry-ce/core/features/plugins";
@@ -12,15 +12,15 @@ import { relativeTime } from "./relative-time";
 /** Which cards of the Artifacts panel are open. A card keeps its half-filled form while it is closed. */
 export function useOpenCards() {
   const [open, setOpen] = useState<ReadonlySet<string>>(() => new Set());
-  const isOpen = useCallback((id: string) => open.has(id), [open]);
-  const toggle = useCallback((id: string) => {
+  const isOpen = (id: string) => open.has(id);
+  const toggle = (id: string) => {
     setOpen((previous) => {
       const next = new Set(previous);
       if (!next.delete(id)) next.add(id);
       return next;
     });
-  }, []);
-  const show = useCallback((id: string) => { setOpen((previous) => (previous.has(id) ? previous : new Set(previous).add(id))); }, []);
+  };
+  const show = (id: string) => { setOpen((previous) => (previous.has(id) ? previous : new Set(previous).add(id))); };
   return { isOpen, toggle, show };
 }
 

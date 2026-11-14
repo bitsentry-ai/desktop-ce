@@ -91,6 +91,21 @@ describe("incident message persistence", () => {
     expect(await loadIncidentThreadMessages(db, "thread-b")).toEqual(threadB);
   });
 
+  it("persists streaming changes without replacing history and updates the preview", async () => {
+    const history = [
+      { id: "h-1", kind: "user", text: "First" },
+      { id: "h-2", kind: "agent", streamText: "Checking", status: "streaming" },
+    ];
+    await saveIncidentThreadMessages(db, "thread-a", history);
+    const changed = { ...history[1], streamText: "Checking disk usage" };
+    await saveIncidentThreadMessages(db, "thread-a", [history[0], changed], [1]);
+    expect(await loadIncidentThreadMessages(db, "thread-a")).toEqual([history[0], changed]);
+    const rows = await db.$queryRawUnsafe<{ lastMessagePreview: string }>(
+      `SELECT "lastMessagePreview" FROM "IncidentThread" WHERE id = 'thread-a'`,
+    );
+    expect(rows[0]?.lastMessagePreview).toBe("Checking disk usage");
+  });
+
   it("appends after the stored messages and keeps all of them", async () => {
     const handlers = createDesktopStateHandlers(db);
     const history = [

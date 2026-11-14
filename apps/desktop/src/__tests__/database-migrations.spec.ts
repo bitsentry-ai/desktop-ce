@@ -14,7 +14,7 @@ import { SqliteAgentQueueStore } from '@bitsentry-ce/core/features/agent-runtime
 
 type BetterSqlite3Constructor = typeof import('better-sqlite3')
 
-const CURRENT_SCHEMA_VERSION = 19
+const CURRENT_SCHEMA_VERSION = 20
 const tempDirectories: string[] = []
 let Database: BetterSqlite3Constructor | undefined
 let nativeModuleWarning: string | undefined
@@ -164,6 +164,7 @@ describeSqliteMigrations('desktop SQLite upgrades', () => {
       DROP TABLE "ResourceLink";
       DROP TABLE "ExternalResource";
       DROP TABLE "IntegrationConnection";
+      DROP TABLE "AgentQueuedMessage";
       DELETE FROM "_MigrationLedger" WHERE "version" = ${String(CURRENT_SCHEMA_VERSION)};
       PRAGMA user_version = ${String(CURRENT_SCHEMA_VERSION - 1)};
     `)
@@ -176,6 +177,9 @@ describeSqliteMigrations('desktop SQLite upgrades', () => {
     expect(await getDatabase().$queryRawUnsafe(
       'SELECT "value" FROM "Setting" WHERE "key" = \'retained.setting\'',
     )).toEqual([{ value: 'retained-value' }])
+    expect(await getDatabase().$queryRawUnsafe(
+      `SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ('AgentQueuedMessage', 'IntegrationConnection') ORDER BY name`,
+    )).toEqual([{ name: 'AgentQueuedMessage' }, { name: 'IntegrationConnection' }])
   })
 
   it('purges failed authoring shells on startup without removing user tombstones', async () => {

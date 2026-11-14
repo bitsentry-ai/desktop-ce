@@ -105,13 +105,13 @@ export function RunbookAuthoringProposalCards({
   const [savedTitleByProposalId, setSavedTitleByProposalId] = useState<Record<string, string>>({});
   const [selectedOperationIdsByProposalId, setSelectedOperationIdsByProposalId] = useState<Record<string, string[]>>({});
 
-  const toggleSelectedOperation = useCallback((proposalId: string, operationIds: string[], operationId: string) => {
+  const toggleSelectedOperation = (proposalId: string, operationIds: string[], operationId: string) => {
     setSelectedOperationIdsByProposalId((previous) => {
       const current = previous[proposalId] ?? operationIds;
       const next = current.includes(operationId) ? current.filter((id) => id !== operationId) : [...current, operationId];
       return { ...previous, [proposalId]: next };
     });
-  }, []);
+  };
 
   const canDecideProposals = sessionId !== null || incidentId.length > 0;
   const decisionSessionId = sessionId ?? undefined;

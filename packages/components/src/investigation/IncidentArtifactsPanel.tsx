@@ -110,10 +110,10 @@ export default function IncidentArtifactsPanel({ isOpen, filter, focusOnOpen = f
   const { summary: runbookSummary } = runbookResults;
 
   const operationRows = useMemo(() => orderOperations(actions.rows), [actions.rows]);
-  const deliveryList = useMemo(() => orderDeliveries(deliveryRows.rows), [deliveryRows.rows]);
+  const deliveryList = orderDeliveries(deliveryRows.rows);
   const pendingOperations = useMemo(() => operationRows.filter((row) => row.status === "proposed"), [operationRows]);
-  const reviewDeliveries = useMemo(() => deliveryList.filter(needsReview), [deliveryList]);
-  const dueTickets = useMemo(() => ticketsAwaitingResponse(sources.rows, Date.now()), [sources.rows]);
+  const reviewDeliveries = deliveryList.filter(needsReview);
+  const dueTickets = ticketsAwaitingResponse(sources.rows, Date.now());
   const needYou = pendingOperations.length + reviewDeliveries.length + runbookSummary.failedRuns.length + runbookSummary.pendingDrafts.length + dueTickets.length;
   const total = sources.rows.length + runbookSummary.count + operationRows.length + deliveryRows.rows.length;
   const pendingIds = useMemo(

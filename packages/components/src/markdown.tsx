@@ -3,10 +3,8 @@ import {
   createContext,
   isValidElement,
   useContext,
-  useCallback,
   useEffect,
   memo,
-  useMemo,
   useRef,
   useState,
   type ReactNode,
@@ -652,7 +650,7 @@ function MarkdownCodeBlock({
   const [copied, setCopied] = useState(false);
   const copiedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const handleCopy = useCallback(() => {
+  const handleCopy = () => {
     if (typeof navigator === "undefined" || navigator.clipboard == null) return;
 
     void navigator.clipboard
@@ -668,7 +666,7 @@ function MarkdownCodeBlock({
         }, 1200);
       })
       .catch(() => {});
-  }, [code]);
+  };
 
   useEffect(
     () => () => {
@@ -792,18 +790,10 @@ export const MarkdownContent = memo(function MarkdownContent({
 }: MarkdownContentProps) {
   const { t } = useTranslation();
   const scrollableTableLabel = t("common.markdown.scrollableTable");
-  const rendererContext = useMemo(
-    () => ({ scrollableTableLabel, collapsedJsonLabel }),
-    [scrollableTableLabel, collapsedJsonLabel],
+  const rendererContext = { scrollableTableLabel, collapsedJsonLabel };
+  const normalizedContent = normalizeMarkdownContent(
+    paragraphizeSoftBreaks ? paragraphizePlainTextSoftBreaks(content) : content,
   );
-  const normalizedContent = useMemo(() => {
-    let sourceContent = content;
-    if (paragraphizeSoftBreaks) {
-      sourceContent = paragraphizePlainTextSoftBreaks(content);
-    }
-
-    return normalizeMarkdownContent(sourceContent);
-  }, [content, paragraphizeSoftBreaks]);
 
   return (
     <div
