@@ -579,6 +579,7 @@ export type RunbookLlmProviderKey =
   | "groq"
   | "kilocode"
   | "openai"
+  | "openai_compatible"
   | "anthropic"
   | "gemini"
   | "openrouter"
@@ -1208,6 +1209,7 @@ export interface AgentLlmSelection {
     | "groq"
     | "kilocode"
     | "openai"
+    | "openai_compatible"
     | "anthropic"
     | "gemini"
     | "openrouter"
@@ -1333,6 +1335,7 @@ export type ProviderKey =
   | "groq"
   | "kilocode"
   | "openai"
+  | "openai_compatible"
   | "anthropic"
   | "gemini"
   | "openrouter"
@@ -1349,6 +1352,8 @@ export interface LLMProviderDto {
   providerType: ProviderType;
   baseUrl: string;
   hasApiKey: boolean;
+  isConfigured: boolean;
+  contextWindow?: number | null;
   model: string | null;
   availableModels: string[];
   isPrimary: boolean;
@@ -1365,6 +1370,7 @@ export interface LLMProviderListResponse {
 }
 
 export interface SaveProviderRequest {
+  contextWindow?: number | null;
   providerKey: ProviderKey;
   apiKey?: string;
   baseUrl?: string;
