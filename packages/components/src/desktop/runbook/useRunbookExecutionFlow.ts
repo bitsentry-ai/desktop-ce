@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from "react";
+import { useState } from "react";
 
 import {
   collectRuntimeParameters,
@@ -49,61 +49,55 @@ export function useRunbookExecutionFlow({
     Set<string>
   >(() => new Set());
 
-  const runtimeParameters = useMemo(
-    () => collectRuntimeParameters(editingRunbook, t),
-    [editingRunbook, t],
-  );
+  const runtimeParameters = collectRuntimeParameters(editingRunbook, t);
 
   const missingRuntimeRequiredParameters = runtimeParameters.filter(
     (parameter) => isRuntimeParameterMissing(parameter, runtimeParameterValues),
   );
 
-  const launchRunbook = useCallback(
-    async (parameterValues?: Record<string, string>) => {
-      if (editingRunbook === null || editingRunbook.actions.length === 0) {
-        return;
-      }
+  const launchRunbook = async (parameterValues?: Record<string, string>) => {
+    if (editingRunbook === null || editingRunbook.actions.length === 0) {
+      return;
+    }
 
-      try {
-        const context = await ipcInvoke<RunbookContextV1>(
-          "runbooks:exportContext",
-          {
-            id: editingRunbook.id,
-          },
-        );
-        const execution = await ipcInvoke<{
-          executionId: string;
-          resultId: string;
-          execution?: {
-            status?: string;
-            startedAt?: string;
-            completedAt?: string;
-          };
-        }>("runbooks:execute", {
-          runbookId: editingRunbook.id,
-          parameterValues,
-          triggerContext: {
-            entrypoint: "runbooks",
-          },
-        });
+    try {
+      const context = await ipcInvoke<RunbookContextV1>(
+        "runbooks:exportContext",
+        {
+          id: editingRunbook.id,
+        },
+      );
+      const execution = await ipcInvoke<{
+        executionId: string;
+        resultId: string;
+        execution?: {
+          status?: string;
+          startedAt?: string;
+          completedAt?: string;
+        };
+      }>("runbooks:execute", {
+        runbookId: editingRunbook.id,
+        parameterValues,
+        triggerContext: {
+          entrypoint: "runbooks",
+        },
+      });
 
-        persistRunningRunResult({
-          executionId: execution.executionId,
-          resultId: execution.resultId,
-          runbook: editingRunbook,
-          context,
-          execution: execution.execution,
-        });
+      persistRunningRunResult({
+        executionId: execution.executionId,
+        resultId: execution.resultId,
+        runbook: editingRunbook,
+        context,
+        execution: execution.execution,
+      });
 
-        navigateToResult(execution.resultId);
-      } catch (error) {
-        console.error("Failed to launch runbook result:", error);
-      }
-    },
-    [editingRunbook, ipcInvoke, navigateToResult],
-  );
+      navigateToResult(execution.resultId);
+    } catch (error) {
+      console.error("Failed to launch runbook result:", error);
+    }
+  };
 
-  const handleRun = useCallback(() => {
+  const handleRun = () => {
     if (editingRunbook === null || editingRunbook.actions.length === 0) return;
 
     const parameters = collectRuntimeParameters(editingRunbook, t);
@@ -119,15 +113,9 @@ export function useRunbookExecutionFlow({
     setRuntimeParameterValues(initialRuntimeParameterValues(parameters));
     setVisibleSecureParameters(new Set());
     setRunDialogOpen(true);
-  }, [
-    captureDesktopAnalyticsEvent,
-    editingRunbook,
-    launchRunbook,
-    summarizeRunbookForTelemetry,
-    t,
-  ]);
+  };
 
-  const handleSubmitRun = useCallback(() => {
+  const handleSubmitRun = () => {
     if (missingRuntimeRequiredParameters.length > 0) {
       return;
     }
@@ -139,23 +127,16 @@ export function useRunbookExecutionFlow({
     setRuntimeParameterValues({});
     setVisibleSecureParameters(new Set());
     void launchRunbook(parameterValues);
-  }, [
-    launchRunbook,
-    missingRuntimeRequiredParameters.length,
-    runtimeParameterValues,
-  ]);
+  };
 
-  const handleRuntimeParameterValueChange = useCallback(
-    (key: string, value: string) => {
-      setRuntimeParameterValues((current) => ({
-        ...current,
-        [key]: value,
-      }));
-    },
-    [],
-  );
+  const handleRuntimeParameterValueChange = (key: string, value: string) => {
+    setRuntimeParameterValues((current) => ({
+      ...current,
+      [key]: value,
+    }));
+  };
 
-  const handleToggleSecureParameterVisibility = useCallback((key: string) => {
+  const handleToggleSecureParameterVisibility = (key: string) => {
     setVisibleSecureParameters((current) => {
       const next = new Set(current);
       if (next.has(key)) {
@@ -165,9 +146,9 @@ export function useRunbookExecutionFlow({
       }
       return next;
     });
-  }, []);
+  };
 
-  const handleCancelRunDialog = useCallback(() => {
+  const handleCancelRunDialog = () => {
     if (editingRunbook !== null) {
       captureDesktopAnalyticsEvent("desktop_runbook_run_dialog_cancelled", {
         ...summarizeRunbookForTelemetry(editingRunbook),
@@ -175,12 +156,7 @@ export function useRunbookExecutionFlow({
       });
     }
     setRunDialogOpen(false);
-  }, [
-    captureDesktopAnalyticsEvent,
-    editingRunbook,
-    runtimeParameters.length,
-    summarizeRunbookForTelemetry,
-  ]);
+  };
 
   return {
     runDialogOpen,

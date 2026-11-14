@@ -1052,7 +1052,7 @@ function ArtifactListItem({
   }
   let iconClassName = "text-muted-foreground";
   if (isPendingExecution) {
-    iconClassName = "animate-spin text-amber-500";
+    iconClassName = "text-amber-500";
   }
 
   return (
@@ -1333,7 +1333,7 @@ function ArtifactDetails({
 }
 
 /** What a host needs from Runbook results without owning their data: the list size and what waits for a person. */
-export interface RunbookResultsSummary {
+interface RunbookResultsSummary {
   /** Runs and latest drafts in the list. */
   count: number;
   /** Runs that ended in failure. */
@@ -1342,18 +1342,24 @@ export interface RunbookResultsSummary {
   pendingDrafts: Array<{ proposalId: string; title: string; version: number; kind: RunbookAuthoringProposalKind }>;
 }
 
+const EMPTY_PROPOSAL_LIST: RunbookAuthoringProposalReview[] = [];
+const EMPTY_REFERENCE_LIST: IncidentArtifactReference[] = [];
+
 /**
  * The data and the selection of Runbook results: the runs and drafts of one incident, which one is open, and the
  * automatic choices (a run in progress, a new draft). A host reads the summary and renders `RunbookResultsView`.
+ * `enabled` false (closed rail) stops the scans, loads and subscriptions; reopening refetches.
  */
 export function useRunbookResults({
   messages,
   incidentId,
   sessionId,
+  enabled = true,
 }: {
   messages: IncidentArtifactsMessage[];
   incidentId?: string | null;
   sessionId?: string | null;
+  enabled?: boolean;
 }) {
   const { t } = useTranslation();
   const { runbooks, agent } = useBitsentryServices();
@@ -1375,8 +1381,8 @@ export function useRunbookResults({
   const currentIncidentIdRef = useRef(incidentId);
 
   const messageProposals = useMemo(
-    () => collectRunbookProposalArtifacts(messages),
-    [messages],
+    () => (enabled ? collectRunbookProposalArtifacts(messages) : EMPTY_PROPOSAL_LIST),
+    [enabled, messages],
   );
   const proposals = useMemo(
     () => markLatestRunbookProposalArtifacts([
@@ -1418,19 +1424,17 @@ export function useRunbookResults({
   // What can change the proposal list, as values that stay the same while a reply streams: the proposals the messages
   // already carry, and how many agent turns have finished. A request per streamed update would flood the IPC channel
   // (240 requests a minute are allowed). Actions on a proposal refresh through `refreshProposals` directly.
-  const proposalKey = useMemo(
-    () => messageProposals.map((proposal) => `${proposal.proposalId}@${String(proposal.artifactVersion)}`).join("|"),
-    [messageProposals],
-  );
-  const finishedAgentTurns = useMemo(
-    () => messages.filter((message) => message.kind === "agent" && !isAgentMessageInProgress(message)).length,
-    [messages],
-  );
+  const proposalKey = messageProposals.map((proposal) => `${proposal.proposalId}@${String(proposal.artifactVersion)}`).join("|");
+  const finishedAgentTurns = enabled
+    ? messages.filter((message) => message.kind === "agent" && !isAgentMessageInProgress(message)).length
+    : 0;
   useEffect(() => {
+    if (!enabled) return;
     void refreshProposals();
-  }, [refreshProposals, proposalKey, finishedAgentTurns]);
+  }, [enabled, refreshProposals, proposalKey, finishedAgentTurns]);
 
   useEffect(() => {
+    if (!enabled) return;
     const proposalCountIncreased = proposals.length > previousProposalCountRef.current;
     previousProposalCountRef.current = proposals.length;
     if (proposals.length === 0) {
@@ -1452,9 +1456,10 @@ export function useRunbookResults({
       setSelectedProposalId(latest.proposalId);
       viewingProposalHistoryRef.current = false;
     }
-  }, [proposals, selectedProposalId, showProposalDetails]);
+  }, [enabled, proposals, selectedProposalId, showProposalDetails]);
 
   useEffect(() => {
+    if (!enabled) return;
     const refreshStoredRunbookArtifacts = () => {
       setStoredResults(loadStoredResults());
       setStoredTraces(loadStoredResultTraces());
@@ -1472,7 +1477,7 @@ export function useRunbookResults({
         refreshStoredRunbookArtifacts,
       );
     };
-  }, []);
+  }, [enabled]);
 
   const incidentStoredResults = useMemo(
     () => filterStoredResultsForIncident(storedResults, incidentId),
@@ -1480,11 +1485,12 @@ export function useRunbookResults({
   );
 
   const references = useMemo(() => {
+    if (!enabled) return EMPTY_REFERENCE_LIST;
     return mergeStoredResultsIntoReferences(
       collectArtifactReferences(messages),
       incidentStoredResults,
     );
-  }, [incidentStoredResults, messages]);
+  }, [enabled, incidentStoredResults, messages]);
 
   const trackedExecutionIds = useMemo(() => {
     const ids = new Set<string>();
@@ -1659,6 +1665,7 @@ export function useRunbookResults({
   );
 
   useEffect(() => {
+    if (!enabled) return;
     if (artifacts.length === 0) {
       setSelectedKey(null);
       return;
@@ -1697,38 +1704,35 @@ export function useRunbookResults({
     }
 
     setSelectedKey(preferred.key);
-  }, [artifacts, selectedKey]);
+  }, [artifacts, enabled, selectedKey]);
 
   const selectedArtifact =
     artifacts.find((artifact) => artifact.key === selectedKey) ?? null;
-  const latestProposals = useMemo(
-    () => proposals.filter((proposal) => proposal.isLatest),
-    [proposals],
-  );
+  const latestProposals = proposals.filter((proposal) => proposal.isLatest);
   const selectedProposal =
     proposals.find((proposal) => proposal.proposalId === selectedProposalId) ?? null;
 
-  const selectRun = useCallback((key: string) => {
+  const selectRun = (key: string) => {
     setSelectedKey(key);
     setSelectedProposalId(null);
     viewingProposalHistoryRef.current = false;
     setShowProposalDetails(false);
-  }, []);
+  };
   /** Opens the newest version of a draft, the way picking it in the list does. */
-  const selectDraft = useCallback((proposalId: string) => {
+  const selectDraft = (proposalId: string) => {
     setSelectedProposalId(proposalId);
     viewingProposalHistoryRef.current = false;
     setShowProposalDetails(true);
-  }, []);
+  };
   /** Opens one version from the version picker; an older version is kept while the list refreshes. */
-  const selectDraftVersion = useCallback((proposalId: string) => {
+  const selectDraftVersion = (proposalId: string) => {
     const proposal = proposals.find((candidate) => candidate.proposalId === proposalId);
     setSelectedProposalId(proposalId);
     viewingProposalHistoryRef.current = proposal?.isLatest === false;
     setShowProposalDetails(true);
-  }, [proposals]);
+  };
 
-  const summary = useMemo<RunbookResultsSummary>(() => ({
+  const summary: RunbookResultsSummary = {
     count: artifacts.length + latestProposals.length,
     failedRuns: artifacts
       .filter((artifact) => artifact.status === "failed")
@@ -1746,7 +1750,7 @@ export function useRunbookResults({
         version: proposal.artifactVersion,
         kind: proposal.kind,
       })),
-  }), [artifacts, latestProposals]);
+  };
 
   return {
     agent,
@@ -1900,7 +1904,19 @@ export default function IncidentArtifactsRail({
   onRevisionRequested?: (requestedEdit: string) => void;
 }) {
   const { t } = useTranslation();
-  const results = useRunbookResults({ messages, incidentId, sessionId });
+  // The results stay on screen for the slide-out, then unmount so a closed rail keeps no result DOM.
+  const [slidOut, setSlidOut] = useState(!isOpen);
+  const bodyMounted = isOpen || !slidOut;
+  const results = useRunbookResults({ messages, incidentId, sessionId, enabled: bodyMounted });
+  useEffect(() => {
+    if (isOpen) return undefined;
+    const timer = window.setTimeout(() => setSlidOut(true), 300);
+    return () => {
+      window.clearTimeout(timer);
+      setSlidOut(false);
+    };
+  }, [isOpen]);
+
   let railTransformClass = "translate-x-full";
   if (isOpen) {
     railTransformClass = "translate-x-0";
@@ -1910,7 +1926,8 @@ export default function IncidentArtifactsRail({
     <aside
       data-tour="incidents-artifacts-rail"
       className={cn(
-        "absolute inset-y-0 right-0 z-20 flex w-full max-w-[430px] flex-col border-l border-border bg-background/95 shadow-2xl backdrop-blur transition-transform duration-300",
+        "absolute inset-y-0 right-0 z-20 flex w-full max-w-[430px] flex-col border-l border-border bg-background/95 shadow-2xl transition-transform duration-300",
+        bodyMounted && "backdrop-blur",
         railTransformClass,
       )}
     >
@@ -1938,10 +1955,12 @@ export default function IncidentArtifactsRail({
         </button>
       </div>
 
-      <RunbookResultsView
-        results={results}
-        onRevisionRequested={onRevisionRequested}
-      />
+      {bodyMounted && (
+        <RunbookResultsView
+          results={results}
+          onRevisionRequested={onRevisionRequested}
+        />
+      )}
     </aside>
   );
 }

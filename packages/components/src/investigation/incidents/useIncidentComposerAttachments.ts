@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState, type ClipboardEvent } from "react";
+import { useRef, useState, type ClipboardEvent } from "react";
 import type { ModelCatalogEntry } from "../../llm/modelCatalog";
 import type {
   ComposerAttachment,
@@ -48,98 +48,92 @@ export function useIncidentComposerAttachments(
   const imageInputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const handlePickImages = useCallback(() => {
+  const handlePickImages = () => {
     if (!selectedModelCapability?.supportsImageInput) return;
     imageInputRef.current?.click();
-  }, [selectedModelCapability]);
+  };
 
-  const handlePickFiles = useCallback(() => {
+  const handlePickFiles = () => {
     if (!composerSupportsFiles) return;
     fileInputRef.current?.click();
-  }, [composerSupportsFiles]);
+  };
 
-  const handleAttachmentFilesSelected = useCallback(
-    async (files: FileList | null) => {
-      if (!files || files.length === 0) return;
+  const handleAttachmentFilesSelected = async (files: FileList | null) => {
+    if (!files || files.length === 0) return;
 
-      const acceptedFiles = Array.from(files)
-        .filter(
-          (file) =>
-            file.size <= 3 * 1024 * 1024 &&
-            (file.type.startsWith("image/") ||
-              getTextAttachmentMimeType(file) !== undefined),
-        )
-        .slice(0, Math.max(0, 4 - composerImages.length));
+    const acceptedFiles = Array.from(files)
+      .filter(
+        (file) =>
+          file.size <= 3 * 1024 * 1024 &&
+          (file.type.startsWith("image/") ||
+            getTextAttachmentMimeType(file) !== undefined),
+      )
+      .slice(0, Math.max(0, 4 - composerImages.length));
 
-      const nextAttachments = await Promise.all(
-        acceptedFiles
-          .map(async (file): Promise<ComposerAttachment | null> => {
-            const id = crypto.randomUUID();
-            const name = file.name || "attachment";
-            if (file.type.startsWith("image/")) {
-              return {
-                id,
-                type: "image",
-                name,
-                mimeType: file.type || "image/png",
-                sizeBytes: file.size,
-                dataUrl: await readFileAsDataUrl(file),
-              };
-            }
+    const nextAttachments = await Promise.all(
+      acceptedFiles
+        .map(async (file): Promise<ComposerAttachment | null> => {
+          const id = crypto.randomUUID();
+          const name = file.name || "attachment";
+          if (file.type.startsWith("image/")) {
+            return {
+              id,
+              type: "image",
+              name,
+              mimeType: file.type || "image/png",
+              sizeBytes: file.size,
+              dataUrl: await readFileAsDataUrl(file),
+            };
+          }
 
-            const mimeType = getTextAttachmentMimeType(file);
-            if (mimeType === undefined) return null;
-            const text = await file.text();
-            if (mimeType === "text/csv") {
-              const nonEmptyLines = text.split(/\r?\n/).filter((line) => line.length > 0);
-              const rowCount = Math.max(0, nonEmptyLines.length - 1);
-              return {
-                id, type: "csv", name, mimeType, sizeBytes: file.size, text,
-                rowCount, totalRowCount: rowCount,
-              };
-            }
-            return { id, type: "text", name, mimeType, sizeBytes: file.size, text };
-          }),
-      );
+          const mimeType = getTextAttachmentMimeType(file);
+          if (mimeType === undefined) return null;
+          const text = await file.text();
+          if (mimeType === "text/csv") {
+            const nonEmptyLines = text.split(/\r?\n/).filter((line) => line.length > 0);
+            const rowCount = Math.max(0, nonEmptyLines.length - 1);
+            return {
+              id, type: "csv", name, mimeType, sizeBytes: file.size, text,
+              rowCount, totalRowCount: rowCount,
+            };
+          }
+          return { id, type: "text", name, mimeType, sizeBytes: file.size, text };
+        }),
+    );
 
-      const attachments = nextAttachments.filter(
-        (attachment): attachment is ComposerAttachment => attachment !== null,
-      );
-      if (attachments.length === 0) return;
-      setComposerImages((prev) => [...prev, ...attachments].slice(0, 4));
-    },
-    [composerImages.length],
-  );
+    const attachments = nextAttachments.filter(
+      (attachment): attachment is ComposerAttachment => attachment !== null,
+    );
+    if (attachments.length === 0) return;
+    setComposerImages((prev) => [...prev, ...attachments].slice(0, 4));
+  };
 
-  const handleComposerPaste = useCallback(
-    async (event: ClipboardEvent<HTMLTextAreaElement>) => {
-      if (!selectedModelCapability?.supportsImageInput) return;
+  const handleComposerPaste = async (event: ClipboardEvent<HTMLTextAreaElement>) => {
+    if (!selectedModelCapability?.supportsImageInput) return;
 
-      const clipboardItems = Array.from(event.clipboardData?.items ?? []);
-      const imageFiles = clipboardItems
-        .filter(
-          (item) => item.kind === "file" && item.type.startsWith("image/"),
-        )
-        .map((item) => item.getAsFile())
-        .filter((file): file is File => file instanceof File);
+    const clipboardItems = Array.from(event.clipboardData?.items ?? []);
+    const imageFiles = clipboardItems
+      .filter(
+        (item) => item.kind === "file" && item.type.startsWith("image/"),
+      )
+      .map((item) => item.getAsFile())
+      .filter((file): file is File => file instanceof File);
 
-      if (imageFiles.length === 0) return;
+    if (imageFiles.length === 0) return;
 
-      event.preventDefault();
+    event.preventDefault();
 
-      const transferable = new DataTransfer();
-      for (const file of imageFiles) {
-        transferable.items.add(file);
-      }
+    const transferable = new DataTransfer();
+    for (const file of imageFiles) {
+      transferable.items.add(file);
+    }
 
-      await handleAttachmentFilesSelected(transferable.files);
-    },
-    [handleAttachmentFilesSelected, selectedModelCapability],
-  );
+    await handleAttachmentFilesSelected(transferable.files);
+  };
 
-  const handleRemoveComposerImage = useCallback((imageId: string) => {
+  const handleRemoveComposerImage = (imageId: string) => {
     setComposerImages((prev) => prev.filter((image) => image.id !== imageId));
-  }, []);
+  };
 
   return {
     composerImages,

@@ -238,14 +238,11 @@ export function ModelPicker({
     [onSelectModelSelection, onSelectProvider, onSelectModel],
   );
 
-  const handleProviderClick = useCallback(
-    (providerKey: ModelCatalogProviderKey) => {
-      if (isProviderLocked && providerKey !== selectedProviderKey) return;
-      setActivePanel(providerKey);
-      setSearch("");
-    },
-    [isProviderLocked, selectedProviderKey],
-  );
+  const handleProviderClick = (providerKey: ModelCatalogProviderKey) => {
+    if (isProviderLocked && providerKey !== selectedProviderKey) return;
+    setActivePanel(providerKey);
+    setSearch("");
+  };
 
   const panelProvider = activePanel ?? selectedProviderKey ?? configuredProviderKeys[0] ?? null;
 

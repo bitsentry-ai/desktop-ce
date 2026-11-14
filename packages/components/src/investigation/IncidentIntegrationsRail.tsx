@@ -66,16 +66,16 @@ export function useIntegrationsRailState({ incidentId, runbookRailOpen, closeRun
   const reportSummary = useCallback((next: IntegrationsRailSummary) => {
     setSummaryState((previous) => (previous.incidentId === incidentId && summaryKey(previous.summary) === summaryKey(next) ? previous : { incidentId, summary: next }));
   }, [incidentId]);
-  const toggle = useCallback((view: IntegrationsRailView) => {
+  const toggle = (view: IntegrationsRailView) => {
     setUi((previous) => {
       const state = forIncident(previous, incidentId);
       if (state.open && state.view === view) return { ...state, open: false };
       return { ...state, open: true, view, openedByUser: true };
     });
     closeRunbookRail();
-  }, [closeRunbookRail, incidentId]);
-  const close = useCallback(() => { update({ open: false }); }, [update]);
-  const setView = useCallback((view: IntegrationsRailView) => { update({ view }); }, [update]);
+  };
+  const close = () => { update({ open: false }); };
+  const setView = (view: IntegrationsRailView) => { update({ view }); };
 
   useEffect(() => {
     if (runbookRailOpen) update({ open: false });
@@ -181,7 +181,7 @@ export function usePolledRows<T>(threadId: string, port: { list(threadId: string
     const timer = setInterval(() => { void refresh(); }, intervalMs);
     return () => { generationRef.current += 1; clearInterval(timer); };
   }, [intervalMs, refresh]);
-  const fail = useCallback(() => { setFailed(true); }, []);
+  const fail = () => { setFailed(true); };
   return { rows, failed, refresh, fail };
 }
 

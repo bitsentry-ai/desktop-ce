@@ -107,6 +107,7 @@ export type AgentRuntimeIncidentHistoryLoader = (
 export type AgentRuntimeIncidentHistorySaver = (
   incidentThreadId: string,
   messages: ThreadChatMessage[],
+  changedIndexes?: readonly number[],
 ) => Promise<void>
 
 export type AgentRuntimeEventPayload = AgentEventPayload<AgentEventData>
@@ -549,6 +550,9 @@ interface AgentSession {
   incidentSave?: Promise<void>
   /** Latest messages requested while a write runs; written once it finishes. */
   pendingIncidentMessages?: ThreadChatMessage[]
+  /** Changed message indexes for the next write; null means write the full list. */
+  pendingIncidentIndexes?: Set<number> | null
+  completedAt?: number
   /** Messages array of the last successful write, to skip writes when nothing changed. */
   persistedMessages?: ThreadChatMessage[]
 }
@@ -3050,6 +3054,8 @@ export class AgentRuntimeService {
       session.currentTurnVisibleRunbookExecutionIds = undefined
       session.currentTurnId = undefined
       this.settleQueueAfterTurn(session)
+      session.completedAt = Date.now()
+      this.evictCompletedSessions()
     }
   }
 
@@ -3479,10 +3485,16 @@ export class AgentRuntimeService {
   }
 
   /** Writes the snapshot messages; requests during a running write collapse into one write of the latest. */
-  private persistIncidentMessages(session: AgentSession): void {
+  private persistIncidentMessages(session: AgentSession, changedIndex?: number): void {
     const save = this.saveIncidentMessages
     if (save === undefined || session.incidentThreadId === undefined) return
     if (session.snapshot.messages === session.persistedMessages) return
+    if (changedIndex === undefined || session.pendingIncidentIndexes === null) {
+      session.pendingIncidentIndexes = null
+    } else {
+      session.pendingIncidentIndexes ??= new Set<number>()
+      session.pendingIncidentIndexes.add(changedIndex)
+    }
     session.pendingIncidentMessages = session.snapshot.messages
     session.incidentSave ??= this.writeIncidentMessages(session, save)
   }
@@ -3490,17 +3502,21 @@ export class AgentRuntimeService {
   private async writeIncidentMessages(session: AgentSession, save: AgentRuntimeIncidentHistorySaver): Promise<void> {
     let messages = session.pendingIncidentMessages
     while (messages !== undefined) {
+      const indexes = session.pendingIncidentIndexes
       session.pendingIncidentMessages = undefined
+      session.pendingIncidentIndexes = undefined
       try {
-        await save(session.incidentThreadId ?? '', messages)
+        await save(session.incidentThreadId ?? '', messages, indexes ? [...indexes] : undefined)
         // Set only on success, so a failed write is retried by the next request or destroy().
         session.persistedMessages = messages
       } catch (error) {
+        session.pendingIncidentIndexes = null
         log.warn(`[agent-runtime:${session.id}] Failed to persist incident messages:`, error)
       }
       messages = session.pendingIncidentMessages
     }
     session.incidentSave = undefined
+    this.evictCompletedSessions()
   }
 
   private flushStreamUpdate(session: AgentSession): void {
@@ -3536,7 +3552,19 @@ export class AgentRuntimeService {
     }, 'message')
     // Text-only answers have no structural events, so persist every coalesced update;
     // a write in flight collapses later requests into one write of the latest messages.
-    this.persistIncidentMessages(session)
+    this.persistIncidentMessages(session, messageIndex)
+  }
+
+  private evictCompletedSessions(): void {
+    if (this.loadIncidentMessages === undefined) return
+    const completed = [...this.sessions.values()].filter((session) =>
+      session.completedAt !== undefined && session.state !== 'RUNNING' && session.loopActive !== true &&
+      session.queuedFollowUps.length === 0 && session.pendingSteers.length === 0 &&
+      session.incidentSave === undefined && session.pendingIncidentMessages === undefined &&
+      session.streamFlushTimer === undefined &&
+      session.persistedMessages === session.snapshot.messages,
+    ).sort((a, b) => (b.completedAt ?? 0) - (a.completedAt ?? 0))
+    for (const session of completed.slice(3)) this.sessions.delete(session.id)
   }
 
   private postToRenderer(payload: AgentRuntimeEventPayload, label: string): void {

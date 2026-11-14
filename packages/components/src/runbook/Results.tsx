@@ -889,26 +889,22 @@ export default function ResultsPage() {
 
     return sortedResults;
   }, [runbookFilter, sortedResults]);
-  const resultCounts = useMemo(
-    () =>
-      filteredResults.reduce<Record<RunResultStatus | "total", number>>(
-        (counts, result) => {
-          counts.total += 1;
-          counts[effectiveStatus(result, traceMap[result.id]?.execution)] += 1;
-          return counts;
-        },
-        {
-          total: 0,
-          queued: 0,
-          pending: 0,
-          running: 0,
-          claim_expired: 0,
-          completed: 0,
-          failed: 0,
-          cancelled: 0,
-        },
-      ),
-    [filteredResults, traceMap],
+  const resultCounts = filteredResults.reduce<Record<RunResultStatus | "total", number>>(
+    (counts, result) => {
+      counts.total += 1;
+      counts[effectiveStatus(result, traceMap[result.id]?.execution)] += 1;
+      return counts;
+    },
+    {
+      total: 0,
+      queued: 0,
+      pending: 0,
+      running: 0,
+      claim_expired: 0,
+      completed: 0,
+      failed: 0,
+      cancelled: 0,
+    },
   );
   const showAllHistory =
     activeId === null &&
@@ -1025,18 +1021,13 @@ export default function ResultsPage() {
     });
   }, [activeExecution]);
 
-  const activeStep = useMemo(
-    () =>
-      activeExecution?.steps.find(
-        (step) => stepSelectionKey(step) === selectedStepKey,
-      ) ??
-      activeExecution?.steps[0] ??
-      null,
-    [activeExecution, selectedStepKey],
-  );
+  const activeStep =
+    activeExecution?.steps.find((step) => stepSelectionKey(step) === selectedStepKey) ??
+    activeExecution?.steps[0] ??
+    null;
 
   const activeExecutionId = activeResult?.executionId;
-  const handleCancel = useCallback(async () => {
+  const handleCancel = async () => {
     if (cancelPending) return;
     const executionId = activeExecutionId;
     if (!isUuid(executionId)) {
@@ -1061,7 +1052,7 @@ export default function ResultsPage() {
       .finally(() => {
         setCancelPending(false);
       });
-  }, [activeExecutionId, cancelPending, runbooks]);
+  };
 
   // ── Filtered list view when ?runbook=<id> is present ─────────────────────
   if (runbookFilter !== null && runbookFilter.length > 0 && activeId === null) {

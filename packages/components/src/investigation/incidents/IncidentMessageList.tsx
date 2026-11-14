@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useImperativeHandle, useRef, useState, type RefObject } from "react";
+import { memo, useEffect, useImperativeHandle, useRef, useState, type RefObject } from "react";
 import { LegendList, type LegendListRef, type MaintainScrollAtEndOptions } from "@legendapp/list/react";
 import { useTranslation } from "@bitsentry-ce/i18n";
 import { ChatBubble } from "../../chat/ChatBubble";
@@ -100,7 +100,7 @@ export const IncidentMessageList = memo(function IncidentMessageList({
 
   // Going to a citation's source leaves the end, so following stops first. A source row outside the render window
   // is not mounted, so the list scrolls to its message and highlights the quote once the row mounts.
-  const revealSource = useCallback((citation: AssistantCitation) => {
+  const revealSource = (citation: AssistantCitation) => {
     liveFollowRef.current = false;
     leftEndRef.current = true;
     setLiveFollow(false);
@@ -114,7 +114,7 @@ export const IncidentMessageList = memo(function IncidentMessageList({
       requestAnimationFrame(() => { retry(frame + 1); });
     };
     requestAnimationFrame(() => { retry(1); });
-  }, [listRef, messages]);
+  };
 
   useEffect(() => {
     const node = listRef.current?.getScrollableNode();

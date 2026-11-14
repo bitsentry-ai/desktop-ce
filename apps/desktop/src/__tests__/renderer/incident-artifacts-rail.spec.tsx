@@ -885,10 +885,10 @@ describe("IncidentArtifactsRail proposal refresh while a reply streams", () => {
     { kind: "agent", status, toolCalls: [...toolCalls] },
   ];
 
-  function update(rail: Rail, messages: Messages, incidentId = INCIDENT_ID) {
+  function update(rail: Rail, messages: Messages, incidentId = INCIDENT_ID, isOpen = true) {
     rail.rerender(
       <BitsentryServicesProvider services={rail.services}>
-        <IncidentArtifactsRail isOpen onClose={() => {}} messages={messages} incidentId={incidentId} />
+        <IncidentArtifactsRail isOpen={isOpen} onClose={() => {}} messages={messages} incidentId={incidentId} />
       </BitsentryServicesProvider>,
     );
   }
@@ -973,6 +973,25 @@ describe("IncidentArtifactsRail proposal refresh while a reply streams", () => {
     await waitFor(() => { expect(restore).toHaveBeenCalled(); });
     expect((await screen.findAllByText("Action runbook v3")).length).toBeGreaterThan(0);
     expect(list).toHaveBeenCalledTimes(before + 1);
+  });
+
+  it("does no proposal work while closed, loads on open and drops the results after closing", async () => {
+    const v1 = proposalReview("proposal-stream-v1", 1, "Closed rail runbook");
+    const list = vi.fn().mockResolvedValue([v1]);
+    const rail = renderRail({ agent: agentWith(list), messages: turn("streaming") });
+    await waitFor(() => { expect(list).toHaveBeenCalledTimes(1); });
+    const setOpen = (isOpen: boolean, messages: Messages) => { update(rail, messages, INCIDENT_ID, isOpen); };
+
+    setOpen(false, turn("streaming"));
+    await waitFor(() => { expect(document.querySelector('[data-tour="incidents-artifacts-list"]')).toBeNull(); });
+    for (let delta = 0; delta < 50; delta += 1) setOpen(false, turn("streaming", [proposalCall(v1)]));
+    setOpen(false, turn("done", [proposalCall(v1)]));
+    await flush();
+    expect(list).toHaveBeenCalledTimes(1);
+
+    setOpen(true, turn("done", [proposalCall(v1)]));
+    await waitFor(() => { expect(list).toHaveBeenCalledTimes(2); });
+    expect((await screen.findAllByText("Closed rail runbook")).length).toBeGreaterThan(0);
   });
 
   it("never lets an older response overwrite a newer one when two refreshes overlap", async () => {

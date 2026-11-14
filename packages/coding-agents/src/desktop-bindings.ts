@@ -133,7 +133,7 @@ export function createDesktopCodingAgentBindings(
   ): ReturnType<typeof executeSharedClaudeCode> {
     return executeSharedClaudeCode({
       ...input,
-      debug: input.debug ?? debugRecorder,
+      debug: input.debug ?? (isCodingAgentDebugEnabled() ? debugRecorder : undefined),
     })
   }
 
@@ -142,7 +142,7 @@ export function createDesktopCodingAgentBindings(
   ): ReturnType<typeof executeSharedCodex> {
     return executeSharedCodex({
       ...input,
-      debug: input.debug ?? codexDebugRecorder,
+      debug: input.debug ?? (isCodingAgentDebugEnabled() ? codexDebugRecorder : undefined),
     })
   }
 
@@ -151,7 +151,7 @@ export function createDesktopCodingAgentBindings(
   ): ReturnType<typeof executeSharedOpenCode> {
     return executeSharedOpenCode({
       ...input,
-      debug: input.debug ?? openCodeDebugRecorder,
+      debug: input.debug ?? (isCodingAgentDebugEnabled() ? openCodeDebugRecorder : undefined),
     })
   }
 
@@ -162,7 +162,7 @@ export function createDesktopCodingAgentBindings(
         reportError(error, context) {
           options.captureException(error, context)
         },
-        debugRecorder,
+        debugRecorder: isCodingAgentDebugEnabled() ? debugRecorder : undefined,
       })
     }
   }

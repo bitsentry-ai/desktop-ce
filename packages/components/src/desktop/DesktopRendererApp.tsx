@@ -1,8 +1,9 @@
-import type { ComponentType } from 'react'
+import { lazy, type ComponentType } from 'react'
 import { DesktopAppShell } from './DesktopAppShell'
 import { captureDesktopPageview } from './DesktopPosthogRenderer'
-import RunbookPage from './DesktopRunbookRoute'
 import { DesktopRouteTracing } from './DesktopSentryRenderer'
+
+const RunbookPage = lazy(() => import('./DesktopRunbookRoute'))
 
 type DesktopRendererAppProps = {
   AppSettingsPage: ComponentType

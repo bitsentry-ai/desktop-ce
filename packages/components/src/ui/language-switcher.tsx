@@ -35,14 +35,11 @@ export function LanguageSwitcher({
   const { locale, setLocale } = useLocale();
   const label = placeholder ?? t("common.systemSettings.language");
 
-  const handleChange = React.useCallback(
-    (next: string) => {
-      if (isSupportedLocale(next)) {
-        void setLocale(next);
-      }
-    },
-    [setLocale],
-  );
+  const handleChange = (next: string) => {
+    if (isSupportedLocale(next)) {
+      void setLocale(next);
+    }
+  };
 
   return (
     <div className={cn("inline-flex", className)}>

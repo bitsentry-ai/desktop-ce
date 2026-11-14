@@ -11,7 +11,6 @@
  */
 
 import {
-  useCallback,
   useEffect,
   useEffectEvent,
   useMemo,
@@ -322,10 +321,7 @@ export function Composer({
     },
     [selectedModelCapability],
   );
-  const contextWindowLimit = useMemo(
-    () => getModelContextWindowLimit(selectedModelCapability, traitValues),
-    [selectedModelCapability, traitValues],
-  );
+  const contextWindowLimit = getModelContextWindowLimit(selectedModelCapability, traitValues);
 
   let showPlanMode = false;
   if (selectedProviderKey !== null) {
@@ -389,51 +385,45 @@ export function Composer({
 
   const isEditingQueuedMessage = queue?.editingId != null;
   const canSteer = queue?.canSteer === true;
-  const submit = useCallback(
-    (alternate: boolean) => {
-      let delivery: AgentMessageDelivery | undefined;
-      if (isProcessing && !isEditingQueuedMessage) {
-        const mode = resolveComposerDispatchMode({ running: true, canSteer, alternateModifier: alternate });
-        delivery = mode === "steer" ? "steer" : "queue";
-      }
-      onSend({ accessLevel, interactionMode, traitValues, delivery });
-    },
-    [onSend, isProcessing, isEditingQueuedMessage, canSteer, accessLevel, interactionMode, traitValues],
-  );
+  const submit = (alternate: boolean) => {
+    let delivery: AgentMessageDelivery | undefined;
+    if (isProcessing && !isEditingQueuedMessage) {
+      const mode = resolveComposerDispatchMode({ running: true, canSteer, alternateModifier: alternate });
+      delivery = mode === "steer" ? "steer" : "queue";
+    }
+    onSend({ accessLevel, interactionMode, traitValues, delivery });
+  };
 
   // ── Keyboard: Enter sends, Shift+Enter newline ─────────────────────────────
-  const handleKeyDown = useCallback(
-    (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-      // In a compact remediation list, the arrow keys move the pick while the search text keeps the focus.
-      if (remediation !== undefined && moveRemediationSelection(remediation, e.key)) {
-        e.preventDefault();
-        return;
-      }
-      if (e.nativeEvent.isComposing) return;
-      const modifier = e.metaKey || e.ctrlKey;
-      if (queue !== undefined && question === undefined && remediation === undefined && handleQueueShortcut(e, queue)) return;
-      if (e.key !== "Enter" || e.shiftKey) return;
-      if (question !== undefined) {
-        e.preventDefault();
-        if (question.canSubmit) question.submit();
-        return;
-      }
-      if (remediation !== undefined) {
-        e.preventDefault();
-        if (remediation.primary !== undefined && remediation.primary.disabled !== true && !remediation.submitting) remediation.primary.run();
-        return;
-      }
-      if (canSend) {
-        e.preventDefault();
-        submit(modifier);
-      }
-    },
-    [submit, canSend, question, remediation, queue],
-  );
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    // In a compact remediation list, the arrow keys move the pick while the search text keeps the focus.
+    if (remediation !== undefined && moveRemediationSelection(remediation, e.key)) {
+      e.preventDefault();
+      return;
+    }
+    if (e.nativeEvent.isComposing) return;
+    const modifier = e.metaKey || e.ctrlKey;
+    if (queue !== undefined && question === undefined && remediation === undefined && handleQueueShortcut(e, queue)) return;
+    if (e.key !== "Enter" || e.shiftKey) return;
+    if (question !== undefined) {
+      e.preventDefault();
+      if (question.canSubmit) question.submit();
+      return;
+    }
+    if (remediation !== undefined) {
+      e.preventDefault();
+      if (remediation.primary !== undefined && remediation.primary.disabled !== true && !remediation.submitting) remediation.primary.run();
+      return;
+    }
+    if (canSend) {
+      e.preventDefault();
+      submit(modifier);
+    }
+  };
 
-  const handleTraitChange = useCallback((id: string, value: string | boolean) => {
+  const handleTraitChange = (id: string, value: string | boolean) => {
     setTraitValues((prev) => ({ ...prev, [id]: value }));
-  }, []);
+  };
 
   if (isArchived) return null;
 
@@ -473,7 +463,7 @@ export function Composer({
     <div className="shrink-0 px-4 pb-4">
       {threadStatus === "streaming" && showThreadWaitingIndicator && (
         <div className="mb-2 flex items-center gap-2 text-xs text-muted-foreground">
-          <Loader2 size={11} className="animate-spin" />
+          <Loader2 size={11} />
           {t("common.incidents.aiIsResponding")}
         </div>
       )}

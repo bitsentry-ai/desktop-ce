@@ -55,13 +55,14 @@ export class DesktopIpcDispatcher {
       this.options.logger.warn(`[ipc] Overwriting handler for channel: ${channel}`);
     }
     this.handlers.set(channel, handler);
-    this.options.logger.info(`[ipc] Registered handler: ${channel}`);
   }
 
   registerAll(handlers: Record<string, DesktopIpcHandler>): void {
-    for (const [channel, handler] of Object.entries(handlers)) {
+    const entries = Object.entries(handlers);
+    for (const [channel, handler] of entries) {
       this.register(channel, handler);
     }
+    this.options.logger.info(`[ipc] Registered ${entries.length} handlers (${this.handlers.size} total)`);
   }
 
   async dispatch(channel: string, payload: unknown): Promise<unknown> {

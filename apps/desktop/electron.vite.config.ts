@@ -40,6 +40,10 @@ export default defineConfig({
         ],
       },
       rollupOptions: {
+        output: {
+          // main.ts resolves the preload, renderer and assets from __dirname, so it sits next to index.js.
+          chunkFileNames: (chunk) => (chunk.name === 'main' ? '[name].js' : 'chunks/[name]-[hash].js'),
+        },
         input: {
           index: resolve(__dirname, 'src/main/platform/app/electron/index.ts'),
           cli: resolve(

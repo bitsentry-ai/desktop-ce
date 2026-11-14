@@ -43,7 +43,7 @@ const MAX_STDERR_LENGTH = 5_000
 type OpenCodeAssistantDelta = { type: 'text' | 'reasoning'; text: string }
 interface OpenCodeExecutionState {
   output: string
-  rawStdout: string
+  sawStdout: boolean
   nonJsonStdout: string
   parsedJsonLineCount: number
   stderr: string
@@ -487,9 +487,9 @@ function handleOpenCodeStdoutLine(
   appendOutput: AppendOpenCodeOutput,
   accessLevel: AccessLevel,
 ): void {
-  state.rawStdout += `${line}\n`
   const trimmed = line.trim()
   if (trimmed.length === 0) return
+  state.sawStdout = true
 
   try {
     handleParsedOpenCodeLine(
@@ -500,7 +500,7 @@ function handleOpenCodeStdoutLine(
       accessLevel,
     )
   } catch {
-    state.nonJsonStdout += `${line}\n`
+    if (state.nonJsonStdout.length < MAX_OUTPUT_LENGTH) state.nonJsonStdout += `${line}\n`
     appendOutput(`${line}\n`)
   }
 }
@@ -531,7 +531,7 @@ function buildOpenCodeArgs(
 function createOpenCodeExecutionState(): OpenCodeExecutionState {
   return {
     output: '',
-    rawStdout: '',
+    sawStdout: false,
     nonJsonStdout: '',
     parsedJsonLineCount: 0,
     stderr: '',
@@ -697,7 +697,7 @@ function recordOpenCodeCompletionAnomaly(
   if (
     state.output.trim().length === 0 &&
     state.parsedJsonLineCount === 0 &&
-    state.rawStdout.trim().length > 0
+    state.sawStdout
   ) {
     state.output = state.nonJsonStdout.trim().slice(0, MAX_OUTPUT_LENGTH)
     debug?.recordAnomaly('opencode.completed_without_stream_deltas', {
