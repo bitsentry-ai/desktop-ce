@@ -17,9 +17,8 @@ export {
 export {
   createI18nInstance,
   fallbackLng,
-  getI18nNamespaces,
-  getI18nResources,
   getSharedI18nInstance,
+  loadNamespaces,
   type CreateI18nOptions,
 } from "./instance";
 

@@ -1,5 +1,6 @@
 import type { IntegrationConnection, IntegrationConnectionInput } from "@bitsentry-ce/core/features/plugins";
 import type { AgentEventPayload, AgentSnapshotReply } from '../chat/types'
+import { subscribeToFullExecutions } from './runbookExecutionEvents'
 import type {
   AuthSessionState,
   AvailablePlugin,
@@ -67,6 +68,7 @@ type DesktopLocalBridge = {
         executionId: string
         incidentThreadId?: string | null
         execution: RunbookExecutionRecord
+        step?: { index: number; record: unknown }
       }) => void,
     ) => () => void
     onChanged: (callback: () => void) => () => void
@@ -655,7 +657,11 @@ export function createDesktopLocalBitsentryServices({
           execution: RunbookExecutionRecord
         }) => void,
       ): () => void {
-        return getDesktopBridge().runbooks.onExecutionEvent(handler)
+        return subscribeToFullExecutions(
+          (onEvent) => getDesktopBridge().runbooks.onExecutionEvent(onEvent),
+          (executionId) => ipcInvoke<RunbookExecutionRecord | null>('runbooks:getExecution', { executionId }),
+          handler,
+        )
       },
       onChanged(handler: () => void): () => void {
         return getDesktopBridge().runbooks.onChanged(handler)

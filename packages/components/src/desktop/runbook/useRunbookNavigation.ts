@@ -1,33 +1,23 @@
-import { useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 
 export function useRunbookNavigation() {
   const navigate = useNavigate();
 
-  const openRunbook = useCallback(
-    (runbookId: string) => {
-      void navigate(`/runbooks?id=${runbookId}`);
-    },
-    [navigate],
-  );
+  const openRunbook = (runbookId: string) => {
+    void navigate(`/runbooks?id=${runbookId}`);
+  };
 
-  const openRunbooks = useCallback(() => {
+  const openRunbooks = () => {
     void navigate("/runbooks");
-  }, [navigate]);
+  };
 
-  const openRunbookResults = useCallback(
-    (runbookId: string) => {
-      void navigate(`/results?runbook=${runbookId}`);
-    },
-    [navigate],
-  );
+  const openRunbookResults = (runbookId: string) => {
+    void navigate(`/results?runbook=${runbookId}`);
+  };
 
-  const openResult = useCallback(
-    (resultId: string) => {
-      void navigate(`/results?id=${resultId}`);
-    },
-    [navigate],
-  );
+  const openResult = (resultId: string) => {
+    void navigate(`/results?id=${resultId}`);
+  };
 
   return {
     openResult,

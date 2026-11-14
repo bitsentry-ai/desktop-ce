@@ -25,7 +25,8 @@ export type DesktopPosthogApi = {
 }
 
 type ConfigureDesktopPosthogRuntimeInput = {
-  posthogClient: DesktopPosthogClient
+  // Loaded only once telemetry is on, so the SDK stays out of the startup bundle.
+  loadPosthogClient: () => Promise<DesktopPosthogClient>
   posthogKey?: string
   posthogHost?: string
   productName?: string
@@ -40,6 +41,7 @@ function envString(value: string | undefined, fallback = ''): string {
   return fallback
 }
 
+let loadConfiguredPosthogClient: (() => Promise<DesktopPosthogClient>) | null = null
 let configuredPosthogClient: DesktopPosthogClient | null = null
 let POSTHOG_KEY = ''
 let POSTHOG_HOST = 'https://us.i.posthog.com'
@@ -127,12 +129,13 @@ function getDesktopAnalyticsBridge(): DesktopAnalyticsBridge {
 }
 
 export function configureDesktopPosthogRuntime({
-  posthogClient,
+  loadPosthogClient,
   posthogKey,
   posthogHost,
   productName,
 }: ConfigureDesktopPosthogRuntimeInput): DesktopPosthogApi {
-  configuredPosthogClient = posthogClient
+  loadConfiguredPosthogClient = loadPosthogClient
+  configuredPosthogClient = null
   POSTHOG_KEY = envString(posthogKey)
   POSTHOG_HOST = envString(posthogHost, 'https://us.i.posthog.com')
   PRODUCT_NAME = envString(productName, 'bitsentry-desktop')
@@ -401,7 +404,7 @@ export async function initDesktopAnalytics(): Promise<void> {
       return
     }
 
-    const posthogClient = getPosthogClient()
+    const posthogClient = (await loadConfiguredPosthogClient?.()) ?? null
     if (posthogClient === null) {
       pendingEvents.length = 0
       pendingExceptions.length = 0
@@ -413,6 +416,7 @@ export async function initDesktopAnalytics(): Promise<void> {
       return
     }
 
+    configuredPosthogClient = posthogClient
     posthogClient.init(POSTHOG_KEY, {
       api_host: POSTHOG_HOST,
       autocapture: false,

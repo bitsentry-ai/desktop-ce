@@ -76,7 +76,6 @@ function createDb(runbooks: Row[], actions: Row[] = []) {
         findUnique: async () => ({ key: "phase1.localstorage.bootstrap" }),
         upsert: async () => ({}),
       },
-      incidentMessage: table(empty),
       incidentThread: table(empty),
       runbook: runbookTable,
       runbookAction: table(actions),

@@ -24,6 +24,7 @@ import {
 } from "./claude-code-provider.service.js";
 import { getCatalogModelIds } from "@bitsentry-ce/components/llm/modelCatalog";
 import { CodexAppServerClient } from "./codex-app-server-client.js";
+import { closeCodexAppServers } from "./codex-app-server-pool.js";
 import {
   executeCodex,
   type CodexExecutionOptions,
@@ -722,6 +723,7 @@ export class CodingAgentsProviderService {
 
   async destroy(): Promise<void> {
     this.probeCache.clear();
+    await closeCodexAppServers();
     await this.hostMcpServer.stop();
   }
 }

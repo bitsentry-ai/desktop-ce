@@ -194,6 +194,37 @@ afterEach(() => {
 });
 
 describe("IncidentArtifactsRail step selection", () => {
+  it("keeps the chosen stored run when the rail closes and opens again", async () => {
+    const storedRun = (runbookId: string, runbookTitle: string, startedAt: string) => ({
+      id: `result-${runbookId}`, incidentThreadId: "incident-1", runbookId, runbookTitle, status: "completed", startedAt, completedAt: startedAt,
+    });
+    localStorage.setItem("bitsentry_results", JSON.stringify([
+      storedRun("runbook-sentry", "Retrieve errors from Sentry", "2026-05-26T01:00:00.000Z"),
+      storedRun("runbook-logs", "Check backend logs", "2026-05-26T01:01:00.000Z"),
+    ]));
+    const services = createRailServices(vi.fn());
+    const rail = (isOpen: boolean) => (
+      <BitsentryServicesProvider services={services}>
+        <IncidentArtifactsRail isOpen={isOpen} incidentId="incident-1" onClose={() => {}} messages={[]} />
+      </BitsentryServicesProvider>
+    );
+    const runButton = (title: string) => screen.getAllByText(title)[0]?.closest("button");
+    const { rerender } = render(rail(true));
+
+    await waitFor(() => { expect(runButton("Check backend logs")).toBeTruthy(); });
+    const unselected = ["Retrieve errors from Sentry", "Check backend logs"].find(
+      (title) => runButton(title)?.className.includes("border-primary") !== true,
+    ) ?? "";
+    fireEvent.click(runButton(unselected) as HTMLElement);
+    await waitFor(() => { expect(runButton(unselected)?.className).toContain("border-primary"); });
+
+    rerender(rail(false));
+    await waitFor(() => { expect(screen.queryByText(unselected)).toBeNull(); });
+    rerender(rail(true));
+
+    await waitFor(() => { expect(runButton(unselected)?.className).toContain("border-primary"); });
+  });
+
   it("selects only the clicked step when execution steps share an action id", async () => {
     renderRail();
 

@@ -1,4 +1,4 @@
-import { useCallback, useMemo, type Dispatch, type SetStateAction } from "react";
+import { type Dispatch, type SetStateAction } from "react";
 
 import { collectRunbookGlobalReferences } from "@bitsentry-ce/core";
 
@@ -18,39 +18,28 @@ export function useRunbookMetadataFlow({
   setEditingRunbook,
   commitMeta,
 }: UseRunbookMetadataFlowOptions) {
-  const unresolvedGlobalKeys = useMemo(() => {
-    if (activeEditingRunbook === null) {
-      return [];
-    }
+  const availableKeys = new Set(globalVariables.map((globalVariable) => globalVariable.key));
+  const unresolvedGlobalKeys =
+    activeEditingRunbook === null
+      ? []
+      : collectRunbookGlobalReferences(activeEditingRunbook).filter((key) => !availableKeys.has(key));
 
-    const availableKeys = new Set(
-      globalVariables.map((globalVariable) => globalVariable.key),
-    );
+  const handleTitleChange = (value: string) => {
+    setEditingRunbook((prev) => {
+      if (prev === null) {
+        return prev;
+      }
 
-    return collectRunbookGlobalReferences(activeEditingRunbook).filter(
-      (key) => !availableKeys.has(key),
-    );
-  }, [activeEditingRunbook, globalVariables]);
+      let title = value;
+      if (title.length === 0) {
+        title = "Untitled Runbook";
+      }
 
-  const handleTitleChange = useCallback(
-    (value: string) => {
-      setEditingRunbook((prev) => {
-        if (prev === null) {
-          return prev;
-        }
+      return { ...prev, title };
+    });
+  };
 
-        let title = value;
-        if (title.length === 0) {
-          title = "Untitled Runbook";
-        }
-
-        return { ...prev, title };
-      });
-    },
-    [setEditingRunbook],
-  );
-
-  const handleTitleBlur = useCallback(() => {
+  const handleTitleBlur = () => {
     if (activeEditingRunbook === null) {
       return;
     }
@@ -61,25 +50,22 @@ export function useRunbookMetadataFlow({
     }
 
     void commitMeta({ title });
-  }, [activeEditingRunbook, commitMeta]);
+  };
 
-  const handleDescriptionChange = useCallback(
-    (value: string) => {
-      setEditingRunbook((prev) => {
-        if (prev === null) {
-          return prev;
-        }
+  const handleDescriptionChange = (value: string) => {
+    setEditingRunbook((prev) => {
+      if (prev === null) {
+        return prev;
+      }
 
-        return {
-          ...prev,
-          description: value,
-        };
-      });
-    },
-    [setEditingRunbook],
-  );
+      return {
+        ...prev,
+        description: value,
+      };
+    });
+  };
 
-  const handleDescriptionBlur = useCallback(() => {
+  const handleDescriptionBlur = () => {
     if (activeEditingRunbook === null) {
       return;
     }
@@ -87,7 +73,7 @@ export function useRunbookMetadataFlow({
     void commitMeta({
       description: activeEditingRunbook.description,
     });
-  }, [activeEditingRunbook, commitMeta]);
+  };
 
   return {
     handleDescriptionBlur,

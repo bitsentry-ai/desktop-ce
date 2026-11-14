@@ -1146,6 +1146,32 @@ function cursorProbeErrorKindFromMessage(lowerMessage: string): CLIProbeErrorKin
   return appServerProbeErrorKindFromMessage(lowerMessage)
 }
 
+// OpenCode 2 changed the `run` flags, so each turn needs the major version.
+// A re-probe (settings change, doctor) refreshes it after an in-place upgrade.
+const OPENCODE_VERSION_TIMEOUT_MS = 10_000
+const openCodeMajorVersions = new Map<string, Promise<number>>()
+
+function parseMajorVersion(version: string | null): number | undefined {
+  const major = Number.parseInt(version ?? '', 10)
+  return Number.isNaN(major) ? undefined : major
+}
+
+export function getOpenCodeMajorVersion(binaryPath: string): Promise<number> {
+  const cached = openCodeMajorVersions.get(binaryPath)
+  if (cached !== undefined) return cached
+
+  const pending = runCommand(binaryPath, ['--version'], OPENCODE_VERSION_TIMEOUT_MS).then((result) => {
+    const major = parseMajorVersion(parseVersion(versionOutput(result)))
+    if (major === undefined) {
+      throw new Error(`Could not read the OpenCode version from \`${binaryPath} --version\`.`)
+    }
+    return major
+  })
+  openCodeMajorVersions.set(binaryPath, pending)
+  pending.catch(() => { openCodeMajorVersions.delete(binaryPath) })
+  return pending
+}
+
 export async function probeOpenCode(binaryPath: string, args?: string[]): Promise<CLIProbeResult> {
   const resolvedBinaryPath = await resolveProviderBinaryPath('opencode', binaryPath)
   if (resolvedBinaryPath === null) {
@@ -1175,6 +1201,8 @@ export async function probeOpenCode(binaryPath: string, args?: string[]): Promis
       message: error.message,
     }
   }
+  const major = parseMajorVersion(version)
+  if (major !== undefined) openCodeMajorVersions.set(resolvedBinaryPath, Promise.resolve(major))
 
   let auth = await getOpenCodeAuth(resolvedBinaryPath, args)
 

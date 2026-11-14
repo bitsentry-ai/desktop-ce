@@ -2,7 +2,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { DbClient } from "../src/features/desktop/desktop-database-client";
 import {
@@ -91,6 +91,21 @@ describe("incident message persistence", () => {
     expect(await loadIncidentThreadMessages(db, "thread-b")).toEqual(threadB);
   });
 
+  it("persists streaming changes without replacing history and updates the preview", async () => {
+    const history = [
+      { id: "h-1", kind: "user", text: "First" },
+      { id: "h-2", kind: "agent", streamText: "Checking", status: "streaming" },
+    ];
+    await saveIncidentThreadMessages(db, "thread-a", history);
+    const changed = { ...history[1], streamText: "Checking disk usage" };
+    await saveIncidentThreadMessages(db, "thread-a", [history[0], changed], [1]);
+    expect(await loadIncidentThreadMessages(db, "thread-a")).toEqual([history[0], changed]);
+    const rows = await db.$queryRawUnsafe<{ lastMessagePreview: string }>(
+      `SELECT "lastMessagePreview" FROM "IncidentThread" WHERE id = 'thread-a'`,
+    );
+    expect(rows[0]?.lastMessagePreview).toBe("Checking disk usage");
+  });
+
   it("appends after the stored messages and keeps all of them", async () => {
     const handlers = createDesktopStateHandlers(db);
     const history = [
@@ -106,6 +121,35 @@ describe("incident message persistence", () => {
     await handlers["incidents:appendThreadMessages"]({ threadId: "thread-a", messages: failedSend });
 
     expect(await loadIncidentThreadMessages(db, "thread-a")).toEqual([...history, ...failedSend]);
+  });
+
+  it("writes on the main connection and keeps paging a long thread after the worker dies", async () => {
+    await db.$startWorker();
+    const handlers = createDesktopStateHandlers(db);
+    const thread = Array.from({ length: 500 }, (_, index) => ({ id: `m-${String(index)}`, kind: "user", text: `question ${String(index)} ${"x".repeat(index === 499 ? 2_000_000 : 3_000)}` }));
+    // A write is committed when the call returns, so a later write on the main connection can reference it.
+    const saving = saveIncidentThreadMessages(db, "thread-a", thread);
+    expect(await db.$queryRawUnsafe('SELECT COUNT(*) AS "count" FROM "IncidentMessage"')).toEqual([{ count: 500 }]);
+    await saving;
+
+    const workerReads = vi.spyOn(db, "$queryRawInWorker");
+    const pages: Array<{ messages: unknown[]; before: number | null }> = [];
+    let before: number | undefined;
+    do {
+      const reading = handlers["incidents:getThreadMessages"]({ threadId: "thread-a", before }) as Promise<{ messages: unknown[]; before: number | null }>;
+      if (pages.length === 1) await (db as unknown as { worker: { worker: { terminate(): Promise<number> } } }).worker.worker.terminate();
+      const page = await reading;
+      // Only the page and the one row that marks an older page leave the database.
+      const rows = (await workerReads.mock.results.at(-1)?.value) as unknown[];
+      expect(rows.length).toBeLessThanOrEqual(page.messages.length + 1);
+      pages.unshift(page);
+      before = page.before ?? undefined;
+    } while (before !== undefined);
+
+    // The newest message alone is over the size budget, so it comes back on its own.
+    expect(pages[pages.length - 1]?.messages).toEqual([thread[499]]);
+    expect(pages.every((page) => page.messages.length <= 200)).toBe(true);
+    expect(pages.flatMap((page) => page.messages)).toEqual(thread);
   });
 
   it("patches only the thread fields it is given", async () => {

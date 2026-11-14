@@ -95,7 +95,7 @@ describe('generic SQLite integration storage', () => {
         BEGIN SELECT RAISE(ABORT, 'simulated snapshot write failure'); END;`)
       await expect(saveIncidentThreadMessages(first, 'thread', [{ id: 'm-2', kind: 'user', text: 'Replacement' }]))
         .rejects.toThrow('simulated snapshot write failure')
-      expect(await first.$queryRaw('SELECT text FROM "IncidentMessage"')).toEqual([{ text: 'Preserved message' }])
+      expect(await first.$queryRaw('SELECT id FROM "IncidentMessage"')).toEqual([{ id: 'm-1' }])
       await first.$executeRawUnsafe('DROP TRIGGER reject_message')
       expect((await first.$queryRaw('SELECT "threadId" FROM "IntegrationOperation" WHERE id = ?', 'intent'))[0]?.threadId).toBe('thread')
       await expect(async () => {

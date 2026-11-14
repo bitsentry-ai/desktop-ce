@@ -1,4 +1,3 @@
-import posthog from 'posthog-js/dist/module.full.no-external.js'
 import {
   configureDesktopPosthogRuntime,
   type DesktopPosthogApi,
@@ -18,7 +17,8 @@ export function configureDesktopPosthogRendererRuntime({
   productName,
 }: ConfigureDesktopPosthogRendererRuntimeInput): DesktopPosthogApi {
   desktopPosthogApi = configureDesktopPosthogRuntime({
-    posthogClient: posthog,
+    loadPosthogClient: async () =>
+      (await import('posthog-js/dist/module.full.no-external.js')).default,
     posthogKey,
     posthogHost,
     productName,

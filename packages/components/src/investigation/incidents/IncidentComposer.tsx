@@ -1,4 +1,3 @@
-import { useCallback } from "react";
 import { Composer, type ComposerProps } from "../../chat/Composer";
 import { withCitationComment, type AssistantCitation } from "../../chat/citations";
 import { useIncidentDraftStore } from "./incidentDraftStore";
@@ -14,13 +13,13 @@ export function IncidentComposer({
   const citations = useIncidentDraftStore((state) => state.citations[incidentId] ?? NO_CITATIONS);
   const setDraft = useIncidentDraftStore((state) => state.setDraft);
   const setCitations = useIncidentDraftStore((state) => state.setCitations);
-  const onPromptChange = useCallback((text: string) => { setDraft(incidentId, text); }, [incidentId, setDraft]);
-  const onRemoveCitation = useCallback((index: number) => {
+  const onPromptChange = (text: string) => { setDraft(incidentId, text); };
+  const onRemoveCitation = (index: number) => {
     setCitations(incidentId, citations.filter((_, position) => position !== index));
-  }, [citations, incidentId, setCitations]);
-  const onCitationCommentChange = useCallback((index: number, comment: string | undefined) => {
+  };
+  const onCitationCommentChange = (index: number, comment: string | undefined) => {
     setCitations(incidentId, citations.map((citation, position) => (position === index ? withCitationComment(citation, comment) : citation)));
-  }, [citations, incidentId, setCitations]);
+  };
   return (
     <Composer
       {...props}

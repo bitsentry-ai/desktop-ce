@@ -39,7 +39,6 @@ function createDesktopStateDatabase(): {
   };
   const db = {
     legacyImportLedger: createNoopTable(),
-    incidentMessage: createNoopTable(),
     incidentThread: createNoopTable(),
     runbook: createNoopTable(),
     runbookAction,

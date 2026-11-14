@@ -1,12 +1,11 @@
 import {
   Children,
   createContext,
+  Fragment,
   isValidElement,
   useContext,
-  useCallback,
   useEffect,
   memo,
-  useMemo,
   useRef,
   useState,
   type ReactNode,
@@ -24,6 +23,8 @@ export interface MarkdownContentProps {
   className?: string;
   paragraphizeSoftBreaks?: boolean;
   collapsedJsonLabel?: string;
+  /** The text is still streaming: completed blocks are parsed once and only the live tail re-parses. */
+  streaming?: boolean;
 }
 
 function readBacktickDelimiter(line: string, index: number): string | undefined {
@@ -652,7 +653,7 @@ function MarkdownCodeBlock({
   const [copied, setCopied] = useState(false);
   const copiedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const handleCopy = useCallback(() => {
+  const handleCopy = () => {
     if (typeof navigator === "undefined" || navigator.clipboard == null) return;
 
     void navigator.clipboard
@@ -668,7 +669,7 @@ function MarkdownCodeBlock({
         }, 1200);
       })
       .catch(() => {});
-  }, [code]);
+  };
 
   useEffect(
     () => () => {
@@ -784,26 +785,82 @@ const MARKDOWN_COMPONENTS = {
   },
 } satisfies Components;
 
+// Syntax that reaches across blocks (definitions, footnotes) or can hide a block boundary (raw HTML, display math).
+const CROSS_BLOCK_SYNTAX = /\]:|\[\^|<[A-Za-z!/?]|\$\$/;
+const FENCE_START = /^( *)(`{3,}|~{3,})/;
+// A whole document puts a newline between top-level blocks; joined streamed blocks match it.
+const BLOCK_SEPARATOR = "\n";
+// After a blank line these may still belong to the block above: indented content, list items, quotes.
+const MAY_CONTINUE_BLOCK = /^(\s|[-*+](\s|$)|\d{1,9}[.)](\s|$)|>)/;
+
+type Fence = { indent: number; marker: string; rest: string };
+
+function readFence(line: string): Fence | null {
+  const match = FENCE_START.exec(line);
+  if (match === null) return null;
+  const rest = line.slice(match[0].length);
+  // A backtick fence's info string has no backticks; with one, the line is inline code.
+  if (match[2].startsWith("`") && rest.includes("`")) return null;
+  return { indent: match[1].length, marker: match[2], rest };
+}
+
+/** Whether `line` closes `open`; null for a fence line left of `open`, which may end a list item around it. */
+function closesFence(open: Fence, line: Fence): boolean | null {
+  if (line.indent < open.indent) return null;
+  return line.indent === open.indent && line.marker[0] === open.marker[0] && line.marker.length >= open.marker.length && line.rest.trim() === "";
+}
+
+function startsBlock(lines: string[], index: number): boolean {
+  return index > 0 && lines[index - 1].trim() === "" && lines[index].trim() !== "" && !MAY_CONTINUE_BLOCK.test(lines[index]);
+}
+
+/** Splits at blank lines that always end a block, outside code fences; null when a split could change the output. */
+function splitMarkdownBlocks(markdown: string): string[] | null {
+  if (CROSS_BLOCK_SYNTAX.test(markdown)) return null;
+  const lines = markdown.split("\n");
+  const blocks: string[] = [];
+  let start = 0;
+  let fence: Fence | null = null;
+  for (const [index, line] of lines.entries()) {
+    const lineFence = readFence(line);
+    if (fence !== null) {
+      const closes = lineFence === null ? false : closesFence(fence, lineFence);
+      if (closes === null) return null;
+      if (closes) fence = null;
+      continue;
+    }
+    if (startsBlock(lines, index)) {
+      blocks.push(lines.slice(start, index).join("\n"));
+      start = index;
+    }
+    fence = lineFence;
+  }
+  blocks.push(lines.slice(start).join("\n"));
+  return blocks.filter((block) => block.trim() !== "");
+}
+
+const MarkdownBlock = memo(function MarkdownBlock({ source }: { source: string }) {
+  return (
+    <ReactMarkdown remarkPlugins={MARKDOWN_REMARK_PLUGINS} components={MARKDOWN_COMPONENTS}>
+      {source}
+    </ReactMarkdown>
+  );
+});
+
 export const MarkdownContent = memo(function MarkdownContent({
   content,
   className,
   paragraphizeSoftBreaks = false,
   collapsedJsonLabel,
+  streaming = false,
 }: MarkdownContentProps) {
   const { t } = useTranslation();
   const scrollableTableLabel = t("common.markdown.scrollableTable");
-  const rendererContext = useMemo(
-    () => ({ scrollableTableLabel, collapsedJsonLabel }),
-    [scrollableTableLabel, collapsedJsonLabel],
+  const rendererContext = { scrollableTableLabel, collapsedJsonLabel };
+  const normalizedContent = normalizeMarkdownContent(
+    paragraphizeSoftBreaks ? paragraphizePlainTextSoftBreaks(content) : content,
   );
-  const normalizedContent = useMemo(() => {
-    let sourceContent = content;
-    if (paragraphizeSoftBreaks) {
-      sourceContent = paragraphizePlainTextSoftBreaks(content);
-    }
-
-    return normalizeMarkdownContent(sourceContent);
-  }, [content, paragraphizeSoftBreaks]);
+  const blocks = streaming ? splitMarkdownBlocks(normalizedContent) : null;
 
   return (
     <div
@@ -813,9 +870,9 @@ export const MarkdownContent = memo(function MarkdownContent({
       )}
     >
       <MarkdownRendererContext.Provider value={rendererContext}>
-        <ReactMarkdown remarkPlugins={MARKDOWN_REMARK_PLUGINS} components={MARKDOWN_COMPONENTS}>
-          {normalizedContent}
-        </ReactMarkdown>
+        {blocks === null ? <MarkdownBlock source={normalizedContent} /> : blocks.map((block, index) => (
+          <Fragment key={index}>{index > 0 && BLOCK_SEPARATOR}<MarkdownBlock source={block} /></Fragment>
+        ))}
       </MarkdownRendererContext.Provider>
     </div>
   );

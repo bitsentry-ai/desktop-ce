@@ -17,7 +17,7 @@ import { PluginsSettingsSection } from "../settings/PluginsSettingsSection";
 import { GlobalVariablesSettingsSection } from "../settings/GlobalVariablesSettingsSection";
 import { TelemetrySection } from "../settings/TelemetrySection";
 import { UpdateSettingsSection } from "../settings/UpdateSettingsSection";
-import { HelpSection } from "../tutorial";
+import { HelpSection } from "../tutorial/HelpSection";
 import { useToast } from "../hooks/use-toast";
 import { Button } from "../ui/button";
 import type { SettingsSectionLink } from "../layout/Navbar";

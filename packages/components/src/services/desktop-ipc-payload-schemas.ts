@@ -611,7 +611,7 @@ export function createDesktopIpcPayloadValidator(
       executionId: z.uuid(),
     }),
     "incidents:list": optionalLooseObjectSchema,
-    "incidents:getThreadMessages": z.object({ threadId: z.string().min(1) }).strict(),
+    "incidents:getThreadMessages": z.object({ threadId: z.string().min(1), before: z.number().int().nonnegative().optional() }).strict(),
     "incidents:saveThread": z.object({ thread: looseObjectSchema.extend({ id: z.string().min(1) }) }).strict(),
     "incidents:appendThreadMessages": z.object({ threadId: z.string().min(1), messages: z.array(looseObjectSchema) }).strict(),
     "desktopState:bootstrap": optionalLooseObjectSchema,

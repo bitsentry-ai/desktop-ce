@@ -42,12 +42,12 @@ describe('desktop PostHog exception capture', () => {
     const captureException = vi.fn()
     const posthog = await import('@bitsentry-ce/components/desktop/DesktopPosthog')
     const api = posthog.configureDesktopPosthogRuntime({
-      posthogClient: {
+      loadPosthogClient: async () => ({
         init: vi.fn(),
         identify: vi.fn(),
         capture: vi.fn(),
         captureException,
-      },
+      }),
       posthogKey: 'phc-test-key',
       posthogHost: 'https://eu.i.posthog.com',
     })
@@ -64,12 +64,12 @@ describe('desktop PostHog exception capture', () => {
     const captureException = vi.fn()
     const posthog = await import('@bitsentry-ce/components/desktop/DesktopPosthog')
     const api = posthog.configureDesktopPosthogRuntime({
-      posthogClient: {
+      loadPosthogClient: async () => ({
         init: vi.fn(),
         identify: vi.fn(),
         capture: vi.fn(),
         captureException,
-      },
+      }),
       posthogKey: 'phc-test-key',
     })
 

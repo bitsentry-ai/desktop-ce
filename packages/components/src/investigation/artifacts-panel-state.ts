@@ -52,14 +52,14 @@ export function useArtifactsPanelState({ incidentId }: { incidentId: string | nu
   const reportSummary = useCallback((next: ArtifactsPanelSummary) => {
     setSummaryState((previous) => (previous.incidentId === incidentId && summaryKey(previous.summary) === summaryKey(next) ? previous : { incidentId, summary: next }));
   }, [incidentId]);
-  const toggle = useCallback(() => {
+  const toggle = () => {
     setUi((previous) => {
       const state = forIncident(previous, incidentId);
       return state.open ? { ...state, open: false } : { ...state, open: true, openedByUser: true };
     });
-  }, [incidentId]);
-  const close = useCallback(() => { update({ open: false }); }, [update]);
-  const setFilter = useCallback((filter: ArtifactsFilter) => { update({ filter }); }, [update]);
+  };
+  const close = () => { update({ open: false }); };
+  const setFilter = (filter: ArtifactsFilter) => { update({ filter }); };
 
   useEffect(() => {
     if (seenPendingRef.current.incidentId !== incidentId) seenPendingRef.current = { incidentId, ids: new Set() };

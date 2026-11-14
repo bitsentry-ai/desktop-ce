@@ -54,26 +54,30 @@ export type DesktopSentryApi = {
   DesktopRouteTracing: () => null
 }
 
-type ConfigureDesktopSentryRuntimeInput = {
+export type DesktopSentryRuntimeModule = {
   sentryRuntime: DesktopSentryRuntime
   reactInit: DesktopReactInit
+}
+
+type ConfigureDesktopSentryRuntimeInput = {
+  // Loaded only once telemetry is on, so the SDK stays out of the startup bundle.
+  loadSentryRuntime: () => Promise<DesktopSentryRuntimeModule>
   productName?: string
 }
 
+let loadConfiguredSentryRuntime: (() => Promise<DesktopSentryRuntimeModule>) | null = null
 let configuredSentryRuntime: DesktopSentryRuntime | null = null
-let configuredReactInit: DesktopReactInit | null = null
 
 function getSentryRuntime(): DesktopSentryRuntime | null {
   return configuredSentryRuntime
 }
 
 export function configureDesktopSentryRuntime({
-  sentryRuntime,
-  reactInit,
+  loadSentryRuntime,
   productName,
 }: ConfigureDesktopSentryRuntimeInput): DesktopSentryApi {
-  configuredSentryRuntime = sentryRuntime
-  configuredReactInit = reactInit
+  loadConfiguredSentryRuntime = loadSentryRuntime
+  configuredSentryRuntime = null
   if (typeof productName === 'string' && productName.trim().length > 0) {
     PRODUCT_NAME = productName.trim()
   }
@@ -168,8 +172,7 @@ async function loadAnalyticsContext(): Promise<AnalyticsContext | undefined> {
 async function initSentryRenderer(): Promise<void> {
   if (initialized) return
 
-  const sentryRuntime = getSentryRuntime()
-  if (sentryRuntime === null || configuredReactInit === null) {
+  if (loadConfiguredSentryRuntime === null) {
     warnSentryFailure(
       'initialize renderer telemetry',
       new Error('Desktop Sentry runtime is unavailable'),
@@ -191,6 +194,8 @@ async function initSentryRenderer(): Promise<void> {
   // The renderer SDK forwards events through the main process Sentry client,
   // so no separate DSN is needed here.
   try {
+    const { sentryRuntime, reactInit } = await loadConfiguredSentryRuntime()
+    configuredSentryRuntime = sentryRuntime
     sentryRuntime.init(
       {
         integrations: [
@@ -200,7 +205,7 @@ async function initSentryRenderer(): Promise<void> {
         tracesSampleRate: TRACES_SAMPLE_RATE,
         profileSessionSampleRate: PROFILE_SESSION_SAMPLE_RATE,
       },
-      configuredReactInit,
+      reactInit,
     )
 
     sentryRuntime.setTag('product', PRODUCT_NAME)

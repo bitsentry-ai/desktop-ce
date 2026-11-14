@@ -94,6 +94,8 @@ const COALESCED_EVENT_TYPES = new Set<AgentEventData['type']>([
 const NO_LLM_PROVIDER_CONFIGURED_MESSAGE =
   'No LLM provider configured. Please configure a provider in Settings.'
 
+// A restored session only sees capped tool-output digests, so keep a normal on-call working set live.
+const RETAINED_COMPLETED_SESSIONS = 20
 // Restored agent turns carry a plain-text digest of their tool calls.
 const MAX_RESTORED_TOOL_OUTPUT_CHARS = 2_000
 const MAX_RESTORED_TURN_TOOL_CHARS = 8_000
@@ -107,6 +109,7 @@ export type AgentRuntimeIncidentHistoryLoader = (
 export type AgentRuntimeIncidentHistorySaver = (
   incidentThreadId: string,
   messages: ThreadChatMessage[],
+  changedIndexes?: readonly number[],
 ) => Promise<void>
 
 export type AgentRuntimeEventPayload = AgentEventPayload<AgentEventData>
@@ -549,6 +552,7 @@ interface AgentSession {
   incidentSave?: Promise<void>
   /** Latest messages requested while a write runs; written once it finishes. */
   pendingIncidentMessages?: ThreadChatMessage[]
+  completedAt?: number
   /** Messages array of the last successful write, to skip writes when nothing changed. */
   persistedMessages?: ThreadChatMessage[]
 }
@@ -865,6 +869,13 @@ function createUserMessageContent(text: string, attachments?: AgentChatAttachmen
           },
     ),
   ]
+}
+
+/** Messages are replaced, never mutated, so a new object marks a changed row; undefined means save the full list. */
+function changedMessageIndexes(messages: ThreadChatMessage[], persisted: ThreadChatMessage[] | undefined): number[] | undefined {
+  if (persisted === undefined || messages.length < persisted.length) return undefined
+  if (persisted.some((message, index) => message.id !== messages[index].id)) return undefined
+  return messages.flatMap((message, index) => (message === persisted[index] ? [] : [index]))
 }
 
 function restoreThreadMessage(raw: Record<string, unknown>): ThreadChatMessage | null {
@@ -3055,6 +3066,8 @@ export class AgentRuntimeService {
       session.currentTurnVisibleRunbookExecutionIds = undefined
       session.currentTurnId = undefined
       this.settleQueueAfterTurn(session)
+      session.completedAt = Date.now()
+      this.evictCompletedSessions()
     }
   }
 
@@ -3497,8 +3510,8 @@ export class AgentRuntimeService {
     while (messages !== undefined) {
       session.pendingIncidentMessages = undefined
       try {
-        await save(session.incidentThreadId ?? '', messages)
-        // Set only on success, so a failed write is retried by the next request or destroy().
+        await save(session.incidentThreadId ?? '', messages, changedMessageIndexes(messages, session.persistedMessages))
+        // Set only on success, so a failed write is diffed again by the next request or destroy().
         session.persistedMessages = messages
       } catch (error) {
         log.warn(`[agent-runtime:${session.id}] Failed to persist incident messages:`, error)
@@ -3506,6 +3519,7 @@ export class AgentRuntimeService {
       messages = session.pendingIncidentMessages
     }
     session.incidentSave = undefined
+    this.evictCompletedSessions()
   }
 
   private flushStreamUpdate(session: AgentSession): void {
@@ -3542,6 +3556,18 @@ export class AgentRuntimeService {
     // Text-only answers have no structural events, so persist every coalesced update;
     // a write in flight collapses later requests into one write of the latest messages.
     this.persistIncidentMessages(session)
+  }
+
+  private evictCompletedSessions(): void {
+    if (this.loadIncidentMessages === undefined) return
+    const completed = [...this.sessions.values()].filter((session) =>
+      session.completedAt !== undefined && session.state !== 'RUNNING' && session.loopActive !== true &&
+      session.queuedFollowUps.length === 0 && session.pendingSteers.length === 0 &&
+      session.incidentSave === undefined && session.pendingIncidentMessages === undefined &&
+      session.streamFlushTimer === undefined &&
+      session.persistedMessages === session.snapshot.messages,
+    ).sort((a, b) => (b.completedAt ?? 0) - (a.completedAt ?? 0))
+    for (const session of completed.slice(RETAINED_COMPLETED_SESSIONS)) this.sessions.delete(session.id)
   }
 
   private postToRenderer(payload: AgentRuntimeEventPayload, label: string): void {

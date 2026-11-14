@@ -1,4 +1,3 @@
-import * as Sentry from "@sentry/react";
 import { getDesktopApi } from "../../services/desktop-api";
 import type { AgentSessionState, ChatMessage } from "../../chat/types";
 import {
@@ -70,13 +69,16 @@ export function captureIncidentException(
   error: unknown,
   context?: Record<string, unknown>,
 ): void {
-  try {
-    if (context === undefined) {
-      Sentry.captureException(error);
-    } else {
-      Sentry.captureException(error, { extra: context });
-    }
-  } catch {}
+  // Loaded on demand to keep the Sentry SDK out of the startup bundle; a no-op until the renderer client inits.
+  void import("@sentry/react")
+    .then((Sentry) => {
+      if (context === undefined) {
+        Sentry.captureException(error);
+      } else {
+        Sentry.captureException(error, { extra: context });
+      }
+    })
+    .catch(() => {});
 }
 
 export async function loadDesktopIncidents(): Promise<IncidentThread[]> {
@@ -94,11 +96,12 @@ export async function loadDesktopIncidentPreviews(): Promise<Array<{ id: string;
   });
 }
 
-export async function loadDesktopIncidentMessages(threadId: string): Promise<ChatMessage[]> {
+/** The thread's newest messages before `before`, and the cursor for the page before them (null at the start). */
+export async function loadDesktopIncidentMessages(threadId: string, before?: number): Promise<{ messages: ChatMessage[]; before: number | null }> {
   const incidentsApi = getDesktopApi()?.incidents;
-  if (incidentsApi === undefined) return [];
-  const messages = await incidentsApi.getThreadMessages(threadId);
-  return normalizeIncidentMessagesMap({ [threadId]: messages })[threadId] ?? [];
+  if (incidentsApi === undefined) return { messages: [], before: null };
+  const page = await incidentsApi.getThreadMessages(threadId, before);
+  return { messages: normalizeIncidentMessagesMap({ [threadId]: page.messages })[threadId] ?? [], before: page.before };
 }
 
 /** Saves only the fields in `patch`; `archivedAt: null` unarchives. */

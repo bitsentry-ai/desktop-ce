@@ -12,7 +12,8 @@ import {
 import { getDatabasePath, getDatabaseUrl } from './database-paths.js'
 
 let db: DbClient | null = null
-const DATABASE_SCHEMA_VERSION = 19
+// A database at this version skips runMigrations entirely, so every schema change must bump it.
+const DATABASE_SCHEMA_VERSION = 20
 
 export type DesktopDatabaseRuntimeSeeders = {
   seedDefaults(client: DbClient): Promise<void>
@@ -102,11 +103,11 @@ export async function initializeDatabase(): Promise<DbClient> {
 
     await applyConnectionPragmas(db)
 
-    await assertDatabaseIntegrity()
     await runMigrations()
     await purgeFailedRunbookAuthoringAttempts()
 
     await seeders.seedDefaults(db)
+    await startDatabaseWorker(db)
   } catch (error) {
     log.error('[database] Initialization failed:', error)
     if (backupPath !== null) {
@@ -119,6 +120,7 @@ export async function initializeDatabase(): Promise<DbClient> {
         })
         await getDb().$connect()
         await applyConnectionPragmas(getDb())
+        await assertDatabaseIntegrity()
         log.warn('[database] Recovery path executed after failed migration')
       } catch (restoreError) {
         log.error('[database] Failed to restore snapshot:', restoreError)
@@ -137,6 +139,15 @@ export async function initializeDatabase(): Promise<DbClient> {
   }
 
   return db
+}
+
+async function startDatabaseWorker(client: DbClient): Promise<void> {
+  try {
+    await client.$startWorker()
+  } catch (error) {
+    // Checkpoints and thread reads then stay on the main connection.
+    log.warn('[database] SQLite worker unavailable:', error)
+  }
 }
 
 async function assertDatabaseIntegrity(): Promise<void> {
@@ -205,6 +216,7 @@ async function getTableColumns(tableName: string): Promise<Set<string>> {
 async function runMigrations(): Promise<void> {
   await ensureMigrationLedger()
   const appliedVersions = await getAppliedMigrationVersions()
+  if (appliedVersions.has(DATABASE_SCHEMA_VERSION)) return
 
   // Desktop ships with Drizzle + better-sqlite3. We keep startup schema sync
   // lightweight by running idempotent SQL at app boot.
@@ -1267,6 +1279,7 @@ async function runMigrations(): Promise<void> {
     if (!appliedVersions.has(18)) {
       await markMigrationApplied(18, 'generic_integration_storage')
     }
+    await markMigrationApplied(20, 'incident_messages_and_agent_queue')
     await getDb().$executeRawUnsafe(`PRAGMA user_version = ${String(DATABASE_SCHEMA_VERSION)}`)
 
     log.info('[database] Schema tables ensured')

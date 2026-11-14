@@ -9,6 +9,7 @@ import type { Readable } from 'stream'
 import type { LocalAiExecutionResult, LocalAiStreamDelta } from './types.js'
 import { createCodingAgentsProcessEnv } from './coding-agents-process-env.js'
 import { createCommandInvocation, resolveOpenCodeWindowsBinary } from './cli-binary-resolution.js'
+import { getOpenCodeMajorVersion } from './cli-probe.service.js'
 import {
   normalizeAccessLevel,
   type AccessLevel,
@@ -43,7 +44,7 @@ const MAX_STDERR_LENGTH = 5_000
 type OpenCodeAssistantDelta = { type: 'text' | 'reasoning'; text: string }
 interface OpenCodeExecutionState {
   output: string
-  rawStdout: string
+  sawStdout: boolean
   nonJsonStdout: string
   parsedJsonLineCount: number
   stderr: string
@@ -125,29 +126,34 @@ function stringField(record: Record<string, unknown> | undefined, field: string)
   return record[field]
 }
 
+const OPENCODE_RESTRICTED_PERMISSION = {
+  read: 'allow',
+  glob: 'allow',
+  grep: 'allow',
+  edit: 'allow',
+  bash: 'deny',
+  webfetch: 'deny',
+  websearch: 'deny',
+  codesearch: 'deny',
+  external_directory: 'deny',
+  task: 'deny',
+  question: 'allow',
+} as const
+
+// OpenCode 2 adds Code Mode (`execute`) and browser automation. 1.x had
+// neither, so the restricted mode denies both to stay within the 1.x surface.
+const OPENCODE_2_RESTRICTED_PERMISSION = {
+  ...OPENCODE_RESTRICTED_PERMISSION,
+  execute: 'deny',
+  browser: 'deny',
+} as const
+
 export function createOpenCodePermissionEnv(accessLevel: AccessLevel): Record<string, string> {
   if (accessLevel === 'full-access') {
     return {}
   }
 
-  const deny = 'deny'
-  const allow = 'allow'
-
-  return {
-    OPENCODE_PERMISSION: JSON.stringify({
-      read: allow,
-      glob: allow,
-      grep: allow,
-      edit: allow,
-      bash: deny,
-      webfetch: deny,
-      websearch: deny,
-      codesearch: deny,
-      external_directory: deny,
-      task: deny,
-      question: allow,
-    }),
-  }
+  return { OPENCODE_PERMISSION: JSON.stringify(OPENCODE_RESTRICTED_PERMISSION) }
 }
 
 export function getOpenCodeHostToolPermissions(): Record<string, 'allow'> {
@@ -487,9 +493,9 @@ function handleOpenCodeStdoutLine(
   appendOutput: AppendOpenCodeOutput,
   accessLevel: AccessLevel,
 ): void {
-  state.rawStdout += `${line}\n`
   const trimmed = line.trim()
   if (trimmed.length === 0) return
+  state.sawStdout = true
 
   try {
     handleParsedOpenCodeLine(
@@ -500,12 +506,12 @@ function handleOpenCodeStdoutLine(
       accessLevel,
     )
   } catch {
-    state.nonJsonStdout += `${line}\n`
+    if (state.nonJsonStdout.length < MAX_OUTPUT_LENGTH) state.nonJsonStdout += `${line}\n`
     appendOutput(`${line}\n`)
   }
 }
 
-function buildOpenCodeArgs(
+function buildOpenCode1Args(
   options: OpenCodeExecutionOptions,
   cwd: string,
   accessLevel: AccessLevel,
@@ -528,10 +534,34 @@ function buildOpenCodeArgs(
   return args
 }
 
+function getOpenCode2Model(options: OpenCodeExecutionOptions): string | undefined {
+  if (options.model === undefined || options.model.length === 0) return undefined
+  const variant = getOpenCodeVariant(options.traitValues)
+  return variant === undefined ? options.model : `${options.model}#${variant}`
+}
+
+function buildOpenCode2Args(options: OpenCodeExecutionOptions, accessLevel: AccessLevel): string[] {
+  // The shared background service never sees this process's env, so our MCP
+  // config and permission limits only apply with a private server. 2.x runs
+  // in the spawn cwd.
+  const args = [...(options.opencodeArgs ?? []), 'run', '--standalone', '--format', 'json']
+  const model = getOpenCode2Model(options)
+  if (model !== undefined) {
+    args.push('--model', model)
+  }
+
+  if (accessLevel === 'full-access') {
+    args.push('--auto')
+  }
+
+  args.push(buildOpenCodePrompt(options.prompt, accessLevel, options.mcpEndpoint))
+  return args
+}
+
 function createOpenCodeExecutionState(): OpenCodeExecutionState {
   return {
     output: '',
-    rawStdout: '',
+    sawStdout: false,
     nonJsonStdout: '',
     parsedJsonLineCount: 0,
     stderr: '',
@@ -557,17 +587,12 @@ function createAppendOpenCodeOutput(
 }
 
 function createOpenCodeProcess(
-  options: OpenCodeExecutionOptions,
+  binaryPath: string,
+  args: string[],
   cwd: string,
-  accessLevel: AccessLevel,
-  configPath: string | undefined,
-  endpoint: HostMcpEndpoint | undefined,
+  env: Record<string, string | undefined>,
 ): OpenCodeChildProcess {
-  const binaryPath = resolveOpenCodeWindowsBinary(options.binaryPath)
-  const invocation = createCommandInvocation(
-    binaryPath,
-    buildOpenCodeArgs(options, cwd, accessLevel),
-  )
+  const invocation = createCommandInvocation(binaryPath, args)
 
   const child = spawn(invocation.command, invocation.args, {
     cwd,
@@ -576,13 +601,36 @@ function createOpenCodeProcess(
     detached: process.platform !== 'win32',
     env: {
       ...createCodingAgentsProcessEnv(process.env),
-      ...createOpenCodePermissionEnv(accessLevel),
-      ...endpoint?.env,
-      ...(configPath === undefined ? {} : { OPENCODE_CONFIG: configPath }),
+      ...env,
     },
   })
 
   return child
+}
+
+function createHostMcpConfig(endpoint: HostMcpEndpoint): Record<string, unknown> {
+  return {
+    [HOST_MCP_SERVER_NAME]: {
+      type: 'local',
+      command: [endpoint.command, ...endpoint.args],
+    },
+  }
+}
+
+// OpenCode applies permission rules to MCP tools by their server-prefixed
+// names. Keep the provider's built-in restrictions in place while letting
+// the scoped, host-validated BitSentry tools run deterministically.
+function getLoggedHostToolPermissions(
+  endpoint: HostMcpEndpoint,
+  accessLevel: AccessLevel,
+): Record<string, 'allow'> {
+  const hostToolPermissions = getOpenCodeHostToolPermissions()
+  log.info('[opencode-provider] configured host tool permissions', {
+    agentSessionId: endpoint.agentSessionId,
+    accessLevel,
+    toolNames: Object.keys(hostToolPermissions).map((name) => name.slice(`${HOST_MCP_SERVER_NAME}_`.length)),
+  })
+  return hostToolPermissions
 }
 
 async function createOpenCodeMcpConfig(
@@ -595,25 +643,44 @@ async function createOpenCodeMcpConfig(
   if (endpoint === undefined) return undefined
   const directory = await mkdtemp(path.join(os.tmpdir(), 'bitsentry-opencode-mcp-'))
   const configPath = path.join(directory, 'opencode.json')
-  const hostToolPermissions = getOpenCodeHostToolPermissions()
-  log.info('[opencode-provider] configured host tool permissions', {
-    agentSessionId: endpoint.agentSessionId,
-    accessLevel,
-    toolNames: Object.keys(hostToolPermissions).map((name) => name.slice(`${HOST_MCP_SERVER_NAME}_`.length)),
-  })
   await writeFile(configPath, JSON.stringify({
-    mcp: {
-      [HOST_MCP_SERVER_NAME]: {
-        type: 'local',
-        command: [endpoint.command, ...endpoint.args],
-      },
-    },
-    // OpenCode applies permission rules to MCP tools by their server-prefixed
-    // names. Keep the provider's built-in restrictions in place while letting
-    // the scoped, host-validated BitSentry tools run deterministically.
-    permission: hostToolPermissions,
+    mcp: createHostMcpConfig(endpoint),
+    permission: getLoggedHostToolPermissions(endpoint, accessLevel),
   }), 'utf8')
   return { directory, path: configPath }
+}
+
+// OPENCODE_CONFIG_CONTENT outranks global and project config in 2.x, as
+// OPENCODE_PERMISSION did in 1.x, so a repo's opencode.json cannot loosen it.
+function createOpenCode2Env(
+  endpoint: HostMcpEndpoint | undefined,
+  accessLevel: AccessLevel,
+): Record<string, string | undefined> {
+  const restrictions = accessLevel === 'full-access' ? {} : OPENCODE_2_RESTRICTED_PERMISSION
+  if (endpoint === undefined) {
+    if (accessLevel === 'full-access') return {}
+    return { OPENCODE_CONFIG_CONTENT: JSON.stringify({ permission: restrictions }) }
+  }
+
+  return {
+    ...endpoint.env,
+    OPENCODE_CONFIG_CONTENT: JSON.stringify({
+      mcp: createHostMcpConfig(endpoint),
+      permission: { ...restrictions, ...getLoggedHostToolPermissions(endpoint, accessLevel) },
+    }),
+  }
+}
+
+function createOpenCode1Env(
+  endpoint: HostMcpEndpoint | undefined,
+  accessLevel: AccessLevel,
+  configPath: string | undefined,
+): Record<string, string | undefined> {
+  return {
+    ...createOpenCodePermissionEnv(accessLevel),
+    ...endpoint?.env,
+    ...(configPath === undefined ? {} : { OPENCODE_CONFIG: configPath }),
+  }
 }
 
 async function waitForOpenCodeExit(
@@ -697,7 +764,7 @@ function recordOpenCodeCompletionAnomaly(
   if (
     state.output.trim().length === 0 &&
     state.parsedJsonLineCount === 0 &&
-    state.rawStdout.trim().length > 0
+    state.sawStdout
   ) {
     state.output = state.nonJsonStdout.trim().slice(0, MAX_OUTPUT_LENGTH)
     debug?.recordAnomaly('opencode.completed_without_stream_deltas', {
@@ -754,9 +821,12 @@ function finalizeOpenCodeResult(
     return buildAbortedOpenCodeResult(state, exitCode)
   }
 
-  if (exitCode !== 0) {
+  // 2.x exits 0 after an error event such as an unavailable model.
+  const reportedErrorOnly = state.jsonErrorMessage !== undefined && state.output.trim().length === 0
+  if (exitCode !== 0 || reportedErrorOnly) {
     options.onDelta?.({ type: 'status', status: 'failed' })
-    throw new Error(`OpenCode exited with code ${String(exitCode)}: ${getOpenCodeFailureDetail(state)}`)
+    const failure = exitCode === 0 ? 'OpenCode reported an error' : `OpenCode exited with code ${String(exitCode)}`
+    throw new Error(`${failure}: ${getOpenCodeFailureDetail(state)}`)
   }
 
   recordOpenCodeCompletionAnomaly(state, accessLevel, options.debug)
@@ -773,10 +843,23 @@ export async function executeOpenCode(
 
   const cwd = options.cwd ?? os.tmpdir()
   const accessLevel = normalizeAccessLevel(options.accessLevel ?? DEFAULT_ACCESS_LEVEL)
-  const config = options.mcpEndpoint === undefined
+  const binaryPath = resolveOpenCodeWindowsBinary(options.binaryPath)
+  const isOpenCode2 = await getOpenCodeMajorVersion(binaryPath) >= 2
+  // The version check can take seconds; an abort during it never reaches the child.
+  if (options.abortController.signal.aborted) {
+    return { output: '', exitCode: -1 }
+  }
+
+  const config = isOpenCode2
     ? undefined
     : await createOpenCodeMcpConfig(options.mcpEndpoint, accessLevel)
-  const child = createOpenCodeProcess(options, cwd, accessLevel, config?.path, options.mcpEndpoint)
+  const args = isOpenCode2
+    ? buildOpenCode2Args(options, accessLevel)
+    : buildOpenCode1Args(options, cwd, accessLevel)
+  const env = isOpenCode2
+    ? createOpenCode2Env(options.mcpEndpoint, accessLevel)
+    : createOpenCode1Env(options.mcpEndpoint, accessLevel, config?.path)
+  const child = createOpenCodeProcess(binaryPath, args, cwd, env)
   const state = createOpenCodeExecutionState()
   const appendOutput = createAppendOpenCodeOutput(state, options)
   const { stdoutLines, onAbort } = wireOpenCodeProcess(

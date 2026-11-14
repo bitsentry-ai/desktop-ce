@@ -73,6 +73,7 @@ export class CodexAppServerClient extends EventEmitter {
   private pending = new Map<JsonRpcId, PendingRequest>()
   private nextId = 1
   private stderrBuffer = ''
+  private stderrLength = 0
   private closed = false
   private termination: Promise<void> | null = null
 
@@ -108,6 +109,7 @@ export class CodexAppServerClient extends EventEmitter {
 
     this.child.stderr.on('data', (chunk: Buffer) => {
       const text = chunk.toString()
+      this.stderrLength += text.length
       this.stderrBuffer = (this.stderrBuffer + text).slice(-MAX_STDERR_BUFFER)
     })
 
@@ -259,8 +261,14 @@ export class CodexAppServerClient extends EventEmitter {
     return this.termination
   }
 
-  getStderrTail(): string {
-    return this.stderrBuffer
+  /** Position to pass to getStderrTail so a reused process reports only newer output. */
+  stderrMark(): number {
+    return this.stderrLength
+  }
+
+  getStderrTail(since = 0): string {
+    const unread = this.stderrLength - since
+    return this.stderrBuffer.slice(Math.max(0, this.stderrBuffer.length - unread))
   }
 
   kill(): Promise<void> {

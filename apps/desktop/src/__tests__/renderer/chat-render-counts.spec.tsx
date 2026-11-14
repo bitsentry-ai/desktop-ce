@@ -12,6 +12,7 @@ import IncidentsPage from "@bitsentry-ce/components/investigation/Incidents";
 import { useIncidentListStore } from "@bitsentry-ce/components/investigation/incidents/incidentListStore";
 import type { SessionQueueState } from "@bitsentry-ce/components/chat/useComposerQueue";
 import { useIncidentAgentEvents } from "@bitsentry-ce/components/investigation/incidents/useIncidentAgentEvents";
+import { useLiveMessage } from "@bitsentry-ce/components/investigation/incidents/liveMessageStore";
 import type { IncidentThread } from "@bitsentry-ce/components/investigation/incidents/types";
 
 const commits = new Map<string, number>();
@@ -110,15 +111,21 @@ async function renderNavbar() {
   commits.clear();
 }
 
-/** The incidents page's agent event path, without the rest of the page. */
+function StreamedRow({ msg }: { msg: ChatMessage }) {
+  const live = useLiveMessage(msg);
+  return <p data-testid="streamed">{live.kind === "agent" ? live.finalText : ""}</p>;
+}
+
+/** The incidents page's agent event path, without the rest of the page; its renders count as "streamed-page". */
 function StreamedIncident({ agent }: { agent: never }) {
+  commits.set("streamed-page", (commits.get("streamed-page") ?? 0) + 1);
   const [messagesMap, setMessagesMap] = useState<Record<string, ChatMessage[]>>({});
   const [, setTokenUsageByIncident] = useState<Record<string, AgentThreadTokenUsage>>({});
   const [, setSessionTokenUsage] = useState<AgentThreadTokenUsage | undefined>();
   const [, setQueueByIncident] = useState<Record<string, SessionQueueState>>({});
   useIncidentAgentEvents({ agent, activeId: "incident-1", setMessagesMap, setTokenUsageByIncident, setSessionTokenUsage, setQueueByIncident });
   const last = messagesMap["incident-1"]?.at(-1);
-  return <p data-testid="streamed">{last?.kind === "agent" ? last.finalText : ""}</p>;
+  return last === undefined ? null : <StreamedRow msg={last} />;
 }
 
 afterEach(() => {
@@ -205,6 +212,7 @@ describe("chat render counts", () => {
       snapshot: { sessionId: "session-1", startedAt: "2026-09-28T00:00:00.000Z", runtimeState: threadState, threadState, currentToolCallId: null, messages: [user, reply(text, threadState === "RUNNING" ? "streaming" : "done")] },
     });
     act(() => { emit(snapshot(1, "RUNNING", "", { type: "tool_start" })); });
+    commits.delete("streamed-page");
     for (let step = 1; step <= 20; step += 1) {
       act(() => {
         emit({ sessionId: "session-1", kind: "message", sequence: 1 + step, messageCount: 2, messageIndex: 1, message: reply(`checking${" disk".repeat(step)}`, "streaming"), threadState: "RUNNING", runtimeState: "RUNNING", currentToolCallId: null });
@@ -212,6 +220,8 @@ describe("chat render counts", () => {
     }
 
     expect(screen.getByTestId("streamed").textContent).toBe(`checking${" disk".repeat(20)}`);
+    // Streamed text renders only the message's row, not the page above it.
+    expect(commits.get("streamed-page") ?? 0).toBe(0);
     expect(commits.get("navbar") ?? 0).toBe(0);
     expect(within(screen.getByRole("navigation")).getByText("disk full?")).not.toBeNull();
 
@@ -226,7 +236,7 @@ describe("chat render counts", () => {
     const list = vi.fn().mockRejectedValueOnce(new Error("database busy")).mockResolvedValue([incidentRow("incident-9", "Main incident")]);
     Object.defineProperty(window, "bitsentry", {
       configurable: true,
-      value: { incidents: { list, saveThread: vi.fn(async () => undefined), getThreadMessages: vi.fn(async () => []), appendThreadMessages: vi.fn(async () => undefined) } },
+      value: { incidents: { list, saveThread: vi.fn(async () => undefined), getThreadMessages: vi.fn(async () => ({ messages: [], before: null })), appendThreadMessages: vi.fn(async () => undefined) } },
     });
     const services = { agent: { cancel: vi.fn(), getStatus: vi.fn(async () => null), onEvent: vi.fn(() => () => undefined) } } as never;
     const page = () => (

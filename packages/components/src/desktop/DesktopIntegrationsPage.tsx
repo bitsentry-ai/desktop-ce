@@ -1,4 +1,3 @@
-import { useMemo } from "react";
 import { Link } from "react-router-dom";
 import { useTranslation } from "@bitsentry-ce/i18n";
 import DashboardLayout from "../layout/DashboardLayout";
@@ -10,9 +9,9 @@ import { Button } from "../ui/button";
 export default function DesktopIntegrationsPage() {
   const { t } = useTranslation();
   const { plugins } = useBitsentryServices();
-  const service = useMemo<IntegrationConnectionsPort | null>(() => plugins?.listConnections && plugins.saveConnection && plugins.removeConnection ? {
+  const service: IntegrationConnectionsPort | null = plugins?.listConnections && plugins.saveConnection && plugins.removeConnection ? {
     list: plugins.listConnections.bind(plugins), listPlugins: plugins.list.bind(plugins), save: plugins.saveConnection.bind(plugins), remove: plugins.removeConnection.bind(plugins),
-  } : null, [plugins]);
+  } : null;
   return (
     <DashboardLayout>
       <div className="mb-8">

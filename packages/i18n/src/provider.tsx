@@ -23,6 +23,8 @@ export interface I18nProviderProps {
   children: ReactNode;
   locale?: SupportedLocale;
   detectLocale?: boolean;
+  /** Shown while a locale that is not bundled downloads. */
+  fallback?: ReactNode;
 }
 
 function resolveInitialLocale(
@@ -68,6 +70,7 @@ export function I18nProvider({
   children,
   locale,
   detectLocale = true,
+  fallback,
 }: I18nProviderProps) {
   const initialLocale = useMemo<SupportedLocale>(
     () => resolveInitialLocale(locale, detectLocale),
@@ -86,15 +89,19 @@ export function I18nProvider({
 
     const syncLocale = async () => {
       setReady(hasLocaleResources(initialLocale));
-      await ensureLocaleResources(initialLocale, instance);
+      // A locale chunk that fails to download leaves the app in English rather than blank.
+      const language = await ensureLocaleResources(initialLocale, instance).then(
+        () => initialLocale,
+        () => DEFAULT_LOCALE,
+      );
       if (cancelled) {
         return;
       }
-      if (instance.language !== initialLocale) {
-        await instance.changeLanguage(initialLocale);
+      if (instance.language !== language) {
+        await instance.changeLanguage(language);
       }
       if (typeof document !== "undefined") {
-        document.documentElement.lang = initialLocale;
+        document.documentElement.lang = language;
       }
       previousLocaleRef.current = initialLocale;
       setReady(true);
@@ -141,7 +148,7 @@ export function I18nProvider({
   }, [instance, locale]);
 
   if (!ready) {
-    return null;
+    return fallback ?? null;
   }
 
   return <I18nextProvider i18n={instance}>{children}</I18nextProvider>;

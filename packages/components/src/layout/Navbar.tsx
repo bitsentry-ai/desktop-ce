@@ -791,7 +791,7 @@ const Navbar = ({
   const [isDeletingRunbook, setIsDeletingRunbook] = React.useState(false);
   const [runbookItems, setRunbookItems] = React.useState<RunbookNavItem[]>([]);
 
-  const handleConfirmDeleteRunbook = React.useCallback(async () => {
+  const handleConfirmDeleteRunbook = async () => {
     if (runbookToDelete === null) return;
     if (deleteConfirmText !== runbookToDelete.title) return;
 
@@ -816,7 +816,7 @@ const Navbar = ({
     }
     // No finally (the React Compiler can't lower one); the catch above never throws.
     setIsDeletingRunbook(false);
-  }, [deleteConfirmText, location.search, navigate, runbookToDelete, runbooks]);
+  };
 
   // ── Incidents ────────────────────────────────────────────────────────────
   const investigationIncidents = useIncidentListStore(useShallow(selectIncidentNavItems));
@@ -933,26 +933,23 @@ const Navbar = ({
     if (status !== null) incidentStatuses.set(incident.id, status);
   }
 
-  const handleArchiveIncidentNavItem = React.useCallback(
-    async (incidentId: string) => {
-      const archivedAt = new Date().toISOString();
+  const handleArchiveIncidentNavItem = async (incidentId: string) => {
+    const archivedAt = new Date().toISOString();
 
-      if (services.incidents) {
-        await services.incidents.archiveThread(incidentId);
-        archiveLocalIncident(incidentId, archivedAt);
-      } else if (isDesktop && hasDesktopIncidentsApi()) {
-        // Once main's list is loaded, the store subscription saves the archive. Only the archive time is
-        // patched, so a concurrent rename or state change is kept.
-        if (useIncidentListStore.getState().loadedFrom !== "desktop") await saveDesktopIncidentThread({ id: incidentId, archivedAt });
-      } else if (!isDesktop) {
-        archiveLocalIncident(incidentId, archivedAt);
-      } else {
-        return;
-      }
-      useIncidentListStore.getState().archive(incidentId, archivedAt);
-    },
-    [services.incidents],
-  );
+    if (services.incidents) {
+      await services.incidents.archiveThread(incidentId);
+      archiveLocalIncident(incidentId, archivedAt);
+    } else if (isDesktop && hasDesktopIncidentsApi()) {
+      // Once main's list is loaded, the store subscription saves the archive. Only the archive time is
+      // patched, so a concurrent rename or state change is kept.
+      if (useIncidentListStore.getState().loadedFrom !== "desktop") await saveDesktopIncidentThread({ id: incidentId, archivedAt });
+    } else if (!isDesktop) {
+      archiveLocalIncident(incidentId, archivedAt);
+    } else {
+      return;
+    }
+    useIncidentListStore.getState().archive(incidentId, archivedAt);
+  };
 
   React.useEffect(() => {
     if (!openAccordions.has("/runbooks")) return;
