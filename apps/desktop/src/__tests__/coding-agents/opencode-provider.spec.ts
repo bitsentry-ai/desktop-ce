@@ -46,7 +46,7 @@ class MockChildProcess extends EventEmitter {
 }
 
 /** OpenCode 2 spawns one `serve` per server and one `run --server` client per turn. */
-function mockOpenCode2Processes(): { servers: MockChildProcess[]; clients: MockChildProcess[] } {
+function mockOpenCode2Processes(listen = true): { servers: MockChildProcess[]; clients: MockChildProcess[] } {
   const servers: MockChildProcess[] = []
   const clients: MockChildProcess[] = []
   mocks.spawn.mockImplementation((_command: string, args: string[]) => {
@@ -54,7 +54,7 @@ function mockOpenCode2Processes(): { servers: MockChildProcess[]; clients: MockC
     if (args.includes('serve')) {
       servers.push(child)
       const port = 4095 + servers.length
-      setImmediate(() => { child.stdout.write(`server listening on http://127.0.0.1:${String(port)}\n`) })
+      if (listen) setImmediate(() => { child.stdout.write(`server listening on http://127.0.0.1:${String(port)}\n`) })
     } else {
       clients.push(child)
     }
@@ -831,6 +831,20 @@ describe('OpenCode 2 server reuse', () => {
 
     await expect(second.result).resolves.toMatchObject({ output: 'second', exitCode: 0 })
     expect(servers).toHaveLength(2)
+  })
+
+  it('cancels a turn whose server is still starting and kills that server', async () => {
+    const { servers, clients } = mockOpenCode2Processes(false)
+    const abortController = new AbortController()
+    const { executeOpenCode } = await import('@bitsentry-ce/desktop-cli/runtime/desktop-coding-agents')
+    const result = executeOpenCode({ prompt: 'Investigate', binaryPath: 'opencode', abortController })
+    await vi.waitFor(() => { expect(servers).toHaveLength(1) })
+
+    abortController.abort()
+
+    await expect(result).resolves.toEqual({ output: '', exitCode: -1 })
+    expect(servers[0].kill).toHaveBeenCalled()
+    expect(clients).toHaveLength(0)
   })
 
   it('cancels one turn without touching a concurrent turn of the same incident', async () => {

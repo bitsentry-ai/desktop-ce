@@ -30,7 +30,7 @@ interface PooledProcess<T> {
   close(): Promise<void>
 }
 
-const live = new Set<PooledProcess<unknown>>()
+const live = new Set<{ close(): Promise<void> }>()
 
 /**
  * Lends running CLI processes per turn, keyed by their launch config. An idle
@@ -52,7 +52,7 @@ export function createProcessPool<Spec, T>(adapter: ProcessPoolAdapter<Spec, T>)
       clearTimeout(entry.idleTimer)
       entry.retired = true
       if (available.get(key) === entry) available.delete(key)
-      live.delete(entry as PooledProcess<unknown>)
+      live.delete(entry)
       const process = await created.catch(() => undefined)
       if (process !== undefined) await adapter.close(process)
     }
@@ -73,7 +73,7 @@ export function createProcessPool<Spec, T>(adapter: ProcessPoolAdapter<Spec, T>)
     }
     entry.ready.catch(() => { retire(entry) })
     available.set(key, entry)
-    live.add(entry as PooledProcess<unknown>)
+    live.add(entry)
     return entry
   }
 

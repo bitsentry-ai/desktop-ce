@@ -706,13 +706,11 @@ function createOpenCodeAbortHandler(
   state: OpenCodeExecutionState,
   options: OpenCodeExecutionOptions,
   child: OpenCodeChildProcess,
-  onCancel: (() => void) | undefined,
 ): () => void {
   return () => {
     if (state.wasAborted) return
     state.wasAborted = true
     options.onDelta?.({ type: 'status', status: 'cancelled' })
-    onCancel?.()
     state.termination = terminateProcessTree(child).then(() => undefined)
   }
 }
@@ -798,7 +796,6 @@ function wireOpenCodeProcess(
   options: OpenCodeExecutionOptions,
   appendOutput: AppendOpenCodeOutput,
   accessLevel: AccessLevel,
-  onCancel: (() => void) | undefined,
 ): {
   stdoutLines: readline.Interface
   onAbort: () => void
@@ -813,7 +810,7 @@ function wireOpenCodeProcess(
     state.stderr = (state.stderr + chunk.toString('utf8')).slice(-MAX_STDERR_LENGTH)
   })
 
-  const onAbort = createOpenCodeAbortHandler(state, options, child, onCancel)
+  const onAbort = createOpenCodeAbortHandler(state, options, child)
   options.abortController.signal.addEventListener('abort', onAbort, { once: true })
   return { stdoutLines, onAbort }
 }
@@ -874,18 +871,14 @@ interface OpenCodeServerSpec {
   binaryPath: string
   cwd: string
   opencodeArgs: string[]
-  accessLevel: AccessLevel
   agentSessionId: string | undefined
-  /** Config and host-tool env, without the MCP identity when the server owns it. */
+  /** Config and host-tool env, without the per-turn MCP identity. */
   env: Record<string, string | undefined>
-  /** Each turn binds its host-tool session to the server's own MCP identity. */
-  ownsMcpIdentity: boolean
 }
 
 interface OpenCodeServer {
   child: OpenCodeChildProcess
-  listening: Promise<string>
-  url: string
+  url: Promise<string>
   password: string
   identity: HostMcpIdentity
 }
@@ -923,9 +916,7 @@ const borrowOpenCodeServer = createProcessPool<OpenCodeServerSpec, OpenCodeServe
     spec.binaryPath,
     spec.opencodeArgs,
     spec.cwd,
-    spec.accessLevel,
     spec.agentSessionId ?? null,
-    spec.ownsMcpIdentity,
     spec.env,
     createCodingAgentsProcessEnv(process.env),
   ]),
@@ -935,14 +926,15 @@ const borrowOpenCodeServer = createProcessPool<OpenCodeServerSpec, OpenCodeServe
     const args = [...spec.opencodeArgs, 'serve', '--hostname', '127.0.0.1', '--port', '0']
     const child = createOpenCodeProcess(spec.binaryPath, args, spec.cwd, {
       ...spec.env,
-      ...(spec.ownsMcpIdentity ? { BITSENTRY_MCP_TOKEN: identity.token, BITSENTRY_MCP_CONTEXT_ID: identity.contextId } : {}),
+      BITSENTRY_MCP_TOKEN: identity.token,
+      BITSENTRY_MCP_CONTEXT_ID: identity.contextId,
       OPENCODE_SERVER_PASSWORD: password,
     })
-    return Promise.resolve({ child, listening: waitForOpenCodeServer(child), url: '', password, identity })
+    return Promise.resolve({ child, url: waitForOpenCodeServer(child), password, identity })
   },
   start: async (server, onExit) => {
     server.child.once('exit', onExit)
-    server.url = await server.listening
+    await server.url
   },
   close: async (server) => { await terminateProcessTree(server.child) },
 })
@@ -957,35 +949,35 @@ async function executeOpenCode2(
 ): Promise<LocalAiExecutionResult> {
   const endpoint = options.mcpEndpoint
   const env = createOpenCode2Env(endpoint, accessLevel)
-  // A per-turn MCP token would key a new server every turn.
-  const ownsMcpIdentity = endpoint?.bindIdentity !== undefined
-  if (ownsMcpIdentity) {
-    delete env.BITSENTRY_MCP_TOKEN
-    delete env.BITSENTRY_MCP_CONTEXT_ID
-  }
+  // The server has its own MCP identity; a per-turn token would key a new server every turn.
+  delete env.BITSENTRY_MCP_TOKEN
+  delete env.BITSENTRY_MCP_CONTEXT_ID
   const lease = borrowOpenCodeServer({
     binaryPath,
     cwd,
     opencodeArgs: options.opencodeArgs ?? [],
-    accessLevel,
     agentSessionId: endpoint?.agentSessionId,
     env,
-    ownsMcpIdentity,
   })
+  // Cancel kills the server too, also while it starts: no other turn uses it,
+  // and killing only the client would leave its session running.
+  const { signal } = options.abortController
+  const abortServer = (): void => { lease.abort() }
+  signal.addEventListener('abort', abortServer, { once: true })
   let unbind: (() => void) | undefined
   try {
     const server = await lease.ready
-    if (options.abortController.signal.aborted) return { output: '', exitCode: -1 }
+    const url = await server.url
+    if (signal.aborted) return { output: '', exitCode: -1 }
     // OpenCode connects MCP servers on the first turn, not at startup.
     unbind = endpoint?.bindIdentity?.(server.identity)
     const runTurn = (withVariant: boolean) => runOpenCodeProcess(
       binaryPath,
-      buildOpenCode2Args(options, accessLevel, server.url, withVariant),
+      buildOpenCode2Args(options, accessLevel, url, withVariant),
       cwd,
       { OPENCODE_PASSWORD: server.password },
       options,
       accessLevel,
-      () => { lease.abort() },
     )
     options.onDelta?.({ type: 'status', status: 'started' })
     let run = await runTurn(true)
@@ -1004,11 +996,13 @@ async function executeOpenCode2(
     }
     return finalizeOpenCodeResult(run.state, run.exitCode, options, accessLevel)
   } catch (error) {
+    if (signal.aborted) return { output: '', exitCode: -1 }
     lease.retire()
     throw error
   } finally {
+    signal.removeEventListener('abort', abortServer)
     unbind?.()
-    void lease.release()
+    await lease.release()
   }
 }
 
@@ -1025,7 +1019,6 @@ async function runOpenCodeProcess(
   env: Record<string, string | undefined>,
   options: OpenCodeExecutionOptions,
   accessLevel: AccessLevel,
-  onCancel?: () => void,
 ): Promise<{ state: OpenCodeExecutionState; exitCode: number | null }> {
   const child = createOpenCodeProcess(binaryPath, args, cwd, env)
   const state = createOpenCodeExecutionState()
@@ -1036,7 +1029,6 @@ async function runOpenCodeProcess(
     options,
     appendOutput,
     accessLevel,
-    onCancel,
   )
 
   try {
