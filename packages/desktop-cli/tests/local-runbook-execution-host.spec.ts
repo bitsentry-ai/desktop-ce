@@ -2,13 +2,19 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import net from 'node:net'
+import { once } from 'node:events'
 
 import {
   createLocalRunbookExecutionClient,
   LocalRunbookExecutionHost,
   type LocalRunbookExecutionHostRuntime,
 } from '../src/runtime/local-runbook-execution-host'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+
+const entryRun = vi.hoisted(() => vi.fn())
+vi.mock('../src/cli/runbooks-cli', () => ({ runRunbooksCli: entryRun }))
+vi.mock('electron-log', () => ({ default: { transports: { console: { level: 'error' } } } }))
+vi.mock('@bitsentry-desktop/runbook-runtime', () => ({ DesktopRunbookRuntime: {} }))
 
 function createRuntime(label: string): LocalRunbookExecutionHostRuntime & {
   readonly executions: Map<string, Record<string, unknown>>
@@ -52,6 +58,7 @@ describe('local runbook execution host', () => {
   const temporaryDirectories: string[] = []
 
   afterEach(async () => {
+    vi.restoreAllMocks()
     await Promise.all(temporaryDirectories.map((directory) => rm(directory, { recursive: true, force: true })))
     temporaryDirectories.length = 0
   })
@@ -61,6 +68,168 @@ describe('local runbook execution host', () => {
     temporaryDirectories.push(directory)
     return directory
   }
+
+  async function createBrokenWrite(directory: string): Promise<Error> {
+    const endpoint = path.join(directory, 'broken.sock')
+    let closed!: () => void
+    const peerClosed = new Promise<void>((resolve) => { closed = resolve })
+    const peer = net.createServer((socket) => {
+      socket.once('close', closed)
+      socket.destroy()
+    })
+    await new Promise<void>((resolve) => peer.listen(endpoint, resolve))
+    const writer = new net.Socket()
+    writer.pause()
+    const failure = new Promise<Error>((resolve) => writer.once('error', resolve))
+    try {
+      writer.connect(endpoint)
+      await once(writer, 'connect')
+      await peerClosed
+      writer.write('synthetic')
+      return await failure
+    } finally {
+      writer.destroy()
+      await new Promise<void>((resolve) => peer.close(() => resolve()))
+    }
+  }
+
+  // These barriers assert actual Unix-socket errno; named-pipe coverage remains below.
+  it.skipIf(process.platform === 'win32').each(['write', 'remote-response', 'unsafe-fields', 'wait-response'] as const)(
+    'prints bounded %s context without leaking request data',
+    async (kind) => {
+      vi.resetModules()
+      const hostModule = await import('../src/runtime/local-runbook-execution-host')
+      const directory = await createUserDataDirectory()
+      const sentinel = 'DO_NOT_LOG_TOKEN_ARGS_ENV_PATH_STACK'
+      const endpoint = path.join(directory, `${sentinel}.sock`)
+      const executions: string[] = []
+      let host: InstanceType<typeof hostModule.LocalRunbookExecutionHost> | undefined
+      let server: net.Server | undefined
+      let failure: unknown
+      const sockets = new Set<net.Socket>()
+      if (kind === 'remote-response') {
+        const runtime = createRuntime('diagnostic')
+        runtime.executeRunbook = async (input) => {
+          executions.push(input.runbookId)
+          throw await createBrokenWrite(directory)
+        }
+        host = new hostModule.LocalRunbookExecutionHost({ userDataPath: directory, runtime })
+        await host.start()
+      } else {
+        let peerClosed!: () => void
+        const closed = new Promise<void>((resolve) => { peerClosed = resolve })
+        let accepted = false
+        server = net.createServer((socket) => {
+          sockets.add(socket)
+          socket.once('close', () => sockets.delete(socket))
+          if (accepted) {
+            if (kind === 'wait-response') {
+              socket.once('data', (data: Buffer) => {
+                const request = JSON.parse(data.toString()) as { args: [{ runbookId: string }] }
+                executions.push(request.args[0].runbookId)
+                socket.end('{')
+              })
+              return
+            }
+            socket.once('close', peerClosed)
+            socket.destroy()
+            return
+          }
+          accepted = true
+          socket.once('data', (data: Buffer) => {
+            const request = JSON.parse(data.toString()) as { id: string }
+            socket.end(`${JSON.stringify({ id: request.id, result: null })}\n`)
+          })
+        })
+        await new Promise<void>((resolve) => server!.listen(endpoint, resolve))
+        await writeFile(path.join(directory, 'runbook-execution-host.json'), JSON.stringify({
+          version: 1, endpoint, token: sentinel,
+        }))
+        // Hold only the execute write until its real peer has closed.
+        const connect = net.createConnection.bind(net)
+        const client = await hostModule.createLocalRunbookExecutionClient({
+          userDataPath: directory,
+          createHeadlessRuntime: async () => { throw new Error('Unexpected execution replay') },
+        })
+        vi.spyOn(net, 'createConnection').mockImplementationOnce((...args) => {
+          const socket = Reflect.apply(connect, net, args) as net.Socket
+          if (kind === 'wait-response') return socket
+          socket.pause()
+          const write = socket.write
+          socket.write = ((...writeArgs: unknown[]) => {
+            void closed.then(() => Reflect.apply(write, socket, writeArgs))
+            return true
+          }) as typeof socket.write
+          socket.once('error', (error) => {
+            Object.assign(error, { path: sentinel, stack: sentinel, env: sentinel })
+            if (kind === 'unsafe-fields') Object.assign(error, { code: sentinel, syscall: sentinel })
+          })
+          return socket
+        })
+        try { await client.executeRunbook({ runbookId: sentinel }) } catch (error) { failure = error }
+        await client.destroy()
+      }
+      try {
+        if (host !== undefined) {
+          const client = await hostModule.createLocalRunbookExecutionClient({
+            userDataPath: directory,
+            createHeadlessRuntime: async () => { throw new Error('Unexpected execution replay') },
+          })
+          try { await client.executeRunbook({ runbookId: sentinel }) } catch (error) { failure = error }
+          await client.destroy()
+          expect(executions).toEqual([sentinel])
+        }
+        const message = kind === 'wait-response'
+          ? 'Local runbook host closed the connection before responding.'
+          : 'write EPIPE'
+        if (kind === 'wait-response') expect(executions).toEqual([sentinel])
+        expect(failure).toMatchObject({ message })
+        entryRun.mockRejectedValueOnce(failure)
+        const output: string[] = []
+        vi.spyOn(process.stderr, 'write').mockImplementation((chunk) => { output.push(String(chunk)); return true })
+        const previousExitCode = process.exitCode
+        try {
+          await import('../src/cli/desktop-runbooks-entry')
+          await vi.waitFor(() => expect(output.join('').split('\n').filter(Boolean)).toHaveLength(2))
+          const lines = output.join('').split('\n').filter(Boolean)
+          expect(lines[0]).toBe(message)
+          expect(lines[1]!.length).toBeLessThan(384)
+          const context = JSON.parse(lines[1]!.replace('[local-runbook-host] ', '')) as unknown
+          expect(context).toEqual({
+            requestId: expect.stringMatching(/^[a-f0-9]{24}$/),
+            method: 'executeRunbook', phase: kind === 'unsafe-fields' ? 'write' : kind,
+            pid: process.pid, requestWasSent: true,
+            ...(kind === 'write' ? { errno: 'EPIPE', syscall: 'write' } : {}),
+            ...(kind === 'wait-response' ? { errno: 'ECONNRESET' } : {}),
+          })
+          expect(output.join('')).not.toContain(sentinel)
+          expect(process.exitCode).toBe(1)
+        } finally { process.exitCode = previousExitCode }
+      } finally {
+        if (host !== undefined) await host.close()
+        for (const socket of sockets) socket.destroy()
+        await new Promise<void>((resolve) => {
+          if (server === undefined) resolve()
+          else server.close(() => resolve())
+        })
+      }
+    },
+    5_000,
+  )
+
+  it.each([true, false])('adds no context line when the entry has no classified failure (success %s)', async (success) => {
+    vi.resetModules()
+    if (success) entryRun.mockResolvedValueOnce(undefined)
+    else entryRun.mockRejectedValueOnce(Object.assign(new Error('synthetic failure'), { token: 'DO_NOT_LOG' }))
+    const output: string[] = []
+    vi.spyOn(process.stderr, 'write').mockImplementation((chunk) => { output.push(String(chunk)); return true })
+    const previousExitCode = process.exitCode
+    try {
+      await import('../src/cli/desktop-runbooks-entry')
+      expect(output.join('')).toBe(success ? '' : 'synthetic failure\n')
+      expect(process.exitCode).toBe(success ? previousExitCode : 1)
+    } finally { process.exitCode = previousExitCode }
+  })
 
   it.each(['getExecution', 'executeRunbook'] as const)(
     'settles a disconnected %s request and only retries reads',
