@@ -30,11 +30,46 @@ vi.mock('electron-log', () => ({
   default: mocks.log,
 }))
 
+// Fake PIDs far above any real one; process.kill is mocked below as well.
+let nextFakePid = 900_000
+
+function takeFakePid(): number {
+  nextFakePid += 1
+  return nextFakePid
+}
+
 class MockChildProcess extends EventEmitter {
   stdout = new PassThrough()
   stderr = new PassThrough()
-  pid = 1234
-  kill = vi.fn()
+  pid = takeFakePid()
+  kill = vi.fn(() => { queueMicrotask(() => { this.emit('exit', null) }) })
+}
+
+/** OpenCode 2 spawns one `serve` per server and one `run --server` client per turn. */
+function mockOpenCode2Processes(): { servers: MockChildProcess[]; clients: MockChildProcess[] } {
+  const servers: MockChildProcess[] = []
+  const clients: MockChildProcess[] = []
+  mocks.spawn.mockImplementation((_command: string, args: string[]) => {
+    const child = new MockChildProcess()
+    if (args.includes('serve')) {
+      servers.push(child)
+      const port = 4095 + servers.length
+      setImmediate(() => { child.stdout.write(`server listening on http://127.0.0.1:${String(port)}\n`) })
+    } else {
+      clients.push(child)
+    }
+    return child
+  })
+  return { servers, clients }
+}
+
+function spawnOptions(child: MockChildProcess): { args: string[]; env: Record<string, string | undefined> } {
+  const index = mocks.spawn.mock.results.findIndex((result) => result.value === child)
+  return spawnCall(index)
+}
+
+async function waitForClients(clients: MockChildProcess[], count: number): Promise<void> {
+  await vi.waitFor(() => { expect(clients).toHaveLength(count) })
 }
 
 function finishOpenCodeProcess(child: MockChildProcess, stdoutLines: unknown[] = []): void {
@@ -94,9 +129,15 @@ const LEGACY_OPENCODE_EXECUTION_CASES = [
 describe('executeOpenCode', () => {
   beforeEach(() => {
     mockOpenCodeVersion('1.14.20')
+    vi.spyOn(process, 'kill').mockImplementation(() => {
+      throw Object.assign(new Error('kill ESRCH'), { code: 'ESRCH' })
+    })
   })
 
-  afterEach(() => {
+  afterEach(async () => {
+    const { closePooledProcesses } = await import('@bitsentry-ce/coding-agents/process-pool')
+    await closePooledProcesses()
+    vi.mocked(process.kill).mockRestore()
     mocks.execFile.mockReset()
     mocks.spawn.mockReset()
     mocks.spawnSync.mockReset()
@@ -573,8 +614,6 @@ describe('executeOpenCode', () => {
   it.each([
     { version: '1.14.20', accessLevel: 'auto-accept-edits', flags: ['run', '--format', 'json', '--dir', '/repo', '--model', 'openai/gpt-5', '--variant', 'high'] },
     { version: '1.14.20', accessLevel: 'full-access', flags: ['run', '--format', 'json', '--dir', '/repo', '--model', 'openai/gpt-5', '--variant', 'high', '--dangerously-skip-permissions'] },
-    { version: 'opencode v2.3.0', accessLevel: 'auto-accept-edits', flags: ['run', '--standalone', '--format', 'json', '--model', 'openai/gpt-5#high'] },
-    { version: 'opencode v2.3.0', accessLevel: 'full-access', flags: ['run', '--standalone', '--format', 'json', '--model', 'openai/gpt-5#high', '--auto'] },
   ] as const)('builds $accessLevel run flags for OpenCode $version', async ({ version, accessLevel, flags }) => {
     mockOpenCodeVersion(version)
     const child = new MockChildProcess()
@@ -598,55 +637,6 @@ describe('executeOpenCode', () => {
     expect(mocks.spawn.mock.calls[0][2]).toMatchObject({ cwd: '/repo' })
   })
 
-  it('passes OpenCode 2 host tools and access limits to its private server', async () => {
-    mockOpenCodeVersion('opencode v2.3.0')
-    const restrictedChild = new MockChildProcess()
-    const fullAccessChild = new MockChildProcess()
-    mocks.spawn.mockReturnValueOnce(restrictedChild).mockReturnValueOnce(fullAccessChild)
-    const { executeOpenCode } = await import('@bitsentry-ce/desktop-cli/runtime/desktop-coding-agents')
-
-    const restricted = executeOpenCode({
-      prompt: 'List runbooks',
-      binaryPath: 'opencode',
-      abortController: new AbortController(),
-      accessLevel: 'auto-accept-edits',
-      mcpEndpoint: MCP_ENDPOINT,
-    })
-    await waitForSpawn()
-    finishOpenCodeProcess(restrictedChild)
-    await expect(restricted).resolves.toMatchObject({ exitCode: 0 })
-    const fullAccess = executeOpenCode({
-      prompt: 'List runbooks',
-      binaryPath: 'opencode',
-      abortController: new AbortController(),
-      accessLevel: 'full-access',
-      mcpEndpoint: MCP_ENDPOINT,
-    })
-    await waitForSpawn(2)
-    finishOpenCodeProcess(fullAccessChild)
-    await expect(fullAccess).resolves.toMatchObject({ exitCode: 0 })
-
-    const { env } = spawnCall(0)
-    expect(env).toMatchObject(MCP_ENDPOINT.env)
-    expect(env.OPENCODE_CONFIG).toBeUndefined()
-    const config = JSON.parse(env.OPENCODE_CONFIG_CONTENT ?? '{}') as {
-      mcp: Record<string, unknown>
-      permission: Record<string, string>
-    }
-    expect(config.mcp.bitsentry).toEqual({ type: 'local', command: [process.execPath, MCP_ENDPOINT.args[0]] })
-    expect(config.permission).toMatchObject({
-      bash: 'deny', task: 'deny', webfetch: 'deny', external_directory: 'deny', execute: 'deny', browser: 'deny', edit: 'allow',
-    })
-    for (const hostTool of getHostTools()) {
-      expect(config.permission[`bitsentry_${hostTool.name}`]).toBe('allow')
-    }
-    const fullAccessPermission = (JSON.parse(spawnCall(1).env.OPENCODE_CONFIG_CONTENT ?? '{}') as {
-      permission: Record<string, string>
-    }).permission
-    expect(Object.values(fullAccessPermission)).toEqual(getHostTools().map(() => 'allow'))
-    expect(mocks.execFile).toHaveBeenCalledTimes(1)
-  })
-
   it('does not start OpenCode when the turn is cancelled during the version check', async () => {
     let finishVersion: () => void = () => {}
     mocks.execFile.mockImplementation((_command: string, _args: string[], _options: unknown, callback: ExecFileCallback) => {
@@ -667,9 +657,7 @@ describe('executeOpenCode', () => {
 
   it('reruns OpenCode 2 on the model default when the model lacks the chosen effort', async () => {
     mockOpenCodeVersion('opencode v2.3.0')
-    const rejected = new MockChildProcess()
-    const retried = new MockChildProcess()
-    mocks.spawn.mockReturnValueOnce(rejected).mockReturnValueOnce(retried)
+    const { servers, clients } = mockOpenCode2Processes()
     const { executeOpenCode } = await import('@bitsentry-ce/desktop-cli/runtime/desktop-coding-agents')
 
     const resultPromise = executeOpenCode({
@@ -679,7 +667,8 @@ describe('executeOpenCode', () => {
       model: 'kimi-code-plan-global/k3',
       traitValues: { effort: 'medium' },
     })
-    await waitForSpawn()
+    await waitForClients(clients, 1)
+    const [rejected] = clients
     rejected.stdout.write(`${JSON.stringify({
       type: 'error',
       sessionID: 'ses_1',
@@ -689,29 +678,181 @@ describe('executeOpenCode', () => {
     rejected.stderr.end()
     rejected.emit('exit', 1)
     rejected.emit('close', 1)
-    await waitForSpawn(2)
-    finishOpenCodeProcess(retried, [{ type: 'message.part.updated', properties: { part: { id: 'part_1', type: 'text', text: 'OK' } } }])
+    await waitForClients(clients, 2)
+    finishOpenCodeProcess(clients[1], [{ type: 'message.part.updated', properties: { part: { id: 'part_1', type: 'text', text: 'OK' } } }])
 
     await expect(resultPromise).resolves.toMatchObject({ output: 'OK', exitCode: 0 })
-    expect(spawnCall(0).args).toContain('kimi-code-plan-global/k3#medium')
-    expect(spawnCall(1).args).toContain('kimi-code-plan-global/k3')
-    expect(spawnCall(1).args.some((arg) => arg.includes('#'))).toBe(false)
+    expect(servers).toHaveLength(1)
+    expect(spawnOptions(rejected).args).toContain('kimi-code-plan-global/k3#medium')
+    expect(spawnOptions(clients[1]).args).toContain('kimi-code-plan-global/k3')
+    expect(spawnOptions(clients[1]).args.some((arg) => arg.includes('#'))).toBe(false)
   })
 
   it('fails the turn when OpenCode 2 exits cleanly after an error event', async () => {
     mockOpenCodeVersion('opencode v2.3.0')
-    const child = new MockChildProcess()
-    mocks.spawn.mockReturnValue(child)
+    const { clients } = mockOpenCode2Processes()
     const { executeOpenCode } = await import('@bitsentry-ce/desktop-cli/runtime/desktop-coding-agents')
 
     const resultPromise = executeOpenCode({ prompt: 'Use a missing model', binaryPath: 'opencode', abortController: new AbortController() })
-    await waitForSpawn()
-    finishOpenCodeProcess(child, [{
+    await waitForClients(clients, 1)
+    finishOpenCodeProcess(clients[0], [{
       type: 'error',
       sessionID: 'ses_1',
       error: { type: 'provider.no-route', message: 'Model unavailable: nonexistent/fake-model' },
     }])
 
     await expect(resultPromise).rejects.toThrow('OpenCode reported an error: Model unavailable: nonexistent/fake-model')
+  })
+})
+
+describe('OpenCode 2 server reuse', () => {
+  const bound: string[] = []
+  let turnCount = 0
+  const incidentEndpoint = (agentSessionId: string) => {
+    turnCount += 1
+    const token = `turn-token-${String(turnCount)}`
+    return {
+      ...MCP_ENDPOINT,
+      token,
+      env: { ...MCP_ENDPOINT.env, BITSENTRY_MCP_TOKEN: token },
+      agentSessionId,
+      bindIdentity: (identity: { token: string }) => {
+        bound.push(identity.token)
+        return () => {}
+      },
+    }
+  }
+
+  beforeEach(() => {
+    bound.length = 0
+    mockOpenCodeVersion('opencode v2.3.0')
+    vi.spyOn(process, 'kill').mockImplementation(() => {
+      throw Object.assign(new Error('kill ESRCH'), { code: 'ESRCH' })
+    })
+  })
+
+  afterEach(async () => {
+    const { closePooledProcesses } = await import('@bitsentry-ce/coding-agents/process-pool')
+    await closePooledProcesses()
+    vi.mocked(process.kill).mockRestore()
+    mocks.execFile.mockReset()
+    mocks.spawn.mockReset()
+    vi.resetModules()
+  })
+
+  async function startTurn(options: {
+    clients: MockChildProcess[]
+    agentSessionId?: string
+    accessLevel?: 'auto-accept-edits' | 'full-access'
+    abortController?: AbortController
+  }) {
+    const { executeOpenCode } = await import('@bitsentry-ce/desktop-cli/runtime/desktop-coding-agents')
+    const clientCount = options.clients.length
+    const result = executeOpenCode({
+      prompt: 'Investigate',
+      binaryPath: 'opencode',
+      abortController: options.abortController ?? new AbortController(),
+      cwd: '/repo',
+      model: 'openai/gpt-5',
+      traitValues: { effort: 'high' },
+      accessLevel: options.accessLevel ?? 'auto-accept-edits',
+      mcpEndpoint: incidentEndpoint(options.agentSessionId ?? 'incident-1'),
+    })
+    await waitForClients(options.clients, clientCount + 1)
+    return { result, client: options.clients[clientCount] }
+  }
+
+  const answer = (text: string) => [{ type: 'text', sessionID: `ses-${text}`, part: { id: `part-${text}`, type: 'text', text } }]
+
+  it('serves five turns of one incident from one server, each turn binding its tools to that server', async () => {
+    const { servers, clients } = mockOpenCode2Processes()
+    const outputs: string[] = []
+    for (let turn = 1; turn <= 5; turn += 1) {
+      const { result, client } = await startTurn({ clients })
+      finishOpenCodeProcess(client, answer(`answer ${String(turn)}`))
+      outputs.push((await result).output)
+    }
+
+    expect(servers).toHaveLength(1)
+    expect(outputs).toEqual(['answer 1', 'answer 2', 'answer 3', 'answer 4', 'answer 5'])
+    const server = spawnOptions(servers[0])
+    expect(server.args).toEqual(['serve', '--hostname', '127.0.0.1', '--port', '0'])
+    expect(new Set(bound)).toEqual(new Set([server.env.BITSENTRY_MCP_TOKEN]))
+    expect(bound).toHaveLength(5)
+    const client = spawnOptions(clients[4])
+    expect(client.args.slice(0, -1)).toEqual(['run', '--server', 'http://127.0.0.1:4096', '--format', 'json', '--model', 'openai/gpt-5#high'])
+    expect(client.env.OPENCODE_PASSWORD).toBe(server.env.OPENCODE_SERVER_PASSWORD)
+    expect(client.env.BITSENTRY_MCP_TOKEN).toBeUndefined()
+  })
+
+  it('keeps access limits per server and never shares a server between incidents', async () => {
+    const { servers, clients } = mockOpenCode2Processes()
+    const runTurn = async (agentSessionId: string, accessLevel: 'auto-accept-edits' | 'full-access') => {
+      const { result, client } = await startTurn({ clients, agentSessionId, accessLevel })
+      finishOpenCodeProcess(client, answer(agentSessionId))
+      await result
+      return client
+    }
+    await runTurn('incident-1', 'auto-accept-edits')
+    const reusedClient = await runTurn('incident-1', 'auto-accept-edits')
+    const fullAccessClient = await runTurn('incident-1', 'full-access')
+    await runTurn('incident-2', 'auto-accept-edits')
+
+    expect(servers).toHaveLength(3)
+    const permissionOf = (server: MockChildProcess) =>
+      (JSON.parse(spawnOptions(server).env.OPENCODE_CONFIG_CONTENT ?? '{}') as { permission: Record<string, string> }).permission
+    const restricted = permissionOf(servers[0])
+    expect(restricted).toMatchObject({
+      bash: 'deny', task: 'deny', webfetch: 'deny', external_directory: 'deny', execute: 'deny', browser: 'deny', edit: 'allow',
+    })
+    for (const hostTool of getHostTools()) {
+      expect(restricted[`bitsentry_${hostTool.name}`]).toBe('allow')
+    }
+    expect(JSON.parse(spawnOptions(servers[0]).env.OPENCODE_CONFIG_CONTENT ?? '{}')).toMatchObject({
+      mcp: { bitsentry: { type: 'local', command: [process.execPath, MCP_ENDPOINT.args[0]] } },
+    })
+    expect(spawnOptions(reusedClient).args).not.toContain('--auto')
+    expect(Object.values(permissionOf(servers[1]))).toEqual(getHostTools().map(() => 'allow'))
+    expect(spawnOptions(fullAccessClient).args).toContain('--auto')
+    expect(permissionOf(servers[2])).toEqual(restricted)
+    expect(spawnOptions(servers[2]).env.BITSENTRY_MCP_TOKEN).not.toBe(spawnOptions(servers[0]).env.BITSENTRY_MCP_TOKEN)
+    expect(mocks.execFile).toHaveBeenCalledTimes(1)
+  })
+
+  it('replaces a crashed server on the next turn', async () => {
+    const { servers, clients } = mockOpenCode2Processes()
+    const first = await startTurn({ clients })
+    finishOpenCodeProcess(first.client, answer('first'))
+    await first.result
+    servers[0].emit('exit', 1)
+
+    const second = await startTurn({ clients })
+    finishOpenCodeProcess(second.client, answer('second'))
+
+    await expect(second.result).resolves.toMatchObject({ output: 'second', exitCode: 0 })
+    expect(servers).toHaveLength(2)
+  })
+
+  it('cancels one turn without touching a concurrent turn of the same incident', async () => {
+    const { servers, clients } = mockOpenCode2Processes()
+    const abortController = new AbortController()
+    const cancelled = await startTurn({ clients, abortController })
+    const running = await startTurn({ clients })
+    expect(servers).toHaveLength(2)
+
+    abortController.abort()
+    cancelled.client.emit('close', null)
+    await expect(cancelled.result).resolves.toMatchObject({ exitCode: -1 })
+    finishOpenCodeProcess(running.client, answer('still running'))
+
+    await expect(running.result).resolves.toMatchObject({ output: 'still running', exitCode: 0 })
+    expect(servers[0].kill).toHaveBeenCalled()
+    expect(cancelled.client.kill).toHaveBeenCalled()
+    expect(servers[1].kill).not.toHaveBeenCalled()
+    expect(running.client.kill).not.toHaveBeenCalled()
+    const next = await startTurn({ clients })
+    finishOpenCodeProcess(next.client, answer('next'))
+    await next.result
+    expect(servers).toHaveLength(2)
   })
 })

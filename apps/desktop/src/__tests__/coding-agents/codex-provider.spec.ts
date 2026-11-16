@@ -10,9 +10,9 @@ import {
 import { setCodingAgentsLoggerForTesting } from '@bitsentry-ce/coding-agents/logger'
 import { HOST_MCP_SERVER_NAME } from '@bitsentry-ce/coding-agents/host-mcp-server.service'
 import {
-  closeCodexAppServers,
-  setCodexAppServerIdleTtlForTesting,
-} from '@bitsentry-ce/coding-agents/codex-app-server-pool'
+  closePooledProcesses,
+  setProcessPoolIdleTtlForTesting,
+} from '@bitsentry-ce/coding-agents/process-pool'
 
 const tempDirs: string[] = []
 async function createMultiItemCodexAppServer(options: { readsGlobalCodexInstructions?: boolean } = {}): Promise<{
@@ -156,7 +156,7 @@ rl.on('line', (line) => {
 }
 
 afterEach(async () => {
-  await closeCodexAppServers()
+  await closePooledProcesses()
   await Promise.all(tempDirs.splice(0).map((directory) => rm(directory, { recursive: true, force: true })))
   setCodingAgentsLoggerForTesting({ info: () => {}, warn: () => {}, error: () => {} })
 })
@@ -629,7 +629,7 @@ describe('Codex app-server reuse', () => {
   })
 
   it('closes an idle process and starts a fresh one for the next turn', async () => {
-    setCodexAppServerIdleTtlForTesting(50)
+    setProcessPoolIdleTtlForTesting(50)
     try {
       const mock = await createCountingCodexAppServer()
       await runIncidentTurn(mock, 'First')
@@ -639,7 +639,7 @@ describe('Codex app-server reuse', () => {
       await expect(runIncidentTurn(mock, 'Second')).resolves.toMatchObject({ output: 'answer from thread-1' })
       expect(await readSpawnedPids(mock.spawnsPath)).toHaveLength(2)
     } finally {
-      setCodexAppServerIdleTtlForTesting(30_000)
+      setProcessPoolIdleTtlForTesting(30_000)
     }
   })
 
