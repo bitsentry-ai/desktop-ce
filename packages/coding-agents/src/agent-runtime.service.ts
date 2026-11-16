@@ -2804,6 +2804,11 @@ export class AgentRuntimeService {
               }),
           })
 
+        if (isAbortSignalAborted(abortController.signal)) {
+          session.state = 'CANCELLED'
+          return
+        }
+
         const toolResponseFallbackText = this.buildVisibleRunbookFallbackResponse(
           fallbackResultsForThisLlmCall,
           response.content,
