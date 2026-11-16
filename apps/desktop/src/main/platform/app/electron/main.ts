@@ -120,10 +120,12 @@ const SMOKE_RUNBOOK_COMPLETE_MARKER = '[smoke] runbook-completed'
 const isRunbookSmokeScenario = process.env.BITSENTRY_DESKTOP_SMOKE_SCENARIO === 'runbook'
 const smokeMarkerFilePath = process.env.BITSENTRY_DESKTOP_SMOKE_MARKER_FILE
 const buildGitSha = process.env.BITSENTRY_BUILD_GIT_SHA ?? 'unknown'
-// electron-log resolves its file path from Electron's mutable app name. Pin
-// the dev destination before the first agent/provider log line is emitted.
+// electron-log fixes its file path on the first log line, using Electron's
+// mutable app name. Pin it before that line: the first line is logged before
+// app.setName runs, so packaged builds would otherwise log to the dev folder.
+// This changes only the log folder; userData stays where it is.
+log.transports.file.setAppName(isDebug ? '@bitsentry-ce/desktop' : APP_DATA_NAME)
 if (isDebug) {
-  log.transports.file.setAppName('@bitsentry-ce/desktop')
   log.transports.file.level = 'info'
 }
 log.transports.console.level = false
