@@ -8,7 +8,7 @@ type LlmChatResponse = Awaited<ReturnType<AgentRuntimeLlmAdapter['chatWithTools'
 type ScriptedResponse = Omit<LlmChatResponse, 'toolProtocol'>
 
 /** An LLM whose calls wait until the test answers them, in order. */
-function createScriptedLlm() {
+function createScriptedLlm({ rejectOnAbort = true } = {}) {
   const calls: Array<{
     messages: LlmChatRequest['messages']
     onDelta: LlmChatRequest['onDelta']
@@ -16,7 +16,9 @@ function createScriptedLlm() {
   }> = []
   const adapter = {
     chatWithTools: vi.fn((request: LlmChatRequest) => new Promise<LlmChatResponse>((resolve, reject) => {
-      request.signal?.addEventListener('abort', () => { reject(new Error('aborted')) })
+      if (rejectOnAbort) {
+        request.signal?.addEventListener('abort', () => { reject(new Error('aborted')) })
+      }
       // The runtime keeps appending to the same array, so keep what this call saw.
       calls.push({
         messages: [...request.messages],
@@ -212,6 +214,44 @@ describe('agent runtime queue and steer', () => {
     await waitFor(() => llm.calls.length === 2)
     expect(userTexts(llm.calls[1].messages).at(-1)).toBe('Then verify it is healthy.')
     expect(runtime.getSnapshot(sessionId).queueHeld).toBe(false)
+  })
+
+  it('keeps a stopped turn cancelled and its queue held when the provider returns normally after abort', async () => {
+    const llm = createScriptedLlm({ rejectOnAbort: false })
+    const runtime = new AgentRuntimeService(() => null, llm.adapter)
+    const sessionId = await runtime.start({ prompt: 'Check disk usage.', llm: DIRECT_API })
+    await waitFor(() => llm.calls.length === 1)
+    llm.calls[0].onDelta?.({ type: 'text', text: 'Partial reply before stop.' })
+    await runtime.send({ sessionId, message: 'Then check memory.' })
+    await runtime.send({ sessionId, message: 'Then check load.' })
+
+    runtime.cancel(sessionId)
+    llm.calls[0].respond({ content: 'Late result after stop.', toolCalls: [] })
+    await waitFor(() => runtime.getSnapshot(sessionId).queueHeld === true || runtime.getSnapshot(sessionId).queuedMessages?.length !== 2)
+
+    const stopped = runtime.getSnapshot(sessionId)
+    expect(stopped).toMatchObject({
+      runtimeState: 'CANCELLED',
+      threadState: 'CANCELLED',
+      queueHeld: true,
+      queuedMessages: [{ text: 'Then check memory.' }, { text: 'Then check load.' }],
+    })
+    expect(stopped.messages.filter((message) => message.kind === 'agent')).toMatchObject([
+      { status: 'cancelled', finalText: null, iterations: [{ text: 'Partial reply before stop.' }] },
+    ])
+
+    runtime.updateQueue({ sessionId, action: 'resume' })
+    await waitFor(() => llm.calls.length === 2)
+    llm.calls[1].respond({ content: 'Memory is fine.', toolCalls: [] })
+    await waitFor(() => llm.calls.length === 3)
+    llm.calls[2].respond({ content: 'Load is low.', toolCalls: [] })
+    await waitFor(() => runtime.getSnapshot(sessionId).threadState === 'COMPLETED')
+    expect(runtime.getSnapshot(sessionId)).toMatchObject({ queueHeld: false, queuedMessages: [] })
+    expect(runtime.getSnapshot(sessionId).messages.filter((message) => message.kind === 'agent')).toMatchObject([
+      { status: 'cancelled', finalText: null },
+      { status: 'done', finalText: 'Memory is fine.' },
+      { status: 'done', finalText: 'Load is low.' },
+    ])
   })
 
   it('runs a message sent after a stop once the stopped turn winds down', async () => {
