@@ -382,7 +382,17 @@ async function waitForDetachedExecutionStart(
   const deadline = Date.now() + DETACHED_EXECUTION_START_TIMEOUT_MS
 
   while (Date.now() < deadline) {
+    const started = await readDetachedExecutionStartFile(startupFile)
+    if (started !== null) {
+      return started
+    }
+
     if (child.exitCode !== null) {
+      // The worker may have published startup metadata after the first read.
+      const finalStarted = await readDetachedExecutionStartFile(startupFile)
+      if (finalStarted !== null) {
+        return finalStarted
+      }
       const workerError = await readFile(workerErrorFile, 'utf-8').catch(() => '')
       const detail = workerError.trim()
       throw new Error(
@@ -390,11 +400,6 @@ async function waitForDetachedExecutionStart(
           detail === '' ? '' : `: ${detail}`
         }`,
       )
-    }
-
-    const started = await readDetachedExecutionStartFile(startupFile)
-    if (started !== null) {
-      return started
     }
 
     await new Promise((resolve) => setTimeout(resolve, DETACHED_EXECUTION_START_POLL_MS))
