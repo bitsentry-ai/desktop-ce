@@ -95,7 +95,7 @@ describe('AgentRuntimeService incident restore', () => {
     ])
   })
 
-  it('persists the incident snapshot after structural events and coalesced deltas, and retries a failed save on destroy', async () => {
+  it('saves only the changed messages after structural events and coalesced deltas, and retries a failed save on destroy', async () => {
     let onDelta: ((delta: { type: 'text'; text: string }) => void) | undefined
     const adapter: AgentRuntimeLlmAdapter = {
       chatWithTools: (input) => {
@@ -103,45 +103,53 @@ describe('AgentRuntimeService incident restore', () => {
         return new Promise((_resolve, reject) => { input.signal?.addEventListener('abort', () => { reject(new Error('aborted')) }) })
       },
     }
-    const saved: unknown[][] = []
+    // Applies each save like the SQLite store does: changed indexes only, or the whole list.
+    const stored: unknown[] = []
+    const writes: number[][] = []
     let failSaves = false
     let failedSaves = 0
     const service = new AgentRuntimeService(
       () => null, adapter, undefined, undefined, undefined, undefined, undefined, undefined,
       async () => [],
-      async (incidentThreadId, messages) => {
+      async (incidentThreadId, messages, changedIndexes) => {
         if (failSaves) {
           failedSaves += 1
           throw new Error('disk busy')
         }
-        if (incidentThreadId === 'thread-1') saved.push(messages)
+        if (incidentThreadId !== 'thread-1') return
+        const indexes = changedIndexes ?? messages.map((_, index) => index)
+        if (changedIndexes === undefined) stored.length = messages.length
+        for (const index of indexes) stored[index] = messages[index]
+        writes.push([...indexes])
       },
     )
 
     const sessionId = await service.start({ incidentThreadId: 'thread-1', prompt: 'Why is the disk full?' })
     await waitForCondition(() => onDelta !== undefined)
     await new Promise((resolve) => setTimeout(resolve, 20))
-    const savesBeforeDeltas = saved.length
+    const savesBeforeDeltas = writes.length
     onDelta?.({ type: 'text', text: 'Checking ' })
     onDelta?.({ type: 'text', text: '/var' })
     await new Promise((resolve) => setTimeout(resolve, 150))
-    expect(saved.length).toBeGreaterThan(savesBeforeDeltas)
-    expect(saved.at(-1)).toMatchObject([
+    expect(writes.length).toBeGreaterThan(savesBeforeDeltas)
+    expect(writes.at(-1)).toEqual([1])
+    expect(stored).toMatchObject([
       { kind: 'user', text: 'Why is the disk full?' },
       { kind: 'agent', iterations: [{ text: 'Checking /var' }] },
     ])
-    const savesAfterDeltas = saved.length
+    const savesAfterDeltas = writes.length
 
     failSaves = true
     service.cancel(sessionId)
     await waitForCondition(() => failedSaves > 0)
     await new Promise((resolve) => setTimeout(resolve, 50))
-    expect(saved).toHaveLength(savesAfterDeltas)
+    expect(writes).toHaveLength(savesAfterDeltas)
     failSaves = false
     const messages = service.getSnapshot(sessionId).messages
     await service.destroy()
-    expect(saved.at(-1)).toEqual(messages)
-    expect(saved.at(-1)).toMatchObject([
+    expect(writes.at(-1)).toEqual([1])
+    expect(stored).toEqual(messages)
+    expect(stored).toMatchObject([
       { kind: 'user', text: 'Why is the disk full?' },
       { kind: 'agent', iterations: [{ text: 'Checking /var' }] },
     ])

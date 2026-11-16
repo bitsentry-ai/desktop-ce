@@ -74,7 +74,8 @@ export type DesktopBitsentryApi = {
   };
   incidents?: {
     list: () => Promise<unknown[]>;
-    getThreadMessages: (threadId: string) => Promise<unknown[]>;
+    /** The newest page before `before`; `before` in the result pages further back, null at the start. */
+    getThreadMessages: (threadId: string, before?: number) => Promise<{ messages: unknown[]; before: number | null }>;
     /** Writes only the fields present; `archivedAt: null` unarchives. */
     saveThread: (thread: { id: string } & Record<string, unknown>) => Promise<{ ok: true }>;
     appendThreadMessages: (threadId: string, messages: unknown[]) => Promise<{ ok: true }>;

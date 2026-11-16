@@ -593,31 +593,14 @@ export default function DataSourcesManager({
       null,
     [providerCards, selectedProviderId],
   );
-  const availableProviderSummary = useMemo(
-    () => providerCards.map((card) => card.label).join(", "),
-    [providerCards],
-  );
-  const pluginsById = useMemo(
-    () => new Map(plugins.map((plugin) => [plugin.id, plugin])),
-    [plugins],
-  );
-  const selectedPlugin = useMemo(
-    () =>
-      plugins.find((plugin) => plugin.id === selectedProviderId) ??
-      plugins.find(
-        (plugin) => readPluginDataSourceType(plugin) === sourceType,
-      ) ??
-      null,
-    [plugins, selectedProviderId, sourceType],
-  );
-  const selectedSetupFields = useMemo(
-    () => selectedPlugin?.metadata?.dataSource?.setupFields ?? [],
-    [selectedPlugin],
-  );
-  const editDialogPlugin = useMemo(
-    () => findEditDialogPlugin(plugins, editDialogSource),
-    [editDialogSource, plugins],
-  );
+  const availableProviderSummary = providerCards.map((card) => card.label).join(", ");
+  const pluginsById = new Map(plugins.map((plugin) => [plugin.id, plugin]));
+  const selectedPlugin =
+    plugins.find((plugin) => plugin.id === selectedProviderId) ??
+    plugins.find((plugin) => readPluginDataSourceType(plugin) === sourceType) ??
+    null;
+  const selectedSetupFields = selectedPlugin?.metadata?.dataSource?.setupFields ?? [];
+  const editDialogPlugin = findEditDialogPlugin(plugins, editDialogSource);
 
   useEffect(() => {
     if (pendingSyncIds.size === 0) return;

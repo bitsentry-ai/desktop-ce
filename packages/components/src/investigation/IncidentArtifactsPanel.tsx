@@ -5,7 +5,7 @@ import { DEADLINE_LEVELS, needsAction, ticketDeadlineStatus, type DeadlineLevel,
 import { Badge } from "../ui/badge";
 import { cn } from "../lib/utils";
 import type { ArtifactsFilter, ArtifactsPanelState, ArtifactsPanelSummary } from "./artifacts-panel-state";
-import { RunbookResultsView, useRunbookResults, type IncidentArtifactsMessage } from "./IncidentArtifactsRail";
+import { RunbookResultsView, useRunbookResults, useRunbookResultsSelection, type IncidentArtifactsMessage } from "./IncidentArtifactsRail";
 import { usePolledRows, useSourceActions } from "./IncidentIntegrationsRail";
 import { orderOperations, useOperationDecisions, type IntegrationOperationsPort } from "./IntegrationActionsView";
 import { AttentionRow, DeliveryItemCard, OperationCard, useOpenCards } from "./IntegrationArtifactCards";
@@ -102,7 +102,8 @@ export default function IncidentArtifactsPanel({ isOpen, filter, focusOnOpen = f
   const sources = usePolledRows<IntegrationResource>(threadId, resources, 5000);
   const actions = usePolledRows<IntegrationOperation>(threadId, operations, 2500);
   const deliveryRows = usePolledRows<IntegrationDelivery>(threadId, deliveries, 5000);
-  const runbookResults = useRunbookResults({ messages, incidentId: threadId, sessionId });
+  const runbookSelection = useRunbookResultsSelection(threadId);
+  const runbookResults = useRunbookResults({ messages, incidentId: threadId, sessionId, selection: runbookSelection });
   const sourceActions = useSourceActions(resources, sources.refresh);
   const decisions = useOperationDecisions({ threadId, service: operations, onRefresh: actions.refresh });
   const execution = useExecutionPanelState(sources.rows);
@@ -110,10 +111,10 @@ export default function IncidentArtifactsPanel({ isOpen, filter, focusOnOpen = f
   const { summary: runbookSummary } = runbookResults;
 
   const operationRows = useMemo(() => orderOperations(actions.rows), [actions.rows]);
-  const deliveryList = useMemo(() => orderDeliveries(deliveryRows.rows), [deliveryRows.rows]);
+  const deliveryList = orderDeliveries(deliveryRows.rows);
   const pendingOperations = useMemo(() => operationRows.filter((row) => row.status === "proposed"), [operationRows]);
-  const reviewDeliveries = useMemo(() => deliveryList.filter(needsReview), [deliveryList]);
-  const dueTickets = useMemo(() => ticketsAwaitingResponse(sources.rows, Date.now()), [sources.rows]);
+  const reviewDeliveries = deliveryList.filter(needsReview);
+  const dueTickets = ticketsAwaitingResponse(sources.rows, Date.now());
   const needYou = pendingOperations.length + reviewDeliveries.length + runbookSummary.failedRuns.length + runbookSummary.pendingDrafts.length + dueTickets.length;
   const total = sources.rows.length + runbookSummary.count + operationRows.length + deliveryRows.rows.length;
   const pendingIds = useMemo(

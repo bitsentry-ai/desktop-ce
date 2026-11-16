@@ -138,6 +138,24 @@ export interface RunbookExecutionServiceEvent {
   execution: RunbookExecutionRecord;
 }
 
+/**
+ * What the renderer is sent: an output flush of a running execution carries only its changed step, with the
+ * execution's other fields and `steps: []`; the renderer applies it to the previous version or fetches a snapshot.
+ */
+type RunbookExecutionRendererEvent = RunbookExecutionServiceEvent & {
+  step?: { index: number; record: RunbookExecutionRecord["steps"][number] };
+};
+
+function toRendererEvent(
+  event: RunbookExecutionServiceEvent,
+  stepIndex: number | undefined,
+): RunbookExecutionRendererEvent {
+  const { steps, status } = event.execution;
+  if (stepIndex === undefined || status !== "running" || stepIndex >= steps.length) return event;
+  const record = steps[stepIndex];
+  return { ...event, execution: { ...event.execution, steps: [] }, step: { index: stepIndex, record } };
+}
+
 export interface ChatMessage {
   role: "system" | "user" | "assistant" | "tool";
   content: string;
@@ -1259,7 +1277,7 @@ export class RunbookExecutionService {
         clearTimeout(flushTimer);
         flushTimer = null;
       }
-      await this.emitSnapshot(session);
+      await this.emitSnapshot(session, { stepIndex: actionIndex });
     };
 
     const scheduleFlush = () => {
@@ -1268,7 +1286,7 @@ export class RunbookExecutionService {
       }
       flushTimer = setTimeout(() => {
         flushTimer = null;
-        void this.emitSnapshot(session);
+        void this.emitSnapshot(session, { stepIndex: actionIndex });
       }, SHELL_STEP_EMIT_THROTTLE_MS);
     };
 
@@ -2055,6 +2073,7 @@ export class RunbookExecutionService {
     const throttledEmitSnapshot = this.createLocalAiSnapshotEmitter(
       session,
       snapshotState,
+      actionIndex,
     );
 
     const result = await runOrchestratedOperation({
@@ -2095,7 +2114,7 @@ export class RunbookExecutionService {
       },
     });
 
-    await this.flushLocalAiSnapshotEmitter(session, snapshotState);
+    await this.flushLocalAiSnapshotEmitter(session, snapshotState, actionIndex);
     step.metadata = this.createLocalAiMetadata(
       step.metadata,
       providerKey,
@@ -2192,6 +2211,7 @@ export class RunbookExecutionService {
   private createLocalAiSnapshotEmitter(
     session: RunbookExecutionSession,
     snapshotState: LocalAiSnapshotThrottleState,
+    stepIndex: number,
   ): () => void {
     const snapshotThrottleMs = 250;
 
@@ -2205,7 +2225,7 @@ export class RunbookExecutionService {
         snapshotState.timer = null;
         if (snapshotState.pending) {
           snapshotState.pending = false;
-          void this.emitSnapshot(session);
+          void this.emitSnapshot(session, { stepIndex });
         }
       }, snapshotThrottleMs);
     };
@@ -2214,13 +2234,14 @@ export class RunbookExecutionService {
   private async flushLocalAiSnapshotEmitter(
     session: RunbookExecutionSession,
     snapshotState: LocalAiSnapshotThrottleState,
+    stepIndex: number,
   ): Promise<void> {
     if (snapshotState.timer !== null) {
       clearTimeout(snapshotState.timer);
       snapshotState.timer = null;
     }
     if (snapshotState.pending) {
-      await this.emitSnapshot(session);
+      await this.emitSnapshot(session, { stepIndex });
     }
   }
 
@@ -2962,9 +2983,10 @@ export class RunbookExecutionService {
     await this.emitSnapshot(session);
   }
 
+  /** `stepIndex` marks an output flush that changed only that step, so the renderer is sent just the step. */
   private emitSnapshot(
     session: RunbookExecutionSession,
-    options?: { failOnReject?: boolean },
+    options?: { failOnReject?: boolean; stepIndex?: number },
   ): Promise<void> {
     // Serialize emits per session. Concurrent emits (throttled streaming
     // snapshots racing the terminal snapshot) can reach the store out of
@@ -2979,7 +3001,7 @@ export class RunbookExecutionService {
 
   private async emitSnapshotNow(
     session: RunbookExecutionSession,
-    options?: { failOnReject?: boolean },
+    options?: { failOnReject?: boolean; stepIndex?: number },
   ): Promise<void> {
     const maxAttempts = 3;
     for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
@@ -2997,7 +3019,7 @@ export class RunbookExecutionService {
         },
       );
       if (eventOutcome === "accepted") {
-        await this.publishAcceptedSnapshot(session, snapshot);
+        await this.publishAcceptedSnapshot(session, snapshot, options?.stepIndex);
         return;
       }
       if (eventOutcome !== "stale") {
@@ -3046,6 +3068,7 @@ export class RunbookExecutionService {
   private async publishAcceptedSnapshot(
     session: RunbookExecutionSession,
     snapshot: RunbookExecutionRecord,
+    stepIndex?: number,
   ): Promise<void> {
     if (snapshot.status !== "running") {
       this.stopExecutionHeartbeat(session);
@@ -3068,7 +3091,7 @@ export class RunbookExecutionService {
     const win = this.windowGetter();
     if (win !== null && !win.isDestroyed()) {
       try {
-        win.webContents.send(RUNBOOK_EXECUTION_EVENT_CHANNEL, payload);
+        win.webContents.send(RUNBOOK_EXECUTION_EVENT_CHANNEL, toRendererEvent(payload, stepIndex));
       } catch {
         // Renderer teardown cannot retroactively fail an already-persisted run.
       }

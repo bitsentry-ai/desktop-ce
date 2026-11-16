@@ -21,6 +21,7 @@ import {
 } from "./incidentNormalize";
 import { captureIncidentException } from "./incidentDesktopApi";
 import { useIncidentListStore } from "./incidentListStore";
+import { clearLiveText, publishLiveText } from "./liveMessageStore";
 import type { SessionMessagesCache } from "./types";
 
 function findIncidentBySession(sessionId: string) {
@@ -62,6 +63,8 @@ export function useIncidentAgentEvents({
   // Per-incident normalized messages for live sessions; streamed updates are
   // applied against this so unchanged messages keep their identity.
   const sessionMessagesRef = useRef(new Map<string, SessionMessagesCache>());
+  // The messages last handed to the page per incident; text-only updates go to the row instead.
+  const pageMessagesRef = useRef(new Map<string, ChatMessage[]>());
   const snapshotFetchesRef = useRef(new Set<string>());
   // Sequence of the last payload applied per session. A getSnapshot reply can
   // be overtaken by a newer payload, so older state is never applied over it.
@@ -75,11 +78,17 @@ export function useIncidentAgentEvents({
       threadState: AgentSessionState,
       tokenUsage: AgentThreadTokenUsage | undefined,
       settled: boolean,
+      textOnly = false,
     ) => {
       sessionMessagesRef.current.set(incidentId, next);
-      setMessagesMap((prev) =>
-        prev[incidentId] === next.messages ? prev : { ...prev, [incidentId]: next.messages },
-      );
+      if (!textOnly) {
+        // The page now holds the latest text, so the row's streamed copy is stale.
+        clearLiveText(incidentId);
+        pageMessagesRef.current.set(incidentId, next.messages);
+        setMessagesMap((prev) =>
+          prev[incidentId] === next.messages ? prev : { ...prev, [incidentId]: next.messages },
+        );
+      }
       if (tokenUsage !== undefined) {
         setTokenUsageByIncident((prev) => updateIncidentTokenUsage(prev, incidentId, tokenUsage));
         if (incidentId === activeId) {
@@ -157,7 +166,10 @@ export function useIncidentAgentEvents({
           refetchSessionSnapshot(incident.id, sid);
           return;
         }
-        applySessionMessages(incident.id, sid, next, payload.threadState, payload.tokenUsage, false);
+        const base = pageMessagesRef.current.get(incident.id)?.[payload.messageIndex];
+        const changed = next.messages[payload.messageIndex];
+        const textOnly = base !== undefined && changed !== undefined && publishLiveText(incident.id, base, changed);
+        applySessionMessages(incident.id, sid, next, payload.threadState, payload.tokenUsage, false, textOnly);
         lastAppliedSequenceRef.current.set(sid, payload.sequence);
         return;
       }
@@ -172,6 +184,8 @@ export function useIncidentAgentEvents({
     });
     return () => { unsub(); };
   }, [agent, applySessionMessages, applySnapshotToIncident, refetchSessionSnapshot]);
+
+  useEffect(() => () => { clearLiveText(); }, []);
 
   // Snapshots for a session no thread has yet apply once a thread takes the session.
   const incidents = useIncidentListStore((state) => state.incidents);

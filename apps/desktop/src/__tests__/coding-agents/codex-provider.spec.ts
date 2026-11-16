@@ -9,6 +9,10 @@ import {
 } from '@bitsentry-ce/desktop-cli/runtime/desktop-coding-agents'
 import { setCodingAgentsLoggerForTesting } from '@bitsentry-ce/coding-agents/logger'
 import { HOST_MCP_SERVER_NAME } from '@bitsentry-ce/coding-agents/host-mcp-server.service'
+import {
+  closeCodexAppServers,
+  setCodexAppServerIdleTtlForTesting,
+} from '@bitsentry-ce/coding-agents/codex-app-server-pool'
 
 const tempDirs: string[] = []
 async function createMultiItemCodexAppServer(options: { readsGlobalCodexInstructions?: boolean } = {}): Promise<{
@@ -152,6 +156,7 @@ rl.on('line', (line) => {
 }
 
 afterEach(async () => {
+  await closeCodexAppServers()
   await Promise.all(tempDirs.splice(0).map((directory) => rm(directory, { recursive: true, force: true })))
   setCodingAgentsLoggerForTesting({ info: () => {}, warn: () => {}, error: () => {} })
 })
@@ -527,5 +532,125 @@ describe('normalizeCodexExecutionError', () => {
     const error = new Error('Codex app-server closed: exited')
 
     expect(normalizeCodexExecutionError(error)).toBe(error)
+  })
+})
+
+async function createCountingCodexAppServer(): Promise<{ binaryPath: string; cwd: string; spawnsPath: string }> {
+  const cwd = await mkdtemp(path.join(os.tmpdir(), 'codex-provider-reuse-'))
+  tempDirs.push(cwd)
+  const scriptPath = path.join(cwd, 'mock-codex-app-server.cjs')
+  const spawnsPath = path.join(cwd, 'spawns.txt')
+  const script = `
+const fs = require('fs')
+const readline = require('readline')
+const respond = (id, result) => process.stdout.write(JSON.stringify({ id, result }) + '\\n')
+const notify = (method, params) => process.stdout.write(JSON.stringify({ method, params }) + '\\n')
+fs.appendFileSync(${JSON.stringify(spawnsPath)}, process.pid + '\\n')
+let threads = 0
+readline.createInterface({ input: process.stdin }).on('line', (line) => {
+  const message = JSON.parse(line)
+  if (message.method === 'initialize') return respond(message.id, {})
+  if (message.method === 'thread/unsubscribe') return respond(message.id, {})
+  if (message.method === 'thread/start') {
+    threads += 1
+    return respond(message.id, { thread: { id: 'thread-' + threads } })
+  }
+  if (message.method === 'turn/start') {
+    const threadId = message.params.threadId
+    respond(message.id, { turn: { id: 'turn-' + threadId } })
+    notify('item/completed', { threadId, item: { id: 'answer-' + threadId, type: 'agentMessage', text: 'answer from ' + threadId } })
+    notify('thread/tokenUsage/updated', { threadId, tokenUsage: { last: { inputTokens: 1, outputTokens: 1 } } })
+    notify('turn/completed', { threadId, turn: { id: 'turn-' + threadId } })
+  }
+})
+`
+  await writeFile(scriptPath, script)
+  const binaryPath = path.join(cwd, 'codex')
+  await writeFile(binaryPath, `#!/usr/bin/env node\nrequire(${JSON.stringify(scriptPath)})\n`)
+  await chmod(binaryPath, 0o755)
+  return { binaryPath, cwd, spawnsPath }
+}
+
+async function readSpawnedPids(spawnsPath: string): Promise<number[]> {
+  const contents = await readFile(spawnsPath, 'utf8').catch(() => '')
+  return contents.split(/\r?\n/).filter(Boolean).map(Number)
+}
+
+function isProcessAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0)
+    return true
+  } catch {
+    return false
+  }
+}
+
+async function waitForProcessExit(pid: number): Promise<void> {
+  for (let attempt = 0; attempt < 200 && isProcessAlive(pid); attempt += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 25))
+  }
+  expect(isProcessAlive(pid)).toBe(false)
+  // Let the client observe the exit before the next turn borrows a process.
+  await new Promise((resolve) => setTimeout(resolve, 50))
+}
+
+describe('Codex app-server reuse', () => {
+  const runIncidentTurn = (mock: { binaryPath: string; cwd: string }, prompt: string) => executeCodex({
+    prompt,
+    binaryPath: mock.binaryPath,
+    cwd: mock.cwd,
+    abortController: new AbortController(),
+    mcpEndpoint: {
+      url: 'http://127.0.0.1:1/mcp',
+      token: 'token',
+      contextId: 'context-reuse',
+      command: 'node',
+      args: ['host-mcp-shim.js'],
+      env: {},
+      agentSessionId: 'session-reuse',
+    },
+  })
+
+  it('serves consecutive turns of one incident from a single process, each on a fresh thread', async () => {
+    const mock = await createCountingCodexAppServer()
+    const results = []
+    for (let turn = 1; turn <= 5; turn += 1) {
+      results.push(await runIncidentTurn(mock, `Turn ${String(turn)}`))
+    }
+
+    expect(await readSpawnedPids(mock.spawnsPath)).toHaveLength(1)
+    expect(results.map((result) => result.output)).toEqual([
+      'answer from thread-1',
+      'answer from thread-2',
+      'answer from thread-3',
+      'answer from thread-4',
+      'answer from thread-5',
+    ])
+  })
+
+  it('closes an idle process and starts a fresh one for the next turn', async () => {
+    setCodexAppServerIdleTtlForTesting(50)
+    try {
+      const mock = await createCountingCodexAppServer()
+      await runIncidentTurn(mock, 'First')
+      const [firstPid] = await readSpawnedPids(mock.spawnsPath)
+      await waitForProcessExit(firstPid)
+
+      await expect(runIncidentTurn(mock, 'Second')).resolves.toMatchObject({ output: 'answer from thread-1' })
+      expect(await readSpawnedPids(mock.spawnsPath)).toHaveLength(2)
+    } finally {
+      setCodexAppServerIdleTtlForTesting(30_000)
+    }
+  })
+
+  it('replaces a crashed process on the next turn', async () => {
+    const mock = await createCountingCodexAppServer()
+    await runIncidentTurn(mock, 'First')
+    const [firstPid] = await readSpawnedPids(mock.spawnsPath)
+    process.kill(firstPid, 'SIGKILL')
+    await waitForProcessExit(firstPid)
+
+    await expect(runIncidentTurn(mock, 'Second')).resolves.toMatchObject({ output: 'answer from thread-1' })
+    expect(await readSpawnedPids(mock.spawnsPath)).toHaveLength(2)
   })
 })

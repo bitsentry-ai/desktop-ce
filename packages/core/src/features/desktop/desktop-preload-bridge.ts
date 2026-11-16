@@ -542,6 +542,7 @@ export function createDesktopBitsentryApi({
           executionId: string
           incidentThreadId?: string | null
           execution: Record<string, unknown>
+          step?: { index: number; record: unknown }
         }) => void,
       ): (() => void) => {
         return createSubscription(bridge, 'bitsentry:runbooks:execution', callback)
@@ -554,8 +555,8 @@ export function createDesktopBitsentryApi({
       list: async (): Promise<IncidentThreadMetadata[]> => {
         return bridge.invoke('incidents:list', {}) as Promise<IncidentThreadMetadata[]>
       },
-      getThreadMessages: async (threadId: string): Promise<unknown[]> => {
-        return bridge.invoke('incidents:getThreadMessages', { threadId }) as Promise<unknown[]>
+      getThreadMessages: async (threadId: string, before?: number): Promise<{ messages: unknown[]; before: number | null }> => {
+        return bridge.invoke('incidents:getThreadMessages', before === undefined ? { threadId } : { threadId, before }) as Promise<{ messages: unknown[]; before: number | null }>
       },
       saveThread: async (thread: IncidentThreadPatch): Promise<{ ok: true }> => {
         return bridge.invoke('incidents:saveThread', { thread }) as Promise<{ ok: true }>

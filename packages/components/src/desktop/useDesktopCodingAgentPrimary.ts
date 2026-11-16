@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { getErrorMessage } from "@bitsentry-ce/core";
+import { getErrorMessage } from "@bitsentry-ce/core/shared/errors";
 import { useTranslation } from "@bitsentry-ce/i18n";
 import {
   getDesktopApi,

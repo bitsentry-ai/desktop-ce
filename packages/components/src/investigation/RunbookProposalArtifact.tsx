@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { AlertCircle, Check, RotateCcw, X } from "lucide-react";
 import { useTranslation } from "@bitsentry-ce/i18n";
 
@@ -119,7 +119,11 @@ export default function RunbookProposalArtifact({
   onRevisionRequested?: (requestedEdit: string) => void;
 }) {
   const { t } = useTranslation();
-  const [selectedOperationIds, setSelectedOperationIds] = useState<string[]>([]);
+  // The rail keys this component by proposal id, so state resets only when another proposal is selected.
+  // A refresh that returns the same proposal as a new object (the end of every turn) keeps the draft.
+  const [selectedOperationIds, setSelectedOperationIds] = useState<string[]>(
+    () => selectedProposal.operationDiffs.map((diff) => diff.operationId),
+  );
   const [revisionDraft, setRevisionDraft] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -130,16 +134,6 @@ export default function RunbookProposalArtifact({
       .sort((left, right) => right.artifactVersion - left.artifactVersion),
     [proposals, selectedProposal.artifactId],
   );
-  const allOperationIds = useMemo(
-    () => selectedProposal.operationDiffs.map((diff) => diff.operationId),
-    [selectedProposal],
-  );
-
-  useEffect(() => {
-    setSelectedOperationIds(allOperationIds);
-    setRevisionDraft("");
-    setError("");
-  }, [allOperationIds, selectedProposal.proposalId]);
 
   const runDecision = async (operation: () => Promise<void>) => {
     setBusy(true);

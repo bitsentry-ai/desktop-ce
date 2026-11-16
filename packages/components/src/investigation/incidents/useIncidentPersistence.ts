@@ -87,6 +87,10 @@ export function useIncidentPersistence(activeId: string | null) {
   const desktopHydrated = !isDesktopIncidents || loadedFromDesktop || localFallbackHydrated;
   const desktopStoreFallbackLoggedRef = useRef(false);
   const messagesMapRef = useRef(messagesMap);
+  // Per thread: where the next older page starts, and the first message of the loaded pages. A live session's
+  // snapshot carries the whole thread, so a different first message means nothing older is missing.
+  const olderPagesRef = useRef(new Map<string, { before: number; firstId: string | undefined }>());
+  const loadingOlderRef = useRef(new Set<string>());
   const isDesktopIncidentsRef = useRef(isDesktopIncidents);
   // Synced after each commit, since the compiler forbids writing refs during render.
   useLayoutEffect(() => {
@@ -144,8 +148,9 @@ export function useIncidentPersistence(activeId: string | null) {
 
     let cancelled = false;
     void loadDesktopIncidentMessages(activeId)
-      .then((loaded) => {
+      .then(({ messages: loaded, before }) => {
         if (cancelled) return;
+        if (before !== null) olderPagesRef.current.set(activeId, { before, firstId: loaded[0]?.id });
         // Without a session nothing can still be answering, so an unfinished turn was interrupted.
         const hasSession = useIncidentListStore.getState().incidents.some((incident) => incident.id === activeId && incident.sessionId !== undefined);
         const messages = hasSession ? loaded : settleInterruptedAgentTurn(loaded, new Date().toISOString());
@@ -166,7 +171,7 @@ export function useIncidentPersistence(activeId: string | null) {
    * those. Main appends after its stored rows, so history the renderer has not
    * loaded is never dropped.
    */
-  const appendThreadMessages = useCallback((incidentId: string, added: ChatMessage[]) => {
+  const appendThreadMessages = (incidentId: string, added: ChatMessage[]) => {
     const next = [...(messagesMapRef.current[incidentId] ?? []), ...added];
     messagesMapRef.current = { ...messagesMapRef.current, [incidentId]: next };
     setMessagesMap((prev) => ({ ...prev, [incidentId]: [...(prev[incidentId] ?? []), ...added] }));
@@ -175,10 +180,32 @@ export function useIncidentPersistence(activeId: string | null) {
       console.error("Failed to save incident messages to desktop store:", error);
       captureIncidentException(error, { operation: "appendDesktopIncidentMessages", incidentId });
     });
-  }, []);
+  };
+
+  /** Prepends the page before the oldest loaded message, when there is one. */
+  const loadOlderMessages = (incidentId: string) => {
+    const cursor = olderPagesRef.current.get(incidentId);
+    if (cursor === undefined || loadingOlderRef.current.has(incidentId)) return;
+    if (messagesMapRef.current[incidentId]?.[0]?.id !== cursor.firstId) return;
+    loadingOlderRef.current.add(incidentId);
+    void loadDesktopIncidentMessages(incidentId, cursor.before)
+      .then(({ messages: older, before }) => {
+        if (messagesMapRef.current[incidentId]?.[0]?.id !== cursor.firstId) return;
+        if (before === null) olderPagesRef.current.delete(incidentId);
+        else olderPagesRef.current.set(incidentId, { before, firstId: older[0]?.id });
+        setMessagesMap((prev) => (prev[incidentId]?.[0]?.id === cursor.firstId ? { ...prev, [incidentId]: [...older, ...prev[incidentId]] } : prev));
+      })
+      .catch((error: unknown) => {
+        captureIncidentException(error, { operation: "loadOlderIncidentMessages", incidentId });
+      })
+      .finally(() => {
+        loadingOlderRef.current.delete(incidentId);
+      });
+  };
 
   return {
     incidents,
+    loadOlderMessages,
     messagesMap,
     setMessagesMap,
     appendThreadMessages,

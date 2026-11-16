@@ -1,12 +1,13 @@
 // @vitest-environment jsdom
 
 import { createElement } from 'react'
+import { renderToStaticMarkup } from 'react-dom/server'
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { ChatBubble, getCopyableMarkdown } from '@bitsentry-ce/components/chat/ChatBubble'
 import type { ChatMessage } from '@bitsentry-ce/components/chat/types'
-import { getCodeText, normalizeMarkdownContent } from '@bitsentry-ce/components/markdown'
+import { getCodeText, MarkdownContent, normalizeMarkdownContent } from '@bitsentry-ce/components/markdown'
 import { TooltipProvider } from '@bitsentry-ce/components/ui/tooltip'
 
 vi.mock('@bitsentry-ce/i18n', () => ({
@@ -554,5 +555,30 @@ describe('incident response copy and markdown extraction', () => {
     const pre = createElement('pre', null, code)
 
     expect(getCodeText(pre.props.children)).toBe('const value = 1' + '42')
+  })
+})
+
+describe('streaming markdown', () => {
+  const documents = [
+    '# Disk\n\nRoot is full:\n\n```sh\ndf -h\n\n/dev/sda1 100%\n```\n\nNext, rotate logs.\n\n| host | use |\n| --- | --- |\n| db-1 | 99% |\n\n---\n\nDone.',
+    '1. Check usage\n\n2. Clean up:\n\n   ```sh\n   rm -rf /tmp/old\n\n   ```\n\nThen verify.\n\n- a\n\n  still a\n\nAfter the list.',
+    '````md\n```\n\nnot closed by three\n````\n\n~~~\n```\n\ninside tildes\n~~~\n\nEnd.',
+    'See [the docs][ref].\n\nMore text.\n\n[ref]: https://example.com',
+    'Footnote here[^1].\n\nNext.\n\n[^1]: The note.',
+    'Before\n\n<details>\n\nhidden\n\n</details>\n\nAfter',
+    '> quoted\n\n> still quoted\n\nplain\n\n    indented code\n\nlast',
+  ]
+
+  it('renders every streamed prefix the same as the whole document', () => {
+    for (const document of documents) {
+      // Cuts inside and after every blank line (where streamed blocks split), plus one mid-block point.
+      const lengths = [...document].flatMap((_, index) => (document.startsWith('\n\n', index) ? [index + 1, index + 2] : []))
+      for (const length of new Set([...lengths, Math.floor(document.length / 2), document.length])) {
+        const prefix = document.slice(0, length)
+        const whole = renderToStaticMarkup(createElement(MarkdownContent, { content: prefix }))
+        const streamed = renderToStaticMarkup(createElement(MarkdownContent, { content: prefix, streaming: true }))
+        expect(streamed, JSON.stringify(prefix)).toBe(whole)
+      }
+    }
   })
 })

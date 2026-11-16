@@ -1,4 +1,4 @@
-import { parseHostToolError } from "@bitsentry-ce/core";
+import { parseHostToolError } from "@bitsentry-ce/core/shared/host-tool-error";
 import type { ToolCallCard } from "./types";
 import { cn } from "../lib/utils";
 import { useTranslation } from "@bitsentry-ce/i18n";
@@ -12,7 +12,7 @@ export function ToolCard({ card, messageId }: { card: ToolCallCard; messageId: s
   let dot = "bg-destructive";
   let label = t("common.incidents.toolStateFailed");
   if (card.state === "running") {
-    dot = "bg-amber-400 animate-pulse";
+    dot = "bg-amber-400";
     label = "";
   }
   if (card.state === "done") {
@@ -154,7 +154,7 @@ export function WorkLogGroup({
           <span className="ml-auto flex items-center gap-2">
             {runningCount > 0 && (
               <span className="flex items-center gap-1">
-                <span className="size-1.5 rounded-full bg-amber-400 animate-pulse" />
+                <span className="size-1.5 rounded-full bg-amber-400" />
                 {runningCount}
               </span>
             )}

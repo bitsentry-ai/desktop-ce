@@ -1,7 +1,6 @@
 import {
   useCallback,
   useEffect,
-  useMemo,
   useState,
   type ReactNode,
 } from "react";
@@ -133,12 +132,6 @@ function loadResults(): StoredRunResult[] {
   }
 }
 
-function saveResults(list: StoredRunResult[]) {
-  try {
-    localStorage.setItem(RESULTS_KEY, JSON.stringify(list));
-  } catch {}
-}
-
 function loadResultTraces(): Record<string, ResultTraceMemory> {
   try {
     const raw =
@@ -160,18 +153,6 @@ function loadResultTraces(): Record<string, ResultTraceMemory> {
   } catch {
     return {};
   }
-}
-
-function dispatchExecutionMirrorUpdate(): void {
-  window.dispatchEvent(
-    new CustomEvent("bitsentry:results-updated", { detail: { source: "execution-mirror" } }),
-  );
-}
-
-function saveResultTraces(traceMap: Record<string, ResultTraceMemory>) {
-  try {
-    localStorage.setItem(RESULT_TRACES_KEY, JSON.stringify(traceMap));
-  } catch {}
 }
 
 const RUN_RESULT_STATUSES = new Set<string>([
@@ -881,34 +862,26 @@ export default function ResultsPage() {
   const [cancelPending, setCancelPending] = useState(false);
   const [cancelError, setCancelError] = useState<string | null>(null);
 
-  const sortedResults = useMemo(() => sortResults(results), [results]);
-  const filteredResults = useMemo(() => {
-    if (runbookFilter !== null && runbookFilter.length > 0) {
-      return sortedResults.filter((result) => result.runbookId === runbookFilter);
-    }
-
-    return sortedResults;
-  }, [runbookFilter, sortedResults]);
-  const resultCounts = useMemo(
-    () =>
-      filteredResults.reduce<Record<RunResultStatus | "total", number>>(
-        (counts, result) => {
-          counts.total += 1;
-          counts[effectiveStatus(result, traceMap[result.id]?.execution)] += 1;
-          return counts;
-        },
-        {
-          total: 0,
-          queued: 0,
-          pending: 0,
-          running: 0,
-          claim_expired: 0,
-          completed: 0,
-          failed: 0,
-          cancelled: 0,
-        },
-      ),
-    [filteredResults, traceMap],
+  const sortedResults = sortResults(results);
+  const filteredResults = runbookFilter !== null && runbookFilter.length > 0
+    ? sortedResults.filter((result) => result.runbookId === runbookFilter)
+    : sortedResults;
+  const resultCounts = filteredResults.reduce<Record<RunResultStatus | "total", number>>(
+    (counts, result) => {
+      counts.total += 1;
+      counts[effectiveStatus(result, traceMap[result.id]?.execution)] += 1;
+      return counts;
+    },
+    {
+      total: 0,
+      queued: 0,
+      pending: 0,
+      running: 0,
+      claim_expired: 0,
+      completed: 0,
+      failed: 0,
+      cancelled: 0,
+    },
   );
   const showAllHistory =
     activeId === null &&
@@ -920,18 +893,6 @@ export default function ResultsPage() {
   if (activeId !== null) {
     activeExecution = traceMap[activeId]?.execution ?? null;
   }
-
-  // Results and traces here only mirror main-process executions, which main has
-  // already persisted; the tag stops the bootstrap from syncing them back.
-  useEffect(() => {
-    saveResults(results);
-    dispatchExecutionMirrorUpdate();
-  }, [results]);
-
-  useEffect(() => {
-    saveResultTraces(traceMap);
-    dispatchExecutionMirrorUpdate();
-  }, [traceMap]);
 
   const syncExecution = useCallback(
     (resultId: string, execution: RunbookExecutionRecord) => {
@@ -1025,18 +986,13 @@ export default function ResultsPage() {
     });
   }, [activeExecution]);
 
-  const activeStep = useMemo(
-    () =>
-      activeExecution?.steps.find(
-        (step) => stepSelectionKey(step) === selectedStepKey,
-      ) ??
-      activeExecution?.steps[0] ??
-      null,
-    [activeExecution, selectedStepKey],
-  );
+  const activeStep =
+    activeExecution?.steps.find((step) => stepSelectionKey(step) === selectedStepKey) ??
+    activeExecution?.steps[0] ??
+    null;
 
   const activeExecutionId = activeResult?.executionId;
-  const handleCancel = useCallback(async () => {
+  const handleCancel = async () => {
     if (cancelPending) return;
     const executionId = activeExecutionId;
     if (!isUuid(executionId)) {
@@ -1061,7 +1017,7 @@ export default function ResultsPage() {
       .finally(() => {
         setCancelPending(false);
       });
-  }, [activeExecutionId, cancelPending, runbooks]);
+  };
 
   // ── Filtered list view when ?runbook=<id> is present ─────────────────────
   if (runbookFilter !== null && runbookFilter.length > 0 && activeId === null) {

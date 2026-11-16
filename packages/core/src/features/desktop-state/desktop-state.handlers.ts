@@ -42,7 +42,6 @@ type DesktopStateCollectionTable = DesktopStateDeleteManyTable & DesktopStateCre
 
 export interface DesktopStateDatabase {
   legacyImportLedger: DesktopStateFindUniqueTable & DesktopStateUpsertTable
-  incidentMessage: DesktopStateFindManyTable
   incidentThread: DesktopStateFindManyTable
   runbook:
     & DesktopStateCountTable
@@ -64,6 +63,7 @@ export interface DesktopStateDatabase {
   $queryRawUnsafe<T extends DesktopStateRow = DesktopStateRow>(query: string): Promise<T[]>
   $executeRawUnsafe(query: string): Promise<unknown>
   $executeBatch(statements: BatchStatement[]): Promise<void>
+  $queryRawInWorker<T extends DesktopStateRow = DesktopStateRow>(query: string, ...parameters: (string | number)[]): Promise<T[]>
 }
 
 type BatchStatement = { sql: string; parameters: (string | number | null)[] }
@@ -92,17 +92,8 @@ interface IncidentThreadRecord {
 }
 
 // Renderer chat messages are stored verbatim in "messageJson"; the summary
-// columns are derived from them for readers that predate that column.
+// columns are only read for rows written before that column existed.
 export type IncidentChatMessage = Record<string, unknown> & { kind: 'user' | 'agent' }
-
-interface IncidentMessageColumns {
-  text: string | null
-  streamText: string | null
-  toolCallsJson: string | null
-  finalText: string | null
-  status: string | null
-  errorMsg: string | null
-}
 
 interface RunbookActionRecord {
   id: string
@@ -439,38 +430,10 @@ function latestIterationText(value: Record<string, unknown>): string {
   return asString(latestIteration.text)
 }
 
-function normalizeAgentFinalText(value: Record<string, unknown>, fallbackText: string): string | null {
-  if (value.finalText != null) {
-    return asString(value.finalText)
-  }
-
-  if (fallbackText.length > 0 && asString(value.status, 'thinking') === 'done') {
-    return fallbackText
-  }
-
-  return null
-}
-
 function normalizeChatMessage(raw: unknown): IncidentChatMessage | null {
   const value = asObject(raw)
   if (value.kind === 'user' || value.kind === 'agent') return value as IncidentChatMessage
   return null
-}
-
-function incidentMessageColumns(message: IncidentChatMessage): IncidentMessageColumns {
-  if (message.kind === 'user') {
-    return { text: asString(message.text), streamText: null, toolCallsJson: null, finalText: null, status: null, errorMsg: null }
-  }
-
-  const fallbackText = latestIterationText(message)
-  return {
-    text: null,
-    streamText: asString(message.streamText, fallbackText),
-    toolCallsJson: JSON.stringify(dedupeToolCalls(message.toolCalls)),
-    finalText: normalizeAgentFinalText(message, fallbackText),
-    status: asString(message.status, 'thinking'),
-    errorMsg: asOptionalString(message.errorMsg) ?? null,
-  }
 }
 
 function normalizePreviewText(value: string | null | undefined): string | null {
@@ -1372,20 +1335,55 @@ class DesktopStateStore {
   }
 }
 
+// The summary columns repeat messageJson; read them only for rows written before it existed.
+const INCIDENT_MESSAGE_ROW_SQL = `SELECT "id","threadId","sortOrder","kind","messageJson",
+  ${['text', 'streamText', 'toolCallsJson', 'finalText', 'status', 'errorMsg'].map((column) => `CASE WHEN "messageJson" IS NULL THEN "${column}" END AS "${column}"`).join(',')}
+  FROM "IncidentMessage" WHERE "threadId" = ?`
+
 /** Loads one incident thread's persisted chat messages in display order. */
 export async function loadIncidentThreadMessages(
-  db: Pick<DesktopStateDatabase, 'incidentMessage'>,
+  db: Pick<DesktopStateDatabase, '$queryRawInWorker'>,
   threadId: string,
 ): Promise<IncidentChatMessage[]> {
-  const rows = await db.incidentMessage.findMany({ where: { threadId }, orderBy: { sortOrder: 'asc' } })
+  const rows = await db.$queryRawInWorker(`${INCIDENT_MESSAGE_ROW_SQL} ORDER BY "sortOrder" ASC`, threadId)
   return rows.map((row) => normalizeIncidentMessageRow(row))
+}
+
+// Like T3 Code's recent-history window: a page stops at this many rows or about 1 MiB of stored JSON, whichever comes first.
+const INCIDENT_MESSAGE_PAGE_ROWS = 200
+const INCIDENT_MESSAGE_PAGE_BYTES = 1024 * 1024
+const MESSAGE_BYTES_SQL = 'length(CAST("messageJson" AS BLOB))'
+
+/** A thread's newest messages before `before` (a sortOrder), in display order; `before` is the cursor for the next older page, or null at the start. */
+export async function loadIncidentThreadMessagePage(
+  db: Pick<DesktopStateDatabase, '$queryRawInWorker'>,
+  threadId: string,
+  before?: number,
+): Promise<{ messages: IncidentChatMessage[]; before: number | null }> {
+  // Large thread reads run on the worker connection so they do not stall the main event loop.
+  // The byte cut happens there too: only the page and the first row after it, which marks an older page, reach this thread.
+  const rows = await db.$queryRawInWorker(
+    `SELECT * FROM (SELECT *, TOTAL(${MESSAGE_BYTES_SQL}) OVER page AS "pageBytes", ROW_NUMBER() OVER page AS "pageRow"
+      FROM (${INCIDENT_MESSAGE_ROW_SQL} AND "sortOrder" < ? ORDER BY "sortOrder" DESC LIMIT ?) WINDOW page AS (ORDER BY "sortOrder" DESC))
+    WHERE "pageRow" <= 2 OR "pageBytes" - COALESCE(${MESSAGE_BYTES_SQL}, 0) <= ? ORDER BY "sortOrder" DESC`,
+    threadId, before ?? Number.MAX_SAFE_INTEGER, INCIDENT_MESSAGE_PAGE_ROWS + 1, INCIDENT_MESSAGE_PAGE_BYTES,
+  )
+  let count = 0
+  for (const row of rows.slice(0, INCIDENT_MESSAGE_PAGE_ROWS)) {
+    // A single oversized message still loads, so the page is never empty.
+    if (count > 0 && Number(row.pageBytes) > INCIDENT_MESSAGE_PAGE_BYTES) break
+    count += 1
+  }
+  const page = rows.slice(0, count).reverse()
+  return {
+    messages: page.map((row) => normalizeIncidentMessageRow(row)),
+    before: count < rows.length ? Number(page[0].sortOrder) : null,
+  }
 }
 
 // Message ids are unique across threads; an id owned by another thread is
 // ignored rather than moved, so one thread's write never rewrites another's.
-const MESSAGE_CONTENT_UPDATES = `"kind"=excluded."kind","text"=excluded."text",
-        "streamText"=excluded."streamText","toolCallsJson"=excluded."toolCallsJson","finalText"=excluded."finalText",
-        "status"=excluded."status","errorMsg"=excluded."errorMsg","messageJson"=excluded."messageJson","updatedAt"=excluded."updatedAt"`
+const MESSAGE_CONTENT_UPDATES = `"kind"=excluded."kind","messageJson"=excluded."messageJson","updatedAt"=excluded."updatedAt"`
 
 function ensureIncidentThreadStatement(threadId: string, now: string): BatchStatement {
   // The agent can answer before the renderer saved a new thread's row.
@@ -1399,39 +1397,46 @@ function ensureIncidentThreadStatement(threadId: string, now: string): BatchStat
 /**
  * Replaces one incident thread's messages in a single transaction. Rows are
  * keyed by message id, so unchanged messages are not rewritten. Only the agent
- * runtime, which owns the full list, calls this.
+ * runtime, which owns the full list, calls this; `changedIndexes` upserts only those rows.
  */
 export async function saveIncidentThreadMessages(
   db: Pick<DesktopStateDatabase, '$executeBatch'>,
   threadId: string,
   rawMessages: readonly unknown[],
+  changedIndexes?: readonly number[],
 ): Promise<void> {
   if (threadId.length === 0) throw new Error('Incident thread id is required')
   const now = new Date().toISOString()
-  const messages = rawMessages.map(normalizeChatMessage).filter((message) => message !== null)
-  const rowIds: string[] = []
+  const indexes = changedIndexes ?? rawMessages.map((_, index) => index)
+  const rowIds = new Set<string>()
   const statements: BatchStatement[] = [ensureIncidentThreadStatement(threadId, now)]
-  for (const [index, message] of messages.entries()) {
+  for (const index of indexes) {
+    const message = normalizeChatMessage(rawMessages[index])
+    if (message === null) continue
     const messageId = asString(message.id)
-    const rowId = messageId.length > 0 && !rowIds.includes(messageId) ? messageId : `${threadId}:${String(index)}`
-    rowIds.push(rowId)
-    const columns = incidentMessageColumns(message)
+    // A repeated id gets a positional row id, so a partial save must look at the earlier messages.
+    const duplicate = changedIndexes === undefined
+      ? rowIds.has(messageId)
+      : rawMessages.slice(0, index).some((raw) => asString(normalizeChatMessage(raw)?.id) === messageId)
+    const rowId = messageId.length > 0 && !duplicate ? messageId : `${threadId}:${String(index)}`
+    rowIds.add(rowId)
     statements.push({
-      sql: `INSERT INTO "IncidentMessage" ("id","threadId","sortOrder","kind","text","streamText","toolCallsJson","finalText","status","errorMsg","messageJson","createdAt","updatedAt")
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT("id") DO UPDATE SET
+      sql: `INSERT INTO "IncidentMessage" ("id","threadId","sortOrder","kind","messageJson","createdAt","updatedAt")
+        VALUES (?,?,?,?,?,?,?) ON CONFLICT("id") DO UPDATE SET
         "sortOrder"=excluded."sortOrder",${MESSAGE_CONTENT_UPDATES}
         WHERE "IncidentMessage"."threadId" = excluded."threadId"
           AND ("IncidentMessage"."messageJson" IS NOT excluded."messageJson" OR "IncidentMessage"."sortOrder" IS NOT excluded."sortOrder")`,
-      parameters: [rowId, threadId, index, message.kind, columns.text, columns.streamText, columns.toolCallsJson,
-        columns.finalText, columns.status, columns.errorMsg, serializeIncidentMessage(message), now, now],
+      parameters: [rowId, threadId, index, message.kind, serializeIncidentMessage(message), now, now],
     })
   }
-  statements.push({
+  const lastMessage = normalizeChatMessage(rawMessages[rawMessages.length - 1])
+  if (changedIndexes === undefined) statements.push({
     sql: 'DELETE FROM "IncidentMessage" WHERE "threadId" = ? AND "id" NOT IN (SELECT value FROM json_each(?))',
-    parameters: [threadId, JSON.stringify(rowIds)],
-  }, {
+    parameters: [threadId, JSON.stringify([...rowIds])],
+  })
+  statements.push({
     sql: 'UPDATE "IncidentThread" SET "lastMessagePreview" = ?, "updatedAt" = ? WHERE "id" = ?',
-    parameters: [getIncidentPreviewFromMessages(messages), now, threadId],
+    parameters: [getIncidentPreviewFromMessages(lastMessage === null ? [] : [lastMessage]), now, threadId],
   })
   await db.$executeBatch(statements)
 }
@@ -1455,14 +1460,12 @@ export async function appendIncidentThreadMessages(
     const messageId = asString(message.id)
     const rowId = messageId.length > 0 && !rowIds.has(messageId) ? messageId : `${threadId}:${crypto.randomUUID()}`
     rowIds.add(rowId)
-    const columns = incidentMessageColumns(message)
     statements.push({
-      sql: `INSERT INTO "IncidentMessage" ("id","threadId","sortOrder","kind","text","streamText","toolCallsJson","finalText","status","errorMsg","messageJson","createdAt","updatedAt")
-        VALUES (?,?,(SELECT COALESCE(MAX("sortOrder"), -1) + 1 FROM "IncidentMessage" WHERE "threadId" = ?),?,?,?,?,?,?,?,?,?,?)
+      sql: `INSERT INTO "IncidentMessage" ("id","threadId","sortOrder","kind","messageJson","createdAt","updatedAt")
+        VALUES (?,?,(SELECT COALESCE(MAX("sortOrder"), -1) + 1 FROM "IncidentMessage" WHERE "threadId" = ?),?,?,?,?)
         ON CONFLICT("id") DO UPDATE SET ${MESSAGE_CONTENT_UPDATES}
         WHERE "IncidentMessage"."threadId" = excluded."threadId" AND "IncidentMessage"."messageJson" IS NOT excluded."messageJson"`,
-      parameters: [rowId, threadId, threadId, message.kind, columns.text, columns.streamText, columns.toolCallsJson,
-        columns.finalText, columns.status, columns.errorMsg, serializeIncidentMessage(message), now, now],
+      parameters: [rowId, threadId, threadId, message.kind, serializeIncidentMessage(message), now, now],
     })
   }
   statements.push({
@@ -1482,7 +1485,8 @@ export function createDesktopStateHandlers(
       return store.listIncidentThreads()
     },
     'incidents:getThreadMessages': async (payload: unknown) => {
-      return loadIncidentThreadMessages(db, asString(asObject(payload).threadId))
+      const { threadId, before } = asObject(payload)
+      return loadIncidentThreadMessagePage(db, asString(threadId), typeof before === 'number' ? before : undefined)
     },
     'incidents:saveThread': async (payload: unknown) => {
       return store.saveThread(asObject(payload).thread)

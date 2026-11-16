@@ -1,6 +1,5 @@
 import {
   memo,
-  useCallback,
   useEffect,
   useLayoutEffect,
   useRef,
@@ -291,7 +290,7 @@ function CopyMarkdownResponseButton({ content }: { content: string }) {
     Icon = CheckIcon;
   }
 
-  const handleCopy = useCallback(() => {
+  const handleCopy = () => {
     if (typeof navigator === "undefined" || navigator.clipboard == null) return;
 
     void navigator.clipboard
@@ -307,7 +306,7 @@ function CopyMarkdownResponseButton({ content }: { content: string }) {
         }, 1200);
       })
       .catch(() => {});
-  }, []);
+  };
 
   useEffect(
     () => () => {
@@ -416,7 +415,7 @@ export const ChatBubble = memo(function ChatBubble({
         {providerLogoContent}
         {isWaitingForAssistant && (
           <span
-            className="absolute -right-0.5 -top-0.5 size-2 rounded-full bg-primary/70 shadow-[0_0_0_3px_hsl(var(--background))] motion-safe:animate-pulse"
+            className="absolute -right-0.5 -top-0.5 size-2 rounded-full bg-primary/70 shadow-[0_0_0_3px_hsl(var(--background))]"
             aria-hidden="true"
           />
         )}

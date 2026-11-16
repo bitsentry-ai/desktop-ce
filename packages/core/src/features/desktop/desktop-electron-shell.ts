@@ -7,6 +7,7 @@ export interface DesktopShellWindowPort {
     on: (...args: unknown[]) => unknown
     loadFile: (...args: unknown[]) => unknown
     loadURL: (...args: unknown[]) => unknown
+    setBackgroundThrottling?: (enabled: boolean) => void
     setWindowOpenHandler: (...args: unknown[]) => unknown
   }
   isDestroyed: () => boolean
@@ -183,6 +184,7 @@ export async function createDesktopMainWindow(
       sandbox: true,
       nodeIntegration: false,
       webSecurity: true,
+      backgroundThrottling: false,
     },
   }
   if (process.platform === 'darwin') {
@@ -234,6 +236,7 @@ export async function createDesktopMainWindow(
       sourceId?: string
     }
     const level = details.level ?? ''
+    if (!options.isDebug && level !== 'error' && level !== 'warning') return
     const message = details.message ?? ''
     const lineNumber = details.lineNumber ?? 0
     const sourceId = details.sourceId ?? ''
@@ -315,6 +318,7 @@ export async function createDesktopMainWindow(
     if (options.desktopShell.mainWindow === null) {
       throw new Error('"mainWindow" is not defined')
     }
+    options.desktopShell.mainWindow.webContents.setBackgroundThrottling?.(true)
     if (process.env.START_MINIMIZED !== undefined && process.env.START_MINIMIZED.length > 0) {
       options.desktopShell.mainWindow.minimize()
     } else {

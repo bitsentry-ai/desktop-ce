@@ -1,4 +1,5 @@
 import { retireDesktopTables } from './desktop-retirement'
+import { SqliteWorker } from './desktop-database-worker'
 import BetterSqlite3 from 'better-sqlite3'
 import { randomUUID } from 'crypto'
 import {
@@ -726,6 +727,8 @@ const booleanColumnsByModel: Record<ModelName, Set<string>> = {
   legacyImportLedger: new Set(),
 }
 
+const STATEMENT_CACHE_SIZE = 200
+
 function resolveDatabasePath(url: string): string {
   if (!url.startsWith('file:')) return url
   return decodeURIComponent(url.slice('file:'.length))
@@ -745,6 +748,9 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
 export class DbClient {
   private readonly sqlite: BetterSqlite3.Database
   private readonly db: BetterSQLite3Database<typeof modelTables>
+  private readonly dbPath: string
+  private worker: SqliteWorker | null = null
+  private readonly statements = new Map<string, BetterSqlite3.Statement>()
 
   readonly setting = this.createDelegate('setting')
   readonly auditLog = this.createDelegate('auditLog')
@@ -758,7 +764,6 @@ export class DbClient {
   readonly diagnosisEntrySourceRef = this.createDelegate('diagnosisEntrySourceRef')
   readonly jobSchedule = this.createDelegate('jobSchedule')
   readonly incidentThread = this.createDelegate('incidentThread')
-  readonly incidentMessage = this.createDelegate('incidentMessage')
   readonly runbookAuthoringProposal = this.createDelegate('runbookAuthoringProposal')
   readonly agentQueuedMessage = this.createDelegate('agentQueuedMessage')
   readonly globalVariable = this.createDelegate('globalVariable')
@@ -777,8 +782,8 @@ export class DbClient {
 
   constructor(options?: DbClientOptions) {
     const dbUrl = options?.datasources?.db?.url ?? 'file:bitsentry.db'
-    const dbPath = resolveDatabasePath(dbUrl)
-    this.sqlite = new BetterSqlite3(dbPath)
+    this.dbPath = resolveDatabasePath(dbUrl)
+    this.sqlite = new BetterSqlite3(this.dbPath)
     this.sqlite.pragma('foreign_keys = ON')
     this.db = drizzle(this.sqlite, { schema: modelTables })
   }
@@ -788,9 +793,40 @@ export class DbClient {
     return Promise.resolve()
   }
 
-  $disconnect(): Promise<void> {
+  async $disconnect(): Promise<void> {
+    const worker = this.worker
+    this.worker = null
+    await worker?.close()
     this.sqlite.close()
-    return Promise.resolve()
+  }
+
+  /**
+   * Starts the worker connection that takes over WAL checkpoints and
+   * `$queryRawInWorker`. Until it is ready, or after it exits, both run here.
+   */
+  async $startWorker(): Promise<void> {
+    if (this.worker !== null) return
+    const worker = await SqliteWorker.start(this.dbPath, () => {
+      if (this.worker !== worker) return
+      this.worker = null
+      this.sqlite.pragma('wal_autocheckpoint = 1000')
+    })
+    this.worker = worker
+    this.sqlite.pragma('wal_autocheckpoint = 0')
+  }
+
+  /** Read-only query on the worker connection; it sees only committed data. */
+  async $queryRawInWorker<T extends Record<string, unknown> = Record<string, unknown>>(
+    statement: string,
+    ...parameters: (string | number | bigint | Buffer | null)[]
+  ): Promise<T[]> {
+    if (this.worker === null) return this.$queryRaw<T>(statement, ...parameters)
+    try {
+      return await this.worker.all<T>(statement, parameters)
+    } catch {
+      // A read cut off by the worker exiting reruns here; a real SQL error fails again here.
+      return this.$queryRaw<T>(statement, ...parameters)
+    }
   }
 
   $executeRawUnsafe(statement: string): Promise<unknown> {
@@ -811,15 +847,26 @@ export class DbClient {
     statement: string,
     ...parameters: (string | number | bigint | Buffer | null)[]
   ): Promise<T[]> {
-    return Promise.resolve(this.sqlite.prepare(statement).all(...parameters) as T[])
+    return Promise.resolve(this.prepareCached(statement).all(...parameters) as T[])
   }
 
   /** Synchronous transaction: unrelated async IPC work cannot join this batch. */
   $executeBatch(statements: { sql: string; parameters: (string | number | null)[] }[]): Promise<void> {
     this.sqlite.transaction(() => {
-      for (const statement of statements) this.sqlite.prepare(statement.sql).run(...statement.parameters)
+      for (const statement of statements) this.prepareCached(statement.sql).run(...statement.parameters)
     }).immediate()
     return Promise.resolve()
+  }
+
+  // Compiling an upsert costs more than running it, and a message save repeats one per row.
+  private prepareCached(sql: string): BetterSqlite3.Statement {
+    let statement = this.statements.get(sql)
+    if (statement === undefined) {
+      if (this.statements.size >= STATEMENT_CACHE_SIZE) this.statements.delete(this.statements.keys().next().value ?? '')
+      statement = this.sqlite.prepare(sql)
+      this.statements.set(sql, statement)
+    }
+    return statement
   }
 
   async $transaction<T>(operation: () => Promise<T>): Promise<T> {

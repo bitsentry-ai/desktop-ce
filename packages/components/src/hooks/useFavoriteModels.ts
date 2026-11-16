@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useState } from "react";
 import type { ModelCatalogProviderKey } from "../llm/modelCatalog";
 
 const LS_KEY = "bitsentry_favorite_models";
@@ -41,30 +41,24 @@ function saveFavorites(entries: FavoriteEntry[]): void {
 export function useFavoriteModels() {
   const [favorites, setFavorites] = useState<FavoriteEntry[]>(loadFavorites);
 
-  const isFavorite = useCallback(
-    (providerKey: ModelCatalogProviderKey, modelId: string) =>
-      favorites.some((f) => f.providerKey === providerKey && f.modelId === modelId),
-    [favorites],
-  );
+  const isFavorite = (providerKey: ModelCatalogProviderKey, modelId: string) =>
+    favorites.some((f) => f.providerKey === providerKey && f.modelId === modelId);
 
-  const toggleFavorite = useCallback(
-    (providerKey: ModelCatalogProviderKey, modelId: string) => {
-      setFavorites((prev) => {
-        const exists = prev.some(
-          (f) => f.providerKey === providerKey && f.modelId === modelId,
+  const toggleFavorite = (providerKey: ModelCatalogProviderKey, modelId: string) => {
+    setFavorites((prev) => {
+      const exists = prev.some(
+        (f) => f.providerKey === providerKey && f.modelId === modelId,
+      );
+      let next = [...prev, { providerKey, modelId }];
+      if (exists) {
+        next = prev.filter(
+          (f) => !(f.providerKey === providerKey && f.modelId === modelId),
         );
-        let next = [...prev, { providerKey, modelId }];
-        if (exists) {
-          next = prev.filter(
-            (f) => !(f.providerKey === providerKey && f.modelId === modelId),
-          );
-        }
-        saveFavorites(next);
-        return next;
-      });
-    },
-    [],
-  );
+      }
+      saveFavorites(next);
+      return next;
+    });
+  };
 
   return { favorites, isFavorite, toggleFavorite };
 }

@@ -20,7 +20,7 @@ import {
   X,
   type LucideIcon,
 } from "lucide-react";
-import { parseHostToolError } from "@bitsentry-ce/core";
+import { parseHostToolError } from "@bitsentry-ce/core/shared/host-tool-error";
 import { useTranslation } from "@bitsentry-ce/i18n";
 import { MarkdownContent } from "../markdown";
 import { cn } from "../lib/utils";
@@ -216,16 +216,16 @@ function ToolGroupRow({ cards, messageId, groupKey }: { cards: ToolCallCard[]; m
   );
 }
 
-function TimelineRows({ rows, messageId, collapsedJsonLabel }: { rows: TurnRow[]; messageId: string; collapsedJsonLabel?: string }) {
+function TimelineRows({ rows, messageId, collapsedJsonLabel, streaming = false }: { rows: TurnRow[]; messageId: string; collapsedJsonLabel?: string; streaming?: boolean }) {
   return (
     <>
-      {rows.map((row) => {
+      {rows.map((row, index) => {
         if (row.kind === "text") {
           // The final answer of a message without iterations has no stable id, so it cannot be cited.
           const citationSource = row.key === "final" ? {} : { [CITATION_SOURCE_ATTRIBUTE]: row.key };
           return (
             <div key={row.key} {...citationSource} className="py-1 text-sm leading-relaxed text-foreground">
-              <MarkdownContent content={row.text} paragraphizeSoftBreaks collapsedJsonLabel={collapsedJsonLabel} />
+              <MarkdownContent content={row.text} paragraphizeSoftBreaks collapsedJsonLabel={collapsedJsonLabel} streaming={streaming && index === rows.length - 1} />
             </div>
           );
         }
@@ -293,7 +293,7 @@ export function TurnTimeline({
       {workingRow}
       {foldRow}
       {foldOpen && <TimelineRows rows={timeline.foldedRows} messageId={messageId} collapsedJsonLabel={collapsedJsonLabel} />}
-      <TimelineRows rows={timeline.rows} messageId={messageId} collapsedJsonLabel={collapsedJsonLabel} />
+      <TimelineRows rows={timeline.rows} messageId={messageId} collapsedJsonLabel={collapsedJsonLabel} streaming={isWorking} />
     </div>
   );
 }

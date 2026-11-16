@@ -399,12 +399,14 @@ export interface DesktopBitsentryBridge<
       executionId: string;
       incidentThreadId?: string | null;
       execution: DesktopRunbookExecutionRecord;
+      /** Set on an output flush: the one changed step, with `execution.steps` empty. */
+      step?: { index: number; record: unknown };
     }) => void) => () => void;
     onChanged: (callback: () => void) => () => void;
   };
   incidents: {
     list: () => Promise<DesktopIncidentListItem[]>;
-    getThreadMessages: (threadId: string) => Promise<unknown[]>;
+    getThreadMessages: (threadId: string, before?: number) => Promise<{ messages: unknown[]; before: number | null }>;
     /** Writes only the fields present; `archivedAt: null` unarchives. */
     saveThread: (
       thread: { id: string }

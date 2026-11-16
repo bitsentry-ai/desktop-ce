@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useImperativeHandle, useRef, useState, type RefObject } from "react";
+import { memo, useEffect, useImperativeHandle, useRef, useState, type RefObject } from "react";
 import { LegendList, type LegendListRef, type MaintainScrollAtEndOptions } from "@legendapp/list/react";
 import { useTranslation } from "@bitsentry-ce/i18n";
 import { ChatBubble } from "../../chat/ChatBubble";
@@ -7,6 +7,7 @@ import { revealCitation } from "../../chat/citationDom";
 import type { AssistantCitation } from "../../chat/citations";
 import type { ChatMessage } from "../../chat/types";
 import { iterationTextSourceId } from "../../chat/turnTimelineRows";
+import { useLiveMessage } from "./liveMessageStore";
 
 // Same pinning as T3 Code's timeline: follow the newest output on every trigger, without animating.
 const MAINTAIN_SCROLL_AT_END = {
@@ -55,6 +56,11 @@ function getItemType(msg: ChatMessage) {
   return msg.kind;
 }
 
+/** Subscribes to the message's streamed text, so a text-only update renders this row and not the list. */
+function LiveChatBubble({ msg, providerKey }: { msg: ChatMessage; providerKey: string | null }) {
+  return <ChatBubble msg={useLiveMessage(msg)} providerKey={providerKey} />;
+}
+
 /**
  * The incident's chat rows, virtualized: only the visible rows and a small buffer are mounted. The list is the scroll
  * container, stays pinned to the end while a reply streams, and keeps its place when the reader scrolls up.
@@ -72,6 +78,7 @@ export const IncidentMessageList = memo(function IncidentMessageList({
   headerClassName,
   onAtEndChange,
   scrollToEndRef,
+  onStartReached,
 }: {
   messages: ChatMessage[];
   providerKey: string | null;
@@ -81,6 +88,8 @@ export const IncidentMessageList = memo(function IncidentMessageList({
   onAtEndChange: (atEnd: boolean) => void;
   /** Set to a function that resumes following and scrolls to the end. */
   scrollToEndRef?: RefObject<((options: { animated: boolean }) => void) | null>;
+  /** Loads older history once the reader scrolls near the first row. */
+  onStartReached?: () => void;
 }) {
   const { t } = useTranslation();
   const [liveFollow, setLiveFollow] = useState(true);
@@ -100,7 +109,7 @@ export const IncidentMessageList = memo(function IncidentMessageList({
 
   // Going to a citation's source leaves the end, so following stops first. A source row outside the render window
   // is not mounted, so the list scrolls to its message and highlights the quote once the row mounts.
-  const revealSource = useCallback((citation: AssistantCitation) => {
+  const revealSource = (citation: AssistantCitation) => {
     liveFollowRef.current = false;
     leftEndRef.current = true;
     setLiveFollow(false);
@@ -114,7 +123,7 @@ export const IncidentMessageList = memo(function IncidentMessageList({
       requestAnimationFrame(() => { retry(frame + 1); });
     };
     requestAnimationFrame(() => { retry(1); });
-  }, [listRef, messages]);
+  };
 
   useEffect(() => {
     const node = listRef.current?.getScrollableNode();
@@ -181,7 +190,7 @@ export const IncidentMessageList = memo(function IncidentMessageList({
         getItemType={getItemType}
         renderItem={({ item }) => (
           <div className="space-y-3 pb-5" data-message-id={item.id}>
-            <ChatBubble msg={item} providerKey={providerKey} />
+            <LiveChatBubble msg={item} providerKey={providerKey} />
           </div>
         )}
         estimatedItemSize={90}
@@ -190,6 +199,7 @@ export const IncidentMessageList = memo(function IncidentMessageList({
         maintainScrollAtEnd={liveFollow ? MAINTAIN_SCROLL_AT_END : false}
         maintainScrollAtEndThreshold={1}
         maintainVisibleContentPosition
+        onStartReached={onStartReached}
         // Rows hold local UI state, so a reused container remounts its row instead of handing it another message.
         recycleItems={false}
         onScroll={() => {
