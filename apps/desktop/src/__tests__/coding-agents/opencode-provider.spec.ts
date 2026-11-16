@@ -665,6 +665,39 @@ describe('executeOpenCode', () => {
     expect(mocks.spawn).not.toHaveBeenCalled()
   })
 
+  it('reruns OpenCode 2 on the model default when the model lacks the chosen effort', async () => {
+    mockOpenCodeVersion('opencode v2.3.0')
+    const rejected = new MockChildProcess()
+    const retried = new MockChildProcess()
+    mocks.spawn.mockReturnValueOnce(rejected).mockReturnValueOnce(retried)
+    const { executeOpenCode } = await import('@bitsentry-ce/desktop-cli/runtime/desktop-coding-agents')
+
+    const resultPromise = executeOpenCode({
+      prompt: 'Reply OK',
+      binaryPath: 'opencode',
+      abortController: new AbortController(),
+      model: 'kimi-code-plan-global/k3',
+      traitValues: { effort: 'medium' },
+    })
+    await waitForSpawn()
+    rejected.stdout.write(`${JSON.stringify({
+      type: 'error',
+      sessionID: 'ses_1',
+      error: { type: 'provider.no-route', message: 'Variant unavailable for kimi-code-plan-global/k3: medium' },
+    })}\n`)
+    rejected.stdout.end()
+    rejected.stderr.end()
+    rejected.emit('exit', 1)
+    rejected.emit('close', 1)
+    await waitForSpawn(2)
+    finishOpenCodeProcess(retried, [{ type: 'message.part.updated', properties: { part: { id: 'part_1', type: 'text', text: 'OK' } } }])
+
+    await expect(resultPromise).resolves.toMatchObject({ output: 'OK', exitCode: 0 })
+    expect(spawnCall(0).args).toContain('kimi-code-plan-global/k3#medium')
+    expect(spawnCall(1).args).toContain('kimi-code-plan-global/k3')
+    expect(spawnCall(1).args.some((arg) => arg.includes('#'))).toBe(false)
+  })
+
   it('fails the turn when OpenCode 2 exits cleanly after an error event', async () => {
     mockOpenCodeVersion('opencode v2.3.0')
     const child = new MockChildProcess()

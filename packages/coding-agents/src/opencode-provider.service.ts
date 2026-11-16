@@ -534,18 +534,22 @@ function buildOpenCode1Args(
   return args
 }
 
-function getOpenCode2Model(options: OpenCodeExecutionOptions): string | undefined {
+function getOpenCode2Model(options: OpenCodeExecutionOptions, withVariant: boolean): string | undefined {
   if (options.model === undefined || options.model.length === 0) return undefined
-  const variant = getOpenCodeVariant(options.traitValues)
+  const variant = withVariant ? getOpenCodeVariant(options.traitValues) : undefined
   return variant === undefined ? options.model : `${options.model}#${variant}`
 }
 
-function buildOpenCode2Args(options: OpenCodeExecutionOptions, accessLevel: AccessLevel): string[] {
+function buildOpenCode2Args(
+  options: OpenCodeExecutionOptions,
+  accessLevel: AccessLevel,
+  withVariant = true,
+): string[] {
   // The shared background service never sees this process's env, so our MCP
   // config and permission limits only apply with a private server. 2.x runs
   // in the spawn cwd.
   const args = [...(options.opencodeArgs ?? []), 'run', '--standalone', '--format', 'json']
-  const model = getOpenCode2Model(options)
+  const model = getOpenCode2Model(options, withVariant)
   if (model !== undefined) {
     args.push('--model', model)
   }
@@ -859,6 +863,51 @@ export async function executeOpenCode(
   const env = isOpenCode2
     ? createOpenCode2Env(options.mcpEndpoint, accessLevel)
     : createOpenCode1Env(options.mcpEndpoint, accessLevel, config?.path)
+  options.onDelta?.({ type: 'status', status: 'started' })
+
+  try {
+    let run = await runOpenCodeProcess(binaryPath, args, cwd, env, options, accessLevel)
+    // The composer offers a fixed effort list, but 2.x rejects a variant the
+    // model lacks (Kimi K3 has no "medium"), so run once more on its default.
+    if (isOpenCode2 && isUnavailableVariantRun(run.state)) {
+      if (options.abortController.signal.aborted) {
+        options.onDelta?.({ type: 'status', status: 'cancelled' })
+        return { output: '', exitCode: -1 }
+      }
+      log.warn('[opencode-provider] model has no such variant, retrying with its default', {
+        model: options.model ?? null,
+        effort: getOpenCodeVariant(options.traitValues) ?? null,
+      })
+      run = await runOpenCodeProcess(
+        binaryPath,
+        buildOpenCode2Args(options, accessLevel, false),
+        cwd,
+        env,
+        options,
+        accessLevel,
+      )
+    }
+
+    return finalizeOpenCodeResult(run.state, run.exitCode, options, accessLevel)
+  } finally {
+    if (config !== undefined) await rm(config.directory, { recursive: true, force: true })
+  }
+}
+
+function isUnavailableVariantRun(state: OpenCodeExecutionState): boolean {
+  return !state.wasAborted
+    && state.output.trim().length === 0
+    && /variant unavailable/i.test(`${state.jsonErrorMessage ?? ''}\n${state.stderr}`)
+}
+
+async function runOpenCodeProcess(
+  binaryPath: string,
+  args: string[],
+  cwd: string,
+  env: Record<string, string | undefined>,
+  options: OpenCodeExecutionOptions,
+  accessLevel: AccessLevel,
+): Promise<{ state: OpenCodeExecutionState; exitCode: number | null }> {
   const child = createOpenCodeProcess(binaryPath, args, cwd, env)
   const state = createOpenCodeExecutionState()
   const appendOutput = createAppendOpenCodeOutput(state, options)
@@ -869,7 +918,6 @@ export async function executeOpenCode(
     appendOutput,
     accessLevel,
   )
-  options.onDelta?.({ type: 'status', status: 'started' })
 
   try {
     const exitCode = await waitForOpenCodeExit(
@@ -879,8 +927,7 @@ export async function executeOpenCode(
       stdoutLines,
     )
     await state.termination
-
-    return finalizeOpenCodeResult(state, exitCode, options, accessLevel)
+    return { state, exitCode }
   } finally {
     const stderrTail = state.stderr.trim()
     if (stderrTail.length > 0) {
@@ -889,6 +936,5 @@ export async function executeOpenCode(
         stderrTail,
       })
     }
-    if (config !== undefined) await rm(config.directory, { recursive: true, force: true })
   }
 }

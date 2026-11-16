@@ -1886,6 +1886,7 @@ export function RunbookResultsView({
   } else {
     details = (
       <RunbookProposalArtifact
+        key={selectedProposal.proposalId}
         agent={agent}
         incidentId={incidentId ?? ""}
         sessionId={sessionId ?? undefined}

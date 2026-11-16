@@ -939,6 +939,22 @@ describe("IncidentArtifactsRail proposal refresh while a reply streams", () => {
     await waitFor(() => { expect(list).toHaveBeenCalledTimes(4); });
   });
 
+  it("keeps a revision draft typed during a reply when the turn finishes", async () => {
+    const v1 = proposalReview("proposal-stream-v1", 1, "Draft runbook");
+    // Each refresh returns the same proposal as a new object, like the IPC call does.
+    const list = vi.fn().mockImplementation(async () => [structuredClone(v1)]);
+    const rail = renderRail({ agent: agentWith(list), messages: turn("streaming", [proposalCall(v1)]) });
+    const draft = await screen.findByPlaceholderText("Describe what the agent should revise…");
+    fireEvent.change(draft, { target: { value: "Also check the queue depth" } });
+
+    const callsBefore = list.mock.calls.length;
+    update(rail, turn("done", [proposalCall(v1)]));
+    await waitFor(() => { expect(list.mock.calls.length).toBeGreaterThan(callsBefore); });
+    await flush();
+    expect((screen.getByPlaceholderText("Describe what the agent should revise…") as HTMLTextAreaElement).value)
+      .toBe("Also check the queue depth");
+  });
+
   it("loads on open and on an incident change even while a reply is streaming", async () => {
     const list = vi.fn().mockResolvedValue([]);
     const rail = renderRail({ agent: agentWith(list), messages: turn("streaming") });
