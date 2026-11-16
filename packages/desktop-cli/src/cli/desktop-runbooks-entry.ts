@@ -3,7 +3,7 @@ import log from 'electron-log'
 import {
   runRunbooksCli,
 } from './runbooks-cli.js'
-import { createLocalRunbookExecutionClient } from '../runtime/local-runbook-execution-host.js'
+import { createLocalRunbookExecutionClient, getLocalRunbookHostErrorContext } from '../runtime/local-runbook-execution-host.js'
 import { DesktopRunbookRuntime } from '@bitsentry-desktop/runbook-runtime'
 
 log.transports.console.level = 'error'
@@ -17,5 +17,9 @@ void runRunbooksCli((options) => createLocalRunbookExecutionClient({
     message = error.message
   }
   process.stderr.write(`${message}\n`)
+  const context = getLocalRunbookHostErrorContext(error)
+  if (context !== undefined) {
+    process.stderr.write(`[local-runbook-host] ${JSON.stringify(context)}\n`)
+  }
   process.exitCode = 1
 })

@@ -47,8 +47,25 @@ type HostResponse = {
   error?: string
 }
 
+type HostRequestContext = {
+  requestId: string
+  method: HostMethod
+  phase: 'connect' | 'write' | 'wait-response' | 'remote-response'
+  pid: number
+  requestWasSent: boolean
+  errno?: string
+  syscall?: 'connect' | 'write' | 'read'
+}
+
+const hostRequestContext = Symbol('local-runbook-host-request')
+
 type HostConnectionError = Error & {
   readonly requestWasSent?: boolean
+  readonly [hostRequestContext]?: Readonly<HostRequestContext>
+}
+
+export function getLocalRunbookHostErrorContext(error: unknown): Readonly<HostRequestContext> | undefined {
+  return error instanceof Error ? (error as HostConnectionError)[hostRequestContext] : undefined
 }
 
 type HostMetadata = {
@@ -622,18 +639,21 @@ async function requestHost(
     let buffer = ''
     let requestWasSent = false
     let settled = false
+    let phase: HostRequestContext['phase'] = 'connect'
     const fail = (error: unknown): void => {
       if (settled) return
       settled = true
       socket.destroy()
-      if (error instanceof Error) {
-        Object.assign(error as HostConnectionError, { requestWasSent })
-        reject(error)
-        return
-      }
-      const wrappedError = new Error(String(error)) as HostConnectionError
-      Object.assign(wrappedError, { requestWasSent })
-      reject(wrappedError)
+      const failure = error instanceof Error ? error : new Error(String(error))
+      const code: unknown = Object.getOwnPropertyDescriptor(failure, 'code')?.value
+      const syscall: unknown = Object.getOwnPropertyDescriptor(failure, 'syscall')?.value
+      const context: Readonly<HostRequestContext> = Object.freeze({
+        requestId: id, method, phase, pid: process.pid, requestWasSent,
+        ...(typeof code === 'string' && Object.hasOwn(os.constants.errno, code) ? { errno: code } : {}),
+        ...(syscall === 'connect' || syscall === 'write' || syscall === 'read' ? { syscall } : {}),
+      })
+      Object.assign(failure, { requestWasSent, [hostRequestContext]: context })
+      reject(failure)
     }
     socket.setEncoding('utf-8')
     socket.setTimeout(CONNECTION_TIMEOUT_MS, () => fail(new Error('Timed out connecting to the local runbook host.')))
@@ -655,7 +675,10 @@ async function requestHost(
       try {
         const response = JSON.parse(buffer.slice(0, newline)) as HostResponse
         if (response.id !== id) throw new Error('Local runbook host response id mismatch.')
-        if (response.error !== undefined) throw new Error(response.error)
+        if (response.error !== undefined) {
+          phase = 'remote-response'
+          throw new Error(response.error)
+        }
         settled = true
         socket.end()
         resolve(response.result)
@@ -667,6 +690,7 @@ async function requestHost(
       // Only bound the handshake. A cold local runtime can legitimately take
       // longer than five seconds to initialise its first request.
       socket.setTimeout(0)
+      phase = 'write'
       requestWasSent = true
       socket.write(`${JSON.stringify({
         version: LOCAL_RUNBOOK_EXECUTION_HOST_VERSION,
@@ -674,7 +698,9 @@ async function requestHost(
         id,
         method,
         args,
-      } satisfies HostRequest)}\n`)
+      } satisfies HostRequest)}\n`, (error) => {
+        if (error == null && !settled && phase === 'write') phase = 'wait-response'
+      })
     })
   })
 }
