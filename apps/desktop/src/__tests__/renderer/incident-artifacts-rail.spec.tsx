@@ -419,18 +419,35 @@ describe("IncidentArtifactsRail", () => {
     });
     const alpha = proposal("proposal-alpha", "artifact-alpha", "Alpha runbook");
     const beta = proposal("proposal-beta", "artifact-beta", "Beta runbook");
-    const agent = {
-      listRunbookAuthoringProposals: vi.fn().mockResolvedValue([alpha, beta]),
-    } as unknown as AgentServicePort;
+    const list = vi.fn().mockResolvedValue([alpha, beta]);
+    const agent = { listRunbookAuthoringProposals: list } as unknown as AgentServicePort;
 
-    renderRail({ agent });
+    const rail = renderRail({ agent });
 
     expect(await screen.findByText("Alpha runbook")).toBeTruthy();
+    expect(detailPane().textContent).not.toContain("Beta runbook");
     fireEvent.click(artifactButtonWithText("Beta runbook"));
 
     await waitFor(() => {
       expect(detailPane().textContent).toContain("Beta runbook");
     });
+
+    // The closed rail unmounts its results; reopening it keeps the chosen draft.
+    const setOpen = (isOpen: boolean) => {
+      rail.rerender(
+        <BitsentryServicesProvider services={rail.services}>
+          <IncidentArtifactsRail isOpen={isOpen} onClose={() => {}} messages={[]} incidentId={INCIDENT_ID} />
+        </BitsentryServicesProvider>,
+      );
+    };
+    setOpen(false);
+    await waitFor(() => { expect(screen.queryByText("Beta runbook")).toBeNull(); });
+    const loads = list.mock.calls.length;
+    setOpen(true);
+    // Check after the reopened rail's own refresh has landed, not before it.
+    await waitFor(() => { expect(list.mock.calls.length).toBeGreaterThan(loads); });
+    await act(async () => { await list.mock.results.at(-1)?.value; });
+    expect(detailPane().textContent).toContain("Beta runbook");
   });
 
   it("sends selected operation ids for a create-kind revision", async () => {
