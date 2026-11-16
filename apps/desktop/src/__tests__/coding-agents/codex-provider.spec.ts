@@ -287,7 +287,7 @@ describe('Codex provider behavior', () => {
       mcpEndpoint: {
         url: 'http://127.0.0.1:1/mcp',
         token: 'token',
-        contextId: 'context-cancelled',
+        contextId: 'context-cancelled', bindIdentity: () => () => {},
         command: 'node',
         args: ['host-mcp-shim.js'],
         env: {},
@@ -318,7 +318,7 @@ describe('Codex provider behavior', () => {
         mcpEndpoint: {
         url: 'http://127.0.0.1:1/mcp',
         token: 'token',
-        contextId: 'context-isolated-home',
+        contextId: 'context-isolated-home', bindIdentity: () => () => {},
           command: 'node',
           args: ['host-mcp-shim.js'],
           env: {},
@@ -603,7 +603,7 @@ describe('Codex app-server reuse', () => {
     mcpEndpoint: {
       url: 'http://127.0.0.1:1/mcp',
       token: 'token',
-      contextId: 'context-reuse',
+      contextId: 'context-reuse', bindIdentity: () => () => {},
       command: 'node',
       args: ['host-mcp-shim.js'],
       env: {},

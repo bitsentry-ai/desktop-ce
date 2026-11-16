@@ -29,7 +29,7 @@ export interface HostMcpEndpoint {
   agentSessionId: string
   scopeOptions?: RunbookOnlyScopeOptions
   /** Serves this session under a reused CLI server's own MCP identity until the returned function runs. */
-  bindIdentity?: (identity: HostMcpIdentity) => () => void
+  bindIdentity: (identity: HostMcpIdentity) => () => void
 }
 
 export interface HostMcpIdentity {

@@ -112,6 +112,7 @@ const MCP_ENDPOINT = {
     BITSENTRY_MCP_CONTEXT_ID: 'context-opencode',
   },
   agentSessionId: 'agent-session-opencode',
+  bindIdentity: () => () => {},
 }
 
 const LEGACY_OPENCODE_MODEL_MIGRATIONS = [

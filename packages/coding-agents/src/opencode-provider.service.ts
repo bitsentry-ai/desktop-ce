@@ -930,7 +930,10 @@ const borrowOpenCodeServer = createProcessPool<OpenCodeServerSpec, OpenCodeServe
       BITSENTRY_MCP_CONTEXT_ID: identity.contextId,
       OPENCODE_SERVER_PASSWORD: password,
     })
-    return Promise.resolve({ child, url: waitForOpenCodeServer(child), password, identity })
+    const url = waitForOpenCodeServer(child)
+    // A cancel before the pool starts the server leaves this promise unawaited.
+    url.catch(() => undefined)
+    return Promise.resolve({ child, url, password, identity })
   },
   start: async (server, onExit) => {
     server.child.once('exit', onExit)
@@ -970,7 +973,7 @@ async function executeOpenCode2(
     const url = await server.url
     if (signal.aborted) return { output: '', exitCode: -1 }
     // OpenCode connects MCP servers on the first turn, not at startup.
-    unbind = endpoint?.bindIdentity?.(server.identity)
+    unbind = endpoint?.bindIdentity(server.identity)
     const runTurn = (withVariant: boolean) => runOpenCodeProcess(
       binaryPath,
       buildOpenCode2Args(options, accessLevel, url, withVariant),
