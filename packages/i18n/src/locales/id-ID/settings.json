@@ -213,5 +213,8 @@
   "settings.integrationConnections.active": "Aktif",
   "settings.integrationConnections.inactive": "Nonaktif",
   "settings.integrationConnections.activeHint": "Koneksi nonaktif tetap tersimpan tetapi tidak ditawarkan ke chat.",
-  "settings.integrationConnections.invalidJson": "{{field}} harus berupa JSON yang valid."
+  "settings.integrationConnections.invalidJson": "{{field}} harus berupa JSON yang valid.",
+  "settings.globalVariables.emptyDescription": "Tambahkan variabel untuk memakai ulang nilai atau rahasia di runbook mana pun.",
+  "settings.pluginsEmpty.hint": "Pasang atau aktifkan plugin kode yang mendeklarasikan sumber error.",
+  "settings.pluginsEmpty.availableSources": "Sumber berbasis plugin yang tersedia: {{sources}}."
 }

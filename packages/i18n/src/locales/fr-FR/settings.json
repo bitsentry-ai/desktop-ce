@@ -213,5 +213,8 @@
   "settings.integrationConnections.active": "Active",
   "settings.integrationConnections.inactive": "Inactive",
   "settings.integrationConnections.activeHint": "Une connexion inactive reste enregistrée mais n'est pas proposée au chat.",
-  "settings.integrationConnections.invalidJson": "{{field}} doit être un JSON valide."
+  "settings.integrationConnections.invalidJson": "{{field}} doit être un JSON valide.",
+  "settings.globalVariables.emptyDescription": "Ajoutez une variable pour réutiliser une valeur ou un secret dans n’importe quel runbook.",
+  "settings.pluginsEmpty.hint": "Installez ou activez un plugin de code qui déclare une source d’erreurs.",
+  "settings.pluginsEmpty.availableSources": "Sources disponibles via des plugins : {{sources}}."
 }

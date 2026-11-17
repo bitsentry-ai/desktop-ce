@@ -42,5 +42,18 @@
   "navigation.navbar.userManagement": "Gestion des utilisateurs",
   "navigation.topBar.connected": "Connecté",
   "navigation.topBar.offline": "Hors ligne",
-  "navigation.navbar.integrations": "Intégrations"
+  "navigation.navbar.integrations": "Intégrations",
+  "navigation.navbar.viewAll": "Tout afficher ({{count}})",
+  "navigation.navbar.groupRunning": "En cours",
+  "navigation.navbar.groupRecent": "Récents",
+  "navigation.navbar.library": "Bibliothèque",
+  "navigation.navbar.statusRunning": "En cours",
+  "navigation.navbar.statusQueued": "En attente",
+  "navigation.navbar.statusFailed": "Échec",
+  "navigation.navbar.statusCompleted": "Terminé",
+  "navigation.navbar.statusCancelled": "Annulé",
+  "navigation.navbar.statusIdle": "En attente de réponse",
+  "navigation.navbar.justNow": "maintenant",
+  "navigation.navbar.statusNeedsInput": "Réponse requise",
+  "navigation.navbar.statusDone": "Terminé"
 }
