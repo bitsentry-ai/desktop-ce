@@ -366,6 +366,8 @@ describe('IntegrationConnectionsPanel', () => {
     rows.push({ ...storedConnection, enabled: true, config: { ...storedConnection.config, mapping: { priority: 'P1' } } })
     render(<IntegrationConnectionsPanel service={service} />)
 
+    // With a saved connection the add form opens on demand.
+    fireEvent.click(await screen.findByRole('button', { name: 'settings.integrationConnections.addHeading' }))
     await screen.findByLabelText('Service URL')
     const advanced = screen.getByText('settings.integrationConnections.advanced').closest('details') as HTMLDetailsElement
     expect(advanced.open).toBe(false)
@@ -388,6 +390,23 @@ describe('IntegrationConnectionsPanel', () => {
     fireEvent.click(screen.getByRole('button', { name: 'settings.integrationConnections.cancel' }))
 
     expect(onEditConnectionChange).toHaveBeenLastCalledWith(null)
+    // Ending the edit closes the form; Add connection opens an empty one.
+    expect(screen.queryByLabelText('settings.integrationConnections.name')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'settings.integrationConnections.addHeading' }))
     expect(screen.getByLabelText('settings.integrationConnections.name')).toHaveProperty('value', '')
+  })
+
+  it('opens the add form from the Connections heading once connections exist, and cancels it', async () => {
+    const { rows, service } = createConnectionService()
+    rows.push({ ...storedConnection, enabled: true })
+    render(<IntegrationConnectionsPanel service={service} />)
+
+    const add = await screen.findByRole('button', { name: 'settings.integrationConnections.addHeading' })
+    expect(screen.queryByLabelText('settings.integrationConnections.name')).toBeNull()
+    fireEvent.click(add)
+    expect(screen.getByRole('region', { name: 'settings.integrationConnections.addHeading' })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'settings.integrationConnections.addHeading' })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'settings.integrationConnections.cancel' }))
+    expect(screen.queryByLabelText('settings.integrationConnections.name')).toBeNull()
   })
 })

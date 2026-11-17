@@ -1,5 +1,5 @@
 import type { PluginDescriptor } from "../services/contracts";
-import { ChevronRight, Plug } from "lucide-react";
+import { ChevronRight, Plug, Plus } from "lucide-react";
 import { useEffect, useId, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { useTranslation } from "@bitsentry-ce/i18n";
 import type { IntegrationConnection, IntegrationConnectionInput, DesktopPluginFieldDefinition } from "@bitsentry-ce/core/features/plugins";
@@ -112,15 +112,25 @@ interface ConnectionListProps {
   busy: boolean;
   onEdit: (row: IntegrationConnection) => void;
   onRemove: (id: string) => void;
+  /** Opens the form for a new connection. */
+  onAdd: () => void;
+  /** Hides Add connection while the form is already open. */
+  formOpen: boolean;
 }
 
 /** The saved connections, in a card of their own above the form that adds one. */
-function ConnectionList({ titleId, rows, plugins, loaded, busy, onEdit, onRemove }: ConnectionListProps) {
+function ConnectionList({ titleId, rows, plugins, loaded, busy, onEdit, onRemove, onAdd, formOpen }: ConnectionListProps) {
   const { t } = useTranslation();
   return <section aria-labelledby={titleId} className={cardClass}>
-    <div className="border-b border-border px-4 py-3">
-      <h2 id={titleId} className={settingsSectionTitleClass}>{t("settings.integrationConnections.connectionsHeading")}</h2>
-      <p className={settingsDescriptionClass}>{t("settings.integrationConnections.connectionsDescription")}</p>
+    <div className="flex flex-wrap items-start justify-between gap-3 border-b border-border px-4 py-3">
+      <div className="min-w-0">
+        <h2 id={titleId} className={settingsSectionTitleClass}>{t("settings.integrationConnections.connectionsHeading")}</h2>
+        <p className={settingsDescriptionClass}>{t("settings.integrationConnections.connectionsDescription")}</p>
+      </div>
+      {!formOpen && <Button type="button" size="sm" className="shrink-0 gap-1.5 max-sm:h-11 max-sm:px-4" disabled={busy} onClick={onAdd}>
+        <Plus aria-hidden="true" className="size-3.5" />
+        {t("settings.integrationConnections.addHeading")}
+      </Button>}
     </div>
     {rows.length === 0 && loaded && <p className={cn("px-4 py-3", settingsDescriptionClass)}>{t("settings.integrationConnections.noConnections")}</p>}
     {rows.length > 0 && <ul className="divide-y divide-border">{rows.map((row) => <li key={row.id} className="flex flex-col gap-2 px-4 py-3 sm:flex-row sm:items-center sm:gap-4">
@@ -149,6 +159,17 @@ function AdvancedFields({ open, onOpenChange, children }: { open: boolean; onOpe
   </details>;
 }
 
+/**
+ * Whether the add/edit form shows. Once connections exist, adding one is on demand (Add connection), so the saved
+ * connections lead the page; with none yet, the form is the page's main content.
+ */
+function useConnectionForm(rowCount: number, editing: boolean, startNew: boolean) {
+  const [addOpen, setAddOpen] = useState(false);
+  const formVisible = editing || addOpen || startNew || rowCount === 0;
+  const showCancel = editing || (addOpen && rowCount > 0);
+  return { addOpen, setAddOpen, formVisible, showCancel };
+}
+
 export function IntegrationConnectionsPanel({ service, emptyAction, editConnectionId = null, startNew = false, onEditConnectionChange }: IntegrationConnectionsPanelProps) {
   const { t } = useTranslation();
   const formId = useId();
@@ -167,6 +188,7 @@ export function IntegrationConnectionsPanel({ service, emptyAction, editConnecti
   const [credentialSet, setCredentialSet] = useState(0);
   const [connectionEnabled, setConnectionEnabled] = useState(true);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const { addOpen, setAddOpen, formVisible, showCancel } = useConnectionForm(rows.length, editingId !== null, startNew);
   const listRequestVersion = useRef(0);
   const nameInputRef = useRef<HTMLInputElement>(null);
   // The deep-linked connection already loaded into the form; a later list refresh must not overwrite edits.
@@ -243,8 +265,18 @@ export function IntegrationConnectionsPanel({ service, emptyAction, editConnecti
 
   function finishEdit() {
     reset();
+    setAddOpen(false);
     onEditConnectionChange?.(null);
   }
+
+  function openAdd() {
+    reset();
+    setAddOpen(true);
+    onEditConnectionChange?.(null);
+  }
+  useEffect(() => {
+    if (addOpen) nameInputRef.current?.focus();
+  }, [addOpen]);
 
   function save(event: FormEvent) {
     event.preventDefault();
@@ -347,6 +379,8 @@ export function IntegrationConnectionsPanel({ service, emptyAction, editConnecti
       busy={busy}
       onEdit={editRow}
       onRemove={remove}
+      onAdd={openAdd}
+      formOpen={formVisible}
     />}
 
     {pluginState.status === "loading" && <p role="status" className="text-sm text-muted-foreground">{t("settings.integrationConnections.loading")}</p>}
@@ -361,7 +395,7 @@ export function IntegrationConnectionsPanel({ service, emptyAction, editConnecti
       />
     </div>}
 
-    {plugin !== undefined && contract !== undefined && <section aria-labelledby={`${formId}-form-title`} className={cn(cardClass, "p-4 sm:p-6")}>
+    {formVisible && plugin !== undefined && contract !== undefined && <section aria-labelledby={`${formId}-form-title`} className={cn(cardClass, "p-4 sm:p-6")}>
       <div className="mb-4">
         <h2 id={`${formId}-form-title`} className={settingsSectionTitleClass}>{formHeading}</h2>
         <p className={settingsDescriptionClass}>{t("settings.integrationConnections.credentialHint")}</p>
@@ -407,7 +441,7 @@ export function IntegrationConnectionsPanel({ service, emptyAction, editConnecti
         {editingId !== null && <p className={settingsDescriptionClass}>{t("settings.integrationConnections.targetImmutable")}</p>}
         {errorAlert}
         <div className="flex justify-end gap-2">
-          {editingId !== null && <Button type="button" variant="outline" disabled={busy} onClick={finishEdit}>{t("settings.integrationConnections.cancel")}</Button>}
+          {showCancel && <Button type="button" variant="outline" disabled={busy} onClick={finishEdit}>{t("settings.integrationConnections.cancel")}</Button>}
           <Button type="submit" disabled={busy}>{t("settings.integrationConnections.save")}</Button>
         </div>
       </form>

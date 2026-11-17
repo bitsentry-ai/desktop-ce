@@ -267,7 +267,7 @@ function NewRunbookButton({
         >
           <SquarePen aria-hidden="true" />
           <span className="[@container(max-width:27.99rem)]:sr-only">
-            {t("common.actions.new")}
+            {label}
           </span>
         </Button>
       </TooltipTrigger>
@@ -431,8 +431,9 @@ export function RunbookEditorHeader({
       className="bs-page-header shrink-0 border-b border-border px-4 py-3 [container-type:inline-size]"
     >
       {/* Three areas on a grid, placed by the header's own width:
-          - under 28rem: the title takes the first row; the toolbar and Run
-            share the second row.
+          - under 28rem: the title takes the first row, the execution
+            settings the second, and the icon buttons (left) and Run (right)
+            the third, so every control sits in a clear group.
           - 28rem to 60rem: title with Run at its right; the toolbar on the
             row below.
           - 60rem and wider: title, toolbar and Run on one row.
@@ -464,7 +465,7 @@ export function RunbookEditorHeader({
           {hasMetaIssue && <MetadataWarning metaIssues={metaIssues} t={t} />}
         </div>
 
-        <div className="col-start-2 row-start-1 flex items-center justify-end [@container(max-width:27.99rem)]:row-start-2 [@container(min-width:60rem)]:col-start-3">
+        <div className="col-start-2 row-start-1 flex items-center justify-end [@container(max-width:27.99rem)]:row-start-3 [@container(min-width:60rem)]:col-start-3">
           <Tooltip>
             <TooltipTrigger asChild>
               <Button
@@ -486,7 +487,7 @@ export function RunbookEditorHeader({
           </Tooltip>
         </div>
 
-        <div className="col-span-2 col-start-1 row-start-2 flex min-w-0 flex-wrap items-center gap-2 [@container(max-width:27.99rem)]:col-span-1 [@container(min-width:60rem)]:col-span-1 [@container(min-width:60rem)]:col-start-2 [@container(min-width:60rem)]:row-start-1 [@container(min-width:60rem)]:justify-end">
+        <div className="col-span-2 col-start-1 row-start-2 flex min-w-0 flex-wrap items-center gap-2 [@container(max-width:27.99rem)]:contents [@container(min-width:60rem)]:col-span-1 [@container(min-width:60rem)]:col-start-2 [@container(min-width:60rem)]:row-start-1 [@container(min-width:60rem)]:justify-end">
           <span className="shrink-0 text-xs tabular-nums text-muted-foreground [@container(max-width:27.99rem)]:hidden">
             {t("runbooks.runbooks.actionCount", {
               count: runbook.actions.length,
@@ -496,7 +497,7 @@ export function RunbookEditorHeader({
           <div
             role="group"
             aria-label={t("runbooks.runbook.executionSettings")}
-            className="flex min-w-0 flex-wrap items-center gap-2"
+            className="flex min-w-0 flex-wrap items-center gap-2 [@container(max-width:27.99rem)]:col-span-2 [@container(max-width:27.99rem)]:row-start-2"
           >
             <IdleTimeoutPicker
               currentTimeoutMinutes={currentTimeoutMinutes}
@@ -507,7 +508,7 @@ export function RunbookEditorHeader({
             />
             {extraActions}
           </div>
-          <div className="ml-auto flex shrink-0 items-center gap-2 [@container(min-width:60rem)]:ml-0">
+          <div className="ml-auto flex shrink-0 items-center gap-2 [@container(max-width:27.99rem)]:col-start-1 [@container(max-width:27.99rem)]:row-start-3 [@container(max-width:27.99rem)]:ml-0 [@container(min-width:60rem)]:ml-0">
             <HeaderIconButton
               label={t("runbooks.runbook.viewRunbookResultHistory")}
               onClick={onOpenResults}

@@ -41,7 +41,7 @@ export function RunbookCollapsedActionCard({
       data-tour={dataTour}
       onClick={onClick}
       className={cn(
-        "group flex cursor-pointer select-none items-center gap-2 rounded-xl border border-border bg-card py-2.5 pl-2 pr-2.5 transition-all hover:border-border-hover hover:bg-card/80",
+        "group flex min-h-[72px] cursor-pointer select-none items-center gap-2.5 rounded-xl border border-border bg-card py-3 pl-3 pr-3 transition-all hover:border-border-hover hover:bg-card/80",
         isDragging && "opacity-70",
         isDragSource && "border-primary/30 bg-primary/5 shadow-sm",
         isDropTarget &&
@@ -63,12 +63,12 @@ export function RunbookCollapsedActionCard({
       <div className="min-w-0 flex-1 pl-1">
         {/* Badges wrap below a long title instead of truncating it. */}
         <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-          <span className="min-w-0 break-words text-sm font-medium leading-5 text-foreground">
+          <span className="min-w-0 break-words text-[15px] font-medium leading-[22px] text-foreground">
             {collapsedActionTitle}
           </span>
           {renderTypeBadge(actionType)}
         </div>
-        <p className="mt-0.5 truncate font-mono text-[12.5px] leading-[18px] text-muted-foreground">
+        <p className="mt-1 truncate font-mono text-[13px] leading-5 text-muted-foreground">
           {summary}
         </p>
       </div>
