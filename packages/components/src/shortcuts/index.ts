@@ -30,3 +30,22 @@ export {
 export { filterByQuery, scoreItem, scoreText } from "./filter";
 export { readShortcutContext, useGlobalShortcuts } from "./useGlobalShortcuts";
 export { Kbd, Keycap, keyGlyph, type KbdProps } from "./Kbd";
+export {
+  CommandPaletteProvider,
+  useCommandPalette,
+  type CommandPaletteState,
+} from "./CommandPaletteContext";
+export {
+  CommandPalette,
+  type CommandPaletteGroup,
+  type CommandPaletteItem,
+  type CommandPaletteProps,
+} from "./CommandPalette";
+export {
+  KeyboardShortcutsDialog,
+  KeyboardShortcutsList,
+  type KeyboardShortcutsDialogProps,
+  type KeyboardShortcutsListProps,
+} from "./KeyboardShortcutsList";
+export { CommandPaletteHost, type CommandPaletteHostProps } from "./CommandPaletteHost";
+export { PaletteSearchButton } from "./PaletteSearchButton";
