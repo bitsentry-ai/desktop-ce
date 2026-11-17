@@ -918,8 +918,8 @@ export default function IncidentsPage() {
     return (
       <PageShell>
         <div className="flex flex-1 flex-col overflow-hidden">
-          <div className="flex shrink-0 items-center gap-2 border-b border-border px-4 py-2.5">
-            <span className="flex-1 text-sm font-medium text-muted-foreground">
+          <div className="bs-page-header flex min-h-[3.25rem] shrink-0 items-center gap-2 border-b border-border px-4 py-2">
+            <span className="flex-1 truncate text-[15px] font-semibold tracking-[-0.01em] text-foreground">
               {t("common.incidents.allIncidents")}
             </span>
             {topBarActions}
@@ -1025,7 +1025,7 @@ export default function IncidentsPage() {
     <PageShell>
       <div className="flex flex-1 flex-col overflow-hidden">
         {/* Top bar */}
-        <div className="flex shrink-0 items-center gap-2 border-b border-border px-4 py-2.5">
+        <div className="bs-page-header flex min-h-[3.25rem] shrink-0 items-center gap-2 border-b border-border px-4 py-2">
           {activeIncident !== null && (
             <>
               <div data-tour="incidents-title" className="min-w-0 flex-1">

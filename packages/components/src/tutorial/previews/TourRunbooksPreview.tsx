@@ -127,7 +127,7 @@ export default function TourRunbooksPreview() {
           {/* Editor header */}
           <div
             data-tour="runbooks-editor-header"
-            className="flex shrink-0 items-center gap-2 border-b border-border px-4 py-2.5"
+            className="bs-page-header flex min-h-[3.25rem] shrink-0 items-center gap-2 border-b border-border px-4 py-2"
           >
             <div className="min-w-0 flex-1">
               <div className="text-sm font-medium">{DEMO_TITLE}</div>

@@ -213,15 +213,15 @@ function statusLabel(status: RunResultStatus): string {
 function statusClass(status: RunResultStatus): string {
   switch (status) {
     case "queued":
-      return "bg-sky-500/15 text-sky-500";
+      return "bg-[hsl(var(--info)/0.1)] text-[hsl(var(--info))]";
     case "pending":
-      return "bg-sky-500/15 text-sky-500";
+      return "bg-[hsl(var(--info)/0.1)] text-[hsl(var(--info))]";
     case "running":
-      return "bg-amber-500/15 text-amber-500";
+      return "bg-[hsl(var(--warning)/0.12)] text-[hsl(var(--warning))]";
     case "claim_expired":
-      return "bg-rose-500/15 text-rose-500";
+      return "bg-[hsl(var(--destructive)/0.1)] text-[hsl(var(--destructive))]";
     case "completed":
-      return "bg-emerald-500/15 text-emerald-500";
+      return "bg-[hsl(var(--success)/0.1)] text-[hsl(var(--success))]";
     case "failed":
       return "bg-destructive/15 text-destructive";
     case "cancelled":
@@ -479,7 +479,7 @@ function SummaryPanel({
   if (idleTimeoutText !== null) {
     idleTimeoutContent = (
       <div className="rounded-lg border border-border bg-muted/20 p-3">
-        <div className="text-[10px] uppercase tracking-wide text-muted-foreground/60">
+        <div className="text-[11px] font-medium uppercase tracking-[0.06em] text-muted-foreground">
           {t("runbooks.results.idleTimeout")}
         </div>
         <div className="mt-1 font-medium">{idleTimeoutText}</div>
@@ -523,13 +523,13 @@ function SummaryPanel({
   return (
     <div data-tour="results-summary" className="flex h-full flex-col">
       <div className="shrink-0 border-b border-border px-4 py-3">
-        <h3 className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/50">
+        <h3 className="text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
           {t("common.results.summary")}
         </h3>
       </div>
       <div className="flex-1 space-y-4 overflow-y-auto px-4 py-4 text-sm">
         <div className="space-y-1">
-          <div className="text-xs uppercase tracking-wide text-muted-foreground/60">
+          <div className="text-[11px] font-medium uppercase tracking-[0.06em] text-muted-foreground">
             {t("common.results.runbook")}
           </div>
           <div className="font-medium">{result.runbookTitle}</div>
@@ -542,13 +542,13 @@ function SummaryPanel({
 
         <div className="grid grid-cols-2 gap-3">
           <div className="rounded-lg border border-border bg-muted/20 p-3">
-            <div className="text-[10px] uppercase tracking-wide text-muted-foreground/60">
+            <div className="text-[11px] font-medium uppercase tracking-[0.06em] text-muted-foreground">
               {t("common.results.status")}
             </div>
             <div className="mt-1 font-medium">{statusLabel(resolvedStatus)}</div>
           </div>
           <div className="rounded-lg border border-border bg-muted/20 p-3">
-            <div className="text-[10px] uppercase tracking-wide text-muted-foreground/60">
+            <div className="text-[11px] font-medium uppercase tracking-[0.06em] text-muted-foreground">
               {t("common.results.completed_2")}
             </div>
             <div className="mt-1 font-medium">
@@ -556,7 +556,7 @@ function SummaryPanel({
             </div>
           </div>
           <div className="rounded-lg border border-border bg-muted/20 p-3">
-            <div className="text-[10px] uppercase tracking-wide text-muted-foreground/60">
+            <div className="text-[11px] font-medium uppercase tracking-[0.06em] text-muted-foreground">
               {t("runbooks.results.source")}
                           </div>
             <div className="mt-1 font-medium">{sourceText}</div>
@@ -568,7 +568,7 @@ function SummaryPanel({
         {failedStepContent}
 
         <div className="space-y-2">
-          <div className="text-xs uppercase tracking-wide text-muted-foreground/60">
+          <div className="text-[11px] font-medium uppercase tracking-[0.06em] text-muted-foreground">
             {t("common.results.executionParameters")}
           </div>
           <RenderedOutput
@@ -578,7 +578,7 @@ function SummaryPanel({
         </div>
 
         <div className="space-y-2">
-          <div className="text-xs uppercase tracking-wide text-muted-foreground/60">
+          <div className="text-[11px] font-medium uppercase tracking-[0.06em] text-muted-foreground">
             {t("common.results.finalOutput")}
           </div>
           <RenderedOutput
@@ -604,7 +604,7 @@ function StepsPanel({
   return (
     <div data-tour="results-steps" className="flex h-full flex-col">
       <div className="shrink-0 border-b border-border px-4 py-3">
-        <h3 className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/50">
+        <h3 className="text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
           {t("common.results.steps")}
         </h3>
       </div>
@@ -709,7 +709,7 @@ function OutputPanel({ step }: { step: RunbookExecutionStepRecord | null }) {
           </div>
         </div>
         <div>
-          <div className="mb-2 text-[11px] uppercase tracking-[0.18em] text-muted-foreground/60">
+          <div className="mb-2 text-[11px] font-medium uppercase tracking-[0.06em] text-muted-foreground">
             {t("common.results.input")}
           </div>
           <RenderedOutput
@@ -719,7 +719,7 @@ function OutputPanel({ step }: { step: RunbookExecutionStepRecord | null }) {
         </div>
         {errorContent}
         <div>
-          <div className="mb-2 text-[11px] uppercase tracking-[0.18em] text-muted-foreground/60">
+          <div className="mb-2 text-[11px] font-medium uppercase tracking-[0.06em] text-muted-foreground">
             {t("common.results.output_2")}
           </div>
           <RenderedOutput
@@ -739,7 +739,7 @@ function OutputPanel({ step }: { step: RunbookExecutionStepRecord | null }) {
   return (
     <div data-tour="results-output" className="flex h-full flex-col">
       <div className="shrink-0 border-b border-border px-4 py-3">
-        <h3 className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/50">
+        <h3 className="text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
           {t("common.results.output")}
         </h3>
       </div>
@@ -1033,7 +1033,7 @@ export default function ResultsPage() {
         <div className="flex flex-1 flex-col overflow-hidden">
           <TopBar />
           <div className="flex flex-1 flex-col overflow-hidden">
-            <div className="flex shrink-0 items-center gap-2 border-b border-border px-4 py-2.5">
+            <div className="bs-page-header flex min-h-[3.25rem] shrink-0 items-center gap-2 border-b border-border px-4 py-2">
               <button
                 onClick={() => { void navigate(`/runbooks?id=${runbookFilter}`); }}
                 className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
@@ -1042,7 +1042,7 @@ export default function ResultsPage() {
                 {t("common.results.backToRunbook")}
               </button>
               <span className="text-muted-foreground/30">/</span>
-              <span className="flex-1 text-sm font-medium text-muted-foreground">
+              <span className="flex-1 truncate text-[15px] font-semibold tracking-[-0.01em] text-foreground">
                 {t("common.results.resultsFor")} {runbookTitle}
               </span>
               <span className="rounded-full border border-border px-2 py-0.5 text-[11px] text-muted-foreground">
@@ -1070,8 +1070,8 @@ export default function ResultsPage() {
         <div className="flex flex-1 flex-col overflow-hidden">
           <TopBar />
           <div className="flex flex-1 flex-col overflow-hidden">
-            <div className="flex shrink-0 items-center gap-2 border-b border-border px-4 py-2.5">
-              <span className="flex-1 text-sm font-medium text-muted-foreground">
+            <div className="bs-page-header flex min-h-[3.25rem] shrink-0 items-center gap-2 border-b border-border px-4 py-2">
+              <span className="flex-1 truncate text-[15px] font-semibold tracking-[-0.01em] text-foreground">
                 {t("common.results.allRunbookResults")}
               </span>
               <button
@@ -1090,7 +1090,7 @@ export default function ResultsPage() {
                   className="mb-4 grid gap-3 md:grid-cols-4"
                 >
                   <div className="rounded-lg border border-border bg-muted/20 p-3">
-                    <div className="text-[10px] uppercase tracking-wide text-muted-foreground/60">
+                    <div className="text-[11px] font-medium uppercase tracking-[0.06em] text-muted-foreground">
                       {t("common.results.total")}
                     </div>
                     <div className="mt-1 text-lg font-medium">
@@ -1098,7 +1098,7 @@ export default function ResultsPage() {
                     </div>
                   </div>
                   <div className="rounded-lg border border-border bg-amber-500/5 p-3">
-                    <div className="text-[10px] uppercase tracking-wide text-muted-foreground/60">
+                    <div className="text-[11px] font-medium uppercase tracking-[0.06em] text-muted-foreground">
                       {t("common.results.running")}
                     </div>
                     <div className="mt-1 text-lg font-medium text-amber-500">
@@ -1106,7 +1106,7 @@ export default function ResultsPage() {
                     </div>
                   </div>
                   <div className="rounded-lg border border-border bg-emerald-500/5 p-3">
-                    <div className="text-[10px] uppercase tracking-wide text-muted-foreground/60">
+                    <div className="text-[11px] font-medium uppercase tracking-[0.06em] text-muted-foreground">
                       {t("common.results.completed_4")}
                     </div>
                     <div className="mt-1 text-lg font-medium text-emerald-500">
@@ -1114,7 +1114,7 @@ export default function ResultsPage() {
                     </div>
                   </div>
                   <div className="rounded-lg border border-border bg-destructive/5 p-3">
-                    <div className="text-[10px] uppercase tracking-wide text-muted-foreground/60">
+                    <div className="text-[11px] font-medium uppercase tracking-[0.06em] text-muted-foreground">
                       {t("common.results.failedCancelled")}
                     </div>
                     <div className="mt-1 text-lg font-medium text-destructive">
@@ -1164,7 +1164,7 @@ export default function ResultsPage() {
           )}
           {activeResult !== null && (
             <div className="flex flex-1 flex-col overflow-hidden">
-              <div className="flex shrink-0 items-center gap-2 border-b border-border px-4 py-2.5">
+              <div className="bs-page-header flex min-h-[3.25rem] shrink-0 items-center gap-2 border-b border-border px-4 py-2">
                 <button
                   data-tour="results-runbooks-btn"
                   onClick={() => {
@@ -1218,21 +1218,21 @@ export default function ResultsPage() {
                 </div>
               )}
 
-              <div className="flex flex-1 divide-x divide-border overflow-hidden">
-                <div className="min-w-0 flex-1 overflow-hidden">
+              <div className="flex min-h-0 flex-1 flex-col divide-y divide-border overflow-y-auto lg:flex-row lg:divide-x lg:divide-y-0 lg:overflow-hidden">
+                <div className="min-w-0 shrink-0 lg:flex-1 lg:shrink lg:overflow-hidden">
                   <SummaryPanel
                     result={activeResult}
                     execution={activeExecution}
                   />
                 </div>
-                <div className="min-w-0 flex-1 overflow-hidden">
+                <div className="min-w-0 shrink-0 lg:flex-1 lg:shrink lg:overflow-hidden">
                   <StepsPanel
                     execution={activeExecution}
                     selectedStepKey={selectedStepKey}
                     onSelect={setSelectedStepKey}
                   />
                 </div>
-                <div className="min-w-0 flex-1 overflow-hidden">
+                <div className="min-w-0 shrink-0 lg:flex-[1.35] lg:shrink lg:overflow-hidden">
                   <OutputPanel step={activeStep} />
                 </div>
               </div>

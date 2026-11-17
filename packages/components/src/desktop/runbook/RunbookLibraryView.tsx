@@ -168,8 +168,8 @@ export function RunbookLibraryView({
 
   return (
     <DashboardLayout mainClassName="flex flex-col overflow-hidden p-0">
-      <div className="flex shrink-0 items-center gap-2 border-b border-border px-4 py-2.5">
-        <span className="flex-1 text-sm font-medium text-muted-foreground">
+      <div className="bs-page-header flex min-h-[3.25rem] shrink-0 items-center gap-2 border-b border-border px-4 py-2">
+        <span className="flex-1 truncate text-[15px] font-semibold tracking-[-0.01em] text-foreground">
           {t("runbooks.runbook.allRunbooks")}
         </span>
         <span className="rounded-full border border-border px-2 py-0.5 text-[11px] text-muted-foreground">

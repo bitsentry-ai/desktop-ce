@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
+import { statusPillBaseClass, statusToneClass } from "../../lib/plainText";
 import { AlertTriangle } from "lucide-react";
 import { useTranslation } from "@bitsentry-ce/i18n";
 import Navbar from "../../layout/Navbar";
@@ -47,7 +48,7 @@ export function StatusPill({ state, interrupted = false }: { state: AgentSession
   const { t } = useTranslation();
   if (interrupted && (state === "CANCELLED" || state === "FAILED")) {
     return (
-      <span className="rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
+      <span className={cn(statusPillBaseClass, statusToneClass.neutral)}>
         {t("common.incidents.statusInterrupted")}
       </span>
     );
@@ -55,29 +56,29 @@ export function StatusPill({ state, interrupted = false }: { state: AgentSession
   const map: Record<AgentSessionState, { label: string; cls: string }> = {
     IDLE: {
       label: t("common.incidents.statusIdle"),
-      cls: "bg-muted text-muted-foreground",
+      cls: statusToneClass.neutral,
     },
     RUNNING: {
       label: t("common.incidents.statusRunning"),
-      cls: "bg-amber-500/15 text-amber-500",
+      cls: statusToneClass.running,
     },
     COMPLETED: {
       label: t("common.incidents.statusCompleted"),
-      cls: "bg-emerald-500/15 text-emerald-500",
+      cls: statusToneClass.success,
     },
     FAILED: {
       label: t("common.incidents.statusFailed"),
-      cls: "bg-destructive/15 text-destructive",
+      cls: statusToneClass.danger,
     },
     CANCELLED: {
       label: t("common.incidents.statusCancelled"),
-      cls: "bg-muted text-muted-foreground",
+      cls: statusToneClass.neutral,
     },
   };
 
   const { label, cls } = map[state];
   return (
-    <span className={cn("rounded-full px-2 py-0.5 text-xs font-medium", cls)}>
+    <span className={cn(statusPillBaseClass, cls)}>
       {label}
     </span>
   );

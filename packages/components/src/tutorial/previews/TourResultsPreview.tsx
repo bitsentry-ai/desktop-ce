@@ -80,7 +80,7 @@ const TYPE_LABELS: Record<string, string> = {
 function statusClass(status: string): string {
   switch (status) {
     case "completed":
-      return "bg-emerald-500/15 text-emerald-500";
+      return "bg-[hsl(var(--success)/0.1)] text-[hsl(var(--success))]";
     case "failed":
       return "bg-destructive/15 text-destructive";
     default:
@@ -110,7 +110,7 @@ export default function TourResultsPreview() {
     if (selectedStep.input !== undefined) {
       inputContent = (
         <div>
-          <div className="mb-1 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/50">
+          <div className="mb-1 text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
             {t("common.tourResultsPreview.input")}
           </div>
           <pre className="rounded-lg border border-border bg-muted/30 px-3 py-2 text-xs font-mono whitespace-pre-wrap break-all">
@@ -124,7 +124,7 @@ export default function TourResultsPreview() {
     if (selectedStep.output !== undefined) {
       markdownOutputContent = (
         <div>
-          <div className="mb-1 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/50">
+          <div className="mb-1 text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
             {t("common.tourResultsPreview.output_2")}
           </div>
           <div className="rounded-lg border border-border bg-muted/30 px-3 py-2 text-sm">
@@ -138,7 +138,7 @@ export default function TourResultsPreview() {
     if (selectedStep.error !== undefined) {
       errorContent = (
         <div>
-          <div className="mb-1 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/50">
+          <div className="mb-1 text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
             {t("common.tourResultsPreview.error")}
           </div>
           <pre className="rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs font-mono text-destructive whitespace-pre-wrap">
@@ -164,7 +164,7 @@ export default function TourResultsPreview() {
         <TopBar />
         <div className="flex flex-1 flex-col overflow-hidden">
           {/* Header */}
-          <div className="flex shrink-0 items-center gap-2 border-b border-border px-4 py-2.5">
+          <div className="bs-page-header flex min-h-[3.25rem] shrink-0 items-center gap-2 border-b border-border px-4 py-2">
             <button
               data-tour="results-runbooks-btn"
               className="text-xs text-muted-foreground hover:text-foreground transition-colors"
@@ -193,12 +193,12 @@ export default function TourResultsPreview() {
           </div>
 
           {/* Three-column panel layout */}
-          <div className="flex flex-1 divide-x divide-border overflow-hidden">
+          <div className="flex min-h-0 flex-1 flex-col divide-y divide-border overflow-y-auto lg:flex-row lg:divide-x lg:divide-y-0 lg:overflow-hidden">
             {/* Summary panel */}
-            <div className="min-w-0 flex-1 overflow-hidden">
+            <div className="min-w-0 shrink-0 lg:flex-1 lg:shrink lg:overflow-hidden">
               <div data-tour="results-summary" className="flex h-full flex-col">
                 <div className="shrink-0 border-b border-border px-4 py-3">
-                  <h3 className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/50">
+                  <h3 className="text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
                     {t("common.tourResultsPreview.summary")}
                   </h3>
                 </div>
@@ -249,10 +249,10 @@ export default function TourResultsPreview() {
             </div>
 
             {/* Steps panel */}
-            <div className="min-w-0 flex-1 overflow-hidden">
+            <div className="min-w-0 shrink-0 lg:flex-1 lg:shrink lg:overflow-hidden">
               <div data-tour="results-steps" className="flex h-full flex-col">
                 <div className="shrink-0 border-b border-border px-4 py-3">
-                  <h3 className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/50">
+                  <h3 className="text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
                     {t("common.tourResultsPreview.steps_2")}
                   </h3>
                 </div>
@@ -303,10 +303,10 @@ export default function TourResultsPreview() {
             </div>
 
             {/* Output panel */}
-            <div className="min-w-0 flex-1 overflow-hidden">
+            <div className="min-w-0 shrink-0 lg:flex-[1.35] lg:shrink lg:overflow-hidden">
               <div data-tour="results-output" className="flex h-full flex-col">
                 <div className="shrink-0 border-b border-border px-4 py-3">
-                  <h3 className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/50">
+                  <h3 className="text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
                     {t("common.tourResultsPreview.output")}
                   </h3>
                 </div>

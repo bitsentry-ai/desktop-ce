@@ -147,7 +147,7 @@ export function StructuredOutputDisplay({
 
   return (
     <div>
-      <div className="mb-2 text-[11px] uppercase tracking-[0.18em] text-muted-foreground/60">
+      <div className="mb-2 text-[11px] font-medium uppercase tracking-[0.06em] text-muted-foreground">
         {t("common.structuredOutputDisplay.structuredOutput")}
       </div>
       {logFilterContent}

@@ -61,7 +61,7 @@ function StatusPill({ status }: { status: string }) {
   let cls = "bg-muted text-muted-foreground";
   let label = "Idle";
   if (status === "COMPLETED") {
-    cls = "bg-emerald-500/15 text-emerald-500";
+    cls = "bg-[hsl(var(--success)/0.1)] text-[hsl(var(--success))]";
     label = "Completed";
   }
 
@@ -76,7 +76,7 @@ function ArtifactStatusBadge({ status }: { status: string }) {
   const map: Record<string, { label: string; cls: string }> = {
     completed: {
       label: "Completed",
-      cls: "bg-emerald-500/15 text-emerald-500",
+      cls: "bg-[hsl(var(--success)/0.1)] text-[hsl(var(--success))]",
     },
     failed: { label: "Failed", cls: "bg-destructive/15 text-destructive" },
   };
@@ -116,7 +116,7 @@ export default function TourIncidentsPreview() {
         <TopBar />
         <div className="flex flex-1 flex-col overflow-hidden">
           {/* Top bar */}
-          <div className="flex shrink-0 items-center gap-2 border-b border-border px-4 py-2.5">
+          <div className="bs-page-header flex min-h-[3.25rem] shrink-0 items-center gap-2 border-b border-border px-4 py-2">
             <div data-tour="incidents-title" className="min-w-0 flex-1">
               <span className="block truncate text-sm font-medium">
                 {DEMO_TITLE}

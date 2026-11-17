@@ -12,102 +12,107 @@
 :root {
   /* --- Surface --- */
   --background: 0 0% 100%;
-  --foreground: 0 0% 9%;
+  --foreground: 222 14% 11%;
   --card: 0 0% 100%;
-  --card-foreground: 0 0% 9%;
-  --card-secondary: 0 0% 98%;
+  --card-foreground: 222 14% 11%;
+  --card-secondary: 220 16% 98%;
   --popover: 0 0% 100%;
-  --popover-foreground: 0 0% 9%;
+  --popover-foreground: 222 14% 11%;
 
   /* --- Primary (neutral — buttons, links, emphasis) --- */
-  --primary: 0 0% 9%;
+  --primary: 222 14% 11%;
   --primary-foreground: 0 0% 100%;
 
   /* --- Secondary / Muted / Accent --- */
-  --secondary: 0 0% 96%;
-  --secondary-foreground: 0 0% 9%;
-  --muted: 0 0% 96%;
-  --muted-foreground: 0 0% 45%;
-  --accent: 0 0% 96%;
-  --accent-foreground: 0 0% 9%;
+  --secondary: 220 14% 96%;
+  --secondary-foreground: 222 14% 11%;
+  --muted: 220 14% 96%;
+  --muted-foreground: 220 8% 44%;
+  --accent: 220 14% 94.5%;
+  --accent-foreground: 222 14% 11%;
 
   /* --- Borders & Inputs --- */
-  --border: 0 0% 90%;
-  --border-hover: 0 0% 78%;
-  --input: 0 0% 90%;
-  --ring: 0 0% 60%;
+  --border: 220 13% 91%;
+  --border-hover: 220 10% 81%;
+  --input: 220 13% 88%;
+  --ring: 192 100% 31%;
 
   /* --- Status --- */
-  --destructive: 0 72% 51%;
+  --destructive: 0 72% 50%;
   --destructive-foreground: 0 0% 100%;
-  --success: 142 76% 36%;
-  --warning: 38 92% 50%;
-  --info: 217 91% 60%;
+  --success: 152 64% 30%;
+  --warning: 32 95% 40%;
+  --info: 217 85% 50%;
 
   /* --- Scrollbar --- */
-  --scrollbar-track: 0 0% 98%;
-  --scrollbar-thumb: 0 0% 82%;
-  --scrollbar-thumb-hover: 0 0% 70%;
+  --scrollbar-track: 0 0% 100% / 0;
+  --scrollbar-thumb: 220 10% 84%;
+  --scrollbar-thumb-hover: 220 9% 72%;
 
   /* --- Brand accent (used sparingly — focus rings, highlights) --- */
   --brand: 190 100% 50%;
   --brand-foreground: 0 0% 100%;
-  --brand-emphasis: 192 100% 42%;
-  --brand-emphasis-surface: 192 100% 95%;
-  --brand-emphasis-border: 192 95% 82%;
-  --brand-emphasis-subtle: 192 72% 34%;
+  --brand-emphasis: 192 100% 31%;
+  --brand-emphasis-surface: 192 80% 96%;
+  --brand-emphasis-border: 192 70% 84%;
+  --brand-emphasis-subtle: 192 60% 30%;
+
+  /* --- Elevation --- */
+  --shadow-color: 222 30% 20%;
 
   /* --- Radius --- */
   --radius: 0.5rem;
 }
 
 .dark {
-  /* --- Surface --- */
-  --background: 0 0% 7%;
-  --foreground: 0 0% 93%;
-  --card: 0 0% 10%;
-  --card-foreground: 0 0% 93%;
-  --card-secondary: 0 0% 13%;
-  --popover: 0 0% 10%;
-  --popover-foreground: 0 0% 93%;
+  /* --- Surface: layered, slightly cool near-blacks --- */
+  --background: 228 8% 7.5%;
+  --foreground: 220 14% 93%;
+  --card: 228 7% 9.5%;
+  --card-foreground: 220 14% 93%;
+  --card-secondary: 228 6% 11.5%;
+  --popover: 228 7% 10.5%;
+  --popover-foreground: 220 14% 93%;
 
   /* --- Primary (inverted for dark) --- */
-  --primary: 0 0% 98%;
-  --primary-foreground: 0 0% 9%;
+  --primary: 220 14% 96%;
+  --primary-foreground: 228 8% 9%;
 
   /* --- Secondary / Muted / Accent --- */
-  --secondary: 0 0% 15%;
-  --secondary-foreground: 0 0% 93%;
-  --muted: 0 0% 15%;
-  --muted-foreground: 0 0% 63%;
-  --accent: 0 0% 15%;
-  --accent-foreground: 0 0% 93%;
+  --secondary: 228 6% 14%;
+  --secondary-foreground: 220 14% 93%;
+  --muted: 228 6% 13.5%;
+  --muted-foreground: 220 8% 63%;
+  --accent: 228 6% 15.5%;
+  --accent-foreground: 220 14% 93%;
 
   /* --- Borders & Inputs --- */
-  --border: 0 0% 20%;
-  --border-hover: 0 0% 28%;
-  --input: 0 0% 15%;
-  --ring: 0 0% 40%;
+  --border: 228 6% 16.5%;
+  --border-hover: 228 6% 25%;
+  --input: 228 6% 19%;
+  --ring: 190 90% 52%;
 
   /* --- Status --- */
-  --destructive: 0 63% 50%;
+  --destructive: 0 72% 60%;
   --destructive-foreground: 0 0% 98%;
-  --success: 142 70% 45%;
-  --warning: 38 85% 55%;
-  --info: 213 94% 68%;
+  --success: 152 55% 52%;
+  --warning: 38 90% 60%;
+  --info: 213 94% 70%;
 
   /* --- Scrollbar --- */
-  --scrollbar-track: 0 0% 10%;
-  --scrollbar-thumb: 0 0% 24%;
-  --scrollbar-thumb-hover: 0 0% 34%;
+  --scrollbar-track: 0 0% 0% / 0;
+  --scrollbar-thumb: 228 6% 24%;
+  --scrollbar-thumb-hover: 228 6% 32%;
 
-  /* --- Brand accent (same in dark) --- */
+  /* --- Brand accent --- */
   --brand: 190 100% 50%;
   --brand-foreground: 0 0% 100%;
-  --brand-emphasis: 190 100% 58%;
-  --brand-emphasis-surface: 190 100% 11%;
-  --brand-emphasis-border: 190 100% 24%;
-  --brand-emphasis-subtle: 190 90% 70%;
+  --brand-emphasis: 190 90% 58%;
+  --brand-emphasis-surface: 192 60% 11%;
+  --brand-emphasis-border: 192 55% 22%;
+  --brand-emphasis-subtle: 190 70% 72%;
+
+  --shadow-color: 0 0% 0%;
 }
 
 .bs-brand-tint {

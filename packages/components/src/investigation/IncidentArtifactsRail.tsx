@@ -301,17 +301,17 @@ function stepStatusLabel(
 function statusClasses(status: IncidentArtifactEntry["status"]): string {
   switch (status) {
     case "starting":
-      return "bg-sky-500/15 text-sky-500";
+      return "bg-[hsl(var(--info)/0.1)] text-[hsl(var(--info))]";
     case "queued":
-      return "bg-sky-500/15 text-sky-500";
+      return "bg-[hsl(var(--info)/0.1)] text-[hsl(var(--info))]";
     case "pending":
-      return "bg-sky-500/15 text-sky-500";
+      return "bg-[hsl(var(--info)/0.1)] text-[hsl(var(--info))]";
     case "running":
-      return "bg-amber-500/15 text-amber-500";
+      return "bg-[hsl(var(--warning)/0.12)] text-[hsl(var(--warning))]";
     case "claim_expired":
-      return "bg-rose-500/15 text-rose-500";
+      return "bg-[hsl(var(--destructive)/0.1)] text-[hsl(var(--destructive))]";
     case "completed":
-      return "bg-emerald-500/15 text-emerald-500";
+      return "bg-[hsl(var(--success)/0.1)] text-[hsl(var(--success))]";
     case "failed":
       return "bg-destructive/15 text-destructive";
     case "cancelled":
@@ -1209,7 +1209,7 @@ function ArtifactDetails({
         }
       >
         <div className={flow ? "px-4 py-4" : "min-h-0 overflow-y-auto px-4 py-4"}>
-          <div className="mb-3 flex items-center justify-between text-[11px] uppercase tracking-[0.18em] text-muted-foreground/60">
+          <div className="mb-3 flex items-center justify-between text-[11px] font-medium uppercase tracking-[0.06em] text-muted-foreground">
             <span>{t("common.incidentArtifactsRail.liveSteps")}</span>
             <span>
               {artifact.completedStepCount}/{artifact.stepCount || 0}
@@ -1297,7 +1297,7 @@ function ArtifactDetails({
         >
           <div className="space-y-3">
             <div>
-              <div className="mb-2 text-[11px] uppercase tracking-[0.18em] text-muted-foreground/60">
+              <div className="mb-2 text-[11px] font-medium uppercase tracking-[0.06em] text-muted-foreground">
                 {t("common.incidentArtifactsRail.executionParameters")}
               </div>
               <OutputContent
@@ -1306,7 +1306,7 @@ function ArtifactDetails({
               />
             </div>
             <div>
-              <div className="mb-2 text-[11px] uppercase tracking-[0.18em] text-muted-foreground/60">
+              <div className="mb-2 text-[11px] font-medium uppercase tracking-[0.06em] text-muted-foreground">
                 {t("common.incidentArtifactsRail.input")}
               </div>
               <OutputContent
@@ -1314,7 +1314,7 @@ function ArtifactDetails({
                 emptyMessage={t("common.incidentArtifactsRail.empty.input")}
               />
             </div>
-            <div className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground/60">
+            <div className="text-[11px] font-medium uppercase tracking-[0.06em] text-muted-foreground">
               {t("common.incidentArtifactsRail.output")}
             </div>
             <OutputContent
