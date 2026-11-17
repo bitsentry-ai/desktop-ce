@@ -1021,7 +1021,7 @@ export default function IncidentsPage() {
                             {relativeTime(inc.createdAt, now)}
                           </div>
                         </div>
-                        <StatusPill state={inc.state} />
+                        <StatusPill state={inc.state} quiet />
                       </button>
                       {inc.archived === true && (
                         <Tooltip>

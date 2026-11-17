@@ -1,3 +1,4 @@
+import { Check } from "lucide-react";
 import { statusPillBaseClass, statusToneClass } from "../../lib/plainText";
 import { useTranslation } from "@bitsentry-ce/i18n";
 import Navbar from "../../layout/Navbar";
@@ -41,8 +42,12 @@ export function translateIncidentPreview(
 
 // ─── Status pill ──────────────────────────────────────────────────────────────
 
-/** `interrupted`: the last turn stopped because the app closed, which the saved state cannot tell from a stop or a failure. */
-export function StatusPill({ state, interrupted = false }: { state: AgentSessionState; interrupted?: boolean }) {
+/**
+ * `interrupted`: the last turn stopped because the app closed, which the saved state cannot tell from a stop or a failure.
+ * `quiet`: in lists, a completed incident reads as a small check and label rather than a filled pill, so the filled
+ * pills that remain mark incidents that need attention.
+ */
+export function StatusPill({ state, interrupted = false, quiet = false }: { state: AgentSessionState; interrupted?: boolean; quiet?: boolean }) {
   const { t } = useTranslation();
   if (interrupted && (state === "CANCELLED" || state === "FAILED")) {
     return (
@@ -75,6 +80,14 @@ export function StatusPill({ state, interrupted = false }: { state: AgentSession
   };
 
   const { label, cls } = map[state];
+  if (quiet && state === "COMPLETED") {
+    return (
+      <span className="inline-flex shrink-0 items-center gap-1 text-xs text-muted-foreground">
+        <Check size={12} aria-hidden="true" className="text-[hsl(var(--success-text))]" />
+        {label}
+      </span>
+    );
+  }
   return (
     <span className={cn(statusPillBaseClass, cls)}>
       {label}
