@@ -112,7 +112,8 @@
   /* --- Borders & Inputs --- */
   --border: 0 0% 16%;
   --border-hover: 0 0% 25%;
-  --input: 0 0% 19%;
+  /* Enabled control borders (#404040), a step above card dividers so inputs and buttons read as controls. */
+  --input: 0 0% 25%;
   --ring: 166 100% 41%;
 
   /* --- Status --- */

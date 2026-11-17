@@ -25,7 +25,7 @@ const toastClassNames = {
   cancelButton: "!h-7 !rounded-md !bg-muted !px-2.5 !text-xs !text-muted-foreground",
   // Inside the top-right corner with a 28px target, instead of floating off the top-left edge.
   closeButton:
-    "!left-auto !right-2 !top-2 !size-7 !translate-x-0 !translate-y-0 !rounded-md !border-0 !bg-transparent !text-muted-foreground hover:!bg-accent hover:!text-foreground [&>svg]:!size-3.5",
+    "!left-auto !right-2 !top-2 !size-7 !translate-x-0 !translate-y-0 !rounded-md !border-0 !bg-transparent !text-muted-foreground hover:!bg-accent hover:!text-foreground [&>svg]:!size-4",
 };
 
 /** Each type's icon in its status text colour (AA on the popover surface), matching the accent bar. */

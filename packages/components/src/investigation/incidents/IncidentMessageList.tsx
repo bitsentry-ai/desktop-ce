@@ -216,7 +216,8 @@ export const IncidentMessageList = memo(function IncidentMessageList({
         className="page-enter absolute inset-0"
         contentContainerClassName="px-4 sm:px-6"
         ListHeaderComponent={<div className={headerClassName} />}
-        ListFooterComponent={<div className="h-1" />}
+        // 24px under the last message so it never sits against the composer, even before the list settles at the end.
+        ListFooterComponent={<div className="h-6" />}
       />
     </CitationRevealContext>
   );

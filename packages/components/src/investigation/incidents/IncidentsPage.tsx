@@ -1081,11 +1081,10 @@ export default function IncidentsPage() {
               {/* The incident's status, plus a badge when the response under way has stalled; the turn's details
                   (elapsed time, stop) stay on its row in the conversation. */}
               <div className="flex shrink-0 items-center gap-1.5">
-                {/* "Incident" names the pill's scope, so it never reads as the state of the latest reply. */}
-                <div className="flex items-center gap-1.5" title={t("common.incidentDetail.incidentStatus")}>
-                  <span className="text-xs text-muted-foreground">{t("common.incidentDetail.incidentScope")}</span>
+                {/* The pill names its scope ("Incident completed"), so it never reads as the state of the latest reply. */}
+                <div className="flex items-center" title={t("common.incidentDetail.incidentStatus")}>
                   <div data-tour="incidents-status">
-                    <StatusPill state={incidentState} interrupted={isLastAgentTurnInterrupted(rawMessages)} />
+                    <StatusPill state={incidentState} interrupted={isLastAgentTurnInterrupted(rawMessages)} scoped />
                   </div>
                 </div>
                 <ResponseStalledBadge messages={rawMessages} />

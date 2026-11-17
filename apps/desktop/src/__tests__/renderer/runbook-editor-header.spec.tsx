@@ -170,8 +170,15 @@ describe("RunbookEditorHeader", () => {
       }
 
       openOverflowMenu();
-      const items = screen
-        .getAllByRole("menuitem")
+      const menuItems = screen.getAllByRole("menuitem");
+      // History and New runbook are menu items only below 640px; from sm up they are hidden there.
+      const narrowOnly = menuItems.filter((item) => item.className.includes("sm:hidden"));
+      expect(narrowOnly.map((item) => item.textContent)).toEqual([
+        "View result history",
+        "New runbook",
+      ]);
+      const items = menuItems
+        .filter((item) => !narrowOnly.includes(item))
         .map((item) => item.textContent);
       expect(items).toEqual([
         "Export runbook",

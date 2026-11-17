@@ -155,7 +155,8 @@ export function SidebarRow({
       >
         {leading}
         <span className="min-w-0 flex-1">
-          <span className={cn("block truncate", active ? "font-medium" : "text-foreground/85")}>{title}</span>
+          {/* The selected row shows up to two lines, so similarly named items stay distinguishable. */}
+          <span className={cn("block", active ? "line-clamp-2 break-words font-medium" : "truncate text-foreground/85")}>{title}</span>
           {meta !== undefined && <span className="block truncate text-xs leading-4 text-muted-foreground">{meta}</span>}
         </span>
         {trailing !== undefined && (

@@ -283,9 +283,11 @@ const MENU_ITEM_CLASS = "gap-2 max-sm:min-h-11";
 function RunbookOverflowMenu({
   onExport,
   onDelete,
+  onOpenResults,
+  onCreateRunbook,
   overflowActions,
   t,
-}: Pick<RunbookEditorHeaderProps, "onExport" | "onDelete" | "t"> & {
+}: Pick<RunbookEditorHeaderProps, "onExport" | "onDelete" | "onOpenResults" | "onCreateRunbook" | "t"> & {
   overflowActions: readonly RunbookHeaderMenuAction[];
 }) {
   const label = t("runbooks.runbook.moreRunbookActions");
@@ -308,6 +310,15 @@ function RunbookOverflowMenu({
         <TooltipContent side="bottom">{label}</TooltipContent>
       </Tooltip>
       <DropdownMenuContent align="end" className="min-w-52">
+        {/* Below 640px History and New runbook live here instead of in the toolbar. */}
+        <DropdownMenuItem onSelect={onOpenResults} className={cn(MENU_ITEM_CLASS, "sm:hidden")}>
+          <History size={14} aria-hidden="true" />
+          {t("runbooks.runbook.viewRunbookResultHistory")}
+        </DropdownMenuItem>
+        <DropdownMenuItem onSelect={onCreateRunbook} className={cn(MENU_ITEM_CLASS, "sm:hidden")}>
+          <SquarePen size={14} aria-hidden="true" />
+          {t("runbooks.runbook.newRunbook")}
+        </DropdownMenuItem>
         <DropdownMenuItem onSelect={onExport} className={MENU_ITEM_CLASS}>
           <Upload size={14} aria-hidden="true" />
           {t("runbooks.runbook.exportRunbook")}
@@ -507,16 +518,21 @@ export function RunbookEditorHeader({
             {extraActions}
           </div>
           <div className="ml-auto flex shrink-0 items-center gap-2 [@container(max-width:27.99rem)]:col-start-1 [@container(max-width:27.99rem)]:row-start-3 [@container(max-width:27.99rem)]:ml-0 [@container(min-width:60rem)]:ml-0">
-            <HeaderIconButton
-              label={t("runbooks.runbook.viewRunbookResultHistory")}
-              onClick={onOpenResults}
-              icon={<History size={14} aria-hidden="true" />}
-              dataTour="runbooks-history-btn"
-            />
-            <NewRunbookButton onCreateRunbook={onCreateRunbook} t={t} />
+            {/* History and New runbook move into ⋯ below 640px, leaving the title, settings and Run. */}
+            <span className="contents max-sm:hidden">
+              <HeaderIconButton
+                label={t("runbooks.runbook.viewRunbookResultHistory")}
+                onClick={onOpenResults}
+                icon={<History size={14} aria-hidden="true" />}
+                dataTour="runbooks-history-btn"
+              />
+              <NewRunbookButton onCreateRunbook={onCreateRunbook} t={t} />
+            </span>
             <RunbookOverflowMenu
               onExport={onExport}
               onDelete={onDelete}
+              onOpenResults={onOpenResults}
+              onCreateRunbook={onCreateRunbook}
               overflowActions={overflowActions}
               t={t}
             />

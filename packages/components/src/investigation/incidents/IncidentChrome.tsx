@@ -42,12 +42,22 @@ export function translateIncidentPreview(
 
 // ─── Status pill ──────────────────────────────────────────────────────────────
 
+const SCOPED_STATUS_KEYS: Record<AgentSessionState, string> = {
+  IDLE: "common.incidentDetail.incidentIdle",
+  RUNNING: "common.incidentDetail.incidentRunning",
+  COMPLETED: "common.incidentDetail.incidentCompleted",
+  FAILED: "common.incidentDetail.incidentFailed",
+  CANCELLED: "common.incidentDetail.incidentCancelled",
+};
+
 /**
  * `interrupted`: the last turn stopped because the app closed, which the saved state cannot tell from a stop or a failure.
  * `quiet`: in lists, a completed incident reads as a small check and label rather than a filled pill, so the filled
  * pills that remain mark incidents that need attention.
+ * `scoped`: in an incident's header the label names its scope ("Incident completed"), so it never reads as the state
+ * of the latest reply.
  */
-export function StatusPill({ state, interrupted = false, quiet = false }: { state: AgentSessionState; interrupted?: boolean; quiet?: boolean }) {
+export function StatusPill({ state, interrupted = false, quiet = false, scoped = false }: { state: AgentSessionState; interrupted?: boolean; quiet?: boolean; scoped?: boolean }) {
   const { t } = useTranslation();
   if (interrupted && (state === "CANCELLED" || state === "FAILED")) {
     return (
@@ -79,7 +89,8 @@ export function StatusPill({ state, interrupted = false, quiet = false }: { stat
     },
   };
 
-  const { label, cls } = map[state];
+  const { cls } = map[state];
+  const label = scoped ? t(SCOPED_STATUS_KEYS[state]) : map[state].label;
   if (quiet && state === "COMPLETED") {
     return (
       <span className="inline-flex shrink-0 items-center gap-1 text-xs text-muted-foreground">
