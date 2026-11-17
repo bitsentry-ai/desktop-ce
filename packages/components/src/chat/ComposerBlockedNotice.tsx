@@ -24,23 +24,26 @@ export function ComposerBlockedNotice({
 }) {
   const hasDescription = description !== undefined && description.length > 0;
   return (
-    <div role="status" className="flex min-w-0 items-center gap-2 py-2 pl-3.5 pr-2 sm:pl-4">
+    // Below 640px the message takes its own line and the actions sit under it, so the message is never cut off.
+    <div role="status" className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1.5 py-2 pl-3.5 pr-2 sm:flex-nowrap sm:pl-4">
       <AlertTriangle aria-hidden="true" className="size-4 shrink-0 text-[hsl(var(--warning-text))]" />
       <p
-        className="min-w-0 flex-1 truncate text-[13px] font-medium leading-5 text-foreground"
+        className="min-w-0 flex-1 text-[13px] font-medium leading-5 text-foreground max-sm:basis-[calc(100%-1.5rem)] sm:truncate"
         title={hasDescription ? `${title} ${description}` : title}
       >
         {title}
         {hasDescription && <span className="sr-only"> {description}</span>}
       </p>
-      {retryLabel !== undefined && onRetry !== undefined && (
-        <Button type="button" variant="ghost" size="sm" onClick={onRetry} className="h-7 shrink-0 px-2.5 text-xs max-sm:h-11">
-          {retryLabel}
+      <div className="flex shrink-0 items-center gap-2 max-sm:ml-auto">
+        {retryLabel !== undefined && onRetry !== undefined && (
+          <Button type="button" variant="ghost" size="sm" onClick={onRetry} className="h-7 px-2.5 text-xs max-sm:h-11">
+            {retryLabel}
+          </Button>
+        )}
+        <Button type="button" variant="outline" size="sm" onClick={onAction} className="h-7 px-2.5 text-xs max-sm:h-11">
+          {actionLabel}
         </Button>
-      )}
-      <Button type="button" variant="outline" size="sm" onClick={onAction} className="h-7 shrink-0 px-2.5 text-xs max-sm:h-11">
-        {actionLabel}
-      </Button>
+      </div>
     </div>
   );
 }

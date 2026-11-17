@@ -930,7 +930,7 @@ export default function IncidentsPage() {
             data-tour="incidents-new-btn"
             onClick={handleNewIncident}
             disabled={isActiveProcessing}
-            className="flex h-8 shrink-0 items-center gap-1.5 rounded-md bg-primary px-2.5 text-[13px] font-medium text-primary-foreground transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 disabled:opacity-50 max-sm:h-11"
+            className="flex h-8 shrink-0 items-center gap-1.5 rounded-md bg-primary px-2.5 text-[13px] font-medium text-primary-foreground transition-colors hover:bg-[hsl(var(--primary-hover))] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 disabled:opacity-50 max-sm:h-11"
           >
             <SquarePen size={14} />
             {t("common.incidents.newIncident")}
