@@ -147,7 +147,7 @@ export function SidebarRow({
         title={title}
         aria-current={active ? "page" : undefined}
         className={cn(
-          "flex min-h-8 items-center gap-2 rounded-md px-2.5 py-1.5 text-[13px] leading-5 text-muted-foreground transition-colors",
+          "flex min-h-9 items-center gap-2 rounded-md px-2.5 py-1.5 text-[13px] leading-5 text-muted-foreground transition-colors",
           "hover:bg-[hsl(var(--accent)/0.7)] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
           // Selection is a neutral surface with a brand indicator, so it never reads as "success".
           active && cn("bg-[hsl(var(--selection))] text-foreground hover:bg-[hsl(var(--selection))]", SELECTION_BAR_CLASS),
