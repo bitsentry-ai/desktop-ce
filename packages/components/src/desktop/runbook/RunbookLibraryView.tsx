@@ -175,7 +175,7 @@ export function RunbookLibraryView({
         <span className="flex-1 truncate text-[15px] font-semibold tracking-[-0.01em] text-foreground">
           {t("runbooks.runbook.allRunbooks")}
         </span>
-        <span className="shrink-0 rounded-full border border-border px-2 py-0.5 text-[11px] tabular-nums text-muted-foreground">
+        <span className="shrink-0 rounded-full border border-border px-2 py-0.5 text-xs tabular-nums text-muted-foreground">
           {t("runbooks.runbooks.runbookCount", { count: runbooks.length })}
         </span>
         <Tooltip>

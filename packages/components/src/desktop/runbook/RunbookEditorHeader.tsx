@@ -193,7 +193,7 @@ function IdleTimeoutPicker({
         </TooltipContent>
       </Tooltip>
       <DropdownMenuContent align="end" className="w-40">
-        <div className="px-2 pb-1.5 pt-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+        <div className="px-2 pb-1.5 pt-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">
           {t("runbooks.runbook.idleTimeout")}
         </div>
         {idleTimeoutPresets.map((preset) => {

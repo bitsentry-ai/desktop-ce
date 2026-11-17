@@ -42,12 +42,13 @@ export const ACTION_TYPES = [
 
 export type SupportedActionType = (typeof ACTION_TYPES)[number];
 
+// Action-type badges are neutral, told apart by icon and label: colour is kept for run status, so a Plugin step never
+// reads as a failure or a Shell step as a success.
 export const ACTION_META: Record<SupportedActionType, ActionMeta> = {
   shell: {
     labelKey: "runbooks.runbook.actionTypeShell",
     icon: Terminal,
-    badgeCls:
-      "text-emerald-700 bg-emerald-500/10 border-emerald-500/20 dark:text-emerald-400",
+    badgeCls: "border-border bg-muted text-foreground/80 [&>svg]:text-muted-foreground",
     placeholderKey: "runbooks.runbook.exampleRunBackupScript",
     fieldLabelKey: "runbooks.runbook.command",
     fieldPlaceholderKey: "runbooks.runbook.fetchLogsPlaceholder",
@@ -55,8 +56,7 @@ export const ACTION_META: Record<SupportedActionType, ActionMeta> = {
   llm: {
     labelKey: "runbooks.runbook.actionTypeAi",
     icon: Bot,
-    badgeCls:
-      "text-blue-700 bg-blue-500/10 border-blue-500/20 dark:text-blue-400",
+    badgeCls: "border-border bg-muted text-foreground/80 [&>svg]:text-muted-foreground",
     placeholderKey: "runbooks.runbook.exampleAnalyzeTheOutput",
     fieldLabelKey: "runbooks.runbook.prompt",
     fieldPlaceholderKey: "runbooks.runbook.analyzeErrorsPlaceholder",
@@ -64,8 +64,7 @@ export const ACTION_META: Record<SupportedActionType, ActionMeta> = {
   http: {
     labelKey: "runbooks.runbook.actionTypeHttp",
     icon: Globe,
-    badgeCls:
-      "text-amber-700 bg-amber-500/10 border-amber-500/20 dark:text-amber-400",
+    badgeCls: "border-border bg-muted text-foreground/80 [&>svg]:text-muted-foreground",
     placeholderKey: "runbooks.runbook.exampleFetchApiData",
     fieldLabelKey: "runbooks.runbook.url",
     fieldPlaceholderKey: "runbooks.runbook.apiEndpointPlaceholder",
@@ -73,8 +72,7 @@ export const ACTION_META: Record<SupportedActionType, ActionMeta> = {
   plugin: {
     labelKey: "runbooks.runbook.actionTypePlugin",
     icon: Puzzle,
-    badgeCls:
-      "text-rose-700 bg-rose-500/10 border-rose-500/20 dark:text-rose-400",
+    badgeCls: "border-border bg-muted text-foreground/80 [&>svg]:text-muted-foreground",
     placeholderKey: "runbooks.runbook.exampleQueryGitHubIssues",
     fieldLabelKey: "runbooks.runbook.pluginAction",
     fieldPlaceholderKey: "runbooks.runbook.selectAPluginAction",
@@ -82,8 +80,7 @@ export const ACTION_META: Record<SupportedActionType, ActionMeta> = {
   external_source: {
     labelKey: "runbooks.runbook.actionTypeExternalSource",
     icon: AlertCircle,
-    badgeCls:
-      "text-purple-700 bg-purple-500/10 border-purple-500/20 dark:text-purple-400",
+    badgeCls: "border-border bg-muted text-foreground/80 [&>svg]:text-muted-foreground",
     placeholderKey: "runbooks.runbook.exampleSearchRecentErrors",
     fieldLabelKey: "runbooks.runbook.query",
     fieldPlaceholderKey: "runbooks.runbook.isUnresolvedLevelError",

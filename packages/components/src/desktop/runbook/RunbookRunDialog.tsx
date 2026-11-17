@@ -124,7 +124,7 @@ function SecureParameterBadge({ show, t }: { show: boolean; t: TranslationFn }) 
   }
 
   return (
-    <span className="rounded border border-border px-1.5 py-0.5 text-[10px] text-muted-foreground">
+    <span className="rounded border border-border px-1.5 py-0.5 text-xs text-muted-foreground">
       {t("runbooks.runbook.secure")}
     </span>
   );
@@ -135,7 +135,7 @@ function RuntimeParameterDescription({ description }: { description: string }) {
     return null;
   }
 
-  return <p className="text-[11px] text-muted-foreground/70">{description}</p>;
+  return <p className="text-xs text-muted-foreground/70">{description}</p>;
 }
 
 function RuntimeParameterVisibilityButton({
@@ -174,12 +174,12 @@ function RuntimeParameterValidationMessages({
   return (
     <>
       {missing && (
-        <p className="text-[11px] text-destructive">
+        <p className="text-xs text-destructive">
           {t("runbooks.runbook.thisValueIsRequired")}
         </p>
       )}
       {shortSecureValue && (
-        <p className="text-[11px] text-amber-600">
+        <p className="text-xs text-amber-600">
           {t("runbooks.runbook.shortSecureValuesCanRedact")}
         </p>
       )}
@@ -238,7 +238,7 @@ function RuntimeParameterInputRow({
         />
       </div>
       <RuntimeParameterDescription description={description} />
-      <p className="text-[11px] text-muted-foreground/50">
+      <p className="text-xs text-muted-foreground/50">
         {t("runbooks.runbook.usedBy")} {actionTitles.join(", ")}
       </p>
       <RuntimeParameterValidationMessages
@@ -310,7 +310,7 @@ export function RunbookRunDialog({
           ))}
         </div>
         <div className="flex items-center justify-between gap-3 border-t border-border px-4 py-3">
-          <p className="text-[11px] text-muted-foreground/60">
+          <p className="text-xs text-muted-foreground/60">
             {t("runbooks.runbook.secureValuesAreHiddenFrom")}
           </p>
           <div className="flex items-center gap-2">

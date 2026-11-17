@@ -67,7 +67,7 @@ export function RunbookLlmActionFields({
   return (
     <div className="space-y-3">
       <div>
-        <label className="mb-1.5 block text-[10px] font-medium uppercase tracking-wide text-muted-foreground/60">
+        <label className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-muted-foreground/60">
           {t(actionMeta.llm.fieldLabelKey)}
         </label>
         <textarea
@@ -84,7 +84,7 @@ export function RunbookLlmActionFields({
         />
       </div>
       <div>
-        <label className="mb-1.5 block text-[10px] font-medium uppercase tracking-wide text-muted-foreground/60">
+        <label className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-muted-foreground/60">
           {t("runbooks.runbook.model")}
         </label>
         <div ref={modelDropdownRef} className="relative">
@@ -203,7 +203,7 @@ export function RunbookLlmActionFields({
                       <span className="truncate font-medium">
                         {option.modelId}
                       </span>
-                      <span className="ml-2 shrink-0 text-[11px] text-muted-foreground/60">
+                      <span className="ml-2 shrink-0 text-xs text-muted-foreground/60">
                         {llmProviderLabelsByKey[option.providerKey] ??
                           option.providerKey}
                       </span>
@@ -213,13 +213,13 @@ export function RunbookLlmActionFields({
               );
             })()}
         </div>
-        <p className="mt-1.5 text-[11px] text-muted-foreground/60">
+        <p className="mt-1.5 text-xs text-muted-foreground/60">
           {llmProviderHint}
         </p>
         {modelError !== null && (
-          <p className="mt-1 text-[11px] text-destructive">{modelError}</p>
+          <p className="mt-1 text-xs text-destructive">{modelError}</p>
         )}
-        <p className="mt-1 text-[11px] text-muted-foreground/60">
+        <p className="mt-1 text-xs text-muted-foreground/60">
           {t("runbooks.runbook.youCanAlsoUsePlaceholders")}{" "}
           <code>{"{{target_model}}"}</code>.
         </p>

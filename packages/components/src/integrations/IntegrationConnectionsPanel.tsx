@@ -130,8 +130,8 @@ function ConnectionList({ titleId, rows, plugins, loaded, busy, onEdit, onRemove
       </div>
       <div className="flex shrink-0 flex-wrap items-center gap-2">
         <ConnectionStatus row={row} />
-        <Button size="sm" variant="outline" disabled={busy || !plugins.some((item) => item.id === row.pluginId)} onClick={() => { onEdit(row); }}>{t("settings.integrationConnections.edit")}</Button>
-        <Button size="sm" variant="outline" disabled={busy} onClick={() => { onRemove(row.id); }}>{t("settings.integrationConnections.remove")}</Button>
+        <Button size="sm" variant="outline" className="max-sm:h-11 max-sm:px-4" disabled={busy || !plugins.some((item) => item.id === row.pluginId)} onClick={() => { onEdit(row); }}>{t("settings.integrationConnections.edit")}</Button>
+        <Button size="sm" variant="ghost" className="text-[hsl(var(--destructive-text))] hover:bg-destructive/10 hover:text-[hsl(var(--destructive-text))] max-sm:h-11 max-sm:px-4" disabled={busy} onClick={() => { onRemove(row.id); }}>{t("settings.integrationConnections.remove")}</Button>
       </div>
     </li>)}</ul>}
   </section>;

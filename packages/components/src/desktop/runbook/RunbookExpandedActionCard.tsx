@@ -167,7 +167,7 @@ export function RunbookExpandedActionCardShell({
           size={14}
           className="shrink-0 cursor-grab text-muted-foreground/40 active:cursor-grabbing"
         />
-        <span className="w-4 shrink-0 text-center text-[10px] font-mono text-muted-foreground/40 tabular-nums">
+        <span className="w-4 shrink-0 text-center text-xs font-mono text-muted-foreground/40 tabular-nums">
           {index + 1}
         </span>
         <div className="flex-1">
@@ -200,7 +200,7 @@ export function RunbookExpandedActionCardShell({
           {t("runbooks.runbooks.deleteAction")}
         </button>
         <div className="flex items-center gap-3">
-          <span className="text-[10px] text-muted-foreground/40">
+          <span className="text-xs text-muted-foreground/40">
             {t("runbooks.runbooks.escapeToClose")}
           </span>
           <button
@@ -282,7 +282,7 @@ export function RunbookExpandedActionCard({
         t={t}
       />
       <div>
-        <label className="mb-1.5 block text-[10px] font-medium uppercase tracking-wide text-muted-foreground/60">
+        <label className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-muted-foreground/60">
           {t("runbooks.runbook.title")}
         </label>
         <input
@@ -360,7 +360,7 @@ export function RunbookExpandedActionCard({
           {t("runbooks.runbook.deleteAction")}
         </button>
         <div className="flex items-center gap-3">
-          <span className="text-[10px] text-muted-foreground/40">
+          <span className="text-xs text-muted-foreground/40">
             {t("runbooks.runbook.escapeToClose")}
           </span>
           <button
