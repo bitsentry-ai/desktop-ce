@@ -3,7 +3,7 @@ import { Button } from '@bitsentry-ce/components/ui/button'
 import { useToast } from '@bitsentry-ce/components/hooks/use-toast'
 import { useTranslation } from '@bitsentry-ce/i18n'
 import { getDesktopApi, type DesktopTelemetryStatus } from '../services/desktop-api'
-import { settingsDescriptionClass, settingsLabelClass, settingsSectionTitleClass } from './SettingsRow'
+import { settingsDescriptionClass, settingsLabelClass, settingsPageTitleClass } from './SettingsRow'
 
 type Translate = ReturnType<typeof useTranslation>['t']
 
@@ -53,11 +53,11 @@ function isToggleDisabled(
 
 function renderHeader(t: Translate): ReactNode {
   return (
-    <div className="mb-4">
-      <h2 className={settingsSectionTitleClass}>
+    <div className="mb-6">
+      <h2 className={settingsPageTitleClass}>
         {t('settings.telemetrySection.telemetry')}
       </h2>
-      <p className={settingsDescriptionClass}>
+      <p className={`mt-1 ${settingsDescriptionClass}`}>
         {t('settings.telemetrySection.usageCrashReportingAndDiagnosticsPreferences')}
       </p>
     </div>

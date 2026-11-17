@@ -41,7 +41,7 @@ function removePendingSync(
 }
 import { Download, Pencil, Puzzle, RefreshCw, Trash2 } from "lucide-react";
 import { SettingsEmptyState } from "../settings/SettingsEmptyState";
-import { settingsDescriptionClass, settingsSectionTitleClass } from "../settings/SettingsRow";
+import { settingsDescriptionClass, settingsPageTitleClass } from "../settings/SettingsRow";
 import { ProviderIcon, type ProviderIconKind } from "./icons";
 import InstallPluginDialog from "./InstallPluginDialog";
 
@@ -1079,12 +1079,13 @@ export default function DataSourcesManager({
   return (
     <div className="space-y-4">
       {showHeader && (
-        <div className="flex flex-wrap items-start justify-between gap-3">
+        // The Settings page's section title; pb-2 makes the usual 24px gap to the content.
+        <div className="flex flex-wrap items-start justify-between gap-3 pb-2">
           <div className="min-w-0">
-            <h2 className={settingsSectionTitleClass}>
+            <h2 className={settingsPageTitleClass}>
               {t("common.dataSourcesManager.externalSources")}
             </h2>
-            <p className={settingsDescriptionClass}>
+            <p className={`mt-1 ${settingsDescriptionClass}`}>
               {t("common.dataSourcesManager.connectExternalServicesToFeed")}
             </p>
           </div>

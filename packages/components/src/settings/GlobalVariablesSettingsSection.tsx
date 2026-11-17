@@ -19,8 +19,10 @@ import { SettingsEmptyState } from "./SettingsEmptyState";
 import {
   settingsDescriptionClass,
   settingsLabelClass,
+  settingsPageTitleClass,
   settingsSectionTitleClass,
 } from "./SettingsRow";
+import { cn } from "../lib/utils";
 
 const GLOBAL_KEY_PATTERN = /^[A-Za-z_][A-Za-z0-9_.-]*$/;
 const formatGlobalVariableReference = (key: string) => `\${globals.${key}}`;
@@ -37,6 +39,8 @@ interface GlobalVariablesSettingsSectionProps {
   className?: string;
   title?: string;
   description?: string;
+  /** Sizes the title as the Settings page's section title; other hosts keep the 15px sub-heading. */
+  pageTitle?: boolean;
 }
 
 function toDraft(globalVariable?: GlobalVariable): GlobalVariableDraft {
@@ -491,6 +495,7 @@ export function GlobalVariablesSettingsSection({
   className,
   title,
   description,
+  pageTitle = false,
 }: GlobalVariablesSettingsSectionProps) {
   const { t } = useTranslation();
   const { toast } = useToast();
@@ -686,12 +691,12 @@ export function GlobalVariablesSettingsSection({
 
   return (
     <section id={id} data-tour="settings-global-variables" className={className}>
-      <div className="mb-4 flex items-start justify-between gap-3">
+      <div className={cn("flex items-start justify-between gap-3", pageTitle ? "mb-6" : "mb-4")}>
         <div>
-          <h2 className={settingsSectionTitleClass}>
+          <h2 className={pageTitle ? settingsPageTitleClass : settingsSectionTitleClass}>
             {sectionTitle}
           </h2>
-          <p className={settingsDescriptionClass}>
+          <p className={cn(pageTitle && "mt-1", settingsDescriptionClass)}>
             {sectionDescription}
           </p>
         </div>

@@ -17,9 +17,12 @@ export interface SettingsSectionNavProps {
   pathname: string;
   /** Names the navigation for assistive technology. */
   label: string;
-  /** Labels the section picker shown below the `md` breakpoint. */
+  /** Labels the section picker shown below the `md` breakpoint, for assistive technology. */
   selectLabel: string;
-  /** Optional eyebrow above the list on wide screens. */
+  /**
+   * The page title, such as "Settings". It is the page's `h1`: a small heading above the list on wide screens and
+   * read only by assistive technology on narrow ones, where the section picker and section title stand for it.
+   */
   heading?: string;
   className?: string;
 }
@@ -28,12 +31,13 @@ const listLinkClass =
   "flex h-8 items-center gap-2.5 whitespace-nowrap rounded-md px-2.5 text-[13px] text-muted-foreground transition-colors hover:bg-accent/70 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50";
 
 const selectClass =
-  "h-11 w-full appearance-none rounded-md border border-input bg-background pl-3 pr-9 text-sm text-foreground transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50";
+  "h-10 w-full appearance-none rounded-md border border-input bg-background pl-3 pr-9 text-sm text-foreground transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50";
 
 /**
- * Section navigation for a settings page that shows one section at a time. On `md` and wider it is a list on the
- * left; below `md` it is a labelled native picker showing the current section, so nothing scrolls sideways or hides
- * behind the edge. Both write the section to the location hash, so deep links and other menus stay in sync.
+ * Section navigation for a settings page that shows one section at a time. On `md` and wider it is a 208px list on
+ * the left; below `md` it is a native picker showing the current section, so nothing scrolls sideways or hides behind
+ * the edge and the first field stays close to the top. Both write the section to the location hash, so deep links and
+ * other menus stay in sync.
  */
 export function SettingsSectionNav({
   items,
@@ -56,11 +60,13 @@ export function SettingsSectionNav({
       aria-label={label}
       className={cn("md:sticky md:top-0 md:w-52 md:shrink-0 md:self-start", className)}
     >
+      {heading !== undefined && (
+        <h1 className="sr-only md:not-sr-only md:mb-2 md:block md:px-2.5 md:text-[11px] md:font-medium md:uppercase md:leading-4 md:tracking-[0.06em] md:text-muted-foreground">
+          {heading}
+        </h1>
+      )}
       <div className="md:hidden">
-        <label
-          htmlFor={selectId}
-          className="mb-1.5 block text-[13px] font-medium leading-5 text-muted-foreground"
-        >
+        <label htmlFor={selectId} className="sr-only">
           {selectLabel}
         </label>
         <div className="relative">
@@ -84,11 +90,6 @@ export function SettingsSectionNav({
       </div>
 
       <div className="hidden md:block">
-        {heading !== undefined && (
-          <p className="mb-2 px-2.5 text-[11px] font-medium uppercase tracking-[0.06em] text-muted-foreground">
-            {heading}
-          </p>
-        )}
         <ul className="flex flex-col gap-px">
           {items.map((item) => (
             <li key={item.id}>

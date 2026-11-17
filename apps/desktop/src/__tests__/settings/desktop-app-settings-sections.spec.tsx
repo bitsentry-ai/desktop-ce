@@ -121,6 +121,15 @@ describe('DesktopAppSettingsScaffold sections', () => {
     expect(screen.getByRole('button', { name: 'settings.appSettings.resetDatabase' })).toBeTruthy()
   })
 
+  it('titles the page once, above the section list, with the section title under it', () => {
+    renderSettings('/app-settings#danger-zone')
+
+    expect(screen.getAllByRole('heading', { level: 1 }).map((heading) => heading.textContent)).toEqual([
+      'settings.appSettings.settings',
+    ])
+    expect(screen.getByRole('heading', { level: 2, name: 'settings.appSettings.dangerZone' })).toBeTruthy()
+  })
+
   it('keeps the help tour marker and shows host sections under their own hash', () => {
     const { unmount } = renderSettings('/app-settings#help')
     expect(document.querySelector('[data-tour="settings-help"]')).not.toBeNull()

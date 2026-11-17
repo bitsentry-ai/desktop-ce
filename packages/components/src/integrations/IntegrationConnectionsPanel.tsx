@@ -1,5 +1,5 @@
 import type { PluginDescriptor } from "../services/contracts";
-import { Plug } from "lucide-react";
+import { ChevronRight, Plug } from "lucide-react";
 import { useEffect, useId, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { useTranslation } from "@bitsentry-ce/i18n";
 import type { IntegrationConnection, IntegrationConnectionInput, DesktopPluginFieldDefinition } from "@bitsentry-ce/core/features/plugins";
@@ -11,6 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from ".
 import { Textarea } from "../ui/textarea";
 import { EmptyState } from "../ui/empty-state";
 import { settingsDescriptionClass, settingsLabelClass, settingsSectionTitleClass } from "../settings/SettingsRow";
+import { cn } from "../lib/utils";
 
 /** How a host lists, saves and removes named connections. Desktop backs it with local IPC, the Dashboard with its API. */
 export interface IntegrationConnectionsPort {
@@ -83,12 +84,79 @@ function eligiblePlugins(plugins: PluginDescriptor[]): PluginDescriptor[] {
   return plugins.filter((item) => item.metadata?.persistence !== undefined);
 }
 
+/** Optional JSON settings, such as ticket mappings: shown under a collapsed "Advanced" disclosure. */
+function isAdvancedField(field: DesktopPluginFieldDefinition): boolean {
+  return field.required !== true && field.type === "json";
+}
+
+function hasAdvancedValue(plugin: PluginDescriptor | undefined, config: Record<string, unknown> | undefined): boolean {
+  const fields = plugin?.metadata?.persistence?.configFields ?? [];
+  return fields.some((field) => isAdvancedField(field) && config?.[field.key] !== undefined);
+}
+
+const cardClass = "rounded-lg border border-border bg-card";
+
+function ConnectionStatus({ row }: { row: IntegrationConnection }) {
+  const { t } = useTranslation();
+  if (!row.enabled) return <Badge variant="secondary">{t("settings.integrationConnections.inactive")}</Badge>;
+  if (row.availability === "configured") return <Badge variant="success">{t("settings.integrationConnections.active")}</Badge>;
+  return <Badge variant="warning">{t(`settings.integrationConnections.availability.${row.availability}`)}</Badge>;
+}
+
+interface ConnectionListProps {
+  titleId: string;
+  rows: IntegrationConnection[];
+  plugins: PluginDescriptor[];
+  /** The list has loaded, so an empty list means there are no connections rather than none yet fetched. */
+  loaded: boolean;
+  busy: boolean;
+  onEdit: (row: IntegrationConnection) => void;
+  onRemove: (id: string) => void;
+}
+
+/** The saved connections, in a card of their own above the form that adds one. */
+function ConnectionList({ titleId, rows, plugins, loaded, busy, onEdit, onRemove }: ConnectionListProps) {
+  const { t } = useTranslation();
+  return <section aria-labelledby={titleId} className={cardClass}>
+    <div className="border-b border-border px-4 py-3">
+      <h2 id={titleId} className={settingsSectionTitleClass}>{t("settings.integrationConnections.connectionsHeading")}</h2>
+      <p className={settingsDescriptionClass}>{t("settings.integrationConnections.connectionsDescription")}</p>
+    </div>
+    {rows.length === 0 && loaded && <p className={cn("px-4 py-3", settingsDescriptionClass)}>{t("settings.integrationConnections.noConnections")}</p>}
+    {rows.length > 0 && <ul className="divide-y divide-border">{rows.map((row) => <li key={row.id} className="flex flex-col gap-2 px-4 py-3 sm:flex-row sm:items-center sm:gap-4">
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-sm font-medium leading-5 text-foreground" title={row.name}>{row.name}</p>
+        <p className="truncate font-mono text-[12.5px] leading-5 text-muted-foreground" title={row.target}>{row.target}</p>
+      </div>
+      <div className="flex shrink-0 flex-wrap items-center gap-2">
+        <ConnectionStatus row={row} />
+        <Button size="sm" variant="outline" disabled={busy || !plugins.some((item) => item.id === row.pluginId)} onClick={() => { onEdit(row); }}>{t("settings.integrationConnections.edit")}</Button>
+        <Button size="sm" variant="outline" disabled={busy} onClick={() => { onRemove(row.id); }}>{t("settings.integrationConnections.remove")}</Button>
+      </div>
+    </li>)}</ul>}
+  </section>;
+}
+
+/** Optional settings most connections never need, collapsed until opened or filled. */
+function AdvancedFields({ open, onOpenChange, children }: { open: boolean; onOpenChange: (open: boolean) => void; children: ReactNode }) {
+  const { t } = useTranslation();
+  return <details open={open} onToggle={(event) => { onOpenChange(event.currentTarget.open); }} className="group rounded-md border border-border">
+    <summary className="flex cursor-pointer select-none list-none items-center gap-2 rounded-md px-3 py-2 text-sm font-medium text-foreground transition-colors hover:bg-accent/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 [&::-webkit-details-marker]:hidden">
+      <ChevronRight aria-hidden={true} className="size-4 shrink-0 text-muted-foreground transition-transform group-open:rotate-90" />
+      {t("settings.integrationConnections.advanced")}
+    </summary>
+    <div className="space-y-4 border-t border-border p-3">{children}</div>
+  </details>;
+}
+
 export function IntegrationConnectionsPanel({ service, emptyAction, editConnectionId = null, startNew = false, onEditConnectionChange }: IntegrationConnectionsPanelProps) {
   const { t } = useTranslation();
   const formId = useId();
   const [rows, setRows] = useState<IntegrationConnection[]>([]);
   const [pluginState, setPluginState] = useState<PluginState>({ status: "loading" });
   const [listFailed, setListFailed] = useState(false);
+  const [listLoaded, setListLoaded] = useState(false);
+  const [advancedOpen, setAdvancedOpen] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -123,7 +191,7 @@ export function IntegrationConnectionsPanel({ service, emptyAction, editConnecti
   useEffect(() => {
     const requestVersion = ++listRequestVersion.current;
     void service.list().then((result) => {
-      if (requestVersion === listRequestVersion.current) { setRows(result); setListFailed(false); }
+      if (requestVersion === listRequestVersion.current) { setRows(result); setListFailed(false); setListLoaded(true); }
     }, () => {
       if (requestVersion === listRequestVersion.current) setListFailed(true);
     });
@@ -141,16 +209,17 @@ export function IntegrationConnectionsPanel({ service, emptyAction, editConnecti
   function refreshRows(): Promise<void> {
     const requestVersion = ++listRequestVersion.current;
     return service.list().then((result) => {
-      if (requestVersion === listRequestVersion.current) { setRows(result); setListFailed(false); }
+      if (requestVersion === listRequestVersion.current) { setRows(result); setListFailed(false); setListLoaded(true); }
     }, () => {
       if (requestVersion === listRequestVersion.current) setListFailed(true);
     });
   }
 
-  function reset() { setEditingId(null); setName(""); setConfig({}); setAuth({}); setCredentialSet(0); setConnectionEnabled(true); }
+  function reset() { setEditingId(null); setName(""); setConfig({}); setAuth({}); setCredentialSet(0); setConnectionEnabled(true); setAdvancedOpen(false); }
 
   function startEdit(row: IntegrationConnection) {
     setEditingId(row.id); setName(row.name); setPluginId(row.pluginId); setAuth({}); setCredentialSet(0); setConnectionEnabled(row.enabled);
+    setAdvancedOpen(hasAdvancedValue(plugins.find((item) => item.id === row.pluginId), row.config));
     setConfig(Object.fromEntries(Object.entries(row.config ?? {}).map(([key, value]) => [key, typeof value === "string" ? value : JSON.stringify(value, null, 2)])));
   }
 
@@ -182,6 +251,8 @@ export function IntegrationConnectionsPanel({ service, emptyAction, editConnecti
     if (busy || plugin === undefined || contract === undefined) return;
     const parsed = parseFields(contract.configFields, config);
     if ("invalidField" in parsed) {
+      // A field that does not parse may sit under "Advanced"; open it so the user can see what to fix.
+      if (contract.configFields.some((field) => field.label === parsed.invalidField && isAdvancedField(field))) setAdvancedOpen(true);
       setError(t("settings.integrationConnections.invalidJson", { field: parsed.invalidField }));
       return;
     }
@@ -239,95 +310,107 @@ export function IntegrationConnectionsPanel({ service, emptyAction, editConnecti
     return <Input id={id} type={type} autoComplete={secret ? "new-password" : "off"} value={value} required={required} disabled={disabled} onChange={(event) => { change(event.target.value); }} />;
   }
 
-  function status(row: IntegrationConnection) {
-    if (!row.enabled) return <Badge variant="secondary">{t("settings.integrationConnections.inactive")}</Badge>;
-    if (row.availability === "configured") return <Badge variant="success">{t("settings.integrationConnections.active")}</Badge>;
-    return <Badge variant="warning">{t(`settings.integrationConnections.availability.${row.availability}`)}</Badge>;
+  function configField(field: DesktopPluginFieldDefinition) {
+    return <div key={field.key} className="space-y-2">
+      <Label htmlFor={`${formId}-config-${field.key}`}>{field.label}</Label>
+      {fieldInput(field, false, `${formId}-config-${field.key}`)}
+    </div>;
+  }
+
+  function editRow(row: IntegrationConnection) {
+    setAppliedEditId(row.id);
+    startEdit(row);
+    onEditConnectionChange?.(row.id);
   }
 
   const loadFailed = listFailed || pluginState.status === "failed";
+  const noPlugins = pluginState.status === "ready" && plugins.length === 0;
+  const configFields = contract?.configFields ?? [];
+  const advancedFields = configFields.filter(isAdvancedField);
+  const errorAlert = error === null ? null : <p role="alert" className="text-sm text-destructive">{error}</p>;
+  const formHeading = editingId === null ? t("settings.integrationConnections.addHeading") : t("settings.integrationConnections.editHeading");
 
-  return <section className="space-y-4" aria-labelledby={`${formId}-title`}>
-    <div>
-      <h2 id={`${formId}-title`} className={settingsSectionTitleClass}>{t("settings.integrationConnections.title")}</h2>
-      <p className={settingsDescriptionClass}>{t("settings.integrationConnections.description")}</p>
-    </div>
-
+  // Existing connections and the form that adds one are separate cards; with no plugin to connect, one compact
+  // empty state takes their place.
+  return <div className="space-y-6">
     {loadFailed && <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-destructive/40 px-3 py-2 text-sm text-destructive">
       <span>{t("settings.integrationConnections.loadFailed")}</span>
       <Button type="button" size="sm" variant="outline" onClick={retry}>{t("settings.integrationConnections.retry")}</Button>
     </div>}
-    {error !== null && <p role="alert" className="text-sm text-destructive">{error}</p>}
+    {contract === undefined && errorAlert}
 
-    {rows.length > 0 && <ul className="divide-y divide-border rounded-md border border-border">{rows.map((row) => <li key={row.id} className="flex flex-col gap-2 px-4 py-3 sm:flex-row sm:items-center sm:gap-4">
-      <div className="min-w-0 flex-1">
-        <p className="truncate text-sm font-medium leading-5 text-foreground" title={row.name}>{row.name}</p>
-        <p className="truncate font-mono text-[12.5px] leading-5 text-muted-foreground" title={row.target}>{row.target}</p>
-      </div>
-      <div className="flex shrink-0 flex-wrap items-center gap-2">
-        {status(row)}
-        <Button size="sm" variant="outline" disabled={busy || !plugins.some((item) => item.id === row.pluginId)} onClick={() => {
-          setAppliedEditId(row.id);
-          startEdit(row);
-          onEditConnectionChange?.(row.id);
-        }}>{t("settings.integrationConnections.edit")}</Button>
-        <Button size="sm" variant="outline" disabled={busy} onClick={() => { remove(row.id); }}>{t("settings.integrationConnections.remove")}</Button>
-      </div>
-    </li>)}</ul>}
+    {(rows.length > 0 || (listLoaded && plugins.length > 0)) && <ConnectionList
+      titleId={`${formId}-connections`}
+      rows={rows}
+      plugins={plugins}
+      loaded={listLoaded}
+      busy={busy}
+      onEdit={editRow}
+      onRemove={remove}
+    />}
 
     {pluginState.status === "loading" && <p role="status" className="text-sm text-muted-foreground">{t("settings.integrationConnections.loading")}</p>}
 
-    {pluginState.status === "ready" && plugins.length === 0 && <EmptyState
-      icon={Plug}
-      title={t("settings.integrationConnections.noPlugins")}
-      description={t("settings.integrationConnections.noPluginsHint")}
-      action={emptyAction}
-    />}
+    {noPlugins && <div className={cardClass}>
+      <EmptyState
+        icon={Plug}
+        title={t("settings.integrationConnections.emptyTitle")}
+        description={t("settings.integrationConnections.emptyDescription")}
+        action={emptyAction}
+        className="py-10"
+      />
+    </div>}
 
-    {plugin !== undefined && contract !== undefined && <form onSubmit={save} className="space-y-4">
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <div className="space-y-2">
-          <Label htmlFor={`${formId}-plugin`}>{t("settings.integrationConnections.plugin")}</Label>
-          <Select value={selectedPluginId} disabled={busy || editingId !== null} onValueChange={(value) => { setPluginId(value); reset(); }}>
-            <SelectTrigger id={`${formId}-plugin`}><SelectValue /></SelectTrigger>
-            <SelectContent>{plugins.map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}</SelectContent>
-          </Select>
+    {plugin !== undefined && contract !== undefined && <section aria-labelledby={`${formId}-form-title`} className={cn(cardClass, "p-4 sm:p-6")}>
+      <div className="mb-4">
+        <h2 id={`${formId}-form-title`} className={settingsSectionTitleClass}>{formHeading}</h2>
+        <p className={settingsDescriptionClass}>{t("settings.integrationConnections.credentialHint")}</p>
+      </div>
+      <form onSubmit={save} className="space-y-4">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <div className="space-y-2">
+            <Label htmlFor={`${formId}-plugin`}>{t("settings.integrationConnections.plugin")}</Label>
+            <Select value={selectedPluginId} disabled={busy || editingId !== null} onValueChange={(value) => { setPluginId(value); reset(); }}>
+              <SelectTrigger id={`${formId}-plugin`}><SelectValue /></SelectTrigger>
+              <SelectContent>{plugins.map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}</SelectContent>
+            </Select>
+          </div>
+          {sets.length > 1 && <div className="space-y-2">
+            <Label htmlFor={`${formId}-credentials`}>{t("settings.integrationConnections.authMethod")}</Label>
+            <Select value={String(credentialSet)} disabled={busy} onValueChange={(value) => { setCredentialSet(Number(value)); setAuth({}); }}>
+              <SelectTrigger id={`${formId}-credentials`}><SelectValue /></SelectTrigger>
+              <SelectContent>{sets.map((keys, index) => <SelectItem key={keys.join("+")} value={String(index)}>{setLabel(plugin, keys)}</SelectItem>)}</SelectContent>
+            </Select>
+          </div>}
         </div>
-        {sets.length > 1 && <div className="space-y-2">
-          <Label htmlFor={`${formId}-credentials`}>{t("settings.integrationConnections.authMethod")}</Label>
-          <Select value={String(credentialSet)} disabled={busy} onValueChange={(value) => { setCredentialSet(Number(value)); setAuth({}); }}>
-            <SelectTrigger id={`${formId}-credentials`}><SelectValue /></SelectTrigger>
-            <SelectContent>{sets.map((keys, index) => <SelectItem key={keys.join("+")} value={String(index)}>{setLabel(plugin, keys)}</SelectItem>)}</SelectContent>
-          </Select>
-        </div>}
-      </div>
 
-      <div className="space-y-2">
-        <Label htmlFor={`${formId}-name`}>{t("settings.integrationConnections.name")}</Label>
-        <Input id={`${formId}-name`} ref={nameInputRef} value={name} maxLength={100} required disabled={busy} onChange={(event) => { setName(event.target.value); }} />
-      </div>
-      {contract.configFields.map((field) => <div key={field.key} className="space-y-2">
-        <Label htmlFor={`${formId}-config-${field.key}`}>{field.label}</Label>
-        {fieldInput(field, false, `${formId}-config-${field.key}`)}
-      </div>)}
-      {authFields.map((field) => <div key={field.key} className="space-y-2">
-        <Label htmlFor={`${formId}-auth-${field.key}`}>{field.label}</Label>
-        {fieldInput(field, true, `${formId}-auth-${field.key}`)}
-      </div>)}
+        <div className="space-y-2">
+          <Label htmlFor={`${formId}-name`}>{t("settings.integrationConnections.name")}</Label>
+          <Input id={`${formId}-name`} ref={nameInputRef} value={name} maxLength={100} required disabled={busy} onChange={(event) => { setName(event.target.value); }} />
+        </div>
+        {configFields.filter((field) => !isAdvancedField(field)).map(configField)}
+        {authFields.map((field) => <div key={field.key} className="space-y-2">
+          <Label htmlFor={`${formId}-auth-${field.key}`}>{field.label}</Label>
+          {fieldInput(field, true, `${formId}-auth-${field.key}`)}
+        </div>)}
 
-      <label className="flex items-center justify-between gap-4 rounded-md border border-border px-4 py-3">
-        <span className="min-w-0">
-          <span className={settingsLabelClass}>{t("settings.integrationConnections.active")}</span>
-          <span className={`block ${settingsDescriptionClass}`}>{t("settings.integrationConnections.activeHint")}</span>
-        </span>
-        <input type="checkbox" className="h-4 w-4 accent-primary" checked={connectionEnabled} disabled={busy} onChange={(event) => { setConnectionEnabled(event.target.checked); }} />
-      </label>
+        {advancedFields.length > 0 && <AdvancedFields open={advancedOpen} onOpenChange={setAdvancedOpen}>{advancedFields.map(configField)}</AdvancedFields>}
 
-      <p className={settingsDescriptionClass}>{t("settings.integrationConnections.targetImmutable")}</p>
-      <div className="flex justify-end gap-2">
-        {editingId !== null && <Button type="button" variant="outline" disabled={busy} onClick={finishEdit}>{t("settings.integrationConnections.cancel")}</Button>}
-        <Button type="submit" disabled={busy}>{t("settings.integrationConnections.save")}</Button>
-      </div>
-    </form>}
-  </section>;
+        <label className="flex items-center justify-between gap-4 rounded-md border border-border px-3 py-2.5">
+          <span className="min-w-0">
+            <span className={settingsLabelClass}>{t("settings.integrationConnections.active")}</span>
+            <span className={`block ${settingsDescriptionClass}`}>{t("settings.integrationConnections.activeHint")}</span>
+          </span>
+          <input type="checkbox" className="h-4 w-4 accent-primary" checked={connectionEnabled} disabled={busy} onChange={(event) => { setConnectionEnabled(event.target.checked); }} />
+        </label>
+
+        {editingId !== null && <p className={settingsDescriptionClass}>{t("settings.integrationConnections.targetImmutable")}</p>}
+        {errorAlert}
+        <div className="flex justify-end gap-2">
+          {editingId !== null && <Button type="button" variant="outline" disabled={busy} onClick={finishEdit}>{t("settings.integrationConnections.cancel")}</Button>}
+          <Button type="submit" disabled={busy}>{t("settings.integrationConnections.save")}</Button>
+        </div>
+      </form>
+    </section>}
+  </div>;
 }

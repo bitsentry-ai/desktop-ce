@@ -10,7 +10,7 @@ import {
 } from '@bitsentry-ce/components/llm/modelCatalog'
 import { useTranslation } from '@bitsentry-ce/i18n'
 import { resolveSyncedDefaultModel } from './model-selection'
-import { settingsDescriptionClass, settingsSectionTitleClass } from './SettingsRow'
+import { settingsDescriptionClass, settingsPageTitleClass } from './SettingsRow'
 import {
   mergeDiscoveredModelIds,
   publishDiscoveredModels,
@@ -1155,11 +1155,11 @@ export function CodingAgentProvidersSection({
       data-tour="settings-coding-agents"
       className="scroll-mt-24"
     >
-      <div className="mb-4">
-        <h2 className={settingsSectionTitleClass}>
+      <div className="mb-6">
+        <h2 className={settingsPageTitleClass}>
           {t('navigation.navbar.codingAgents')}
         </h2>
-        <p className={settingsDescriptionClass}>
+        <p className={`mt-1 ${settingsDescriptionClass}`}>
           {t('settings.localCliProviders.connectLocalCodingAgents')}
         </p>
       </div>

@@ -1,7 +1,9 @@
 import type { MouseEventHandler, ReactNode } from "react";
 import { cn } from "../lib/utils";
 
-/** Section heading inside a settings page: 15px/22px semibold. */
+/** The title of the settings section on show, in Dashboard and Desktop alike: 20px/28px semibold. */
+export const settingsPageTitleClass = "text-xl font-semibold leading-7 tracking-[-0.01em] text-foreground";
+/** Sub-heading inside a settings section: 15px/22px semibold. */
 export const settingsSectionTitleClass = "text-[15px] font-semibold leading-[22px] text-foreground";
 /** Section subtitle and row description: 13px/20px muted. */
 export const settingsDescriptionClass = "text-[13px] leading-5 text-muted-foreground";

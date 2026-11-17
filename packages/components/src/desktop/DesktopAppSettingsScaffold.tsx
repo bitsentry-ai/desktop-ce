@@ -34,7 +34,7 @@ import { UpdateSettingsSection } from "../settings/UpdateSettingsSection";
 import {
   settingsDescriptionClass,
   settingsLabelClass,
-  settingsSectionTitleClass,
+  settingsPageTitleClass,
 } from "../settings/SettingsRow";
 import {
   SettingsSectionNav,
@@ -134,9 +134,9 @@ function SectionHeader({
   description: string;
 }) {
   return (
-    <div className="mb-4">
-      <h2 className={settingsSectionTitleClass}>{title}</h2>
-      <p className={settingsDescriptionClass}>{description}</p>
+    <div className="mb-6">
+      <h2 className={settingsPageTitleClass}>{title}</h2>
+      <p className={`mt-1 ${settingsDescriptionClass}`}>{description}</p>
     </div>
   );
 }
@@ -341,7 +341,7 @@ export function DesktopAppSettingsScaffold({
     ),
     plugins: <PluginsSettingsSection id="plugins" />,
     "global-variables": (
-      <GlobalVariablesSettingsSection id="global-variables" />
+      <GlobalVariablesSettingsSection id="global-variables" pageTitle />
     ),
     "coding-agents": (
       <div className="space-y-8">
@@ -428,27 +428,26 @@ export function DesktopAppSettingsScaffold({
   }));
 
   return (
-    <DashboardLayout appSettingsExtraSections={appSettingsExtraSections}>
-      <div ref={headerRef} className="mb-6 scroll-mt-3">
-        <h1 className="text-xl font-semibold tracking-[-0.01em] text-foreground">
-          {t("settings.appSettings.settings")}
-        </h1>
-        <p className="mt-1 text-[13px] leading-5 text-muted-foreground">
-          {t("settings.appSettings.configureAppSettings")}
-        </p>
-      </div>
-
+    <DashboardLayout
+      appSettingsExtraSections={appSettingsExtraSections}
+      mainClassName="px-4 pt-4 md:px-6"
+    >
       {/*
-        One section at a time, like the Dashboard settings. The hash picks the
-        section, so the sidebar's `/app-settings#hash` links and this list stay
-        in sync. The body is capped at 880px.
+        The same frame as the Dashboard settings: the "Settings" title heads a
+        208px section list, and one section shows at a time under its own 20px
+        title. The hash picks the section, so `/app-settings#hash` links and
+        this list stay in sync. The body is capped at 880px.
       */}
-      <div className="flex flex-col gap-6 md:flex-row md:gap-10">
+      <div
+        ref={headerRef}
+        className="flex scroll-mt-3 flex-col gap-6 md:flex-row md:gap-8"
+      >
         <SettingsSectionNav
           items={navItems}
           activeId={activeId}
           pathname={location.pathname}
           label={t("settings.appSettings.settings")}
+          heading={t("settings.appSettings.settings")}
           selectLabel={t("settings.sectionNav.label")}
         />
         <div key={activeId} className="min-w-0 max-w-[880px] flex-1">

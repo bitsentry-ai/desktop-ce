@@ -137,8 +137,8 @@ describe('IntegrationConnectionsPanel', () => {
     const { service } = createConnectionService([withoutPersistence])
     render(<IntegrationConnectionsPanel service={service} emptyAction={<a href="/app-settings#plugins">Open plugins</a>} />)
 
-    expect(await screen.findByText('settings.integrationConnections.noPlugins')).toBeTruthy()
-    expect(screen.getByText('settings.integrationConnections.noPluginsHint')).toBeTruthy()
+    expect(await screen.findByText('settings.integrationConnections.emptyTitle')).toBeTruthy()
+    expect(screen.getByText('settings.integrationConnections.emptyDescription')).toBeTruthy()
     expect(screen.getByRole('link', { name: 'Open plugins' }).getAttribute('href')).toBe('/app-settings#plugins')
     expect(screen.queryByLabelText('settings.integrationConnections.plugin')).toBeNull()
     expect(screen.queryByRole('button', { name: 'settings.integrationConnections.save' })).toBeNull()
@@ -340,6 +340,42 @@ describe('IntegrationConnectionsPanel', () => {
     await waitFor(() => expect(rows).toHaveLength(1))
     expect(rows[0]?.id).not.toBe(storedConnection.id)
     expect(rows[0]?.name).toBe('Replacement')
+  })
+
+  it('lists connections apart from the form that adds one', async () => {
+    const { rows, service } = createConnectionService()
+    render(<IntegrationConnectionsPanel service={service} />)
+
+    expect(await screen.findByText('settings.integrationConnections.noConnections')).toBeTruthy()
+    const list = screen.getByRole('region', { name: 'settings.integrationConnections.connectionsHeading' })
+    const form = screen.getByRole('region', { name: 'settings.integrationConnections.addHeading' })
+    expect(within(form).getByText('settings.integrationConnections.credentialHint')).toBeTruthy()
+
+    fill('settings.integrationConnections.name', 'Acme production')
+    fill('Service URL', 'https://tickets.example/api')
+    fill('API token', 'private-token')
+    save()
+
+    await waitFor(() => expect(rows).toHaveLength(1))
+    expect(await within(list).findByText('Acme production')).toBeTruthy()
+    expect(within(form).queryByText('Acme production')).toBeNull()
+  })
+
+  it('keeps optional JSON settings under a collapsed Advanced disclosure, opened for a connection that uses them', async () => {
+    const { rows, service } = createConnectionService()
+    rows.push({ ...storedConnection, enabled: true, config: { ...storedConnection.config, mapping: { priority: 'P1' } } })
+    render(<IntegrationConnectionsPanel service={service} />)
+
+    await screen.findByLabelText('Service URL')
+    const advanced = screen.getByText('settings.integrationConnections.advanced').closest('details') as HTMLDetailsElement
+    expect(advanced.open).toBe(false)
+    expect(advanced.contains(screen.getByLabelText('Field mapping'))).toBe(true)
+    expect(advanced.contains(screen.getByLabelText('Service URL'))).toBe(false)
+
+    fireEvent.click(await screen.findByRole('button', { name: 'settings.integrationConnections.edit' }))
+    expect(advanced.open).toBe(true)
+    expect(screen.getByRole('region', { name: 'settings.integrationConnections.editHeading' })).toBeTruthy()
+    expect(screen.getByText('settings.integrationConnections.targetImmutable')).toBeTruthy()
   })
 
   it('opens a deep-linked connection once and reports when editing ends', async () => {

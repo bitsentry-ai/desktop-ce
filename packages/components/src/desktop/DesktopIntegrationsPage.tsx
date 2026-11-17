@@ -7,7 +7,11 @@ import { useBitsentryServices } from "../services/context";
 import { Button } from "../ui/button";
 import { EmptyState } from "../ui/empty-state";
 
-/** Desktop Integrations page: the shared connections panel over the local plugin services, with credentials kept on this machine. */
+/**
+ * Desktop Integrations page: the shared connections panel over the local plugin services, with credentials kept on
+ * this machine. The panel lays out its own cards (saved connections, then the form that adds one), so the page only
+ * caps their width.
+ */
 export default function DesktopIntegrationsPage() {
   const { t } = useTranslation();
   const { plugins } = useBitsentryServices();
@@ -16,16 +20,16 @@ export default function DesktopIntegrationsPage() {
   } : null;
   return (
     <DashboardLayout>
-      <div className="mb-8">
+      <div className="mb-6">
         <h1 className="text-lg font-semibold text-foreground">{t("navigation.navbar.integrations")}</h1>
         <p className="text-sm text-muted-foreground">{t("settings.integrationConnections.pageDescription")}</p>
       </div>
-      <div className="max-w-2xl rounded-md border border-border p-4 sm:p-6">
+      <div className="max-w-2xl">
         {service === null
-          ? <EmptyState icon={Plug} title={t("settings.integrationConnections.unavailable")} />
+          ? <div className="rounded-lg border border-border bg-card"><EmptyState icon={Plug} title={t("settings.integrationConnections.unavailable")} className="py-10" /></div>
           : <IntegrationConnectionsPanel
             service={service}
-            emptyAction={<Button asChild variant="outline"><Link to="/app-settings#plugins">{t("settings.integrationConnections.openPlugins")}</Link></Button>}
+            emptyAction={<Button asChild><Link to="/app-settings#plugins">{t("settings.integrationConnections.openPlugins")}</Link></Button>}
           />}
       </div>
     </DashboardLayout>
