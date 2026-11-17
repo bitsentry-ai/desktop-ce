@@ -147,7 +147,7 @@ export function SidebarRow({
         title={title}
         aria-current={active ? "page" : undefined}
         className={cn(
-          "flex min-h-9 items-center gap-2 rounded-md px-2.5 py-1.5 text-[13px] leading-5 text-muted-foreground transition-colors",
+          "flex min-h-9 items-center gap-2 rounded-md px-2.5 py-1.5 text-sm leading-5 text-muted-foreground transition-colors",
           "hover:bg-[hsl(var(--accent)/0.7)] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
           // Selection is a neutral surface with a brand indicator, so it never reads as "success".
           active && cn("bg-[hsl(var(--selection))] text-foreground hover:bg-[hsl(var(--selection))]", SELECTION_BAR_CLASS),
@@ -157,7 +157,7 @@ export function SidebarRow({
         <span className="min-w-0 flex-1">
           {/* The selected row shows up to two lines, so similarly named items stay distinguishable. */}
           <span className={cn("block", active ? "line-clamp-2 break-words font-medium" : "truncate text-foreground/85")}>{title}</span>
-          {meta !== undefined && <span className="block truncate text-xs leading-4 text-muted-foreground">{meta}</span>}
+          {meta !== undefined && <span className="block truncate text-[13px] leading-[18px] text-muted-foreground">{meta}</span>}
         </span>
         {trailing !== undefined && (
           <span

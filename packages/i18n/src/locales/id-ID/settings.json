@@ -218,7 +218,7 @@
   "settings.integrationConnections.emptyTitle": "Tambahkan integrasi pertama Anda",
   "settings.integrationConnections.emptyDescription": "Pasang plugin seperti iTop atau Outline untuk menghubungkannya ke chat.",
   "settings.integrationConnections.connectionsHeading": "Koneksi",
-  "settings.integrationConnections.connectionsDescription": "Instans bernama yang dapat digunakan chat.",
+  "settings.integrationConnections.connectionsDescription": "Hubungkan alat tiket dan pengetahuan ke obrolan insiden.",
   "settings.integrationConnections.noConnections": "Belum ada koneksi.",
   "settings.integrationConnections.addHeading": "Tambahkan koneksi",
   "settings.integrationConnections.editHeading": "Edit koneksi",

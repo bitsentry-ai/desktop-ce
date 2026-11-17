@@ -218,7 +218,7 @@
   "settings.integrationConnections.emptyTitle": "Ajoutez votre première intégration",
   "settings.integrationConnections.emptyDescription": "Installez un plugin comme iTop ou Outline pour le connecter au chat.",
   "settings.integrationConnections.connectionsHeading": "Connexions",
-  "settings.integrationConnections.connectionsDescription": "Instances nommées que le chat peut utiliser.",
+  "settings.integrationConnections.connectionsDescription": "Connectez vos outils de tickets et de connaissances au chat d’incident.",
   "settings.integrationConnections.noConnections": "Aucune connexion pour l’instant.",
   "settings.integrationConnections.addHeading": "Ajouter une connexion",
   "settings.integrationConnections.editHeading": "Modifier la connexion",

@@ -218,7 +218,7 @@
   "settings.integrationConnections.emptyTitle": "添加您的第一个集成",
   "settings.integrationConnections.emptyDescription": "安装 iTop 或 Outline 等插件，即可将其连接到聊天。",
   "settings.integrationConnections.connectionsHeading": "连接",
-  "settings.integrationConnections.connectionsDescription": "聊天可以使用的命名实例。",
+  "settings.integrationConnections.connectionsDescription": "将工单和知识库工具连接到事件聊天。",
   "settings.integrationConnections.noConnections": "暂无连接。",
   "settings.integrationConnections.addHeading": "添加连接",
   "settings.integrationConnections.editHeading": "编辑连接",

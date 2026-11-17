@@ -596,7 +596,7 @@ function StepsPanel({
           );
         })}
         {!execution && (
-          <p className="text-xs italic text-muted-foreground">
+          <p className="text-[13px] leading-[18px] text-muted-foreground">
             {t("common.results.waitingForExecutionState")}
           </p>
         )}
@@ -609,7 +609,7 @@ function OutputPanel({ step }: { step: RunbookExecutionStepRecord | null }) {
   const { t } = useTranslation();
   const inputText = stringifyForOutput(step?.input);
   let content: ReactNode = (
-    <p className="text-xs italic text-muted-foreground">
+    <p className="text-[13px] leading-[18px] text-muted-foreground">
       {t("common.results.selectAStepToInspect")}
     </p>
   );

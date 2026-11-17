@@ -119,6 +119,14 @@ interface ConnectionListProps {
   formOpen: boolean;
 }
 
+function ConnectionService({ name }: { name: string | undefined }) {
+  if (name === undefined) return null;
+  return <span className="inline-flex shrink-0 items-center gap-1 rounded border border-border px-1.5 text-xs font-normal leading-5 text-muted-foreground">
+    <Plug aria-hidden="true" className="size-3" />
+    {name}
+  </span>;
+}
+
 /** Less frequent row actions behind ⋯, so Remove never sits beside Edit as an equal. */
 function ConnectionMenu({ name, disabled, onRemove }: { name: string; disabled: boolean; onRemove: () => void }) {
   const { t } = useTranslation();
@@ -155,7 +163,11 @@ function ConnectionList({ titleId, rows, plugins, loaded, busy, onEdit, onRemove
     {rows.length === 0 && loaded && <p className={cn("px-4 py-3", settingsDescriptionClass)}>{t("settings.integrationConnections.noConnections")}</p>}
     {rows.length > 0 && <ul className="divide-y divide-border">{rows.map((row) => <li key={row.id} className="flex flex-col gap-2 px-4 py-3 sm:flex-row sm:items-center sm:gap-4">
       <div className="min-w-0 flex-1">
-        <p className="truncate text-sm font-medium leading-5 text-foreground" title={row.name}>{row.name}</p>
+        <p className="flex min-w-0 items-center gap-2 text-sm font-medium leading-5 text-foreground">
+          <span className="truncate" title={row.name}>{row.name}</span>
+          {/* The service it connects to, so Outline and iTop rows are told apart without the sidebar. */}
+          <ConnectionService name={plugins.find((item) => item.id === row.pluginId)?.name} />
+        </p>
         <p className="truncate font-mono text-[12.5px] leading-5 text-muted-foreground" title={row.target}>{row.target}</p>
       </div>
       <div className="flex shrink-0 flex-wrap items-center gap-2">
