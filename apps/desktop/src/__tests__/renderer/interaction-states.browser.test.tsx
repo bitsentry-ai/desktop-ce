@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { page, userEvent } from "vitest/browser";
 import { Button } from "@bitsentry-ce/components/ui/button";
 import { Input } from "@bitsentry-ce/components/ui/input";
+import { FieldError } from "@bitsentry-ce/components/ui/field-error";
 import { SidebarRow, SidebarRunStatus } from "@bitsentry-ce/components/layout/SidebarRows";
 
 // Sidebar rows render router links; a plain anchor is enough to show their states.
@@ -67,7 +68,7 @@ function StatesSheet() {
         <Row label="Input">
           <div className="w-44"><Input placeholder="Connection name" /><Caption>empty</Caption></div>
           <div className="w-44"><Input data-testid="input-focus" defaultValue="Production" /><Caption>focus</Caption></div>
-          <div className="w-44"><Input data-testid="input-invalid" aria-invalid="true" defaultValue="{ bad json" /><Caption>invalid</Caption></div>
+          <div className="w-44"><Input data-testid="input-invalid" aria-invalid="true" aria-describedby="bad-json" defaultValue="{ bad json" /><FieldError id="bad-json">Must be valid JSON.</FieldError><Caption>invalid</Caption></div>
           <div className="w-44"><Input disabled defaultValue="Read only" /><Caption>disabled</Caption></div>
         </Row>
         <Row label="Sidebar row">
