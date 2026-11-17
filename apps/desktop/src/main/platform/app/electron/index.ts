@@ -1,11 +1,16 @@
 import { app } from 'electron'
 import { enableCompileCache } from 'node:module'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 import { getDesktopEditionIdentity } from '@bitsentry-ce/core/features/desktop/desktop-edition-identity'
 
-// main.ts renames the app later, so the default userData folder is not the app's own folder yet.
+// A profile chosen with --user-data-dir owns the cache. Otherwise use the edition folder: main.ts renames the app
+// later, so the default userData folder is not the app's own folder yet.
 try {
-  enableCompileCache(join(app.getPath('appData'), getDesktopEditionIdentity('ce').appDataName, 'compile-cache'))
+  const chosenUserData = app.commandLine.getSwitchValue('user-data-dir')
+  const profileDir = chosenUserData === ''
+    ? join(app.getPath('appData'), getDesktopEditionIdentity('ce').appDataName)
+    : resolve(chosenUserData)
+  enableCompileCache(join(profileDir, 'compile-cache'))
 } catch {
   // Cache availability must not prevent startup.
 }
