@@ -53,7 +53,7 @@ export class SyncSchedulerService {
     this.inFlight = this.syncService
       .syncAllEnabled(abortController.signal)
       .then((results) => {
-        const failed = results.filter((result) => Boolean(result.error)).length
+        const failed = results.filter((result) => result.error).length
         if (failed > 0) {
           log.warn(`[error-sources] Scheduled sync completed with ${String(failed)} failures`)
         }

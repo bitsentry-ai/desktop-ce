@@ -113,6 +113,30 @@ function emitTrace(
   }
 }
 
+function toOrchestrationError(
+  cause: unknown,
+  options: RunOrchestratedOperationOptions<unknown>,
+): OrchestrationError {
+  if (cause instanceof OrchestrationError) {
+    return cause;
+  }
+
+  const kind = options.signal.aborted ? "cancelled" : "operation";
+  return new OrchestrationError(kind, options.operation, cause);
+}
+
+function getCancellationSource(
+  kind: OrchestrationFailureKind,
+): OrchestrationTraceEvent["cancellationSource"] {
+  if (kind === "cancelled") {
+    return "caller";
+  }
+  if (kind === "timeout") {
+    return "deadline";
+  }
+  return undefined;
+}
+
 /**
  * Runs a side-effecting Promise through Effect while keeping the caller's
  * Promise-based API intact. The operation receives a signal that is aborted
@@ -131,14 +155,7 @@ export async function runOrchestratedOperation<T>(
         linkedSignal.dispose();
       }
     },
-    catch: (cause) =>
-      cause instanceof OrchestrationError
-        ? cause
-        : new OrchestrationError(
-            options.signal.aborted ? "cancelled" : "operation",
-            options.operation,
-            cause,
-          ),
+    catch: (cause) => toOrchestrationError(cause, options),
   });
 
   const boundedOperation =
@@ -164,12 +181,7 @@ export async function runOrchestratedOperation<T>(
       elapsedMs: Date.now() - startedAt,
       outcome: "failed",
       failureKind: error.kind,
-      cancellationSource:
-        error.kind === "cancelled"
-          ? "caller"
-          : error.kind === "timeout"
-            ? "deadline"
-            : undefined,
+      cancellationSource: getCancellationSource(error.kind),
     });
     throw error;
   }

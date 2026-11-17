@@ -32,7 +32,9 @@ export function readUnseenIncidentOutcomes(): Record<string, IncidentRunOutcome>
 function writeUnseenIncidentOutcomes(outcomes: Record<string, IncidentRunOutcome>): void {
   try {
     localStorage.setItem(UNSEEN_OUTCOMES_KEY, JSON.stringify(outcomes));
-  } catch {}
+  } catch {
+    // Storage can be unavailable (private mode or full quota); persistence is best effort.
+  }
 }
 
 export function recordUnseenIncidentOutcome(incidentId: string, outcome: IncidentRunOutcome): void {

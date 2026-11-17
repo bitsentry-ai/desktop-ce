@@ -600,7 +600,7 @@ app
       dispatcher.registerAll(
         createDesktopDialogHandlers({
           app,
-          dialog: dialog,
+          dialog,
           getWindow: () => desktopShell.mainWindow,
           approveRunbookExportPath,
           approveRunbookImportPaths,

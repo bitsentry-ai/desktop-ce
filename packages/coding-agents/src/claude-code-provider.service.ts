@@ -140,6 +140,7 @@ export function createClaudePromptStream(prompt: string): {
   return {
     messages: {
       async *[Symbol.asyncIterator]() {
+        const waitForNextMessage = () => new Promise<void>((resolve) => { wake = resolve })
         for (;;) {
           const next = pending.shift()
           if (next !== undefined) {
@@ -147,7 +148,7 @@ export function createClaudePromptStream(prompt: string): {
             continue
           }
           if (closed) return
-          await new Promise<void>((resolve) => { wake = resolve })
+          await waitForNextMessage()
         }
       },
     },

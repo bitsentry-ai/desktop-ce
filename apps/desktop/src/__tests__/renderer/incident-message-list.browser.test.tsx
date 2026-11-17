@@ -234,7 +234,8 @@ describe("incident message list", () => {
     const aboveHeight = rowFor(aboveId)?.getBoundingClientRect().height ?? 0;
 
     const longer = "Much longer now. ".repeat(200);
-    list.rerender(messages.map((msg) => (msg.id !== aboveId ? msg : msg.kind === "user" ? { ...msg, text: longer } : agentMessage(aboveId, longer))));
+    const grow = (msg: ChatMessage): ChatMessage => (msg.kind === "user" ? { ...msg, text: longer } : agentMessage(aboveId, longer));
+    list.rerender(messages.map((msg) => (msg.id === aboveId ? grow(msg) : msg)));
     await vi.waitFor(() => { expect(rowFor(aboveId)?.getBoundingClientRect().height).toBeGreaterThan(aboveHeight + 100); });
     await act(nextFrame);
 

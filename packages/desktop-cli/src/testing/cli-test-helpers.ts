@@ -91,7 +91,7 @@ export function createCliTestContext(desktopDir: string) {
       return electronBinary
     } catch (error) {
       throw new Error(
-        `Unable to resolve the Electron binary from ${desktopDir}: ${getErrorMessage(error)}`,
+        `Unable to resolve the Electron binary from ${desktopDir}: ${getErrorMessage(error)}`, { cause: error },
       )
     }
   }

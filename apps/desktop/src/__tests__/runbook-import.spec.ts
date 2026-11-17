@@ -12,7 +12,7 @@ function createDb(overrides?: Partial<Record<string, unknown>>) {
         ({ data }: { data: Record<string, unknown> }) => data,
       ),
       delete: vi.fn(() => {}),
-      ...((overrides?.runbook as Record<string, unknown> | undefined) ?? {}),
+      ...(overrides?.runbook as Record<string, unknown> | undefined),
     },
     runbookAction: {
       findMany: vi.fn(() => []),
@@ -20,8 +20,7 @@ function createDb(overrides?: Partial<Record<string, unknown>>) {
         ({ data }: { data: Record<string, unknown> }) => data,
       ),
       deleteMany: vi.fn(() => {}),
-      ...((overrides?.runbookAction as Record<string, unknown> | undefined) ??
-        {}),
+      ...(overrides?.runbookAction as Record<string, unknown> | undefined),
     },
     errorSource: {
       findMany: vi.fn(() => []),
@@ -31,8 +30,7 @@ function createDb(overrides?: Partial<Record<string, unknown>>) {
         updatedAt: new Date().toISOString(),
       })),
       findUnique: vi.fn(() => null),
-      ...((overrides?.errorSource as Record<string, unknown> | undefined) ??
-        {}),
+      ...(overrides?.errorSource as Record<string, unknown> | undefined),
     },
   };
 }

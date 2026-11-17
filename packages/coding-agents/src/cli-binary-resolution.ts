@@ -46,9 +46,7 @@ function addLocalAppDataCandidates(candidates: string[], localAppData: string | 
     return
   }
 
-  candidates.push(path.join(localAppData, 'pnpm'))
-  candidates.push(path.join(localAppData, 'Programs', 'nodejs'))
-  candidates.push(path.join(localAppData, 'Volta', 'bin'))
+  candidates.push(path.join(localAppData, 'pnpm'), path.join(localAppData, 'Programs', 'nodejs'), path.join(localAppData, 'Volta', 'bin'))
 }
 
 function addUserProfileCandidates(candidates: string[], userProfile: string | undefined): void {
@@ -56,8 +54,7 @@ function addUserProfileCandidates(candidates: string[], userProfile: string | un
     return
   }
 
-  candidates.push(path.join(userProfile, '.bun', 'bin'))
-  candidates.push(path.join(userProfile, 'scoop', 'shims'))
+  candidates.push(path.join(userProfile, '.bun', 'bin'), path.join(userProfile, 'scoop', 'shims'))
 }
 
 function getWindowsCliDirs(): string[] {

@@ -54,7 +54,7 @@ export type {
   DiagnosisTicketRepositoryPort,
 };
 
-export interface DiagnosisServicePort extends NewDiagnosisServicePort {}
+export type DiagnosisServicePort = NewDiagnosisServicePort;
 
 /**
  * Legacy compatibility: existing backend modules currently bind against this token.

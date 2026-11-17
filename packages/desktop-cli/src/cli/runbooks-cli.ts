@@ -705,7 +705,6 @@ function normalizeCliStoredAuthValue(
       return normalizeCliStringArrayAuthValue(field, value)
     case 'json':
       return JSON.parse(JSON.stringify(value)) as DesktopPluginStoredAuthValue
-    case 'string':
     default:
       return normalizeCliStringAuthValue(field, value)
   }
@@ -833,10 +832,6 @@ function resolvePluginIndexUrl(args: ParsedArgs): string {
   }
 
   return DEFAULT_PLUGIN_INDEX_URL
-}
-
-function isRemoteUrl(source: string): boolean {
-  return source.startsWith('http://') || source.startsWith('https://')
 }
 
 function readPluginName(args: ParsedArgs): string {

@@ -46,8 +46,8 @@ interface ClaudeQueryInput {
 }
 
 async function firstPromptText(prompt: ClaudeQueryInput['prompt']): Promise<string | undefined> {
-  for await (const message of prompt) return message.message.content
-  return undefined
+  const first = await prompt[Symbol.asyncIterator]().next()
+  return first.done === true ? undefined : first.value.message.content
 }
 
 const closeMock = vi.fn()
@@ -402,7 +402,7 @@ describe('executeClaudeCode', () => {
       async *[Symbol.asyncIterator]() {
         const text = await firstPromptText(prompt)
         if (text === 'first turn') await releaseFirst.promise
-        if (text === 'second turn') await releaseSecond.promise
+        else if (text === 'second turn') await releaseSecond.promise
         let result = 'turn-second'
         if (text === 'first turn') {
           result = 'turn-first'
@@ -749,7 +749,7 @@ describe('executeClaudeCode', () => {
         '/d',
         '/s',
         '/c',
-        '"\"C:\\Users\\User\\AppData\\Roaming\\npm\\claude.cmd\" \"--output-format\" \"stream-json\""',
+        "\"\"C:\\Users\\User\\AppData\\Roaming\\npm\\claude.cmd\" \"--output-format\" \"stream-json\"\"",
       ],
       expect.objectContaining({
         cwd: 'C:\\Users\\User\\Project',

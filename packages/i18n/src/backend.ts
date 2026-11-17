@@ -39,27 +39,23 @@ export function getLocalesPath(): string {
   try {
     const pkgJson = require.resolve("@bitsentry-ce/i18n/package.json");
     const pkgRoot = path.dirname(pkgJson);
-    candidates.push(path.join(pkgRoot, "dist", "locales"));
-    candidates.push(path.join(pkgRoot, "src", "locales"));
+    candidates.push(
+      path.join(pkgRoot, "dist", "locales"),
+      path.join(pkgRoot, "src", "locales"),
+    );
   } catch {
     /* fall through to __dirname-relative candidates */
   }
   candidates.push(
     path.join(cwd, "apps", "desktop-ce", "packages", "i18n", "dist", "locales"),
-  );
-  candidates.push(
     path.join(cwd, "apps", "desktop-ce", "packages", "i18n", "src", "locales"),
-  );
-  candidates.push(
     path.join(cwd, "..", "desktop-ce", "packages", "i18n", "dist", "locales"),
-  );
-  candidates.push(
     path.join(cwd, "..", "desktop-ce", "packages", "i18n", "src", "locales"),
+    path.join(__dirname, "locales"),
+    path.join(__dirname, "..", "locales"),
+    path.join(__dirname, "..", "dist", "locales"),
+    path.join(__dirname, "..", "src", "locales"),
   );
-  candidates.push(path.join(__dirname, "locales"));
-  candidates.push(path.join(__dirname, "..", "locales"));
-  candidates.push(path.join(__dirname, "..", "dist", "locales"));
-  candidates.push(path.join(__dirname, "..", "src", "locales"));
   const found = candidates.find((p) => existsSync(p));
   return found ?? candidates[0];
 }

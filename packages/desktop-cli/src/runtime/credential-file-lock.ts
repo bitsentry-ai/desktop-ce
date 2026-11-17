@@ -13,10 +13,10 @@ export async function withCredentialFileLock<T>(filename: string, operation: () 
       break
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'EEXIST') {
-        throw new Error('Could not acquire the credential-store lock. Check directory access; existing data was preserved.')
+        throw new Error('Could not acquire the credential-store lock. Check directory access; existing data was preserved.', { cause: error })
       }
       if (Date.now() >= deadline) {
-        throw new Error('Credential storage is locked by another process. Close other Desktop/CLI processes and retry. After a crash, verify all processes using this profile have stopped before removing auth/plugins.json.lock. No data was changed.')
+        throw new Error('Credential storage is locked by another process. Close other Desktop/CLI processes and retry. After a crash, verify all processes using this profile have stopped before removing auth/plugins.json.lock. No data was changed.', { cause: error })
       }
       await setTimeout(25)
     }

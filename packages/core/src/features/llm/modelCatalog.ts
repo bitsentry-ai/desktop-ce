@@ -547,8 +547,8 @@ export function resolveCatalogModelRuntimeSelection(
   return {
     modelId: model?.runtimeModelId ?? legacySelection?.modelId ?? modelId,
     traitValues: {
-      ...(model?.runtimeTraitValues ?? {}),
-      ...(legacySelection?.traitValues ?? {}),
+      ...model?.runtimeTraitValues,
+      ...legacySelection?.traitValues,
       ...traitValues,
     },
   }

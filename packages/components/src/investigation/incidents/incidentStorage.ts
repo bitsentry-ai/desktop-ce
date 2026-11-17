@@ -56,7 +56,9 @@ export function saveProviderLock(
     const locks = loadProviderLocks();
     locks[incidentId] = { providerKey, modelId, accessLevel };
     localStorage.setItem(INCIDENT_PROVIDER_LOCK_KEY, JSON.stringify(locks));
-  } catch {}
+  } catch {
+    // Storage can be unavailable (private mode or full quota); persistence is best effort.
+  }
 }
 
 export function loadIncidents(): IncidentThread[] {
@@ -109,5 +111,7 @@ export function saveIncidentTokenUsage(
       INCIDENT_TOKEN_USAGE_KEY,
       JSON.stringify(tokenUsageByIncident),
     );
-  } catch {}
+  } catch {
+    // Storage can be unavailable (private mode or full quota); persistence is best effort.
+  }
 }

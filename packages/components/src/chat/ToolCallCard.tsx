@@ -14,8 +14,7 @@ export function ToolCard({ card, messageId }: { card: ToolCallCard; messageId: s
   if (card.state === "running") {
     dot = "bg-amber-400";
     label = "";
-  }
-  if (card.state === "done") {
+  } else if (card.state === "done") {
     dot = "bg-emerald-400";
     label = t("common.incidents.toolStateDone");
   }

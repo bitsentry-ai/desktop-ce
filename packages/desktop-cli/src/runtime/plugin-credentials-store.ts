@@ -37,6 +37,7 @@ export function electronPluginCredentialCipher(): PluginCredentialCipher {
       'Secure plugin credential storage is unavailable. Open the Desktop app and retry through its local execution host, or configure a secure credential provider.',
     )
   try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports -- Electron is optional outside the desktop app.
     const electron = require('electron') as {
       safeStorage?: {
         isEncryptionAvailable(): boolean
@@ -164,7 +165,7 @@ async function readStore(storePath: string): Promise<PluginCredentialsFile> {
     raw = await readFile(storePath, 'utf-8')
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return emptyStore()
-    throw new Error(UNREADABLE_STORE_MESSAGE)
+    throw new Error(UNREADABLE_STORE_MESSAGE, { cause: error })
   }
 
   // A parse error would quote part of the file, which holds credentials, so report a fixed message.
@@ -259,8 +260,9 @@ export class LocalPluginCredentialsStore implements DesktopPluginStoredAuthStore
     id: string,
   ): DesktopPluginStoredAuthRecord {
     try {
+      if (record.encryptedValues === undefined) throw new Error('Missing values')
       const raw: unknown = JSON.parse(
-        cipher.decrypt(record.encryptedValues!, id),
+        cipher.decrypt(record.encryptedValues, id),
       )
       if (raw === null || typeof raw !== 'object' || Array.isArray(raw))
         throw new Error('Invalid values')
@@ -301,7 +303,8 @@ export class LocalPluginCredentialsStore implements DesktopPluginStoredAuthStore
       )
     }
     let changed = false
-    for (const [id, record] of Object.entries(store.plugins)) {
+    for (const [id, value] of values) {
+      const record = store.plugins[id]
       if (
         record.values === undefined &&
         !(
@@ -310,7 +313,7 @@ export class LocalPluginCredentialsStore implements DesktopPluginStoredAuthStore
         )
       )
         continue
-      store.plugins[id] = this.encrypt(values.get(id)!, cipher, id)
+      store.plugins[id] = this.encrypt(value, cipher, id)
       changed = true
     }
     return changed

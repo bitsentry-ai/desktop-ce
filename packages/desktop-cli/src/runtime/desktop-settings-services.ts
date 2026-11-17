@@ -14,7 +14,7 @@ export type DesktopSettingsServiceDatabase =
   & DesktopJobRuntimeDatabase
   & DesktopSettingsRepositoryDatabase
 
-export type DesktopSettingsServices<TExtraServices extends object = {}> =
+export type DesktopSettingsServices<TExtraServices extends object = Record<never, never>> =
   DesktopComposedServices<DesktopJobRuntime, TExtraServices>
 
 export function composeDesktopSettingsServices(

@@ -119,8 +119,7 @@ export function EditableTitle({
     if (e.key === "Enter") {
       e.preventDefault();
       commit();
-    }
-    if (e.key === "Escape") {
+    } else if (e.key === "Escape") {
       setDraft(value);
       setEditing(false);
     }
