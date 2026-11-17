@@ -1,11 +1,14 @@
 import { BookOpen, Download, History, SquarePen, Upload } from "../../icons";
 import DashboardLayout from "../../layout/DashboardLayout";
 import type { RunbookRecord } from "../../services";
+import { Button } from "../../ui/button";
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
 } from "../../ui/tooltip";
+import { RunbookEmptyState } from "./RunbookEmptyState";
+import { RUNBOOK_ICON_BUTTON_CLASS } from "./runbookButtonStyles";
 import type { TranslationFn } from "./types";
 
 function formatRelativeTime(iso: string): string {
@@ -39,11 +42,6 @@ export function RunbookLibraryView({
   onOpenRunbookResults,
   t,
 }: RunbookLibraryViewProps) {
-  let runbookCountSuffix = "s";
-  if (runbooks.length === 1) {
-    runbookCountSuffix = "";
-  }
-
   let runbookListContent = (
     <div
       data-tour="runbooks-list"
@@ -55,17 +53,13 @@ export function RunbookLibraryView({
           description = t("runbooks.runbooks.noDescription");
         }
 
-        let actionCountSuffix = "s";
-        if (runbook.actions.length === 1) {
-          actionCountSuffix = "";
-        }
-
         return (
           <div
             key={runbook.id}
             className="flex items-center gap-3 px-4 py-3 transition-colors hover:bg-muted/40"
           >
             <button
+              type="button"
               onClick={() => {
                 onOpenRunbook(runbook.id);
               }}
@@ -81,7 +75,9 @@ export function RunbookLibraryView({
                 </div>
                 <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-muted-foreground/70">
                   <span>
-                    {runbook.actions.length} action{actionCountSuffix}
+                    {t("runbooks.runbooks.actionCount", {
+                      count: runbook.actions.length,
+                    })}
                   </span>
                   <span className="text-muted-foreground/30">•</span>
                   <span>
@@ -95,13 +91,14 @@ export function RunbookLibraryView({
             <Tooltip>
               <TooltipTrigger asChild>
                 <button
+                  type="button"
                   onClick={() => {
                     onExportRunbooks(runbook.id);
                   }}
                   aria-label={t("runbooks.runbook.export")}
-                  className="flex size-8 shrink-0 items-center justify-center rounded-md border border-border transition-colors hover:bg-muted"
+                  className={RUNBOOK_ICON_BUTTON_CLASS}
                 >
-                  <Upload size={13} />
+                  <Upload size={14} aria-hidden="true" />
                 </button>
               </TooltipTrigger>
               <TooltipContent side="bottom">
@@ -111,13 +108,14 @@ export function RunbookLibraryView({
             <Tooltip>
               <TooltipTrigger asChild>
                 <button
+                  type="button"
                   onClick={() => {
                     onOpenRunbookResults(runbook.id);
                   }}
                   aria-label={t("runbooks.runbook.viewRunbookResults")}
-                  className="flex size-8 shrink-0 items-center justify-center rounded-md border border-border transition-colors hover:bg-muted"
+                  className={RUNBOOK_ICON_BUTTON_CLASS}
                 >
-                  <History size={13} />
+                  <History size={14} aria-hidden="true" />
                 </button>
               </TooltipTrigger>
               <TooltipContent side="bottom">
@@ -132,29 +130,32 @@ export function RunbookLibraryView({
 
   if (runbooks.length === 0) {
     runbookListContent = (
-      <div className="flex flex-col items-center justify-center gap-3 py-24 text-center text-muted-foreground">
-        <BookOpen size={36} className="opacity-25" />
-        <p className="text-sm">
-          {t("runbooks.runbook.noRunbooksYetImportOne")}
-        </p>
-        <div className="flex flex-wrap items-center justify-center gap-2">
-          <button
-            type="button"
-            onClick={onOpenImportDialog}
-            className="flex items-center gap-1.5 rounded-lg border border-border px-4 py-2 text-xs transition-colors hover:bg-muted"
-          >
-            <Download size={12} />
-            {t("runbooks.runbook.importRunbooks")}
-          </button>
-          <button
-            onClick={onCreateRunbook}
-            className="flex items-center gap-1.5 rounded-lg border border-dashed border-border px-4 py-2 text-xs transition-colors hover:border-primary/40 hover:text-foreground"
-          >
-            <SquarePen size={12} />
-            {t("runbooks.runbook.newRunbook")}
-          </button>
-        </div>
-      </div>
+      <RunbookEmptyState
+        icon={<BookOpen />}
+        title={t("runbooks.runbook.noRunbooksYetTitle")}
+        description={t("runbooks.runbook.noRunbooksYetDescription")}
+        actions={
+          <>
+            <Button
+              type="button"
+              onClick={onCreateRunbook}
+              className="max-sm:h-11"
+            >
+              <SquarePen aria-hidden="true" />
+              {t("runbooks.runbook.newRunbook")}
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={onOpenImportDialog}
+              className="max-sm:h-11"
+            >
+              <Download aria-hidden="true" />
+              {t("runbooks.runbook.importRunbooks")}
+            </Button>
+          </>
+        }
+      />
     );
   }
 
@@ -172,20 +173,22 @@ export function RunbookLibraryView({
         <span className="flex-1 truncate text-[15px] font-semibold tracking-[-0.01em] text-foreground">
           {t("runbooks.runbook.allRunbooks")}
         </span>
-        <span className="rounded-full border border-border px-2 py-0.5 text-[11px] text-muted-foreground">
-          {runbooks.length} runbook{runbookCountSuffix}
+        <span className="shrink-0 rounded-full border border-border px-2 py-0.5 text-[11px] tabular-nums text-muted-foreground">
+          {t("runbooks.runbooks.runbookCount", { count: runbooks.length })}
         </span>
         <Tooltip>
           <TooltipTrigger asChild>
-            <button
+            <Button
               type="button"
+              variant="outline"
+              size="sm"
               data-tour="runbooks-import-btn"
               onClick={onOpenImportDialog}
-              className="flex items-center gap-1.5 rounded-md border border-border px-2 py-1 text-xs transition-colors hover:bg-muted"
+              className="gap-1.5 max-sm:h-11 [&_svg]:size-3.5"
             >
-              <Download size={12} />
+              <Download aria-hidden="true" />
               {t("common.actions.import")}
-            </button>
+            </Button>
           </TooltipTrigger>
           <TooltipContent side="bottom">
             {t("runbooks.runbook.importRunbooks")}
@@ -193,14 +196,16 @@ export function RunbookLibraryView({
         </Tooltip>
         <Tooltip>
           <TooltipTrigger asChild>
-            <button
+            <Button
+              type="button"
+              size="sm"
               data-tour="runbooks-new-btn"
               onClick={onCreateRunbook}
-              className="flex items-center gap-1.5 rounded-md border border-border px-2 py-1 text-xs transition-colors hover:bg-muted"
+              className="gap-1.5 max-sm:h-11 [&_svg]:size-3.5"
             >
-              <SquarePen size={12} />
+              <SquarePen aria-hidden="true" />
               {t("common.actions.new")}
-            </button>
+            </Button>
           </TooltipTrigger>
           <TooltipContent side="bottom">
             {t("runbooks.runbook.newRunbook")}

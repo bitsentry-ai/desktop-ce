@@ -41,7 +41,7 @@ export function RunbookCollapsedActionCard({
       data-tour={dataTour}
       onClick={onClick}
       className={cn(
-        "group flex cursor-pointer select-none items-center gap-3 rounded-xl border border-border bg-card px-4 py-3 transition-all hover:border-border/80 hover:bg-card/80",
+        "group flex cursor-pointer select-none items-center gap-2 rounded-xl border border-border bg-card py-2.5 pl-2 pr-2.5 transition-all hover:border-border-hover hover:bg-card/80",
         isDragging && "opacity-70",
         isDragSource && "border-primary/30 bg-primary/5 shadow-sm",
         isDropTarget &&
@@ -49,32 +49,40 @@ export function RunbookCollapsedActionCard({
           "border-primary/50 ring-2 ring-primary/15 shadow-md",
       )}
     >
-      <span className="shrink-0 cursor-grab text-muted-foreground/20 transition-colors group-hover:text-muted-foreground/40 active:cursor-grabbing">
+      {/* The whole card is the drag source; the grip is only a hint, so it
+          stays out of the way until the row is hovered or focused. */}
+      <span
+        aria-hidden="true"
+        className="shrink-0 cursor-grab text-muted-foreground opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100 active:cursor-grabbing"
+      >
         <GripVertical size={14} />
       </span>
-      <span className="w-4 shrink-0 text-center text-[10px] font-mono tabular-nums text-muted-foreground/40">
+      <span className="w-5 shrink-0 text-right text-xs tabular-nums text-muted-foreground">
         {index + 1}
       </span>
-      <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-2">
-          <span className="truncate text-sm font-medium">
+      <div className="min-w-0 flex-1 pl-1">
+        {/* Badges wrap below a long title instead of truncating it. */}
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+          <span className="min-w-0 break-words text-sm font-medium leading-5 text-foreground">
             {collapsedActionTitle}
           </span>
           {renderTypeBadge(actionType)}
         </div>
-        <p className="mt-0.5 truncate text-xs text-muted-foreground">
+        <p className="mt-0.5 truncate font-mono text-[12.5px] leading-[18px] text-muted-foreground">
           {summary}
         </p>
       </div>
       <button
+        type="button"
         onClick={(event) => {
           event.stopPropagation();
           onDelete();
         }}
         title={deleteTitle}
-        className="shrink-0 rounded p-1.5 text-muted-foreground/70 opacity-60 transition-all hover:bg-destructive/10 hover:text-destructive hover:opacity-100"
+        aria-label={deleteTitle}
+        className="inline-flex size-8 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60 max-sm:size-11"
       >
-        <Trash2 size={12} />
+        <Trash2 size={14} aria-hidden="true" />
       </button>
     </div>
   );
