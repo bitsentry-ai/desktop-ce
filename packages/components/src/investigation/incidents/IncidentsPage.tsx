@@ -46,7 +46,7 @@ import type {
   InteractionMode,
   ThreadStatus,
 } from "../../chat/types";
-import { settleInterruptedAgentTurn } from "../../chat/runtimeProjection";
+import { isLastAgentTurnInterrupted, settleInterruptedAgentTurn } from "../../chat/runtimeProjection";
 import { CustomerReportIntakeChatContext, useCustomerReportIntake } from "../../chat/useCustomerReportIntake";
 import {
   EMPTY_SESSION_QUEUE,
@@ -1039,7 +1039,7 @@ export default function IncidentsPage() {
                 />
               </div>
               <div data-tour="incidents-status">
-                <StatusPill state={incidentState} />
+                <StatusPill state={incidentState} interrupted={isLastAgentTurnInterrupted(rawMessages)} />
               </div>
             </>
           )}

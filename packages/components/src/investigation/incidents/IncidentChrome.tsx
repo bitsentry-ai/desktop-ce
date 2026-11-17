@@ -42,8 +42,16 @@ export function translateIncidentPreview(
 
 // ─── Status pill ──────────────────────────────────────────────────────────────
 
-export function StatusPill({ state }: { state: AgentSessionState }) {
+/** `interrupted`: the last turn stopped because the app closed, which the saved state cannot tell from a stop or a failure. */
+export function StatusPill({ state, interrupted = false }: { state: AgentSessionState; interrupted?: boolean }) {
   const { t } = useTranslation();
+  if (interrupted && (state === "CANCELLED" || state === "FAILED")) {
+    return (
+      <span className="rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
+        {t("common.incidents.statusInterrupted")}
+      </span>
+    );
+  }
   const map: Record<AgentSessionState, { label: string; cls: string }> = {
     IDLE: {
       label: t("common.incidents.statusIdle"),

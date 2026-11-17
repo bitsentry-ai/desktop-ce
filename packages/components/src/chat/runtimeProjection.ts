@@ -289,6 +289,16 @@ export function setAgentThreadRuntimeState(
 
 const INTERRUPTED_TURN_MESSAGE = "Interrupted before the response finished.";
 
+/** A turn that `settleInterruptedAgentTurn` stopped because the app closed, not one the engineer stopped. */
+export function isInterruptedAgentTurn(message: ChatMessage | undefined): boolean {
+  return message?.kind === "agent" && message.status === "cancelled" && message.errorMsg === INTERRUPTED_TURN_MESSAGE;
+}
+
+/** Whether the thread's last agent turn was interrupted by the app closing. */
+export function isLastAgentTurnInterrupted(messages: readonly ChatMessage[]): boolean {
+  return isInterruptedAgentTurn([...messages].reverse().find((message) => message.kind === "agent"));
+}
+
 /**
  * Settles the last agent turn like a cancellation when its session is gone
  * (app restart), so a persisted thinking/streaming turn stops spinning.
