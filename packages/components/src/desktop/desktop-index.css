@@ -137,10 +137,11 @@
       flex: none;
       max-width: 100%;
       overflow: hidden;
-      padding-inline: 0.125rem;
+      padding-inline: 0;
       font-size: 0.75rem;
       line-height: 1rem;
       font-weight: 500;
+      letter-spacing: -0.02em;
       text-overflow: ellipsis;
       white-space: nowrap;
     }
