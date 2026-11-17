@@ -55,6 +55,7 @@ import {
   SidebarHoverButton,
   SidebarMoreLink,
   SidebarRow,
+  SidebarCount,
   SidebarRunStatus,
   SidebarSection,
   SidebarStatusDot,
@@ -297,7 +298,7 @@ function RunbookSubNavigation({ runbooks, search, t, onDelete }: {
       to={`/runbooks?id=${runbook.id}`}
       title={runbook.title}
       active={currentId === runbook.id}
-      trailing={runbook.actions.length > 0 ? t("navigation.navbar.actionCount", { count: runbook.actions.length }) : undefined}
+      trailing={runbook.actions.length > 0 ? <SidebarCount count={runbook.actions.length} label={t("navigation.navbar.actionCount", { count: runbook.actions.length })} /> : undefined}
       hoverAction={<SidebarHoverButton tone="danger" label={t("common.navbar.deleteRunbook")} onClick={() => { onDelete(runbook); }}><Trash2 size={12} /></SidebarHoverButton>}
     />)}
     {overflow > 0 && <SidebarMoreLink to="/runbooks" label={t("navigation.navbar.viewAll", { count: runbooks.length })} />}

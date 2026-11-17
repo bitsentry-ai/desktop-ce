@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { Link } from "react-router-dom";
-import { ArrowRight, Check, X } from "lucide-react";
+import { ArrowRight, Check, ListChecks, X } from "lucide-react";
 import { cn } from "../lib/utils";
 
 /**
@@ -246,4 +246,15 @@ export function shortAge(value: string | number | Date, locale: string | undefin
     }
   }
   return nowLabel;
+}
+
+/** A compact step count for runbook rows: an icon and the number, with the full phrase for assistive tech. */
+export function SidebarCount({ count, label }: { count: number; label: string }) {
+  return (
+    <span className="inline-flex items-center gap-1" title={label}>
+      <ListChecks size={11} aria-hidden="true" />
+      <span aria-hidden="true">{count}</span>
+      <span className="sr-only">{label}</span>
+    </span>
+  );
 }
