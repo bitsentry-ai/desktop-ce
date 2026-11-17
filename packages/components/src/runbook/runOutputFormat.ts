@@ -22,6 +22,8 @@ export type RunOutputFormat =
       display: string;
       /** Valid pretty-printed JSON (plus the lead) for the clipboard. */
       copyText: string;
+      /** The parsed payload. */
+      value: unknown;
     }
   | { kind: "markdown"; text: string }
   | { kind: "text"; text: string };
@@ -151,6 +153,7 @@ function jsonFormat(lead: string, value: object): RunOutputFormat {
     lead,
     display: expandJsonWhitespaceEscapes(pretty),
     copyText: lead.length > 0 ? `${lead}\n\n${pretty}` : pretty,
+    value,
   };
 }
 
@@ -241,4 +244,38 @@ export function truncateLines(text: string, maxLines: number): TruncatedLines {
     return { text, totalLines, truncated: false };
   }
   return { text: text.slice(0, cutAt), totalLines, truncated: true };
+}
+
+export interface JsonSummaryField {
+  key: string;
+  /** The value on one line: strings as written, anything else as compact JSON. */
+  value: string;
+}
+
+export interface JsonSummary {
+  fields: JsonSummaryField[];
+  /** Number of top-level fields, including the ones not listed. */
+  total: number;
+}
+
+function summaryValue(value: unknown): string {
+  if (typeof value === "string") return value;
+  return JSON.stringify(value) ?? String(value);
+}
+
+/**
+ * The top-level fields of a JSON object output, for reading at a glance instead of scanning braces. Null when the
+ * output is not a JSON object.
+ */
+export function jsonSummary(value: string, maxFields: number): JsonSummary | null {
+  const format = detectRunOutputFormat(value);
+  if (format.kind !== "json") return null;
+  const parsed = format.value;
+  if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) return null;
+  const entries = Object.entries(parsed);
+  if (entries.length === 0) return null;
+  return {
+    fields: entries.slice(0, maxFields).map(([key, field]) => ({ key, value: summaryValue(field) })),
+    total: entries.length,
+  };
 }

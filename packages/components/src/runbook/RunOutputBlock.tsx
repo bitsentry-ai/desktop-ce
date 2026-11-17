@@ -64,7 +64,7 @@ export function RunOutputCopyButton({ text }: { text: string }) {
       type="button"
       onClick={handleCopy}
       aria-label={t("common.results.copyOutput")}
-      className="inline-flex h-6 shrink-0 items-center gap-1 rounded-md border border-border bg-background px-1.5 text-[11px] font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+      className="inline-flex h-6 shrink-0 items-center gap-1 rounded-md border border-border bg-background px-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
     >
       <Icon size={12} aria-hidden="true" />
       <span aria-live="polite">{label}</span>
@@ -114,7 +114,7 @@ function BlockToolbar({
 }) {
   return (
     <div className="flex items-center justify-between gap-2 px-3 pt-2 pb-1.5">
-      <span className="text-[11px] font-medium uppercase tracking-[0.06em] text-muted-foreground">
+      <span className="text-xs font-medium uppercase tracking-[0.06em] text-muted-foreground">
         {label}
       </span>
       <div className="flex shrink-0 items-center gap-1.5">

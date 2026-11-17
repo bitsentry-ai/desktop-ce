@@ -157,15 +157,36 @@ describe("FinalOutputPreview", () => {
     expect(screen.queryByRole("button")).toBeNull();
   });
 
-  it("previews a longer output in four lines with a View full output button", () => {
+  it("previews a longer output in ten lines with a View full output button", () => {
     const onViewOutput = vi.fn();
     const output = Array.from({ length: 12 }, (_, index) => `line ${String(index)}`).join("\n");
     render(<FinalOutputPreview output={output} emptyMessage="empty" onViewOutput={onViewOutput} />);
 
-    expect(document.querySelector("pre")?.className).toContain("line-clamp-4");
+    const pre = document.querySelector("pre");
+    expect(pre?.className).toContain("whitespace-pre");
+    expect([...(pre?.children ?? [])].map((line) => line.textContent)).toEqual(
+      Array.from({ length: 10 }, (_, index) => `line ${String(index)}`),
+    );
+    expect(pre?.children[0]?.className).toContain("truncate");
     expect(screen.queryByText("common.results.showMore")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "common.results.viewFullOutput" }));
     expect(onViewOutput).toHaveBeenCalledTimes(1);
+  });
+
+  it("lists a longer JSON object's top-level fields instead of its braces", () => {
+    const value = Object.fromEntries(
+      Array.from({ length: 10 }, (_, index) => [`field${String(index)}`, index === 0 ? "ok" : { nested: index }]),
+    );
+    render(
+      <FinalOutputPreview output={JSON.stringify(value)} emptyMessage="empty" onViewOutput={vi.fn()} />,
+    );
+
+    const keys = [...document.querySelectorAll("dt")].map((node) => node.textContent);
+    expect(keys).toEqual(Array.from({ length: 8 }, (_, index) => `field${String(index)}`));
+    expect(document.querySelector("dd")?.textContent).toBe("ok");
+    expect(document.querySelectorAll("dd")[1]?.textContent).toBe('{"nested":1}');
+    expect(screen.getByText("common.results.moreFields")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "common.results.viewFullOutput" })).toBeTruthy();
   });
 
   it("treats a few very long lines as a long output", () => {

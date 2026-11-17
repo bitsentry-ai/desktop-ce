@@ -125,8 +125,10 @@ describe("RunOutcomeLine", () => {
 describe("results step card styles", () => {
   it("marks selection with a neutral surface and a brand bar, not success green", () => {
     const selected = resultsStepCardClass(true);
-    expect(selected).toContain("border-border");
-    expect(selected).toContain("shadow-[inset_2px_0_0_hsl(var(--brand-emphasis))]");
+    expect(selected).toContain("bg-[hsl(var(--selection))]");
+    expect(selected).toContain("before:bg-[hsl(var(--brand-emphasis))]");
+    expect(selected).toContain("before:inset-y-2.5");
+    expect(selected).not.toContain("before:inset-y-1.5");
     expect(selected).not.toContain("primary");
     expect(selected).not.toContain("success");
     expect(resultsStepCardClass(false)).not.toContain("brand-emphasis");

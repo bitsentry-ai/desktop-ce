@@ -5,7 +5,12 @@ import { useTranslation } from "@bitsentry-ce/i18n";
 import { cn } from "../lib/utils";
 import { HighlightedJson } from "./HighlightedJson";
 import { RUN_OUTPUT_MAX_VISIBLE_LINES } from "./RunOutputBlock";
-import { runOutputPreview, type RunOutputPreview } from "./runOutputFormat";
+import {
+  jsonSummary,
+  runOutputPreview,
+  type JsonSummary,
+  type RunOutputPreview,
+} from "./runOutputFormat";
 import {
   RUN_OUTPUT_BLOCK_CLASS,
   RUN_OUTPUT_MONO_CLASS,
@@ -34,6 +39,58 @@ function lineCount(text: string): number {
   return count;
 }
 
+/** Lines of a longer plain-text output shown in the Summary (about 200px). */
+export const FINAL_OUTPUT_PREVIEW_LINES = 10;
+/** Top-level fields of a longer JSON object shown in the Summary. */
+export const FINAL_OUTPUT_SUMMARY_FIELDS = 8;
+
+/**
+ * The first lines of a longer plain-text output, one row each and cut off with an ellipsis at the column edge, the
+ * way a terminal shows them, instead of wrapping a single long line into the whole preview.
+ */
+function PlainTextPreviewLines({ text }: { text: string }) {
+  const lines = text.split("\n", FINAL_OUTPUT_PREVIEW_LINES);
+  return (
+    <pre className={cn(RUN_OUTPUT_MONO_CLASS, "min-w-0 max-w-full whitespace-pre")}>
+      {lines.map((line, index) => (
+        <span key={`${String(index)}:${line}`} className="block truncate">
+          {line.length > 0 ? line : " "}
+        </span>
+      ))}
+    </pre>
+  );
+}
+
+/**
+ * A longer JSON object as its top-level fields, one per row (key, then value cut off at the column edge), so the
+ * Summary shows values instead of braces and indentation.
+ */
+function JsonSummaryFields({ summary }: { summary: JsonSummary }) {
+  const { t } = useTranslation();
+  const hidden = summary.total - summary.fields.length;
+  return (
+    <div className="space-y-1.5">
+      <dl className="grid grid-cols-[minmax(0,max-content)_minmax(0,1fr)] gap-x-3 gap-y-1 font-mono text-[13px] leading-5">
+        {summary.fields.map((field) => (
+          <div key={field.key} className="contents">
+            <dt className="max-w-[9rem] truncate text-muted-foreground" title={field.key}>
+              {field.key}
+            </dt>
+            <dd className="m-0 truncate text-foreground" title={field.value}>
+              {field.value.length > 0 ? field.value : "\u00a0"}
+            </dd>
+          </div>
+        ))}
+      </dl>
+      {hidden > 0 && (
+        <p className="text-xs text-muted-foreground">
+          {t("common.results.moreFields", { count: hidden })}
+        </p>
+      )}
+    </div>
+  );
+}
+
 /** True when the whole preview fits in a few lines, so it needs no "View full output". */
 export function isShortFinalOutput(preview: RunOutputPreview): boolean {
   return (
@@ -45,9 +102,10 @@ export function isShortFinalOutput(preview: RunOutputPreview): boolean {
 
 /**
  * The Summary column's view of the final output, in the same monospace block
- * as the Output column. A short output shows whole; a longer one shows a
- * four-line preview and a "View full output" button that opens it in the
- * Output column, so the Summary never repeats the full payload.
+ * as the Output column. A short output shows whole; a longer one shows its
+ * top-level fields (a JSON object) or its first ten lines, with a "View full
+ * output" button that opens it in the Output column, so the Summary never
+ * repeats the full payload.
  */
 export function FinalOutputPreview({
   output,
@@ -64,10 +122,14 @@ export function FinalOutputPreview({
     [output],
   );
   const short = preview !== null && isShortFinalOutput(preview);
+  const summary = useMemo(
+    () => (short ? null : jsonSummary(output, FINAL_OUTPUT_SUMMARY_FIELDS)),
+    [output, short],
+  );
 
   return (
     <div className="space-y-2">
-      <div className="text-[11px] font-medium uppercase tracking-[0.06em] text-muted-foreground">
+      <div className="text-xs font-medium uppercase tracking-[0.06em] text-muted-foreground">
         {t("common.results.finalOutput")}
       </div>
       {preview === null ? (
@@ -85,19 +147,25 @@ export function FinalOutputPreview({
                 {preview.lead}
               </p>
             )}
-            <pre
-              className={cn(
-                RUN_OUTPUT_MONO_CLASS,
-                RUN_OUTPUT_WRAPPED_CLASS,
-                !short && "line-clamp-4",
-              )}
-            >
-              {preview.json ? (
-                <HighlightedJson text={preview.body} />
-              ) : (
-                preview.body
-              )}
-            </pre>
+            {summary !== null && <JsonSummaryFields summary={summary} />}
+            {summary === null && !short && !preview.json && (
+              <PlainTextPreviewLines text={preview.body} />
+            )}
+            {summary === null && (short || preview.json) && (
+              <pre
+                className={cn(
+                  RUN_OUTPUT_MONO_CLASS,
+                  RUN_OUTPUT_WRAPPED_CLASS,
+                  !short && "line-clamp-[10]",
+                )}
+              >
+                {preview.json ? (
+                  <HighlightedJson text={preview.body} />
+                ) : (
+                  preview.body
+                )}
+              </pre>
+            )}
           </div>
           {!short && (
             <button

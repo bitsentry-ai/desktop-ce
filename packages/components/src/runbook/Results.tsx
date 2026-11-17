@@ -424,7 +424,7 @@ function SummaryPanel({
   if (idleTimeoutText !== null) {
     idleTimeoutContent = (
       <div className="rounded-lg border border-border bg-muted/20 p-3">
-        <div className="text-[11px] font-medium uppercase tracking-[0.06em] text-muted-foreground">
+        <div className="text-xs font-medium uppercase tracking-[0.06em] text-muted-foreground">
           {t("runbooks.results.idleTimeout")}
         </div>
         <div className="mt-1 font-medium">{idleTimeoutText}</div>
@@ -483,7 +483,7 @@ function SummaryPanel({
           )}
         />
         <div className="space-y-1">
-          <div className="text-[11px] font-medium uppercase tracking-[0.06em] text-muted-foreground">
+          <div className="text-xs font-medium uppercase tracking-[0.06em] text-muted-foreground">
             {t("common.results.runbook")}
           </div>
           <div className="break-words text-[15px] font-semibold leading-[22px] tracking-[-0.01em] text-foreground">
@@ -498,7 +498,7 @@ function SummaryPanel({
 
         <div className="grid grid-cols-2 gap-3">
           <div className="rounded-lg border border-border bg-muted/20 p-3">
-            <div className="text-[11px] font-medium uppercase tracking-[0.06em] text-muted-foreground">
+            <div className="text-xs font-medium uppercase tracking-[0.06em] text-muted-foreground">
               {t("runbooks.results.source")}
             </div>
             <div className="mt-1 font-medium">{sourceText}</div>
@@ -510,7 +510,7 @@ function SummaryPanel({
         {failedStepContent}
 
         <div className="space-y-2">
-          <div className="text-[11px] font-medium uppercase tracking-[0.06em] text-muted-foreground">
+          <div className="text-xs font-medium uppercase tracking-[0.06em] text-muted-foreground">
             {t("common.results.executionParameters")}
           </div>
           <RunOutputBlock
@@ -574,7 +574,7 @@ function StepsPanel({
               className={resultsStepCardClass(isSelected)}
             >
               <div className="flex items-start gap-2">
-                <span className="mt-0.5 shrink-0 text-[10px] font-mono leading-4 text-muted-foreground">
+                <span className="mt-0.5 shrink-0 text-xs font-mono leading-4 text-muted-foreground">
                   {step.order}
                 </span>
                 <Icon
@@ -584,7 +584,7 @@ function StepsPanel({
                 />
                 <span className={RESULTS_STEP_TITLE_CLASS}>{stepTitle}</span>
               </div>
-              <div className="mt-1.5 flex items-center gap-2 text-[11px] text-muted-foreground">
+              <div className="mt-1.5 flex items-center gap-2 text-xs text-muted-foreground">
                 <span className="uppercase tracking-wide">{step.type}</span>
                 <span aria-hidden="true">•</span>
                 <span className={resultsStepStatusClass(step.status)}>
@@ -644,7 +644,7 @@ function OutputPanel({ step }: { step: RunbookExecutionStepRecord | null }) {
           </div>
         </div>
         <div>
-          <div className="mb-2 text-[11px] font-medium uppercase tracking-[0.06em] text-muted-foreground">
+          <div className="mb-2 text-xs font-medium uppercase tracking-[0.06em] text-muted-foreground">
             {t("common.results.input")}
           </div>
           <RunOutputBlock
@@ -654,7 +654,7 @@ function OutputPanel({ step }: { step: RunbookExecutionStepRecord | null }) {
         </div>
         {errorContent}
         <div>
-          <div className="mb-2 text-[11px] font-medium uppercase tracking-[0.06em] text-muted-foreground">
+          <div className="mb-2 text-xs font-medium uppercase tracking-[0.06em] text-muted-foreground">
             {t("common.results.output_2")}
           </div>
           <RunOutputBlock
@@ -985,7 +985,7 @@ export default function ResultsPage() {
               <span className="flex-1 truncate text-[15px] font-semibold tracking-[-0.01em] text-foreground">
                 {t("common.results.resultsFor")} {runbookTitle}
               </span>
-              <span className="rounded-full border border-border px-2 py-0.5 text-[11px] text-muted-foreground">
+              <span className="rounded-full border border-border px-2 py-0.5 text-xs text-muted-foreground">
                 {resultCounts.total} run{resultPluralSuffix}
               </span>
             </div>
@@ -1017,7 +1017,7 @@ export default function ResultsPage() {
               <button
                 data-tour="results-runbooks-btn"
                 onClick={() => { void navigate("/runbooks"); }}
-                className="flex items-center gap-1.5 rounded-md border border-border px-2 py-1 text-xs hover:bg-muted transition-colors"
+                className="flex h-8 shrink-0 items-center gap-1.5 rounded-md border border-border px-2.5 text-[13px] max-sm:h-11 hover:bg-muted transition-colors"
               >
                 <BookOpen size={12} />
                 {t("common.results.runbooks")}
@@ -1030,7 +1030,7 @@ export default function ResultsPage() {
                   className="mb-4 grid gap-3 md:grid-cols-4"
                 >
                   <div className="rounded-lg border border-border bg-muted/20 p-3">
-                    <div className="text-[11px] font-medium uppercase tracking-[0.06em] text-muted-foreground">
+                    <div className="text-xs font-medium uppercase tracking-[0.06em] text-muted-foreground">
                       {t("common.results.total")}
                     </div>
                     <div className="mt-1 text-lg font-medium">
@@ -1038,7 +1038,7 @@ export default function ResultsPage() {
                     </div>
                   </div>
                   <div className="rounded-lg border border-border bg-amber-500/5 p-3">
-                    <div className="text-[11px] font-medium uppercase tracking-[0.06em] text-muted-foreground">
+                    <div className="text-xs font-medium uppercase tracking-[0.06em] text-muted-foreground">
                       {t("common.results.running")}
                     </div>
                     <div className="mt-1 text-lg font-medium text-amber-500">
@@ -1046,7 +1046,7 @@ export default function ResultsPage() {
                     </div>
                   </div>
                   <div className="rounded-lg border border-border bg-emerald-500/5 p-3">
-                    <div className="text-[11px] font-medium uppercase tracking-[0.06em] text-muted-foreground">
+                    <div className="text-xs font-medium uppercase tracking-[0.06em] text-muted-foreground">
                       {t("common.results.completed_4")}
                     </div>
                     <div className="mt-1 text-lg font-medium text-emerald-500">
@@ -1054,7 +1054,7 @@ export default function ResultsPage() {
                     </div>
                   </div>
                   <div className="rounded-lg border border-border bg-destructive/5 p-3">
-                    <div className="text-[11px] font-medium uppercase tracking-[0.06em] text-muted-foreground">
+                    <div className="text-xs font-medium uppercase tracking-[0.06em] text-muted-foreground">
                       {t("common.results.failedCancelled")}
                     </div>
                     <div className="mt-1 text-lg font-medium text-destructive">
@@ -1130,16 +1130,16 @@ export default function ResultsPage() {
                 <button
                   data-tour="results-history-btn"
                   onClick={() => { void navigate("/results?view=history"); }}
-                  className="flex size-7 items-center justify-center rounded-md border border-border hover:bg-muted transition-colors"
+                  className="flex size-8 shrink-0 items-center justify-center rounded-md border border-border max-sm:size-11 hover:bg-muted transition-colors"
                   title={t("common.results.allRunbookResults_2")}
                 >
-                  <History size={13} />
+                  <History size={14} />
                 </button>
                 {activeResult.status === "running" && (
                   <button
                     onClick={() => { void handleCancel(); }}
                     disabled={cancelPending}
-                    className="flex items-center gap-1.5 rounded-md border border-border px-2 py-1 text-xs hover:bg-muted transition-colors disabled:opacity-50"
+                    className="flex h-8 shrink-0 items-center gap-1.5 rounded-md border border-border px-2.5 text-[13px] max-sm:h-11 hover:bg-muted transition-colors disabled:opacity-50"
                   >
                     {cancelPending && <Loader2 size={11} className="animate-spin" />}
                     {!cancelPending && <X size={11} />}

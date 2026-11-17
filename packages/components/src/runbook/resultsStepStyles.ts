@@ -1,3 +1,6 @@
+import { SELECTION_BAR_CLASS } from "../lib/selectionBar";
+import { cn } from "../lib/utils";
+
 /** Class names for the step cards in the Results Steps column, shared by both apps. */
 
 const STEP_CARD_BASE_CLASS =
@@ -9,7 +12,7 @@ const STEP_CARD_BASE_CLASS =
  */
 export function resultsStepCardClass(isSelected: boolean): string {
   if (isSelected) {
-    return `${STEP_CARD_BASE_CLASS} bg-muted/60 shadow-[inset_2px_0_0_hsl(var(--brand-emphasis))]`;
+    return cn(STEP_CARD_BASE_CLASS, "border-[hsl(var(--brand-emphasis-border))] bg-[hsl(var(--selection))]", SELECTION_BAR_CLASS, "before:inset-y-2.5");
   }
   return `${STEP_CARD_BASE_CLASS} bg-muted/10 hover:bg-muted/30`;
 }

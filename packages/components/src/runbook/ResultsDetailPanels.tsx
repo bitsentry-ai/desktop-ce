@@ -111,7 +111,7 @@ function nextPanelForKey(
  * The Summary / Steps / Output body of a run result.
  *
  * At lg+ the three panels sit side by side in resizable columns (Summary
- * about 280px, Steps about 240px, Output the rest). Below lg they would stack, and a long output
+ * about 280px, Steps about 300px, Output the rest). Below lg they would stack, and a long output
  * would bury the steps under it, so a tab bar pinned above the scroll area
  * shows one panel at a time instead.
  */
@@ -237,7 +237,7 @@ export function ResultsDetailPanels({
 export function ResultsPanelHeader({ children }: { children: ReactNode }) {
   return (
     <div className="hidden shrink-0 border-b border-border px-4 py-3 lg:block">
-      <h3 className="text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
+      <h3 className="text-xs font-medium uppercase tracking-[0.08em] text-muted-foreground">
         {children}
       </h3>
     </div>
