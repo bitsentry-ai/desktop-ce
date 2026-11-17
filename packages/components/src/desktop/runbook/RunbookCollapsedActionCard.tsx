@@ -49,13 +49,13 @@ export function RunbookCollapsedActionCard({
           "border-primary/50 ring-2 ring-primary/15 shadow-md",
       )}
     >
-      {/* The whole card is the drag source; the grip is only a hint, so it
-          stays out of the way until the row is hovered or focused. */}
+      {/* The whole card is the drag source. The grip says so at a glance:
+          always visible at reduced emphasis, full emphasis on hover/focus. */}
       <span
         aria-hidden="true"
-        className="shrink-0 cursor-grab text-muted-foreground opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100 active:cursor-grabbing"
+        className="flex shrink-0 cursor-grab items-center text-muted-foreground opacity-60 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100 active:cursor-grabbing"
       >
-        <GripVertical size={14} />
+        <GripVertical size={16} />
       </span>
       <span className="w-5 shrink-0 text-right text-xs tabular-nums text-muted-foreground">
         {index + 1}
