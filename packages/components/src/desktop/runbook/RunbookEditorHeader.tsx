@@ -247,7 +247,10 @@ function HeaderIconButton({
   );
 }
 
-/** "New runbook" as an outlined button; only the icon stays on the tightest header. */
+/**
+ * "New runbook" as a compact icon button beside History: on a runbook's own page it is a secondary action, so it
+ * gives its width to the title and execution controls. The tooltip and accessible name spell it out.
+ */
 function NewRunbookButton({
   onCreateRunbook,
   t,
@@ -256,20 +259,15 @@ function NewRunbookButton({
   return (
     <Tooltip>
       <TooltipTrigger asChild>
-        <Button
+        <button
           type="button"
-          variant="outline"
-          size="sm"
           data-tour="runbooks-new-btn"
           onClick={onCreateRunbook}
           aria-label={label}
-          className="gap-1.5 px-2.5 max-sm:h-11 max-sm:min-w-11 [&_svg]:size-3.5"
+          className={RUNBOOK_ICON_BUTTON_CLASS}
         >
-          <SquarePen aria-hidden="true" />
-          <span className="[@container(max-width:27.99rem)]:sr-only">
-            {label}
-          </span>
-        </Button>
+          <SquarePen size={14} aria-hidden="true" />
+        </button>
       </TooltipTrigger>
       <TooltipContent side="bottom">{label}</TooltipContent>
     </Tooltip>
