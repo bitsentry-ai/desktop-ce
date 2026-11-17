@@ -659,7 +659,7 @@ export async function executeCodex(
   try {
     options.onDelta?.({ type: 'status', status: 'started' })
 
-    client = await lease.ready
+    client = (await lease.ready).client
     const activeClient = client
     stderrMark = activeClient.stderrMark()
     activeClient.on('notification', onNotification)

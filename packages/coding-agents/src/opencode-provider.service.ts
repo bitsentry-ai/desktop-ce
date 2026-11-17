@@ -1,4 +1,5 @@
 import { spawn } from 'child_process'
+import { randomBytes } from 'crypto'
 import os from 'os'
 import path from 'path'
 import readline from 'readline'
@@ -16,7 +17,8 @@ import {
   DEFAULT_ACCESS_LEVEL,
 } from './composer.js'
 import { terminateProcessTree } from '@bitsentry-ce/core/features/agent-runtime/shared/local-process'
-import { HOST_MCP_SERVER_NAME, type HostMcpEndpoint } from './host-mcp-server.service.js'
+import { HOST_MCP_SERVER_NAME, type HostMcpEndpoint, type HostMcpIdentity } from './host-mcp-server.service.js'
+import { createProcessPool } from './process-pool.js'
 import { getHostTools } from '@bitsentry-ce/core/features/agent-runtime'
 import { prependRunbookOnlyScope } from './runbook-only-scope.js'
 
@@ -543,12 +545,10 @@ function getOpenCode2Model(options: OpenCodeExecutionOptions, withVariant: boole
 function buildOpenCode2Args(
   options: OpenCodeExecutionOptions,
   accessLevel: AccessLevel,
-  withVariant = true,
+  serverUrl: string,
+  withVariant: boolean,
 ): string[] {
-  // The shared background service never sees this process's env, so our MCP
-  // config and permission limits only apply with a private server. 2.x runs
-  // in the spawn cwd.
-  const args = [...(options.opencodeArgs ?? []), 'run', '--standalone', '--format', 'json']
+  const args = [...(options.opencodeArgs ?? []), 'run', '--server', serverUrl, '--format', 'json']
   const model = getOpenCode2Model(options, withVariant)
   if (model !== undefined) {
     args.push('--model', model)
@@ -854,22 +854,136 @@ export async function executeOpenCode(
     return { output: '', exitCode: -1 }
   }
 
-  const config = isOpenCode2
-    ? undefined
-    : await createOpenCodeMcpConfig(options.mcpEndpoint, accessLevel)
-  const args = isOpenCode2
-    ? buildOpenCode2Args(options, accessLevel)
-    : buildOpenCode1Args(options, cwd, accessLevel)
-  const env = isOpenCode2
-    ? createOpenCode2Env(options.mcpEndpoint, accessLevel)
-    : createOpenCode1Env(options.mcpEndpoint, accessLevel, config?.path)
-  options.onDelta?.({ type: 'status', status: 'started' })
+  if (isOpenCode2) return await executeOpenCode2(options, binaryPath, cwd, accessLevel)
 
+  const config = await createOpenCodeMcpConfig(options.mcpEndpoint, accessLevel)
+  const env = createOpenCode1Env(options.mcpEndpoint, accessLevel, config?.path)
+  options.onDelta?.({ type: 'status', status: 'started' })
   try {
-    let run = await runOpenCodeProcess(binaryPath, args, cwd, env, options, accessLevel)
+    const run = await runOpenCodeProcess(binaryPath, buildOpenCode1Args(options, cwd, accessLevel), cwd, env, options, accessLevel)
+    return finalizeOpenCodeResult(run.state, run.exitCode, options, accessLevel)
+  } finally {
+    if (config !== undefined) await rm(config.directory, { recursive: true, force: true })
+  }
+}
+
+interface OpenCodeServerSpec {
+  binaryPath: string
+  cwd: string
+  opencodeArgs: string[]
+  agentSessionId: string | undefined
+  /** Config and host-tool env, without the per-turn MCP identity. */
+  env: Record<string, string | undefined>
+}
+
+interface OpenCodeServer {
+  child: OpenCodeChildProcess
+  url: Promise<string>
+  password: string
+  identity: HostMcpIdentity
+}
+
+const OPENCODE_SERVER_START_TIMEOUT_MS = 30_000
+
+function waitForOpenCodeServer(child: OpenCodeChildProcess): Promise<string> {
+  let output = ''
+  return new Promise<string>((resolve, reject) => {
+    const fail = (reason: string): void => {
+      clearTimeout(timer)
+      reject(new Error(`OpenCode server ${reason}: ${output.trim() || 'no output'}`))
+    }
+    const timer = setTimeout(() => { fail('did not start in time') }, OPENCODE_SERVER_START_TIMEOUT_MS)
+    const collect = (chunk: Buffer): void => {
+      output = (output + chunk.toString('utf8')).slice(-MAX_STDERR_LENGTH)
+      const url = /listening on (http:\/\/\S+)/.exec(output)?.[1]
+      if (url === undefined) return
+      clearTimeout(timer)
+      resolve(url)
+    }
+    child.stdout.on('data', collect)
+    child.stderr.on('data', collect)
+    child.on('error', (error) => { fail(error.message) })
+    child.once('exit', (code) => { fail(`exited with code ${String(code)}`) })
+  })
+}
+
+// One `opencode serve` per incident and config, lent to one turn at a time:
+// the config, permission rules and MCP server are fixed when it starts, and
+// every turn runs in a fresh OpenCode session.
+const borrowOpenCodeServer = createProcessPool<OpenCodeServerSpec, OpenCodeServer>({
+  exclusive: true,
+  keyFor: (spec) => JSON.stringify([
+    spec.binaryPath,
+    spec.opencodeArgs,
+    spec.cwd,
+    spec.agentSessionId ?? null,
+    spec.env,
+    createCodingAgentsProcessEnv(process.env),
+  ]),
+  create: (spec) => {
+    const identity = { token: randomBytes(32).toString('base64url'), contextId: randomBytes(16).toString('base64url') }
+    const password = randomBytes(32).toString('base64url')
+    const args = [...spec.opencodeArgs, 'serve', '--hostname', '127.0.0.1', '--port', '0']
+    const child = createOpenCodeProcess(spec.binaryPath, args, spec.cwd, {
+      ...spec.env,
+      BITSENTRY_MCP_TOKEN: identity.token,
+      BITSENTRY_MCP_CONTEXT_ID: identity.contextId,
+      OPENCODE_SERVER_PASSWORD: password,
+    })
+    return Promise.resolve({ child, url: waitForOpenCodeServer(child), password, identity })
+  },
+  start: async (server, onExit) => {
+    server.child.once('exit', onExit)
+    await server.url
+  },
+  close: async (server) => { await terminateProcessTree(server.child) },
+})
+
+// 2.x `run` alone attaches to the shared background service, which never sees
+// our env, so MCP config and permission limits apply only on our own server.
+async function executeOpenCode2(
+  options: OpenCodeExecutionOptions,
+  binaryPath: string,
+  cwd: string,
+  accessLevel: AccessLevel,
+): Promise<LocalAiExecutionResult> {
+  const endpoint = options.mcpEndpoint
+  const env = createOpenCode2Env(endpoint, accessLevel)
+  // The server has its own MCP identity; a per-turn token would key a new server every turn.
+  delete env.BITSENTRY_MCP_TOKEN
+  delete env.BITSENTRY_MCP_CONTEXT_ID
+  const lease = borrowOpenCodeServer({
+    binaryPath,
+    cwd,
+    opencodeArgs: options.opencodeArgs ?? [],
+    agentSessionId: endpoint?.agentSessionId,
+    env,
+  })
+  // Cancel kills the server too, also while it starts: no other turn uses it,
+  // and killing only the client would leave its session running.
+  const { signal } = options.abortController
+  const abortServer = (): void => { lease.abort() }
+  signal.addEventListener('abort', abortServer, { once: true })
+  let unbind: (() => void) | undefined
+  try {
+    const server = await lease.ready
+    const url = await server.url
+    if (signal.aborted) return { output: '', exitCode: -1 }
+    // OpenCode connects MCP servers on the first turn, not at startup.
+    unbind = endpoint?.bindIdentity(server.identity)
+    const runTurn = (withVariant: boolean) => runOpenCodeProcess(
+      binaryPath,
+      buildOpenCode2Args(options, accessLevel, url, withVariant),
+      cwd,
+      { OPENCODE_PASSWORD: server.password },
+      options,
+      accessLevel,
+    )
+    options.onDelta?.({ type: 'status', status: 'started' })
+    let run = await runTurn(true)
     // The composer offers a fixed effort list, but 2.x rejects a variant the
     // model lacks (Kimi K3 has no "medium"), so run once more on its default.
-    if (isOpenCode2 && isUnavailableVariantRun(run.state)) {
+    if (isUnavailableVariantRun(run.state)) {
       if (options.abortController.signal.aborted) {
         options.onDelta?.({ type: 'status', status: 'cancelled' })
         return { output: '', exitCode: -1 }
@@ -878,19 +992,17 @@ export async function executeOpenCode(
         model: options.model ?? null,
         effort: getOpenCodeVariant(options.traitValues) ?? null,
       })
-      run = await runOpenCodeProcess(
-        binaryPath,
-        buildOpenCode2Args(options, accessLevel, false),
-        cwd,
-        env,
-        options,
-        accessLevel,
-      )
+      run = await runTurn(false)
     }
-
     return finalizeOpenCodeResult(run.state, run.exitCode, options, accessLevel)
+  } catch (error) {
+    if (signal.aborted) return { output: '', exitCode: -1 }
+    lease.retire()
+    throw error
   } finally {
-    if (config !== undefined) await rm(config.directory, { recursive: true, force: true })
+    signal.removeEventListener('abort', abortServer)
+    unbind?.()
+    await lease.release()
   }
 }
 
