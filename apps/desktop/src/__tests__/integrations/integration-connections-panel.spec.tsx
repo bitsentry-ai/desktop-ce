@@ -329,7 +329,9 @@ describe('IntegrationConnectionsPanel', () => {
     render(<IntegrationConnectionsPanel service={service} />)
 
     fireEvent.click(await screen.findByRole('button', { name: 'settings.integrationConnections.edit' }))
-    fireEvent.click(screen.getByRole('button', { name: 'settings.integrationConnections.remove' }))
+    // Remove sits in the row's ⋯ menu.
+    fireEvent.keyDown(screen.getByRole('button', { name: 'settings.integrationConnections.moreActions' }), { key: 'Enter' })
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'settings.integrationConnections.remove' }))
     await waitFor(() => expect(rows).toHaveLength(0))
 
     fill('settings.integrationConnections.name', 'Replacement')

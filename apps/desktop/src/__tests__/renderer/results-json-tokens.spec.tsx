@@ -196,6 +196,7 @@ describe("FinalOutputPreview", () => {
       offset: 0,
       hasMore: true,
       agent: "004",
+      retrievedAt: "2026-10-29T07:39:26.836Z",
       severity: "Critical",
       source: "wazuh",
       page: 1,
@@ -209,6 +210,7 @@ describe("FinalOutputPreview", () => {
     expect(details?.open).toBe(false);
     const detailKeys = [...(details?.querySelectorAll("dt") ?? [])].map((node) => node.textContent);
     expect(detailKeys).toEqual(["offset", "hasMore", "page"]);
+    expect(screen.getByText("2026-10-29 07:39 UTC")).toBeTruthy();
     cleanup();
 
     // A sentence before the payload already states the outcome, so no second outcome line is added.

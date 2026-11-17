@@ -52,6 +52,8 @@ const Toaster = ({ ...props }: ToasterProps) => {
       // (French strings run ~20% longer than English). Honors caller override.
       style={style}
       icons={toastIcons}
+      // Every toast can be dismissed with a visible 28px target in its top-right corner.
+      closeButton
       toastOptions={{ classNames: toastClassNames }}
       {...props}
     />

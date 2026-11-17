@@ -366,7 +366,7 @@ function DescriptionField({
           onClick={() => {
             ref.current?.focus();
           }}
-          className="line-clamp-2 cursor-text break-words text-[13px] leading-[18px] text-muted-foreground"
+          className="line-clamp-2 cursor-text break-words text-[13px] leading-[18px] text-muted-foreground max-sm:line-clamp-1"
         >
           {value}
         </p>

@@ -191,6 +191,7 @@
   "settings.integrationConnections.save": "Save connection",
   "settings.integrationConnections.edit": "Edit",
   "settings.integrationConnections.remove": "Remove",
+  "settings.integrationConnections.moreActions": "More actions for {{name}}",
   "settings.integrationConnections.cancel": "Cancel",
   "settings.integrationConnections.loadFailed": "Could not load connections. Reload to try again.",
   "settings.integrationConnections.saveFailed": "Could not save the connection. Check the URL, credentials, and unique name.",

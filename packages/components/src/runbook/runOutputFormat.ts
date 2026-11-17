@@ -284,9 +284,19 @@ function outcomeHeadline(entries: [string, unknown][]): JsonSummary["headline"] 
   return { shown, total: totalEntry === undefined ? null : (totalEntry[1] as number), noun: list[0] };
 }
 
+const ISO_TIMESTAMP = /^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2})(?::\d{2}(?:\.\d{1,9})?)?(Z?)$/;
+
+/** "2026-10-29T07:39:26.836Z" as "2026-10-29 07:39 UTC", short enough for the Summary column. */
+function compactTimestamp(value: string): string {
+  const match = ISO_TIMESTAMP.exec(value);
+  if (match === null) return value;
+  const [, date, time, utc] = match;
+  return `${date ?? ""} ${time ?? ""}${utc === "Z" ? " UTC" : ""}`;
+}
+
 /** One line per field: strings as written, scalars as JSON, and nested values by their size ("3 fields", "5 items"). */
 function summaryValue(value: unknown): string {
-  if (typeof value === "string") return value;
+  if (typeof value === "string") return compactTimestamp(value);
   if (Array.isArray(value)) return value.length === 1 ? "1 item" : `${String(value.length)} items`;
   if (value !== null && typeof value === "object") {
     const count = Object.keys(value).length;

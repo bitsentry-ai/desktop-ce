@@ -266,9 +266,17 @@ function TruncatedMonospace({
   );
 }
 
+/** JSON lines longer than this hold prose (descriptions, messages), which reads better wrapped. */
+const PROSE_LINE_LENGTH = 160;
+
+function hasProseLine(text: string): boolean {
+  return text.split("\n").some((line) => line.length > PROSE_LINE_LENGTH);
+}
+
 /**
- * A JSON or plain-text block with its toolbar. JSON starts unwrapped so its
- * indentation holds; plain text starts wrapped. "Wrap lines" flips either.
+ * A JSON or plain-text block with its toolbar. Compact JSON starts unwrapped so
+ * its indentation holds; JSON with prose-length values, and plain text, start
+ * wrapped. "Wrap lines" flips either.
  */
 function MonospaceOutputBlock({
   label,
@@ -283,7 +291,7 @@ function MonospaceOutputBlock({
   text: string;
   json: boolean;
 }) {
-  const [wrap, setWrap] = useState(!json);
+  const [wrap, setWrap] = useState(() => !json || hasProseLine(text));
   return (
     <div className={RUN_OUTPUT_BLOCK_CLASS}>
       <BlockToolbar label={label} copyText={copyText}>

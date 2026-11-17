@@ -1,5 +1,6 @@
 import type { PluginDescriptor } from "../services/contracts";
-import { ChevronRight, Plug, Plus } from "lucide-react";
+import { ChevronRight, MoreHorizontal, Plug, Plus, Trash2 } from "lucide-react";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "../ui/dropdown-menu";
 import { useEffect, useId, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { useTranslation } from "@bitsentry-ce/i18n";
 import type { IntegrationConnection, IntegrationConnectionInput, DesktopPluginFieldDefinition } from "@bitsentry-ce/core/features/plugins";
@@ -118,6 +119,25 @@ interface ConnectionListProps {
   formOpen: boolean;
 }
 
+/** Less frequent row actions behind ⋯, so Remove never sits beside Edit as an equal. */
+function ConnectionMenu({ name, disabled, onRemove }: { name: string; disabled: boolean; onRemove: () => void }) {
+  const { t } = useTranslation();
+  const label = t("settings.integrationConnections.moreActions", { name });
+  return <DropdownMenu modal={false}>
+    <DropdownMenuTrigger asChild>
+      <Button size="sm" variant="ghost" aria-label={label} title={label} disabled={disabled} className="size-8 p-0 max-sm:size-11">
+        <MoreHorizontal aria-hidden="true" className="size-4" />
+      </Button>
+    </DropdownMenuTrigger>
+    <DropdownMenuContent align="end" className="min-w-40">
+      <DropdownMenuItem onSelect={onRemove} className="text-destructive focus:bg-destructive/10 focus:text-destructive max-sm:min-h-11">
+        <Trash2 aria-hidden="true" className="size-3.5" />
+        {t("settings.integrationConnections.remove")}
+      </DropdownMenuItem>
+    </DropdownMenuContent>
+  </DropdownMenu>;
+}
+
 /** The saved connections, in a card of their own above the form that adds one. */
 function ConnectionList({ titleId, rows, plugins, loaded, busy, onEdit, onRemove, onAdd, formOpen }: ConnectionListProps) {
   const { t } = useTranslation();
@@ -141,7 +161,7 @@ function ConnectionList({ titleId, rows, plugins, loaded, busy, onEdit, onRemove
       <div className="flex shrink-0 flex-wrap items-center gap-2">
         <ConnectionStatus row={row} />
         <Button size="sm" variant="outline" className="max-sm:h-11 max-sm:px-4" disabled={busy || !plugins.some((item) => item.id === row.pluginId)} onClick={() => { onEdit(row); }}>{t("settings.integrationConnections.edit")}</Button>
-        <Button size="sm" variant="ghost" className="text-[hsl(var(--destructive-text))] hover:bg-destructive/10 hover:text-[hsl(var(--destructive-text))] max-sm:h-11 max-sm:px-4" disabled={busy} onClick={() => { onRemove(row.id); }}>{t("settings.integrationConnections.remove")}</Button>
+        <ConnectionMenu name={row.name} disabled={busy} onRemove={() => { onRemove(row.id); }} />
       </div>
     </li>)}</ul>}
   </section>;

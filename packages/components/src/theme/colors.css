@@ -24,6 +24,8 @@
   --primary: 167 100% 26%;
   /* Hovered primary: a step darker in light mode and brighter in dark, so the change is visible in both. */
   --primary-hover: 167 100% 21%;
+  /* Hovered secondary and ghost buttons: a clear neutral fill (#EDEDED light, #262626 dark). */
+  --secondary-hover: 0 0% 93%;
   --primary-foreground: 0 0% 100%;
 
   /* --- Secondary / Muted / Accent --- */
@@ -96,6 +98,7 @@
   /* --- Primary: the brighter end of the brand gradient --- */
   --primary: 166 100% 41%;
   --primary-hover: 166 100% 48%;
+  --secondary-hover: 0 0% 15%;
   --primary-foreground: 166 60% 5%;
 
   /* --- Secondary / Muted / Accent --- */

@@ -105,16 +105,18 @@ describe.each(["light", "dark"] as const)("interaction states in %s mode", (them
     expect(getComputedStyle(input).borderColor).not.toBe(before);
     expect(getComputedStyle(getByTestId("input-invalid")).borderColor).not.toBe(before);
     expect(document.querySelector('[aria-current="page"]')).not.toBeNull();
+    await userEvent.hover(getByTestId("primary-hover"));
+    await settle();
     if (SCREENSHOT_DIR !== undefined) {
       await page.screenshot({ path: `${SCREENSHOT_DIR}/interaction-states_${theme}.png` });
     }
 
-    // Picture 2: keyboard focus on a primary button (reached with Tab) and the pointer over another.
+    // Picture 2: keyboard focus on a primary button (reached with Tab) and the pointer over a secondary button.
     await userEvent.click(getByTestId("primary"));
     await userEvent.tab();
     await userEvent.tab();
     expect(document.activeElement).toBe(getByTestId("primary-focus"));
-    await userEvent.hover(getByTestId("primary-hover"));
+    await userEvent.hover(getByTestId("outline-hover"));
     await settle();
     if (SCREENSHOT_DIR !== undefined) {
       await page.screenshot({ path: `${SCREENSHOT_DIR}/interaction-states-keyboard_${theme}.png` });

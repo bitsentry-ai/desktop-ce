@@ -191,6 +191,7 @@
   "settings.integrationConnections.save": "保存连接",
   "settings.integrationConnections.edit": "编辑",
   "settings.integrationConnections.remove": "删除",
+  "settings.integrationConnections.moreActions": "{{name}} 的更多操作",
   "settings.integrationConnections.cancel": "取消",
   "settings.integrationConnections.loadFailed": "无法加载连接。请刷新后重试。",
   "settings.integrationConnections.saveFailed": "无法保存连接。请检查地址、凭据和名称是否唯一。",
