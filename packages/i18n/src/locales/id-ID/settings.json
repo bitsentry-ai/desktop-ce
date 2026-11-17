@@ -216,5 +216,6 @@
   "settings.integrationConnections.invalidJson": "{{field}} harus berupa JSON yang valid.",
   "settings.globalVariables.emptyDescription": "Tambahkan variabel untuk memakai ulang nilai atau rahasia di runbook mana pun.",
   "settings.pluginsEmpty.hint": "Pasang atau aktifkan plugin kode yang mendeklarasikan sumber error.",
+  "settings.sectionNav.label": "Bagian",
   "settings.pluginsEmpty.availableSources": "Sumber berbasis plugin yang tersedia: {{sources}}."
 }

@@ -216,5 +216,6 @@
   "settings.integrationConnections.invalidJson": "{{field}} must be valid JSON.",
   "settings.globalVariables.emptyDescription": "Add a variable to reuse a value or secret in any runbook.",
   "settings.pluginsEmpty.hint": "Install or enable a code plugin that declares an error source.",
+  "settings.sectionNav.label": "Section",
   "settings.pluginsEmpty.availableSources": "Available plugin-backed sources: {{sources}}."
 }

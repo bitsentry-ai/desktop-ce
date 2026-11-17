@@ -32,6 +32,8 @@ import {
   Download,
   RefreshCw,
   Plug,
+  PanelLeftClose,
+  PanelLeftOpen,
 } from "lucide-react";
 import {
   AlertDialog,
@@ -46,6 +48,7 @@ import {
 import { useFormatters, useTranslation } from "@bitsentry-ce/i18n";
 import { useNavbarSubNavigation } from "./navigation-context";
 import { PaletteSearchButton } from "../shortcuts/PaletteSearchButton";
+import { BitSentryLogo } from "./BitSentryLogo";
 import {
   SidebarEmpty,
   SidebarGroupLabel,
@@ -54,6 +57,7 @@ import {
   SidebarRow,
   SidebarRunStatus,
   SidebarSection,
+  SidebarStatusDot,
   isNotableRunState,
   shortAge,
   type SidebarRunState,
@@ -262,7 +266,7 @@ function IncidentSubNavigation({
       trailing={state !== null && status !== null
         ? <SidebarRunStatus state={state} label={t(INCIDENT_STATUS_LABEL_KEYS[status])} />
         : shortAge(incident.createdAt, formatters.locale, now, t("navigation.navbar.justNow"))}
-      meta={status === "failed" && preview !== null ? translateIncidentPreview(preview, t) : undefined}
+      meta={preview === null ? undefined : translateIncidentPreview(preview, t)}
       hoverAction={<SidebarHoverButton label={t("common.navbar.archiveIncident")} onClick={() => { onArchive(incident.id, currentId === incident.id).catch(console.error); }}><Archive size={12} /></SidebarHoverButton>}
     />;
   };
@@ -293,7 +297,7 @@ function RunbookSubNavigation({ runbooks, search, t, onDelete }: {
       to={`/runbooks?id=${runbook.id}`}
       title={runbook.title}
       active={currentId === runbook.id}
-      trailing={runbook.actions.length > 0 ? String(runbook.actions.length) : undefined}
+      trailing={runbook.actions.length > 0 ? t("navigation.navbar.actionCount", { count: runbook.actions.length }) : undefined}
       hoverAction={<SidebarHoverButton tone="danger" label={t("common.navbar.deleteRunbook")} onClick={() => { onDelete(runbook); }}><Trash2 size={12} /></SidebarHoverButton>}
     />)}
     {overflow > 0 && <SidebarMoreLink to="/runbooks" label={t("navigation.navbar.viewAll", { count: runbooks.length })} />}
@@ -714,6 +718,25 @@ const Navbar = ({
   const formatters = useFormatters();
   const now = useNow();
   const location = useLocation();
+  // Narrow windows fold the sidebar into an icon rail (CSS); this opens it over the page.
+  // Open for the page it was opened on, so navigating closes it without an extra render.
+  const railLocation = `${location.pathname}${location.search}`;
+  const [railOpenFor, setRailOpenFor] = useState<string | null>(null);
+  const railExpanded = railOpenFor === railLocation;
+  const setRailExpanded = (open: boolean | ((current: boolean) => boolean)) => {
+    const next = typeof open === "function" ? open(railExpanded) : open;
+    setRailOpenFor(next ? railLocation : null);
+  };
+  useEffect(() => {
+    if (!railExpanded) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setRailOpenFor(null);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+    };
+  }, [railExpanded]);
   const navigate = useNavigate();
   const currentPath = location.pathname;
   const { user } = useAuthSession();
@@ -1026,28 +1049,34 @@ const Navbar = ({
   }
 
   return (
-    <nav className="bs-sidebar nav-rail h-screen w-60 shrink-0 flex flex-col">
+    <nav
+      className="bs-sidebar nav-rail h-screen w-60 shrink-0 flex flex-col"
+      data-expanded={railExpanded ? "true" : undefined}
+    >
       <div className={navHeaderClass}>
         <Link
           to="/"
-          className="flex items-center gap-2 text-sm font-semibold text-foreground"
+          className="bs-sidebar-brand flex items-center gap-2 text-sm font-semibold text-foreground"
         >
-          {!isDesktop && (
-            <>
-              <img
-                src="/logo.png"
-                alt=""
-                className="h-5 w-5 object-contain dark:hidden"
-              />
-              <img
-                src="/logo-light.png"
-                alt=""
-                className="hidden h-5 w-5 object-contain dark:block"
-              />
-            </>
-          )}
+          <BitSentryLogo />
           <span className="bs-sidebar-label">{t("navigation.navbar.bitsentry")}</span>
         </Link>
+      </div>
+
+      <div className="bs-sidebar-railbar hidden flex-col items-center gap-1.5 pb-2">
+        <BitSentryLogo />
+        <button
+          type="button"
+          onClick={() => {
+            setRailExpanded((open) => !open);
+          }}
+          aria-expanded={railExpanded}
+          aria-label={t(railExpanded ? "navigation.navbar.collapseSidebar" : "navigation.navbar.expandSidebar")}
+          title={t(railExpanded ? "navigation.navbar.collapseSidebar" : "navigation.navbar.expandSidebar")}
+          className="flex size-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+        >
+          {railExpanded ? <PanelLeftClose size={16} /> : <PanelLeftOpen size={16} />}
+        </button>
       </div>
 
       <div className="px-3 pt-1">
@@ -1159,6 +1188,9 @@ const Navbar = ({
                   const resultStateLabel = (state: SidebarRunState) => {
                     if (state === "running") return t("navigation.navbar.statusRunning");
                     if (state === "queued") return t("navigation.navbar.statusQueued");
+                    if (state === "completed") return t("navigation.navbar.statusCompleted");
+                    if (state === "cancelled") return t("navigation.navbar.statusCancelled");
+                    if (state === "idle") return t("navigation.navbar.statusIdle");
                     return t("navigation.navbar.statusFailed");
                   };
 
@@ -1172,6 +1204,7 @@ const Navbar = ({
                             to={`/results?id=${result.id}`}
                             title={result.runbookTitle}
                             active={currentId === result.id}
+                            leading={<SidebarStatusDot state={state} label={resultStateLabel(state)} />}
                             live={isNotableRunState(state)}
                             trailing={isNotableRunState(state)
                               ? <SidebarRunStatus state={state} label={resultStateLabel(state)} />

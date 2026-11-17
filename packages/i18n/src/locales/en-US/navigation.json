@@ -55,5 +55,7 @@
   "navigation.navbar.statusIdle": "Waiting",
   "navigation.navbar.justNow": "now",
   "navigation.navbar.statusNeedsInput": "Needs input",
-  "navigation.navbar.statusDone": "Done"
+  "navigation.navbar.statusDone": "Done",
+  "navigation.navbar.expandSidebar": "Expand sidebar",
+  "navigation.navbar.collapseSidebar": "Collapse sidebar"
 }

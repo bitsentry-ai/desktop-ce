@@ -88,6 +88,24 @@ export function SidebarRunStatus({ state, label }: { state: SidebarRunState; lab
   );
 }
 
+const STATUS_DOT: Partial<Record<SidebarRunState, string>> = {
+  completed: "bg-[hsl(var(--success))]",
+  done: "bg-[hsl(var(--success))]",
+  failed: "bg-[hsl(var(--destructive))]",
+  running: "bg-[hsl(var(--brand-emphasis))] motion-safe:animate-pulse",
+  queued: "bg-[hsl(var(--brand-emphasis))]",
+  "needs-input": "bg-[hsl(var(--warning))]",
+};
+
+/** A small leading dot for a row's last known state, so finished rows still read at a glance. */
+export function SidebarStatusDot({ state, label }: { state: SidebarRunState; label: string }) {
+  return (
+    <span role="img" aria-label={label} className="inline-flex size-3.5 shrink-0 items-center justify-center">
+      <span className={cn("size-1.5 rounded-full", STATUS_DOT[state] ?? "bg-muted-foreground/50")} />
+    </span>
+  );
+}
+
 export function SidebarGroupLabel({ children, count, action }: { children: ReactNode; count?: number; action?: ReactNode }) {
   return (
     <div className="flex h-6 items-center gap-1.5 px-2.5 pt-1 text-[11px] font-medium text-muted-foreground">

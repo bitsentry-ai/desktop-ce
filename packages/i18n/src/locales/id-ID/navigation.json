@@ -55,5 +55,7 @@
   "navigation.navbar.statusIdle": "Menunggu",
   "navigation.navbar.justNow": "baru saja",
   "navigation.navbar.statusNeedsInput": "Perlu masukan",
-  "navigation.navbar.statusDone": "Selesai"
+  "navigation.navbar.statusDone": "Selesai",
+  "navigation.navbar.expandSidebar": "Bentangkan bilah sisi",
+  "navigation.navbar.collapseSidebar": "Ciutkan bilah sisi"
 }

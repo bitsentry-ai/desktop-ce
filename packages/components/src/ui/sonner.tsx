@@ -11,7 +11,7 @@ import type { ToasterProps } from "./sonner.types";
  */
 const toastClassNames = {
   toast: [
-    "group toast !gap-3 !rounded-lg !border !border-border !bg-popover !p-3.5 !pl-5 !text-popover-foreground",
+    "group toast !gap-3 !rounded-lg !border !border-border !bg-popover !p-4 !pl-5 !pr-11 !text-popover-foreground",
     "!shadow-[0_10px_30px_-10px_hsl(var(--shadow-color)/0.25),0_2px_6px_-2px_hsl(var(--shadow-color)/0.1)]",
     "before:absolute before:inset-y-3 before:left-2 before:w-[3px] before:rounded-full before:content-['']",
     "data-[type=error]:before:bg-[hsl(var(--destructive))] data-[type=warning]:before:bg-[hsl(var(--warning))]",
@@ -26,7 +26,9 @@ const toastClassNames = {
   ].join(" "),
   actionButton: "!h-7 !rounded-md !bg-primary !px-2.5 !text-xs !font-medium !text-primary-foreground",
   cancelButton: "!h-7 !rounded-md !bg-muted !px-2.5 !text-xs !text-muted-foreground",
-  closeButton: "!border-border !bg-popover !text-muted-foreground hover:!bg-accent hover:!text-foreground",
+  // Inside the top-right corner with a 28px target, instead of floating off the top-left edge.
+  closeButton:
+    "!left-auto !right-2 !top-2 !size-7 !translate-x-0 !translate-y-0 !rounded-md !border-0 !bg-transparent !text-muted-foreground hover:!bg-accent hover:!text-foreground [&>svg]:!size-3.5",
 };
 
 const Toaster = ({ ...props }: ToasterProps) => {

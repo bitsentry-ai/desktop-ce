@@ -55,5 +55,7 @@
   "navigation.navbar.statusIdle": "En attente de réponse",
   "navigation.navbar.justNow": "maintenant",
   "navigation.navbar.statusNeedsInput": "Réponse requise",
-  "navigation.navbar.statusDone": "Terminé"
+  "navigation.navbar.statusDone": "Terminé",
+  "navigation.navbar.expandSidebar": "Déplier la barre latérale",
+  "navigation.navbar.collapseSidebar": "Replier la barre latérale"
 }

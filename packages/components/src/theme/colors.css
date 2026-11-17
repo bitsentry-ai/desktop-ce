@@ -21,14 +21,14 @@
   --popover-foreground: 0 0% 9%;
 
   /* --- Primary: BitSentry green (logo teal-green #02C1A9 to #02E48A) --- */
-  --primary: 166 100% 25%;
+  --primary: 167 100% 26%;
   --primary-foreground: 0 0% 100%;
 
   /* --- Secondary / Muted / Accent --- */
   --secondary: 0 0% 96%;
   --secondary-foreground: 0 0% 9%;
   --muted: 0 0% 96%;
-  --muted-foreground: 0 0% 42%;
+  --muted-foreground: 0 0% 40%;
   --accent: 0 0% 92.5%;
   --accent-foreground: 0 0% 9%;
 
@@ -36,7 +36,7 @@
   --border: 0 0% 90%;
   --border-hover: 0 0% 80%;
   --input: 0 0% 87%;
-  --ring: 166 100% 30%;
+  --ring: 167 100% 30%;
 
   /* --- Status (kept apart from the brand green: success is a yellower green) --- */
   --destructive: 0 72% 50%;
@@ -58,7 +58,7 @@
   /* --- Brand (selected states, links, highlights) --- */
   --brand: 166 98% 38%;
   --brand-foreground: 0 0% 100%;
-  --brand-emphasis: 166 100% 24%;
+  --brand-emphasis: 167 100% 25%;
   --brand-emphasis-surface: 160 60% 95%;
   --brand-emphasis-border: 162 50% 80%;
   --brand-emphasis-subtle: 166 70% 24%;
@@ -81,14 +81,14 @@
   --popover-foreground: 0 0% 93%;
 
   /* --- Primary: the brighter end of the brand gradient --- */
-  --primary: 160 85% 45%;
-  --primary-foreground: 160 60% 6%;
+  --primary: 166 100% 41%;
+  --primary-foreground: 166 60% 5%;
 
   /* --- Secondary / Muted / Accent --- */
   --secondary: 0 0% 14%;
   --secondary-foreground: 0 0% 93%;
   --muted: 0 0% 13%;
-  --muted-foreground: 0 0% 63%;
+  --muted-foreground: 0 0% 65%;
   --accent: 0 0% 17%;
   --accent-foreground: 0 0% 93%;
 
@@ -96,7 +96,7 @@
   --border: 0 0% 16%;
   --border-hover: 0 0% 25%;
   --input: 0 0% 19%;
-  --ring: 160 85% 45%;
+  --ring: 166 100% 41%;
 
   /* --- Status --- */
   --destructive: 0 70% 52%;
@@ -115,9 +115,9 @@
   --scrollbar-thumb-hover: 0 0% 32%;
 
   /* --- Brand --- */
-  --brand: 160 85% 45%;
-  --brand-foreground: 160 60% 6%;
-  --brand-emphasis: 160 80% 52%;
+  --brand: 166 100% 41%;
+  --brand-foreground: 166 60% 5%;
+  --brand-emphasis: 166 90% 48%;
   --brand-emphasis-surface: 162 50% 10%;
   --brand-emphasis-border: 162 45% 22%;
   --brand-emphasis-subtle: 160 60% 70%;

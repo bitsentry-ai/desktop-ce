@@ -216,5 +216,6 @@
   "settings.integrationConnections.invalidJson": "{{field}} 必须是有效的 JSON。",
   "settings.globalVariables.emptyDescription": "添加变量，即可在任意运行手册中复用某个值或密钥。",
   "settings.pluginsEmpty.hint": "请安装或启用一个声明了错误来源的代码插件。",
+  "settings.sectionNav.label": "分区",
   "settings.pluginsEmpty.availableSources": "可用的插件数据源：{{sources}}。"
 }

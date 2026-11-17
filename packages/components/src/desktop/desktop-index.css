@@ -100,23 +100,45 @@
      text hide; every item keeps its tooltip. */
   @media (max-width: 899px) {
     /* Beats the w-60 utility, which sits in a later layer. */
-    .bs-sidebar {
+    .bs-sidebar:not([data-expanded="true"]) {
       width: 4.75rem !important;
     }
 
-    .bs-sidebar .bs-sidebar-label,
-    .bs-sidebar .bs-sidebar-section {
+    .bs-sidebar .bs-sidebar-railbar {
+      display: flex;
+    }
+
+    .bs-sidebar:not([data-expanded="true"]) .bs-sidebar-label,
+    .bs-sidebar:not([data-expanded="true"]) .bs-sidebar-brand,
+    .bs-sidebar:not([data-expanded="true"]) .bs-sidebar-section {
       display: none;
     }
 
-    .bs-sidebar .nav-item,
-    .bs-sidebar button:has(> .bs-sidebar-label) {
+    .bs-sidebar:not([data-expanded="true"]) .nav-item,
+    .bs-sidebar:not([data-expanded="true"]) button:has(> .bs-sidebar-label) {
       justify-content: center;
       padding-inline: 0;
     }
 
-    .bs-sidebar .nav-item.active {
+    .bs-sidebar:not([data-expanded="true"]) .nav-item.active {
       box-shadow: inset 0 -2px 0 hsl(var(--brand-emphasis));
+    }
+
+    /* Opened from the rail: full width over the page, without moving the content. */
+    .bs-sidebar[data-expanded="true"] {
+      position: relative;
+      z-index: 50;
+      margin-right: calc(4.75rem - 15rem);
+      box-shadow: 8px 0 24px -12px hsl(var(--shadow-color) / 0.35);
+    }
+
+    .bs-sidebar[data-expanded="true"] .bs-sidebar-railbar {
+      align-items: flex-end;
+      padding-inline: 0.75rem;
+    }
+
+    .bs-sidebar[data-expanded="true"] .bs-sidebar-railbar > img {
+      display: none;
     }
   }
 

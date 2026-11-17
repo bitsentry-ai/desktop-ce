@@ -55,5 +55,7 @@
   "navigation.navbar.statusIdle": "等待中",
   "navigation.navbar.justNow": "刚刚",
   "navigation.navbar.statusNeedsInput": "需要输入",
-  "navigation.navbar.statusDone": "完成"
+  "navigation.navbar.statusDone": "完成",
+  "navigation.navbar.expandSidebar": "展开侧边栏",
+  "navigation.navbar.collapseSidebar": "收起侧边栏"
 }
