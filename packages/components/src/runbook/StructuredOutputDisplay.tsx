@@ -102,7 +102,7 @@ export function StructuredOutputDisplay({
     }
 
     logFilterContent = (
-      <div className="mb-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-muted-foreground">
+      <div className="mb-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
         <span>
           {logFilterMetadata.matchCount} {matchUnit}
         </span>
@@ -131,10 +131,10 @@ export function StructuredOutputDisplay({
           <tbody className="divide-y divide-border">
             {structuredEntries.map(([key, value]) => (
               <tr key={key}>
-                <td className="w-40 break-words bg-muted/20 px-3 py-2 align-top font-mono text-[11px] text-muted-foreground">
+                <td className="w-40 break-words bg-muted/20 px-3 py-2 align-top font-mono text-xs text-muted-foreground">
                   {key}
                 </td>
-                <td className="px-3 py-2 align-top font-mono text-[11px] text-foreground [overflow-wrap:anywhere]">
+                <td className="px-3 py-2 align-top font-mono text-xs text-foreground [overflow-wrap:anywhere]">
                   <StructuredValueCell value={value} />
                 </td>
               </tr>
@@ -147,7 +147,7 @@ export function StructuredOutputDisplay({
 
   return (
     <div>
-      <div className="mb-2 text-[11px] font-medium uppercase tracking-[0.06em] text-muted-foreground">
+      <div className="mb-2 text-xs font-medium uppercase tracking-[0.06em] text-muted-foreground">
         {t("common.structuredOutputDisplay.structuredOutput")}
       </div>
       {logFilterContent}

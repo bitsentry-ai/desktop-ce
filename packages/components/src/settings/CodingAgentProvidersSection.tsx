@@ -370,10 +370,10 @@ function getSyncButtonText(
 
 function getSyncMessageClass(syncState: SyncState): string {
   if (syncState === 'error') {
-    return 'mt-1 text-[11px] text-[hsl(var(--destructive-text))]'
+    return 'mt-1 text-xs text-[hsl(var(--destructive-text))]'
   }
 
-  return 'mt-1 text-[11px] text-muted-foreground'
+  return 'mt-1 text-xs text-muted-foreground'
 }
 
 function getDetectButtonText(
@@ -491,7 +491,7 @@ function ProviderBinarySettings({
         </Button>
       </div>
       {probeStatusText !== null && (
-        <p className={`mt-1 text-[11px] ${probeStatusClass}`}>
+        <p className={`mt-1 text-xs ${probeStatusClass}`}>
           {probeStatusText}
         </p>
       )}

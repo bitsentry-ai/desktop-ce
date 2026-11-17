@@ -61,7 +61,7 @@ export function SettingsSectionNav({
       className={cn("md:sticky md:top-0 md:w-52 md:shrink-0 md:self-start", className)}
     >
       {heading !== undefined && (
-        <h1 className="sr-only md:not-sr-only md:mb-2 md:block md:px-2.5 md:text-[11px] md:font-medium md:uppercase md:leading-4 md:tracking-[0.06em] md:text-muted-foreground">
+        <h1 className="sr-only md:not-sr-only md:mb-2 md:block md:px-2.5 md:text-xs md:font-medium md:uppercase md:leading-4 md:tracking-[0.06em] md:text-muted-foreground">
           {heading}
         </h1>
       )}

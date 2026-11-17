@@ -1,6 +1,7 @@
 import { useContext } from "react";
 import type * as React from "react";
 import { ThemeContext } from "../theme/ThemeContext";
+import { CircleAlert, CircleCheck, Info, TriangleAlert } from "lucide-react";
 import { Toaster as Sonner } from "sonner";
 import type { ToasterProps } from "./sonner.types";
 
@@ -19,16 +20,20 @@ const toastClassNames = {
   ].join(" "),
   title: "!text-[13px] !font-medium !leading-5 !text-foreground",
   description: "!text-[12.5px] !leading-[1.125rem] !text-muted-foreground",
-  icon: [
-    "!mt-0.5 !self-start text-muted-foreground",
-    "[[data-type=error]_&]:!text-[hsl(var(--destructive-text))] [[data-type=warning]_&]:!text-[hsl(var(--warning-text))]",
-    "[[data-type=success]_&]:!text-[hsl(var(--success-text))] [[data-type=info]_&]:!text-[hsl(var(--info-text))]",
-  ].join(" "),
+  icon: "!mt-0.5 !self-start",
   actionButton: "!h-7 !rounded-md !bg-primary !px-2.5 !text-xs !font-medium !text-primary-foreground",
   cancelButton: "!h-7 !rounded-md !bg-muted !px-2.5 !text-xs !text-muted-foreground",
   // Inside the top-right corner with a 28px target, instead of floating off the top-left edge.
   closeButton:
     "!left-auto !right-2 !top-2 !size-7 !translate-x-0 !translate-y-0 !rounded-md !border-0 !bg-transparent !text-muted-foreground hover:!bg-accent hover:!text-foreground [&>svg]:!size-3.5",
+};
+
+/** Each type's icon in its status text colour (AA on the popover surface), matching the accent bar. */
+const toastIcons: ToasterProps["icons"] = {
+  success: <CircleCheck aria-hidden="true" className="size-4 !text-[hsl(var(--status-success-text))]" />,
+  info: <Info aria-hidden="true" className="size-4 !text-[hsl(var(--status-info-text))]" />,
+  warning: <TriangleAlert aria-hidden="true" className="size-4 !text-[hsl(var(--status-warning-text))]" />,
+  error: <CircleAlert aria-hidden="true" className="size-4 !text-[hsl(var(--status-destructive-text))]" />,
 };
 
 const Toaster = ({ ...props }: ToasterProps) => {
@@ -46,6 +51,7 @@ const Toaster = ({ ...props }: ToasterProps) => {
       // Wider than Sonner's 356px default to accommodate longer translations
       // (French strings run ~20% longer than English). Honors caller override.
       style={style}
+      icons={toastIcons}
       toastOptions={{ classNames: toastClassNames }}
       {...props}
     />

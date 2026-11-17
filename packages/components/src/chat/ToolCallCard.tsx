@@ -69,7 +69,7 @@ export function ToolCard({ card, messageId }: { card: ToolCallCard; messageId: s
               open={detailsOpen}
               onToggle={(e) => { setDetailsOpen(e.currentTarget.open); }}
             >
-              <summary className="cursor-pointer select-none text-[11px] font-medium text-muted-foreground">
+              <summary className="cursor-pointer select-none text-xs font-medium text-muted-foreground">
                 {t("common.toolCallCard.viewTechnicalDetails")}
               </summary>
               {failure.issues.length > 0 && (
@@ -77,18 +77,18 @@ export function ToolCard({ card, messageId }: { card: ToolCallCard; messageId: s
                   {failure.issues.map((issue) => (
                     <li key={`${issue.path}:${issue.message}`} className="min-w-0">
                       {issue.path.length > 0 && (
-                        <span className="font-mono text-[11px] text-muted-foreground break-all">
+                        <span className="font-mono text-xs text-muted-foreground break-all">
                           {issue.path}
                         </span>
                       )}
-                      <span className="block break-words text-[11px] text-muted-foreground">
+                      <span className="block break-words text-xs text-muted-foreground">
                         {issue.message}
                       </span>
                     </li>
                   ))}
                 </ul>
               )}
-              <pre className="mt-2 max-h-72 overflow-auto whitespace-pre-wrap break-words rounded bg-muted/50 p-2 font-mono text-[11px] leading-relaxed text-muted-foreground">
+              <pre className="mt-2 max-h-72 overflow-auto whitespace-pre-wrap break-words rounded bg-muted/50 p-2 font-mono text-xs leading-relaxed text-muted-foreground">
                 {failure.raw}
               </pre>
             </details>
@@ -101,10 +101,10 @@ export function ToolCard({ card, messageId }: { card: ToolCallCard; messageId: s
           open={contextOpen}
           onToggle={(e) => { setContextOpen(e.currentTarget.open); }}
         >
-          <summary className="cursor-pointer select-none text-[11px] font-medium text-muted-foreground">
+          <summary className="cursor-pointer select-none text-xs font-medium text-muted-foreground">
             {t("common.toolCallCard.modelContextSentToLlm")}
           </summary>
-          <pre className="mt-2 max-h-72 overflow-auto whitespace-pre-wrap break-words rounded bg-muted/50 p-2 font-mono text-[11px] leading-relaxed text-muted-foreground">
+          <pre className="mt-2 max-h-72 overflow-auto whitespace-pre-wrap break-words rounded bg-muted/50 p-2 font-mono text-xs leading-relaxed text-muted-foreground">
             {modelContext}
           </pre>
         </details>

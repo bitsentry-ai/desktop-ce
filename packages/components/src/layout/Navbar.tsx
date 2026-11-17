@@ -698,7 +698,7 @@ function UpdateIslandButton() {
         <div className="bs-brand-tint-title truncate text-xs font-medium">
           {label}
         </div>
-        <div className="bs-brand-tint-subtitle truncate text-[11px]">
+        <div className="bs-brand-tint-subtitle truncate text-xs">
           {detail}
         </div>
       </div>

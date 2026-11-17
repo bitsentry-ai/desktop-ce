@@ -3,11 +3,16 @@ import tailwindcssAnimate from "tailwindcss-animate";
 
 const config: Config = {
   darkMode: "class",
-  content: [
-    './src/renderer/index.html',
-    './src/renderer/src/**/*.{js,ts,jsx,tsx}',
-    '../../packages/components/src/**/*.{js,ts,jsx,tsx}',
-  ],
+  // Globs resolve from this file, not the working directory, so tools started elsewhere (such as the browser tests)
+  // generate the same utilities as the app build.
+  content: {
+    relative: true,
+    files: [
+      './src/renderer/index.html',
+      './src/renderer/src/**/*.{js,ts,jsx,tsx}',
+      '../../packages/components/src/**/*.{js,ts,jsx,tsx}',
+    ],
+  },
   prefix: "",
   theme: {
     container: {

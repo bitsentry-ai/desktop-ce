@@ -68,7 +68,7 @@ function CustomerReportSource({ report }: { report: NonNullable<IntegrationOpera
       {report.subject !== undefined && report.subject !== null && <div className="col-span-2"><Fact label={t("incidents.integrationWrites.customerReport.subject")}>{report.subject}</Fact></div>}
       <div className="col-span-2"><Fact label={t("incidents.integrationWrites.customerReport.submittedBy")}>{report.submittedBy}</Fact></div>
     </dl>
-    <p className="mt-2 flex items-center gap-1 text-[11px] text-amber-700 dark:text-amber-400"><AlertCircle size={11} aria-hidden="true" />{t("incidents.integrationWrites.customerReport.unverified")}</p>
+    <p className="mt-2 flex items-center gap-1 text-xs text-amber-700 dark:text-amber-400"><AlertCircle size={11} aria-hidden="true" />{t("incidents.integrationWrites.customerReport.unverified")}</p>
   </section>;
 }
 

@@ -42,7 +42,7 @@ export function ModeToggle({ value, onChange, disabled }: ModeToggleProps) {
       disabled={disabled}
       title={title}
       className={cn(
-        "flex h-7 shrink-0 items-center gap-1.5 rounded-md px-2.5 text-[11px] font-medium transition-colors",
+        "flex h-7 shrink-0 items-center gap-1.5 rounded-md px-2.5 text-xs font-medium transition-colors",
         "disabled:cursor-not-allowed disabled:opacity-50",
         stateClassName,
       )}

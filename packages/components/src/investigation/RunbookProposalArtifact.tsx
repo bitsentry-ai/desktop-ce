@@ -91,7 +91,7 @@ export function RunbookProposalListItem({
               : ""}
           </div>
         </div>
-        <span className="inline-flex shrink-0 items-center justify-center whitespace-nowrap rounded-full border border-border px-2 py-0.5 text-center text-[10px] capitalize text-muted-foreground">
+        <span className="inline-flex shrink-0 items-center justify-center whitespace-nowrap rounded-full border border-border px-2 py-0.5 text-center text-xs capitalize text-muted-foreground">
           {statusLabel(proposal.status)}
         </span>
       </div>
@@ -232,7 +232,7 @@ export default function RunbookProposalArtifact({
         </div>
 
         <div>
-          <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+          <div className="mb-2 text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
             {t("common.incidentArtifactsRail.proposal.steps")}
           </div>
           <div className="space-y-2">
@@ -246,7 +246,7 @@ export default function RunbookProposalArtifact({
         </div>
 
         <div>
-          <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+          <div className="mb-2 text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
             {t("common.incidentArtifactsRail.proposal.proposedChanges")}
           </div>
           <div className="space-y-2">
@@ -290,7 +290,7 @@ export default function RunbookProposalArtifact({
           <summary className="cursor-pointer px-3 py-2 text-xs font-medium">
             {t("common.incidentArtifactsRail.proposal.rawJson")}
           </summary>
-          <pre className="min-w-0 max-w-full max-h-72 overflow-x-hidden overflow-y-auto border-t border-border p-3 text-[11px] leading-relaxed whitespace-pre-wrap break-all">
+          <pre className="min-w-0 max-w-full max-h-72 overflow-x-hidden overflow-y-auto border-t border-border p-3 text-xs leading-relaxed whitespace-pre-wrap break-all">
             {JSON.stringify(selectedProposal, null, 2)}
           </pre>
         </details>

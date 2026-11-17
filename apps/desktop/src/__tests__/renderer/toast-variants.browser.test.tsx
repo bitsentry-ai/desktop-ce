@@ -95,6 +95,16 @@ describe.each(["light", "dark"] as const)("toasts and alerts in %s mode", (theme
       const ratio = contrast(element);
       expect(ratio, `${theme}: "${element.textContent ?? ""}" is ${ratio.toFixed(2)}:1`).toBeGreaterThanOrEqual(4.5);
     }
+    // Each typed toast's icon carries its status colour (not the title's), at 3:1 or more for a graphic.
+    const typed = new Set(["error", "warning", "success", "info"]);
+    for (const item of toasts.filter((toastItem) => typed.has(toastItem.getAttribute("data-type") ?? ""))) {
+      const icon = item.querySelector("[data-icon] svg");
+      const title = item.querySelector("[data-title]");
+      expect(icon, `${theme}: ${item.getAttribute("data-type") ?? ""} toast has an icon`).not.toBeNull();
+      if (icon === null || title === null) continue;
+      expect(getComputedStyle(icon).color).not.toBe(getComputedStyle(title).color);
+      expect(contrast(icon)).toBeGreaterThanOrEqual(3);
+    }
     if (SCREENSHOT_DIR !== undefined) {
       await page.screenshot({ path: `${SCREENSHOT_DIR}/toasts-and-alerts_${theme}.png` });
     }

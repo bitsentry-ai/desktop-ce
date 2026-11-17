@@ -131,7 +131,7 @@ export function TraitsDropdown({
         onClick={() => { setOpen((value) => !value); }}
         disabled={disabled}
         className={cn(
-          "flex h-7 items-center gap-1 rounded-md px-2 text-[11px] transition-colors",
+          "flex h-7 items-center gap-1 rounded-md px-2 text-xs transition-colors",
           "text-muted-foreground hover:bg-accent hover:text-foreground/80",
           "disabled:cursor-not-allowed disabled:opacity-50",
           open && "bg-accent text-foreground/80",
@@ -198,7 +198,7 @@ function SelectSection({
     option.options[0]?.value;
   return (
     <div>
-      <div className="px-3 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+      <div className="px-3 pb-1 pt-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
         {translateLabel(t, option.label)}
       </div>
       {option.options.map((choice) => {
@@ -210,7 +210,7 @@ function SelectSection({
         let defaultLabel = null;
         if (choice.isDefault === true) {
           defaultLabel = (
-            <span className="ml-auto text-[10px] text-muted-foreground">
+            <span className="ml-auto text-xs text-muted-foreground">
               {t("common.traitsDropdown.default")}
             </span>
           );
@@ -261,7 +261,7 @@ function BooleanSection({
   const onLabel = t("common.traitsDropdown.on");
   return (
     <div>
-      <div className="px-3 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+      <div className="px-3 pb-1 pt-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
         {translateLabel(t, option.label)}
       </div>
       {[true, false].map((valueOption) => {
@@ -278,7 +278,7 @@ function BooleanSection({
         let defaultLabel = null;
         if (valueOption === option.defaultValue) {
           defaultLabel = (
-            <span className="ml-auto text-[10px] text-muted-foreground">
+            <span className="ml-auto text-xs text-muted-foreground">
               {t("common.traitsDropdown.default_2")}
             </span>
           );

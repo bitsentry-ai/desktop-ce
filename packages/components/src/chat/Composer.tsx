@@ -571,7 +571,7 @@ export function Composer({
                       {image.name}
                     </span>
                     {image.type === "csv" && (
-                      <span className="shrink-0 text-[11px] tabular-nums text-muted-foreground">
+                      <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
                         {t("common.incidents.attachmentRows", {
                           rowCount: image.rowCount,
                           totalRowCount: image.totalRowCount,

@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { ArrowRight, Check, ListChecks, X } from "lucide-react";
+import { SELECTION_BAR_CLASS } from "../lib/selectionBar";
 import { cn } from "../lib/utils";
 
 /**
@@ -108,7 +109,7 @@ export function SidebarStatusDot({ state, label }: { state: SidebarRunState; lab
 
 export function SidebarGroupLabel({ children, count, action }: { children: ReactNode; count?: number; action?: ReactNode }) {
   return (
-    <div className="flex h-6 items-center gap-1.5 px-2.5 pt-1 text-[11px] font-medium text-muted-foreground">
+    <div className="flex h-6 items-center gap-1.5 px-2.5 pt-1 text-xs font-medium text-muted-foreground">
       <span className="truncate">{children}</span>
       {count !== undefined && <span className="tabular-nums text-muted-foreground">{count}</span>}
       {action !== undefined && <span className="ml-auto flex items-center">{action}</span>}
@@ -149,18 +150,18 @@ export function SidebarRow({
           "flex min-h-8 items-center gap-2 rounded-md px-2.5 py-1.5 text-[13px] leading-5 text-muted-foreground transition-colors",
           "hover:bg-[hsl(var(--accent)/0.7)] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
           // Selection is a neutral surface with a brand indicator, so it never reads as "success".
-          active && "bg-accent text-foreground shadow-[inset_2px_0_0_hsl(var(--brand-emphasis))]",
+          active && cn("bg-[hsl(var(--selection))] text-foreground hover:bg-[hsl(var(--selection))]", SELECTION_BAR_CLASS),
         )}
       >
         {leading}
         <span className="min-w-0 flex-1">
           <span className={cn("block truncate", active ? "font-medium" : "text-foreground/85")}>{title}</span>
-          {meta !== undefined && <span className="block truncate text-[11px] leading-4 text-muted-foreground">{meta}</span>}
+          {meta !== undefined && <span className="block truncate text-xs leading-4 text-muted-foreground">{meta}</span>}
         </span>
         {trailing !== undefined && (
           <span
             className={cn(
-              "shrink-0 text-[11px] tabular-nums",
+              "shrink-0 text-xs tabular-nums",
               live ? "" : "text-muted-foreground/80",
               hoverAction !== undefined && "group-hover/row:invisible group-focus-within/row:invisible",
             )}

@@ -49,6 +49,15 @@
   --warning-text: 30 90% 31%;
   --destructive-text: 0 72% 43%;
   --info-text: 217 85% 44%;
+  /*
+   * The status text colours under names Sonner does not use. Sonner sets its own --success-text, --info-text and
+   * --warning-text on the toaster, so inside a toast those names stop meaning ours. These resolve here at the root
+   * (light or dark) and keep our values inside toasts.
+   */
+  --status-success-text: var(--success-text);
+  --status-warning-text: var(--warning-text);
+  --status-info-text: var(--info-text);
+  --status-destructive-text: var(--destructive-text);
 
   /* --- Scrollbar --- */
   --scrollbar-track: 0 0% 100% / 0;
@@ -60,6 +69,8 @@
   --brand-foreground: 0 0% 100%;
   --brand-emphasis: 167 100% 25%;
   --brand-emphasis-surface: 160 60% 95%;
+  /* Selected item surface: a faint brand tint, distinct from the grey hover and from success. */
+  --selection: 160 30% 92.5%;
   --brand-emphasis-border: 162 50% 80%;
   --brand-emphasis-subtle: 166 70% 24%;
 
@@ -119,6 +130,7 @@
   --brand-foreground: 166 60% 5%;
   --brand-emphasis: 166 90% 48%;
   --brand-emphasis-surface: 162 50% 10%;
+  --selection: 164 22% 15.5%;
   --brand-emphasis-border: 162 45% 22%;
   --brand-emphasis-subtle: 160 60% 70%;
 

@@ -288,11 +288,11 @@ export function RunbookAuthoringProposalCards({
                       ? t("common.incidents.newRunbookProposal")
                       : t("common.incidents.runbookEditProposal")}
                   </span>
-                  <span className="rounded-md border border-border bg-muted px-1.5 py-0.5 text-[11px] text-muted-foreground">
+                  <span className="rounded-md border border-border bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
                     {t(statusKey)}
                   </span>
                   {proposal.saved && (
-                    <span className="rounded-md border border-emerald-500/30 bg-emerald-500/10 px-1.5 py-0.5 text-[11px] text-emerald-700 dark:text-emerald-300">
+                    <span className="rounded-md border border-emerald-500/30 bg-emerald-500/10 px-1.5 py-0.5 text-xs text-emerald-700 dark:text-emerald-300">
                       {t("common.incidents.savedAs", {
                         title:
                           savedTitleByProposalId[proposal.proposalId] ??
@@ -334,7 +334,7 @@ export function RunbookAuthoringProposalCards({
                 {riskLabels.map((riskLabel) => (
                   <span
                     key={riskLabel}
-                    className="rounded-md border border-amber-500/30 bg-amber-500/10 px-1.5 py-0.5 text-[11px] text-amber-700 dark:text-amber-300"
+                    className="rounded-md border border-amber-500/30 bg-amber-500/10 px-1.5 py-0.5 text-xs text-amber-700 dark:text-amber-300"
                   >
                     {riskLabel.replace(/_/g, " ")}
                   </span>
@@ -378,10 +378,10 @@ export function RunbookAuthoringProposalCards({
                     {diff.type.replace(/_/g, " ")}: {diff.rationale}
                   </summary>
                   <div className="mt-2 grid gap-2 md:grid-cols-2">
-                    <pre className="max-h-48 overflow-auto rounded bg-background p-2 text-[11px] leading-relaxed text-muted-foreground">
+                    <pre className="max-h-48 overflow-auto rounded bg-background p-2 text-xs leading-relaxed text-muted-foreground">
                       {JSON.stringify(diff.before, null, 2)}
                     </pre>
-                    <pre className="max-h-48 overflow-auto rounded bg-background p-2 text-[11px] leading-relaxed text-muted-foreground">
+                    <pre className="max-h-48 overflow-auto rounded bg-background p-2 text-xs leading-relaxed text-muted-foreground">
                       {JSON.stringify(diff.after, null, 2)}
                     </pre>
                   </div>

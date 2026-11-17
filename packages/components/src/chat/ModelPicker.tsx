@@ -347,7 +347,7 @@ export function ModelPicker({
       let shortcutContent: ReactNode = null;
       if (shortcut !== null) {
         shortcutContent = (
-          <span className="shrink-0 rounded bg-muted px-1 py-0.5 text-[10px] font-mono text-muted-foreground">
+          <span className="shrink-0 rounded bg-muted px-1 py-0.5 text-xs font-mono text-muted-foreground">
             {shortcut}
           </span>
         );
@@ -413,7 +413,7 @@ export function ModelPicker({
         disabled={disabled === true || configuredProviderKeys.length === 0}
         title={triggerTitle}
         className={cn(
-          "flex h-7 items-center gap-1.5 rounded-md px-2 text-[11px] transition-colors",
+          "flex h-7 items-center gap-1.5 rounded-md px-2 text-xs transition-colors",
           "text-muted-foreground hover:bg-accent hover:text-foreground/80",
           "disabled:cursor-not-allowed disabled:opacity-50",
           open && "bg-accent text-foreground/80",
@@ -474,7 +474,7 @@ export function ModelPicker({
             {isProviderLocked && triggerTitle !== undefined && (
               <div
                 role="status"
-                className="border-b border-border/60 px-3 py-2 text-[11px] text-muted-foreground"
+                className="border-b border-border/60 px-3 py-2 text-xs text-muted-foreground"
               >
                 {triggerTitle}
               </div>

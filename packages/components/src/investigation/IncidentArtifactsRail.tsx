@@ -1075,7 +1075,7 @@ function ArtifactListItem({
             </div>
             <span
               className={cn(
-                "rounded-full px-2 py-0.5 text-[10px] font-medium",
+                "rounded-full px-2 py-0.5 text-xs font-medium",
                 statusClasses(artifact.status),
               )}
             >
@@ -1184,7 +1184,7 @@ function ArtifactDetails({
           <div className="text-sm font-semibold">{artifact.runbookTitle}</div>
           <span
             className={cn(
-              "rounded-full px-2 py-0.5 text-[10px] font-medium",
+              "rounded-full px-2 py-0.5 text-xs font-medium",
               statusClasses(artifact.status),
             )}
           >
@@ -1209,7 +1209,7 @@ function ArtifactDetails({
         }
       >
         <div className={flow ? "px-4 py-4" : "min-h-0 overflow-y-auto px-4 py-4"}>
-          <div className="mb-3 flex items-center justify-between text-[11px] font-medium uppercase tracking-[0.06em] text-muted-foreground">
+          <div className="mb-3 flex items-center justify-between text-xs font-medium uppercase tracking-[0.06em] text-muted-foreground">
             <span>{t("common.incidentArtifactsRail.liveSteps")}</span>
             <span>
               {artifact.completedStepCount}/{artifact.stepCount || 0}
@@ -1244,7 +1244,7 @@ function ArtifactDetails({
                   )}
                 >
                   <div className="flex items-center gap-2">
-                    <span className="text-[10px] font-mono text-muted-foreground">
+                    <span className="text-xs font-mono text-muted-foreground">
                       {step.order}
                     </span>
                     <Icon size={13} className="text-muted-foreground" />
@@ -1255,12 +1255,12 @@ function ArtifactDetails({
                         })}
                     </span>
                   </div>
-                  <div className="mt-1 text-[11px] text-muted-foreground">
+                  <div className="mt-1 text-xs text-muted-foreground">
                     {actionTypeLabel(t, step.type)} •{" "}
                     {stepStatusLabel(t, step.status)}
                   </div>
                   {providerSummary !== null && (
-                    <div className="mt-1 text-[11px] text-muted-foreground">
+                    <div className="mt-1 text-xs text-muted-foreground">
                       {providerSummary}
                     </div>
                   )}
@@ -1297,7 +1297,7 @@ function ArtifactDetails({
         >
           <div className="space-y-3">
             <div>
-              <div className="mb-2 text-[11px] font-medium uppercase tracking-[0.06em] text-muted-foreground">
+              <div className="mb-2 text-xs font-medium uppercase tracking-[0.06em] text-muted-foreground">
                 {t("common.incidentArtifactsRail.executionParameters")}
               </div>
               <OutputContent
@@ -1306,7 +1306,7 @@ function ArtifactDetails({
               />
             </div>
             <div>
-              <div className="mb-2 text-[11px] font-medium uppercase tracking-[0.06em] text-muted-foreground">
+              <div className="mb-2 text-xs font-medium uppercase tracking-[0.06em] text-muted-foreground">
                 {t("common.incidentArtifactsRail.input")}
               </div>
               <OutputContent
@@ -1314,7 +1314,7 @@ function ArtifactDetails({
                 emptyMessage={t("common.incidentArtifactsRail.empty.input")}
               />
             </div>
-            <div className="text-[11px] font-medium uppercase tracking-[0.06em] text-muted-foreground">
+            <div className="text-xs font-medium uppercase tracking-[0.06em] text-muted-foreground">
               {t("common.incidentArtifactsRail.output")}
             </div>
             <OutputContent

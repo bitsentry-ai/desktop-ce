@@ -95,13 +95,14 @@
     -webkit-app-region: no-drag;
   }
 
-  /* Narrow windows: the sidebar folds into an icon rail (wide enough to keep
-     the macOS traffic lights inside it). Labels, sub-lists and the search
-     text hide; every item keeps its tooltip. */
+  /* Narrow windows: the sidebar folds into an 80px rail (wide enough to keep
+     the macOS traffic lights inside it). Each page keeps a short label under
+     its icon; sub-lists, chevrons and the search text hide, and every item
+     keeps its tooltip. */
   @media (max-width: 899px) {
     /* Beats the w-60 utility, which sits in a later layer. */
     .bs-sidebar:not([data-expanded="true"]) {
-      width: 4.75rem !important;
+      width: 5rem !important;
     }
 
     .bs-sidebar .bs-sidebar-railbar {
@@ -122,19 +123,39 @@
 
     .bs-sidebar:not([data-expanded="true"]) .nav-item {
       position: relative;
-      min-height: 2.5rem;
+      flex-direction: column;
+      gap: 0.125rem;
+      min-height: 3.25rem;
+      padding-block: 0.375rem;
     }
 
-    .bs-sidebar:not([data-expanded="true"]) .nav-item.active {
-      box-shadow: inset 2px 0 0 hsl(var(--brand-emphasis));
+    .bs-sidebar:not([data-expanded="true"]) .nav-item > span.bs-sidebar-label {
+      display: block;
+      flex: none;
+      max-width: 100%;
+      overflow: hidden;
+      padding-inline: 0.25rem;
+      font-size: 0.75rem;
+      line-height: 1rem;
+      font-weight: 500;
+      text-overflow: ellipsis;
+      white-space: nowrap;
     }
 
+    /* The rail hides the section rows, so its icon stays marked as selected. */
+    .bs-sidebar:not([data-expanded="true"]) .nav-item.active:has(+ * [aria-current="page"]) {
+      background-color: hsl(var(--selection));
+    }
+
+    .bs-sidebar:not([data-expanded="true"]) .nav-item.active:has(+ * [aria-current="page"])::before {
+      content: "";
+    }
 
     /* Opened from the rail: full width over the page, without moving the content. */
     .bs-sidebar[data-expanded="true"] {
       position: relative;
       z-index: 50;
-      margin-right: calc(4.75rem - 16rem);
+      margin-right: calc(5rem - 16rem);
       box-shadow: 8px 0 24px -12px hsl(var(--shadow-color) / 0.35);
     }
 
@@ -177,10 +198,34 @@
   }
 
   .nav-item.active {
+    position: relative;
     color: hsl(var(--foreground));
     font-weight: 600;
-    background-color: hsl(var(--accent));
-    box-shadow: inset 2px 0 0 hsl(var(--brand-emphasis));
+    background-color: hsl(var(--selection));
+  }
+
+  /* A straight 2px brand bar, drawn on its own so it does not bend around the rounded corners. */
+  .nav-item.active::before {
+    content: "";
+    position: absolute;
+    inset-block: 0.375rem;
+    left: 0;
+    width: 2px;
+    border-radius: 9999px;
+    background-color: hsl(var(--brand-emphasis));
+    pointer-events: none;
+  }
+
+  /*
+   * When a row inside the section is the selected one, only that row is marked: the section heading keeps its
+   * bold label but drops the surface and the bar, so the sidebar never shows two selections at once.
+   */
+  .nav-item.active:has(+ * [aria-current="page"]) {
+    background-color: transparent;
+  }
+
+  .nav-item.active:has(+ * [aria-current="page"])::before {
+    content: none;
   }
 
   .nav-item:focus-within:has(:focus-visible) {
