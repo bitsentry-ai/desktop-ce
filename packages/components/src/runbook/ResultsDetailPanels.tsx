@@ -1,7 +1,23 @@
-import { useId, useRef, type KeyboardEvent, type ReactNode } from "react";
+import {
+  Fragment,
+  useId,
+  useRef,
+  type CSSProperties,
+  type KeyboardEvent,
+  type ReactNode,
+} from "react";
 import { useTranslation } from "@bitsentry-ce/i18n";
 
 import { cn } from "../lib/utils";
+import {
+  RESULTS_COLUMN_MIN_PERCENT,
+  type ResultsColumnDivider,
+  type ResultsColumnSplit,
+} from "./resultsColumnSplit";
+import {
+  useResultsColumnSplit,
+  type ResultsColumnDividerHandlers,
+} from "./useResultsColumnSplit";
 
 export type ResultsPanelId = "summary" | "steps" | "output";
 
@@ -13,14 +29,69 @@ const PANEL_LABEL_KEYS: Record<ResultsPanelId, string> = {
   output: "common.results.output",
 };
 
-// Column widths at lg+, where all three panels sit side by side.
+// Column widths at lg+, where all three panels sit side by side. The widths
+// come from the split as CSS variables so they only apply at that breakpoint.
 const PANEL_WIDTH_CLASS: Record<ResultsPanelId, string> = {
-  summary: "lg:flex-1",
-  steps: "lg:flex-1",
-  output: "lg:flex-[1.35]",
+  summary: "lg:flex-[0_1_var(--results-col-summary)]",
+  steps: "lg:flex-[0_1_var(--results-col-steps)]",
+  output: "lg:flex-[0_1_var(--results-col-output)]",
 };
 
-function nextPanelForKey(key: string, current: ResultsPanelId): ResultsPanelId | null {
+function splitStyle(split: ResultsColumnSplit): CSSProperties {
+  return {
+    "--results-col-summary": `${String(split[0])}%`,
+    "--results-col-steps": `${String(split[1])}%`,
+    "--results-col-output": `${String(split[2])}%`,
+  } as CSSProperties;
+}
+
+/**
+ * A 1px rule between two columns with a wider invisible grip, draggable and
+ * movable with the arrow keys (Home / End jump to the limits, double-click
+ * resets). Hidden below lg, where the panels are tabs.
+ */
+function ColumnDivider({
+  divider,
+  split,
+  label,
+  controls,
+  dragging,
+  handlers,
+}: {
+  divider: ResultsColumnDivider;
+  split: ResultsColumnSplit;
+  label: string;
+  controls: string;
+  dragging: boolean;
+  handlers: ResultsColumnDividerHandlers;
+}) {
+  const before = split[divider];
+  const pair = before + split[divider + 1];
+  return (
+    <div
+      role="separator"
+      aria-orientation="vertical"
+      aria-label={label}
+      aria-controls={controls}
+      aria-valuenow={Math.round(before)}
+      aria-valuemin={RESULTS_COLUMN_MIN_PERCENT}
+      aria-valuemax={Math.round(pair - RESULTS_COLUMN_MIN_PERCENT)}
+      tabIndex={0}
+      data-dragging={dragging}
+      {...handlers}
+      className={cn(
+        "relative z-10 hidden w-px shrink-0 cursor-col-resize touch-none select-none bg-border outline-none transition-colors lg:block",
+        "before:absolute before:inset-y-0 before:-left-1.5 before:-right-1.5 before:content-['']",
+        "hover:bg-primary/50 focus-visible:bg-primary focus-visible:before:rounded-sm focus-visible:before:ring-2 focus-visible:before:ring-ring/40 data-[dragging=true]:bg-primary",
+      )}
+    />
+  );
+}
+
+function nextPanelForKey(
+  key: string,
+  current: ResultsPanelId,
+): ResultsPanelId | null {
   const index = PANEL_IDS.indexOf(current);
   switch (key) {
     case "ArrowRight":
@@ -39,9 +110,10 @@ function nextPanelForKey(key: string, current: ResultsPanelId): ResultsPanelId |
 /**
  * The Summary / Steps / Output body of a run result.
  *
- * At lg+ the three panels sit side by side. Below lg they would stack, and a
- * long output would bury the steps under it, so a tab bar pinned above the
- * scroll area shows one panel at a time instead.
+ * At lg+ the three panels sit side by side in resizable columns (Summary and
+ * Steps narrow, Output wide). Below lg they would stack, and a long output
+ * would bury the steps under it, so a tab bar pinned above the scroll area
+ * shows one panel at a time instead.
  */
 export function ResultsDetailPanels({
   activePanel,
@@ -58,7 +130,12 @@ export function ResultsDetailPanels({
 }) {
   const { t } = useTranslation();
   const idPrefix = useId();
-  const tabRefs = useRef<Partial<Record<ResultsPanelId, HTMLButtonElement | null>>>({});
+  const tabRefs = useRef<
+    Partial<Record<ResultsPanelId, HTMLButtonElement | null>>
+  >({});
+  const columnsRef = useRef<HTMLDivElement>(null);
+  const { split, draggingDivider, dividerHandlers } =
+    useResultsColumnSplit(columnsRef);
   const content: Record<ResultsPanelId, ReactNode> = { summary, steps, output };
 
   const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
@@ -108,22 +185,49 @@ export function ResultsDetailPanels({
           })}
         </div>
       </div>
-      <div className="flex min-h-0 flex-1 flex-col lg:flex-row lg:divide-x lg:divide-border">
-        {PANEL_IDS.map((panel) => (
-          <div
-            key={panel}
-            role="tabpanel"
-            id={`${idPrefix}-panel-${panel}`}
-            aria-labelledby={`${idPrefix}-tab-${panel}`}
-            className={cn(
-              "min-h-0 min-w-0 flex-1 overflow-hidden lg:block",
-              PANEL_WIDTH_CLASS[panel],
-              panel === activePanel ? "block" : "hidden",
-            )}
-          >
-            {content[panel]}
-          </div>
-        ))}
+      <div
+        ref={columnsRef}
+        style={splitStyle(split)}
+        className={cn(
+          "flex min-h-0 flex-1 flex-col lg:flex-row",
+          draggingDivider !== null && "cursor-col-resize select-none",
+        )}
+      >
+        {PANEL_IDS.map((panel, index) => {
+          const divider =
+            index < PANEL_IDS.length - 1
+              ? (index as ResultsColumnDivider)
+              : null;
+          return (
+            <Fragment key={panel}>
+              <div
+                role="tabpanel"
+                id={`${idPrefix}-panel-${panel}`}
+                aria-labelledby={`${idPrefix}-tab-${panel}`}
+                className={cn(
+                  "min-h-0 min-w-0 flex-1 overflow-hidden lg:block",
+                  PANEL_WIDTH_CLASS[panel],
+                  panel === activePanel ? "block" : "hidden",
+                )}
+              >
+                {content[panel]}
+              </div>
+              {divider !== null && (
+                <ColumnDivider
+                  divider={divider}
+                  split={split}
+                  label={t("common.results.resizeColumns", {
+                    before: t(PANEL_LABEL_KEYS[panel]),
+                    after: t(PANEL_LABEL_KEYS[PANEL_IDS[index + 1]]),
+                  })}
+                  controls={`${idPrefix}-panel-${panel}`}
+                  dragging={draggingDivider === divider}
+                  handlers={dividerHandlers(divider)}
+                />
+              )}
+            </Fragment>
+          );
+        })}
       </div>
     </div>
   );

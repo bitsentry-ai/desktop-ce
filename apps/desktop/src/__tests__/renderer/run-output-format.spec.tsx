@@ -88,12 +88,23 @@ describe("detectRunOutputFormat", () => {
 });
 
 describe("runOutputPreview", () => {
-  it("previews the lead sentence of a JSON payload", () => {
-    expect(runOutputPreview('Fetched 2 rows.\n{"rows":[1,2]}')).toBe("Fetched 2 rows.");
+  it("keeps the lead sentence apart from the pretty-printed payload", () => {
+    expect(runOutputPreview('Fetched 2 rows.\n{"rows":[1,2]}', 10)).toEqual({
+      lead: "Fetched 2 rows.",
+      body: '{\n  "rows": [\n    1,\n    2\n  ]\n}',
+      json: true,
+    });
   });
 
-  it("caps long text", () => {
-    expect(runOutputPreview("x".repeat(1000))).toHaveLength(400);
+  it("caps the body at the line limit", () => {
+    const value = Array.from({ length: 30 }, (_, index) => `line ${String(index)}`).join("\n");
+    const preview = runOutputPreview(value, 5);
+    expect(preview?.json).toBe(false);
+    expect(preview?.body.split("\n")).toHaveLength(5);
+  });
+
+  it("returns null for blank output", () => {
+    expect(runOutputPreview("  ", 5)).toBeNull();
   });
 });
 

@@ -29,7 +29,6 @@ export type RunOutputFormat =
 // Only the first few lines that open a JSON value are tried, so a long log
 // with many `{` lines costs a bounded number of parse attempts.
 const MAX_EMBEDDED_JSON_CANDIDATES = 3;
-const PREVIEW_MAX_LENGTH = 400;
 
 function isJsonContainer(value: unknown): value is object {
   return value !== null && typeof value === "object";
@@ -56,7 +55,8 @@ export function parseJsonContainer(text: string): object | null {
   }
 
   if (isJsonContainer(parsed)) return parsed;
-  if (typeof parsed !== "string" || !opensJsonContainer(parsed.trim())) return null;
+  if (typeof parsed !== "string" || !opensJsonContainer(parsed.trim()))
+    return null;
 
   try {
     const inner: unknown = JSON.parse(parsed);
@@ -70,7 +70,9 @@ export function parseJsonContainer(text: string): object | null {
  * Finds a JSON object or array that starts at the beginning of a line and runs
  * to the end of the text, returning the prose before it.
  */
-function findTrailingJson(text: string): { lead: string; value: object } | null {
+function findTrailingJson(
+  text: string,
+): { lead: string; value: object } | null {
   let attempts = 0;
   let lineStart = 0;
   while (lineStart < text.length && attempts < MAX_EMBEDDED_JSON_CANDIDATES) {
@@ -98,12 +100,18 @@ function hasMarkdownStructureLine(text: string): boolean {
       const headingLength = value.indexOf(" ");
       return headingLength > 0 && headingLength <= 6;
     }
-    if (["-", "*", "+", ">"].includes(firstCharacter) && value[1] === " ") return true;
+    if (["-", "*", "+", ">"].includes(firstCharacter) && value[1] === " ")
+      return true;
     if (value.startsWith("|") && value.lastIndexOf("|") > 0) return true;
 
     let digitCount = 0;
-    while (value[digitCount] >= "0" && value[digitCount] <= "9") digitCount += 1;
-    return digitCount > 0 && value[digitCount] === "." && value[digitCount + 1] === " ";
+    while (value[digitCount] >= "0" && value[digitCount] <= "9")
+      digitCount += 1;
+    return (
+      digitCount > 0 &&
+      value[digitCount] === "." &&
+      value[digitCount + 1] === " "
+    );
   });
 }
 
@@ -111,7 +119,8 @@ function hasDelimitedText(value: string, delimiter: string): boolean {
   const first = value.indexOf(delimiter);
   return (
     first >= 0 &&
-    value.indexOf(delimiter, first + delimiter.length) > first + delimiter.length
+    value.indexOf(delimiter, first + delimiter.length) >
+      first + delimiter.length
   );
 }
 
@@ -172,23 +181,40 @@ export function stringifyForOutput(value: unknown): string {
   }
 }
 
+export interface RunOutputPreview {
+  /** Prose before a JSON payload; empty otherwise. */
+  lead: string;
+  /** The payload as it reads in the Output column, capped at `maxLines`. */
+  body: string;
+  json: boolean;
+}
+
 /**
- * A short plain-text excerpt for the Summary column. JSON with a lead sentence
- * previews the sentence; everything else previews its opening characters.
+ * The Summary column's view of an output: the same formatted text the Output
+ * column shows (pretty JSON, or the text itself), capped at `maxLines` lines so
+ * expanding the preview never lays out an unbounded payload.
  */
-export function runOutputPreview(value: string): string {
+export function runOutputPreview(
+  value: string,
+  maxLines: number,
+): RunOutputPreview | null {
   const format = detectRunOutputFormat(value);
   switch (format.kind) {
     case "empty":
-      return "";
+      return null;
     case "json":
-      return (format.lead.length > 0 ? format.lead : format.display).slice(
-        0,
-        PREVIEW_MAX_LENGTH,
-      );
+      return {
+        lead: format.lead,
+        body: truncateLines(format.display, maxLines).text,
+        json: true,
+      };
     case "markdown":
     case "text":
-      return format.text.slice(0, PREVIEW_MAX_LENGTH);
+      return {
+        lead: "",
+        body: truncateLines(format.text, maxLines).text,
+        json: false,
+      };
   }
 }
 
@@ -202,7 +228,11 @@ export interface TruncatedLines {
 export function truncateLines(text: string, maxLines: number): TruncatedLines {
   let newlineCount = 0;
   let cutAt = -1;
-  for (let index = text.indexOf("\n"); index !== -1; index = text.indexOf("\n", index + 1)) {
+  for (
+    let index = text.indexOf("\n");
+    index !== -1;
+    index = text.indexOf("\n", index + 1)
+  ) {
     newlineCount += 1;
     if (newlineCount === maxLines) cutAt = index;
   }
