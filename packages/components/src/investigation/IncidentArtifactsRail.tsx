@@ -301,17 +301,17 @@ function stepStatusLabel(
 function statusClasses(status: IncidentArtifactEntry["status"]): string {
   switch (status) {
     case "starting":
-      return "bg-[hsl(var(--info)/0.1)] text-[hsl(var(--info))]";
+      return "bg-[hsl(var(--info)/0.1)] text-[hsl(var(--info-text))]";
     case "queued":
-      return "bg-[hsl(var(--info)/0.1)] text-[hsl(var(--info))]";
+      return "bg-[hsl(var(--info)/0.1)] text-[hsl(var(--info-text))]";
     case "pending":
-      return "bg-[hsl(var(--info)/0.1)] text-[hsl(var(--info))]";
+      return "bg-[hsl(var(--info)/0.1)] text-[hsl(var(--info-text))]";
     case "running":
-      return "bg-[hsl(var(--warning)/0.12)] text-[hsl(var(--warning))]";
+      return "bg-[hsl(var(--warning)/0.12)] text-[hsl(var(--warning-text))]";
     case "claim_expired":
-      return "bg-[hsl(var(--destructive)/0.1)] text-[hsl(var(--destructive))]";
+      return "bg-[hsl(var(--destructive)/0.1)] text-[hsl(var(--destructive-text))]";
     case "completed":
-      return "bg-[hsl(var(--success)/0.1)] text-[hsl(var(--success))]";
+      return "bg-[hsl(var(--success)/0.1)] text-[hsl(var(--success-text))]";
     case "failed":
       return "bg-destructive/15 text-destructive";
     case "cancelled":
@@ -1244,7 +1244,7 @@ function ArtifactDetails({
                   )}
                 >
                   <div className="flex items-center gap-2">
-                    <span className="text-[10px] font-mono text-muted-foreground/60">
+                    <span className="text-[10px] font-mono text-muted-foreground">
                       {step.order}
                     </span>
                     <Icon size={13} className="text-muted-foreground" />

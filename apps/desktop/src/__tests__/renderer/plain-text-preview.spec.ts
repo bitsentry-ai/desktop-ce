@@ -15,6 +15,10 @@ describe("markdownToPlainText", () => {
     ).toBe("Wazuh snapshot · Taken · Scope see the runbook")
   })
 
+  it("drops table rules that arrive on one line", () => {
+    expect(markdownToPlainText("Snapshot | Taken | |---|---:| | 003 | 12:00 |")).toBe("Snapshot · Taken · 003 · 12:00")
+  })
+
   it("leaves identifiers with underscores alone", () => {
     expect(markdownToPlainText("snake_case_name and a_b stay")).toBe("snake_case_name and a_b stay")
   })

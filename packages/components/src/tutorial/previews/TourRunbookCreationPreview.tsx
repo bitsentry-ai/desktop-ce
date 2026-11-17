@@ -47,7 +47,7 @@ export default function TourRunbookCreationPreview() {
                 className="mt-0.5 w-full bg-transparent text-xs text-muted-foreground outline-none"
               />
             </div>
-            <span className="hidden shrink-0 text-[11px] text-muted-foreground/70 md:block">
+            <span className="hidden shrink-0 text-[11px] text-muted-foreground md:block">
               Auto-saves on Done
             </span>
             <button className="flex size-7 shrink-0 items-center justify-center rounded-md border border-border">
@@ -95,7 +95,7 @@ export default function TourRunbookCreationPreview() {
 
                 <div className="mt-4 space-y-4">
                   <label className="block space-y-1.5">
-                    <span className="block text-[10px] font-medium uppercase text-muted-foreground/60">
+                    <span className="block text-[10px] font-medium uppercase text-muted-foreground">
                       Title
                     </span>
                     <input
@@ -106,7 +106,7 @@ export default function TourRunbookCreationPreview() {
                   </label>
 
                   <label data-tour="runbook-create-global-reference" className="block space-y-1.5">
-                    <span className="block text-[10px] font-medium uppercase text-muted-foreground/60">
+                    <span className="block text-[10px] font-medium uppercase text-muted-foreground">
                       Command
                     </span>
                     <textarea
@@ -132,7 +132,7 @@ export default function TourRunbookCreationPreview() {
 
                   <div data-tour="runbook-create-parameters">
                     <div className="mb-1.5 flex items-center justify-between">
-                      <span className="text-[10px] font-medium uppercase text-muted-foreground/60">
+                      <span className="text-[10px] font-medium uppercase text-muted-foreground">
                         Parameters
                       </span>
                       <button className="text-[10px] uppercase text-muted-foreground">

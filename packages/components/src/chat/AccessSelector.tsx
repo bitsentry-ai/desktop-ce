@@ -65,7 +65,7 @@ export function AccessSelector({
         disabled={disabled}
         className={cn(
           "flex h-7 items-center gap-1.5 rounded-md px-2 text-[11px] transition-colors",
-          "text-muted-foreground/70 hover:bg-accent hover:text-foreground/80",
+          "text-muted-foreground hover:bg-accent hover:text-foreground/80",
           "disabled:cursor-not-allowed disabled:opacity-50",
           open && "bg-accent text-foreground/80",
         )}

@@ -61,7 +61,7 @@ function StatusPill({ status }: { status: string }) {
   let cls = "bg-muted text-muted-foreground";
   let label = "Idle";
   if (status === "COMPLETED") {
-    cls = "bg-[hsl(var(--success)/0.1)] text-[hsl(var(--success))]";
+    cls = "bg-[hsl(var(--success)/0.1)] text-[hsl(var(--success-text))]";
     label = "Completed";
   }
 
@@ -76,7 +76,7 @@ function ArtifactStatusBadge({ status }: { status: string }) {
   const map: Record<string, { label: string; cls: string }> = {
     completed: {
       label: "Completed",
-      cls: "bg-[hsl(var(--success)/0.1)] text-[hsl(var(--success))]",
+      cls: "bg-[hsl(var(--success)/0.1)] text-[hsl(var(--success-text))]",
     },
     failed: { label: "Failed", cls: "bg-destructive/15 text-destructive" },
   };
@@ -201,7 +201,7 @@ export default function TourIncidentsPreview() {
                       placeholder={t(
                         "common.tourIncidentsPreview.describeTheSecurityIssueTo",
                       )}
-                      className="w-full resize-none bg-transparent text-sm outline-none placeholder:text-muted-foreground/50"
+                      className="w-full resize-none bg-transparent text-sm outline-none placeholder:text-muted-foreground"
                       rows={2}
                     />
                   </div>
@@ -211,7 +211,7 @@ export default function TourIncidentsPreview() {
                         data-tour="incidents-model-picker"
                         className="relative z-30 shrink-0"
                       >
-                        <button className="flex h-8 items-center gap-1.5 rounded-md px-2 text-xs text-muted-foreground/70 hover:bg-accent sm:px-3">
+                        <button className="flex h-8 items-center gap-1.5 rounded-md px-2 text-xs text-muted-foreground hover:bg-accent sm:px-3">
                           {t("common.tourIncidentsPreview.groqGptOss120b")}
                           <svg
                             width="10"
@@ -316,7 +316,7 @@ export default function TourIncidentsPreview() {
                               {a.stepsCompleted}/{a.stepsTotal}{" "}
                               {t("common.tourIncidentsPreview.stepsComplete")}
                             </div>
-                            <div className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground/70">
+                            <div className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground">
                               <span>→</span>
                               <span className="truncate">{a.latestStep}</span>
                               <span className="text-muted-foreground/40">
@@ -354,7 +354,7 @@ export default function TourIncidentsPreview() {
                             </span>
                             <ArtifactStatusBadge status={a.status} />
                           </div>
-                          <div className="text-[10px] uppercase tracking-widest text-muted-foreground/50">
+                          <div className="text-[10px] uppercase tracking-widest text-muted-foreground">
                             {t("common.tourIncidentsPreview.latestStep")}
                           </div>
                           <div className="rounded-lg border border-border px-3 py-2 text-xs">

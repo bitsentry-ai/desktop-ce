@@ -53,7 +53,7 @@ function stripInline(line: string): string {
     text = text
       .split("|")
       .map((cell) => cell.trim())
-      .filter((cell) => cell.length > 0)
+      .filter((cell) => cell.length > 0 && !isTableRule(`${cell}---`))
       .join(" · ");
   }
   return text;
@@ -86,9 +86,9 @@ export type StatusTone = "neutral" | "running" | "success" | "danger";
 export const statusToneClass: Record<StatusTone, string> = {
   neutral: "bg-muted text-muted-foreground before:bg-muted-foreground/60",
   running:
-    "bg-[hsl(var(--warning)/0.12)] text-[hsl(var(--warning))] before:bg-[hsl(var(--warning))] before:animate-pulse",
-  success: "bg-[hsl(var(--success)/0.1)] text-[hsl(var(--success))] before:bg-[hsl(var(--success))]",
-  danger: "bg-[hsl(var(--destructive)/0.1)] text-[hsl(var(--destructive))] before:bg-[hsl(var(--destructive))]",
+    "bg-[hsl(var(--warning)/0.12)] text-[hsl(var(--warning-text))] before:bg-[hsl(var(--warning))] before:animate-pulse",
+  success: "bg-[hsl(var(--success)/0.1)] text-[hsl(var(--success-text))] before:bg-[hsl(var(--success))]",
+  danger: "bg-[hsl(var(--destructive)/0.1)] text-[hsl(var(--destructive-text))] before:bg-[hsl(var(--destructive))]",
 };
 
 export const statusPillBaseClass =

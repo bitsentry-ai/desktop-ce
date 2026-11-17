@@ -30,6 +30,17 @@ import {
   DialogTitle,
 } from "../ui/dialog";
 import { getDesktopApi } from "../services/desktop-api";
+import { KeyboardShortcutsList, defaultNavigationCommands } from "../shortcuts";
+
+const noop = () => undefined;
+/** Every desktop shortcut, read-only; the palette host owns the handlers. */
+const SHORTCUT_REFERENCE = defaultNavigationCommands(noop, {
+  routes: { settings: "/app-settings" },
+  togglePalette: noop,
+  showShortcuts: noop,
+  newIncident: noop,
+  toggleTheme: noop,
+});
 
 type CaptureDesktopAnalyticsEvent = (
   event: string,
@@ -234,6 +245,19 @@ export function DesktopAppSettingsScaffold({
           </>
         )}
 
+        <div className="border-t border-border" />
+
+        <section id="shortcuts" className="scroll-mt-24">
+          <div className="mb-4">
+            <h2 className="text-sm font-semibold text-foreground">
+              {t("common.shortcuts.title")}
+            </h2>
+            <p className="text-xs text-muted-foreground">
+              {t("common.shortcuts.description")}
+            </p>
+          </div>
+          <KeyboardShortcutsList commands={SHORTCUT_REFERENCE} />
+        </section>
         <div className="border-t border-border" />
 
         <section

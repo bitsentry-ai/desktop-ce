@@ -80,7 +80,7 @@ const TYPE_LABELS: Record<string, string> = {
 function statusClass(status: string): string {
   switch (status) {
     case "completed":
-      return "bg-[hsl(var(--success)/0.1)] text-[hsl(var(--success))]";
+      return "bg-[hsl(var(--success)/0.1)] text-[hsl(var(--success-text))]";
     case "failed":
       return "bg-destructive/15 text-destructive";
     default:
@@ -100,7 +100,7 @@ export default function TourResultsPreview() {
   const selectedStep = DEMO_STEPS.find((s) => s.id === selectedStepId) ?? null;
 
   let outputContent: ReactNode = (
-    <p className="text-xs italic text-muted-foreground/50">
+    <p className="text-xs italic text-muted-foreground">
       {t("common.tourResultsPreview.selectAStepToInspect")}
     </p>
   );
@@ -172,7 +172,7 @@ export default function TourResultsPreview() {
               {RUNBOOK_TITLE}
             </button>
             <span className="text-muted-foreground/30">/</span>
-            <span className="font-mono text-xs text-muted-foreground/50">
+            <span className="font-mono text-xs text-muted-foreground">
               {EXECUTION_ID.slice(0, 8)}
             </span>
             <span
@@ -204,13 +204,13 @@ export default function TourResultsPreview() {
                 </div>
                 <div className="flex-1 space-y-4 overflow-y-auto px-4 py-4 text-sm">
                   <div>
-                    <span className="text-xs text-muted-foreground/60">
+                    <span className="text-xs text-muted-foreground">
                       {t("common.tourResultsPreview.runbook")}
                     </span>
                     <div className="font-medium">{RUNBOOK_TITLE}</div>
                   </div>
                   <div>
-                    <span className="text-xs text-muted-foreground/60">
+                    <span className="text-xs text-muted-foreground">
                       {t("common.tourResultsPreview.status")}
                     </span>
                     <div>
@@ -225,7 +225,7 @@ export default function TourResultsPreview() {
                     </div>
                   </div>
                   <div>
-                    <span className="text-xs text-muted-foreground/60">
+                    <span className="text-xs text-muted-foreground">
                       {t("common.tourResultsPreview.steps")}
                     </span>
                     <div>
@@ -237,7 +237,7 @@ export default function TourResultsPreview() {
                     </div>
                   </div>
                   <div>
-                    <span className="text-xs text-muted-foreground/60">
+                    <span className="text-xs text-muted-foreground">
                       {t("common.tourResultsPreview.parameters")}
                     </span>
                     <pre className="mt-1 rounded-lg border border-border bg-muted/30 px-3 py-2 text-xs font-mono">

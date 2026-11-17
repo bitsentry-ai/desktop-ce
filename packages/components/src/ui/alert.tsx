@@ -4,13 +4,20 @@ import { cva, type VariantProps } from "class-variance-authority";
 import { cn } from "../lib/utils";
 
 const alertVariants = cva(
-  "relative w-full rounded-lg border p-4 [&>svg~*]:pl-7 [&>svg+div]:translate-y-[-3px] [&>svg]:absolute [&>svg]:left-4 [&>svg]:top-4 [&>svg]:text-foreground",
+  "relative w-full rounded-lg border p-4 text-foreground [&>svg~*]:pl-7 [&>svg+div]:translate-y-[-3px] [&>svg]:absolute [&>svg]:left-4 [&>svg]:top-4 [&>svg]:size-4 [&>svg]:text-muted-foreground",
   {
+    // Tinted surface plus a status icon; the text stays in the foreground
+    // colors so titles and descriptions pass AA on every variant.
     variants: {
       variant: {
-        default: "bg-background text-foreground",
+        default: "border-border bg-card",
         destructive:
-          "border-destructive/50 text-destructive dark:border-destructive [&>svg]:text-destructive",
+          "border-[hsl(var(--destructive)/0.3)] bg-[hsl(var(--destructive)/0.06)] [&>svg]:text-[hsl(var(--destructive-text))]",
+        warning:
+          "border-[hsl(var(--warning)/0.35)] bg-[hsl(var(--warning)/0.07)] [&>svg]:text-[hsl(var(--warning-text))]",
+        success:
+          "border-[hsl(var(--success)/0.3)] bg-[hsl(var(--success)/0.06)] [&>svg]:text-[hsl(var(--success-text))]",
+        info: "border-[hsl(var(--info)/0.3)] bg-[hsl(var(--info)/0.06)] [&>svg]:text-[hsl(var(--info-text))]",
       },
     },
     defaultVariants: {
@@ -50,7 +57,7 @@ const AlertDescription = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <div
     ref={ref}
-    className={cn("text-sm [&_p]:leading-relaxed", className)}
+    className={cn("text-sm text-muted-foreground [&_p]:leading-relaxed", className)}
     {...props}
   />
 ));

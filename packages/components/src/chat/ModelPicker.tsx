@@ -315,7 +315,7 @@ export function ModelPicker({
   }
 
   let modelListContent: ReactNode = (
-    <div className="px-3 py-3 text-xs text-muted-foreground/50">
+    <div className="px-3 py-3 text-xs text-muted-foreground">
       {t("common.modelPicker.noModelsFound")}
     </div>
   );
@@ -324,7 +324,7 @@ export function ModelPicker({
     modelLoadErrors[panelProvider] === true
   ) {
     modelListContent = (
-      <div className="px-3 py-3 text-xs text-muted-foreground/50">
+      <div className="px-3 py-3 text-xs text-muted-foreground">
         {t("common.modelPicker.modelsUnavailable")}
       </div>
     );
@@ -347,7 +347,7 @@ export function ModelPicker({
       let shortcutContent: ReactNode = null;
       if (shortcut !== null) {
         shortcutContent = (
-          <span className="shrink-0 rounded bg-muted px-1 py-0.5 text-[10px] font-mono text-muted-foreground/50">
+          <span className="shrink-0 rounded bg-muted px-1 py-0.5 text-[10px] font-mono text-muted-foreground">
             {shortcut}
           </span>
         );
@@ -414,7 +414,7 @@ export function ModelPicker({
         title={triggerTitle}
         className={cn(
           "flex h-7 items-center gap-1.5 rounded-md px-2 text-[11px] transition-colors",
-          "text-muted-foreground/70 hover:bg-accent hover:text-foreground/80",
+          "text-muted-foreground hover:bg-accent hover:text-foreground/80",
           "disabled:cursor-not-allowed disabled:opacity-50",
           open && "bg-accent text-foreground/80",
         )}
@@ -482,14 +482,14 @@ export function ModelPicker({
 
             {/* Search */}
             <div className="relative px-3 pt-2 pb-1">
-              <Search size={12} className="absolute left-5 top-1/2 -translate-y-1/2 mt-0.5 text-muted-foreground/50" />
+              <Search size={12} className="absolute left-5 top-1/2 -translate-y-1/2 mt-0.5 text-muted-foreground" />
               <input
                 ref={searchRef}
                 type="text"
                 value={search}
                 onChange={(e) => { setSearch(e.target.value); }}
                 placeholder={t("common.modelPicker.searchModels")}
-                className="w-full rounded-md bg-muted/40 py-1.5 pl-6 pr-2 text-xs outline-none placeholder:text-muted-foreground/50 focus:bg-muted/60"
+                className="w-full rounded-md bg-muted/40 py-1.5 pl-6 pr-2 text-xs outline-none placeholder:text-muted-foreground focus:bg-muted/60"
               />
             </div>
 

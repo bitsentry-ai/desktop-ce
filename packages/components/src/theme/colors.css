@@ -28,7 +28,7 @@
   --secondary-foreground: 222 14% 11%;
   --muted: 220 14% 96%;
   --muted-foreground: 220 8% 44%;
-  --accent: 220 14% 94.5%;
+  --accent: 220 14% 92%;
   --accent-foreground: 222 14% 11%;
 
   /* --- Borders & Inputs --- */
@@ -43,6 +43,11 @@
   --success: 152 64% 30%;
   --warning: 32 95% 40%;
   --info: 217 85% 50%;
+  /* Status text: AA (>= 4.5:1) on the surface and on a 12% status tint. */
+  --success-text: 152 64% 27%;
+  --warning-text: 30 90% 31%;
+  --destructive-text: 0 72% 43%;
+  --info-text: 217 85% 44%;
 
   /* --- Scrollbar --- */
   --scrollbar-track: 0 0% 100% / 0;
@@ -83,7 +88,7 @@
   --secondary-foreground: 220 14% 93%;
   --muted: 228 6% 13.5%;
   --muted-foreground: 220 8% 63%;
-  --accent: 228 6% 15.5%;
+  --accent: 228 7% 18%;
   --accent-foreground: 220 14% 93%;
 
   /* --- Borders & Inputs --- */
@@ -93,11 +98,15 @@
   --ring: 190 90% 52%;
 
   /* --- Status --- */
-  --destructive: 0 72% 60%;
+  --destructive: 0 70% 52%;
   --destructive-foreground: 0 0% 98%;
   --success: 152 55% 52%;
   --warning: 38 90% 60%;
   --info: 213 94% 70%;
+  --success-text: 152 55% 60%;
+  --warning-text: 38 90% 62%;
+  --destructive-text: 0 85% 72%;
+  --info-text: 213 94% 74%;
 
   /* --- Scrollbar --- */
   --scrollbar-track: 0 0% 0% / 0;

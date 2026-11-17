@@ -10,17 +10,17 @@ export const badgeVariants = cva(
         secondary:
           "border-border bg-muted/70 text-muted-foreground",
         destructive:
-          "border-[hsl(var(--destructive)/0.2)] bg-[hsl(var(--destructive)/0.1)] text-[hsl(var(--destructive))]",
+          "border-[hsl(var(--destructive)/0.2)] bg-[hsl(var(--destructive)/0.1)] text-[hsl(var(--destructive-text))]",
         outline: "border-input bg-transparent text-foreground",
         accent:
           "border-[hsl(var(--brand-emphasis-border))] bg-[hsl(var(--brand-emphasis-surface))] text-[hsl(var(--brand-emphasis))]",
         success:
-          "border-[hsl(var(--success)/0.18)] bg-[hsl(var(--success)/0.08)] text-[hsl(var(--success))]",
+          "border-[hsl(var(--success)/0.18)] bg-[hsl(var(--success)/0.08)] text-[hsl(var(--success-text))]",
         warning:
-          "border-[hsl(var(--warning)/0.2)] bg-[hsl(var(--warning)/0.1)] text-[hsl(var(--warning))]",
+          "border-[hsl(var(--warning)/0.2)] bg-[hsl(var(--warning)/0.1)] text-[hsl(var(--warning-text))]",
         critical:
-          "border-[hsl(var(--destructive)/0.2)] bg-[hsl(var(--destructive)/0.08)] text-[hsl(var(--destructive))]",
-        info: "border-[hsl(var(--info)/0.2)] bg-[hsl(var(--info)/0.08)] text-[hsl(var(--info))]",
+          "border-[hsl(var(--destructive)/0.2)] bg-[hsl(var(--destructive)/0.08)] text-[hsl(var(--destructive-text))]",
+        info: "border-[hsl(var(--info)/0.2)] bg-[hsl(var(--info)/0.08)] text-[hsl(var(--info-text))]",
       },
     },
     defaultVariants: {

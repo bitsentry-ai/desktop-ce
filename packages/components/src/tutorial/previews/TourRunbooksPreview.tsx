@@ -138,7 +138,7 @@ export default function TourRunbooksPreview() {
             <span className="shrink-0 text-xs text-muted-foreground">
               {DEMO_ACTIONS.length} actions
             </span>
-            <span className="hidden shrink-0 text-[11px] text-muted-foreground/70 lg:block">
+            <span className="hidden shrink-0 text-[11px] text-muted-foreground lg:block">
               {t("common.tourRunbooksPreview.autoSavesOnBlurDone")}
             </span>
             <button
@@ -221,7 +221,7 @@ export default function TourRunbooksPreview() {
                         })}
                       </div>
                       <div>
-                        <label className="mb-1.5 block text-[10px] font-medium uppercase tracking-wide text-muted-foreground/60">
+                        <label className="mb-1.5 block text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
                           {t("common.tourRunbooksPreview.title")}
                         </label>
                         <input
@@ -231,7 +231,7 @@ export default function TourRunbooksPreview() {
                         />
                       </div>
                       <div>
-                        <label className="mb-1.5 block text-[10px] font-medium uppercase tracking-wide text-muted-foreground/60">
+                        <label className="mb-1.5 block text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
                           {fieldLabel}
                         </label>
                         <div className="rounded-lg border border-border bg-muted/20 px-3 py-2 text-xs text-muted-foreground font-mono">
