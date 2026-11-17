@@ -930,10 +930,7 @@ const borrowOpenCodeServer = createProcessPool<OpenCodeServerSpec, OpenCodeServe
       BITSENTRY_MCP_CONTEXT_ID: identity.contextId,
       OPENCODE_SERVER_PASSWORD: password,
     })
-    const url = waitForOpenCodeServer(child)
-    // A cancel before the pool starts the server leaves this promise unawaited.
-    url.catch(() => undefined)
-    return Promise.resolve({ child, url, password, identity })
+    return Promise.resolve({ child, url: waitForOpenCodeServer(child), password, identity })
   },
   start: async (server, onExit) => {
     server.child.once('exit', onExit)
