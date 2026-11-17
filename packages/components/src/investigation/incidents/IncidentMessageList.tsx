@@ -3,10 +3,9 @@ import { LegendList, type LegendListRef, type MaintainScrollAtEndOptions } from 
 import { useTranslation } from "@bitsentry-ce/i18n";
 import { ChatBubble } from "../../chat/ChatBubble";
 import { CitationRevealContext } from "../../chat/CitationControls";
-import { revealCitation } from "../../chat/citationDom";
+import { revealCitationInMessages } from "../../chat/citationDom";
 import type { AssistantCitation } from "../../chat/citations";
 import type { ChatMessage } from "../../chat/types";
-import { iterationTextSourceId } from "../../chat/turnTimelineRows";
 import { useLiveMessage } from "./liveMessageStore";
 
 // Same pinning as T3 Code's timeline: follow the newest output on every trigger, without animating.
@@ -20,9 +19,6 @@ const MAINTAIN_SCROLL_AT_END = {
 const FOLLOW_REARM_THRESHOLD_PX = 40;
 // Back at the very end, following resumes even when a small move up never left the band.
 const END_EPSILON_PX = 1;
-
-// Frames to wait for a citation's source row to mount after scrolling to it.
-const REVEAL_MOUNT_FRAMES = 60;
 
 const UP_KEYS = ["PageUp", "Home", "ArrowUp"];
 const DOWN_KEYS = ["PageDown", "End", "ArrowDown"];
@@ -113,16 +109,9 @@ export const IncidentMessageList = memo(function IncidentMessageList({
     liveFollowRef.current = false;
     leftEndRef.current = true;
     setLiveFollow(false);
-    if (revealCitation(document, citation)) return;
-    const index = messages.findIndex((msg) =>
-      msg.kind === "agent" && msg.iterations.some((iteration) => iterationTextSourceId(iteration.id) === citation.sourceId));
-    if (index === -1) return;
-    void listRef.current?.scrollToIndex({ index, animated: false, viewPosition: 0.5 });
-    const retry = (frame: number) => {
-      if (revealCitation(document, citation) || frame >= REVEAL_MOUNT_FRAMES) return;
-      requestAnimationFrame(() => { retry(frame + 1); });
-    };
-    requestAnimationFrame(() => { retry(1); });
+    revealCitationInMessages(citation, messages, (index) => {
+      void listRef.current?.scrollToIndex({ index, animated: false, viewPosition: 0.5 });
+    });
   };
 
   useEffect(() => {

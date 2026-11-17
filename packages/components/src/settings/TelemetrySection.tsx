@@ -3,6 +3,7 @@ import { Button } from '@bitsentry-ce/components/ui/button'
 import { useToast } from '@bitsentry-ce/components/hooks/use-toast'
 import { useTranslation } from '@bitsentry-ce/i18n'
 import { getDesktopApi, type DesktopTelemetryStatus } from '../services/desktop-api'
+import { settingsDescriptionClass, settingsLabelClass, settingsSectionTitleClass } from './SettingsRow'
 
 type Translate = ReturnType<typeof useTranslation>['t']
 
@@ -53,10 +54,10 @@ function isToggleDisabled(
 function renderHeader(t: Translate): ReactNode {
   return (
     <div className="mb-4">
-      <h2 className="text-sm font-semibold text-foreground">
+      <h2 className={settingsSectionTitleClass}>
         {t('settings.telemetrySection.telemetry')}
       </h2>
-      <p className="text-xs text-muted-foreground mt-1">
+      <p className={settingsDescriptionClass}>
         {t('settings.telemetrySection.usageCrashReportingAndDiagnosticsPreferences')}
       </p>
     </div>
@@ -72,7 +73,7 @@ function renderForcedTelemetryNotice(
   if (!enabled) return null
 
   return (
-    <p className="text-[11px] text-muted-foreground mt-1">
+    <p className={`mt-1 ${settingsDescriptionClass}`}>
       {t('settings.telemetrySection.previewAndBetaBuildsAlwaysKeepTelemetryEnabled')}
     </p>
   )
@@ -82,7 +83,7 @@ function renderLoadError(loadError: boolean, t: Translate): ReactNode {
   if (!loadError) return null
 
   return (
-    <p className="text-[11px] text-destructive mt-1">
+    <p className="mt-1 text-[13px] leading-5 text-destructive">
       {t('settings.telemetrySection.couldNotLoadTelemetryStatus')}
     </p>
   )
@@ -149,12 +150,12 @@ export function TelemetrySection({ embedded = false }: TelemetrySectionProps) {
 
   const body = (
     <div className="rounded-lg border border-border bg-card p-4 space-y-3">
-      <div className="flex items-center justify-between">
-        <div className="flex-1 pr-8">
-          <h3 className="text-sm font-medium text-foreground">
+      <div className="flex flex-col items-start gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+        <div className="min-w-0 sm:flex-1">
+          <h3 className={settingsLabelClass}>
             {t('settings.telemetrySection.analyticsAmpDiagnostics')}
           </h3>
-          <p className="text-[11px] text-muted-foreground mt-1">
+          <p className={settingsDescriptionClass}>
             {t('settings.telemetrySection.anonymousUsageAndCrashReports')}
           </p>
           {renderForcedTelemetryNotice(enabled, canDisable, t)}

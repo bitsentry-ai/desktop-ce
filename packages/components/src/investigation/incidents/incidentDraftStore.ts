@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { joinCitations, separateCitations, type AssistantCitation } from "../../chat/citations";
+import { joinCitations, separateCitations, withCitationComment, type AssistantCitation } from "../../chat/citations";
 
 interface IncidentDraftStore {
   /** The unsent composer text per incident. In memory only, like the composer state it replaces. */
@@ -50,4 +50,31 @@ export const useIncidentDraftStore = create<IncidentDraftStore>()((set) => ({
 export function readComposedDraft(incidentId: string): string {
   const state = useIncidentDraftStore.getState();
   return joinCitations(state.citations[incidentId] ?? [], state.drafts[incidentId] ?? "");
+}
+
+/** Adds a quote to an incident's composer, after the ones already there. */
+export function addIncidentCitation(incidentId: string, citation: AssistantCitation): void {
+  const state = useIncidentDraftStore.getState();
+  state.setCitations(incidentId, [...(state.citations[incidentId] ?? []), citation]);
+}
+
+const NO_CITATIONS: AssistantCitation[] = [];
+
+/** An incident's quotes and the composer callbacks that remove one or change its comment. */
+export function useIncidentCitations(incidentId: string): {
+  citations: AssistantCitation[];
+  onRemoveCitation: (index: number) => void;
+  onCitationCommentChange: (index: number, comment: string | undefined) => void;
+} {
+  const citations = useIncidentDraftStore((state) => state.citations[incidentId] ?? NO_CITATIONS);
+  const setCitations = useIncidentDraftStore((state) => state.setCitations);
+  return {
+    citations,
+    onRemoveCitation: (index) => {
+      setCitations(incidentId, citations.filter((_, position) => position !== index));
+    },
+    onCitationCommentChange: (index, comment) => {
+      setCitations(incidentId, citations.map((citation, position) => (position === index ? withCitationComment(citation, comment) : citation)));
+    },
+  };
 }

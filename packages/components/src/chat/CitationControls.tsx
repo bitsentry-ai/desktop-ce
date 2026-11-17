@@ -174,9 +174,9 @@ export function CitationSelectionToolbar({
           type="button"
           disabled={tooLong}
           onClick={() => { setEditing(true); }}
-          className="inline-flex h-7 items-center gap-1.5 rounded-md border border-border bg-popover px-2 text-xs text-popover-foreground shadow-md transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-60"
+          className="inline-flex h-7 items-center gap-1.5 rounded-md border border-border bg-popover/95 px-2 text-xs font-medium text-popover-foreground shadow-md backdrop-blur transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-60"
         >
-          <Quote className="size-3.5" aria-hidden />
+          <Quote className="size-3.5 text-[hsl(var(--brand-emphasis))]" aria-hidden />
           {tooLong ? t("common.chat.citations.shortenSelection") : t("common.chat.citations.cite")}
         </button>
       )}
@@ -213,16 +213,19 @@ export function CitationChip({
 
   return (
     <PopoverPrimitive.Root open={open} onOpenChange={setOpen}>
-      <span className="inline-flex max-w-full items-center gap-0.5 rounded-md border border-border/80 bg-background/70 align-middle text-xs">
+      {/* Like T3 Code's citation ContextChip: brand ink on a faint brand surface, the label underlined on hover. */}
+      <span className="inline-flex max-w-full items-center gap-0.5 rounded-md border border-[hsl(var(--brand-emphasis-border))] bg-[hsl(var(--brand-emphasis-surface))] align-middle text-xs font-medium leading-normal text-[hsl(var(--brand-emphasis))]">
         <PopoverPrimitive.Trigger asChild>
           <button
             type="button"
             aria-label={inComposer ? commentLabel : t("common.chat.citations.viewQuote", { label })}
-            className="inline-flex min-w-0 items-center gap-1 rounded-md px-1.5 py-0.5 text-left hover:bg-muted"
+            className="group/citation inline-flex min-w-0 items-center gap-1 rounded-md px-1.5 py-0.5 text-left focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring"
           >
-            <Quote className="size-3 shrink-0 text-muted-foreground" aria-hidden />
-            <span className="max-w-64 truncate">{label}</span>
-            {inComposer && <Pencil className="size-3 shrink-0 text-muted-foreground" aria-hidden />}
+            <Quote className="size-3 shrink-0" aria-hidden />
+            <span className="max-w-64 truncate underline decoration-transparent underline-offset-[0.2em] transition-colors group-hover/citation:decoration-current motion-reduce:transition-none">
+              {label}
+            </span>
+            {inComposer && <Pencil className="size-3 shrink-0 opacity-70" aria-hidden />}
           </button>
         </PopoverPrimitive.Trigger>
         {onRemove !== undefined && (
@@ -230,7 +233,7 @@ export function CitationChip({
             type="button"
             aria-label={t("common.chat.citations.remove")}
             onClick={onRemove}
-            className="flex size-5 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
+            className="mr-0.5 flex size-4 shrink-0 items-center justify-center rounded-sm opacity-70 transition-colors hover:bg-[hsl(var(--brand-emphasis)/0.15)] hover:opacity-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
           >
             <X className="size-3" />
           </button>

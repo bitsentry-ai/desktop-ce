@@ -115,7 +115,7 @@ function CustomerReportAnswerRow({ header }: { header: CustomerReportAnswerHeade
           type="button"
           onClick={() => { chat.edit(field); }}
           aria-label={t("common.incidents.customerReport.changeAnswer")}
-          className="flex size-5 shrink-0 items-center justify-center rounded-md text-muted-foreground/70 transition-colors hover:bg-violet-100 hover:text-violet-800 dark:hover:bg-violet-500/15 dark:hover:text-violet-200"
+          className="flex size-5 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-violet-100 hover:text-violet-800 dark:hover:bg-violet-500/15 dark:hover:text-violet-200"
         >
           <Pencil size={11} />
         </button>
@@ -129,7 +129,7 @@ function CustomerReportIntakeMessage({ msg }: { msg: UserMessage }) {
   if (parseCustomerReportDismissMessage(msg.text) !== null) {
     return (
       <div className="flex items-center gap-2 pl-[38px] text-xs text-muted-foreground">
-        <MessageCircle size={14} className="shrink-0 text-muted-foreground/70" aria-hidden="true" />
+        <MessageCircle size={14} className="shrink-0 text-muted-foreground" aria-hidden="true" />
         {t("common.incidents.customerReport.dismissed")}
       </div>
     );

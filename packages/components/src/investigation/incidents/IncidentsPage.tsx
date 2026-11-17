@@ -86,13 +86,15 @@ import {
   saveProviderLock,
 } from "./incidentStorage";
 import { IncidentComposer } from "./IncidentComposer";
-import { readComposedDraft, useIncidentDraftStore } from "./incidentDraftStore";
+import { addIncidentCitation, readComposedDraft, useIncidentDraftStore } from "./incidentDraftStore";
 import { useIncidentListStore } from "./incidentListStore";
 import { IncidentMessageList } from "./IncidentMessageList";
 import { useIncidentAgentEvents } from "./useIncidentAgentEvents";
 import { useIncidentComposerAttachments } from "./useIncidentComposerAttachments";
 import { useIncidentPersistence } from "./useIncidentPersistence";
 import { useIncidentProviderSelection } from "./useIncidentProviderSelection";
+import { EmptyState } from "../../ui/empty-state";
+import { Button } from "../../ui/button";
 
 // ─── Main page ────────────────────────────────────────────────────────────────
 
@@ -919,19 +921,25 @@ export default function IncidentsPage() {
       <PageShell>
         <div className="flex flex-1 flex-col overflow-hidden">
           <div className="bs-page-header flex min-h-[3.25rem] shrink-0 items-center gap-2 border-b border-border px-4 py-2">
-            <span className="flex-1 truncate text-[15px] font-semibold tracking-[-0.01em] text-foreground">
+            <span className="flex-1 truncate text-base font-semibold tracking-[-0.01em] text-foreground">
               {t("common.incidents.allIncidents")}
             </span>
             {topBarActions}
           </div>
           <div className="flex-1 overflow-y-auto px-6 py-6 page-enter">
             {visibleIncidents.length === 0 && (
-              <div className="flex flex-col items-center justify-center gap-3 py-24 text-center text-muted-foreground">
-                <ShieldAlert size={36} className="opacity-25" />
-                <p className="text-sm">
-                  {t("common.incidents.noIncidentsYetCreateOne")}
-                </p>
-              </div>
+              <EmptyState
+                className="py-20"
+                icon={ShieldAlert}
+                title={t("common.incidents.emptyTitle")}
+                description={t("common.incidents.emptyDescription")}
+                action={
+                  <Button onClick={handleNewIncident}>
+                    <SquarePen />
+                    {t("common.incidents.newIncident")}
+                  </Button>
+                }
+              />
             )}
             {visibleIncidents.length > 0 && (
               <div
@@ -978,7 +986,7 @@ export default function IncidentsPage() {
                               {translateIncidentPreview(preview, t)}
                             </div>
                           )}
-                          <div className="text-[11px] text-muted-foreground/70">
+                          <div className="text-[11px] text-muted-foreground">
                             {relativeTime(inc.createdAt, now)}
                           </div>
                         </div>
@@ -1086,10 +1094,7 @@ export default function IncidentsPage() {
                     <CitationSelectionToolbar
                       getViewport={getMessageViewport}
                       threadId={activeIncident.id}
-                      onCite={(citation) => {
-                        const drafts = useIncidentDraftStore.getState();
-                        drafts.setCitations(activeIncident.id, [...(drafts.citations[activeIncident.id] ?? []), citation]);
-                      }}
+                      onCite={(citation) => { addIncidentCitation(activeIncident.id, citation); }}
                     />
                   )}
                   {activeIncident !== null && (

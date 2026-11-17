@@ -1,4 +1,6 @@
 import { useId, useMemo, useState } from "react";
+import { Send } from "lucide-react";
+import { EmptyState } from "../ui/empty-state";
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
 import { Textarea } from "../ui/textarea";
@@ -181,7 +183,7 @@ export function IntegrationDeliveriesView({ threadId, rows, failed, disabled, se
   const ordered = useMemo(() => orderDeliveries(rows), [rows]);
   return <div className="space-y-3">
     {failed && <p role="alert" className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">{t("incidents.deliveries.error")}</p>}
-    {ordered.length === 0 && !failed && <div className="rounded-2xl border border-dashed border-border/70 bg-muted/10 px-4 py-5 text-sm text-muted-foreground">{t("incidents.integrationRail.noDeliveries")}</div>}
+    {ordered.length === 0 && !failed && <EmptyState icon={Send} title={t("incidents.integrationRail.noDeliveries")} className="rounded-lg border border-dashed border-border py-8" />}
     {ordered.map((row) => <DeliveryCard key={row.id} row={row} threadId={threadId} disabled={disabled} service={service} onRefresh={onRefresh} />)}
   </div>;
 }

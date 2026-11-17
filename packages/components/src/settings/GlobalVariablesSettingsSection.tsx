@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { Braces } from "lucide-react";
 import {
   useCreateGlobalVariable,
   useDeleteGlobalVariable,
@@ -14,6 +15,12 @@ import {
   type AutoSaveStatus,
 } from "../hooks/useDebouncedAutoSave";
 import { useTranslation } from "@bitsentry-ce/i18n";
+import { EmptyState } from "../ui/empty-state";
+import {
+  settingsDescriptionClass,
+  settingsLabelClass,
+  settingsSectionTitleClass,
+} from "./SettingsRow";
 
 const GLOBAL_KEY_PATTERN = /^[A-Za-z_][A-Za-z0-9_.-]*$/;
 const formatGlobalVariableReference = (key: string) => `\${globals.${key}}`;
@@ -376,10 +383,10 @@ function CreatePanel({
     <div className="border border-border rounded-lg bg-card overflow-hidden">
       <div className="px-4 py-4 space-y-4">
         <div>
-          <h3 className="text-sm font-medium text-foreground">
+          <h3 className={settingsLabelClass}>
             {t("common.globalVariablesSettingsSection.newVariable")}
           </h3>
-          <p className="text-xs text-muted-foreground">
+          <p className={settingsDescriptionClass}>
             {t("common.globalVariablesSettingsSection.reusableValueHelp")}{" "}
             <code>{t("common.globalVariablesSettingsSection.globalsKey")}</code>.
           </p>
@@ -655,12 +662,15 @@ export function GlobalVariablesSettingsSection({
     );
   } else if (sortedGlobals.length === 0 && !creating) {
     globalsContent = (
-      <div className="rounded-lg border border-border bg-card px-4 py-6 text-sm text-muted-foreground">
-        {t(
+      <EmptyState
+        icon={Braces}
+        title={t(
           "common.globalVariablesSettingsSection.noGlobalVariablesSavedYet",
           "No global variables saved yet.",
         )}
-      </div>
+        description={t("settings.globalVariables.emptyDescription")}
+        className="rounded-lg border border-dashed border-border"
+      />
     );
   } else {
     globalsContent = sortedGlobals.map((globalVariable) => (
@@ -679,10 +689,10 @@ export function GlobalVariablesSettingsSection({
     <section id={id} data-tour="settings-global-variables" className={className}>
       <div className="mb-4 flex items-start justify-between gap-3">
         <div>
-          <h2 className="text-sm font-semibold text-foreground">
+          <h2 className={settingsSectionTitleClass}>
             {sectionTitle}
           </h2>
-          <p className="text-xs text-muted-foreground">
+          <p className={settingsDescriptionClass}>
             {sectionDescription}
           </p>
         </div>

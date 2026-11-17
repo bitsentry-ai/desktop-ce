@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { AlertCircle, FileText, Ticket } from "lucide-react";
+import { EmptyState } from "../ui/empty-state";
 import { useTranslation } from "@bitsentry-ce/i18n";
 import { customerReportMarker, type IntegrationOperation } from "@bitsentry-ce/core/features/plugins";
 import { CustomerReportInternalBadge } from "../chat/CustomerReportPanel";
@@ -238,7 +239,7 @@ export function IntegrationActionsView({ threadId, rows, failed, disabled, servi
     <div className="max-h-[min(40vh,18rem)] shrink-0 overflow-y-auto px-4 py-4">
       <div className="space-y-2">
         {ordered.map((row) => <OperationListItem key={row.id} row={row} isSelected={row.id === selectedId} onSelect={() => { setSelectedId(row.id); }} />)}
-        {ordered.length === 0 && !failed && <div className="rounded-2xl border border-dashed border-border/70 bg-muted/10 px-4 py-5 text-sm text-muted-foreground">{t("incidents.integrationRail.noActions")}</div>}
+        {ordered.length === 0 && !failed && <EmptyState icon={Ticket} title={t("incidents.integrationRail.noActions")} className="rounded-lg border border-dashed border-border py-8" />}
       </div>
     </div>
     <div className="min-h-0 flex-1 px-4 pb-4">

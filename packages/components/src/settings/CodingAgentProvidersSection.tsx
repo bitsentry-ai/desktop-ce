@@ -10,6 +10,7 @@ import {
 } from '@bitsentry-ce/components/llm/modelCatalog'
 import { useTranslation } from '@bitsentry-ce/i18n'
 import { resolveSyncedDefaultModel } from './model-selection'
+import { settingsDescriptionClass, settingsSectionTitleClass } from './SettingsRow'
 import {
   mergeDiscoveredModelIds,
   publishDiscoveredModels,
@@ -369,7 +370,7 @@ function getSyncButtonText(
 
 function getSyncMessageClass(syncState: SyncState): string {
   if (syncState === 'error') {
-    return 'mt-1 text-[11px] text-[hsl(var(--destructive))]'
+    return 'mt-1 text-[11px] text-[hsl(var(--destructive-text))]'
   }
 
   return 'mt-1 text-[11px] text-muted-foreground'
@@ -1155,10 +1156,10 @@ export function CodingAgentProvidersSection({
       className="scroll-mt-24"
     >
       <div className="mb-4">
-        <h2 className="text-sm font-semibold text-foreground">
+        <h2 className={settingsSectionTitleClass}>
           {t('navigation.navbar.codingAgents')}
         </h2>
-        <p className="text-xs text-muted-foreground">
+        <p className={settingsDescriptionClass}>
           {t('settings.localCliProviders.connectLocalCodingAgents')}
         </p>
       </div>

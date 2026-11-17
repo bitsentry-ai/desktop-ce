@@ -1,4 +1,5 @@
 import type { PluginDescriptor } from "../services/contracts";
+import { Plug } from "lucide-react";
 import { useEffect, useId, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { useTranslation } from "@bitsentry-ce/i18n";
 import type { IntegrationConnection, IntegrationConnectionInput, DesktopPluginFieldDefinition } from "@bitsentry-ce/core/features/plugins";
@@ -8,6 +9,8 @@ import { Input } from "../ui/input";
 import { Label } from "../ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../ui/select";
 import { Textarea } from "../ui/textarea";
+import { EmptyState } from "../ui/empty-state";
+import { settingsDescriptionClass, settingsLabelClass, settingsSectionTitleClass } from "../settings/SettingsRow";
 
 /** How a host lists, saves and removes named connections. Desktop backs it with local IPC, the Dashboard with its API. */
 export interface IntegrationConnectionsPort {
@@ -246,37 +249,43 @@ export function IntegrationConnectionsPanel({ service, emptyAction, editConnecti
 
   return <section className="space-y-4" aria-labelledby={`${formId}-title`}>
     <div>
-      <h2 id={`${formId}-title`} className="text-sm font-semibold text-foreground">{t("settings.integrationConnections.title")}</h2>
-      <p className="text-xs text-muted-foreground">{t("settings.integrationConnections.description")}</p>
+      <h2 id={`${formId}-title`} className={settingsSectionTitleClass}>{t("settings.integrationConnections.title")}</h2>
+      <p className={settingsDescriptionClass}>{t("settings.integrationConnections.description")}</p>
     </div>
 
-    {loadFailed && <div role="alert" className="flex items-center justify-between gap-3 rounded-md border border-destructive/40 px-3 py-2 text-sm text-destructive">
+    {loadFailed && <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-destructive/40 px-3 py-2 text-sm text-destructive">
       <span>{t("settings.integrationConnections.loadFailed")}</span>
       <Button type="button" size="sm" variant="outline" onClick={retry}>{t("settings.integrationConnections.retry")}</Button>
     </div>}
     {error !== null && <p role="alert" className="text-sm text-destructive">{error}</p>}
 
-    {rows.length > 0 && <ul className="divide-y divide-border rounded-md border border-border">{rows.map((row) => <li key={row.id} className="flex items-center gap-2 px-3 py-2">
-      <span className="min-w-0 flex-1 break-all text-sm">{row.name} <span className="text-muted-foreground">— {row.target}</span></span>
-      {status(row)}
-      <Button size="sm" variant="outline" disabled={busy || !plugins.some((item) => item.id === row.pluginId)} onClick={() => {
-        setAppliedEditId(row.id);
-        startEdit(row);
-        onEditConnectionChange?.(row.id);
-      }}>{t("settings.integrationConnections.edit")}</Button>
-      <Button size="sm" variant="outline" disabled={busy} onClick={() => { remove(row.id); }}>{t("settings.integrationConnections.remove")}</Button>
+    {rows.length > 0 && <ul className="divide-y divide-border rounded-md border border-border">{rows.map((row) => <li key={row.id} className="flex flex-col gap-2 px-4 py-3 sm:flex-row sm:items-center sm:gap-4">
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-sm font-medium leading-5 text-foreground" title={row.name}>{row.name}</p>
+        <p className="truncate font-mono text-[12.5px] leading-5 text-muted-foreground" title={row.target}>{row.target}</p>
+      </div>
+      <div className="flex shrink-0 flex-wrap items-center gap-2">
+        {status(row)}
+        <Button size="sm" variant="outline" disabled={busy || !plugins.some((item) => item.id === row.pluginId)} onClick={() => {
+          setAppliedEditId(row.id);
+          startEdit(row);
+          onEditConnectionChange?.(row.id);
+        }}>{t("settings.integrationConnections.edit")}</Button>
+        <Button size="sm" variant="outline" disabled={busy} onClick={() => { remove(row.id); }}>{t("settings.integrationConnections.remove")}</Button>
+      </div>
     </li>)}</ul>}
 
     {pluginState.status === "loading" && <p role="status" className="text-sm text-muted-foreground">{t("settings.integrationConnections.loading")}</p>}
 
-    {pluginState.status === "ready" && plugins.length === 0 && <div className="space-y-2 rounded-md border border-dashed border-border p-6 text-center">
-      <p className="text-sm font-medium text-foreground">{t("settings.integrationConnections.noPlugins")}</p>
-      <p className="text-xs text-muted-foreground">{t("settings.integrationConnections.noPluginsHint")}</p>
-      {emptyAction}
-    </div>}
+    {pluginState.status === "ready" && plugins.length === 0 && <EmptyState
+      icon={Plug}
+      title={t("settings.integrationConnections.noPlugins")}
+      description={t("settings.integrationConnections.noPluginsHint")}
+      action={emptyAction}
+    />}
 
     {plugin !== undefined && contract !== undefined && <form onSubmit={save} className="space-y-4">
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div className="space-y-2">
           <Label htmlFor={`${formId}-plugin`}>{t("settings.integrationConnections.plugin")}</Label>
           <Select value={selectedPluginId} disabled={busy || editingId !== null} onValueChange={(value) => { setPluginId(value); reset(); }}>
@@ -308,13 +317,13 @@ export function IntegrationConnectionsPanel({ service, emptyAction, editConnecti
 
       <label className="flex items-center justify-between gap-4 rounded-md border border-border px-4 py-3">
         <span className="min-w-0">
-          <span className="block text-sm text-foreground">{t("settings.integrationConnections.active")}</span>
-          <span className="block text-xs text-muted-foreground">{t("settings.integrationConnections.activeHint")}</span>
+          <span className={settingsLabelClass}>{t("settings.integrationConnections.active")}</span>
+          <span className={`block ${settingsDescriptionClass}`}>{t("settings.integrationConnections.activeHint")}</span>
         </span>
         <input type="checkbox" className="h-4 w-4 accent-primary" checked={connectionEnabled} disabled={busy} onChange={(event) => { setConnectionEnabled(event.target.checked); }} />
       </label>
 
-      <p className="text-xs text-muted-foreground">{t("settings.integrationConnections.targetImmutable")}</p>
+      <p className={settingsDescriptionClass}>{t("settings.integrationConnections.targetImmutable")}</p>
       <div className="flex justify-end gap-2">
         {editingId !== null && <Button type="button" variant="outline" disabled={busy} onClick={finishEdit}>{t("settings.integrationConnections.cancel")}</Button>}
         <Button type="submit" disabled={busy}>{t("settings.integrationConnections.save")}</Button>

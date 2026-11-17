@@ -6,6 +6,7 @@ import { useConnectionStatus } from "../services/hooks";
 import { getDesktopApi } from "../services/desktop-api";
 import { useTranslation } from "@bitsentry-ce/i18n";
 import { LanguageSwitcher } from "../ui/language-switcher";
+import { SettingsRow } from "./SettingsRow";
 
 const isDesktop = getDesktopApi() !== undefined;
 
@@ -32,13 +33,11 @@ export const AppearanceSettingsSection = ({
 
   return (
     <div className="rounded-lg border border-border divide-y divide-border">
-      <div className="flex items-center justify-between gap-4 px-4 py-3">
-        <div className="min-w-0">
-          <p className="text-sm text-foreground">{t("settings.appearanceSettingsSection.theme")}</p>
-          <p className="text-xs text-muted-foreground">
-            {t("settings.appearanceSettingsSection.switchBetweenLightAndDark")}
-                      </p>
-        </div>
+      <SettingsRow
+        label={t("settings.appearanceSettingsSection.theme")}
+        description={t("settings.appearanceSettingsSection.switchBetweenLightAndDark")}
+        controlLayout="compact"
+      >
         <Button
           variant="outline"
           size="sm"
@@ -48,17 +47,17 @@ export const AppearanceSettingsSection = ({
           <ThemeIcon size={14} />
           <span>{themeLabel}</span>
         </Button>
-      </div>
+      </SettingsRow>
 
-      <div className="flex items-center justify-between gap-4 px-4 py-3">
-        <div className="min-w-0">
-          <p className="text-sm text-foreground">{t("settings.appearanceSettingsSection.language")}</p>
-          <p className="text-xs text-muted-foreground">
-            {t("settings.appearanceSettingsSection.displayLanguageForTheInterface")}
-                      </p>
-        </div>
-        <LanguageSwitcher triggerClassName="h-8 w-[200px] text-xs whitespace-nowrap" />
-      </div>
+      <SettingsRow
+        label={t("settings.appearanceSettingsSection.language")}
+        description={t("settings.appearanceSettingsSection.displayLanguageForTheInterface")}
+      >
+        <LanguageSwitcher
+          className="w-full"
+          triggerClassName="h-8 w-full text-xs whitespace-nowrap"
+        />
+      </SettingsRow>
 
       {extraRows}
 
@@ -80,20 +79,18 @@ const NetworkRow = () => {
   }
 
   return (
-    <div className="flex items-center justify-between gap-4 px-4 py-3">
-      <div className="min-w-0">
-        <p className="text-sm text-foreground">{t("settings.appearanceSettingsSection.network")}</p>
-        <p className="text-xs text-muted-foreground">
-          {t("settings.appearanceSettingsSection.whetherTheBrowserReportsAn")}
-                  </p>
-      </div>
+    <SettingsRow
+      label={t("settings.appearanceSettingsSection.network")}
+      description={t("settings.appearanceSettingsSection.whetherTheBrowserReportsAn")}
+      controlLayout="compact"
+    >
       <div className="flex items-center gap-2 text-xs text-muted-foreground">
         <span
           className={`w-1.5 h-1.5 rounded-full ${dotClassName}`}
         />
         <span>{label}</span>
       </div>
-    </div>
+    </SettingsRow>
   );
 };
 

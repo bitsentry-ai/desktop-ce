@@ -39,7 +39,9 @@ function removePendingSync(
     Object.entries(pendingSyncs).filter(([id]) => id !== sourceId),
   );
 }
-import { Download, Pencil, RefreshCw, Trash2 } from "lucide-react";
+import { Download, Pencil, Puzzle, RefreshCw, Trash2 } from "lucide-react";
+import { EmptyState } from "../ui/empty-state";
+import { settingsDescriptionClass, settingsSectionTitleClass } from "../settings/SettingsRow";
 import { ProviderIcon, type ProviderIconKind } from "./icons";
 import InstallPluginDialog from "./InstallPluginDialog";
 
@@ -245,12 +247,12 @@ function findEditDialogPlugin(
   return findPluginDescriptorForSource(plugins, source);
 }
 
-function emptySourcePrompt(availableProviderSummary: string): string {
+function emptySourcePrompt(availableProviderSummary: string, t: Translate): string {
   if (availableProviderSummary.length > 0) {
-    return `Available plugin-backed sources: ${availableProviderSummary}.`;
+    return t("settings.pluginsEmpty.availableSources", { sources: availableProviderSummary });
   }
 
-  return "Install or enable a code plugin that declares an error source.";
+  return t("settings.pluginsEmpty.hint");
 }
 
 function setupFieldInputType(field: PluginDataSourceSetupField): string {
@@ -1077,12 +1079,12 @@ export default function DataSourcesManager({
   return (
     <div className="space-y-4">
       {showHeader && (
-        <div className="flex items-center justify-between">
-          <div>
-            <h2 className="text-sm font-semibold text-foreground">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="min-w-0">
+            <h2 className={settingsSectionTitleClass}>
               {t("common.dataSourcesManager.externalSources")}
             </h2>
-            <p className="text-xs text-muted-foreground">
+            <p className={settingsDescriptionClass}>
               {t("common.dataSourcesManager.connectExternalServicesToFeed")}
             </p>
           </div>
@@ -1151,14 +1153,12 @@ export default function DataSourcesManager({
         </p>
       )}
       {showSourceList && !isLoading && sources.length === 0 && (
-        <div className="rounded-lg border border-dashed border-border p-8 text-center">
-          <p className="text-sm text-muted-foreground">
-            {t("common.dataSourcesManager.noExternalSourcesConnected")}
-          </p>
-          <p className="mt-1 text-xs text-muted-foreground">
-            {emptySourcePrompt(availableProviderSummary)}
-          </p>
-        </div>
+        <EmptyState
+          icon={Puzzle}
+          title={t("common.dataSourcesManager.noExternalSourcesConnected")}
+          description={emptySourcePrompt(availableProviderSummary, t)}
+          className="rounded-lg border border-dashed border-border"
+        />
       )}
       {showSourceList && !isLoading && sources.length > 0 && (
         <div className="rounded-lg border border-border divide-y divide-border">
