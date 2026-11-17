@@ -189,6 +189,30 @@ describe("FinalOutputPreview", () => {
     expect(screen.getByRole("button", { name: "common.results.viewFullOutput" })).toBeTruthy();
   });
 
+  it("leads a JSON list result with its outcome and keeps paging fields under Details", () => {
+    const value = {
+      findings: Array.from({ length: 10 }, (_, index) => ({ id: index })),
+      total: 103,
+      offset: 0,
+      hasMore: true,
+      agent: "004",
+      severity: "Critical",
+      source: "wazuh",
+      page: 1,
+      window: "24h",
+      checkedAt: "2026-11-17",
+    };
+    render(<FinalOutputPreview output={JSON.stringify(value)} emptyMessage="empty" onViewOutput={vi.fn()} />);
+
+    expect(screen.getByText(/common\.results\.outcomeReturnedOf/)).toBeTruthy();
+    const details = document.querySelector("details");
+    expect(details?.open).toBe(false);
+    const detailKeys = [...(details?.querySelectorAll("dt") ?? [])].map((node) => node.textContent);
+    expect(detailKeys).toEqual(["offset", "hasMore", "page"]);
+    const mainKeys = [...document.querySelectorAll("dl")][0]?.querySelectorAll("dt");
+    expect([...(mainKeys ?? [])].map((node) => node.textContent)).not.toContain("offset");
+  });
+
   it("keeps aligned terminal labels next to their values in the preview", () => {
     const output = Array.from({ length: 8 }, (_, index) => `Pages free:                          ${String(76905 + index)}.`).join("\n");
     render(<FinalOutputPreview output={output} emptyMessage="empty" onViewOutput={vi.fn()} />);

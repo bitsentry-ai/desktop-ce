@@ -253,9 +253,35 @@ export interface JsonSummaryField {
 }
 
 export interface JsonSummary {
+  /** A one-line outcome such as "10 of 103 findings returned", when the payload has a list (and a total). */
+  headline: { shown: number; total: number | null; noun: string } | null;
+  /** The fields worth reading, without paging and transport fields. */
   fields: JsonSummaryField[];
-  /** Number of top-level fields, including the ones not listed. */
+  /** Paging and transport fields (offset, hasMore, cursors…), kept for a Details disclosure. */
+  details: JsonSummaryField[];
+  /** Number of readable top-level fields, including the ones not listed. */
   total: number;
+}
+
+/** Fields that describe the request or paging rather than the result. */
+const TRANSPORT_FIELDS = new Set([
+  "offset", "limit", "cursor", "nextcursor", "next_cursor", "hasmore", "has_more", "page", "pagesize", "page_size",
+  "indexpattern", "index_pattern", "took", "timed_out", "scroll_id", "nextpagetoken", "next_page_token",
+]);
+const TOTAL_FIELDS = ["total", "totalcount", "total_count", "totalhits", "total_hits", "count"];
+
+function isTransportField(key: string): boolean {
+  return TRANSPORT_FIELDS.has(key.toLowerCase());
+}
+
+function outcomeHeadline(entries: [string, unknown][]): JsonSummary["headline"] {
+  const list = entries.find(([, value]) => Array.isArray(value));
+  if (list === undefined) return null;
+  const totalEntry = entries.find(
+    ([key, value]) => TOTAL_FIELDS.includes(key.toLowerCase()) && typeof value === "number",
+  );
+  const shown = (list[1] as unknown[]).length;
+  return { shown, total: totalEntry === undefined ? null : (totalEntry[1] as number), noun: list[0] };
 }
 
 /** One line per field: strings as written, scalars as JSON, and nested values by their size ("3 fields", "5 items"). */
@@ -280,8 +306,12 @@ export function jsonSummary(value: string, maxFields: number): JsonSummary | nul
   if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) return null;
   const entries = Object.entries(parsed);
   if (entries.length === 0) return null;
+  const readable = entries.filter(([key]) => !isTransportField(key));
+  const toField = ([key, field]: [string, unknown]): JsonSummaryField => ({ key, value: summaryValue(field) });
   return {
-    fields: entries.slice(0, maxFields).map(([key, field]) => ({ key, value: summaryValue(field) })),
-    total: entries.length,
+    headline: outcomeHeadline(entries),
+    fields: readable.slice(0, maxFields).map(toField),
+    details: entries.filter(([key]) => isTransportField(key)).map(toField),
+    total: readable.length,
   };
 }

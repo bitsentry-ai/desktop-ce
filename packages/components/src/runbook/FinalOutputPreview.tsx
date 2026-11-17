@@ -62,31 +62,64 @@ function PlainTextPreviewLines({ text }: { text: string }) {
   );
 }
 
+/** "findingIds" or "open_findings" as words ("finding ids", "open findings") for the outcome line. */
+function humanizeKey(key: string): string {
+  return key.replace(/_/g, " ").replace(/([a-z])([A-Z])/g, "$1 $2").toLowerCase();
+}
+
+function FieldRows({ fields }: { fields: JsonSummary["fields"] }) {
+  return (
+    <dl className="grid grid-cols-[minmax(0,max-content)_minmax(0,1fr)] gap-x-3 gap-y-1 font-mono text-[13px] leading-5">
+      {fields.map((field) => (
+        <div key={field.key} className="contents">
+          <dt className="max-w-[9rem] truncate text-muted-foreground" title={field.key}>
+            {field.key}
+          </dt>
+          <dd className="m-0 line-clamp-2 break-words text-foreground [overflow-wrap:anywhere]" title={field.value}>
+            {field.value.length > 0 ? field.value : "\u00a0"}
+          </dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
+
+function OutcomeHeadline({ headline }: { headline: NonNullable<JsonSummary["headline"]> }) {
+  const { t } = useTranslation();
+  const noun = humanizeKey(headline.noun);
+  const text =
+    headline.total === null
+      ? t("common.results.outcomeReturned", { shown: headline.shown, noun })
+      : t("common.results.outcomeReturnedOf", { shown: headline.shown, total: headline.total, noun });
+  return <p className="text-sm font-semibold leading-5 text-foreground">{text}</p>;
+}
+
 /**
- * A longer JSON object as its top-level fields, one per row (key, then up to two lines of value), so the Summary
- * shows values instead of braces and indentation.
+ * A longer JSON object, read at a glance: an outcome line when it holds a list ("10 of 103 findings returned"), then
+ * its readable top-level fields, one per row; paging and transport fields (offset, hasMore, cursors) sit under a
+ * collapsed Details.
  */
 function JsonSummaryFields({ summary }: { summary: JsonSummary }) {
   const { t } = useTranslation();
   const hidden = summary.total - summary.fields.length;
   return (
-    <div className="space-y-1.5">
-      <dl className="grid grid-cols-[minmax(0,max-content)_minmax(0,1fr)] gap-x-3 gap-y-1 font-mono text-[13px] leading-5">
-        {summary.fields.map((field) => (
-          <div key={field.key} className="contents">
-            <dt className="max-w-[9rem] truncate text-muted-foreground" title={field.key}>
-              {field.key}
-            </dt>
-            <dd className="m-0 line-clamp-2 break-words text-foreground [overflow-wrap:anywhere]" title={field.value}>
-              {field.value.length > 0 ? field.value : "\u00a0"}
-            </dd>
-          </div>
-        ))}
-      </dl>
+    <div className="space-y-2">
+      {summary.headline !== null && <OutcomeHeadline headline={summary.headline} />}
+      {summary.fields.length > 0 && <FieldRows fields={summary.fields} />}
       {hidden > 0 && (
         <p className="text-xs text-muted-foreground">
           {t("common.results.moreFields", { count: hidden })}
         </p>
+      )}
+      {summary.details.length > 0 && (
+        <details className="group text-xs text-muted-foreground">
+          <summary className="cursor-pointer select-none font-medium hover:text-foreground">
+            {t("common.results.resultDetails", { count: summary.details.length })}
+          </summary>
+          <div className="pt-1.5">
+            <FieldRows fields={summary.details} />
+          </div>
+        </details>
       )}
     </div>
   );
