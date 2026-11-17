@@ -4,7 +4,6 @@ import {
   useState,
   type KeyboardEvent,
   type ReactNode,
-  type RefObject,
 } from "react";
 
 import {
@@ -63,10 +62,7 @@ type RunbookEditorHeaderProps = {
   onCreateRunbook: () => void;
   /** Compact execution controls grouped with the timeout picker. */
   extraActions?: ReactNode;
-  /**
-   * Extra infrequent actions shown after Export: icon buttons on a wide
-   * header, items in the ⋯ menu on a compact one.
-   */
+  /** Extra infrequent actions listed after Export in the ⋯ menu. */
   overflowActions?: readonly RunbookHeaderMenuAction[];
   t: TranslationFn;
 };
@@ -220,50 +216,11 @@ function IdleTimeoutPicker({
   );
 }
 
-/** Header widths (border box) below this collapse the secondary icon buttons into the overflow menu. */
-const COMPACT_HEADER_MAX_WIDTH = 640;
-
-/**
- * Tracks whether the header itself (not the window) is narrower than 640px,
- * so the desktop sidebar and the dashboard navbar both get the compact
- * layout when they squeeze it. An unmeasured header (0px, as in jsdom) keeps
- * the wide layout.
- */
-function useIsCompactHeader(ref: RefObject<HTMLDivElement | null>): boolean {
-  const [compact, setCompact] = useState(false);
-
-  useLayoutEffect(() => {
-    const element = ref.current;
-    if (element === null) {
-      return;
-    }
-
-    const measure = () => {
-      const { width } = element.getBoundingClientRect();
-      setCompact(width > 0 && width < COMPACT_HEADER_MAX_WIDTH);
-    };
-    measure();
-
-    if (typeof ResizeObserver === "undefined") {
-      return;
-    }
-
-    const observer = new ResizeObserver(measure);
-    observer.observe(element);
-    return () => {
-      observer.disconnect();
-    };
-  }, [ref]);
-
-  return compact;
-}
-
 type HeaderIconButtonProps = {
   label: string;
   onClick: () => void;
   icon: ReactNode;
   dataTour?: string;
-  destructive?: boolean;
 };
 
 function HeaderIconButton({
@@ -271,7 +228,6 @@ function HeaderIconButton({
   onClick,
   icon,
   dataTour,
-  destructive = false,
 }: HeaderIconButtonProps) {
   return (
     <Tooltip>
@@ -281,11 +237,7 @@ function HeaderIconButton({
           data-tour={dataTour}
           onClick={onClick}
           aria-label={label}
-          className={cn(
-            RUNBOOK_ICON_BUTTON_CLASS,
-            destructive &&
-              "text-muted-foreground hover:border-destructive/40 hover:bg-destructive/10 hover:text-destructive",
-          )}
+          className={RUNBOOK_ICON_BUTTON_CLASS}
         >
           {icon}
         </button>
@@ -295,68 +247,49 @@ function HeaderIconButton({
   );
 }
 
-type SecondaryActionProps = Pick<
-  RunbookEditorHeaderProps,
-  "onExport" | "onOpenResults" | "onDelete" | "onCreateRunbook" | "t"
-> & {
-  overflowActions: readonly RunbookHeaderMenuAction[];
-};
-
-/** Wide headers: history, export, extras, delete and New as icon buttons. */
-function RunbookSecondaryIconButtons({
-  onExport,
-  onOpenResults,
-  onDelete,
+/** "New runbook" as an outlined button; only the icon stays on the tightest header. */
+function NewRunbookButton({
   onCreateRunbook,
-  overflowActions,
   t,
-}: SecondaryActionProps) {
+}: Pick<RunbookEditorHeaderProps, "onCreateRunbook" | "t">) {
+  const label = t("runbooks.runbook.newRunbook");
   return (
-    <div className="ml-auto flex shrink-0 items-center gap-1.5 [@container(min-width:60rem)]:ml-1.5">
-      <HeaderIconButton
-        label={t("runbooks.runbook.viewRunbookResultHistory")}
-        onClick={onOpenResults}
-        icon={<History size={14} aria-hidden="true" />}
-        dataTour="runbooks-history-btn"
-      />
-      <HeaderIconButton
-        label={t("runbooks.runbook.exportRunbook")}
-        onClick={onExport}
-        icon={<Upload size={14} aria-hidden="true" />}
-      />
-      {overflowActions.map((action) => (
-        <HeaderIconButton
-          key={action.id}
-          label={action.label}
-          onClick={action.onSelect}
-          icon={action.icon}
-        />
-      ))}
-      <HeaderIconButton
-        label={t("runbooks.runbook.deleteRunbook")}
-        onClick={onDelete}
-        icon={<Trash2 size={14} aria-hidden="true" />}
-        destructive
-      />
-      <HeaderIconButton
-        label={t("runbooks.runbook.newRunbook")}
-        onClick={onCreateRunbook}
-        icon={<SquarePen size={14} aria-hidden="true" />}
-        dataTour="runbooks-new-btn"
-      />
-    </div>
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          data-tour="runbooks-new-btn"
+          onClick={onCreateRunbook}
+          aria-label={label}
+          className="gap-1.5 px-2.5 max-sm:h-11 max-sm:min-w-11 [&_svg]:size-3.5"
+        >
+          <SquarePen aria-hidden="true" />
+          <span className="[@container(max-width:27.99rem)]:sr-only">
+            {t("common.actions.new")}
+          </span>
+        </Button>
+      </TooltipTrigger>
+      <TooltipContent side="bottom">{label}</TooltipContent>
+    </Tooltip>
   );
 }
 
-/** Compact headers: the same secondary actions behind one ⋯ button next to Run. */
+const MENU_ITEM_CLASS = "gap-2 max-sm:min-h-11";
+
+/**
+ * The ⋯ menu, at every header width: export actions first, then Delete on its
+ * own after a separator so the destructive action never sits beside Run.
+ */
 function RunbookOverflowMenu({
   onExport,
-  onOpenResults,
   onDelete,
-  onCreateRunbook,
   overflowActions,
   t,
-}: SecondaryActionProps) {
+}: Pick<RunbookEditorHeaderProps, "onExport" | "onDelete" | "t"> & {
+  overflowActions: readonly RunbookHeaderMenuAction[];
+}) {
   const label = t("runbooks.runbook.moreRunbookActions");
   // Non-modal so the delete confirmation dialog can take focus right after
   // the menu closes without fighting the menu's pointer lock.
@@ -367,8 +300,6 @@ function RunbookOverflowMenu({
           <DropdownMenuTrigger asChild>
             <button
               type="button"
-              // History lives in this menu here, so the tour points at it.
-              data-tour="runbooks-history-btn"
               aria-label={label}
               className={RUNBOOK_ICON_BUTTON_CLASS}
             >
@@ -379,44 +310,92 @@ function RunbookOverflowMenu({
         <TooltipContent side="bottom">{label}</TooltipContent>
       </Tooltip>
       <DropdownMenuContent align="end" className="min-w-52">
-        <DropdownMenuItem
-          onSelect={onOpenResults}
-          className="gap-2 max-sm:min-h-11"
-        >
-          <History size={14} aria-hidden="true" />
-          {t("runbooks.runbook.viewRunbookResultHistory")}
-        </DropdownMenuItem>
-        <DropdownMenuItem onSelect={onExport} className="gap-2 max-sm:min-h-11">
+        <DropdownMenuItem onSelect={onExport} className={MENU_ITEM_CLASS}>
           <Upload size={14} aria-hidden="true" />
-          {t("runbooks.runbook.export")}
+          {t("runbooks.runbook.exportRunbook")}
         </DropdownMenuItem>
         {overflowActions.map((action) => (
           <DropdownMenuItem
             key={action.id}
             onSelect={action.onSelect}
-            className="gap-2 max-sm:min-h-11"
+            className={MENU_ITEM_CLASS}
           >
             {action.icon}
             {action.label}
           </DropdownMenuItem>
         ))}
-        <DropdownMenuItem
-          onSelect={onCreateRunbook}
-          className="gap-2 max-sm:min-h-11"
-        >
-          <SquarePen size={14} aria-hidden="true" />
-          {t("runbooks.runbook.newRunbook")}
-        </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem
           onSelect={onDelete}
-          className="gap-2 text-destructive focus:bg-destructive/10 focus:text-destructive max-sm:min-h-11"
+          className={cn(
+            MENU_ITEM_CLASS,
+            "text-destructive focus:bg-destructive/10 focus:text-destructive",
+          )}
         >
           <Trash2 size={14} aria-hidden="true" />
           {t("runbooks.runbook.deleteRunbook")}
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
+  );
+}
+
+/**
+ * The description reads as up to two clamped lines; focusing it (click or
+ * Tab) swaps in the textarea so the full text can be edited.
+ */
+function DescriptionField({
+  value,
+  onChange,
+  onBlur,
+  t,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  onBlur: () => void;
+  t: TranslationFn;
+}) {
+  const ref = useAutoHeight(value);
+  const [editing, setEditing] = useState(false);
+  const showPreview = !editing && value.length > 0;
+
+  return (
+    <div className="relative mt-0.5">
+      {showPreview && (
+        <p
+          aria-hidden="true"
+          title={value}
+          onClick={() => {
+            ref.current?.focus();
+          }}
+          className="line-clamp-2 cursor-text break-words text-[13px] leading-[18px] text-muted-foreground"
+        >
+          {value}
+        </p>
+      )}
+      <textarea
+        ref={ref}
+        rows={1}
+        value={value}
+        onChange={(event) => {
+          onChange(singleLine(event.target.value));
+        }}
+        onKeyDown={preventLineBreak}
+        onFocus={() => {
+          setEditing(true);
+        }}
+        onBlur={() => {
+          setEditing(false);
+          onBlur();
+        }}
+        aria-label={t("runbooks.runbook.addADescription")}
+        className={cn(
+          "block max-h-[36px] w-full resize-none overflow-hidden break-words bg-transparent text-[13px] leading-[18px] text-muted-foreground outline-none placeholder:text-muted-foreground/70 focus:overflow-y-auto",
+          showPreview && "sr-only",
+        )}
+        placeholder={t("runbooks.runbook.addADescription")}
+      />
+    </div>
   );
 }
 
@@ -445,31 +424,20 @@ export function RunbookEditorHeader({
   const hasMetaIssue =
     metaIssues.titleIssue !== null || metaIssues.descriptionIssue !== null;
   const titleRef = useAutoHeight(runbook.title);
-  const descriptionRef = useAutoHeight(runbook.description);
-  const headerRef = useRef<HTMLDivElement>(null);
-  const compact = useIsCompactHeader(headerRef);
-  const secondaryActionProps: SecondaryActionProps = {
-    onExport,
-    onOpenResults,
-    onDelete,
-    onCreateRunbook,
-    overflowActions,
-    t,
-  };
 
   return (
     <div
-      ref={headerRef}
       data-tour="runbooks-editor-header"
-      data-compact={compact ? "true" : undefined}
       className="bs-page-header shrink-0 border-b border-border px-4 py-3 [container-type:inline-size]"
     >
       {/* Three areas on a grid, placed by the header's own width:
-          - under 28rem: the title takes the first row; the secondary group
-            and the [⋯][Run] pair share the second row.
-          - 28rem to 60rem: title with Run at its right; the secondary group
-            on the row below.
-          - 60rem and wider: title, secondary group and Run on one row. */}
+          - under 28rem: the title takes the first row; the toolbar and Run
+            share the second row.
+          - 28rem to 60rem: title with Run at its right; the toolbar on the
+            row below.
+          - 60rem and wider: title, toolbar and Run on one row.
+          The toolbar keeps the execution settings and History visible; the
+          export actions and Delete live in the ⋯ menu at every width. */}
       <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-x-3 gap-y-2.5 [@container(min-width:60rem)]:grid-cols-[minmax(0,1fr)_auto_auto]">
         <div className="col-start-1 row-start-1 flex min-w-0 items-start gap-1.5 [@container(max-width:27.99rem)]:col-span-2">
           <div className="min-w-0 flex-1">
@@ -486,26 +454,17 @@ export function RunbookEditorHeader({
               className="block max-h-[44px] w-full resize-none overflow-hidden break-words bg-transparent text-base font-semibold leading-[22px] text-foreground outline-none placeholder:text-muted-foreground focus:overflow-y-auto"
               placeholder={t("runbooks.runbook.runbookTitle")}
             />
-            <textarea
-              ref={descriptionRef}
-              rows={1}
+            <DescriptionField
               value={runbook.description}
-              onChange={(event) => {
-                onDescriptionChange(singleLine(event.target.value));
-              }}
-              onKeyDown={preventLineBreak}
+              onChange={onDescriptionChange}
               onBlur={onDescriptionBlur}
-              title={runbook.description}
-              aria-label={t("runbooks.runbook.addADescription")}
-              className="mt-0.5 block max-h-[36px] w-full resize-none overflow-hidden break-words bg-transparent text-[13px] leading-[18px] text-muted-foreground outline-none placeholder:text-muted-foreground/70 focus:overflow-y-auto"
-              placeholder={t("runbooks.runbook.addADescription")}
+              t={t}
             />
           </div>
           {hasMetaIssue && <MetadataWarning metaIssues={metaIssues} t={t} />}
         </div>
 
-        <div className="col-start-2 row-start-1 flex items-center justify-end gap-1.5 [@container(max-width:27.99rem)]:row-start-2 [@container(min-width:60rem)]:col-start-3">
-          {compact && <RunbookOverflowMenu {...secondaryActionProps} />}
+        <div className="col-start-2 row-start-1 flex items-center justify-end [@container(max-width:27.99rem)]:row-start-2 [@container(min-width:60rem)]:col-start-3">
           <Tooltip>
             <TooltipTrigger asChild>
               <Button
@@ -527,8 +486,8 @@ export function RunbookEditorHeader({
           </Tooltip>
         </div>
 
-        <div className="col-span-2 col-start-1 row-start-2 flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-2 [@container(max-width:27.99rem)]:col-span-1 [@container(min-width:60rem)]:col-span-1 [@container(min-width:60rem)]:col-start-2 [@container(min-width:60rem)]:row-start-1 [@container(min-width:60rem)]:justify-end">
-          <span className="mr-1 shrink-0 text-xs tabular-nums text-muted-foreground [@container(max-width:27.99rem)]:hidden">
+        <div className="col-span-2 col-start-1 row-start-2 flex min-w-0 flex-wrap items-center gap-2 [@container(max-width:27.99rem)]:col-span-1 [@container(min-width:60rem)]:col-span-1 [@container(min-width:60rem)]:col-start-2 [@container(min-width:60rem)]:row-start-1 [@container(min-width:60rem)]:justify-end">
+          <span className="shrink-0 text-xs tabular-nums text-muted-foreground [@container(max-width:27.99rem)]:hidden">
             {t("runbooks.runbooks.actionCount", {
               count: runbook.actions.length,
             })}
@@ -537,7 +496,7 @@ export function RunbookEditorHeader({
           <div
             role="group"
             aria-label={t("runbooks.runbook.executionSettings")}
-            className="flex min-w-0 flex-wrap items-center gap-1.5"
+            className="flex min-w-0 flex-wrap items-center gap-2"
           >
             <IdleTimeoutPicker
               currentTimeoutMinutes={currentTimeoutMinutes}
@@ -548,9 +507,21 @@ export function RunbookEditorHeader({
             />
             {extraActions}
           </div>
-          {!compact && (
-            <RunbookSecondaryIconButtons {...secondaryActionProps} />
-          )}
+          <div className="ml-auto flex shrink-0 items-center gap-2 [@container(min-width:60rem)]:ml-0">
+            <HeaderIconButton
+              label={t("runbooks.runbook.viewRunbookResultHistory")}
+              onClick={onOpenResults}
+              icon={<History size={14} aria-hidden="true" />}
+              dataTour="runbooks-history-btn"
+            />
+            <NewRunbookButton onCreateRunbook={onCreateRunbook} t={t} />
+            <RunbookOverflowMenu
+              onExport={onExport}
+              onDelete={onDelete}
+              overflowActions={overflowActions}
+              t={t}
+            />
+          </div>
         </div>
       </div>
     </div>

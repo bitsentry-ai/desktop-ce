@@ -67,19 +67,21 @@ export function RunbookLibraryView({
             >
               <BookOpen size={14} className="shrink-0 text-muted-foreground" />
               <div className="min-w-0 flex-1">
-                <div className="truncate text-sm font-medium">
+                <div className="truncate text-sm font-semibold leading-5 text-foreground">
                   {runbook.title}
                 </div>
-                <div className="mt-1 line-clamp-1 text-xs text-muted-foreground">
+                <div className="mt-0.5 line-clamp-2 text-[13px] leading-[18px] text-muted-foreground">
                   {description}
                 </div>
-                <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-muted-foreground/70">
+                <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
                   <span>
                     {t("runbooks.runbooks.actionCount", {
                       count: runbook.actions.length,
                     })}
                   </span>
-                  <span className="text-muted-foreground/30">•</span>
+                  <span aria-hidden="true" className="text-muted-foreground/50">
+                    •
+                  </span>
                   <span>
                     {t("runbooks.runbook.updated")}{" "}
                     {formatRelativeTime(runbook.updatedAt)}

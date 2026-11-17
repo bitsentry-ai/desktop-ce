@@ -10,7 +10,6 @@ import { TooltipProvider } from "@bitsentry-ce/components/ui/tooltip";
 const translations: Record<string, string> = {
   "runbooks.runbook.run": "Run",
   "runbooks.runbook.runRunbook": "Run runbook",
-  "runbooks.runbook.export": "Export",
   "runbooks.runbook.exportRunbook": "Export runbook",
   "runbooks.runbook.newRunbook": "New runbook",
   "runbooks.runbook.deleteRunbook": "Delete runbook",
@@ -18,6 +17,8 @@ const translations: Record<string, string> = {
   "runbooks.runbook.viewRunbookResultHistory": "View result history",
   "runbooks.runbook.executionSettings": "Execution settings",
   "runbooks.runbook.runbookTitle": "Runbook title",
+  "runbooks.runbook.addADescription": "Add a description",
+  "common.actions.new": "New",
 };
 
 function t(key: string, options?: Record<string, unknown>) {
@@ -79,7 +80,7 @@ function openOverflowMenu() {
   fireEvent.keyDown(trigger, { key: "Enter" });
 }
 
-/** Pretends the header measures `width` pixels, as a ResizeObserver-less jsdom reports 0. */
+/** Pretends the header measures `width` pixels; the toolbar must not depend on it. */
 function setHeaderWidth(width: number) {
   vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue({
     width,
@@ -129,89 +130,95 @@ describe("RunbookEditorHeader", () => {
     ).toBe(true);
   });
 
-  it("shows history, export, extra actions, delete and New as icon buttons on a wide header", () => {
-    setHeaderWidth(1100);
-    const onExportContext = vi.fn();
-    const props = renderHeader({
-      overflowActions: [exportContextAction(onExportContext)],
-    });
+  it.each([1100, 390])(
+    "keeps History and New visible and groups export and delete in the ⋯ menu at %ipx",
+    (width) => {
+      setHeaderWidth(width);
+      const onExportContext = vi.fn();
+      const props = renderHeader({
+        overflowActions: [exportContextAction(onExportContext)],
+        extraActions: <button type="button">Step credentials</button>,
+      });
 
+      expect(screen.getByRole("button", { name: "Run runbook" })).toBeTruthy();
+      // Execution settings stay inline as one group.
+      const settings = screen.getByRole("group", {
+        name: "Execution settings",
+      });
+      expect(settings.textContent).toContain("Step credentials");
+
+      const history = screen.getByRole("button", {
+        name: "View result history",
+      });
+      expect(history.getAttribute("data-tour")).toBe("runbooks-history-btn");
+      fireEvent.click(history);
+      expect(props.onOpenResults).toHaveBeenCalledTimes(1);
+
+      const newRunbook = screen.getByRole("button", { name: "New runbook" });
+      expect(newRunbook.getAttribute("data-tour")).toBe("runbooks-new-btn");
+      expect(newRunbook.className).toContain("border");
+      expect(newRunbook.className).not.toContain("bg-primary");
+      fireEvent.click(newRunbook);
+      expect(props.onCreateRunbook).toHaveBeenCalledTimes(1);
+
+      for (const name of [
+        "Export runbook",
+        "Export runbook context",
+        "Delete runbook",
+      ]) {
+        expect(screen.queryByRole("button", { name })).toBeNull();
+      }
+
+      openOverflowMenu();
+      const items = screen
+        .getAllByRole("menuitem")
+        .map((item) => item.textContent);
+      expect(items).toEqual([
+        "Export runbook",
+        "Export runbook context",
+        "Delete runbook",
+      ]);
+      fireEvent.click(screen.getByRole("menuitem", { name: "Export runbook" }));
+      expect(props.onExport).toHaveBeenCalledTimes(1);
+
+      openOverflowMenu();
+      fireEvent.click(
+        screen.getByRole("menuitem", { name: "Export runbook context" }),
+      );
+      expect(onExportContext).toHaveBeenCalledTimes(1);
+
+      openOverflowMenu();
+      const deleteItem = screen.getByRole("menuitem", {
+        name: "Delete runbook",
+      });
+      expect(deleteItem.className).toContain("text-destructive");
+      expect(deleteItem.previousElementSibling?.getAttribute("role")).toBe(
+        "separator",
+      );
+      fireEvent.click(deleteItem);
+      expect(props.onDelete).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it("shows the description as a two-line preview until it is focused", () => {
+    const props = renderHeader();
+
+    const preview = screen.getByText("Load and memory", { selector: "p" });
+    expect(preview.className).toContain("line-clamp-2");
+    const description = screen.getByRole("textbox", {
+      name: "Add a description",
+    });
+    expect(description.className).toContain("sr-only");
+
+    fireEvent.focus(description);
+    expect(screen.queryByText("Load and memory", { selector: "p" })).toBeNull();
+    expect(description.className).not.toContain("sr-only");
+
+    fireEvent.blur(description);
+    expect(props.onDescriptionBlur).toHaveBeenCalledTimes(1);
     expect(
-      screen.queryByRole("button", { name: "More runbook actions" }),
-    ).toBeNull();
-
-    const history = screen.getByRole("button", { name: "View result history" });
-    expect(history.getAttribute("data-tour")).toBe("runbooks-history-btn");
-    fireEvent.click(history);
-    expect(props.onOpenResults).toHaveBeenCalledTimes(1);
-
-    fireEvent.click(screen.getByRole("button", { name: "Export runbook" }));
-    expect(props.onExport).toHaveBeenCalledTimes(1);
-
-    fireEvent.click(
-      screen.getByRole("button", { name: "Export runbook context" }),
-    );
-    expect(onExportContext).toHaveBeenCalledTimes(1);
-
-    const newRunbook = screen.getByRole("button", { name: "New runbook" });
-    expect(newRunbook.getAttribute("data-tour")).toBe("runbooks-new-btn");
-    fireEvent.click(newRunbook);
-    expect(props.onCreateRunbook).toHaveBeenCalledTimes(1);
-
-    const deleteButton = screen.getByRole("button", { name: "Delete runbook" });
-    expect(deleteButton.className).toContain("hover:text-destructive");
-    fireEvent.click(deleteButton);
-    expect(props.onDelete).toHaveBeenCalledTimes(1);
-  });
-
-  it("keeps Run visible and moves the secondary actions into the overflow menu on a narrow header", () => {
-    setHeaderWidth(390);
-    const onExportContext = vi.fn();
-    const props = renderHeader({
-      overflowActions: [exportContextAction(onExportContext)],
-      extraActions: <button type="button">Step credentials</button>,
-    });
-
-    expect(screen.getByRole("button", { name: "Run runbook" })).toBeTruthy();
-    // Execution settings stay inline as one group.
-    const settings = screen.getByRole("group", {
-      name: "Execution settings",
-    });
-    expect(settings.textContent).toContain("Step credentials");
-    for (const name of [
-      "View result history",
-      "Export runbook",
-      "New runbook",
-      "Delete runbook",
-    ]) {
-      expect(screen.queryByRole("button", { name })).toBeNull();
-    }
-
-    openOverflowMenu();
-    fireEvent.click(
-      screen.getByRole("menuitem", { name: "View result history" }),
-    );
-    expect(props.onOpenResults).toHaveBeenCalledTimes(1);
-
-    openOverflowMenu();
-    fireEvent.click(screen.getByRole("menuitem", { name: "Export" }));
-    expect(props.onExport).toHaveBeenCalledTimes(1);
-
-    openOverflowMenu();
-    fireEvent.click(
-      screen.getByRole("menuitem", { name: "Export runbook context" }),
-    );
-    expect(onExportContext).toHaveBeenCalledTimes(1);
-
-    openOverflowMenu();
-    fireEvent.click(screen.getByRole("menuitem", { name: "New runbook" }));
-    expect(props.onCreateRunbook).toHaveBeenCalledTimes(1);
-
-    openOverflowMenu();
-    const deleteItem = screen.getByRole("menuitem", { name: "Delete runbook" });
-    expect(deleteItem.className).toContain("text-destructive");
-    fireEvent.click(deleteItem);
-    expect(props.onDelete).toHaveBeenCalledTimes(1);
+      screen.getByText("Load and memory", { selector: "p" }).className,
+    ).toContain("line-clamp-2");
   });
 
   it("keeps the runbook title on one logical line", () => {
