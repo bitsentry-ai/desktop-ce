@@ -13,13 +13,13 @@ import type { ToasterProps } from "./sonner.types";
 const toastClassNames = {
   toast: [
     "group toast !gap-3 !rounded-lg !border !border-border !bg-popover !p-4 !pl-5 !pr-11 !text-popover-foreground",
-    "!shadow-[0_10px_30px_-10px_hsl(var(--shadow-color)/0.25),0_2px_6px_-2px_hsl(var(--shadow-color)/0.1)]",
+    "!shadow-[0_4px_12px_hsl(var(--shadow-color)/0.1)]",
     "before:absolute before:inset-y-3 before:left-2 before:w-[3px] before:rounded-full before:content-['']",
     "data-[type=error]:before:bg-[hsl(var(--destructive))] data-[type=warning]:before:bg-[hsl(var(--warning))]",
     "data-[type=success]:before:bg-[hsl(var(--success))] data-[type=info]:before:bg-[hsl(var(--info))]",
   ].join(" "),
-  title: "!text-[13px] !font-medium !leading-5 !text-foreground",
-  description: "!text-[12.5px] !leading-[1.125rem] !text-muted-foreground",
+  title: "!text-sm !font-medium !leading-5 !text-foreground",
+  description: "!text-[13px] !leading-5 !text-muted-foreground",
   icon: "!mt-0.5 !self-start",
   actionButton: "!h-7 !rounded-md !bg-primary !px-2.5 !text-xs !font-medium !text-primary-foreground",
   cancelButton: "!h-7 !rounded-md !bg-muted !px-2.5 !text-xs !text-muted-foreground",

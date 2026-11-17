@@ -57,5 +57,6 @@
   "navigation.navbar.statusNeedsInput": "Needs input",
   "navigation.navbar.statusDone": "Done",
   "navigation.navbar.expandSidebar": "Expand sidebar",
+  "navigation.navbar.railRecent": "Recent",
   "navigation.navbar.collapseSidebar": "Collapse sidebar"
 }

@@ -57,5 +57,6 @@
   "navigation.navbar.statusNeedsInput": "需要输入",
   "navigation.navbar.statusDone": "完成",
   "navigation.navbar.expandSidebar": "展开侧边栏",
+  "navigation.navbar.railRecent": "最近",
   "navigation.navbar.collapseSidebar": "收起侧边栏"
 }

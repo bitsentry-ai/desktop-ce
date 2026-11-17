@@ -57,5 +57,6 @@
   "navigation.navbar.statusNeedsInput": "Réponse requise",
   "navigation.navbar.statusDone": "Terminé",
   "navigation.navbar.expandSidebar": "Déplier la barre latérale",
+  "navigation.navbar.railRecent": "Récents",
   "navigation.navbar.collapseSidebar": "Replier la barre latérale"
 }

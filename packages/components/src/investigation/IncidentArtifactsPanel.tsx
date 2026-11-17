@@ -170,7 +170,7 @@ export default function IncidentArtifactsPanel({ isOpen, filter, focusOnOpen = f
     : <DeliveryItemCard key={row.id} row={row} open={cards.isOpen(deliveryCardId(row.id))} onToggle={() => { cards.toggle(deliveryCardId(row.id)); }} threadId={threadId} disabled={disabled} service={deliveries} onRefresh={deliveryRows.refresh} />;
 
   return <aside ref={asideRef} tabIndex={-1} data-tour="incidents-artifacts-rail" aria-label={t("incidents.artifactsPanel.title")} aria-hidden={!isOpen} inert={!isOpen} onKeyDown={handleKeyDown}
-    className={cn("absolute inset-y-0 right-0 z-20 flex w-full max-w-[430px] flex-col border-l border-border bg-background/95 shadow-2xl outline-none backdrop-blur transition-transform duration-300", isOpen ? "translate-x-0" : "translate-x-full")}>
+    className={cn("absolute inset-y-0 right-0 z-20 flex w-full max-w-[430px] flex-col border-l border-border bg-background/95 shadow-2xl outline-none backdrop-blur transition-transform duration-300", isOpen ? "translate-x-0" : "translate-x-full shadow-none")}>
     <div className="flex items-center gap-3 border-b border-border px-4 py-3">
       <div className="flex size-9 items-center justify-center rounded-2xl border border-border bg-muted/20"><Layers size={16} className="text-muted-foreground" aria-hidden="true" /></div>
       <div className="min-w-0 flex-1">

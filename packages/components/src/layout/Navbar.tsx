@@ -1074,9 +1074,15 @@ const Navbar = ({
           aria-expanded={railExpanded}
           aria-label={t(railExpanded ? "navigation.navbar.collapseSidebar" : "navigation.navbar.expandSidebar")}
           title={t(railExpanded ? "navigation.navbar.collapseSidebar" : "navigation.navbar.expandSidebar")}
-          className="flex size-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+          className="bs-sidebar-railtoggle flex size-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
         >
           {railExpanded ? <PanelLeftClose size={16} /> : <PanelLeftOpen size={16} />}
+          {/* In the rail the toggle reads "Recent": it opens the full sidebar with recent incidents, runbooks and results. */}
+          {!railExpanded && (
+            <span aria-hidden="true" className="bs-sidebar-railtoggle-label hidden">
+              {t("navigation.navbar.railRecent")}
+            </span>
+          )}
         </button>
       </div>
 

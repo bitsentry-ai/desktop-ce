@@ -2,6 +2,7 @@ import { useId, type ChangeEvent } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { ChevronDown, type LucideIcon } from "lucide-react";
 import { cn } from "../lib/utils";
+import { SELECTION_BAR_CLASS } from "../lib/selectionBar";
 
 export interface SettingsSectionNavItem {
   /** The location hash without `#`, such as `plugins` for `/app-settings#plugins`. */
@@ -116,7 +117,10 @@ function SectionLink({
     <Link
       to={{ pathname, hash: `#${item.id}` }}
       aria-current={selected ? "page" : undefined}
-      className={cn(listLinkClass, selected && "bg-accent font-medium text-foreground")}
+      className={cn(
+        listLinkClass,
+        selected && cn("bg-[hsl(var(--selection))] font-medium text-foreground hover:bg-[hsl(var(--selection))]", SELECTION_BAR_CLASS),
+      )}
     >
       {Icon !== undefined && <Icon size={15} className="shrink-0" />}
       <span className="truncate">{item.label}</span>
