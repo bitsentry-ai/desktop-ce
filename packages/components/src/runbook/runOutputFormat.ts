@@ -258,8 +258,14 @@ export interface JsonSummary {
   total: number;
 }
 
+/** One line per field: strings as written, scalars as JSON, and nested values by their size ("3 fields", "5 items"). */
 function summaryValue(value: unknown): string {
   if (typeof value === "string") return value;
+  if (Array.isArray(value)) return value.length === 1 ? "1 item" : `${String(value.length)} items`;
+  if (value !== null && typeof value === "object") {
+    const count = Object.keys(value).length;
+    return count === 1 ? "1 field" : `${String(count)} fields`;
+  }
   return JSON.stringify(value) ?? String(value);
 }
 

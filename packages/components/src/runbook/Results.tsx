@@ -982,7 +982,7 @@ export default function ResultsPage() {
                 {t("common.results.backToRunbook")}
               </button>
               <span aria-hidden="true" className="text-muted-foreground/30">/</span>
-              <span className="flex-1 truncate text-[15px] font-semibold tracking-[-0.01em] text-foreground">
+              <span className="flex-1 truncate text-lg font-semibold tracking-[-0.015em] text-foreground">
                 {t("common.results.resultsFor")} {runbookTitle}
               </span>
               <span className="rounded-full border border-border px-2 py-0.5 text-xs text-muted-foreground">
@@ -1011,7 +1011,7 @@ export default function ResultsPage() {
           <TopBar />
           <div className="flex flex-1 flex-col overflow-hidden">
             <div className="bs-page-header flex min-h-[3.25rem] shrink-0 items-center gap-2 border-b border-border px-4 py-2">
-              <span className="flex-1 truncate text-[15px] font-semibold tracking-[-0.01em] text-foreground">
+              <span className="flex-1 truncate text-lg font-semibold tracking-[-0.015em] text-foreground">
                 {t("common.results.allRunbookResults")}
               </span>
               <button
@@ -1104,29 +1104,30 @@ export default function ResultsPage() {
           )}
           {activeResult !== null && (
             <div className="flex flex-1 flex-col overflow-hidden">
-              <div className="bs-page-header flex min-h-[3.25rem] shrink-0 items-center gap-2 border-b border-border px-4 py-2">
-                <button
-                  data-tour="results-runbooks-btn"
-                  onClick={() => {
-                    void navigate(`/runbooks?id=${activeResult.runbookId}`);
-                  }}
-                  className="text-xs text-muted-foreground hover:text-foreground transition-colors"
-                >
-                  {activeResult.runbookTitle}
-                </button>
-                <span aria-hidden="true" className="text-muted-foreground/30">/</span>
-                <span className="font-mono text-xs text-muted-foreground">
-                  {activeResult.id.slice(0, 8)}
-                </span>
-                <span
-                  className={cn(
-                    "rounded-full px-2 py-0.5 text-xs font-medium",
-                    statusClass(effectiveStatus(activeResult, activeExecution)),
-                  )}
-                >
-                  {statusLabel(effectiveStatus(activeResult, activeExecution))}
-                </span>
-                <div className="flex-1" />
+              {/* Title first: the runbook's name (it links back to the runbook), then the run ID and status. */}
+              <div className="bs-page-header flex min-h-[3.25rem] shrink-0 items-start gap-3 border-b border-border px-4 py-2.5">
+                <div className="min-w-0 flex-1">
+                  <button
+                    data-tour="results-runbooks-btn"
+                    onClick={() => {
+                      void navigate(`/runbooks?id=${activeResult.runbookId}`);
+                    }}
+                    className="line-clamp-2 text-left text-base font-semibold leading-[22px] text-foreground underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+                  >
+                    {activeResult.runbookTitle}
+                  </button>
+                  <div className="mt-0.5 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                    <span className="font-mono">{activeResult.id.slice(0, 8)}</span>
+                    <span
+                      className={cn(
+                        "rounded-full px-2 py-0.5 text-xs font-medium",
+                        statusClass(effectiveStatus(activeResult, activeExecution)),
+                      )}
+                    >
+                      {statusLabel(effectiveStatus(activeResult, activeExecution))}
+                    </span>
+                  </div>
+                </div>
                 <button
                   data-tour="results-history-btn"
                   onClick={() => { void navigate("/results?view=history"); }}

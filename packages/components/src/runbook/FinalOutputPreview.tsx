@@ -45,15 +45,15 @@ export const FINAL_OUTPUT_PREVIEW_LINES = 10;
 export const FINAL_OUTPUT_SUMMARY_FIELDS = 8;
 
 /**
- * The first lines of a longer plain-text output. Each line wraps onto at most two rows, so values stay readable in
- * the Summary column, and one very long line cannot fill the whole preview.
+ * The first lines of a longer plain-text output, as the terminal printed them: no wrapping, so aligned columns keep
+ * their labels and values together. Wider lines scroll sideways inside the preview, which is at most about 240px tall.
  */
 function PlainTextPreviewLines({ text }: { text: string }) {
   const lines = text.split("\n", FINAL_OUTPUT_PREVIEW_LINES);
   return (
-    <pre className={cn(RUN_OUTPUT_MONO_CLASS, "min-w-0 max-w-full whitespace-pre-wrap")}>
+    <pre className={cn(RUN_OUTPUT_MONO_CLASS, "max-h-60 min-w-0 max-w-full overflow-x-auto overflow-y-hidden whitespace-pre")}>
       {lines.map((line, index) => (
-        <span key={`${String(index)}:${line}`} className="line-clamp-2 break-words [overflow-wrap:anywhere]">
+        <span key={`${String(index)}:${line}`} className="block">
           {line.length > 0 ? line : " "}
         </span>
       ))}
