@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { ChatBubble } from "@bitsentry-ce/components/chat/ChatBubble";
 import { Composer, type ComposerProps } from "@bitsentry-ce/components/chat/Composer";
 import { ComposerBlockedNotice } from "@bitsentry-ce/components/chat/ComposerBlockedNotice";
+import { ResponseStalledBadge } from "@bitsentry-ce/components/chat/ResponseStalledBadge";
 import { isTurnStalled, TURN_STALL_AFTER_MS } from "@bitsentry-ce/components/chat/turnTimelineRows";
 import { TurnStopContext } from "@bitsentry-ce/components/chat/turnStop";
 import type { ChatMessage } from "@bitsentry-ce/components/chat/types";
@@ -76,14 +77,35 @@ describe("a running turn's state", () => {
       </TurnStopContext>,
     );
 
-    const label = screen.getByText("common.incidentDetail.possiblyStalled(1d 0h)");
-    const row = label.parentElement;
+    const label = screen.getByText("common.incidentDetail.responseStalled");
+    const row = label.closest('[role="status"]');
     expect(row?.querySelector("svg.lucide-triangle-alert")).not.toBeNull();
     expect(activityDot(container)).toBeNull();
     expect(container.querySelector(".animate-spin")).toBeNull();
 
     fireEvent.click(screen.getByRole("button", { name: "common.incidentDetail.stop" }));
     expect(stop).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("the header's response badge", () => {
+  const user: ChatMessage = { kind: "user", text: "Why is the disk full?" };
+
+  it("shows Response stalled beside the status only while the latest reply is stalled", () => {
+    renderAt(startedMs + 24 * 60 * 60_000, <ResponseStalledBadge messages={[user, runningTurn()]} />);
+    expect(screen.getByText("common.incidentDetail.responseStalled")).toBeTruthy();
+  });
+
+  it("stays hidden for a reply still inside the stall window, a finished reply, or no reply", () => {
+    const { rerender } = renderAt(startedMs + 60_000, <ResponseStalledBadge messages={[runningTurn()]} />);
+    expect(screen.queryByText("common.incidentDetail.responseStalled")).toBeNull();
+
+    vi.setSystemTime(startedMs + 24 * 60 * 60_000);
+    rerender(<TooltipProvider><ResponseStalledBadge messages={[{ ...runningTurn(), status: "done" }]} /></TooltipProvider>);
+    expect(screen.queryByText("common.incidentDetail.responseStalled")).toBeNull();
+
+    rerender(<TooltipProvider><ResponseStalledBadge messages={[user]} /></TooltipProvider>);
+    expect(screen.queryByText("common.incidentDetail.responseStalled")).toBeNull();
   });
 });
 

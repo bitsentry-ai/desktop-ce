@@ -28,7 +28,7 @@ import { MarkdownContent } from "../markdown";
 import { cn } from "../lib/utils";
 import { formatDuration } from "./utils";
 import { dominantToolKind, summarizeToolGroup, toolDetail, toolKind, toolLabel, type ToolKind } from "./toolPresentation";
-import { deriveTurnTimeline, isTurnStalled, type TurnRow } from "./turnTimelineRows";
+import { deriveTurnTimeline, isTurnStalled, lastTurnActivityMs, type TurnRow } from "./turnTimelineRows";
 import { TurnStopContext } from "./turnStop";
 import { useDisclosure } from "./disclosureStore";
 import { CITATION_SOURCE_ATTRIBUTE } from "./citationDom";
@@ -258,8 +258,9 @@ function StopTurnButton() {
 
 /**
  * The running turn's one label: how long it has worked, or, once nothing new arrived for half an hour, that this turn
- * may have stalled. A stalled turn reads as a warning about the turn, not as work in progress: an amber alert, the
- * elapsed time and the host's stop, with no spinner. The incident's own status stays in the header.
+ * may have stalled. A stalled turn reads as a warning about the turn, not as work in progress: a compact amber panel
+ * with how long nothing has happened, how long the reply has run, and the host's stop, with no spinner. The header
+ * keeps the incident's own status and adds a "Response stalled" badge beside it.
  */
 function WorkingRow({ msg, startedAt, nowMs }: { msg: AgentMessage; startedAt: string | undefined; nowMs: number }) {
   const { t } = useTranslation();
@@ -281,11 +282,20 @@ function WorkingRow({ msg, startedAt, nowMs }: { msg: AgentMessage; startedAt: s
       </div>
     );
   }
+  const inactive = formatDuration(Math.max(0, nowMs - (lastTurnActivityMs(msg) ?? startedMs)));
   return (
-    <div className="border-b border-border/60 pb-2 pt-1">
-      <div className="flex min-h-7 min-w-0 flex-wrap items-center gap-x-2 gap-y-1.5 px-1 text-sm leading-[22px] tabular-nums">
-        <TriangleAlert aria-hidden className="size-4 shrink-0 text-[hsl(var(--warning-text))]" />
-        <span className="font-medium text-[hsl(var(--warning-text))]">{t("common.incidentDetail.possiblyStalled", { duration })}</span>
+    <div className="pb-2 pt-1">
+      <div
+        role="status"
+        className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2 rounded-lg border border-[hsl(var(--warning)/0.35)] bg-[hsl(var(--warning)/0.08)] p-3 tabular-nums"
+      >
+        <TriangleAlert aria-hidden className="size-4 shrink-0 self-start text-[hsl(var(--warning-text))] max-sm:mt-0.5" />
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-medium leading-5 text-[hsl(var(--warning-text))]">{t("common.incidentDetail.responseStalled")}</p>
+          <p className="text-xs leading-[18px] text-muted-foreground">
+            {t("common.incidentDetail.stalledDetail", { inactive, duration })}
+          </p>
+        </div>
         <StopTurnButton />
       </div>
     </div>

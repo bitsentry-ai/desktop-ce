@@ -110,17 +110,17 @@ export function useDesktopIntegrationPorts(): { resources?: IntegrationResources
 
 function CountPill({ count, pending, attention = 0 }: { count: number; pending: number; attention?: number }) {
   const { t } = useTranslation();
-  const amber = "rounded-full bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-medium text-amber-700 dark:text-amber-400";
+  const amber = "rounded-full bg-amber-500/15 px-1.5 py-0.5 text-xs font-medium text-amber-700 dark:text-amber-400";
   if (pending > 0) return <span className={amber}>{t("incidents.integrationRail.pendingShort", { pending })}</span>;
   if (attention > 0) return <span className={amber}>{t("incidents.integrationRail.attentionShort", { attention })}</span>;
-  return <span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px]">{count}</span>;
+  return <span className="rounded-full bg-muted px-1.5 py-0.5 text-xs">{count}</span>;
 }
 
 function RailTrigger({ active, icon: Icon, label, title, count, pending, attention = 0, onClick }: {
   active: boolean; icon: ElementType; label: string; title: string; count: number; pending: number; attention?: number; onClick(): void;
 }) {
   return <button type="button" aria-pressed={active} title={title} onClick={onClick}
-    className={cn("flex items-center gap-1.5 rounded-md border border-border px-2 py-1 text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring", active ? "bg-muted text-foreground" : "hover:bg-muted")}>
+    className={cn("flex h-8 shrink-0 items-center gap-1.5 rounded-md border border-border px-2.5 text-[13px] max-sm:h-11 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring", active ? "bg-muted text-foreground" : "hover:bg-muted")}>
     <Icon size={12} aria-hidden="true" />
     {label}
     <CountPill count={count} pending={pending} attention={attention} />

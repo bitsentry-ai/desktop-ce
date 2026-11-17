@@ -15,6 +15,7 @@ import {
 import { useSearchParams, useNavigate } from "react-router-dom";
 import type { LegendListRef } from "@legendapp/list/react";
 import { hasWaitingAgentIndicator } from "../../chat/ChatBubble";
+import { ResponseStalledBadge } from "../../chat/ResponseStalledBadge";
 import IncidentArtifactsRail, {
   countIncidentArtifacts,
 } from "../IncidentArtifactsRail";
@@ -837,14 +838,14 @@ export default function IncidentsPage() {
               data-tour="incidents-artifacts-btn"
               onClick={() => { setArtifactsOpen((open) => !open); }}
               className={cn(
-                "flex items-center gap-1.5 rounded-md border border-border px-2 py-1 text-xs transition-colors",
+                "flex h-8 shrink-0 items-center gap-1.5 rounded-md border border-border px-2.5 text-[13px] max-sm:h-11 transition-colors",
                 artifactsButtonClassName,
               )}
             >
-              <FileText size={12} />
+              <FileText size={14} />
               {t("common.incidents.runbookResults")}
               {artifactCount > 0 && (
-                <span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px]">
+                <span className="rounded-full bg-muted px-1.5 py-0.5 text-xs">
                   {artifactCount}
                 </span>
               )}
@@ -862,9 +863,9 @@ export default function IncidentsPage() {
               onClick={() => {
                 void handleCancel();
               }}
-              className="flex items-center gap-1.5 rounded-md border border-border px-2 py-1 text-xs hover:bg-muted transition-colors"
+              className="flex h-8 shrink-0 items-center gap-1.5 rounded-md border border-border px-2.5 text-[13px] max-sm:h-11 hover:bg-muted transition-colors"
             >
-              <X size={12} />
+              <X size={14} />
               {t("common.actions.cancel")}
             </button>
           </TooltipTrigger>
@@ -881,9 +882,9 @@ export default function IncidentsPage() {
               void navigate("/incidents?view=history");
             }}
             aria-label={t("common.incidents.incidentHistory")}
-            className="flex size-7 items-center justify-center rounded-md border border-border hover:bg-muted transition-colors"
+            className="flex size-8 shrink-0 items-center justify-center rounded-md border border-border max-sm:size-11 hover:bg-muted transition-colors"
           >
-            <History size={13} />
+            <History size={14} />
           </button>
         </TooltipTrigger>
         <TooltipContent side="bottom">
@@ -896,9 +897,9 @@ export default function IncidentsPage() {
             <button
               onClick={() => { handleUnarchiveIncident(activeIncident.id); }}
               aria-label={t("common.incidents.unarchiveIncident")}
-              className="flex size-7 items-center justify-center rounded-md border border-border text-muted-foreground hover:bg-muted transition-colors"
+              className="flex size-8 shrink-0 items-center justify-center rounded-md border border-border max-sm:size-11 text-muted-foreground hover:bg-muted transition-colors"
             >
-              <Upload size={13} />
+              <Upload size={14} />
             </button>
           </TooltipTrigger>
           <TooltipContent side="bottom">
@@ -913,9 +914,9 @@ export default function IncidentsPage() {
               onClick={handleArchiveIncident}
               disabled={isActiveProcessing}
               aria-label={t("common.incidents.archiveIncident")}
-              className="flex size-7 items-center justify-center rounded-md border border-border text-muted-foreground hover:bg-muted transition-colors disabled:opacity-50"
+              className="flex size-8 shrink-0 items-center justify-center rounded-md border border-border max-sm:size-11 text-muted-foreground hover:bg-muted transition-colors disabled:opacity-50"
             >
-              <Archive size={13} />
+              <Archive size={14} />
             </button>
           </TooltipTrigger>
           <TooltipContent side="bottom">
@@ -929,10 +930,10 @@ export default function IncidentsPage() {
             data-tour="incidents-new-btn"
             onClick={handleNewIncident}
             disabled={isActiveProcessing}
-            className="flex items-center gap-1.5 rounded-md border border-border px-2 py-1 text-xs hover:bg-muted transition-colors disabled:opacity-50"
+            className="flex h-8 shrink-0 items-center gap-1.5 rounded-md border border-border px-2.5 text-[13px] max-sm:h-11 hover:bg-muted transition-colors disabled:opacity-50"
           >
-            <SquarePen size={12} />
-            {t("common.actions.new")}
+            <SquarePen size={14} />
+            {t("common.incidents.newIncident")}
           </button>
         </TooltipTrigger>
         <TooltipContent side="bottom">
@@ -1035,7 +1036,7 @@ export default function IncidentsPage() {
                               )}
                               className="flex size-7 items-center justify-center rounded-md border border-transparent text-muted-foreground opacity-0 transition-all hover:border-border hover:bg-muted hover:text-foreground group-hover:opacity-100"
                             >
-                              <Upload size={13} />
+                              <Upload size={14} />
                             </button>
                           </TooltipTrigger>
                           <TooltipContent side="left">
@@ -1077,12 +1078,16 @@ export default function IncidentsPage() {
                   }}
                 />
               </div>
-              {/* The incident's status; a turn's own state (working, stalled) shows on its row in the conversation. */}
-              <div className="flex shrink-0" title={t("common.incidentDetail.incidentStatus")}>
-                <span className="sr-only">{`${t("common.incidentDetail.incidentStatus")} `}</span>
-                <div data-tour="incidents-status">
-                  <StatusPill state={incidentState} interrupted={isLastAgentTurnInterrupted(rawMessages)} />
+              {/* The incident's status, plus a badge when the response under way has stalled; the turn's details
+                  (elapsed time, stop) stay on its row in the conversation. */}
+              <div className="flex shrink-0 items-center gap-1.5">
+                <div className="flex" title={t("common.incidentDetail.incidentStatus")}>
+                  <span className="sr-only">{`${t("common.incidentDetail.incidentStatus")} `}</span>
+                  <div data-tour="incidents-status">
+                    <StatusPill state={incidentState} interrupted={isLastAgentTurnInterrupted(rawMessages)} />
+                  </div>
                 </div>
+                <ResponseStalledBadge messages={rawMessages} />
               </div>
             </>
           )}
@@ -1111,7 +1116,7 @@ export default function IncidentsPage() {
                       onClick={handleNewIncident}
                       className="flex items-center gap-1.5 rounded-lg border border-dashed border-border px-4 py-2 text-xs hover:border-primary/40 hover:text-foreground transition-colors"
                     >
-                      <SquarePen size={12} />
+                      <SquarePen size={14} />
                       {t("common.incidents.newIncident")}
                     </button>
                   </div>
