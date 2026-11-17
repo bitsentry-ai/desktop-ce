@@ -77,7 +77,7 @@ describe("a running turn's state", () => {
       </TurnStopContext>,
     );
 
-    const label = screen.getByText("common.incidentDetail.responseStalled");
+    const label = screen.getByText("common.incidentDetail.replyStalled");
     const row = label.closest('[role="status"]');
     expect(row?.querySelector("svg.lucide-triangle-alert")).not.toBeNull();
     expect(activityDot(container)).toBeNull();

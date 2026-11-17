@@ -11,11 +11,16 @@ export function ComposerBlockedNotice({
   description,
   actionLabel,
   onAction,
+  retryLabel,
+  onRetry,
 }: {
   title: string;
   description?: string;
   actionLabel: string;
   onAction: () => void;
+  /** Shown before the main action when the cause can be retried in place, such as a failed load. */
+  retryLabel?: string;
+  onRetry?: () => void;
 }) {
   const hasDescription = description !== undefined && description.length > 0;
   return (
@@ -28,7 +33,12 @@ export function ComposerBlockedNotice({
         {title}
         {hasDescription && <span className="sr-only"> {description}</span>}
       </p>
-      <Button type="button" variant="outline" size="sm" onClick={onAction} className="h-7 shrink-0 px-2.5 text-xs">
+      {retryLabel !== undefined && onRetry !== undefined && (
+        <Button type="button" variant="ghost" size="sm" onClick={onRetry} className="h-7 shrink-0 px-2.5 text-xs max-sm:h-11">
+          {retryLabel}
+        </Button>
+      )}
+      <Button type="button" variant="outline" size="sm" onClick={onAction} className="h-7 shrink-0 px-2.5 text-xs max-sm:h-11">
         {actionLabel}
       </Button>
     </div>

@@ -140,7 +140,7 @@ describe("TurnTimeline", () => {
         <TurnTimeline msg={working} nowMs={minutes(20 * 60 + 58)} />
       </TurnStopContext>,
     );
-    expect(screen.getByText("common.incidentDetail.responseStalled")).toBeTruthy();
+    expect(screen.getByText("common.incidentDetail.replyStalled")).toBeTruthy();
     expect(screen.getByText(/^common\.incidentDetail\.stalledDetail\(20h 58m,20h 58m\)$/)).toBeTruthy();
     expect(screen.queryByText(/common.incidents.workingFor/)).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "common.incidentDetail.stop" }));
@@ -148,7 +148,7 @@ describe("TurnTimeline", () => {
 
     // Without a way to stop the session, the panel stands alone.
     rerender(<TurnTimeline msg={working} nowMs={minutes(20 * 60 + 58)} />);
-    expect(screen.getByText("common.incidentDetail.responseStalled")).toBeTruthy();
+    expect(screen.getByText("common.incidentDetail.replyStalled")).toBeTruthy();
     expect(screen.queryByRole("button", { name: "common.incidentDetail.stop" })).toBeNull();
   });
 

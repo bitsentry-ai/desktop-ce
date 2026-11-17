@@ -260,7 +260,7 @@ function StopTurnButton() {
  * The running turn's one label: how long it has worked, or, once nothing new arrived for half an hour, that this turn
  * may have stalled. A stalled turn reads as a warning about the turn, not as work in progress: a compact amber panel
  * with how long nothing has happened, how long the reply has run, and the host's stop, with no spinner. The header
- * keeps the incident's own status and adds a "Response stalled" badge beside it.
+ * keeps the incident's own status and adds a "Latest reply stalled" badge beside it.
  */
 function WorkingRow({ msg, startedAt, nowMs }: { msg: AgentMessage; startedAt: string | undefined; nowMs: number }) {
   const { t } = useTranslation();
@@ -291,7 +291,7 @@ function WorkingRow({ msg, startedAt, nowMs }: { msg: AgentMessage; startedAt: s
       >
         <TriangleAlert aria-hidden className="size-4 shrink-0 self-start text-[hsl(var(--warning-text))] max-sm:mt-0.5" />
         <div className="min-w-0 flex-1">
-          <p className="text-sm font-medium leading-5 text-[hsl(var(--warning-text))]">{t("common.incidentDetail.responseStalled")}</p>
+          <p className="text-sm font-medium leading-5 text-[hsl(var(--warning-text))]">{t("common.incidentDetail.replyStalled")}</p>
           <p className="text-xs leading-[18px] text-muted-foreground">
             {t("common.incidentDetail.stalledDetail", { inactive, duration })}
           </p>

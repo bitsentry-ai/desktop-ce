@@ -930,7 +930,7 @@ export default function IncidentsPage() {
             data-tour="incidents-new-btn"
             onClick={handleNewIncident}
             disabled={isActiveProcessing}
-            className="flex h-8 shrink-0 items-center gap-1.5 rounded-md border border-border px-2.5 text-[13px] max-sm:h-11 hover:bg-muted transition-colors disabled:opacity-50"
+            className="flex h-8 shrink-0 items-center gap-1.5 rounded-md bg-primary px-2.5 text-[13px] font-medium text-primary-foreground transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 disabled:opacity-50 max-sm:h-11"
           >
             <SquarePen size={14} />
             {t("common.incidents.newIncident")}
@@ -1081,8 +1081,9 @@ export default function IncidentsPage() {
               {/* The incident's status, plus a badge when the response under way has stalled; the turn's details
                   (elapsed time, stop) stay on its row in the conversation. */}
               <div className="flex shrink-0 items-center gap-1.5">
-                <div className="flex" title={t("common.incidentDetail.incidentStatus")}>
-                  <span className="sr-only">{`${t("common.incidentDetail.incidentStatus")} `}</span>
+                {/* "Incident" names the pill's scope, so it never reads as the state of the latest reply. */}
+                <div className="flex items-center gap-1.5" title={t("common.incidentDetail.incidentStatus")}>
+                  <span className="text-xs text-muted-foreground">{t("common.incidentDetail.incidentScope")}</span>
                   <div data-tour="incidents-status">
                     <StatusPill state={incidentState} interrupted={isLastAgentTurnInterrupted(rawMessages)} />
                   </div>
