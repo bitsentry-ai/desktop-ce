@@ -1051,7 +1051,7 @@ const Navbar = ({
 
   return (
     <nav
-      className="bs-sidebar nav-rail h-screen w-60 shrink-0 flex flex-col"
+      className="bs-sidebar nav-rail h-screen w-64 shrink-0 flex flex-col"
       data-expanded={railExpanded ? "true" : undefined}
     >
       <div className={navHeaderClass}>
@@ -1231,8 +1231,8 @@ const Navbar = ({
           const isAdminSettingsItem = item.href === "/settings";
           const isAppSettingsItem = item.href === "/app-settings";
           const isProfileItem = item.href === "/profile";
-          const isSettingsItem =
-            isAdminSettingsItem || isAppSettingsItem || isProfileItem;
+          // App settings lists its sections inside the page, so the sidebar item is a plain link.
+          const isSettingsItem = isAdminSettingsItem || isProfileItem;
           const isActive = currentPath === item.href;
           const accordionKey = item.href;
           const isOpen = openAccordions.has(accordionKey);

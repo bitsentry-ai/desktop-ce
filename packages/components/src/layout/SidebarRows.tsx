@@ -148,7 +148,8 @@ export function SidebarRow({
         className={cn(
           "flex min-h-8 items-center gap-2 rounded-md px-2.5 py-1.5 text-[13px] leading-5 text-muted-foreground transition-colors",
           "hover:bg-[hsl(var(--accent)/0.7)] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
-          active && "bg-accent text-foreground",
+          // Selection is a neutral surface with a brand indicator, so it never reads as "success".
+          active && "bg-accent text-foreground shadow-[inset_2px_0_0_hsl(var(--brand-emphasis))]",
         )}
       >
         {leading}
