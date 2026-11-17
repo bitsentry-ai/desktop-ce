@@ -9,18 +9,8 @@
 @tailwind utilities;
 
 @layer base {
-  /* Desktop overrides: brand cyan for primary/ring */
-  :root {
-    --primary: 192 100% 31%;
-    --primary-foreground: 0 0% 100%;
-    --ring: 192 100% 31%;
-  }
-
-  .dark {
-    --primary: 190 90% 52%;
-    --primary-foreground: 200 50% 7%;
-    --ring: 190 90% 52%;
-  }
+  
+  /* Primary, ring and brand come from theme/colors.css (BitSentry green). */
 
   * {
     @apply border-border;
