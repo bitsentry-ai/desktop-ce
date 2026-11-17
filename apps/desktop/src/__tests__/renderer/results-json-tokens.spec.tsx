@@ -164,11 +164,10 @@ describe("FinalOutputPreview", () => {
 
     const pre = document.querySelector("pre");
     expect(pre?.className).toContain("whitespace-pre");
-    expect(pre?.className).toContain("overflow-x-auto");
     expect([...(pre?.children ?? [])].map((line) => line.textContent)).toEqual(
       Array.from({ length: 10 }, (_, index) => `line ${String(index)}`),
     );
-    expect(pre?.children[0]?.className).toBe("block");
+    expect(pre?.children[0]?.className).toContain("truncate");
     expect(screen.queryByText("common.results.showMore")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "common.results.viewFullOutput" }));
     expect(onViewOutput).toHaveBeenCalledTimes(1);
@@ -188,6 +187,12 @@ describe("FinalOutputPreview", () => {
     expect(document.querySelectorAll("dd")[1]?.textContent).toBe("1 field");
     expect(screen.getByText("common.results.moreFields")).toBeTruthy();
     expect(screen.getByRole("button", { name: "common.results.viewFullOutput" })).toBeTruthy();
+  });
+
+  it("keeps aligned terminal labels next to their values in the preview", () => {
+    const output = Array.from({ length: 8 }, (_, index) => `Pages free:                          ${String(76905 + index)}.`).join("\n");
+    render(<FinalOutputPreview output={output} emptyMessage="empty" onViewOutput={vi.fn()} />);
+    expect(document.querySelector("pre")?.children[0]?.textContent).toBe("Pages free: 76905.");
   });
 
   it("treats a few very long lines as a long output", () => {

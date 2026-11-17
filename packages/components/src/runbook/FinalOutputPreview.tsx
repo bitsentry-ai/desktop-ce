@@ -45,15 +45,16 @@ export const FINAL_OUTPUT_PREVIEW_LINES = 10;
 export const FINAL_OUTPUT_SUMMARY_FIELDS = 8;
 
 /**
- * The first lines of a longer plain-text output, as the terminal printed them: no wrapping, so aligned columns keep
- * their labels and values together. Wider lines scroll sideways inside the preview, which is at most about 240px tall.
+ * The first lines of a longer plain-text output, one row each. Runs of alignment spaces collapse to one, so a label
+ * stays next to its value ("Pages free: 76905.") in the narrow Summary; only a genuinely long line ends in an
+ * ellipsis. The Output column keeps the exact spacing.
  */
 function PlainTextPreviewLines({ text }: { text: string }) {
-  const lines = text.split("\n", FINAL_OUTPUT_PREVIEW_LINES);
+  const lines = text.split("\n", FINAL_OUTPUT_PREVIEW_LINES).map((line) => line.replace(/ {2,}/g, " ").trimEnd());
   return (
-    <pre className={cn(RUN_OUTPUT_MONO_CLASS, "max-h-60 min-w-0 max-w-full overflow-x-auto overflow-y-hidden whitespace-pre")}>
+    <pre className={cn(RUN_OUTPUT_MONO_CLASS, "max-h-60 min-w-0 max-w-full overflow-hidden whitespace-pre")}>
       {lines.map((line, index) => (
-        <span key={`${String(index)}:${line}`} className="block">
+        <span key={`${String(index)}:${line}`} className="block truncate" title={line}>
           {line.length > 0 ? line : " "}
         </span>
       ))}
