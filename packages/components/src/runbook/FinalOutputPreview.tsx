@@ -45,15 +45,15 @@ export const FINAL_OUTPUT_PREVIEW_LINES = 10;
 export const FINAL_OUTPUT_SUMMARY_FIELDS = 8;
 
 /**
- * The first lines of a longer plain-text output, one row each and cut off with an ellipsis at the column edge, the
- * way a terminal shows them, instead of wrapping a single long line into the whole preview.
+ * The first lines of a longer plain-text output. Each line wraps onto at most two rows, so values stay readable in
+ * the Summary column, and one very long line cannot fill the whole preview.
  */
 function PlainTextPreviewLines({ text }: { text: string }) {
   const lines = text.split("\n", FINAL_OUTPUT_PREVIEW_LINES);
   return (
-    <pre className={cn(RUN_OUTPUT_MONO_CLASS, "min-w-0 max-w-full whitespace-pre")}>
+    <pre className={cn(RUN_OUTPUT_MONO_CLASS, "min-w-0 max-w-full whitespace-pre-wrap")}>
       {lines.map((line, index) => (
-        <span key={`${String(index)}:${line}`} className="block truncate">
+        <span key={`${String(index)}:${line}`} className="line-clamp-2 break-words [overflow-wrap:anywhere]">
           {line.length > 0 ? line : " "}
         </span>
       ))}
@@ -62,8 +62,8 @@ function PlainTextPreviewLines({ text }: { text: string }) {
 }
 
 /**
- * A longer JSON object as its top-level fields, one per row (key, then value cut off at the column edge), so the
- * Summary shows values instead of braces and indentation.
+ * A longer JSON object as its top-level fields, one per row (key, then up to two lines of value), so the Summary
+ * shows values instead of braces and indentation.
  */
 function JsonSummaryFields({ summary }: { summary: JsonSummary }) {
   const { t } = useTranslation();
@@ -76,7 +76,7 @@ function JsonSummaryFields({ summary }: { summary: JsonSummary }) {
             <dt className="max-w-[9rem] truncate text-muted-foreground" title={field.key}>
               {field.key}
             </dt>
-            <dd className="m-0 truncate text-foreground" title={field.value}>
+            <dd className="m-0 line-clamp-2 break-words text-foreground [overflow-wrap:anywhere]" title={field.value}>
               {field.value.length > 0 ? field.value : "\u00a0"}
             </dd>
           </div>

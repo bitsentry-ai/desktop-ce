@@ -111,7 +111,7 @@ function nextPanelForKey(
  * The Summary / Steps / Output body of a run result.
  *
  * At lg+ the three panels sit side by side in resizable columns (Summary
- * about 280px, Steps about 300px, Output the rest). Below lg they would stack, and a long output
+ * about 320px, Steps about 260px, Output the rest). Below lg they would stack, and a long output
  * would bury the steps under it, so a tab bar pinned above the scroll area
  * shows one panel at a time instead.
  */
