@@ -98,7 +98,8 @@ function normalizeIncidentState(
 ): AgentSessionState {
   if (value === "RUNNING") {
     if (sessionId !== undefined) return "RUNNING";
-    return "FAILED";
+    // No session survives a restart, so the run was interrupted, not failed.
+    return "CANCELLED";
   }
   if (
     value === "IDLE" ||

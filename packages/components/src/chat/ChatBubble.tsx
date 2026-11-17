@@ -8,6 +8,7 @@ import {
 } from "react";
 import type { ChatMessage, AgentIteration } from "./types";
 import { TurnTimeline } from "./TurnTimeline";
+import { isInterruptedAgentTurn } from "./runtimeProjection";
 import { CitationChip } from "./CitationControls";
 import { splitCitations } from "./citations";
 import { useTranslation } from "@bitsentry-ce/i18n";
@@ -396,7 +397,9 @@ export const ChatBubble = memo(function ChatBubble({
       message: msg.errorMsg,
     });
     if (msg.status === "cancelled") {
-      statusText = t("common.incidents.sessionCancelled");
+      statusText = isInterruptedAgentTurn(msg)
+        ? t("common.incidents.sessionInterrupted")
+        : t("common.incidents.sessionCancelled");
     }
 
     errorStatusContent = (

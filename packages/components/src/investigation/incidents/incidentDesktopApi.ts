@@ -58,10 +58,11 @@ export function isMissingAgentSessionError(error: unknown): boolean {
   return message.includes("Session not found:");
 }
 
+/** A run whose session is gone was cut off by the app closing, like a stop, so it is not a failure. */
 export function getRecoveredIncidentState(
   state: AgentSessionState,
 ): AgentSessionState {
-  if (state === "RUNNING") return "FAILED";
+  if (state === "RUNNING") return "CANCELLED";
   return state;
 }
 
