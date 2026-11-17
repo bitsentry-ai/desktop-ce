@@ -15,7 +15,7 @@ import {
   type AutoSaveStatus,
 } from "../hooks/useDebouncedAutoSave";
 import { useTranslation } from "@bitsentry-ce/i18n";
-import { EmptyState } from "../ui/empty-state";
+import { SettingsEmptyState } from "./SettingsEmptyState";
 import {
   settingsDescriptionClass,
   settingsLabelClass,
@@ -662,14 +662,13 @@ export function GlobalVariablesSettingsSection({
     );
   } else if (sortedGlobals.length === 0 && !creating) {
     globalsContent = (
-      <EmptyState
+      <SettingsEmptyState
         icon={Braces}
         title={t(
           "common.globalVariablesSettingsSection.noGlobalVariablesSavedYet",
           "No global variables saved yet.",
         )}
         description={t("settings.globalVariables.emptyDescription")}
-        className="rounded-lg border border-dashed border-border"
       />
     );
   } else {

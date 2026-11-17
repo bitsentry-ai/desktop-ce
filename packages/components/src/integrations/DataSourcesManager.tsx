@@ -40,7 +40,7 @@ function removePendingSync(
   );
 }
 import { Download, Pencil, Puzzle, RefreshCw, Trash2 } from "lucide-react";
-import { EmptyState } from "../ui/empty-state";
+import { SettingsEmptyState } from "../settings/SettingsEmptyState";
 import { settingsDescriptionClass, settingsSectionTitleClass } from "../settings/SettingsRow";
 import { ProviderIcon, type ProviderIconKind } from "./icons";
 import InstallPluginDialog from "./InstallPluginDialog";
@@ -1153,11 +1153,10 @@ export default function DataSourcesManager({
         </p>
       )}
       {showSourceList && !isLoading && sources.length === 0 && (
-        <EmptyState
+        <SettingsEmptyState
           icon={Puzzle}
           title={t("common.dataSourcesManager.noExternalSourcesConnected")}
           description={emptySourcePrompt(availableProviderSummary, t)}
-          className="rounded-lg border border-dashed border-border"
         />
       )}
       {showSourceList && !isLoading && sources.length > 0 && (
