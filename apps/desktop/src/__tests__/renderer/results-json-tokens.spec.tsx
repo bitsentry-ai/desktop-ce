@@ -209,6 +209,14 @@ describe("FinalOutputPreview", () => {
     expect(details?.open).toBe(false);
     const detailKeys = [...(details?.querySelectorAll("dt") ?? [])].map((node) => node.textContent);
     expect(detailKeys).toEqual(["offset", "hasMore", "page"]);
+    cleanup();
+
+    // A sentence before the payload already states the outcome, so no second outcome line is added.
+    render(
+      <FinalOutputPreview output={`Fetched 10 of 103 findings.\n${JSON.stringify(value)}`} emptyMessage="empty" onViewOutput={vi.fn()} />,
+    );
+    expect(screen.getByText("Fetched 10 of 103 findings.")).toBeTruthy();
+    expect(screen.queryByText(/common\.results\.outcomeReturnedOf/)).toBeNull();
     const mainKeys = [...document.querySelectorAll("dl")][0]?.querySelectorAll("dt");
     expect([...(mainKeys ?? [])].map((node) => node.textContent)).not.toContain("offset");
   });

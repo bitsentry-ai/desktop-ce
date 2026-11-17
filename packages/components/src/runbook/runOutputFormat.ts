@@ -265,7 +265,7 @@ export interface JsonSummary {
 
 /** Fields that describe the request or paging rather than the result. */
 const TRANSPORT_FIELDS = new Set([
-  "offset", "limit", "cursor", "nextcursor", "next_cursor", "hasmore", "has_more", "page", "pagesize", "page_size",
+  "offset", "nextoffset", "next_offset", "limit", "cursor", "nextcursor", "next_cursor", "hasmore", "has_more", "page", "pagesize", "page_size",
   "indexpattern", "index_pattern", "took", "timed_out", "scroll_id", "nextpagetoken", "next_page_token",
 ]);
 const TOTAL_FIELDS = ["total", "totalcount", "total_count", "totalhits", "total_hits", "count"];

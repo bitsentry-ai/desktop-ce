@@ -99,12 +99,13 @@ function OutcomeHeadline({ headline }: { headline: NonNullable<JsonSummary["head
  * its readable top-level fields, one per row; paging and transport fields (offset, hasMore, cursors) sit under a
  * collapsed Details.
  */
-function JsonSummaryFields({ summary }: { summary: JsonSummary }) {
+function JsonSummaryFields({ summary, hasLead }: { summary: JsonSummary; hasLead: boolean }) {
   const { t } = useTranslation();
   const hidden = summary.total - summary.fields.length;
   return (
     <div className="space-y-2">
-      {summary.headline !== null && <OutcomeHeadline headline={summary.headline} />}
+      {/* A sentence before the payload already states the outcome; the computed line is only for bare JSON. */}
+      {summary.headline !== null && !hasLead && <OutcomeHeadline headline={summary.headline} />}
       {summary.fields.length > 0 && <FieldRows fields={summary.fields} />}
       {hidden > 0 && (
         <p className="text-xs text-muted-foreground">
@@ -181,7 +182,7 @@ export function FinalOutputPreview({
                 {preview.lead}
               </p>
             )}
-            {summary !== null && <JsonSummaryFields summary={summary} />}
+            {summary !== null && <JsonSummaryFields summary={summary} hasLead={preview.lead.length > 0} />}
             {summary === null && !short && !preview.json && (
               <PlainTextPreviewLines text={preview.body} />
             )}
