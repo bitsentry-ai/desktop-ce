@@ -95,14 +95,14 @@ export function StructuredOutputDisplay({
     if (logFilterMetadata.groupNames.length > 0) {
       groupsContent = (
         <>
-          <span className="text-muted-foreground/30">•</span>
+          <span aria-hidden="true">•</span>
           <span>{logFilterMetadata.groupNames.join(", ")}</span>
         </>
       );
     }
 
     logFilterContent = (
-      <div className="mb-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-muted-foreground/60">
+      <div className="mb-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-muted-foreground">
         <span>
           {logFilterMetadata.matchCount} {matchUnit}
         </span>
@@ -120,7 +120,7 @@ export function StructuredOutputDisplay({
     );
   } else if (structuredEntries.length === 0) {
     valuesContent = (
-      <p className="text-xs italic text-muted-foreground/50">
+      <p className="text-xs italic text-muted-foreground">
         {t("common.structuredOutputDisplay.noValuesExtracted")}
       </p>
     );
