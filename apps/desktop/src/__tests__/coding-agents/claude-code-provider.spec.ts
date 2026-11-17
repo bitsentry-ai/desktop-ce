@@ -46,8 +46,8 @@ interface ClaudeQueryInput {
 }
 
 async function firstPromptText(prompt: ClaudeQueryInput['prompt']): Promise<string | undefined> {
-  for await (const message of prompt) return message.message.content
-  return undefined
+  const first = await prompt[Symbol.asyncIterator]().next()
+  return first.done === true ? undefined : first.value.message.content
 }
 
 const closeMock = vi.fn()

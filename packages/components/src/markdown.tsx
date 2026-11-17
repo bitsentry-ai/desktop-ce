@@ -876,8 +876,6 @@ export const MarkdownContent = memo(function MarkdownContent({
       </MarkdownRendererContext.Provider>
     </div>
   );
-}
-
-export const MarkdownContent = memo(MarkdownContentView);
+});
 
 export default MarkdownContent;

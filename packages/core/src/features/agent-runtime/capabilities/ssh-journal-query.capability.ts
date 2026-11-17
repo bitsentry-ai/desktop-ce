@@ -107,7 +107,7 @@ async function executeSshJournalQuery(
     })
 
     // Stream stdout chunks
-    const stdoutChunks: Promise<void> = new Promise((resolve) => {
+    const stdoutChunks = new Promise<void>((resolve) => {
       sshProcess.stdout.on('data', (data: Buffer) => {
         const chunk = data.toString('utf-8')
         if (outputBuffer.length + chunk.length > MAX_TOOL_OUTPUT) {
@@ -127,7 +127,7 @@ async function executeSshJournalQuery(
     })
 
     // Capture stderr
-    const stderrChunks: Promise<void> = new Promise((resolve) => {
+    const stderrChunks = new Promise<void>((resolve) => {
       sshProcess.stderr.on('data', (data: Buffer) => {
         const chunk = data.toString('utf-8')
         stderrBuffer = appendBoundedOutput(stderrBuffer, chunk, MAX_TOOL_OUTPUT)
