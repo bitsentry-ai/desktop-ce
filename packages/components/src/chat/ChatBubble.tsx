@@ -78,7 +78,7 @@ function CustomerReportChip({ header }: { header: CustomerReportMessageHeader })
             <button
               type="button"
               onClick={chat.chooseEdit}
-              className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-medium text-muted-foreground transition-colors hover:bg-violet-100 hover:text-violet-800 dark:hover:bg-violet-500/15 dark:hover:text-violet-200"
+              className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-violet-100 hover:text-violet-800 dark:hover:bg-violet-500/15 dark:hover:text-violet-200"
             >
               <Pencil size={11} aria-hidden="true" />
               {t("common.incidents.customerReport.edit")}
@@ -87,11 +87,11 @@ function CustomerReportChip({ header }: { header: CustomerReportMessageHeader })
           <CustomerReportInternalBadge label={t("common.incidents.customerReport.internalOnly")} />
         </span>
       </div>
-      <div className="pl-[38px] text-[11px] text-muted-foreground">{source}</div>
+      <div className="pl-[38px] text-xs text-muted-foreground">{source}</div>
       {current.subject !== undefined && current.subject !== null && (
-        <div className="pl-[38px] text-[11px] text-foreground">{t("common.incidents.customerReport.subjectLine", { subject: current.subject })}</div>
+        <div className="pl-[38px] text-xs text-foreground">{t("common.incidents.customerReport.subjectLine", { subject: current.subject })}</div>
       )}
-      <div className="pl-[38px] text-[11px] text-amber-700 dark:text-amber-400">{t("common.incidents.customerReport.unverified")}</div>
+      <div className="pl-[38px] text-xs text-[hsl(var(--warning-text))]">{t("common.incidents.customerReport.unverified")}</div>
     </div>
   );
 }
@@ -109,7 +109,7 @@ function CustomerReportAnswerRow({ header }: { header: CustomerReportAnswerHeade
       <MessageCircle size={14} className="shrink-0 text-violet-600 dark:text-violet-300" aria-hidden="true" />
       <span className="whitespace-nowrap">{intakeQuestionTitle(t, field, own ? intake.answers.channel : undefined)}</span>
       <span className="min-w-0 truncate font-medium text-foreground">{header.answer}</span>
-      {header.edit === true && <span className="shrink-0 text-[11px]">{t("common.incidents.customerReport.changed")}</span>}
+      {header.edit === true && <span className="shrink-0 text-xs">{t("common.incidents.customerReport.changed")}</span>}
       {canEdit && isEditable(field) && (
         <button
           type="button"
@@ -142,7 +142,7 @@ function CustomerReportIntakeMessage({ msg }: { msg: UserMessage }) {
       {answer.header.field !== "reportText" && answer.header.field !== "confirm" && <CustomerReportAnswerRow header={answer.header} />}
       {report !== null && (
         <div className="flex justify-end">
-          <div className="max-w-[75%] space-y-2 rounded-2xl bg-muted px-4 py-2.5 text-sm">
+          <div className="max-w-[75%] space-y-2 rounded-2xl bg-muted px-4 py-2.5 text-sm leading-[22px]">
             <CustomerReportChip header={report.header} />
             {report.body.length > 0 && <div className="whitespace-pre-wrap break-words">{report.body}</div>}
           </div>
@@ -188,7 +188,7 @@ function UserTextBubble({ msg, t }: { msg: UserMessage; t: (key: string, values?
                   {attachment.name}
                 </span>
                 {attachment.type === "csv" && (
-                  <span className="ml-auto shrink-0 text-[11px] tabular-nums text-muted-foreground">
+                  <span className="ml-auto shrink-0 text-xs tabular-nums text-muted-foreground">
                     {t("common.incidents.attachmentRows", {
                       rowCount: attachment.rowCount,
                       totalRowCount: attachment.totalRowCount,
@@ -216,7 +216,7 @@ function UserTextBubble({ msg, t }: { msg: UserMessage; t: (key: string, values?
 
   return (
     <div className="flex justify-end">
-      <div className="max-w-[75%] space-y-2 rounded-2xl bg-muted px-4 py-2.5 text-sm">
+      <div className="max-w-[75%] space-y-2 rounded-2xl bg-muted px-4 py-2.5 text-sm leading-[22px]">
         {report !== null && <CustomerReportChip header={report.header} />}
         {attachmentsContent}
         {textContent}

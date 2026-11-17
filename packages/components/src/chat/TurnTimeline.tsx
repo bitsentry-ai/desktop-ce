@@ -6,7 +6,7 @@
  * behind "Worked for …".
  */
 
-import type { ReactNode } from "react";
+import { use, type ReactNode } from "react";
 import {
   BookOpen,
   ChevronDown,
@@ -14,6 +14,7 @@ import {
   Globe,
   ScrollText,
   Search,
+  Square,
   SquarePen,
   Terminal,
   Wrench,
@@ -26,7 +27,8 @@ import { MarkdownContent } from "../markdown";
 import { cn } from "../lib/utils";
 import { formatDuration } from "./utils";
 import { dominantToolKind, summarizeToolGroup, toolDetail, toolKind, toolLabel, type ToolKind } from "./toolPresentation";
-import { deriveTurnTimeline, type TurnRow } from "./turnTimelineRows";
+import { deriveTurnTimeline, lastTurnActivityMs, TURN_STALL_AFTER_MS, type TurnRow } from "./turnTimelineRows";
+import { TurnStopContext } from "./turnStop";
 import { useDisclosure } from "./disclosureStore";
 import { CITATION_SOURCE_ATTRIBUTE } from "./citationDom";
 import type { ChatMessage, ToolCallCard } from "./types";
@@ -48,10 +50,10 @@ const rowClassName =
 
 function RowLine({ icon, label, trailing }: { icon: ReactNode; label: ReactNode; trailing?: ReactNode }) {
   return (
-    <div className="flex min-h-6 min-w-0 select-none items-center gap-1.5 text-sm leading-relaxed">
+    <div className="flex min-h-6 min-w-0 select-none items-center gap-1.5 text-sm leading-[22px]">
       <div className="flex min-w-0 flex-1 items-center gap-1.5">
         <span className="flex size-6 shrink-0 items-center justify-center">{icon}</span>
-        <div className="min-w-0 flex-1 truncate text-muted-foreground">{label}</div>
+        <div className="min-w-0 flex-1 truncate font-medium text-muted-foreground">{label}</div>
       </div>
       {trailing}
     </div>
@@ -81,7 +83,7 @@ function stringifyInput(input: Record<string, unknown> | undefined): string | nu
 }
 
 const detailBlockClassName =
-  "max-h-64 cursor-text overflow-auto whitespace-pre-wrap break-words rounded-md bg-muted/50 p-2 font-mono text-[11px] leading-relaxed text-muted-foreground select-text";
+  "max-h-64 cursor-text overflow-auto whitespace-pre-wrap break-words rounded-md bg-muted/50 p-2 font-mono text-xs leading-relaxed text-muted-foreground select-text";
 
 function ToolDetails({ card, messageId }: { card: ToolCallCard; messageId: string }) {
   const { t } = useTranslation();
@@ -101,19 +103,19 @@ function ToolDetails({ card, messageId }: { card: ToolCallCard; messageId: strin
       {failure !== undefined && <p className="break-words text-xs text-destructive">{failure.summary}</p>}
       {input !== null && (
         <div className="space-y-1">
-          <p className="text-[11px] font-medium text-muted-foreground">{t("common.chat.tools.input")}</p>
+          <p className="text-xs font-medium text-muted-foreground">{t("common.chat.tools.input")}</p>
           <pre className={detailBlockClassName}>{input}</pre>
         </div>
       )}
       {output !== undefined && output.length > 0 && (
         <div className="space-y-1">
-          <p className="text-[11px] font-medium text-muted-foreground">{t("common.chat.tools.output")}</p>
+          <p className="text-xs font-medium text-muted-foreground">{t("common.chat.tools.output")}</p>
           <pre className={detailBlockClassName}>{output}</pre>
         </div>
       )}
       {failure !== undefined && (failure.structured || failure.raw !== failure.summary) && (
         <details className="space-y-1" open={detailsOpen} onToggle={(event) => { setDetailsOpen(event.currentTarget.open); }}>
-          <summary className="cursor-pointer select-none text-[11px] font-medium text-muted-foreground">
+          <summary className="cursor-pointer select-none text-xs font-medium text-muted-foreground">
             {t("common.toolCallCard.viewTechnicalDetails")}
           </summary>
           {failure.issues.length > 0 && (
@@ -121,9 +123,9 @@ function ToolDetails({ card, messageId }: { card: ToolCallCard; messageId: strin
               {failure.issues.map((issue) => (
                 <li key={`${issue.path}:${issue.message}`} className="min-w-0">
                   {issue.path.length > 0 && (
-                    <span className="break-all font-mono text-[11px] text-muted-foreground">{issue.path}</span>
+                    <span className="break-all font-mono text-xs text-muted-foreground">{issue.path}</span>
                   )}
-                  <span className="block break-words text-[11px] text-muted-foreground">{issue.message}</span>
+                  <span className="block break-words text-xs text-muted-foreground">{issue.message}</span>
                 </li>
               ))}
             </ul>
@@ -133,7 +135,7 @@ function ToolDetails({ card, messageId }: { card: ToolCallCard; messageId: strin
       )}
       {modelContext !== undefined && modelContext.length > 0 && (
         <details className="space-y-1" open={contextOpen} onToggle={(event) => { setContextOpen(event.currentTarget.open); }}>
-          <summary className="cursor-pointer select-none text-[11px] font-medium text-muted-foreground">
+          <summary className="cursor-pointer select-none text-xs font-medium text-muted-foreground">
             {t("common.toolCallCard.modelContextSentToLlm")}
           </summary>
           <pre className={detailBlockClassName}>{modelContext}</pre>
@@ -168,7 +170,7 @@ function ToolRow({ card, messageId }: { card: ToolCallCard; messageId: string })
         label={
           <span className={cn("block truncate", running && "live-tool-shine", failed && "text-destructive")}>
             {toolLabel(card, t)}
-            {detail !== undefined && <span className="ml-1.5 font-mono text-xs text-muted-foreground/80">{detail}</span>}
+            {detail !== undefined && <span className="ml-1.5 font-mono text-xs font-normal text-muted-foreground">{detail}</span>}
           </span>
         }
         trailing={
@@ -179,7 +181,7 @@ function ToolRow({ card, messageId }: { card: ToolCallCard; messageId: string })
         }
       />
       {progress !== undefined && progress.length > 0 && (
-        <p className="pl-[1.875rem] text-xs text-muted-foreground/80 break-words" aria-live="polite">{progress}</p>
+        <p className="pl-[1.875rem] text-xs text-muted-foreground break-words" aria-live="polite">{progress}</p>
       )}
       {expanded && <ToolDetails card={card} messageId={messageId} />}
     </div>
@@ -224,7 +226,7 @@ function TimelineRows({ rows, messageId, collapsedJsonLabel, streaming = false }
           // The final answer of a message without iterations has no stable id, so it cannot be cited.
           const citationSource = row.key === "final" ? {} : { [CITATION_SOURCE_ATTRIBUTE]: row.key };
           return (
-            <div key={row.key} {...citationSource} className="py-1 text-sm leading-relaxed text-foreground">
+            <div key={row.key} {...citationSource} className="py-1 text-sm leading-[22px] text-foreground [&_.chat-markdown]:leading-[22px]">
               <MarkdownContent content={row.text} paragraphizeSoftBreaks collapsedJsonLabel={collapsedJsonLabel} streaming={streaming && index === rows.length - 1} />
             </div>
           );
@@ -233,6 +235,56 @@ function TimelineRows({ rows, messageId, collapsedJsonLabel, streaming = false }
         return <ToolGroupRow key={row.key} cards={row.cards} messageId={messageId} groupKey={row.key} />;
       })}
     </>
+  );
+}
+
+/** Offers the host's stop for this thread; only a stalled turn mounts it, so streaming never reads the context. */
+function StopTurnButton() {
+  const { t } = useTranslation();
+  const stop = use(TurnStopContext);
+  if (stop === null) return null;
+  return (
+    <button
+      type="button"
+      onClick={stop}
+      className="inline-flex h-7 shrink-0 items-center gap-1.5 rounded-md border border-border bg-background px-2.5 text-xs font-medium text-foreground transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/70"
+    >
+      <Square aria-hidden className="size-3" />
+      {t("common.incidentDetail.stop")}
+    </button>
+  );
+}
+
+/**
+ * The running turn's one label: how long it has worked, or, once nothing new arrived for half an hour, that it may
+ * have stalled, with the host's stop next to it.
+ */
+function WorkingRow({ msg, startedAt, nowMs }: { msg: AgentMessage; startedAt: string | undefined; nowMs: number }) {
+  const { t } = useTranslation();
+  const startedMs = startedAt === undefined ? Number.NaN : Date.parse(startedAt);
+  if (Number.isNaN(startedMs)) {
+    return (
+      <div className="border-b border-border/60 pb-2 pt-1">
+        <div className="flex min-h-6 items-center px-1 text-sm leading-[22px] text-muted-foreground">{t("common.incidents.aiIsResponding")}</div>
+      </div>
+    );
+  }
+  const duration = formatDuration(Math.max(0, nowMs - startedMs));
+  const lastActivity = lastTurnActivityMs(msg) ?? startedMs;
+  const stalled = nowMs - lastActivity > TURN_STALL_AFTER_MS;
+  return (
+    <div className="border-b border-border/60 pb-2 pt-1">
+      <div className="flex min-h-6 min-w-0 flex-wrap items-center gap-x-3 gap-y-1.5 px-1 text-sm leading-[22px] tabular-nums">
+        {stalled ? (
+          <>
+            <span className="font-medium text-[hsl(var(--warning-text))]">{t("common.incidentDetail.possiblyStalled", { duration })}</span>
+            <StopTurnButton />
+          </>
+        ) : (
+          <span className="whitespace-nowrap text-muted-foreground">{`${t("common.incidents.workingFor")} ${duration}`}</span>
+        )}
+      </div>
+    </div>
   );
 }
 
@@ -253,20 +305,7 @@ export function TurnTimeline({
   const isWorking = msg.status === "thinking" || msg.status === "streaming";
   const startedAt = msg.iterations[0]?.startedAt;
 
-  let workingRow: ReactNode = null;
-  if (isWorking) {
-    let label = t("common.incidents.aiIsResponding");
-    if (startedAt !== undefined) {
-      label = `${t("common.incidents.workingFor")} ${formatDuration(Math.max(0, nowMs - Date.parse(startedAt)))}`;
-    }
-    workingRow = (
-      <div className="border-b border-border/60 pb-2 pt-1">
-        <div className="flex h-6 min-w-0 items-baseline gap-2 px-1 text-sm leading-relaxed tabular-nums text-muted-foreground">
-          <span className="shrink-0 whitespace-nowrap">{label}</span>
-        </div>
-      </div>
-    );
-  }
+  const workingRow = isWorking ? <WorkingRow msg={msg} startedAt={startedAt} nowMs={nowMs} /> : null;
 
   let foldRow: ReactNode = null;
   if (timeline.foldedRows.length > 0) {
@@ -279,7 +318,7 @@ export function TurnTimeline({
           type="button"
           aria-expanded={foldOpen}
           onClick={() => { setFoldOpen(!foldOpen); }}
-          className="flex cursor-pointer select-none items-center gap-1 rounded-md px-1 text-sm leading-relaxed tabular-nums text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/70"
+          className="flex cursor-pointer select-none items-center gap-1 rounded-md px-1 text-sm leading-[22px] tabular-nums text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/70"
         >
           <span>{label}</span>
           {foldOpen ? <ChevronDown className="size-3.5" /> : <ChevronRight className="size-3.5" />}

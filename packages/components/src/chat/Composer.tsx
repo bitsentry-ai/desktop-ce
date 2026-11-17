@@ -85,6 +85,8 @@ export interface ComposerProps {
   onCitationCommentChange?: (index: number, comment: string | undefined) => void;
   isProcessing: boolean;
   isBlocked: boolean;
+  /** Shown in place of the text area while blocked: what is missing and where to fix it. */
+  blockedNotice?: ReactNode;
   isArchived: boolean;
   // Images
   composerImages: ComposerAttachment[];
@@ -243,6 +245,7 @@ export function Composer({
   onCancel,
   isProcessing,
   isBlocked,
+  blockedNotice,
   isArchived,
   composerImages,
   onRemoveImage,
@@ -307,7 +310,8 @@ export function Composer({
   const asking = question !== undefined;
   const host = hostPanelParts(hostPanel, { open: question ?? remediation, busy: isBlocked || isProcessing });
   const highlighted = asking || remediation !== undefined || host.card !== undefined;
-  const hidesText = (remediation !== undefined && remediation.input === undefined) || host.buttons !== undefined;
+  const notice = isBlocked ? blockedNotice : undefined;
+  const hidesText = (remediation !== undefined && remediation.input === undefined) || host.buttons !== undefined || notice !== undefined;
   const hasAttachOptions =
     composerSupportsPhotos || composerFileAccept?.includes(".csv") === true;
   // The IPC schemas refuse a longer message, so it never leaves the composer.
@@ -494,9 +498,9 @@ export function Composer({
           "group relative z-10 rounded-[20px] border bg-card transition-[border-color,box-shadow] duration-200",
           !isBlocked && !highlighted && "focus-within:border-ring/45",
           highlighted && "border-violet-300 shadow-[0_0_0_3px_rgb(124_58_237_/_0.08)] dark:border-violet-500/40",
-          isBlocked && "opacity-60",
         )}
       >
+        {notice}
         {question !== undefined && <CustomerReportQuestionPanel key={question.question.key} intake={question} />}
         {remediation !== undefined && <RemediationQuestionPanel flow={remediation} />}
         {host.card}

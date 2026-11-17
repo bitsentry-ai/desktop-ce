@@ -100,6 +100,18 @@ function workedMs(message: AgentMessage): number | null {
   return elapsed >= 0 ? elapsed : null;
 }
 
+/** A running turn with no recorded event for this long reads as possibly stalled. */
+export const TURN_STALL_AFTER_MS = 30 * 60_000;
+
+/** When the turn last recorded anything: an iteration or tool call starting or ending, or text starting to stream. */
+export function lastTurnActivityMs(message: AgentMessage): number | null {
+  const times = [
+    ...message.iterations.flatMap((iteration) => [iteration.startedAt, iteration.completedAt, iteration.textStartedAt]),
+    ...message.toolCalls.flatMap((card) => [card.startedAt, card.completedAt]),
+  ].map(timeOf).filter((ms) => ms !== END_OF_ITERATION);
+  return times.length === 0 ? null : Math.max(...times);
+}
+
 export function deriveTurnTimeline(message: AgentMessage): TurnTimeline {
   const tools = new Map(message.toolCalls.map((card) => [card.toolCallId, card]));
   const entries = message.iterations.flatMap((iteration, index) =>

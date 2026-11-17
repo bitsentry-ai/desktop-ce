@@ -1,6 +1,4 @@
-import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { statusPillBaseClass, statusToneClass } from "../../lib/plainText";
-import { AlertTriangle } from "lucide-react";
 import { useTranslation } from "@bitsentry-ce/i18n";
 import Navbar from "../../layout/Navbar";
 import TopBar from "../../layout/TopBar";
@@ -84,116 +82,7 @@ export function StatusPill({ state, interrupted = false }: { state: AgentSession
   );
 }
 
-// ─── Editable title ───────────────────────────────────────────────────────────
-
-export function EditableTitle({
-  value,
-  onChange,
-  disabled = false,
-}: {
-  value: string;
-  onChange: (v: string) => void;
-  disabled?: boolean;
-}) {
-  const { t } = useTranslation();
-  const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState(value);
-  const inputRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    setDraft(value);
-  }, [value]);
-  useEffect(() => {
-    if (disabled) {
-      setEditing(false);
-    }
-  }, [disabled]);
-
-  const commit = () => {
-    const trimmed = draft.trim() || "New Incident";
-    setDraft(trimmed);
-    onChange(trimmed);
-    setEditing(false);
-  };
-
-  const handleKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === "Enter") {
-      e.preventDefault();
-      commit();
-    } else if (e.key === "Escape") {
-      setDraft(value);
-      setEditing(false);
-    }
-  };
-
-  if (editing) {
-    return (
-      <input
-        ref={inputRef}
-        autoFocus
-        value={draft}
-        onChange={(e) => { setDraft(e.target.value); }}
-        onBlur={commit}
-        onKeyDown={handleKeyDown}
-        className="flex-1 min-w-0 truncate bg-transparent text-sm font-medium outline-none border-b border-primary/50 focus:border-primary"
-      />
-    );
-  }
-
-  let title = t("common.incidents.clickToRename");
-  if (disabled) {
-    title = t("common.incidents.archivedIncidentsAreReadOnly");
-  }
-
-  return (
-    <button
-      onClick={() => {
-        if (!disabled) {
-          setEditing(true);
-        }
-      }}
-      title={title}
-      disabled={disabled}
-      className={cn(
-        "flex-1 min-w-0 truncate text-left text-sm font-medium transition-colors",
-        disabled && "cursor-default text-foreground",
-        !disabled && "hover:text-muted-foreground",
-      )}
-    >
-      {value}
-    </button>
-  );
-}
-
-// ─── Warning banner ────────────────────────────────────────────────────────────
-
-export function ProviderBanner({
-  onNavigateToSettings,
-}: {
-  onNavigateToSettings: () => void;
-}) {
-  const { t } = useTranslation();
-  return (
-    <div className="mx-6 mt-4 flex items-center gap-3 rounded-lg border border-border bg-card px-4 py-3">
-      <AlertTriangle size={16} className="shrink-0 text-amber-500" />
-      <div className="flex-1 text-sm">
-        <span className="font-medium text-foreground">
-          {t("common.incidents.noChatModelIsConfigured")}
-        </span>
-        <span className="text-muted-foreground">
-          {" "}
-          {t("common.incidents.addAnApiKeyIn")}
-        </span>
-      </div>
-      <button
-        onClick={onNavigateToSettings}
-        className="rounded-md border border-border px-3 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground hover:border-border-hover transition-colors"
-      >
-        {t("common.incidents.openSettings")}
-      </button>
-    </div>
-  );
-}
+export { EditableTitle } from "./EditableTitle";
 
 // ─── Shell shared by both views ───────────────────────────────────────────────
 

@@ -4,6 +4,7 @@ import IncidentIntegrationsRail, {
   useIntegrationsRailState,
 } from "../IncidentIntegrationsRail";
 import {
+  type ReactNode,
   useCallback,
   useEffect,
   useEffectEvent,
@@ -63,7 +64,6 @@ import {
 import {
   EditableTitle,
   PageShell,
-  ProviderBanner,
   relativeTime,
   StatusPill,
   translateIncidentPreview,
@@ -86,6 +86,8 @@ import {
   saveProviderLock,
 } from "./incidentStorage";
 import { IncidentComposer } from "./IncidentComposer";
+import { ComposerBlockedNotice } from "../../chat/ComposerBlockedNotice";
+import { TurnStopContext } from "../../chat/turnStop";
 import { addIncidentCitation, readComposedDraft, useIncidentDraftStore } from "./incidentDraftStore";
 import { useIncidentListStore } from "./incidentListStore";
 import { IncidentMessageList } from "./IncidentMessageList";
@@ -95,6 +97,31 @@ import { useIncidentPersistence } from "./useIncidentPersistence";
 import { useIncidentProviderSelection } from "./useIncidentProviderSelection";
 import { EmptyState } from "../../ui/empty-state";
 import { Button } from "../../ui/button";
+
+/**
+ * Stops the running turn through its session; null while there is no session to cancel. A hook rather than a plain
+ * helper, so the React Compiler keeps treating the handler as immutable and still compiles the page.
+ */
+function useTurnStop(sessionId: string | null, cancel: () => Promise<void>): (() => void) | null {
+  if (sessionId === null) return null;
+  return () => {
+    void cancel();
+  };
+}
+
+/** The composer's notice while no provider is configured, once the provider settings have loaded. */
+function useProviderNotice(loaded: boolean, openSettings: () => void): ReactNode {
+  const { t } = useTranslation();
+  if (!loaded) return undefined;
+  return (
+    <ComposerBlockedNotice
+      title={t("common.incidents.noChatModelIsConfigured")}
+      description={t("common.incidents.addAnApiKeyIn")}
+      actionLabel={t("common.incidents.openSettings")}
+      onAction={openSettings}
+    />
+  );
+}
 
 // ─── Main page ────────────────────────────────────────────────────────────────
 
@@ -722,6 +749,7 @@ export default function IncidentsPage() {
     if (activeSessionId === null) return;
     await agent.cancel(activeSessionId);
   };
+  const stopActiveTurn = useTurnStop(activeSessionId, handleCancel);
 
   const incidentState: AgentSessionState = activeIncident?.state ?? "IDLE";
   const isArchivedIncident = activeIncident?.archived === true;
@@ -773,6 +801,8 @@ export default function IncidentsPage() {
       hash,
     });
   };
+  const providerNotice = useProviderNotice(providerConfigsLoaded, handleNavigateToSettings);
+
 
   const isBlocked =
     activeIncident !== null &&
@@ -921,7 +951,7 @@ export default function IncidentsPage() {
       <PageShell>
         <div className="flex flex-1 flex-col overflow-hidden">
           <div className="bs-page-header flex min-h-[3.25rem] shrink-0 items-center gap-2 border-b border-border px-4 py-2">
-            <span className="flex-1 truncate text-base font-semibold tracking-[-0.01em] text-foreground">
+            <span className="flex-1 truncate text-lg font-semibold tracking-[-0.015em] text-foreground">
               {t("common.incidents.allIncidents")}
             </span>
             {topBarActions}
@@ -1033,10 +1063,11 @@ export default function IncidentsPage() {
     <PageShell>
       <div className="flex flex-1 flex-col overflow-hidden">
         {/* Top bar */}
-        <div className="bs-page-header flex min-h-[3.25rem] shrink-0 items-center gap-2 border-b border-border px-4 py-2">
+        {/* Below 640px the title takes the first row, up to two lines, and the status and actions move below it. */}
+        <div className="bs-page-header flex min-h-[3.25rem] shrink-0 flex-wrap items-center gap-x-2 gap-y-1.5 border-b border-border px-4 py-2 sm:flex-nowrap">
           {activeIncident !== null && (
             <>
-              <div data-tour="incidents-title" className="min-w-0 flex-1">
+              <div data-tour="incidents-title" className="min-w-0 basis-full sm:basis-auto">
                 <EditableTitle
                   value={activeIncident.title}
                   disabled={isArchivedIncident}
@@ -1046,23 +1077,15 @@ export default function IncidentsPage() {
                   }}
                 />
               </div>
-              <div data-tour="incidents-status">
+              <div data-tour="incidents-status" className="shrink-0">
                 <StatusPill state={incidentState} interrupted={isLastAgentTurnInterrupted(rawMessages)} />
               </div>
             </>
           )}
-          {activeIncident === null && (
-            <div className="flex-1" />
-          )}
-          {topBarActions}
+          <div className="ml-auto flex shrink-0 items-center gap-2">
+            {topBarActions}
+          </div>
         </div>
-
-        {/* Warning banner when blocked */}
-        {!isArchivedIncident &&
-          providerConfigsLoaded &&
-          !hasConfiguredProvider && (
-            <ProviderBanner onNavigateToSettings={handleNavigateToSettings} />
-          )}
 
         <div className="relative flex-1 overflow-hidden">
           <div
@@ -1089,6 +1112,7 @@ export default function IncidentsPage() {
                     </button>
                   </div>
                 )}
+                <TurnStopContext value={stopActiveTurn}>
                 <CustomerReportIntakeChatContext.Provider value={customerReportIntake.chat}>
                   {activeIncident !== null && (
                     <CitationSelectionToolbar
@@ -1112,6 +1136,7 @@ export default function IncidentsPage() {
                     />
                   )}
                 </CustomerReportIntakeChatContext.Provider>
+                </TurnStopContext>
               </div>
 
               {activeIncident !== null && isArchivedIncident && (
@@ -1120,18 +1145,18 @@ export default function IncidentsPage() {
                 </div>
               )}
 
-              {/* Scroll button - OUTSIDE scroll container to avoid clipping */}
+              {/* Outside the scroll container so it is not clipped; in the corner above the composer, clear of the
+                  left-aligned answer controls. */}
               {showScrollIndicator && (
                 <button
                   type="button"
                   onClick={() => {
                     scrollMessagesToEndRef.current?.({ animated: true });
                   }}
-                  className="absolute left-1/2 -translate-x-1/2 z-10 rounded-full bg-foreground p-2.5 shadow-lg hover:bg-foreground/90"
-                  style={{ bottom: "1.5rem" }}
+                  className="absolute bottom-3 right-4 z-10 flex size-9 items-center justify-center rounded-full border border-border bg-background text-foreground shadow-md transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/70"
                   aria-label={t("common.incidents.scrollToBottom")}
                 >
-                  <ArrowDown className="h-5 w-5 text-background" />
+                  <ArrowDown className="size-4" />
                 </button>
               )}
             </div>
@@ -1149,6 +1174,7 @@ export default function IncidentsPage() {
                 }}
                 isProcessing={isActiveProcessing}
                 isBlocked={isBlocked}
+                blockedNotice={providerNotice}
                 isArchived={isArchivedIncident}
                 composerImages={composerImages}
                 onRemoveImage={handleRemoveComposerImage}
