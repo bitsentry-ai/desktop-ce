@@ -1051,7 +1051,7 @@ const Navbar = ({
 
   return (
     <nav
-      className="bs-sidebar nav-rail h-screen w-64 shrink-0 flex flex-col"
+      className="bs-sidebar nav-rail h-screen w-[17rem] shrink-0 flex flex-col"
       data-expanded={railExpanded ? "true" : undefined}
     >
       <div className={navHeaderClass}>

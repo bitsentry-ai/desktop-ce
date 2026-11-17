@@ -1,6 +1,6 @@
 import { type ReactNode } from "react";
 import { Sun, Moon } from "lucide-react";
-import { Button } from "../ui/button";
+import { cn } from "../lib/utils";
 import { useTheme } from "../theme";
 import { useConnectionStatus } from "../services/hooks";
 import { getDesktopApi } from "../services/desktop-api";
@@ -19,12 +19,6 @@ export const AppearanceSettingsSection = ({
 }: AppearanceSettingsSectionProps) => {
   const { t } = useTranslation();
   const { theme, toggleTheme } = useTheme();
-  let themeLabel = t("settings.appearanceSettingsSection.themeDark");
-  let ThemeIcon = Sun;
-  if (theme === "light") {
-    themeLabel = t("settings.appearanceSettingsSection.themeLight");
-    ThemeIcon = Moon;
-  }
 
   let networkRow: ReactNode = <NetworkRow />;
   if (isDesktop) {
@@ -38,15 +32,7 @@ export const AppearanceSettingsSection = ({
         description={t("settings.appearanceSettingsSection.switchBetweenLightAndDark")}
         controlLayout="compact"
       >
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={toggleTheme}
-          className="gap-2"
-        >
-          <ThemeIcon size={14} />
-          <span>{themeLabel}</span>
-        </Button>
+        <ThemeSelector theme={theme} onToggle={toggleTheme} />
       </SettingsRow>
 
       <SettingsRow
@@ -65,6 +51,50 @@ export const AppearanceSettingsSection = ({
     </div>
   );
 };
+
+const THEME_OPTIONS = [
+  { value: "light", icon: Sun, labelKey: "settings.appearanceSettingsSection.themeLight" },
+  { value: "dark", icon: Moon, labelKey: "settings.appearanceSettingsSection.themeDark" },
+] as const;
+
+/**
+ * Light and Dark as one segmented control: each option shows its own icon, and the current one carries the shared
+ * selection tint, so the control states what is selected rather than what a click would switch to.
+ */
+function ThemeSelector({ theme, onToggle }: { theme: string; onToggle: () => void }) {
+  const { t } = useTranslation();
+  return (
+    <div
+      role="radiogroup"
+      aria-label={t("settings.appearanceSettingsSection.theme")}
+      className="inline-flex rounded-md border border-border bg-background p-0.5"
+    >
+      {THEME_OPTIONS.map(({ value, icon: Icon, labelKey }) => {
+        const selected = theme === value;
+        return (
+          <button
+            key={value}
+            type="button"
+            role="radio"
+            aria-checked={selected}
+            onClick={() => {
+              if (!selected) onToggle();
+            }}
+            className={cn(
+              "inline-flex h-8 items-center gap-1.5 rounded-[5px] px-3 text-[13px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 max-sm:h-10",
+              selected
+                ? "bg-[hsl(var(--selection))] text-foreground shadow-[inset_0_0_0_1px_hsl(var(--brand-emphasis-border))]"
+                : "text-muted-foreground hover:bg-accent hover:text-foreground",
+            )}
+          >
+            <Icon size={14} aria-hidden="true" />
+            {t(labelKey)}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
 
 // Web-only. BitSentry Desktop is local-first; there is no backend to be "connected" to,
 // so we drop this row in the desktop renderer and show a simple browser online flag on web.

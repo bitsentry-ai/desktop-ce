@@ -208,7 +208,7 @@ export function RunbookExpandedActionCardShell({
               onSaveAction(action.id);
             }}
             disabled={!canSaveAction}
-            className="flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-40 transition-colors"
+            className="flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-[hsl(var(--primary-hover))] disabled:opacity-40 transition-colors"
           >
             <Check size={11} />
             {t("common.actions.done")}
@@ -368,7 +368,7 @@ export function RunbookExpandedActionCard({
               onSaveAction(action.id);
             }}
             disabled={!canSaveAction}
-            className="flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-40"
+            className="flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground transition-colors hover:bg-[hsl(var(--primary-hover))] disabled:opacity-40"
           >
             <Check size={11} />
             {t("common.actions.done")}

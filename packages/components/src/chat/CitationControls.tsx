@@ -62,7 +62,7 @@ function CitationCommentEditor({
         <button type="button" onClick={onCancel} className="h-7 rounded-md border border-border px-3 text-xs hover:bg-muted">
           {t("common.actions.cancel")}
         </button>
-        <button type="button" onClick={save} className="h-7 rounded-md bg-primary px-3 text-xs text-primary-foreground hover:bg-primary/90">
+        <button type="button" onClick={save} className="h-7 rounded-md bg-primary px-3 text-xs text-primary-foreground hover:bg-[hsl(var(--primary-hover))]">
           {t("common.actions.save")}
         </button>
       </div>

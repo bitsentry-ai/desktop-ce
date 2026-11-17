@@ -324,7 +324,7 @@ export function RunbookRunDialog({
             <button
               type="submit"
               disabled={missingRuntimeRequiredParameterCount > 0}
-              className="rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-40"
+              className="rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground transition-colors hover:bg-[hsl(var(--primary-hover))] disabled:opacity-40"
             >
               {t("runbooks.runbook.run")}
             </button>
