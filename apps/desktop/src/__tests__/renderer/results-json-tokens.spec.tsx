@@ -113,36 +113,71 @@ describe("RunOutputBlock layout", () => {
   });
 });
 
+describe("RunOutputBlock wrap toggle", () => {
+  it("wraps JSON on demand and keeps the scroller and its shadows", () => {
+    render(<RunOutputBlock value='{"a":"x"}' emptyMessage="empty" />);
+    const toggle = screen.getByRole("button", { name: "common.results.wrapLines" });
+    expect(toggle.getAttribute("aria-pressed")).toBe("false");
+
+    fireEvent.click(toggle);
+    expect(toggle.getAttribute("aria-pressed")).toBe("true");
+    const pre = document.querySelector("pre");
+    expect(pre?.className).toContain("whitespace-pre-wrap");
+    expect(pre?.parentElement?.className).toContain("overflow-x-auto");
+    expect(document.querySelectorAll("[aria-hidden='true'].bg-gradient-to-r")).toHaveLength(1);
+  });
+
+  it("starts plain text wrapped and unwraps it into a sideways scroller", () => {
+    render(<RunOutputBlock value="Pages free: 76905." emptyMessage="empty" />);
+    const toggle = screen.getByRole("button", { name: "common.results.wrapLines" });
+    expect(toggle.getAttribute("aria-pressed")).toBe("true");
+
+    fireEvent.click(toggle);
+    const classes = document.querySelector("pre")?.className.split(" ") ?? [];
+    expect(classes).toContain("whitespace-pre");
+    expect(classes).not.toContain("whitespace-pre-wrap");
+  });
+});
+
 describe("FinalOutputPreview", () => {
-  it("shows the formatted payload clamped to four lines in monospace", () => {
-    const onViewOutput = vi.fn();
+  it("shows a short output whole, with no extra action", () => {
     render(
       <FinalOutputPreview
         output={'Fetched 1 finding.\n{"id":"CVE-1"}'}
         emptyMessage="empty"
-        onViewOutput={onViewOutput}
+        onViewOutput={vi.fn()}
       />,
     );
 
     expect(screen.getByText("Fetched 1 finding.")).toBeTruthy();
     const pre = document.querySelector("pre");
     expect(pre?.className).toContain("font-mono");
-    expect(pre?.className).toContain("line-clamp-4");
+    expect(pre?.className).not.toContain("line-clamp-4");
     expect(pre?.textContent).toBe('{\n  "id": "CVE-1"\n}');
+    expect(screen.queryByRole("button")).toBeNull();
+  });
 
-    const toggle = screen.getByRole("button", { name: "common.results.showMore", hidden: true });
-    fireEvent.click(toggle);
-    expect(toggle.getAttribute("aria-expanded")).toBe("true");
-    expect(document.querySelector("pre")?.className).not.toContain("line-clamp-4");
-    expect(toggle.textContent).toBe("common.results.showLess");
+  it("previews a longer output in four lines with a View full output button", () => {
+    const onViewOutput = vi.fn();
+    const output = Array.from({ length: 12 }, (_, index) => `line ${String(index)}`).join("\n");
+    render(<FinalOutputPreview output={output} emptyMessage="empty" onViewOutput={onViewOutput} />);
 
-    fireEvent.click(screen.getByText("common.results.viewOutput"));
+    expect(document.querySelector("pre")?.className).toContain("line-clamp-4");
+    expect(screen.queryByText("common.results.showMore")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "common.results.viewFullOutput" }));
     expect(onViewOutput).toHaveBeenCalledTimes(1);
+  });
+
+  it("treats a few very long lines as a long output", () => {
+    render(
+      <FinalOutputPreview output={"x".repeat(2000)} emptyMessage="empty" onViewOutput={vi.fn()} />,
+    );
+    expect(screen.getByRole("button", { name: "common.results.viewFullOutput" })).toBeTruthy();
   });
 
   it("shows the empty message when there is no output", () => {
     render(<FinalOutputPreview output="" emptyMessage="Nothing yet" onViewOutput={vi.fn()} />);
     expect(screen.getByText("Nothing yet")).toBeTruthy();
-    expect(screen.queryByText("common.results.viewOutput")).toBeNull();
+    expect(screen.queryByText("common.results.viewFullOutput")).toBeNull();
   });
 });

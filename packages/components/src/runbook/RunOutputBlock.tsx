@@ -6,7 +6,7 @@ import {
   type ReactNode,
   type RefObject,
 } from "react";
-import { Check, Copy } from "lucide-react";
+import { Check, Copy, WrapText } from "lucide-react";
 import { useTranslation } from "@bitsentry-ce/i18n";
 
 import { MarkdownContent } from "../markdown";
@@ -72,19 +72,55 @@ export function RunOutputCopyButton({ text }: { text: string }) {
   );
 }
 
+const BLOCK_TOOL_BUTTON_CLASS =
+  "inline-flex h-6 shrink-0 items-center justify-center rounded-md border border-border bg-background text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 max-sm:h-11";
+
+/** Toggles soft wrapping of long lines; pressed while lines wrap. */
+function WrapLinesToggle({
+  wrap,
+  onToggle,
+}: {
+  wrap: boolean;
+  onToggle: () => void;
+}) {
+  const { t } = useTranslation();
+  const label = t("common.results.wrapLines");
+  return (
+    <button
+      type="button"
+      aria-pressed={wrap}
+      aria-label={label}
+      title={label}
+      onClick={onToggle}
+      className={cn(
+        BLOCK_TOOL_BUTTON_CLASS,
+        "w-6 max-sm:w-11",
+        wrap && "border-foreground/20 bg-muted text-foreground",
+      )}
+    >
+      <WrapText size={12} aria-hidden="true" />
+    </button>
+  );
+}
+
 function BlockToolbar({
   label,
   copyText,
+  children,
 }: {
   label: string;
   copyText: string;
+  children?: ReactNode;
 }) {
   return (
     <div className="flex items-center justify-between gap-2 px-3 pt-2 pb-1.5">
       <span className="text-[11px] font-medium uppercase tracking-[0.06em] text-muted-foreground">
         {label}
       </span>
-      <RunOutputCopyButton text={copyText} />
+      <div className="flex shrink-0 items-center gap-1.5">
+        {children}
+        <RunOutputCopyButton text={copyText} />
+      </div>
     </div>
   );
 }
@@ -129,10 +165,19 @@ function useHorizontalScrollEdges(
 }
 
 /**
- * JSON keeps its indentation: long values scroll sideways instead of wrapping
- * back to the left edge, with a soft shadow on whichever side has more.
+ * Captured monospace output. Unwrapped, long lines scroll sideways (JSON keeps
+ * its indentation) with a soft shadow on whichever side has more; wrapped,
+ * they fold back at the column edge and no shadow shows.
  */
-function JsonScrollArea({ text }: { text: string }) {
+function MonospaceScrollArea({
+  text,
+  json,
+  wrap,
+}: {
+  text: string;
+  json: boolean;
+  wrap: boolean;
+}) {
   const frameRef = useRef<HTMLDivElement>(null);
   const scrollerRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLPreElement>(null);
@@ -145,10 +190,11 @@ function JsonScrollArea({ text }: { text: string }) {
           ref={contentRef}
           className={cn(
             RUN_OUTPUT_MONO_CLASS,
-            "w-max min-w-full whitespace-pre px-3 pb-3",
+            "px-3 pb-3",
+            wrap ? RUN_OUTPUT_WRAPPED_CLASS : "w-max min-w-full whitespace-pre",
           )}
         >
-          <HighlightedJson text={text} />
+          {json ? <HighlightedJson text={text} /> : text}
         </pre>
       </div>
       <div
@@ -169,7 +215,15 @@ function JsonScrollArea({ text }: { text: string }) {
   );
 }
 
-function TruncatedMonospace({ text, json }: { text: string; json: boolean }) {
+function TruncatedMonospace({
+  text,
+  json,
+  wrap,
+}: {
+  text: string;
+  json: boolean;
+  wrap: boolean;
+}) {
   const { t } = useTranslation();
   // Tracks which text was expanded, so selecting another step collapses again
   // without an effect.
@@ -200,31 +254,61 @@ function TruncatedMonospace({ text, json }: { text: string; json: boolean }) {
     );
   }
 
-  const visibleText = expanded ? text : truncated.text;
   return (
     <>
-      {json ? (
-        <JsonScrollArea text={visibleText} />
-      ) : (
-        <pre
-          className={cn(
-            RUN_OUTPUT_MONO_CLASS,
-            RUN_OUTPUT_WRAPPED_CLASS,
-            "px-3 pb-3",
-          )}
-        >
-          {visibleText}
-        </pre>
-      )}
+      <MonospaceScrollArea
+        text={expanded ? text : truncated.text}
+        json={json}
+        wrap={wrap}
+      />
       {toggle}
     </>
   );
 }
 
 /**
+ * A JSON or plain-text block with its toolbar. JSON starts unwrapped so its
+ * indentation holds; plain text starts wrapped. "Wrap lines" flips either.
+ */
+function MonospaceOutputBlock({
+  label,
+  copyText,
+  lead,
+  text,
+  json,
+}: {
+  label: string;
+  copyText: string;
+  lead: string;
+  text: string;
+  json: boolean;
+}) {
+  const [wrap, setWrap] = useState(!json);
+  return (
+    <div className={RUN_OUTPUT_BLOCK_CLASS}>
+      <BlockToolbar label={label} copyText={copyText}>
+        <WrapLinesToggle
+          wrap={wrap}
+          onToggle={() => {
+            setWrap((current) => !current);
+          }}
+        />
+      </BlockToolbar>
+      {lead.length > 0 && (
+        <p className="whitespace-pre-wrap break-words px-3 pb-2 text-sm text-foreground">
+          {lead}
+        </p>
+      )}
+      <TruncatedMonospace text={text} json={json} wrap={wrap} />
+    </div>
+  );
+}
+
+/**
  * Renders captured step output: JSON (or JSON-in-a-string, or a lead sentence
  * followed by JSON) pretty-printed and syntax-coloured in a sideways scroller,
- * Markdown rendered, anything else as wrapped monospace text. JSON and text carry a Copy button and cap at
+ * Markdown rendered, anything else as wrapped monospace text. JSON and text
+ * carry "Wrap lines" and Copy buttons and cap at
  * {@link RUN_OUTPUT_MAX_VISIBLE_LINES} lines until expanded.
  */
 export function RunOutputBlock({
@@ -259,25 +343,25 @@ export function RunOutputBlock({
       );
     case "json":
       return (
-        <div className={RUN_OUTPUT_BLOCK_CLASS}>
-          <BlockToolbar label="JSON" copyText={format.copyText} />
-          {format.lead.length > 0 && (
-            <p className="whitespace-pre-wrap break-words px-3 pb-2 text-sm text-foreground">
-              {format.lead}
-            </p>
-          )}
-          <TruncatedMonospace text={format.display} json />
-        </div>
+        <MonospaceOutputBlock
+          key="json"
+          label="JSON"
+          copyText={format.copyText}
+          lead={format.lead}
+          text={format.display}
+          json
+        />
       );
     case "text":
       return (
-        <div className={RUN_OUTPUT_BLOCK_CLASS}>
-          <BlockToolbar
-            label={t("common.results.formatText")}
-            copyText={format.text}
-          />
-          <TruncatedMonospace text={format.text} json={false} />
-        </div>
+        <MonospaceOutputBlock
+          key="text"
+          label={t("common.results.formatText")}
+          copyText={format.text}
+          lead=""
+          text={format.text}
+          json={false}
+        />
       );
   }
 }

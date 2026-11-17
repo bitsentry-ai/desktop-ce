@@ -32,6 +32,13 @@ import {
   type ResultsPanelId,
 } from "./ResultsDetailPanels";
 import { FinalOutputPreview } from "./FinalOutputPreview";
+import { RunOutcomeLine } from "./RunOutcomeLine";
+import { describeRunOutcome } from "./runOutcome";
+import {
+  RESULTS_STEP_TITLE_CLASS,
+  resultsStepCardClass,
+  resultsStepStatusClass,
+} from "./resultsStepStyles";
 import { stringifyForOutput } from "./runOutputFormat";
 import { StreamDeltaInspector } from "../chat/StreamDeltaInspector";
 import type {
@@ -462,6 +469,19 @@ function SummaryPanel({
     <div data-tour="results-summary" className="flex h-full flex-col">
       <ResultsPanelHeader>{t("common.results.summary")}</ResultsPanelHeader>
       <div className="flex-1 space-y-4 overflow-y-auto px-4 py-4 text-sm">
+        <RunOutcomeLine
+          outcome={describeRunOutcome(
+            {
+              status: resolvedStatus,
+              steps: execution?.steps ?? null,
+              completedSteps,
+              totalSteps: execution?.steps.length ?? 0,
+              startedAt: result.startedAt,
+              completedAt: resolvedCompletedAt,
+            },
+            t,
+          )}
+        />
         <div className="space-y-1">
           <div className="text-[11px] font-medium uppercase tracking-[0.06em] text-muted-foreground">
             {t("common.results.runbook")}
@@ -477,20 +497,6 @@ function SummaryPanel({
         </div>
 
         <div className="grid grid-cols-2 gap-3">
-          <div className="rounded-lg border border-border bg-muted/20 p-3">
-            <div className="text-[11px] font-medium uppercase tracking-[0.06em] text-muted-foreground">
-              {t("common.results.status")}
-            </div>
-            <div className="mt-1 font-medium">{statusLabel(resolvedStatus)}</div>
-          </div>
-          <div className="rounded-lg border border-border bg-muted/20 p-3">
-            <div className="text-[11px] font-medium uppercase tracking-[0.06em] text-muted-foreground">
-              {t("common.results.completed_2")}
-            </div>
-            <div className="mt-1 font-medium">
-              {completedSteps}/{execution?.steps.length ?? 0} steps
-            </div>
-          </div>
           <div className="rounded-lg border border-border bg-muted/20 p-3">
             <div className="text-[11px] font-medium uppercase tracking-[0.06em] text-muted-foreground">
               {t("runbooks.results.source")}
@@ -543,11 +549,6 @@ function StepsPanel({
           const Icon = typeIcon(step.type, step.metadata?.stage ?? step.metadata?.currentActionLabel);
           const stepKey = stepSelectionKey(step);
           const isSelected = selectedStepKey === stepKey;
-          let stepClassName = "border-border bg-muted/10 hover:bg-muted/20";
-          if (isSelected) {
-            stepClassName = "border-primary bg-primary/5";
-          }
-
           let stepTitle = t("common.incidentArtifactsRail.stepNumber", {
             order: step.order,
           });
@@ -569,22 +570,26 @@ function StepsPanel({
               key={stepKey}
               aria-pressed={isSelected}
               onClick={() => { onSelect(stepKey); }}
-              className={cn(
-                "w-full rounded-lg border px-3 py-2 text-left transition-colors",
-                stepClassName,
-              )}
+              title={stepTitle}
+              className={resultsStepCardClass(isSelected)}
             >
-              <div className="flex items-center gap-2">
-                <span className="text-[10px] font-mono text-muted-foreground">
+              <div className="flex items-start gap-2">
+                <span className="mt-0.5 shrink-0 text-[10px] font-mono leading-4 text-muted-foreground">
                   {step.order}
                 </span>
-                <Icon size={13} className="text-muted-foreground" />
-                <span className="truncate text-sm font-medium">{stepTitle}</span>
+                <Icon
+                  size={13}
+                  aria-hidden="true"
+                  className="mt-[3px] shrink-0 text-muted-foreground"
+                />
+                <span className={RESULTS_STEP_TITLE_CLASS}>{stepTitle}</span>
               </div>
-              <div className="mt-2 flex items-center gap-2 text-[11px] text-muted-foreground">
+              <div className="mt-1.5 flex items-center gap-2 text-[11px] text-muted-foreground">
                 <span className="uppercase tracking-wide">{step.type}</span>
                 <span aria-hidden="true">•</span>
-                <span>{step.status}</span>
+                <span className={resultsStepStatusClass(step.status)}>
+                  {step.status}
+                </span>
               </div>
               {stepErrorContent}
             </button>

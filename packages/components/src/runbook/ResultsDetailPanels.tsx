@@ -10,7 +10,7 @@ import { useTranslation } from "@bitsentry-ce/i18n";
 
 import { cn } from "../lib/utils";
 import {
-  RESULTS_COLUMN_MIN_PERCENT,
+  RESULTS_COLUMN_LIMITS,
   type ResultsColumnDivider,
   type ResultsColumnSplit,
 } from "./resultsColumnSplit";
@@ -29,19 +29,20 @@ const PANEL_LABEL_KEYS: Record<ResultsPanelId, string> = {
   output: "common.results.output",
 };
 
-// Column widths at lg+, where all three panels sit side by side. The widths
-// come from the split as CSS variables so they only apply at that breakpoint.
+// Column widths at lg+, where all three panels sit side by side: Summary and
+// Steps get fixed pixel widths (from the split, as CSS variables so they only
+// apply at that breakpoint) and Output takes the rest. On a tight screen the
+// fixed columns give way before Output drops under its minimum.
 const PANEL_WIDTH_CLASS: Record<ResultsPanelId, string> = {
   summary: "lg:flex-[0_1_var(--results-col-summary)]",
   steps: "lg:flex-[0_1_var(--results-col-steps)]",
-  output: "lg:flex-[0_1_var(--results-col-output)]",
+  output: "lg:flex-[1_1_0%] lg:min-w-[320px]",
 };
 
 function splitStyle(split: ResultsColumnSplit): CSSProperties {
   return {
-    "--results-col-summary": `${String(split[0])}%`,
-    "--results-col-steps": `${String(split[1])}%`,
-    "--results-col-output": `${String(split[2])}%`,
+    "--results-col-summary": `${String(split[0])}px`,
+    "--results-col-steps": `${String(split[1])}px`,
   } as CSSProperties;
 }
 
@@ -65,17 +66,16 @@ function ColumnDivider({
   dragging: boolean;
   handlers: ResultsColumnDividerHandlers;
 }) {
-  const before = split[divider];
-  const pair = before + split[divider + 1];
+  const { min, max } = RESULTS_COLUMN_LIMITS[divider];
   return (
     <div
       role="separator"
       aria-orientation="vertical"
       aria-label={label}
       aria-controls={controls}
-      aria-valuenow={Math.round(before)}
-      aria-valuemin={RESULTS_COLUMN_MIN_PERCENT}
-      aria-valuemax={Math.round(pair - RESULTS_COLUMN_MIN_PERCENT)}
+      aria-valuenow={split[divider]}
+      aria-valuemin={min}
+      aria-valuemax={max}
       tabIndex={0}
       data-dragging={dragging}
       {...handlers}
@@ -110,8 +110,8 @@ function nextPanelForKey(
 /**
  * The Summary / Steps / Output body of a run result.
  *
- * At lg+ the three panels sit side by side in resizable columns (Summary and
- * Steps narrow, Output wide). Below lg they would stack, and a long output
+ * At lg+ the three panels sit side by side in resizable columns (Summary
+ * about 280px, Steps about 240px, Output the rest). Below lg they would stack, and a long output
  * would bury the steps under it, so a tab bar pinned above the scroll area
  * shows one panel at a time instead.
  */
@@ -133,9 +133,7 @@ export function ResultsDetailPanels({
   const tabRefs = useRef<
     Partial<Record<ResultsPanelId, HTMLButtonElement | null>>
   >({});
-  const columnsRef = useRef<HTMLDivElement>(null);
-  const { split, draggingDivider, dividerHandlers } =
-    useResultsColumnSplit(columnsRef);
+  const { split, draggingDivider, dividerHandlers } = useResultsColumnSplit();
   const content: Record<ResultsPanelId, ReactNode> = { summary, steps, output };
 
   const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
@@ -186,7 +184,6 @@ export function ResultsDetailPanels({
         </div>
       </div>
       <div
-        ref={columnsRef}
         style={splitStyle(split)}
         className={cn(
           "flex min-h-0 flex-1 flex-col lg:flex-row",

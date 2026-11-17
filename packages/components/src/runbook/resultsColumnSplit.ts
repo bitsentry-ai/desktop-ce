@@ -1,41 +1,53 @@
 /**
- * Widths of the Summary / Steps / Output columns at lg+, as percentages of the
- * detail area, and their persistence in localStorage.
+ * Widths of the Summary and Steps columns at lg+, in CSS pixels, and their
+ * persistence in localStorage. Output takes whatever width is left.
  *
  * Kept free of React so the clamping and storage rules are testable alone.
  */
 
-export type ResultsColumnSplit = readonly [number, number, number];
+/** [Summary, Steps] widths in px. */
+export type ResultsColumnSplit = readonly [number, number];
 
-/** Index of a divider: 0 sits between Summary and Steps, 1 between Steps and Output. */
+/** Index of a divider: 0 sits after Summary, 1 after Steps. */
 export type ResultsColumnDivider = 0 | 1;
 
-export const RESULTS_COLUMN_MIN_PERCENT = 18;
-export const DEFAULT_RESULTS_COLUMN_SPLIT: ResultsColumnSplit = [26, 24, 50];
-export const RESULTS_COLUMN_SPLIT_STORAGE_KEY = "bitsentry.results.columnSplit";
+export const DEFAULT_RESULTS_COLUMN_SPLIT: ResultsColumnSplit = [280, 240];
+
+/** Narrowest and widest each fixed column may be dragged to. */
+export const RESULTS_COLUMN_LIMITS: readonly [
+  { min: number; max: number },
+  { min: number; max: number },
+] = [
+  { min: 220, max: 560 },
+  { min: 180, max: 480 },
+];
+
+/**
+ * v2 stores pixels. The v1 key held percentages of a container whose width is
+ * unknown here, so it is dropped rather than converted.
+ */
+export const RESULTS_COLUMN_SPLIT_STORAGE_KEY =
+  "bitsentry.results.columnWidths.v2";
+export const LEGACY_RESULTS_COLUMN_SPLIT_STORAGE_KEY =
+  "bitsentry.results.columnSplit";
 
 /** How far one arrow key press moves a divider. */
-export const RESULTS_COLUMN_KEYBOARD_STEP = 2;
-
-// Rounding to a tenth of a percent can leave the total a hair off 100.
-const TOTAL_TOLERANCE = 0.5;
+export const RESULTS_COLUMN_KEYBOARD_STEP = 16;
 
 type StorageReader = Pick<Storage, "getItem">;
-type StorageWriter = Pick<Storage, "setItem">;
+type StorageWriter = Pick<Storage, "setItem"> &
+  Partial<Pick<Storage, "removeItem">>;
 
-function roundPercent(value: number): number {
-  return Math.round(value * 10) / 10;
+function clampWidth(divider: ResultsColumnDivider, value: number): number {
+  const { min, max } = RESULTS_COLUMN_LIMITS[divider];
+  return Math.round(Math.min(Math.max(value, min), max));
 }
 
-function clamp(value: number, min: number, max: number): number {
-  return Math.min(Math.max(value, min), max);
-}
-
-/** Returns `value` as a split when it is three widths that fit, else null. */
+/** Returns `value` as a split (clamped to the limits) when it is two widths, else null. */
 export function normalizeColumnSplit(
   value: unknown,
 ): ResultsColumnSplit | null {
-  if (!Array.isArray(value) || value.length !== 3) return null;
+  if (!Array.isArray(value) || value.length !== 2) return null;
   const widths: unknown[] = value;
   if (
     !widths.every(
@@ -45,44 +57,28 @@ export function normalizeColumnSplit(
     return null;
   }
 
-  const [summary, steps, output] = widths as [number, number, number];
-  if (Math.abs(summary + steps + output - 100) > TOTAL_TOLERANCE) return null;
-  if (
-    Math.min(summary, steps, output) <
-    RESULTS_COLUMN_MIN_PERCENT - TOTAL_TOLERANCE
-  ) {
-    return null;
-  }
-  return [summary, steps, output];
+  const [summary, steps] = widths as [number, number];
+  return [clampWidth(0, summary), clampWidth(1, steps)];
 }
 
 export function sameColumnSplit(
   a: ResultsColumnSplit,
   b: ResultsColumnSplit,
 ): boolean {
-  return a[0] === b[0] && a[1] === b[1] && a[2] === b[2];
+  return a[0] === b[0] && a[1] === b[1];
 }
 
 /**
- * Moves one divider by `deltaPercent`, trading width between the two columns
- * on either side of it. Neither may drop below the minimum; the third column
- * keeps its width.
+ * Moves one divider by `deltaPx`, resizing the column before it within its
+ * limits. Output, the flexible column, absorbs the difference.
  */
 export function resizeColumnSplit(
   split: ResultsColumnSplit,
   divider: ResultsColumnDivider,
-  deltaPercent: number,
+  deltaPx: number,
 ): ResultsColumnSplit {
-  const pair = split[divider] + split[divider + 1];
-  const before = roundPercent(
-    clamp(
-      split[divider] + deltaPercent,
-      RESULTS_COLUMN_MIN_PERCENT,
-      pair - RESULTS_COLUMN_MIN_PERCENT,
-    ),
-  );
-  const after = roundPercent(pair - before);
-  return divider === 0 ? [before, after, split[2]] : [split[0], before, after];
+  const width = clampWidth(divider, split[divider] + deltaPx);
+  return divider === 0 ? [width, split[1]] : [split[0], width];
 }
 
 /** The split after a key press on a divider, or null for keys it ignores. */
@@ -91,25 +87,17 @@ export function columnSplitForKey(
   divider: ResultsColumnDivider,
   key: string,
 ): ResultsColumnSplit | null {
-  const before = split[divider];
-  const pair = before + split[divider + 1];
+  const { min, max } = RESULTS_COLUMN_LIMITS[divider];
+  const current = split[divider];
   switch (key) {
     case "ArrowLeft":
       return resizeColumnSplit(split, divider, -RESULTS_COLUMN_KEYBOARD_STEP);
     case "ArrowRight":
       return resizeColumnSplit(split, divider, RESULTS_COLUMN_KEYBOARD_STEP);
     case "Home":
-      return resizeColumnSplit(
-        split,
-        divider,
-        RESULTS_COLUMN_MIN_PERCENT - before,
-      );
+      return resizeColumnSplit(split, divider, min - current);
     case "End":
-      return resizeColumnSplit(
-        split,
-        divider,
-        pair - RESULTS_COLUMN_MIN_PERCENT - before,
-      );
+      return resizeColumnSplit(split, divider, max - current);
     default:
       return null;
   }
@@ -146,6 +134,7 @@ export function writeColumnSplit(
   if (storage === null) return;
   try {
     storage.setItem(RESULTS_COLUMN_SPLIT_STORAGE_KEY, JSON.stringify(split));
+    storage.removeItem?.(LEGACY_RESULTS_COLUMN_SPLIT_STORAGE_KEY);
   } catch {
     // A full or blocked store only costs the remembered widths.
   }

@@ -1,10 +1,4 @@
-import {
-  useRef,
-  useState,
-  type KeyboardEvent,
-  type PointerEvent,
-  type RefObject,
-} from "react";
+import { useRef, useState, type KeyboardEvent, type PointerEvent } from "react";
 
 import {
   DEFAULT_RESULTS_COLUMN_SPLIT,
@@ -21,7 +15,6 @@ interface DragState {
   divider: ResultsColumnDivider;
   pointerId: number;
   startX: number;
-  width: number;
   startSplit: ResultsColumnSplit;
 }
 
@@ -41,9 +34,7 @@ export interface ResultsColumnDividerHandlers {
  * Only the panel container re-renders while dragging: the panel bodies are
  * elements handed in by the page, so React skips them.
  */
-export function useResultsColumnSplit(
-  containerRef: RefObject<HTMLElement | null>,
-) {
+export function useResultsColumnSplit() {
   const [split, setSplit] = useState<ResultsColumnSplit>(() =>
     readColumnSplit(),
   );
@@ -78,8 +69,7 @@ export function useResultsColumnSplit(
     divider: ResultsColumnDivider,
   ): ResultsColumnDividerHandlers => ({
     onPointerDown: (event) => {
-      const width = containerRef.current?.getBoundingClientRect().width ?? 0;
-      if (event.button !== 0 || width <= 0) return;
+      if (event.button !== 0) return;
       // Keeps the drag from starting a text selection across the columns.
       event.preventDefault();
       event.currentTarget.setPointerCapture(event.pointerId);
@@ -87,7 +77,6 @@ export function useResultsColumnSplit(
         divider,
         pointerId: event.pointerId,
         startX: event.clientX,
-        width,
         startSplit: splitRef.current,
       };
       setDraggingDivider(divider);
@@ -95,9 +84,12 @@ export function useResultsColumnSplit(
     onPointerMove: (event) => {
       const drag = dragRef.current;
       if (drag === null || drag.pointerId !== event.pointerId) return;
-      const deltaPercent = ((event.clientX - drag.startX) / drag.width) * 100;
       applySplit(
-        resizeColumnSplit(drag.startSplit, drag.divider, deltaPercent),
+        resizeColumnSplit(
+          drag.startSplit,
+          drag.divider,
+          event.clientX - drag.startX,
+        ),
       );
     },
     onPointerUp: endDrag,

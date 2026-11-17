@@ -1,60 +1,53 @@
-import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
+import { useMemo } from "react";
 import { ArrowRight } from "lucide-react";
 import { useTranslation } from "@bitsentry-ce/i18n";
 
 import { cn } from "../lib/utils";
 import { HighlightedJson } from "./HighlightedJson";
 import { RUN_OUTPUT_MAX_VISIBLE_LINES } from "./RunOutputBlock";
-import { runOutputPreview } from "./runOutputFormat";
+import { runOutputPreview, type RunOutputPreview } from "./runOutputFormat";
 import {
   RUN_OUTPUT_BLOCK_CLASS,
   RUN_OUTPUT_MONO_CLASS,
   RUN_OUTPUT_WRAPPED_CLASS,
 } from "./runOutputStyles";
 
-const ACTION_BUTTON_CLASS =
-  "inline-flex h-7 items-center gap-1 rounded-md border border-border px-2 text-xs font-medium text-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40";
+/** Outputs up to this many lines show whole in the Summary. */
+export const FINAL_OUTPUT_SHORT_MAX_LINES = 6;
+// A few very long lines wrap into many in the narrow Summary column, so a
+// "short" output must also be short in characters.
+const FINAL_OUTPUT_SHORT_MAX_CHARS = 480;
 
-function isClipped(element: HTMLElement | null): boolean {
-  return element !== null && element.scrollHeight > element.clientHeight + 1;
+const VIEW_FULL_OUTPUT_BUTTON_CLASS =
+  "inline-flex h-8 items-center gap-1.5 rounded-md border border-border bg-background px-2.5 text-xs font-medium text-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 max-sm:h-11";
+
+function lineCount(text: string): number {
+  if (text.length === 0) return 0;
+  let count = 1;
+  for (
+    let index = text.indexOf("\n");
+    index !== -1;
+    index = text.indexOf("\n", index + 1)
+  ) {
+    count += 1;
+  }
+  return count;
+}
+
+/** True when the whole preview fits in a few lines, so it needs no "View full output". */
+export function isShortFinalOutput(preview: RunOutputPreview): boolean {
+  return (
+    lineCount(preview.lead) + lineCount(preview.body) <=
+      FINAL_OUTPUT_SHORT_MAX_LINES &&
+    preview.lead.length + preview.body.length <= FINAL_OUTPUT_SHORT_MAX_CHARS
+  );
 }
 
 /**
- * Sets `data-clamped` on `frame` while either clamped element hides text, so
- * "Show more" only appears when there is more. Written straight to the DOM so
- * measuring never re-renders the summary.
- */
-function useClampedFlag(
-  frameRef: RefObject<HTMLDivElement | null>,
-  leadRef: RefObject<HTMLParagraphElement | null>,
-  bodyRef: RefObject<HTMLPreElement | null>,
-  active: boolean,
-) {
-  useEffect(() => {
-    const frame = frameRef.current;
-    if (frame === null || !active) return undefined;
-
-    const update = () => {
-      frame.dataset.clamped = String(
-        isClipped(leadRef.current) || isClipped(bodyRef.current),
-      );
-    };
-    update();
-
-    if (typeof ResizeObserver === "undefined") return undefined;
-    const observer = new ResizeObserver(update);
-    if (leadRef.current !== null) observer.observe(leadRef.current);
-    if (bodyRef.current !== null) observer.observe(bodyRef.current);
-    return () => {
-      observer.disconnect();
-    };
-  }, [frameRef, leadRef, bodyRef, active]);
-}
-
-/**
- * The Summary column's view of the final output: the formatted payload in the
- * same monospace block as the Output column, clamped to four lines with an
- * inline "Show more", and a button that opens it in the Output column.
+ * The Summary column's view of the final output, in the same monospace block
+ * as the Output column. A short output shows whole; a longer one shows a
+ * four-line preview and a "View full output" button that opens it in the
+ * Output column, so the Summary never repeats the full payload.
  */
 export function FinalOutputPreview({
   output,
@@ -70,18 +63,10 @@ export function FinalOutputPreview({
     () => runOutputPreview(output, RUN_OUTPUT_MAX_VISIBLE_LINES),
     [output],
   );
-  // Tracks which output was expanded, so a new run collapses again without an
-  // effect.
-  const [expandedOutput, setExpandedOutput] = useState<string | null>(null);
-  const expanded = expandedOutput === output;
-
-  const frameRef = useRef<HTMLDivElement>(null);
-  const leadRef = useRef<HTMLParagraphElement>(null);
-  const bodyRef = useRef<HTMLPreElement>(null);
-  useClampedFlag(frameRef, leadRef, bodyRef, preview !== null && !expanded);
+  const short = preview !== null && isShortFinalOutput(preview);
 
   return (
-    <div ref={frameRef} className="group/final space-y-2">
+    <div className="space-y-2">
       <div className="text-[11px] font-medium uppercase tracking-[0.06em] text-muted-foreground">
         {t("common.results.finalOutput")}
       </div>
@@ -92,21 +77,19 @@ export function FinalOutputPreview({
           <div className={cn(RUN_OUTPUT_BLOCK_CLASS, "space-y-2 px-3 py-2.5")}>
             {preview.lead.length > 0 && (
               <p
-                ref={leadRef}
                 className={cn(
                   "whitespace-pre-wrap break-words text-sm text-foreground [overflow-wrap:anywhere]",
-                  !expanded && "line-clamp-2",
+                  !short && "line-clamp-2",
                 )}
               >
                 {preview.lead}
               </p>
             )}
             <pre
-              ref={bodyRef}
               className={cn(
                 RUN_OUTPUT_MONO_CLASS,
                 RUN_OUTPUT_WRAPPED_CLASS,
-                !expanded && "line-clamp-4",
+                !short && "line-clamp-4",
               )}
             >
               {preview.json ? (
@@ -116,32 +99,16 @@ export function FinalOutputPreview({
               )}
             </pre>
           </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              aria-expanded={expanded}
-              onClick={() => {
-                setExpandedOutput(expanded ? null : output);
-              }}
-              className={cn(
-                ACTION_BUTTON_CLASS,
-                !expanded &&
-                  "hidden group-data-[clamped=true]/final:inline-flex",
-              )}
-            >
-              {expanded
-                ? t("common.results.showLess")
-                : t("common.results.showMore")}
-            </button>
+          {!short && (
             <button
               type="button"
               onClick={onViewOutput}
-              className={ACTION_BUTTON_CLASS}
+              className={VIEW_FULL_OUTPUT_BUTTON_CLASS}
             >
-              {t("common.results.viewOutput")}
+              {t("common.results.viewFullOutput")}
               <ArrowRight size={12} aria-hidden="true" />
             </button>
-          </div>
+          )}
         </>
       )}
     </div>
