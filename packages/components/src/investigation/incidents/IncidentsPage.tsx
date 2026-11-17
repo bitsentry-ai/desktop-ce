@@ -1008,15 +1008,15 @@ export default function IncidentsPage() {
                           className="shrink-0 text-muted-foreground"
                         />
                         <div className="min-w-0 flex-1">
-                          <div className="truncate text-sm font-medium">
+                          <div className="truncate text-sm font-semibold leading-5 text-foreground">
                             {inc.title}
                           </div>
                           {preview !== null && (
-                            <div className="truncate text-xs text-muted-foreground">
+                            <div className="truncate text-[13px] leading-[18px] text-muted-foreground">
                               {translateIncidentPreview(preview, t)}
                             </div>
                           )}
-                          <div className="text-[11px] text-muted-foreground">
+                          <div className="mt-0.5 text-xs tabular-nums text-muted-foreground">
                             {relativeTime(inc.createdAt, now)}
                           </div>
                         </div>
@@ -1077,8 +1077,12 @@ export default function IncidentsPage() {
                   }}
                 />
               </div>
-              <div data-tour="incidents-status" className="shrink-0">
-                <StatusPill state={incidentState} interrupted={isLastAgentTurnInterrupted(rawMessages)} />
+              {/* The incident's status; a turn's own state (working, stalled) shows on its row in the conversation. */}
+              <div className="flex shrink-0" title={t("common.incidentDetail.incidentStatus")}>
+                <span className="sr-only">{`${t("common.incidentDetail.incidentStatus")} `}</span>
+                <div data-tour="incidents-status">
+                  <StatusPill state={incidentState} interrupted={isLastAgentTurnInterrupted(rawMessages)} />
+                </div>
               </div>
             </>
           )}

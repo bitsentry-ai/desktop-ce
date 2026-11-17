@@ -17,6 +17,7 @@ import {
   Square,
   SquarePen,
   Terminal,
+  TriangleAlert,
   Wrench,
   X,
   type LucideIcon,
@@ -27,7 +28,7 @@ import { MarkdownContent } from "../markdown";
 import { cn } from "../lib/utils";
 import { formatDuration } from "./utils";
 import { dominantToolKind, summarizeToolGroup, toolDetail, toolKind, toolLabel, type ToolKind } from "./toolPresentation";
-import { deriveTurnTimeline, lastTurnActivityMs, TURN_STALL_AFTER_MS, type TurnRow } from "./turnTimelineRows";
+import { deriveTurnTimeline, isTurnStalled, type TurnRow } from "./turnTimelineRows";
 import { TurnStopContext } from "./turnStop";
 import { useDisclosure } from "./disclosureStore";
 import { CITATION_SOURCE_ATTRIBUTE } from "./citationDom";
@@ -256,8 +257,9 @@ function StopTurnButton() {
 }
 
 /**
- * The running turn's one label: how long it has worked, or, once nothing new arrived for half an hour, that it may
- * have stalled, with the host's stop next to it.
+ * The running turn's one label: how long it has worked, or, once nothing new arrived for half an hour, that this turn
+ * may have stalled. A stalled turn reads as a warning about the turn, not as work in progress: an amber alert, the
+ * elapsed time and the host's stop, with no spinner. The incident's own status stays in the header.
  */
 function WorkingRow({ msg, startedAt, nowMs }: { msg: AgentMessage; startedAt: string | undefined; nowMs: number }) {
   const { t } = useTranslation();
@@ -270,19 +272,21 @@ function WorkingRow({ msg, startedAt, nowMs }: { msg: AgentMessage; startedAt: s
     );
   }
   const duration = formatDuration(Math.max(0, nowMs - startedMs));
-  const lastActivity = lastTurnActivityMs(msg) ?? startedMs;
-  const stalled = nowMs - lastActivity > TURN_STALL_AFTER_MS;
+  if (!isTurnStalled(msg, nowMs)) {
+    return (
+      <div className="border-b border-border/60 pb-2 pt-1">
+        <div className="flex min-h-6 min-w-0 items-center px-1 text-sm leading-[22px] tabular-nums">
+          <span className="whitespace-nowrap text-muted-foreground">{`${t("common.incidents.workingFor")} ${duration}`}</span>
+        </div>
+      </div>
+    );
+  }
   return (
     <div className="border-b border-border/60 pb-2 pt-1">
-      <div className="flex min-h-6 min-w-0 flex-wrap items-center gap-x-3 gap-y-1.5 px-1 text-sm leading-[22px] tabular-nums">
-        {stalled ? (
-          <>
-            <span className="font-medium text-[hsl(var(--warning-text))]">{t("common.incidentDetail.possiblyStalled", { duration })}</span>
-            <StopTurnButton />
-          </>
-        ) : (
-          <span className="whitespace-nowrap text-muted-foreground">{`${t("common.incidents.workingFor")} ${duration}`}</span>
-        )}
+      <div className="flex min-h-7 min-w-0 flex-wrap items-center gap-x-2 gap-y-1.5 px-1 text-sm leading-[22px] tabular-nums">
+        <TriangleAlert aria-hidden className="size-4 shrink-0 text-[hsl(var(--warning-text))]" />
+        <span className="font-medium text-[hsl(var(--warning-text))]">{t("common.incidentDetail.possiblyStalled", { duration })}</span>
+        <StopTurnButton />
       </div>
     </div>
   );

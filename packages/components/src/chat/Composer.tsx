@@ -227,6 +227,16 @@ function composerCanSend(isBlocked: boolean, prompt: string, attachmentCount: nu
   return prompt.trim().length > 0 || attachmentCount > 0;
 }
 
+function showsContextIndicator(isBlocked: boolean, tokenUsage: AgentThreadTokenUsage | undefined, contextWindowLimit: number | undefined): boolean {
+  return !isBlocked && (tokenUsage !== undefined || contextWindowLimit !== undefined);
+}
+
+/** Why the send button is unavailable while the composer is blocked; undefined while it is not. */
+function sendUnavailableReason(t: (key: string) => string, isBlocked: boolean, threadStatus: ThreadStatus | undefined): string | undefined {
+  if (!isBlocked) return undefined;
+  return threadStatus === "blocked_no_runbook" ? t("common.incidentDetail.sendNeedsRunbook") : t("common.incidentDetail.sendNeedsProvider");
+}
+
 function composerPlaceholder(t: (key: string) => string, isBlocked: boolean, threadStatus: ThreadStatus | undefined, question: ComposerCustomerReportIntake | undefined, remediation: ComposerRemediationFlow | undefined, placeholder: string | undefined): string {
   if (isBlocked) {
     return threadStatus === "blocked_no_runbook" ? t("common.incidents.createARunbookToEnable") : t("common.incidents.configureAProviderInSettings");
@@ -440,9 +450,11 @@ export function Composer({
     );
   }
 
+  // While blocked there is no model to measure against, so the context meter, which reads like a busy ring at a
+  // glance, stays hidden.
   let contextIndicator: ReactNode = null;
   const actualUsage = tokenUsage?.kind === "estimate" ? undefined : tokenUsage;
-  if (tokenUsage !== undefined || contextWindowLimit !== undefined) {
+  if (showsContextIndicator(isBlocked, tokenUsage, contextWindowLimit)) {
     contextIndicator = (
       <ContextIndicator
         inputTokens={actualUsage?.inputTokens ?? 0}
@@ -457,8 +469,10 @@ export function Composer({
     );
   }
 
+  // The composer shares the conversation's centered 800px column (848px less its 24px gutters); below 640px the
+  // gutters are 16px.
   return (
-    <div className="shrink-0 px-4 pb-4">
+    <div className="mx-auto w-full max-w-[848px] shrink-0 px-4 pb-4 sm:px-6">
       {threadStatus === "streaming" && showThreadWaitingIndicator && (
         <div className="mb-2 flex items-center gap-2 text-xs text-muted-foreground">
           <Loader2 size={11} />
@@ -706,6 +720,7 @@ export function Composer({
                 canSteer={canSteer}
                 canResume={!isProcessing && queue?.held === true && queue.messages.length > 0}
                 isEditingQueuedMessage={isEditingQueuedMessage}
+                unavailableReason={sendUnavailableReason(t, isBlocked, threadStatus)}
                 onSubmit={submit}
                 onResume={() => { onResumeQueue?.(); }}
                 onInterrupt={onCancel}

@@ -9,6 +9,7 @@ import {
 import type { ChatMessage, AgentIteration } from "./types";
 import { TurnTimeline } from "./TurnTimeline";
 import { isInterruptedAgentTurn } from "./runtimeProjection";
+import { isTurnStalled } from "./turnTimelineRows";
 import { CitationChip } from "./CitationControls";
 import { splitCitations } from "./citations";
 import { useTranslation } from "@bitsentry-ce/i18n";
@@ -273,6 +274,10 @@ export function getCopyableMarkdown(msg: AgentMessage): string {
   return (msg.finalText ?? "").trim();
 }
 
+/** The answer row's 28px ghost icon buttons; hosts that add their own actions to the row reuse it. */
+export const answerActionButtonClassName =
+  "inline-flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50";
+
 function CopyMarkdownResponseButton({ content }: { content: string }) {
   const { t } = useTranslation();
   const [copied, setCopied] = useState(false);
@@ -325,7 +330,7 @@ function CopyMarkdownResponseButton({ content }: { content: string }) {
         <button
           type="button"
           onClick={handleCopy}
-          className="inline-flex size-7 shrink-0 items-center justify-center rounded-md border border-border/70 bg-background/80 text-muted-foreground shadow-sm transition-colors hover:border-foreground/30 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className={answerActionButtonClassName}
           aria-label={label}
         >
           <Icon className="size-3.5" />
@@ -338,14 +343,46 @@ function CopyMarkdownResponseButton({ content }: { content: string }) {
   );
 }
 
+/** Whether the turn is working: running and not stalled. A stalled turn's row carries the warning instead. */
+function isWorkingTurn(msg: AgentMessage, nowMs: number): boolean {
+  return (msg.status === "thinking" || msg.status === "streaming") && !isTurnStalled(msg, nowMs);
+}
+
+/** The provider's logo, with an activity dot while the turn works. */
+function AgentAvatar({ providerKey, working }: { providerKey: string | null | undefined; working: boolean }) {
+  const ProviderLogo = providerKey === undefined || providerKey === null ? null : getProviderLogo(providerKey);
+  return (
+    <div
+      className={cn(
+        "relative mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-full border border-border bg-muted transition-colors",
+        working && "border-primary/25 bg-primary/5",
+      )}
+    >
+      {ProviderLogo === null ? <ShieldAlert size={14} className="text-muted-foreground" /> : <ProviderLogo size={14} />}
+      {working && (
+        <span
+          className="absolute -right-0.5 -top-0.5 size-2 rounded-full bg-primary/70 shadow-[0_0_0_3px_hsl(var(--background))]"
+          aria-hidden="true"
+        />
+      )}
+    </div>
+  );
+}
+
 export const ChatBubble = memo(function ChatBubble({
   msg,
   providerKey,
   collapsedJsonLabel,
+  actions,
 }: {
   msg: ChatMessage;
   providerKey?: string | null;
   collapsedJsonLabel?: string;
+  /**
+   * More controls for the answer row, after copy, such as a host's feedback buttons. The reply is the
+   * `group/answer` hover and focus group, so an action can reveal its label while the reader is on the reply.
+   */
+  actions?: ReactNode;
 }) {
   const { t } = useTranslation();
   const [nowMs, setNowMs] = useState(() => Date.now());
@@ -373,19 +410,6 @@ export const ChatBubble = memo(function ChatBubble({
 
   const copyableMarkdown = getCopyableMarkdown(msg);
 
-  let providerLogoContent: ReactNode = (
-    <ShieldAlert size={14} className="text-muted-foreground" />
-  );
-  if (providerKey !== undefined && providerKey !== null) {
-    const ProviderLogo = getProviderLogo(providerKey);
-    if (ProviderLogo !== null) {
-      providerLogoContent = <ProviderLogo size={14} />;
-    }
-  }
-
-  const isWaitingForAssistant =
-    msg.status === "thinking" || msg.status === "streaming";
-
   let copyResponseButton: ReactNode = null;
   if (copyableMarkdown.length > 0) {
     copyResponseButton = <CopyMarkdownResponseButton content={copyableMarkdown} />;
@@ -408,30 +432,18 @@ export const ChatBubble = memo(function ChatBubble({
   }
 
   return (
-    <div className="flex gap-3">
-      <div
-        className={cn(
-          "relative mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-full border border-border bg-muted transition-colors",
-          isWaitingForAssistant && "border-primary/25 bg-primary/5",
-        )}
-      >
-        {providerLogoContent}
-        {isWaitingForAssistant && (
-          <span
-            className="absolute -right-0.5 -top-0.5 size-2 rounded-full bg-primary/70 shadow-[0_0_0_3px_hsl(var(--background))]"
-            aria-hidden="true"
-          />
-        )}
-      </div>
+    <div className="group/answer flex gap-3">
+      <AgentAvatar providerKey={providerKey} working={isWorkingTurn(msg, nowMs)} />
       <div className="min-w-0 flex-1 pt-0.5">
         <div className="min-w-0 flex-1 space-y-3">
           <TurnTimeline msg={msg} nowMs={nowMs} collapsedJsonLabel={collapsedJsonLabel} />
 
           {errorStatusContent}
 
-          {copyResponseButton !== null && (
-            <div className="flex items-center gap-1.5">
+          {(copyResponseButton !== null || actions !== undefined) && (
+            <div className="-ml-1.5 flex flex-wrap items-center gap-0.5">
               {copyResponseButton}
+              {actions}
             </div>
           )}
         </div>

@@ -177,8 +177,9 @@ export const IncidentMessageList = memo(function IncidentMessageList({
         extraData={providerKey}
         keyExtractor={keyExtractor}
         getItemType={getItemType}
+        // Rows sit in one centered reading column, the composer's width; the gutters stay 16px below 640px.
         renderItem={({ item }) => (
-          <div className="space-y-3 pb-5" data-message-id={item.id}>
+          <div className="mx-auto w-full max-w-[800px] space-y-3 pb-5" data-message-id={item.id}>
             <LiveChatBubble msg={item} providerKey={providerKey} />
           </div>
         )}
@@ -213,7 +214,7 @@ export const IncidentMessageList = memo(function IncidentMessageList({
         tabIndex={0}
         aria-label={t("common.incidents.messageList")}
         className="page-enter absolute inset-0"
-        contentContainerClassName="px-6"
+        contentContainerClassName="px-4 sm:px-6"
         ListHeaderComponent={<div className={headerClassName} />}
         ListFooterComponent={<div className="h-1" />}
       />

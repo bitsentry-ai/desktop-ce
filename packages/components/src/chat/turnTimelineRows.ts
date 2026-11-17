@@ -112,6 +112,17 @@ export function lastTurnActivityMs(message: AgentMessage): number | null {
   return times.length === 0 ? null : Math.max(...times);
 }
 
+/**
+ * Whether a running turn recorded nothing for {@link TURN_STALL_AFTER_MS}. A turn without a start time never reads as
+ * stalled, and neither does one that settled.
+ */
+export function isTurnStalled(message: AgentMessage, nowMs: number): boolean {
+  if (message.status !== "thinking" && message.status !== "streaming") return false;
+  const startedMs = Date.parse(message.iterations[0]?.startedAt ?? "");
+  if (Number.isNaN(startedMs)) return false;
+  return nowMs - (lastTurnActivityMs(message) ?? startedMs) > TURN_STALL_AFTER_MS;
+}
+
 export function deriveTurnTimeline(message: AgentMessage): TurnTimeline {
   const tools = new Map(message.toolCalls.map((card) => [card.toolCallId, card]));
   const entries = message.iterations.flatMap((iteration, index) =>
