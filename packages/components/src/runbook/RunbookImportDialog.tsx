@@ -244,7 +244,7 @@ export function RunbookImportDialog({
 
     conflictPolicyContent = (
       <div className="rounded-lg border border-border p-4">
-        <p className="text-[11px] uppercase tracking-wide text-muted-foreground/60">
+        <p className="text-xs uppercase tracking-wide text-muted-foreground">
           {t("runbooks.runbookImportDialog.conflictPolicy")}
         </p>
         <div className="mt-3 grid gap-2">
@@ -331,7 +331,7 @@ export function RunbookImportDialog({
               key={key}
               className="rounded-lg border border-border bg-muted/20 px-3 py-3"
             >
-              <p className="text-[11px] uppercase tracking-wide text-muted-foreground/60">
+              <p className="text-xs uppercase tracking-wide text-muted-foreground">
                 {formatSummaryCountLabel(key, !isResult, t)}
               </p>
               <p className="mt-1 text-2xl font-semibold">{summary[key]}</p>
@@ -366,7 +366,7 @@ export function RunbookImportDialog({
                 </div>
                 <span
                   className={cn(
-                    "inline-flex items-center gap-1 rounded-full border px-2 py-1 text-[11px] font-medium",
+                    "inline-flex items-center gap-1 rounded-full border px-2 py-1 text-xs font-medium",
                     resultStatusClass(result.status),
                   )}
                 >
@@ -439,7 +439,7 @@ export function RunbookImportDialog({
         <div className="grid max-h-[calc(88vh-14rem)] gap-4 overflow-y-auto px-6 py-5">
           <div className="grid gap-3 rounded-lg border border-border bg-muted/20 p-4 sm:grid-cols-3">
             <div>
-              <p className="text-[11px] uppercase tracking-wide text-muted-foreground/60">
+              <p className="text-xs uppercase tracking-wide text-muted-foreground">
                 {t("runbooks.runbookImportDialog.exportedFrom")}
               </p>
               <p className="mt-1 text-sm font-medium">
@@ -447,7 +447,7 @@ export function RunbookImportDialog({
               </p>
             </div>
             <div>
-              <p className="text-[11px] uppercase tracking-wide text-muted-foreground/60">
+              <p className="text-xs uppercase tracking-wide text-muted-foreground">
                 {t("runbooks.runbookImportDialog.exportedAt")}
               </p>
               <p className="mt-1 text-sm font-medium">
@@ -455,7 +455,7 @@ export function RunbookImportDialog({
               </p>
             </div>
             <div>
-              <p className="text-[11px] uppercase tracking-wide text-muted-foreground/60">
+              <p className="text-xs uppercase tracking-wide text-muted-foreground">
                 {t("runbooks.runbookImportDialog.runbooks")}
               </p>
               <p className="mt-1 text-sm font-medium">
@@ -468,7 +468,7 @@ export function RunbookImportDialog({
 
           <div className="rounded-lg border border-border p-4">
             <div className="flex items-center justify-between gap-3">
-              <p className="text-[11px] uppercase tracking-wide text-muted-foreground/60">
+              <p className="text-xs uppercase tracking-wide text-muted-foreground">
                 {summaryLabel}
               </p>
               {previewLoadingContent}

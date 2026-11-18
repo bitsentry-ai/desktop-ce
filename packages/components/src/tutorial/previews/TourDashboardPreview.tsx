@@ -40,14 +40,14 @@ const DEMO_DIAGNOSES = [
 const SEVERITY_BADGE: Record<string, string> = {
   critical: "bg-destructive/15 text-destructive",
   high: "bg-orange-500/15 text-orange-500",
-  medium: "bg-amber-500/15 text-amber-500",
-  low: "bg-emerald-500/15 text-emerald-500",
+  medium: "bg-[hsl(var(--warning)/0.12)] text-[hsl(var(--warning-text))]",
+  low: "bg-[hsl(var(--success)/0.1)] text-[hsl(var(--success-text))]",
 };
 
 const STATE_BADGE: Record<string, string> = {
   in_progress: "bg-blue-500/15 text-blue-500",
   open: "bg-muted text-muted-foreground",
-  resolved: "bg-emerald-500/15 text-emerald-500",
+  resolved: "bg-[hsl(var(--success)/0.1)] text-[hsl(var(--success-text))]",
 };
 
 export default function TourDashboardPreview() {

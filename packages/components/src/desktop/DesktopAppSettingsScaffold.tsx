@@ -6,6 +6,20 @@ import {
   type ReactNode,
 } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
+import {
+  Activity,
+  Braces,
+  Cpu,
+  Keyboard,
+  LifeBuoy,
+  Palette,
+  Puzzle,
+  ShieldCheck,
+  SlidersHorizontal,
+  SquareTerminal,
+  TriangleAlert,
+  type LucideIcon,
+} from "lucide-react";
 import { useTranslation } from "@bitsentry-ce/i18n";
 import DashboardLayout from "../layout/DashboardLayout";
 import { AppearanceSettingsSection } from "../settings/AppearanceSettingsSection";
@@ -17,6 +31,15 @@ import { PluginsSettingsSection } from "../settings/PluginsSettingsSection";
 import { GlobalVariablesSettingsSection } from "../settings/GlobalVariablesSettingsSection";
 import { TelemetrySection } from "../settings/TelemetrySection";
 import { UpdateSettingsSection } from "../settings/UpdateSettingsSection";
+import {
+  settingsDescriptionClass,
+  settingsLabelClass,
+  settingsPageTitleClass,
+} from "../settings/SettingsRow";
+import {
+  SettingsSectionNav,
+  type SettingsSectionNavItem,
+} from "../settings/SettingsSectionNav";
 import { HelpSection } from "../tutorial/HelpSection";
 import { useToast } from "../hooks/use-toast";
 import { Button } from "../ui/button";
@@ -30,6 +53,93 @@ import {
   DialogTitle,
 } from "../ui/dialog";
 import { getDesktopApi } from "../services/desktop-api";
+import { KeyboardShortcutsList, defaultNavigationCommands } from "../shortcuts";
+
+const noop = () => undefined;
+/** Every desktop shortcut, read-only; the palette host owns the handlers. */
+const SHORTCUT_REFERENCE = defaultNavigationCommands(noop, {
+  routes: { settings: "/app-settings" },
+  togglePalette: noop,
+  showShortcuts: noop,
+  newIncident: noop,
+  toggleTheme: noop,
+});
+
+type SettingsSectionMeta = {
+  id: string;
+  labelKey: string;
+  icon: LucideIcon;
+};
+
+/** Sections the desktop sidebar also lists as `/app-settings#hash` sub-links, in the same order. */
+const LEADING_SECTIONS: readonly SettingsSectionMeta[] = [
+  { id: "appearance", labelKey: "navigation.navbar.appearance", icon: Palette },
+  { id: "plugins", labelKey: "navigation.navbar.plugins", icon: Puzzle },
+  {
+    id: "global-variables",
+    labelKey: "navigation.navbar.globalVariables",
+    icon: Braces,
+  },
+  {
+    id: "coding-agents",
+    labelKey: "navigation.navbar.codingAgents",
+    icon: SquareTerminal,
+  },
+  { id: "shortcuts", labelKey: "common.shortcuts.title", icon: Keyboard },
+  { id: "help", labelKey: "navigation.navbar.help", icon: LifeBuoy },
+];
+
+/** Page-only sections, after any extra sections the host adds. */
+const TRAILING_SECTIONS: readonly SettingsSectionMeta[] = [
+  {
+    id: "telemetry",
+    labelKey: "settings.telemetrySection.telemetry",
+    icon: Activity,
+  },
+  {
+    id: "danger-zone",
+    labelKey: "settings.appSettings.dangerZone",
+    icon: TriangleAlert,
+  },
+];
+
+const EXTRA_SECTION_ICONS: Record<string, LucideIcon> = {
+  "llm-providers": Cpu,
+  "data-policy": ShieldCheck,
+};
+
+/** Hashes that used to point inside a section on the long page. */
+const NESTED_HASH_SECTIONS: Record<string, string> = {
+  updates: "appearance",
+};
+
+function hashId(hash: string): string {
+  if (hash.length === 0) return "";
+  return decodeURIComponent(hash.slice(1));
+}
+
+function resolveActiveSectionId(
+  targetId: string,
+  sectionIds: readonly string[],
+): string {
+  if (sectionIds.includes(targetId)) return targetId;
+  return NESTED_HASH_SECTIONS[targetId] ?? sectionIds[0] ?? "appearance";
+}
+
+function SectionHeader({
+  title,
+  description,
+}: {
+  title: string;
+  description: string;
+}) {
+  return (
+    <div className="mb-6">
+      <h2 className={settingsPageTitleClass}>{title}</h2>
+      <p className={`mt-1 ${settingsDescriptionClass}`}>{description}</p>
+    </div>
+  );
+}
 
 type CaptureDesktopAnalyticsEvent = (
   event: string,
@@ -77,6 +187,7 @@ export function DesktopAppSettingsScaffold({
   const location = useLocation();
   const navigate = useNavigate();
   const viewedSettingsSectionRef = useRef<string | null>(null);
+  const headerRef = useRef<HTMLDivElement>(null);
   const [isResetDialogOpen, setIsResetDialogOpen] = useState(false);
   const [resetConfirmationText, setResetConfirmationText] = useState("");
   const [isResettingDatabase, setIsResettingDatabase] = useState(false);
@@ -93,9 +204,34 @@ export function DesktopAppSettingsScaffold({
     });
   }, [captureDesktopAnalyticsEvent, location.hash]);
 
+  const extraSectionIds = (appSettingsExtraSections ?? []).map(
+    (section) => section.hash,
+  );
+  const sections: SettingsSectionMeta[] = [
+    ...LEADING_SECTIONS,
+    ...(appSettingsExtraSections ?? []).map((section) => ({
+      id: section.hash,
+      labelKey: section.labelKey,
+      icon: EXTRA_SECTION_ICONS[section.hash] ?? SlidersHorizontal,
+    })),
+    ...TRAILING_SECTIONS,
+  ];
+  const targetId = hashId(location.hash);
+  const activeId = resolveActiveSectionId(
+    targetId,
+    sections.map((section) => section.id),
+  );
+  // Host sections share one panel, so their hashes still scroll to the matching part of it.
+  const scrollsToTarget =
+    targetId !== activeId || extraSectionIds.includes(targetId);
+
   useEffect(() => {
-    if (location.hash.length === 0) return;
-    const targetId = decodeURIComponent(location.hash.slice(1));
+    if (targetId.length === 0) return;
+    if (!scrollsToTarget) {
+      // A section switch shows the new section from its top.
+      headerRef.current?.scrollIntoView({ block: "nearest" });
+      return;
+    }
     let frameId: number | null = null;
     let attempts = 0;
 
@@ -117,7 +253,7 @@ export function DesktopAppSettingsScaffold({
         window.cancelAnimationFrame(frameId);
       }
     };
-  }, [location.hash]);
+  }, [scrollsToTarget, targetId]);
 
   const handleResetDatabaseDialogChange = useCallback(
     (open: boolean) => {
@@ -183,42 +319,32 @@ export function DesktopAppSettingsScaffold({
     confirmResetDatabaseLabel = t("settings.appSettings.resetting");
   }
 
-  return (
-    <DashboardLayout appSettingsExtraSections={appSettingsExtraSections}>
-      <div className="mb-8">
-        <h1 className="text-lg font-semibold text-foreground">
-          {t("settings.appSettings.settings")}
-        </h1>
-        <p className="text-sm text-muted-foreground">
-          {t("settings.appSettings.configureAppSettings")}
-        </p>
-      </div>
+  let codingAgentsExtra: ReactNode = null;
+  if (extraSectionIds.length === 0) {
+    // Without sidebar entries of their own, host sections stay under Coding Agents.
+    codingAgentsExtra = additionalSections;
+  }
 
-      <div className="space-y-12">
-        <section id="appearance" className="scroll-mt-24">
-          <div className="mb-4">
-            <h2 className="text-sm font-semibold text-foreground">
-              {t("navigation.navbar.appearance")}
-            </h2>
-            <p className="text-xs text-muted-foreground">
-              {t("settings.appSettings.themeLanguageAndConnectionStatus")}
-            </p>
-          </div>
-          <AppearanceSettingsSection
-            extraRows={<UpdateSettingsSection mode="row" />}
-          />
-        </section>
-
-        <div className="border-t border-border" />
-
-        <PluginsSettingsSection id="plugins" />
-
-        <div className="border-t border-border" />
-
-        <GlobalVariablesSettingsSection id="global-variables" />
-
-        <div className="border-t border-border" />
-
+  const sectionContent: Record<string, ReactNode> = {
+    appearance: (
+      <section id="appearance" className="scroll-mt-24">
+        <SectionHeader
+          title={t("navigation.navbar.appearance")}
+          description={t(
+            "settings.appSettings.themeLanguageAndConnectionStatus",
+          )}
+        />
+        <AppearanceSettingsSection
+          extraRows={<UpdateSettingsSection mode="row" />}
+        />
+      </section>
+    ),
+    plugins: <PluginsSettingsSection id="plugins" />,
+    "global-variables": (
+      <GlobalVariablesSettingsSection id="global-variables" pageTitle />
+    ),
+    "coding-agents": (
+      <div className="space-y-8">
         <CodingAgentProvidersSection
           primaryAgent={primaryAgent}
           isPrimarySelectionPending={isPrimarySelectionPending}
@@ -226,76 +352,107 @@ export function DesktopAppSettingsScaffold({
           captureDesktopAnalyticsEvent={captureDesktopAnalyticsEvent}
           captureRendererException={captureRendererException}
         />
+        {codingAgentsExtra}
+      </div>
+    ),
+    shortcuts: (
+      <section id="shortcuts" className="scroll-mt-24">
+        <SectionHeader
+          title={t("common.shortcuts.title")}
+          description={t("common.shortcuts.description")}
+        />
+        <KeyboardShortcutsList commands={SHORTCUT_REFERENCE} />
+      </section>
+    ),
+    help: (
+      <section
+        id="help"
+        data-tour={helpSectionTourMarker}
+        className="scroll-mt-24"
+      >
+        <SectionHeader
+          title={t("settings.appSettings.help")}
+          description={t(
+            "settings.appSettings.guidedToursAndOnboardingWalkthroughs",
+          )}
+        />
+        <HelpSection
+          navigate={(path) => {
+            void navigate(path);
+          }}
+          excludedTourIds={["dashboard"]}
+        />
+      </section>
+    ),
+    telemetry: <TelemetrySection />,
+    "danger-zone": (
+      <section id="danger-zone" className="scroll-mt-24">
+        <SectionHeader
+          title={t("settings.appSettings.dangerZone")}
+          description={t("settings.appSettings.irreversibleLocalResetActions")}
+        />
 
-        {additionalSections !== undefined && additionalSections !== null && (
-          <>
-            <div className="border-t border-border" />
-            {additionalSections}
-          </>
-        )}
-
-        <div className="border-t border-border" />
-
-        <section
-          id="help"
-          data-tour={helpSectionTourMarker}
-          className="scroll-mt-24"
-        >
-          <div className="mb-4">
-            <h2 className="text-sm font-semibold text-foreground">
-              {t("settings.appSettings.help")}
-            </h2>
-            <p className="text-xs text-muted-foreground">
-              {t("settings.appSettings.guidedToursAndOnboardingWalkthroughs")}
-            </p>
-          </div>
-          <HelpSection
-            navigate={(path) => {
-              void navigate(path);
-            }}
-            excludedTourIds={["dashboard"]}
-          />
-        </section>
-
-        <div className="border-t border-border" />
-
-        <TelemetrySection />
-
-        <div className="border-t border-border" />
-
-        <section id="danger-zone">
-          <div className="mb-4">
-            <h2 className="text-sm font-semibold text-foreground">
-              {t("settings.appSettings.dangerZone")}
-            </h2>
-            <p className="text-xs text-muted-foreground">
-              {t("settings.appSettings.irreversibleLocalResetActions")}
-            </p>
-          </div>
-
-          <div className="rounded-lg border border-border bg-card p-4">
-            <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-              <div className="space-y-1.5">
-                <h3 className="text-sm font-semibold text-foreground">
-                  {t("settings.appSettings.resetLocalDatabase")}
-                </h3>
-                <p className="text-xs text-muted-foreground">
-                  {t("settings.appSettings.deleteTheAppAposS")}
-                </p>
-              </div>
-              <Button
-                type="button"
-                variant="outline"
-                className="shrink-0 border-destructive/30 text-destructive hover:bg-destructive/10 hover:text-destructive md:min-w-[160px]"
-                onClick={() => {
-                  handleResetDatabaseDialogChange(true);
-                }}
-              >
-                {t("settings.appSettings.resetDatabase")}
-              </Button>
+        <div className="rounded-lg border border-border bg-card p-4">
+          <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+            <div className="min-w-0">
+              <h3 className={settingsLabelClass}>
+                {t("settings.appSettings.resetLocalDatabase")}
+              </h3>
+              <p className={settingsDescriptionClass}>
+                {t("settings.appSettings.deleteTheAppAposS")}
+              </p>
             </div>
+            <Button
+              type="button"
+              variant="outline"
+              className="shrink-0 border-destructive/30 text-destructive hover:bg-destructive/10 hover:text-destructive md:min-w-[160px]"
+              onClick={() => {
+                handleResetDatabaseDialogChange(true);
+              }}
+            >
+              {t("settings.appSettings.resetDatabase")}
+            </Button>
           </div>
-        </section>
+        </div>
+      </section>
+    ),
+  };
+  for (const id of extraSectionIds) {
+    sectionContent[id] = <div className="space-y-8">{additionalSections}</div>;
+  }
+
+  const navItems: SettingsSectionNavItem[] = sections.map((section) => ({
+    id: section.id,
+    label: t(section.labelKey),
+    icon: section.icon,
+  }));
+
+  return (
+    <DashboardLayout
+      appSettingsExtraSections={appSettingsExtraSections}
+      mainClassName="px-4 pt-4 md:px-6"
+    >
+      {/*
+        The same frame as the Dashboard settings: the "Settings" title heads a
+        208px section list, and one section shows at a time under its own 20px
+        title. The hash picks the section, so `/app-settings#hash` links and
+        this list stay in sync. The body is capped at 880px.
+      */}
+      <div
+        ref={headerRef}
+        className="flex scroll-mt-3 flex-col gap-6 md:flex-row md:gap-8"
+      >
+        <SettingsSectionNav
+          items={navItems}
+          activeId={activeId}
+          pathname={location.pathname}
+          label={t("settings.appSettings.settings")}
+          heading={t("settings.appSettings.settings")}
+          selectLabel={t("settings.sectionNav.label")}
+        />
+        <div key={activeId} className="min-w-0 max-w-[760px] flex-1">
+          {sectionContent[activeId]}
+        </div>
       </div>
 
       {additionalDialogs}

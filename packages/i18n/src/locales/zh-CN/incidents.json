@@ -32,6 +32,8 @@
   "incidents.incidents.openAnIncidentToUse": "打开一个事件以使用此触发器",
   "incidents.incidents.openRunbooks": "打开运行手册",
   "incidents.incidents.openSettings": "打开设置",
+  "incidents.incidents.moreIncidentActions": "更多事件操作",
+  "incidents.incidents.reloadProviders": "重新加载提供商",
   "incidents.incidents.runTelemetry": "运行遥测",
   "incidents.incidents.runTelemetry_2": "运行遥测",
   "incidents.incidents.runTelemetry_3": "运行遥测",

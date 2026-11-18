@@ -85,6 +85,8 @@ export interface ComposerProps {
   onCitationCommentChange?: (index: number, comment: string | undefined) => void;
   isProcessing: boolean;
   isBlocked: boolean;
+  /** Shown in place of the text area while blocked: what is missing and where to fix it. */
+  blockedNotice?: ReactNode;
   isArchived: boolean;
   // Images
   composerImages: ComposerAttachment[];
@@ -225,6 +227,16 @@ function composerCanSend(isBlocked: boolean, prompt: string, attachmentCount: nu
   return prompt.trim().length > 0 || attachmentCount > 0;
 }
 
+function showsContextIndicator(isBlocked: boolean, tokenUsage: AgentThreadTokenUsage | undefined, contextWindowLimit: number | undefined): boolean {
+  return !isBlocked && (tokenUsage !== undefined || contextWindowLimit !== undefined);
+}
+
+/** Why the send button is unavailable while the composer is blocked; undefined while it is not. */
+function sendUnavailableReason(t: (key: string) => string, isBlocked: boolean, threadStatus: ThreadStatus | undefined): string | undefined {
+  if (!isBlocked) return undefined;
+  return threadStatus === "blocked_no_runbook" ? t("common.incidentDetail.sendNeedsRunbook") : t("common.incidentDetail.sendNeedsProvider");
+}
+
 function composerPlaceholder(t: (key: string) => string, isBlocked: boolean, threadStatus: ThreadStatus | undefined, question: ComposerCustomerReportIntake | undefined, remediation: ComposerRemediationFlow | undefined, placeholder: string | undefined): string {
   if (isBlocked) {
     return threadStatus === "blocked_no_runbook" ? t("common.incidents.createARunbookToEnable") : t("common.incidents.configureAProviderInSettings");
@@ -243,6 +255,7 @@ export function Composer({
   onCancel,
   isProcessing,
   isBlocked,
+  blockedNotice,
   isArchived,
   composerImages,
   onRemoveImage,
@@ -307,7 +320,8 @@ export function Composer({
   const asking = question !== undefined;
   const host = hostPanelParts(hostPanel, { open: question ?? remediation, busy: isBlocked || isProcessing });
   const highlighted = asking || remediation !== undefined || host.card !== undefined;
-  const hidesText = (remediation !== undefined && remediation.input === undefined) || host.buttons !== undefined;
+  const notice = isBlocked ? blockedNotice : undefined;
+  const hidesText = (remediation !== undefined && remediation.input === undefined) || host.buttons !== undefined || notice !== undefined;
   const hasAttachOptions =
     composerSupportsPhotos || composerFileAccept?.includes(".csv") === true;
   // The IPC schemas refuse a longer message, so it never leaves the composer.
@@ -436,9 +450,11 @@ export function Composer({
     );
   }
 
+  // While blocked there is no model to measure against, so the context meter, which reads like a busy ring at a
+  // glance, stays hidden.
   let contextIndicator: ReactNode = null;
   const actualUsage = tokenUsage?.kind === "estimate" ? undefined : tokenUsage;
-  if (tokenUsage !== undefined || contextWindowLimit !== undefined) {
+  if (showsContextIndicator(isBlocked, tokenUsage, contextWindowLimit)) {
     contextIndicator = (
       <ContextIndicator
         inputTokens={actualUsage?.inputTokens ?? 0}
@@ -453,8 +469,10 @@ export function Composer({
     );
   }
 
+  // The composer shares the conversation's centered 800px column (848px less its 24px gutters); below 640px the
+  // gutters are 16px.
   return (
-    <div className="shrink-0 px-4 pb-4">
+    <div className="mx-auto w-full max-w-[848px] shrink-0 px-4 pb-4 sm:px-6">
       {threadStatus === "streaming" && showThreadWaitingIndicator && (
         <div className="mb-2 flex items-center gap-2 text-xs text-muted-foreground">
           <Loader2 size={11} />
@@ -494,9 +512,9 @@ export function Composer({
           "group relative z-10 rounded-[20px] border bg-card transition-[border-color,box-shadow] duration-200",
           !isBlocked && !highlighted && "focus-within:border-ring/45",
           highlighted && "border-violet-300 shadow-[0_0_0_3px_rgb(124_58_237_/_0.08)] dark:border-violet-500/40",
-          isBlocked && "opacity-60",
         )}
       >
+        {notice}
         {question !== undefined && <CustomerReportQuestionPanel key={question.question.key} intake={question} />}
         {remediation !== undefined && <RemediationQuestionPanel flow={remediation} />}
         {host.card}
@@ -553,7 +571,7 @@ export function Composer({
                       {image.name}
                     </span>
                     {image.type === "csv" && (
-                      <span className="shrink-0 text-[11px] tabular-nums text-muted-foreground">
+                      <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
                         {t("common.incidents.attachmentRows", {
                           rowCount: image.rowCount,
                           totalRowCount: image.totalRowCount,
@@ -702,6 +720,7 @@ export function Composer({
                 canSteer={canSteer}
                 canResume={!isProcessing && queue?.held === true && queue.messages.length > 0}
                 isEditingQueuedMessage={isEditingQueuedMessage}
+                unavailableReason={sendUnavailableReason(t, isBlocked, threadStatus)}
                 onSubmit={submit}
                 onResume={() => { onResumeQueue?.(); }}
                 onInterrupt={onCancel}

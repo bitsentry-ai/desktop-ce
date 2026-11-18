@@ -32,6 +32,8 @@
   "incidents.incidents.openAnIncidentToUse": "Buka insiden untuk menggunakan pemicu ini.",
   "incidents.incidents.openRunbooks": "Buka Runbooks",
   "incidents.incidents.openSettings": "Buka Pengaturan",
+  "incidents.incidents.moreIncidentActions": "Tindakan insiden lainnya",
+  "incidents.incidents.reloadProviders": "Muat ulang penyedia",
   "incidents.incidents.runTelemetry": "Jalankan Telemetri",
   "incidents.incidents.runTelemetry_2": "Jalankan Telemetri",
   "incidents.incidents.runTelemetry_3": "Jalankan Telemetri",

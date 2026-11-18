@@ -3,6 +3,7 @@ import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { ArrowDown, Plus } from "../../icons";
 import { cn } from "../../lib/utils";
 import type { RunbookActionRecord } from "../../services";
+import { RUNBOOK_ADD_ACTION_BUTTON_CLASS } from "./runbookButtonStyles";
 import type { TranslationFn } from "./types";
 
 type UseSortableRuntime = (options: {
@@ -67,7 +68,7 @@ function SortableActionWrapper({
         <div
           aria-hidden="true"
           className={cn(
-            "pointer-events-none flex h-7 items-center justify-center text-muted-foreground/35",
+            "pointer-events-none flex h-7 items-center justify-center text-muted-foreground/50",
             (isDragSource || isDragging) && "opacity-0",
           )}
         >
@@ -164,16 +165,17 @@ export function RunbookActionList({
                   ? renderExpandedCard(action, index)
                   : renderCollapsedCard(action, index, sortableApi)}
                 {expanded && (
-                  <div className="flex justify-center py-2">
+                  <div className="flex py-3">
                     <button
+                      type="button"
                       data-tour="runbooks-add-action"
                       onClick={() => {
                         onAddActionAt(index + 1);
                       }}
                       disabled={action.title.trim().length === 0}
-                      className="flex items-center gap-1.5 rounded-lg border border-dashed border-border px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-30"
+                      className={RUNBOOK_ADD_ACTION_BUTTON_CLASS}
                     >
-                      <Plus size={11} />
+                      <Plus size={14} aria-hidden="true" />
                       {t("runbooks.runbook.addActionHere")}
                     </button>
                   </div>
@@ -184,14 +186,15 @@ export function RunbookActionList({
         );
       })}
       {actions.length > 0 && !actions.some(isExpanded) && (
-        <div className="mt-4 flex justify-center">
+        <div className="mt-3 flex">
           <button
+            type="button"
             onClick={() => {
               onAddActionAt(actions.length);
             }}
-            className="flex items-center gap-1 rounded-lg px-3 py-1.5 text-xs text-muted-foreground/40 transition-colors hover:bg-muted/30 hover:text-muted-foreground"
+            className={RUNBOOK_ADD_ACTION_BUTTON_CLASS}
           >
-            <Plus size={11} />
+            <Plus size={14} aria-hidden="true" />
             {t("runbooks.runbook.addAction")}
           </button>
         </div>

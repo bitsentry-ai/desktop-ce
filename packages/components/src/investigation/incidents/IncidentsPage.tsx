@@ -4,6 +4,7 @@ import IncidentIntegrationsRail, {
   useIntegrationsRailState,
 } from "../IncidentIntegrationsRail";
 import {
+  type ReactNode,
   useCallback,
   useEffect,
   useEffectEvent,
@@ -63,7 +64,6 @@ import {
 import {
   EditableTitle,
   PageShell,
-  ProviderBanner,
   relativeTime,
   StatusPill,
   translateIncidentPreview,
@@ -86,15 +86,50 @@ import {
   saveProviderLock,
 } from "./incidentStorage";
 import { IncidentComposer } from "./IncidentComposer";
-import { readComposedDraft, useIncidentDraftStore } from "./incidentDraftStore";
+import { ComposerBlockedNotice } from "../../chat/ComposerBlockedNotice";
+import { TurnStopContext } from "../../chat/turnStop";
+import { addIncidentCitation, readComposedDraft, useIncidentDraftStore } from "./incidentDraftStore";
 import { useIncidentListStore } from "./incidentListStore";
 import { IncidentMessageList } from "./IncidentMessageList";
 import { useIncidentAgentEvents } from "./useIncidentAgentEvents";
 import { useIncidentComposerAttachments } from "./useIncidentComposerAttachments";
 import { useIncidentPersistence } from "./useIncidentPersistence";
 import { useIncidentProviderSelection } from "./useIncidentProviderSelection";
+import { Button } from "../../ui/button";
+import { EmptyState } from "../../ui/empty-state";
+
+/**
+ * Stops the running turn through its session; null while there is no session to cancel. A hook rather than a plain
+ * helper, so the React Compiler keeps treating the handler as immutable and still compiles the page.
+ */
+function useTurnStop(sessionId: string | null, cancel: () => Promise<void>): (() => void) | null {
+  if (sessionId === null) return null;
+  return () => {
+    void cancel();
+  };
+}
+
+/** The composer's notice while no provider is configured, once the provider settings have loaded. */
+function useProviderNotice(loaded: boolean, openSettings: () => void): ReactNode {
+  const { t } = useTranslation();
+  if (!loaded) return undefined;
+  return (
+    <ComposerBlockedNotice
+      title={t("common.incidents.noChatModelIsConfigured")}
+      description={t("common.incidents.addAnApiKeyIn")}
+      actionLabel={t("common.incidents.openSettings")}
+      onAction={openSettings}
+    />
+  );
+}
 
 // ─── Main page ────────────────────────────────────────────────────────────────
+
+const NEW_INCIDENT_HEADER_BASE =
+  "flex h-8 shrink-0 items-center gap-1.5 rounded-md px-2.5 text-[13px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:opacity-50 max-sm:h-11";
+
+/** The header's New incident is the page's one primary action, also while the list is empty (the empty state's is outlined). */
+const NEW_INCIDENT_HEADER_CLASS = `${NEW_INCIDENT_HEADER_BASE} bg-primary text-primary-foreground hover:bg-[hsl(var(--primary-hover))]`;
 
 export default function IncidentsPage() {
   const { t } = useTranslation();
@@ -720,6 +755,7 @@ export default function IncidentsPage() {
     if (activeSessionId === null) return;
     await agent.cancel(activeSessionId);
   };
+  const stopActiveTurn = useTurnStop(activeSessionId, handleCancel);
 
   const incidentState: AgentSessionState = activeIncident?.state ?? "IDLE";
   const isArchivedIncident = activeIncident?.archived === true;
@@ -771,6 +807,8 @@ export default function IncidentsPage() {
       hash,
     });
   };
+  const providerNotice = useProviderNotice(providerConfigsLoaded, handleNavigateToSettings);
+
 
   const isBlocked =
     activeIncident !== null &&
@@ -805,14 +843,14 @@ export default function IncidentsPage() {
               data-tour="incidents-artifacts-btn"
               onClick={() => { setArtifactsOpen((open) => !open); }}
               className={cn(
-                "flex items-center gap-1.5 rounded-md border border-border px-2 py-1 text-xs transition-colors",
+                "flex h-8 shrink-0 items-center gap-1.5 rounded-md border border-border px-2.5 text-[13px] max-sm:h-11 transition-colors",
                 artifactsButtonClassName,
               )}
             >
-              <FileText size={12} />
+              <FileText size={14} />
               {t("common.incidents.runbookResults")}
               {artifactCount > 0 && (
-                <span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px]">
+                <span className="rounded-full bg-muted px-1.5 py-0.5 text-xs">
                   {artifactCount}
                 </span>
               )}
@@ -830,9 +868,9 @@ export default function IncidentsPage() {
               onClick={() => {
                 void handleCancel();
               }}
-              className="flex items-center gap-1.5 rounded-md border border-border px-2 py-1 text-xs hover:bg-muted transition-colors"
+              className="flex h-8 shrink-0 items-center gap-1.5 rounded-md border border-border px-2.5 text-[13px] max-sm:h-11 hover:bg-muted transition-colors"
             >
-              <X size={12} />
+              <X size={14} />
               {t("common.actions.cancel")}
             </button>
           </TooltipTrigger>
@@ -849,9 +887,9 @@ export default function IncidentsPage() {
               void navigate("/incidents?view=history");
             }}
             aria-label={t("common.incidents.incidentHistory")}
-            className="flex size-7 items-center justify-center rounded-md border border-border hover:bg-muted transition-colors"
+            className="flex size-8 shrink-0 items-center justify-center rounded-md border border-border max-sm:size-11 hover:bg-muted transition-colors"
           >
-            <History size={13} />
+            <History size={14} />
           </button>
         </TooltipTrigger>
         <TooltipContent side="bottom">
@@ -864,9 +902,9 @@ export default function IncidentsPage() {
             <button
               onClick={() => { handleUnarchiveIncident(activeIncident.id); }}
               aria-label={t("common.incidents.unarchiveIncident")}
-              className="flex size-7 items-center justify-center rounded-md border border-border text-muted-foreground hover:bg-muted transition-colors"
+              className="flex size-8 shrink-0 items-center justify-center rounded-md border border-border max-sm:size-11 text-muted-foreground hover:bg-muted transition-colors"
             >
-              <Upload size={13} />
+              <Upload size={14} />
             </button>
           </TooltipTrigger>
           <TooltipContent side="bottom">
@@ -881,9 +919,9 @@ export default function IncidentsPage() {
               onClick={handleArchiveIncident}
               disabled={isActiveProcessing}
               aria-label={t("common.incidents.archiveIncident")}
-              className="flex size-7 items-center justify-center rounded-md border border-border text-muted-foreground hover:bg-muted transition-colors disabled:opacity-50"
+              className="flex size-8 shrink-0 items-center justify-center rounded-md border border-border max-sm:size-11 text-muted-foreground hover:bg-muted transition-colors disabled:opacity-50"
             >
-              <Archive size={13} />
+              <Archive size={14} />
             </button>
           </TooltipTrigger>
           <TooltipContent side="bottom">
@@ -895,12 +933,12 @@ export default function IncidentsPage() {
         <TooltipTrigger asChild>
           <button
             data-tour="incidents-new-btn"
+            className={NEW_INCIDENT_HEADER_CLASS}
             onClick={handleNewIncident}
             disabled={isActiveProcessing}
-            className="flex items-center gap-1.5 rounded-md border border-border px-2 py-1 text-xs hover:bg-muted transition-colors disabled:opacity-50"
           >
-            <SquarePen size={12} />
-            {t("common.actions.new")}
+            <SquarePen size={14} />
+            {t("common.incidents.newIncident")}
           </button>
         </TooltipTrigger>
         <TooltipContent side="bottom">
@@ -918,20 +956,28 @@ export default function IncidentsPage() {
     return (
       <PageShell>
         <div className="flex flex-1 flex-col overflow-hidden">
-          <div className="flex shrink-0 items-center gap-2 border-b border-border px-4 py-2.5">
-            <span className="flex-1 text-sm font-medium text-muted-foreground">
+          <div className="bs-page-header flex min-h-[3.25rem] shrink-0 items-center gap-2 border-b border-border px-4 py-2">
+            <span className="flex-1 truncate text-lg font-semibold tracking-[-0.015em] text-foreground">
               {t("common.incidents.allIncidents")}
             </span>
             {topBarActions}
           </div>
           <div className="flex-1 overflow-y-auto px-6 py-6 page-enter">
             {visibleIncidents.length === 0 && (
-              <div className="flex flex-col items-center justify-center gap-3 py-24 text-center text-muted-foreground">
-                <ShieldAlert size={36} className="opacity-25" />
-                <p className="text-sm">
-                  {t("common.incidents.noIncidentsYetCreateOne")}
-                </p>
-              </div>
+              <EmptyState
+                className="py-20"
+                icon={ShieldAlert}
+                title={t("common.incidents.emptyTitle")}
+                description={t("common.incidents.emptyDescription")}
+                action={
+                  // The next step sits right under the explanation; the header's New incident stays the page's one
+                  // primary button, so this one is outlined.
+                  <Button variant="outline" onClick={handleNewIncident}>
+                    <SquarePen />
+                    {t("common.incidents.newIncident")}
+                  </Button>
+                }
+              />
             )}
             {visibleIncidents.length > 0 && (
               <div
@@ -970,19 +1016,19 @@ export default function IncidentsPage() {
                           className="shrink-0 text-muted-foreground"
                         />
                         <div className="min-w-0 flex-1">
-                          <div className="truncate text-sm font-medium">
+                          <div className="truncate text-sm font-semibold leading-5 text-foreground">
                             {inc.title}
                           </div>
                           {preview !== null && (
-                            <div className="truncate text-xs text-muted-foreground">
+                            <div className="truncate text-[13px] leading-[18px] text-muted-foreground">
                               {translateIncidentPreview(preview, t)}
                             </div>
                           )}
-                          <div className="text-[11px] text-muted-foreground/70">
+                          <div className="mt-0.5 text-xs tabular-nums text-muted-foreground">
                             {relativeTime(inc.createdAt, now)}
                           </div>
                         </div>
-                        <StatusPill state={inc.state} />
+                        <StatusPill state={inc.state} quiet />
                       </button>
                       {inc.archived === true && (
                         <Tooltip>
@@ -997,7 +1043,7 @@ export default function IncidentsPage() {
                               )}
                               className="flex size-7 items-center justify-center rounded-md border border-transparent text-muted-foreground opacity-0 transition-all hover:border-border hover:bg-muted hover:text-foreground group-hover:opacity-100"
                             >
-                              <Upload size={13} />
+                              <Upload size={14} />
                             </button>
                           </TooltipTrigger>
                           <TooltipContent side="left">
@@ -1025,10 +1071,11 @@ export default function IncidentsPage() {
     <PageShell>
       <div className="flex flex-1 flex-col overflow-hidden">
         {/* Top bar */}
-        <div className="flex shrink-0 items-center gap-2 border-b border-border px-4 py-2.5">
+        {/* Below 640px the title takes the first row, up to two lines, and the status and actions move below it. */}
+        <div className="bs-page-header flex min-h-[3.25rem] shrink-0 flex-wrap items-center gap-x-2 gap-y-1.5 border-b border-border px-4 py-2 sm:flex-nowrap">
           {activeIncident !== null && (
             <>
-              <div data-tour="incidents-title" className="min-w-0 flex-1">
+              <div data-tour="incidents-title" className="min-w-0 basis-full sm:basis-auto">
                 <EditableTitle
                   value={activeIncident.title}
                   disabled={isArchivedIncident}
@@ -1038,23 +1085,22 @@ export default function IncidentsPage() {
                   }}
                 />
               </div>
-              <div data-tour="incidents-status">
-                <StatusPill state={incidentState} interrupted={isLastAgentTurnInterrupted(rawMessages)} />
+              {/* The incident's status. A stalled reply shows once, on its own row in the conversation, with the turn's
+                  elapsed time and Stop. */}
+              <div className="flex shrink-0 items-center gap-1.5">
+                {/* The pill names its scope ("Incident completed"), so it never reads as the state of the latest reply. */}
+                <div className="flex items-center" title={t("common.incidentDetail.incidentStatus")}>
+                  <div data-tour="incidents-status">
+                    <StatusPill state={incidentState} interrupted={isLastAgentTurnInterrupted(rawMessages)} scoped />
+                  </div>
+                </div>
               </div>
             </>
           )}
-          {activeIncident === null && (
-            <div className="flex-1" />
-          )}
-          {topBarActions}
+          <div className="ml-auto flex shrink-0 items-center gap-2">
+            {topBarActions}
+          </div>
         </div>
-
-        {/* Warning banner when blocked */}
-        {!isArchivedIncident &&
-          providerConfigsLoaded &&
-          !hasConfiguredProvider && (
-            <ProviderBanner onNavigateToSettings={handleNavigateToSettings} />
-          )}
 
         <div className="relative flex-1 overflow-hidden">
           <div
@@ -1076,20 +1122,18 @@ export default function IncidentsPage() {
                       onClick={handleNewIncident}
                       className="flex items-center gap-1.5 rounded-lg border border-dashed border-border px-4 py-2 text-xs hover:border-primary/40 hover:text-foreground transition-colors"
                     >
-                      <SquarePen size={12} />
+                      <SquarePen size={14} />
                       {t("common.incidents.newIncident")}
                     </button>
                   </div>
                 )}
+                <TurnStopContext value={stopActiveTurn}>
                 <CustomerReportIntakeChatContext.Provider value={customerReportIntake.chat}>
                   {activeIncident !== null && (
                     <CitationSelectionToolbar
                       getViewport={getMessageViewport}
                       threadId={activeIncident.id}
-                      onCite={(citation) => {
-                        const drafts = useIncidentDraftStore.getState();
-                        drafts.setCitations(activeIncident.id, [...(drafts.citations[activeIncident.id] ?? []), citation]);
-                      }}
+                      onCite={(citation) => { addIncidentCitation(activeIncident.id, citation); }}
                     />
                   )}
                   {activeIncident !== null && (
@@ -1107,6 +1151,7 @@ export default function IncidentsPage() {
                     />
                   )}
                 </CustomerReportIntakeChatContext.Provider>
+                </TurnStopContext>
               </div>
 
               {activeIncident !== null && isArchivedIncident && (
@@ -1115,18 +1160,18 @@ export default function IncidentsPage() {
                 </div>
               )}
 
-              {/* Scroll button - OUTSIDE scroll container to avoid clipping */}
+              {/* Outside the scroll container so it is not clipped; in the corner above the composer, clear of the
+                  left-aligned answer controls. */}
               {showScrollIndicator && (
                 <button
                   type="button"
                   onClick={() => {
                     scrollMessagesToEndRef.current?.({ animated: true });
                   }}
-                  className="absolute left-1/2 -translate-x-1/2 z-10 rounded-full bg-foreground p-2.5 shadow-lg hover:bg-foreground/90"
-                  style={{ bottom: "1.5rem" }}
+                  className="absolute bottom-3 right-4 z-10 flex size-9 items-center justify-center rounded-full border border-border bg-background text-foreground shadow-md transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/70"
                   aria-label={t("common.incidents.scrollToBottom")}
                 >
-                  <ArrowDown className="h-5 w-5 text-background" />
+                  <ArrowDown className="size-4" />
                 </button>
               )}
             </div>
@@ -1144,6 +1189,7 @@ export default function IncidentsPage() {
                 }}
                 isProcessing={isActiveProcessing}
                 isBlocked={isBlocked}
+                blockedNotice={providerNotice}
                 isArchived={isArchivedIncident}
                 composerImages={composerImages}
                 onRemoveImage={handleRemoveComposerImage}

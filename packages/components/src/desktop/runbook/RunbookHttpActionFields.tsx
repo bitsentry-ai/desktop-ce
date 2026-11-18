@@ -71,7 +71,7 @@ export function RunbookHttpActionFields({
       </div>
       <div>
         <div className="mb-1.5 flex items-center justify-between">
-          <label className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground/60">
+          <label className="text-xs font-medium uppercase tracking-wide text-muted-foreground/60">
             {t("runbooks.runbook.headers")}
           </label>
           <button
@@ -82,14 +82,14 @@ export function RunbookHttpActionFields({
                 headers: [...(action.headers ?? []), createEmptyHttpHeader()],
               });
             }}
-            className="text-[10px] uppercase tracking-wide text-muted-foreground transition-colors hover:text-foreground"
+            className="text-xs uppercase tracking-wide text-muted-foreground transition-colors hover:text-foreground"
           >
             {t("runbooks.runbook.addHeader")}
           </button>
         </div>
         <div className="space-y-2">
           {headers.length === 0 && (
-            <p className="rounded-lg border border-dashed border-border bg-muted/10 px-3 py-2 text-[11px] text-muted-foreground/60">
+            <p className="rounded-lg border border-dashed border-border bg-muted/10 px-3 py-2 text-xs text-muted-foreground/60">
               {t("runbooks.runbook.noHeadersConfigured")}
             </p>
           )}
@@ -108,7 +108,7 @@ export function RunbookHttpActionFields({
         </div>
       </div>
       <div>
-        <label className="mb-1.5 block text-[10px] font-medium uppercase tracking-wide text-muted-foreground/60">
+        <label className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-muted-foreground/60">
           {t("runbooks.runbook.body")}
         </label>
         <textarea
@@ -195,7 +195,7 @@ function RunbookHttpHeaderRow({
             headers: updatedHeaders,
           });
         }}
-        className="rounded-lg border border-border px-2 py-2 text-[11px] text-muted-foreground transition-colors hover:border-destructive/40 hover:bg-destructive/10 hover:text-destructive"
+        className="rounded-lg border border-border px-2 py-2 text-xs text-muted-foreground transition-colors hover:border-destructive/40 hover:bg-destructive/10 hover:text-destructive"
       >
         {t("common.actions.remove")}
       </button>

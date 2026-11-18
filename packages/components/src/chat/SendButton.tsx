@@ -21,6 +21,11 @@ interface SendButtonProps {
   canSteer: boolean;
   canResume: boolean;
   isEditingQueuedMessage: boolean;
+  /**
+   * Why sending is unavailable, such as no configured model provider. The button then reads as unavailable rather
+   * than as a faded send, and its tooltip gives this reason.
+   */
+  unavailableReason?: string;
   /** `alternate` is true for a Ctrl/⌘-click, which sends the other way while the agent runs. */
   onSubmit: (alternate: boolean) => void;
   onResume: () => void;
@@ -41,12 +46,59 @@ function SendArrow() {
   );
 }
 
+interface SendState {
+  showResume: boolean;
+  isEditingQueuedMessage: boolean;
+  isQueuing: boolean;
+  isRunning: boolean;
+}
+
+function sendLabelKey({ showResume, isEditingQueuedMessage, isQueuing, isRunning }: SendState): string {
+  if (showResume) return "common.incidents.composer.resumeThread";
+  if (isEditingQueuedMessage) return "common.incidents.composer.updateQueuedMessage";
+  if (isQueuing) return "common.incidents.composer.queueMessage";
+  if (isRunning) return "common.incidents.composer.steerMessage";
+  return "common.incidents.sendMessage";
+}
+
+function SendIcon({ showResume, isEditingQueuedMessage, isQueuing, isRunning }: SendState) {
+  if (showResume) return <Play className="size-4 fill-current" aria-hidden="true" />;
+  if (isEditingQueuedMessage) return <Check className="size-4" aria-hidden="true" />;
+  if (!isRunning) return <SendArrow />;
+  return isQueuing ? <ListPlus className="size-4" aria-hidden="true" /> : <CornerUpRight className="size-4" aria-hidden="true" />;
+}
+
+/** While the agent runs and the composer is empty, the button stops the turn. */
+function InterruptButton({ onInterrupt }: { onInterrupt: () => void }) {
+  const { t } = useTranslation();
+  return (
+    <TooltipProvider delayDuration={300}>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <button
+            type="button"
+            onClick={onInterrupt}
+            aria-label={t("common.incidents.composer.stopGeneration")}
+            className="flex size-8 shrink-0 items-center justify-center rounded-full bg-destructive/90 text-white shadow-sm transition-colors duration-150 hover:bg-destructive"
+          >
+            <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor" aria-hidden="true">
+              <rect x="2" y="2" width="8" height="8" rx="1.5" />
+            </svg>
+          </button>
+        </TooltipTrigger>
+        <TooltipContent>{t("common.incidents.composer.interrupt")}</TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  );
+}
+
 export function SendButton({
   isRunning,
   canSend,
   canSteer,
   canResume,
   isEditingQueuedMessage,
+  unavailableReason,
   onSubmit,
   onResume,
   onInterrupt,
@@ -55,25 +107,7 @@ export function SendButton({
   const modifiers = useShortcutModifierState();
 
   if (isRunning && !canSend && !isEditingQueuedMessage) {
-    return (
-      <TooltipProvider delayDuration={300}>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <button
-              type="button"
-              onClick={onInterrupt}
-              aria-label={t("common.incidents.composer.stopGeneration")}
-              className="flex size-8 shrink-0 items-center justify-center rounded-full bg-destructive/90 text-white shadow-sm transition-colors duration-150 hover:bg-destructive"
-            >
-              <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor" aria-hidden="true">
-                <rect x="2" y="2" width="8" height="8" rx="1.5" />
-              </svg>
-            </button>
-          </TooltipTrigger>
-          <TooltipContent>{t("common.incidents.composer.interrupt")}</TooltipContent>
-        </Tooltip>
-      </TooltipProvider>
-    );
+    return <InterruptButton onInterrupt={onInterrupt} />;
   }
 
   const showResume = canResume && !canSend && !isEditingQueuedMessage;
@@ -85,27 +119,22 @@ export function SendButton({
       alternateModifier: modifiers.metaKey || modifiers.ctrlKey,
     }) === "queue";
 
-  let label = t("common.incidents.sendMessage");
-  if (showResume) label = t("common.incidents.composer.resumeThread");
-  else if (isEditingQueuedMessage) label = t("common.incidents.composer.updateQueuedMessage");
-  else if (isQueuing) label = t("common.incidents.composer.queueMessage");
-  else if (isRunning) label = t("common.incidents.composer.steerMessage");
+  const label = t(sendLabelKey({ showResume, isEditingQueuedMessage, isQueuing, isRunning }));
 
+  const disabled = !canSend && !showResume;
+  const unavailable = disabled && unavailableReason !== undefined;
   let tooltip = label;
-  if (isRunning && !isEditingQueuedMessage && canSteer) {
+  if (unavailable) tooltip = unavailableReason;
+  else if (isRunning && !isEditingQueuedMessage && canSteer) {
     tooltip = t("common.incidents.composer.clickToQueue");
   }
-
-  let icon = <SendArrow />;
-  if (showResume) icon = <Play className="size-4 fill-current" aria-hidden="true" />;
-  else if (isEditingQueuedMessage) icon = <Check className="size-4" aria-hidden="true" />;
-  else if (isRunning) icon = isQueuing ? <ListPlus className="size-4" aria-hidden="true" /> : <CornerUpRight className="size-4" aria-hidden="true" />;
 
   return (
     <TooltipProvider delayDuration={300}>
       <Tooltip>
         <TooltipTrigger asChild>
-          <span className="inline-flex">
+          {/* The trigger wraps the button, so the tooltip still explains a disabled send on hover. */}
+          <span className={cn("inline-flex", unavailable && "cursor-not-allowed")}>
             <button
               type="button"
               onClick={(event) => {
@@ -115,14 +144,19 @@ export function SendButton({
                 }
                 onSubmit(event.metaKey || event.ctrlKey);
               }}
-              disabled={!canSend && !showResume}
+              disabled={disabled}
+              aria-disabled={disabled}
               aria-label={label}
+              aria-description={unavailable ? unavailableReason : undefined}
               className={cn(
-                "flex size-8 items-center justify-center rounded-full bg-primary/90 text-primary-foreground shadow-sm transition-all duration-150",
-                "enabled:cursor-pointer enabled:hover:scale-105 enabled:hover:bg-primary disabled:pointer-events-none disabled:opacity-30 disabled:shadow-none",
+                "flex size-8 items-center justify-center rounded-full shadow-sm transition-all duration-150",
+                "enabled:cursor-pointer enabled:hover:scale-105 enabled:hover:bg-primary disabled:pointer-events-none disabled:shadow-none",
+                unavailable
+                  ? "bg-muted text-muted-foreground"
+                  : "bg-primary/90 text-primary-foreground disabled:opacity-30",
               )}
             >
-              {icon}
+              <SendIcon showResume={showResume} isEditingQueuedMessage={isEditingQueuedMessage} isQueuing={isQueuing} isRunning={isRunning} />
             </button>
           </span>
         </TooltipTrigger>

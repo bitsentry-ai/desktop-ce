@@ -76,7 +76,7 @@ describe('Desktop Integrations page', () => {
   it('points to plugin settings when no installed plugin supports connections', async () => {
     renderAt('/integrations', <DesktopIntegrationsPage />)
 
-    expect(await screen.findByText('settings.integrationConnections.noPlugins')).toBeTruthy()
+    expect(await screen.findByText('settings.integrationConnections.emptyTitle')).toBeTruthy()
     expect(screen.getByRole('link', { name: 'settings.integrationConnections.openPlugins' }).getAttribute('href')).toBe('/app-settings#plugins')
   })
 

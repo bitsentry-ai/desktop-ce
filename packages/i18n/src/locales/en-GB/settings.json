@@ -191,6 +191,7 @@
   "settings.integrationConnections.save": "Save connection",
   "settings.integrationConnections.edit": "Edit",
   "settings.integrationConnections.remove": "Remove",
+  "settings.integrationConnections.moreActions": "More actions for {{name}}",
   "settings.integrationConnections.cancel": "Cancel",
   "settings.integrationConnections.loadFailed": "Could not load connections. Reload to try again.",
   "settings.integrationConnections.saveFailed": "Could not save the connection. Check the URL, credentials, and unique name.",
@@ -213,5 +214,18 @@
   "settings.integrationConnections.active": "Active",
   "settings.integrationConnections.inactive": "Inactive",
   "settings.integrationConnections.activeHint": "An inactive connection stays saved but is not offered to chat.",
-  "settings.integrationConnections.invalidJson": "{{field}} must be valid JSON."
+  "settings.integrationConnections.invalidJson": "{{field}} must be valid JSON.",
+  "settings.integrationConnections.emptyTitle": "Add your first integration",
+  "settings.integrationConnections.emptyDescription": "Install a plugin such as iTop or Outline to connect it to chat.",
+  "settings.integrationConnections.connectionsHeading": "Connections",
+  "settings.integrationConnections.connectionsDescription": "Connect ticketing and knowledge tools to incident chat.",
+  "settings.integrationConnections.noConnections": "No connections yet.",
+  "settings.integrationConnections.addHeading": "Add connection",
+  "settings.integrationConnections.editHeading": "Edit connection",
+  "settings.integrationConnections.credentialHint": "Credentials stay in this product and are not tested on save. When editing, leave a credential blank to keep it.",
+  "settings.integrationConnections.advanced": "Advanced",
+  "settings.globalVariables.emptyDescription": "Add a variable to reuse a value or secret in any runbook.",
+  "settings.pluginsEmpty.hint": "Install or enable a code plugin that declares an error source.",
+  "settings.sectionNav.label": "Section",
+  "settings.pluginsEmpty.availableSources": "Available plugin-backed sources: {{sources}}."
 }

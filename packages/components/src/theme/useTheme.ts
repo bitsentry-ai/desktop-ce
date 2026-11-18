@@ -8,3 +8,6 @@ export const useTheme = () => {
   }
   return context;
 };
+
+/** The theme context, or undefined outside a ThemeProvider (for optional features such as a theme shortcut). */
+export const useOptionalTheme = () => useContext(ThemeContext);

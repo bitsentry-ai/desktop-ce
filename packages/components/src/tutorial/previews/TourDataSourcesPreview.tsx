@@ -193,7 +193,7 @@ export default function TourDataSourcesPreview() {
 
                 <div className="mt-4 space-y-4">
                   <label className="block space-y-1.5">
-                    <span className="block text-[10px] font-medium uppercase text-muted-foreground/60">
+                    <span className="block text-[10px] font-medium uppercase text-muted-foreground">
                       Title
                     </span>
                     <input
@@ -207,7 +207,7 @@ export default function TourDataSourcesPreview() {
                     data-tour="data-sources-runbook-selector"
                     className="block space-y-1.5"
                   >
-                    <span className="block text-[10px] font-medium uppercase text-muted-foreground/60">
+                    <span className="block text-[10px] font-medium uppercase text-muted-foreground">
                       External Source
                     </span>
                     <select className="w-full rounded-lg border border-border bg-background px-3 py-2 text-xs">
@@ -222,7 +222,7 @@ export default function TourDataSourcesPreview() {
                     data-tour="data-sources-runbook-query"
                     className="block space-y-1.5"
                   >
-                    <span className="block text-[10px] font-medium uppercase text-muted-foreground/60">
+                    <span className="block text-[10px] font-medium uppercase text-muted-foreground">
                       Query
                     </span>
                     <input

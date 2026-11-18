@@ -13,7 +13,7 @@ export function RunbookShellActionFields({
 }: RunbookShellActionFieldsProps) {
   return (
     <div>
-      <label className="mb-1.5 block text-[10px] font-medium uppercase tracking-wide text-muted-foreground/60">
+      <label className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-muted-foreground/60">
         {t(actionMeta.shell.fieldLabelKey)}
       </label>
       <div className="overflow-hidden rounded-lg border border-border">

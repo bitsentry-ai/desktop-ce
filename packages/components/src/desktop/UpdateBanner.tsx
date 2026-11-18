@@ -264,7 +264,7 @@ export default function UpdateBanner() {
               setDismissed(true);
             }}
             aria-label={t("common.updateBanner.dismiss")}
-            className="shrink-0 rounded p-1 text-muted-foreground/70 hover:bg-muted hover:text-foreground transition-colors"
+            className="shrink-0 rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
           >
             <X size={12} />
           </button>
