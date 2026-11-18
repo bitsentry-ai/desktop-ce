@@ -3,10 +3,10 @@ import { CheckIcon, Loader2, X } from "lucide-react";
 import { cn } from "../lib/utils";
 
 // The line divides the card from the text area. Without a text area the toolbar follows, so the tint fades out instead.
-const CARD_DIVIDED = "rounded-t-[19px] border-b border-violet-200 bg-gradient-to-b from-violet-50 to-violet-50/30 px-4 py-3 duration-200 animate-in fade-in slide-in-from-bottom-1 dark:border-violet-500/30 dark:from-violet-500/10 dark:to-transparent";
-const CARD_OPEN = "rounded-t-[19px] bg-gradient-to-b from-violet-50 to-transparent px-4 py-3 duration-200 animate-in fade-in slide-in-from-bottom-1 dark:from-violet-500/10 dark:to-transparent";
+const CARD_DIVIDED = "rounded-t-[19px] border-b border-primary/25 bg-gradient-to-b from-primary/5 to-primary/[0.015] px-4 py-3 duration-200 animate-in fade-in slide-in-from-bottom-1 dark:border-primary/30 dark:from-primary/10 dark:to-transparent";
+const CARD_OPEN = "rounded-t-[19px] bg-gradient-to-b from-primary/5 to-transparent px-4 py-3 duration-200 animate-in fade-in slide-in-from-bottom-1 dark:from-primary/10 dark:to-transparent";
 
-const PRIMARY = "h-8 whitespace-nowrap rounded-[10px] bg-violet-600 px-3.5 text-[13px] font-semibold text-white transition-colors hover:bg-violet-700 disabled:cursor-default disabled:bg-violet-200 dark:disabled:bg-violet-500/30";
+const PRIMARY = "h-8 whitespace-nowrap rounded-[10px] bg-primary px-3.5 text-[13px] font-semibold text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-default disabled:bg-primary/30 dark:disabled:bg-primary/30";
 const PRIMARY_DANGER = "h-8 whitespace-nowrap rounded-[10px] bg-destructive px-3.5 text-[13px] font-semibold text-destructive-foreground transition-colors hover:bg-destructive/90 disabled:cursor-default disabled:bg-destructive/30";
 
 /** The card above the composer text that asks the engineer one question, as the customer report and CVE remediation do. */
@@ -21,14 +21,14 @@ export function ComposerQuestionCard({ label, aside, close, divided = true, chil
   return (
     <section aria-label={label} className={divided ? CARD_DIVIDED : CARD_OPEN}>
       <div className="mb-1.5 flex items-center gap-2">
-        <span className="text-[11px] font-bold uppercase tracking-widest text-violet-700 dark:text-violet-300">{label}</span>
+        <span className="text-[11px] font-bold uppercase tracking-widest text-primary">{label}</span>
         {aside}
         <button
           type="button"
           onClick={close.run}
           disabled={close.disabled}
           aria-label={close.label}
-          className="ml-auto flex size-6 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-violet-100 hover:text-violet-800 disabled:opacity-50 dark:hover:bg-violet-500/15 dark:hover:text-violet-200"
+          className="ml-auto flex size-6 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-primary/10 hover:text-foreground disabled:opacity-50 dark:hover:bg-primary/15 dark:hover:text-primary"
         >
           <X size={14} />
         </button>
@@ -38,10 +38,10 @@ export function ComposerQuestionCard({ label, aside, close, divided = true, chil
   );
 }
 
-const OPTION = "group flex w-full items-center gap-3 rounded-lg border px-3 py-2 text-left outline-none transition-colors duration-150 focus-visible:border-violet-400 focus-visible:ring-2 focus-visible:ring-violet-500/20 disabled:cursor-not-allowed disabled:opacity-60";
-const OPTION_COMPACT = "group flex h-9 w-full shrink-0 items-center gap-3 rounded-lg border px-3 text-left outline-none transition-colors duration-150 focus-visible:border-violet-400 focus-visible:ring-2 focus-visible:ring-violet-500/20 disabled:cursor-not-allowed disabled:opacity-60";
-const OPTION_SELECTED = "border-violet-300 bg-violet-100/70 dark:border-violet-400/40 dark:bg-violet-500/15";
-const OPTION_PINNED = "border-dashed border-violet-300 text-violet-700 hover:bg-violet-50 dark:border-violet-500/40 dark:text-violet-300 dark:hover:bg-violet-500/10";
+const OPTION = "group flex w-full items-center gap-3 rounded-lg border px-3 py-2 text-left outline-none transition-colors duration-150 focus-visible:border-primary/50 focus-visible:ring-2 focus-visible:ring-primary/20 disabled:cursor-not-allowed disabled:opacity-60";
+const OPTION_COMPACT = "group flex h-9 w-full shrink-0 items-center gap-3 rounded-lg border px-3 text-left outline-none transition-colors duration-150 focus-visible:border-primary/50 focus-visible:ring-2 focus-visible:ring-primary/20 disabled:cursor-not-allowed disabled:opacity-60";
+const OPTION_SELECTED = "border-primary/40 bg-primary/10 dark:border-primary/40 dark:bg-primary/15";
+const OPTION_PINNED = "border-dashed border-primary/40 text-primary hover:bg-primary/5 dark:border-primary/40 dark:text-primary dark:hover:bg-primary/10";
 
 /**
  * One answer to pick: its number key shows until it is picked, then a check. A compact option is one line, with the
@@ -88,7 +88,7 @@ export function QuestionOption({ label, hint, index, selected, disabled, onSelec
 }
 
 function OptionShortcut({ selected, pinned, index }: { selected: boolean; pinned: boolean; index: number }) {
-  if (selected) return <CheckIcon className="size-3.5 shrink-0 text-violet-600 dark:text-violet-300" aria-hidden="true" />;
+  if (selected) return <CheckIcon className="size-3.5 shrink-0 text-primary" aria-hidden="true" />;
   if (pinned || index >= 9) return null;
   return (
     <kbd className="flex size-5 shrink-0 items-center justify-center rounded border border-border bg-background text-[11px] font-medium tabular-nums text-muted-foreground">

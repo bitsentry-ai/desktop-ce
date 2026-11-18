@@ -153,8 +153,8 @@ function ResourceCard({ row, disabled, onToggle, onRefresh }: { row: Integration
       </a>
     </div>
     {/* A removed resource keeps its last known details below: nothing the engineer already read is lost. */}
-    {deleted && <p role="status" className="rounded-md border border-amber-500/30 bg-amber-50 px-2.5 py-1.5 text-xs font-medium text-amber-700 dark:bg-amber-950/30 dark:text-amber-400">{t("incidents.integrationRecovery.deleted")}</p>}
-    {stale && <p className="text-xs text-amber-700 dark:text-amber-400">{t("incidents.integrationRecovery.staleCard")}</p>}
+    {deleted && <p role="status" className="rounded-md border border-border bg-muted/40 px-2.5 py-1.5 text-xs font-medium text-foreground">{t("incidents.integrationRecovery.deleted")}</p>}
+    {stale && <p className="text-xs font-medium text-foreground">{t("incidents.integrationRecovery.staleCard")}</p>}
     <p className="truncate font-mono text-xs text-muted-foreground" title={row.externalId}>{referenceLine}</p>
     {shownFacts.length > 0 && <dl className="grid grid-cols-2 gap-x-3 gap-y-1">{shownFacts.map(([label, value]) => <Fact key={label} label={label}>{value}</Fact>)}</dl>}
     {row.resourceType === "ticket" && <TicketDeadlines row={row} />}

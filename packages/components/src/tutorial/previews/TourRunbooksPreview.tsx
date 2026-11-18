@@ -33,22 +33,22 @@ const ACTION_META: Record<
   shell: {
     label: "Shell",
     icon: Terminal,
-    badgeCls: "text-emerald-500 bg-emerald-500/10 border-emerald-500/20",
+    badgeCls: "text-muted-foreground bg-muted/60 border-border",
   },
   llm: {
     label: "AI",
     icon: Bot,
-    badgeCls: "text-blue-500 bg-blue-500/10 border-blue-500/20",
+    badgeCls: "text-muted-foreground bg-muted/60 border-border",
   },
   http: {
     label: "HTTP",
     icon: Globe,
-    badgeCls: "text-amber-500 bg-amber-500/10 border-amber-500/20",
+    badgeCls: "text-muted-foreground bg-muted/60 border-border",
   },
   external_source: {
     label: "External Source",
     icon: AlertCircle,
-    badgeCls: "text-purple-500 bg-purple-500/10 border-purple-500/20",
+    badgeCls: "text-muted-foreground bg-muted/60 border-border",
   },
 };
 

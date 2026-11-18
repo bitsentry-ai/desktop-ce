@@ -33,6 +33,7 @@ import { TurnStopContext } from "./turnStop";
 import { useDisclosure } from "./disclosureStore";
 import { CITATION_SOURCE_ATTRIBUTE } from "./citationDom";
 import type { ChatMessage, ToolCallCard } from "./types";
+import { renderJsonEvidence } from "./JsonEvidenceBlock";
 
 type AgentMessage = Extract<ChatMessage, { kind: "agent" }>;
 
@@ -228,7 +229,7 @@ function TimelineRows({ rows, messageId, collapsedJsonLabel, streaming = false }
           const citationSource = row.key === "final" ? {} : { [CITATION_SOURCE_ATTRIBUTE]: row.key };
           return (
             <div key={row.key} {...citationSource} className="py-1 text-sm leading-[22px] text-foreground [&_.chat-markdown]:leading-[22px]">
-              <MarkdownContent content={row.text} paragraphizeSoftBreaks collapsedJsonLabel={collapsedJsonLabel} streaming={streaming && index === rows.length - 1} />
+              <MarkdownContent content={row.text} paragraphizeSoftBreaks collapsedJsonLabel={collapsedJsonLabel} renderJsonBlock={renderJsonEvidence} streaming={streaming && index === rows.length - 1} />
             </div>
           );
         }

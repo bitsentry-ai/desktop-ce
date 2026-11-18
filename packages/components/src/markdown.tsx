@@ -23,6 +23,11 @@ export interface MarkdownContentProps {
   className?: string;
   paragraphizeSoftBreaks?: boolean;
   collapsedJsonLabel?: string;
+  /**
+   * Renders a fenced JSON block in place of the collapsed "View JSON" disclosure, for example as a table of records or
+   * a short field summary. Gets the JSON text, the plain code block and the disclosure label.
+   */
+  renderJsonBlock?: JsonBlockRenderer;
   /** The text is still streaming: completed blocks are parsed once and only the live tail re-parses. */
   streaming?: boolean;
 }
@@ -736,15 +741,19 @@ export function getCodeText(children: ReactNode): string {
   return getNestedText(codeElement.props.children);
 }
 
+export type JsonBlockRenderer = (code: string, rawBlock: ReactNode, label: string) => ReactNode;
+
 interface MarkdownRendererContextValue {
   scrollableTableLabel: string;
   collapsedJsonLabel: string | undefined;
+  renderJsonBlock: JsonBlockRenderer | undefined;
 }
 
 // Per-render values the hoisted renderers need; the renderers themselves stay module-level.
 const MarkdownRendererContext = createContext<MarkdownRendererContextValue>({
   scrollableTableLabel: "",
   collapsedJsonLabel: undefined,
+  renderJsonBlock: undefined,
 });
 
 const MARKDOWN_REMARK_PLUGINS = [remarkGfm];
@@ -755,9 +764,10 @@ const MARKDOWN_COMPONENTS = {
     return <a {...props} href={href} target="_blank" rel="noreferrer noopener" />;
   },
   pre: function MarkdownPre({ children, node: _node, ...props }) {
-    const { collapsedJsonLabel } = useContext(MarkdownRendererContext);
+    const { collapsedJsonLabel, renderJsonBlock } = useContext(MarkdownRendererContext);
+    const code = getCodeText(children);
     const block = (
-      <MarkdownCodeBlock code={getCodeText(children)}>
+      <MarkdownCodeBlock code={code}>
         <pre {...props}>{children}</pre>
       </MarkdownCodeBlock>
     );
@@ -766,6 +776,7 @@ const MARKDOWN_COMPONENTS = {
       isValidElement<{ className?: string }>(child) &&
       child.props.className?.split(" ").includes("language-json");
     if (!collapsedJsonLabel || !isJson) return block;
+    if (renderJsonBlock !== undefined) return renderJsonBlock(code, block, collapsedJsonLabel);
     return (
       <details className="my-3 min-w-0 rounded-lg border border-border bg-muted/30 p-3">
         <summary className="cursor-pointer text-sm font-medium text-muted-foreground">
@@ -852,11 +863,12 @@ export const MarkdownContent = memo(function MarkdownContent({
   className,
   paragraphizeSoftBreaks = false,
   collapsedJsonLabel,
+  renderJsonBlock,
   streaming = false,
 }: MarkdownContentProps) {
   const { t } = useTranslation();
   const scrollableTableLabel = t("common.markdown.scrollableTable");
-  const rendererContext = { scrollableTableLabel, collapsedJsonLabel };
+  const rendererContext = { scrollableTableLabel, collapsedJsonLabel, renderJsonBlock };
   const normalizedContent = normalizeMarkdownContent(
     paragraphizeSoftBreaks ? paragraphizePlainTextSoftBreaks(content) : content,
   );

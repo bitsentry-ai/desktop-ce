@@ -274,10 +274,10 @@ function sourceLabel(execution: RunbookExecutionRecord | null | undefined) {
 
 function sourceClass(execution: RunbookExecutionRecord | null | undefined) {
   if (executionSource(execution) === "agent") {
-    return "border-violet-500/20 bg-violet-500/10 text-violet-500";
+    return "border-primary/25 bg-primary/10 text-primary";
   }
 
-  return "border-sky-500/20 bg-sky-500/10 text-sky-600 dark:text-sky-400";
+  return "border-border bg-muted/60 text-muted-foreground";
 }
 
 function startedByLabel(execution: RunbookExecutionRecord | null | undefined) {

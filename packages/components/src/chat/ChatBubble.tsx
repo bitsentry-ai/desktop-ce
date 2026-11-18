@@ -79,7 +79,7 @@ function CustomerReportChip({ header }: { header: CustomerReportMessageHeader })
             <button
               type="button"
               onClick={chat.chooseEdit}
-              className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-violet-100 hover:text-violet-800 dark:hover:bg-violet-500/15 dark:hover:text-violet-200"
+              className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-primary/10 hover:text-foreground dark:hover:bg-primary/15 dark:hover:text-primary"
             >
               <Pencil size={11} aria-hidden="true" />
               {t("common.incidents.customerReport.edit")}
@@ -107,7 +107,7 @@ function CustomerReportAnswerRow({ header }: { header: CustomerReportAnswerHeade
   const canEdit = chat?.canEdit === true && own && isEditable(field) && intake.answers[field] !== undefined && header.edit !== true;
   return (
     <div className="flex min-w-0 items-center gap-2 pl-[38px] text-xs text-muted-foreground">
-      <MessageCircle size={14} className="shrink-0 text-violet-600 dark:text-violet-300" aria-hidden="true" />
+      <MessageCircle size={14} className="shrink-0 text-primary" aria-hidden="true" />
       <span className="whitespace-nowrap">{intakeQuestionTitle(t, field, own ? intake.answers.channel : undefined)}</span>
       <span className="min-w-0 truncate font-medium text-foreground">{header.answer}</span>
       {header.edit === true && <span className="shrink-0 text-xs">{t("common.incidents.customerReport.changed")}</span>}
@@ -116,7 +116,7 @@ function CustomerReportAnswerRow({ header }: { header: CustomerReportAnswerHeade
           type="button"
           onClick={() => { chat.edit(field); }}
           aria-label={t("common.incidents.customerReport.changeAnswer")}
-          className="flex size-5 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-violet-100 hover:text-violet-800 dark:hover:bg-violet-500/15 dark:hover:text-violet-200"
+          className="flex size-5 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-primary/10 hover:text-foreground dark:hover:bg-primary/15 dark:hover:text-primary"
         >
           <Pencil size={11} />
         </button>
