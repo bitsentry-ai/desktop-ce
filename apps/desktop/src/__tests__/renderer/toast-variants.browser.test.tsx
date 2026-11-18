@@ -86,7 +86,7 @@ describe.each(["light", "dark"] as const)("toasts and alerts in %s mode", (theme
         description: "Waiting for approval before the write step.",
         action: { label: "Review", onClick: () => undefined },
       });
-      toast.success("Runbook saved", { description: "3 actions, timeout 30m." });
+      toast.success("Runbook saved", { description: "3 steps, timeout 30m." });
       toast.info("Sync started", { description: "Sentry Sandbox API is syncing." });
       toast("Copied link", { description: "The incident link is on your clipboard." });
     });

@@ -23,7 +23,8 @@
   /* --- Primary: BitSentry green (logo teal-green #02C1A9 to #02E48A) --- */
   --primary: 167 100% 26%;
   /* Hovered primary: a step darker in light mode and brighter in dark, so the change is visible in both. */
-  --primary-hover: 167 100% 21%;
+  --primary-hover: 167 100% 19%;
+  --primary-active: 167 100% 15%;
   /* Hovered secondary and ghost buttons: a clear neutral fill (#EDEDED light, #262626 dark). */
   --secondary-hover: 0 0% 93%;
   --primary-foreground: 0 0% 100%;
@@ -97,7 +98,8 @@
 
   /* --- Primary: the brighter end of the brand gradient --- */
   --primary: 166 100% 41%;
-  --primary-hover: 166 100% 48%;
+  --primary-hover: 166 100% 50%;
+  --primary-active: 166 85% 34%;
   --secondary-hover: 0 0% 15%;
   --primary-foreground: 166 60% 5%;
 

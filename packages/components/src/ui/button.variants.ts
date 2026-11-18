@@ -7,7 +7,7 @@ export const buttonVariants = cva(
       variant: {
         // Disabled (not busy): a neutral fill, so an unavailable action never reads as the brand's call to action.
         default:
-          "bg-primary text-primary-foreground shadow-sm hover:bg-[hsl(var(--primary-hover))] active:bg-[hsl(var(--primary-hover))] [&:disabled:not([aria-busy=true])]:bg-muted [&:disabled:not([aria-busy=true])]:text-muted-foreground [&:disabled:not([aria-busy=true])]:opacity-100 [&:disabled:not([aria-busy=true])]:shadow-none",
+          "bg-primary text-primary-foreground shadow-sm hover:bg-[hsl(var(--primary-hover))] active:bg-[hsl(var(--primary-active))] [&:disabled:not([aria-busy=true])]:bg-muted [&:disabled:not([aria-busy=true])]:text-muted-foreground [&:disabled:not([aria-busy=true])]:opacity-100 [&:disabled:not([aria-busy=true])]:shadow-none",
         destructive:
           "bg-destructive text-destructive-foreground shadow-sm hover:bg-destructive/90 active:bg-destructive/80",
         outline:

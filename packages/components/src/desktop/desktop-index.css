@@ -163,7 +163,7 @@
       box-shadow: 8px 0 24px -12px hsl(var(--shadow-color) / 0.35);
     }
 
-    /* The rail's toggle is a labelled item like the pages below it, with a border so it reads as a control. */
+    /* The rail's toggle is a labelled item like the pages below it; only the current page is filled. */
     .bs-sidebar:not([data-expanded="true"]) .bs-sidebar-railtoggle {
       flex-direction: column;
       gap: 0.125rem;
@@ -171,8 +171,6 @@
       height: auto;
       min-height: 3.25rem;
       padding-block: 0.375rem;
-      border: 1px solid hsl(var(--border));
-      background-color: hsl(var(--background));
     }
 
     .bs-sidebar:not([data-expanded="true"]) .bs-sidebar-railtoggle-label {
