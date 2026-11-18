@@ -75,7 +75,8 @@ function humanizeKey(key: string): string {
   return key.replace(/_/g, " ").replace(/([a-z])([A-Z])/g, "$1 $2").toLowerCase();
 }
 
-function FieldRows({ fields }: { fields: JsonSummary["fields"] }) {
+/** Key/value rows for a JSON summary, in the run output monospace. */
+export function FieldRows({ fields }: { fields: JsonSummary["fields"] }) {
   return (
     <dl className="grid grid-cols-[minmax(0,max-content)_minmax(0,1fr)] gap-x-3 gap-y-1 font-mono text-[13px] leading-5">
       {fields.map((field) => (

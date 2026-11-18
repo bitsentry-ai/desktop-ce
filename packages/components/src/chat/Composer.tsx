@@ -511,7 +511,7 @@ export function Composer({
         className={cn(
           "group relative z-10 rounded-[20px] border bg-card transition-[border-color,box-shadow] duration-200",
           !isBlocked && !highlighted && "focus-within:border-ring/45",
-          highlighted && "border-violet-300 shadow-[0_0_0_3px_rgb(124_58_237_/_0.08)] dark:border-violet-500/40",
+          highlighted && "border-primary/40 shadow-[0_0_0_3px_hsl(var(--primary)/0.08)] dark:border-primary/40",
         )}
       >
         {notice}
