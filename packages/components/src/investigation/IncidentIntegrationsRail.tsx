@@ -110,9 +110,9 @@ export function useDesktopIntegrationPorts(): { resources?: IntegrationResources
 
 function CountPill({ count, pending, attention = 0 }: { count: number; pending: number; attention?: number }) {
   const { t } = useTranslation();
-  const amber = "rounded-full bg-amber-500/15 px-1.5 py-0.5 text-xs font-medium text-amber-700 dark:text-amber-400";
-  if (pending > 0) return <span className={amber}>{t("incidents.integrationRail.pendingShort", { pending })}</span>;
-  if (attention > 0) return <span className={amber}>{t("incidents.integrationRail.attentionShort", { attention })}</span>;
+  const needYou = "rounded-full bg-primary/10 px-1.5 py-0.5 text-xs font-medium text-primary";
+  if (pending > 0) return <span className={needYou}>{t("incidents.integrationRail.pendingShort", { pending })}</span>;
+  if (attention > 0) return <span className={needYou}>{t("incidents.integrationRail.attentionShort", { attention })}</span>;
   return <span className="rounded-full bg-muted px-1.5 py-0.5 text-xs">{count}</span>;
 }
 

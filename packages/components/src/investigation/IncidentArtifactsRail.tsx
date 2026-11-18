@@ -1052,7 +1052,7 @@ function ArtifactListItem({
   }
   let iconClassName = "text-muted-foreground";
   if (isPendingExecution) {
-    iconClassName = "text-amber-500";
+    iconClassName = "text-primary";
   }
 
   return (

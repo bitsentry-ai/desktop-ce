@@ -292,7 +292,7 @@ export function RunbookAuthoringProposalCards({
                     {t(statusKey)}
                   </span>
                   {proposal.saved && (
-                    <span className="rounded-md border border-emerald-500/30 bg-emerald-500/10 px-1.5 py-0.5 text-xs text-emerald-700 dark:text-emerald-300">
+                    <span className="rounded-md border border-primary/25 bg-primary/10 px-1.5 py-0.5 text-xs text-primary">
                       {t("common.incidents.savedAs", {
                         title:
                           savedTitleByProposalId[proposal.proposalId] ??
@@ -311,7 +311,7 @@ export function RunbookAuthoringProposalCards({
                     type="button"
                     onClick={handleApprove}
                     disabled={isBusy || !canDecideProposals || !proposal.validation.valid || (proposal.kind === "edit_existing_runbook" && selectedOperationIds.length === 0)}
-                    className="inline-flex h-8 items-center gap-1.5 rounded-md border border-emerald-500/40 bg-emerald-500/10 px-2.5 text-xs font-medium text-emerald-700 transition-colors hover:bg-emerald-500/15 disabled:cursor-not-allowed disabled:opacity-50 dark:text-emerald-300"
+                    className="inline-flex h-8 items-center gap-1.5 rounded-md border border-primary/40 bg-primary/10 px-2.5 text-xs font-medium text-primary transition-colors hover:bg-primary/15 disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     <Check size={13} />
                     {t("common.incidents.approve")}
@@ -334,7 +334,7 @@ export function RunbookAuthoringProposalCards({
                 {riskLabels.map((riskLabel) => (
                   <span
                     key={riskLabel}
-                    className="rounded-md border border-amber-500/30 bg-amber-500/10 px-1.5 py-0.5 text-xs text-amber-700 dark:text-amber-300"
+                    className="rounded-md border border-border bg-muted/60 px-1.5 py-0.5 text-xs text-muted-foreground"
                   >
                     {riskLabel.replace(/_/g, " ")}
                   </span>

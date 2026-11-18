@@ -14,7 +14,7 @@ import { IntegrationSourcesView, deadlineLevelLabel, deadlineSummary, resourceKe
 import { KnowledgeExecutionPanel } from "./KnowledgeExecutionPanel";
 
 const COUNT_PILL = "rounded-full bg-muted px-1.5 py-0.5 text-xs";
-const AMBER_PILL = "rounded-full bg-amber-500/15 px-1.5 py-0.5 text-xs font-medium text-amber-700 dark:text-amber-400";
+const NEED_YOU_PILL = "rounded-full bg-primary/10 px-1.5 py-0.5 text-xs font-medium text-primary";
 const EMPTY_BOX = "rounded-2xl border border-dashed border-border/70 bg-muted/10 px-4 py-5 text-sm text-muted-foreground";
 const ERROR_BOX = "rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive";
 
@@ -28,7 +28,7 @@ export function ArtifactsPanelTrigger({ state }: { state: ArtifactsPanelState })
     <Layers size={12} aria-hidden="true" />
     {t("incidents.artifactsPanel.title")}
     <span className={COUNT_PILL}>{summary.total}</span>
-    {summary.needYou > 0 && <span className={AMBER_PILL}>{t("incidents.artifactsPanel.needYou", { count: summary.needYou })}</span>}
+    {summary.needYou > 0 && <span className={NEED_YOU_PILL}>{t("incidents.artifactsPanel.needYou", { count: summary.needYou })}</span>}
   </button>;
 }
 
@@ -177,7 +177,7 @@ export default function IncidentArtifactsPanel({ isOpen, filter, focusOnOpen = f
         <div className="text-sm font-semibold">{t("incidents.artifactsPanel.title")}</div>
         <div className="truncate text-xs text-muted-foreground">
           {t("incidents.artifactsPanel.itemCount", { count: total })}
-          {needYou > 0 && <> · <span className="font-medium text-amber-700 dark:text-amber-400">{t("incidents.artifactsPanel.needYou", { count: needYou })}</span></>}
+          {needYou > 0 && <> · <span className="font-medium text-primary">{t("incidents.artifactsPanel.needYou", { count: needYou })}</span></>}
         </div>
       </div>
       <button type="button" onClick={onClose} aria-label={t("incidents.artifactsPanel.close")}
@@ -194,11 +194,11 @@ export default function IncidentArtifactsPanel({ isOpen, filter, focusOnOpen = f
     </div>
 
     <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-4 py-4">
-      {showNeedsYou && <section aria-label={t("incidents.artifactsPanel.needsYouTitle")} className="space-y-2 rounded-2xl border border-amber-500/40 bg-amber-500/5 p-3">
-        <h3 className="flex items-center gap-1.5 text-xs font-semibold text-amber-700 dark:text-amber-400">
+      {showNeedsYou && <section aria-label={t("incidents.artifactsPanel.needsYouTitle")} className="space-y-2 rounded-2xl border border-primary/30 bg-primary/5 p-3">
+        <h3 className="flex items-center gap-1.5 text-xs font-semibold text-primary">
           <AlertTriangle size={13} aria-hidden="true" />
           {t("incidents.artifactsPanel.needsYouTitle")}
-          <span className={AMBER_PILL}>{needYou}</span>
+          <span className={NEED_YOU_PILL}>{needYou}</span>
         </h3>
         {runbookSummary.pendingDrafts.map((draft) => <AttentionRow key={draft.proposalId} icon={FileText} title={draft.title} actionLabel={t("incidents.artifactsPanel.review")} onAction={() => { reviewDraft(draft.proposalId); }}
           subtitle={`${t(draft.kind === "create_new_runbook" ? "common.incidentArtifactsRail.proposal.newRunbook" : "common.incidentArtifactsRail.proposal.runbookUpdate")} · ${t("common.incidentArtifactsRail.proposal.versionOption", { version: draft.version })} · ${t("incidents.artifactsPanel.pendingApproval")}`} />)}
