@@ -138,9 +138,9 @@ function formatResultStatus(
 function resultStatusClass(status: "imported" | "skipped" | "failed"): string {
   switch (status) {
     case "imported":
-      return "border-emerald-500/30 bg-emerald-500/10 text-emerald-600";
+      return "border-primary/30 bg-primary/10 text-primary";
     case "skipped":
-      return "border-amber-500/30 bg-amber-500/10 text-amber-600";
+      return "border-border bg-muted text-muted-foreground";
     case "failed":
       return "border-destructive/30 bg-destructive/10 text-destructive";
   }
@@ -233,7 +233,7 @@ export function RunbookImportDialog({
       }
 
       secureGlobalsWarning = (
-        <div className="mt-3 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-3 text-xs text-amber-700 dark:text-amber-300">
+        <div className="mt-3 rounded-lg border border-border bg-muted/40 px-3 py-3 text-xs text-foreground">
           {secureGlobalsNeedingValues}{" "}
           {t("runbooks.runbookImportDialog.secureGlobal")}
           {pluralSuffix}{" "}

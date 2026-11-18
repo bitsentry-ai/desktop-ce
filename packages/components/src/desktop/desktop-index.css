@@ -255,19 +255,19 @@
 
   /* Severity pills — subtle tinted backgrounds with colored text */
   .severity-critical {
-    @apply bg-red-50 text-red-700 dark:bg-red-950/30 dark:text-red-400;
+    @apply bg-destructive/10 text-destructive;
   }
 
   .severity-high {
-    @apply bg-orange-50 text-orange-700 dark:bg-orange-950/30 dark:text-orange-400;
+    @apply bg-destructive/10 text-destructive;
   }
 
   .severity-medium {
-    @apply bg-amber-50 text-amber-700 dark:bg-amber-950/30 dark:text-amber-400;
+    @apply bg-muted text-foreground;
   }
 
   .severity-low {
-    @apply bg-blue-50 text-blue-700 dark:bg-blue-950/30 dark:text-blue-400;
+    @apply bg-secondary text-muted-foreground;
   }
 
   .severity-info {

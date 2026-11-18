@@ -179,7 +179,7 @@ function RuntimeParameterValidationMessages({
         </p>
       )}
       {shortSecureValue && (
-        <p className="text-xs text-amber-600">
+        <p className="text-xs font-medium text-foreground">
           {t("runbooks.runbook.shortSecureValuesCanRedact")}
         </p>
       )}
