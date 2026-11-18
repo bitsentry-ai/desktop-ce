@@ -51,6 +51,13 @@ describe("JSON blocks in chat replies", () => {
     expect(screen.getByText("CVE-2026-2")).toBeTruthy();
   });
 
+  it("summarises a list that holds a single record as that record's fields", () => {
+    renderJson([{ eligibility: "blocked", reason: "vendor_fix_pending", cveId: "CVE-2026-89526" }]);
+    expect(screen.getByText("eligibility")).toBeTruthy();
+    expect(screen.getByText("vendor_fix_pending")).toBeTruthy();
+    expect(screen.queryByRole("table")).toBeNull();
+  });
+
   it("keeps plain JSON values collapsed", () => {
     const { container } = renderJson(["a", "b"]);
     expect(container.querySelector("details summary")?.textContent).toBe("View JSON");

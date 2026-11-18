@@ -34,7 +34,15 @@ function JsonEvidenceBlock({
     );
   }
 
-  const summary = jsonSummary(code, SUMMARY_FIELDS);
+  // A list holding one record (a single evaluation, a single finding) reads best as that record's fields.
+  const soleRecord =
+    Array.isArray(format.value) &&
+    format.value.length === 1 &&
+    typeof format.value[0] === "object" &&
+    format.value[0] !== null
+      ? JSON.stringify(format.value[0])
+      : null;
+  const summary = jsonSummary(soleRecord ?? code, SUMMARY_FIELDS);
   if (summary === null || summary.fields.length === 0) {
     return (
       <details className="my-3 min-w-0">
