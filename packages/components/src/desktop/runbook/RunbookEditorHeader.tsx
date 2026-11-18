@@ -440,15 +440,13 @@ export function RunbookEditorHeader({
       className="bs-page-header shrink-0 border-b border-border px-4 py-3 [container-type:inline-size]"
     >
       {/* Three areas on a grid, placed by the header's own width:
-          - under 28rem: the title takes the first row; the execution
-            settings, ⋯ and Run share the second.
-          - 28rem to 60rem: title with Run at its right; the toolbar on the
-            row below.
+          - under 60rem: title with Run at its right; the toolbar, with its
+            labelled controls and ⋯, on the row below.
           - 60rem and wider: title, toolbar and Run on one row.
           The toolbar keeps the execution settings and History visible; the
           export actions and Delete live in the ⋯ menu at every width. */}
-      <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-x-3 gap-y-2.5 [@container(max-width:27.99rem)]:grid-cols-[minmax(0,1fr)_auto_auto] [@container(max-width:27.99rem)]:gap-x-2 [@container(min-width:60rem)]:grid-cols-[minmax(0,1fr)_auto_auto]">
-        <div className="col-start-1 row-start-1 flex min-w-0 items-start gap-1.5 [@container(max-width:27.99rem)]:col-span-3">
+      <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-x-3 gap-y-2.5 [@container(min-width:60rem)]:grid-cols-[minmax(0,1fr)_auto_auto]">
+        <div className="col-start-1 row-start-1 flex min-w-0 items-start gap-1.5">
           <div className="min-w-0 flex-1">
             <textarea
               ref={titleRef}
@@ -473,7 +471,7 @@ export function RunbookEditorHeader({
           {hasMetaIssue && <MetadataWarning metaIssues={metaIssues} t={t} />}
         </div>
 
-        <div className="col-start-2 row-start-1 flex items-center justify-end [@container(max-width:27.99rem)]:col-start-3 [@container(max-width:27.99rem)]:row-start-2 [@container(min-width:60rem)]:col-start-3">
+        <div className="col-start-2 row-start-1 flex items-center justify-end [@container(min-width:60rem)]:col-start-3">
           <Tooltip>
             <TooltipTrigger asChild>
               <Button
@@ -495,7 +493,7 @@ export function RunbookEditorHeader({
           </Tooltip>
         </div>
 
-        <div className="col-span-2 col-start-1 row-start-2 flex min-w-0 flex-wrap items-center gap-2 [@container(max-width:27.99rem)]:contents [@container(min-width:60rem)]:col-span-1 [@container(min-width:60rem)]:col-start-2 [@container(min-width:60rem)]:row-start-1 [@container(min-width:60rem)]:justify-end">
+        <div className="col-span-2 col-start-1 row-start-2 flex min-w-0 flex-wrap items-center gap-2 [@container(min-width:60rem)]:col-span-1 [@container(min-width:60rem)]:col-start-2 [@container(min-width:60rem)]:row-start-1 [@container(min-width:60rem)]:justify-end">
           <span className="shrink-0 text-xs tabular-nums text-muted-foreground [@container(max-width:27.99rem)]:hidden">
             {t("runbooks.runbooks.actionCount", {
               count: runbook.actions.length,
@@ -505,7 +503,7 @@ export function RunbookEditorHeader({
           <div
             role="group"
             aria-label={t("runbooks.runbook.executionSettings")}
-            className="flex min-w-0 flex-wrap items-center gap-2 [@container(max-width:27.99rem)]:col-start-1 [@container(max-width:27.99rem)]:row-start-2"
+            className="flex min-w-0 flex-wrap items-center gap-2"
           >
             <IdleTimeoutPicker
               currentTimeoutMinutes={currentTimeoutMinutes}
@@ -516,7 +514,7 @@ export function RunbookEditorHeader({
             />
             {extraActions}
           </div>
-          <div className="ml-auto flex shrink-0 items-center gap-2 [@container(max-width:27.99rem)]:col-start-2 [@container(max-width:27.99rem)]:row-start-2 [@container(max-width:27.99rem)]:ml-0 [@container(min-width:60rem)]:ml-0">
+          <div className="ml-auto flex shrink-0 items-center gap-2 [@container(min-width:60rem)]:ml-0">
             {/* History and New runbook move into ⋯ below 640px, leaving the title, settings and Run. */}
             <span className="contents max-sm:hidden">
               <HeaderIconButton

@@ -15,7 +15,6 @@ import {
 import { useSearchParams, useNavigate } from "react-router-dom";
 import type { LegendListRef } from "@legendapp/list/react";
 import { hasWaitingAgentIndicator } from "../../chat/ChatBubble";
-import { ResponseStalledBadge } from "../../chat/ResponseStalledBadge";
 import IncidentArtifactsRail, {
   countIncidentArtifacts,
 } from "../IncidentArtifactsRail";
@@ -129,10 +128,16 @@ function useProviderNotice(loaded: boolean, openSettings: () => void): ReactNode
 const NEW_INCIDENT_HEADER_BASE =
   "flex h-8 shrink-0 items-center gap-1.5 rounded-md px-2.5 text-[13px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:opacity-50 max-sm:h-11";
 
-/** The header's New incident: primary normally; secondary while the empty list's own call to action is the primary. */
-const NEW_INCIDENT_HEADER_CLASS = {
-  false: `${NEW_INCIDENT_HEADER_BASE} bg-primary text-primary-foreground hover:bg-[hsl(var(--primary-hover))]`,
-  true: `${NEW_INCIDENT_HEADER_BASE} border border-input bg-background text-foreground hover:bg-[hsl(var(--secondary-hover))]`,
+/** The tour points at whichever New incident button is on screen. */
+const NEW_INCIDENT_TOUR = "incidents-new-btn";
+
+/** The header's New incident: the page's primary action, hidden while the empty list shows the same call to action. */
+const NEW_INCIDENT_HEADER_PROPS = {
+  false: {
+    className: `${NEW_INCIDENT_HEADER_BASE} bg-primary text-primary-foreground hover:bg-[hsl(var(--primary-hover))]`,
+    "data-tour": NEW_INCIDENT_TOUR,
+  },
+  true: { className: "hidden", "data-tour": undefined },
 } as const;
 
 /** Whether the incident list page shows its empty state (no incident open and none to list). */
@@ -942,10 +947,9 @@ export default function IncidentsPage() {
       <Tooltip>
         <TooltipTrigger asChild>
           <button
-            data-tour="incidents-new-btn"
+            {...NEW_INCIDENT_HEADER_PROPS[String(emptyIncidentList) as "true" | "false"]}
             onClick={handleNewIncident}
             disabled={isActiveProcessing}
-            className={NEW_INCIDENT_HEADER_CLASS[String(emptyIncidentList) as "true" | "false"]}
           >
             <SquarePen size={14} />
             {t("common.incidents.newIncident")}
@@ -980,8 +984,8 @@ export default function IncidentsPage() {
                 title={t("common.incidents.emptyTitle")}
                 description={t("common.incidents.emptyDescription")}
                 action={
-                  // The empty state's call to action is the page's one primary button; the header's steps back.
-                  <Button onClick={handleNewIncident}>
+                  // The empty state's call to action is the page's one New incident; the header's is hidden meanwhile.
+                  <Button data-tour={NEW_INCIDENT_TOUR} onClick={handleNewIncident}>
                     <SquarePen />
                     {t("common.incidents.newIncident")}
                   </Button>
@@ -1094,8 +1098,8 @@ export default function IncidentsPage() {
                   }}
                 />
               </div>
-              {/* The incident's status, plus a badge when the response under way has stalled; the turn's details
-                  (elapsed time, stop) stay on its row in the conversation. */}
+              {/* The incident's status. A stalled reply shows once, on its own row in the conversation, with the turn's
+                  elapsed time and Stop. */}
               <div className="flex shrink-0 items-center gap-1.5">
                 {/* The pill names its scope ("Incident completed"), so it never reads as the state of the latest reply. */}
                 <div className="flex items-center" title={t("common.incidentDetail.incidentStatus")}>
@@ -1103,7 +1107,6 @@ export default function IncidentsPage() {
                     <StatusPill state={incidentState} interrupted={isLastAgentTurnInterrupted(rawMessages)} scoped />
                   </div>
                 </div>
-                <ResponseStalledBadge messages={rawMessages} />
               </div>
             </>
           )}
