@@ -829,6 +829,7 @@
   "common.streamDeltaInspector.rawDeltas_one": "原始增量（{{count}}）",
   "common.streamDeltaInspector.rawDeltas_other": "原始增量（{{count}}）",
   "common.structuredOutputDisplay.noValuesExtracted": "未提取到任何值。",
+  "common.structuredOutputDisplay.fieldCount": "· {{count}} 个字段",
   "common.structuredOutputDisplay.structuredOutput": "结构化输出",
   "common.systemSettings._12Hour230Pm": "12 小时制（2:30 PM）",
   "common.systemSettings._24Hour1430": "24 小时制（14:30）",
