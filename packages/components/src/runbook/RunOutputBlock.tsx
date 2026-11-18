@@ -12,6 +12,13 @@ import { useTranslation } from "@bitsentry-ce/i18n";
 import { MarkdownContent } from "../markdown";
 import { cn } from "../lib/utils";
 import { HighlightedJson } from "./HighlightedJson";
+import {
+  findRecordTable,
+  isIdentifierColumn,
+  recordColumnLabel,
+  severityTone,
+  type RecordTable,
+} from "./recordTable";
 import { detectRunOutputFormat, truncateLines } from "./runOutputFormat";
 import {
   RUN_OUTPUT_BLOCK_CLASS,
@@ -108,15 +115,19 @@ function BlockToolbar({
   copyText,
   children,
 }: {
-  label: string;
+  label: ReactNode;
   copyText: string;
   children?: ReactNode;
 }) {
   return (
     <div className="flex items-center justify-between gap-2 px-3 pt-2 pb-1.5">
-      <span className="text-xs font-medium uppercase tracking-[0.06em] text-muted-foreground">
-        {label}
-      </span>
+      {typeof label === "string" ? (
+        <span className="text-xs font-medium uppercase tracking-[0.06em] text-muted-foreground">
+          {label}
+        </span>
+      ) : (
+        label
+      )}
       <div className="flex shrink-0 items-center gap-1.5">
         {children}
         <RunOutputCopyButton text={copyText} />
@@ -266,6 +277,156 @@ function TruncatedMonospace({
   );
 }
 
+type OutputView = "table" | "json";
+
+const VIEW_BUTTON_CLASS =
+  "inline-flex h-6 items-center rounded-[5px] px-2 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 max-sm:h-10 max-sm:px-3";
+
+/** Switches a record list between its table and the raw JSON. */
+function OutputViewSwitch({
+  view,
+  onChange,
+}: {
+  view: OutputView;
+  onChange: (view: OutputView) => void;
+}) {
+  const { t } = useTranslation();
+  const options: { value: OutputView; label: string }[] = [
+    { value: "table", label: t("common.results.viewTable") },
+    { value: "json", label: "JSON" },
+  ];
+  return (
+    <div
+      role="group"
+      aria-label={t("common.results.outputView")}
+      className="inline-flex items-center gap-0.5 rounded-md border border-border bg-background p-0.5"
+    >
+      {options.map((option) => (
+        <button
+          key={option.value}
+          type="button"
+          aria-pressed={view === option.value}
+          onClick={() => {
+            onChange(option.value);
+          }}
+          className={cn(
+            VIEW_BUTTON_CLASS,
+            view === option.value && "bg-muted text-foreground shadow-sm",
+          )}
+        >
+          {option.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function formatCell(cell: unknown): string {
+  if (cell === null || cell === undefined) return "";
+  if (typeof cell === "string") return cell;
+  if (typeof cell === "number" || typeof cell === "boolean") return String(cell);
+  return JSON.stringify(cell);
+}
+
+const SEVERITY_DOT_CLASS = {
+  critical: "bg-destructive",
+  warning: "bg-[hsl(var(--warning))]",
+} as const;
+
+/** A record list as a table: one row per record, the columns that tell records apart. */
+function RecordTableView({ table }: { table: RecordTable }) {
+  const { t } = useTranslation();
+  // Number columns are short; they take a narrow right-aligned track so the
+  // text columns share the rest of the pane instead of scrolling sideways.
+  const numeric = new Set(
+    table.columns.filter((column) =>
+      table.rows.every(
+        (row) => row[column] === undefined || typeof row[column] === "number",
+      ),
+    ),
+  );
+  return (
+    <div className="border-t border-border">
+      <p className="px-3 py-2 text-xs text-muted-foreground">
+        {t("common.results.recordCount", { count: table.total })}
+        {table.name !== null && (
+          <>
+            {" · "}
+            <span className="font-mono text-foreground/80">{table.name}</span>
+          </>
+        )}
+      </p>
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[28rem] table-fixed border-collapse text-left text-[13px] leading-5">
+          <thead>
+            <tr className="border-y border-border bg-muted/40">
+              {table.columns.map((column) => (
+                <th
+                  key={column}
+                  scope="col"
+                  title={column}
+                  className={cn(
+                    "h-8 truncate px-3 text-xs font-medium text-muted-foreground",
+                    numeric.has(column) && "w-24 text-right",
+                    isIdentifierColumn(column) && "w-40",
+                  )}
+                >
+                  {recordColumnLabel(column, table.columns)}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {table.rows.map((row, index) => (
+              <tr
+                // Records have no stable id of their own; their order is fixed by the payload.
+                key={index}
+                className="border-b border-border/60 last:border-b-0 hover:bg-muted/40"
+              >
+                {table.columns.map((column) => {
+                  const text = formatCell(row[column]);
+                  const tone = severityTone(column, row[column]);
+                  return (
+                    <td
+                      key={column}
+                      title={text}
+                      className={cn(
+                        "h-9 truncate px-3 text-foreground",
+                        numeric.has(column) && "text-right tabular-nums",
+                        isIdentifierColumn(column) && "font-mono text-xs",
+                      )}
+                    >
+                      {tone === null ? (
+                        text
+                      ) : (
+                        <span className="inline-flex items-center gap-1.5 font-medium">
+                          <span
+                            aria-hidden="true"
+                            className={cn("size-1.5 shrink-0 rounded-full", SEVERITY_DOT_CLASS[tone])}
+                          />
+                          {text}
+                        </span>
+                      )}
+                    </td>
+                  );
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {table.total > table.rows.length && (
+        <p className="border-t border-border px-3 py-2 text-xs text-muted-foreground">
+          {t("common.results.recordsShown", {
+            shown: table.rows.length,
+            count: table.total,
+          })}
+        </p>
+      )}
+    </div>
+  );
+}
+
 /** JSON lines longer than this hold prose (descriptions, messages), which reads better wrapped. */
 const PROSE_LINE_LENGTH = 160;
 
@@ -284,30 +445,45 @@ function MonospaceOutputBlock({
   lead,
   text,
   json,
+  table = null,
 }: {
   label: string;
   copyText: string;
   lead: string;
   text: string;
   json: boolean;
+  table?: RecordTable | null;
 }) {
   const [wrap, setWrap] = useState(() => !json || hasProseLine(text));
+  const [view, setView] = useState<OutputView>("table");
+  const showTable = table !== null && view === "table";
   return (
     <div className={RUN_OUTPUT_BLOCK_CLASS}>
-      <BlockToolbar label={label} copyText={copyText}>
-        <WrapLinesToggle
-          wrap={wrap}
-          onToggle={() => {
-            setWrap((current) => !current);
-          }}
-        />
+      <BlockToolbar
+        label={
+          table === null ? label : <OutputViewSwitch view={view} onChange={setView} />
+        }
+        copyText={copyText}
+      >
+        {!showTable && (
+          <WrapLinesToggle
+            wrap={wrap}
+            onToggle={() => {
+              setWrap((current) => !current);
+            }}
+          />
+        )}
       </BlockToolbar>
       {lead.length > 0 && (
         <p className="whitespace-pre-wrap break-words px-3 pb-2 text-sm text-foreground">
           {lead}
         </p>
       )}
-      <TruncatedMonospace text={text} json={json} wrap={wrap} />
+      {showTable ? (
+        <RecordTableView table={table} />
+      ) : (
+        <TruncatedMonospace text={text} json={json} wrap={wrap} />
+      )}
     </div>
   );
 }
@@ -328,6 +504,10 @@ export function RunOutputBlock({
 }) {
   const { t } = useTranslation();
   const format = useMemo(() => detectRunOutputFormat(value), [value]);
+  const table = useMemo(
+    () => (format.kind === "json" ? findRecordTable(format.value) : null),
+    [format],
+  );
 
   switch (format.kind) {
     case "empty":
@@ -358,6 +538,7 @@ export function RunOutputBlock({
           lead={format.lead}
           text={format.display}
           json
+          table={table}
         />
       );
     case "text":
