@@ -16,7 +16,7 @@ import type {
   RunbookTriggerContext,
 } from '../runbooks/desktop-runbook.types'
 import { MAX_RUNBOOK_IDLE_TIMEOUT_MINUTES } from '../runbooks/desktop-runbook.types'
-import { resolveRunbookMatch, type MatchableRunbook } from '../../shared/runbook-match'
+import { resolveRunbookMatch, type MatchableRunbook, unresolvedRunbookMessage } from '../../shared/runbook-match'
 import type { RunbookGateway } from '../runbooks/runbook.gateway'
 import {
   createRunbookCreationProposal,
@@ -465,7 +465,7 @@ function resolveRunbookByTitle(runbooks: RunbookRecord[], runbookTitle: string, 
   if (resolution.kind === 'ambiguous') {
     if (staleRunbookId !== undefined) throw staleRunbookIdError(runbooks, staleRunbookId, runbookTitle)
     const candidates = runbooks.filter((runbook) => resolution.candidates.some((candidate) => candidate.id === runbook.id))
-    throw new Error(`Multiple runbooks match "${runbookTitle}". Use runbookId. Matches: ${describeRunbookCandidates(candidates)}`)
+    throw new Error(unresolvedRunbookMessage(runbookTitle, candidates))
   }
   return null
 }
