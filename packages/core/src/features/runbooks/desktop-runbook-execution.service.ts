@@ -239,6 +239,9 @@ type RunbookCancellationReason = Extract<
 type RunbookActionContext = RunbookContextV1["actions"][number];
 type RunbookActionContextPayload = RunbookActionContext["payload"];
 
+const SELF_HOSTED_PROVIDER_REFUSAL =
+  "Self-hosted OpenAI-compatible providers run in the Dashboard. Choose a Desktop provider for this step.";
+
 function isLocalLlmProviderKey(
   value: RunbookActionRecord["llmProviderKey"],
 ): value is LocalAiProviderKey {
@@ -251,6 +254,15 @@ function isLocalLlmProviderKey(
     default:
       return false;
   }
+}
+
+/** Desktop cannot run a step pinned to a self-hosted OpenAI-compatible provider. */
+function assertDesktopRunnableProviders(runbook: RunbookRecord): void {
+  const pinned = runbook.actions.some(
+    (action) =>
+      action.type === "llm" && action.llmProviderKey === "openai_compatible",
+  );
+  if (pinned) throw new Error(SELF_HOSTED_PROVIDER_REFUSAL);
 }
 
 function formatActionStepTitle(actionIndex: number, title: string): string {
@@ -512,6 +524,8 @@ export class RunbookExecutionService {
     options?: RunbookExecutionStartOptions,
   ): Promise<{ executionId: string; resultId: string }> {
     const runbook = await this.store.getRunbookOrThrow(runbookId);
+    // Refuse before the execution is recorded or any earlier step runs on a host.
+    assertDesktopRunnableProviders(runbook);
     const rawParameterValues = this.normalizeParameterValues(
       options?.parameterValues,
     );
@@ -1789,6 +1803,9 @@ export class RunbookExecutionService {
     // local CLI provider cannot serve, and the step "succeeds" with no output.
     const providerKey =
       input.providerKey ?? (await this.resolveDefaultProviderKey(input.model));
+    if (providerKey === "openai_compatible") {
+      throw new Error(SELF_HOSTED_PROVIDER_REFUSAL);
+    }
 
     if (this.shouldUseDedicatedLocalAiExecution(providerKey)) {
       return this.executeLocalAiStep(
@@ -1833,9 +1850,7 @@ export class RunbookExecutionService {
     );
     let model = llmModel?.value;
     if (action.llmProviderKey === "openai_compatible") {
-      throw new Error(
-        "Self-hosted OpenAI-compatible providers run in the Dashboard. Choose a Desktop provider for this step.",
-      );
+      throw new Error(SELF_HOSTED_PROVIDER_REFUSAL);
     }
     let providerKey: LlmSelection["providerKey"] = action.llmProviderKey;
     if (model !== undefined && model.trim().length > 0) {

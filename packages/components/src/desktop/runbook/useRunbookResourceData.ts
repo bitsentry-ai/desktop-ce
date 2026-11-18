@@ -22,6 +22,18 @@ type DesktopIpcInvoke = <T>(
 
 const LLM_PROVIDERS_UPDATED_EVENT = "bitsentry:llm-providers-updated";
 
+/** A self-hosted server offers only its saved model; hosted providers merge the catalog. */
+function providerModelIds(provider: LLMProviderDto): string[] {
+  if (provider.providerKey !== "openai_compatible") {
+    return mergeProviderModels(
+      provider.providerKey,
+      provider.availableModels,
+      provider.model,
+    );
+  }
+  return provider.model ? [provider.model] : [];
+}
+
 export function useRunbookResourceData({
   ipcInvoke,
 }: {
@@ -87,13 +99,7 @@ export function useRunbookResourceData({
 
     selectableLlmProviders.forEach((provider) => {
       const providerKey = provider.providerKey;
-      const models = providerKey === "openai_compatible"
-        ? (provider.model ? [provider.model] : [])
-        : mergeProviderModels(
-            providerKey,
-            provider.availableModels,
-            provider.model,
-          );
+      const models = providerModelIds(provider);
 
       models.forEach((modelId) => {
         const normalized = modelId.trim();
