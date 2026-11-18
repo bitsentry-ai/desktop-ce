@@ -45,20 +45,24 @@ export const FINAL_OUTPUT_PREVIEW_LINES = 10;
 export const FINAL_OUTPUT_SUMMARY_FIELDS = 8;
 
 /**
- * The first lines of a longer plain-text output, one row each. Runs of alignment spaces collapse to one, so a label
- * stays next to its value ("Pages free: 76905.") in the narrow Summary. The first line, usually a heading, may wrap
- * onto a second row so it reads in full; any other long line ends in an ellipsis. The Output column keeps the exact spacing.
+ * The first lines of a longer plain-text output. Runs of alignment spaces collapse to one, so a label stays next to its
+ * value ("Pages free: 76905.") in the narrow Summary, and every line wraps so values read in full. When the output has
+ * more lines than the preview shows, the last row fades out above "View full output". The Output column keeps the
+ * exact spacing.
  */
 function PlainTextPreviewLines({ text }: { text: string }) {
-  const lines = text.split("\n", FINAL_OUTPUT_PREVIEW_LINES).map((line) => line.replace(/ {2,}/g, " ").trimEnd());
+  const allLines = text.split("\n");
+  const lines = allLines.slice(0, FINAL_OUTPUT_PREVIEW_LINES).map((line) => line.replace(/ {2,}/g, " ").trimEnd());
   return (
-    <pre className={cn(RUN_OUTPUT_MONO_CLASS, "max-h-60 min-w-0 max-w-full overflow-hidden whitespace-pre")}>
+    <pre
+      className={cn(
+        RUN_OUTPUT_MONO_CLASS,
+        "max-h-60 min-w-0 max-w-full overflow-hidden whitespace-pre-wrap [overflow-wrap:anywhere]",
+        allLines.length > FINAL_OUTPUT_PREVIEW_LINES && "[mask-image:linear-gradient(to_bottom,black_calc(100%-1.5rem),transparent)]",
+      )}
+    >
       {lines.map((line, index) => (
-        <span
-          key={`${String(index)}:${line}`}
-          className={index === 0 ? "line-clamp-2 whitespace-pre-wrap [overflow-wrap:anywhere]" : "block truncate"}
-          title={line}
-        >
+        <span key={`${String(index)}:${line}`} className="block">
           {line.length > 0 ? line : " "}
         </span>
       ))}
