@@ -440,7 +440,7 @@ export function DesktopAppSettingsScaffold({
       */}
       <div
         ref={headerRef}
-        className="flex scroll-mt-3 flex-col gap-6 sm:flex-row md:gap-8"
+        className="flex scroll-mt-3 flex-col gap-6 min-[900px]:flex-row min-[900px]:gap-8"
       >
         <SettingsSectionNav
           items={navItems}
