@@ -439,13 +439,12 @@ export function RunbookEditorHeader({
       data-tour="runbooks-editor-header"
       className="bs-page-header shrink-0 border-b border-border px-4 py-3 [container-type:inline-size]"
     >
-      {/* Three areas on a grid, placed by the header's own width:
-          - under 60rem: title with Run at its right; the toolbar, with its
-            labelled controls and ⋯, on the row below.
-          - 60rem and wider: title, toolbar and Run on one row.
+      {/* Title and description with Run at their right; the toolbar, with its
+          labelled controls and ⋯, on its own row below at every width, so the
+          runbook's name never shares a line with its settings.
           The toolbar keeps the execution settings and History visible; the
           export actions and Delete live in the ⋯ menu at every width. */}
-      <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-x-3 gap-y-2.5 [@container(min-width:60rem)]:grid-cols-[minmax(0,1fr)_auto_auto]">
+      <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-x-3 gap-y-2.5">
         <div className="col-start-1 row-start-1 flex min-w-0 items-start gap-1.5">
           <div className="min-w-0 flex-1">
             <textarea
@@ -471,7 +470,7 @@ export function RunbookEditorHeader({
           {hasMetaIssue && <MetadataWarning metaIssues={metaIssues} t={t} />}
         </div>
 
-        <div className="col-start-2 row-start-1 flex items-center justify-end [@container(min-width:60rem)]:col-start-3">
+        <div className="col-start-2 row-start-1 flex items-center justify-end">
           <Tooltip>
             <TooltipTrigger asChild>
               <Button
@@ -493,7 +492,7 @@ export function RunbookEditorHeader({
           </Tooltip>
         </div>
 
-        <div className="col-span-2 col-start-1 row-start-2 flex min-w-0 flex-wrap items-center gap-2 [@container(min-width:60rem)]:col-span-1 [@container(min-width:60rem)]:col-start-2 [@container(min-width:60rem)]:row-start-1 [@container(min-width:60rem)]:justify-end">
+        <div className="col-span-2 col-start-1 row-start-2 flex min-w-0 flex-wrap items-center gap-2">
           <span className="shrink-0 text-xs tabular-nums text-muted-foreground [@container(max-width:27.99rem)]:hidden">
             {t("runbooks.runbooks.actionCount", {
               count: runbook.actions.length,
@@ -514,7 +513,7 @@ export function RunbookEditorHeader({
             />
             {extraActions}
           </div>
-          <div className="ml-auto flex shrink-0 items-center gap-2 [@container(min-width:60rem)]:ml-0">
+          <div className="ml-auto flex shrink-0 items-center gap-2">
             {/* History and New runbook move into ⋯ below 640px, leaving the title, settings and Run. */}
             <span className="contents max-sm:hidden">
               <HeaderIconButton
