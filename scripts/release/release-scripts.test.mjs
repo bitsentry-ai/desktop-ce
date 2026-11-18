@@ -194,3 +194,19 @@ test('the release workflow calls every extracted script', () => {
     assert.match(workflow, new RegExp(`run: bash (\\.\\./\\.\\./)?scripts/release/${script.replace('.', '\\.')}`), script);
   }
 });
+
+test('package:publish stops with a pointer to the manual release workflow before building anything', () => {
+  const desktop = JSON.parse(readFileSync(path.join(repoRoot, 'apps/desktop/package.json'), 'utf8'));
+  const root = JSON.parse(readFileSync(path.join(repoRoot, 'package.json'), 'utf8'));
+  assert.equal(desktop.scripts['package:publish'], 'node scripts/refuse-package-publish.mjs');
+  assert.equal(root.scripts['desktop:package:publish'], 'pnpm --filter @bitsentry-ce/desktop run package:publish');
+  const result = spawnSync(process.execPath, ['scripts/refuse-package-publish.mjs'], {
+    cwd: path.join(repoRoot, 'apps/desktop'),
+    encoding: 'utf8',
+  });
+  assert.equal(result.status, 1);
+  assert.equal(result.stdout, '');
+  assert.match(result.stderr, /"Desktop CE Release \(Manual\)" GitHub Actions workflow/);
+  assert.match(result.stderr, /\.github\/workflows\/desktop-ce-release\.yml in bitsentry-ai\/desktop-ce/);
+  assert.ok(existsSync(path.join(repoRoot, '.github/workflows/desktop-ce-release.yml')));
+});
