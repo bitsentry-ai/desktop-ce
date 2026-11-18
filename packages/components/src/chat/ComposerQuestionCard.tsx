@@ -3,7 +3,7 @@ import { CheckIcon, Loader2, X } from "lucide-react";
 import { cn } from "../lib/utils";
 
 // The line divides the card from the text area. Without a text area the toolbar follows, so the tint fades out instead.
-const CARD_DIVIDED = "rounded-t-[19px] border-b border-primary/25 bg-gradient-to-b from-primary/5 to-primary/5/30 px-4 py-3 duration-200 animate-in fade-in slide-in-from-bottom-1 dark:border-primary/30 dark:from-primary/10 dark:to-transparent";
+const CARD_DIVIDED = "rounded-t-[19px] border-b border-primary/25 bg-gradient-to-b from-primary/5 to-primary/[0.015] px-4 py-3 duration-200 animate-in fade-in slide-in-from-bottom-1 dark:border-primary/30 dark:from-primary/10 dark:to-transparent";
 const CARD_OPEN = "rounded-t-[19px] bg-gradient-to-b from-primary/5 to-transparent px-4 py-3 duration-200 animate-in fade-in slide-in-from-bottom-1 dark:from-primary/10 dark:to-transparent";
 
 const PRIMARY = "h-8 whitespace-nowrap rounded-[10px] bg-primary px-3.5 text-[13px] font-semibold text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-default disabled:bg-primary/30 dark:disabled:bg-primary/30";
