@@ -126,6 +126,20 @@ function useProviderNotice(loaded: boolean, openSettings: () => void): ReactNode
 
 // ─── Main page ────────────────────────────────────────────────────────────────
 
+const NEW_INCIDENT_HEADER_BASE =
+  "flex h-8 shrink-0 items-center gap-1.5 rounded-md px-2.5 text-[13px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:opacity-50 max-sm:h-11";
+
+/** The header's New incident: primary normally; secondary while the empty list's own call to action is the primary. */
+const NEW_INCIDENT_HEADER_CLASS = {
+  false: `${NEW_INCIDENT_HEADER_BASE} bg-primary text-primary-foreground hover:bg-[hsl(var(--primary-hover))]`,
+  true: `${NEW_INCIDENT_HEADER_BASE} border border-input bg-background text-foreground hover:bg-[hsl(var(--secondary-hover))]`,
+} as const;
+
+/** Whether the incident list page shows its empty state (no incident open and none to list). */
+function useIsEmptyIncidentList(activeId: string | null | undefined, incidentCount: number): boolean {
+  return !activeId && incidentCount === 0;
+}
+
 export default function IncidentsPage() {
   const { t } = useTranslation();
   const now = useNow();
@@ -826,6 +840,7 @@ export default function IncidentsPage() {
 
   // ── Top-bar action buttons (shared) ──────────────────────────────────────
 
+  const emptyIncidentList = useIsEmptyIncidentList(activeId, visibleIncidents.length);
   const topBarActions = (
     <>
       {activeIncident !== null && (
@@ -930,10 +945,10 @@ export default function IncidentsPage() {
             data-tour="incidents-new-btn"
             onClick={handleNewIncident}
             disabled={isActiveProcessing}
-            className="flex h-8 shrink-0 items-center gap-1.5 rounded-md bg-primary px-2.5 text-[13px] font-medium text-primary-foreground transition-colors hover:bg-[hsl(var(--primary-hover))] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:opacity-50 max-sm:h-11 max-sm:w-11 max-sm:justify-center max-sm:px-0"
+            className={NEW_INCIDENT_HEADER_CLASS[String(emptyIncidentList) as "true" | "false"]}
           >
             <SquarePen size={14} />
-            <span className="max-sm:sr-only">{t("common.incidents.newIncident")}</span>
+            {t("common.incidents.newIncident")}
           </button>
         </TooltipTrigger>
         <TooltipContent side="bottom">
@@ -965,8 +980,8 @@ export default function IncidentsPage() {
                 title={t("common.incidents.emptyTitle")}
                 description={t("common.incidents.emptyDescription")}
                 action={
-                  // Outline: the header already carries the page's one primary New incident.
-                  <Button variant="outline" onClick={handleNewIncident}>
+                  // The empty state's call to action is the page's one primary button; the header's steps back.
+                  <Button onClick={handleNewIncident}>
                     <SquarePen />
                     {t("common.incidents.newIncident")}
                   </Button>

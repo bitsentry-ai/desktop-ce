@@ -335,3 +335,9 @@
       sans-serif;
   }
 }
+
+/* driver.js disables Previous on the first step; hide it there instead of showing a button that does nothing. */
+.driver-popover-prev-btn.driver-popover-btn-disabled,
+.driver-popover-prev-btn:disabled {
+  display: none !important;
+}
