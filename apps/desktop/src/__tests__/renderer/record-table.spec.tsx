@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   RECORD_TABLE_MAX_ROWS,
   findRecordTable,
+  isIdentifierColumn,
   recordColumnLabel,
   severityTone,
 } from "@bitsentry-ce/components/runbook/recordTable";
@@ -51,7 +52,6 @@ describe("findRecordTable", () => {
       "vulnerability.id",
       "package.name",
       "package.version",
-      "vulnerability.score.base",
     ]);
   });
 
@@ -88,6 +88,12 @@ describe("recordColumnLabel and severityTone", () => {
     expect(recordColumnLabel("vulnerability.severity", columns)).toBe("severity");
     expect(recordColumnLabel("vulnerability.id", columns)).toBe("vulnerability.id");
     expect(recordColumnLabel("package.name", columns)).toBe("package.name");
+  });
+
+  it("treats id, key and CVE columns as identifiers", () => {
+    expect(isIdentifierColumn("vulnerability.id")).toBe(true);
+    expect(isIdentifierColumn("cve")).toBe(true);
+    expect(isIdentifierColumn("package.name")).toBe(false);
   });
 
   it("marks high and critical severities strongest", () => {
