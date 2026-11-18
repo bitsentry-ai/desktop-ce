@@ -22,6 +22,18 @@ type DesktopIpcInvoke = <T>(
 
 const LLM_PROVIDERS_UPDATED_EVENT = "bitsentry:llm-providers-updated";
 
+/** A self-hosted server offers only its saved model; hosted providers merge the catalog. */
+function providerModelIds(provider: LLMProviderDto): string[] {
+  if (provider.providerKey !== "openai_compatible") {
+    return mergeProviderModels(
+      provider.providerKey,
+      provider.availableModels,
+      provider.model,
+    );
+  }
+  return provider.model ? [provider.model] : [];
+}
+
 export function useRunbookResourceData({
   ipcInvoke,
 }: {
@@ -64,7 +76,7 @@ export function useRunbookResourceData({
   const selectableLlmProviders = useMemo(
     () =>
       llmProviders.filter(
-        (provider) => provider.hasApiKey && provider.isSelectable,
+        (provider) => provider.isConfigured && provider.isSelectable,
       ),
     [llmProviders],
   );
@@ -87,11 +99,7 @@ export function useRunbookResourceData({
 
     selectableLlmProviders.forEach((provider) => {
       const providerKey = provider.providerKey;
-      const models = mergeProviderModels(
-        providerKey,
-        provider.availableModels,
-        provider.model,
-      );
+      const models = providerModelIds(provider);
 
       models.forEach((modelId) => {
         const normalized = modelId.trim();
@@ -102,7 +110,9 @@ export function useRunbookResourceData({
         options.push({
           providerKey: provider.providerKey,
           modelId: normalized,
-          label: getModelDisplayName(providerKey, normalized),
+          label: providerKey === "openai_compatible"
+            ? normalized
+            : getModelDisplayName(providerKey, normalized),
         });
       });
     });
@@ -246,6 +256,7 @@ export function useRunbookResourceData({
               providerType: providerTypes[providerKey] ?? "third_party",
               baseUrl: config.baseUrl,
               hasApiKey: config.hasApiKey,
+              isConfigured: config.hasApiKey,
               model,
               availableModels: mergeProviderModels(
                 providerKey as ModelCatalogProviderKey,

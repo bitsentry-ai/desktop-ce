@@ -20,6 +20,7 @@ export type RunbookLlmProviderKey =
   | "groq"
   | "kilocode"
   | "openai"
+  | "openai_compatible"
   | "anthropic"
   | "gemini"
   | "openrouter"
