@@ -16,6 +16,7 @@ import type {
   RunbookTriggerContext,
 } from '../runbooks/desktop-runbook.types'
 import { MAX_RUNBOOK_IDLE_TIMEOUT_MINUTES } from '../runbooks/desktop-runbook.types'
+import { resolveRunbookMatch, type MatchableRunbook, unresolvedRunbookMessage } from '../../shared/runbook-match'
 import type { RunbookGateway } from '../runbooks/runbook.gateway'
 import {
   createRunbookCreationProposal,
@@ -419,33 +420,23 @@ function defaultRequestKey(
   ].join(':')
 }
 
-function normalizeLookupTokens(value: string): string[] {
-  const ignoredTokens = new Set(['a', 'an', 'and', 'for', 'from', 'id', 'in', 'of', 'rb', 'runbook', 'the', 'to'])
-  return value
-    .toLowerCase()
-    .split(/[^a-z0-9]+/)
-    .map((token) => token.trim())
-    .filter((token) => token.length > 0 && !ignoredTokens.has(token))
+function matchableRunbooks(runbooks: RunbookRecord[]): (MatchableRunbook & { id: string })[] {
+  return runbooks.map((runbook) => ({
+    id: runbook.id,
+    title: runbook.title,
+    description: runbook.description,
+    stepTitles: runbook.actions.map((action) => action.title),
+  }))
 }
 
-function resolveSyntheticRunbookId(runbooks: RunbookRecord[], runbookId: string): RunbookRecord | null {
-  const lookupTokens = normalizeLookupTokens(runbookId)
-  if (lookupTokens.length < 2) return null
-
-  const matches = runbooks
-    .map((runbook) => ({
-      runbook,
-      score: lookupTokens.filter((token) =>
-        normalizeLookupTokens(`${runbook.title} ${runbook.description}`).includes(token),
-      ).length,
-    }))
-    .filter(({ score }) => score >= Math.min(lookupTokens.length, 2))
-    .sort((left, right) => right.score - left.score)
-
-  if (matches.length === 0 || (matches.length > 1 && matches[0].score === matches[1].score)) {
-    return null
-  }
-  return matches[0].runbook
+/**
+ * The runbook a model referred to by words rather than an exact id or title, using the palette's matcher so the agent
+ * finds what a person would. Null unless one runbook clearly wins; see {@link resolveRunbookMatch}.
+ */
+function resolveRunbookByWords(runbooks: RunbookRecord[], words: string): RunbookRecord | null {
+  const resolution = resolveRunbookMatch(words, matchableRunbooks(runbooks))
+  if (resolution.kind !== 'match') return null
+  return runbooks.find((runbook) => runbook.id === resolution.runbook.id) ?? null
 }
 
 function staleRunbookIdError(runbooks: RunbookRecord[], runbookId: string, runbookTitle?: string): Error {
@@ -467,11 +458,14 @@ function resolveRunbookByTitle(runbooks: RunbookRecord[], runbookTitle: string, 
     if (staleRunbookId !== undefined) throw staleRunbookIdError(runbooks, staleRunbookId, runbookTitle)
     throw new Error(`Multiple runbooks exactly match "${runbookTitle}". Use runbookId. Matches: ${describeRunbookCandidates(exactMatches)}`)
   }
-  const partialMatches = runbooks.filter((runbook) => runbook.title.toLowerCase().includes(normalizedTitle))
-  if (partialMatches.length === 1) return partialMatches[0]
-  if (partialMatches.length > 1) {
+  const resolution = resolveRunbookMatch(runbookTitle, matchableRunbooks(runbooks))
+  if (resolution.kind === 'match') {
+    return runbooks.find((runbook) => runbook.id === resolution.runbook.id) ?? null
+  }
+  if (resolution.kind === 'ambiguous') {
     if (staleRunbookId !== undefined) throw staleRunbookIdError(runbooks, staleRunbookId, runbookTitle)
-    throw new Error(`Multiple runbooks match "${runbookTitle}". Use runbookId. Matches: ${describeRunbookCandidates(partialMatches)}`)
+    const candidates = runbooks.filter((runbook) => resolution.candidates.some((candidate) => candidate.id === runbook.id))
+    throw new Error(unresolvedRunbookMessage(runbookTitle, candidates))
   }
   return null
 }
@@ -497,8 +491,8 @@ function resolveRequestedRunbookById(
     const exactTitleMatch = findUniqueExactRunbookTitle(runbooks, runbookTitle)
     if (exactTitleMatch !== undefined) return exactTitleMatch
   }
-  const syntheticMatch = resolveSyntheticRunbookId(runbooks, runbookId)
-  if (syntheticMatch !== null) return syntheticMatch
+  const wordsMatch = resolveRunbookByWords(runbooks, runbookId)
+  if (wordsMatch !== null) return wordsMatch
   if (runbookTitle === undefined || runbookTitle.length === 0) throw staleRunbookIdError(runbooks, runbookId)
   return null
 }

@@ -113,6 +113,7 @@ function DesktopCommandPaletteHost() {
           items: runbooks.map((runbook) => ({
             id: runbook.id,
             label: runbook.title,
+            keywords: [runbook.description ?? '', ...(runbook.stepTitles ?? [])],
             icon: BookOpen,
             run: () => {
               go(`/runbooks?id=${runbook.id}`)
