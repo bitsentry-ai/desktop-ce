@@ -43,7 +43,7 @@ function getMeterClasses(
     return { ringClass: "stroke-destructive", barClass: "bg-destructive" };
   }
   if (usageRatio !== null && usageRatio > 0.8) {
-    return { ringClass: "stroke-amber-500", barClass: "bg-amber-500" };
+    return { ringClass: "stroke-foreground", barClass: "bg-foreground" };
   }
   return {
     ringClass: "stroke-muted-foreground/60",

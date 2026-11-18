@@ -267,7 +267,7 @@ function CompactOptions({ flow, label }: { flow: ComposerRemediationFlow; label:
 const STEP_SCROLL = "-mr-2 max-h-[min(50dvh,32rem)] overflow-y-auto overscroll-y-contain pr-2 outline-none focus-visible:ring-2 focus-visible:ring-primary/30 [scrollbar-color:hsl(var(--border))_transparent] [scrollbar-width:thin]";
 
 const RESULT_TONES: Record<RemediationFlowTone, string> = {
-  success: "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-400",
+  success: "bg-primary/10 text-primary",
   destructive: "bg-destructive/10 text-destructive",
   neutral: "bg-muted text-muted-foreground",
 };

@@ -39,13 +39,13 @@ const DEMO_DIAGNOSES = [
 
 const SEVERITY_BADGE: Record<string, string> = {
   critical: "bg-destructive/15 text-destructive",
-  high: "bg-orange-500/15 text-orange-500",
+  high: "bg-destructive/10 text-destructive",
   medium: "bg-[hsl(var(--warning)/0.12)] text-[hsl(var(--warning-text))]",
   low: "bg-[hsl(var(--success)/0.1)] text-[hsl(var(--success-text))]",
 };
 
 const STATE_BADGE: Record<string, string> = {
-  in_progress: "bg-blue-500/15 text-blue-500",
+  in_progress: "bg-muted text-foreground",
   open: "bg-muted text-muted-foreground",
   resolved: "bg-[hsl(var(--success)/0.1)] text-[hsl(var(--success-text))]",
 };
@@ -73,7 +73,7 @@ export default function TourDashboardPreview() {
                   <div className="mb-3 flex items-center gap-3 rounded-lg border border-border bg-card px-4 py-3 text-sm text-muted-foreground">
                     <AlertTriangle
                       size={15}
-                      className="shrink-0 text-amber-500"
+                      className="shrink-0 text-primary"
                     />
                     <span>
                       {t("dashboard.tourDashboardPreview.connectMoreSourcesFromSettings")}

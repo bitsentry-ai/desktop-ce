@@ -117,7 +117,7 @@ export default function InstallPluginDialog({
 
     if (availableQuery.isError) {
       return (
-        <p className="text-sm text-red-600 dark:text-red-400">
+        <p className="text-sm text-destructive">
           {t("common.dataSourcesManager.installIndexError")}
         </p>
       );

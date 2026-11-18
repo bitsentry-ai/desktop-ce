@@ -471,7 +471,7 @@ function PluginStructuredFieldsEditor({
       </div>
 
       {parsed.error && (
-        <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+        <div className="rounded-md border border-border bg-muted/40 px-3 py-2 text-xs text-foreground">
           {invalidJsonText}
         </div>
       )}

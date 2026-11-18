@@ -205,7 +205,7 @@ export function RunbookEditorView({
         t={t}
       />
       {unresolvedGlobalKeys.length > 0 && (
-        <div className="border-b border-amber-500/20 bg-amber-500/10 px-4 py-3 text-xs text-amber-700">
+        <div className="border-b border-border bg-muted/40 px-4 py-3 text-xs text-foreground">
           {t("runbooks.runbook.thisRunbookReferencesMissingGlobals")}{" "}
           {unresolvedGlobalKeys.join(", ")}
           {t("runbooks.runbook.addThemInAppSettings")}

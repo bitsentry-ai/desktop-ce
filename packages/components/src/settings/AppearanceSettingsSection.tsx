@@ -104,7 +104,7 @@ const NetworkRow = () => {
   let dotClassName = "bg-muted-foreground";
   let label = t("navigation.topBar.offline");
   if (isConnected) {
-    dotClassName = "bg-emerald-500 dark:bg-emerald-400";
+    dotClassName = "bg-primary";
     label = t("navigation.topBar.connected");
   }
 

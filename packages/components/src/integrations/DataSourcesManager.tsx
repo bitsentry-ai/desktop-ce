@@ -440,7 +440,7 @@ interface ProviderCard {
 function FieldLabel({ children, required = false }: FieldLabelProps) {
   let requiredMarker: ReactNode = null;
   if (required) {
-    requiredMarker = <span className="ml-0.5 text-red-600">*</span>;
+    requiredMarker = <span className="ml-0.5 text-destructive">*</span>;
   }
 
   return (
@@ -967,11 +967,11 @@ export default function DataSourcesManager({
 
   let statusContent: ReactNode = null;
   if (status !== null) {
-    let statusClassName = "border-blue-300 text-blue-700";
+    let statusClassName = "border-border text-muted-foreground";
     if (status.kind === "error") {
-      statusClassName = "border-red-300 text-red-700";
+      statusClassName = "border-destructive/40 text-destructive";
     } else if (status.kind === "success") {
-      statusClassName = "border-green-300 text-green-700";
+      statusClassName = "border-primary/40 text-primary";
     }
 
     statusContent = (
@@ -1064,7 +1064,7 @@ export default function DataSourcesManager({
     editDialogErrorContent = (
       <div
         role="alert"
-        className="rounded-md border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300"
+        className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive"
       >
         {editDialogError}
       </div>
@@ -1186,7 +1186,7 @@ export default function DataSourcesManager({
               !sourceIsSyncing
             ) {
               lastSyncErrorContent = (
-                <span className="text-red-600">
+                <span className="text-destructive">
                   {" "}
                   - {formatStoredSyncErrorMessage(source.lastSyncError, t)}
                 </span>
@@ -1260,7 +1260,7 @@ export default function DataSourcesManager({
                       disabled={actionLoading}
                       aria-label={t("common.dataSourcesManager.removeSource")}
                       title={t("common.dataSourcesManager.removeSource_2")}
-                      className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-red-600 disabled:opacity-50"
+                      className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-destructive disabled:opacity-50"
                     >
                       <Trash2 size={16} aria-hidden="true" />
                     </button>
@@ -1309,7 +1309,7 @@ export default function DataSourcesManager({
               {!pluginsLoading && pluginsError && (
                 <p
                   role="alert"
-                  className="text-sm text-red-600 dark:text-red-400"
+                  className="text-sm text-destructive"
                 >
                   {t("common.dataSourcesManager.installIndexError")}
                 </p>
@@ -1525,7 +1525,7 @@ export default function DataSourcesManager({
             {dialogError && (
               <div
                 role="alert"
-                className="rounded-md border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300"
+                className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive"
               >
                 {dialogError}
               </div>

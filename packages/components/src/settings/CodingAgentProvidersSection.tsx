@@ -220,10 +220,10 @@ function getProbeStatusClass(status: DesktopCliProbeResult['status'] | undefined
     return 'text-[hsl(var(--primary))]'
   }
   if (status === 'warning') {
-    return 'text-amber-600 dark:text-amber-400'
+    return 'text-foreground'
   }
   if (status === 'error') {
-    return 'text-red-600 dark:text-red-400'
+    return 'text-destructive'
   }
 
   return 'text-muted-foreground'

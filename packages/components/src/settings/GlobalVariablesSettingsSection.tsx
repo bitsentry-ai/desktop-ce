@@ -340,7 +340,7 @@ function SaveStatusInline({ status }: { status: AutoSaveStatus }) {
       </span>
     );
   return (
-    <span className="text-red-600 dark:text-red-400">
+    <span className="text-destructive">
       {t("common.globalVariablesSettingsSection.saveError")}
     </span>
   );

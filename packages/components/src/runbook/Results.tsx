@@ -435,7 +435,7 @@ function SummaryPanel({
   let idleCancellationContent: ReactNode = null;
   if (idleCancellationMessage !== null) {
     idleCancellationContent = (
-      <div className="rounded-lg border border-amber-500/20 bg-amber-500/10 p-3 text-sm text-amber-700 dark:text-amber-300">
+      <div className="rounded-lg border border-border bg-muted/40 p-3 text-sm text-foreground">
         {idleCancellationMessage}
       </div>
     );
@@ -1038,19 +1038,19 @@ export default function ResultsPage() {
                       {resultCounts.total}
                     </div>
                   </div>
-                  <div className="rounded-lg border border-border bg-amber-500/5 p-3">
+                  <div className="rounded-lg border border-border p-3">
                     <div className="text-xs font-medium uppercase tracking-[0.06em] text-muted-foreground">
                       {t("common.results.running")}
                     </div>
-                    <div className="mt-1 text-lg font-medium text-amber-500">
+                    <div className="mt-1 text-lg font-medium text-foreground">
                       {resultCounts.running}
                     </div>
                   </div>
-                  <div className="rounded-lg border border-border bg-emerald-500/5 p-3">
+                  <div className="rounded-lg border border-border p-3">
                     <div className="text-xs font-medium uppercase tracking-[0.06em] text-muted-foreground">
                       {t("common.results.completed_4")}
                     </div>
-                    <div className="mt-1 text-lg font-medium text-emerald-500">
+                    <div className="mt-1 text-lg font-medium text-primary">
                       {resultCounts.completed}
                     </div>
                   </div>
