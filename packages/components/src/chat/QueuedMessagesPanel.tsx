@@ -123,7 +123,7 @@ export function QueuedMessagesPanel({ queue }: { queue: ComposerQueue }) {
           <ol id={listId} className={cn("grid max-h-32 gap-px overflow-y-auto", !expanded && "hidden")}>
             {steering.map((message) => (
               <li key={message.id} className="grid min-h-6 grid-cols-[1.5rem_minmax(0,1fr)_auto] items-center gap-x-1">
-                <span className="flex items-center justify-center text-violet-600 dark:text-violet-400 [&_svg]:size-3">
+                <span className="flex items-center justify-center text-primary [&_svg]:size-3">
                   <CornerUpRight aria-label={t("common.incidents.queue.steering")} />
                 </span>
                 <QueuedRowText message={message} />

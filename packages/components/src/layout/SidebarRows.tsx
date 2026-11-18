@@ -156,7 +156,7 @@ export function SidebarRow({
         {leading}
         <span className="min-w-0 flex-1">
           {/* Every row shows up to two lines, so similarly named items stay distinguishable. */}
-          <span className={cn("line-clamp-2 break-words text-[13px] leading-[18px]", active ? "font-medium" : "text-foreground/85")}>{title}</span>
+          <span className={cn("line-clamp-2 break-words text-[13px] leading-[18px]", !active && "text-foreground/85")}>{title}</span>
           {meta !== undefined && <span className="block truncate text-xs leading-4 text-muted-foreground">{meta}</span>}
         </span>
         {trailing !== undefined && (

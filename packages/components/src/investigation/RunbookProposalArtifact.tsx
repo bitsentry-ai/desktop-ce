@@ -286,11 +286,11 @@ export default function RunbookProposalArtifact({
           </div>
         )}
 
-        <details className="min-w-0 w-full rounded-xl border border-border">
-          <summary className="cursor-pointer px-3 py-2 text-xs font-medium">
+        <details className="min-w-0 w-full">
+          <summary className="cursor-pointer text-xs font-medium text-muted-foreground hover:text-foreground">
             {t("common.incidentArtifactsRail.proposal.rawJson")}
           </summary>
-          <pre className="min-w-0 max-w-full max-h-72 overflow-x-hidden overflow-y-auto border-t border-border p-3 text-xs leading-relaxed whitespace-pre-wrap break-all">
+          <pre className="mt-2 min-w-0 max-w-full max-h-72 overflow-x-hidden overflow-y-auto rounded-lg border border-border bg-muted/30 p-3 text-xs leading-relaxed whitespace-pre-wrap break-all">
             {JSON.stringify(selectedProposal, null, 2)}
           </pre>
         </details>

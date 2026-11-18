@@ -129,11 +129,11 @@ export function RemediationResumeChip({ flow, disabled }: { flow: ComposerRemedi
       type="button"
       onClick={flow.resume}
       disabled={disabled}
-      className="mb-2 ml-0.5 inline-flex max-w-full items-center gap-2 rounded-full border border-violet-200 bg-violet-50 py-1 pl-2.5 pr-3 text-xs transition-colors duration-150 animate-in fade-in hover:bg-violet-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-violet-500/30 dark:bg-violet-500/10 dark:hover:bg-violet-500/15"
+      className="mb-2 ml-0.5 inline-flex max-w-full items-center gap-2 rounded-full border border-primary/25 bg-primary/5 py-1 pl-2.5 pr-3 text-xs transition-colors duration-150 animate-in fade-in hover:bg-primary/10 disabled:cursor-not-allowed disabled:opacity-60 dark:border-primary/30 dark:bg-primary/10 dark:hover:bg-primary/15"
     >
       <span className="font-semibold text-foreground">{t("common.incidents.remediation.title")}</span>
       <StatusBadge status={flow.status} />
-      <span className="inline-flex items-center gap-0.5 font-semibold text-violet-700 dark:text-violet-300">
+      <span className="inline-flex items-center gap-0.5 font-semibold text-primary">
         {t("common.incidents.remediation.resume")}
         <ChevronRight size={12} aria-hidden="true" />
       </span>
@@ -242,13 +242,13 @@ function CompactOptions({ flow, label }: { flow: ComposerRemediationFlow; label:
       {keyed.length === 0 && searching && <p className="px-3 py-2.5 text-[13px] text-muted-foreground">{t("common.incidents.remediation.noConnectionMatch")}</p>}
       {keyed.length > 0 && (
         <div className="relative">
-          <div ref={scroll} className="grid max-h-[9.75rem] gap-1 overflow-y-auto pr-0.5 [scrollbar-color:theme(colors.violet.300)_transparent] [scrollbar-width:thin]">
+          <div ref={scroll} className="grid max-h-[9.75rem] gap-1 overflow-y-auto pr-0.5 [scrollbar-color:hsl(var(--border))_transparent] [scrollbar-width:thin]">
             {keyed.map((index, keyIndex) => option(index, keyIndex))}
           </div>
           <div
             aria-hidden="true"
             className={cn(
-              "pointer-events-none absolute inset-x-0 bottom-0 h-[34px] rounded-b-lg bg-gradient-to-b from-transparent to-violet-50 transition-opacity duration-150 dark:to-background",
+              "pointer-events-none absolute inset-x-0 bottom-0 h-[34px] rounded-b-lg bg-gradient-to-b from-transparent to-primary/5 transition-opacity duration-150 dark:to-background",
               more ? "opacity-100" : "opacity-0",
             )}
           />
@@ -264,7 +264,7 @@ function CompactOptions({ flow, label }: { flow: ComposerRemediationFlow; label:
  * option and Enter runs the primary button while focus is outside a text field; Escape closes the card.
  */
 // At most half the visible height, so the conversation stays usable on a phone; one scroll, with no nested boxes.
-const STEP_SCROLL = "-mr-2 max-h-[min(50dvh,32rem)] overflow-y-auto overscroll-y-contain pr-2 outline-none focus-visible:ring-2 focus-visible:ring-violet-500/30 [scrollbar-color:theme(colors.violet.300)_transparent] [scrollbar-width:thin]";
+const STEP_SCROLL = "-mr-2 max-h-[min(50dvh,32rem)] overflow-y-auto overscroll-y-contain pr-2 outline-none focus-visible:ring-2 focus-visible:ring-primary/30 [scrollbar-color:hsl(var(--border))_transparent] [scrollbar-width:thin]";
 
 const RESULT_TONES: Record<RemediationFlowTone, string> = {
   success: "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-400",
@@ -370,7 +370,7 @@ export function RemediationQuestionPanel({ flow }: { flow: ComposerRemediationFl
                     onClick={row.edit}
                     disabled={flow.submitting}
                     aria-label={`${t("common.incidents.remediation.edit")} ${row.label}`}
-                    className="text-xs font-medium text-violet-700 hover:underline disabled:opacity-50 dark:text-violet-300"
+                    className="text-xs font-medium text-primary hover:underline disabled:opacity-50 dark:text-primary"
                   >
                     {t("common.incidents.remediation.edit")}
                   </button>
@@ -381,7 +381,7 @@ export function RemediationQuestionPanel({ flow }: { flow: ComposerRemediationFl
         )}
         {flow.running !== undefined && (
           <p role="status" className="mt-2.5 flex items-center gap-2 rounded-lg border border-border bg-muted/40 px-3 py-2 text-sm">
-            <Loader2 size={14} className="animate-spin text-violet-600 dark:text-violet-300" aria-hidden="true" />
+            <Loader2 size={14} className="animate-spin text-primary" aria-hidden="true" />
             {flow.running}
           </p>
         )}

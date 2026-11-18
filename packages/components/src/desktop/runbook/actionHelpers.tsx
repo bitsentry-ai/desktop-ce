@@ -48,7 +48,7 @@ export const ACTION_META: Record<SupportedActionType, ActionMeta> = {
   shell: {
     labelKey: "runbooks.runbook.actionTypeShell",
     icon: Terminal,
-    badgeCls: "border-blue-500/20 bg-blue-500/[0.07] text-blue-700 dark:text-blue-300 [&>svg]:text-blue-600 dark:[&>svg]:text-blue-400",
+    badgeCls: "border-border bg-muted/60 text-muted-foreground [&>svg]:text-muted-foreground",
     placeholderKey: "runbooks.runbook.exampleRunBackupScript",
     fieldLabelKey: "runbooks.runbook.command",
     fieldPlaceholderKey: "runbooks.runbook.fetchLogsPlaceholder",
@@ -56,7 +56,7 @@ export const ACTION_META: Record<SupportedActionType, ActionMeta> = {
   llm: {
     labelKey: "runbooks.runbook.actionTypeAi",
     icon: Bot,
-    badgeCls: "border-fuchsia-500/20 bg-fuchsia-500/[0.07] text-fuchsia-700 dark:text-fuchsia-300 [&>svg]:text-fuchsia-600 dark:[&>svg]:text-fuchsia-400",
+    badgeCls: "border-border bg-muted/60 text-muted-foreground [&>svg]:text-muted-foreground",
     placeholderKey: "runbooks.runbook.exampleAnalyzeTheOutput",
     fieldLabelKey: "runbooks.runbook.prompt",
     fieldPlaceholderKey: "runbooks.runbook.analyzeErrorsPlaceholder",
@@ -64,7 +64,7 @@ export const ACTION_META: Record<SupportedActionType, ActionMeta> = {
   http: {
     labelKey: "runbooks.runbook.actionTypeHttp",
     icon: Globe,
-    badgeCls: "border-indigo-500/20 bg-indigo-500/[0.07] text-indigo-700 dark:text-indigo-300 [&>svg]:text-indigo-600 dark:[&>svg]:text-indigo-400",
+    badgeCls: "border-border bg-muted/60 text-muted-foreground [&>svg]:text-muted-foreground",
     placeholderKey: "runbooks.runbook.exampleFetchApiData",
     fieldLabelKey: "runbooks.runbook.url",
     fieldPlaceholderKey: "runbooks.runbook.apiEndpointPlaceholder",
@@ -72,7 +72,7 @@ export const ACTION_META: Record<SupportedActionType, ActionMeta> = {
   plugin: {
     labelKey: "runbooks.runbook.actionTypePlugin",
     icon: Puzzle,
-    badgeCls: "border-violet-500/20 bg-violet-500/[0.07] text-violet-700 dark:text-violet-300 [&>svg]:text-violet-600 dark:[&>svg]:text-violet-400",
+    badgeCls: "border-border bg-muted/60 text-muted-foreground [&>svg]:text-muted-foreground",
     placeholderKey: "runbooks.runbook.exampleQueryGitHubIssues",
     fieldLabelKey: "runbooks.runbook.pluginAction",
     fieldPlaceholderKey: "runbooks.runbook.selectAPluginAction",
@@ -80,7 +80,7 @@ export const ACTION_META: Record<SupportedActionType, ActionMeta> = {
   external_source: {
     labelKey: "runbooks.runbook.actionTypeExternalSource",
     icon: AlertCircle,
-    badgeCls: "border-sky-500/20 bg-sky-500/[0.07] text-sky-700 dark:text-sky-300 [&>svg]:text-sky-600 dark:[&>svg]:text-sky-400",
+    badgeCls: "border-border bg-muted/60 text-muted-foreground [&>svg]:text-muted-foreground",
     placeholderKey: "runbooks.runbook.exampleSearchRecentErrors",
     fieldLabelKey: "runbooks.runbook.query",
     fieldPlaceholderKey: "runbooks.runbook.isUnresolvedLevelError",
