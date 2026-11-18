@@ -98,7 +98,7 @@
 
   /* --- Primary: the brighter end of the brand gradient --- */
   --primary: 166 100% 41%;
-  --primary-hover: 166 100% 50%;
+  --primary-hover: 166 100% 45%;
   --primary-active: 166 85% 34%;
   --secondary-hover: 0 0% 15%;
   --primary-foreground: 166 60% 5%;
