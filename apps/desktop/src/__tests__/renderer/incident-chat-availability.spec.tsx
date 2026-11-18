@@ -151,6 +151,10 @@ describe("incident chat availability", () => {
       ).toBe(true);
     });
     expect(screen.getByText("common.incidents.addAnApiKeyIn")).toBeTruthy();
+    // The composer states the failure once, with the way to fix it.
+    expect(
+      screen.getByRole("button", { name: "common.incidents.openSettings" }),
+    ).toBeTruthy();
   });
 
   it("keeps archived incidents locked and offers the unarchive control", async () => {

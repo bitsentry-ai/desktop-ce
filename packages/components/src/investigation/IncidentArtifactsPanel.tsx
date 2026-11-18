@@ -13,8 +13,8 @@ import { needsReview, orderDeliveries, type IntegrationDelivery, type Integratio
 import { IntegrationSourcesView, deadlineLevelLabel, deadlineSummary, resourceKey, useExecutionPanelState, type IntegrationResourcesPort } from "./IntegrationSourcesView";
 import { KnowledgeExecutionPanel } from "./KnowledgeExecutionPanel";
 
-const COUNT_PILL = "rounded-full bg-muted px-1.5 py-0.5 text-[10px]";
-const AMBER_PILL = "rounded-full bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-medium text-amber-700 dark:text-amber-400";
+const COUNT_PILL = "rounded-full bg-muted px-1.5 py-0.5 text-xs";
+const AMBER_PILL = "rounded-full bg-amber-500/15 px-1.5 py-0.5 text-xs font-medium text-amber-700 dark:text-amber-400";
 const EMPTY_BOX = "rounded-2xl border border-dashed border-border/70 bg-muted/10 px-4 py-5 text-sm text-muted-foreground";
 const ERROR_BOX = "rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive";
 
@@ -24,7 +24,7 @@ export function ArtifactsPanelTrigger({ state }: { state: ArtifactsPanelState })
   const { summary } = state;
   if (summary.total === 0 && !state.open) return null;
   return <button type="button" aria-pressed={state.open} onClick={state.toggle}
-    className={cn("flex items-center gap-1.5 rounded-md border border-border px-2 py-1 text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring", state.open ? "bg-muted text-foreground" : "hover:bg-muted")}>
+    className={cn("flex h-8 shrink-0 items-center gap-1.5 rounded-md border border-border px-2.5 text-[13px] max-sm:h-11 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring", state.open ? "bg-muted text-foreground" : "hover:bg-muted")}>
     <Layers size={12} aria-hidden="true" />
     {t("incidents.artifactsPanel.title")}
     <span className={COUNT_PILL}>{summary.total}</span>
@@ -42,7 +42,7 @@ function FilterChip({ active, label, count, onSelect }: { active: boolean; label
 }
 
 function SectionHeading({ icon: Icon, label, count }: { icon: ElementType; label: string; count: number }) {
-  return <div className="mb-2 flex items-center gap-2 text-[11px] font-medium uppercase tracking-[0.18em] text-muted-foreground">
+  return <div className="mb-2 flex items-center gap-2 text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
     <Icon size={12} aria-hidden="true" />
     <h3>{label}</h3>
     <span className={cn(COUNT_PILL, "normal-case tracking-normal")}>{count}</span>
@@ -170,7 +170,7 @@ export default function IncidentArtifactsPanel({ isOpen, filter, focusOnOpen = f
     : <DeliveryItemCard key={row.id} row={row} open={cards.isOpen(deliveryCardId(row.id))} onToggle={() => { cards.toggle(deliveryCardId(row.id)); }} threadId={threadId} disabled={disabled} service={deliveries} onRefresh={deliveryRows.refresh} />;
 
   return <aside ref={asideRef} tabIndex={-1} data-tour="incidents-artifacts-rail" aria-label={t("incidents.artifactsPanel.title")} aria-hidden={!isOpen} inert={!isOpen} onKeyDown={handleKeyDown}
-    className={cn("absolute inset-y-0 right-0 z-20 flex w-full max-w-[430px] flex-col border-l border-border bg-background/95 shadow-2xl outline-none backdrop-blur transition-transform duration-300", isOpen ? "translate-x-0" : "translate-x-full")}>
+    className={cn("absolute inset-y-0 right-0 z-20 flex w-full max-w-[430px] flex-col border-l border-border bg-background/95 shadow-2xl outline-none backdrop-blur transition-transform duration-300", isOpen ? "translate-x-0" : "translate-x-full shadow-none")}>
     <div className="flex items-center gap-3 border-b border-border px-4 py-3">
       <div className="flex size-9 items-center justify-center rounded-2xl border border-border bg-muted/20"><Layers size={16} className="text-muted-foreground" aria-hidden="true" /></div>
       <div className="min-w-0 flex-1">
@@ -211,7 +211,7 @@ export default function IncidentArtifactsPanel({ isOpen, filter, focusOnOpen = f
         {reviewDeliveries.map(deliveryCard)}
         {runbookSummary.failedRuns.map((run) => <AttentionRow key={run.key} icon={FileText} title={run.title} actionLabel={t("incidents.artifactsPanel.viewRun")} onAction={() => { viewRun(run.key); }}
           subtitle={t("common.incidentArtifactsRail.stepsComplete", { completed: run.completedSteps, total: run.totalSteps })}
-          badge={<span className="rounded-full bg-destructive/15 px-2 py-0.5 text-[10px] font-medium text-destructive">{t("common.incidentArtifactsRail.status.failed")}</span>} />)}
+          badge={<span className="rounded-full bg-destructive/15 px-2 py-0.5 text-xs font-medium text-destructive">{t("common.incidentArtifactsRail.status.failed")}</span>} />)}
       </section>}
 
       <Section label={t("incidents.integrationRail.sources")} visible={showSources}>

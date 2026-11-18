@@ -191,6 +191,7 @@
   "settings.integrationConnections.save": "Simpan koneksi",
   "settings.integrationConnections.edit": "Edit",
   "settings.integrationConnections.remove": "Hapus",
+  "settings.integrationConnections.moreActions": "Tindakan lain untuk {{name}}",
   "settings.integrationConnections.cancel": "Batal",
   "settings.integrationConnections.loadFailed": "Tidak dapat memuat koneksi. Muat ulang untuk mencoba lagi.",
   "settings.integrationConnections.saveFailed": "Tidak dapat menyimpan koneksi. Periksa URL, kredensial, dan nama yang unik.",
@@ -213,5 +214,18 @@
   "settings.integrationConnections.active": "Aktif",
   "settings.integrationConnections.inactive": "Nonaktif",
   "settings.integrationConnections.activeHint": "Koneksi nonaktif tetap tersimpan tetapi tidak ditawarkan ke chat.",
-  "settings.integrationConnections.invalidJson": "{{field}} harus berupa JSON yang valid."
+  "settings.integrationConnections.invalidJson": "{{field}} harus berupa JSON yang valid.",
+  "settings.integrationConnections.emptyTitle": "Tambahkan integrasi pertama Anda",
+  "settings.integrationConnections.emptyDescription": "Pasang plugin seperti iTop atau Outline untuk menghubungkannya ke chat.",
+  "settings.integrationConnections.connectionsHeading": "Koneksi",
+  "settings.integrationConnections.connectionsDescription": "Hubungkan alat tiket dan pengetahuan ke obrolan insiden.",
+  "settings.integrationConnections.noConnections": "Belum ada koneksi.",
+  "settings.integrationConnections.addHeading": "Tambahkan koneksi",
+  "settings.integrationConnections.editHeading": "Edit koneksi",
+  "settings.integrationConnections.credentialHint": "Kredensial tetap di produk ini dan tidak diuji saat disimpan. Saat mengedit, kosongkan kredensial untuk mempertahankannya.",
+  "settings.integrationConnections.advanced": "Lanjutan",
+  "settings.globalVariables.emptyDescription": "Tambahkan variabel untuk memakai ulang nilai atau rahasia di runbook mana pun.",
+  "settings.pluginsEmpty.hint": "Pasang atau aktifkan plugin kode yang mendeklarasikan sumber error.",
+  "settings.sectionNav.label": "Bagian",
+  "settings.pluginsEmpty.availableSources": "Sumber berbasis plugin yang tersedia: {{sources}}."
 }

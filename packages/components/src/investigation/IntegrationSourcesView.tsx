@@ -1,5 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { Check, ExternalLink, FileText, RefreshCw, Ticket } from "lucide-react";
+import { Check, ExternalLink, FileText, Link2, RefreshCw, Ticket } from "lucide-react";
+import { EmptyState } from "../ui/empty-state";
 import { useTranslation } from "@bitsentry-ce/i18n";
 import { DEADLINE_LEVELS, ticketDeadlineStatus, type DeadlineLevel, type DeadlineStatus, type IntegrationResource } from "@bitsentry-ce/core/features/plugins";
 import { cn } from "../lib/utils";
@@ -206,7 +207,7 @@ export function IntegrationSourcesView({ threadId, rows, failed, disabled, onSel
   return <div className="space-y-3">
     {actionError !== null && <p role="alert" className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">{t(actionError)}</p>}
     {failed && <p role="alert" className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">{t("incidents.integrationResources.error")}</p>}
-    {rows.length === 0 && !failed && <div className="rounded-2xl border border-dashed border-border/70 bg-muted/10 px-4 py-5 text-sm text-muted-foreground">{t("incidents.integrationRail.noSources")}</div>}
+    {rows.length === 0 && !failed && <EmptyState icon={Link2} title={t("incidents.integrationRail.noSources")} className="rounded-lg border border-dashed border-border py-8" />}
     {rows.map((row) => <ResourceCard key={resourceKey(row)} row={row} disabled={disabled} onToggle={onSelect === undefined ? undefined : (selected) => { onSelect(row, selected); }} onRefresh={onRefresh === undefined ? undefined : () => { onRefresh(row); }} />)}
     {showExecution && execution.visible && <KnowledgeExecutionPanel threadId={threadId} disabled={disabled} active={execution.anySelected} />}
   </div>;

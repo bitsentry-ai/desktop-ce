@@ -191,6 +191,7 @@
   "settings.integrationConnections.save": "Enregistrer la connexion",
   "settings.integrationConnections.edit": "Modifier",
   "settings.integrationConnections.remove": "Supprimer",
+  "settings.integrationConnections.moreActions": "Plus d’actions pour {{name}}",
   "settings.integrationConnections.cancel": "Annuler",
   "settings.integrationConnections.loadFailed": "Impossible de charger les connexions. Rechargez la page pour réessayer.",
   "settings.integrationConnections.saveFailed": "Impossible d’enregistrer la connexion. Vérifiez l’URL, les identifiants et l’unicité du nom.",
@@ -213,5 +214,18 @@
   "settings.integrationConnections.active": "Active",
   "settings.integrationConnections.inactive": "Inactive",
   "settings.integrationConnections.activeHint": "Une connexion inactive reste enregistrée mais n'est pas proposée au chat.",
-  "settings.integrationConnections.invalidJson": "{{field}} doit être un JSON valide."
+  "settings.integrationConnections.invalidJson": "{{field}} doit être un JSON valide.",
+  "settings.integrationConnections.emptyTitle": "Ajoutez votre première intégration",
+  "settings.integrationConnections.emptyDescription": "Installez un plugin comme iTop ou Outline pour le connecter au chat.",
+  "settings.integrationConnections.connectionsHeading": "Connexions",
+  "settings.integrationConnections.connectionsDescription": "Connectez vos outils de tickets et de connaissances au chat d’incident.",
+  "settings.integrationConnections.noConnections": "Aucune connexion pour l’instant.",
+  "settings.integrationConnections.addHeading": "Ajouter une connexion",
+  "settings.integrationConnections.editHeading": "Modifier la connexion",
+  "settings.integrationConnections.credentialHint": "Les identifiants restent dans ce produit et ne sont pas testés à l’enregistrement. Lors d’une modification, laissez un identifiant vide pour le conserver.",
+  "settings.integrationConnections.advanced": "Avancé",
+  "settings.globalVariables.emptyDescription": "Ajoutez une variable pour réutiliser une valeur ou un secret dans n’importe quel runbook.",
+  "settings.pluginsEmpty.hint": "Installez ou activez un plugin de code qui déclare une source d’erreurs.",
+  "settings.sectionNav.label": "Section",
+  "settings.pluginsEmpty.availableSources": "Sources disponibles via des plugins : {{sources}}."
 }

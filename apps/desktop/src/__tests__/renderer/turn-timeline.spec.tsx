@@ -7,6 +7,7 @@ import { deriveTurnTimeline } from "@bitsentry-ce/components/chat/turnTimelineRo
 import { reconcileMessages } from "@bitsentry-ce/components/investigation/incidents/incidentNormalize";
 import { summarizeToolGroup } from "@bitsentry-ce/components/chat/toolPresentation";
 import { TurnTimeline } from "@bitsentry-ce/components/chat/TurnTimeline";
+import { TurnStopContext } from "@bitsentry-ce/components/chat/turnStop";
 import type { ChatMessage, ToolCallCard } from "@bitsentry-ce/components/chat/types";
 
 vi.mock("@bitsentry-ce/i18n", () => ({
@@ -115,6 +116,40 @@ describe("TurnTimeline", () => {
     fireEvent.click(screen.getByRole("button", { name: /common.chat.tools.joinTwo/ }));
     fireEvent.click(screen.getByText("Check nginx"));
     expect(screen.getByText(/"runbookTitle": "Check nginx"/)).toBeTruthy();
+  });
+
+  it("labels a working turn by its duration until nothing new arrives for half an hour", () => {
+    const working = agentMessage({
+      status: "streaming",
+      iterations: [{ id: "i1", startedAt: at(0), text: "", toolCallIds: ["t1"], status: "streaming" }],
+      toolCalls: [tool("t1", "execute_runbook", 1, { state: "running", completedAt: undefined })],
+    });
+    const stop = vi.fn();
+    const minutes = (count: number) => Date.parse(at(1)) + count * 60_000;
+
+    const { rerender } = render(
+      <TurnStopContext value={stop}>
+        <TurnTimeline msg={working} nowMs={minutes(29)} />
+      </TurnStopContext>,
+    );
+    expect(screen.getByText("common.incidents.workingFor 29m 01s")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "common.incidentDetail.stop" })).toBeNull();
+
+    rerender(
+      <TurnStopContext value={stop}>
+        <TurnTimeline msg={working} nowMs={minutes(20 * 60 + 58)} />
+      </TurnStopContext>,
+    );
+    expect(screen.getByText("common.incidentDetail.replyStalled")).toBeTruthy();
+    expect(screen.getByText(/^common\.incidentDetail\.stalledDetail\(20h 58m,20h 58m\)$/)).toBeTruthy();
+    expect(screen.queryByText(/common.incidents.workingFor/)).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "common.incidentDetail.stop" }));
+    expect(stop).toHaveBeenCalledTimes(1);
+
+    // Without a way to stop the session, the panel stands alone.
+    rerender(<TurnTimeline msg={working} nowMs={minutes(20 * 60 + 58)} />);
+    expect(screen.getByText("common.incidentDetail.replyStalled")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "common.incidentDetail.stop" })).toBeNull();
   });
 
   it("shows a tool's latest progress only while it runs", () => {

@@ -23,10 +23,23 @@ import {
 } from "lucide-react";
 import Navbar from "../layout/Navbar";
 import TopBar from "../layout/TopBar";
-import { MarkdownContent } from "../markdown";
 import { cn } from "../lib/utils";
-import { formatJsonBlockForDisplay } from "../lib/jsonDisplay";
 import { StructuredOutputDisplay } from "./StructuredOutputDisplay";
+import { RunOutputBlock } from "./RunOutputBlock";
+import {
+  ResultsDetailPanels,
+  ResultsPanelHeader,
+  type ResultsPanelId,
+} from "./ResultsDetailPanels";
+import { FinalOutputPreview } from "./FinalOutputPreview";
+import { RunOutcomeLine } from "./RunOutcomeLine";
+import { describeRunOutcome } from "./runOutcome";
+import {
+  RESULTS_STEP_TITLE_CLASS,
+  resultsStepCardClass,
+  resultsStepStatusClass,
+} from "./resultsStepStyles";
+import { stringifyForOutput } from "./runOutputFormat";
 import { StreamDeltaInspector } from "../chat/StreamDeltaInspector";
 import type {
   RunbookActionType,
@@ -213,15 +226,15 @@ function statusLabel(status: RunResultStatus): string {
 function statusClass(status: RunResultStatus): string {
   switch (status) {
     case "queued":
-      return "bg-sky-500/15 text-sky-500";
+      return "bg-[hsl(var(--info)/0.1)] text-[hsl(var(--info-text))]";
     case "pending":
-      return "bg-sky-500/15 text-sky-500";
+      return "bg-[hsl(var(--info)/0.1)] text-[hsl(var(--info-text))]";
     case "running":
-      return "bg-amber-500/15 text-amber-500";
+      return "bg-[hsl(var(--warning)/0.12)] text-[hsl(var(--warning-text))]";
     case "claim_expired":
-      return "bg-rose-500/15 text-rose-500";
+      return "bg-[hsl(var(--destructive)/0.1)] text-[hsl(var(--destructive-text))]";
     case "completed":
-      return "bg-emerald-500/15 text-emerald-500";
+      return "bg-[hsl(var(--success)/0.1)] text-[hsl(var(--success-text))]";
     case "failed":
       return "bg-destructive/15 text-destructive";
     case "cancelled":
@@ -319,17 +332,21 @@ function typeIcon(type: RunbookActionType, stage: unknown) {
   }
 }
 
-function finalOutput(execution: RunbookExecutionRecord | null): string {
-  if (execution === null) return "";
-  const completed = [...execution.steps]
-    .reverse()
-    .find(
-      (step) =>
-        step.status === "completed" &&
-        step.output !== undefined &&
-        step.output.length > 0,
-    );
-  return completed?.output ?? "";
+// The last completed step with output holds the run's final output.
+function finalOutputStep(
+  execution: RunbookExecutionRecord | null,
+): RunbookExecutionStepRecord | null {
+  if (execution === null) return null;
+  return (
+    [...execution.steps]
+      .reverse()
+      .find(
+        (step) =>
+          step.status === "completed" &&
+          step.output !== undefined &&
+          step.output.length > 0,
+      ) ?? null
+  );
 }
 
 function stepSelectionKey(step: RunbookExecutionStepRecord): string {
@@ -339,80 +356,6 @@ function stepSelectionKey(step: RunbookExecutionStepRecord): string {
   }
 
   return `${String(step.order)}:${actionPart}:${step.title}`;
-}
-
-function hasMarkdownStructureLine(text: string): boolean {
-  return text.split("\n").some((line) => {
-    const value = line.trimStart();
-    const firstCharacter = value[0] ?? "";
-    if (firstCharacter === "#") {
-      const headingLength = value.indexOf(" ");
-      return headingLength > 0 && headingLength <= 6;
-    }
-    if (["-", "*", "+", ">"].includes(firstCharacter) && value[1] === " ") return true;
-    if (value.startsWith("|") && value.lastIndexOf("|") > 0) return true;
-
-    let digitCount = 0;
-    while (value[digitCount] >= "0" && value[digitCount] <= "9") digitCount += 1;
-    return digitCount > 0 && value[digitCount] === "." && value[digitCount + 1] === " ";
-  });
-}
-
-function hasDelimitedText(value: string, delimiter: string): boolean {
-  const first = value.indexOf(delimiter);
-  return first >= 0 && value.indexOf(delimiter, first + delimiter.length) > first + delimiter.length;
-}
-
-function hasMarkdownLink(value: string): boolean {
-  const labelStart = value.indexOf("[");
-  const labelEnd = value.indexOf("](", labelStart + 1);
-  const urlEnd = value.indexOf(")", labelEnd + 2);
-  return labelStart >= 0 && labelEnd > labelStart + 1 && urlEnd > labelEnd + 2;
-}
-
-function looksLikeMarkdown(value: string): boolean {
-  const text = value.trim();
-  if (text.length === 0 || text.startsWith("{") || text.startsWith("[")) return false;
-
-  return hasMarkdownStructureLine(text)
-    || hasDelimitedText(text, "**")
-    || hasDelimitedText(text, "`")
-    || hasMarkdownLink(text)
-    || text.includes("```");
-}
-
-function RenderedOutput({
-  value,
-  emptyMessage,
-}: {
-  value: string;
-  emptyMessage: string;
-}) {
-  const text = value;
-
-  if (text.length === 0) {
-    return (
-      <p className="text-xs italic text-muted-foreground/50">{emptyMessage}</p>
-    );
-  }
-
-  if (looksLikeMarkdown(text)) {
-    return (
-      <div className="min-w-0 max-w-full overflow-hidden rounded-lg border border-border bg-muted/20 p-3 text-sm">
-        <MarkdownContent content={text} className="min-w-0 max-w-full" />
-      </div>
-    );
-  }
-
-  return (
-    <pre className="min-w-0 max-w-full overflow-x-auto rounded-lg border border-border bg-muted/20 p-3 text-xs whitespace-pre-wrap break-words">
-      {text}
-    </pre>
-  );
-}
-
-function formatJsonBlock(value: unknown): string {
-  return formatJsonBlockForDisplay(value);
 }
 
 function executionParameterSummary(
@@ -439,17 +382,19 @@ function sortResults(list: StoredRunResult[]): StoredRunResult[] {
 function SummaryPanel({
   result,
   execution,
+  onViewOutput,
 }: {
   result: StoredRunResult;
   execution: RunbookExecutionRecord | null;
+  onViewOutput: (step: RunbookExecutionStepRecord) => void;
 }) {
   const { t } = useTranslation();
   const completedSteps =
     execution?.steps.filter((step) => step.status === "completed").length ?? 0;
   const failedStep =
     execution?.steps.find((step) => step.status === "failed") ?? null;
-  const finalText = finalOutput(execution);
-  const parameterText = formatJsonBlock(execution?.parameterValues);
+  const finalStep = finalOutputStep(execution);
+  const parameterText = stringifyForOutput(execution?.parameterValues);
   const sourceText = sourceLabel(execution);
   const sourceDetailText = startedByLabel(execution);
   const surfaceText = entrypointLabel(execution);
@@ -479,7 +424,7 @@ function SummaryPanel({
   if (idleTimeoutText !== null) {
     idleTimeoutContent = (
       <div className="rounded-lg border border-border bg-muted/20 p-3">
-        <div className="text-[10px] uppercase tracking-wide text-muted-foreground/60">
+        <div className="text-xs font-medium uppercase tracking-[0.06em] text-muted-foreground">
           {t("runbooks.results.idleTimeout")}
         </div>
         <div className="mt-1 font-medium">{idleTimeoutText}</div>
@@ -522,17 +467,28 @@ function SummaryPanel({
 
   return (
     <div data-tour="results-summary" className="flex h-full flex-col">
-      <div className="shrink-0 border-b border-border px-4 py-3">
-        <h3 className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/50">
-          {t("common.results.summary")}
-        </h3>
-      </div>
+      <ResultsPanelHeader>{t("common.results.summary")}</ResultsPanelHeader>
       <div className="flex-1 space-y-4 overflow-y-auto px-4 py-4 text-sm">
+        <RunOutcomeLine
+          outcome={describeRunOutcome(
+            {
+              status: resolvedStatus,
+              steps: execution?.steps ?? null,
+              completedSteps,
+              totalSteps: execution?.steps.length ?? 0,
+              startedAt: result.startedAt,
+              completedAt: resolvedCompletedAt,
+            },
+            t,
+          )}
+        />
         <div className="space-y-1">
-          <div className="text-xs uppercase tracking-wide text-muted-foreground/60">
+          <div className="text-xs font-medium uppercase tracking-[0.06em] text-muted-foreground">
             {t("common.results.runbook")}
           </div>
-          <div className="font-medium">{result.runbookTitle}</div>
+          <div className="break-words text-[15px] font-semibold leading-[22px] tracking-[-0.01em] text-foreground">
+            {result.runbookTitle}
+          </div>
           <div className="text-xs text-muted-foreground">
             {sourceDetailText} {new Date(result.startedAt).toLocaleString()}
           </div>
@@ -542,23 +498,9 @@ function SummaryPanel({
 
         <div className="grid grid-cols-2 gap-3">
           <div className="rounded-lg border border-border bg-muted/20 p-3">
-            <div className="text-[10px] uppercase tracking-wide text-muted-foreground/60">
-              {t("common.results.status")}
-            </div>
-            <div className="mt-1 font-medium">{statusLabel(resolvedStatus)}</div>
-          </div>
-          <div className="rounded-lg border border-border bg-muted/20 p-3">
-            <div className="text-[10px] uppercase tracking-wide text-muted-foreground/60">
-              {t("common.results.completed_2")}
-            </div>
-            <div className="mt-1 font-medium">
-              {completedSteps}/{execution?.steps.length ?? 0} steps
-            </div>
-          </div>
-          <div className="rounded-lg border border-border bg-muted/20 p-3">
-            <div className="text-[10px] uppercase tracking-wide text-muted-foreground/60">
+            <div className="text-xs font-medium uppercase tracking-[0.06em] text-muted-foreground">
               {t("runbooks.results.source")}
-                          </div>
+            </div>
             <div className="mt-1 font-medium">{sourceText}</div>
           </div>
           {idleTimeoutContent}
@@ -568,24 +510,22 @@ function SummaryPanel({
         {failedStepContent}
 
         <div className="space-y-2">
-          <div className="text-xs uppercase tracking-wide text-muted-foreground/60">
+          <div className="text-xs font-medium uppercase tracking-[0.06em] text-muted-foreground">
             {t("common.results.executionParameters")}
           </div>
-          <RenderedOutput
+          <RunOutputBlock
             value={parameterText}
             emptyMessage={t("common.results.noRuntimeParameterValuesCaptured")}
           />
         </div>
 
-        <div className="space-y-2">
-          <div className="text-xs uppercase tracking-wide text-muted-foreground/60">
-            {t("common.results.finalOutput")}
-          </div>
-          <RenderedOutput
-            value={finalText}
-            emptyMessage={finalOutputEmptyMessage}
-          />
-        </div>
+        <FinalOutputPreview
+          output={finalStep?.output ?? ""}
+          emptyMessage={finalOutputEmptyMessage}
+          onViewOutput={() => {
+            if (finalStep !== null) onViewOutput(finalStep);
+          }}
+        />
       </div>
     </div>
   );
@@ -603,21 +543,12 @@ function StepsPanel({
   const { t } = useTranslation();
   return (
     <div data-tour="results-steps" className="flex h-full flex-col">
-      <div className="shrink-0 border-b border-border px-4 py-3">
-        <h3 className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/50">
-          {t("common.results.steps")}
-        </h3>
-      </div>
+      <ResultsPanelHeader>{t("common.results.steps")}</ResultsPanelHeader>
       <div className="flex-1 space-y-2 overflow-y-auto px-4 py-4">
         {execution?.steps.map((step) => {
           const Icon = typeIcon(step.type, step.metadata?.stage ?? step.metadata?.currentActionLabel);
           const stepKey = stepSelectionKey(step);
           const isSelected = selectedStepKey === stepKey;
-          let stepClassName = "border-border bg-muted/10 hover:bg-muted/20";
-          if (isSelected) {
-            stepClassName = "border-primary bg-primary/5";
-          }
-
           let stepTitle = t("common.incidentArtifactsRail.stepNumber", {
             order: step.order,
           });
@@ -639,29 +570,33 @@ function StepsPanel({
               key={stepKey}
               aria-pressed={isSelected}
               onClick={() => { onSelect(stepKey); }}
-              className={cn(
-                "w-full rounded-lg border px-3 py-2 text-left transition-colors",
-                stepClassName,
-              )}
+              title={stepTitle}
+              className={resultsStepCardClass(isSelected)}
             >
-              <div className="flex items-center gap-2">
-                <span className="text-[10px] font-mono text-muted-foreground/60">
+              <div className="flex items-start gap-2">
+                <span className="mt-0.5 shrink-0 text-xs font-mono leading-4 text-muted-foreground">
                   {step.order}
                 </span>
-                <Icon size={13} className="text-muted-foreground" />
-                <span className="truncate text-sm font-medium">{stepTitle}</span>
+                <Icon
+                  size={13}
+                  aria-hidden="true"
+                  className="mt-[3px] shrink-0 text-muted-foreground"
+                />
+                <span className={RESULTS_STEP_TITLE_CLASS}>{stepTitle}</span>
               </div>
-              <div className="mt-2 flex items-center gap-2 text-[11px] text-muted-foreground">
+              <div className="mt-1.5 flex items-center gap-2 text-xs text-muted-foreground">
                 <span className="uppercase tracking-wide">{step.type}</span>
-                <span className="text-muted-foreground/30">•</span>
-                <span>{step.status}</span>
+                <span aria-hidden="true">•</span>
+                <span className={resultsStepStatusClass(step.status)}>
+                  {step.status}
+                </span>
               </div>
               {stepErrorContent}
             </button>
           );
         })}
         {!execution && (
-          <p className="text-xs italic text-muted-foreground/50">
+          <p className="text-[13px] leading-[18px] text-muted-foreground">
             {t("common.results.waitingForExecutionState")}
           </p>
         )}
@@ -672,9 +607,9 @@ function StepsPanel({
 
 function OutputPanel({ step }: { step: RunbookExecutionStepRecord | null }) {
   const { t } = useTranslation();
-  const inputText = formatJsonBlock(step?.input);
+  const inputText = stringifyForOutput(step?.input);
   let content: ReactNode = (
-    <p className="text-xs italic text-muted-foreground/50">
+    <p className="text-[13px] leading-[18px] text-muted-foreground">
       {t("common.results.selectAStepToInspect")}
     </p>
   );
@@ -709,20 +644,20 @@ function OutputPanel({ step }: { step: RunbookExecutionStepRecord | null }) {
           </div>
         </div>
         <div>
-          <div className="mb-2 text-[11px] uppercase tracking-[0.18em] text-muted-foreground/60">
+          <div className="mb-2 text-xs font-medium uppercase tracking-[0.06em] text-muted-foreground">
             {t("common.results.input")}
           </div>
-          <RenderedOutput
+          <RunOutputBlock
             value={inputText}
             emptyMessage={t("common.results.noInputMetadataCaptured")}
           />
         </div>
         {errorContent}
         <div>
-          <div className="mb-2 text-[11px] uppercase tracking-[0.18em] text-muted-foreground/60">
+          <div className="mb-2 text-xs font-medium uppercase tracking-[0.06em] text-muted-foreground">
             {t("common.results.output_2")}
           </div>
-          <RenderedOutput
+          <RunOutputBlock
             value={step.output ?? ""}
             emptyMessage={outputEmptyMessage}
           />
@@ -738,11 +673,7 @@ function OutputPanel({ step }: { step: RunbookExecutionStepRecord | null }) {
 
   return (
     <div data-tour="results-output" className="flex h-full flex-col">
-      <div className="shrink-0 border-b border-border px-4 py-3">
-        <h3 className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/50">
-          {t("common.results.output")}
-        </h3>
-      </div>
+      <ResultsPanelHeader>{t("common.results.output")}</ResultsPanelHeader>
       <div className="min-w-0 flex-1 overflow-y-auto px-4 py-4">
         {content}
       </div>
@@ -782,7 +713,7 @@ function ResultsList({
         if (rowCompletedAt !== undefined) {
           completedAtContent = (
             <>
-              <span className="text-muted-foreground/30">•</span>
+              <span aria-hidden="true">•</span>
               <span>
                 {t("common.results.completed_3")}{" "}
                 {new Date(rowCompletedAt).toLocaleString()}
@@ -810,7 +741,7 @@ function ResultsList({
             <div className="min-w-0 flex-1">
               <div className="truncate text-sm font-medium">
                 {result.runbookTitle}
-                <span className="ml-2 font-mono text-xs text-muted-foreground/50">
+                <span className="ml-2 font-mono text-xs font-normal text-muted-foreground">
                   {result.id.slice(0, 8)}
                 </span>
               </div>
@@ -859,6 +790,8 @@ export default function ResultsPage() {
   const [traceMap, setTraceMap] =
     useState<Record<string, ResultTraceMemory>>(loadResultTraces);
   const [selectedStepKey, setSelectedStepKey] = useState<string | null>(null);
+  // Which panel shows below lg; at lg+ all three are visible side by side.
+  const [activePanel, setActivePanel] = useState<ResultsPanelId>("summary");
   const [cancelPending, setCancelPending] = useState(false);
   const [cancelError, setCancelError] = useState<string | null>(null);
 
@@ -991,6 +924,13 @@ export default function ResultsPage() {
     activeExecution?.steps[0] ??
     null;
 
+  // Picking a step means "show me its output", which on narrow widths lives
+  // on another tab.
+  const handleSelectStep = (stepKey: string) => {
+    setSelectedStepKey(stepKey);
+    setActivePanel("output");
+  };
+
   const activeExecutionId = activeResult?.executionId;
   const handleCancel = async () => {
     if (cancelPending) return;
@@ -1033,7 +973,7 @@ export default function ResultsPage() {
         <div className="flex flex-1 flex-col overflow-hidden">
           <TopBar />
           <div className="flex flex-1 flex-col overflow-hidden">
-            <div className="flex shrink-0 items-center gap-2 border-b border-border px-4 py-2.5">
+            <div className="bs-page-header flex min-h-[3.25rem] shrink-0 items-center gap-2 border-b border-border px-4 py-2">
               <button
                 onClick={() => { void navigate(`/runbooks?id=${runbookFilter}`); }}
                 className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
@@ -1041,11 +981,11 @@ export default function ResultsPage() {
                 <ArrowLeft size={12} />
                 {t("common.results.backToRunbook")}
               </button>
-              <span className="text-muted-foreground/30">/</span>
-              <span className="flex-1 text-sm font-medium text-muted-foreground">
+              <span aria-hidden="true" className="text-muted-foreground/30">/</span>
+              <span className="flex-1 truncate text-lg font-semibold tracking-[-0.015em] text-foreground">
                 {t("common.results.resultsFor")} {runbookTitle}
               </span>
-              <span className="rounded-full border border-border px-2 py-0.5 text-[11px] text-muted-foreground">
+              <span className="rounded-full border border-border px-2 py-0.5 text-xs text-muted-foreground">
                 {resultCounts.total} run{resultPluralSuffix}
               </span>
             </div>
@@ -1070,14 +1010,14 @@ export default function ResultsPage() {
         <div className="flex flex-1 flex-col overflow-hidden">
           <TopBar />
           <div className="flex flex-1 flex-col overflow-hidden">
-            <div className="flex shrink-0 items-center gap-2 border-b border-border px-4 py-2.5">
-              <span className="flex-1 text-sm font-medium text-muted-foreground">
+            <div className="bs-page-header flex min-h-[3.25rem] shrink-0 items-center gap-2 border-b border-border px-4 py-2">
+              <span className="flex-1 truncate text-lg font-semibold tracking-[-0.015em] text-foreground">
                 {t("common.results.allRunbookResults")}
               </span>
               <button
                 data-tour="results-runbooks-btn"
                 onClick={() => { void navigate("/runbooks"); }}
-                className="flex items-center gap-1.5 rounded-md border border-border px-2 py-1 text-xs hover:bg-muted transition-colors"
+                className="flex h-8 shrink-0 items-center gap-1.5 rounded-md border border-border px-2.5 text-[13px] max-sm:h-11 hover:bg-muted transition-colors"
               >
                 <BookOpen size={12} />
                 {t("common.results.runbooks")}
@@ -1090,7 +1030,7 @@ export default function ResultsPage() {
                   className="mb-4 grid gap-3 md:grid-cols-4"
                 >
                   <div className="rounded-lg border border-border bg-muted/20 p-3">
-                    <div className="text-[10px] uppercase tracking-wide text-muted-foreground/60">
+                    <div className="text-xs font-medium uppercase tracking-[0.06em] text-muted-foreground">
                       {t("common.results.total")}
                     </div>
                     <div className="mt-1 text-lg font-medium">
@@ -1098,7 +1038,7 @@ export default function ResultsPage() {
                     </div>
                   </div>
                   <div className="rounded-lg border border-border bg-amber-500/5 p-3">
-                    <div className="text-[10px] uppercase tracking-wide text-muted-foreground/60">
+                    <div className="text-xs font-medium uppercase tracking-[0.06em] text-muted-foreground">
                       {t("common.results.running")}
                     </div>
                     <div className="mt-1 text-lg font-medium text-amber-500">
@@ -1106,7 +1046,7 @@ export default function ResultsPage() {
                     </div>
                   </div>
                   <div className="rounded-lg border border-border bg-emerald-500/5 p-3">
-                    <div className="text-[10px] uppercase tracking-wide text-muted-foreground/60">
+                    <div className="text-xs font-medium uppercase tracking-[0.06em] text-muted-foreground">
                       {t("common.results.completed_4")}
                     </div>
                     <div className="mt-1 text-lg font-medium text-emerald-500">
@@ -1114,7 +1054,7 @@ export default function ResultsPage() {
                     </div>
                   </div>
                   <div className="rounded-lg border border-border bg-destructive/5 p-3">
-                    <div className="text-[10px] uppercase tracking-wide text-muted-foreground/60">
+                    <div className="text-xs font-medium uppercase tracking-[0.06em] text-muted-foreground">
                       {t("common.results.failedCancelled")}
                     </div>
                     <div className="mt-1 text-lg font-medium text-destructive">
@@ -1164,42 +1104,43 @@ export default function ResultsPage() {
           )}
           {activeResult !== null && (
             <div className="flex flex-1 flex-col overflow-hidden">
-              <div className="flex shrink-0 items-center gap-2 border-b border-border px-4 py-2.5">
-                <button
-                  data-tour="results-runbooks-btn"
-                  onClick={() => {
-                    void navigate(`/runbooks?id=${activeResult.runbookId}`);
-                  }}
-                  className="text-xs text-muted-foreground hover:text-foreground transition-colors"
-                >
-                  {activeResult.runbookTitle}
-                </button>
-                <span className="text-muted-foreground/30">/</span>
-                <span className="font-mono text-xs text-muted-foreground/50">
-                  {activeResult.id.slice(0, 8)}
-                </span>
-                <span
-                  className={cn(
-                    "rounded-full px-2 py-0.5 text-xs font-medium",
-                    statusClass(effectiveStatus(activeResult, activeExecution)),
-                  )}
-                >
-                  {statusLabel(effectiveStatus(activeResult, activeExecution))}
-                </span>
-                <div className="flex-1" />
+              {/* Title first: the runbook's name (it links back to the runbook), then the run ID and status. */}
+              <div className="bs-page-header flex min-h-[3.25rem] shrink-0 items-start gap-3 border-b border-border px-4 py-2.5">
+                <div className="min-w-0 flex-1">
+                  <button
+                    data-tour="results-runbooks-btn"
+                    onClick={() => {
+                      void navigate(`/runbooks?id=${activeResult.runbookId}`);
+                    }}
+                    className="line-clamp-2 text-left text-base font-semibold leading-[22px] text-foreground underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+                  >
+                    {activeResult.runbookTitle}
+                  </button>
+                  <div className="mt-0.5 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                    <span className="font-mono">{activeResult.id.slice(0, 8)}</span>
+                    <span
+                      className={cn(
+                        "rounded-full px-2 py-0.5 text-xs font-medium",
+                        statusClass(effectiveStatus(activeResult, activeExecution)),
+                      )}
+                    >
+                      {statusLabel(effectiveStatus(activeResult, activeExecution))}
+                    </span>
+                  </div>
+                </div>
                 <button
                   data-tour="results-history-btn"
                   onClick={() => { void navigate("/results?view=history"); }}
-                  className="flex size-7 items-center justify-center rounded-md border border-border hover:bg-muted transition-colors"
+                  className="flex size-8 shrink-0 items-center justify-center rounded-md border border-border max-sm:size-11 hover:bg-muted transition-colors"
                   title={t("common.results.allRunbookResults_2")}
                 >
-                  <History size={13} />
+                  <History size={14} />
                 </button>
                 {activeResult.status === "running" && (
                   <button
                     onClick={() => { void handleCancel(); }}
                     disabled={cancelPending}
-                    className="flex items-center gap-1.5 rounded-md border border-border px-2 py-1 text-xs hover:bg-muted transition-colors disabled:opacity-50"
+                    className="flex h-8 shrink-0 items-center gap-1.5 rounded-md border border-border px-2.5 text-[13px] max-sm:h-11 hover:bg-muted transition-colors disabled:opacity-50"
                   >
                     {cancelPending && <Loader2 size={11} className="animate-spin" />}
                     {!cancelPending && <X size={11} />}
@@ -1218,24 +1159,27 @@ export default function ResultsPage() {
                 </div>
               )}
 
-              <div className="flex flex-1 divide-x divide-border overflow-hidden">
-                <div className="min-w-0 flex-1 overflow-hidden">
+              <ResultsDetailPanels
+                activePanel={activePanel}
+                onActivePanelChange={setActivePanel}
+                summary={
                   <SummaryPanel
                     result={activeResult}
                     execution={activeExecution}
+                    onViewOutput={(step) => {
+                      handleSelectStep(stepSelectionKey(step));
+                    }}
                   />
-                </div>
-                <div className="min-w-0 flex-1 overflow-hidden">
+                }
+                steps={
                   <StepsPanel
                     execution={activeExecution}
                     selectedStepKey={selectedStepKey}
-                    onSelect={setSelectedStepKey}
+                    onSelect={handleSelectStep}
                   />
-                </div>
-                <div className="min-w-0 flex-1 overflow-hidden">
-                  <OutputPanel step={activeStep} />
-                </div>
-              </div>
+                }
+                output={<OutputPanel step={activeStep} />}
+              />
             </div>
           )}
         </div>

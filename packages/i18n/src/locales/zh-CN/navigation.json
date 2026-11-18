@@ -42,5 +42,21 @@
   "navigation.navbar.userManagement": "用户管理",
   "navigation.topBar.connected": "已连接",
   "navigation.topBar.offline": "离线",
-  "navigation.navbar.integrations": "集成"
+  "navigation.navbar.integrations": "集成",
+  "navigation.navbar.viewAll": "查看全部 {{count}}",
+  "navigation.navbar.groupRunning": "运行中",
+  "navigation.navbar.groupRecent": "最近",
+  "navigation.navbar.library": "资源库",
+  "navigation.navbar.statusRunning": "运行中",
+  "navigation.navbar.statusQueued": "排队中",
+  "navigation.navbar.statusFailed": "失败",
+  "navigation.navbar.statusCompleted": "已完成",
+  "navigation.navbar.statusCancelled": "已取消",
+  "navigation.navbar.statusIdle": "等待中",
+  "navigation.navbar.justNow": "刚刚",
+  "navigation.navbar.statusNeedsInput": "需要输入",
+  "navigation.navbar.statusDone": "完成",
+  "navigation.navbar.expandSidebar": "展开侧边栏",
+  "navigation.navbar.railRecent": "最近",
+  "navigation.navbar.collapseSidebar": "收起侧边栏"
 }

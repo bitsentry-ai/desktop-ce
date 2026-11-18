@@ -141,11 +141,11 @@ describe('a linked ticket card', () => {
     ])
     const badge = (title: string, text: string) => within(screen.getByRole('article', { name: title })).getByText(text)
 
-    expect(badge('Solved one', 'resolved').className).toContain('emerald')
-    expect(badge('Closed one', 'closed').className).toContain('emerald')
-    expect(badge('Assigned one', 'assigned').className).toContain('amber')
-    expect(badge('New one', 'new').className).not.toContain('emerald')
-    expect(badge('New one', 'new').className).not.toContain('amber')
+    expect(badge('Solved one', 'resolved').className).toContain('--success')
+    expect(badge('Closed one', 'closed').className).toContain('--success')
+    expect(badge('Assigned one', 'assigned').className).toContain('--warning')
+    expect(badge('New one', 'new').className).not.toContain('--success')
+    expect(badge('New one', 'new').className).not.toContain('--warning')
     expect(badge('Odd one', 'on hold').className).toContain('bg-muted')
   })
 

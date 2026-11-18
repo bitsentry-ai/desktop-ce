@@ -9,6 +9,7 @@ import {
 import type { ChatMessage, AgentIteration } from "./types";
 import { TurnTimeline } from "./TurnTimeline";
 import { isInterruptedAgentTurn } from "./runtimeProjection";
+import { isTurnStalled } from "./turnTimelineRows";
 import { CitationChip } from "./CitationControls";
 import { splitCitations } from "./citations";
 import { useTranslation } from "@bitsentry-ce/i18n";
@@ -78,7 +79,7 @@ function CustomerReportChip({ header }: { header: CustomerReportMessageHeader })
             <button
               type="button"
               onClick={chat.chooseEdit}
-              className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-medium text-muted-foreground transition-colors hover:bg-violet-100 hover:text-violet-800 dark:hover:bg-violet-500/15 dark:hover:text-violet-200"
+              className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-violet-100 hover:text-violet-800 dark:hover:bg-violet-500/15 dark:hover:text-violet-200"
             >
               <Pencil size={11} aria-hidden="true" />
               {t("common.incidents.customerReport.edit")}
@@ -87,11 +88,11 @@ function CustomerReportChip({ header }: { header: CustomerReportMessageHeader })
           <CustomerReportInternalBadge label={t("common.incidents.customerReport.internalOnly")} />
         </span>
       </div>
-      <div className="pl-[38px] text-[11px] text-muted-foreground">{source}</div>
+      <div className="pl-[38px] text-xs text-muted-foreground">{source}</div>
       {current.subject !== undefined && current.subject !== null && (
-        <div className="pl-[38px] text-[11px] text-foreground">{t("common.incidents.customerReport.subjectLine", { subject: current.subject })}</div>
+        <div className="pl-[38px] text-xs text-foreground">{t("common.incidents.customerReport.subjectLine", { subject: current.subject })}</div>
       )}
-      <div className="pl-[38px] text-[11px] text-amber-700 dark:text-amber-400">{t("common.incidents.customerReport.unverified")}</div>
+      <div className="pl-[38px] text-xs text-[hsl(var(--warning-text))]">{t("common.incidents.customerReport.unverified")}</div>
     </div>
   );
 }
@@ -109,13 +110,13 @@ function CustomerReportAnswerRow({ header }: { header: CustomerReportAnswerHeade
       <MessageCircle size={14} className="shrink-0 text-violet-600 dark:text-violet-300" aria-hidden="true" />
       <span className="whitespace-nowrap">{intakeQuestionTitle(t, field, own ? intake.answers.channel : undefined)}</span>
       <span className="min-w-0 truncate font-medium text-foreground">{header.answer}</span>
-      {header.edit === true && <span className="shrink-0 text-[11px]">{t("common.incidents.customerReport.changed")}</span>}
+      {header.edit === true && <span className="shrink-0 text-xs">{t("common.incidents.customerReport.changed")}</span>}
       {canEdit && isEditable(field) && (
         <button
           type="button"
           onClick={() => { chat.edit(field); }}
           aria-label={t("common.incidents.customerReport.changeAnswer")}
-          className="flex size-5 shrink-0 items-center justify-center rounded-md text-muted-foreground/70 transition-colors hover:bg-violet-100 hover:text-violet-800 dark:hover:bg-violet-500/15 dark:hover:text-violet-200"
+          className="flex size-5 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-violet-100 hover:text-violet-800 dark:hover:bg-violet-500/15 dark:hover:text-violet-200"
         >
           <Pencil size={11} />
         </button>
@@ -129,7 +130,7 @@ function CustomerReportIntakeMessage({ msg }: { msg: UserMessage }) {
   if (parseCustomerReportDismissMessage(msg.text) !== null) {
     return (
       <div className="flex items-center gap-2 pl-[38px] text-xs text-muted-foreground">
-        <MessageCircle size={14} className="shrink-0 text-muted-foreground/70" aria-hidden="true" />
+        <MessageCircle size={14} className="shrink-0 text-muted-foreground" aria-hidden="true" />
         {t("common.incidents.customerReport.dismissed")}
       </div>
     );
@@ -142,7 +143,7 @@ function CustomerReportIntakeMessage({ msg }: { msg: UserMessage }) {
       {answer.header.field !== "reportText" && answer.header.field !== "confirm" && <CustomerReportAnswerRow header={answer.header} />}
       {report !== null && (
         <div className="flex justify-end">
-          <div className="max-w-[75%] space-y-2 rounded-2xl bg-muted px-4 py-2.5 text-sm">
+          <div className="max-w-[75%] space-y-2 rounded-2xl bg-muted px-4 py-2.5 text-sm leading-[22px]">
             <CustomerReportChip header={report.header} />
             {report.body.length > 0 && <div className="whitespace-pre-wrap break-words">{report.body}</div>}
           </div>
@@ -188,7 +189,7 @@ function UserTextBubble({ msg, t }: { msg: UserMessage; t: (key: string, values?
                   {attachment.name}
                 </span>
                 {attachment.type === "csv" && (
-                  <span className="ml-auto shrink-0 text-[11px] tabular-nums text-muted-foreground">
+                  <span className="ml-auto shrink-0 text-xs tabular-nums text-muted-foreground">
                     {t("common.incidents.attachmentRows", {
                       rowCount: attachment.rowCount,
                       totalRowCount: attachment.totalRowCount,
@@ -216,7 +217,7 @@ function UserTextBubble({ msg, t }: { msg: UserMessage; t: (key: string, values?
 
   return (
     <div className="flex justify-end">
-      <div className="max-w-[75%] space-y-2 rounded-2xl bg-muted px-4 py-2.5 text-sm">
+      <div className="max-w-[75%] space-y-2 rounded-2xl bg-muted px-4 py-2.5 text-sm leading-[22px]">
         {report !== null && <CustomerReportChip header={report.header} />}
         {attachmentsContent}
         {textContent}
@@ -273,6 +274,10 @@ export function getCopyableMarkdown(msg: AgentMessage): string {
   return (msg.finalText ?? "").trim();
 }
 
+/** The answer row's 28px ghost icon buttons; hosts that add their own actions to the row reuse it. */
+export const answerActionButtonClassName =
+  "inline-flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50";
+
 function CopyMarkdownResponseButton({ content }: { content: string }) {
   const { t } = useTranslation();
   const [copied, setCopied] = useState(false);
@@ -325,7 +330,7 @@ function CopyMarkdownResponseButton({ content }: { content: string }) {
         <button
           type="button"
           onClick={handleCopy}
-          className="inline-flex size-7 shrink-0 items-center justify-center rounded-md border border-border/70 bg-background/80 text-muted-foreground shadow-sm transition-colors hover:border-foreground/30 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className={answerActionButtonClassName}
           aria-label={label}
         >
           <Icon className="size-3.5" />
@@ -338,14 +343,46 @@ function CopyMarkdownResponseButton({ content }: { content: string }) {
   );
 }
 
+/** Whether the turn is working: running and not stalled. A stalled turn's row carries the warning instead. */
+function isWorkingTurn(msg: AgentMessage, nowMs: number): boolean {
+  return (msg.status === "thinking" || msg.status === "streaming") && !isTurnStalled(msg, nowMs);
+}
+
+/** The provider's logo, with an activity dot while the turn works. */
+function AgentAvatar({ providerKey, working }: { providerKey: string | null | undefined; working: boolean }) {
+  const ProviderLogo = providerKey === undefined || providerKey === null ? null : getProviderLogo(providerKey);
+  return (
+    <div
+      className={cn(
+        "relative mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-full border border-border bg-muted transition-colors",
+        working && "border-primary/25 bg-primary/5",
+      )}
+    >
+      {ProviderLogo === null ? <ShieldAlert size={14} className="text-muted-foreground" /> : <ProviderLogo size={14} />}
+      {working && (
+        <span
+          className="absolute -right-0.5 -top-0.5 size-2 rounded-full bg-primary/70 shadow-[0_0_0_3px_hsl(var(--background))]"
+          aria-hidden="true"
+        />
+      )}
+    </div>
+  );
+}
+
 export const ChatBubble = memo(function ChatBubble({
   msg,
   providerKey,
   collapsedJsonLabel,
+  actions,
 }: {
   msg: ChatMessage;
   providerKey?: string | null;
   collapsedJsonLabel?: string;
+  /**
+   * More controls for the answer row, after copy, such as a host's feedback buttons. The reply is the
+   * `group/answer` hover and focus group, so an action can reveal its label while the reader is on the reply.
+   */
+  actions?: ReactNode;
 }) {
   const { t } = useTranslation();
   const [nowMs, setNowMs] = useState(() => Date.now());
@@ -373,19 +410,6 @@ export const ChatBubble = memo(function ChatBubble({
 
   const copyableMarkdown = getCopyableMarkdown(msg);
 
-  let providerLogoContent: ReactNode = (
-    <ShieldAlert size={14} className="text-muted-foreground" />
-  );
-  if (providerKey !== undefined && providerKey !== null) {
-    const ProviderLogo = getProviderLogo(providerKey);
-    if (ProviderLogo !== null) {
-      providerLogoContent = <ProviderLogo size={14} />;
-    }
-  }
-
-  const isWaitingForAssistant =
-    msg.status === "thinking" || msg.status === "streaming";
-
   let copyResponseButton: ReactNode = null;
   if (copyableMarkdown.length > 0) {
     copyResponseButton = <CopyMarkdownResponseButton content={copyableMarkdown} />;
@@ -408,30 +432,18 @@ export const ChatBubble = memo(function ChatBubble({
   }
 
   return (
-    <div className="flex gap-3">
-      <div
-        className={cn(
-          "relative mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-full border border-border bg-muted transition-colors",
-          isWaitingForAssistant && "border-primary/25 bg-primary/5",
-        )}
-      >
-        {providerLogoContent}
-        {isWaitingForAssistant && (
-          <span
-            className="absolute -right-0.5 -top-0.5 size-2 rounded-full bg-primary/70 shadow-[0_0_0_3px_hsl(var(--background))]"
-            aria-hidden="true"
-          />
-        )}
-      </div>
+    <div className="group/answer flex gap-3">
+      <AgentAvatar providerKey={providerKey} working={isWorkingTurn(msg, nowMs)} />
       <div className="min-w-0 flex-1 pt-0.5">
         <div className="min-w-0 flex-1 space-y-3">
           <TurnTimeline msg={msg} nowMs={nowMs} collapsedJsonLabel={collapsedJsonLabel} />
 
           {errorStatusContent}
 
-          {copyResponseButton !== null && (
-            <div className="flex items-center gap-1.5">
+          {(copyResponseButton !== null || actions !== undefined) && (
+            <div className="-ml-1.5 flex flex-wrap items-center gap-0.5">
               {copyResponseButton}
+              {actions}
             </div>
           )}
         </div>

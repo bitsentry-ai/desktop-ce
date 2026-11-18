@@ -42,5 +42,21 @@
   "navigation.navbar.userManagement": "Manajemen Pengguna",
   "navigation.topBar.connected": "Terhubung",
   "navigation.topBar.offline": "Luring",
-  "navigation.navbar.integrations": "Integrasi"
+  "navigation.navbar.integrations": "Integrasi",
+  "navigation.navbar.viewAll": "Lihat semua {{count}}",
+  "navigation.navbar.groupRunning": "Berjalan",
+  "navigation.navbar.groupRecent": "Terbaru",
+  "navigation.navbar.library": "Pustaka",
+  "navigation.navbar.statusRunning": "Berjalan",
+  "navigation.navbar.statusQueued": "Dalam antrean",
+  "navigation.navbar.statusFailed": "Gagal",
+  "navigation.navbar.statusCompleted": "Selesai",
+  "navigation.navbar.statusCancelled": "Dibatalkan",
+  "navigation.navbar.statusIdle": "Menunggu",
+  "navigation.navbar.justNow": "baru saja",
+  "navigation.navbar.statusNeedsInput": "Perlu masukan",
+  "navigation.navbar.statusDone": "Selesai",
+  "navigation.navbar.expandSidebar": "Bentangkan bilah sisi",
+  "navigation.navbar.railRecent": "Terbaru",
+  "navigation.navbar.collapseSidebar": "Ciutkan bilah sisi"
 }

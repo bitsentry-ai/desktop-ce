@@ -46,7 +46,7 @@ export function StreamDeltaInspector({
               key={`${delta.timestamp}-${String(index)}`}
               className="rounded-md bg-background/70 px-2 py-1"
             >
-              <div className="mb-0.5 flex flex-wrap items-center gap-2 text-[10px] uppercase tracking-[0.18em] text-muted-foreground/70">
+              <div className="mb-0.5 flex flex-wrap items-center gap-2 text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
                 <span>{formatDeltaTime(delta.timestamp)}</span>
                 <span>{delta.kind ?? "text"}</span>
                 <span>

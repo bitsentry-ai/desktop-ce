@@ -76,7 +76,7 @@ export interface ComposerRemediationFlow {
 
 function StatusBadge({ status }: { status: ComposerRemediationFlow["status"] }) {
   return (
-    <Badge variant={status.tone === "neutral" ? "secondary" : status.tone} className="shrink-0 whitespace-nowrap px-1.5 py-0 text-[10px] font-semibold">
+    <Badge variant={status.tone === "neutral" ? "secondary" : status.tone} className="shrink-0 whitespace-nowrap px-1.5 py-0 text-xs font-semibold">
       {status.label}
     </Badge>
   );
@@ -90,7 +90,7 @@ function OptionBadges({ badges }: { badges: RemediationFlowBadge[] | undefined }
         <Badge
           key={badge.label}
           variant={badge.tone === "neutral" ? "secondary" : badge.tone}
-          className={cn("whitespace-nowrap px-1.5 py-0 text-[10px] font-semibold", badge.check === true && "border-dashed border-foreground/25")}
+          className={cn("whitespace-nowrap px-1.5 py-0 text-xs font-semibold", badge.check === true && "border-dashed border-foreground/25")}
         >
           {badge.label}
         </Badge>
@@ -323,11 +323,11 @@ export function RemediationQuestionPanel({ flow }: { flow: ComposerRemediationFl
   const keyed = keyedOptions(flow);
   const step = flow.step === undefined
     ? <StatusBadge status={flow.status} />
-    : <span className="text-[11px] tabular-nums text-muted-foreground">{`${String(flow.step.index)}/${String(flow.step.total)}`}</span>;
+    : <span className="text-xs tabular-nums text-muted-foreground">{`${String(flow.step.index)}/${String(flow.step.total)}`}</span>;
   const aside = compact && flow.count !== undefined ? (
     <>
       {step}
-      <Badge variant="secondary" className="shrink-0 whitespace-nowrap px-1.5 py-0 text-[10px] font-semibold">
+      <Badge variant="secondary" className="shrink-0 whitespace-nowrap px-1.5 py-0 text-xs font-semibold">
         {t("common.incidents.remediation.savedCount", { count: flow.count })}
       </Badge>
     </>

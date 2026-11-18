@@ -37,7 +37,7 @@ export function RunbookExternalSourceActionFields({
   return (
     <div className="space-y-3">
       <div>
-        <label className="mb-1.5 block text-[10px] font-medium uppercase tracking-wide text-muted-foreground/60">
+        <label className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-muted-foreground/60">
           {t("runbooks.runbook.externalSource")}
         </label>
         <select
@@ -78,12 +78,12 @@ export function RunbookExternalSourceActionFields({
             </option>
           ))}
         </select>
-        <p className={cn("mt-1.5 text-[11px]", sourceHelpClass)}>
+        <p className={cn("mt-1.5 text-xs", sourceHelpClass)}>
           {sourceHelpText}
         </p>
       </div>
       <div>
-        <label className="mb-1.5 block text-[10px] font-medium uppercase tracking-wide text-muted-foreground/60">
+        <label className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-muted-foreground/60">
           {t(actionMeta.external_source.fieldLabelKey)}
         </label>
         <input

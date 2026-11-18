@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState, type KeyboardEvent } from "react";
-import { AlertTriangle } from "lucide-react";
+import { Check } from "lucide-react";
+import { statusPillBaseClass, statusToneClass } from "../../lib/plainText";
 import { useTranslation } from "@bitsentry-ce/i18n";
 import Navbar from "../../layout/Navbar";
 import TopBar from "../../layout/TopBar";
@@ -42,12 +42,26 @@ export function translateIncidentPreview(
 
 // ─── Status pill ──────────────────────────────────────────────────────────────
 
-/** `interrupted`: the last turn stopped because the app closed, which the saved state cannot tell from a stop or a failure. */
-export function StatusPill({ state, interrupted = false }: { state: AgentSessionState; interrupted?: boolean }) {
+const SCOPED_STATUS_KEYS: Record<AgentSessionState, string> = {
+  IDLE: "common.incidentDetail.incidentIdle",
+  RUNNING: "common.incidentDetail.incidentRunning",
+  COMPLETED: "common.incidentDetail.incidentCompleted",
+  FAILED: "common.incidentDetail.incidentFailed",
+  CANCELLED: "common.incidentDetail.incidentCancelled",
+};
+
+/**
+ * `interrupted`: the last turn stopped because the app closed, which the saved state cannot tell from a stop or a failure.
+ * `quiet`: in lists, a completed incident reads as a green check and label rather than a filled pill, so the filled
+ * pills that remain mark incidents that need attention.
+ * `scoped`: in an incident's header the label names its scope ("Incident completed"), so it never reads as the state
+ * of the latest reply.
+ */
+export function StatusPill({ state, interrupted = false, quiet = false, scoped = false }: { state: AgentSessionState; interrupted?: boolean; quiet?: boolean; scoped?: boolean }) {
   const { t } = useTranslation();
   if (interrupted && (state === "CANCELLED" || state === "FAILED")) {
     return (
-      <span className="rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
+      <span className={cn(statusPillBaseClass, statusToneClass.neutral)}>
         {t("common.incidents.statusInterrupted")}
       </span>
     );
@@ -55,144 +69,44 @@ export function StatusPill({ state, interrupted = false }: { state: AgentSession
   const map: Record<AgentSessionState, { label: string; cls: string }> = {
     IDLE: {
       label: t("common.incidents.statusIdle"),
-      cls: "bg-muted text-muted-foreground",
+      cls: statusToneClass.neutral,
     },
     RUNNING: {
       label: t("common.incidents.statusRunning"),
-      cls: "bg-amber-500/15 text-amber-500",
+      cls: statusToneClass.running,
     },
     COMPLETED: {
       label: t("common.incidents.statusCompleted"),
-      cls: "bg-emerald-500/15 text-emerald-500",
+      cls: statusToneClass.success,
     },
     FAILED: {
       label: t("common.incidents.statusFailed"),
-      cls: "bg-destructive/15 text-destructive",
+      cls: statusToneClass.danger,
     },
     CANCELLED: {
       label: t("common.incidents.statusCancelled"),
-      cls: "bg-muted text-muted-foreground",
+      cls: statusToneClass.neutral,
     },
   };
 
-  const { label, cls } = map[state];
+  const { cls } = map[state];
+  const label = scoped ? t(SCOPED_STATUS_KEYS[state]) : map[state].label;
+  if (quiet && state === "COMPLETED") {
+    return (
+      <span className="inline-flex shrink-0 items-center gap-1 text-xs font-medium text-[hsl(var(--success-text))]">
+        <Check size={14} strokeWidth={2.5} aria-hidden="true" />
+        {label}
+      </span>
+    );
+  }
   return (
-    <span className={cn("rounded-full px-2 py-0.5 text-xs font-medium", cls)}>
+    <span className={cn(statusPillBaseClass, cls)}>
       {label}
     </span>
   );
 }
 
-// ─── Editable title ───────────────────────────────────────────────────────────
-
-export function EditableTitle({
-  value,
-  onChange,
-  disabled = false,
-}: {
-  value: string;
-  onChange: (v: string) => void;
-  disabled?: boolean;
-}) {
-  const { t } = useTranslation();
-  const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState(value);
-  const inputRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    setDraft(value);
-  }, [value]);
-  useEffect(() => {
-    if (disabled) {
-      setEditing(false);
-    }
-  }, [disabled]);
-
-  const commit = () => {
-    const trimmed = draft.trim() || "New Incident";
-    setDraft(trimmed);
-    onChange(trimmed);
-    setEditing(false);
-  };
-
-  const handleKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === "Enter") {
-      e.preventDefault();
-      commit();
-    } else if (e.key === "Escape") {
-      setDraft(value);
-      setEditing(false);
-    }
-  };
-
-  if (editing) {
-    return (
-      <input
-        ref={inputRef}
-        autoFocus
-        value={draft}
-        onChange={(e) => { setDraft(e.target.value); }}
-        onBlur={commit}
-        onKeyDown={handleKeyDown}
-        className="flex-1 min-w-0 truncate bg-transparent text-sm font-medium outline-none border-b border-primary/50 focus:border-primary"
-      />
-    );
-  }
-
-  let title = t("common.incidents.clickToRename");
-  if (disabled) {
-    title = t("common.incidents.archivedIncidentsAreReadOnly");
-  }
-
-  return (
-    <button
-      onClick={() => {
-        if (!disabled) {
-          setEditing(true);
-        }
-      }}
-      title={title}
-      disabled={disabled}
-      className={cn(
-        "flex-1 min-w-0 truncate text-left text-sm font-medium transition-colors",
-        disabled && "cursor-default text-foreground",
-        !disabled && "hover:text-muted-foreground",
-      )}
-    >
-      {value}
-    </button>
-  );
-}
-
-// ─── Warning banner ────────────────────────────────────────────────────────────
-
-export function ProviderBanner({
-  onNavigateToSettings,
-}: {
-  onNavigateToSettings: () => void;
-}) {
-  const { t } = useTranslation();
-  return (
-    <div className="mx-6 mt-4 flex items-center gap-3 rounded-lg border border-border bg-card px-4 py-3">
-      <AlertTriangle size={16} className="shrink-0 text-amber-500" />
-      <div className="flex-1 text-sm">
-        <span className="font-medium text-foreground">
-          {t("common.incidents.noChatModelIsConfigured")}
-        </span>
-        <span className="text-muted-foreground">
-          {" "}
-          {t("common.incidents.addAnApiKeyIn")}
-        </span>
-      </div>
-      <button
-        onClick={onNavigateToSettings}
-        className="rounded-md border border-border px-3 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground hover:border-border-hover transition-colors"
-      >
-        {t("common.incidents.openSettings")}
-      </button>
-    </div>
-  );
-}
+export { EditableTitle } from "./EditableTitle";
 
 // ─── Shell shared by both views ───────────────────────────────────────────────
 

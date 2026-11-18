@@ -94,7 +94,15 @@
         "src/types/api.types.ts",
         "src/ui/{alert-dialog,alert,badge,button,dialog,dropdown-menu,input,label,select,sonner,textarea,tooltip}.tsx",
         "src/{index,services,theme}.ts",
-        "types/**/*.d.ts"
+        "types/**/*.d.ts",
+        "src/shortcuts/index.ts",
+        "src/settings/{SettingsEmptyState,SettingsRow,SettingsSectionNav}.tsx",
+        "src/ui/empty-state.tsx",
+        "src/runbook/{FinalOutputPreview,RunOutcomeLine,RunOutputBlock}.tsx",
+        "src/runbook/runOutcome.ts",
+        "src/layout/SidebarRows.tsx",
+        "src/chat/ComposerBlockedNotice.tsx",
+        "src/chat/citations.ts"
       ],
       "project": [
         "src/**/*.{ts,tsx,css}",

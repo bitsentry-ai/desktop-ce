@@ -194,7 +194,7 @@ describe("chat render counts", () => {
     expect(screen.getByText("Disk full on prod-db")).not.toBeNull();
   });
 
-  it("leaves the navbar alone while a reply streams and updates the preview when the turn settles", async () => {
+  it("leaves the navbar alone while a reply streams and updates the row when the turn settles", async () => {
     const listeners: Array<(payload: AgentEventPayload) => void> = [];
     const emit = (payload: AgentEventPayload) => { for (const listener of listeners) listener(payload); };
     const agent = { onEvent: (listener: (payload: AgentEventPayload) => void) => { listeners.push(listener); return () => undefined; }, getSnapshot: vi.fn(async () => null) } as never;
@@ -223,11 +223,14 @@ describe("chat render counts", () => {
     // Streamed text renders only the message's row, not the page above it.
     expect(commits.get("streamed-page") ?? 0).toBe(0);
     expect(commits.get("navbar") ?? 0).toBe(0);
-    expect(within(screen.getByRole("navigation")).getByText("disk full?")).not.toBeNull();
+    // The row shows the incident and its live state rather than the streamed text.
+    const nav = within(screen.getByRole("navigation"));
+    expect(nav.getByText("Disk alert")).not.toBeNull();
+    expect(nav.getByRole("img", { name: "navigation.navbar.incidentStatus.working" })).not.toBeNull();
 
     act(() => { emit(snapshot(22, "COMPLETED", "The disk is full.", { type: "final" })); });
     expect(commits.get("navbar")).toBe(1);
-    expect(within(screen.getByRole("navigation")).getByText("The disk is full.")).not.toBeNull();
+    expect(nav.queryByRole("img", { name: "navigation.navbar.incidentStatus.working" })).toBeNull();
   });
 
   it("retries the desktop list on the next visit after a failed load", async () => {

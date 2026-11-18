@@ -24,8 +24,9 @@ export interface AssistantCitation {
 export const CITATION_MAX_TEXT_LENGTH = 2_000;
 export const CITATION_MAX_COMMENT_LENGTH = 2_000;
 /**
- * A chat message's longest length, checked by the IPC schemas. Citations travel in the message as links that carry the
- * quote and comment URL-encoded, so a quote can take up to nine times its length, for example in Chinese.
+ * A chat message's longest length: the composer holds back a longer one, and the desktop IPC schemas check it. The
+ * Dashboard's own limits are higher (its worker accepts a 1 MiB prompt). Citations travel in the message as links that
+ * carry the quote and comment URL-encoded, so a quote can take up to nine times its length, for example in Chinese.
  */
 export const CHAT_MESSAGE_MAX_LENGTH = 50_000;
 const CITATION_CONTEXT_LENGTH = 32;

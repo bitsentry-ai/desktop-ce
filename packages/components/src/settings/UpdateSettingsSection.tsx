@@ -4,6 +4,7 @@ import { RefreshCw } from '@bitsentry-ce/components/icons'
 import { useToast } from '@bitsentry-ce/components/hooks/use-toast'
 import { useTranslation } from '@bitsentry-ce/i18n'
 import { getDesktopApi, type DesktopUpdaterState } from '../services/desktop-api'
+import { SettingsRow, settingsLabelClass, settingsSectionTitleClass } from './SettingsRow'
 
 type UpdaterState = DesktopUpdaterState
 type Translate = ReturnType<typeof useTranslation>['t']
@@ -267,33 +268,25 @@ export function UpdateSettingsSection({ mode = 'card' }: UpdateSettingsSectionPr
   const description = formatStatusDescription(state, checkedAtLabel, t)
   const buttonLabel = formatButtonLabel(status, t)
   const disabled = isActionDisabled(state, busy)
-  const rowDescriptionClass = getDescriptionClass(status, 'text-xs')
-  const cardDescriptionClass = getDescriptionClass(status, 'text-[11px]')
-  const rowLastCheckedLabel = renderLastCheckedLabel(
+  const descriptionTone = status === 'error' ? 'text-destructive' : undefined
+  const cardDescriptionClass = getDescriptionClass(status, 'text-[13px] leading-5')
+  const lastCheckedLabel = renderLastCheckedLabel(
     status,
     checkedAtLabel,
-    'mt-1 text-xs text-muted-foreground',
-    t,
-  )
-  const cardLastCheckedLabel = renderLastCheckedLabel(
-    status,
-    checkedAtLabel,
-    'mt-1 text-[11px] text-muted-foreground',
+    'mt-1 text-[13px] leading-5 text-muted-foreground',
     t,
   )
 
   if (mode === 'row') {
     return (
-      <div className="flex items-center justify-between gap-4 px-4 py-3" id="updates">
-        <div className="min-w-0 flex-1">
-          <p className="text-sm text-foreground">
-            {t('settings.updateSettingsSection.updates')}
-          </p>
-          <p className={rowDescriptionClass}>
-            {description}
-          </p>
-          {rowLastCheckedLabel}
-        </div>
+      <SettingsRow
+        id="updates"
+        label={t('settings.updateSettingsSection.updates')}
+        description={description}
+        descriptionClassName={descriptionTone}
+        details={lastCheckedLabel}
+        controlLayout="compact"
+      >
         <Button
           variant="outline"
           size="sm"
@@ -304,27 +297,27 @@ export function UpdateSettingsSection({ mode = 'card' }: UpdateSettingsSectionPr
           <RefreshCw className="mr-1.5" size={12} />
           {buttonLabel}
         </Button>
-      </div>
+      </SettingsRow>
     )
   }
 
   return (
     <section id="updates">
       <div className="mb-4">
-        <h2 className="text-sm font-semibold text-foreground">
+        <h2 className={settingsSectionTitleClass}>
           {t('settings.updateSettingsSection.updates')}
         </h2>
       </div>
       <div className="rounded-lg border border-border bg-card p-4 space-y-3">
-        <div className="flex items-center justify-between gap-4">
-          <div className="min-w-0 flex-1">
-            <h3 className="text-sm font-medium text-foreground">
+        <div className="flex flex-col items-start gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+          <div className="min-w-0 sm:flex-1">
+            <h3 className={settingsLabelClass}>
               {t('settings.updateSettingsSection.desktopAppUpdates')}
             </h3>
             <p className={cardDescriptionClass}>
               {description}
             </p>
-            {cardLastCheckedLabel}
+            {lastCheckedLabel}
           </div>
           <Button
             variant="outline"

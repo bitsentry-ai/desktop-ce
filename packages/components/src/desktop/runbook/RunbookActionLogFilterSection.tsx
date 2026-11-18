@@ -30,10 +30,10 @@ export function RunbookActionLogFilterSection({
     <div className="space-y-3 rounded-xl border border-border/70 bg-muted/10 p-3">
       <div className="flex items-center justify-between gap-3">
         <div>
-          <label className="block text-[10px] font-medium uppercase tracking-wide text-muted-foreground/60">
+          <label className="block text-xs font-medium uppercase tracking-wide text-muted-foreground/60">
             {t("runbooks.runbook.logFilter")}
           </label>
-          <p className="mt-1 text-[11px] text-muted-foreground/60">
+          <p className="mt-1 text-xs text-muted-foreground/60">
             {t("runbooks.runbook.extractNamedRegexGroupsInto")}{" "}
             {t("runbooks.runbook.stepsNStructuredoutputKey")}.
           </p>
@@ -54,21 +54,21 @@ export function RunbookActionLogFilterSection({
               logFilter: nextLogFilter,
             });
           }}
-          className="text-[10px] uppercase tracking-wide text-muted-foreground transition-colors hover:text-foreground"
+          className="text-xs uppercase tracking-wide text-muted-foreground transition-colors hover:text-foreground"
         >
           {logFilterToggleText}
         </button>
       </div>
 
       {logFilter === undefined && (
-        <p className="rounded-lg border border-dashed border-border bg-background/50 px-3 py-2 text-[11px] text-muted-foreground/60">
+        <p className="rounded-lg border border-dashed border-border bg-background/50 px-3 py-2 text-xs text-muted-foreground/60">
           {t("runbooks.runbook.noLogFilterConfiguredStep")}
         </p>
       )}
       {logFilter !== undefined && (
         <div className="space-y-3">
           <div>
-            <label className="mb-1.5 block text-[10px] font-medium uppercase tracking-wide text-muted-foreground/60">
+            <label className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-muted-foreground/60">
               {t("runbooks.runbook.pattern")}
             </label>
             <input
@@ -85,7 +85,7 @@ export function RunbookActionLogFilterSection({
               placeholder={t("runbooks.runbook.activeActiveConnectionsD")}
               className="w-full rounded-lg border border-border bg-background px-3 py-2 font-mono text-xs outline-none transition-colors focus:border-primary/50"
             />
-            <p className="mt-1.5 text-[11px] text-muted-foreground/60">
+            <p className="mt-1.5 text-xs text-muted-foreground/60">
               {t("runbooks.runbook.useAtLeastOneNamed")}{" "}
               <code>{t("runbooks.runbook.ltTraceIdGt")}</code>.
             </p>
@@ -93,7 +93,7 @@ export function RunbookActionLogFilterSection({
 
           <div className="grid gap-3 md:grid-cols-2">
             <div>
-              <label className="mb-1.5 block text-[10px] font-medium uppercase tracking-wide text-muted-foreground/60">
+              <label className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-muted-foreground/60">
                 {t("runbooks.runbook.matchMode")}
               </label>
               <select
@@ -122,7 +122,7 @@ export function RunbookActionLogFilterSection({
               </select>
             </div>
             <div>
-              <label className="mb-1.5 block text-[10px] font-medium uppercase tracking-wide text-muted-foreground/60">
+              <label className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-muted-foreground/60">
                 {t("runbooks.runbook.flags")}
               </label>
               <input
@@ -167,7 +167,7 @@ export function RunbookActionLogFilterSection({
             </label>
             {(logFilter.match ?? "first") === "all" && (
               <div>
-                <label className="mb-1.5 block text-[10px] font-medium uppercase tracking-wide text-muted-foreground/60">
+                <label className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-muted-foreground/60">
                   {t("runbooks.runbook.maxMatches")}
                 </label>
                 <input
@@ -197,7 +197,7 @@ export function RunbookActionLogFilterSection({
           </div>
 
           <div>
-            <label className="mb-1.5 block text-[10px] font-medium uppercase tracking-wide text-muted-foreground/60">
+            <label className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-muted-foreground/60">
               {t("runbooks.runbook.sampleOutputPreview")}
             </label>
             <textarea
@@ -212,14 +212,14 @@ export function RunbookActionLogFilterSection({
           </div>
 
           {logFilterErrors.length > 0 && (
-            <div className="rounded-lg border border-destructive/20 bg-destructive/5 px-3 py-2 text-[11px] text-destructive">
+            <div className="rounded-lg border border-destructive/20 bg-destructive/5 px-3 py-2 text-xs text-destructive">
               {logFilterErrors.join(" ")}
             </div>
           )}
 
           {logFilterSample.length > 0 && (
             <div className="rounded-lg border border-border bg-background/70 px-3 py-2">
-              <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-muted-foreground/60">
+              <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground/60">
                 <span>{t("runbooks.runbook.preview")}</span>
                 {typeof logFilterPreview.matchCount === "number" && (
                   <LogFilterMatchCount matchCount={logFilterPreview.matchCount} />
@@ -234,13 +234,13 @@ export function RunbookActionLogFilterSection({
               </div>
               {logFilterPreview.error !== undefined &&
                 logFilterPreview.error.length > 0 && (
-                  <div className="mt-2 text-[11px] text-destructive">
+                  <div className="mt-2 text-xs text-destructive">
                     {logFilterPreview.error}
                   </div>
                 )}
               {logFilterPreview.error === undefined &&
                 logFilterPreview.matched === false && (
-                  <div className="mt-2 text-[11px] text-muted-foreground/60">
+                  <div className="mt-2 text-xs text-muted-foreground/60">
                     {t("runbooks.runbook.noValuesExtracted")}
                   </div>
                 )}
@@ -259,10 +259,10 @@ export function RunbookActionLogFilterSection({
 
                           return (
                             <tr key={key}>
-                              <td className="w-40 bg-muted/20 px-3 py-2 font-mono text-[11px] text-muted-foreground">
+                              <td className="w-40 bg-muted/20 px-3 py-2 font-mono text-xs text-muted-foreground">
                                 {key}
                               </td>
-                              <td className="px-3 py-2 font-mono text-[11px] text-foreground">
+                              <td className="px-3 py-2 font-mono text-xs text-foreground">
                                 {displayValue}
                               </td>
                             </tr>

@@ -25,7 +25,6 @@ import {
   ShieldAlert,
   BookOpen,
   Ticket,
-  Check,
   CheckCircle2,
   Archive,
   FileText,
@@ -33,6 +32,8 @@ import {
   Download,
   RefreshCw,
   Plug,
+  PanelLeftClose,
+  PanelLeftOpen,
 } from "lucide-react";
 import {
   AlertDialog,
@@ -46,6 +47,22 @@ import {
 } from "../ui/alert-dialog";
 import { useFormatters, useTranslation } from "@bitsentry-ce/i18n";
 import { useNavbarSubNavigation } from "./navigation-context";
+import { PaletteSearchButton } from "../shortcuts/PaletteSearchButton";
+import { BitSentryLogo } from "./BitSentryLogo";
+import {
+  SidebarEmpty,
+  SidebarGroupLabel,
+  SidebarHoverButton,
+  SidebarMoreLink,
+  SidebarRow,
+  SidebarCount,
+  SidebarRunStatus,
+  SidebarSection,
+  SidebarStatusDot,
+  isNotableRunState,
+  shortAge,
+  type SidebarRunState,
+} from "./SidebarRows";
 import { useShallow } from "zustand/react/shallow";
 import { useIncidentListStore } from "../investigation/incidents/incidentListStore";
 import { loadDesktopIncidentList, refreshDesktopIncidentPreviews } from "../investigation/incidents/incidentListPersistence";
@@ -70,12 +87,6 @@ import {
   resolveIncidentNavStatus,
   type IncidentNavStatus,
 } from "./incident-nav-status";
-
-function getResultDotClass(status: string): string {
-  if (status === "running") return "bg-amber-400";
-  if (status === "completed") return "bg-emerald-400";
-  return "bg-muted-foreground/30";
-}
 
 // The state each incident was last seen in, so a run that ends while the Navbar
 // is remounted between pages still counts as finished.
@@ -173,27 +184,6 @@ const INCIDENT_STATUS_LABEL_KEYS: Record<IncidentNavStatus, string> = {
   completed: "navigation.navbar.incidentStatus.completed",
 };
 
-const INCIDENT_STATUS_MARK_CLASSES: Record<Exclude<IncidentNavStatus, "completed">, string> = {
-  working: "size-2 rounded-[2px] bg-amber-400 motion-safe:animate-pulse",
-  "needs-input": "size-2 rounded-full bg-violet-500 dark:bg-violet-400",
-  failed: "size-2 rounded-full bg-red-500 dark:bg-red-400",
-};
-
-function IncidentStatusIndicator({
-  status,
-  t,
-}: {
-  status: IncidentNavStatus;
-  t: ReturnType<typeof useTranslation>["t"];
-}) {
-  const label = t(INCIDENT_STATUS_LABEL_KEYS[status]);
-  return <span role="img" aria-label={label} title={label} className="inline-flex size-3 shrink-0 items-center justify-center">
-    {status === "completed"
-      ? <Check size={11} strokeWidth={3} className="text-emerald-500 dark:text-emerald-400" />
-      : <span className={INCIDENT_STATUS_MARK_CLASSES[status]} />}
-  </span>;
-}
-
 type UnknownRecord = Record<string, unknown>;
 
 function isRecord(value: unknown): value is UnknownRecord {
@@ -232,6 +222,13 @@ type ResultNavItem = {
   completedAt?: string;
 };
 
+const INCIDENT_RUN_STATE: Record<IncidentNavStatus, SidebarRunState> = {
+  working: "running",
+  "needs-input": "needs-input",
+  failed: "failed",
+  completed: "done",
+};
+
 function IncidentSubNavigation({
   incidents,
   statuses,
@@ -250,31 +247,40 @@ function IncidentSubNavigation({
   const now = useNow();
   const currentId = new URLSearchParams(search).get("id");
   const active = incidents.filter((incident) => incident.archived !== true);
-  const shown = shownIncidentNavItems(incidents);
-  const overflow = active.length - shown.length;
-  return <div className="ml-4 mt-1 space-y-0.5">
-    {shown.map((incident) => {
-      const status = statuses.get(incident.id) ?? null;
-      const preview = normalizeIncidentPreview(incident.lastMessagePreview);
-      return <div key={incident.id} className="group relative">
-        <Link to={`/incidents?id=${incident.id}`} className={cn("block px-3 py-1.5 pr-8 text-xs text-muted-foreground hover:text-foreground hover:bg-neutral-100/50 dark:hover:bg-white/10 rounded-md transition-colors", currentId === incident.id && "text-foreground font-medium bg-neutral-100/50 dark:bg-white/10")}>
-          <div className="flex items-center gap-1.5">
-            <span className="min-w-0 flex-1 truncate">{incident.title}</span>
-            {status !== null && <IncidentStatusIndicator status={status} t={t} />}
-          </div>
-          {status === "needs-input"
-            ? <div className="truncate text-[10px] text-violet-600 dark:text-violet-400">{t("navigation.navbar.incidentStatus.needsInput")}</div>
-            : preview !== null && <div className={cn("truncate text-[10px] text-muted-foreground/60", status === "working" && "text-muted-foreground/35")}>{translateIncidentPreview(preview, t)}</div>}
-          <div className="text-[10px] text-muted-foreground/50">{formatters.relativeTime(incident.createdAt, now)}</div>
-        </Link>
-        <button onClick={(event) => { event.preventDefault(); event.stopPropagation(); onArchive(incident.id, currentId === incident.id).catch(console.error); }} className="absolute right-1 top-1/2 -translate-y-1/2 hidden group-hover:flex size-5 items-center justify-center rounded text-muted-foreground hover:text-foreground hover:bg-muted transition-colors" title={t("common.navbar.archiveIncident")}>
-          <Archive size={11} />
-        </button>
-      </div>;
-    })}
-    {overflow > 0 && <Link to="/incidents?view=history" className="block px-3 py-1 text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground transition-colors">{overflow} {t("navigation.navbar.more")}</Link>}
-    {active.length === 0 && <p className="px-3 py-1 text-xs text-muted-foreground/60">{t("navigation.navbar.noIncidentsYet")}</p>}
-  </div>;
+  const isLiveIncident = (incident: IncidentNavItem) => {
+    const status = statuses.get(incident.id);
+    return status === "working" || status === "needs-input";
+  };
+  const live = active.filter(isLiveIncident);
+  const rest = shownIncidentNavItems(active.filter((incident) => !isLiveIncident(incident))).slice(0, Math.max(0, SHOWN_INCIDENT_LIMIT - live.length));
+  const overflow = active.length - live.length - rest.length;
+  const renderRow = (incident: IncidentNavItem) => {
+    const status = statuses.get(incident.id) ?? null;
+    const state = status === null ? null : INCIDENT_RUN_STATE[status];
+    const preview = normalizeIncidentPreview(incident.lastMessagePreview);
+    return <SidebarRow
+      key={incident.id}
+      to={`/incidents?id=${incident.id}`}
+      title={incident.title}
+      active={currentId === incident.id}
+      live={state !== null}
+      trailing={state !== null && status !== null
+        ? <SidebarRunStatus state={state} label={t(INCIDENT_STATUS_LABEL_KEYS[status])} />
+        : shortAge(incident.createdAt, formatters.locale, now, t("navigation.navbar.justNow"))}
+      meta={preview === null ? undefined : translateIncidentPreview(preview, t)}
+      hoverAction={<SidebarHoverButton label={t("common.navbar.archiveIncident")} onClick={() => { onArchive(incident.id, currentId === incident.id).catch(console.error); }}><Archive size={12} /></SidebarHoverButton>}
+    />;
+  };
+  return <SidebarSection>
+    {live.length > 0 && <>
+      <SidebarGroupLabel count={live.length}>{t("navigation.navbar.groupRunning")}</SidebarGroupLabel>
+      {live.map(renderRow)}
+      {rest.length > 0 && <SidebarGroupLabel>{t("navigation.navbar.groupRecent")}</SidebarGroupLabel>}
+    </>}
+    {rest.map(renderRow)}
+    {overflow > 0 && <SidebarMoreLink to="/incidents?view=history" label={t("navigation.navbar.viewAll", { count: active.length })} />}
+    {active.length === 0 && <SidebarEmpty>{t("navigation.navbar.noIncidentsYet")}</SidebarEmpty>}
+  </SidebarSection>;
 }
 
 function RunbookSubNavigation({ runbooks, search, t, onDelete }: {
@@ -284,19 +290,29 @@ function RunbookSubNavigation({ runbooks, search, t, onDelete }: {
   onDelete: (runbook: Pick<RunbookNavItem, "id" | "title">) => void;
 }) {
   const currentId = new URLSearchParams(search).get("id");
-  const shown = runbooks.slice(0, 7);
+  const shown = runbooks.slice(0, SHOWN_INCIDENT_LIMIT);
   const overflow = runbooks.length - shown.length;
-  return <div className="ml-4 mt-1 space-y-0.5">
-    {shown.map((runbook) => <div key={runbook.id} className="group relative">
-      <Link to={`/runbooks?id=${runbook.id}`} className={cn("block px-3 py-1.5 pr-8 text-xs text-muted-foreground hover:text-foreground hover:bg-neutral-100/50 dark:hover:bg-white/10 rounded-md transition-colors", currentId === runbook.id && "text-foreground font-medium bg-neutral-100/50 dark:bg-white/10")}>
-        <div className="truncate">{runbook.title}</div>
-        {runbook.actions.length > 0 && <div className="text-[10px] text-muted-foreground/60">{t("navigation.navbar.actionCount", { count: runbook.actions.length })}</div>}
-      </Link>
-      <button onClick={(event) => { event.preventDefault(); event.stopPropagation(); onDelete(runbook); }} className="absolute right-1 top-1/2 -translate-y-1/2 hidden group-hover:flex size-5 items-center justify-center rounded text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors" title={t("common.navbar.deleteRunbook")}><Trash2 size={11} /></button>
-    </div>)}
-    {overflow > 0 && <Link to="/runbooks" className="block px-3 py-1 text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground transition-colors">{overflow} {t("navigation.navbar.more")}</Link>}
-    {runbooks.length === 0 && <p className="px-3 py-1 text-xs text-muted-foreground/60">{t("navigation.navbar.noRunbooksYet")}</p>}
-  </div>;
+  return <SidebarSection>
+    {shown.map((runbook) => <SidebarRow
+      key={runbook.id}
+      to={`/runbooks?id=${runbook.id}`}
+      title={runbook.title}
+      active={currentId === runbook.id}
+      trailing={runbook.actions.length > 0 ? <SidebarCount count={runbook.actions.length} label={t("navigation.navbar.actionCount", { count: runbook.actions.length })} /> : undefined}
+      hoverAction={<SidebarHoverButton tone="danger" label={t("common.navbar.deleteRunbook")} onClick={() => { onDelete(runbook); }}><Trash2 size={12} /></SidebarHoverButton>}
+    />)}
+    {overflow > 0 && <SidebarMoreLink to="/runbooks" label={t("navigation.navbar.viewAll", { count: runbooks.length })} />}
+    {runbooks.length === 0 && <SidebarEmpty>{t("navigation.navbar.noRunbooksYet")}</SidebarEmpty>}
+  </SidebarSection>;
+}
+
+function resultRunState(status: string): SidebarRunState {
+  if (status === "running") return "running";
+  if (status === "queued" || status === "pending") return "queued";
+  if (status === "failed" || status === "claim_expired") return "failed";
+  if (status === "cancelled") return "cancelled";
+  if (status === "completed") return "completed";
+  return "idle";
 }
 
 const UPDATE_ISLAND_DEBUG_STORAGE_KEY = "bitsentry_debug_update_island";
@@ -528,6 +544,7 @@ const appSettingsSections = [
   { labelKey: "navigation.navbar.plugins", hash: "plugins" },
   { labelKey: "navigation.navbar.globalVariables", hash: "global-variables" },
   { labelKey: "navigation.navbar.codingAgents", hash: "coding-agents" },
+  { labelKey: "common.shortcuts.title", hash: "shortcuts" },
   { labelKey: "navigation.navbar.help", hash: "help" },
 ] as const;
 
@@ -681,7 +698,7 @@ function UpdateIslandButton() {
         <div className="bs-brand-tint-title truncate text-xs font-medium">
           {label}
         </div>
-        <div className="bs-brand-tint-subtitle truncate text-[11px]">
+        <div className="bs-brand-tint-subtitle truncate text-xs">
           {detail}
         </div>
       </div>
@@ -702,6 +719,25 @@ const Navbar = ({
   const formatters = useFormatters();
   const now = useNow();
   const location = useLocation();
+  // Narrow windows fold the sidebar into an icon rail (CSS); this opens it over the page.
+  // Open for the page it was opened on, so navigating closes it without an extra render.
+  const railLocation = `${location.pathname}${location.search}`;
+  const [railOpenFor, setRailOpenFor] = useState<string | null>(null);
+  const railExpanded = railOpenFor === railLocation;
+  const setRailExpanded = (open: boolean | ((current: boolean) => boolean)) => {
+    const next = typeof open === "function" ? open(railExpanded) : open;
+    setRailOpenFor(next ? railLocation : null);
+  };
+  useEffect(() => {
+    if (!railExpanded) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setRailOpenFor(null);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+    };
+  }, [railExpanded]);
   const navigate = useNavigate();
   const currentPath = location.pathname;
   const { user } = useAuthSession();
@@ -1014,28 +1050,44 @@ const Navbar = ({
   }
 
   return (
-    <nav className="nav-rail h-screen w-60 flex flex-col">
+    <nav
+      className="bs-sidebar nav-rail h-screen w-[17rem] shrink-0 flex flex-col"
+      data-expanded={railExpanded ? "true" : undefined}
+    >
       <div className={navHeaderClass}>
         <Link
           to="/"
-          className="flex items-center gap-2 text-sm font-semibold text-foreground"
+          className="bs-sidebar-brand flex items-center gap-2 text-sm font-semibold text-foreground"
         >
-          {!isDesktop && (
-            <>
-              <img
-                src="/logo.png"
-                alt=""
-                className="h-5 w-5 object-contain dark:hidden"
-              />
-              <img
-                src="/logo-light.png"
-                alt=""
-                className="hidden h-5 w-5 object-contain dark:block"
-              />
-            </>
-          )}
-          {t("navigation.navbar.bitsentry")}
+          <BitSentryLogo />
+          <span className="bs-sidebar-label">{t("navigation.navbar.bitsentry")}</span>
         </Link>
+      </div>
+
+      <div className="bs-sidebar-railbar hidden flex-col items-center gap-1.5 pb-2">
+        <BitSentryLogo />
+        <button
+          type="button"
+          onClick={() => {
+            setRailExpanded((open) => !open);
+          }}
+          aria-expanded={railExpanded}
+          aria-label={t(railExpanded ? "navigation.navbar.collapseSidebar" : "navigation.navbar.expandSidebar")}
+          title={t(railExpanded ? "navigation.navbar.collapseSidebar" : "navigation.navbar.expandSidebar")}
+          className="bs-sidebar-railtoggle flex size-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+        >
+          {railExpanded ? <PanelLeftClose size={16} /> : <PanelLeftOpen size={16} />}
+          {/* In the rail the toggle reads "Recent": it opens the full sidebar with recent incidents, runbooks and results. */}
+          {!railExpanded && (
+            <span aria-hidden="true" className="bs-sidebar-railtoggle-label hidden">
+              {t("navigation.navbar.railRecent")}
+            </span>
+          )}
+        </button>
+      </div>
+
+      <div className="px-3 pt-1">
+        <PaletteSearchButton />
       </div>
 
       <div className="flex flex-col gap-1 px-3 pt-3 flex-grow overflow-y-auto">
@@ -1077,15 +1129,16 @@ const Navbar = ({
                     toggleAccordion(accordionKey);
                   }
                 }}
+                title={t(item.labelKey)}
                 className={cn(
                   "nav-item",
                   currentPath === item.href && "active",
                 )}
               >
                 <ItemIcon size={16} />
-                <span className="flex-1">{t(item.labelKey)}</span>
+                <span className="bs-sidebar-label flex-1">{t(item.labelKey)}</span>
                 {PrimaryChevron !== null && (
-                  <PrimaryChevron size={14} className="text-muted-foreground" />
+                  <PrimaryChevron size={14} className="bs-sidebar-label text-muted-foreground" />
                 )}
               </Link>
 
@@ -1107,22 +1160,16 @@ const Navbar = ({
                     },
                   ];
                   return (
-                    <div className="ml-4 mt-1 space-y-0.5">
+                    <SidebarSection>
                       {subItems.map((sub) => (
-                        <Link
+                        <SidebarRow
                           key={`diagnosis-sub-${sub.tab}`}
                           to={`/diagnosis?tab=${sub.tab}`}
-                          className={cn(
-                            "block rounded-md px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-neutral-100/50 hover:text-foreground dark:hover:bg-white/10",
-                            currentPath === "/diagnosis" &&
-                              currentTab === sub.tab &&
-                              "bg-neutral-100/50 text-foreground font-medium dark:bg-white/10",
-                          )}
-                        >
-                          {sub.label}
-                        </Link>
+                          title={sub.label}
+                          active={currentPath === "/diagnosis" && currentTab === sub.tab}
+                        />
                       ))}
-                    </div>
+                    </SidebarSection>
                   );
                 })()}
 
@@ -1143,55 +1190,38 @@ const Navbar = ({
                   const currentId = new URLSearchParams(location.search).get(
                     "id",
                   );
-                  const shown = resultItems.slice(0, 7);
+                  const shown = resultItems.slice(0, SHOWN_INCIDENT_LIMIT);
                   const overflow = resultItems.length - shown.length;
+                  const resultStateLabel = (state: SidebarRunState) => {
+                    if (state === "running") return t("navigation.navbar.statusRunning");
+                    if (state === "queued") return t("navigation.navbar.statusQueued");
+                    if (state === "completed") return t("navigation.navbar.statusCompleted");
+                    if (state === "cancelled") return t("navigation.navbar.statusCancelled");
+                    if (state === "idle") return t("navigation.navbar.statusIdle");
+                    return t("navigation.navbar.statusFailed");
+                  };
 
                   return (
-                    <div className="ml-4 mt-1 space-y-0.5">
+                    <SidebarSection>
                       {shown.map((result) => {
-                        const dotCls = getResultDotClass(result.status);
-
+                        const state = resultRunState(result.status);
                         return (
-                          <Link
+                          <SidebarRow
                             key={result.id}
                             to={`/results?id=${result.id}`}
-                            className={cn(
-                              "flex items-start gap-2 rounded-md px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-neutral-100/50 hover:text-foreground dark:hover:bg-white/10",
-                              currentId === result.id &&
-                                "bg-neutral-100/50 text-foreground font-medium dark:bg-white/10",
-                            )}
-                          >
-                            <span
-                              className={cn(
-                                "mt-1 size-1.5 shrink-0 rounded-full",
-                                dotCls,
-                              )}
-                            />
-                            <div className="min-w-0">
-                              <div className="truncate">
-                                {result.runbookTitle}
-                              </div>
-                              <div className="text-[10px] text-muted-foreground/60">
-                                {formatters.relativeTime(result.startedAt, now)}
-                              </div>
-                            </div>
-                          </Link>
+                            title={result.runbookTitle}
+                            active={currentId === result.id}
+                            leading={<SidebarStatusDot state={state} label={resultStateLabel(state)} />}
+                            live={isNotableRunState(state)}
+                            trailing={isNotableRunState(state)
+                              ? <SidebarRunStatus state={state} label={resultStateLabel(state)} />
+                              : shortAge(result.startedAt, formatters.locale, now, t("navigation.navbar.justNow"))}
+                          />
                         );
                       })}
-                      {overflow > 0 && (
-                        <Link
-                          to="/results?view=history"
-                          className="block px-3 py-1 text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground transition-colors"
-                        >
-                          {overflow} {t("navigation.navbar.more")}
-                        </Link>
-                      )}
-                      {shown.length === 0 && (
-                        <p className="px-3 py-1 text-xs text-muted-foreground/60">
-                          {t("navigation.navbar.noResultsYet")}
-                        </p>
-                      )}
-                    </div>
+                      {overflow > 0 && <SidebarMoreLink to="/results?view=history" label={t("navigation.navbar.viewAll", { count: resultItems.length })} />}
+                      {shown.length === 0 && <SidebarEmpty>{t("navigation.navbar.noResultsYet")}</SidebarEmpty>}
+                    </SidebarSection>
                   );
                 })()}
 
@@ -1207,8 +1237,8 @@ const Navbar = ({
           const isAdminSettingsItem = item.href === "/settings";
           const isAppSettingsItem = item.href === "/app-settings";
           const isProfileItem = item.href === "/profile";
-          const isSettingsItem =
-            isAdminSettingsItem || isAppSettingsItem || isProfileItem;
+          // App settings lists its sections inside the page, so the sidebar item is a plain link.
+          const isSettingsItem = isAdminSettingsItem || isProfileItem;
           const isActive = currentPath === item.href;
           const accordionKey = item.href;
           const isOpen = openAccordions.has(accordionKey);
@@ -1248,36 +1278,34 @@ const Navbar = ({
                     toggleAccordion(accordionKey);
                   }
                 }}
+                title={t(item.labelKey)}
                 className={cn("nav-item", isActive && "active")}
               >
                 <item.icon size={16} />
-                <span className="flex-1">{t(item.labelKey)}</span>
+                <span className="bs-sidebar-label flex-1">{t(item.labelKey)}</span>
                 {SettingsChevron !== null && (
                   <SettingsChevron
                     size={14}
-                    className="text-muted-foreground"
+                    className="bs-sidebar-label text-muted-foreground"
                   />
                 )}
               </Link>
 
               {isSettingsItem && isOpen && (
-                <div className="ml-4 mt-1 space-y-1">
+                <SidebarSection>
                   {settingsSections.map(({ labelKey, hash }, index) => (
-                    <Link
+                    <SidebarRow
                       key={hash}
                       to={`${item.href}#${hash}`}
-                      className={cn(
-                        "block px-3 py-1.5 text-xs text-muted-foreground hover:text-foreground hover:bg-neutral-100/50 dark:hover:bg-white/10 rounded-md transition-colors",
+                      title={t(labelKey)}
+                      active={
                         currentPath === item.href &&
-                          (location.hash === `#${hash}` ||
-                            (!location.hash && index === 0)) &&
-                          "text-foreground font-medium",
-                      )}
-                    >
-                      {t(labelKey)}
-                    </Link>
+                        (location.hash === `#${hash}` ||
+                          (!location.hash && index === 0))
+                      }
+                    />
                   ))}
-                </div>
+                </SidebarSection>
               )}
             </React.Fragment>
           );

@@ -6,6 +6,8 @@
  */
 
 import { buildCitation, findCitationRange, type AssistantCitation } from "./citations";
+import { iterationTextSourceId } from "./turnTimelineRows";
+import type { ChatMessage } from "./types";
 
 export const CITATION_SOURCE_ATTRIBUTE = "data-citation-source";
 
@@ -150,4 +152,28 @@ export function revealCitation(root: ParentNode, citation: AssistantCitation): b
   selection?.removeAllRanges();
   selection?.addRange(range);
   return true;
+}
+
+// Frames to wait for a citation's source row to mount after scrolling to it.
+const REVEAL_MOUNT_FRAMES = 60;
+
+/**
+ * Reveals a cited quote in a virtualized message list. A source row outside the render window is not mounted, so
+ * the list scrolls to the message that holds it and highlights the quote once the row mounts.
+ */
+export function revealCitationInMessages(
+  citation: AssistantCitation,
+  messages: readonly ChatMessage[],
+  scrollToIndex: (index: number) => void,
+): void {
+  if (revealCitation(document, citation)) return;
+  const index = messages.findIndex((msg) =>
+    msg.kind === "agent" && msg.iterations.some((iteration) => iterationTextSourceId(iteration.id) === citation.sourceId));
+  if (index === -1) return;
+  scrollToIndex(index);
+  const retry = (frame: number) => {
+    if (revealCitation(document, citation) || frame >= REVEAL_MOUNT_FRAMES) return;
+    requestAnimationFrame(() => { retry(frame + 1); });
+  };
+  requestAnimationFrame(() => { retry(1); });
 }

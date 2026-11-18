@@ -8,6 +8,7 @@ import IncidentsPage from '../investigation/Incidents'
 import { getDesktopConnectionStatus } from '../services/desktop-local-services'
 import { useTour } from '../tutorial/useTour'
 import { DesktopBetaFeedbackPrompts } from './DesktopBetaFeedbackPrompts'
+import { DesktopCommandPalette } from './DesktopCommandPalette'
 import { captureDesktopAnalyticsEvent } from './DesktopPosthogRenderer'
 import OfflineIndicator from './OfflineIndicator'
 import UpdateBanner from './UpdateBanner'
@@ -68,44 +69,46 @@ export function DesktopAppShell({
 
   return (
     <TooltipProvider>
-      <DesktopRouteTracing />
-      <DesktopPageTracker captureDesktopPageview={captureDesktopPageview} />
-      <DesktopBetaFeedbackPrompts
-        captureDesktopAnalyticsEvent={captureDesktopAnalyticsEvent}
-      />
-      <OfflineIndicator getDesktopConnectionStatus={getDesktopConnectionStatus} />
-      <UpdateBanner />
-      <Toaster />
-      <Sonner />
-      <Suspense fallback={null}>
-        <Routes>
-          <Route path="/app-settings" element={<AppSettingsPage />} />
-          <Route path="/incidents" element={<IncidentsPage />} />
-          <Route path="/runbooks" element={<RunbookPage />} />
-          <Route path="/results" element={<RunbookResultsPage />} />
-          <Route path="/integrations" element={<DesktopIntegrationsPage />} />
+      <DesktopCommandPalette>
+        <DesktopRouteTracing />
+        <DesktopPageTracker captureDesktopPageview={captureDesktopPageview} />
+        <DesktopBetaFeedbackPrompts
+          captureDesktopAnalyticsEvent={captureDesktopAnalyticsEvent}
+        />
+        <OfflineIndicator getDesktopConnectionStatus={getDesktopConnectionStatus} />
+        <UpdateBanner />
+        <Toaster />
+        <Sonner />
+        <Suspense fallback={null}>
+          <Routes>
+            <Route path="/app-settings" element={<AppSettingsPage />} />
+            <Route path="/incidents" element={<IncidentsPage />} />
+            <Route path="/runbooks" element={<RunbookPage />} />
+            <Route path="/results" element={<RunbookResultsPage />} />
+            <Route path="/integrations" element={<DesktopIntegrationsPage />} />
 
-          <Route path="/tour/incidents" element={<TourIncidentsPreview />} />
-          <Route path="/tour/runbooks" element={<TourRunbooksPreview />} />
-          <Route path="/tour/results" element={<TourResultsPreview />} />
+            <Route path="/tour/incidents" element={<TourIncidentsPreview />} />
+            <Route path="/tour/runbooks" element={<TourRunbooksPreview />} />
+            <Route path="/tour/results" element={<TourResultsPreview />} />
 
-          {includeExtendedTourRoutes && (
-            <>
-              <Route path="/tour/settings" element={<TourSettingsPreview />} />
-              <Route
-                path="/tour/runbook-creation"
-                element={<TourRunbookCreationPreview />}
-              />
-              <Route
-                path="/tour/data-sources"
-                element={<TourDataSourcesPreview />}
-              />
-            </>
-          )}
+            {includeExtendedTourRoutes && (
+              <>
+                <Route path="/tour/settings" element={<TourSettingsPreview />} />
+                <Route
+                  path="/tour/runbook-creation"
+                  element={<TourRunbookCreationPreview />}
+                />
+                <Route
+                  path="/tour/data-sources"
+                  element={<TourDataSourcesPreview />}
+                />
+              </>
+            )}
 
-          <Route path="*" element={<Navigate to="/incidents" replace />} />
-        </Routes>
-      </Suspense>
+            <Route path="*" element={<Navigate to="/incidents" replace />} />
+          </Routes>
+        </Suspense>
+      </DesktopCommandPalette>
     </TooltipProvider>
   )
 }

@@ -136,7 +136,7 @@ describe("turns that did not end by closing the app", () => {
 
     expect(await screen.findByText("common.incidents.errorWithMessage: Provider returned 500")).not.toBeNull();
     expect(screen.queryByText("common.incidents.sessionInterrupted")).toBeNull();
-    expect(headerStatus()).toBe("common.incidents.statusFailed");
+    expect(headerStatus()).toBe("common.incidentDetail.incidentFailed");
   });
 
   it("still shows a turn the engineer stopped as cancelled", async () => {
@@ -144,6 +144,6 @@ describe("turns that did not end by closing the app", () => {
 
     expect(await screen.findByText("common.incidents.sessionCancelled")).not.toBeNull();
     expect(screen.queryByText("common.incidents.sessionInterrupted")).toBeNull();
-    expect(headerStatus()).toBe("common.incidents.statusCancelled");
+    expect(headerStatus()).toBe("common.incidentDetail.incidentCancelled");
   });
 });

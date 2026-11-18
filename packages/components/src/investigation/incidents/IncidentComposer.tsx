@@ -1,8 +1,5 @@
 import { Composer, type ComposerProps } from "../../chat/Composer";
-import { withCitationComment, type AssistantCitation } from "../../chat/citations";
-import { useIncidentDraftStore } from "./incidentDraftStore";
-
-const NO_CITATIONS: AssistantCitation[] = [];
+import { useIncidentCitations, useIncidentDraftStore } from "./incidentDraftStore";
 
 /** The composer bound to one incident's draft and quotes; keystrokes stay inside this component. */
 export function IncidentComposer({
@@ -10,24 +7,8 @@ export function IncidentComposer({
   ...props
 }: Omit<ComposerProps, "prompt" | "onPromptChange" | "citations" | "onRemoveCitation" | "onCitationCommentChange"> & { incidentId: string }) {
   const prompt = useIncidentDraftStore((state) => state.drafts[incidentId] ?? "");
-  const citations = useIncidentDraftStore((state) => state.citations[incidentId] ?? NO_CITATIONS);
   const setDraft = useIncidentDraftStore((state) => state.setDraft);
-  const setCitations = useIncidentDraftStore((state) => state.setCitations);
+  const citations = useIncidentCitations(incidentId);
   const onPromptChange = (text: string) => { setDraft(incidentId, text); };
-  const onRemoveCitation = (index: number) => {
-    setCitations(incidentId, citations.filter((_, position) => position !== index));
-  };
-  const onCitationCommentChange = (index: number, comment: string | undefined) => {
-    setCitations(incidentId, citations.map((citation, position) => (position === index ? withCitationComment(citation, comment) : citation)));
-  };
-  return (
-    <Composer
-      {...props}
-      prompt={prompt}
-      onPromptChange={onPromptChange}
-      citations={citations}
-      onRemoveCitation={onRemoveCitation}
-      onCitationCommentChange={onCitationCommentChange}
-    />
-  );
+  return <Composer {...props} prompt={prompt} onPromptChange={onPromptChange} {...citations} />;
 }

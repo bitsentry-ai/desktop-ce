@@ -136,8 +136,9 @@ export function useTour(tourId: TourId = "main") {
         const config: Config = {
           showProgress: true,
           animate: true,
-          overlayColor: "hsl(var(--background))",
-          overlayOpacity: 0.75,
+          // A neutral dark scrim in both themes: it dims the page around the step without washing it out.
+          overlayColor: "rgb(15 23 42)",
+          overlayOpacity: 0.42,
           stagePadding: 6,
           stageRadius: 8,
           popoverClass: "bitsentry-tour-popover",

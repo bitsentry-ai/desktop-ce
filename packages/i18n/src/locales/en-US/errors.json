@@ -1,7 +1,7 @@
 {
   "errors.auditLogs.failedToLoadAuditLogs": "Failed to load audit logs. Please try again later.",
   "errors.boundary.somethingWentWrong": "Something went wrong",
-  "errors.boundary.tryAgain": "Try Again",
+  "errors.boundary.tryAgain": "Try again",
   "errors.boundary.unexpectedError": "An unexpected error occurred. Please try refreshing the page or contact support if the problem persists.",
   "errors.dataPolicy.failedToLoad": "Failed to load data policy",
   "errors.emailOtpLogin.missingFields": "Please enter both email and OTP code",
@@ -22,7 +22,7 @@
   "errors.profile.failedToRegenerate": "Failed to regenerate backup codes",
   "errors.profile.failedToUpdate": "Failed to update profile",
   "errors.profile.invalidTotpCode": "TOTP code must be exactly 6 digits",
-  "errors.retry.tryAgain": "Try Again",
+  "errors.retry.tryAgain": "Try again",
   "errors.totp.failedToDisable": "Failed to disable TOTP. Please try again.",
   "errors.totpLogin.invalidTotpCode": "Please enter a valid 6-digit TOTP code",
   "errors.totpSetup.failedToCopyBackupCodes": "Failed to copy backup codes",
