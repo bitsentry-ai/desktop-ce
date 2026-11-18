@@ -44,6 +44,8 @@
   "runbooks.runbook.addAction": "Ajouter une action",
   "runbooks.runbook.addActionHere": "Ajouter une action ici",
   "runbooks.runbook.addADescription": "Ajouter une description...",
+  "runbooks.runbook.showFullDescription": "Afficher plus",
+  "runbooks.runbook.showShortDescription": "Afficher moins",
   "runbooks.runbook.addAnExternalSourceInSettings": "Ajoutez une source externe dans les paramètres avant d’enregistrer cette action.",
   "runbooks.runbook.addFilter": "Ajouter un filtre",
   "runbooks.runbook.addFirstAction": "Ajouter la première action",

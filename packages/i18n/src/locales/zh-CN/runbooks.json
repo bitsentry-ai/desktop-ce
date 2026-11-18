@@ -44,6 +44,8 @@
   "runbooks.runbook.addAction": "添加操作",
   "runbooks.runbook.addActionHere": "在此添加操作",
   "runbooks.runbook.addADescription": "添加描述...",
+  "runbooks.runbook.showFullDescription": "显示更多",
+  "runbooks.runbook.showShortDescription": "收起",
   "runbooks.runbook.addAnExternalSourceInSettings": "保存此操作前，请先在设置中添加外部来源。",
   "runbooks.runbook.addFilter": "添加过滤器",
   "runbooks.runbook.addFirstAction": "添加第一个操作",

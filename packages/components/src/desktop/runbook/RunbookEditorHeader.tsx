@@ -351,7 +351,8 @@ function RunbookOverflowMenu({
 
 /**
  * The description reads as up to two clamped lines; focusing it (click or
- * Tab) swaps in the textarea so the full text can be edited.
+ * Tab) swaps in the textarea so the full text can be edited. When the clamp
+ * hides text, a "Show more" button under it expands the description in place.
  */
 function DescriptionField({
   value,
@@ -365,22 +366,58 @@ function DescriptionField({
   t: TranslationFn;
 }) {
   const ref = useAutoHeight(value);
+  const previewRef = useRef<HTMLParagraphElement>(null);
   const [editing, setEditing] = useState(false);
+  const [expanded, setExpanded] = useState(false);
+  const [clamped, setClamped] = useState(false);
   const showPreview = !editing && value.length > 0;
+
+  useLayoutEffect(() => {
+    const preview = previewRef.current;
+    if (preview === null || expanded) return;
+    const measure = () => {
+      setClamped(preview.scrollHeight > preview.clientHeight + 1);
+    };
+    measure();
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(measure);
+    observer.observe(preview);
+    return () => {
+      observer.disconnect();
+    };
+  }, [value, expanded, showPreview]);
 
   return (
     <div className="relative mt-0.5">
       {showPreview && (
         <p
+          ref={previewRef}
           aria-hidden="true"
-          title={value}
+          title={expanded ? undefined : value}
           onClick={() => {
             ref.current?.focus();
           }}
-          className="line-clamp-2 cursor-text break-words text-[13px] leading-[18px] text-muted-foreground max-sm:line-clamp-1"
+          className={cn(
+            "cursor-text break-words text-[13px] leading-[18px] text-muted-foreground",
+            !expanded && "line-clamp-2 max-sm:line-clamp-1",
+          )}
         >
           {value}
         </p>
+      )}
+      {showPreview && (expanded || clamped) && (
+        <button
+          type="button"
+          aria-expanded={expanded}
+          onClick={() => {
+            setExpanded((current) => !current);
+          }}
+          className="mt-0.5 rounded-sm text-xs font-medium text-foreground/80 underline-offset-2 transition-colors hover:text-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring max-sm:py-2"
+        >
+          {expanded
+            ? t("runbooks.runbook.showShortDescription")
+            : t("runbooks.runbook.showFullDescription")}
+        </button>
       )}
       <textarea
         ref={ref}
