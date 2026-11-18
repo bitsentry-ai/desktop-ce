@@ -829,6 +829,7 @@
   "common.streamDeltaInspector.rawDeltas_one": "Raw delta ({{count}})",
   "common.streamDeltaInspector.rawDeltas_other": "Raw deltas ({{count}})",
   "common.structuredOutputDisplay.noValuesExtracted": "No values extracted.",
+  "common.structuredOutputDisplay.fieldCount": "· {{count}} fields",
   "common.structuredOutputDisplay.structuredOutput": "Structured Output",
   "common.systemSettings._12Hour230Pm": "12-hour (2:30 PM)",
   "common.systemSettings._24Hour1430": "24-hour (14:30)",

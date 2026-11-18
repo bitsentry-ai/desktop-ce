@@ -664,6 +664,7 @@ function OutputPanel({ step }: { step: RunbookExecutionStepRecord | null }) {
         </div>
         <StreamDeltaInspector deltas={step.streamDeltas} />
         <StructuredOutputDisplay
+          collapsed
           metadata={step.metadata}
           structuredOutput={step.structuredOutput}
         />
