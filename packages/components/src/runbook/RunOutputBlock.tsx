@@ -14,6 +14,7 @@ import { cn } from "../lib/utils";
 import { HighlightedJson } from "./HighlightedJson";
 import {
   findRecordTable,
+  isIdentifierColumn,
   recordColumnLabel,
   severityTone,
   type RecordTable,
@@ -367,6 +368,7 @@ function RecordTableView({ table }: { table: RecordTable }) {
                   className={cn(
                     "h-8 truncate px-3 text-xs font-medium text-muted-foreground",
                     numeric.has(column) && "w-24 text-right",
+                    isIdentifierColumn(column) && "w-40",
                   )}
                 >
                   {recordColumnLabel(column, table.columns)}
@@ -391,6 +393,7 @@ function RecordTableView({ table }: { table: RecordTable }) {
                       className={cn(
                         "h-9 truncate px-3 text-foreground",
                         numeric.has(column) && "text-right tabular-nums",
+                        isIdentifierColumn(column) && "font-mono text-xs",
                       )}
                     >
                       {tone === null ? (

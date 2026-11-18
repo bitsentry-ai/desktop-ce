@@ -16,7 +16,8 @@ export interface RecordTable {
 }
 
 export const RECORD_TABLE_MAX_ROWS = 200;
-const MAX_COLUMNS = 5;
+/** Four columns fit the Output pane at 1440px without truncating identifiers. */
+const MAX_COLUMNS = 4;
 const MIN_ROWS = 2;
 /** A column must have a scalar in at least this share of rows. */
 const MIN_COLUMN_COVERAGE = 0.6;
@@ -25,9 +26,11 @@ const MAX_AVERAGE_CELL_LENGTH = 60;
 const FLATTEN_DEPTH = 3;
 
 /** Columns that identify or rank a record come first, in this order. */
+const IDENTIFIER_PATTERN = /(^|\.)(cve|id|key|ref)$/i;
+
 const COLUMN_PRIORITY: readonly RegExp[] = [
   /severity|priority|level/i,
-  /(^|\.)(cve|id|key|ref)$/i,
+  IDENTIFIER_PATTERN,
   /(^|\.)(name|title|host|hostname)$/i,
   /version$/i,
   /score|count|total/i,
@@ -159,6 +162,11 @@ export function recordColumnLabel(column: string, columns: readonly string[]): s
     return segments.slice(-2).join(".");
   }
   return last;
+}
+
+/** Whether a column holds identifiers, which the table never truncates. */
+export function isIdentifierColumn(column: string): boolean {
+  return IDENTIFIER_PATTERN.test(column);
 }
 
 /** How strongly a severity-like cell should read. */
