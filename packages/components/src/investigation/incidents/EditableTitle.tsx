@@ -2,7 +2,7 @@ import { useState, type KeyboardEvent } from "react";
 import { useTranslation } from "@bitsentry-ce/i18n";
 import { cn } from "../../lib/utils";
 
-const titleTextClassName = "text-[15px] font-semibold leading-5 tracking-[-0.01em]";
+const titleTextClassName = "text-lg font-semibold leading-6 tracking-[-0.015em]";
 
 /**
  * The incident title in the page header. A long title wraps to two lines on a narrow screen and keeps one line from

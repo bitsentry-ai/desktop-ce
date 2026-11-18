@@ -1112,7 +1112,7 @@ export default function ResultsPage() {
                     onClick={() => {
                       void navigate(`/runbooks?id=${activeResult.runbookId}`);
                     }}
-                    className="line-clamp-2 text-left text-base font-semibold leading-[22px] text-foreground underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+                    className="line-clamp-2 text-left text-lg font-semibold leading-6 tracking-[-0.015em] text-foreground underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
                   >
                     {activeResult.runbookTitle}
                   </button>

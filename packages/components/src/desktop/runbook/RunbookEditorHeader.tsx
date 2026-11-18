@@ -458,7 +458,7 @@ export function RunbookEditorHeader({
               onKeyDown={preventLineBreak}
               onBlur={onTitleBlur}
               aria-label={t("runbooks.runbook.runbookTitle")}
-              className="block max-h-[44px] w-full resize-none overflow-hidden break-words bg-transparent text-base font-semibold leading-[22px] text-foreground outline-none placeholder:text-muted-foreground focus:overflow-y-auto"
+              className="block max-h-[48px] w-full resize-none overflow-hidden break-words bg-transparent text-lg font-semibold leading-6 tracking-[-0.015em] text-foreground outline-none placeholder:text-muted-foreground focus:overflow-y-auto"
               placeholder={t("runbooks.runbook.runbookTitle")}
             />
             <DescriptionField
