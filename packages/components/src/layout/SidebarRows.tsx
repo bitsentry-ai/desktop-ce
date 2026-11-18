@@ -1,7 +1,6 @@
 import type { ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { ArrowRight, Check, X } from "lucide-react";
-import { SELECTION_BAR_CLASS } from "../lib/selectionBar";
 import { cn } from "../lib/utils";
 
 /**
@@ -149,14 +148,15 @@ export function SidebarRow({
         className={cn(
           "flex min-h-9 items-center gap-2 rounded-md px-2.5 py-1.5 text-sm leading-5 text-muted-foreground transition-colors",
           "hover:bg-[hsl(var(--accent)/0.7)] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-          // Selection is a neutral surface with a brand indicator, so it never reads as "success".
-          active && cn("bg-[hsl(var(--selection))] text-foreground hover:bg-[hsl(var(--selection))]", SELECTION_BAR_CLASS),
+          // Selection is a neutral surface. Rows sit beside their section's guide line, so a second brand bar here would
+          // read as a doubled edge; the surface and medium weight mark the row on their own.
+          active && "bg-[hsl(var(--selection))] text-foreground hover:bg-[hsl(var(--selection))]",
         )}
       >
         {leading}
         <span className="min-w-0 flex-1">
           {/* Every row shows up to two lines, so similarly named items stay distinguishable. */}
-          <span className={cn("line-clamp-2 block break-words text-[13px] leading-[18px]", active ? "font-medium" : "text-foreground/85")}>{title}</span>
+          <span className={cn("line-clamp-2 break-words text-[13px] leading-[18px]", active ? "font-medium" : "text-foreground/85")}>{title}</span>
           {meta !== undefined && <span className="block truncate text-xs leading-4 text-muted-foreground">{meta}</span>}
         </span>
         {trailing !== undefined && (

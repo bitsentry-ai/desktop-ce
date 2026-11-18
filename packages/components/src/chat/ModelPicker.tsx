@@ -8,7 +8,8 @@
  * cross-provider switching is disabled. Within-provider model switching
  * remains available.
  *
- * Keyboard: Cmd+K opens, Escape closes.
+ * Keyboard: Escape closes; Cmd+1–5 picks a listed model while open. Cmd+K stays
+ * with the app's command palette, so it does the same thing on every page.
  */
 
 import {
@@ -275,13 +276,9 @@ export function ModelPicker({
     return [...starred, ...rest];
   }, [discoveredModels, panelProvider, providerConfigs, search, isFavorite]);
 
-  // Cmd+K to open/close, Escape to close, Cmd+1–5 to pick Nth model when open
+  // Escape to close, Cmd+1–5 to pick Nth model when open
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key === "k") {
-        e.preventDefault();
-        setOpen((v) => !v);
-      }
       if (e.key === "Escape" && open) {
         setOpen(false);
       }
