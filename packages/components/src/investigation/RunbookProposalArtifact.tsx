@@ -73,7 +73,7 @@ export function RunbookProposalListItem({
       onClick={onSelect}
       className={`w-full rounded-2xl border px-3 py-3 text-left transition-colors ${
         isSelected
-          ? "border-sky-400 bg-sky-500/5"
+          ? "border-primary bg-primary/5"
           : "border-border bg-background hover:bg-muted/40"
       }`}
     >
@@ -265,15 +265,15 @@ export default function RunbookProposalArtifact({
         {(riskLabels.length > 0 ||
           !selectedProposal.validation.valid ||
           selectedProposal.validation.warnings.length > 0) && (
-          <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-xs">
-            <div className="flex items-center gap-1.5 font-medium text-amber-700 dark:text-amber-300">
-              <AlertCircle size={13} />
+          <div className="rounded-xl border border-border bg-muted/40 px-3 py-2 text-xs">
+            <div className="flex items-center gap-1.5 font-medium text-foreground">
+              <AlertCircle size={13} className="text-muted-foreground" aria-hidden="true" />
               {t("common.incidentArtifactsRail.proposal.reviewNotes")}
             </div>
             {riskLabels.length > 0 && (
               <div className="mt-1">
                 {t("common.incidentArtifactsRail.proposal.risks", {
-                  risks: riskLabels.join(", "),
+                  risks: riskLabels.map((risk) => risk.replace(/_/g, " ")).join(", "),
                 })}
               </div>
             )}
@@ -319,7 +319,7 @@ export default function RunbookProposalArtifact({
                       : undefined,
                   });
                 })}
-                className="inline-flex items-center gap-1 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white disabled:opacity-50"
+                className="inline-flex items-center gap-1 rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
               >
                 <Check size={13} />
                 {t("common.incidentArtifactsRail.proposal.approve")}

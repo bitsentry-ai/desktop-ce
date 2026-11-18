@@ -68,7 +68,7 @@ function CustomerReportSource({ report }: { report: NonNullable<IntegrationOpera
       {report.subject !== undefined && report.subject !== null && <div className="col-span-2"><Fact label={t("incidents.integrationWrites.customerReport.subject")}>{report.subject}</Fact></div>}
       <div className="col-span-2"><Fact label={t("incidents.integrationWrites.customerReport.submittedBy")}>{report.submittedBy}</Fact></div>
     </dl>
-    <p className="mt-2 flex items-center gap-1 text-xs text-amber-700 dark:text-amber-400"><AlertCircle size={11} aria-hidden="true" />{t("incidents.integrationWrites.customerReport.unverified")}</p>
+    <p className="mt-2 flex items-center gap-1 text-xs font-medium text-foreground"><AlertCircle size={11} aria-hidden="true" />{t("incidents.integrationWrites.customerReport.unverified")}</p>
   </section>;
 }
 
@@ -116,7 +116,7 @@ export function OperationBody({ row, disabled, busy, refusal, closeRequested, on
   const { changes, facts } = summarizeOperation(row);
   const awaiting = row.status === "proposed";
   return <div className={className}>
-    {row.publicUpdate && <p role="note" className="rounded-md border border-amber-500/30 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-700 dark:bg-amber-950/30 dark:text-amber-400">{t("incidents.integrationWrites.public")}</p>}
+    {row.publicUpdate && <p role="note" className="rounded-md border border-border bg-muted/40 px-3 py-2 text-sm font-medium text-foreground">{t("incidents.integrationWrites.public")}</p>}
     <dl className="grid grid-cols-1 gap-3">
       <Fact label={t("incidents.integrationWrites.target")}>{row.target}</Fact>
       <Fact label={t("incidents.integrationWrites.action")}><code className="text-xs">{row.actionId}</code></Fact>
