@@ -252,7 +252,7 @@
   }
 
   .nav-item:focus-within:has(:focus-visible) {
-    box-shadow: 0 0 0 2px hsl(var(--ring) / 0.5);
+    box-shadow: 0 0 0 2px hsl(var(--ring));
   }
 
   /* Severity pills — subtle tinted backgrounds with colored text */

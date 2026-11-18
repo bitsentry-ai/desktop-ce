@@ -491,7 +491,7 @@
   "common.incidents.noLlmProviderConfigured": "No LLM provider configured. Please configure a provider in Settings.",
   "common.incidents.noValidRunbookFound": "No valid runbook found.",
   "common.incidents.openRunbooks": "Open Runbooks",
-  "common.incidents.openSettings": "Open Settings",
+  "common.incidents.openSettings": "Open settings",
   "common.incidents.removeAttachment": "Remove {{name}}",
   "common.incidents.reviseNewRunbookProposal": "Revise create-kind runbook proposal {{proposalId}}: {{requestedEdit}}. Submit a revised propose_runbook_create. Do not use propose_runbook_edit because the draft was never saved.",
   "common.incidents.reviseExistingRunbookProposal": "Revise edit-kind runbook proposal {{proposalId}}: {{requestedEdit}}. Submit a revised propose_runbook_edit against the same target runbook {{targetRunbookId}}.",

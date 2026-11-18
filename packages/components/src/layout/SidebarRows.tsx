@@ -148,7 +148,7 @@ export function SidebarRow({
         aria-current={active ? "page" : undefined}
         className={cn(
           "flex min-h-9 items-center gap-2 rounded-md px-2.5 py-1.5 text-sm leading-5 text-muted-foreground transition-colors",
-          "hover:bg-[hsl(var(--accent)/0.7)] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
+          "hover:bg-[hsl(var(--accent)/0.7)] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
           // Selection is a neutral surface with a brand indicator, so it never reads as "success".
           active && cn("bg-[hsl(var(--selection))] text-foreground hover:bg-[hsl(var(--selection))]", SELECTION_BAR_CLASS),
         )}
@@ -163,7 +163,7 @@ export function SidebarRow({
           <span
             className={cn(
               "shrink-0 text-xs tabular-nums",
-              live ? "" : "text-muted-foreground/80",
+              live ? "" : "text-muted-foreground",
               hoverAction !== undefined && "group-hover/row:invisible group-focus-within/row:invisible",
             )}
           >
@@ -192,7 +192,7 @@ export function SidebarHoverButton({ label, onClick, children, tone = "neutral" 
         onClick();
       }}
       className={cn(
-        "flex size-6 items-center justify-center rounded-md text-muted-foreground transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
+        "flex size-6 items-center justify-center rounded-md text-muted-foreground transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
         tone === "danger" ? "hover:bg-[hsl(var(--destructive)/0.1)] hover:text-[hsl(var(--destructive-text))]" : "hover:bg-accent hover:text-foreground",
       )}
     >

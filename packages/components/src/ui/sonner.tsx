@@ -21,7 +21,10 @@ const toastClassNames = {
   title: "!text-sm !font-medium !leading-5 !text-foreground",
   description: "!text-[13px] !leading-5 !text-muted-foreground",
   icon: "!mt-0.5 !self-start",
-  actionButton: "!h-7 !rounded-md !bg-primary !px-2.5 !text-xs !font-medium !text-primary-foreground",
+  // Toast actions are corrective (Try again, Review), so they are neutral secondary buttons; green stays for primary
+  // actions on the page.
+  actionButton:
+    "!h-7 !rounded-md !border !border-input !bg-background !px-2.5 !text-xs !font-medium !text-foreground hover:!bg-[hsl(var(--secondary-hover))]",
   cancelButton: "!h-7 !rounded-md !bg-muted !px-2.5 !text-xs !text-muted-foreground",
   // Inside the top-right corner with a 28px target, instead of floating off the top-left edge.
   closeButton:

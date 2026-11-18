@@ -80,7 +80,7 @@ describe.each(["light", "dark"] as const)("toasts and alerts in %s mode", (theme
       // Recoverable failures and pauses carry their next step as an action.
       toast.error("Failed to load providers", {
         description: "Could not load LLM provider configurations.",
-        action: { label: "Retry", onClick: () => undefined },
+        action: { label: "Try again", onClick: () => undefined },
       });
       toast.warning("Runbook paused", {
         description: "Waiting for approval before the write step.",

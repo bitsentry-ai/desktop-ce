@@ -27,7 +27,7 @@ export default function DesktopIntegrationsPage() {
       </div>
       <div className="flex-1 overflow-y-auto p-4 sm:p-6">
         <p className="mb-6 text-sm text-muted-foreground">{t("settings.integrationConnections.pageDescription")}</p>
-        <div className="max-w-2xl">
+        <div className="max-w-[880px]">
           {service === null
             ? <div className="rounded-lg border border-border bg-card"><EmptyState icon={Plug} title={t("settings.integrationConnections.unavailable")} className="py-10" /></div>
             : <IntegrationConnectionsPanel

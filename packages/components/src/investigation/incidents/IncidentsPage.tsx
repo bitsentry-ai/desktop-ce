@@ -965,7 +965,8 @@ export default function IncidentsPage() {
                 title={t("common.incidents.emptyTitle")}
                 description={t("common.incidents.emptyDescription")}
                 action={
-                  <Button onClick={handleNewIncident}>
+                  // Outline: the header already carries the page's one primary New incident.
+                  <Button variant="outline" onClick={handleNewIncident}>
                     <SquarePen />
                     {t("common.incidents.newIncident")}
                   </Button>

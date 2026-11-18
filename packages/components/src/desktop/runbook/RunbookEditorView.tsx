@@ -237,7 +237,7 @@ export function RunbookEditorView({
             onDragEnd={onActionDragEnd}
           >
             <RunbookActionList
-              className="max-w-[960px]"
+              className="max-w-[1120px]"
               actions={runbook.actions}
               useSortableRuntime={useSortableRuntime}
               isExpanded={(action) => expandedId === action.id}

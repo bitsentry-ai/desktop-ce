@@ -441,8 +441,8 @@ export function RunbookEditorHeader({
     >
       {/* Three areas on a grid, placed by the header's own width:
           - under 28rem: the title takes the first row, the execution
-            settings the second, and the icon buttons (left) and Run (right)
-            the third, so every control sits in a clear group.
+            settings the second, and ⋯ beside Run (both right-aligned) the
+            third.
           - 28rem to 60rem: title with Run at its right; the toolbar on the
             row below.
           - 60rem and wider: title, toolbar and Run on one row.
@@ -517,7 +517,7 @@ export function RunbookEditorHeader({
             />
             {extraActions}
           </div>
-          <div className="ml-auto flex shrink-0 items-center gap-2 [@container(max-width:27.99rem)]:col-start-1 [@container(max-width:27.99rem)]:row-start-3 [@container(max-width:27.99rem)]:ml-0 [@container(min-width:60rem)]:ml-0">
+          <div className="ml-auto flex shrink-0 items-center gap-2 [@container(max-width:27.99rem)]:col-start-1 [@container(max-width:27.99rem)]:row-start-3 [@container(max-width:27.99rem)]:ml-0 [@container(max-width:27.99rem)]:justify-self-end [@container(min-width:60rem)]:ml-0">
             {/* History and New runbook move into ⋯ below 640px, leaving the title, settings and Run. */}
             <span className="contents max-sm:hidden">
               <HeaderIconButton
