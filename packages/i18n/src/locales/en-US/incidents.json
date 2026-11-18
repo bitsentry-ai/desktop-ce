@@ -32,6 +32,7 @@
   "incidents.incidents.openAnIncidentToUse": "Open an incident to use this trigger.",
   "incidents.incidents.openRunbooks": "Open Runbooks",
   "incidents.incidents.openSettings": "Open settings",
+  "incidents.incidents.reloadProviders": "Reload providers",
   "incidents.incidents.runTelemetry": "Run Telemetry",
   "incidents.incidents.runTelemetry_2": "Run Telemetry",
   "incidents.incidents.runTelemetry_3": "Run Telemetry",

@@ -18,7 +18,7 @@ export function ComposerBlockedNotice({
   description?: string;
   actionLabel: string;
   onAction: () => void;
-  /** Shown before the main action when the cause can be retried in place, such as a failed load. */
+  /** Shown before the main action, in the same style, when the cause can be retried in place, such as a failed load. */
   retryLabel?: string;
   onRetry?: () => void;
 }) {
@@ -36,7 +36,7 @@ export function ComposerBlockedNotice({
       </p>
       <div className="flex shrink-0 items-center gap-2 max-sm:ml-auto">
         {retryLabel !== undefined && onRetry !== undefined && (
-          <Button type="button" variant="ghost" size="sm" onClick={onRetry} className="h-7 px-2.5 text-xs max-sm:h-11">
+          <Button type="button" variant="outline" size="sm" onClick={onRetry} className="h-7 px-2.5 text-xs max-sm:h-11">
             {retryLabel}
           </Button>
         )}

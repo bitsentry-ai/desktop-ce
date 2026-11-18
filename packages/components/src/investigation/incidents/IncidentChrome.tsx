@@ -52,7 +52,7 @@ const SCOPED_STATUS_KEYS: Record<AgentSessionState, string> = {
 
 /**
  * `interrupted`: the last turn stopped because the app closed, which the saved state cannot tell from a stop or a failure.
- * `quiet`: in lists, a completed incident reads as a small check and label rather than a filled pill, so the filled
+ * `quiet`: in lists, a completed incident reads as a green check and label rather than a filled pill, so the filled
  * pills that remain mark incidents that need attention.
  * `scoped`: in an incident's header the label names its scope ("Incident completed"), so it never reads as the state
  * of the latest reply.
@@ -93,8 +93,8 @@ export function StatusPill({ state, interrupted = false, quiet = false, scoped =
   const label = scoped ? t(SCOPED_STATUS_KEYS[state]) : map[state].label;
   if (quiet && state === "COMPLETED") {
     return (
-      <span className="inline-flex shrink-0 items-center gap-1 text-xs text-muted-foreground">
-        <Check size={12} aria-hidden="true" className="text-[hsl(var(--success-text))]" />
+      <span className="inline-flex shrink-0 items-center gap-1 text-xs font-medium text-[hsl(var(--success-text))]">
+        <Check size={14} strokeWidth={2.5} aria-hidden="true" />
         {label}
       </span>
     );

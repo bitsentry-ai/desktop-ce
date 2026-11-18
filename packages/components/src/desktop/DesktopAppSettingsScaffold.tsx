@@ -450,7 +450,7 @@ export function DesktopAppSettingsScaffold({
           heading={t("settings.appSettings.settings")}
           selectLabel={t("settings.sectionNav.label")}
         />
-        <div key={activeId} className="min-w-0 max-w-[880px] flex-1">
+        <div key={activeId} className="min-w-0 max-w-[760px] flex-1">
           {sectionContent[activeId]}
         </div>
       </div>

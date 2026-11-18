@@ -206,7 +206,7 @@ export function RunbookLibraryView({
               className="gap-1.5 max-sm:h-11 [&_svg]:size-3.5"
             >
               <SquarePen aria-hidden="true" />
-              {t("common.actions.new")}
+              {t("runbooks.runbooks.newRunbook")}
             </Button>
           </TooltipTrigger>
           <TooltipContent side="bottom">
