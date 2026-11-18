@@ -163,12 +163,12 @@ describe("FinalOutputPreview", () => {
     render(<FinalOutputPreview output={output} emptyMessage="empty" onViewOutput={onViewOutput} />);
 
     const pre = document.querySelector("pre");
-    expect(pre?.className).toContain("whitespace-pre");
+    expect(pre?.className).toContain("whitespace-pre-wrap");
     expect([...(pre?.children ?? [])].map((line) => line.textContent)).toEqual(
       Array.from({ length: 10 }, (_, index) => `line ${String(index)}`),
     );
-    expect(pre?.children[0]?.className).toContain("line-clamp-2");
-    expect(pre?.children[1]?.className).toContain("truncate");
+    expect(pre?.children[1]?.className).not.toContain("truncate");
+    expect(pre?.className).toContain("mask-image");
     expect(screen.queryByText("common.results.showMore")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "common.results.viewFullOutput" }));
     expect(onViewOutput).toHaveBeenCalledTimes(1);
