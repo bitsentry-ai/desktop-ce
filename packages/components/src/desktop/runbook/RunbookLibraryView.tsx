@@ -10,6 +10,14 @@ import {
 import { RunbookEmptyState } from "./RunbookEmptyState";
 import { RUNBOOK_ICON_BUTTON_CLASS } from "./runbookButtonStyles";
 import type { TranslationFn } from "./types";
+import { cn } from "../../lib/utils";
+
+/**
+ * A row's Export and History buttons appear while the pointer is over the row or focus is inside it, so a list of
+ * runbooks reads as names first. Without a hovering pointer (touch) they always show.
+ */
+const ROW_ACTION_REVEAL_CLASS =
+  "transition-opacity [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100 [@media(hover:hover)]:group-focus-within:opacity-100";
 
 function formatRelativeTime(iso: string): string {
   const diff = Date.now() - new Date(iso).getTime();
@@ -56,7 +64,7 @@ export function RunbookLibraryView({
         return (
           <div
             key={runbook.id}
-            className="flex items-center gap-3 px-4 py-3 transition-colors hover:bg-muted/40"
+            className="group flex items-center gap-3 px-4 py-3 transition-colors hover:bg-muted/40"
           >
             <button
               type="button"
@@ -98,7 +106,7 @@ export function RunbookLibraryView({
                     onExportRunbooks(runbook.id);
                   }}
                   aria-label={t("runbooks.runbook.export")}
-                  className={RUNBOOK_ICON_BUTTON_CLASS}
+                  className={cn(RUNBOOK_ICON_BUTTON_CLASS, ROW_ACTION_REVEAL_CLASS)}
                 >
                   <Upload size={14} aria-hidden="true" />
                 </button>
@@ -115,7 +123,7 @@ export function RunbookLibraryView({
                     onOpenRunbookResults(runbook.id);
                   }}
                   aria-label={t("runbooks.runbook.viewRunbookResults")}
-                  className={RUNBOOK_ICON_BUTTON_CLASS}
+                  className={cn(RUNBOOK_ICON_BUTTON_CLASS, ROW_ACTION_REVEAL_CLASS)}
                 >
                   <History size={14} aria-hidden="true" />
                 </button>

@@ -96,7 +96,6 @@ import { useIncidentComposerAttachments } from "./useIncidentComposerAttachments
 import { useIncidentPersistence } from "./useIncidentPersistence";
 import { useIncidentProviderSelection } from "./useIncidentProviderSelection";
 import { EmptyState } from "../../ui/empty-state";
-import { Button } from "../../ui/button";
 
 /**
  * Stops the running turn through its session; null while there is no session to cancel. A hook rather than a plain
@@ -128,22 +127,8 @@ function useProviderNotice(loaded: boolean, openSettings: () => void): ReactNode
 const NEW_INCIDENT_HEADER_BASE =
   "flex h-8 shrink-0 items-center gap-1.5 rounded-md px-2.5 text-[13px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:opacity-50 max-sm:h-11";
 
-/** The tour points at whichever New incident button is on screen. */
-const NEW_INCIDENT_TOUR = "incidents-new-btn";
-
-/** The header's New incident: the page's primary action, hidden while the empty list shows the same call to action. */
-const NEW_INCIDENT_HEADER_PROPS = {
-  false: {
-    className: `${NEW_INCIDENT_HEADER_BASE} bg-primary text-primary-foreground hover:bg-[hsl(var(--primary-hover))]`,
-    "data-tour": NEW_INCIDENT_TOUR,
-  },
-  true: { className: "hidden", "data-tour": undefined },
-} as const;
-
-/** Whether the incident list page shows its empty state (no incident open and none to list). */
-function useIsEmptyIncidentList(activeId: string | null | undefined, incidentCount: number): boolean {
-  return !activeId && incidentCount === 0;
-}
+/** The header's New incident is the page's one primary action, also while the list is empty. */
+const NEW_INCIDENT_HEADER_CLASS = `${NEW_INCIDENT_HEADER_BASE} bg-primary text-primary-foreground hover:bg-[hsl(var(--primary-hover))]`;
 
 export default function IncidentsPage() {
   const { t } = useTranslation();
@@ -845,7 +830,6 @@ export default function IncidentsPage() {
 
   // ── Top-bar action buttons (shared) ──────────────────────────────────────
 
-  const emptyIncidentList = useIsEmptyIncidentList(activeId, visibleIncidents.length);
   const topBarActions = (
     <>
       {activeIncident !== null && (
@@ -947,7 +931,8 @@ export default function IncidentsPage() {
       <Tooltip>
         <TooltipTrigger asChild>
           <button
-            {...NEW_INCIDENT_HEADER_PROPS[String(emptyIncidentList) as "true" | "false"]}
+            data-tour="incidents-new-btn"
+            className={NEW_INCIDENT_HEADER_CLASS}
             onClick={handleNewIncident}
             disabled={isActiveProcessing}
           >
@@ -983,13 +968,6 @@ export default function IncidentsPage() {
                 icon={ShieldAlert}
                 title={t("common.incidents.emptyTitle")}
                 description={t("common.incidents.emptyDescription")}
-                action={
-                  // The empty state's call to action is the page's one New incident; the header's is hidden meanwhile.
-                  <Button data-tour={NEW_INCIDENT_TOUR} onClick={handleNewIncident}>
-                    <SquarePen />
-                    {t("common.incidents.newIncident")}
-                  </Button>
-                }
               />
             )}
             {visibleIncidents.length > 0 && (

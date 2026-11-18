@@ -32,6 +32,7 @@
   "incidents.incidents.openAnIncidentToUse": "Ouvrez un incident pour utiliser ce déclencheur.",
   "incidents.incidents.openRunbooks": "Ouvrir les runbooks",
   "incidents.incidents.openSettings": "Ouvrir les paramètres",
+  "incidents.incidents.moreIncidentActions": "Plus d'actions sur l'incident",
   "incidents.incidents.reloadProviders": "Recharger les fournisseurs",
   "incidents.incidents.runTelemetry": "Exécuter la télémétrie",
   "incidents.incidents.runTelemetry_2": "Exécuter la télémétrie",
