@@ -143,14 +143,6 @@ function readRequiredString(value: unknown, fallback: string): string {
   return readOptionalString(value) ?? fallback;
 }
 
-function readNullableBoolean(value: unknown): boolean | null {
-  if (value === null || value === undefined) {
-    return null;
-  }
-
-  return Boolean(value);
-}
-
 function readRecordString(
   record: ExternalPayloadRecord | null,
   key: string,
@@ -217,14 +209,6 @@ function extractTagValue(
   const value = tags[tagKey];
   if (value == null) return null;
   return readOptionalString(value);
-}
-
-function extractIssueField(
-  issue: ExternalPayloadRecord,
-  tagKey: string,
-): string | null {
-  const parsedTags = parseIssueTags(issue.tags);
-  return extractTagValue(parsedTags, tagKey);
 }
 
 function extractException(event: ExternalPayloadRecord): {
@@ -646,12 +630,6 @@ function parseJsonObject(value: unknown): Record<string, unknown> | null {
   return null;
 }
 
-function extractIssueMetadata(
-  issue: ExternalPayloadRecord,
-): Record<string, unknown> | null {
-  return readRecord(issue.metadata);
-}
-
 function toDiagnosisIssueContext(
   issue: ErrorIssue | ExternalPayloadRecord | null,
 ): DiagnosisIssueContext | null {
@@ -708,7 +686,8 @@ export class ErrorSourceSyncService {
     return this.syncSource(source);
   }
 
-  async syncAllEnabled(): Promise<
+  /** Syncs every enabled source; once `signal` aborts no new source or page starts. */
+  async syncAllEnabled(signal?: AbortSignal): Promise<
     Array<{
       sourceId: string;
       syncedIssues: number;
@@ -725,8 +704,9 @@ export class ErrorSourceSyncService {
     }> = [];
 
     for (const source of sources) {
+      if (signal?.aborted === true) break;
       try {
-        const result = await this.syncSource(source);
+        const result = await this.syncSource(source, signal);
         results.push(result);
       } catch (error) {
         let message = String(error);
@@ -747,6 +727,7 @@ export class ErrorSourceSyncService {
 
   private async syncSource(
     source: ErrorSource,
+    signal?: AbortSignal,
   ): Promise<{ sourceId: string; syncedIssues: number; syncedEvents: number }> {
     source = await resolveErrorSourceCredentials(source, this.credentialsStore);
     await this.sourcesRepository.updateSyncStatus(source.id, "in_progress");
@@ -756,7 +737,7 @@ export class ErrorSourceSyncService {
     );
 
     try {
-      return await this.syncCustomPluginSource(source);
+      return await this.syncCustomPluginSource(source, signal);
     } catch (error) {
       let message = String(error);
       if (error instanceof Error) {
@@ -1080,7 +1061,9 @@ export class ErrorSourceSyncService {
     since: string | undefined;
     until: string;
     pageCount: number;
+    signal: AbortSignal | undefined;
   }) {
+    args.signal?.throwIfAborted();
     const pageStartMs = Date.now();
     const result = await this.pluginRuntime.executeAction({
       pluginId: args.pluginId,
@@ -1099,7 +1082,7 @@ export class ErrorSourceSyncService {
         since: args.since,
         until: args.until,
       }),
-    });
+    }, { signal: args.signal });
 
     if (!result.ok) {
       throw new Error(
@@ -1291,6 +1274,7 @@ export class ErrorSourceSyncService {
     issueContext: CustomPluginIssueContext;
     since: string | undefined;
     until: string;
+    signal: AbortSignal | undefined;
   }): Promise<number> {
     let syncedEvents = 0;
     let eventCursor: string | undefined;
@@ -1336,10 +1320,12 @@ export class ErrorSourceSyncService {
       issueContext: CustomPluginIssueContext;
       since: string | undefined;
       until: string;
+      signal: AbortSignal | undefined;
     },
     cursor: string | undefined,
     pageCount: number,
   ) {
+    args.signal?.throwIfAborted();
     const eventPageStartMs = Date.now();
     const eventResult = await this.pluginRuntime.executeAction({
         pluginId: args.pluginId,
@@ -1361,7 +1347,7 @@ export class ErrorSourceSyncService {
           issueId: args.issueContext.externalIssueId,
           cursor,
         },
-    });
+    }, { signal: args.signal });
     if (!eventResult.ok) {
       throw new Error(
         `Plugin "${args.pluginId}" failed to list issue events for source sync: ${eventResult.summary}`,
@@ -1456,6 +1442,7 @@ export class ErrorSourceSyncService {
 
   private async syncCustomPluginSource(
     source: ErrorSource,
+    signal?: AbortSignal,
   ): Promise<{ sourceId: string; syncedIssues: number; syncedEvents: number }> {
     const pluginId = readSourcePluginId(source);
     const capabilities = this.readCustomPluginSyncCapabilities(
@@ -1467,6 +1454,7 @@ export class ErrorSourceSyncService {
       sourcesRepository: this.sourcesRepository,
       pluginRuntime: this.pluginRuntime,
       credentialsStore: this.credentialsStore,
+      signal,
     });
     const refreshedSource = { ...source, accessTokenRef };
     const auth = await buildPluginAuthFromSource(
@@ -1497,6 +1485,7 @@ export class ErrorSourceSyncService {
         since,
         until,
         pageCount,
+        signal,
       });
       hasMore = page.hasMore;
       cursor = page.nextCursor;
@@ -1541,6 +1530,7 @@ export class ErrorSourceSyncService {
           issueContext,
           since,
           until,
+          signal,
         });
       } else {
         await this.upsertSyntheticCustomPluginEvent(

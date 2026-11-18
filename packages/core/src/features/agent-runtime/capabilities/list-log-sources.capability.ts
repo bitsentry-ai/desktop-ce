@@ -19,7 +19,7 @@ import type {
  * Zod schema for list_log_sources tool input.
  * No parameters required.
  */
-export const listLogSourcesSchema = z.object({})
+const listLogSourcesSchema = z.object({})
 
 /**
  * List log sources tool executor.

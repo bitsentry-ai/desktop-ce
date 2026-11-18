@@ -10,10 +10,11 @@ import {
   initializeDatabase,
 } from '@bitsentry-ce/desktop-cli/runtime/database-index'
 import { setRuntimeUserDataPath } from '@bitsentry-ce/desktop-cli/runtime/runtime-paths'
+import { SqliteAgentQueueStore } from '@bitsentry-ce/core/features/agent-runtime'
 
 type BetterSqlite3Constructor = typeof import('better-sqlite3')
 
-const CURRENT_SCHEMA_VERSION = 19
+const CURRENT_SCHEMA_VERSION = 20
 const tempDirectories: string[] = []
 let Database: BetterSqlite3Constructor | undefined
 let nativeModuleWarning: string | undefined
@@ -129,6 +130,25 @@ describeSqliteMigrations('desktop SQLite upgrades', () => {
     expect(await migrationLedgerVersions()).toEqual(firstVersions)
   })
 
+  it('keeps a queued agent message across a restart', async () => {
+    const { directory } = await makeDatabaseDirectory()
+    configureNoopSeeders()
+    setRuntimeUserDataPath(directory)
+    await initializeDatabase()
+    await new SqliteAgentQueueStore(getDatabase()).save('incident-1', {
+      held: true,
+      messages: [{ id: 'queued-1', input: { message: 'Then check memory.' }, queuedAt: '2026-10-19T10:00:00.000Z' }],
+    })
+    await closeDatabase()
+
+    await initializeDatabase()
+
+    expect(await new SqliteAgentQueueStore(getDatabase()).load('incident-1')).toEqual({
+      held: true,
+      messages: [{ id: 'queued-1', input: { message: 'Then check memory.' }, queuedAt: '2026-10-19T10:00:00.000Z' }],
+    })
+  })
+
   it('applies the immediately previous migration exactly once', async () => {
     const { directory, databasePath } = await makeDatabaseDirectory()
     prepareOldestSupportedFixture(databasePath)
@@ -144,6 +164,7 @@ describeSqliteMigrations('desktop SQLite upgrades', () => {
       DROP TABLE "ResourceLink";
       DROP TABLE "ExternalResource";
       DROP TABLE "IntegrationConnection";
+      DROP TABLE "AgentQueuedMessage";
       DELETE FROM "_MigrationLedger" WHERE "version" = ${String(CURRENT_SCHEMA_VERSION)};
       PRAGMA user_version = ${String(CURRENT_SCHEMA_VERSION - 1)};
     `)
@@ -156,6 +177,9 @@ describeSqliteMigrations('desktop SQLite upgrades', () => {
     expect(await getDatabase().$queryRawUnsafe(
       'SELECT "value" FROM "Setting" WHERE "key" = \'retained.setting\'',
     )).toEqual([{ value: 'retained-value' }])
+    expect(await getDatabase().$queryRawUnsafe(
+      `SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ('AgentQueuedMessage', 'IntegrationConnection') ORDER BY name`,
+    )).toEqual([{ name: 'AgentQueuedMessage' }, { name: 'IntegrationConnection' }])
   })
 
   it('purges failed authoring shells on startup without removing user tombstones', async () => {

@@ -1,0 +1,27 @@
+/*
+ * The running tool call's label shimmers, like T3 Code's live-tool-shine
+ * (https://github.com/pingdotgg/t3code, MIT). Motion-sensitive readers and
+ * forced-colors modes see plain text.
+ */
+@keyframes live-tool-shine {
+  from {
+    background-position: -4.5rem 0, 0 0;
+  }
+  to {
+    background-position: calc(100% + 4.5rem) 0, 0 0;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) and (forced-colors: none) {
+  .live-tool-shine {
+    color: transparent;
+    background-image:
+      linear-gradient(to right, transparent, hsl(var(--foreground)), transparent),
+      linear-gradient(hsl(var(--muted-foreground)), hsl(var(--muted-foreground)));
+    background-size: 4.5rem 100%, 100% 100%;
+    background-repeat: no-repeat;
+    -webkit-background-clip: text;
+    background-clip: text;
+    animation: live-tool-shine 2.2s steps(30) infinite;
+  }
+}

@@ -20,7 +20,8 @@ vi.mock('@bitsentry-ce/i18n', async () => {
   const english = { ...load('common'), ...load('incidents') }
   const fill = (text: string, options: Record<string, unknown>) => text.replace(/{{(\w+)}}/g, (_match, name: string) => String(options[name] ?? `{{${name}}}`))
   const t = (key: string, options: Record<string, unknown> = {}) => {
-    const plural = typeof options.count === 'number' ? english[`${key}_${options.count === 1 ? 'one' : 'other'}`] : undefined
+    const pluralForm = options.count === 1 ? 'one' : 'other'
+    const plural = typeof options.count === 'number' ? english[`${key}_${pluralForm}`] : undefined
     return fill(plural ?? english[key] ?? key, options)
   }
   return { useTranslation: () => ({ t }) }
@@ -336,8 +337,9 @@ describe('opening the panel', () => {
     await waitFor(() => { expect(panelIsOpen()).toBe(true) })
     fireEvent.click(screen.getByRole('button', { name: 'Close artifacts' }))
 
+    // The draft shows up when an agent turn finishes: that is when the list is asked for again.
     proposals.current = [draft()]
-    view.rerender(<Host messages={[]} />)
+    view.rerender(<Host messages={[{ kind: 'user' }, { kind: 'agent', status: 'done' }]} />)
     await waitFor(() => { expect(panelIsOpen()).toBe(true) })
     expect(names(needsYou())).toEqual(['Sandbox: Logon failure triage'])
 
@@ -553,5 +555,26 @@ describe('deliveries and sources in the panel', () => {
     expect(screen.queryByRole('region', { name: 'Review and execute a saved runbook' })).toBeNull()
     fireEvent.click(footer)
     expect(screen.getByRole('region', { name: 'Review and execute a saved runbook' })).toBeTruthy()
+  })
+})
+
+// Task 730: the panel shares the Runbook results hook with the rail, and used to ask the main process for the proposal
+// list on every streamed update (the IPC limit is 240 requests a minute).
+describe('the Artifacts panel while a reply streams', () => {
+  it('asks for the proposal list once for a whole streamed reply and again when the turn finishes', async () => {
+    const agent = services.agent as unknown as { listRunbookAuthoringProposals: AgentServicePort['listRunbookAuthoringProposals'] }
+    const spy = vi.spyOn(agent, 'listRunbookAuthoringProposals')
+    try {
+      const turn = (status: 'streaming' | 'done'): IncidentArtifactsMessage[] => [{ kind: 'user' }, { kind: 'agent', status, toolCalls: [] }]
+      const view = render(<Host messages={turn('streaming')} />)
+      await waitFor(() => { expect(spy).toHaveBeenCalledTimes(1) })
+      for (let delta = 0; delta < 200; delta += 1) view.rerender(<Host messages={turn('streaming')} />)
+      await act(async () => { await Promise.resolve() })
+      expect(spy).toHaveBeenCalledTimes(1)
+      view.rerender(<Host messages={turn('done')} />)
+      await waitFor(() => { expect(spy).toHaveBeenCalledTimes(2) })
+    } finally {
+      spy.mockRestore()
+    }
   })
 })

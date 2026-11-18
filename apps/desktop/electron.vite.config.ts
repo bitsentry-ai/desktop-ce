@@ -40,6 +40,10 @@ export default defineConfig({
         ],
       },
       rollupOptions: {
+        output: {
+          // main.ts resolves the preload, renderer and assets from __dirname, so it sits next to index.js.
+          chunkFileNames: (chunk) => (chunk.name === 'main' ? '[name].js' : 'chunks/[name]-[hash].js'),
+        },
         input: {
           index: resolve(__dirname, 'src/main/platform/app/electron/index.ts'),
           cli: resolve(
@@ -49,11 +53,7 @@ export default defineConfig({
         },
         external: [
           'better-sqlite3',
-          'bcryptjs',
-          'speakeasy',
-          'qrcode',
-          'jsonwebtoken',
-          'node-pty', '@napi-rs/keyring',
+          '@napi-rs/keyring',
         ],
       },
     },
@@ -112,6 +112,8 @@ export default defineConfig({
       ),
     },
     build: {
+      // electron-vite turns renderer minification off by default.
+      minify: true,
       rollupOptions: {
         input: { index: resolve(__dirname, 'src/renderer/index.html') },
       },
@@ -119,12 +121,14 @@ export default defineConfig({
         include: [/packages\/components/, /packages\/core/, /node_modules/],
       },
     },
-    plugins: [react()],
+    // The React Compiler memoizes components and hooks, including the components
+    // and core packages resolved to source below. react-compiler-coverage.spec.ts
+    // fails when a file stops compiling.
+    plugins: [react({ babel: { plugins: [['babel-plugin-react-compiler', {}]] } })],
     resolve: {
       dedupe: [
         'react',
         'react-dom',
-        'react-router',
         'react-router-dom',
         '@tanstack/react-query',
       ],

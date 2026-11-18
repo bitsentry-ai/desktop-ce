@@ -15,14 +15,14 @@ function areModelIdsEqual(left: readonly string[], right: readonly string[]): bo
   return left.length === right.length && left.every((modelId, index) => modelId === right[index]);
 }
 
-export function subscribeToDiscoveredModels(listener: () => void): () => void {
+function subscribeToDiscoveredModels(listener: () => void): () => void {
   listeners.add(listener);
   return () => {
     listeners.delete(listener);
   };
 }
 
-export function getDiscoveredModelsSnapshot(): DiscoveredModelCache {
+function getDiscoveredModelsSnapshot(): DiscoveredModelCache {
   return snapshot;
 }
 

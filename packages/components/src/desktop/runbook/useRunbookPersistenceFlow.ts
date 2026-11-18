@@ -15,6 +15,7 @@ import {
   type RunbookMetaPatch,
 } from "./runbookRecordHelpers";
 import type { TranslationFn } from "./types";
+import type { DraftReconcileMode } from "./useRunbookCatalogFlow";
 import type { DesktopRpcChannel, RunbookRecord } from "../../services";
 
 type DesktopIpcInvoke = <T>(
@@ -42,7 +43,7 @@ type UseRunbookPersistenceFlowOptions = {
   editingRunbook: RunbookRecord | null;
   runbooks: RunbookRecord[];
   setEditingRunbook: Dispatch<SetStateAction<RunbookRecord | null>>;
-  replaceRunbook: (updated: RunbookRecord) => void;
+  replaceRunbook: (updated: RunbookRecord, draftMode?: DraftReconcileMode) => void;
   ipcInvoke: DesktopIpcInvoke;
   showSaveDialog: ShowSaveDialog;
   t: TranslationFn;
@@ -78,7 +79,8 @@ export function useRunbookPersistenceFlow({
           description: next.description,
           idleTimeout: next.idleTimeout,
         });
-        replaceRunbook(updated);
+        // A metadata save must not drop actions the user added while it was in flight.
+        replaceRunbook(updated, "keep-actions");
       } catch (error) {
         console.error("Failed to update runbook metadata:", error);
         setEditingRunbook((current) =>

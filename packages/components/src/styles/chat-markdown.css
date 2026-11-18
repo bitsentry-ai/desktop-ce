@@ -249,3 +249,8 @@
     background: hsl(var(--muted) / 0.5);
   }
 }
+
+/* A cited quote in an agent answer, briefly highlighted when the engineer goes to its source. */
+::highlight(bitsentry-citation) {
+  background-color: hsl(var(--primary) / 0.25);
+}

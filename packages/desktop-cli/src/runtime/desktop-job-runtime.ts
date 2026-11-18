@@ -6,12 +6,6 @@ import {
   type DesktopJobRuntimeCron,
   type DesktopJobRuntimeDatabase,
   type DesktopJobRuntimeLogger,
-  type EnqueueOptions,
-  type JobHandler,
-  type JobRunRecord,
-  type JobScheduleRecord,
-  type JobStatus,
-  type UpsertScheduleOptions,
 } from '@bitsentry-ce/core/features/jobs'
 
 const schedulerLogger: DesktopJobRuntimeLogger = log
@@ -24,12 +18,6 @@ const schedulerCron: DesktopJobRuntimeCron = {
 export type {
   DesktopJobRuntime,
   DesktopJobRuntimeDatabase,
-  EnqueueOptions,
-  JobHandler,
-  JobRunRecord,
-  JobScheduleRecord,
-  JobStatus,
-  UpsertScheduleOptions,
 }
 
 export function createDesktopSchedulerJobRuntime(

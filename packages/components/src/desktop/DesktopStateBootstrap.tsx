@@ -9,8 +9,6 @@ import {
 } from "react";
 import { useTranslation } from "@bitsentry-ce/i18n";
 
-const INCIDENTS_KEY = "bitsentry_incidents";
-const INCIDENT_MESSAGES_KEY = "bitsentry_incident_messages";
 const RUNBOOKS_KEY = "bitsentry_runbooks";
 const RESULTS_KEY = "bitsentry_results";
 const LEGACY_RESULTS_KEY = "bitsentry_investigations";
@@ -65,8 +63,6 @@ type RunbookExecutionStepStatus =
   | "cancelled";
 
 interface DesktopProductStateSnapshot {
-  incidents: unknown[];
-  incidentMessages: Record<string, unknown[]>;
   runbooks: unknown[];
   results: unknown[];
   resultTraces: Record<string, unknown>;
@@ -171,13 +167,13 @@ function loadJson<T>(key: string, fallback: T): T {
 function saveJson(key: string, value: unknown): void {
   try {
     localStorage.setItem(key, JSON.stringify(value));
-  } catch {}
+  } catch {
+    // Storage can be unavailable (private mode or full quota); persistence is best effort.
+  }
 }
 
 function readLocalSnapshot(): DesktopProductStateSnapshot {
   return {
-    incidents: loadJson(INCIDENTS_KEY, []),
-    incidentMessages: loadJson(INCIDENT_MESSAGES_KEY, {}),
     runbooks: loadJson(RUNBOOKS_KEY, []),
     results: loadJson(RESULTS_KEY, loadJson(LEGACY_RESULTS_KEY, [])),
     resultTraces: loadJson(
@@ -188,8 +184,6 @@ function readLocalSnapshot(): DesktopProductStateSnapshot {
 }
 
 function writeLocalSnapshot(snapshot: DesktopProductStateSnapshot): void {
-  saveJson(INCIDENTS_KEY, snapshot.incidents);
-  saveJson(INCIDENT_MESSAGES_KEY, snapshot.incidentMessages);
   saveJson(RUNBOOKS_KEY, snapshot.runbooks);
   saveJson(RESULTS_KEY, snapshot.results);
   saveJson(RESULT_TRACES_KEY, snapshot.resultTraces);
@@ -610,7 +604,9 @@ export function DesktopStateBootstrap({
     let active = true;
     let refreshSequence = 0;
 
-    const handleRunbooksUpdated = () => {
+    const handleRunbooksUpdated = (event: Event) => {
+      // Runbooks refreshed from main are already persisted there.
+      if ((event as CustomEvent<{ source?: string }>).detail?.source === "main-refresh") return;
       scheduleDesktopStateSync(runbookTimerRef, hydrateInProgressRef, syncFns.syncRunbooks);
     };
     const handleResultsUpdated = (event: Event) => {
@@ -643,17 +639,10 @@ export function DesktopStateBootstrap({
       const sequence = ++refreshSequence;
       void (async () => {
         try {
-          const snapshot = await ipcInvoke<DesktopProductStateSnapshot>(
-            "desktopState:bootstrap",
-            readLocalSnapshot(),
-          );
+          const runbooks = await ipcInvoke<unknown[]>("runbooks:list", {});
           if (!active || sequence !== refreshSequence || hydrateInProgressRef.current) return;
 
-          const localSnapshot = readLocalSnapshot();
-          writeLocalSnapshot({
-            ...localSnapshot,
-            runbooks: snapshot.runbooks,
-          });
+          saveJson(RUNBOOKS_KEY, runbooks);
           window.dispatchEvent(
             new CustomEvent("bitsentry:runbooks-updated", {
               detail: { source: "main-refresh" },

@@ -56,6 +56,7 @@ export type RuntimeProjectionEvent =
       tokenUsage?: AgentThreadTokenUsage;
     }
   | { type: "cancelled"; timestamp: string; message: string }
+  | { type: "queue_updated"; timestamp: string }
   | {
       type: "error";
       timestamp: string;
@@ -66,6 +67,7 @@ export type RuntimeProjectionEvent =
 
 function createAgentMessage(): Extract<ChatMessage, { kind: "agent" }> {
   return {
+    id: crypto.randomUUID(),
     kind: "agent",
     iterations: [],
     activeIterationId: null,
@@ -80,7 +82,6 @@ function createIteration(timestamp: string): AgentIteration {
     id: crypto.randomUUID(),
     startedAt: timestamp,
     text: "",
-    streamDeltas: [],
     toolCallIds: [],
     status: "thinking",
   };
@@ -92,17 +93,23 @@ function appendAgentMessage(
   return [...messages, createAgentMessage()];
 }
 
+export function findLastAgentMessageIndex(messages: readonly ChatMessage[]): number {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    if (messages[index]?.kind === "agent") return index;
+  }
+  return -1;
+}
+
 function mapLastAgentMessage(
   messages: ChatMessage[],
   updater: (message: Extract<ChatMessage, { kind: "agent" }>) => ChatMessage,
 ): Array<ChatMessage> {
-  const idx = [...messages].reverse().findIndex((message) => message.kind === "agent");
-  if (idx === -1) {
+  const realIdx = findLastAgentMessageIndex(messages);
+  if (realIdx === -1) {
     const seeded = appendAgentMessage(messages);
     return mapLastAgentMessage(seeded, updater);
   }
 
-  const realIdx = messages.length - 1 - idx;
   const next = [...messages];
   next[realIdx] = updater(next[realIdx] as Extract<ChatMessage, { kind: "agent" }>);
   return next;
@@ -161,6 +168,7 @@ export function createAgentThreadSnapshot(input: {
     currentToolCallId: null,
     messages: [
       {
+        id: crypto.randomUUID(),
         kind: "user",
         text: input.prompt,
         attachments: input.attachments,
@@ -186,6 +194,7 @@ export function appendPromptToThreadSnapshot(
     messages: [
       ...snapshot.messages,
       {
+        id: crypto.randomUUID(),
         kind: "user",
         text: input.prompt,
         attachments: input.attachments,
@@ -195,14 +204,112 @@ export function appendPromptToThreadSnapshot(
   };
 }
 
+/**
+ * A steer joins the running turn: the agent's work so far closes, the steer shows as the engineer's message, and the
+ * rest of the turn streams into a new agent message after it.
+ */
+export function appendSteerToThreadSnapshot(
+  snapshot: AgentThreadSnapshot,
+  input: {
+    prompt: string;
+    attachments?: ComposerAttachment[];
+    timestamp: string;
+  },
+): AgentThreadSnapshot {
+  let messages = snapshot.messages;
+  const last = messages[messages.length - 1];
+  if (last?.kind === "agent") {
+    // Work that has not shown anything yet continues after the steer instead
+    // of leaving an empty agent message behind.
+    messages = hasVisibleAgentWork(last)
+      ? [...messages.slice(0, -1), closeAgentMessage(last, input.timestamp)]
+      : messages.slice(0, -1);
+  }
+
+  return {
+    ...snapshot,
+    threadState: "RUNNING",
+    messages: [
+      ...messages,
+      {
+        id: crypto.randomUUID(),
+        kind: "user",
+        text: input.prompt,
+        attachments: input.attachments,
+      },
+      createAgentMessage(),
+    ],
+  };
+}
+
+function closeAgentMessage(
+  message: Extract<ChatMessage, { kind: "agent" }>,
+  timestamp: string,
+): Extract<ChatMessage, { kind: "agent" }> {
+  return {
+    ...message,
+    status: "done",
+    activity: undefined,
+    activeIterationId: null,
+    iterations: message.iterations.map((iteration) => {
+      if (iteration.status === "done" || iteration.status === "error") {
+        return iteration;
+      }
+
+      return { ...iteration, status: "done", completedAt: iteration.completedAt ?? timestamp };
+    }),
+  };
+}
+
+function hasVisibleAgentWork(message: Extract<ChatMessage, { kind: "agent" }>): boolean {
+  return message.toolCalls.length > 0 || message.iterations.some((iteration) => iteration.text.trim().length > 0);
+}
+
+/** A steer the provider accepted just as its turn ended: it shows before that turn's answer. */
+export function insertUserMessageBeforeLastAgentMessage(
+  snapshot: AgentThreadSnapshot,
+  prompt: string,
+): AgentThreadSnapshot {
+  const index = snapshot.messages.map((message) => message.kind).lastIndexOf("agent");
+  const messages = [...snapshot.messages];
+  messages.splice(index === -1 ? messages.length : index, 0, { kind: "user", text: prompt });
+  return { ...snapshot, messages };
+}
+
 export function setAgentThreadRuntimeState(
   snapshot: AgentThreadSnapshot,
   runtimeState: AgentSessionState,
 ): AgentThreadSnapshot {
+  if (snapshot.runtimeState === runtimeState) return snapshot;
   return {
     ...snapshot,
     runtimeState,
   };
+}
+
+const INTERRUPTED_TURN_MESSAGE = "Interrupted before the response finished.";
+
+/** A turn that `settleInterruptedAgentTurn` stopped because the app closed, not one the engineer stopped. */
+export function isInterruptedAgentTurn(message: ChatMessage | undefined): boolean {
+  return message?.kind === "agent" && message.status === "cancelled" && message.errorMsg === INTERRUPTED_TURN_MESSAGE;
+}
+
+/** Whether the thread's last agent turn was interrupted by the app closing. */
+export function isLastAgentTurnInterrupted(messages: readonly ChatMessage[]): boolean {
+  return isInterruptedAgentTurn([...messages].reverse().find((message) => message.kind === "agent"));
+}
+
+/**
+ * Settles the last agent turn like a cancellation when its session is gone
+ * (app restart), so a persisted thinking/streaming turn stops spinning.
+ */
+export function settleInterruptedAgentTurn(messages: ChatMessage[], timestamp: string): ChatMessage[] {
+  const lastAgent = [...messages].reverse().find((message) => message.kind === "agent");
+  if (lastAgent?.kind !== "agent" || (lastAgent.status !== "thinking" && lastAgent.status !== "streaming")) {
+    return messages;
+  }
+  const snapshot = { messages } as AgentThreadSnapshot;
+  return reduceAgentThreadSnapshot(snapshot, { type: "cancelled", timestamp, message: INTERRUPTED_TURN_MESSAGE }).messages;
 }
 
 export function reduceAgentThreadSnapshot(
@@ -228,14 +335,8 @@ export function reduceAgentThreadSnapshot(
                 ...iteration,
                 text: iteration.text + event.delta,
                 status: "streaming",
-                streamDeltas: [
-                  ...(iteration.streamDeltas ?? []),
-                  {
-                    timestamp: event.timestamp,
-                    text: event.delta,
-                    kind: event.kind ?? "text",
-                  },
-                ],
+                ...(event.kind === "command_output" ? { hasCommandOutput: true as const } : {}),
+                ...(iteration.textStartedAt === undefined ? { textStartedAt: event.timestamp } : {}),
               };
             }),
           };
@@ -286,7 +387,11 @@ export function reduceAgentThreadSnapshot(
         })),
       };
 
-    case "activity":
+    case "activity": {
+      const lastAgent = snapshot.messages[findLastAgentMessageIndex(snapshot.messages)];
+      if (lastAgent?.kind === "agent" && lastAgent.activity === (event.phase ?? undefined)) {
+        return snapshot;
+      }
       return {
         ...snapshot,
         messages: mapLastAgentMessage(snapshot.messages, (message) => ({
@@ -294,6 +399,7 @@ export function reduceAgentThreadSnapshot(
           activity: event.phase ?? undefined,
         })),
       };
+    }
 
     case "tool_start":
       return {
@@ -311,6 +417,7 @@ export function reduceAgentThreadSnapshot(
               toolName: event.toolName,
               state: "running" as const,
               input: event.input,
+              startedAt: event.timestamp,
             },
           ];
           if (existingToolCall !== undefined) {
@@ -324,6 +431,7 @@ export function reduceAgentThreadSnapshot(
                 toolName: event.toolName,
                 state: "running",
                 input: event.input,
+                startedAt: toolCall.startedAt ?? event.timestamp,
               };
             });
           }
@@ -348,6 +456,7 @@ export function reduceAgentThreadSnapshot(
         }),
       };
 
+    // Live tool output is not projected; tool_end carries the final output.
     case "tool_update":
       return snapshot;
 
@@ -378,6 +487,7 @@ export function reduceAgentThreadSnapshot(
               output: event.output,
               modelContext: event.modelContext,
               error: event.error,
+              completedAt: event.timestamp,
             };
           }),
         })),
@@ -396,12 +506,8 @@ export function reduceAgentThreadSnapshot(
           if (lastIteration !== undefined) {
             streamedResponse = lastIteration.text.trim();
           }
-          const streamDeltas = lastIteration?.streamDeltas ?? [];
           const shouldAppendFinalResponse =
-            finalResponse.length > 0 &&
-            streamDeltas.some(
-              (delta) => delta.kind === "command_output",
-            );
+            finalResponse.length > 0 && lastIteration?.hasCommandOutput === true;
           const shouldPreserveStreamedResponse =
             streamedResponse.length > 0 &&
             !shouldAppendFinalResponse &&
@@ -478,6 +584,9 @@ export function reduceAgentThreadSnapshot(
           }),
         })),
       };
+
+    case "queue_updated":
+      return snapshot;
 
     case "error":
       return {

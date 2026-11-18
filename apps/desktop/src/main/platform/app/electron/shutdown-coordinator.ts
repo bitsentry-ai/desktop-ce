@@ -4,6 +4,7 @@ export interface DesktopShutdownActions {
   destroyCodingAgents(): void | Promise<void>
   closeSentry(): void | Promise<void>
   destroyRunbookExecution(): void | Promise<void>
+  stopErrorSourceSync(): void | Promise<void>
   stopJobRuntime(): void | Promise<void>
   closeDatabase(): void | Promise<void>
   onShutdownError?(step: string, error: unknown): void
@@ -49,6 +50,7 @@ export class DesktopShutdownCoordinator {
     await this.release('coding-agents', () => this.actions.destroyCodingAgents())
     await this.release('sentry', () => this.actions.closeSentry())
     await this.release('runbook-execution', () => this.actions.destroyRunbookExecution())
+    await this.release('error-source-sync', () => this.actions.stopErrorSourceSync())
     await this.release('job-runtime', () => this.actions.stopJobRuntime())
     await this.release('database', () => this.actions.closeDatabase())
   }

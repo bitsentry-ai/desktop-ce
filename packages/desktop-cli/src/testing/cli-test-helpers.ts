@@ -15,7 +15,7 @@ function isTransientRunbookSocketError(error: unknown): boolean {
     error.message.includes('bitsentry-ce-runbooks-')
 }
 
-export interface ExportedRunbookActionParameter {
+interface ExportedRunbookActionParameter {
   key: string
   label?: string
   description?: string
@@ -24,7 +24,7 @@ export interface ExportedRunbookActionParameter {
   secure?: boolean
 }
 
-export interface ExportedRunbookAction {
+interface ExportedRunbookAction {
   type: 'shell'
   title: string
   command: string
@@ -91,7 +91,7 @@ export function createCliTestContext(desktopDir: string) {
       return electronBinary
     } catch (error) {
       throw new Error(
-        `Unable to resolve the Electron binary from ${desktopDir}: ${getErrorMessage(error)}`,
+        `Unable to resolve the Electron binary from ${desktopDir}: ${getErrorMessage(error)}`, { cause: error },
       )
     }
   }

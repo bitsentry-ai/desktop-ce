@@ -1,8 +1,11 @@
 import { useId, useMemo, useState } from "react";
+import { Send } from "lucide-react";
+import { EmptyState } from "../ui/empty-state";
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
 import { Textarea } from "../ui/textarea";
 import { useTranslation } from "@bitsentry-ce/i18n";
+import { useNow } from "../hooks/useNow";
 import { relativeTime } from "./relative-time";
 
 /** Why the triage policy let a ticket creation through or held it. */
@@ -151,6 +154,7 @@ function DeliveryCard({ row, threadId, disabled, service, onRefresh }: {
   row: IntegrationDelivery; threadId: string; disabled: boolean; service: IntegrationDeliveriesPort; onRefresh(): Promise<void>;
 }) {
   const { t } = useTranslation();
+  const now = useNow();
   const channel = deliveryChannelLabel(row, t);
   return <article aria-label={`${channel} ${shortEvent(row.eventId)}`} className="min-w-0 space-y-2 rounded-2xl border border-border bg-card p-3">
     <div className="flex flex-wrap items-center gap-2">
@@ -158,7 +162,7 @@ function DeliveryCard({ row, threadId, disabled, service, onRefresh }: {
       <DeliveryStateBadge row={row} />
     </div>
     <p className="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
-      <time dateTime={row.updatedAt} title={new Date(row.updatedAt).toLocaleString()}>{relativeTime(row.updatedAt)}</time>
+      <time dateTime={row.updatedAt} title={new Date(row.updatedAt).toLocaleString()}>{relativeTime(row.updatedAt, now)}</time>
       <span aria-hidden="true">·</span>
       <span className="min-w-0 truncate font-mono" title={row.eventId}>{shortEvent(row.eventId)}</span>
     </p>
@@ -179,7 +183,7 @@ export function IntegrationDeliveriesView({ threadId, rows, failed, disabled, se
   const ordered = useMemo(() => orderDeliveries(rows), [rows]);
   return <div className="space-y-3">
     {failed && <p role="alert" className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">{t("incidents.deliveries.error")}</p>}
-    {ordered.length === 0 && !failed && <div className="rounded-2xl border border-dashed border-border/70 bg-muted/10 px-4 py-5 text-sm text-muted-foreground">{t("incidents.integrationRail.noDeliveries")}</div>}
+    {ordered.length === 0 && !failed && <EmptyState icon={Send} title={t("incidents.integrationRail.noDeliveries")} className="rounded-lg border border-dashed border-border py-8" />}
     {ordered.map((row) => <DeliveryCard key={row.id} row={row} threadId={threadId} disabled={disabled} service={service} onRefresh={onRefresh} />)}
   </div>;
 }

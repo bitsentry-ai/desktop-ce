@@ -996,7 +996,7 @@ function assertValidAction(action: DesktopRunbookActionRecord): void {
     }
   }
 
-  if (action.type === "plugin") {
+  else if (action.type === "plugin") {
     if (action.pluginId === undefined || action.pluginId.trim().length === 0) {
       throw new Error("Plugin action is missing a selected plugin");
     }
@@ -1092,6 +1092,22 @@ function toRunbookAction(raw: Record<string, unknown>): DesktopRunbookActionReco
       raw.body ?? raw.telemetryConfig,
     ),
   });
+}
+
+function toRunbookRecord(
+  rawRunbook: Record<string, unknown>,
+  actions: DesktopRunbookActionRecord[],
+): DesktopRunbookRecord {
+  return {
+    id: asString(rawRunbook.id),
+    title: asString(rawRunbook.title, "New Runbook"),
+    description: asString(rawRunbook.description),
+    idleTimeout: normalizeRunbookIdleTimeout(rawRunbook.idleTimeout),
+    revisionNumber: Math.max(1, Number(rawRunbook.revisionNumber ?? 1)),
+    actions,
+    createdAt: asIsoString(rawRunbook.createdAt),
+    updatedAt: asIsoString(rawRunbook.updatedAt),
+  };
 }
 
 type RunbookActionPayload = DesktopRunbookContext["actions"][number]["payload"];
@@ -1219,18 +1235,7 @@ export class DesktopRunbookStore {
   private async hydrateRunbook(
     rawRunbook: Record<string, unknown>,
   ): Promise<DesktopRunbookRecord> {
-    const runbookId = asString(rawRunbook.id);
-    const actions = await this.listActions(runbookId);
-    return {
-      id: runbookId,
-      title: asString(rawRunbook.title, "New Runbook"),
-      description: asString(rawRunbook.description),
-      idleTimeout: normalizeRunbookIdleTimeout(rawRunbook.idleTimeout),
-      revisionNumber: Math.max(1, Number(rawRunbook.revisionNumber ?? 1)),
-      actions,
-      createdAt: asIsoString(rawRunbook.createdAt),
-      updatedAt: asIsoString(rawRunbook.updatedAt),
-    };
+    return toRunbookRecord(rawRunbook, await this.listActions(asString(rawRunbook.id)));
   }
 
   async getRunbookRow(id: string): Promise<Record<string, unknown> | null> {
@@ -1260,7 +1265,9 @@ export class DesktopRunbookStore {
     } catch (error) {
       try {
         await this.db.$executeRawUnsafe("ROLLBACK");
-      } catch {}
+      } catch {
+        // Rethrow the original failure; a failed rollback adds nothing.
+      }
       throw error;
     }
   }
@@ -1284,7 +1291,21 @@ export class DesktopRunbookStore {
       orderBy: { createdAt: "desc" },
     }));
 
-    return Promise.all(rows.map((row) => this.hydrateRunbook(row)));
+    const actionRows = await this.db.runbookAction.findMany({
+      where: { runbookId: { in: rows.map((row) => asString(row.id)) } },
+      orderBy: { sortOrder: "asc" },
+    });
+    const actionsByRunbookId = new Map<string, DesktopRunbookActionRecord[]>();
+    for (const actionRow of actionRows) {
+      const runbookId = asString(actionRow.runbookId);
+      const actions = actionsByRunbookId.get(runbookId) ?? [];
+      actions.push(toRunbookAction(actionRow));
+      actionsByRunbookId.set(runbookId, actions);
+    }
+
+    return rows.map((row) =>
+      toRunbookRecord(row, actionsByRunbookId.get(asString(row.id)) ?? []),
+    );
   }
 
   async get(id: string): Promise<DesktopRunbookRecord | null> {

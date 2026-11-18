@@ -16,6 +16,7 @@
     "src/shared/**/*",
     "src/renderer/src/**/*",
     "electron.vite.config.ts",
-    "vitest.config.ts"
+    "vitest.config.ts",
+    "vitest.browser.config.ts"
   ]
 }

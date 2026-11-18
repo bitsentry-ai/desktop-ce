@@ -28,6 +28,13 @@ export interface HostMcpEndpoint {
   env: Record<string, string>
   agentSessionId: string
   scopeOptions?: RunbookOnlyScopeOptions
+  /** Serves this session under a reused CLI server's own MCP identity until the returned function runs. */
+  bindIdentity: (identity: HostMcpIdentity) => () => void
+}
+
+export interface HostMcpIdentity {
+  token: string
+  contextId: string
 }
 
 type HostMcpSession = {
@@ -236,6 +243,13 @@ export class HostMcpServerService {
       },
       agentSessionId: context.session.id,
       scopeOptions: scopeOptionsFor(context.session),
+      bindIdentity: (identity) => {
+        const session = this.sessions.get(token)
+        if (session === undefined) throw new Error('Host MCP session is closed')
+        const bound = { ...session, contextId: identity.contextId, activeRequests: 0 }
+        this.sessions.set(identity.token, bound)
+        return () => { if (this.sessions.get(identity.token) === bound) this.sessions.delete(identity.token) }
+      },
     }
   }
 

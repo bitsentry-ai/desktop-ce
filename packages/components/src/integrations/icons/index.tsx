@@ -16,7 +16,7 @@ function withSize(
   };
 }
 
-export function PluginIcon(props: ProviderIconProps) {
+function PluginIcon(props: ProviderIconProps) {
   return (
     <svg
       viewBox="0 0 32 32"
@@ -34,7 +34,7 @@ export function PluginIcon(props: ProviderIconProps) {
   );
 }
 
-export function SentryIcon(props: ProviderIconProps) {
+function SentryIcon(props: ProviderIconProps) {
   return (
     <svg viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" {...withSize(props)}>
       <rect width="32" height="32" rx="7" fill="#362D59" />
@@ -48,7 +48,7 @@ export function SentryIcon(props: ProviderIconProps) {
   );
 }
 
-export function PostHogIcon(props: ProviderIconProps) {
+function PostHogIcon(props: ProviderIconProps) {
   return (
     <svg viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" {...withSize(props)}>
       <rect width="32" height="32" rx="7" fill="#fff" />
@@ -63,7 +63,7 @@ export function PostHogIcon(props: ProviderIconProps) {
   );
 }
 
-export function WazuhIcon(props: ProviderIconProps) {
+function WazuhIcon(props: ProviderIconProps) {
   return (
     <svg viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" {...withSize(props)}>
       <rect width="200" height="200" rx="32" fill="#3D82F7" />
@@ -73,7 +73,7 @@ export function WazuhIcon(props: ProviderIconProps) {
   );
 }
 
-export function GithubIcon(props: ProviderIconProps) {
+function GithubIcon(props: ProviderIconProps) {
   return (
     <svg viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" {...withSize(props)}>
       <rect width="32" height="32" rx="7" fill="#24292F" />

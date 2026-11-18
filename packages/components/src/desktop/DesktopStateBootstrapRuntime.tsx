@@ -4,6 +4,7 @@ import {
   type DesktopStateBootstrapProps,
 } from './DesktopStateBootstrap'
 import { ipcInvoke } from './DesktopIpcRuntime'
+import { subscribeToFullExecutions } from '../services/runbookExecutionEvents'
 import { captureDesktopAnalyticsEvent } from './DesktopPosthogRenderer'
 
 type DesktopRunbookBridge = {
@@ -32,7 +33,12 @@ function subscribeToRunbookExecutionEvents(
     throw new Error('Desktop runbook bridge is unavailable.')
   }
 
-  return desktopWindow.bitsentry.runbooks.onExecutionEvent(callback)
+  const { runbooks } = desktopWindow.bitsentry
+  return subscribeToFullExecutions(
+    (onEvent) => runbooks.onExecutionEvent(onEvent),
+    (executionId) => ipcInvoke<Parameters<typeof callback>[0]['execution'] | null>('runbooks:getExecution', { executionId }),
+    callback,
+  )
 }
 
 function subscribeToRunbookChangeEvents(

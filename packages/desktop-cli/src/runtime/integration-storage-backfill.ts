@@ -44,6 +44,10 @@ function stageResources(cipher: MigrationCipher, resources: IntegrationResource[
       statements.push({ sql: `INSERT INTO "ResourceLink" (id,"resourceId","subjectType","subjectId",role,selected,"createdAt") VALUES (?,?,'thread',?,'referenced',?,?) ON CONFLICT("resourceId","subjectType","subjectId") DO NOTHING`, parameters: [randomUUID(), id, row.threadId, row.selected ? 1 : 0, timestamp] })
     }
 }
+const LEGACY_OPERATION_MESSAGE_CODES: Partial<Record<IntegrationOperation['status'], string>> = {
+  proposed: 'legacy_preview_requires_new_approval',
+  executing: 'legacy_execution_uncertain',
+}
 function importedStatus(status: IntegrationOperation['status']): IntegrationOperation['status'] {
   if (status === 'executing') return 'uncertain'
   return status === 'proposed' ? 'cancelled' : status
@@ -52,10 +56,11 @@ async function stageOperations(db: DbClient, cipher: MigrationCipher, connection
     for (const row of operations) {
       const existing = (await db.$queryRaw<Record<string, unknown>>('SELECT "connectionId","requestHash" FROM "IntegrationOperation" WHERE id=?', row.id))[0]
       if (existing && (existing.connectionId !== row.connectionId || existing.requestHash !== hash(row))) throw new Error('Historical operation identity conflicts with SQLite; originals were retained.')
-      const connection = connections.find(item => item.id === row.connectionId)!
+      const connection = connections.find(item => item.id === row.connectionId)
+      if (!connection) throw new Error('Historical operation references a missing connection; originals were retained.')
       if (row.pluginId !== connection.pluginId || row.target !== describeIntegrationConnection(connection).target) throw new Error('Historical operation destination does not match its connection.')
       const status = importedStatus(row.status)
-      statements.push({ sql: `INSERT INTO "IntegrationOperation" (id,"connectionId","threadId","idempotencyKey","requestHash","requestCiphertext","pluginId","pluginVersion","actionId",target,"connectionName","connectionRevision",status,"proposedBy","resultCiphertext","messageCode","createdAt","updatedAt") VALUES (?,?,?,?,?,?,?,?,?,?,?,1,?,'local-profile',?,?,?,?) ON CONFLICT(id) DO NOTHING`, parameters: [row.id, row.connectionId, row.threadId, `legacy:${row.id}`, hash(row), cipher.seal(`operation:${row.id}`, JSON.stringify(row)), row.pluginId, row.pluginVersion, row.actionId, row.target, row.connectionName, status, cipher.seal(`operation-result:${row.id}`, JSON.stringify({ result: row.result, message: row.message })), row.status === 'proposed' ? 'legacy_preview_requires_new_approval' : row.status === 'executing' ? 'legacy_execution_uncertain' : null, row.createdAt, row.updatedAt] })
+      statements.push({ sql: `INSERT INTO "IntegrationOperation" (id,"connectionId","threadId","idempotencyKey","requestHash","requestCiphertext","pluginId","pluginVersion","actionId",target,"connectionName","connectionRevision",status,"proposedBy","resultCiphertext","messageCode","createdAt","updatedAt") VALUES (?,?,?,?,?,?,?,?,?,?,?,1,?,'local-profile',?,?,?,?) ON CONFLICT(id) DO NOTHING`, parameters: [row.id, row.connectionId, row.threadId, `legacy:${row.id}`, hash(row), cipher.seal(`operation:${row.id}`, JSON.stringify(row)), row.pluginId, row.pluginVersion, row.actionId, row.target, row.connectionName, status, cipher.seal(`operation-result:${row.id}`, JSON.stringify({ result: row.result, message: row.message })), LEGACY_OPERATION_MESSAGE_CODES[row.status] ?? null, row.createdAt, row.updatedAt] })
     }
 }
 async function verifyBackfill(db: DbClient, connections: IntegrationConnectionInput[], resources: IntegrationResource[], operations: IntegrationOperation[]): Promise<void> {

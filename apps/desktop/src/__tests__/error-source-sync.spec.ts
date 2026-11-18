@@ -457,80 +457,6 @@ describe("Sentry external source sync", () => {
     );
   });
 
-  it("fails plugin issue pages with ok false without advancing the watermark", async () => {
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date("2026-06-01T09:00:00.000Z"));
-
-    const source = makeSource({
-      id: "source-posthog",
-      sourceType: "posthog",
-      name: "Production PostHog",
-      additionalMetadata: { pluginId: "posthog" },
-      lastSyncAt: "2026-06-01T08:30:00.000Z",
-    });
-    const runtime = new TestPluginRuntimeService([
-      createPostHogPluginDescriptor(),
-    ]);
-    runtime.executeActionMock.mockResolvedValue({
-      pluginId: "posthog",
-      actionId: "list_issues",
-      ok: false,
-      status: 500,
-      summary: "PostHog provider returned HTTP 500.",
-      data: {
-        issues: [],
-        hasMore: false,
-      },
-    });
-    const sourcesRepository = {
-      findById: vi.fn().mockResolvedValue(source),
-      findSyncEnabled: vi.fn().mockResolvedValue([source]),
-      updateSyncStatus: vi.fn().mockResolvedValue(undefined),
-      update: vi.fn().mockResolvedValue(source),
-    };
-    const service = new ErrorSourceSyncService(
-      {
-        $queryRawUnsafe: () => Promise.resolve([]),
-        telemetryDaily: { upsert: vi.fn() },
-        telemetryEntry: {
-          findUnique: vi.fn(),
-          create: vi.fn(),
-        },
-        diagnosisEntry: { upsert: vi.fn() },
-        diagnosisEntrySourceRef: { upsert: vi.fn() },
-      },
-      sourcesRepository,
-      {
-        upsert: vi.fn(),
-        findById: vi.fn(),
-      },
-      {
-        upsert: vi.fn(),
-        findById: vi.fn(),
-      },
-      runtime,
-    );
-
-    await expect(service.syncSourceById(source.id)).rejects.toThrow(
-      "PostHog provider returned HTTP 500.",
-    );
-    expect(sourcesRepository.update).toHaveBeenLastCalledWith(
-      expect.objectContaining({
-        id: source.id,
-        lastSyncStatus: "failed",
-        lastSyncError:
-          'Plugin "posthog" failed to list issues for source sync: PostHog provider returned HTTP 500.',
-      }),
-    );
-    expect(sourcesRepository.update).not.toHaveBeenCalledWith(
-      expect.objectContaining({
-        id: source.id,
-        lastSyncAt: "2026-06-01T09:00:00.000Z",
-        lastSyncStatus: "success",
-      }),
-    );
-  });
-
   it("bounds initial Sentry plugin syncs instead of crawling all history", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-06-01T09:00:00.000Z"));
@@ -676,91 +602,6 @@ describe("Sentry external source sync", () => {
     );
   });
 
-  it("fails capped plugin syncs without advancing the watermark", async () => {
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date("2026-06-01T09:00:00.000Z"));
-
-    const source = makeSource({
-      id: "source-posthog",
-      sourceType: "posthog",
-      name: "Production PostHog",
-      additionalMetadata: { pluginId: "posthog" },
-      lastSyncAt: "2026-06-01T08:30:00.000Z",
-    });
-    const runtime = new TestPluginRuntimeService([
-      createPostHogPluginDescriptor(),
-    ]);
-    runtime.executeActionMock.mockResolvedValue({
-      pluginId: "posthog",
-      actionId: "list_issues",
-      ok: true,
-      status: 200,
-      summary: "Listed PostHog issues.",
-      data: {
-        issues: [
-          {
-            id: "issue-1",
-            title: "Repeated issue",
-            level: "error",
-            lastSeen: "2026-06-01T08:45:00.000Z",
-          },
-        ],
-        hasMore: true,
-        nextCursor: "next-page",
-      },
-    });
-    const sourcesRepository = {
-      findById: vi.fn().mockResolvedValue(source),
-      findSyncEnabled: vi.fn().mockResolvedValue([source]),
-      updateSyncStatus: vi.fn().mockResolvedValue(undefined),
-      update: vi.fn().mockResolvedValue(source),
-    };
-    const service = new ErrorSourceSyncService(
-      {
-        $queryRawUnsafe: () => Promise.resolve([]),
-        telemetryDaily: { upsert: vi.fn().mockResolvedValue({ id: 1 }) },
-        telemetryEntry: {
-          findUnique: vi.fn().mockResolvedValue(null),
-          create: vi.fn().mockResolvedValue({ id: 1 }),
-        },
-        diagnosisEntry: { upsert: vi.fn().mockResolvedValue({ id: 1 }) },
-        diagnosisEntrySourceRef: { upsert: vi.fn() },
-      },
-      sourcesRepository,
-      {
-        upsert: vi.fn((input: UpsertErrorIssueInput) =>
-          Promise.resolve(makeIssue(input)),
-        ),
-        findById: vi.fn(),
-      },
-      {
-        upsert: vi.fn(),
-        findById: vi.fn(),
-      },
-      runtime,
-    );
-
-    await expect(service.syncSourceById(source.id)).rejects.toThrow(
-      "Plugin sync reached the 10 page limit before all issues were fetched.",
-    );
-    expect(runtime.executeActionMock).toHaveBeenCalledTimes(10);
-    expect(sourcesRepository.update).toHaveBeenLastCalledWith(
-      expect.objectContaining({
-        id: source.id,
-        lastSyncStatus: "failed",
-        lastSyncError:
-          "Plugin sync reached the 10 page limit before all issues were fetched.",
-      }),
-    );
-    expect(sourcesRepository.update).not.toHaveBeenCalledWith(
-      expect.objectContaining({
-        id: source.id,
-        lastSyncAt: "2026-06-01T09:00:00.000Z",
-        lastSyncStatus: "success",
-      }),
-    );
-  });
-
   it("continues plugin issue pagination across empty pages with cursors", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-06-01T09:00:00.000Z"));
@@ -850,121 +691,76 @@ describe("Sentry external source sync", () => {
     expect(issueRepository.upsert).toHaveBeenCalledTimes(1);
   });
 
-  it("fails capped plugin event syncs without advancing the watermark", async () => {
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date("2026-06-01T09:00:00.000Z"));
-
-    const source = makeSource({
-      id: "source-posthog",
-      sourceType: "posthog",
-      name: "Production PostHog",
-      additionalMetadata: { pluginId: "posthog" },
-      lastSyncAt: "2026-06-01T08:30:00.000Z",
-    });
-    const descriptor = createPostHogPluginDescriptor();
-    const runtime = new TestPluginRuntimeService([
-      {
-        ...descriptor,
-        actions: [
-          ...descriptor.actions,
-          createProviderAction("list_issue_events"),
-        ],
-      },
-    ]);
-    runtime.executeActionMock.mockImplementation((request) => {
-      if (request.actionId === "list_issues") {
-        return Promise.resolve({
-          pluginId: "posthog",
-          actionId: "list_issues",
-          ok: true,
-          status: 200,
-          summary: "Listed PostHog issues.",
-          data: {
-            issues: [
-              {
-                id: "issue-1",
-                title: "Repeated issue",
-                level: "error",
-                lastSeen: "2026-06-01T08:45:00.000Z",
-              },
-            ],
-            hasMore: false,
-          },
-        });
-      }
-
-      return Promise.resolve({
-        pluginId: "posthog",
-        actionId: "list_issue_events",
-        ok: true,
-        status: 200,
-        summary: "Listed PostHog issue events.",
-        data: {
-          events: [
-            {
-              id: `event-${String(runtime.executeActionMock.mock.calls.length)}`,
-              timestamp: "2026-06-01T08:45:00.000Z",
-              message: "Repeated event",
-            },
-          ],
-          hasMore: true,
-          nextCursor: "next-event-page",
-        },
-      });
-    });
-    const sourcesRepository = {
-      findById: vi.fn().mockResolvedValue(source),
-      findSyncEnabled: vi.fn().mockResolvedValue([source]),
-      updateSyncStatus: vi.fn().mockResolvedValue(undefined),
-      update: vi.fn().mockResolvedValue(source),
-    };
-    const service = new ErrorSourceSyncService(
-      {
-        $queryRawUnsafe: () => Promise.resolve([]),
-        telemetryDaily: { upsert: vi.fn().mockResolvedValue({ id: 1 }) },
-        telemetryEntry: {
-          findUnique: vi.fn().mockResolvedValue(null),
-          create: vi.fn().mockResolvedValue({ id: 1 }),
-        },
-        diagnosisEntry: { upsert: vi.fn().mockResolvedValue({ id: 1 }) },
-        diagnosisEntrySourceRef: { upsert: vi.fn() },
-      },
-      sourcesRepository,
-      {
-        upsert: vi.fn((input: UpsertErrorIssueInput) =>
-          Promise.resolve(makeIssue(input)),
-        ),
-        findById: vi.fn(),
-      },
-      {
-        upsert: vi.fn(),
-        findById: vi.fn(),
-      },
-      runtime,
-    );
-
-    await expect(service.syncSourceById(source.id)).rejects.toThrow(
-      "Plugin sync reached the 10 event page limit before all events were fetched.",
-    );
-    expect(runtime.executeActionMock).toHaveBeenCalledTimes(11);
-    expect(sourcesRepository.update).toHaveBeenLastCalledWith(
-      expect.objectContaining({
-        id: source.id,
-        lastSyncStatus: "failed",
-        lastSyncError:
-          "Plugin sync reached the 10 event page limit before all events were fetched.",
-      }),
-    );
-    expect(sourcesRepository.update).not.toHaveBeenCalledWith(
-      expect.objectContaining({
-        id: source.id,
-        lastSyncAt: "2026-06-01T09:00:00.000Z",
-        lastSyncStatus: "success",
-      }),
-    );
+  const issuePage = (hasMore: boolean): DesktopPluginExecutionResult => ({
+    pluginId: "posthog",
+    actionId: "list_issues",
+    ok: true,
+    status: 200,
+    summary: "Listed PostHog issues.",
+    data: {
+      issues: [{ id: "issue-1", title: "Repeated issue", level: "error", lastSeen: "2026-06-01T08:45:00.000Z" }],
+      hasMore,
+      ...(hasMore ? { nextCursor: "next-page" } : {}),
+    },
   });
+  const failedPage = (actionId: string, summary: string, data: Record<string, unknown>): DesktopPluginExecutionResult => ({
+    pluginId: "posthog",
+    actionId,
+    ok: false,
+    status: 500,
+    summary,
+    data: { ...data, hasMore: false },
+  });
+  const eventPage = (callCount: number): DesktopPluginExecutionResult => ({
+    pluginId: "posthog",
+    actionId: "list_issue_events",
+    ok: true,
+    status: 200,
+    summary: "Listed PostHog issue events.",
+    data: {
+      events: [{ id: `event-${String(callCount)}`, timestamp: "2026-06-01T08:45:00.000Z", message: "Repeated event" }],
+      hasMore: true,
+      nextCursor: "next-event-page",
+    },
+  });
+  const issuesThenEvents = (events: (callCount: number) => DesktopPluginExecutionResult) =>
+    (request: DesktopPluginExecutionRequest, callCount: number) =>
+      request.actionId === "list_issues" ? issuePage(false) : events(callCount);
 
-  it("fails plugin event pages with ok false without advancing the watermark", async () => {
+  it.each([
+    {
+      failure: "an issue page with ok false",
+      withEvents: false,
+      respond: () => failedPage("list_issues", "PostHog provider returned HTTP 500.", { issues: [] }),
+      thrown: "PostHog provider returned HTTP 500.",
+      lastSyncError: 'Plugin "posthog" failed to list issues for source sync: PostHog provider returned HTTP 500.',
+      calls: undefined,
+    },
+    {
+      failure: "the issue page cap",
+      withEvents: false,
+      respond: () => issuePage(true),
+      thrown: "Plugin sync reached the 10 page limit before all issues were fetched.",
+      lastSyncError: "Plugin sync reached the 10 page limit before all issues were fetched.",
+      calls: 10,
+    },
+    {
+      failure: "the event page cap",
+      withEvents: true,
+      respond: issuesThenEvents(eventPage),
+      thrown: "Plugin sync reached the 10 event page limit before all events were fetched.",
+      lastSyncError: "Plugin sync reached the 10 event page limit before all events were fetched.",
+      calls: 11,
+    },
+    {
+      failure: "an event page with ok false",
+      withEvents: true,
+      respond: issuesThenEvents(() => failedPage("list_issue_events", "PostHog event API returned HTTP 500.", { events: [] })),
+      thrown: "PostHog event API returned HTTP 500.",
+      lastSyncError: 'Plugin "posthog" failed to list issue events for source sync: PostHog event API returned HTTP 500.',
+      calls: undefined,
+    },
+  ])("fails a plugin sync on $failure without advancing the watermark", async ({ withEvents, respond, thrown, lastSyncError, calls }) => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-06-01T09:00:00.000Z"));
 
@@ -977,48 +773,13 @@ describe("Sentry external source sync", () => {
     });
     const descriptor = createPostHogPluginDescriptor();
     const runtime = new TestPluginRuntimeService([
-      {
-        ...descriptor,
-        actions: [
-          ...descriptor.actions,
-          createProviderAction("list_issue_events"),
-        ],
-      },
+      withEvents
+        ? { ...descriptor, actions: [...descriptor.actions, createProviderAction("list_issue_events")] }
+        : descriptor,
     ]);
-    runtime.executeActionMock.mockImplementation((request) => {
-      if (request.actionId === "list_issues") {
-        return Promise.resolve({
-          pluginId: "posthog",
-          actionId: "list_issues",
-          ok: true,
-          status: 200,
-          summary: "Listed PostHog issues.",
-          data: {
-            issues: [
-              {
-                id: "issue-1",
-                title: "Issue with failed events",
-                level: "error",
-                lastSeen: "2026-06-01T08:45:00.000Z",
-              },
-            ],
-            hasMore: false,
-          },
-        });
-      }
-
-      return Promise.resolve({
-        pluginId: "posthog",
-        actionId: "list_issue_events",
-        ok: false,
-        status: 500,
-        summary: "PostHog event API returned HTTP 500.",
-        data: {
-          events: [],
-          hasMore: false,
-        },
-      });
-    });
+    runtime.executeActionMock.mockImplementation((request) =>
+      Promise.resolve(respond(request, runtime.executeActionMock.mock.calls.length)),
+    );
     const sourcesRepository = {
       findById: vi.fn().mockResolvedValue(source),
       findSyncEnabled: vi.fn().mockResolvedValue([source]),
@@ -1038,9 +799,7 @@ describe("Sentry external source sync", () => {
       },
       sourcesRepository,
       {
-        upsert: vi.fn((input: UpsertErrorIssueInput) =>
-          Promise.resolve(makeIssue(input)),
-        ),
+        upsert: vi.fn((input: UpsertErrorIssueInput) => Promise.resolve(makeIssue(input))),
         findById: vi.fn(),
       },
       {
@@ -1050,23 +809,13 @@ describe("Sentry external source sync", () => {
       runtime,
     );
 
-    await expect(service.syncSourceById(source.id)).rejects.toThrow(
-      "PostHog event API returned HTTP 500.",
-    );
+    await expect(service.syncSourceById(source.id)).rejects.toThrow(thrown);
+    if (calls !== undefined) expect(runtime.executeActionMock).toHaveBeenCalledTimes(calls);
     expect(sourcesRepository.update).toHaveBeenLastCalledWith(
-      expect.objectContaining({
-        id: source.id,
-        lastSyncStatus: "failed",
-        lastSyncError:
-          'Plugin "posthog" failed to list issue events for source sync: PostHog event API returned HTTP 500.',
-      }),
+      expect.objectContaining({ id: source.id, lastSyncStatus: "failed", lastSyncError }),
     );
     expect(sourcesRepository.update).not.toHaveBeenCalledWith(
-      expect.objectContaining({
-        id: source.id,
-        lastSyncAt: "2026-06-01T09:00:00.000Z",
-        lastSyncStatus: "success",
-      }),
+      expect.objectContaining({ id: source.id, lastSyncAt: "2026-06-01T09:00:00.000Z", lastSyncStatus: "success" }),
     );
   });
 });

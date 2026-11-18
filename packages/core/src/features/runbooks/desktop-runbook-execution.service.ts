@@ -1,5 +1,6 @@
 import { randomUUID } from "crypto";
 import { getErrorMessage } from "../../shared/errors";
+import { readBoundedResponseText } from "../../shared/bounded-response";
 import {
   addStepTemplateWarnings as addSharedStepTemplateWarnings,
   bumpExecutionSnapshotVersion,
@@ -75,7 +76,6 @@ const PLUGIN_ACTION_STEP_TIMEOUT_MS = 60_000;
 const RUNBOOK_SHELL_STEP_TIMEOUT_MS = 300_000;
 const RUNBOOK_LLM_STEP_TIMEOUT_MS = 300_000;
 const SHELL_STEP_EMIT_THROTTLE_MS = 250;
-const MILLISECONDS_PER_MINUTE = 60_000;
 const EXECUTION_CONTROL_HEARTBEAT_INTERVAL_MS = 2_000;
 
 export type RunbookExecutionEdition = "pro" | "ce";
@@ -108,7 +108,9 @@ export type LocalAiStreamDelta =
   | {
       type: "token_usage";
       tokenUsage: LocalAiTokenUsage;
-    };
+    }
+  // Steering a running coding agent turn; runbook steps ignore it.
+  | { type: "steer_handle"; steer: ((text: string) => Promise<void>) | null };
 
 export interface LocalAiExecutionResult {
   output: string;
@@ -133,6 +135,24 @@ export interface RunbookExecutionServiceEvent {
   executionId: string;
   incidentThreadId?: string | null;
   execution: RunbookExecutionRecord;
+}
+
+/**
+ * What the renderer is sent: an output flush of a running execution carries only its changed step, with the
+ * execution's other fields and `steps: []`; the renderer applies it to the previous version or fetches a snapshot.
+ */
+type RunbookExecutionRendererEvent = RunbookExecutionServiceEvent & {
+  step?: { index: number; record: RunbookExecutionRecord["steps"][number] };
+};
+
+function toRendererEvent(
+  event: RunbookExecutionServiceEvent,
+  stepIndex: number | undefined,
+): RunbookExecutionRendererEvent {
+  const { steps, status } = event.execution;
+  if (stepIndex === undefined || status !== "running" || stepIndex >= steps.length) return event;
+  const record = steps[stepIndex];
+  return { ...event, execution: { ...event.execution, steps: [] }, step: { index: stepIndex, record } };
 }
 
 export interface ChatMessage {
@@ -170,7 +190,9 @@ export type RunbookExecutionOnDelta = (
     | {
         type: "token_usage";
         tokenUsage: NonNullable<ChatResponse["tokenUsage"]>;
-      },
+      }
+    // A runbook step never steers its coding agent, so it ignores this.
+    | { type: "steer_handle"; steer: ((text: string) => Promise<void>) | null },
 ) => void;
 
 export interface RunbookExecutionLlmAdapter {
@@ -614,7 +636,7 @@ export class RunbookExecutionService {
       );
 
     if (inMemoryMatches.length > 0) {
-      const latest = inMemoryMatches[0]!;
+      const latest = inMemoryMatches[0];
       return {
         resultId: latest.resultId,
         execution: this.snapshotForBoundary(latest),
@@ -677,7 +699,7 @@ export class RunbookExecutionService {
         return this.get(executionId);
       }
       if (error instanceof OrchestrationError && error.kind === "cancelled") {
-        throw new Error("Runbook wait cancelled");
+        throw new Error("Runbook wait cancelled", { cause: error });
       }
       throw error;
     }
@@ -1254,7 +1276,7 @@ export class RunbookExecutionService {
         clearTimeout(flushTimer);
         flushTimer = null;
       }
-      await this.emitSnapshot(session);
+      await this.emitSnapshot(session, { stepIndex: actionIndex });
     };
 
     const scheduleFlush = () => {
@@ -1263,7 +1285,7 @@ export class RunbookExecutionService {
       }
       flushTimer = setTimeout(() => {
         flushTimer = null;
-        void this.emitSnapshot(session);
+        void this.emitSnapshot(session, { stepIndex: actionIndex });
       }, SHELL_STEP_EMIT_THROTTLE_MS);
     };
 
@@ -1324,8 +1346,8 @@ export class RunbookExecutionService {
     this.recordActivity(session);
     await this.emitSnapshot(session);
 
-    const response = await this.sendHttpRequest(session, request);
-    return this.buildHttpResult(response);
+    const { response, body } = await this.sendHttpRequest(session, request);
+    return this.buildHttpResult(response, body);
   }
 
   private prepareHttpRequest(
@@ -1413,31 +1435,38 @@ export class RunbookExecutionService {
   private async sendHttpRequest(
     session: RunbookExecutionSession,
     request: PreparedHttpRequest,
-  ): Promise<Response> {
+  ): Promise<{ response: Response; body: string }> {
     try {
-      const response = await runOrchestratedOperation({
+      // The body is read under the same deadline and cancellation signal.
+      const result = await runOrchestratedOperation({
         operation: "HTTP request",
         signal: session.abortController.signal,
         timeoutMs: this.httpTimeoutMs,
-        execute: (signal) =>
-          fetch(request.url.toString(), {
+        execute: async (signal) => {
+          const response = await fetch(request.url.toString(), {
             method: request.method,
             headers: request.headers.requestHeaders,
             body: this.getHttpRequestBody(request),
             signal,
-          }),
+          });
+          const { text } = await readBoundedResponseText(
+            response,
+            MAX_STEP_OUTPUT_LENGTH,
+          );
+          return { response, body: text };
+        },
       });
       this.recordActivity(session);
-      return response;
+      return result;
     } catch (error) {
       if (error instanceof OrchestrationError) {
         if (error.kind === "timeout") {
           throw new Error(
-            `HTTP request timed out after ${String(this.httpTimeoutMs)}ms`,
+            `HTTP request timed out after ${String(this.httpTimeoutMs)}ms`, { cause: error },
           );
         }
         if (error.kind === "cancelled") {
-          throw new Error("HTTP request cancelled");
+          throw new Error("HTTP request cancelled", { cause: error });
         }
         this.recordActivity(session);
         throw error.cause;
@@ -1456,10 +1485,10 @@ export class RunbookExecutionService {
     return request.body?.value;
   }
 
-  private async buildHttpResult(
+  private buildHttpResult(
     response: Response,
-  ): Promise<ExecutedStepResult> {
-    const responseBody = await this.readHttpBody(response);
+    responseBody: string,
+  ): ExecutedStepResult {
     const contentType = response.headers.get("content-type");
     const formattedBody = this.formatHttpBody(contentType, responseBody);
 
@@ -1582,11 +1611,6 @@ export class RunbookExecutionService {
     };
   }
 
-  private async readHttpBody(response: Response): Promise<string> {
-    const bodyText = await response.text();
-    return bodyText.slice(0, MAX_STEP_OUTPUT_LENGTH);
-  }
-
   private formatHttpBody(contentType: string | null, body: string): string {
     if (body.length === 0) return "(empty body)";
 
@@ -1666,7 +1690,7 @@ export class RunbookExecutionService {
         message = error.message;
       }
       throw new Error(
-        `${fieldLabel} must resolve to a valid JSON object: ${message}`,
+        `${fieldLabel} must resolve to a valid JSON object: ${message}`, { cause: error },
       );
     }
 
@@ -2053,6 +2077,7 @@ export class RunbookExecutionService {
     const throttledEmitSnapshot = this.createLocalAiSnapshotEmitter(
       session,
       snapshotState,
+      actionIndex,
     );
 
     const result = await runOrchestratedOperation({
@@ -2093,7 +2118,7 @@ export class RunbookExecutionService {
       },
     });
 
-    await this.flushLocalAiSnapshotEmitter(session, snapshotState);
+    await this.flushLocalAiSnapshotEmitter(session, snapshotState, actionIndex);
     step.metadata = this.createLocalAiMetadata(
       step.metadata,
       providerKey,
@@ -2190,6 +2215,7 @@ export class RunbookExecutionService {
   private createLocalAiSnapshotEmitter(
     session: RunbookExecutionSession,
     snapshotState: LocalAiSnapshotThrottleState,
+    stepIndex: number,
   ): () => void {
     const snapshotThrottleMs = 250;
 
@@ -2203,7 +2229,7 @@ export class RunbookExecutionService {
         snapshotState.timer = null;
         if (snapshotState.pending) {
           snapshotState.pending = false;
-          void this.emitSnapshot(session);
+          void this.emitSnapshot(session, { stepIndex });
         }
       }, snapshotThrottleMs);
     };
@@ -2212,13 +2238,14 @@ export class RunbookExecutionService {
   private async flushLocalAiSnapshotEmitter(
     session: RunbookExecutionSession,
     snapshotState: LocalAiSnapshotThrottleState,
+    stepIndex: number,
   ): Promise<void> {
     if (snapshotState.timer !== null) {
       clearTimeout(snapshotState.timer);
       snapshotState.timer = null;
     }
     if (snapshotState.pending) {
-      await this.emitSnapshot(session);
+      await this.emitSnapshot(session, { stepIndex });
     }
   }
 
@@ -2309,7 +2336,7 @@ export class RunbookExecutionService {
     result: LocalAiExecutionResult,
   ): Record<string, unknown> {
     const metadata: Record<string, unknown> = {
-      ...(previousMetadata ?? {}),
+      ...previousMetadata,
       providerKey,
     };
 
@@ -2743,17 +2770,17 @@ export class RunbookExecutionService {
       return {
         ...result,
         metadata: {
-          ...(result.metadata ?? {}),
+          ...result.metadata,
           logFilter: filtered.metadata,
         },
         structuredOutput: {
-          ...(result.structuredOutput ?? {}),
+          ...result.structuredOutput,
           ...filtered.structuredOutput,
         },
       };
     } catch (error) {
       if (error instanceof RunbookLogFilterError) {
-        throw new Error(`Log filter failed: ${error.message}`);
+        throw new Error(`Log filter failed: ${error.message}`, { cause: error });
       }
       throw error;
     }
@@ -2960,9 +2987,10 @@ export class RunbookExecutionService {
     await this.emitSnapshot(session);
   }
 
+  /** `stepIndex` marks an output flush that changed only that step, so the renderer is sent just the step. */
   private emitSnapshot(
     session: RunbookExecutionSession,
-    options?: { failOnReject?: boolean },
+    options?: { failOnReject?: boolean; stepIndex?: number },
   ): Promise<void> {
     // Serialize emits per session. Concurrent emits (throttled streaming
     // snapshots racing the terminal snapshot) can reach the store out of
@@ -2977,7 +3005,7 @@ export class RunbookExecutionService {
 
   private async emitSnapshotNow(
     session: RunbookExecutionSession,
-    options?: { failOnReject?: boolean },
+    options?: { failOnReject?: boolean; stepIndex?: number },
   ): Promise<void> {
     const maxAttempts = 3;
     for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
@@ -2995,7 +3023,7 @@ export class RunbookExecutionService {
         },
       );
       if (eventOutcome === "accepted") {
-        await this.publishAcceptedSnapshot(session, snapshot);
+        await this.publishAcceptedSnapshot(session, snapshot, options?.stepIndex);
         return;
       }
       if (eventOutcome !== "stale") {
@@ -3044,6 +3072,7 @@ export class RunbookExecutionService {
   private async publishAcceptedSnapshot(
     session: RunbookExecutionSession,
     snapshot: RunbookExecutionRecord,
+    stepIndex?: number,
   ): Promise<void> {
     if (snapshot.status !== "running") {
       this.stopExecutionHeartbeat(session);
@@ -3066,7 +3095,7 @@ export class RunbookExecutionService {
     const win = this.windowGetter();
     if (win !== null && !win.isDestroyed()) {
       try {
-        win.webContents.send(RUNBOOK_EXECUTION_EVENT_CHANNEL, payload);
+        win.webContents.send(RUNBOOK_EXECUTION_EVENT_CHANNEL, toRendererEvent(payload, stepIndex));
       } catch {
         // Renderer teardown cannot retroactively fail an already-persisted run.
       }

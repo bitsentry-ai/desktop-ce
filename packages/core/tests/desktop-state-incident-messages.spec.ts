@@ -1,0 +1,178 @@
+import { mkdtemp, rm } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+import { DbClient } from "../src/features/desktop/desktop-database-client";
+import {
+  createDesktopStateHandlers,
+  loadIncidentThreadMessages,
+  saveIncidentThreadMessages,
+} from "../src/features/desktop-state/desktop-state.handlers";
+
+const createdAt = "2026-10-01T10:00:00.000Z";
+
+const persistedIteration = {
+  id: "iteration-1",
+  startedAt: createdAt,
+  completedAt: createdAt,
+  text: "Disk is full",
+  toolCallIds: ["tool-1"],
+  status: "done",
+};
+
+const richAgentMessage = {
+  id: "message-agent-1",
+  kind: "agent",
+  iterations: [persistedIteration],
+  activeIterationId: null,
+  toolCalls: [{ toolCallId: "tool-1", toolName: "execute_shell_command", state: "done", output: "100%", modelContext: "df" }],
+  finalText: "Disk is full",
+  status: "done",
+  customerReport: { title: "Disk usage", parts: [{ type: "remediation", text: "Rotate logs" }] },
+};
+
+let directory: string;
+let db: DbClient;
+
+beforeEach(async () => {
+  directory = await mkdtemp(path.join(os.tmpdir(), "incident-messages-"));
+  db = new DbClient({ datasources: { db: { url: `file:${path.join(directory, "profile.db")}` } } });
+  await db.$executeRawUnsafe(`
+    CREATE TABLE "IncidentThread" (id TEXT PRIMARY KEY, title TEXT, prompt TEXT, state TEXT, "sessionId" TEXT,
+      "createdAt" TEXT, "updatedAt" TEXT, "archivedAt" TEXT, "deletedAt" TEXT, "lastMessagePreview" TEXT);
+    CREATE TABLE "IncidentMessage" (id TEXT PRIMARY KEY, "threadId" TEXT, "sortOrder" INTEGER, kind TEXT, text TEXT,
+      "streamText" TEXT, "toolCallsJson" TEXT, "finalText" TEXT, status TEXT, "errorMsg" TEXT, "messageJson" TEXT,
+      "createdAt" TEXT, "updatedAt" TEXT);
+  `);
+});
+
+afterEach(async () => {
+  await db.$disconnect();
+  await rm(directory, { recursive: true, force: true });
+});
+
+describe("incident message persistence", () => {
+  it("round-trips chat message fields through SQLite", async () => {
+    const handlers = createDesktopStateHandlers(db);
+    const threadA = [
+      { id: "message-user-1", kind: "user", text: "Why is api-1 down?", attachments: [{ id: "a-1", type: "text", name: "log.txt" }] },
+      richAgentMessage,
+    ];
+    const threadB = [{ id: "message-user-2", kind: "user", text: "Other thread" }];
+    await handlers["incidents:saveThread"]({ thread: { id: "thread-a", title: "A", prompt: "Why is api-1 down?", state: "completed", createdAt } });
+    await handlers["incidents:appendThreadMessages"]({ threadId: "thread-a", messages: threadA });
+    await handlers["incidents:appendThreadMessages"]({ threadId: "thread-b", messages: threadB });
+
+    expect(await loadIncidentThreadMessages(db, "thread-a")).toEqual(threadA);
+    expect(await loadIncidentThreadMessages(db, "thread-b")).toEqual(threadB);
+    expect(await handlers["incidents:list"]({})).toMatchObject([
+      { id: "thread-b", lastMessagePreview: "Other thread" },
+      { id: "thread-a", title: "A", lastMessagePreview: "Disk is full" },
+    ]);
+  });
+
+  it("saves one thread's messages without touching another thread", async () => {
+    const threadA = [
+      { id: "a-1", kind: "user", text: "First" },
+      { id: "a-2", kind: "agent", finalText: "Answer", status: "done" },
+      { id: "a-3", kind: "user", text: "Removed later" },
+    ];
+    const threadB = [{ id: "b-1", kind: "user", text: "Untouched" }];
+    await saveIncidentThreadMessages(db, "thread-a", threadA);
+    await saveIncidentThreadMessages(db, "thread-b", threadB);
+
+    const changed = { id: "a-2", kind: "agent", finalText: "Better answer", status: "done" };
+    const added = { id: "a-4", kind: "user", text: "Follow-up" };
+    await saveIncidentThreadMessages(db, "thread-a", [threadA[0], changed, added]);
+
+    expect(await loadIncidentThreadMessages(db, "thread-a")).toEqual([threadA[0], changed, added]);
+    expect(await loadIncidentThreadMessages(db, "thread-b")).toEqual(threadB);
+  });
+
+  it("persists streaming changes without replacing history and updates the preview", async () => {
+    const history = [
+      { id: "h-1", kind: "user", text: "First" },
+      { id: "h-2", kind: "agent", streamText: "Checking", status: "streaming" },
+    ];
+    await saveIncidentThreadMessages(db, "thread-a", history);
+    const changed = { ...history[1], streamText: "Checking disk usage" };
+    await saveIncidentThreadMessages(db, "thread-a", [history[0], changed], [1]);
+    expect(await loadIncidentThreadMessages(db, "thread-a")).toEqual([history[0], changed]);
+    const rows = await db.$queryRawUnsafe<{ lastMessagePreview: string }>(
+      `SELECT "lastMessagePreview" FROM "IncidentThread" WHERE id = 'thread-a'`,
+    );
+    expect(rows[0]?.lastMessagePreview).toBe("Checking disk usage");
+  });
+
+  it("appends after the stored messages and keeps all of them", async () => {
+    const handlers = createDesktopStateHandlers(db);
+    const history = [
+      { id: "h-1", kind: "user", text: "First" },
+      { id: "h-2", kind: "agent", finalText: "Answer", status: "done" },
+    ];
+    await saveIncidentThreadMessages(db, "thread-a", history);
+
+    const failedSend = [
+      { id: "s-1", kind: "user", text: "Follow-up" },
+      { id: "s-2", kind: "agent", finalText: "Provider down", status: "error", errorMsg: "Provider down" },
+    ];
+    await handlers["incidents:appendThreadMessages"]({ threadId: "thread-a", messages: failedSend });
+
+    expect(await loadIncidentThreadMessages(db, "thread-a")).toEqual([...history, ...failedSend]);
+  });
+
+  it("writes on the main connection and keeps paging a long thread after the worker dies", async () => {
+    await db.$startWorker();
+    const handlers = createDesktopStateHandlers(db);
+    const thread = Array.from({ length: 500 }, (_, index) => ({ id: `m-${String(index)}`, kind: "user", text: `question ${String(index)} ${"x".repeat(index === 499 ? 2_000_000 : 3_000)}` }));
+    // A write is committed when the call returns, so a later write on the main connection can reference it.
+    const saving = saveIncidentThreadMessages(db, "thread-a", thread);
+    expect(await db.$queryRawUnsafe('SELECT COUNT(*) AS "count" FROM "IncidentMessage"')).toEqual([{ count: 500 }]);
+    await saving;
+
+    const workerReads = vi.spyOn(db, "$queryRawInWorker");
+    const pages: Array<{ messages: unknown[]; before: number | null }> = [];
+    let before: number | undefined;
+    do {
+      const reading = handlers["incidents:getThreadMessages"]({ threadId: "thread-a", before }) as Promise<{ messages: unknown[]; before: number | null }>;
+      if (pages.length === 1) await (db as unknown as { worker: { worker: { terminate(): Promise<number> } } }).worker.worker.terminate();
+      const page = await reading;
+      // Only the page and the one row that marks an older page leave the database.
+      const rows = (await workerReads.mock.results.at(-1)?.value) as unknown[];
+      expect(rows.length).toBeLessThanOrEqual(page.messages.length + 1);
+      pages.unshift(page);
+      before = page.before ?? undefined;
+    } while (before !== undefined);
+
+    // The newest message alone is over the size budget, so it comes back on its own.
+    expect(pages[pages.length - 1]?.messages).toEqual([thread[499]]);
+    expect(pages.every((page) => page.messages.length <= 200)).toBe(true);
+    expect(pages.flatMap((page) => page.messages)).toEqual(thread);
+  });
+
+  it("patches only the thread fields it is given", async () => {
+    const handlers = createDesktopStateHandlers(db);
+    await handlers["incidents:saveThread"]({ thread: { id: "thread-a", title: "Disk full", prompt: "Why?", state: "COMPLETED", createdAt } });
+    await handlers["incidents:saveThread"]({ thread: { id: "thread-a", archivedAt: createdAt } });
+
+    expect(await handlers["incidents:list"]({})).toMatchObject([
+      { id: "thread-a", title: "Disk full", state: "COMPLETED", archived: true, archivedAt: createdAt },
+    ]);
+  });
+
+  it("reads rows written before messageJson from the summary columns", async () => {
+    await db.$executeRawUnsafe(`
+      INSERT INTO "IncidentMessage" (id, "threadId", "sortOrder", kind, text, "createdAt", "updatedAt")
+        VALUES ('m-0', 'thread-a', 0, 'user', 'Legacy question', '${createdAt}', '${createdAt}');
+      INSERT INTO "IncidentMessage" (id, "threadId", "sortOrder", kind, "streamText", "toolCallsJson", "finalText", status, "createdAt", "updatedAt")
+        VALUES ('m-1', 'thread-a', 1, 'agent', 'Legacy answer', '[]', 'Legacy answer', 'done', '${createdAt}', '${createdAt}');
+    `);
+
+    expect(await loadIncidentThreadMessages(db, "thread-a")).toEqual([
+      { id: "m-0", kind: "user", text: "Legacy question" },
+      { id: "m-1", kind: "agent", streamText: "Legacy answer", toolCalls: [], finalText: "Legacy answer", status: "done", errorMsg: undefined },
+    ]);
+  });
+});

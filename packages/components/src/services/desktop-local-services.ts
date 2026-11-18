@@ -1,5 +1,6 @@
 import type { IntegrationConnection, IntegrationConnectionInput } from "@bitsentry-ce/core/features/plugins";
-import type { AgentThreadSnapshot } from '../chat/types'
+import type { AgentEventPayload, AgentSnapshotReply } from '../chat/types'
+import { subscribeToFullExecutions } from './runbookExecutionEvents'
 import type {
   AuthSessionState,
   AvailablePlugin,
@@ -30,6 +31,7 @@ import type {
   AgentEvent,
   RunbookAuthoringProposalDecisionResult,
   RunbookAuthoringProposalReview,
+  AgentQueueUpdateRequest,
   AgentSendRequest,
   AgentSessionStatus,
   AgentStartRequest,
@@ -66,6 +68,7 @@ type DesktopLocalBridge = {
         executionId: string
         incidentThreadId?: string | null
         execution: RunbookExecutionRecord
+        step?: { index: number; record: unknown }
       }) => void,
     ) => () => void
     onChanged: (callback: () => void) => () => void
@@ -74,8 +77,10 @@ type DesktopLocalBridge = {
     start: (input: AgentStartRequest) => Promise<{ sessionId: string }>
     send: (input: AgentSendRequest) => Promise<{ sessionId: string }>
     cancel: (sessionId: string) => Promise<void>
+    updateQueue: (input: AgentQueueUpdateRequest) => Promise<void>
+    restoreQueue: (incidentThreadId: string) => Promise<{ sessionId: string; snapshot: AgentSnapshotReply } | null>
     getStatus: (sessionId: string) => Promise<AgentSessionStatus | null>
-    getSnapshot: (sessionId: string) => Promise<AgentThreadSnapshot | null>
+    getSnapshot: (sessionId: string) => Promise<AgentSnapshotReply | null>
     listRunbookAuthoringProposals: (input: {
       sessionId?: string
       incidentThreadId?: string
@@ -104,16 +109,12 @@ type DesktopLocalBridge = {
       proposalId: string
     }) => Promise<RunbookAuthoringProposalDecisionResult>
     onEvent: (
-      handler: (data: {
-        sessionId: string
-        event: AgentEvent
-        snapshot?: AgentThreadSnapshot
-      }) => void,
+      handler: (data: AgentEventPayload<AgentEvent>) => void,
     ) => () => void
   }
 }
 
-let desktopAuthSession: AuthSessionState = {
+const desktopAuthSession: AuthSessionState = {
   user: {
     id: 1,
     email: 'local-operator@desktop',
@@ -657,7 +658,11 @@ export function createDesktopLocalBitsentryServices({
           execution: RunbookExecutionRecord
         }) => void,
       ): () => void {
-        return getDesktopBridge().runbooks.onExecutionEvent(handler)
+        return subscribeToFullExecutions(
+          (onEvent) => getDesktopBridge().runbooks.onExecutionEvent(onEvent),
+          (executionId) => ipcInvoke<RunbookExecutionRecord | null>('runbooks:getExecution', { executionId }),
+          handler,
+        )
       },
       onChanged(handler: () => void): () => void {
         return getDesktopBridge().runbooks.onChanged(handler)
@@ -668,6 +673,8 @@ export function createDesktopLocalBitsentryServices({
       start: (input: AgentStartRequest) => getDesktopBridge().agent.start(input),
       send: (input: AgentSendRequest) => getDesktopBridge().agent.send(input),
       cancel: (sessionId: string) => getDesktopBridge().agent.cancel(sessionId),
+      updateQueue: (input: AgentQueueUpdateRequest) => getDesktopBridge().agent.updateQueue(input),
+      restoreQueue: (incidentThreadId: string) => getDesktopBridge().agent.restoreQueue(incidentThreadId),
       getStatus: (sessionId: string) => getDesktopBridge().agent.getStatus(sessionId),
       getSnapshot: (sessionId: string) => getDesktopBridge().agent.getSnapshot(sessionId),
       listRunbookAuthoringProposals: (input: {
@@ -698,11 +705,7 @@ export function createDesktopLocalBitsentryServices({
         proposalId: string
       }) => getDesktopBridge().agent.restoreRunbookAuthoringProposal(input),
       onEvent: (
-        handler: (data: {
-          sessionId: string
-          event: AgentEvent
-          snapshot?: AgentThreadSnapshot
-        }) => void,
+        handler: (data: AgentEventPayload<AgentEvent>) => void,
       ) => getDesktopBridge().agent.onEvent(handler),
     },
 
@@ -710,9 +713,7 @@ export function createDesktopLocalBitsentryServices({
       getAuthSession() {
         return desktopAuthSession
       },
-      logout() {
-        return
-      },
+      logout() {},
       navigate(path: string) {
         window.location.assign(path)
       },

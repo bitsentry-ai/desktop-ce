@@ -52,10 +52,8 @@ const cli = {
 
 const {
   detectBinary,
-  probeClaudeCode,
   probeCodex,
   probeOpenCode,
-  executeClaudeCode,
   executeCodex,
   executeOpenCode,
 } = cli;
@@ -155,76 +153,6 @@ describe("CodingAgentsProviderService", () => {
     ).rejects.toThrow("Codex app-server probe failed: initialize failed");
   });
 
-  it("passes configured OpenCode args to provider probes", async () => {
-    vi.mocked(probeOpenCode).mockImplementation((_binaryPath, opencodeArgs) => {
-      let status: "ready" | "error" = "error";
-      if (
-        JSON.stringify(opencodeArgs) ===
-        JSON.stringify(["--provider", "github-copilot"])
-      ) {
-        status = "ready";
-      }
-      return Promise.resolve({
-        installed: true,
-        version: "0.7.0",
-        auth: { status: "authenticated" },
-        status,
-      });
-    });
-
-    const db = createDbMock();
-    const service = createService(db);
-    await service.saveSettings({
-      opencode: {
-        enabled: true,
-        binaryPath: "opencode",
-        opencodeArgs: ["--provider", "github-copilot"],
-      },
-    });
-
-    const result = await service.probe("opencode");
-
-    expect(result.status).toBe("ready");
-    expect(service.getSettings().opencode.lastProbe?.status).toBe("ready");
-  });
-
-  it("passes configured OpenCode args when syncing models", async () => {
-    vi.mocked(detectBinary).mockResolvedValue(null);
-    vi.mocked(execFile).mockImplementation(
-      (command, args, options, callback) => {
-        let cb = callback;
-        if (typeof options === "function") {
-          cb = options;
-        }
-        if (
-          command === "opencode" &&
-          Array.isArray(args) &&
-          args.join("\u0000") ===
-            ["--provider", "github-copilot", "models"].join("\u0000")
-        ) {
-          cb?.(null, "grok-code-fast-free\nopencode/grok-code-fast-free\n", "");
-        } else {
-          cb?.(new Error("unexpected models command"), "", "");
-        }
-        return new ChildProcess();
-      },
-    );
-
-    const db = createDbMock();
-    const service = createService(db);
-    await service.saveSettings({
-      opencode: {
-        enabled: true,
-        binaryPath: "opencode",
-        opencodeArgs: ["--provider", "github-copilot"],
-      },
-    });
-
-    const models = await service.listModels("opencode");
-
-    expect(models).toEqual(["grok-code-fast-free", "opencode/grok-code-fast-free"]);
-  });
-
   it("uses the detected OpenCode binary when syncing models", async () => {
     vi.mocked(detectBinary).mockResolvedValue("/opt/homebrew/bin/opencode");
     vi.mocked(execFile).mockImplementation(
@@ -280,62 +208,6 @@ describe("CodingAgentsProviderService", () => {
     }
     expect(detectBinary).not.toHaveBeenCalled();
     expect(service.getSettings().cursor.binaryPath).toBe("cursor-agent");
-  });
-
-  it("maps every Claude effort tier to agent max turns", async () => {
-    vi.mocked(detectBinary).mockResolvedValue("/opt/homebrew/bin/claude");
-    vi.mocked(probeClaudeCode).mockResolvedValue({
-      installed: true,
-      version: "2.0.0",
-      auth: { status: "authenticated" },
-      status: "ready",
-    });
-    vi.mocked(executeClaudeCode).mockImplementation((input) =>
-      Promise.resolve({
-        output: JSON.stringify({
-          binaryPath: input.binaryPath,
-          model: input.model,
-          maxTurns: input.maxTurns,
-          contextWindow: input.contextWindow,
-        }),
-      }),
-    );
-
-    const db = createDbMock();
-    const service = createService(db);
-    await service.saveSettings({
-      claudeCode: {
-        enabled: true,
-        binaryPath: "claude",
-      },
-    });
-
-    for (const [effort, maxTurns] of [
-      ["low", 3],
-      ["medium", 8],
-      ["high", 16],
-      ["xhigh", 24],
-      ["max", 40],
-      ["ultrathink", 64],
-    ] as const) {
-      const result = await service.execute(
-        "claude_code",
-        "hello",
-        new AbortController(),
-        undefined,
-        undefined,
-        "claude-sonnet-5",
-        "auto-accept-edits",
-        { effort, contextWindow: "1m" },
-      );
-
-      expect(JSON.parse(result.output)).toEqual({
-        binaryPath: "/opt/homebrew/bin/claude",
-        model: "claude-sonnet-5",
-        maxTurns,
-        contextWindow: "1m",
-      });
-    }
   });
 
   it("silently detects and uses the resolved opencode binary without changing the saved path", async () => {

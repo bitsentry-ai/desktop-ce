@@ -71,6 +71,15 @@ export const DEFAULT_LOCAL_AI_SETTINGS: LocalAiSettings = {
   },
 }
 
+/**
+ * The running turn can take a steer through `steer`, or no longer can when it
+ * is null. Only providers with a mid-turn input API send this.
+ */
+export interface LocalAiSteerHandleDelta {
+  type: 'steer_handle'
+  steer: ((text: string) => Promise<void>) | null
+}
+
 export type LocalAiStreamDelta =
   | {
       type: 'text' | 'reasoning' | 'tool_start' | 'tool_end' | 'command_output' | 'status'
@@ -79,6 +88,7 @@ export type LocalAiStreamDelta =
       status?: 'started' | 'completed' | 'failed' | 'cancelled'
     }
   | LocalAiTokenUsageDelta
+  | LocalAiSteerHandleDelta
 
 export interface LocalAiTokenUsage {
   inputTokens: number

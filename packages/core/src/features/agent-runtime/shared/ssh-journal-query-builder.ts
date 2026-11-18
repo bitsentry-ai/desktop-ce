@@ -162,8 +162,7 @@ function appendJournalLimitArgs(journalParts: string[], input: SshJournalQueryIn
 export function buildSshJournalctlCommand(input: SshJournalQueryInput): SshJournalctlCommand {
   const args: string[] = []
 
-  args.push('-o', 'ConnectTimeout=10')
-  args.push('-o', 'BatchMode=yes')
+  args.push('-o', 'ConnectTimeout=10', '-o', 'BatchMode=yes')
   appendSshPortArg(args, input)
 
   const target = `${input.username}@${input.host}`
@@ -204,9 +203,7 @@ export function classifySshError(stderr: string): ErrorClassification {
     }
   }
 
-  const [firstLine = 'Unknown error'] = stderr
-    .split('\n')
-    .filter((line) => line.length > 0)
+  const firstLine = stderr.split('\n').find((line) => line.length > 0) ?? 'Unknown error'
   return {
     message: firstLine.slice(0, 200),
     level: 'error',

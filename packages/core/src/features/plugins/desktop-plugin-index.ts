@@ -9,11 +9,11 @@ import { parse as parseYaml } from "yaml";
 // GitHub Release. Override the index URL with BITSENTRY_PLUGIN_INDEX_URL (it
 // must stay on the first-party R2 origin).
 export const DEFAULT_PLUGIN_INDEX_URL = "https://plugins.bitsentry.ai/index.yaml";
-export const DEFAULT_PLUGIN_INDEX_ORIGIN = new URL(
+const DEFAULT_PLUGIN_INDEX_ORIGIN = new URL(
   DEFAULT_PLUGIN_INDEX_URL,
 ).origin;
-export const FIRST_PARTY_PLUGIN_RELEASE_ORIGIN = "https://github.com";
-export const FIRST_PARTY_PLUGIN_RELEASE_PATH =
+const FIRST_PARTY_PLUGIN_RELEASE_ORIGIN = "https://github.com";
+const FIRST_PARTY_PLUGIN_RELEASE_PATH =
   /^\/bitsentry-ai\/desktop-ce\/releases\/download\/[^/]+\/[^/]+\.plugin\.js$/;
 
 export type PluginIndexEntry = {
@@ -53,7 +53,7 @@ export function assertFirstPartyRemoteUrl(source: string, label: string): void {
   }
 }
 
-export function resolvePluginIndexUrl(explicit?: string): string {
+function resolvePluginIndexUrl(explicit?: string): string {
   const configured = explicit ?? process.env.BITSENTRY_PLUGIN_INDEX_URL;
   if (
     configured !== undefined &&
@@ -106,7 +106,7 @@ async function readBinarySource(source: string): Promise<Buffer> {
   return readFile(path.resolve(source));
 }
 
-export function sourceRelativeUrl(source: string, relativeUrl: string): string {
+function sourceRelativeUrl(source: string, relativeUrl: string): string {
   if (isRemoteUrl(relativeUrl)) {
     return relativeUrl;
   }
@@ -192,7 +192,7 @@ function parsePluginIndexEntry(
   };
 }
 
-export function parsePluginIndex(raw: string): PluginIndexEntry[] {
+function parsePluginIndex(raw: string): PluginIndexEntry[] {
   const parsed = parseYaml(raw) as unknown;
   const root = readIndexEntryRecord(parsed);
   if ("version" in root || "versions" in root) {
@@ -231,7 +231,7 @@ export async function fetchPluginIndex(explicitUrl?: string): Promise<{
   return { entries, indexUrl };
 }
 
-export async function resolvePluginIndexEntry(
+async function resolvePluginIndexEntry(
   name: string,
   explicitUrl?: string,
 ): Promise<{ entry: PluginIndexEntry; indexUrl: string }> {

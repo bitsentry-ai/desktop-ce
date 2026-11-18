@@ -18,7 +18,7 @@ import type {
 /**
  * Zod schema for get_checkpoint tool input.
  */
-export const getCheckpointSchema = z.object({
+const getCheckpointSchema = z.object({
   sourceId: z.string().optional().describe('Log source ID to get checkpoint for'),
   host: z.string().optional().describe('Host to get checkpoint for (if no sourceId)'),
 })

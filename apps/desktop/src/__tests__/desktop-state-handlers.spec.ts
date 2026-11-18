@@ -21,12 +21,12 @@ function createDesktopStateDatabase(): {
   runbookActionCreate: ReturnType<typeof vi.fn>;
   investigationSessionCreate: ReturnType<typeof vi.fn>;
   investigationSessionDeleteMany: ReturnType<typeof vi.fn>;
-  investigationSessionFindUnique: ReturnType<typeof vi.fn>;
+  investigationSessionFindMany: ReturnType<typeof vi.fn>;
 } {
   const runbookActionCreate = vi.fn().mockResolvedValue({});
   const investigationSessionCreate = vi.fn().mockResolvedValue({});
   const investigationSessionDeleteMany = vi.fn().mockResolvedValue({});
-  const investigationSessionFindUnique = vi.fn().mockResolvedValue(null);
+  const investigationSessionFindMany = vi.fn().mockResolvedValue([]);
   const runbookAction = {
     ...createNoopTable(),
     create: runbookActionCreate,
@@ -35,11 +35,10 @@ function createDesktopStateDatabase(): {
     ...createNoopTable(),
     create: investigationSessionCreate,
     deleteMany: investigationSessionDeleteMany,
-    findUnique: investigationSessionFindUnique,
+    findMany: investigationSessionFindMany,
   };
   const db = {
     legacyImportLedger: createNoopTable(),
-    incidentMessage: createNoopTable(),
     incidentThread: createNoopTable(),
     runbook: createNoopTable(),
     runbookAction,
@@ -58,7 +57,7 @@ function createDesktopStateDatabase(): {
     runbookActionCreate,
     investigationSessionCreate,
     investigationSessionDeleteMany,
-    investigationSessionFindUnique,
+    investigationSessionFindMany,
   };
 }
 
@@ -167,9 +166,9 @@ describe("desktop state handlers", () => {
         db,
         investigationSessionCreate,
         investigationSessionDeleteMany,
-        investigationSessionFindUnique,
+        investigationSessionFindMany,
       } = createDesktopStateDatabase();
-      investigationSessionFindUnique.mockResolvedValue({
+      investigationSessionFindMany.mockResolvedValue([{
         id: "result-1",
         executionId: "execution-1",
         status,
@@ -177,7 +176,7 @@ describe("desktop state handlers", () => {
           executionId: "execution-1",
           status,
         }),
-      });
+      }]);
       const handlers = createDesktopStateHandlers(db);
 
       await expect(
@@ -204,9 +203,6 @@ describe("desktop state handlers", () => {
         }),
       ).resolves.toEqual({ ok: true, count: 1 });
 
-      expect(investigationSessionFindUnique).toHaveBeenCalledWith({
-        where: { id: "result-1" },
-      });
       expect(investigationSessionDeleteMany).not.toHaveBeenCalled();
       expect(investigationSessionCreate).not.toHaveBeenCalled();
     },

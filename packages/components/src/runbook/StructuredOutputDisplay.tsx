@@ -95,14 +95,14 @@ export function StructuredOutputDisplay({
     if (logFilterMetadata.groupNames.length > 0) {
       groupsContent = (
         <>
-          <span className="text-muted-foreground/30">•</span>
+          <span aria-hidden="true">•</span>
           <span>{logFilterMetadata.groupNames.join(", ")}</span>
         </>
       );
     }
 
     logFilterContent = (
-      <div className="mb-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-muted-foreground/60">
+      <div className="mb-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
         <span>
           {logFilterMetadata.matchCount} {matchUnit}
         </span>
@@ -120,7 +120,7 @@ export function StructuredOutputDisplay({
     );
   } else if (structuredEntries.length === 0) {
     valuesContent = (
-      <p className="text-xs italic text-muted-foreground/50">
+      <p className="text-xs italic text-muted-foreground">
         {t("common.structuredOutputDisplay.noValuesExtracted")}
       </p>
     );
@@ -131,10 +131,10 @@ export function StructuredOutputDisplay({
           <tbody className="divide-y divide-border">
             {structuredEntries.map(([key, value]) => (
               <tr key={key}>
-                <td className="w-40 break-words bg-muted/20 px-3 py-2 align-top font-mono text-[11px] text-muted-foreground">
+                <td className="w-40 break-words bg-muted/20 px-3 py-2 align-top font-mono text-xs text-muted-foreground">
                   {key}
                 </td>
-                <td className="px-3 py-2 align-top font-mono text-[11px] text-foreground [overflow-wrap:anywhere]">
+                <td className="px-3 py-2 align-top font-mono text-xs text-foreground [overflow-wrap:anywhere]">
                   <StructuredValueCell value={value} />
                 </td>
               </tr>
@@ -147,7 +147,7 @@ export function StructuredOutputDisplay({
 
   return (
     <div>
-      <div className="mb-2 text-[11px] uppercase tracking-[0.18em] text-muted-foreground/60">
+      <div className="mb-2 text-xs font-medium uppercase tracking-[0.06em] text-muted-foreground">
         {t("common.structuredOutputDisplay.structuredOutput")}
       </div>
       {logFilterContent}

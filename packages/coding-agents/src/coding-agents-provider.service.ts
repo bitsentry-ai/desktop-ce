@@ -24,6 +24,7 @@ import {
 } from "./claude-code-provider.service.js";
 import { getCatalogModelIds } from "@bitsentry-ce/components/llm/modelCatalog";
 import { CodexAppServerClient } from "./codex-app-server-client.js";
+import { closePooledProcesses } from "./process-pool.js";
 import {
   executeCodex,
   type CodexExecutionOptions,
@@ -330,10 +331,10 @@ export class CodingAgentsProviderService {
     return {
       ...this.settings,
       ...patch,
-      claudeCode: { ...this.settings.claudeCode, ...(patch.claudeCode ?? {}) },
-      codex: { ...this.settings.codex, ...(patch.codex ?? {}) },
-      opencode: { ...this.settings.opencode, ...(patch.opencode ?? {}) },
-      cursor: { ...this.settings.cursor, ...(patch.cursor ?? {}) },
+      claudeCode: { ...this.settings.claudeCode, ...patch.claudeCode },
+      codex: { ...this.settings.codex, ...patch.codex },
+      opencode: { ...this.settings.opencode, ...patch.opencode },
+      cursor: { ...this.settings.cursor, ...patch.cursor },
     };
   }
 
@@ -722,6 +723,7 @@ export class CodingAgentsProviderService {
 
   async destroy(): Promise<void> {
     this.probeCache.clear();
+    await closePooledProcesses();
     await this.hostMcpServer.stop();
   }
 }

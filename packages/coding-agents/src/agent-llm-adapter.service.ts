@@ -200,6 +200,10 @@ export type OnDelta = (delta: {
 } | {
   type: 'token_usage'
   tokenUsage: NonNullable<ChatResponse['tokenUsage']>
+} | {
+  /** The running coding agent turn can take a steer, or no longer can when null. */
+  type: 'steer_handle'
+  steer: ((text: string) => Promise<void>) | null
 }) => void
 
 /**
@@ -740,6 +744,11 @@ function createLocalAiDeltaHandler(
       return
     }
 
+    if (delta.type === 'steer_handle') {
+      onDelta?.(delta)
+      return
+    }
+
     if (delta.type !== 'text' || delta.text === undefined || delta.text.length === 0) {
       return
     }
@@ -760,13 +769,12 @@ function toTokenUsage(
   providerKey: LlmProviderKey,
   model: string,
   inputTokens: number | undefined,
-  outputTokens: number | undefined,
+  normalizedOutputTokens = 0,
 ): ChatResponse['tokenUsage'] {
   if (inputTokens === undefined) {
     return undefined
   }
 
-  const normalizedOutputTokens = outputTokens ?? 0
 
   return {
     inputTokens,
@@ -1245,7 +1253,7 @@ export class AgentLlmAdapterService {
         return await this.chatOpenAiCompatible({
           ...input,
           providerKey,
-          apiKey: apiKey,
+          apiKey,
           baseUrl: baseUrl ?? this.getDefaultBaseUrl(providerKey),
           model,
         })
@@ -1253,7 +1261,7 @@ export class AgentLlmAdapterService {
       case 'anthropic':
         return await this.chatAnthropic({
           ...input,
-          apiKey: apiKey,
+          apiKey,
           baseUrl: baseUrl ?? this.getDefaultBaseUrl(providerKey),
           model,
         })
@@ -1261,7 +1269,7 @@ export class AgentLlmAdapterService {
       case 'gemini':
         return await this.chatGemini({
           ...input,
-          apiKey: apiKey,
+          apiKey,
           model,
         })
 
@@ -1633,8 +1641,7 @@ export class AgentLlmAdapterService {
       .filter((toolCall): toolCall is ToolCall => toolCall !== null)
 
     const outputText = data.output_text ?? output
-      .filter((item) => item.type === 'message')
-      .flatMap((item) => item.content ?? [])
+      .flatMap((item) => (item.type === 'message' ? item.content ?? [] : []))
       .filter((item) => item.type === 'output_text')
       .map((item) => item.text ?? '')
       .join('')

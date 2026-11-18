@@ -1,4 +1,4 @@
-import i18next, { type i18n as I18nType, type Resource } from "i18next";
+import i18next, { type i18n as I18nType } from "i18next";
 import LanguageDetector from "i18next-browser-languagedetector";
 import { initReactI18next } from "react-i18next";
 
@@ -14,15 +14,9 @@ import {
 } from "./config";
 
 import enUSCommon from "./locales/en-US/common.json";
-import enUSAuth from "./locales/en-US/auth.json";
 import enUSNavigation from "./locales/en-US/navigation.json";
 import enUSDashboard from "./locales/en-US/dashboard.json";
 import enUSIncidents from "./locales/en-US/incidents.json";
-import enUSRunbooks from "./locales/en-US/runbooks.json";
-import enUSSettings from "./locales/en-US/settings.json";
-import enUSAgents from "./locales/en-US/agents.json";
-import enUSErrors from "./locales/en-US/errors.json";
-import enUSEmails from "./locales/en-US/emails.json";
 
 type NamespaceResource = Record<string, unknown>;
 type DeferredLocale = Exclude<SupportedLocale, "en-US">;
@@ -31,17 +25,21 @@ type NamespaceLoader = () => Promise<{ default: NamespaceResource }>;
 const resources: Partial<Record<SupportedLocale, Partial<Record<Namespace, NamespaceResource>>>> = {
   "en-US": {
     common: enUSCommon,
-    auth: enUSAuth,
     navigation: enUSNavigation,
     dashboard: enUSDashboard,
     incidents: enUSIncidents,
-    runbooks: enUSRunbooks,
-    settings: enUSSettings,
-    agents: enUSAgents,
-    errors: enUSErrors,
-    emails: enUSEmails,
   },
 };
+
+// English namespaces the incidents screen does not use load with the screens that do.
+const defaultNamespaceLoaders: Partial<Record<Namespace, NamespaceLoader>> = {
+  auth: () => import("./locales/en-US/auth.json"),
+  runbooks: () => import("./locales/en-US/runbooks.json"),
+  settings: () => import("./locales/en-US/settings.json"),
+  agents: () => import("./locales/en-US/agents.json"),
+  errors: () => import("./locales/en-US/errors.json"),
+};
+const defaultNamespaceLoads = new Map<Namespace, Promise<void>>();
 
 const loadedLocales = new Set<SupportedLocale>([DEFAULT_LOCALE]);
 
@@ -60,7 +58,6 @@ const localeNamespaceLoaders = {
     settings: () => import("./locales/en-GB/settings.json"),
     agents: () => import("./locales/en-GB/agents.json"),
     errors: () => import("./locales/en-GB/errors.json"),
-    emails: () => import("./locales/en-GB/emails.json"),
   },
   "en-AU": {
     common: () => import("./locales/en-AU/common.json"),
@@ -72,7 +69,6 @@ const localeNamespaceLoaders = {
     settings: () => import("./locales/en-AU/settings.json"),
     agents: () => import("./locales/en-AU/agents.json"),
     errors: () => import("./locales/en-AU/errors.json"),
-    emails: () => import("./locales/en-AU/emails.json"),
   },
   "fr-FR": {
     common: () => import("./locales/fr-FR/common.json"),
@@ -84,7 +80,6 @@ const localeNamespaceLoaders = {
     settings: () => import("./locales/fr-FR/settings.json"),
     agents: () => import("./locales/fr-FR/agents.json"),
     errors: () => import("./locales/fr-FR/errors.json"),
-    emails: () => import("./locales/fr-FR/emails.json"),
   },
   "zh-CN": {
     common: () => import("./locales/zh-CN/common.json"),
@@ -96,7 +91,6 @@ const localeNamespaceLoaders = {
     settings: () => import("./locales/zh-CN/settings.json"),
     agents: () => import("./locales/zh-CN/agents.json"),
     errors: () => import("./locales/zh-CN/errors.json"),
-    emails: () => import("./locales/zh-CN/emails.json"),
   },
   "id-ID": {
     common: () => import("./locales/id-ID/common.json"),
@@ -108,7 +102,6 @@ const localeNamespaceLoaders = {
     settings: () => import("./locales/id-ID/settings.json"),
     agents: () => import("./locales/id-ID/agents.json"),
     errors: () => import("./locales/id-ID/errors.json"),
-    emails: () => import("./locales/id-ID/emails.json"),
   },
 } satisfies Record<DeferredLocale, Record<Namespace, NamespaceLoader>>;
 
@@ -123,12 +116,10 @@ async function loadLocaleNamespace(
 async function loadLocaleBundles(
   locale: DeferredLocale,
 ): Promise<Partial<Record<Namespace, NamespaceResource>>> {
-  const bundles: Partial<Record<Namespace, NamespaceResource>> = {};
-  for (const namespace of NAMESPACES) {
-    bundles[namespace] = await loadLocaleNamespace(locale, namespace);
-  }
-
-  return bundles;
+  const loaded = await Promise.all(
+    NAMESPACES.map(async (namespace) => [namespace, await loadLocaleNamespace(locale, namespace)] as const),
+  );
+  return Object.fromEntries(loaded);
 }
 
 function mergeLocaleResources(
@@ -168,14 +159,6 @@ let sharedInstance: I18nType | null = null;
 export interface CreateI18nOptions {
   locale?: SupportedLocale;
   detectLocale?: boolean;
-}
-
-export function getI18nResources(): Resource {
-  return resources;
-}
-
-export function getI18nNamespaces(): readonly Namespace[] {
-  return NAMESPACES;
 }
 
 export function hasLocaleResources(locale: SupportedLocale): boolean {
@@ -262,6 +245,32 @@ export function createI18nInstance(options: CreateI18nOptions = {}): I18nType {
   });
 
   return instance;
+}
+
+function loadDefaultNamespace(namespace: Namespace): Promise<void> {
+  const loader = defaultNamespaceLoaders[namespace];
+  if (loader === undefined) return Promise.resolve();
+
+  let load = defaultNamespaceLoads.get(namespace);
+  if (load === undefined) {
+    load = loader().then(
+      ({ default: bundle }) => {
+        // No overwrite: the Dashboard registers its own values for some keys.
+        getSharedI18nInstance().addResourceBundle(DEFAULT_LOCALE, namespace, bundle, true, false);
+      },
+      (error: unknown) => {
+        defaultNamespaceLoads.delete(namespace);
+        throw error;
+      },
+    );
+    defaultNamespaceLoads.set(namespace, load);
+  }
+  return load;
+}
+
+// Screens that use these namespaces load them before they render, e.g. in their React.lazy import.
+export async function loadNamespaces(namespaces: readonly Namespace[]): Promise<void> {
+  await Promise.all(namespaces.map(loadDefaultNamespace));
 }
 
 export function getSharedI18nInstance(

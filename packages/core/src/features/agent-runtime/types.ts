@@ -16,12 +16,12 @@ export type AgentActivityPhase = 'asking_model' | 'running_runbook' | 'waiting_f
 /**
  * Tool execution lifecycle state.
  */
-export type ToolExecutionState = 'PENDING' | 'RUNNING' | 'COMPLETED' | 'FAILED' | 'CANCELLED'
+type ToolExecutionState = 'PENDING' | 'RUNNING' | 'COMPLETED' | 'FAILED' | 'CANCELLED'
 
 /**
  * Agent event types streamed to renderer.
  */
-export type AgentEventType =
+type AgentEventType =
   | 'assistant_delta'  // Streaming assistant response chunks
   | 'token_usage'      // Live token/context usage update
   | 'thinking_start'   // AI started reasoning (before LLM call)
@@ -34,6 +34,7 @@ export type AgentEventType =
   | 'final'            // Final assistant response complete
   | 'cancelled'        // Session cancelled by user or timeout
   | 'error'            // Agent-level error
+  | 'queue_updated'    // Queued follow-ups, the queue hold or steerability changed
 
 export type AgentErrorCode = 'NO_LLM_PROVIDER_CONFIGURED'
 
@@ -48,7 +49,7 @@ export interface AgentEvent {
 /**
  * Streaming assistant delta (text chunks).
  */
-export interface AssistantDeltaEvent extends AgentEvent {
+interface AssistantDeltaEvent extends AgentEvent {
   type: 'assistant_delta'
   delta: string
   kind?: 'text' | 'command_output'
@@ -81,7 +82,7 @@ export interface SandboxTokenBudgetMetadata {
   }>
 }
 
-export interface TokenUsageEvent extends AgentEvent {
+interface TokenUsageEvent extends AgentEvent {
   type: 'token_usage'
   tokenUsage: {
     kind?: 'estimate' | 'actual'
@@ -97,14 +98,14 @@ export interface TokenUsageEvent extends AgentEvent {
 /**
  * AI started reasoning (before LLM call).
  */
-export interface ThinkingStartEvent extends AgentEvent {
+interface ThinkingStartEvent extends AgentEvent {
   type: 'thinking_start'
 }
 
 /**
  * Streaming thinking content (optional detailed reasoning).
  */
-export interface ThinkingDeltaEvent extends AgentEvent {
+interface ThinkingDeltaEvent extends AgentEvent {
   type: 'thinking_delta'
   delta: string
 }
@@ -112,16 +113,16 @@ export interface ThinkingDeltaEvent extends AgentEvent {
 /**
  * AI finished reasoning.
  */
-export interface ThinkingEndEvent extends AgentEvent {
+interface ThinkingEndEvent extends AgentEvent {
   type: 'thinking_end'
 }
 
-export interface AgentActivityEvent extends AgentEvent {
+interface AgentActivityEvent extends AgentEvent {
   type: 'activity'
   phase: AgentActivityPhase | null
 }
 
-export interface AgentChatImageAttachment {
+interface AgentChatImageAttachment {
   id: string
   type: 'image'
   name: string
@@ -130,7 +131,7 @@ export interface AgentChatImageAttachment {
   dataUrl: string
 }
 
-export interface AgentChatCsvAttachment {
+interface AgentChatCsvAttachment {
   id: string
   type: 'csv'
   name: string
@@ -141,7 +142,7 @@ export interface AgentChatCsvAttachment {
   totalRowCount: number
 }
 
-export type AgentChatTextAttachmentMimeType =
+type AgentChatTextAttachmentMimeType =
   | 'text/plain'
   | 'text/yaml'
   | 'text/x-yaml'
@@ -151,7 +152,7 @@ export type AgentChatTextAttachmentMimeType =
   | 'text/x-markdown'
   | 'application/json'
 
-export interface AgentChatTextAttachment {
+interface AgentChatTextAttachment {
   id: string
   type: 'text'
   name: string
@@ -177,16 +178,12 @@ export interface ToolCallCard {
   toolCallId: string
   toolName: string
   state: 'running' | 'done' | 'failed'
+  startedAt?: string
+  completedAt?: string
   error?: string
   input?: Record<string, unknown>
   output?: string
   modelContext?: string
-}
-
-export interface StreamDeltaRecord {
-  timestamp: string
-  text: string
-  kind?: 'text' | 'command_output'
 }
 
 export interface AgentThreadTokenUsage {
@@ -204,18 +201,20 @@ export interface AgentIteration {
   startedAt: string
   completedAt?: string
   text: string
-  streamDeltas?: StreamDeltaRecord[]
+  hasCommandOutput?: true
   toolCallIds: string[]
   status: 'thinking' | 'streaming' | 'done' | 'error'
 }
 
 export type ChatMessage =
   | {
+      id?: string
       kind: 'user'
       text: string
       attachments?: AgentChatAttachment[]
     }
   | {
+      id?: string
       kind: 'agent'
       iterations: AgentIteration[]
       activeIterationId: string | null
@@ -227,6 +226,18 @@ export type ChatMessage =
       errorCode?: AgentErrorCode
     }
 
+/**
+ * A follow-up waiting for the running turn to finish.
+ */
+export interface AgentQueuedMessage {
+  id: string
+  text: string
+  attachments?: AgentChatAttachment[]
+  queuedAt: string
+  /** Waiting to join the running turn as a steer rather than to run after it. */
+  steer?: boolean
+}
+
 export interface AgentThreadSnapshot {
   sessionId: string
   startedAt: string
@@ -235,12 +246,18 @@ export interface AgentThreadSnapshot {
   currentToolCallId: string | null
   messages: ChatMessage[]
   tokenUsage?: AgentThreadTokenUsage
+  /** Follow-ups that run one at a time once the current turn ends. */
+  queuedMessages?: AgentQueuedMessage[]
+  /** True after a stop, timeout or failure: queued follow-ups wait for an explicit resume. */
+  queueHeld?: boolean
+  /** True while the running turn can take a steer: a message added before its next model call. */
+  canSteer?: boolean
 }
 
 /**
  * Tool execution started.
  */
-export interface ToolStartEvent extends AgentEvent {
+interface ToolStartEvent extends AgentEvent {
   type: 'tool_start'
   toolName: string
   toolCallId: string
@@ -250,7 +267,7 @@ export interface ToolStartEvent extends AgentEvent {
 /**
  * Tool output update (for streaming tools).
  */
-export interface ToolUpdateEvent extends AgentEvent {
+interface ToolUpdateEvent extends AgentEvent {
   type: 'tool_update'
   toolCallId: string
   chunk: string
@@ -260,7 +277,7 @@ export interface ToolUpdateEvent extends AgentEvent {
 /**
  * Tool execution ended.
  */
-export interface ToolEndEvent extends AgentEvent {
+interface ToolEndEvent extends AgentEvent {
   type: 'tool_end'
   toolCallId: string
   state: ToolExecutionState
@@ -273,7 +290,7 @@ export interface ToolEndEvent extends AgentEvent {
 /**
  * Final assistant response (complete).
  */
-export interface FinalEvent extends AgentEvent {
+interface FinalEvent extends AgentEvent {
   type: 'final'
   response: string
   llm?: AgentLlmSelection
@@ -288,7 +305,7 @@ export interface FinalEvent extends AgentEvent {
 /**
  * Session cancelled by user or timeout.
  */
-export interface CancelledEvent extends AgentEvent {
+interface CancelledEvent extends AgentEvent {
   type: 'cancelled'
   message: string
 }
@@ -296,11 +313,18 @@ export interface CancelledEvent extends AgentEvent {
 /**
  * Agent-level error.
  */
-export interface AgentErrorEvent extends AgentEvent {
+interface AgentErrorEvent extends AgentEvent {
   type: 'error'
   message: string
   code?: AgentErrorCode
   level?: 'error' | 'warning'
+}
+
+/**
+ * The queue, the hold or whether the turn can be steered changed.
+ */
+export interface QueueUpdatedEvent extends AgentEvent {
+  type: 'queue_updated'
 }
 
 /**
@@ -319,6 +343,7 @@ export type AgentEventData =
   | FinalEvent
   | CancelledEvent
   | AgentErrorEvent
+  | QueueUpdatedEvent
 
 /**
  * Agent start request.
@@ -339,9 +364,16 @@ export interface AgentStartInput {
 /**
  * Agent send request (continue conversation).
  */
+/**
+ * How a message sent while a turn runs is delivered. A queued message runs after the turn; a steer joins the
+ * running turn before its next model call, and is queued instead when the turn cannot take one.
+ */
+export type AgentMessageDelivery = 'queue' | 'steer'
+
 export interface AgentSendInput {
   message: string
   sessionId?: string  // Optional: continue existing session
+  delivery?: AgentMessageDelivery
   attachments?: AgentChatAttachment[]
   llm?: AgentLlmSelection
   accessLevel?: 'auto-accept-edits' | 'full-access'
@@ -351,6 +383,17 @@ export interface AgentSendInput {
   runbookRevisionNumber?: number
   incidentThreadId?: string
 }
+
+/**
+ * A change to a session's queued follow-ups. `steer` moves a queued message into the running turn; `resume` releases
+ * a held queue.
+ */
+export type AgentQueueUpdateInput =
+  | { sessionId: string; action: 'edit'; messageId: string; message: string; attachments?: AgentChatAttachment[] }
+  | { sessionId: string; action: 'remove'; messageId: string }
+  | { sessionId: string; action: 'reorder'; messageId: string; beforeMessageId: string | null }
+  | { sessionId: string; action: 'steer'; messageId: string }
+  | { sessionId: string; action: 'resume' }
 
 /**
  * Agent session snapshot.
@@ -450,8 +493,7 @@ export interface RunbookContext {
 /**
  * Allowlisted journalctl priorities.
  */
-export const JOURNALCTL_PRIORITIES = ['emerg', 'alert', 'crit', 'err', 'warning', 'notice', 'info', 'debug'] as const
-export type JournalctlPriority = (typeof JOURNALCTL_PRIORITIES)[number]
+type JournalctlPriority = 'emerg' | 'alert' | 'crit' | 'err' | 'warning' | 'notice' | 'info' | 'debug'
 
 /**
  * SSH journal query tool input (strictly typed).

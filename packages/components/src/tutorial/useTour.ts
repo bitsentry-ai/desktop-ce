@@ -1,7 +1,7 @@
 import { useCallback } from "react";
-import { driver, type Config } from "driver.js";
+import type { Config, Driver } from "driver.js";
 import { useTranslation } from "@bitsentry-ce/i18n";
-import { getTours, type TourId } from "./tour-definitions";
+import type { TourId } from "./tour-definitions";
 
 const STORAGE_KEY = "bitsentry_completed_tours";
 const TOUR_IDS = new Set<string>([
@@ -65,7 +65,7 @@ export interface StartTourOpts {
 
 // ── Module-level state (survives component unmount) ──────────────────────────
 
-let activeTourDriver: ReturnType<typeof driver> | null = null;
+let activeTourDriver: Driver | null = null;
 let activeTourNavigate: ((path: string) => void) | null = null;
 let activeTourRoute: string | null = null;
 let activeTourReturnRoute: string | null = null;
@@ -88,6 +88,8 @@ export function useTour(tourId: TourId = "main") {
   const start = useCallback(
     async (opts?: StartTourOpts) => {
       try {
+        // Loaded on start, like driver.js below, to keep tours out of the startup bundle.
+        const { getTours } = await import("./tour-definitions");
         const tours = getTours(t);
         const tourDef = tours[tourId];
         if (tourDef === undefined) return;
@@ -134,8 +136,9 @@ export function useTour(tourId: TourId = "main") {
         const config: Config = {
           showProgress: true,
           animate: true,
-          overlayColor: "hsl(var(--background))",
-          overlayOpacity: 0.75,
+          // A neutral dark scrim in both themes: it dims the page around the step without washing it out.
+          overlayColor: "rgb(15 23 42)",
+          overlayOpacity: 0.42,
           stagePadding: 6,
           stageRadius: 8,
           popoverClass: "bitsentry-tour-popover",
@@ -158,6 +161,8 @@ export function useTour(tourId: TourId = "main") {
           },
         };
 
+        // Loaded here so the tour library stays out of the startup bundle.
+        const { driver } = await import("driver.js");
         const instance = driver(config);
         activeTourDriver = instance;
         instance.drive();

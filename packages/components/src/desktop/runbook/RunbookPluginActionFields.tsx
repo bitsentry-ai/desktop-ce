@@ -54,7 +54,6 @@ function buildFieldTemplateValue(field: PluginFieldDefinition): unknown {
       return {};
     case "string_array":
       return [];
-    case "string":
     default:
       return "";
   }
@@ -172,7 +171,6 @@ function readStructuredFieldStringValue(
       }
 
       return JSON.stringify(rawValue, null, 2);
-    case "string":
     default:
       if (typeof rawValue === "string") {
         return rawValue;
@@ -235,7 +233,6 @@ function updateStructuredFieldRecord(input: {
     case "number": return updateNumberField(input.record, field, nextValue);
     case "string_array": return updateStringArrayField(input.record, field, nextValue);
     case "json": return updateJsonField(input.record, field, nextValue);
-    case "string":
     default: return updateStringField(input.record, field, nextValue);
   }
 }
@@ -467,14 +464,14 @@ function PluginStructuredFieldsEditor({
   return (
     <div className="space-y-3 rounded-lg border border-border bg-muted/20 px-3 py-3">
       <div>
-        <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground/60">
+        <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground/60">
           {label}
         </p>
-        <p className="mt-1 text-[11px] text-muted-foreground/70">{helpText}</p>
+        <p className="mt-1 text-xs text-muted-foreground/70">{helpText}</p>
       </div>
 
       {parsed.error && (
-        <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-[11px] text-amber-800">
+        <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-800">
           {invalidJsonText}
         </div>
       )}
@@ -496,7 +493,7 @@ function PluginStructuredFieldsEditor({
           <div key={field.key} className="space-y-1.5">
             <label
               htmlFor={inputId}
-              className="block text-[10px] font-medium uppercase tracking-wide text-muted-foreground/60"
+              className="block text-xs font-medium uppercase tracking-wide text-muted-foreground/60"
             >
               {localizeStructuredFieldLabel(pluginId, field, t)}
               {field.required && " *"}
@@ -511,7 +508,7 @@ function PluginStructuredFieldsEditor({
               onJsonChange,
             })}
 
-            <p className="text-[11px] text-muted-foreground/60">
+            <p className="text-xs text-muted-foreground/60">
               {fieldDescription}
             </p>
           </div>
@@ -624,7 +621,7 @@ export function RunbookPluginActionFields({
   return (
     <div className="space-y-3">
       <div>
-        <label className="mb-1.5 block text-[10px] font-medium uppercase tracking-wide text-muted-foreground/60">
+        <label className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-muted-foreground/60">
           {t("runbooks.runbook.plugin")}
         </label>
         <select
@@ -680,14 +677,14 @@ export function RunbookPluginActionFields({
           ))}
         </select>
         {selectedPlugin !== undefined && (
-          <p className="mt-1.5 text-[11px] text-muted-foreground/60">
+          <p className="mt-1.5 text-xs text-muted-foreground/60">
             {selectedPlugin.description}
           </p>
         )}
       </div>
 
       <div>
-        <label className="mb-1.5 block text-[10px] font-medium uppercase tracking-wide text-muted-foreground/60">
+        <label className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-muted-foreground/60">
           {t("runbooks.runbook.pluginAction")}
         </label>
         <select
@@ -729,7 +726,7 @@ export function RunbookPluginActionFields({
           ))}
         </select>
         {selectedAction !== undefined && (
-          <div className="mt-1.5 rounded-lg border border-border bg-muted/20 px-3 py-2 text-[11px] text-muted-foreground/80">
+          <div className="mt-1.5 rounded-lg border border-border bg-muted/20 px-3 py-2 text-xs text-muted-foreground/80">
             <p>{selectedAction.description}</p>
             <p className="mt-1">
               {t("runbooks.runbook.pluginRiskLevel")}:{" "}
@@ -767,7 +764,7 @@ export function RunbookPluginActionFields({
           }}
         />
         <div className="mb-1.5 flex items-center justify-between gap-3">
-          <label className="block text-[10px] font-medium uppercase tracking-wide text-muted-foreground/60">
+          <label className="block text-xs font-medium uppercase tracking-wide text-muted-foreground/60">
             {t("runbooks.runbook.pluginAuthJson")}
           </label>
           {selectedPlugin !== undefined &&
@@ -780,7 +777,7 @@ export function RunbookPluginActionFields({
                     pluginAuth: pluginAuthTemplate,
                   });
                 }}
-                className="rounded-md border border-border px-2 py-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground transition-colors hover:bg-muted/40"
+                className="rounded-md border border-border px-2 py-1 text-xs font-medium uppercase tracking-wide text-muted-foreground transition-colors hover:bg-muted/40"
               >
                 {t("runbooks.runbook.fillTemplate")}
               </button>
@@ -798,7 +795,7 @@ export function RunbookPluginActionFields({
           placeholder={t("runbooks.runbook.pluginAuthJsonPlaceholder")}
           className="w-full resize-none rounded-lg border border-border bg-muted/30 px-3 py-2 font-mono text-xs outline-none transition-colors focus:border-primary/50"
         />
-        <p className="mt-1.5 text-[11px] text-muted-foreground/60">
+        <p className="mt-1.5 text-xs text-muted-foreground/60">
           {t("runbooks.runbook.pluginAuthJsonHelp")}{" "}
           {selectedPlugin !== undefined && (
             <>
@@ -809,7 +806,7 @@ export function RunbookPluginActionFields({
         </p>
         {selectedPlugin !== undefined &&
           selectedPlugin.auth.fields.length > 0 && (
-            <p className="mt-1 text-[11px] text-muted-foreground/60">
+            <p className="mt-1 text-xs text-muted-foreground/60">
               {t("runbooks.runbook.savedPluginAuthMergedAtExecution")}
             </p>
           )}
@@ -837,7 +834,7 @@ export function RunbookPluginActionFields({
           }}
         />
         <div className="mb-1.5 flex items-center justify-between gap-3">
-          <label className="block text-[10px] font-medium uppercase tracking-wide text-muted-foreground/60">
+          <label className="block text-xs font-medium uppercase tracking-wide text-muted-foreground/60">
             {t("runbooks.runbook.pluginInputJson")}
           </label>
           {selectedAction !== undefined && selectedAction.fields.length > 0 && (
@@ -849,7 +846,7 @@ export function RunbookPluginActionFields({
                   pluginInput: pluginInputTemplate,
                 });
               }}
-              className="rounded-md border border-border px-2 py-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground transition-colors hover:bg-muted/40"
+              className="rounded-md border border-border px-2 py-1 text-xs font-medium uppercase tracking-wide text-muted-foreground transition-colors hover:bg-muted/40"
             >
               {t("runbooks.runbook.fillTemplate")}
             </button>
@@ -867,7 +864,7 @@ export function RunbookPluginActionFields({
           placeholder={t("runbooks.runbook.pluginInputJsonPlaceholder")}
           className="w-full resize-none rounded-lg border border-border bg-muted/30 px-3 py-2 font-mono text-xs outline-none transition-colors focus:border-primary/50"
         />
-        <p className="mt-1.5 text-[11px] text-muted-foreground/60">
+        <p className="mt-1.5 text-xs text-muted-foreground/60">
           {t("runbooks.runbook.pluginInputJsonHelp")}
         </p>
       </div>

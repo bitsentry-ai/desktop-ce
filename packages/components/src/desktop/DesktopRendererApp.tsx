@@ -1,8 +1,12 @@
-import type { ComponentType } from 'react'
+import { lazy, type ComponentType } from 'react'
+import { loadNamespaces } from '@bitsentry-ce/i18n'
 import { DesktopAppShell } from './DesktopAppShell'
 import { captureDesktopPageview } from './DesktopPosthogRenderer'
-import RunbookPage from './DesktopRunbookRoute'
 import { DesktopRouteTracing } from './DesktopSentryRenderer'
+
+const RunbookPage = lazy(() =>
+  Promise.all([import('./DesktopRunbookRoute'), loadNamespaces(['runbooks'])]).then(([page]) => page),
+)
 
 type DesktopRendererAppProps = {
   AppSettingsPage: ComponentType

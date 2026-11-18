@@ -82,25 +82,28 @@ export function ContextIndicator({
     : 0;
   const progressPercentage = Math.min(Math.max(contextPercentage, 0), 100);
   const showMeter = hasContextLimit && !usageUnavailable;
-  const radius = 12;
+  const radius = 6;
   const circumference = 2 * Math.PI * radius;
   const strokeDashoffset =
     circumference - (progressPercentage / 100) * circumference;
   const { ringClass, barClass } = getMeterClasses(usageRatio);
 
-  const usageSummary = hasContextLimit
-    ? usageUnavailable
-      ? t("common.contextIndicator.contextLimitUsageUnavailable", {
-          limit: formatVerbose(contextLimit),
-        })
-      : t("common.contextIndicator.contextWindowUsage", {
-          percentage: contextPercentage,
-          used: formatCompact(total),
-          limit: formatCompact(contextLimit),
-        })
-    : t("common.contextIndicator.lastRequestSummary", {
-        total: formatVerbose(totalProcessed),
-      });
+  let usageSummary: string;
+  if (!hasContextLimit) {
+    usageSummary = t("common.contextIndicator.lastRequestSummary", {
+      total: formatVerbose(totalProcessed),
+    });
+  } else if (usageUnavailable) {
+    usageSummary = t("common.contextIndicator.contextLimitUsageUnavailable", {
+      limit: formatVerbose(contextLimit),
+    });
+  } else {
+    usageSummary = t("common.contextIndicator.contextWindowUsage", {
+      percentage: contextPercentage,
+      used: formatCompact(total),
+      limit: formatCompact(contextLimit),
+    });
+  }
   const progressLabel = hasContextLimit
     ? t("common.contextIndicator.contextWindowProgressLabel", {
         percentage: contextPercentage,
@@ -117,39 +120,40 @@ export function ContextIndicator({
   return (
     <HoverCard.Root openDelay={150} closeDelay={0}>
       <HoverCard.Trigger asChild>
+        {/* A small meter with its percentage beside it, so it never reads as a loading ring. */}
         <button
           type="button"
           className={cn(
-            "relative flex size-8 shrink-0 items-center justify-center rounded-full",
-            "bg-background/70 backdrop-blur-sm",
+            "relative flex h-8 min-w-8 shrink-0 items-center justify-center gap-1 rounded-full px-1.5",
+            "text-xs tabular-nums text-muted-foreground transition-colors hover:bg-accent hover:text-foreground",
             "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
             className,
           )}
           aria-label={ariaLabel}
         >
           <svg
-            width="32"
-            height="32"
-            viewBox="0 0 32 32"
-            className="-rotate-90"
+            width="16"
+            height="16"
+            viewBox="0 0 16 16"
+            className="shrink-0 -rotate-90"
             aria-hidden="true"
           >
             <circle
-              cx="16"
-              cy="16"
+              cx="8"
+              cy="8"
               r={radius}
               fill="none"
               stroke="currentColor"
-              strokeWidth="3"
+              strokeWidth="2"
               className="text-muted-foreground/30"
             />
             {showMeter && (
               <circle
-                cx="16"
-                cy="16"
+                cx="8"
+                cy="8"
                 r={radius}
                 fill="none"
-                strokeWidth="3"
+                strokeWidth="2"
                 strokeDasharray={circumference}
                 strokeDashoffset={strokeDashoffset}
                 strokeLinecap="round"
@@ -160,6 +164,7 @@ export function ContextIndicator({
               />
             )}
           </svg>
+          {showMeter && <span aria-hidden="true">{`${String(contextPercentage)}%`}</span>}
         </button>
       </HoverCard.Trigger>
       <HoverCard.Portal>

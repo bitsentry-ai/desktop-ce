@@ -26,7 +26,6 @@ Each `<namespace>.json` file becomes a separate namespace at runtime. Choose the
 | `settings` | Settings pages, user management | `"User Management"`, `"Time zone"` |
 | `agents` | Agent configuration UI | `"Add New Agent"`, `"Agent Configuration"` |
 | `errors` | Validation, API failure messages, retry prompts | `"Failed to load metrics"`, `"Please enter your email"` |
-| `emails` | Backend email templates only | `"Confirm email"`, `"Reset password"` |
 
 ### Decision tree
 
@@ -107,12 +106,6 @@ pnpm i18n:extract     # run the JSX codemod
 pnpm --dir apps/desktop-ce exec node scripts/i18n/translate-locales.mjs --apply --locale fr-FR
 ```
 
-## Backend integration
-
-The backend uses `nestjs-i18n` with this package's locale files. See [apps/backend/src/app.module.ts](../../apps/backend/src/app.module.ts) — `getLocalesPath()` from `@bitsentry-ce/i18n/backend` resolves the absolute path at runtime via `require.resolve('@bitsentry-ce/i18n/package.json')`.
-
-Backend keys live in `emails.*` namespace. The backend does NOT consume `common`, `auth`, etc. — those are frontend-only.
-
 ## Locale resolution
 
 - **Frontend / desktop:** `<I18nProvider>` reads locale from `localStorage` first (key: `bitsentry.locale`), then `navigator.language`. Falls back to `en-US`.
@@ -123,8 +116,6 @@ Backend keys live in `emails.*` namespace. The backend does NOT consume `common`
 We use `keySeparator: false` and `nsSeparator: false` because keys are stored as flat strings with embedded dots (e.g. `"common.errorFallback.somethingWentWrong"`). This means:
 - Don't use `:` or `.` as semantic separators in your t-call argument — they're treated as literal characters.
 - `fallbackNS` is set to all namespaces, so a `t()` lookup tries `defaultNS` (common) first, then every other namespace until a match is found.
-
-The `emails.json` file uses nested objects (e.g. `{"confirmEmail": {"title": "..."}}`). It's only read by `nestjs-i18n` on the backend, which has its own resolution. Frontend never references `emails.*` keys.
 
 ## Locale-aware formatting
 

@@ -4,9 +4,10 @@
  * IPC bridge and service composition helpers for the desktop agent runtime.
  */
 
-import type { AgentThreadSnapshot } from '@bitsentry-ce/components/chat/types'
+import type { AgentSnapshotReply } from '@bitsentry-ce/components/chat/types'
 import { z } from 'zod'
 import type {
+  AgentQueueUpdateInput,
   AgentStartInput,
   AgentSendInput,
   AgentSessionStatus,
@@ -15,7 +16,10 @@ import type {
 import type { DesktopPluginRuntimeService } from '@bitsentry-ce/core/features/plugins'
 import type { RunbookContextV1 } from '@bitsentry-ce/core/features/runbooks/desktop-runbook.types'
 import type { RunbookAuthoringProposalPersistence } from '@bitsentry-ce/core/features/runbooks'
+import type { AgentQueuePersistence } from '@bitsentry-ce/core/features/agent-runtime'
 import type {
+  AgentRuntimeIncidentHistoryLoader,
+  AgentRuntimeIncidentHistorySaver,
   AgentRuntimeLlmAdapter,
   AgentRuntimeRunbookGateway,
   AgentRuntimeRunbookStore,
@@ -28,9 +32,11 @@ export interface AgentRuntimeSessionController {
   start(input: AgentStartInput): Promise<string>
   send(input: AgentSendInput): Promise<string>
   cancel(sessionId: string): void
-  destroy(): void
+  updateQueue(input: AgentQueueUpdateInput): void
+  restoreQueue(incidentThreadId: string): Promise<{ sessionId: string; snapshot: AgentSnapshotReply } | null>
+  destroy(): Promise<void>
   getStatus(sessionId: string): AgentSessionStatus
-  getSnapshot(sessionId: string): AgentThreadSnapshot
+  getSnapshot(sessionId: string): AgentSnapshotReply
   listRunbookAuthoringProposals(input: { sessionId?: string; incidentThreadId?: string }): Promise<RunbookAuthoringProposalReview[]>
   approveRunbookAuthoringProposal(input: { sessionId?: string; incidentThreadId?: string; proposalId: string; approvedOperationIds?: string[] }): Promise<RunbookAuthoringProposalDecisionResult>
   rejectRunbookAuthoringProposal(input: { sessionId?: string; incidentThreadId?: string; proposalId: string; reason?: string }): Promise<RunbookAuthoringProposalDecisionResult>
@@ -50,6 +56,9 @@ export interface AgentServiceDependencies {
   onRunbooksChanged?: () => void
   pluginRuntime?: DesktopPluginRuntimeService
   authoringProposalStore?: RunbookAuthoringProposalPersistence
+  loadIncidentMessages?: AgentRuntimeIncidentHistoryLoader
+  saveIncidentMessages?: AgentRuntimeIncidentHistorySaver
+  queueStore?: AgentQueuePersistence
   windowGetter: () => AgentRuntimeWindow | null
 }
 
@@ -61,13 +70,16 @@ export type AgentRuntimeServiceClass = new (
   onRunbooksChanged?: () => void,
   pluginRuntime?: DesktopPluginRuntimeService,
   authoringProposalStore?: RunbookAuthoringProposalPersistence,
+  loadIncidentMessages?: AgentRuntimeIncidentHistoryLoader,
+  saveIncidentMessages?: AgentRuntimeIncidentHistorySaver,
+  queueStore?: AgentQueuePersistence,
 ) => AgentRuntimeSessionController
 
 export function createDesktopAgentService(
   dependencies: AgentServiceDependencies,
   services: { AgentRuntimeService: AgentRuntimeServiceClass },
 ): AgentRuntimeSessionController {
-  const { llmAdapter, runbookGateway, runbookStore, onRunbooksChanged, pluginRuntime, authoringProposalStore, windowGetter } = dependencies
+  const { llmAdapter, runbookGateway, runbookStore, onRunbooksChanged, pluginRuntime, authoringProposalStore, loadIncidentMessages, saveIncidentMessages, queueStore, windowGetter } = dependencies
   return new services.AgentRuntimeService(
     windowGetter,
     llmAdapter,
@@ -76,6 +88,9 @@ export function createDesktopAgentService(
     onRunbooksChanged,
     pluginRuntime,
     authoringProposalStore,
+    loadIncidentMessages,
+    saveIncidentMessages,
+    queueStore,
   )
 }
 
@@ -130,6 +145,17 @@ export function createDesktopAgentHandlers(
       return Promise.resolve()
     },
 
+    'agent:updateQueue': (payload: unknown): Promise<void> => {
+      // The IPC dispatcher validates the payload against its schema first.
+      agentRuntime.updateQueue(payload as AgentQueueUpdateInput)
+      return Promise.resolve()
+    },
+
+    'agent:restoreQueue': (payload: unknown): Promise<{ sessionId: string; snapshot: AgentSnapshotReply } | null> => {
+      const input = payload as { incidentThreadId: string }
+      return agentRuntime.restoreQueue(input.incidentThreadId)
+    },
+
     'agent:getStatus': (
       payload: unknown,
     ): Promise<AgentSessionStatus | null> => {
@@ -149,7 +175,7 @@ export function createDesktopAgentHandlers(
 
     'agent:getSnapshot': (
       payload: unknown,
-    ): Promise<AgentThreadSnapshot | null> => {
+    ): Promise<AgentSnapshotReply | null> => {
       const input = payload as { sessionId: string }
       try {
         return Promise.resolve(agentRuntime.getSnapshot(input.sessionId))

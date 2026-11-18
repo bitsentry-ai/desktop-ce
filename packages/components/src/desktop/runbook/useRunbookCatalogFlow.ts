@@ -22,9 +22,11 @@ import {
  *
  * `adopt` takes the server's copy wholesale, which is what a save or a delete
  * wants. `preserve-actions` keeps the draft's own action objects so a reorder
- * cannot discard unsaved edits in another card.
+ * cannot discard unsaved edits in another card. `keep-actions` keeps the
+ * draft's whole action list, including unsaved new actions, for a save that
+ * changes only the runbook's metadata.
  */
-export type DraftReconcileMode = "adopt" | "preserve-actions";
+export type DraftReconcileMode = "adopt" | "preserve-actions" | "keep-actions";
 
 type DesktopIpcInvoke = <T>(
   channel: DesktopRpcChannel,
@@ -83,7 +85,9 @@ export function useRunbookCatalogFlow({
   const syncRunbooksCache = useCallback((nextRunbooks: RunbookRecord[]) => {
     try {
       localStorage.setItem(RUNBOOKS_KEY, JSON.stringify(nextRunbooks));
-    } catch {}
+    } catch {
+      // Storage can be unavailable (private mode or full quota); persistence is best effort.
+    }
   }, []);
 
   const commitRunbooks = useCallback(
@@ -149,6 +153,9 @@ export function useRunbookCatalogFlow({
           return prev;
         if (draftMode === "preserve-actions") {
           return preserveDraftActions(prev, updated);
+        }
+        if (draftMode === "keep-actions" && prev !== null && prev.id === updated.id) {
+          return { ...updated, actions: prev.actions };
         }
 
         return cloneRunbook(updated);

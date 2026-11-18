@@ -39,7 +39,9 @@ function removePendingSync(
     Object.entries(pendingSyncs).filter(([id]) => id !== sourceId),
   );
 }
-import { Download, Pencil, RefreshCw, Trash2 } from "lucide-react";
+import { Download, Pencil, Puzzle, RefreshCw, Trash2 } from "lucide-react";
+import { SettingsEmptyState } from "../settings/SettingsEmptyState";
+import { settingsDescriptionClass, settingsPageTitleClass } from "../settings/SettingsRow";
 import { ProviderIcon, type ProviderIconKind } from "./icons";
 import InstallPluginDialog from "./InstallPluginDialog";
 
@@ -245,12 +247,12 @@ function findEditDialogPlugin(
   return findPluginDescriptorForSource(plugins, source);
 }
 
-function emptySourcePrompt(availableProviderSummary: string): string {
+function emptySourcePrompt(availableProviderSummary: string, t: Translate): string {
   if (availableProviderSummary.length > 0) {
-    return `Available plugin-backed sources: ${availableProviderSummary}.`;
+    return t("settings.pluginsEmpty.availableSources", { sources: availableProviderSummary });
   }
 
-  return "Install or enable a code plugin that declares an error source.";
+  return t("settings.pluginsEmpty.hint");
 }
 
 function setupFieldInputType(field: PluginDataSourceSetupField): string {
@@ -336,11 +338,9 @@ function setupFieldConfigurationKeys(
   const keys = new Set([field.key]);
   if (field.key === "owner") {
     keys.add("orgSlug");
-  }
-  if (field.key === "repos") {
+  } else if (field.key === "repos") {
     keys.add("projectIds");
-  }
-  if (field.key === "indexUrl") {
+  } else if (field.key === "indexUrl") {
     keys.add("baseUrl");
   }
   return [...keys];
@@ -593,31 +593,14 @@ export default function DataSourcesManager({
       null,
     [providerCards, selectedProviderId],
   );
-  const availableProviderSummary = useMemo(
-    () => providerCards.map((card) => card.label).join(", "),
-    [providerCards],
-  );
-  const pluginsById = useMemo(
-    () => new Map(plugins.map((plugin) => [plugin.id, plugin])),
-    [plugins],
-  );
-  const selectedPlugin = useMemo(
-    () =>
-      plugins.find((plugin) => plugin.id === selectedProviderId) ??
-      plugins.find(
-        (plugin) => readPluginDataSourceType(plugin) === sourceType,
-      ) ??
-      null,
-    [plugins, selectedProviderId, sourceType],
-  );
-  const selectedSetupFields = useMemo(
-    () => selectedPlugin?.metadata?.dataSource?.setupFields ?? [],
-    [selectedPlugin],
-  );
-  const editDialogPlugin = useMemo(
-    () => findEditDialogPlugin(plugins, editDialogSource),
-    [editDialogSource, plugins],
-  );
+  const availableProviderSummary = providerCards.map((card) => card.label).join(", ");
+  const pluginsById = new Map(plugins.map((plugin) => [plugin.id, plugin]));
+  const selectedPlugin =
+    plugins.find((plugin) => plugin.id === selectedProviderId) ??
+    plugins.find((plugin) => readPluginDataSourceType(plugin) === sourceType) ??
+    null;
+  const selectedSetupFields = selectedPlugin?.metadata?.dataSource?.setupFields ?? [];
+  const editDialogPlugin = findEditDialogPlugin(plugins, editDialogSource);
 
   useEffect(() => {
     if (pendingSyncIds.size === 0) return;
@@ -1096,12 +1079,13 @@ export default function DataSourcesManager({
   return (
     <div className="space-y-4">
       {showHeader && (
-        <div className="flex items-center justify-between">
-          <div>
-            <h2 className="text-sm font-semibold text-foreground">
+        // The Settings page's section title; pb-2 makes the usual 24px gap to the content.
+        <div className="flex flex-wrap items-start justify-between gap-3 pb-2">
+          <div className="min-w-0">
+            <h2 className={settingsPageTitleClass}>
               {t("common.dataSourcesManager.externalSources")}
             </h2>
-            <p className="text-xs text-muted-foreground">
+            <p className={`mt-1 ${settingsDescriptionClass}`}>
               {t("common.dataSourcesManager.connectExternalServicesToFeed")}
             </p>
           </div>
@@ -1170,14 +1154,11 @@ export default function DataSourcesManager({
         </p>
       )}
       {showSourceList && !isLoading && sources.length === 0 && (
-        <div className="rounded-lg border border-dashed border-border p-8 text-center">
-          <p className="text-sm text-muted-foreground">
-            {t("common.dataSourcesManager.noExternalSourcesConnected")}
-          </p>
-          <p className="mt-1 text-xs text-muted-foreground">
-            {emptySourcePrompt(availableProviderSummary)}
-          </p>
-        </div>
+        <SettingsEmptyState
+          icon={Puzzle}
+          title={t("common.dataSourcesManager.noExternalSourcesConnected")}
+          description={emptySourcePrompt(availableProviderSummary, t)}
+        />
       )}
       {showSourceList && !isLoading && sources.length > 0 && (
         <div className="rounded-lg border border-border divide-y divide-border">

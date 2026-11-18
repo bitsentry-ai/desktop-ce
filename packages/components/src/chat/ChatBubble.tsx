@@ -1,16 +1,18 @@
 import {
   memo,
-  useCallback,
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
   type ReactNode,
 } from "react";
-import type { ChatMessage, AgentIteration, ToolCallCard } from "./types";
-import { ToolCard, WorkLogGroup } from "./ToolCallCard";
-import { formatDuration } from "./utils";
+import type { ChatMessage, AgentIteration } from "./types";
+import { TurnTimeline } from "./TurnTimeline";
+import { isInterruptedAgentTurn } from "./runtimeProjection";
+import { isTurnStalled } from "./turnTimelineRows";
+import { CitationChip } from "./CitationControls";
+import { splitCitations } from "./citations";
 import { useTranslation } from "@bitsentry-ce/i18n";
-import { MarkdownContent } from "../markdown";
 import {
   CheckIcon,
   CopyIcon,
@@ -19,7 +21,6 @@ import {
   MessageSquareText,
   Pencil,
   ShieldAlert,
-  Loader2,
 } from "lucide-react";
 import {
   editableIntakeFields,
@@ -36,14 +37,6 @@ import { useCustomerReportIntakeChat } from "./useCustomerReportIntake";
 import { getProviderLogo } from "./ProviderLogos";
 import { Tooltip, TooltipContent, TooltipTrigger } from "../ui/tooltip";
 import { cn } from "../lib/utils";
-
-function dedupeToolCalls(toolCalls: ToolCallCard[]): ToolCallCard[] {
-  return Array.from(
-    new Map(
-      toolCalls.map((toolCall) => [toolCall.toolCallId, toolCall]),
-    ).values(),
-  );
-}
 
 type AgentMessage = Extract<ChatMessage, { kind: "agent" }>;
 type UserMessage = Extract<ChatMessage, { kind: "user" }>;
@@ -86,7 +79,7 @@ function CustomerReportChip({ header }: { header: CustomerReportMessageHeader })
             <button
               type="button"
               onClick={chat.chooseEdit}
-              className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-medium text-muted-foreground transition-colors hover:bg-violet-100 hover:text-violet-800 dark:hover:bg-violet-500/15 dark:hover:text-violet-200"
+              className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-violet-100 hover:text-violet-800 dark:hover:bg-violet-500/15 dark:hover:text-violet-200"
             >
               <Pencil size={11} aria-hidden="true" />
               {t("common.incidents.customerReport.edit")}
@@ -95,11 +88,11 @@ function CustomerReportChip({ header }: { header: CustomerReportMessageHeader })
           <CustomerReportInternalBadge label={t("common.incidents.customerReport.internalOnly")} />
         </span>
       </div>
-      <div className="pl-[38px] text-[11px] text-muted-foreground">{source}</div>
+      <div className="pl-[38px] text-xs text-muted-foreground">{source}</div>
       {current.subject !== undefined && current.subject !== null && (
-        <div className="pl-[38px] text-[11px] text-foreground">{t("common.incidents.customerReport.subjectLine", { subject: current.subject })}</div>
+        <div className="pl-[38px] text-xs text-foreground">{t("common.incidents.customerReport.subjectLine", { subject: current.subject })}</div>
       )}
-      <div className="pl-[38px] text-[11px] text-amber-700 dark:text-amber-400">{t("common.incidents.customerReport.unverified")}</div>
+      <div className="pl-[38px] text-xs text-[hsl(var(--warning-text))]">{t("common.incidents.customerReport.unverified")}</div>
     </div>
   );
 }
@@ -117,13 +110,13 @@ function CustomerReportAnswerRow({ header }: { header: CustomerReportAnswerHeade
       <MessageCircle size={14} className="shrink-0 text-violet-600 dark:text-violet-300" aria-hidden="true" />
       <span className="whitespace-nowrap">{intakeQuestionTitle(t, field, own ? intake.answers.channel : undefined)}</span>
       <span className="min-w-0 truncate font-medium text-foreground">{header.answer}</span>
-      {header.edit === true && <span className="shrink-0 text-[11px]">{t("common.incidents.customerReport.changed")}</span>}
+      {header.edit === true && <span className="shrink-0 text-xs">{t("common.incidents.customerReport.changed")}</span>}
       {canEdit && isEditable(field) && (
         <button
           type="button"
           onClick={() => { chat.edit(field); }}
           aria-label={t("common.incidents.customerReport.changeAnswer")}
-          className="flex size-5 shrink-0 items-center justify-center rounded-md text-muted-foreground/70 transition-colors hover:bg-violet-100 hover:text-violet-800 dark:hover:bg-violet-500/15 dark:hover:text-violet-200"
+          className="flex size-5 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-violet-100 hover:text-violet-800 dark:hover:bg-violet-500/15 dark:hover:text-violet-200"
         >
           <Pencil size={11} />
         </button>
@@ -137,7 +130,7 @@ function CustomerReportIntakeMessage({ msg }: { msg: UserMessage }) {
   if (parseCustomerReportDismissMessage(msg.text) !== null) {
     return (
       <div className="flex items-center gap-2 pl-[38px] text-xs text-muted-foreground">
-        <MessageCircle size={14} className="shrink-0 text-muted-foreground/70" aria-hidden="true" />
+        <MessageCircle size={14} className="shrink-0 text-muted-foreground" aria-hidden="true" />
         {t("common.incidents.customerReport.dismissed")}
       </div>
     );
@@ -150,7 +143,7 @@ function CustomerReportIntakeMessage({ msg }: { msg: UserMessage }) {
       {answer.header.field !== "reportText" && answer.header.field !== "confirm" && <CustomerReportAnswerRow header={answer.header} />}
       {report !== null && (
         <div className="flex justify-end">
-          <div className="max-w-[75%] space-y-2 rounded-2xl bg-muted px-4 py-2.5 text-sm">
+          <div className="max-w-[75%] space-y-2 rounded-2xl bg-muted px-4 py-2.5 text-sm leading-[22px]">
             <CustomerReportChip header={report.header} />
             {report.body.length > 0 && <div className="whitespace-pre-wrap break-words">{report.body}</div>}
           </div>
@@ -196,7 +189,7 @@ function UserTextBubble({ msg, t }: { msg: UserMessage; t: (key: string, values?
                   {attachment.name}
                 </span>
                 {attachment.type === "csv" && (
-                  <span className="ml-auto shrink-0 text-[11px] tabular-nums text-muted-foreground">
+                  <span className="ml-auto shrink-0 text-xs tabular-nums text-muted-foreground">
                     {t("common.incidents.attachmentRows", {
                       rowCount: attachment.rowCount,
                       totalRowCount: attachment.totalRowCount,
@@ -211,12 +204,20 @@ function UserTextBubble({ msg, t }: { msg: UserMessage; t: (key: string, values?
     : null;
   const bodyText = report === null ? msg.text : report.body;
   const textContent = bodyText.length > 0
-    ? <div className="whitespace-pre-wrap break-words">{bodyText}</div>
+    ? (
+        <div className="whitespace-pre-wrap break-words">
+          {splitCitations(bodyText).map((segment, index) =>
+            segment.kind === "text"
+              ? <span key={index}>{segment.text}</span>
+              : <CitationChip key={index} citation={segment.citation} />,
+          )}
+        </div>
+      )
     : null;
 
   return (
     <div className="flex justify-end">
-      <div className="max-w-[75%] space-y-2 rounded-2xl bg-muted px-4 py-2.5 text-sm">
+      <div className="max-w-[75%] space-y-2 rounded-2xl bg-muted px-4 py-2.5 text-sm leading-[22px]">
         {report !== null && <CustomerReportChip header={report.header} />}
         {attachmentsContent}
         {textContent}
@@ -273,10 +274,20 @@ export function getCopyableMarkdown(msg: AgentMessage): string {
   return (msg.finalText ?? "").trim();
 }
 
+/** The answer row's 28px ghost icon buttons; hosts that add their own actions to the row reuse it. */
+export const answerActionButtonClassName =
+  "inline-flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50";
+
 function CopyMarkdownResponseButton({ content }: { content: string }) {
   const { t } = useTranslation();
   const [copied, setCopied] = useState(false);
   const copiedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Read on click, so a streaming reply keeps the button's props unchanged. New props would re-render the Radix
+  // trigger, whose Slot passes a new ref callback each render and so re-sets the tooltip trigger in a nested commit.
+  const contentRef = useRef(content);
+  useLayoutEffect(() => {
+    contentRef.current = content;
+  }, [content]);
 
   let label = t("common.markdown.copyResponseMarkdown");
   let Icon = CopyIcon;
@@ -285,11 +296,11 @@ function CopyMarkdownResponseButton({ content }: { content: string }) {
     Icon = CheckIcon;
   }
 
-  const handleCopy = useCallback(() => {
+  const handleCopy = () => {
     if (typeof navigator === "undefined" || navigator.clipboard == null) return;
 
     void navigator.clipboard
-      .writeText(content)
+      .writeText(contentRef.current)
       .then(() => {
         if (copiedTimerRef.current != null) {
           clearTimeout(copiedTimerRef.current);
@@ -301,7 +312,7 @@ function CopyMarkdownResponseButton({ content }: { content: string }) {
         }, 1200);
       })
       .catch(() => {});
-  }, [content]);
+  };
 
   useEffect(
     () => () => {
@@ -319,7 +330,7 @@ function CopyMarkdownResponseButton({ content }: { content: string }) {
         <button
           type="button"
           onClick={handleCopy}
-          className="inline-flex size-7 shrink-0 items-center justify-center rounded-md border border-border/70 bg-background/80 text-muted-foreground shadow-sm transition-colors hover:border-foreground/30 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className={answerActionButtonClassName}
           aria-label={label}
         >
           <Icon className="size-3.5" />
@@ -332,25 +343,28 @@ function CopyMarkdownResponseButton({ content }: { content: string }) {
   );
 }
 
-function AssistantWaitingIndicator({
-  label,
-  elapsedMs,
-}: {
-  label: string;
-  elapsedMs?: number;
-}) {
-  let elapsedText = "";
-  if (elapsedMs !== undefined) {
-    elapsedText = ` ${formatDuration(elapsedMs)}`;
-  }
+/** Whether the turn is working: running and not stalled. A stalled turn's row carries the warning instead. */
+function isWorkingTurn(msg: AgentMessage, nowMs: number): boolean {
+  return (msg.status === "thinking" || msg.status === "streaming") && !isTurnStalled(msg, nowMs);
+}
 
+/** The provider's logo, with an activity dot while the turn works. */
+function AgentAvatar({ providerKey, working }: { providerKey: string | null | undefined; working: boolean }) {
+  const ProviderLogo = providerKey === undefined || providerKey === null ? null : getProviderLogo(providerKey);
   return (
-    <div className="inline-flex items-center gap-2 rounded-full border border-border/70 bg-muted/35 px-2.5 py-1 text-xs text-muted-foreground">
-      <Loader2 size={12} className="animate-spin" aria-hidden="true" />
-      <span>
-        {label}
-        {elapsedText}
-      </span>
+    <div
+      className={cn(
+        "relative mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-full border border-border bg-muted transition-colors",
+        working && "border-primary/25 bg-primary/5",
+      )}
+    >
+      {ProviderLogo === null ? <ShieldAlert size={14} className="text-muted-foreground" /> : <ProviderLogo size={14} />}
+      {working && (
+        <span
+          className="absolute -right-0.5 -top-0.5 size-2 rounded-full bg-primary/70 shadow-[0_0_0_3px_hsl(var(--background))]"
+          aria-hidden="true"
+        />
+      )}
     </div>
   );
 }
@@ -359,10 +373,16 @@ export const ChatBubble = memo(function ChatBubble({
   msg,
   providerKey,
   collapsedJsonLabel,
+  actions,
 }: {
   msg: ChatMessage;
   providerKey?: string | null;
   collapsedJsonLabel?: string;
+  /**
+   * More controls for the answer row, after copy, such as a host's feedback buttons. The reply is the
+   * `group/answer` hover and focus group, so an action can reveal its label while the reader is on the reply.
+   */
+  actions?: ReactNode;
 }) {
   const { t } = useTranslation();
   const [nowMs, setNowMs] = useState(() => Date.now());
@@ -389,32 +409,6 @@ export const ChatBubble = memo(function ChatBubble({
   }
 
   const copyableMarkdown = getCopyableMarkdown(msg);
-  const toolCallMap = Object.fromEntries(
-    msg.toolCalls.map((tc) => [tc.toolCallId, tc]),
-  );
-
-  const formatTime = (iso: string) => {
-    const date = new Date(iso);
-    return date.toLocaleTimeString("en-US", {
-      hour: "numeric",
-      minute: "2-digit",
-      second: "2-digit",
-      hour12: true,
-    });
-  };
-
-  let providerLogoContent: ReactNode = (
-    <ShieldAlert size={14} className="text-muted-foreground" />
-  );
-  if (providerKey !== undefined && providerKey !== null) {
-    const ProviderLogo = getProviderLogo(providerKey);
-    if (ProviderLogo !== null) {
-      providerLogoContent = <ProviderLogo size={14} />;
-    }
-  }
-
-  const isWaitingForAssistant =
-    msg.status === "thinking" || msg.status === "streaming";
 
   let copyResponseButton: ReactNode = null;
   if (copyableMarkdown.length > 0) {
@@ -427,7 +421,9 @@ export const ChatBubble = memo(function ChatBubble({
       message: msg.errorMsg,
     });
     if (msg.status === "cancelled") {
-      statusText = t("common.incidents.sessionCancelled");
+      statusText = isInterruptedAgentTurn(msg)
+        ? t("common.incidents.sessionInterrupted")
+        : t("common.incidents.sessionCancelled");
     }
 
     errorStatusContent = (
@@ -436,127 +432,18 @@ export const ChatBubble = memo(function ChatBubble({
   }
 
   return (
-    <div className="flex gap-3">
-      <div
-        className={cn(
-          "relative mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-full border border-border bg-muted transition-colors",
-          isWaitingForAssistant && "border-primary/25 bg-primary/5",
-        )}
-      >
-        {providerLogoContent}
-        {isWaitingForAssistant && (
-          <span
-            className="absolute -right-0.5 -top-0.5 size-2 rounded-full bg-primary/70 shadow-[0_0_0_3px_hsl(var(--background))] motion-safe:animate-pulse"
-            aria-hidden="true"
-          />
-        )}
-      </div>
+    <div className="group/answer flex gap-3">
+      <AgentAvatar providerKey={providerKey} working={isWorkingTurn(msg, nowMs)} />
       <div className="min-w-0 flex-1 pt-0.5">
         <div className="min-w-0 flex-1 space-y-3">
-          {/* Render each iteration */}
-          {msg.iterations.map((iter, index) => {
-            const iterTools = dedupeToolCalls(
-              iter.toolCallIds
-                .map((id) => toolCallMap[id])
-                .filter((toolCall): toolCall is ToolCallCard => toolCall !== undefined),
-            );
-            let duration: string | null = null;
-            if (iter.completedAt !== undefined) {
-              duration = formatDuration(
-                new Date(iter.completedAt).getTime() -
-                  new Date(iter.startedAt).getTime(),
-              );
-            }
-            const isActive = iter.id === msg.activeIterationId;
-            const elapsedMs = nowMs - new Date(iter.startedAt).getTime();
-            const isLastIteration = index === msg.iterations.length - 1;
-            let visibleText = "";
-            if (shouldRenderIterationText(msg, isLastIteration)) {
-              visibleText = getVisibleIterationText(msg, iter, isLastIteration);
-            }
-            const hasVisibleText =
-              visibleText.trim().length > 0;
-            const shouldShowWaitingIndicator = isActive && isWaitingForAssistant;
-
-            // Show timestamp when iteration completes
-            const showTimestamp =
-              !shouldShowWaitingIndicator &&
-              iter.completedAt !== undefined &&
-              iter.status !== "thinking" &&
-              (hasVisibleText || iterTools.length > 0);
-
-            if (
-              !hasVisibleText &&
-              iterTools.length === 0 &&
-              !shouldShowWaitingIndicator
-            ) {
-              return null;
-            }
-
-            let timestampContent: ReactNode = null;
-            if (showTimestamp && duration !== null && iter.completedAt !== undefined) {
-              timestampContent = (
-                <p className="text-xs text-muted-foreground">
-                  {formatTime(iter.completedAt)} • {duration}
-                </p>
-              );
-            }
-
-            return (
-              <div key={iter.id} className="space-y-1">
-                {shouldShowWaitingIndicator && (
-                  <AssistantWaitingIndicator
-                    label={t("common.incidents.workingFor")}
-                    elapsedMs={elapsedMs}
-                  />
-                )}
-
-                {hasVisibleText && (
-                  <div className="text-sm leading-relaxed text-foreground">
-                    <MarkdownContent
-                      content={visibleText}
-                      paragraphizeSoftBreaks
-                      collapsedJsonLabel={collapsedJsonLabel}
-                    />
-                  </div>
-                )}
-
-                {timestampContent}
-
-                {iterTools.length > 0 && (
-                  <WorkLogGroup toolCalls={iterTools}>
-                    <div className="flex flex-wrap gap-1.5">
-                      {iterTools.map((tc) => (
-                        <ToolCard key={tc.toolCallId} card={tc} />
-                      ))}
-                    </div>
-                  </WorkLogGroup>
-                )}
-              </div>
-            );
-          })}
-
-          {msg.iterations.length === 0 && isWaitingForAssistant && (
-            <AssistantWaitingIndicator
-              label={t("common.incidents.aiIsResponding")}
-            />
-          )}
-
-          {msg.iterations.length === 0 && msg.finalText && (
-            <div className="text-sm leading-relaxed text-foreground">
-              <MarkdownContent
-                content={msg.finalText}
-                paragraphizeSoftBreaks
-                collapsedJsonLabel={collapsedJsonLabel}
-              />
-            </div>
-          )}
+          <TurnTimeline msg={msg} nowMs={nowMs} collapsedJsonLabel={collapsedJsonLabel} />
 
           {errorStatusContent}
 
-          {copyResponseButton !== null && (
-            <div className="flex items-center gap-1.5">
+          {(copyResponseButton !== null || actions !== undefined) && (
+            <div className="-ml-1.5 flex flex-wrap items-center gap-0.5">
               {copyResponseButton}
+              {actions}
             </div>
           )}
         </div>

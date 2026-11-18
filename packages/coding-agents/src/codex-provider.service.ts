@@ -2,7 +2,7 @@ import os from 'os'
 import { mkdtemp, rm } from 'fs/promises'
 import path from 'path'
 import { codingAgentsLogger as log } from './logger.js'
-import { CodexAppServerClient, type JsonRpcId } from './codex-app-server-client.js'
+import type { CodexAppServerClient, JsonRpcId } from './codex-app-server-client.js'
 import { HOST_MCP_SERVER_NAME, type HostMcpEndpoint } from './host-mcp-server.service.js'
 import type { LocalAiStreamDelta, LocalAiExecutionResult } from './types.js'
 import {
@@ -14,7 +14,7 @@ import {
 import { getErrorMessage } from '@bitsentry-ce/core'
 import { getHostTools } from '@bitsentry-ce/core/features/agent-runtime'
 import { buildRunbookOnlyScope } from './runbook-only-scope.js'
-import { createIsolatedCodexIncidentHome } from './codex-incident-home.js'
+import { borrowCodexAppServer } from './codex-app-server-pool.js'
 
 type LocalAiTextStreamDelta = LocalAiStreamDelta & { type: 'text'; text?: string }
 
@@ -210,6 +210,15 @@ function firstNumberField(
 
 function isAbortSignalAborted(signal: AbortSignal): boolean {
   return signal.aborted
+}
+
+/** A shared app-server carries several threads; messages for other threads are not ours. */
+function isForeignThreadMessage(params: unknown, threadId: string | undefined): boolean {
+  const record = asRecord(params)
+  const messageThreadId =
+    readStringField(record, 'threadId') ??
+    readStringField(asRecord(record?.thread), 'id')
+  return messageThreadId !== undefined && messageThreadId !== threadId
 }
 
 function parseCodexTokenUsage(
@@ -410,23 +419,15 @@ export async function executeCodex(
     return { output: '', exitCode: -1 }
   }
 
-  let isolatedHome: Awaited<ReturnType<typeof createIsolatedCodexIncidentHome>> | undefined
-  try {
-    isolatedHome = options.mcpEndpoint === undefined
-      ? undefined
-      : await createIsolatedCodexIncidentHome()
-  } catch (error) {
-    if (scratchDirectory !== undefined) await rm(scratchDirectory, { recursive: true, force: true })
-    throw error
-  }
-  if (isAbortSignalAborted(options.abortController.signal)) {
-    await isolatedHome?.dispose()
-    if (scratchDirectory !== undefined) await rm(scratchDirectory, { recursive: true, force: true })
-    return { output: '', exitCode: -1 }
-  }
-  const client = new CodexAppServerClient(options.binaryPath, cwd, effectiveCodexArgs, {
-    home: isolatedHome?.home,
+  // The thread gets the per-turn cwd; the process cwd must outlive this turn.
+  const lease = borrowCodexAppServer({
+    binaryPath: options.binaryPath,
+    cwd: options.cwd ?? os.tmpdir(),
+    args: effectiveCodexArgs,
+    isolatedSessionId: options.mcpEndpoint?.agentSessionId,
   })
+  let client: CodexAppServerClient | undefined
+  let stderrMark = 0
 
   const MAX_OUTPUT_LENGTH = 50_000
   let output = ''
@@ -461,20 +462,21 @@ export async function executeCodex(
   }
 
   const onAbort = () => {
-    if (threadId !== undefined && activeTurnId !== undefined) {
+    if (client !== undefined && threadId !== undefined && activeTurnId !== undefined) {
       client.sendRequest('turn/interrupt', { threadId, turnId: activeTurnId }).catch(() => {
-        // Interrupt failed, kill will handle it
+        // Interrupt failed; the process is retired below.
       })
     }
-    // `kill` owns the bounded SIGTERM/SIGKILL escalation. Do not leave a
-    // provider-local timer behind after the parent session has finished.
-    void client.kill()
+    // The client owns the bounded SIGTERM/SIGKILL escalation; a process
+    // another turn still uses is only retired, not killed.
+    lease.abort()
   }
 
   options.abortController.signal.addEventListener('abort', onAbort, { once: true })
 
   // eslint-disable-next-line sonarjs/cognitive-complexity -- Protocol notifications update one shared turn state machine whose ordering is required for streamed output and approvals.
-  client.on('notification', (notification: { method: string; params: unknown }) => {
+  const onNotification = (notification: { method: string; params: unknown }) => {
+    if (isForeignThreadMessage(notification.params, threadId)) return
     const params = asRecord(notification.params)
 
     switch (notification.method) {
@@ -609,9 +611,10 @@ export async function executeCodex(
       default:
         break
     }
-  })
+  }
 
-  client.on('serverRequest', (request: { id: JsonRpcId; method: string; params: unknown }) => {
+  const onServerRequest = (activeClient: CodexAppServerClient, request: { id: JsonRpcId; method: string; params: unknown }) => {
+    if (isForeignThreadMessage(request.params, threadId)) return
     const requestParams = asRecord(request.params)
     const itemId = readStringField(requestParams, 'itemId')
     const decision = chooseCodexApprovalResponse(
@@ -630,7 +633,7 @@ export async function executeCodex(
         choice: 'deny',
         ...(elicitation === undefined ? {} : { elicitation }),
       })
-      client.respondToServerRequestError(request.id, 'Method not supported')
+      activeClient.respondToServerRequestError(request.id, 'Method not supported')
       return
     }
     log.info('[codex-provider] approval decision', {
@@ -646,13 +649,21 @@ export async function executeCodex(
         },
       }),
     })
-    client.respondToServerRequest(request.id, decision.result)
-  })
+    activeClient.respondToServerRequest(request.id, decision.result)
+  }
+  const handleServerRequest = (request: { id: JsonRpcId; method: string; params: unknown }) => {
+    if (client !== undefined) onServerRequest(client, request)
+  }
 
+  let turnSucceeded = false
   try {
     options.onDelta?.({ type: 'status', status: 'started' })
 
-    await client.start()
+    client = (await lease.ready).client
+    const activeClient = client
+    stderrMark = activeClient.stderrMark()
+    activeClient.on('notification', onNotification)
+    activeClient.on('serverRequest', handleServerRequest)
 
     const mcpEndpoint = options.mcpEndpoint
     const incidentInstructions = mcpEndpoint === undefined
@@ -687,7 +698,7 @@ export async function executeCodex(
         toolNames: configuredHostTools.map((hostTool) => hostTool.name),
       })
     }
-    const threadResult = asRecord(await client.sendRequest('thread/start', {
+    const threadResult = asRecord(await activeClient.sendRequest('thread/start', {
       cwd,
       ...(threadConfig === undefined ? {} : { config: threadConfig }),
       ...(incidentInstructions === undefined
@@ -702,18 +713,26 @@ export async function executeCodex(
       readStringField(thread, 'id') ??
       readStringField(threadResult, 'threadId') ??
       threadId
+    if (isAbortSignalAborted(options.abortController.signal)) {
+      throw new Error('Codex turn cancelled before it started')
+    }
 
     // Register completion listener BEFORE starting the turn to avoid missing
     // events that arrive back-to-back with the turn/start response.
     // Suppress unhandled rejection if turn/start fails before we await this.
     const turnCompletion = new Promise<void>((resolve, reject) => {
-      const onNotification = (notification: { method: string; params: unknown }) => {
+      const stopWatching = () => {
+        activeClient.removeListener('notification', onTurnNotification)
+        activeClient.removeListener('closed', onClosed)
+        options.abortController.signal.removeEventListener('abort', onTurnAbort)
+      }
+      const onTurnNotification = (notification: { method: string; params: unknown }) => {
+        if (isForeignThreadMessage(notification.params, threadId)) return
         if (
           notification.method === 'turn/completed' ||
           notification.method === 'thread/completed'
         ) {
-          client.removeListener('notification', onNotification)
-          client.removeListener('closed', onClosed)
+          stopWatching()
           // A turn can "complete" in a failed state (for example a 400 from
           // the model endpoint). Treating that as success silently drops the
           // provider's error and yields an empty result.
@@ -731,8 +750,7 @@ export async function executeCodex(
           notification.method === 'turn/error' ||
           notification.method === 'thread/error'
         ) {
-          client.removeListener('notification', onNotification)
-          client.removeListener('closed', onClosed)
+          stopWatching()
           const params = asRecord(notification.params)
           const message =
             readStringField(params, 'message') ??
@@ -743,16 +761,22 @@ export async function executeCodex(
       }
 
       const onClosed = (reason: string) => {
-        client.removeListener('notification', onNotification)
+        stopWatching()
         if (options.abortController.signal.aborted) {
           resolve()
         } else {
           reject(new Error(`Codex app-server closed: ${reason}`))
         }
       }
+      // A shared process is interrupted, not killed, so 'closed' may never come.
+      const onTurnAbort = () => {
+        stopWatching()
+        resolve()
+      }
 
-      client.on('notification', onNotification)
-      client.once('closed', onClosed)
+      activeClient.on('notification', onTurnNotification)
+      activeClient.once('closed', onClosed)
+      options.abortController.signal.addEventListener('abort', onTurnAbort, { once: true })
     })
     // Guard against unhandled rejection if turn/start throws before we await
     turnCompletion.catch(() => {})
@@ -771,11 +795,26 @@ export async function executeCodex(
     if (typeof effortValue === 'string' && effortValue.length > 0) {
       turnStartPayload.model_params = { reasoning: { effort: effortValue } }
     }
-    const turnResult = asRecord(await client.sendRequest('turn/start', turnStartPayload))
+    const turnResult = asRecord(await activeClient.sendRequest('turn/start', turnStartPayload))
     const turn = asRecord(turnResult?.turn)
     activeTurnId =
       readStringField(turn, 'id') ??
       readStringField(turnResult, 'turnId')
+    if (threadId !== undefined && activeTurnId !== undefined) {
+      const steerThreadId = threadId
+      const steerTurnId = activeTurnId
+      // `expectedTurnId` makes Codex reject a steer that arrives after this turn ended.
+      options.onDelta?.({
+        type: 'steer_handle',
+        steer: async (text) => {
+          await activeClient.sendRequest('turn/steer', {
+            threadId: steerThreadId,
+            expectedTurnId: steerTurnId,
+            input: [{ type: 'text', text, text_elements: [] }],
+          })
+        },
+      })
+    }
 
     // Wait for turn completion
     await turnCompletion
@@ -785,6 +824,7 @@ export async function executeCodex(
         new Promise<void>((resolve) => setTimeout(resolve, 1000)),
       ])
     }
+    turnSucceeded = !isAbortSignalAborted(options.abortController.signal)
   } catch (err: unknown) {
     if (isAbortSignalAborted(options.abortController.signal)) {
       options.onDelta?.({ type: 'status', status: 'cancelled' })
@@ -795,17 +835,30 @@ export async function executeCodex(
       throw normalizedError
     }
   } finally {
+    options.onDelta?.({ type: 'steer_handle', steer: null })
     options.abortController.signal.removeEventListener('abort', onAbort)
-    const stderrTail = client.getStderrTail().trim()
+    client?.removeListener('notification', onNotification)
+    client?.removeListener('serverRequest', handleServerRequest)
+    const stderrTail = client?.getStderrTail(stderrMark).trim() ?? ''
     if (stderrTail.length > 0) {
       log.warn('[codex-provider] subprocess stderr tail', {
         agentSessionId: options.mcpEndpoint?.agentSessionId ?? 'unknown',
         stderrTail,
       })
     }
-    await client.kill()
-    await isolatedHome?.dispose()
+    if (turnSucceeded && threadId !== undefined) {
+      // Unload the finished thread so a reused process does not accumulate them.
+      client?.sendRequest('thread/unsubscribe', { threadId }).catch(() => {})
+    } else {
+      // Failed or cancelled turns may leave the process in an unknown state.
+      lease.retire()
+    }
+    await lease.release()
     if (scratchDirectory !== undefined) await rm(scratchDirectory, { recursive: true, force: true })
+  }
+
+  if (client === undefined && isAbortSignalAborted(options.abortController.signal)) {
+    return { output: '', exitCode: -1 }
   }
 
   let error: string | undefined
@@ -813,7 +866,7 @@ export async function executeCodex(
     // Codex reports startup and config failures on stderr and then exits
     // without ever sending an assistant message. Without this the caller only
     // sees an empty string and cannot tell a refusal from a silent model.
-    const stderrTail = client.getStderrTail().trim()
+    const stderrTail = client?.getStderrTail(stderrMark).trim() ?? ''
     if (stderrTail.length > 0) {
       error = stderrTail
     }

@@ -348,7 +348,7 @@ export function createDesktopEditionRunbookRuntimeBindings<
   };
 }
 
-export async function createDesktopRunbookRuntime<
+async function createDesktopRunbookRuntime<
   TDb extends DesktopRunbookRuntimeDatabase,
   TGlobalVariablesService,
   TRunbookStore,

@@ -1,7 +1,7 @@
 import type { DbClient } from '@bitsentry-ce/core/features/desktop/desktop-database-client'
 
 /** Fixed host-owned tables. Adding a plugin never changes this schema. */
-export const integrationStorageSchema = `
+const integrationStorageSchema = `
 CREATE TABLE IF NOT EXISTS "IntegrationConnection" (
   "id" TEXT PRIMARY KEY NOT NULL,
   "pluginId" TEXT NOT NULL,

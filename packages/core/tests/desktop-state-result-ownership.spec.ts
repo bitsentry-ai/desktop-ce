@@ -41,7 +41,6 @@ function createDb(sessions: Row[]) {
         findUnique: async () => null,
         upsert: async () => ({}),
       },
-      incidentMessage: table(empty),
       incidentThread: table(empty),
       runbook: table(empty),
       runbookAction: table(empty),

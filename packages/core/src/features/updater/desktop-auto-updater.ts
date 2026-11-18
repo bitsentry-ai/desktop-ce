@@ -26,14 +26,14 @@ export interface UpdaterState {
   disabledReasonCode: AutoUpdaterDisabledReasonCode | null
 }
 
-export type DesktopUpdaterWindow = {
+type DesktopUpdaterWindow = {
   isDestroyed(): boolean
   webContents: {
     send(channel: string, payload: UpdaterState): void
   }
 }
 
-export type DesktopUpdaterIpcMain = {
+type DesktopUpdaterIpcMain = {
   handle(
     channel: string,
     listener: (_event: unknown, ...args: unknown[]) => unknown,
@@ -41,20 +41,20 @@ export type DesktopUpdaterIpcMain = {
   removeHandler(channel: string): void
 }
 
-export type DesktopUpdaterLogger = {
+type DesktopUpdaterLogger = {
   info(message: string, ...args: unknown[]): void
   error(message: string, ...args: unknown[]): void
 }
 
-export type DesktopUpdaterUpdateInfo = {
+type DesktopUpdaterUpdateInfo = {
   version: string
 }
 
-export type DesktopUpdaterProgressInfo = {
+type DesktopUpdaterProgressInfo = {
   percent: number
 }
 
-export type DesktopAutoUpdaterPort = {
+type DesktopAutoUpdaterPort = {
   logger?: unknown
   autoDownload: boolean
   autoInstallOnAppQuit: boolean

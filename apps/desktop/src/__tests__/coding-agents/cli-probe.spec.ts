@@ -608,4 +608,15 @@ describe('cli-probe service', () => {
       message: 'OpenCode free hosted models are available.',
     })
   })
+
+  it.each([
+    ['unauthenticated', 'unauthenticated'],
+    ['[error] unauthenticated', 'unauthenticated'],
+    ['User Email          Not logged in', 'unauthenticated'],
+    ['Logged in as wira@example.com', 'authenticated'],
+  ])('reads Cursor auth output %j as %s', async (stdout, status) => {
+    const { parseCursorAuthOutput } = await import('@bitsentry-ce/coding-agents/cli-probe.service')
+
+    expect(parseCursorAuthOutput(stdout, '')).toEqual({ status })
+  })
 })

@@ -325,6 +325,19 @@ function actionTextContainsFindingValues(
   return false;
 }
 
+// Lookups of existing Wazuh records. Literal IDs only, so a template cannot name another action at run time.
+const EXISTING_RECORD_LOOKUPS: Readonly<Record<string, readonly string[]>> = {
+  wazuh: ["query_issues", "search_alerts", "summarize_vulnerabilities", "list_vulnerabilities"],
+};
+
+/** A query that names a finding's CVE and package reads the existing record; it does not evaluate the finding. */
+function isExistingRecordLookup(action: RunbookActionRecord): boolean {
+  return (
+    action.type === "plugin" &&
+    EXISTING_RECORD_LOOKUPS[normalizeString(action.pluginId)]?.includes(normalizeString(action.pluginActionId)) === true
+  );
+}
+
 function consumesFindings(
   actions: RunbookActionRecord[],
   normalizedFindings: unknown[],
@@ -342,6 +355,7 @@ function consumesFindings(
 
   const findingValues = collectFindingValues(normalizedFindings);
   return actions.some((action) =>
+    !isExistingRecordLookup(action) &&
     actionTextContainsFindingValues(action, findingValues),
   );
 }
@@ -808,28 +822,28 @@ function validateRunbookActionFields(action: RunbookActionRecord, errors: string
   switch (action.type) {
     case "diagnosis":
       if (!telemetryActionConfigWithCliSchema.safeParse(action.telemetryConfig).data?.stage) errors.push(`Diagnosis action "${action.title}" requires a stage.`);
-      return;
+      break;
     case "shell":
       validateRequiredActionField(action.command, `Shell action "${action.title}" is missing a command.`, errors);
-      return;
+      break;
     case "llm":
       validateLlmActionFields(action, errors);
-      return;
+      break;
     case "http":
       validateRequiredActionField(action.url, `HTTP action "${action.title}" is missing a URL.`, errors);
-      return;
+      break;
     case "external_source":
       validateDataSourceActionFields(action, errors);
       validateRequiredActionField(action.sourceId, `External Source action "${action.title}" is missing a source selection.`, errors);
-      return;
+      break;
     case "data_source_query":
       validateDataSourceActionFields(action, errors);
-      return;
+      break;
     case "plugin":
       validatePluginActionFields(action, errors);
-      return;
+      break;
     default:
-      return;
+      break;
   }
 }
 
@@ -1076,7 +1090,7 @@ function buildSequentialOperationDiffs(
   operations: RunbookAuthoringOperation[],
 ): RunbookAuthoringOperationDiff[] {
   const diffs: RunbookAuthoringOperationDiff[] = [];
-  let currentRunbook = cloneRunbook(runbook);
+  const currentRunbook = cloneRunbook(runbook);
 
   for (const operation of operations) {
     const beforeRunbook = cloneRunbook(currentRunbook);

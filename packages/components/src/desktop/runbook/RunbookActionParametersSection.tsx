@@ -93,7 +93,7 @@ export function RunbookActionParametersSection({
         data-tour="runbook-create-parameters"
         className="mb-1.5 flex items-center justify-between"
       >
-        <label className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground/60">
+        <label className="text-xs font-medium uppercase tracking-wide text-muted-foreground/60">
           {t("runbooks.runbook.parameters")}
         </label>
         <button
@@ -104,20 +104,20 @@ export function RunbookActionParametersSection({
               createEmptyActionParameter(),
             ]);
           }}
-          className="text-[10px] uppercase tracking-wide text-muted-foreground transition-colors hover:text-foreground"
+          className="text-xs uppercase tracking-wide text-muted-foreground transition-colors hover:text-foreground"
         >
           {t("runbooks.runbook.addParameter")}
         </button>
       </div>
 
       {definedKeys.length === 0 && (
-        <p className="mb-2 text-[11px] text-muted-foreground/60">
+        <p className="mb-2 text-xs text-muted-foreground/60">
           {t("runbooks.runbook.defineParametersToInjectDynamic")} {target}.
         </p>
       )}
       {definedKeys.length > 0 && (
         <>
-          <p className="mb-2 text-[11px] text-muted-foreground/60">
+          <p className="mb-2 text-xs text-muted-foreground/60">
             {t("runbooks.runbook.placeholdersForTarget", { target })}{" "}
             {definedKeys.map((key, index) => (
               <span key={`${key}:${String(index)}`}>
@@ -133,7 +133,7 @@ export function RunbookActionParametersSection({
           {globalVariables.length > 0 && (
             <p
               data-tour="runbook-create-global-reference"
-              className="mb-2 text-[11px] text-muted-foreground/60"
+              className="mb-2 text-xs text-muted-foreground/60"
             >
               {t("runbooks.runbook.availableGlobals")}
               {globalVariables.slice(0, 6).map((globalVariable, index) => (
@@ -153,7 +153,7 @@ export function RunbookActionParametersSection({
 
       <div className="space-y-2">
         {parameters.length === 0 && (
-          <p className="rounded-lg border border-dashed border-border bg-muted/10 px-3 py-2 text-[11px] text-muted-foreground/60">
+          <p className="rounded-lg border border-dashed border-border bg-muted/10 px-3 py-2 text-xs text-muted-foreground/60">
             {t("runbooks.runbook.noParametersDefinedStaticText")}
           </p>
         )}
@@ -242,7 +242,7 @@ export function RunbookActionParametersSection({
                       />
                     </div>
                     <div className="flex shrink-0 flex-col gap-1 pb-1.5">
-                      <label className="inline-flex items-center gap-1 text-[10px] text-muted-foreground">
+                      <label className="inline-flex items-center gap-1 text-xs text-muted-foreground">
                         <input
                           type="checkbox"
                           checked={parameter.required !== false}
@@ -260,7 +260,7 @@ export function RunbookActionParametersSection({
                         />
                         {t("runbooks.runbook.required")}
                       </label>
-                      <label className="inline-flex items-center gap-1 text-[10px] text-muted-foreground">
+                      <label className="inline-flex items-center gap-1 text-xs text-muted-foreground">
                         <input
                           type="checkbox"
                           checked={parameter.secure === true}
@@ -296,7 +296,7 @@ export function RunbookActionParametersSection({
                     </button>
                   </div>
                   {parameter.secure === true && (
-                    <p className="text-[11px] text-muted-foreground/60">
+                    <p className="text-xs text-muted-foreground/60">
                       {t("runbooks.runbook.secureValuesAreAvailableDuring")}
                     </p>
                   )}
@@ -336,7 +336,7 @@ export function RunbookActionParametersSection({
               );
             })}
             {parameterErrors.length > 0 && (
-              <div className="rounded-lg border border-destructive/20 bg-destructive/5 px-3 py-2 text-[11px] text-destructive">
+              <div className="rounded-lg border border-destructive/20 bg-destructive/5 px-3 py-2 text-xs text-destructive">
                 {parameterErrors.join(" ")}
               </div>
             )}

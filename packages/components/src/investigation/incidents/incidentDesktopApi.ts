@@ -1,0 +1,115 @@
+import { getDesktopApi } from "../../services/desktop-api";
+import type { AgentSessionState, ChatMessage } from "../../chat/types";
+import {
+  asRecord,
+  getString,
+  normalizeIncidentMessagesMap,
+  normalizeIncidents,
+} from "./incidentNormalize";
+import { loadIncidents } from "./incidentStorage";
+import type { DesktopIpcError, IncidentThread } from "./types";
+
+export function hasDesktopIncidentsApi(): boolean {
+  if (typeof window === "undefined") return false;
+  return getDesktopApi()?.incidents !== undefined;
+}
+
+export function hasDesktopLlmApi(): boolean {
+  if (typeof window === "undefined") return false;
+  return getDesktopApi()?.llm?.getProviders !== undefined;
+}
+
+export function hasManagedDesktopLlmApi(): boolean {
+  if (typeof window === "undefined") return false;
+  return typeof getDesktopApi()?.llm?.ping === "function";
+}
+
+export function errorMessage(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  if (typeof error === "string") return error;
+  return "";
+}
+
+export function isMissingIncidentsHandlerError(error: unknown): boolean {
+  const message = errorMessage(error);
+  return (
+    message.includes("No handler registered for 'incidents:list'") ||
+    message.includes("No handler registered for 'incidents:saveThread'")
+  );
+}
+
+export function isMissingAgentSessionError(error: unknown): boolean {
+  const record = asRecord(error);
+  if (record !== null) {
+    const ipcError: DesktopIpcError = {
+      code: getString(record, "code"),
+      message: getString(record, "message"),
+    };
+    if (
+      ipcError.code === "not_found" &&
+      typeof ipcError.message === "string" &&
+      ipcError.message.includes("Session not found:")
+    ) {
+      return true;
+    }
+  }
+
+  const message = errorMessage(error);
+  return message.includes("Session not found:");
+}
+
+/** A run whose session is gone was cut off by the app closing, like a stop, so it is not a failure. */
+export function getRecoveredIncidentState(
+  state: AgentSessionState,
+): AgentSessionState {
+  if (state === "RUNNING") return "CANCELLED";
+  return state;
+}
+
+export function captureIncidentException(
+  error: unknown,
+  context?: Record<string, unknown>,
+): void {
+  // Loaded on demand to keep the Sentry SDK out of the startup bundle; a no-op until the renderer client inits.
+  void import("@sentry/react")
+    .then((Sentry) => {
+      if (context === undefined) {
+        Sentry.captureException(error);
+      } else {
+        Sentry.captureException(error, { extra: context });
+      }
+    })
+    .catch(() => {});
+}
+
+export async function loadDesktopIncidents(): Promise<IncidentThread[]> {
+  const incidentsApi = getDesktopApi()?.incidents;
+  if (incidentsApi === undefined) return loadIncidents();
+  return normalizeIncidents(await incidentsApi.list());
+}
+
+/** Each desktop thread's preview and when main last saved it, in ms (0 when unknown). */
+export async function loadDesktopIncidentPreviews(): Promise<Array<{ id: string; lastMessagePreview: string | null; updatedAt: number }>> {
+  const rows = (await getDesktopApi()?.incidents?.list()) ?? [];
+  return normalizeIncidents(rows).map((thread, index) => {
+    const updatedAt = Date.parse(getString(asRecord(rows[index]) ?? {}, "updatedAt") ?? "");
+    return { id: thread.id, lastMessagePreview: thread.lastMessagePreview ?? null, updatedAt: Number.isNaN(updatedAt) ? 0 : updatedAt };
+  });
+}
+
+/** The thread's newest messages before `before`, and the cursor for the page before them (null at the start). */
+export async function loadDesktopIncidentMessages(threadId: string, before?: number): Promise<{ messages: ChatMessage[]; before: number | null }> {
+  const incidentsApi = getDesktopApi()?.incidents;
+  if (incidentsApi === undefined) return { messages: [], before: null };
+  const page = await incidentsApi.getThreadMessages(threadId, before);
+  return { messages: normalizeIncidentMessagesMap({ [threadId]: page.messages })[threadId] ?? [], before: page.before };
+}
+
+/** Saves only the fields in `patch`; `archivedAt: null` unarchives. */
+export async function saveDesktopIncidentThread(patch: { id: string } & Record<string, unknown>): Promise<void> {
+  await getDesktopApi()?.incidents?.saveThread(patch);
+}
+
+export async function appendDesktopIncidentMessages(threadId: string, messages: ChatMessage[]): Promise<void> {
+  await getDesktopApi()?.incidents?.appendThreadMessages(threadId, messages);
+}

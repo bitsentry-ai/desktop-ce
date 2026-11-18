@@ -24,7 +24,7 @@ export interface IntegrationsRailSummary {
   /** Operations awaiting approval, sorted; the host notices a new proposal by an ID it has not seen for this incident. */
   pendingIds: string[];
 }
-export const EMPTY_INTEGRATIONS_SUMMARY: IntegrationsRailSummary = { resourceCount: 0, selectedCount: 0, operationCount: 0, pendingCount: 0, deliveryCount: 0, attentionCount: 0, pendingIds: [] };
+const EMPTY_INTEGRATIONS_SUMMARY: IntegrationsRailSummary = { resourceCount: 0, selectedCount: 0, operationCount: 0, pendingCount: 0, deliveryCount: 0, attentionCount: 0, pendingIds: [] };
 const summaryKey = (summary: IntegrationsRailSummary) =>
   [summary.resourceCount, summary.selectedCount, summary.operationCount, summary.pendingCount, summary.deliveryCount, summary.attentionCount, summary.pendingIds.join(",")].join("|");
 
@@ -66,16 +66,16 @@ export function useIntegrationsRailState({ incidentId, runbookRailOpen, closeRun
   const reportSummary = useCallback((next: IntegrationsRailSummary) => {
     setSummaryState((previous) => (previous.incidentId === incidentId && summaryKey(previous.summary) === summaryKey(next) ? previous : { incidentId, summary: next }));
   }, [incidentId]);
-  const toggle = useCallback((view: IntegrationsRailView) => {
+  const toggle = (view: IntegrationsRailView) => {
     setUi((previous) => {
       const state = forIncident(previous, incidentId);
       if (state.open && state.view === view) return { ...state, open: false };
       return { ...state, open: true, view, openedByUser: true };
     });
     closeRunbookRail();
-  }, [closeRunbookRail, incidentId]);
-  const close = useCallback(() => { update({ open: false }); }, [update]);
-  const setView = useCallback((view: IntegrationsRailView) => { update({ view }); }, [update]);
+  };
+  const close = () => { update({ open: false }); };
+  const setView = (view: IntegrationsRailView) => { update({ view }); };
 
   useEffect(() => {
     if (runbookRailOpen) update({ open: false });
@@ -110,17 +110,17 @@ export function useDesktopIntegrationPorts(): { resources?: IntegrationResources
 
 function CountPill({ count, pending, attention = 0 }: { count: number; pending: number; attention?: number }) {
   const { t } = useTranslation();
-  const amber = "rounded-full bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-medium text-amber-700 dark:text-amber-400";
+  const amber = "rounded-full bg-amber-500/15 px-1.5 py-0.5 text-xs font-medium text-amber-700 dark:text-amber-400";
   if (pending > 0) return <span className={amber}>{t("incidents.integrationRail.pendingShort", { pending })}</span>;
   if (attention > 0) return <span className={amber}>{t("incidents.integrationRail.attentionShort", { attention })}</span>;
-  return <span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px]">{count}</span>;
+  return <span className="rounded-full bg-muted px-1.5 py-0.5 text-xs">{count}</span>;
 }
 
 function RailTrigger({ active, icon: Icon, label, title, count, pending, attention = 0, onClick }: {
   active: boolean; icon: ElementType; label: string; title: string; count: number; pending: number; attention?: number; onClick(): void;
 }) {
   return <button type="button" aria-pressed={active} title={title} onClick={onClick}
-    className={cn("flex items-center gap-1.5 rounded-md border border-border px-2 py-1 text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring", active ? "bg-muted text-foreground" : "hover:bg-muted")}>
+    className={cn("flex h-8 shrink-0 items-center gap-1.5 rounded-md border border-border px-2.5 text-[13px] max-sm:h-11 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring", active ? "bg-muted text-foreground" : "hover:bg-muted")}>
     <Icon size={12} aria-hidden="true" />
     {label}
     <CountPill count={count} pending={pending} attention={attention} />
@@ -181,7 +181,7 @@ export function usePolledRows<T>(threadId: string, port: { list(threadId: string
     const timer = setInterval(() => { void refresh(); }, intervalMs);
     return () => { generationRef.current += 1; clearInterval(timer); };
   }, [intervalMs, refresh]);
-  const fail = useCallback(() => { setFailed(true); }, []);
+  const fail = () => { setFailed(true); };
   return { rows, failed, refresh, fail };
 }
 
@@ -196,8 +196,8 @@ export function useSourceActions(resources: IntegrationResourcesPort | undefined
   };
   return {
     busy, error,
-    select: resources?.select === undefined ? undefined : (resource: IntegrationResource, selected: boolean) => { run(() => resources.select!(resource, selected)); },
-    refresh: resources?.refresh === undefined ? undefined : (resource: IntegrationResource) => { run(() => resources.refresh!(resource)); },
+    select: resources?.select === undefined ? undefined : (resource: IntegrationResource, selected: boolean) => { run(async () => resources.select?.(resource, selected)); },
+    refresh: resources?.refresh === undefined ? undefined : (resource: IntegrationResource) => { run(async () => resources.refresh?.(resource)); },
   };
 }
 
@@ -268,7 +268,7 @@ export default function IncidentIntegrationsRail({ isOpen, view, focusOnOpen = f
   const handleTabListKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
     const step = event.key === "ArrowRight" ? 1 : -1;
-    const next = views[(views.indexOf(view) + step + views.length) % views.length]!;
+    const next = views[(views.indexOf(view) + step + views.length) % views.length];
     event.preventDefault();
     onViewChange(next);
     document.getElementById(tabId(next))?.focus();
@@ -281,7 +281,7 @@ export default function IncidentIntegrationsRail({ isOpen, view, focusOnOpen = f
   const subtitle = subtitles[view];
 
   return <aside ref={asideRef} tabIndex={-1} data-tour="incidents-integrations-rail" aria-label={t("incidents.integrationRail.title")} aria-hidden={!isOpen} inert={!isOpen} onKeyDown={handleKeyDown}
-    className={cn("absolute inset-y-0 right-0 z-20 flex w-full max-w-[430px] flex-col border-l border-border bg-background/95 shadow-2xl outline-none backdrop-blur transition-transform duration-300", isOpen ? "translate-x-0" : "translate-x-full")}>
+    className={cn("absolute inset-y-0 right-0 z-20 flex w-full max-w-[430px] flex-col border-l border-border bg-background/95 shadow-2xl outline-none backdrop-blur transition-transform duration-300", isOpen ? "translate-x-0" : "translate-x-full shadow-none")}>
     <div className="flex items-center gap-3 border-b border-border px-4 py-3">
       <div className="flex size-9 items-center justify-center rounded-2xl border border-border bg-muted/20"><Plug size={16} className="text-muted-foreground" aria-hidden="true" /></div>
       <div className="min-w-0 flex-1">

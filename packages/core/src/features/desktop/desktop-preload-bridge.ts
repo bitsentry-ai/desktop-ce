@@ -58,6 +58,24 @@ interface UpdaterState {
 
 type IpcListener = (event: unknown, payload: unknown) => void
 
+type IncidentThreadMetadata = {
+  id: string
+  title: string
+  createdAt: string
+  prompt: string
+  state: string
+  sessionId?: string
+  archived?: boolean
+  archivedAt?: string
+  lastMessagePreview?: string | null
+}
+
+/** Only the fields present are written; `archivedAt: null` unarchives. */
+type IncidentThreadPatch = { id: string } & Partial<Omit<IncidentThreadMetadata, 'id' | 'archivedAt' | 'sessionId'>> & {
+  archivedAt?: string | null
+  sessionId?: string | null
+}
+
 export interface DesktopPreloadBridgePort {
   platform: string
   versions: {
@@ -319,6 +337,14 @@ function createAgentBridge(bridge: DesktopPreloadBridgePort) {
     cancel: async (sessionId: string): Promise<void> => {
       await bridge.invoke('agent:cancel', { sessionId })
     },
+    restoreQueue: async (incidentThreadId: string): Promise<{ sessionId: string; snapshot: AgentSnapshot } | null> => {
+      return bridge.invoke('agent:restoreQueue', { incidentThreadId }) as Promise<{ sessionId: string; snapshot: AgentSnapshot } | null>
+    },
+    updateQueue: async (
+      input: { sessionId: string; action: 'edit' | 'remove' | 'reorder' | 'steer' | 'resume' } & Record<string, unknown>,
+    ): Promise<void> => {
+      await bridge.invoke('agent:updateQueue', input)
+    },
     getStatus: async (sessionId: string): Promise<{
       sessionId: string
       state: string
@@ -373,15 +399,16 @@ function createAgentBridge(bridge: DesktopPreloadBridgePort) {
       return bridge.invoke('agent:restoreRunbookAuthoringProposal', input)
     },
     onEvent: (
-      callback: (event: {
-        sessionId: string
-        event: {
-          type: string
-          timestamp: string
-          [key: string]: unknown
-        }
-        snapshot?: Record<string, unknown>
-      }) => void,
+      // Structural events carry the full snapshot; coalesced streaming
+      // updates carry only the changed message (kind: 'message').
+      callback: (event:
+        | {
+            sessionId: string
+            kind: 'snapshot'
+            event: { type: string; timestamp: string; [key: string]: unknown }
+            snapshot?: Record<string, unknown>
+          }
+        | { sessionId: string; kind: 'message'; [key: string]: unknown }) => void,
     ): (() => void) => {
       return createSubscription(bridge, 'bitsentry:agent:event', callback)
     },
@@ -515,6 +542,7 @@ export function createDesktopBitsentryApi({
           executionId: string
           incidentThreadId?: string | null
           execution: Record<string, unknown>
+          step?: { index: number; record: unknown }
         }) => void,
       ): (() => void) => {
         return createSubscription(bridge, 'bitsentry:runbooks:execution', callback)
@@ -524,52 +552,17 @@ export function createDesktopBitsentryApi({
       },
     },
     incidents: {
-      getState: async (): Promise<{
-        incidents: Array<{
-          id: string
-          title: string
-          createdAt: string
-          prompt: string
-          state: string
-          archived?: boolean
-          archivedAt?: string
-          lastMessagePreview?: string | null
-        }>
-        incidentMessages: Record<string, unknown[]>
-      }> => {
-        return bridge.invoke('incidents:getState', {}) as Promise<{
-          incidents: Array<{
-            id: string
-            title: string
-            createdAt: string
-            prompt: string
-            state: string
-            archived?: boolean
-            archivedAt?: string
-            lastMessagePreview?: string | null
-          }>
-          incidentMessages: Record<string, unknown[]>
-        }>
+      list: async (): Promise<IncidentThreadMetadata[]> => {
+        return bridge.invoke('incidents:list', {}) as Promise<IncidentThreadMetadata[]>
       },
-      replaceState: async (
-        snapshot: {
-          incidents: Array<{
-            id: string
-            title: string
-            createdAt: string
-            prompt: string
-            state: string
-            archived?: boolean
-            archivedAt?: string
-            lastMessagePreview?: string | null
-          }>
-          incidentMessages: Record<string, unknown[]>
-        },
-      ): Promise<{ ok: true; count: number }> => {
-        return bridge.invoke('incidents:replaceState', snapshot) as Promise<{
-          ok: true
-          count: number
-        }>
+      getThreadMessages: async (threadId: string, before?: number): Promise<{ messages: unknown[]; before: number | null }> => {
+        return bridge.invoke('incidents:getThreadMessages', before === undefined ? { threadId } : { threadId, before }) as Promise<{ messages: unknown[]; before: number | null }>
+      },
+      saveThread: async (thread: IncidentThreadPatch): Promise<{ ok: true }> => {
+        return bridge.invoke('incidents:saveThread', { thread }) as Promise<{ ok: true }>
+      },
+      appendThreadMessages: async (threadId: string, messages: unknown[]): Promise<{ ok: true }> => {
+        return bridge.invoke('incidents:appendThreadMessages', { threadId, messages }) as Promise<{ ok: true }>
       },
     },
     updater: {

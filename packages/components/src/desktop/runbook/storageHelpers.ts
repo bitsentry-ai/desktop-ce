@@ -7,8 +7,8 @@ import type {
 } from "../../services";
 import type { DesktopNativeDialogFilter } from "../../services/desktop-api";
 
-export const RESULTS_KEY = "bitsentry_results";
-export const LEGACY_RESULTS_KEY = "bitsentry_investigations";
+const RESULTS_KEY = "bitsentry_results";
+const LEGACY_RESULTS_KEY = "bitsentry_investigations";
 export const RUNBOOKS_KEY = "bitsentry_runbooks";
 
 export const RUNBOOK_ARTIFACT_FILE_FILTERS: DesktopNativeDialogFilter[] = [

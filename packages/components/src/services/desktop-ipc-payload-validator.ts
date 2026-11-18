@@ -1,9 +1,11 @@
 import {
   exportRunbooksInputSchema,
-  logFilterConfigSchema,
   runbookImportOptionsSchema,
+} from '@bitsentry-ce/core/features/runbooks/export.schemas'
+import {
+  logFilterConfigSchema,
   telemetryActionConfigSchema,
-} from '@bitsentry-ce/core'
+} from '@bitsentry-ce/core/features/runbooks/runbooks.schemas'
 import {
   createDesktopEditionIpcPayloadValidator,
 } from './desktop-ipc-payload-schemas'

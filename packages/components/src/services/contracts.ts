@@ -1,7 +1,8 @@
 import type { IntegrationConnection, IntegrationConnectionInput } from "@bitsentry-ce/core/features/plugins";
 import type {
   AccessLevel,
-  AgentThreadSnapshot,
+  AgentEventPayload,
+  AgentSnapshotReply,
   AgentThreadTokenUsage,
   ComposerTextAttachmentMimeType,
   InteractionMode,
@@ -492,6 +493,8 @@ export interface PluginDescriptor {
   metadata?: PluginDescriptorMetadata;
   auth: {
     fields: PluginFieldDefinition[];
+    /** Alternative credential sets, any one of which is enough (for example a token, or a username and password). */
+    requiredSets?: string[][];
   };
   actions: PluginActionDefinition[];
 }
@@ -1253,9 +1256,13 @@ export interface AgentStartRequest {
   traitValues?: Record<string, string | boolean>;
 }
 
+/** How a message sent while a turn runs is delivered: after the turn, or into it when the turn can take a steer. */
+export type AgentMessageDelivery = "queue" | "steer";
+
 export interface AgentSendRequest {
   message: string;
   sessionId?: string;
+  delivery?: AgentMessageDelivery;
   attachments?: AgentChatAttachment[];
   llm?: AgentLlmSelection;
   runbookId?: string;
@@ -1265,6 +1272,14 @@ export interface AgentSendRequest {
   interactionMode?: InteractionMode;
   traitValues?: Record<string, string | boolean>;
 }
+
+/** A change to a session's queued follow-ups. */
+export type AgentQueueUpdateRequest =
+  | { sessionId: string; action: "edit"; messageId: string; message: string; attachments?: AgentChatAttachment[] }
+  | { sessionId: string; action: "remove"; messageId: string }
+  | { sessionId: string; action: "reorder"; messageId: string; beforeMessageId: string | null }
+  | { sessionId: string; action: "steer"; messageId: string }
+  | { sessionId: string; action: "resume" };
 
 export interface AgentSessionStatus {
   sessionId: string;
@@ -1277,8 +1292,12 @@ export interface AgentServicePort {
   start(input: AgentStartRequest): Promise<{ sessionId: string }>;
   send(input: AgentSendRequest): Promise<{ sessionId: string }>;
   cancel(sessionId: string): Promise<void>;
+  /** Edits, removes, reorders or steers a queued follow-up, or resumes a held queue. Absent where queues are not supported. */
+  updateQueue?(input: AgentQueueUpdateRequest): Promise<void>;
+  /** The incident's queue, after an app restart too, in the session that holds it. Absent where queues are not supported. */
+  restoreQueue?(incidentThreadId: string): Promise<{ sessionId: string; snapshot: AgentSnapshotReply } | null>;
   getStatus(sessionId: string): Promise<AgentSessionStatus | null>;
-  getSnapshot(sessionId: string): Promise<AgentThreadSnapshot | null>;
+  getSnapshot(sessionId: string): Promise<AgentSnapshotReply | null>;
   listRunbookAuthoringProposals(input: {
     sessionId?: string;
     incidentThreadId?: string;
@@ -1307,13 +1326,7 @@ export interface AgentServicePort {
     proposalId: string;
   }): Promise<RunbookAuthoringProposalDecisionResult>;
   onEvent(
-    handler: (data: {
-      sessionId: string;
-      event: AgentEvent;
-      // Desktop includes a projected snapshot with each event, while the
-      // dashboard websocket transport only emits the raw agent event.
-      snapshot?: AgentThreadSnapshot;
-    }) => void,
+    handler: (data: AgentEventPayload<AgentEvent>) => void,
   ): () => void;
 }
 

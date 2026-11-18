@@ -53,10 +53,9 @@ export class ListDiagnosisResultsUseCaseImpl implements ListDiagnosisResultsUseC
     };
   }
 
-  private normalizeLimit(limit?: number): number {
-    const n = limit ?? 10;
-    if (!Number.isFinite(n) || n <= 0) return 10;
-    return Math.min(Math.floor(n), 1000);
+  private normalizeLimit(limit = 10): number {
+    if (!Number.isFinite(limit) || limit <= 0) return 10;
+    return Math.min(Math.floor(limit), 1000);
   }
 
   private normalizeStatus(statusRaw?: string): {

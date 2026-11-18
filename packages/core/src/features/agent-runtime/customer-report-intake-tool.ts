@@ -29,12 +29,13 @@ const QUESTIONS: Record<CustomerReportIntakeField, string> = {
 };
 
 /** The system prompt rule both Desktop and the Dashboard give the agent; the tool description holds the details. */
-export const CUSTOMER_REPORT_INTAKE_PROMPT = "When the engineer relays what a customer or end user said or sent, in any language or wording and even without the words \"customer report\", call request_customer_report_input before investigating so the report and its source are recorded. Never call it for the engineer's own observations, alerts or logs.";
+export const CUSTOMER_REPORT_INTAKE_PROMPT = "When the engineer relays what a customer or end user said or sent, in any language or wording and even without the words \"customer report\", call request_customer_report_input before investigating so the report and its source are recorded. Never call it for the engineer's own observations, alerts or logs, or when the engineer asks you to review, evaluate or summarise data such as scanner findings, a CSV or a log, even when a customer supplied that data: do the requested work.";
 
 export const REQUEST_CUSTOMER_REPORT_INPUT_DESCRIPTION = [
   "Start collecting a customer report in this conversation. Decide from the meaning of the engineer's message, in any language or wording, not from keywords:",
   "call it when the engineer relays what a customer or end user said, sent or reported (by WhatsApp, email, phone, chat or in person), forwards or pastes a customer's message, or summarises a customer's call, even without the words \"customer report\".",
   "Do not call it for the engineer's own observations, monitoring alerts, log lines, metrics or internal requests from colleagues.",
+  "Do not call it when the engineer asks you to review, evaluate, compare or summarise data, such as vulnerability or scanner findings (for example a Wazuh export), an attached or pasted CSV, or logs, even when the data came from a customer or a customer's report: do the requested work instead. A file or table of findings is evidence to work on, not a customer's message.",
   "If a pasted message might be from a customer but you are not sure, call it with origin unsure; the engineer is then asked \"Is this a message from a customer?\".",
   "Pass every value the conversation already gives in extracted, with the exact words as quote; a value without its words in the conversation is dropped and asked instead. Never guess a sender, time or channel, and never write a subject: take it only from an email's Subject line.",
   "For a forwarded or pasted customer message, pass the customer's own words as reportText, copied exactly, leaving out your instructions to the agent and the From/Subject/Date header lines.",

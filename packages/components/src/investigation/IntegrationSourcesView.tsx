@@ -1,5 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { Check, ExternalLink, FileText, RefreshCw, Ticket } from "lucide-react";
+import { Check, ExternalLink, FileText, Link2, RefreshCw, Ticket } from "lucide-react";
+import { EmptyState } from "../ui/empty-state";
 import { useTranslation } from "@bitsentry-ce/i18n";
 import { DEADLINE_LEVELS, ticketDeadlineStatus, type DeadlineLevel, type DeadlineStatus, type IntegrationResource } from "@bitsentry-ce/core/features/plugins";
 import { cn } from "../lib/utils";
@@ -7,6 +8,7 @@ import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
 import { buttonVariants } from "../ui/button.variants";
 import { KnowledgeExecutionPanel } from "./KnowledgeExecutionPanel";
+import { useNow } from "../hooks/useNow";
 import { relativeTime } from "./relative-time";
 export interface IntegrationResourcesPort { refresh?(resource: IntegrationResource): Promise<unknown>; select?(resource: IntegrationResource, selected: boolean): Promise<unknown>; list(threadId: string): Promise<IntegrationResource[]>; }
 
@@ -76,16 +78,6 @@ function documentView(row: IntegrationResource, t: Translate): CardView {
   };
 }
 
-/** The current time, moved on every `intervalMs`, so a countdown keeps running between refreshes. */
-function useNow(intervalMs: number): number {
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    const id = setInterval(() => { setNow(Date.now()); }, intervalMs);
-    return () => { clearInterval(id); };
-  }, [intervalMs]);
-  return now;
-}
-
 /** A deadline time: the clock time today, with the date on any other day. */
 export function deadlineTime(iso: string, now: number): string {
   const date = new Date(iso);
@@ -96,13 +88,18 @@ export function deadlineTime(iso: string, now: number): string {
 const DEADLINE_KEY = "incidents.integrationResources.deadlines";
 export const deadlineLevelLabel = (level: DeadlineLevel, t: Translate) => t(`${DEADLINE_KEY}.${level}`);
 
+function metDeadlineVariant(late: boolean | null): BadgeVariant {
+  if (late === null) return "secondary";
+  return late ? "warning" : "success";
+}
+
 /** How one deadline reads on a card: a short status and the time it refers to. */
 export function deadlineSummary(status: DeadlineStatus, now: number, t: Translate): { variant: BadgeVariant; label: string; detail: string } {
   switch (status.kind) {
     case "pending": return { variant: "info", label: t(`${DEADLINE_KEY}.pending`, { minutes: status.minutesLeft }), detail: t(`${DEADLINE_KEY}.due`, { time: deadlineTime(status.dueAt, now) }) };
     case "overdue": return { variant: "destructive", label: t(`${DEADLINE_KEY}.overdue`, { minutes: status.minutesOverdue }), detail: t(`${DEADLINE_KEY}.due`, { time: deadlineTime(status.dueAt, now) }) };
     // A level met without a recorded time is not shown as on time.
-    case "met": return { variant: status.late === null ? "secondary" : status.late ? "warning" : "success", label: t(status.late === true ? `${DEADLINE_KEY}.metLate` : `${DEADLINE_KEY}.met`), detail: status.metAt === null ? t(`${DEADLINE_KEY}.metTimeUnknown`) : t(`${DEADLINE_KEY}.metAt`, { time: deadlineTime(status.metAt, now) }) };
+    case "met": return { variant: metDeadlineVariant(status.late), label: t(status.late === true ? `${DEADLINE_KEY}.metLate` : `${DEADLINE_KEY}.met`), detail: status.metAt === null ? t(`${DEADLINE_KEY}.metTimeUnknown`) : t(`${DEADLINE_KEY}.metAt`, { time: deadlineTime(status.metAt, now) }) };
     case "no_target": return { variant: "secondary", label: t(`${DEADLINE_KEY}.noTarget`), detail: status.priority === null ? t(`${DEADLINE_KEY}.noPriority`) : t(`${DEADLINE_KEY}.priority`, { priority: status.priority }) };
     case "not_started": return { variant: "secondary", label: t(`${DEADLINE_KEY}.notStarted`), detail: "" };
   }
@@ -136,12 +133,13 @@ function TicketDeadlines({ row }: { row: IntegrationResource }) {
 
 function ResourceCard({ row, disabled, onToggle, onRefresh }: { row: IntegrationResource; disabled: boolean; onToggle?: (selected: boolean) => void; onRefresh?: () => void }) {
   const { t } = useTranslation();
+  const now = useNow();
   const selected = row.selected === true;
   const Icon = row.resourceType === "ticket" ? Ticket : FileText;
   const { referenceLine, badge, facts, openLabel } = row.resourceType === "ticket" ? ticketView(row, t) : documentView(row, t);
   const shownFacts = facts.filter(([, value]) => value !== "");
   const deleted = row.state.deleted === true;
-  const stale = !deleted && Date.now() - Date.parse(row.observedAt) > STALE_AFTER_MS;
+  const stale = !deleted && now - Date.parse(row.observedAt) > STALE_AFTER_MS;
   return <article aria-label={row.title} className={cn("flex min-w-0 flex-col gap-2 rounded-2xl border border-border bg-card p-3 transition-colors hover:border-primary/40", selected && "bg-primary/5 ring-1 ring-primary")}>
     <div className="flex items-center gap-2 text-xs text-muted-foreground">
       <Icon className="size-4 shrink-0" aria-hidden="true" />
@@ -161,7 +159,7 @@ function ResourceCard({ row, disabled, onToggle, onRefresh }: { row: Integration
     {shownFacts.length > 0 && <dl className="grid grid-cols-2 gap-x-3 gap-y-1">{shownFacts.map(([label, value]) => <Fact key={label} label={label}>{value}</Fact>)}</dl>}
     {row.resourceType === "ticket" && <TicketDeadlines row={row} />}
     <div className="mt-auto flex items-center justify-between gap-2 border-t border-border pt-2">
-      <time className="min-w-0 truncate text-xs text-muted-foreground" dateTime={row.observedAt} title={new Date(row.observedAt).toLocaleString()}>{t("incidents.integrationResources.observedAt", { time: relativeTime(row.observedAt) })}</time>
+      <time className="min-w-0 truncate text-xs text-muted-foreground" dateTime={row.observedAt} title={new Date(row.observedAt).toLocaleString()}>{t("incidents.integrationResources.observedAt", { time: relativeTime(row.observedAt, now) })}</time>
       <div className="flex shrink-0 items-center gap-1.5">
       {onRefresh !== undefined && <Button type="button" size="sm" variant="ghost" disabled={disabled} onClick={onRefresh} title={t("incidents.integrationRecovery.refresh")}>
         <RefreshCw aria-hidden="true" /><span className="sr-only">{t("incidents.integrationRecovery.refresh")}</span>
@@ -209,7 +207,7 @@ export function IntegrationSourcesView({ threadId, rows, failed, disabled, onSel
   return <div className="space-y-3">
     {actionError !== null && <p role="alert" className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">{t(actionError)}</p>}
     {failed && <p role="alert" className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">{t("incidents.integrationResources.error")}</p>}
-    {rows.length === 0 && !failed && <div className="rounded-2xl border border-dashed border-border/70 bg-muted/10 px-4 py-5 text-sm text-muted-foreground">{t("incidents.integrationRail.noSources")}</div>}
+    {rows.length === 0 && !failed && <EmptyState icon={Link2} title={t("incidents.integrationRail.noSources")} className="rounded-lg border border-dashed border-border py-8" />}
     {rows.map((row) => <ResourceCard key={resourceKey(row)} row={row} disabled={disabled} onToggle={onSelect === undefined ? undefined : (selected) => { onSelect(row, selected); }} onRefresh={onRefresh === undefined ? undefined : () => { onRefresh(row); }} />)}
     {showExecution && execution.visible && <KnowledgeExecutionPanel threadId={threadId} disabled={disabled} active={execution.anySelected} />}
   </div>;

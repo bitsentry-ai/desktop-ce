@@ -4,7 +4,7 @@ export type SqliteRow = Record<string, unknown>;
 
 export const jsonRecordSchema = z.record(z.string(), z.unknown());
 export const nullableJsonRecordSchema = jsonRecordSchema.nullable();
-export const jsonRecordArraySchema = z.array(jsonRecordSchema);
+const jsonRecordArraySchema = z.array(jsonRecordSchema);
 export const nullableJsonRecordArraySchema = jsonRecordArraySchema.nullable();
 export const stringArraySchema = z.array(z.string());
 

@@ -1,5 +1,8 @@
 import { randomUUID } from 'node:crypto'
-import { describe, expect, it, vi } from 'vitest'
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import path from 'node:path'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import {
   RunbookExecutionService,
@@ -12,6 +15,8 @@ import type {
   RunbookRecord,
 } from '../src/features/runbooks/desktop-runbook.types'
 import type { RunbookResultPersistence } from '../src/features/runbooks/desktop-runbook-result.store'
+import type { DesktopPluginStoredAuthRecord } from '../src/features/plugins'
+import { createDesktopNodePluginRuntimeService } from '../src/features/plugins/desktop-plugin-runtime.node'
 
 function clone<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T
@@ -291,5 +296,221 @@ describe('RunbookExecutionService lifecycle', () => {
 
     executeSpy.mockRestore()
     await service.destroy()
+  })
+})
+
+describe('RunbookExecutionService plugin steps', () => {
+  const tempRoots: string[] = []
+
+  afterEach(async () => {
+    vi.restoreAllMocks()
+    await Promise.all(tempRoots.splice(0).map((root) => rm(root, { recursive: true, force: true })))
+  })
+
+  async function runPluginStep(step: {
+    pluginId: string
+    pluginActionId: string
+    pluginInput: Record<string, unknown>
+    pluginSource: string
+    storedAuth: DesktopPluginStoredAuthRecord
+  }): Promise<RunbookExecutionRecord | null> {
+    const root = await mkdtemp(path.join(tmpdir(), 'bitsentry-runbook-plugin-'))
+    tempRoots.push(root)
+    await mkdir(path.join(root, step.pluginId), { recursive: true })
+    await writeFile(path.join(root, step.pluginId, 'plugin.js'), step.pluginSource)
+    const pluginRuntime = createDesktopNodePluginRuntimeService([root], {
+      get: (pluginId) => Promise.resolve(pluginId === step.pluginId ? step.storedAuth : {}),
+      set: (_pluginId, values) => Promise.resolve(values),
+      clear: () => Promise.resolve(),
+    })
+    const runbook: RunbookRecord = {
+      id: 'runbook-plugin',
+      title: 'Run a plugin action',
+      description: 'Run a plugin action from a runbook',
+      revisionNumber: 1,
+      actions: [{
+        id: 'action-plugin',
+        type: 'plugin',
+        title: 'Plugin action',
+        pluginId: step.pluginId,
+        pluginActionId: step.pluginActionId,
+        pluginInput: JSON.stringify(step.pluginInput, null, 2),
+      }],
+      createdAt: '2026-06-29T00:00:00.000Z',
+      updatedAt: '2026-06-29T00:00:00.000Z',
+    }
+    const service = new RunbookExecutionService(
+      { getRunbookOrThrow: async () => runbook } as never,
+      { loadResolvedGlobals: async () => ({ definitions: [], values: {} }) } as never,
+      { chatWithTools: () => { throw new Error('LLM should not be used for plugin runbook execution') } } as never,
+      { execute: () => { throw new Error('External source executor should not be used for plugin runbook execution') } } as never,
+      createInMemoryResultStore(async () => false),
+      () => null,
+      undefined,
+      undefined,
+      pluginRuntime,
+    )
+    try {
+      const { executionId } = await service.start(runbook.id)
+      return await service.waitForCompletion(executionId, { timeoutMs: 5_000 })
+    } finally {
+      await service.destroy()
+    }
+  }
+
+  it('executes a plugin step with saved plugin auth and structured input', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({ ok: true }), { status: 200, headers: { 'Content-Type': 'application/json' } }),
+    )
+
+    const execution = await runPluginStep({
+      pluginId: 'ops-config',
+      pluginActionId: 'inspect_config',
+      pluginInput: { team: 'platform' },
+      storedAuth: { baseUrl: 'https://ops.example.com', includeArchived: true, retryCount: 3, labels: ['alpha', 'beta'], metadata: { region: 'us-east-1' } },
+      pluginSource: `
+exports.plugin = {
+  id: "ops-config",
+  name: "Ops Config",
+  version: "1.0.0",
+  description: "Executable code plugin fixture for runbook tests.",
+  auth: {
+    fields: [
+      { key: "baseUrl", label: "Base URL", type: "string", required: true },
+      { key: "includeArchived", label: "Include archived", type: "boolean", required: false },
+      { key: "retryCount", label: "Retry count", type: "number", required: false },
+      { key: "labels", label: "Labels", type: "string_array", required: false },
+      { key: "metadata", label: "Metadata", type: "json", required: false },
+    ],
+  },
+  actions: [
+    {
+      id: "inspect_config",
+      title: "Inspect config",
+      description: "Calls an ops config endpoint with saved auth values.",
+      riskLevel: "read",
+      fields: [{ key: "team", label: "Team", type: "string", required: true }],
+      async execute(context) {
+        const response = await fetch(context.auth.baseUrl + "/api/config/inspect", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            team: context.input.team,
+            includeArchived: context.auth.includeArchived,
+            retryCount: context.auth.retryCount,
+            labels: context.auth.labels,
+            metadata: context.auth.metadata,
+          }),
+        });
+        return { status: response.status, summary: "Ops config inspection completed.", data: await response.json() };
+      },
+    },
+  ],
+}
+`,
+    })
+
+    expect(execution).toMatchObject({ status: 'completed', completionReason: 'success' })
+    expect(execution?.steps).toHaveLength(1)
+    expect(execution?.steps[0]).toMatchObject({
+      type: 'plugin',
+      status: 'completed',
+      input: { actionType: 'plugin', pluginId: 'ops-config', pluginActionId: 'inspect_config', pluginInput: { team: 'platform' } },
+      statusCode: 200,
+      structuredOutput: { ok: true },
+    })
+    expect(execution?.steps[0]?.output).toContain('Ops config inspection completed.')
+    expect(execution?.steps[0]?.output).toContain('"ok": true')
+    const [url, init] = fetchMock.mock.calls[0] ?? []
+    expect(String(url)).toBe('https://ops.example.com/api/config/inspect')
+    expect(JSON.parse(String(init?.body))).toEqual({
+      team: 'platform',
+      includeArchived: true,
+      retryCount: 3,
+      labels: ['alpha', 'beta'],
+      metadata: { region: 'us-east-1' },
+    })
+  })
+
+  it('executes a write plugin step with a saved secret token', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({ number: 42, title: 'Investigate pager flood' }), { status: 201, headers: { 'Content-Type': 'application/json' } }),
+    )
+    const issue = { owner: 'bitsentry-ai', repo: 'bitsentry-desktop', title: 'Investigate pager flood', body: 'Opened from a runbook plugin action test.' }
+
+    const execution = await runPluginStep({
+      pluginId: 'github',
+      pluginActionId: 'create_issue',
+      pluginInput: issue,
+      storedAuth: { accessToken: 'ghp_saved_token' },
+      pluginSource: `
+exports.plugin = {
+  id: "github",
+  name: "GitHub",
+  version: "1.0.0",
+  description: "Executable GitHub code plugin fixture for runbook tests.",
+  auth: {
+    fields: [{ key: "accessToken", label: "Access token", type: "string", required: true, secret: true }],
+  },
+  actions: [
+    {
+      id: "create_issue",
+      title: "Create issue",
+      description: "Creates a GitHub issue.",
+      riskLevel: "write",
+      fields: [
+        { key: "owner", label: "Owner", type: "string", required: true },
+        { key: "repo", label: "Repository", type: "string", required: true },
+        { key: "title", label: "Title", type: "string", required: true },
+        { key: "body", label: "Body", type: "string", required: false },
+      ],
+      async execute(context) {
+        const response = await fetch(
+          "https://api.github.com/repos/" + context.input.owner + "/" + context.input.repo + "/issues",
+          {
+            method: "POST",
+            headers: {
+              Authorization: "Bearer " + context.auth.accessToken,
+              Accept: "application/vnd.github+json",
+              "Content-Type": "application/json",
+              "X-GitHub-Api-Version": "2022-11-28",
+            },
+            body: JSON.stringify({ title: context.input.title, body: context.input.body }),
+          },
+        );
+        return {
+          status: response.status,
+          summary: "POST /repos/" + context.input.owner + "/" + context.input.repo + "/issues completed successfully.",
+          data: await response.json(),
+        };
+      },
+    },
+  ],
+}
+`,
+    })
+
+    expect(execution?.status).toBe('completed')
+    expect(execution?.steps[0]).toMatchObject({
+      type: 'plugin',
+      status: 'completed',
+      input: { actionType: 'plugin', pluginId: 'github', pluginActionId: 'create_issue', pluginInput: issue },
+      statusCode: 201,
+      structuredOutput: { number: 42, title: 'Investigate pager flood' },
+    })
+    expect(execution?.steps[0]?.output).toContain('POST /repos/bitsentry-ai/bitsentry-desktop/issues completed successfully.')
+    expect(execution?.steps[0]?.output).toContain('"number": 42')
+    const [url, init] = fetchMock.mock.calls[0] ?? []
+    expect(String(url)).toBe('https://api.github.com/repos/bitsentry-ai/bitsentry-desktop/issues')
+    expect(init).toMatchObject({
+      method: 'POST',
+      headers: {
+        Authorization: 'Bearer ghp_saved_token',
+        Accept: 'application/vnd.github+json',
+        'Content-Type': 'application/json',
+        'X-GitHub-Api-Version': '2022-11-28',
+      },
+    })
+    expect(JSON.parse(String(init?.body))).toEqual({ title: issue.title, body: issue.body })
   })
 })

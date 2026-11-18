@@ -15,7 +15,7 @@ const SelectValue = React.forwardRef<
   <SelectPrimitive.Value
     ref={ref}
     className={cn(
-      "text-gray-900 dark:text-gray-100 placeholder:text-gray-500 dark:placeholder:text-gray-400",
+      "text-foreground placeholder:text-muted-foreground",
       className,
     )}
     {...props}
@@ -30,14 +30,14 @@ const SelectTrigger = React.forwardRef<
   <SelectPrimitive.Trigger
     ref={ref}
     className={cn(
-      "flex h-9 w-full items-center justify-between rounded-md border border-input bg-transparent px-3 py-2 text-sm transition-colors text-gray-900 dark:text-gray-100 placeholder:text-gray-500 dark:placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-ring/30 focus:border-border-hover disabled:cursor-not-allowed disabled:opacity-50 [&>span]:line-clamp-1",
+      "flex h-9 w-full items-center justify-between rounded-md border border-input max-sm:h-11 bg-transparent px-3 py-2 text-sm transition-colors text-foreground placeholder:text-muted-foreground hover:border-border-hover focus:outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40 data-[state=open]:border-ring aria-[invalid=true]:border-[hsl(var(--destructive-text)/0.75)] disabled:cursor-not-allowed disabled:opacity-50 [&>span]:line-clamp-1 data-[placeholder]:[&>span]:text-muted-foreground",
       className,
     )}
     {...props}
   >
     {children}
     <SelectPrimitive.Icon asChild>
-      <ChevronDown className="h-4 w-4 opacity-50 text-gray-900 dark:text-gray-100" />
+      <ChevronDown className="h-4 w-4 opacity-50 text-foreground" />
     </SelectPrimitive.Icon>
   </SelectPrimitive.Trigger>
 ));

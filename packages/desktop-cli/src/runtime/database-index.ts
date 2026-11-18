@@ -12,7 +12,8 @@ import {
 import { getDatabasePath, getDatabaseUrl } from './database-paths.js'
 
 let db: DbClient | null = null
-const DATABASE_SCHEMA_VERSION = 19
+// A database at this version skips runMigrations entirely, so every schema change must bump it.
+const DATABASE_SCHEMA_VERSION = 20
 
 export type DesktopDatabaseRuntimeSeeders = {
   seedDefaults(client: DbClient): Promise<void>
@@ -60,6 +61,19 @@ async function purgeFailedRunbookAuthoringAttempts(): Promise<void> {
   `)
 }
 
+async function applyConnectionPragmas(client: DbClient): Promise<void> {
+  await client.$executeRawUnsafe('PRAGMA journal_mode = WAL')
+  // FULL fsyncs the WAL on every commit, on the main thread. In WAL mode NORMAL only
+  // syncs at checkpoints; it cannot corrupt the database and an app crash loses nothing.
+  await client.$executeRawUnsafe('PRAGMA synchronous = NORMAL')
+  // Checkpoints are now the only sync; F_FULLFSYNC makes them reach disk on macOS.
+  await client.$executeRawUnsafe('PRAGMA checkpoint_fullfsync = ON')
+  // PASSIVE checkpoints never shrink the -wal file; cap it at 32 MiB.
+  await client.$executeRawUnsafe('PRAGMA journal_size_limit = 33554432')
+  await client.$executeRawUnsafe('PRAGMA foreign_keys = ON')
+  await client.$executeRawUnsafe('PRAGMA busy_timeout = 5000')
+}
+
 export async function initializeDatabase(): Promise<DbClient> {
   if (db !== null) return db
 
@@ -87,17 +101,13 @@ export async function initializeDatabase(): Promise<DbClient> {
     await db.$connect()
     log.info('[database] Connected to SQLite')
 
-    await db.$executeRawUnsafe('PRAGMA journal_mode = WAL')
-    await db.$executeRawUnsafe('PRAGMA synchronous = FULL')
-    await db.$executeRawUnsafe('PRAGMA foreign_keys = ON')
-    await db.$executeRawUnsafe('PRAGMA busy_timeout = 5000')
+    await applyConnectionPragmas(db)
 
-    await assertDatabaseIntegrity()
     await runMigrations()
     await purgeFailedRunbookAuthoringAttempts()
-    await assertDatabaseIntegrity()
 
     await seeders.seedDefaults(db)
+    await startDatabaseWorker(db)
   } catch (error) {
     log.error('[database] Initialization failed:', error)
     if (backupPath !== null) {
@@ -109,10 +119,8 @@ export async function initializeDatabase(): Promise<DbClient> {
           log: logLevels,
         })
         await getDb().$connect()
-        await getDb().$executeRawUnsafe('PRAGMA journal_mode = WAL')
-        await getDb().$executeRawUnsafe('PRAGMA synchronous = FULL')
-        await getDb().$executeRawUnsafe('PRAGMA foreign_keys = ON')
-        await getDb().$executeRawUnsafe('PRAGMA busy_timeout = 5000')
+        await applyConnectionPragmas(getDb())
+        await assertDatabaseIntegrity()
         log.warn('[database] Recovery path executed after failed migration')
       } catch (restoreError) {
         log.error('[database] Failed to restore snapshot:', restoreError)
@@ -131,6 +139,15 @@ export async function initializeDatabase(): Promise<DbClient> {
   }
 
   return db
+}
+
+async function startDatabaseWorker(client: DbClient): Promise<void> {
+  try {
+    await client.$startWorker()
+  } catch (error) {
+    // Checkpoints and thread reads then stay on the main connection.
+    log.warn('[database] SQLite worker unavailable:', error)
+  }
 }
 
 async function assertDatabaseIntegrity(): Promise<void> {
@@ -195,219 +212,11 @@ async function getTableColumns(tableName: string): Promise<Set<string>> {
   return new Set(names)
 }
 
-interface LegacyRunbookVersionRow extends Record<string, unknown> {
-  id?: string
-  runbookId?: string
-  actionsJson?: string
-  updatedAt?: string
-}
-
-interface LegacyRunbookActionRow extends Record<string, unknown> {
-  id?: unknown
-  type?: unknown
-  title?: unknown
-  command?: unknown
-  prompt?: unknown
-  llmProviderKey?: unknown
-  llmModel?: unknown
-  url?: unknown
-  method?: unknown
-  headers?: unknown
-  headersJson?: unknown
-  body?: unknown
-  query?: unknown
-  sourceId?: unknown
-  parameters?: unknown
-  parametersJson?: unknown
-  logFilter?: unknown
-  logFilterJson?: unknown
-}
-
-function safeParseLegacyRunbookActions(value: unknown): LegacyRunbookActionRow[] {
-  if (typeof value !== 'string' || value.trim().length === 0) return []
-  try {
-    const parsed: unknown = JSON.parse(value)
-    if (!Array.isArray(parsed)) {
-      return []
-    }
-
-    return parsed.filter(
-      (item): item is LegacyRunbookActionRow =>
-        typeof item === 'object' && item !== null && !Array.isArray(item),
-    )
-  } catch {
-    return []
-  }
-}
-
-function legacyString(value: unknown, fallback = ''): string {
-  if (typeof value !== 'string') {
-    return fallback
-  }
-
-  return value
-}
-
-function escapedSqlString(value: string): string {
-  return value.replace(/'/g, "''")
-}
-
-function legacySqlString(value: unknown): string | null {
-  if (typeof value !== 'string') {
-    return null
-  }
-
-  return escapedSqlString(value)
-}
-
-function sqlStringLiteral(value: string | null): string {
-  if (value === null) {
-    return 'NULL'
-  }
-
-  return `'${value}'`
-}
-
-function legacyJsonString(primary: unknown, fallback: unknown): string | null {
-  if (Array.isArray(primary)) {
-    return escapedSqlString(JSON.stringify(primary))
-  }
-
-  return legacySqlString(fallback)
-}
-
-function legacyObjectJsonString(primary: unknown, fallback: unknown): string | null {
-  if (typeof primary === 'object' && primary !== null && !Array.isArray(primary)) {
-    return escapedSqlString(JSON.stringify(primary))
-  }
-
-  return legacySqlString(fallback)
-}
-
-function legacyUpdatedAt(value: unknown): string {
-  if (typeof value === 'string' && value.trim().length > 0) {
-    return value
-  }
-
-  return new Date().toISOString()
-}
-
-function legacyActionId(action: LegacyRunbookActionRow, runbookId: string, index: number): string {
-  if (typeof action.id === 'string' && action.id.trim().length > 0) {
-    return action.id
-  }
-
-  return `${runbookId}:action:${String(index + 1)}`
-}
-
-async function insertLegacyRunbookAction(
-  runbookId: string,
-  action: LegacyRunbookActionRow,
-  index: number,
-  updatedAt: string,
-): Promise<void> {
-  const id = legacyActionId(action, runbookId, index)
-  const type = legacyString(action.type, 'shell')
-  const title = legacyString(action.title)
-  const command = legacySqlString(action.command)
-  const prompt = legacySqlString(action.prompt)
-  const llmProviderKey = legacySqlString(action.llmProviderKey)
-  const llmModel = legacySqlString(action.llmModel)
-  const url = legacySqlString(action.url)
-  const method = legacySqlString(action.method)
-  const headersJson = legacyJsonString(action.headers, action.headersJson)
-  const body = legacySqlString(action.body)
-  const query = legacySqlString(action.query)
-  const sourceId = legacySqlString(action.sourceId)
-  const parametersJson = legacyJsonString(action.parameters, action.parametersJson)
-  const logFilterJson = legacyObjectJsonString(action.logFilter, action.logFilterJson)
-
-  await getDb().$executeRawUnsafe(`
-    INSERT OR IGNORE INTO "RunbookAction" (
-      "id",
-      "runbookId",
-      "sortOrder",
-      "type",
-      "title",
-      "command",
-      "prompt",
-      "llmProviderKey",
-      "llmModel",
-      "url",
-      "method",
-      "headersJson",
-      "body",
-      "query",
-      "sourceId",
-      "parametersJson",
-      "logFilterJson",
-      "createdAt",
-      "updatedAt"
-    ) VALUES (
-      '${escapedSqlString(id)}',
-      '${escapedSqlString(runbookId)}',
-      ${String(index)},
-      '${escapedSqlString(type)}',
-      '${escapedSqlString(title)}',
-      ${sqlStringLiteral(command)},
-      ${sqlStringLiteral(prompt)},
-      ${sqlStringLiteral(llmProviderKey)},
-      ${sqlStringLiteral(llmModel)},
-      ${sqlStringLiteral(url)},
-      ${sqlStringLiteral(method)},
-      ${sqlStringLiteral(headersJson)},
-      ${sqlStringLiteral(body)},
-      ${sqlStringLiteral(query)},
-      ${sqlStringLiteral(sourceId)},
-      ${sqlStringLiteral(parametersJson)},
-      ${sqlStringLiteral(logFilterJson)},
-      '${escapedSqlString(updatedAt)}',
-      '${escapedSqlString(updatedAt)}'
-    )
-  `)
-}
-
-async function backfillLegacyRunbookVersion(
-  version: LegacyRunbookVersionRow,
-  hydratedRunbookIds: Set<string>,
-): Promise<void> {
-  const runbookId = legacyString(version.runbookId)
-  if (runbookId.length === 0 || hydratedRunbookIds.has(runbookId)) return
-
-  const actions = safeParseLegacyRunbookActions(version.actionsJson)
-  const updatedAt = legacyUpdatedAt(version.updatedAt)
-
-  for (let index = 0; index < actions.length; index += 1) {
-    await insertLegacyRunbookAction(runbookId, actions[index], index, updatedAt)
-  }
-
-  hydratedRunbookIds.add(runbookId)
-}
-
-async function backfillRunbookActionsFromLegacyVersions(): Promise<void> {
-  const actionCountRows = await getDb().$queryRawUnsafe<{ count?: number | string }>(
-    'SELECT COUNT(*) as "count" FROM "RunbookAction"',
-  )
-  const existingActionCount = Number(actionCountRows[0]?.count ?? 0)
-  if (existingActionCount > 0) {
-    return
-  }
-
-  const legacyVersions = await getDb().$queryRawUnsafe<LegacyRunbookVersionRow>(
-    'SELECT "id", "runbookId", "actionsJson", "updatedAt" FROM "RunbookVersion" ORDER BY "versionNumber" DESC',
-  )
-
-  const hydratedRunbookIds = new Set<string>()
-
-  for (const version of legacyVersions) {
-    await backfillLegacyRunbookVersion(version, hydratedRunbookIds)
-  }
-}
-
 // eslint-disable-next-line sonarjs/cognitive-complexity -- Migration ordering and idempotent schema recovery must remain in one auditable startup boundary.
 async function runMigrations(): Promise<void> {
   await ensureMigrationLedger()
   const appliedVersions = await getAppliedMigrationVersions()
+  if (appliedVersions.has(DATABASE_SCHEMA_VERSION)) return
 
   // Desktop ships with Drizzle + better-sqlite3. We keep startup schema sync
   // lightweight by running idempotent SQL at app boot.
@@ -962,8 +771,6 @@ async function runMigrations(): Promise<void> {
       CREATE INDEX IF NOT EXISTS "DiagnosisEntrySourceRef_lookup_idx" ON "DiagnosisEntrySourceRef"("sourceTableName", "sourceFieldName", "sourceKeyValue")
     `)
 
-    await backfillDiagnosisRowsForCoreParity()
-
     await getDb().$executeRawUnsafe(`
       CREATE TABLE IF NOT EXISTS "IncidentThread" (
         "id" TEXT NOT NULL PRIMARY KEY,
@@ -974,14 +781,16 @@ async function runMigrations(): Promise<void> {
         "createdAt" DATETIME NOT NULL,
         "updatedAt" DATETIME NOT NULL,
         "archivedAt" DATETIME,
-        "deletedAt" DATETIME
+        "deletedAt" DATETIME,
+        "lastMessagePreview" TEXT
       )
     `)
     const incidentThreadColumns = await getTableColumns('IncidentThread')
-    if (!incidentThreadColumns.has('sessionId')) {
+    for (const column of ['sessionId', 'lastMessagePreview']) {
+      if (incidentThreadColumns.has(column)) continue
       try {
         await getDb().$executeRawUnsafe(`
-          ALTER TABLE "IncidentThread" ADD COLUMN "sessionId" TEXT
+          ALTER TABLE "IncidentThread" ADD COLUMN "${column}" TEXT
         `)
       } catch (error) {
         if (!isDuplicateColumnError(error)) throw error
@@ -999,11 +808,22 @@ async function runMigrations(): Promise<void> {
         "finalText" TEXT,
         "status" TEXT,
         "errorMsg" TEXT,
+        "messageJson" TEXT,
         "createdAt" DATETIME NOT NULL,
         "updatedAt" DATETIME NOT NULL,
         CONSTRAINT "IncidentMessage_threadId_fkey" FOREIGN KEY ("threadId") REFERENCES "IncidentThread" ("id") ON DELETE CASCADE ON UPDATE CASCADE
       )
     `)
+    const incidentMessageColumns = await getTableColumns('IncidentMessage')
+    if (!incidentMessageColumns.has('messageJson')) {
+      try {
+        await getDb().$executeRawUnsafe(`
+          ALTER TABLE "IncidentMessage" ADD COLUMN "messageJson" TEXT
+        `)
+      } catch (error) {
+        if (!isDuplicateColumnError(error)) throw error
+      }
+    }
     await getDb().$executeRawUnsafe(`
       CREATE INDEX IF NOT EXISTS "IncidentMessage_threadId_sortOrder_idx" ON "IncidentMessage"("threadId", "sortOrder")
     `)
@@ -1023,6 +843,19 @@ async function runMigrations(): Promise<void> {
     `)
     await getDb().$executeRawUnsafe(`
       CREATE INDEX IF NOT EXISTS "RunbookAuthoringProposal_incidentThreadId_idx" ON "RunbookAuthoringProposal"("incidentThreadId")
+    `)
+    await getDb().$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS "AgentQueuedMessage" (
+        "id" TEXT NOT NULL PRIMARY KEY,
+        "incidentThreadId" TEXT NOT NULL,
+        "position" INTEGER NOT NULL,
+        "inputJson" TEXT NOT NULL,
+        "queuedAt" TEXT NOT NULL,
+        "held" INTEGER NOT NULL DEFAULT 0
+      )
+    `)
+    await getDb().$executeRawUnsafe(`
+      CREATE INDEX IF NOT EXISTS "AgentQueuedMessage_incidentThreadId_position_idx" ON "AgentQueuedMessage"("incidentThreadId", "position")
     `)
     await getDb().$executeRawUnsafe(`
       CREATE TABLE IF NOT EXISTS "GlobalVariable" (
@@ -1288,8 +1121,6 @@ async function runMigrations(): Promise<void> {
       )
     `)
 
-    await backfillRunbookActionsFromLegacyVersions()
-
     if (!appliedVersions.has(1)) {
       await markMigrationApplied(1, 'baseline_core_schema')
     }
@@ -1448,205 +1279,13 @@ async function runMigrations(): Promise<void> {
     if (!appliedVersions.has(18)) {
       await markMigrationApplied(18, 'generic_integration_storage')
     }
+    await markMigrationApplied(20, 'incident_messages_and_agent_queue')
     await getDb().$executeRawUnsafe(`PRAGMA user_version = ${String(DATABASE_SCHEMA_VERSION)}`)
 
     log.info('[database] Schema tables ensured')
   } catch (error) {
     log.error('[database] Failed to ensure schema tables:', error)
     throw error
-  }
-}
-
-interface DiagnosisBackfillRow {
-  [key: string]: unknown
-  id: number
-  telemetryEntryId: number
-  currentState: string | null
-  stateHistory: string | null
-  stateTexts: string | null
-}
-
-interface StateHistoryItem {
-  toState?: string
-}
-
-function normalizeDiagnosisState(state: unknown): string {
-  let value = ''
-  if (typeof state === 'string') {
-    value = state.trim().toLowerCase()
-  }
-
-  const validStates = new Set([
-    'pending',
-    'llm_assessed',
-    'verification_pending',
-    'verified',
-    'completed',
-    'failed',
-  ])
-  if (validStates.has(value)) {
-    return value
-  }
-
-  return 'pending'
-}
-
-function parseStateHistory(raw: unknown): StateHistoryItem[] {
-  if (typeof raw !== 'string' || raw.trim().length === 0) return []
-  try {
-    const parsed = JSON.parse(raw) as unknown
-    if (!Array.isArray(parsed)) {
-      return []
-    }
-
-    return parsed.filter(
-      (item): item is StateHistoryItem =>
-        typeof item === 'object' && item !== null && !Array.isArray(item),
-    )
-  } catch {
-    return []
-  }
-}
-
-function parseStateTextsObject(raw: unknown): Record<string, unknown> {
-  if (typeof raw !== 'string' || raw.trim().length === 0) return {}
-
-  try {
-    const parsed = JSON.parse(raw) as unknown
-    if (typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)) {
-      return parsed as Record<string, unknown>
-    }
-  } catch {
-    // Legacy plain text path handled below.
-  }
-
-  return {}
-}
-
-function stateText(value: unknown): string | undefined {
-  if (typeof value !== 'string') return undefined
-
-  const trimmed = value.trim()
-  if (trimmed.length === 0) {
-    return undefined
-  }
-
-  return trimmed
-}
-
-function firstStateText(
-  stateTextObject: Record<string, unknown>,
-  keys: string[],
-): string | undefined {
-  for (const key of keys) {
-    const text = stateText(stateTextObject[key])
-    if (text !== undefined) {
-      return text
-    }
-  }
-
-  return undefined
-}
-
-function normalizedStructuredStateTexts(
-  stateTextObject: Record<string, unknown>,
-): Record<string, string> | undefined {
-  const diagnose = firstStateText(stateTextObject, ['diagnose', 'assessment'])
-  const verify = firstStateText(stateTextObject, [
-    'verify',
-    'verificationText',
-    'verification_text',
-    'diagnosisConfirmation',
-    'diagnosis_confirmation',
-  ])
-  const recommend = firstStateText(stateTextObject, [
-    'recommend',
-    'actualRemediation',
-    'actual_remediation',
-  ])
-
-  if (diagnose === undefined && verify === undefined && recommend === undefined) {
-    return undefined
-  }
-
-  const stateTexts: Record<string, string> = {}
-  if (diagnose !== undefined) {
-    stateTexts.diagnose = diagnose
-  }
-  if (verify !== undefined) {
-    stateTexts.verify = verify
-  }
-  if (recommend !== undefined) {
-    stateTexts.recommend = recommend
-  }
-
-  return stateTexts
-}
-
-function normalizeLegacyStateText(legacyText: string, currentState: string): Record<string, string> {
-  if (currentState === 'completed') return { recommend: legacyText }
-  if (currentState === 'verified' || currentState === 'verification_pending') {
-    return { verify: legacyText }
-  }
-  if (currentState === 'llm_assessed') return { diagnose: legacyText }
-  return { diagnose: legacyText }
-}
-
-function normalizeStateTexts(raw: unknown, currentState: string): Record<string, string> {
-  const structuredStateTexts = normalizedStructuredStateTexts(parseStateTextsObject(raw))
-  if (structuredStateTexts !== undefined) {
-    return structuredStateTexts
-  }
-
-  if (typeof raw === 'string' && raw.trim().length > 0) {
-    const legacyText = raw.trim()
-    if (legacyText.startsWith('{') || legacyText.startsWith('[')) {
-      return {}
-    }
-
-    return normalizeLegacyStateText(legacyText, currentState)
-  }
-
-  return {}
-}
-
-async function backfillDiagnosisRowsForCoreParity(): Promise<void> {
-  const columns = await getTableColumns('DiagnosisEntry')
-  if (!columns.has('stateHistory') || !columns.has('stateTexts')) {
-    return
-  }
-
-  let currentStateSelect = 'NULL AS "currentState"'
-  if (columns.has('currentState')) {
-    currentStateSelect = '"currentState"'
-  }
-
-  const rows = await getDb().$queryRawUnsafe<DiagnosisBackfillRow>(`
-    SELECT
-      "id",
-      "telemetryEntryId",
-      ${currentStateSelect},
-      "stateHistory",
-      "stateTexts"
-    FROM "DiagnosisEntry"
-  `)
-
-  for (const row of rows) {
-    const history = parseStateHistory(row.stateHistory)
-    const lastState = normalizeDiagnosisState(history[history.length - 1]?.toState)
-    const currentState = normalizeDiagnosisState(row.currentState ?? lastState)
-    const stateTexts = normalizeStateTexts(row.stateTexts, currentState)
-
-    const assignments = [`"stateTexts" = '${escapedSqlString(JSON.stringify(stateTexts))}'`]
-    if (columns.has('currentState')) {
-      assignments.unshift(`"currentState" = '${escapedSqlString(currentState)}'`)
-    }
-
-    await getDb().$executeRawUnsafe(`
-      UPDATE "DiagnosisEntry"
-      SET ${assignments.join(', ')}
-      WHERE "id" = ${String(row.id)}
-    `)
   }
 }
 

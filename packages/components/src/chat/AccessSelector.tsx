@@ -64,8 +64,8 @@ export function AccessSelector({
         onClick={() => { setOpen((v) => !v); }}
         disabled={disabled}
         className={cn(
-          "flex h-7 items-center gap-1.5 rounded-md px-2 text-[11px] transition-colors",
-          "text-muted-foreground/70 hover:bg-accent hover:text-foreground/80",
+          "flex h-7 items-center gap-1.5 rounded-md px-2 text-xs transition-colors",
+          "text-muted-foreground hover:bg-accent hover:text-foreground/80",
           "disabled:cursor-not-allowed disabled:opacity-50",
           open && "bg-accent text-foreground/80",
         )}
@@ -114,7 +114,7 @@ export function AccessSelector({
                   >
                     {t(ACCESS_LEVEL_LABELS[level])}
                   </div>
-                  <div className="text-[10px] text-muted-foreground">
+                  <div className="text-xs text-muted-foreground">
                     {t(ACCESS_LEVEL_DESCRIPTIONS[level])}
                   </div>
                 </div>

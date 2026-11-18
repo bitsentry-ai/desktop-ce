@@ -1,17 +1,17 @@
 import {
   Children,
+  createContext,
+  Fragment,
   isValidElement,
-  useCallback,
+  useContext,
   useEffect,
   memo,
-  useMemo,
   useRef,
   useState,
-  type ComponentPropsWithoutRef,
   type ReactNode,
 } from "react";
 import { CheckIcon, CopyIcon } from "lucide-react";
-import ReactMarkdown from "react-markdown";
+import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { cn } from "./lib/utils";
 import { useTranslation } from "@bitsentry-ce/i18n";
@@ -23,6 +23,8 @@ export interface MarkdownContentProps {
   className?: string;
   paragraphizeSoftBreaks?: boolean;
   collapsedJsonLabel?: string;
+  /** The text is still streaming: completed blocks are parsed once and only the live tail re-parses. */
+  streaming?: boolean;
 }
 
 function readBacktickDelimiter(line: string, index: number): string | undefined {
@@ -83,10 +85,10 @@ function readBlockquoteContent(line: string): MarkdownBlockquoteContent {
 
 function getIndentColumns(line: string): number {
   let columns = 0;
-  for (let index = 0; index < line.length; index += 1) {
-    if (line[index] === " ") {
+  for (const element of line) {
+    if (element === " ") {
       columns += 1;
-    } else if (line[index] === "\t") {
+    } else if (element === "\t") {
       columns += 4 - (columns % 4);
     } else {
       break;
@@ -651,7 +653,7 @@ function MarkdownCodeBlock({
   const [copied, setCopied] = useState(false);
   const copiedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const handleCopy = useCallback(() => {
+  const handleCopy = () => {
     if (typeof navigator === "undefined" || navigator.clipboard == null) return;
 
     void navigator.clipboard
@@ -667,7 +669,7 @@ function MarkdownCodeBlock({
         }, 1200);
       })
       .catch(() => {});
-  }, [code]);
+  };
 
   useEffect(
     () => () => {
@@ -734,21 +736,131 @@ export function getCodeText(children: ReactNode): string {
   return getNestedText(codeElement.props.children);
 }
 
+interface MarkdownRendererContextValue {
+  scrollableTableLabel: string;
+  collapsedJsonLabel: string | undefined;
+}
+
+// Per-render values the hoisted renderers need; the renderers themselves stay module-level.
+const MarkdownRendererContext = createContext<MarkdownRendererContextValue>({
+  scrollableTableLabel: "",
+  collapsedJsonLabel: undefined,
+});
+
+const MARKDOWN_REMARK_PLUGINS = [remarkGfm];
+
+// Keep renderer component types stable across renders, so code blocks and tables are not remounted.
+const MARKDOWN_COMPONENTS = {
+  a: function MarkdownLink({ href, node: _node, ref: _ref, ...props }) {
+    return <a {...props} href={href} target="_blank" rel="noreferrer noopener" />;
+  },
+  pre: function MarkdownPre({ children, node: _node, ...props }) {
+    const { collapsedJsonLabel } = useContext(MarkdownRendererContext);
+    const block = (
+      <MarkdownCodeBlock code={getCodeText(children)}>
+        <pre {...props}>{children}</pre>
+      </MarkdownCodeBlock>
+    );
+    const child = Children.toArray(children)[0];
+    const isJson =
+      isValidElement<{ className?: string }>(child) &&
+      child.props.className?.split(" ").includes("language-json");
+    if (!collapsedJsonLabel || !isJson) return block;
+    return (
+      <details className="my-3 min-w-0 rounded-lg border border-border bg-muted/30 p-3">
+        <summary className="cursor-pointer text-sm font-medium text-muted-foreground">
+          {collapsedJsonLabel}
+        </summary>
+        {block}
+      </details>
+    );
+  },
+  table: function MarkdownTable({ children, node: _node, ref: _ref, ...props }) {
+    const { scrollableTableLabel } = useContext(MarkdownRendererContext);
+    return (
+      <div className="chat-markdown-table-scroll" role="region" aria-label={scrollableTableLabel} tabIndex={0}>
+        <table {...props}>{children}</table>
+      </div>
+    );
+  },
+} satisfies Components;
+
+// Syntax that reaches across blocks (definitions, footnotes) or can hide a block boundary (raw HTML, display math).
+const CROSS_BLOCK_SYNTAX = /\]:|\[\^|<[A-Za-z!/?]|\$\$/;
+const FENCE_START = /^( *)(`{3,}|~{3,})/;
+// A whole document puts a newline between top-level blocks; joined streamed blocks match it.
+const BLOCK_SEPARATOR = "\n";
+// After a blank line these may still belong to the block above: indented content, list items, quotes.
+const MAY_CONTINUE_BLOCK = /^(\s|[-*+](\s|$)|\d{1,9}[.)](\s|$)|>)/;
+
+type Fence = { indent: number; marker: string; rest: string };
+
+function readFence(line: string): Fence | null {
+  const match = FENCE_START.exec(line);
+  if (match === null) return null;
+  const rest = line.slice(match[0].length);
+  // A backtick fence's info string has no backticks; with one, the line is inline code.
+  if (match[2].startsWith("`") && rest.includes("`")) return null;
+  return { indent: match[1].length, marker: match[2], rest };
+}
+
+/** Whether `line` closes `open`; null for a fence line left of `open`, which may end a list item around it. */
+function closesFence(open: Fence, line: Fence): boolean | null {
+  if (line.indent < open.indent) return null;
+  return line.indent === open.indent && line.marker[0] === open.marker[0] && line.marker.length >= open.marker.length && line.rest.trim() === "";
+}
+
+function startsBlock(lines: string[], index: number): boolean {
+  return index > 0 && lines[index - 1].trim() === "" && lines[index].trim() !== "" && !MAY_CONTINUE_BLOCK.test(lines[index]);
+}
+
+/** Splits at blank lines that always end a block, outside code fences; null when a split could change the output. */
+function splitMarkdownBlocks(markdown: string): string[] | null {
+  if (CROSS_BLOCK_SYNTAX.test(markdown)) return null;
+  const lines = markdown.split("\n");
+  const blocks: string[] = [];
+  let start = 0;
+  let fence: Fence | null = null;
+  for (const [index, line] of lines.entries()) {
+    const lineFence = readFence(line);
+    if (fence !== null) {
+      const closes = lineFence === null ? false : closesFence(fence, lineFence);
+      if (closes === null) return null;
+      if (closes) fence = null;
+      continue;
+    }
+    if (startsBlock(lines, index)) {
+      blocks.push(lines.slice(start, index).join("\n"));
+      start = index;
+    }
+    fence = lineFence;
+  }
+  blocks.push(lines.slice(start).join("\n"));
+  return blocks.filter((block) => block.trim() !== "");
+}
+
+const MarkdownBlock = memo(function MarkdownBlock({ source }: { source: string }) {
+  return (
+    <ReactMarkdown remarkPlugins={MARKDOWN_REMARK_PLUGINS} components={MARKDOWN_COMPONENTS}>
+      {source}
+    </ReactMarkdown>
+  );
+});
+
 export const MarkdownContent = memo(function MarkdownContent({
   content,
   className,
   paragraphizeSoftBreaks = false,
   collapsedJsonLabel,
+  streaming = false,
 }: MarkdownContentProps) {
   const { t } = useTranslation();
-  const normalizedContent = useMemo(() => {
-    let sourceContent = content;
-    if (paragraphizeSoftBreaks) {
-      sourceContent = paragraphizePlainTextSoftBreaks(content);
-    }
-
-    return normalizeMarkdownContent(sourceContent);
-  }, [content, paragraphizeSoftBreaks]);
+  const scrollableTableLabel = t("common.markdown.scrollableTable");
+  const rendererContext = { scrollableTableLabel, collapsedJsonLabel };
+  const normalizedContent = normalizeMarkdownContent(
+    paragraphizeSoftBreaks ? paragraphizePlainTextSoftBreaks(content) : content,
+  );
+  const blocks = streaming ? splitMarkdownBlocks(normalizedContent) : null;
 
   return (
     <div
@@ -757,52 +869,11 @@ export const MarkdownContent = memo(function MarkdownContent({
         className,
       )}
     >
-      <ReactMarkdown
-        remarkPlugins={[remarkGfm]}
-        components={{
-          a: ({ href, node: _node, ref: _ref, ...props }) => (
-            <a
-              {...props}
-              href={href}
-              target="_blank"
-              rel="noreferrer noopener"
-            />
-          ),
-          pre: ({ children, ...props }: ComponentPropsWithoutRef<"pre">) => {
-            const code = getCodeText(children);
-            const block = (
-              <MarkdownCodeBlock code={code}>
-                <pre {...props}>{children}</pre>
-              </MarkdownCodeBlock>
-            );
-            const child = Children.toArray(children)[0];
-            const isJson =
-              isValidElement<{ className?: string }>(child) &&
-              child.props.className?.split(" ").includes("language-json");
-            if (!collapsedJsonLabel || !isJson) return block;
-            return (
-              <details className="my-3 min-w-0 rounded-lg border border-border bg-muted/30 p-3">
-                <summary className="cursor-pointer text-sm font-medium text-muted-foreground">
-                  {collapsedJsonLabel}
-                </summary>
-                {block}
-              </details>
-            );
-          },
-          table: ({ children, node: _node, ref: _ref, ...props }) => (
-            <div
-              className="chat-markdown-table-scroll"
-              role="region"
-              aria-label={t("common.markdown.scrollableTable")}
-              tabIndex={0}
-            >
-              <table {...props}>{children}</table>
-            </div>
-          ),
-        }}
-      >
-        {normalizedContent}
-      </ReactMarkdown>
+      <MarkdownRendererContext.Provider value={rendererContext}>
+        {blocks === null ? <MarkdownBlock source={normalizedContent} /> : blocks.map((block, index) => (
+          <Fragment key={index}>{index > 0 && BLOCK_SEPARATOR}<MarkdownBlock source={block} /></Fragment>
+        ))}
+      </MarkdownRendererContext.Provider>
     </div>
   );
 });

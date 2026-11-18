@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { EventEmitter } from 'node:events'
 import { PassThrough } from 'node:stream'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const spawnMock = vi.hoisted(() => vi.fn())
 
@@ -18,7 +18,9 @@ type SpawnedShell = EventEmitter & {
   kill: ReturnType<typeof vi.fn>
 }
 
-let nextMockPid = 1
+// High fake PIDs, and process.kill is always mocked: a fake PID of 1 once
+// reached process.kill(-1, 'SIGTERM') and signalled every user process.
+let nextMockPid = 900_000
 
 function createSpawnedShell(): SpawnedShell {
   const child = new EventEmitter() as SpawnedShell
@@ -49,6 +51,10 @@ function exitChild(child: SpawnedShell, code: number, signal: NodeJS.Signals | n
 }
 
 describe('executeShellCommandTool', () => {
+  beforeEach(() => {
+    vi.spyOn(process, 'kill').mockImplementation(() => true)
+  })
+
   afterEach(() => {
     spawnMock.mockReset()
     vi.restoreAllMocks()

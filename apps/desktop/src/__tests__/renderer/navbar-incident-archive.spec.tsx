@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter } from "react-router-dom";
 import Navbar from "@bitsentry-ce/components/layout/Navbar";
 import { BitsentryServicesProvider } from "@bitsentry-ce/components/services/context";
+import { useIncidentListStore } from "@bitsentry-ce/components/investigation/incidents/incidentListStore";
 
 vi.mock("@bitsentry-ce/i18n", () => ({
   useFormatters: () => ({
@@ -59,6 +60,7 @@ function createServices() {
 }
 
 beforeEach(() => {
+  useIncidentListStore.setState({ incidents: [], loaded: false, loadedFrom: null });
   localStorage.clear();
   localStorage.setItem("bitsentry_incidents", JSON.stringify([incident]));
 });
@@ -80,7 +82,9 @@ function renderNavbar(path: string) {
 }
 
 describe("Navbar incident archive synchronization", () => {
-  it("persists the web archive before broadcasting the update", async () => {
+  it("persists the web archive and hides the incident", async () => {
+    // On its own route the incidents page owns the list.
+    useIncidentListStore.getState().setAll([{ ...incident, prompt: "", state: "IDLE" }]);
     renderNavbar("/incidents");
 
     fireEvent.click(await screen.findByTitle("Archive incident"));

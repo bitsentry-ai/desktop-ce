@@ -217,7 +217,9 @@ function readFeedbackState(): FeedbackState {
 function writeFeedbackState(state: FeedbackState): void {
   try {
     window.localStorage.setItem(FEEDBACK_STATE_KEY, JSON.stringify(state));
-  } catch {}
+  } catch {
+    // Storage can be unavailable (private mode or full quota); persistence is best effort.
+  }
 }
 
 function markPromptResolved(kind: PromptKind): void {

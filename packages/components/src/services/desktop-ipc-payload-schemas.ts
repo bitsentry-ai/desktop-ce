@@ -1,6 +1,7 @@
 import { customerReportIntakeAnswerInputSchema, customerReportIntakeDismissInputSchema, integrationConnectionInputSchema } from "@bitsentry-ce/core/features/plugins";
 import { z } from "zod";
 import { DESKTOP_RPC_CHANNELS, type DesktopRpcChannel } from "./desktop-ipc-contract";
+import { CHAT_MESSAGE_MAX_LENGTH } from "../chat/citations";
 
 type DesktopIpcEnumValues = readonly [string, ...string[]];
 
@@ -452,7 +453,7 @@ export function createDesktopIpcPayloadValidator(
       .optional()
       .default({}),
     "agent:start": z.looseObject({
-      prompt: z.string().min(1).max(10000),
+      prompt: z.string().min(1).max(CHAT_MESSAGE_MAX_LENGTH),
       timeoutMs: z.number().int().positive().max(300000).optional(),
       attachments: z.array(attachmentSchema).max(4).optional(),
       llm: llmSchema,
@@ -464,7 +465,7 @@ export function createDesktopIpcPayloadValidator(
         .optional(),
     }),
     "agent:send": z.looseObject({
-      message: z.string().min(1).max(10000),
+      message: z.string().min(1).max(CHAT_MESSAGE_MAX_LENGTH),
       sessionId: z.uuid().optional(),
       attachments: z.array(attachmentSchema).max(4).optional(),
       llm: llmSchema,
@@ -474,10 +475,32 @@ export function createDesktopIpcPayloadValidator(
       accessLevel: z
         .enum(["auto-accept-edits", "full-access"])
         .optional(),
+      delivery: z.enum(["queue", "steer"]).optional(),
     }),
     "agent:cancel": z.object({
       sessionId: z.uuid(),
     }),
+    "agent:restoreQueue": z.object({
+      incidentThreadId: z.string().trim().min(1),
+    }),
+    "agent:updateQueue": z.discriminatedUnion("action", [
+      z.object({
+        sessionId: z.uuid(),
+        action: z.literal("edit"),
+        messageId: z.uuid(),
+        message: z.string().trim().min(1).max(CHAT_MESSAGE_MAX_LENGTH),
+        attachments: z.array(attachmentSchema).max(4).optional(),
+      }),
+      z.object({ sessionId: z.uuid(), action: z.literal("remove"), messageId: z.uuid() }),
+      z.object({
+        sessionId: z.uuid(),
+        action: z.literal("reorder"),
+        messageId: z.uuid(),
+        beforeMessageId: z.uuid().nullable(),
+      }),
+      z.object({ sessionId: z.uuid(), action: z.literal("steer"), messageId: z.uuid() }),
+      z.object({ sessionId: z.uuid(), action: z.literal("resume") }),
+    ]),
     "agent:getStatus": z.object({
       sessionId: z.uuid(),
     }),
@@ -587,10 +610,11 @@ export function createDesktopIpcPayloadValidator(
     "runbooks:cancelExecution": z.object({
       executionId: z.uuid(),
     }),
-    "incidents:getState": optionalLooseObjectSchema,
-    "incidents:replaceState": optionalLooseObjectSchema,
+    "incidents:list": optionalLooseObjectSchema,
+    "incidents:getThreadMessages": z.object({ threadId: z.string().min(1), before: z.number().int().nonnegative().optional() }).strict(),
+    "incidents:saveThread": z.object({ thread: looseObjectSchema.extend({ id: z.string().min(1) }) }).strict(),
+    "incidents:appendThreadMessages": z.object({ threadId: z.string().min(1), messages: z.array(looseObjectSchema) }).strict(),
     "desktopState:bootstrap": optionalLooseObjectSchema,
-    "desktopState:syncIncidents": optionalLooseObjectSchema,
     "desktopState:syncRunbooks": optionalLooseObjectSchema,
     "desktopState:syncResults": optionalLooseObjectSchema,
   };

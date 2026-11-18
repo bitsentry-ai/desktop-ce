@@ -4,14 +4,15 @@
  * Toolbar layout:
  *   [ModelPicker v] [Traits v] [Mode] [Access v]           [Send/Stop]
  *
- * Keyboard: Enter sends (IME-guarded), Shift+Enter = newline.
+ * Keyboard: Enter sends (IME-guarded), Shift+Enter = newline. While the agent
+ * runs, Enter queues and Ctrl/⌘+Enter steers (T3 Code's defaults); Alt+↑ edits
+ * the last queued message and Ctrl/⌘+Shift+Enter steers the next one.
  * Attachments: plus icon left of textarea for images/files.
  */
 
 import {
-  useCallback,
   useEffect,
-  useMemo,
+  useEffectEvent,
   useRef,
   useState,
   type ReactNode,
@@ -39,8 +40,16 @@ import {
   Plus,
   X,
 } from "lucide-react";
+import { QuestionPrimaryButton } from "./ComposerQuestionCard";
 import { CustomerReportQuestionPanel } from "./CustomerReportPanel";
 import type { ComposerCustomerReportIntake } from "./useCustomerReportIntake";
+import {
+  RemediationFlowButtons,
+  RemediationQuestionPanel,
+  moveRemediationSelection,
+  RemediationResumeChip,
+  type ComposerRemediationFlow,
+} from "./RemediationQuestionPanel";
 import { ModelPicker } from "./ModelPicker";
 import type { AccessLevel, InteractionMode } from "./types";
 import { DEFAULT_ACCESS_LEVEL, DEFAULT_INTERACTION_MODE } from "./types";
@@ -49,6 +58,11 @@ import { ModeToggle } from "./ModeToggle";
 import { AccessSelector } from "./AccessSelector";
 import { SendButton } from "./SendButton";
 import { ContextIndicator } from "./ContextIndicator";
+import { QueuedMessagesPanel, type ComposerQueue } from "./QueuedMessagesPanel";
+import { resolveComposerDispatchMode } from "./composerDispatch";
+import { CitationChip } from "./CitationControls";
+import { CHAT_MESSAGE_MAX_LENGTH, joinCitations, type AssistantCitation } from "./citations";
+import type { AgentMessageDelivery } from "../services/contracts";
 
 export interface ComposerProps {
   prompt: string;
@@ -57,10 +71,22 @@ export interface ComposerProps {
     accessLevel?: AccessLevel;
     interactionMode?: InteractionMode;
     traitValues?: Record<string, string | boolean>;
+    /** Set while the agent runs: queue after the turn, or steer into it. */
+    delivery?: AgentMessageDelivery;
   }) => void;
   onCancel: () => void;
+  /** The follow-ups waiting for the running turn. While one is being edited, sending saves the edit. */
+  queue?: ComposerQueue;
+  /** Releases a queue that a stop, timeout or failure paused. */
+  onResumeQueue?: () => void;
+  /** Quotes of the agent's answers that the message will cite. */
+  citations?: AssistantCitation[];
+  onRemoveCitation?: (index: number) => void;
+  onCitationCommentChange?: (index: number, comment: string | undefined) => void;
   isProcessing: boolean;
   isBlocked: boolean;
+  /** Shown in place of the text area while blocked: what is missing and where to fix it. */
+  blockedNotice?: ReactNode;
   isArchived: boolean;
   // Images
   composerImages: ComposerAttachment[];
@@ -102,6 +128,49 @@ export interface ComposerProps {
   onAccessLevelChange?: (level: AccessLevel) => void;
   // The open customer report question, when the agent asked one. The text area then holds the typed answer.
   customerReportIntake?: ComposerCustomerReportIntake;
+  // The CVE remediation steps for this incident. A customer report question shows first; one card shows at a time.
+  remediationFlow?: ComposerRemediationFlow;
+  // A card the host owns, shown in the composer above the text while no question or remediation step is open and the
+  // agent is idle. `chip` shows above the composer while the host keeps the card closed.
+  hostPanel?: ComposerHostPanel;
+}
+
+export interface ComposerHostButton {
+  label: string;
+  run: () => void;
+}
+
+export interface ComposerHostPanel {
+  card?: ReactNode;
+  chip?: ReactNode;
+  /** While the card shows, these replace the send button and the text area hides; the typed prompt stays for later. */
+  buttons?: { back?: ComposerHostButton; primary: ComposerHostButton };
+}
+
+/** The host card shows while no question or step is open and the composer is idle; otherwise its chip shows. */
+function hostPanelParts(
+  hostPanel: ComposerHostPanel | undefined,
+  { open, busy }: { open: unknown; busy: boolean },
+): ComposerHostPanel {
+  if (hostPanel === undefined || open !== undefined) return {};
+  return !busy && hostPanel.card !== undefined ? { card: hostPanel.card, buttons: hostPanel.buttons } : { chip: hostPanel.chip };
+}
+
+function HostPanelButtons({ buttons }: { buttons: NonNullable<ComposerHostPanel["buttons"]> }) {
+  return (
+    <div className="flex items-center gap-1.5">
+      {buttons.back !== undefined && (
+        <button
+          type="button"
+          onClick={buttons.back.run}
+          className="h-8 whitespace-nowrap rounded-[10px] px-3 text-[13px] font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+        >
+          {buttons.back.label}
+        </button>
+      )}
+      <QuestionPrimaryButton label={buttons.primary.label} run={buttons.primary.run} disabled={false} submitting={false} />
+    </div>
+  );
 }
 
 function getSeededTraitValues(
@@ -114,27 +183,43 @@ function getSeededTraitValues(
   return { ...defaults, thinking: thinkingEnabled };
 }
 
-/** While a customer report question is open, the text area holds the typed answer instead of the prompt. */
-function composerTextBinding(question: ComposerCustomerReportIntake | undefined, prompt: string, onPromptChange: (value: string) => void, onPaste: (event: React.ClipboardEvent<HTMLTextAreaElement>) => void, disabled: boolean) {
-  if (question === undefined) {
-    return { rows: 3, value: prompt, onChange: onPromptChange, onPaste, disabled };
+/** While a question or a remediation step is open, the text area holds its answer instead of the prompt. */
+function composerTextBinding(question: ComposerCustomerReportIntake | undefined, remediation: ComposerRemediationFlow | undefined, prompt: string, onPromptChange: (value: string) => void, onPaste: (event: React.ClipboardEvent<HTMLTextAreaElement>) => void, disabled: boolean) {
+  if (question !== undefined) {
+    return { rows: question.question.multiline ? 3 : 2, value: question.answerText, onChange: question.setAnswerText, onPaste: () => {}, disabled: question.submitting };
   }
-  return { rows: question.question.multiline ? 3 : 2, value: question.answerText, onChange: question.setAnswerText, onPaste: () => {}, disabled: question.submitting };
+  if (remediation?.input !== undefined) {
+    return { rows: 1, value: remediation.input.value, onChange: remediation.input.onChange, onPaste: () => {}, disabled: remediation.submitting };
+  }
+  return { rows: 3, value: prompt, onChange: onPromptChange, onPaste, disabled };
 }
 
 function QuestionSubmitButton({ question }: { question: ComposerCustomerReportIntake }) {
   const { t } = useTranslation();
   const label = t(question.editing ? "common.incidents.customerReport.update" : "common.incidents.customerReport.submit");
-  return (
-    <button
-      type="button"
-      onClick={question.submit}
-      disabled={!question.canSubmit}
-      className="h-8 whitespace-nowrap rounded-[10px] bg-violet-600 px-3.5 text-[13px] font-semibold text-white transition-colors hover:bg-violet-700 disabled:cursor-default disabled:bg-violet-200 dark:disabled:bg-violet-500/30"
-    >
-      {question.submitting ? <Loader2 size={14} className="animate-spin" aria-label={label} /> : label}
-    </button>
-  );
+  return <QuestionPrimaryButton label={label} run={question.submit} disabled={!question.canSubmit} submitting={question.submitting} />;
+}
+
+/** Alt+↑ edits the last queued message; Ctrl/⌘+Shift+Enter steers the next one. True when the key was handled. */
+function handleQueueShortcut(e: React.KeyboardEvent<HTMLTextAreaElement>, queue: ComposerQueue): boolean {
+  const queued = queue.messages.filter((message) => message.steer !== true);
+  if (queued.length === 0) return false;
+  const caretAtStart = e.currentTarget.selectionStart === 0 && e.currentTarget.selectionEnd === 0;
+  if (e.key === "ArrowUp" && e.altKey && caretAtStart && queue.editingId === null) {
+    e.preventDefault();
+    queue.onEdit(queued[queued.length - 1]);
+    return true;
+  }
+  if (e.key === "Enter" && e.shiftKey && (e.metaKey || e.ctrlKey) && queue.canSteer) {
+    e.preventDefault();
+    void queue.onSteer(queued[0].id);
+    return true;
+  }
+  return false;
+}
+
+function getComposerOptions(model: ModelCatalogEntry | undefined) {
+  return model === undefined ? [] : getEffectiveComposerOptions(model);
 }
 
 function composerCanSend(isBlocked: boolean, prompt: string, attachmentCount: number): boolean {
@@ -142,13 +227,24 @@ function composerCanSend(isBlocked: boolean, prompt: string, attachmentCount: nu
   return prompt.trim().length > 0 || attachmentCount > 0;
 }
 
-function composerPlaceholder(t: (key: string) => string, isBlocked: boolean, threadStatus: ThreadStatus | undefined, question: ComposerCustomerReportIntake | undefined, placeholder: string | undefined): string {
+function showsContextIndicator(isBlocked: boolean, tokenUsage: AgentThreadTokenUsage | undefined, contextWindowLimit: number | undefined): boolean {
+  return !isBlocked && (tokenUsage !== undefined || contextWindowLimit !== undefined);
+}
+
+/** Why the send button is unavailable while the composer is blocked; undefined while it is not. */
+function sendUnavailableReason(t: (key: string) => string, isBlocked: boolean, threadStatus: ThreadStatus | undefined): string | undefined {
+  if (!isBlocked) return undefined;
+  return threadStatus === "blocked_no_runbook" ? t("common.incidentDetail.sendNeedsRunbook") : t("common.incidentDetail.sendNeedsProvider");
+}
+
+function composerPlaceholder(t: (key: string) => string, isBlocked: boolean, threadStatus: ThreadStatus | undefined, question: ComposerCustomerReportIntake | undefined, remediation: ComposerRemediationFlow | undefined, placeholder: string | undefined): string {
   if (isBlocked) {
     return threadStatus === "blocked_no_runbook" ? t("common.incidents.createARunbookToEnable") : t("common.incidents.configureAProviderInSettings");
   }
   if (question !== undefined) {
     return question.question.placeholder ?? t("common.incidents.customerReport.placeholders.customAnswer");
   }
+  if (remediation?.input !== undefined) return remediation.input.placeholder;
   return placeholder ?? t("common.incidents.describeTheSecurityIssueTo");
 }
 
@@ -159,6 +255,7 @@ export function Composer({
   onCancel,
   isProcessing,
   isBlocked,
+  blockedNotice,
   isArchived,
   composerImages,
   onRemoveImage,
@@ -187,6 +284,13 @@ export function Composer({
   accessLevel: accessLevelProp,
   onAccessLevelChange,
   customerReportIntake,
+  remediationFlow,
+  hostPanel,
+  queue,
+  onResumeQueue,
+  citations = [],
+  onRemoveCitation,
+  onCitationCommentChange,
 }: ComposerProps) {
   const { t } = useTranslation();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -210,25 +314,22 @@ export function Composer({
   // ── Derived ────────────────────────────────────────────────────────────────
   const composerSupportsPhotos = Boolean(selectedModelCapability?.supportsImageInput);
   const question = isBlocked ? undefined : customerReportIntake;
+  // The remediation card waits while the agent works and while a customer report question is open.
+  const remediation = question === undefined && !isBlocked && !isProcessing && remediationFlow?.open === true ? remediationFlow : undefined;
+  const showResumeChip = remediationFlow !== undefined && question === undefined && remediation === undefined;
   const asking = question !== undefined;
+  const host = hostPanelParts(hostPanel, { open: question ?? remediation, busy: isBlocked || isProcessing });
+  const highlighted = asking || remediation !== undefined || host.card !== undefined;
+  const notice = isBlocked ? blockedNotice : undefined;
+  const hidesText = (remediation !== undefined && remediation.input === undefined) || host.buttons !== undefined || notice !== undefined;
   const hasAttachOptions =
     composerSupportsPhotos || composerFileAccept?.includes(".csv") === true;
-  const canSend = composerCanSend(isBlocked, prompt, composerImages.length);
+  // The IPC schemas refuse a longer message, so it never leaves the composer.
+  const messageTooLong = joinCitations(citations, prompt).length > CHAT_MESSAGE_MAX_LENGTH;
+  const canSend = composerCanSend(isBlocked, prompt, composerImages.length + citations.length) && !messageTooLong;
 
-  const composerOptions = useMemo(
-    () => {
-      if (selectedModelCapability === undefined) {
-        return [];
-      }
-
-      return getEffectiveComposerOptions(selectedModelCapability);
-    },
-    [selectedModelCapability],
-  );
-  const contextWindowLimit = useMemo(
-    () => getModelContextWindowLimit(selectedModelCapability, traitValues),
-    [selectedModelCapability, traitValues],
-  );
+  const composerOptions = getComposerOptions(selectedModelCapability);
+  const contextWindowLimit = getModelContextWindowLimit(selectedModelCapability, traitValues);
 
   let showPlanMode = false;
   if (selectedProviderKey !== null) {
@@ -240,20 +341,24 @@ export function Composer({
 
   // Reset traitValues to new model's defaults when selectedModelCapability changes
   const prevCapabilityRef = useRef(selectedModelCapability);
-  const thinkingEnabledRef = useRef(thinkingEnabled);
-  thinkingEnabledRef.current = thinkingEnabled;
+  const seedTraitValues = useEffectEvent((capability: typeof selectedModelCapability) => {
+    setTraitValues(getSeededTraitValues(capability, thinkingEnabled));
+  });
   useEffect(() => {
     if (prevCapabilityRef.current === selectedModelCapability) return;
     prevCapabilityRef.current = selectedModelCapability;
-    setTraitValues(getSeededTraitValues(selectedModelCapability, thinkingEnabledRef.current));
+    seedTraitValues(selectedModelCapability);
   }, [selectedModelCapability]);
 
   // traitValues.thinking → onThinkingToggle (user changes via TraitsDropdown)
-  useEffect(() => {
-    if (traitValues.thinking !== undefined && traitValues.thinking !== thinkingEnabled) {
+  const syncThinkingToggle = useEffectEvent((thinking: typeof traitValues.thinking) => {
+    if (thinking !== undefined && thinking !== thinkingEnabled) {
       onThinkingToggle();
     }
-  }, [traitValues.thinking]); // eslint-disable-line react-hooks/exhaustive-deps
+  });
+  useEffect(() => {
+    syncThinkingToggle(traitValues.thinking);
+  }, [traitValues.thinking]);
 
   // thinkingEnabled prop → traitValues.thinking (external reset on model switch)
   useEffect(() => {
@@ -286,31 +391,52 @@ export function Composer({
     return () => { document.removeEventListener("mousedown", handleClickOutside); };
   }, [attachMenuOpen]);
 
-  // ── Keyboard: Enter sends, Shift+Enter newline ─────────────────────────────
-  const handleKeyDown = useCallback(
-    (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-      if (e.key !== "Enter" || e.shiftKey || e.nativeEvent.isComposing) return;
-      if (question !== undefined) {
-        e.preventDefault();
-        if (question.canSubmit) question.submit();
-        return;
-      }
-      if (!isProcessing && canSend) {
-        e.preventDefault();
-        onSend({ accessLevel, interactionMode, traitValues });
-      }
-    },
-    [onSend, isProcessing, canSend, accessLevel, interactionMode, traitValues, question],
-  );
+  const isEditingQueuedMessage = queue?.editingId != null;
+  const canSteer = queue?.canSteer === true;
+  const submit = (alternate: boolean) => {
+    let delivery: AgentMessageDelivery | undefined;
+    if (isProcessing && !isEditingQueuedMessage) {
+      const mode = resolveComposerDispatchMode({ running: true, canSteer, alternateModifier: alternate });
+      delivery = mode === "steer" ? "steer" : "queue";
+    }
+    onSend({ accessLevel, interactionMode, traitValues, delivery });
+  };
 
-  const handleTraitChange = useCallback((id: string, value: string | boolean) => {
+  // ── Keyboard: Enter sends, Shift+Enter newline ─────────────────────────────
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    // In a compact remediation list, the arrow keys move the pick while the search text keeps the focus.
+    if (remediation !== undefined && moveRemediationSelection(remediation, e.key)) {
+      e.preventDefault();
+      return;
+    }
+    if (e.nativeEvent.isComposing) return;
+    const modifier = e.metaKey || e.ctrlKey;
+    if (queue !== undefined && question === undefined && remediation === undefined && handleQueueShortcut(e, queue)) return;
+    if (e.key !== "Enter" || e.shiftKey) return;
+    if (question !== undefined) {
+      e.preventDefault();
+      if (question.canSubmit) question.submit();
+      return;
+    }
+    if (remediation !== undefined) {
+      e.preventDefault();
+      if (remediation.primary !== undefined && remediation.primary.disabled !== true && !remediation.submitting) remediation.primary.run();
+      return;
+    }
+    if (canSend) {
+      e.preventDefault();
+      submit(modifier);
+    }
+  };
+
+  const handleTraitChange = (id: string, value: string | boolean) => {
     setTraitValues((prev) => ({ ...prev, [id]: value }));
-  }, []);
+  };
 
   if (isArchived) return null;
 
-  const placeholderText = composerPlaceholder(t, isBlocked, threadStatus, question, placeholder);
-  const textBinding = composerTextBinding(question, prompt, onPromptChange, onPaste, isProcessing || isBlocked);
+  const placeholderText = composerPlaceholder(t, isBlocked, threadStatus, question, remediation, placeholder);
+  const textBinding = composerTextBinding(question, remediation, prompt, onPromptChange, onPaste, isBlocked);
 
   let accessSelector: ReactNode = null;
   const shouldShowAccessSelector = selectedProviderKey !== null;
@@ -324,9 +450,11 @@ export function Composer({
     );
   }
 
+  // While blocked there is no model to measure against, so the context meter, which reads like a busy ring at a
+  // glance, stays hidden.
   let contextIndicator: ReactNode = null;
   const actualUsage = tokenUsage?.kind === "estimate" ? undefined : tokenUsage;
-  if (tokenUsage !== undefined || contextWindowLimit !== undefined) {
+  if (showsContextIndicator(isBlocked, tokenUsage, contextWindowLimit)) {
     contextIndicator = (
       <ContextIndicator
         inputTokens={actualUsage?.inputTokens ?? 0}
@@ -341,11 +469,13 @@ export function Composer({
     );
   }
 
+  // The composer shares the conversation's centered 800px column (848px less its 24px gutters); below 640px the
+  // gutters are 16px.
   return (
-    <div className="shrink-0 px-4 pb-4">
+    <div className="mx-auto w-full max-w-[848px] shrink-0 px-4 pb-4 sm:px-6">
       {threadStatus === "streaming" && showThreadWaitingIndicator && (
         <div className="mb-2 flex items-center gap-2 text-xs text-muted-foreground">
-          <Loader2 size={11} className="animate-spin" />
+          <Loader2 size={11} />
           {t("common.incidents.aiIsResponding")}
         </div>
       )}
@@ -362,6 +492,8 @@ export function Composer({
           }}
         />
       )}
+      {showResumeChip && <RemediationResumeChip flow={remediationFlow} disabled={isProcessing || isBlocked} />}
+      {host.chip}
       <input
         ref={fileInputRef}
         type="file"
@@ -373,18 +505,36 @@ export function Composer({
           event.currentTarget.value = "";
         }}
       />
+      {queue !== undefined && question === undefined && remediation === undefined && <QueuedMessagesPanel queue={queue} />}
       <div
         data-tour="incidents-composer"
         className={cn(
-          "group rounded-[20px] border bg-card transition-[border-color,box-shadow] duration-200",
-          !isProcessing && !isBlocked && !asking && "focus-within:border-ring/45",
-          asking && "border-violet-300 shadow-[0_0_0_3px_rgb(124_58_237_/_0.08)] dark:border-violet-500/40",
-          isBlocked && "opacity-60",
+          "group relative z-10 rounded-[20px] border bg-card transition-[border-color,box-shadow] duration-200",
+          !isBlocked && !highlighted && "focus-within:border-ring/45",
+          highlighted && "border-violet-300 shadow-[0_0_0_3px_rgb(124_58_237_/_0.08)] dark:border-violet-500/40",
         )}
       >
+        {notice}
         {question !== undefined && <CustomerReportQuestionPanel key={question.question.key} intake={question} />}
+        {remediation !== undefined && <RemediationQuestionPanel flow={remediation} />}
+        {host.card}
         {/* Textarea area with optional attach button */}
-        <div className="relative px-3 pb-2 pt-3.5 sm:px-4 sm:pt-4">
+        <div className="relative px-3 pb-2 pt-3.5 sm:px-4 sm:pt-4" hidden={hidesText}>
+          {citations.length > 0 && question === undefined && (
+            <div className="mb-2 flex flex-wrap gap-1.5">
+              {citations.map((citation, index) => (
+                <CitationChip
+                  key={`${citation.sourceId}:${String(citation.start)}:${String(index)}`}
+                  citation={citation}
+                  onRemove={() => { onRemoveCitation?.(index); }}
+                  onCommentChange={(comment) => { onCitationCommentChange?.(index, comment); }}
+                />
+              ))}
+            </div>
+          )}
+          {messageTooLong && question === undefined && (
+            <p role="alert" className="mb-2 text-xs text-destructive">{t("common.chat.citations.messageTooLong")}</p>
+          )}
           {composerImages.length > 0 && (
             <div className="mb-3 flex flex-wrap gap-2">
               {composerImages.map((image) =>
@@ -421,7 +571,7 @@ export function Composer({
                       {image.name}
                     </span>
                     {image.type === "csv" && (
-                      <span className="shrink-0 text-[11px] tabular-nums text-muted-foreground">
+                      <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
                         {t("common.incidents.attachmentRows", {
                           rowCount: image.rowCount,
                           totalRowCount: image.totalRowCount,
@@ -445,12 +595,12 @@ export function Composer({
           )}
           <div className="flex items-start gap-2">
             {/* Attach button (left of textarea) */}
-            {hasAttachOptions && (
+            {hasAttachOptions && remediation === undefined && (
               <div ref={attachMenuRef} className="relative z-40 mt-0.5 shrink-0">
                 <button
                   type="button"
                   onClick={() => { setAttachMenuOpen((v) => !v); }}
-                  disabled={isProcessing || isBlocked}
+                  disabled={isBlocked}
                   className={cn(
                     "flex size-8 items-center justify-center rounded-full text-muted-foreground transition-colors",
                     "hover:bg-accent hover:text-foreground/80 disabled:cursor-not-allowed disabled:opacity-50",
@@ -560,14 +710,20 @@ export function Composer({
           {/* Right: context + send / stop */}
           <div data-tour="incidents-send-btn" className="flex shrink-0 items-center gap-2">
             {contextIndicator}
-            {question !== undefined ? (
-              <QuestionSubmitButton question={question} />
-            ) : (
+            {question !== undefined && <QuestionSubmitButton question={question} />}
+            {remediation !== undefined && <RemediationFlowButtons flow={remediation} />}
+            {host.buttons !== undefined && <HostPanelButtons buttons={host.buttons} />}
+            {question === undefined && remediation === undefined && host.buttons === undefined && (
               <SendButton
-                isProcessing={isProcessing}
+                isRunning={isProcessing}
                 canSend={canSend}
-                onSend={() => { onSend({ accessLevel, interactionMode, traitValues }); }}
-                onCancel={onCancel}
+                canSteer={canSteer}
+                canResume={!isProcessing && queue?.held === true && queue.messages.length > 0}
+                isEditingQueuedMessage={isEditingQueuedMessage}
+                unavailableReason={sendUnavailableReason(t, isBlocked, threadStatus)}
+                onSubmit={submit}
+                onResume={() => { onResumeQueue?.(); }}
+                onInterrupt={onCancel}
               />
             )}
           </div>

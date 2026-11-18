@@ -95,6 +95,7 @@ export interface DesktopAgentStartInput {
 export interface DesktopAgentSendInput {
   message: string;
   sessionId?: string;
+  delivery?: import("./contracts").AgentMessageDelivery;
   attachments?: DesktopAgentAttachment[];
   llm?: DesktopAgentLlmSelection;
   runbookContext?: DesktopRunbookContext;
@@ -116,14 +117,10 @@ export type DesktopUnknownAgentEvent = {
   [key: string]: unknown;
 };
 
-export interface DesktopAgentEventEnvelope<
+export type DesktopAgentEventEnvelope<
   TEvent = DesktopUnknownAgentEvent,
   TSnapshot = unknown,
-> {
-  sessionId: string;
-  event: TEvent;
-  snapshot?: TSnapshot;
-}
+> = import("../chat/types").AgentEventPayload<TEvent, TSnapshot>;
 
 export interface DesktopRunbookTriggerContext {
   entrypoint:
@@ -187,12 +184,10 @@ export interface DesktopIncidentListItem {
   archived?: boolean;
   archivedAt?: string;
   lastMessagePreview?: string | null;
+  /** When main last saved the thread's messages or preview. */
+  updatedAt: string;
 }
 
-export interface DesktopIncidentsState {
-  incidents: DesktopIncidentListItem[];
-  incidentMessages: Record<string, unknown[]>;
-}
 
 export interface DesktopBitsentryBridge<
   TUpdaterState extends DesktopUpdaterStateBase = DesktopUpdaterStateBase,
@@ -349,6 +344,8 @@ export interface DesktopBitsentryBridge<
     start: (input: DesktopAgentStartInput) => Promise<{ sessionId: string }>;
     send: (input: DesktopAgentSendInput) => Promise<{ sessionId: string }>;
     cancel: (sessionId: string) => Promise<void>;
+    updateQueue: (input: import("./contracts").AgentQueueUpdateRequest) => Promise<void>;
+    restoreQueue: (incidentThreadId: string) => Promise<{ sessionId: string; snapshot: TAgentSnapshot } | null>;
     getStatus: (
       sessionId: string,
     ) => Promise<DesktopAgentStatus<TAgentState> | null>;
@@ -402,15 +399,21 @@ export interface DesktopBitsentryBridge<
       executionId: string;
       incidentThreadId?: string | null;
       execution: DesktopRunbookExecutionRecord;
+      /** Set on an output flush: the one changed step, with `execution.steps` empty. */
+      step?: { index: number; record: unknown };
     }) => void) => () => void;
     onChanged: (callback: () => void) => () => void;
   };
   incidents: {
-    getState: () => Promise<DesktopIncidentsState>;
-    replaceState: (snapshot: DesktopIncidentsState) => Promise<{
-      ok: true;
-      count: number;
-    }>;
+    list: () => Promise<DesktopIncidentListItem[]>;
+    getThreadMessages: (threadId: string, before?: number) => Promise<{ messages: unknown[]; before: number | null }>;
+    /** Writes only the fields present; `archivedAt: null` unarchives. */
+    saveThread: (
+      thread: { id: string }
+        & Partial<Omit<DesktopIncidentListItem, "id" | "archivedAt" | "updatedAt">>
+        & { archivedAt?: string | null; sessionId?: string | null },
+    ) => Promise<{ ok: true }>;
+    appendThreadMessages: (threadId: string, messages: unknown[]) => Promise<{ ok: true }>;
   };
   updater: {
     getState: () => Promise<TUpdaterState>;

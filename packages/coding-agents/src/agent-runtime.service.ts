@@ -16,13 +16,18 @@ import { createHash, randomUUID } from 'crypto'
 import { zodToJsonSchema } from '@alcyone-labs/zod-to-json-schema'
 import { z } from 'zod'
 import { getErrorMessage } from '@bitsentry-ce/core'
-import type { AgentThreadSnapshot, ComposerAttachment } from '@bitsentry-ce/components/chat/types'
+import type { AgentEventPayload, AgentQueuedMessage, AgentSnapshotReply, AgentThreadSnapshot, ChatMessage as ThreadChatMessage, ComposerAttachment, ToolCallCard } from '@bitsentry-ce/components/chat/types'
 import {
   appendPromptToThreadSnapshot,
+  appendSteerToThreadSnapshot,
+  insertUserMessageBeforeLastAgentMessage,
   createAgentThreadSnapshot,
+  findLastAgentMessageIndex,
   reduceAgentThreadSnapshot,
   setAgentThreadRuntimeState,
+  settleInterruptedAgentTurn,
 } from '@bitsentry-ce/components/chat/runtimeProjection'
+import { expandCitationsForModel } from '@bitsentry-ce/components/chat/citations'
 import {
   validateToolInput,
   getTool,
@@ -36,6 +41,7 @@ import type {
   AgentErrorCode,
   AgentEventData,
   AgentLlmSelection,
+  AgentQueueUpdateInput,
   AgentSendInput,
   AgentSessionState,
   AgentSessionStatus,
@@ -61,7 +67,7 @@ import type {
 import type { RunbookGateway } from '@bitsentry-ce/core/features/runbooks'
 import type { RunbookAuthoringProposalPersistence } from '@bitsentry-ce/core/features/runbooks'
 import type { DesktopPluginRuntimeService } from '@bitsentry-ce/core/features/plugins'
-import { CUSTOMER_REPORT_INTAKE_PROMPT, type CustomerReportIntakePort } from '@bitsentry-ce/core/features/agent-runtime'
+import { CUSTOMER_REPORT_INTAKE_PROMPT, type AgentQueuePersistence, type CustomerReportIntakePort, type StoredAgentQueue } from '@bitsentry-ce/core/features/agent-runtime'
 import { approveRunbookAuthoringProposal, getRunbookAuthoringRevisionHash, rejectRunbookAuthoringProposal, requestRunbookAuthoringRevision, restoreRunbookAuthoringProposal, type RunbookAuthoringProposal } from '@bitsentry-ce/core/features/runbooks/authoring'
 import {
   createAgentToolResultEnvelope,
@@ -75,14 +81,38 @@ import {
 } from '@bitsentry-ce/core/features/agent-runtime'
 
 const CHANNEL_EVENT = 'bitsentry:agent:event'
+// Streaming events reduce into the snapshot immediately but reach the renderer
+// as one changed-message update per window (T3 Code coalesces at 50 ms too).
+const STREAM_FLUSH_INTERVAL_MS = 50
+const COALESCED_EVENT_TYPES = new Set<AgentEventData['type']>([
+  'assistant_delta',
+  'tool_update',
+  'token_usage',
+  'activity',
+  'thinking_delta',
+])
 const NO_LLM_PROVIDER_CONFIGURED_MESSAGE =
   'No LLM provider configured. Please configure a provider in Settings.'
 
-export interface AgentRuntimeEventPayload {
-  sessionId: string
-  event: AgentEventData
-  snapshot?: AgentThreadSnapshot
-}
+// A restored session only sees capped tool-output digests, so keep a normal on-call working set live.
+const RETAINED_COMPLETED_SESSIONS = 20
+// Restored agent turns carry a plain-text digest of their tool calls.
+const MAX_RESTORED_TOOL_OUTPUT_CHARS = 2_000
+const MAX_RESTORED_TURN_TOOL_CHARS = 8_000
+
+/** Loads an incident thread's persisted renderer messages, oldest first. */
+export type AgentRuntimeIncidentHistoryLoader = (
+  incidentThreadId: string,
+) => Promise<ReadonlyArray<Record<string, unknown>>>
+
+/** Persists an incident thread's messages; the runtime owns what its agent produced. */
+export type AgentRuntimeIncidentHistorySaver = (
+  incidentThreadId: string,
+  messages: ThreadChatMessage[],
+  changedIndexes?: readonly number[],
+) => Promise<void>
+
+export type AgentRuntimeEventPayload = AgentEventPayload<AgentEventData>
 
 export interface AgentRuntimeWindow {
   isDestroyed(): boolean
@@ -183,8 +213,16 @@ function getAgentErrorCode(message: string): AgentErrorCode | undefined {
 
 const DEFAULT_AGENT_SESSION_TIMEOUT_MS = 300_000
 const INTEGRATION_READ_TIMEOUT_MS = 30_000
+const AGENT_LOOP_SHUTDOWN_WAIT_MS = 5_000
 const MAX_TOOL_ITERATIONS = 10 // Prevent infinite loops
 const MAX_MESSAGE_HISTORY = 50 // Limit conversation history
+// Payload sequences are process-wide and clock-seeded, so a session recreated
+// under the same id (restore, runtime restart) always continues above the old one.
+let lastPayloadSequence = Date.now() * 1000
+function nextPayloadSequence(): number {
+  lastPayloadSequence += 1
+  return lastPayloadSequence
+}
 const JOURNAL_TIME_WINDOW_PADDING_MS = 5 * 60 * 1000
 const MAX_ACTIONABLE_JOURNAL_TIME_WINDOWS = 5
 const MAX_STRUCTURED_RUNBOOK_ISSUES = 10
@@ -293,7 +331,7 @@ function normalizeExecuteRunbookArgs(args: Record<string, unknown>): Record<stri
   )
   const parameterValues = {
     ...topLevelParameterValues,
-    ...(explicitParameterValues ?? {}),
+    ...explicitParameterValues,
   }
   const normalized: Record<string, unknown> = {}
   if (Object.keys(parameterValues).length > 0) {
@@ -493,9 +531,113 @@ interface AgentSession {
   runbookAuthoringProposals: RunbookAuthoringProposal[]
   hasRunbookParameters?: boolean
   hasMultipleRunbooksInPlay?: boolean
-  queuedFollowUps: AgentSendInput[]
+  /** Follow-ups that run one at a time, each after the turn before it ends. */
+  queuedFollowUps: QueuedFollowUp[]
+  /** Steers waiting for the running turn's next model call. */
+  pendingSteers: QueuedFollowUp[]
+  /** Set when a turn is stopped, times out or fails with follow-ups queued; they wait for a resume. */
+  queueHeld: boolean
+  /** A coding agent turn that takes steers through its provider's mid-turn input API. */
+  activeTurnSteer?: (text: string) => Promise<void>
   loopActive?: boolean
   snapshot: AgentThreadSnapshot
+  streamFlushTimer?: ReturnType<typeof setTimeout>
+  /** Last coalesced event, reported with a flush that has to send the full snapshot. */
+  pendingStreamEvent?: AgentEventData
+  /** Message count of the last payload sent; a change forces a full snapshot. */
+  lastSentMessageCount?: number
+  /** Sequence of the last payload sent; lets the renderer drop stale ones. */
+  sequence: number
+  /** Running incident message write; at most one per session. */
+  incidentSave?: Promise<void>
+  /** Latest messages requested while a write runs; written once it finishes. */
+  pendingIncidentMessages?: ThreadChatMessage[]
+  completedAt?: number
+  /** Messages array of the last successful write, to skip writes when nothing changed. */
+  persistedMessages?: ThreadChatMessage[]
+}
+
+type QueuedFollowUp = {
+  id: string
+  input: AgentSendInput
+  queuedAt: string
+  /**
+   * Sent after a stop, while the stopped turn was still winding down. It runs once that turn ends even though the
+   * stop holds the queue, because the engineer sent it after deciding to stop.
+   */
+  runAfterHold: boolean
+  /** Sent to a coding agent's running turn and waiting for the provider to accept it. */
+  delivering?: boolean
+}
+
+/** A hold only matters while something waits; with nothing queued or in flight, the next message runs normally. */
+function releaseHoldIfNothingWaits(session: Pick<AgentSession, 'queuedFollowUps' | 'pendingSteers' | 'queueHeld'>): void {
+  if (session.queuedFollowUps.length === 0 && session.pendingSteers.length === 0) {
+    session.queueHeld = false
+  }
+}
+
+/** A queue from the store waits for a resume: the turn it was waiting for ended with the app. */
+function adoptStoredQueue(session: AgentSession, stored: StoredAgentQueue): void {
+  session.queuedFollowUps = stored.messages.map((message) => ({
+    id: message.id,
+    input: message.input,
+    queuedAt: message.queuedAt,
+    runAfterHold: false,
+  }))
+  session.queueHeld = session.queuedFollowUps.length > 0
+}
+
+function removeEntry(list: QueuedFollowUp[], entry: QueuedFollowUp): void {
+  const index = list.indexOf(entry)
+  if (index !== -1) {
+    list.splice(index, 1)
+  }
+}
+
+type FoundQueuedEntry = { list: QueuedFollowUp[]; index: number; entry: QueuedFollowUp }
+
+function sameQueuedMessages(left: AgentQueuedMessage[], right: AgentQueuedMessage[]): boolean {
+  return left.length === right.length && left.every((message, index) => {
+    const other = right[index]
+    return message.id === other.id &&
+      message.text === other.text &&
+      message.steer === other.steer &&
+      (message.attachments ?? []).map((attachment) => attachment.id).join() === (other.attachments ?? []).map((attachment) => attachment.id).join()
+  })
+}
+
+function findQueuedEntry(
+  session: Pick<AgentSession, 'queuedFollowUps' | 'pendingSteers'>,
+  messageId: string,
+): FoundQueuedEntry {
+  for (const list of [session.queuedFollowUps, session.pendingSteers]) {
+    const index = list.findIndex((entry) => entry.id === messageId)
+    if (index !== -1) {
+      return { list, index, entry: list[index] }
+    }
+  }
+  throw new Error(`QUEUED_MESSAGE_NOT_FOUND: ${messageId} already ran or was removed.`)
+}
+
+/** Moves a queued follow-up before another one, or to the end when `beforeMessageId` is null. */
+function reorderQueuedEntry(
+  session: Pick<AgentSession, 'queuedFollowUps'>,
+  found: FoundQueuedEntry,
+  beforeMessageId: string | null,
+): void {
+  if (found.list !== session.queuedFollowUps) {
+    throw new Error('A steer cannot be reordered.')
+  }
+  const remaining = session.queuedFollowUps.filter((entry) => entry.id !== found.entry.id)
+  const beforeIndex = beforeMessageId === null
+    ? remaining.length
+    : remaining.findIndex((entry) => entry.id === beforeMessageId)
+  if (beforeIndex === -1) {
+    throw new Error(`QUEUED_MESSAGE_NOT_FOUND: ${beforeMessageId ?? ''} already ran or was removed.`)
+  }
+  remaining.splice(beforeIndex, 0, found.entry)
+  session.queuedFollowUps.splice(0, session.queuedFollowUps.length, ...remaining)
 }
 
 type ExecuteRunbookInput = ExecuteRunbookHostToolInput
@@ -694,7 +836,8 @@ function appendRunbookToolPromptLines(lines: string[], runbookId: string, hasRun
 }
 
 function createUserMessageContent(text: string, attachments?: AgentChatAttachment[]): ChatMessage['content'] {
-  const normalizedText = text.trim()
+  // The thread shows citations as chips; the model reads the quotes spelled out.
+  const normalizedText = expandCitationsForModel(text.trim())
   const normalizedAttachments = attachments ?? []
 
   if (normalizedAttachments.length === 0) {
@@ -726,6 +869,73 @@ function createUserMessageContent(text: string, attachments?: AgentChatAttachmen
           },
     ),
   ]
+}
+
+/** Messages are replaced, never mutated, so a new object marks a changed row; undefined means save the full list. */
+function changedMessageIndexes(messages: ThreadChatMessage[], persisted: ThreadChatMessage[] | undefined): number[] | undefined {
+  if (persisted === undefined || messages.length < persisted.length) return undefined
+  if (persisted.some((message, index) => message.id !== messages[index].id)) return undefined
+  return messages.flatMap((message, index) => (message === persisted[index] ? [] : [index]))
+}
+
+function restoreThreadMessage(raw: Record<string, unknown>): ThreadChatMessage | null {
+  const id = typeof raw.id === 'string' && raw.id.length > 0 ? raw.id : randomUUID()
+  if (raw.kind === 'user') {
+    return { ...raw, id, kind: 'user', text: typeof raw.text === 'string' ? raw.text : '' } as ThreadChatMessage
+  }
+  if (raw.kind !== 'agent') return null
+
+  return {
+    ...raw,
+    id,
+    iterations: Array.isArray(raw.iterations) ? raw.iterations : [],
+    activeIterationId: typeof raw.activeIterationId === 'string' ? raw.activeIterationId : null,
+    toolCalls: Array.isArray(raw.toolCalls) ? raw.toolCalls : [],
+    finalText: typeof raw.finalText === 'string' ? raw.finalText : null,
+    status: typeof raw.status === 'string' ? raw.status : 'thinking',
+  } as Extract<ThreadChatMessage, { kind: 'agent' }>
+}
+
+function truncateRestoredText(text: string, maxLength: number): string {
+  return text.length <= maxLength ? text : `${text.slice(0, maxLength)}...[truncated]`
+}
+
+function summarizeRestoredToolCalls(toolCalls: ToolCallCard[]): string {
+  let budget = MAX_RESTORED_TURN_TOOL_CHARS
+  const lines: string[] = []
+  for (const toolCall of toolCalls) {
+    if (budget <= 0) break
+    const args = toolCall.input === undefined ? '' : truncateRestoredText(JSON.stringify(toolCall.input), 200)
+    const result = toolCall.modelContext ?? toolCall.output ?? toolCall.error ?? ''
+    const line = `- ${toolCall.toolName}(${args}) [${toolCall.state}]: ${truncateRestoredText(result, MAX_RESTORED_TOOL_OUTPUT_CHARS)}`
+    const kept = truncateRestoredText(line, budget)
+    budget -= kept.length
+    lines.push(kept)
+  }
+  return lines.length === 0 ? '' : `Tool calls in this turn:\n${lines.join('\n')}`
+}
+
+function threadMessageToLlmMessage(message: ThreadChatMessage): ChatMessage | null {
+  if (message.kind === 'user') {
+    const attachments = message.attachments as AgentChatAttachment[] | undefined
+    if (message.text.trim().length === 0 && (attachments === undefined || attachments.length === 0)) return null
+    return { role: 'user', content: createUserMessageContent(message.text, attachments) }
+  }
+
+  const text = [summarizeRestoredToolCalls(message.toolCalls), message.finalText ?? message.iterations.at(-1)?.text ?? '']
+    .filter((part) => part.trim().length > 0)
+    .join('\n\n')
+  return text.length > 0 ? { role: 'assistant', content: text } : null
+}
+
+/** Keeps the system prompt and the most recent MAX_MESSAGE_HISTORY messages. */
+function trimMessageHistory(messages: ChatMessage[]): ChatMessage[] {
+  if (messages.length <= MAX_MESSAGE_HISTORY) return messages
+  const systemMessage = messages.find((m) => m.role === 'system')
+  const recentMessages = messages.slice(-MAX_MESSAGE_HISTORY)
+  return systemMessage === undefined
+    ? recentMessages
+    : [systemMessage, ...recentMessages.filter((m) => m.role !== 'system')]
 }
 
 function deviceTimeZone(): string {
@@ -1728,14 +1938,6 @@ function readFirstStringProperty(
   return fallback
 }
 
-function appendOptionalLine(lines: string[], line: string | null): void {
-  if (line === null) {
-    return
-  }
-
-  lines.push(line)
-}
-
 /**
  * Agent Runtime Service
  *
@@ -1745,9 +1947,8 @@ function appendOptionalLine(lines: string[], line: string | null): void {
 function formatVisibleRunbookListEntry(runbook: Record<string, unknown>): { title: string; lines: string[] } {
   const title = readFirstStringProperty([runbook], 'title', 'Untitled runbook')
   const actionCount = readNumberProperty(runbook, 'actionCount')
-  const actionSummary = actionCount === null
-    ? ''
-    : ` (${String(actionCount)} ${actionCount === 1 ? 'action' : 'actions'})`
+  const actionNoun = actionCount === 1 ? 'action' : 'actions'
+  const actionSummary = actionCount === null ? '' : ` (${String(actionCount)} ${actionNoun})`
   const description = readNonEmptyTrimmedStringProperty(runbook, 'description')
   return {
     title,
@@ -1757,6 +1958,9 @@ function formatVisibleRunbookListEntry(runbook: Record<string, unknown>): { titl
 
 export class AgentRuntimeService {
   private sessions = new Map<string, AgentSession>()
+  // True while destroy() runs: nothing may start or continue mid-shutdown.
+  private shuttingDown = false
+  private activeLoops = new Set<Promise<void>>()
   private readonly authoringPersistence = new Map<string, Promise<RunbookRecord>>()
 
   constructor(
@@ -1768,7 +1972,13 @@ export class AgentRuntimeService {
     private readonly onRunbooksChanged?: () => void,
     private readonly pluginRuntime?: DesktopPluginRuntimeService,
     private readonly authoringProposalStore?: RunbookAuthoringProposalPersistence,
+    private readonly loadIncidentMessages?: AgentRuntimeIncidentHistoryLoader,
+    private readonly saveIncidentMessages?: AgentRuntimeIncidentHistorySaver,
+    private readonly queueStore?: AgentQueuePersistence,
   ) {}
+
+  /** Per incident: the last queue written to the store, and the write in progress. Writes for one incident run in order. */
+  private readonly queuePersistence = new Map<string, { signature: string; write: Promise<void> }>()
 
   /**
    * Start a new agent session.
@@ -1779,86 +1989,8 @@ export class AgentRuntimeService {
    * @param input - Start input with prompt and optional timeout
    * @returns Session ID (returned immediately, before loop completes)
    */
-  async start(input: AgentStartInput): Promise<string> {
-    const incidentThreadId = input.incidentThreadId
-    const rejectIfIncidentSessionActive = () => {
-      if (incidentThreadId === undefined || incidentThreadId.length === 0) {
-        return
-      }
-
-      const existingIncidentSession = this.findActiveIncidentSession(incidentThreadId)
-      if (existingIncidentSession !== null) {
-        throw new Error(
-          'An agent session is already running for this incident. Wait for it to finish or cancel it before starting another response.',
-        )
-      }
-    }
-
-    try {
-      rejectIfIncidentSessionActive()
-    } catch (error) {
-      return Promise.reject(error)
-    }
-
-    const persistedProposals = input.incidentThreadId === undefined
-      ? []
-      : await this.authoringProposalStore?.list(input.incidentThreadId) ?? []
-    try {
-      rejectIfIncidentSessionActive()
-    } catch (error) {
-      return Promise.reject(error)
-    }
-    const sessionId = randomUUID()
-    const timeoutMs = input.timeoutMs ?? DEFAULT_AGENT_SESSION_TIMEOUT_MS // 5 minutes for thinking models
-    const startedAt = new Date()
-
-    log.info(`[agent-runtime:${sessionId}] Starting session with timeout:`, timeoutMs)
-
-    const session: AgentSession = {
-      id: sessionId,
-      state: 'RUNNING',
-      startedAt,
-      expiresAt: startedAt.getTime() + timeoutMs,
-      abortController: new AbortController(),
-      timeoutHandle: null,
-      currentToolCallId: null,
-      queuedFollowUps: [],
-      windowGetter: this.windowGetter,
-      llmAdapter: this.llmAdapter,
-      runbookContext: input.runbookContext,
-      llmSelection: input.llm,
-      accessLevel: input.accessLevel,
-      traitValues: input.traitValues,
-      incidentThreadId: input.incidentThreadId,
-      runbookAuthoringProposals: persistedProposals,
-      messages: [
-        {
-          role: 'system',
-          content: this.buildSystemPrompt(input.runbookContext),
-        },
-        {
-          role: 'user',
-          content: createUserMessageContent(input.prompt, input.attachments),
-        },
-      ],
-      snapshot: createAgentThreadSnapshot({
-        sessionId,
-        startedAt: startedAt.toISOString(),
-        runtimeState: 'RUNNING',
-        prompt: input.prompt,
-        attachments: toSnapshotAttachments(input.attachments),
-      }),
-    }
-
-    this.sessions.set(sessionId, session)
-    this.armSessionTimeout(session, timeoutMs)
-
-    this.runAgentLoop(session)
-      .catch((error: unknown) => {
-        log.error(`[agent-runtime:${sessionId}] Unhandled loop error:`, error)
-      })
-
-    return sessionId
+  start(input: AgentStartInput): Promise<string> {
+    return this.startOrRestore(input)
   }
 
   /**
@@ -1870,21 +2002,16 @@ export class AgentRuntimeService {
    * @returns Session ID (new or existing)
    */
 
-  send(input: AgentSendInput): Promise<string> {
-    let sessionId = input.sessionId ?? randomUUID()
-
-    let session = this.sessions.get(sessionId)
+  async send(input: AgentSendInput): Promise<string> {
+    if (this.shuttingDown) throw new Error('Agent runtime is shutting down')
+    let session = this.sessions.get(input.sessionId ?? '')
 
     if (session === undefined && input.incidentThreadId !== undefined && input.incidentThreadId.length > 0) {
-      const incidentSession = this.findMostRecentIncidentSession(input.incidentThreadId)
-      if (incidentSession !== null) {
-        session = incidentSession
-        sessionId = incidentSession.id
-      }
+      session = this.findMostRecentIncidentSession(input.incidentThreadId) ?? undefined
     }
 
     if (session === undefined) {
-      return this.start({
+      return this.startOrRestore({
         prompt: input.message,
         attachments: input.attachments,
         llm: input.llm,
@@ -1892,21 +2019,138 @@ export class AgentRuntimeService {
         incidentThreadId: input.incidentThreadId,
         accessLevel: input.accessLevel,
         traitValues: input.traitValues,
-      })
+      }, input)
     }
 
-    if (session.state === 'RUNNING' && session.loopActive === true) {
-      // Preserve user intent while the current model turn or runbook summary
-      // owns the loop. The queued message is appended after that turn finishes.
-      session.queuedFollowUps.push(input)
-      return Promise.resolve(sessionId)
+    return this.continueSession(session, input)
+  }
+
+  /**
+   * Starts a session. When the incident thread has persisted messages but no
+   * live session (app restart), the session is rebuilt from that history and
+   * the prompt continues it as a follow-up. `followUp` is the send() input.
+   */
+  private async startOrRestore(input: AgentStartInput, followUp?: AgentSendInput): Promise<string> {
+    if (this.shuttingDown) throw new Error('Agent runtime is shutting down')
+    const incidentThreadId = input.incidentThreadId !== undefined && input.incidentThreadId.length > 0
+      ? input.incidentThreadId
+      : undefined
+    const rejectIfIncidentSessionActive = () => {
+      if (incidentThreadId === undefined) return
+      if (this.findActiveIncidentSession(incidentThreadId) !== null) {
+        throw new Error(
+          'An agent session is already running for this incident. Wait for it to finish or cancel it before starting another response.',
+        )
+      }
+    }
+
+    rejectIfIncidentSessionActive()
+    const hasEarlierSession = incidentThreadId !== undefined && this.findMostRecentIncidentSession(incidentThreadId) !== null
+    const [{ proposals: persistedProposals, history }, storedQueue] = await Promise.all([
+      this.loadIncidentHistory(incidentThreadId),
+      hasEarlierSession ? null : this.loadStoredQueue(incidentThreadId),
+    ])
+    // Another send may have created the incident session while history was loading.
+    if (followUp !== undefined && incidentThreadId !== undefined
+      && this.findMostRecentIncidentSession(incidentThreadId) !== null) {
+      return this.send(followUp)
+    }
+    rejectIfIncidentSessionActive()
+    const earlierSession = incidentThreadId === undefined ? null : this.findMostRecentIncidentSession(incidentThreadId)
+
+    const sessionId = (history.length > 0 ? followUp?.sessionId : undefined) ?? randomUUID()
+    const timeoutMs = input.timeoutMs ?? DEFAULT_AGENT_SESSION_TIMEOUT_MS // 5 minutes for thinking models
+    const startedAt = new Date()
+
+    if (history.length > 0) {
+      log.info(`[agent-runtime:${sessionId}] Restoring incident session from ${String(history.length)} persisted messages`)
+      const session = this.createSession({
+        sessionId,
+        startedAt,
+        timeoutMs,
+        input,
+        proposals: persistedProposals,
+        history: trimMessageHistory(history.map(threadMessageToLlmMessage).filter((message) => message !== null)),
+        snapshot: {
+          sessionId,
+          startedAt: startedAt.toISOString(),
+          runtimeState: 'RUNNING',
+          threadState: 'RUNNING',
+          currentToolCallId: null,
+          messages: history,
+        },
+      })
+      this.takeOverIncidentQueue(session, earlierSession, storedQueue)
+      return this.continueSession(session, followUp ?? { ...input, message: input.prompt }, timeoutMs)
+    }
+
+    log.info(`[agent-runtime:${sessionId}] Starting session with timeout:`, timeoutMs)
+
+    const session = this.createSession({
+      sessionId,
+      startedAt,
+      timeoutMs,
+      input,
+      proposals: persistedProposals,
+      history: [{ role: 'user', content: createUserMessageContent(input.prompt, input.attachments) }],
+      snapshot: createAgentThreadSnapshot({
+        sessionId,
+        startedAt: startedAt.toISOString(),
+        runtimeState: 'RUNNING',
+        prompt: input.prompt,
+        attachments: toSnapshotAttachments(input.attachments),
+      }),
+    })
+    this.takeOverIncidentQueue(session, earlierSession, storedQueue)
+    this.armSessionTimeout(session, timeoutMs)
+
+    this.launchAgentLoop(session)
+
+    return sessionId
+  }
+
+  /** An incident's saved runbook drafts and thread, with a turn the app quit during settled. */
+  private async loadIncidentHistory(incidentThreadId: string | undefined): Promise<{ proposals: RunbookAuthoringProposal[]; history: ThreadChatMessage[] }> {
+    if (incidentThreadId === undefined) return { proposals: [], history: [] }
+    const [proposals, persistedMessages] = await Promise.all([
+      this.authoringProposalStore?.list(incidentThreadId) ?? [],
+      this.loadIncidentMessages?.(incidentThreadId) ?? [],
+    ])
+    const history = settleInterruptedAgentTurn(
+      persistedMessages.map(restoreThreadMessage).filter((message) => message !== null),
+      new Date().toISOString(),
+    )
+    return { proposals, history }
+  }
+
+  /** One session holds an incident's queue: a new session takes over the earlier session's queue, or the saved one. */
+  private takeOverIncidentQueue(session: AgentSession, earlierSession: AgentSession | null, storedQueue: StoredAgentQueue | null): void {
+    if (earlierSession !== null && earlierSession !== session && earlierSession.loopActive !== true) {
+      session.queuedFollowUps = earlierSession.queuedFollowUps.splice(0)
+      session.queueHeld = earlierSession.queueHeld && session.queuedFollowUps.length > 0
+      earlierSession.queueHeld = false
+    } else if (storedQueue !== null) {
+      adoptStoredQueue(session, storedQueue)
+    }
+  }
+
+  private continueSession(
+    session: AgentSession,
+    input: AgentSendInput,
+    timeoutMs = DEFAULT_AGENT_SESSION_TIMEOUT_MS,
+  ): string {
+    if (session.loopActive === true) {
+      // One loop owns a session's history at a time, including a stopped turn
+      // that is still winding down, so a message sent now waits its turn.
+      this.queueWhileLoopActive(session, input)
+      return session.id
     }
 
     if (session.state !== 'RUNNING') {
       session = this.prepareSessionForContinuation(session)
     }
 
-    log.info(`[agent-runtime:${sessionId}] Continuing session with message:`, input.message)
+    log.info(`[agent-runtime:${session.id}] Continuing session with message:`, input.message)
 
     if (input.runbookContext !== undefined) {
       session.runbookContext = input.runbookContext
@@ -1935,13 +2179,48 @@ export class AgentRuntimeService {
       runtimeState: session.state,
     })
 
-    this.armSessionTimeout(session, DEFAULT_AGENT_SESSION_TIMEOUT_MS)
+    this.armSessionTimeout(session, timeoutMs)
 
-    this.runAgentLoop(session).catch((error: unknown) => {
-      log.error(`[agent-runtime:${sessionId}] Unhandled loop error:`, error)
-    })
+    this.launchAgentLoop(session)
 
-    return Promise.resolve(sessionId)
+    return session.id
+  }
+
+  private createSession(params: {
+    sessionId: string
+    startedAt: Date
+    timeoutMs: number
+    input: Pick<AgentStartInput, 'runbookContext' | 'llm' | 'accessLevel' | 'traitValues' | 'incidentThreadId'>
+    proposals: RunbookAuthoringProposal[]
+    history: ChatMessage[]
+    snapshot: AgentThreadSnapshot
+  }): AgentSession {
+    const { sessionId, startedAt, input } = params
+    const session: AgentSession = {
+      id: sessionId,
+      state: 'RUNNING',
+      startedAt,
+      expiresAt: startedAt.getTime() + params.timeoutMs,
+      abortController: new AbortController(),
+      timeoutHandle: null,
+      currentToolCallId: null,
+      queuedFollowUps: [],
+      pendingSteers: [],
+      queueHeld: false,
+      windowGetter: this.windowGetter,
+      llmAdapter: this.llmAdapter,
+      runbookContext: input.runbookContext,
+      llmSelection: input.llm,
+      accessLevel: input.accessLevel,
+      traitValues: input.traitValues,
+      incidentThreadId: input.incidentThreadId,
+      runbookAuthoringProposals: params.proposals,
+      messages: [{ role: 'system', content: this.buildSystemPrompt(input.runbookContext) }, ...params.history],
+      snapshot: params.snapshot,
+      sequence: nextPayloadSequence(),
+    }
+    this.sessions.set(sessionId, session)
+    return session
   }
 
   /**
@@ -1969,6 +2248,53 @@ export class AgentRuntimeService {
   }
 
   /**
+   * Edit, remove, reorder or steer a queued follow-up, or resume a held queue.
+   */
+  updateQueue(input: AgentQueueUpdateInput): void {
+    const session = this.sessions.get(input.sessionId)
+    if (session === undefined) {
+      throw new Error(`Session not found: ${input.sessionId}`)
+    }
+
+    if (input.action === 'resume') {
+      session.queueHeld = false
+      if (session.loopActive !== true) {
+        this.startNextQueuedFollowUp(session)
+      }
+      this.publishQueue(session)
+      return
+    }
+
+    const found = findQueuedEntry(session, input.messageId)
+    if (found.entry.delivering === true) {
+      throw new Error('This steer is already on its way to the running turn.')
+    }
+    switch (input.action) {
+      case 'edit':
+        found.entry.input = { ...found.entry.input, message: input.message, attachments: input.attachments }
+        break
+      case 'remove':
+        found.list.splice(found.index, 1)
+        break
+      case 'reorder':
+        reorderQueuedEntry(session, found, input.beforeMessageId)
+        break
+      case 'steer':
+        if (found.list === session.queuedFollowUps) {
+          if (!this.canSteer(session) || !this.canSteerMessage(session, found.entry.input)) {
+            throw new Error('The running turn cannot take a steer.')
+          }
+          session.queuedFollowUps.splice(found.index, 1)
+          this.steerEntry(session, found.entry)
+        }
+        break
+    }
+
+    releaseHoldIfNothingWaits(session)
+    this.publishQueue(session)
+  }
+
+  /**
    * Get session status snapshot.
    *
    * @param sessionId - Session ID
@@ -1988,13 +2314,14 @@ export class AgentRuntimeService {
     }
   }
 
-  getSnapshot(sessionId: string): AgentThreadSnapshot {
+  getSnapshot(sessionId: string): AgentSnapshotReply {
     const session = this.sessions.get(sessionId)
     if (session === undefined) {
       throw new Error(`Session not found: ${sessionId}`)
     }
 
-    return session.snapshot
+    session.snapshot = this.withQueueState(session, session.snapshot)
+    return { ...session.snapshot, sequence: session.sequence }
   }
 
   async listRunbookAuthoringProposals(input: { sessionId?: string; incidentThreadId?: string }): Promise<RunbookAuthoringProposalReview[]> {
@@ -2374,6 +2701,8 @@ export class AgentRuntimeService {
           return
         }
 
+        this.applyPendingSteers(session)
+
         this.sendEvent(sessionId, {
           type: 'activity',
           timestamp: new Date().toISOString(),
@@ -2463,6 +2792,8 @@ export class AgentRuntimeService {
                     })
                   }
                 }
+              } else if (delta.type === 'steer_handle') {
+                this.acceptSteerHandle(session, delta.steer)
               } else if (delta.type === 'token_usage') {
                 observedIteration.tokenUsage = delta.tokenUsage
                 this.sendEvent(sessionId, {
@@ -2474,6 +2805,11 @@ export class AgentRuntimeService {
                 },
               }),
           })
+
+        if (isAbortSignalAborted(abortController.signal)) {
+          session.state = 'CANCELLED'
+          return
+        }
 
         const toolResponseFallbackText = this.buildVisibleRunbookFallbackResponse(
           fallbackResultsForThisLlmCall,
@@ -2688,17 +3024,7 @@ export class AgentRuntimeService {
           ? completedToolResults
           : null
 
-        // Trim message history if it's getting too long
-        if (session.messages.length > MAX_MESSAGE_HISTORY) {
-          // Keep system message and recent messages
-          const systemMessage = session.messages.find((m) => m.role === 'system')
-          const recentMessages = session.messages.slice(-MAX_MESSAGE_HISTORY)
-          if (systemMessage !== undefined) {
-            session.messages = [systemMessage, ...recentMessages.filter((m) => m.role !== 'system')]
-          } else {
-            session.messages = recentMessages
-          }
-        }
+        session.messages = trimMessageHistory(session.messages)
       }
 
       // Max iterations reached
@@ -2730,13 +3056,304 @@ export class AgentRuntimeService {
       session.currentTurnHostToolCalls = undefined
       session.currentTurnVisibleRunbookExecutionIds = undefined
       session.currentTurnId = undefined
-      const queuedFollowUp = session.queuedFollowUps.shift()
-      if (queuedFollowUp !== undefined && session.state !== 'CANCELLED') {
-        void this.send({ ...queuedFollowUp, sessionId: session.id }).catch((error: unknown) => {
-          log.error(`[agent-runtime:${session.id}] Queued follow-up failed:`, error)
-        })
-      }
+      this.settleQueueAfterTurn(session)
+      session.completedAt = Date.now()
+      this.evictCompletedSessions()
     }
+  }
+
+  /**
+   * Whether the running turn can take a steer. The direct API tool loop adds the steer before its next model call.
+   * Codex and Claude Code take it through their providers' mid-turn input while their turn runs. Other coding agent
+   * CLIs run the whole turn as one subprocess call that cannot take input, so a steer for them is queued.
+   */
+  private canSteer(session: AgentSession): boolean {
+    return (
+      session.loopActive === true &&
+      session.state === 'RUNNING' &&
+      (getLocalCodingAgentProviderKey(session.llmSelection) === null || session.activeTurnSteer !== undefined)
+    )
+  }
+
+  /**
+   * Steers the running turn. The direct API loop takes the steer before its
+   * next model call. A coding agent takes it through its provider right away;
+   * the steer joins the history only once the provider accepts it, and goes
+   * back to the front of the queue if the provider refuses it, so it is never
+   * lost and never sent twice.
+   */
+  private steerEntry(session: AgentSession, entry: QueuedFollowUp): void {
+    session.pendingSteers.push(entry)
+    const deliver = session.activeTurnSteer
+    if (deliver === undefined) {
+      return
+    }
+
+    entry.delivering = true
+    const turnId = session.currentTurnId
+    deliver(entry.input.message).then(
+      () => {
+        entry.delivering = false
+        removeEntry(session.pendingSteers, entry)
+        releaseHoldIfNothingWaits(session)
+        this.recordDeliveredSteer(session, entry, turnId)
+        this.publishQueue(session)
+      },
+      (error: unknown) => {
+        log.warn(`[agent-runtime:${session.id}] Steer refused by the provider; queueing it instead:`, getErrorMessage(error))
+        entry.delivering = false
+        removeEntry(session.pendingSteers, entry)
+        session.queuedFollowUps.unshift(entry)
+        if (session.loopActive !== true) {
+          this.startNextQueuedFollowUp(session)
+        }
+        this.publishQueue(session)
+      },
+    )
+  }
+
+  private recordDeliveredSteer(session: AgentSession, entry: QueuedFollowUp, turnId: string | undefined): void {
+    const userMessage: ChatMessage = {
+      role: 'user',
+      content: createUserMessageContent(entry.input.message, entry.input.attachments),
+    }
+    if (turnId !== undefined && session.currentTurnId === turnId) {
+      session.messages.push(userMessage)
+      session.snapshot = appendSteerToThreadSnapshot(session.snapshot, {
+        prompt: entry.input.message,
+        timestamp: new Date().toISOString(),
+      })
+      return
+    }
+
+    // The turn ended while the provider accepted the steer, so the steer
+    // belongs before that turn's answer.
+    const lastAssistantIndex = session.messages.map((message) => message.role).lastIndexOf('assistant')
+    session.messages.splice(lastAssistantIndex === -1 ? session.messages.length : lastAssistantIndex, 0, userMessage)
+    session.snapshot = insertUserMessageBeforeLastAgentMessage(session.snapshot, entry.input.message)
+  }
+
+  private queueWhileLoopActive(session: AgentSession, input: AgentSendInput): void {
+    const entry: QueuedFollowUp = {
+      id: randomUUID(),
+      input,
+      queuedAt: new Date().toISOString(),
+      runAfterHold: session.state !== 'RUNNING',
+    }
+    if (input.delivery === 'steer' && this.canSteer(session) && this.canSteerMessage(session, input)) {
+      this.steerEntry(session, entry)
+    } else {
+      session.queuedFollowUps.push(entry)
+    }
+    this.publishQueue(session)
+  }
+
+  /** Holds the running coding agent turn's steer handle. A handle from a turn that ended or was stopped is stale. */
+  private acceptSteerHandle(session: AgentSession, steer: ((text: string) => Promise<void>) | null): void {
+    const turnIsLive = session.loopActive === true && session.state === 'RUNNING'
+    session.activeTurnSteer = steer !== null && turnIsLive ? steer : undefined
+    this.publishQueue(session)
+  }
+
+  /** A coding agent steer carries text only, so a message with attachments waits for the next turn. */
+  private canSteerMessage(session: AgentSession, input: AgentSendInput): boolean {
+    return session.activeTurnSteer === undefined || (input.attachments?.length ?? 0) === 0
+  }
+
+  /**
+   * Adds waiting steers to the history before the next model call. The previous
+   * call's tool results are already in place, so tool calls stay paired with
+   * their results.
+   */
+  private applyPendingSteers(session: AgentSession): void {
+    const steers = session.pendingSteers.filter((entry) => entry.delivering !== true)
+    if (steers.length === 0) {
+      return
+    }
+    session.pendingSteers = session.pendingSteers.filter((entry) => entry.delivering === true)
+
+    const timestamp = new Date().toISOString()
+    for (const steer of steers) {
+      log.info(`[agent-runtime:${session.id}] Steering the running turn`)
+      session.messages.push({
+        role: 'user',
+        content: createUserMessageContent(steer.input.message, steer.input.attachments),
+      })
+      session.snapshot = appendSteerToThreadSnapshot(session.snapshot, {
+        prompt: steer.input.message,
+        attachments: toSnapshotAttachments(steer.input.attachments),
+        timestamp,
+      })
+    }
+    this.publishQueue(session)
+  }
+
+  /**
+   * Runs after every turn. A steer the turn ended before taking becomes the
+   * next follow-up. A stop, timeout or failure holds the queue so nothing runs
+   * against a turn the engineer stopped or a provider that just failed.
+   */
+  private settleQueueAfterTurn(session: AgentSession): void {
+    session.activeTurnSteer = undefined
+    // A steer still on its way to the provider settles by itself.
+    const missedSteers = session.pendingSteers.filter((entry) => entry.delivering !== true)
+    session.pendingSteers = session.pendingSteers.filter((entry) => entry.delivering === true)
+    session.queuedFollowUps.unshift(...missedSteers)
+    // A steer still in flight may come back refused; after a stop it must wait too.
+    const waiting = session.queuedFollowUps.length + session.pendingSteers.length
+    if (waiting > 0 && (session.state === 'CANCELLED' || session.state === 'FAILED')) {
+      session.queueHeld = true
+    }
+    this.startNextQueuedFollowUp(session)
+    this.publishQueue(session)
+  }
+
+  private startNextQueuedFollowUp(session: AgentSession): void {
+    const nextIndex = session.queueHeld
+      ? session.queuedFollowUps.findIndex((entry) => entry.runAfterHold)
+      : 0
+    for (const entry of session.queuedFollowUps) {
+      entry.runAfterHold = false
+    }
+    if (nextIndex === -1 || nextIndex >= session.queuedFollowUps.length) {
+      return
+    }
+
+    const [next] = session.queuedFollowUps.splice(nextIndex, 1)
+    releaseHoldIfNothingWaits(session)
+    void this.send({ ...next.input, sessionId: session.id, delivery: undefined }).catch((error: unknown) => {
+      log.error(`[agent-runtime:${session.id}] Queued follow-up failed to start:`, error)
+      session.queuedFollowUps.unshift(next)
+      session.queueHeld = true
+      this.publishQueue(session)
+    })
+  }
+
+  /** The snapshot with the session's queue state; the same snapshot when nothing in the queue changed. */
+  private withQueueState(session: AgentSession, snapshot: AgentThreadSnapshot): AgentThreadSnapshot {
+    const toQueuedMessage = (entry: QueuedFollowUp, steer: boolean): AgentQueuedMessage => ({
+      id: entry.id,
+      text: entry.input.message,
+      attachments: toSnapshotAttachments(entry.input.attachments),
+      queuedAt: entry.queuedAt,
+      steer,
+    })
+    const queuedMessages = [
+      ...session.pendingSteers.map((entry) => toQueuedMessage(entry, true)),
+      ...session.queuedFollowUps.map((entry) => toQueuedMessage(entry, false)),
+    ]
+    const canSteer = this.canSteer(session)
+    if (
+      snapshot.queueHeld === session.queueHeld &&
+      snapshot.canSteer === canSteer &&
+      sameQueuedMessages(snapshot.queuedMessages ?? [], queuedMessages)
+    ) {
+      return snapshot
+    }
+    return { ...snapshot, queuedMessages, queueHeld: session.queueHeld, canSteer }
+  }
+
+  private publishQueue(session: AgentSession): void {
+    this.sendEvent(session.id, {
+      type: 'queue_updated',
+      timestamp: new Date().toISOString(),
+    })
+    this.persistQueue(session)
+  }
+
+  /** Keeps an incident's queue in the store, so it survives the app quitting, like T3 Code's queued runs. */
+  private persistQueue(session: AgentSession): void {
+    const store = this.queueStore
+    const incidentThreadId = session.incidentThreadId
+    if (store === undefined || incidentThreadId === undefined || incidentThreadId.length === 0) {
+      return
+    }
+    const queue: StoredAgentQueue = {
+      held: session.queueHeld,
+      messages: [...session.pendingSteers, ...session.queuedFollowUps].map((entry) => ({
+        id: entry.id,
+        input: entry.input,
+        queuedAt: entry.queuedAt,
+      })),
+    }
+    const signature = JSON.stringify(queue)
+    const previous = this.queuePersistence.get(incidentThreadId)
+    if (previous?.signature === signature) {
+      return
+    }
+    const write = (previous?.write ?? Promise.resolve())
+      .then(() => store.save(incidentThreadId, queue))
+      .catch((error: unknown) => {
+        log.warn(`[agent-runtime:${session.id}] Could not save the queue:`, getErrorMessage(error))
+      })
+    this.queuePersistence.set(incidentThreadId, { signature, write })
+  }
+
+  private async loadStoredQueue(incidentThreadId: string | undefined): Promise<StoredAgentQueue | null> {
+    if (this.queueStore === undefined || incidentThreadId === undefined || incidentThreadId.length === 0) {
+      return null
+    }
+    // A write still in progress is newer than what the store holds.
+    await this.queuePersistence.get(incidentThreadId)?.write
+    try {
+      return await this.queueStore.load(incidentThreadId)
+    } catch (error) {
+      log.warn(`[agent-runtime] Could not load the queue for incident ${incidentThreadId}:`, getErrorMessage(error))
+      return null
+    }
+  }
+
+  /**
+   * The incident's queue, after an app restart too. A stored queue comes back
+   * paused in a new idle session: the turn it was waiting for ended with the
+   * app, so nothing runs until the engineer resumes it.
+   */
+  async restoreQueue(incidentThreadId: string): Promise<{ sessionId: string; snapshot: AgentSnapshotReply } | null> {
+    const live = this.findMostRecentIncidentSession(incidentThreadId)
+    if (live !== null) {
+      return { sessionId: live.id, snapshot: this.getSnapshot(live.id) }
+    }
+    const storedQueue = await this.loadStoredQueue(incidentThreadId)
+    if (storedQueue === null) {
+      return null
+    }
+    const { proposals, history } = await this.loadIncidentHistory(incidentThreadId)
+    const raced = this.findMostRecentIncidentSession(incidentThreadId)
+    if (raced !== null) {
+      return { sessionId: raced.id, snapshot: this.getSnapshot(raced.id) }
+    }
+
+    // Rebuilt from the saved thread, like a restored session, so the queued messages continue the conversation.
+    const sessionId = randomUUID()
+    const startedAt = new Date()
+    const firstInput = storedQueue.messages[0]?.input
+    const session = this.createSession({
+      sessionId,
+      startedAt,
+      timeoutMs: DEFAULT_AGENT_SESSION_TIMEOUT_MS,
+      input: {
+        runbookContext: firstInput?.runbookContext,
+        llm: firstInput?.llm,
+        accessLevel: firstInput?.accessLevel,
+        traitValues: firstInput?.traitValues,
+        incidentThreadId,
+      },
+      proposals,
+      history: trimMessageHistory(history.map(threadMessageToLlmMessage).filter((message) => message !== null)),
+      snapshot: {
+        sessionId,
+        startedAt: startedAt.toISOString(),
+        runtimeState: 'COMPLETED',
+        threadState: 'COMPLETED',
+        currentToolCallId: null,
+        messages: history,
+      },
+    })
+    // Nothing runs until the engineer resumes, so the session waits like a finished one.
+    session.state = 'COMPLETED'
+    session.persistedMessages = history
+    adoptStoredQueue(session, storedQueue)
+    return { sessionId, snapshot: this.getSnapshot(sessionId) }
   }
 
   /**
@@ -2827,22 +3444,129 @@ export class AgentRuntimeService {
   private sendEvent(sessionId: string, event: AgentEventData): void {
     const session = this.sessions.get(sessionId)
     if (session !== undefined) {
-      session.snapshot = reduceAgentThreadSnapshot(setAgentThreadRuntimeState(session.snapshot, session.state), event)
-      session.snapshot = {
-        ...session.snapshot,
-        currentToolCallId: session.currentToolCallId,
+      const previous = session.snapshot
+      let next = reduceAgentThreadSnapshot(setAgentThreadRuntimeState(previous, session.state), event)
+      if (next.currentToolCallId !== session.currentToolCallId) {
+        next = { ...next, currentToolCallId: session.currentToolCallId }
       }
+      const withQueue = this.withQueueState(session, next)
+      // A changed-message update carries no queue state, so a queue change goes out as a full snapshot.
+      const queueChanged = withQueue !== next
+      next = withQueue
+      session.snapshot = next
+
+      if (COALESCED_EVENT_TYPES.has(event.type) && !queueChanged) {
+        if (next === previous) return
+        session.pendingStreamEvent = event
+        session.streamFlushTimer ??= setTimeout(() => { this.flushStreamUpdate(session) }, STREAM_FLUSH_INTERVAL_MS)
+        return
+      }
+      // Keep ordering: the pending streamed text goes out before this event.
+      this.flushStreamUpdate(session)
+      this.sendSnapshot(session, event)
+      return
     }
 
+    this.postToRenderer({ sessionId, kind: 'snapshot', sequence: 0, event }, event.type)
+  }
+
+  private stampSequence(session: AgentSession): number {
+    session.sequence = nextPayloadSequence()
+    return session.sequence
+  }
+
+  private sendSnapshot(session: AgentSession, event: AgentEventData): void {
+    session.lastSentMessageCount = session.snapshot.messages.length
+    this.postToRenderer({
+      sessionId: session.id,
+      kind: 'snapshot',
+      sequence: this.stampSequence(session),
+      event,
+      snapshot: session.snapshot,
+    }, event.type)
+    this.persistIncidentMessages(session)
+  }
+
+  /** Writes the snapshot messages; requests during a running write collapse into one write of the latest. */
+  private persistIncidentMessages(session: AgentSession): void {
+    const save = this.saveIncidentMessages
+    if (save === undefined || session.incidentThreadId === undefined) return
+    if (session.snapshot.messages === session.persistedMessages) return
+    session.pendingIncidentMessages = session.snapshot.messages
+    session.incidentSave ??= this.writeIncidentMessages(session, save)
+  }
+
+  private async writeIncidentMessages(session: AgentSession, save: AgentRuntimeIncidentHistorySaver): Promise<void> {
+    let messages = session.pendingIncidentMessages
+    while (messages !== undefined) {
+      session.pendingIncidentMessages = undefined
+      try {
+        await save(session.incidentThreadId ?? '', messages, changedMessageIndexes(messages, session.persistedMessages))
+        // Set only on success, so a failed write is diffed again by the next request or destroy().
+        session.persistedMessages = messages
+      } catch (error) {
+        log.warn(`[agent-runtime:${session.id}] Failed to persist incident messages:`, error)
+      }
+      messages = session.pendingIncidentMessages
+    }
+    session.incidentSave = undefined
+    this.evictCompletedSessions()
+  }
+
+  private flushStreamUpdate(session: AgentSession): void {
+    if (session.streamFlushTimer === undefined) return
+    clearTimeout(session.streamFlushTimer)
+    session.streamFlushTimer = undefined
+
+    const event = session.pendingStreamEvent
+    session.pendingStreamEvent = undefined
+
+    const { snapshot } = session
+    // A queued follow-up appends messages without a structural event, and a
+    // single-message update can't apply to a renderer cache of another length.
+    if (event !== undefined && snapshot.messages.length !== session.lastSentMessageCount) {
+      this.sendSnapshot(session, event)
+      return
+    }
+    const messageIndex = findLastAgentMessageIndex(snapshot.messages)
+    const message = snapshot.messages[messageIndex]
+    if (message === undefined) return
+    session.lastSentMessageCount = snapshot.messages.length
+    this.postToRenderer({
+      sessionId: session.id,
+      kind: 'message',
+      sequence: this.stampSequence(session),
+      messageCount: snapshot.messages.length,
+      messageIndex,
+      message,
+      threadState: snapshot.threadState,
+      runtimeState: snapshot.runtimeState,
+      tokenUsage: snapshot.tokenUsage,
+      currentToolCallId: snapshot.currentToolCallId,
+    }, 'message')
+    // Text-only answers have no structural events, so persist every coalesced update;
+    // a write in flight collapses later requests into one write of the latest messages.
+    this.persistIncidentMessages(session)
+  }
+
+  private evictCompletedSessions(): void {
+    if (this.loadIncidentMessages === undefined) return
+    const completed = [...this.sessions.values()].filter((session) =>
+      session.completedAt !== undefined && session.state !== 'RUNNING' && session.loopActive !== true &&
+      session.queuedFollowUps.length === 0 && session.pendingSteers.length === 0 &&
+      session.incidentSave === undefined && session.pendingIncidentMessages === undefined &&
+      session.streamFlushTimer === undefined &&
+      session.persistedMessages === session.snapshot.messages,
+    ).sort((a, b) => (b.completedAt ?? 0) - (a.completedAt ?? 0))
+    for (const session of completed.slice(RETAINED_COMPLETED_SESSIONS)) this.sessions.delete(session.id)
+  }
+
+  private postToRenderer(payload: AgentRuntimeEventPayload, label: string): void {
     const win = this.windowGetter()
     if (win !== null && !win.isDestroyed()) {
-      win.webContents.send(CHANNEL_EVENT, {
-        sessionId,
-        event,
-        snapshot: session?.snapshot,
-      })
+      win.webContents.send(CHANNEL_EVENT, payload)
     } else {
-      log.warn(`[agent-runtime:${sessionId}] No window to send event:`, event.type)
+      log.warn(`[agent-runtime:${payload.sessionId}] No window to send event:`, label)
     }
   }
 
@@ -2871,16 +3595,52 @@ export class AgentRuntimeService {
     this.cancel(sessionId)
   }
 
+  private launchAgentLoop(session: AgentSession): void {
+    const loop: Promise<void> = this.runAgentLoop(session)
+      .catch((error: unknown) => {
+        log.error(`[agent-runtime:${session.id}] Unhandled loop error:`, error)
+      })
+      .finally(() => {
+        this.activeLoops.delete(loop)
+      })
+    this.activeLoops.add(loop)
+  }
+
   /**
-   * Cleanup on app shutdown.
+   * Cleanup on app shutdown: aborts every session and waits (bounded) for the
+   * running loops, including their tool subprocesses, to finish.
    */
-  destroy(): void {
+  async destroy(): Promise<void> {
     log.info('[agent-runtime] Destroying all sessions')
+    this.shuttingDown = true
+    const incidentSaves: Promise<void>[] = []
     for (const session of this.sessions.values()) {
       this.clearSessionTimeout(session)
+      clearTimeout(session.streamFlushTimer)
+      session.streamFlushTimer = undefined
+      session.pendingStreamEvent = undefined
+      // A queued follow-up would otherwise restore a fresh session once the loop unwinds.
+      session.queuedFollowUps = []
+      session.pendingSteers = []
       session.abortController.abort()
+      // Streamed text since the last structural event is only in the snapshot.
+      this.persistIncidentMessages(session)
+      if (session.incidentSave !== undefined) incidentSaves.push(session.incidentSave)
     }
     this.sessions.clear()
+
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const settled = await Promise.race([
+      Promise.allSettled(this.activeLoops).then(() => true),
+      new Promise<false>((resolve) => { timer = setTimeout(() => { resolve(false) }, AGENT_LOOP_SHUTDOWN_WAIT_MS) }),
+    ])
+    clearTimeout(timer)
+    if (!settled) {
+      log.warn(`[agent-runtime] ${String(this.activeLoops.size)} session loop(s) still running after shutdown wait`)
+    }
+    await Promise.all(incidentSaves)
+    // A failed update install keeps the app running, so the runtime must be usable again.
+    this.shuttingDown = false
   }
 
   private hasRunbookTools(): boolean {
@@ -3795,8 +4555,7 @@ export class AgentRuntimeService {
     for (const runbook of runbooks) {
       this.appendRunbookListSummary(lines, runbook)
     }
-    lines.push('Choose only from the exact runbook titles above. Do not invent runbook titles or IDs.')
-    lines.push('Summarize the available runbooks for the user in clean Markdown.')
+    lines.push('Choose only from the exact runbook titles above. Do not invent runbook titles or IDs.', 'Summarize the available runbooks for the user in clean Markdown.')
 
     return lines.join('\n')
   }
@@ -3824,8 +4583,7 @@ export class AgentRuntimeService {
       return
     }
 
-    lines.push('  Parameters:')
-    lines.push(...formatRunbookParameterSummary(parameters).map((parameter) => `  ${parameter}`))
+    lines.push('  Parameters:', ...formatRunbookParameterSummary(parameters).map((parameter) => `  ${parameter}`))
   }
 
   private buildDirectRunbookExecutionConversationContent(
@@ -3929,8 +4687,7 @@ export class AgentRuntimeService {
     const finalStructuredOutput = readRecordProperty(executionSummary, 'finalStructuredOutput')
     const structuredIssues = readRecordArrayProperty(finalStructuredOutput, 'issues')
     if (structuredIssues.length > 0) {
-      lines.push(`- Structured issue preview (top ${String(structuredIssues.length)}):`)
-      lines.push(...formatStructuredIssuePreview(structuredIssues).map((issue) => `  ${issue}`))
+      lines.push(`- Structured issue preview (top ${String(structuredIssues.length)}):`, ...formatStructuredIssuePreview(structuredIssues).map((issue) => `  ${issue}`))
       const issueCount = readNumberProperty(finalStructuredOutput, 'issueCount')
       if (finalStructuredOutput?.issuesTruncated === true && issueCount !== null) {
         lines.push(`- ${String(issueCount - structuredIssues.length)} more issues remain in Runbook Results.`)
@@ -4089,7 +4846,7 @@ export class AgentRuntimeService {
 
     const mergedValues = {
       ...session.latestJournalTimeWindowParameters,
-      ...(explicitValues ?? {}),
+      ...explicitValues,
     }
 
     for (const key of ['since', 'until']) {

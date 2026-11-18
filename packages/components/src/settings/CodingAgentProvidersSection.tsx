@@ -10,6 +10,7 @@ import {
 } from '@bitsentry-ce/components/llm/modelCatalog'
 import { useTranslation } from '@bitsentry-ce/i18n'
 import { resolveSyncedDefaultModel } from './model-selection'
+import { settingsDescriptionClass, settingsPageTitleClass } from './SettingsRow'
 import {
   mergeDiscoveredModelIds,
   publishDiscoveredModels,
@@ -369,10 +370,10 @@ function getSyncButtonText(
 
 function getSyncMessageClass(syncState: SyncState): string {
   if (syncState === 'error') {
-    return 'mt-1 text-[11px] text-[hsl(var(--destructive))]'
+    return 'mt-1 text-xs text-[hsl(var(--destructive-text))]'
   }
 
-  return 'mt-1 text-[11px] text-muted-foreground'
+  return 'mt-1 text-xs text-muted-foreground'
 }
 
 function getDetectButtonText(
@@ -490,7 +491,7 @@ function ProviderBinarySettings({
         </Button>
       </div>
       {probeStatusText !== null && (
-        <p className={`mt-1 text-[11px] ${probeStatusClass}`}>
+        <p className={`mt-1 text-xs ${probeStatusClass}`}>
           {probeStatusText}
         </p>
       )}
@@ -985,27 +986,27 @@ export function CodingAgentProvidersSection({
           description: t('settings.localCliProviders.binaryPathDetected'),
         })
         return result
-      } else {
-        captureDesktopAnalyticsEvent('desktop_coding_agent_detection_failed', {
-          provider,
-        })
-        captureRendererException(
-          new Error(`Failed to detect ${provider} binary`),
-          {
-            provider,
-            operation: 'detect',
-            preferredBinaryPath: preferredBinaryPath ?? null,
-          },
-        )
-        toast({
-          title: t('settings.localCliProviders.notFound'),
-          description: t('settings.localCliProviders.binaryNotFoundOnPath', {
-            binary: providerBinaryName(provider),
-          }),
-          variant: 'destructive',
-        })
-        return null
       }
+
+      captureDesktopAnalyticsEvent('desktop_coding_agent_detection_failed', {
+        provider,
+      })
+      captureRendererException(
+        new Error(`Failed to detect ${provider} binary`),
+        {
+          provider,
+          operation: 'detect',
+          preferredBinaryPath: preferredBinaryPath ?? null,
+        },
+      )
+      toast({
+        title: t('settings.localCliProviders.notFound'),
+        description: t('settings.localCliProviders.binaryNotFoundOnPath', {
+          binary: providerBinaryName(provider),
+        }),
+        variant: 'destructive',
+      })
+      return null
     },
     [
       captureDesktopAnalyticsEvent,
@@ -1154,11 +1155,11 @@ export function CodingAgentProvidersSection({
       data-tour="settings-coding-agents"
       className="scroll-mt-24"
     >
-      <div className="mb-4">
-        <h2 className="text-sm font-semibold text-foreground">
+      <div className="mb-6">
+        <h2 className={settingsPageTitleClass}>
           {t('navigation.navbar.codingAgents')}
         </h2>
-        <p className="text-xs text-muted-foreground">
+        <p className={`mt-1 ${settingsDescriptionClass}`}>
           {t('settings.localCliProviders.connectLocalCodingAgents')}
         </p>
       </div>

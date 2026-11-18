@@ -34,6 +34,7 @@
     "electron.vite.config.ts",
     "tailwind.config.ts",
     "vite.cli.config.ts",
-    "vitest.config.ts"
+    "vitest.config.ts",
+    "vitest.browser.config.ts"
   ]
 }

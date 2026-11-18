@@ -19,7 +19,6 @@
  *     --locale fr-FR --locale zh-CN --locale id-ID
  *
  * Notes:
- * - `id-ID/emails.json` keys carried over from Phase 1 are preserved (not re-translated).
  * - `en-GB`/`en-AU` use a separate spelling-override flow (not handled here).
  * - The system prompt is cached (5-minute TTL) so the second locale/namespace
  *   in a session reuses the cached prefix.
@@ -115,9 +114,6 @@ async function main() {
     }
 
     const sourceDir = path.join(LOCALES_DIR, SOURCE_LOCALE);
-    // For id-ID/emails, the script's idempotent --force-off behavior preserves
-    // the 3 human-curated keys (confirmEmail/confirmNewEmail/resetPassword)
-    // and only translates additional keys like magicLink/emailOtp.
     const namespaces = NAMESPACES ?? listNamespaces(sourceDir);
 
     for (const ns of namespaces) {

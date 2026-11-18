@@ -14,7 +14,6 @@ import { executeShellCommandTool } from '../capabilities/execute-shell-command.c
 import { executeHttpRequestTool } from '../capabilities/execute-http-request.capability'
 
 export type { ToolDefinition } from '../types'
-export { sshJournalQueryTool, listLogSourcesTool, getCheckpointTool, executeShellCommandTool, executeHttpRequestTool }
 
 /**
  * Tool registry with all available tools.
@@ -24,7 +23,7 @@ export { sshJournalQueryTool, listLogSourcesTool, getCheckpointTool, executeShel
  * - All tool inputs are schema-validated before execution
  * - All tools execute in main process only
  */
-export const toolRegistry: Record<string, ToolDefinition> = {
+const toolRegistry: Record<string, ToolDefinition> = {
   ssh_journal_query: sshJournalQueryTool as ToolDefinition,
   list_log_sources: listLogSourcesTool,
   get_checkpoint: getCheckpointTool,

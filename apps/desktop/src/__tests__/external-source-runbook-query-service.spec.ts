@@ -381,4 +381,65 @@ describe('ExternalSourceRunbookQueryService code plugin queries', () => {
       },
     })
   })
+
+  it('routes custom error-source families through declared plugin query actions', async () => {
+    const output = [
+      'Source: Production Bugsnag (bugsnag)',
+      'Query: timeout',
+      'Results: 1',
+      '1. Database timeout - #err-1 - project=checkout-api',
+    ].join('\n')
+    const source: ErrorSource = {
+      ...makeSentrySource(),
+      id: 'source-bugsnag',
+      sourceType: 'bugsnag',
+      name: 'Production Bugsnag',
+      accessTokenRef: 'bugsnag-token',
+      configuration: { baseUrl: 'https://bugsnag.example.com', projectIds: ['checkout-api'] },
+      additionalMetadata: { pluginId: 'bugsnag-query' },
+    }
+    const pluginRuntime = new TestPluginRuntimeService([{
+      id: 'bugsnag-query',
+      name: 'bugsnag-query',
+      version: '1.0.0',
+      description: 'Plugin query fixture',
+      type: 'data_source',
+      metadata: { dataSource: { sourceType: 'bugsnag', setupFields: [] } },
+      auth: { fields: [] },
+      actions: [createProviderAction('query_issues')],
+    }])
+    pluginRuntime.executeActionMock.mockResolvedValue({
+      pluginId: 'bugsnag-query',
+      actionId: 'query_issues',
+      ok: true,
+      status: 200,
+      summary: 'Fetched 1 Bugsnag issue.',
+      data: { output },
+    })
+    const service = new ExternalSourceRunbookQueryService(
+      {
+        findById: (id) => Promise.resolve(id === source.id ? source : null),
+        update: () => {
+          throw new Error('update should not be called for custom plugin queries')
+        },
+      },
+      undefined,
+      pluginRuntime,
+    )
+
+    await expect(service.execute({ sourceId: source.id, query: 'timeout' })).resolves.toBe(output)
+    expect(pluginRuntime.executeActionMock).toHaveBeenCalledWith({
+      pluginId: 'bugsnag-query',
+      actionId: 'query_issues',
+      auth: expect.objectContaining({ baseUrl: 'https://bugsnag.example.com', accessToken: 'bugsnag-token' }),
+      input: {
+        query: 'timeout',
+        projectIds: ['checkout-api'],
+        limit: 20,
+        sourceId: 'source-bugsnag',
+        sourceName: 'Production Bugsnag',
+        sourceType: 'bugsnag',
+      },
+    })
+  })
 })

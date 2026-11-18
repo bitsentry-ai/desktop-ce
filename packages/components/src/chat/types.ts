@@ -35,10 +35,15 @@ export interface ToolCallCard {
   toolCallId: string;
   toolName: string;
   state: "running" | "done" | "failed";
+  /** When the tool started and ended; places the call among the turn's text. */
+  startedAt?: string;
+  completedAt?: string;
   error?: string;
   input?: Record<string, unknown>;
   output?: string;
   modelContext?: string;
+  /** Latest progress line of a running tool, such as checked and remaining counts. */
+  progress?: string;
 }
 
 export interface StreamDeltaRecord {
@@ -68,18 +73,23 @@ export interface AgentIteration {
   startedAt: string;
   completedAt?: string;
   text: string;
-  streamDeltas?: StreamDeltaRecord[];
+  /** Set once a command_output delta streamed into this iteration. */
+  hasCommandOutput?: true;
+  /** When the iteration's first text streamed in; the timeline places the text there among its tool calls. */
+  textStartedAt?: string;
   toolCallIds: string[];
   status: "thinking" | "streaming" | "done" | "error";
 }
 
 export type ChatMessage =
   | {
+      id?: string;
       kind: "user";
       text: string;
       attachments?: ComposerAttachment[];
     }
   | {
+      id?: string;
       kind: "agent";
       iterations: AgentIteration[];
       activeIterationId: string | null;
@@ -91,6 +101,16 @@ export type ChatMessage =
       errorCode?: AgentErrorCode;
     };
 
+/** A follow-up waiting for the running turn to finish. */
+export interface AgentQueuedMessage {
+  id: string;
+  text: string;
+  attachments?: ComposerAttachment[];
+  queuedAt: string;
+  /** Waiting to join the running turn as a steer rather than to run after it. */
+  steer?: boolean;
+}
+
 export interface AgentThreadSnapshot {
   sessionId: string;
   startedAt: string;
@@ -99,6 +119,38 @@ export interface AgentThreadSnapshot {
   currentToolCallId: string | null;
   messages: ChatMessage[];
   tokenUsage?: AgentThreadTokenUsage;
+  /** Follow-ups that run one at a time once the current turn ends. */
+  queuedMessages?: AgentQueuedMessage[];
+  /** True after a stop, timeout or failure: queued follow-ups wait for an explicit resume. */
+  queueHeld?: boolean;
+  /** True while the running turn can take a steer: a message added before its next model call. */
+  canSteer?: boolean;
+}
+
+/** agent.getSnapshot reply: `sequence` is that of the last payload sent for the session. */
+export type AgentSnapshotReply = AgentThreadSnapshot & { sequence: number };
+
+/**
+ * Payloads on the "bitsentry:agent:event" channel. Structural events carry the
+ * full snapshot; coalesced streaming updates (every 50 ms at most) carry only
+ * the last agent message, the one deltas touch. `sequence` increases with
+ * every payload of a session, so the renderer can drop stale ones.
+ */
+export type AgentEventPayload<TEvent = unknown, TSnapshot = AgentThreadSnapshot> =
+  | { sessionId: string; kind: "snapshot"; sequence: number; event: TEvent; snapshot?: TSnapshot }
+  | AgentMessageUpdatePayload;
+
+export interface AgentMessageUpdatePayload {
+  sessionId: string;
+  kind: "message";
+  sequence: number;
+  messageCount: number;
+  messageIndex: number;
+  message: ChatMessage;
+  threadState: AgentSessionState;
+  runtimeState: AgentSessionState;
+  tokenUsage?: AgentThreadTokenUsage;
+  currentToolCallId: string | null;
 }
 
 export interface SavedProviderConfig {

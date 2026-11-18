@@ -157,6 +157,10 @@
       "types": "./dist/features/agent-runtime/shared/effect-orchestration.d.ts",
       "default": "./dist/features/agent-runtime/shared/effect-orchestration.js"
     },
+    "./features/agent-runtime/shared/local-process": {
+      "types": "./dist/features/agent-runtime/shared/local-process.d.ts",
+      "default": "./dist/features/agent-runtime/shared/local-process.js"
+    },
     "./features/agent-runtime/shared/ssh-journal-query-builder": {
       "types": "./dist/features/agent-runtime/shared/ssh-journal-query-builder.d.ts",
       "default": "./dist/features/agent-runtime/shared/ssh-journal-query-builder.js"
@@ -196,6 +200,18 @@
     "./features/runbooks/authoring": {
       "types": "./dist/features/runbooks/authoring.d.ts",
       "default": "./dist/features/runbooks/authoring.js"
+    },
+    "./features/runbooks/runbooks.schemas": {
+      "types": "./dist/features/runbooks/runbooks.schemas.d.ts",
+      "default": "./dist/features/runbooks/runbooks.schemas.js"
+    },
+    "./features/runbooks/export.schemas": {
+      "types": "./dist/features/runbooks/export.schemas.d.ts",
+      "default": "./dist/features/runbooks/export.schemas.js"
+    },
+    "./features/plugins/plugins.types": {
+      "types": "./dist/features/plugins/plugins.types.d.ts",
+      "default": "./dist/features/plugins/plugins.types.js"
     },
     "./features/llm/modelCatalog": {
       "types": "./dist/features/llm/modelCatalog.d.ts",

@@ -14,7 +14,6 @@ import {
   type DesktopUpdaterState,
 } from "../services/desktop-api";
 import type {
-  DiagnosisRecord,
 } from "../services";
 import {
   Settings,
@@ -32,6 +31,9 @@ import {
   Trash2,
   Download,
   RefreshCw,
+  Plug,
+  PanelLeftClose,
+  PanelLeftOpen,
 } from "lucide-react";
 import {
   AlertDialog,
@@ -45,38 +47,67 @@ import {
 } from "../ui/alert-dialog";
 import { useFormatters, useTranslation } from "@bitsentry-ce/i18n";
 import { useNavbarSubNavigation } from "./navigation-context";
+import { PaletteSearchButton } from "../shortcuts/PaletteSearchButton";
+import { BitSentryLogo } from "./BitSentryLogo";
+import {
+  SidebarEmpty,
+  SidebarGroupLabel,
+  SidebarHoverButton,
+  SidebarMoreLink,
+  SidebarRow,
+  SidebarCount,
+  SidebarRunStatus,
+  SidebarSection,
+  SidebarStatusDot,
+  isNotableRunState,
+  shortAge,
+  type SidebarRunState,
+} from "./SidebarRows";
+import { useShallow } from "zustand/react/shallow";
+import { useIncidentListStore } from "../investigation/incidents/incidentListStore";
+import { loadDesktopIncidentList, refreshDesktopIncidentPreviews } from "../investigation/incidents/incidentListPersistence";
+import { hasDesktopIncidentsApi, saveDesktopIncidentThread } from "../investigation/incidents/incidentDesktopApi";
+import { normalizeIncidents } from "../investigation/incidents/incidentNormalize";
+import { useNow } from "../hooks/useNow";
+import { loadIncidents } from "../investigation/incidents/incidentStorage";
+import type { IncidentThread } from "../investigation/incidents/types";
 import {
   loadRunbookNavItems,
   readLocalRunbookNavItems,
   writeLocalRunbookNavItems,
   type RunbookNavItem,
 } from "./runbook-nav";
+import {
+  INCIDENT_ATTENTION_CHANGED_EVENT,
+  clearUnseenIncidentOutcome,
+  findIncidentsNeedingInput,
+  finishedRunOutcome,
+  readUnseenIncidentOutcomes,
+  recordUnseenIncidentOutcome,
+  resolveIncidentNavStatus,
+  type IncidentNavStatus,
+} from "./incident-nav-status";
 
-function getLatestDiagnosisState(record: DiagnosisRecord): string {
-  if (record.state_history.length === 0) return "pending";
-  return record.state_history[record.state_history.length - 1].toState;
-}
-
-function getDiagnosisDotClass(latestState: string): string {
-  if (latestState === "verification_pending") return "bg-amber-400";
-  if (latestState === "completed" || latestState === "verified") {
-    return "bg-emerald-400";
-  }
-  if (latestState === "failed") return "bg-red-400";
-  return "bg-muted-foreground/30";
-}
-
-function getResultDotClass(status: string): string {
-  if (status === "running") return "bg-amber-400";
-  if (status === "completed") return "bg-emerald-400";
-  return "bg-muted-foreground/30";
-}
+// The state each incident was last seen in, so a run that ends while the Navbar
+// is remounted between pages still counts as finished.
+const observedIncidentStates = new Map<string, string | undefined>();
 
 // Module-level so the accordion state survives Navbar remounts within a window.
 const navbarAccordionState: {
   open: Set<string>;
   autoOpenedPath: string | null;
 } = { open: new Set(), autoOpenedPath: null };
+
+function toggleNavbarAccordion(key: string): Set<string> {
+  const next = new Set(navbarAccordionState.open);
+  if (next.has(key)) {
+    next.delete(key);
+  } else {
+    next.add(key);
+  }
+  navbarAccordionState.open = next;
+  return next;
+}
 
 const ACCORDION_PAGES = [
   "/app-settings",
@@ -90,55 +121,6 @@ const ACCORDION_PAGES = [
   "/profile",
 ];
 
-function highlightElement(targetId: string) {
-  const element = document.getElementById(targetId);
-  if (element === null) return;
-
-  element.scrollIntoView({ behavior: "smooth", block: "center" });
-  element.classList.add("ring-2", "ring-primary");
-  window.setTimeout(() => {
-    element.classList.remove("ring-2", "ring-primary");
-  }, 2000);
-}
-
-interface QuickAnchorLinkProps {
-  anchorId: string;
-  children: React.ReactNode;
-  currentHash: string;
-  currentPath: string;
-  targetPath: string;
-  title?: string;
-}
-
-const QuickAnchorLink = ({
-  anchorId,
-  children,
-  currentHash,
-  currentPath,
-  targetPath,
-  title,
-}: QuickAnchorLinkProps) => (
-  <Link
-    to={`${targetPath}#${anchorId}`}
-    title={title}
-    onClick={() => {
-      if (currentPath === targetPath) {
-        window.setTimeout(() => {
-          highlightElement(anchorId);
-        }, 0);
-      }
-    }}
-    className={cn(
-      "block w-full rounded-md px-3 py-1.5 text-left text-xs text-muted-foreground transition-colors hover:bg-neutral-100/50 hover:text-foreground dark:hover:bg-white/10",
-      currentPath === targetPath &&
-        currentHash === `#${anchorId}` &&
-        "bg-neutral-100/50 text-foreground font-medium dark:bg-white/10",
-    )}
-  >
-    {children}
-  </Link>
-);
-
 type NavItem = {
   icon: React.ElementType;
   labelKey: string;
@@ -151,8 +133,55 @@ type IncidentNavItem = {
   id: string;
   title: string;
   createdAt: string;
-  archived?: boolean;
-  lastMessagePreview?: string | null;
+  archived: boolean;
+  lastMessagePreview: string | null;
+  state: string;
+};
+
+// The last nav item per thread, reused while the fields the navbar shows are unchanged.
+const incidentNavItemCache = new Map<string, IncidentNavItem>();
+
+function toIncidentNavItem(incident: IncidentThread): IncidentNavItem {
+  const cached = incidentNavItemCache.get(incident.id);
+  const archived = incident.archived === true;
+  const lastMessagePreview = incident.lastMessagePreview ?? null;
+  if (
+    cached?.title === incident.title &&
+    cached.createdAt === incident.createdAt &&
+    cached.archived === archived &&
+    cached.lastMessagePreview === lastMessagePreview &&
+    cached.state === incident.state
+  ) {
+    return cached;
+  }
+  const item = {
+    id: incident.id,
+    title: incident.title,
+    createdAt: incident.createdAt,
+    archived,
+    lastMessagePreview,
+    state: incident.state,
+  };
+  incidentNavItemCache.set(incident.id, item);
+  return item;
+}
+
+/** Nav items from the shared list; with `useShallow` the navbar renders only when a shown field changes. */
+function selectIncidentNavItems(state: { incidents: IncidentThread[] }): IncidentNavItem[] {
+  return state.incidents.map(toIncidentNavItem);
+}
+
+const SHOWN_INCIDENT_LIMIT = 7;
+
+function shownIncidentNavItems(incidents: IncidentNavItem[]): IncidentNavItem[] {
+  return incidents.filter((incident) => incident.archived !== true).slice(0, SHOWN_INCIDENT_LIMIT);
+}
+
+const INCIDENT_STATUS_LABEL_KEYS: Record<IncidentNavStatus, string> = {
+  working: "navigation.navbar.incidentStatus.working",
+  "needs-input": "navigation.navbar.incidentStatus.needsInput",
+  failed: "navigation.navbar.incidentStatus.failed",
+  completed: "navigation.navbar.incidentStatus.completed",
 };
 
 type UnknownRecord = Record<string, unknown>;
@@ -193,40 +222,65 @@ type ResultNavItem = {
   completedAt?: string;
 };
 
+const INCIDENT_RUN_STATE: Record<IncidentNavStatus, SidebarRunState> = {
+  working: "running",
+  "needs-input": "needs-input",
+  failed: "failed",
+  completed: "done",
+};
+
 function IncidentSubNavigation({
   incidents,
+  statuses,
   search,
   formatters,
   t,
   onArchive,
 }: {
   incidents: IncidentNavItem[];
+  statuses: ReadonlyMap<string, IncidentNavStatus>;
   search: string;
   formatters: ReturnType<typeof useFormatters>;
   t: ReturnType<typeof useTranslation>["t"];
   onArchive: (incidentId: string, shouldNavigate: boolean) => Promise<void>;
 }) {
+  const now = useNow();
   const currentId = new URLSearchParams(search).get("id");
   const active = incidents.filter((incident) => incident.archived !== true);
-  const shown = active.slice(0, 7);
-  const overflow = active.length - shown.length;
-  return <div className="ml-4 mt-1 space-y-0.5">
-    {shown.map((incident) => {
-      const preview = normalizeIncidentPreview(incident.lastMessagePreview);
-      return <div key={incident.id} className="group relative">
-        <Link to={`/incidents?id=${incident.id}`} className={cn("block px-3 py-1.5 pr-8 text-xs text-muted-foreground hover:text-foreground hover:bg-neutral-100/50 dark:hover:bg-white/10 rounded-md transition-colors", currentId === incident.id && "text-foreground font-medium bg-neutral-100/50 dark:bg-white/10")}>
-          <div className="truncate">{incident.title}</div>
-          {preview !== null && <div className="truncate text-[10px] text-muted-foreground/60">{translateIncidentPreview(preview, t)}</div>}
-          <div className="text-[10px] text-muted-foreground/50">{formatters.relativeTime(incident.createdAt)}</div>
-        </Link>
-        <button onClick={(event) => { event.preventDefault(); event.stopPropagation(); onArchive(incident.id, currentId === incident.id).catch(console.error); }} className="absolute right-1 top-1/2 -translate-y-1/2 hidden group-hover:flex size-5 items-center justify-center rounded text-muted-foreground hover:text-foreground hover:bg-muted transition-colors" title={t("common.navbar.archiveIncident")}>
-          <Archive size={11} />
-        </button>
-      </div>;
-    })}
-    {overflow > 0 && <Link to="/incidents?view=history" className="block px-3 py-1 text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground transition-colors">{overflow} {t("navigation.navbar.more")}</Link>}
-    {active.length === 0 && <p className="px-3 py-1 text-xs text-muted-foreground/60">{t("navigation.navbar.noIncidentsYet")}</p>}
-  </div>;
+  const isLiveIncident = (incident: IncidentNavItem) => {
+    const status = statuses.get(incident.id);
+    return status === "working" || status === "needs-input";
+  };
+  const live = active.filter(isLiveIncident);
+  const rest = shownIncidentNavItems(active.filter((incident) => !isLiveIncident(incident))).slice(0, Math.max(0, SHOWN_INCIDENT_LIMIT - live.length));
+  const overflow = active.length - live.length - rest.length;
+  const renderRow = (incident: IncidentNavItem) => {
+    const status = statuses.get(incident.id) ?? null;
+    const state = status === null ? null : INCIDENT_RUN_STATE[status];
+    const preview = normalizeIncidentPreview(incident.lastMessagePreview);
+    return <SidebarRow
+      key={incident.id}
+      to={`/incidents?id=${incident.id}`}
+      title={incident.title}
+      active={currentId === incident.id}
+      live={state !== null}
+      trailing={state !== null && status !== null
+        ? <SidebarRunStatus state={state} label={t(INCIDENT_STATUS_LABEL_KEYS[status])} />
+        : shortAge(incident.createdAt, formatters.locale, now, t("navigation.navbar.justNow"))}
+      meta={preview === null ? undefined : translateIncidentPreview(preview, t)}
+      hoverAction={<SidebarHoverButton label={t("common.navbar.archiveIncident")} onClick={() => { onArchive(incident.id, currentId === incident.id).catch(console.error); }}><Archive size={12} /></SidebarHoverButton>}
+    />;
+  };
+  return <SidebarSection>
+    {live.length > 0 && <>
+      <SidebarGroupLabel count={live.length}>{t("navigation.navbar.groupRunning")}</SidebarGroupLabel>
+      {live.map(renderRow)}
+      {rest.length > 0 && <SidebarGroupLabel>{t("navigation.navbar.groupRecent")}</SidebarGroupLabel>}
+    </>}
+    {rest.map(renderRow)}
+    {overflow > 0 && <SidebarMoreLink to="/incidents?view=history" label={t("navigation.navbar.viewAll", { count: active.length })} />}
+    {active.length === 0 && <SidebarEmpty>{t("navigation.navbar.noIncidentsYet")}</SidebarEmpty>}
+  </SidebarSection>;
 }
 
 function RunbookSubNavigation({ runbooks, search, t, onDelete }: {
@@ -236,19 +290,29 @@ function RunbookSubNavigation({ runbooks, search, t, onDelete }: {
   onDelete: (runbook: Pick<RunbookNavItem, "id" | "title">) => void;
 }) {
   const currentId = new URLSearchParams(search).get("id");
-  const shown = runbooks.slice(0, 7);
+  const shown = runbooks.slice(0, SHOWN_INCIDENT_LIMIT);
   const overflow = runbooks.length - shown.length;
-  return <div className="ml-4 mt-1 space-y-0.5">
-    {shown.map((runbook) => <div key={runbook.id} className="group relative">
-      <Link to={`/runbooks?id=${runbook.id}`} className={cn("block px-3 py-1.5 pr-8 text-xs text-muted-foreground hover:text-foreground hover:bg-neutral-100/50 dark:hover:bg-white/10 rounded-md transition-colors", currentId === runbook.id && "text-foreground font-medium bg-neutral-100/50 dark:bg-white/10")}>
-        <div className="truncate">{runbook.title}</div>
-        {runbook.actions.length > 0 && <div className="text-[10px] text-muted-foreground/60">{t("navigation.navbar.actionCount", { count: runbook.actions.length })}</div>}
-      </Link>
-      <button onClick={(event) => { event.preventDefault(); event.stopPropagation(); onDelete(runbook); }} className="absolute right-1 top-1/2 -translate-y-1/2 hidden group-hover:flex size-5 items-center justify-center rounded text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors" title={t("common.navbar.deleteRunbook")}><Trash2 size={11} /></button>
-    </div>)}
-    {overflow > 0 && <Link to="/runbooks" className="block px-3 py-1 text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground transition-colors">{overflow} {t("navigation.navbar.more")}</Link>}
-    {runbooks.length === 0 && <p className="px-3 py-1 text-xs text-muted-foreground/60">{t("navigation.navbar.noRunbooksYet")}</p>}
-  </div>;
+  return <SidebarSection>
+    {shown.map((runbook) => <SidebarRow
+      key={runbook.id}
+      to={`/runbooks?id=${runbook.id}`}
+      title={runbook.title}
+      active={currentId === runbook.id}
+      trailing={runbook.actions.length > 0 ? <SidebarCount count={runbook.actions.length} label={t("navigation.navbar.actionCount", { count: runbook.actions.length })} /> : undefined}
+      hoverAction={<SidebarHoverButton tone="danger" label={t("common.navbar.deleteRunbook")} onClick={() => { onDelete(runbook); }}><Trash2 size={12} /></SidebarHoverButton>}
+    />)}
+    {overflow > 0 && <SidebarMoreLink to="/runbooks" label={t("navigation.navbar.viewAll", { count: runbooks.length })} />}
+    {runbooks.length === 0 && <SidebarEmpty>{t("navigation.navbar.noRunbooksYet")}</SidebarEmpty>}
+  </SidebarSection>;
+}
+
+function resultRunState(status: string): SidebarRunState {
+  if (status === "running") return "running";
+  if (status === "queued" || status === "pending") return "queued";
+  if (status === "failed" || status === "claim_expired") return "failed";
+  if (status === "cancelled") return "cancelled";
+  if (status === "completed") return "completed";
+  return "idle";
 }
 
 const UPDATE_ISLAND_DEBUG_STORAGE_KEY = "bitsentry_debug_update_island";
@@ -272,99 +336,42 @@ function readDebugUpdateIslandState(): "available" | "downloaded" | null {
   return null;
 }
 
-function normalizeIncidentNavItems(items: unknown[]): IncidentNavItem[] {
-  return items
-    .map((item): IncidentNavItem | null => {
-      if (!isRecord(item)) return null;
-      const record = item;
-      if (typeof record.id !== "string" || record.id.length === 0) return null;
-
-      let title = "New Incident";
-      if (typeof record.title === "string" && record.title.trim().length > 0) {
-        title = record.title.trim();
-      }
-
-      let createdAt = new Date().toISOString();
-      if (typeof record.createdAt === "string" && record.createdAt.length > 0) {
-        createdAt = record.createdAt;
-      }
-
-      let archived: boolean | undefined;
-      if (
-        record.archived === true ||
-        (typeof record.archivedAt === "string" && record.archivedAt.length > 0)
-      ) {
-        archived = true;
-      }
-
-      let lastMessagePreview: string | null = null;
-      if (typeof record.lastMessagePreview === "string") {
-        lastMessagePreview = normalizeIncidentPreview(
-          record.lastMessagePreview,
-        );
-      }
-
-      return {
-        id: record.id,
-        title,
-        createdAt,
-        lastMessagePreview,
-        archived,
-      };
-    })
-    .filter((item): item is IncidentNavItem => item !== null);
-}
-
-function readLocalIncidentNavItems(): IncidentNavItem[] {
-  try {
-    const raw = localStorage.getItem("bitsentry_incidents");
-    if (raw === null) return [];
-    const parsed: unknown = JSON.parse(raw);
-    if (!Array.isArray(parsed)) return [];
-    return normalizeIncidentNavItems(parsed);
-  } catch {
-    return [];
-  }
+/** Keeps the current list when a reload reads the same rows, so the navbar does not re-render. */
+function keepIfSameNavItems<T extends object>(next: T[]): (prev: T[]) => T[] {
+  return (prev) => {
+    const same = prev.length === next.length && prev.every((item, index) => {
+      const a = item as Record<string, unknown>;
+      const b = next[index] as Record<string, unknown>;
+      const keys = Object.keys(a);
+      return keys.length === Object.keys(b).length && keys.every((key) => a[key] === b[key]);
+    });
+    return same ? prev : next;
+  };
 }
 
 type NavbarServices = ReturnType<typeof useBitsentryServices>;
-type SetIncidentNavItems = React.Dispatch<React.SetStateAction<IncidentNavItem[]>>;
 
-async function loadWebIncidentNavItems(
+/** Web mode: the incidents page owns the list on its own route; elsewhere the navbar loads it into the store. */
+async function loadWebIncidentList(
   services: NavbarServices,
   currentPath: string,
-  setItems: SetIncidentNavItems,
   isCancelled: () => boolean,
 ): Promise<void> {
+  const { loaded, setAll } = useIncidentListStore.getState();
+  if (currentPath.startsWith("/incidents")) {
+    if (!loaded) setAll(loadIncidents());
+    return;
+  }
   const incidents = services.incidents;
-  if (currentPath.startsWith("/incidents") || incidents === undefined) {
-    setItems(readLocalIncidentNavItems());
+  if (incidents === undefined) {
+    setAll(loadIncidents());
     return;
   }
   try {
     const response = await incidents.listThreads({ limit: 100, includeArchived: true });
-    if (!isCancelled()) setItems(normalizeIncidentNavItems(response.threads));
+    if (!isCancelled()) setAll(normalizeIncidents(response.threads));
   } catch {
-    if (!isCancelled()) setItems(readLocalIncidentNavItems());
-  }
-}
-
-async function loadDesktopIncidentNavItems(
-  setItems: SetIncidentNavItems,
-  isCancelled: () => boolean,
-): Promise<void> {
-  try {
-    const incidentsApi = getDesktopApi()?.incidents;
-    if (incidentsApi === undefined) {
-      setItems(readLocalIncidentNavItems());
-      return;
-    }
-    const snapshot = await incidentsApi.getState();
-    if (isCancelled()) return;
-    const items = normalizeIncidentNavItems(snapshot.incidents);
-    setItems(items.length === 0 ? readLocalIncidentNavItems() : items);
-  } catch {
-    if (!isCancelled()) setItems(readLocalIncidentNavItems());
+    if (!isCancelled()) setAll(loadIncidents());
   }
 }
 
@@ -423,6 +430,15 @@ function normalizeResultNavItems(items: unknown[]): ResultNavItem[] {
     .filter((item): item is ResultNavItem => item !== null);
 }
 
+/** Archives the thread in the web mode local-storage list, keeping a first archive time. */
+function archiveLocalIncident(incidentId: string, archivedAt: string): void {
+  const raw = localStorage.getItem("bitsentry_incidents");
+  const parsed: unknown = raw === null ? [] : JSON.parse(raw);
+  const all: unknown[] = Array.isArray(parsed) ? parsed : [];
+  const updated = all.map((incident) => archiveIncidentRecord(incident, incidentId, archivedAt));
+  localStorage.setItem("bitsentry_incidents", JSON.stringify(updated));
+}
+
 function archiveIncidentRecord(
   value: unknown,
   incidentId: string,
@@ -474,6 +490,13 @@ const primaryNav: NavItem[] = [
     href: "/incidents",
   },
   { icon: BookOpen, labelKey: "navigation.navbar.runbooks", href: "/runbooks" },
+  // The Dashboard renders its own navbar; this entry is the Desktop Integrations page.
+  {
+    icon: Plug,
+    labelKey: "navigation.navbar.integrations",
+    href: "/integrations",
+    desktopOnly: true,
+  },
   { icon: FileText, labelKey: "navigation.navbar.results", href: "/results" },
   // Ticket/Resolution are Dashboard-only surfaces. They remain in primaryNav so
   // the web Dashboard renders them, and are listed in desktopHiddenHrefs below so
@@ -521,6 +544,7 @@ const appSettingsSections = [
   { labelKey: "navigation.navbar.plugins", hash: "plugins" },
   { labelKey: "navigation.navbar.globalVariables", hash: "global-variables" },
   { labelKey: "navigation.navbar.codingAgents", hash: "coding-agents" },
+  { labelKey: "common.shortcuts.title", hash: "shortcuts" },
   { labelKey: "navigation.navbar.help", hash: "help" },
 ] as const;
 
@@ -643,15 +667,17 @@ function UpdateIslandButton() {
     if (api === undefined) return;
 
     setBusy(true);
-    try {
+    // A promise chain, not try/finally, which the React Compiler can't lower.
+    const runUpdate = async () => {
       if (isDownloaded) {
         await api.install();
       } else {
         await api.download();
       }
-    } finally {
+    };
+    await runUpdate().finally(() => {
       setBusy(false);
-    }
+    });
   };
 
   return (
@@ -672,7 +698,7 @@ function UpdateIslandButton() {
         <div className="bs-brand-tint-title truncate text-xs font-medium">
           {label}
         </div>
-        <div className="bs-brand-tint-subtitle truncate text-[11px]">
+        <div className="bs-brand-tint-subtitle truncate text-xs">
           {detail}
         </div>
       </div>
@@ -691,7 +717,27 @@ const Navbar = ({
 }: NavbarProps) => {
   const { t } = useTranslation();
   const formatters = useFormatters();
+  const now = useNow();
   const location = useLocation();
+  // Narrow windows fold the sidebar into an icon rail (CSS); this opens it over the page.
+  // Open for the page it was opened on, so navigating closes it without an extra render.
+  const railLocation = `${location.pathname}${location.search}`;
+  const [railOpenFor, setRailOpenFor] = useState<string | null>(null);
+  const railExpanded = railOpenFor === railLocation;
+  const setRailExpanded = (open: boolean | ((current: boolean) => boolean)) => {
+    const next = typeof open === "function" ? open(railExpanded) : open;
+    setRailOpenFor(next ? railLocation : null);
+  };
+  useEffect(() => {
+    if (!railExpanded) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setRailOpenFor(null);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+    };
+  }, [railExpanded]);
   const navigate = useNavigate();
   const currentPath = location.pathname;
   const { user } = useAuthSession();
@@ -715,8 +761,9 @@ const Navbar = ({
   } | null>(null);
   const [deleteConfirmText, setDeleteConfirmText] = React.useState("");
   const [isDeletingRunbook, setIsDeletingRunbook] = React.useState(false);
+  const [runbookItems, setRunbookItems] = React.useState<RunbookNavItem[]>([]);
 
-  const handleConfirmDeleteRunbook = React.useCallback(async () => {
+  const handleConfirmDeleteRunbook = async () => {
     if (runbookToDelete === null) return;
     if (deleteConfirmText !== runbookToDelete.title) return;
 
@@ -738,111 +785,143 @@ const Navbar = ({
       setDeleteConfirmText("");
     } catch (error) {
       console.error("Failed to delete runbook from navbar:", error);
-    } finally {
-      setIsDeletingRunbook(false);
     }
-  }, [deleteConfirmText, location.search, navigate, runbookToDelete, runbooks]);
+    // No finally (the React Compiler can't lower one); the catch above never throws.
+    setIsDeletingRunbook(false);
+  };
 
   // ── Incidents ────────────────────────────────────────────────────────────
-  const [investigationIncidents, setInvestigationIncidents] = React.useState<
-    IncidentNavItem[]
-  >([]);
+  const investigationIncidents = useIncidentListStore(useShallow(selectIncidentNavItems));
 
+  const incidentsAccordionOpen = openAccordions.has("/incidents");
   React.useEffect(() => {
-    if (!openAccordions.has("/incidents")) return;
+    if (isDesktop || !incidentsAccordionOpen) return;
     let cancelled = false;
-    const isCancelled = () => cancelled;
-    const load = isDesktop
-      ? loadDesktopIncidentNavItems(setInvestigationIncidents, isCancelled)
-      : loadWebIncidentNavItems(services, currentPath, setInvestigationIncidents, isCancelled);
-    load.catch(() => {});
+    loadWebIncidentList(services, currentPath, () => cancelled).catch(() => {});
     return () => {
       cancelled = true;
     };
-  }, [currentPath, openAccordions, services]);
+  }, [currentPath, incidentsAccordionOpen, services]);
+
+  // The navbar is global, so it loads the desktop list until a load from main succeeds. After that, opening the
+  // accordion refreshes previews of turns that settled while no incidents page was listening.
+  React.useEffect(() => {
+    if (!isDesktop || !incidentsAccordionOpen || !hasDesktopIncidentsApi()) return;
+    const load = useIncidentListStore.getState().loadedFrom === "desktop" ? refreshDesktopIncidentPreviews() : loadDesktopIncidentList();
+    load.catch((error: unknown) => {
+      console.error("Failed to load incidents for the navbar:", error);
+    });
+  }, [incidentsAccordionOpen]);
+
+  // Off the Incidents page nothing applies agent progress to the list, so follow it here to keep the sidebar status
+  // live. On the page both patch the same state, which is a no-op the second time.
+  React.useEffect(() => {
+    const agent = services.agent;
+    if (agent === undefined) return;
+    return agent.onEvent((payload) => {
+      const threadState = payload.kind === "message" ? payload.threadState : payload.snapshot?.threadState;
+      if (threadState === undefined) return;
+      const store = useIncidentListStore.getState();
+      const incident = store.incidents.find((item) => item.sessionId === payload.sessionId);
+      if (incident !== undefined) store.patch(incident.id, { state: threadState });
+    });
+  }, [services.agent]);
+
+  const currentIncidentId = currentPath.startsWith("/incidents")
+    ? new URLSearchParams(location.search).get("id")
+    : null;
+  const [unseenOutcomes, setUnseenOutcomes] = React.useState(readUnseenIncidentOutcomes);
 
   React.useEffect(() => {
-    const reload = () => {
-      setInvestigationIncidents(readLocalIncidentNavItems());
-    };
-    window.addEventListener("bitsentry:incidents-updated", reload);
+    let changed = false;
+    for (const incident of investigationIncidents) {
+      const outcome = finishedRunOutcome(observedIncidentStates.get(incident.id), incident.state);
+      observedIncidentStates.set(incident.id, incident.state);
+      if (outcome !== null && incident.id !== currentIncidentId) {
+        recordUnseenIncidentOutcome(incident.id, outcome);
+        changed = true;
+      }
+    }
+    if (currentIncidentId !== null && clearUnseenIncidentOutcome(currentIncidentId)) {
+      changed = true;
+    }
+    if (changed) setUnseenOutcomes(readUnseenIncidentOutcomes());
+  }, [currentIncidentId, investigationIncidents]);
+
+  const [needsInputIds, setNeedsInputIds] = React.useState<ReadonlySet<string>>(
+    () => new Set(),
+  );
+  const [attentionVersion, setAttentionVersion] = React.useState(0);
+
+  React.useEffect(() => {
+    const recheck = () => setAttentionVersion((version) => version + 1);
+    window.addEventListener(INCIDENT_ATTENTION_CHANGED_EVENT, recheck);
     return () => {
-      window.removeEventListener("bitsentry:incidents-updated", reload);
+      window.removeEventListener(INCIDENT_ATTENTION_CHANGED_EVENT, recheck);
     };
   }, []);
 
-  const handleArchiveIncidentNavItem = React.useCallback(
-    async (incidentId: string) => {
-      const archivedAt = new Date().toISOString();
+  // A draft or question arrives when a run ends, so look again whenever a
+  // shown incident changes state rather than on every streamed update.
+  const shownIncidents = shownIncidentNavItems(investigationIncidents);
+  const settledIncidentIds = shownIncidents
+    .filter((incident) => incident.state !== "RUNNING")
+    .map((incident) => incident.id)
+    .join(",");
+  const shownIncidentStates = shownIncidents
+    .map((incident) => incident.state ?? "")
+    .join(",");
+  const incidentsOpen = openAccordions.has("/incidents");
 
-      if (services.incidents) {
-        await services.incidents.archiveThread(incidentId);
-        const raw = localStorage.getItem("bitsentry_incidents");
-        let all: unknown[] = [];
-        if (raw !== null) {
-          const parsed: unknown = JSON.parse(raw);
-          if (Array.isArray(parsed)) {
-            all = parsed;
-          }
-        }
-        const updated = all.map((incident) =>
-          archiveIncidentRecord(incident, incidentId, archivedAt),
-        );
-        localStorage.setItem("bitsentry_incidents", JSON.stringify(updated));
-        setInvestigationIncidents((prev) =>
-          prev.map((incident) => {
-            if (incident.id !== incidentId) return incident;
-            return { ...incident, archived: true };
-          }),
-        );
-        window.dispatchEvent(
-          new CustomEvent("bitsentry:incidents-updated", {
-            detail: { action: "archive", incidentId, archivedAt },
-          }),
-        );
-        return;
-      }
+  React.useEffect(() => {
+    if (!incidentsOpen || settledIncidentIds.length === 0) return;
+    let cancelled = false;
+    void findIncidentsNeedingInput(settledIncidentIds.split(","), {
+      agent: services.agent,
+      plugins: services.plugins,
+    }).then((ids) => {
+      if (!cancelled) setNeedsInputIds(ids);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    attentionVersion,
+    incidentsOpen,
+    services.agent,
+    services.plugins,
+    settledIncidentIds,
+    shownIncidentStates,
+  ]);
 
-      if (isDesktop) {
-        const incidentsApi = getDesktopApi()?.incidents;
-        if (incidentsApi === undefined) return;
+  const incidentStatuses = new Map<string, IncidentNavStatus>();
+  for (const incident of shownIncidents) {
+    const status = resolveIncidentNavStatus({
+      state: incident.state,
+      needsInput: needsInputIds.has(incident.id),
+      unseenOutcome:
+        incident.id === currentIncidentId ? undefined : unseenOutcomes[incident.id],
+    });
+    if (status !== null) incidentStatuses.set(incident.id, status);
+  }
 
-        const snapshot = await incidentsApi.getState();
-        const updated = snapshot.incidents.map((incident) =>
-          archiveIncidentRecord(incident, incidentId, archivedAt),
-        );
-        await incidentsApi.replaceState({
-          incidents: updated,
-          incidentMessages: snapshot.incidentMessages,
-        });
-        setInvestigationIncidents(normalizeIncidentNavItems(updated));
-      } else {
-        const raw = localStorage.getItem("bitsentry_incidents");
-        let all: unknown[] = [];
-        if (raw !== null) {
-          const parsed: unknown = JSON.parse(raw);
-          if (Array.isArray(parsed)) {
-            all = parsed;
-          }
-        }
-        const updated = all.map((incident) =>
-          archiveIncidentRecord(incident, incidentId, archivedAt),
-        );
-        localStorage.setItem("bitsentry_incidents", JSON.stringify(updated));
-        setInvestigationIncidents(normalizeIncidentNavItems(updated));
-      }
+  const handleArchiveIncidentNavItem = async (incidentId: string) => {
+    const archivedAt = new Date().toISOString();
 
-      window.dispatchEvent(
-        new CustomEvent("bitsentry:incidents-updated", {
-          detail: { action: "archive", incidentId, archivedAt },
-        }),
-      );
-    },
-    [services.incidents],
-  );
-
-  // ── Runbooks ─────────────────────────────────────────────────────────────
-  const [runbookItems, setRunbookItems] = React.useState<RunbookNavItem[]>([]);
+    if (services.incidents) {
+      await services.incidents.archiveThread(incidentId);
+      archiveLocalIncident(incidentId, archivedAt);
+    } else if (isDesktop && hasDesktopIncidentsApi()) {
+      // Once main's list is loaded, the store subscription saves the archive. Only the archive time is
+      // patched, so a concurrent rename or state change is kept.
+      if (useIncidentListStore.getState().loadedFrom !== "desktop") await saveDesktopIncidentThread({ id: incidentId, archivedAt });
+    } else if (!isDesktop) {
+      archiveLocalIncident(incidentId, archivedAt);
+    } else {
+      return;
+    }
+    useIncidentListStore.getState().archive(incidentId, archivedAt);
+  };
 
   React.useEffect(() => {
     if (!openAccordions.has("/runbooks")) return;
@@ -919,12 +998,7 @@ const Navbar = ({
 
   React.useEffect(() => {
     const reload = () => {
-      if (isDesktop) {
-        setResultItems(readLocalResultNavItems());
-        return;
-      }
-
-      setResultItems(readLocalResultNavItems());
+      setResultItems(keepIfSameNavItems(readLocalResultNavItems()));
     };
     window.addEventListener("bitsentry:results-updated", reload);
     return () => {
@@ -934,14 +1008,7 @@ const Navbar = ({
 
   // ── Accordion helpers ─────────────────────────────────────────────────────
   const toggleAccordion = (key: string) => {
-    const next = new Set(navbarAccordionState.open);
-    if (next.has(key)) {
-      next.delete(key);
-    } else {
-      next.add(key);
-    }
-    navbarAccordionState.open = next;
-    setOpenAccordions(next);
+    setOpenAccordions(toggleNavbarAccordion(key));
   };
 
   React.useEffect(() => {
@@ -983,28 +1050,44 @@ const Navbar = ({
   }
 
   return (
-    <nav className="nav-rail h-screen w-60 flex flex-col">
+    <nav
+      className="bs-sidebar nav-rail h-screen w-[17rem] shrink-0 flex flex-col"
+      data-expanded={railExpanded ? "true" : undefined}
+    >
       <div className={navHeaderClass}>
         <Link
           to="/"
-          className="flex items-center gap-2 text-sm font-semibold text-foreground"
+          className="bs-sidebar-brand flex items-center gap-2 text-sm font-semibold text-foreground"
         >
-          {!isDesktop && (
-            <>
-              <img
-                src="/logo.png"
-                alt=""
-                className="h-5 w-5 object-contain dark:hidden"
-              />
-              <img
-                src="/logo-light.png"
-                alt=""
-                className="hidden h-5 w-5 object-contain dark:block"
-              />
-            </>
-          )}
-          {t("navigation.navbar.bitsentry")}
+          <BitSentryLogo />
+          <span className="bs-sidebar-label">{t("navigation.navbar.bitsentry")}</span>
         </Link>
+      </div>
+
+      <div className="bs-sidebar-railbar hidden flex-col items-center gap-1.5 pb-2">
+        <BitSentryLogo />
+        <button
+          type="button"
+          onClick={() => {
+            setRailExpanded((open) => !open);
+          }}
+          aria-expanded={railExpanded}
+          aria-label={t(railExpanded ? "navigation.navbar.collapseSidebar" : "navigation.navbar.expandSidebar")}
+          title={t(railExpanded ? "navigation.navbar.collapseSidebar" : "navigation.navbar.expandSidebar")}
+          className="bs-sidebar-railtoggle flex size-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+        >
+          {railExpanded ? <PanelLeftClose size={16} /> : <PanelLeftOpen size={16} />}
+          {/* In the rail the toggle reads "Recent": it opens the full sidebar with recent incidents, runbooks and results. */}
+          {!railExpanded && (
+            <span aria-hidden="true" className="bs-sidebar-railtoggle-label hidden">
+              {t("navigation.navbar.railRecent")}
+            </span>
+          )}
+        </button>
+      </div>
+
+      <div className="px-3 pt-1">
+        <PaletteSearchButton />
       </div>
 
       <div className="flex flex-col gap-1 px-3 pt-3 flex-grow overflow-y-auto">
@@ -1046,15 +1129,16 @@ const Navbar = ({
                     toggleAccordion(accordionKey);
                   }
                 }}
+                title={t(item.labelKey)}
                 className={cn(
                   "nav-item",
                   currentPath === item.href && "active",
                 )}
               >
                 <ItemIcon size={16} />
-                <span className="flex-1">{t(item.labelKey)}</span>
+                <span className="bs-sidebar-label flex-1">{t(item.labelKey)}</span>
                 {PrimaryChevron !== null && (
-                  <PrimaryChevron size={14} className="text-muted-foreground" />
+                  <PrimaryChevron size={14} className="bs-sidebar-label text-muted-foreground" />
                 )}
               </Link>
 
@@ -1076,29 +1160,23 @@ const Navbar = ({
                     },
                   ];
                   return (
-                    <div className="ml-4 mt-1 space-y-0.5">
+                    <SidebarSection>
                       {subItems.map((sub) => (
-                        <Link
+                        <SidebarRow
                           key={`diagnosis-sub-${sub.tab}`}
                           to={`/diagnosis?tab=${sub.tab}`}
-                          className={cn(
-                            "block rounded-md px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-neutral-100/50 hover:text-foreground dark:hover:bg-white/10",
-                            currentPath === "/diagnosis" &&
-                              currentTab === sub.tab &&
-                              "bg-neutral-100/50 text-foreground font-medium dark:bg-white/10",
-                          )}
-                        >
-                          {sub.label}
-                        </Link>
+                          title={sub.label}
+                          active={currentPath === "/diagnosis" && currentTab === sub.tab}
+                        />
                       ))}
-                    </div>
+                    </SidebarSection>
                   );
                 })()}
 
               {/* Incidents Sub-Navigation */}
               {canShowSubNav &&
                 isIncidents &&
-                <IncidentSubNavigation incidents={investigationIncidents} search={location.search} formatters={formatters} t={t} onArchive={async (incidentId, shouldNavigate) => { await handleArchiveIncidentNavItem(incidentId); if (shouldNavigate) navigate("/incidents"); }} />}
+                <IncidentSubNavigation incidents={investigationIncidents} statuses={incidentStatuses} search={location.search} formatters={formatters} t={t} onArchive={async (incidentId, shouldNavigate) => { await handleArchiveIncidentNavItem(incidentId); if (shouldNavigate) navigate("/incidents"); }} />}
 
               {/* Runbooks Sub-Navigation */}
               {canShowSubNav &&
@@ -1112,55 +1190,38 @@ const Navbar = ({
                   const currentId = new URLSearchParams(location.search).get(
                     "id",
                   );
-                  const shown = resultItems.slice(0, 7);
+                  const shown = resultItems.slice(0, SHOWN_INCIDENT_LIMIT);
                   const overflow = resultItems.length - shown.length;
+                  const resultStateLabel = (state: SidebarRunState) => {
+                    if (state === "running") return t("navigation.navbar.statusRunning");
+                    if (state === "queued") return t("navigation.navbar.statusQueued");
+                    if (state === "completed") return t("navigation.navbar.statusCompleted");
+                    if (state === "cancelled") return t("navigation.navbar.statusCancelled");
+                    if (state === "idle") return t("navigation.navbar.statusIdle");
+                    return t("navigation.navbar.statusFailed");
+                  };
 
                   return (
-                    <div className="ml-4 mt-1 space-y-0.5">
+                    <SidebarSection>
                       {shown.map((result) => {
-                        const dotCls = getResultDotClass(result.status);
-
+                        const state = resultRunState(result.status);
                         return (
-                          <Link
+                          <SidebarRow
                             key={result.id}
                             to={`/results?id=${result.id}`}
-                            className={cn(
-                              "flex items-start gap-2 rounded-md px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-neutral-100/50 hover:text-foreground dark:hover:bg-white/10",
-                              currentId === result.id &&
-                                "bg-neutral-100/50 text-foreground font-medium dark:bg-white/10",
-                            )}
-                          >
-                            <span
-                              className={cn(
-                                "mt-1 size-1.5 shrink-0 rounded-full",
-                                dotCls,
-                              )}
-                            />
-                            <div className="min-w-0">
-                              <div className="truncate">
-                                {result.runbookTitle}
-                              </div>
-                              <div className="text-[10px] text-muted-foreground/60">
-                                {formatters.relativeTime(result.startedAt)}
-                              </div>
-                            </div>
-                          </Link>
+                            title={result.runbookTitle}
+                            active={currentId === result.id}
+                            leading={<SidebarStatusDot state={state} label={resultStateLabel(state)} />}
+                            live={isNotableRunState(state)}
+                            trailing={isNotableRunState(state)
+                              ? <SidebarRunStatus state={state} label={resultStateLabel(state)} />
+                              : shortAge(result.startedAt, formatters.locale, now, t("navigation.navbar.justNow"))}
+                          />
                         );
                       })}
-                      {overflow > 0 && (
-                        <Link
-                          to="/results?view=history"
-                          className="block px-3 py-1 text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground transition-colors"
-                        >
-                          {overflow} {t("navigation.navbar.more")}
-                        </Link>
-                      )}
-                      {shown.length === 0 && (
-                        <p className="px-3 py-1 text-xs text-muted-foreground/60">
-                          {t("navigation.navbar.noResultsYet")}
-                        </p>
-                      )}
-                    </div>
+                      {overflow > 0 && <SidebarMoreLink to="/results?view=history" label={t("navigation.navbar.viewAll", { count: resultItems.length })} />}
+                      {shown.length === 0 && <SidebarEmpty>{t("navigation.navbar.noResultsYet")}</SidebarEmpty>}
+                    </SidebarSection>
                   );
                 })()}
 
@@ -1176,8 +1237,8 @@ const Navbar = ({
           const isAdminSettingsItem = item.href === "/settings";
           const isAppSettingsItem = item.href === "/app-settings";
           const isProfileItem = item.href === "/profile";
-          const isSettingsItem =
-            isAdminSettingsItem || isAppSettingsItem || isProfileItem;
+          // App settings lists its sections inside the page, so the sidebar item is a plain link.
+          const isSettingsItem = isAdminSettingsItem || isProfileItem;
           const isActive = currentPath === item.href;
           const accordionKey = item.href;
           const isOpen = openAccordions.has(accordionKey);
@@ -1217,36 +1278,34 @@ const Navbar = ({
                     toggleAccordion(accordionKey);
                   }
                 }}
+                title={t(item.labelKey)}
                 className={cn("nav-item", isActive && "active")}
               >
                 <item.icon size={16} />
-                <span className="flex-1">{t(item.labelKey)}</span>
+                <span className="bs-sidebar-label flex-1">{t(item.labelKey)}</span>
                 {SettingsChevron !== null && (
                   <SettingsChevron
                     size={14}
-                    className="text-muted-foreground"
+                    className="bs-sidebar-label text-muted-foreground"
                   />
                 )}
               </Link>
 
               {isSettingsItem && isOpen && (
-                <div className="ml-4 mt-1 space-y-1">
+                <SidebarSection>
                   {settingsSections.map(({ labelKey, hash }, index) => (
-                    <Link
+                    <SidebarRow
                       key={hash}
                       to={`${item.href}#${hash}`}
-                      className={cn(
-                        "block px-3 py-1.5 text-xs text-muted-foreground hover:text-foreground hover:bg-neutral-100/50 dark:hover:bg-white/10 rounded-md transition-colors",
+                      title={t(labelKey)}
+                      active={
                         currentPath === item.href &&
-                          (location.hash === `#${hash}` ||
-                            (!location.hash && index === 0)) &&
-                          "text-foreground font-medium",
-                      )}
-                    >
-                      {t(labelKey)}
-                    </Link>
+                        (location.hash === `#${hash}` ||
+                          (!location.hash && index === 0))
+                      }
+                    />
                   ))}
-                </div>
+                </SidebarSection>
               )}
             </React.Fragment>
           );
