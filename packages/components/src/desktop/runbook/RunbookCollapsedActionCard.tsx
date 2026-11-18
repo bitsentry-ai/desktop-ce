@@ -65,12 +65,12 @@ export function RunbookCollapsedActionCard({
       <div className="min-w-0 flex-1 pl-1 max-sm:pl-0">
         {/* Badges wrap below a long title instead of truncating it. */}
         <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-          <span className="min-w-0 break-words text-[15px] font-medium leading-[22px] text-foreground">
+          <span className="min-w-0 break-words text-sm font-semibold leading-5 text-foreground">
             {collapsedActionTitle}
           </span>
           {renderTypeBadge(actionType)}
         </div>
-        <p className="mt-1 truncate font-mono text-[13px] leading-5 text-muted-foreground">
+        <p className="mt-1.5 truncate font-mono text-[13px] leading-5 text-muted-foreground">
           {summary}
         </p>
       </div>

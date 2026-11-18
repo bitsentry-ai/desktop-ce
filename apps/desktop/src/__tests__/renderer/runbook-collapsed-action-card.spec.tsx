@@ -46,16 +46,16 @@ describe("RunbookCollapsedActionCard", () => {
     expect(grip?.className).toContain("cursor-grab");
   });
 
-  it("shows a tabular step number and a 15px medium-weight title", () => {
+  it("shows a tabular step number and a 14px semibold title", () => {
     renderCard();
 
     const number = screen.getByText("2");
     expect(number.className).toContain("tabular-nums");
 
     const title = screen.getByText("Top processes by CPU");
-    expect(title.className).toContain("text-[15px]");
-    expect(title.className).toContain("leading-[22px]");
-    expect(title.className).toContain("font-medium");
+    expect(title.className).toContain("text-sm");
+    expect(title.className).toContain("leading-5");
+    expect(title.className).toContain("font-semibold");
   });
 
   it("deletes without opening the card", () => {
