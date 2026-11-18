@@ -44,6 +44,8 @@
   "runbooks.runbook.addAction": "Add step",
   "runbooks.runbook.addActionHere": "Add step here",
   "runbooks.runbook.addADescription": "Add a description...",
+  "runbooks.runbook.showFullDescription": "Show more",
+  "runbooks.runbook.showShortDescription": "Show less",
   "runbooks.runbook.addAnExternalSourceInSettings": "Add an External Source in Settings before saving this action.",
   "runbooks.runbook.addFilter": "Add filter",
   "runbooks.runbook.addFirstAction": "Add first action",

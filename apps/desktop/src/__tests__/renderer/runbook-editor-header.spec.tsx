@@ -18,6 +18,8 @@ const translations: Record<string, string> = {
   "runbooks.runbook.executionSettings": "Execution settings",
   "runbooks.runbook.runbookTitle": "Runbook title",
   "runbooks.runbook.addADescription": "Add a description",
+  "runbooks.runbook.showFullDescription": "Show more",
+  "runbooks.runbook.showShortDescription": "Show less",
   "common.actions.new": "New",
 };
 
@@ -226,6 +228,39 @@ describe("RunbookEditorHeader", () => {
     expect(
       screen.getByText("Load and memory", { selector: "p" }).className,
     ).toContain("line-clamp-2");
+  });
+
+  it("offers Show more only when the clamp hides part of the description", () => {
+    renderHeader();
+    expect(screen.queryByRole("button", { name: "Show more" })).toBeNull();
+    cleanup();
+
+    const scrollHeight = vi
+      .spyOn(HTMLElement.prototype, "scrollHeight", "get")
+      .mockReturnValue(54);
+    const clientHeight = vi
+      .spyOn(HTMLElement.prototype, "clientHeight", "get")
+      .mockReturnValue(36);
+    try {
+      renderHeader();
+      const more = screen.getByRole("button", { name: "Show more" });
+      expect(more.getAttribute("aria-expanded")).toBe("false");
+
+      fireEvent.click(more);
+      const less = screen.getByRole("button", { name: "Show less" });
+      expect(less.getAttribute("aria-expanded")).toBe("true");
+      expect(
+        screen.getByText("Load and memory", { selector: "p" }).className,
+      ).not.toContain("line-clamp-2");
+
+      fireEvent.click(less);
+      expect(
+        screen.getByText("Load and memory", { selector: "p" }).className,
+      ).toContain("line-clamp-2");
+    } finally {
+      scrollHeight.mockRestore();
+      clientHeight.mockRestore();
+    }
   });
 
   it("keeps the runbook title on one logical line", () => {

@@ -44,6 +44,8 @@
   "runbooks.runbook.addAction": "Tambah tindakan",
   "runbooks.runbook.addActionHere": "Tambah tindakan di sini",
   "runbooks.runbook.addADescription": "Tambahkan deskripsi...",
+  "runbooks.runbook.showFullDescription": "Tampilkan lebih banyak",
+  "runbooks.runbook.showShortDescription": "Tampilkan lebih sedikit",
   "runbooks.runbook.addAnExternalSourceInSettings": "Tambahkan Sumber Eksternal di Pengaturan sebelum menyimpan tindakan ini.",
   "runbooks.runbook.addFilter": "Tambah filter",
   "runbooks.runbook.addFirstAction": "Tambah tindakan pertama",
