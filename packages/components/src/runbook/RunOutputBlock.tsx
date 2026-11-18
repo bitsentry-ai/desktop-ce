@@ -335,6 +335,15 @@ const SEVERITY_DOT_CLASS = {
 /** A record list as a table: one row per record, the columns that tell records apart. */
 function RecordTableView({ table }: { table: RecordTable }) {
   const { t } = useTranslation();
+  // Number columns are short; they take a narrow right-aligned track so the
+  // text columns share the rest of the pane instead of scrolling sideways.
+  const numeric = new Set(
+    table.columns.filter((column) =>
+      table.rows.every(
+        (row) => row[column] === undefined || typeof row[column] === "number",
+      ),
+    ),
+  );
   return (
     <div className="border-t border-border">
       <p className="px-3 py-2 text-xs text-muted-foreground">
@@ -347,7 +356,7 @@ function RecordTableView({ table }: { table: RecordTable }) {
         )}
       </p>
       <div className="overflow-x-auto">
-        <table className="w-full border-collapse text-left text-[13px] leading-5">
+        <table className="w-full min-w-[28rem] table-fixed border-collapse text-left text-[13px] leading-5">
           <thead>
             <tr className="border-y border-border bg-muted/40">
               {table.columns.map((column) => (
@@ -355,7 +364,10 @@ function RecordTableView({ table }: { table: RecordTable }) {
                   key={column}
                   scope="col"
                   title={column}
-                  className="h-8 whitespace-nowrap px-3 text-xs font-medium text-muted-foreground"
+                  className={cn(
+                    "h-8 truncate px-3 text-xs font-medium text-muted-foreground",
+                    numeric.has(column) && "w-24 text-right",
+                  )}
                 >
                   {recordColumnLabel(column, table.columns)}
                 </th>
@@ -376,7 +388,10 @@ function RecordTableView({ table }: { table: RecordTable }) {
                     <td
                       key={column}
                       title={text}
-                      className="h-9 max-w-[22rem] truncate px-3 text-foreground"
+                      className={cn(
+                        "h-9 truncate px-3 text-foreground",
+                        numeric.has(column) && "text-right tabular-nums",
+                      )}
                     >
                       {tone === null ? (
                         text
