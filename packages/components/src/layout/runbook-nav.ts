@@ -6,7 +6,19 @@ export type RunbookNavItem = {
   id: string;
   title: string;
   actions: unknown[];
+  /** Searchable with the title, so the palette finds a runbook by what it does. */
+  description?: string;
+  /** Step titles, searchable for the same reason. */
+  stepTitles?: string[];
 };
+
+function readStepTitles(actions: unknown[]): string[] {
+  return actions.flatMap((action) => {
+    if (typeof action !== "object" || action === null) return [];
+    const title = (action as { title?: unknown }).title;
+    return typeof title === "string" && title.trim().length > 0 ? [title.trim()] : [];
+  });
+}
 
 type RunbookNavStorage = Pick<Storage, "getItem" | "setItem">;
 
@@ -29,6 +41,7 @@ export function normalizeRunbookNavItems(items: unknown[]): RunbookNavItem[] {
         id?: unknown;
         title?: unknown;
         actions?: unknown;
+        description?: unknown;
       };
 
       if (typeof record.id !== "string" || record.id.length === 0) {
@@ -41,7 +54,16 @@ export function normalizeRunbookNavItems(items: unknown[]): RunbookNavItem[] {
           : "Untitled Runbook";
       const actions = Array.isArray(record.actions) ? record.actions : [];
 
-      return { id: record.id, title, actions };
+      const description =
+        typeof record.description === "string" ? record.description : "";
+
+      return {
+        id: record.id,
+        title,
+        actions,
+        description,
+        stepTitles: readStepTitles(actions),
+      };
     })
     .filter((item): item is RunbookNavItem => item !== null);
 }
