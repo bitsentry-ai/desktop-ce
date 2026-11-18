@@ -13,11 +13,12 @@ import type { TranslationFn } from "./types";
 import { cn } from "../../lib/utils";
 
 /**
- * A row's Export and History buttons stay visible but quiet: borderless muted icons that take their border and full
- * colour on hover or focus, so a list of runbooks reads as names first without hiding its actions.
+ * A row's Export and History buttons stay quiet but recognisable as buttons: a soft resting outline around a muted
+ * icon, taking the full border, a fill and full colour on hover or focus, so a list of runbooks reads as names first
+ * without its actions looking like passive glyphs.
  */
 const ROW_ACTION_QUIET_CLASS =
-  "border-transparent bg-transparent text-muted-foreground hover:border-border hover:bg-background hover:text-foreground focus-visible:text-foreground";
+  "border-border/70 bg-transparent text-muted-foreground hover:border-border hover:bg-muted hover:text-foreground focus-visible:text-foreground";
 
 function formatRelativeTime(iso: string): string {
   const diff = Date.now() - new Date(iso).getTime();
