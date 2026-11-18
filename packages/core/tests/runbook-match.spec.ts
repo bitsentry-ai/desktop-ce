@@ -96,3 +96,31 @@ describe('resolveRunbookMatch', () => {
     expect(resolveRunbookMatch('database backup', runbooks)).toEqual({ kind: 'none' })
   })
 })
+
+describe('matching by meaning', () => {
+  it('ignores word endings', () => {
+    expect(scoreRunbookMatch('restarting nginx', runbooks[0])).toBeGreaterThanOrEqual(RUNBOOK_MATCH_TIER.allWordsInTitle)
+    expect(scoreRunbookMatch('certificates expiring', runbooks[2])).toBeGreaterThan(0)
+  })
+
+  it('finds a runbook by an operations synonym', () => {
+    expect(rankRunbooks('reboot nginx', runbooks)[0]?.runbook.id).toBe('nginx')
+    expect(rankRunbooks('storage pressure', runbooks)[0]?.runbook.id).toBe('disk')
+    expect(rankRunbooks('ssl cert expiry', runbooks)[0]?.runbook.id).toBe('tls')
+  })
+
+  it('can be turned off for spelling-only scoring', () => {
+    expect(scoreRunbookMatch('reboot nginx', runbooks[0], { meanings: false })).toBe(0)
+  })
+
+  it('offers a meaning-only match as a candidate instead of choosing it to run', () => {
+    const resolution = resolveRunbookMatch('reboot nginx', runbooks)
+    expect(resolution.kind).toBe('ambiguous')
+    expect(resolution.kind === 'ambiguous' ? resolution.candidates[0]?.id : null).toBe('nginx')
+  })
+
+  it('still runs a runbook named by spelling with a different ending', () => {
+    const resolution = resolveRunbookMatch('restart nginx', runbooks)
+    expect(resolution.kind === 'match' ? resolution.runbook.id : null).toBe('nginx')
+  })
+})
