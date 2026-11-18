@@ -195,3 +195,38 @@ describe("StructuredOutputDisplay", () => {
     expect(container.textContent ?? "").toContain("source_evidence");
   });
 });
+
+describe("StructuredOutputDisplay collapsing", () => {
+  it("collapses extracted fields behind their heading when asked", () => {
+    const { container } = render(
+      <StructuredOutputDisplay
+        collapsed
+        structuredOutput={{ verificationMethod: "source_evidence", count: 2 }}
+      />,
+    );
+    const details = container.querySelector("details");
+    expect(details).not.toBeNull();
+    expect(details?.open).toBe(false);
+    expect(details?.querySelector("summary")?.textContent).toContain(
+      "common.structuredOutputDisplay.structuredOutput",
+    );
+  });
+
+  it("keeps a log filter error visible", () => {
+    const { container } = render(
+      <StructuredOutputDisplay
+        collapsed
+        metadata={{ logFilter: { error: "Bad pattern", matchCount: 0, groupNames: [] } }}
+        structuredOutput={{ a: 1 }}
+      />,
+    );
+    expect(container.querySelector("details")).toBeNull();
+  });
+
+  it("stays open by default", () => {
+    const { container } = render(
+      <StructuredOutputDisplay structuredOutput={{ a: 1 }} />,
+    );
+    expect(container.querySelector("details")).toBeNull();
+  });
+});

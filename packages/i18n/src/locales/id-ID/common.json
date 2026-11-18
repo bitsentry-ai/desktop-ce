@@ -829,6 +829,7 @@
   "common.streamDeltaInspector.rawDeltas_one": "Delta mentah ({{count}})",
   "common.streamDeltaInspector.rawDeltas_other": "Delta mentah ({{count}})",
   "common.structuredOutputDisplay.noValuesExtracted": "Tidak ada nilai yang diekstrak.",
+  "common.structuredOutputDisplay.fieldCount": "· {{count}} kolom",
   "common.structuredOutputDisplay.structuredOutput": "Output Terstruktur",
   "common.systemSettings._12Hour230Pm": "12 jam (2:30 PM)",
   "common.systemSettings._24Hour1430": "24 jam (14:30)",

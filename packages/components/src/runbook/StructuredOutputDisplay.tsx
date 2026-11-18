@@ -1,4 +1,5 @@
 import { useTranslation } from "@bitsentry-ce/i18n";
+import { ChevronRight } from "lucide-react";
 import type { ReactNode } from "react";
 
 import { formatStructuredValue } from "../lib/jsonDisplay";
@@ -70,9 +71,15 @@ function getLogFilterMetadata(metadata: Record<string, unknown> | undefined): {
 export function StructuredOutputDisplay({
   metadata,
   structuredOutput,
+  collapsed = false,
 }: {
   metadata?: Record<string, unknown>;
   structuredOutput?: Record<string, unknown>;
+  /**
+   * Starts the extracted fields folded under their heading. Results pages pass
+   * it because the step's output block above already shows the same values.
+   */
+  collapsed?: boolean;
 }) {
   const { t } = useTranslation();
   const structuredEntries = Object.entries(structuredOutput ?? {});
@@ -145,10 +152,37 @@ export function StructuredOutputDisplay({
     );
   }
 
+  const heading = t("common.structuredOutputDisplay.structuredOutput");
+  const collapsible =
+    collapsed &&
+    structuredEntries.length > 0 &&
+    logFilterMetadata?.error === undefined;
+
+  if (collapsible) {
+    return (
+      <details className="group">
+        <summary className="mb-2 flex cursor-pointer list-none items-center gap-1.5 text-xs font-medium uppercase tracking-[0.06em] text-muted-foreground hover:text-foreground [&::-webkit-details-marker]:hidden">
+          <ChevronRight
+            aria-hidden="true"
+            className="size-3.5 shrink-0 transition-transform group-open:rotate-90"
+          />
+          {heading}
+          <span className="font-normal normal-case tracking-normal">
+            {t("common.structuredOutputDisplay.fieldCount", {
+              count: structuredEntries.length,
+            })}
+          </span>
+        </summary>
+        {logFilterContent}
+        {valuesContent}
+      </details>
+    );
+  }
+
   return (
     <div>
       <div className="mb-2 text-xs font-medium uppercase tracking-[0.06em] text-muted-foreground">
-        {t("common.structuredOutputDisplay.structuredOutput")}
+        {heading}
       </div>
       {logFilterContent}
       {valuesContent}
