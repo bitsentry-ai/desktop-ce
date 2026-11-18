@@ -27,7 +27,7 @@
     "package:win": "pnpm run build:shared-cli && pnpm run build:notarize-hook && pnpm run build:cli-bundle && pnpm run prepare:native-deps -- --arch=x64 && electron-vite build && electron-builder build --config electron-builder.yml --win nsis --x64 --publish never",
     "install:mac:arm64:dev": "bash scripts/install-macos-dev.sh \"release/build/mac-arm64/BitSentry-Desktop.app\"",
     "clean-macos-dev": "bash scripts/clean-macos-dev.sh",
-    "package:publish": "pnpm run build:shared-cli && pnpm run build:notarize-hook && pnpm run build:cli-bundle && pnpm run prepare:native-deps && electron-vite build && electron-builder build --config electron-builder.yml --publish always",
+    "package:publish": "node scripts/refuse-package-publish.mjs",
     "typecheck": "tsc -b --noEmit",
     "typecheck:test": "tsc --noEmit -p tsconfig.test.json",
     "lint": "node ../../scripts/eslint/ts7-unavailable.mjs",
