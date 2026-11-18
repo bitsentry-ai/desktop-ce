@@ -4,7 +4,9 @@
  *
  * Text is folded (accents removed, lower case) and split into words; filler words are ignored. A query word matches a
  * runbook word when they are equal, when the query word starts it (three letters or more), or when they are one edit
- * apart (five letters or more), so "nginx restrat" still finds "Restart nginx".
+ * apart (five letters or more), so "nginx restrat" still finds "Restart nginx". Words also match by meaning: endings are
+ * ignored ("restarting" finds "Restart") and common operations words are grouped ("reboot" finds "Restart", "storage"
+ * finds "Disk"). A meaning match helps a runbook surface and rank, but never on its own picks one to run.
  */
 
 export interface MatchableRunbook {
@@ -69,6 +71,56 @@ const IGNORED_WORDS = new Set([
   "your",
 ]);
 
+/**
+ * Words that ask for the same operation. Each group's first word is its meaning; the groups do not overlap. Kept to
+ * operations vocabulary an on-call engineer uses interchangeably.
+ */
+const SAME_MEANING: readonly (readonly string[])[] = [
+  ["restart", "reboot", "bounce", "recycle", "cycle"],
+  ["stop", "halt", "kill", "shutdown"],
+  ["check", "inspect", "verify", "diagnose", "diagnostic", "healthcheck", "examine"],
+  ["disk", "storage", "volume", "filesystem", "fs"],
+  ["memory", "ram", "mem", "oom"],
+  ["log", "journal", "journalctl", "syslog"],
+  ["clean", "cleanup", "clear", "purge", "prune"],
+  ["update", "upgrade", "patch"],
+  ["list", "show", "display", "view"],
+  ["database", "db"],
+  ["certificate", "cert", "tls", "ssl"],
+  ["network", "net", "connectivity"],
+  ["service", "daemon"],
+  ["cpu", "processor"],
+];
+
+const MEANING_OF = new Map<string, string>(
+  SAME_MEANING.flatMap((group) => group.map((word) => [word, group[0] ?? word] as const)),
+);
+
+/** A word without its grammatical ending: "restarting", "restarted" and "restarts" all read "restart". */
+function withoutEnding(word: string): string {
+  if (word.length >= 6 && word.endsWith("ing")) return word.slice(0, -3);
+  if (word.length >= 5 && word.endsWith("ed")) return word.slice(0, -2);
+  if (word.length >= 5 && /(?:ss|x|ch|sh)es$/.test(word)) return word.slice(0, -2);
+  if (word.length >= 4 && word.endsWith("s") && !word.endsWith("ss")) return word.slice(0, -1);
+  return word;
+}
+
+/** The comparable root of a word: no ending and no final "e" or "y", so "expiring" and "expiry" share "expir". */
+function wordStem(word: string): string {
+  const stem = withoutEnding(word);
+  return stem.length >= 5 && /[ey]$/.test(stem) ? stem.slice(0, -1) : stem;
+}
+
+function meaningOf(word: string): string {
+  return MEANING_OF.get(word) ?? MEANING_OF.get(withoutEnding(word)) ?? wordStem(word);
+}
+
+/** How a query is compared: by spelling and meaning (finding), or by spelling only (choosing one to run). */
+export interface RunbookMatchOptions {
+  /** Count same-meaning words and word endings as matches. Default true. */
+  meanings?: boolean;
+}
+
 /** Score tiers, highest first. A match's score is its tier plus a small bonus inside the tier. */
 export const RUNBOOK_MATCH_TIER = {
   exactTitle: 1000,
@@ -124,14 +176,17 @@ function withinOneEdit(left: string, right: string): boolean {
   return edits + (left.length - leftIndex) + (right.length - rightIndex) <= 1;
 }
 
-function wordMatches(queryWord: string, word: string): boolean {
+function spellingMatches(queryWord: string, word: string): boolean {
   if (queryWord === word) return true;
   if (queryWord.length >= 3 && word.startsWith(queryWord)) return true;
   return queryWord.length >= 5 && withinOneEdit(queryWord, word);
 }
 
-function anyWordMatches(queryWord: string, words: readonly string[]): boolean {
-  return words.some((word) => wordMatches(queryWord, word));
+function anyWordMatches(queryWord: string, words: readonly string[], meanings: boolean): boolean {
+  if (words.some((word) => spellingMatches(queryWord, word))) return true;
+  if (!meanings) return false;
+  const meaning = meaningOf(queryWord);
+  return words.some((word) => meaningOf(word) === meaning);
 }
 
 function isLettersInOrder(query: string, text: string): boolean {
@@ -148,7 +203,7 @@ function startsAtWord(text: string, position: number): boolean {
 }
 
 /** The word tiers: every query word in the title, every word anywhere, or most words. 0 when none apply. */
-function scoreByWords(query: string, runbook: MatchableRunbook): number {
+function scoreByWords(query: string, runbook: MatchableRunbook, meanings: boolean): number {
   const queryWords = matchWords(query);
   if (queryWords.length === 0) return 0;
   const titleWords = matchWords(runbook.title);
@@ -157,8 +212,8 @@ function scoreByWords(query: string, runbook: MatchableRunbook): number {
     ...matchWords(runbook.description ?? ""),
     ...(runbook.stepTitles ?? []).flatMap(matchWords),
   ];
-  const inTitle = queryWords.filter((word) => anyWordMatches(word, titleWords)).length;
-  const anywhere = queryWords.filter((word) => anyWordMatches(word, allWords)).length;
+  const inTitle = queryWords.filter((word) => anyWordMatches(word, titleWords, meanings)).length;
+  const anywhere = queryWords.filter((word) => anyWordMatches(word, allWords, meanings)).length;
   // Inside a tier, more of the query found in the title ranks higher.
   const titleBonus = Math.round((inTitle / queryWords.length) * 50);
   if (inTitle === queryWords.length) return RUNBOOK_MATCH_TIER.allWordsInTitle + titleBonus;
@@ -173,7 +228,11 @@ function scoreByWords(query: string, runbook: MatchableRunbook): number {
  * How well `query` names `runbook`: 0 for no match, otherwise one of {@link RUNBOOK_MATCH_TIER} plus a small bonus.
  * An empty query matches everything with 1.
  */
-export function scoreRunbookMatch(query: string, runbook: MatchableRunbook): number {
+export function scoreRunbookMatch(
+  query: string,
+  runbook: MatchableRunbook,
+  options: RunbookMatchOptions = {},
+): number {
   const needle = foldText(query).trim();
   if (needle.length === 0) return 1;
   const title = foldText(runbook.title).trim();
@@ -187,7 +246,7 @@ export function scoreRunbookMatch(query: string, runbook: MatchableRunbook): num
       : RUNBOOK_MATCH_TIER.titleSubstring;
   }
 
-  const byWords = scoreByWords(query, runbook);
+  const byWords = scoreByWords(query, runbook, options.meanings ?? true);
   if (byWords > 0) return byWords;
 
   return !needle.includes(" ") && isLettersInOrder(needle, title)
@@ -217,8 +276,9 @@ const AMBIGUOUS_CANDIDATES = 5;
 
 /**
  * The runbook a name or description refers to, for running it. Runbooks touch production hosts, so this only commits
- * to one when it clearly wins: the best match must cover every query word (or be a title match) and outrank the
- * runner-up by a whole tier. Otherwise the ranked candidates come back for the caller to choose from or ask about.
+ * to one when it clearly wins: the best match must cover every query word by spelling (or be a title match), not only
+ * by meaning, and outrank the runner-up by a whole tier. Otherwise the ranked candidates come back for the caller to
+ * choose from or ask about.
  */
 export function resolveRunbookMatch<T extends MatchableRunbook>(
   query: string,
@@ -228,7 +288,8 @@ export function resolveRunbookMatch<T extends MatchableRunbook>(
   const ranked = rankRunbooks(query, runbooks);
   const [best, runnerUp] = ranked;
   if (best === undefined) return { kind: "none" };
-  const decisive = best.score >= RUNBOOK_MATCH_TIER.allWords;
+  const decisive =
+    scoreRunbookMatch(query, best.runbook, { meanings: false }) >= RUNBOOK_MATCH_TIER.allWords;
   const clearlyAhead =
     runnerUp === undefined || tierOf(best.score) > tierOf(runnerUp.score);
   if (decisive && clearlyAhead) return { kind: "match", runbook: best.runbook };
