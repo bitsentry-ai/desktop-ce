@@ -59,14 +59,14 @@ export function SettingsSectionNav({
   return (
     <nav
       aria-label={label}
-      className={cn("md:sticky md:top-0 md:w-52 md:shrink-0 md:self-start", className)}
+      className={cn("sm:sticky sm:top-0 sm:w-40 sm:shrink-0 sm:self-start md:w-52", className)}
     >
       {heading !== undefined && (
-        <h1 className="sr-only md:not-sr-only md:mb-2 md:block md:px-2.5 md:text-xs md:font-medium md:uppercase md:leading-4 md:tracking-[0.06em] md:text-muted-foreground">
+        <h1 className="sr-only sm:not-sr-only sm:mb-2 sm:block sm:px-2.5 sm:text-xs sm:font-medium sm:uppercase sm:leading-4 sm:tracking-[0.06em] sm:text-muted-foreground">
           {heading}
         </h1>
       )}
-      <div className="md:hidden">
+      <div className="sm:hidden">
         <label htmlFor={selectId} className="sr-only">
           {selectLabel}
         </label>
@@ -90,7 +90,7 @@ export function SettingsSectionNav({
         </div>
       </div>
 
-      <div className="hidden md:block">
+      <div className="hidden sm:block">
         <ul className="flex flex-col gap-px">
           {items.map((item) => (
             <li key={item.id}>
