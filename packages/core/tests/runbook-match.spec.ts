@@ -6,6 +6,7 @@ import {
   rankRunbooks,
   resolveRunbookMatch,
   scoreRunbookMatch,
+  unresolvedRunbookMessage,
 } from '../src/shared/runbook-match'
 
 const runbooks = [
@@ -122,5 +123,22 @@ describe('matching by meaning', () => {
   it('still runs a runbook named by spelling with a different ending', () => {
     const resolution = resolveRunbookMatch('restart nginx', runbooks)
     expect(resolution.kind === 'match' ? resolution.runbook.id : null).toBe('nginx')
+  })
+})
+
+describe('unresolvedRunbookMessage', () => {
+  it('asks to confirm a single likely runbook and names its id', () => {
+    const message = unresolvedRunbookMessage('reboot nginx', [{ id: 'nginx', title: 'Restart nginx' }])
+    expect(message).toContain('"Restart nginx" (runbookId nginx)')
+    expect(message).toContain('Confirm with the user')
+  })
+
+  it('lists several candidates and asks which one', () => {
+    const message = unresolvedRunbookMessage('check', [
+      { id: 'a', title: 'Check disk' },
+      { id: 'b', title: 'Check memory' },
+    ])
+    expect(message).toContain('Several runbooks could match "check"')
+    expect(message).toContain('(runbookId b)')
   })
 })

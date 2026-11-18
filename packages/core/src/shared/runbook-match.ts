@@ -303,3 +303,18 @@ function tierOf(score: number): number {
   const tiers = Object.values(RUNBOOK_MATCH_TIER).sort((left, right) => right - left);
   return tiers.find((tier) => score >= tier) ?? 0;
 }
+
+/**
+ * What an agent tool says when a name or description does not pick one runbook to run: the likely candidates with
+ * their ids, and what to do next. Both agent runtimes use it, so a model gets the same guidance on desktop and Dashboard.
+ */
+export function unresolvedRunbookMessage(
+  query: string,
+  candidates: readonly { id: string; title: string }[],
+): string {
+  const list = candidates.map((candidate) => `"${candidate.title}" (runbookId ${candidate.id})`).join(", ");
+  if (candidates.length === 1) {
+    return `"${query}" most likely means ${list}, but not in its exact words. Confirm with the user, then call execute_runbook with that runbookId.`;
+  }
+  return `Several runbooks could match "${query}": ${list}. Ask the user which one, then call execute_runbook with its runbookId.`;
+}
