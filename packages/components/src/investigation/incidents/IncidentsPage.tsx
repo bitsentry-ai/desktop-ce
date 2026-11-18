@@ -95,6 +95,7 @@ import { useIncidentAgentEvents } from "./useIncidentAgentEvents";
 import { useIncidentComposerAttachments } from "./useIncidentComposerAttachments";
 import { useIncidentPersistence } from "./useIncidentPersistence";
 import { useIncidentProviderSelection } from "./useIncidentProviderSelection";
+import { Button } from "../../ui/button";
 import { EmptyState } from "../../ui/empty-state";
 
 /**
@@ -127,7 +128,7 @@ function useProviderNotice(loaded: boolean, openSettings: () => void): ReactNode
 const NEW_INCIDENT_HEADER_BASE =
   "flex h-8 shrink-0 items-center gap-1.5 rounded-md px-2.5 text-[13px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:opacity-50 max-sm:h-11";
 
-/** The header's New incident is the page's one primary action, also while the list is empty. */
+/** The header's New incident is the page's one primary action, also while the list is empty (the empty state's is outlined). */
 const NEW_INCIDENT_HEADER_CLASS = `${NEW_INCIDENT_HEADER_BASE} bg-primary text-primary-foreground hover:bg-[hsl(var(--primary-hover))]`;
 
 export default function IncidentsPage() {
@@ -968,6 +969,14 @@ export default function IncidentsPage() {
                 icon={ShieldAlert}
                 title={t("common.incidents.emptyTitle")}
                 description={t("common.incidents.emptyDescription")}
+                action={
+                  // The next step sits right under the explanation; the header's New incident stays the page's one
+                  // primary button, so this one is outlined.
+                  <Button variant="outline" onClick={handleNewIncident}>
+                    <SquarePen />
+                    {t("common.incidents.newIncident")}
+                  </Button>
+                }
               />
             )}
             {visibleIncidents.length > 0 && (
