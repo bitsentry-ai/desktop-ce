@@ -129,8 +129,16 @@ function useProviderNotice(loaded: boolean, openSettings: () => void): ReactNode
 const NEW_INCIDENT_HEADER_BASE =
   "flex h-8 shrink-0 items-center gap-1.5 rounded-md px-2.5 text-[13px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:opacity-50 max-sm:h-11";
 
-/** The header's New incident is the page's one primary action, also while the list is empty (the empty state's is outlined). */
+/** The header's New incident is the page's primary action once there are incidents. */
 const NEW_INCIDENT_HEADER_CLASS = `${NEW_INCIDENT_HEADER_BASE} bg-primary text-primary-foreground hover:bg-[hsl(var(--primary-hover))]`;
+
+/** While the list is empty the empty state's New incident is the primary action, so the header's copy is outlined. */
+const NEW_INCIDENT_HEADER_QUIET_CLASS = `${NEW_INCIDENT_HEADER_BASE} border border-border bg-background text-foreground hover:bg-muted`;
+
+function newIncidentHeaderClass(activeId: string | null, incidentCount: number): string {
+  const listIsEmpty = (activeId === null || activeId.length === 0) && incidentCount === 0;
+  return listIsEmpty ? NEW_INCIDENT_HEADER_QUIET_CLASS : NEW_INCIDENT_HEADER_CLASS;
+}
 
 export default function IncidentsPage() {
   const { t } = useTranslation();
@@ -934,7 +942,7 @@ export default function IncidentsPage() {
         <TooltipTrigger asChild>
           <button
             data-tour="incidents-new-btn"
-            className={NEW_INCIDENT_HEADER_CLASS}
+            className={newIncidentHeaderClass(activeId, visibleIncidents.length)}
             onClick={handleNewIncident}
             disabled={isActiveProcessing}
           >
@@ -971,9 +979,7 @@ export default function IncidentsPage() {
                 title={t("common.incidents.emptyTitle")}
                 description={t("common.incidents.emptyDescription")}
                 action={
-                  // The next step sits right under the explanation; the header's New incident stays the page's one
-                  // primary button, so this one is outlined.
-                  <Button variant="outline" onClick={handleNewIncident}>
+                  <Button onClick={handleNewIncident}>
                     <SquarePen />
                     {t("common.incidents.newIncident")}
                   </Button>
