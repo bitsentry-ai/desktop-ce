@@ -140,12 +140,18 @@ export function RemediationResumeChip({ flow, disabled }: { flow: ComposerRemedi
         {flow.step !== undefined && flow.question !== undefined && flow.question.length > 0 && (
           <p className="mt-0.5 truncate text-xs text-muted-foreground">{flow.question}</p>
         )}
+        {disabled && <p className="mt-0.5 text-xs font-medium text-foreground">{t("common.incidents.remediation.resumeBlocked")}</p>}
       </div>
       <button
         type="button"
         onClick={flow.resume}
         disabled={disabled}
-        className="inline-flex h-8 shrink-0 items-center gap-1 rounded-lg bg-primary px-3 text-[13px] font-semibold text-primary-foreground transition-colors hover:bg-[hsl(var(--primary-hover))] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60 max-sm:h-11 max-sm:px-4"
+        className={cn(
+          "inline-flex h-8 shrink-0 items-center gap-1 rounded-lg px-3 text-[13px] font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed max-sm:h-11 max-sm:px-4",
+          disabled
+            ? "border border-border bg-background text-muted-foreground"
+            : "bg-primary text-primary-foreground hover:bg-[hsl(var(--primary-hover))]",
+        )}
       >
         {t("common.incidents.remediation.resume")}
         <ChevronRight size={14} aria-hidden="true" />
