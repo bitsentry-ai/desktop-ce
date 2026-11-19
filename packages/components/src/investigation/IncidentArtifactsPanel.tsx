@@ -41,6 +41,25 @@ function FilterChip({ active, label, count, onSelect }: { active: boolean; label
   </button>;
 }
 
+interface FilterCounts { filter: ArtifactsFilter; onFilterChange(filter: ArtifactsFilter): void; total: number; sources: number; runbooks: number; actions: number; deliveries?: number }
+
+/** The filter row lists All, then only the categories that hold something (or the one already chosen), so empty "0" chips never crowd it. */
+function ArtifactFilterRow({ filter, onFilterChange, total, sources, runbooks, actions, deliveries }: FilterCounts) {
+  const { t } = useTranslation();
+  const categories: { key: ArtifactsFilter; label: string; count: number }[] = [
+    { key: "sources", label: t("incidents.integrationRail.sources"), count: sources },
+    { key: "runbooks", label: t("incidents.artifactsPanel.filterRunbooks"), count: runbooks },
+    { key: "actions", label: t("incidents.integrationRail.ticketActions"), count: actions },
+  ];
+  if (deliveries !== undefined) categories.push({ key: "deliveries", label: t("incidents.integrationRail.deliveries"), count: deliveries });
+  return <div role="group" aria-label={t("incidents.artifactsPanel.filters")} className="flex flex-wrap gap-1.5 border-b border-border px-4 py-3">
+    <FilterChip active={filter === "all"} label={t("incidents.artifactsPanel.filterAll")} count={total} onSelect={() => { onFilterChange("all"); }} />
+    {categories.filter((category) => category.count > 0 || category.key === filter).map((category) => (
+      <FilterChip key={category.key} active={filter === category.key} label={category.label} count={category.count} onSelect={() => { onFilterChange(category.key); }} />
+    ))}
+  </div>;
+}
+
 function SectionHeading({ icon: Icon, label, count }: { icon: ElementType; label: string; count: number }) {
   return <div className="mb-2 flex items-center gap-2 text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
     <Icon size={12} aria-hidden="true" />
@@ -185,13 +204,7 @@ export default function IncidentArtifactsPanel({ isOpen, filter, focusOnOpen = f
         <X size={14} />
       </button>
     </div>
-    <div role="group" aria-label={t("incidents.artifactsPanel.filters")} className="flex flex-wrap gap-1.5 border-b border-border px-4 py-3">
-      <FilterChip active={filter === "all"} label={t("incidents.artifactsPanel.filterAll")} count={total} onSelect={() => { onFilterChange("all"); }} />
-      <FilterChip active={filter === "sources"} label={t("incidents.integrationRail.sources")} count={sources.rows.length} onSelect={() => { onFilterChange("sources"); }} />
-      <FilterChip active={filter === "runbooks"} label={t("incidents.artifactsPanel.filterRunbooks")} count={runbookSummary.count} onSelect={() => { onFilterChange("runbooks"); }} />
-      <FilterChip active={filter === "actions"} label={t("incidents.integrationRail.ticketActions")} count={operationRows.length} onSelect={() => { onFilterChange("actions"); }} />
-      {deliveries !== undefined && <FilterChip active={filter === "deliveries"} label={t("incidents.integrationRail.deliveries")} count={deliveryRows.rows.length} onSelect={() => { onFilterChange("deliveries"); }} />}
-    </div>
+    <ArtifactFilterRow filter={filter} onFilterChange={onFilterChange} total={total} sources={sources.rows.length} runbooks={runbookSummary.count} actions={operationRows.length} deliveries={deliveries === undefined ? undefined : deliveryRows.rows.length} />
 
     <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-4 py-4">
       {showNeedsYou && <section aria-label={t("incidents.artifactsPanel.needsYouTitle")} className="space-y-2 rounded-2xl border border-primary/30 bg-primary/5 p-3">
