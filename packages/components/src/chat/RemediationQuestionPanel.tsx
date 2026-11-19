@@ -128,7 +128,7 @@ export function moveRemediationSelection(flow: ComposerRemediationFlow, key: str
 export function RemediationResumeChip({ flow, disabled }: { flow: ComposerRemediationFlow; disabled: boolean }) {
   const { t } = useTranslation();
   return (
-    <div className="mb-2 flex max-w-full items-center gap-2.5 rounded-xl border border-primary/30 bg-primary/5 py-1.5 pl-3 pr-1.5 text-[13px] animate-in fade-in dark:bg-primary/10">
+    <div className="mb-2 flex max-w-full items-center gap-2.5 rounded-xl border border-border bg-muted/40 py-1.5 pl-3 pr-1.5 text-[13px] animate-in fade-in">
       <div className="min-w-0 flex-1">
         <div className="flex min-w-0 items-center gap-2">
           <span className="min-w-0 truncate font-semibold text-foreground">{t("common.incidents.remediation.title")}</span>
