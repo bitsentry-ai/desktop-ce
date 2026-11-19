@@ -220,6 +220,9 @@ function ToolGroupRow({ cards, messageId, groupKey }: { cards: ToolCallCard[]; m
   );
 }
 
+/** Replies are read at length: 15px with a 24px line, a step above the 14px interface text around them. */
+const REPLY_PROSE_CLASS = "text-[15px] leading-6";
+
 function TimelineRows({ rows, messageId, collapsedJsonLabel, streaming = false }: { rows: TurnRow[]; messageId: string; collapsedJsonLabel?: string; streaming?: boolean }) {
   return (
     <>
@@ -229,7 +232,7 @@ function TimelineRows({ rows, messageId, collapsedJsonLabel, streaming = false }
           const citationSource = row.key === "final" ? {} : { [CITATION_SOURCE_ATTRIBUTE]: row.key };
           return (
             <div key={row.key} {...citationSource} className="py-1 text-sm leading-[22px] text-foreground [&_.chat-markdown]:leading-[22px]">
-              <MarkdownContent content={row.text} paragraphizeSoftBreaks collapsedJsonLabel={collapsedJsonLabel} renderJsonBlock={renderJsonEvidence} streaming={streaming && index === rows.length - 1} />
+              <MarkdownContent content={row.text} className={REPLY_PROSE_CLASS} paragraphizeSoftBreaks collapsedJsonLabel={collapsedJsonLabel} renderJsonBlock={renderJsonEvidence} streaming={streaming && index === rows.length - 1} />
             </div>
           );
         }
