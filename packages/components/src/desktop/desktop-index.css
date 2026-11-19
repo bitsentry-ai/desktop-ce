@@ -255,11 +255,11 @@
 
   /* Severity pills — subtle tinted backgrounds with colored text */
   .severity-critical {
-    @apply bg-destructive/10 text-destructive;
+    @apply bg-foreground font-semibold text-background;
   }
 
   .severity-high {
-    @apply bg-destructive/10 text-destructive;
+    @apply bg-foreground/10 font-semibold text-foreground;
   }
 
   .severity-medium {
@@ -271,7 +271,7 @@
   }
 
   .severity-info {
-    @apply bg-gray-50 text-gray-600 dark:bg-gray-800/30 dark:text-gray-400;
+    @apply bg-secondary text-muted-foreground;
   }
 
   /* Custom scrollbar styles for threat list */

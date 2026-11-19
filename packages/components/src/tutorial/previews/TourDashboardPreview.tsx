@@ -38,10 +38,10 @@ const DEMO_DIAGNOSES = [
 ];
 
 const SEVERITY_BADGE: Record<string, string> = {
-  critical: "bg-destructive/15 text-destructive",
-  high: "bg-destructive/10 text-destructive",
-  medium: "bg-[hsl(var(--warning)/0.12)] text-[hsl(var(--warning-text))]",
-  low: "bg-[hsl(var(--success)/0.1)] text-[hsl(var(--success-text))]",
+  critical: "bg-foreground font-semibold text-background",
+  high: "bg-foreground/10 font-semibold text-foreground",
+  medium: "bg-muted text-foreground",
+  low: "bg-secondary text-muted-foreground",
 };
 
 const STATE_BADGE: Record<string, string> = {

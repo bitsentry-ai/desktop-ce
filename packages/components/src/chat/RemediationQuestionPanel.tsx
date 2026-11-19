@@ -122,20 +122,30 @@ export function moveRemediationSelection(flow: ComposerRemediationFlow, key: str
 }
 
 /**
- * Shown above the composer while the remediation card is closed: the flow, its state, and a solid Resume button, so
- * a remediation that waits on the engineer reads as the next step rather than as a quiet tag.
+ * Shown above the composer while the remediation card is closed: the flow, its state and step, the question it waits
+ * on, and a solid Resume button, so a remediation that waits on the engineer reads as the next step, not a quiet tag.
  */
 export function RemediationResumeChip({ flow, disabled }: { flow: ComposerRemediationFlow; disabled: boolean }) {
   const { t } = useTranslation();
   return (
     <div className="mb-2 flex max-w-full items-center gap-2.5 rounded-xl border border-primary/30 bg-primary/5 py-1.5 pl-3 pr-1.5 text-[13px] animate-in fade-in dark:bg-primary/10">
-      <span className="min-w-0 truncate font-semibold text-foreground">{t("common.incidents.remediation.title")}</span>
-      <StatusBadge status={flow.status} />
+      <div className="min-w-0 flex-1">
+        <div className="flex min-w-0 items-center gap-2">
+          <span className="min-w-0 truncate font-semibold text-foreground">{t("common.incidents.remediation.title")}</span>
+          <StatusBadge status={flow.status} />
+          {flow.step !== undefined && (
+            <span className="shrink-0 text-xs tabular-nums text-muted-foreground">{`${String(flow.step.index)}/${String(flow.step.total)}`}</span>
+          )}
+        </div>
+        {flow.question !== undefined && flow.question.length > 0 && (
+          <p className="mt-0.5 truncate text-xs text-muted-foreground">{flow.question}</p>
+        )}
+      </div>
       <button
         type="button"
         onClick={flow.resume}
         disabled={disabled}
-        className="ml-auto inline-flex h-8 shrink-0 items-center gap-1 rounded-lg bg-primary px-3 text-[13px] font-semibold text-primary-foreground transition-colors hover:bg-[hsl(var(--primary-hover))] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60 max-sm:h-11 max-sm:px-4"
+        className="inline-flex h-8 shrink-0 items-center gap-1 rounded-lg bg-primary px-3 text-[13px] font-semibold text-primary-foreground transition-colors hover:bg-[hsl(var(--primary-hover))] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60 max-sm:h-11 max-sm:px-4"
       >
         {t("common.incidents.remediation.resume")}
         <ChevronRight size={14} aria-hidden="true" />
