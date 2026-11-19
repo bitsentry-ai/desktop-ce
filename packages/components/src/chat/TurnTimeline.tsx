@@ -262,7 +262,7 @@ function StopTurnButton() {
 
 /**
  * The running turn's one label: how long it has worked, or, once nothing new arrived for half an hour, that this turn
- * may have stalled. A stalled turn reads as a warning about the turn, not as work in progress: a compact amber panel
+ * may have stalled. A stalled turn reads as a warning about the turn, not as work in progress: a compact neutral panel
  * with how long nothing has happened, how long the reply has run, and the host's stop, with no spinner. The header
  * keeps the incident's own status and adds a "Latest reply stalled" badge beside it.
  */
@@ -291,7 +291,7 @@ function WorkingRow({ msg, startedAt, nowMs }: { msg: AgentMessage; startedAt: s
     <div className="pb-2 pt-1">
       <div
         role="status"
-        className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2 rounded-lg border border-[hsl(var(--warning)/0.35)] bg-[hsl(var(--warning)/0.08)] p-3 tabular-nums"
+        className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2 rounded-lg border border-border bg-muted/40 p-3 tabular-nums"
       >
         <TriangleAlert aria-hidden className="size-4 shrink-0 self-start text-[hsl(var(--warning-text))] max-sm:mt-0.5" />
         <div className="min-w-0 flex-1">
