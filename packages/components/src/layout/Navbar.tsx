@@ -267,7 +267,7 @@ function IncidentSubNavigation({
       trailing={state !== null && status !== null
         ? <SidebarRunStatus state={state} label={t(INCIDENT_STATUS_LABEL_KEYS[status])} />
         : shortAge(incident.createdAt, formatters.locale, now, t("navigation.navbar.justNow"))}
-      meta={preview === null ? undefined : translateIncidentPreview(preview, t)}
+      meta={preview === null || currentId !== incident.id ? undefined : translateIncidentPreview(preview, t)}
       hoverAction={<SidebarHoverButton label={t("common.navbar.archiveIncident")} onClick={() => { onArchive(incident.id, currentId === incident.id).catch(console.error); }}><Archive size={12} /></SidebarHoverButton>}
     />;
   };

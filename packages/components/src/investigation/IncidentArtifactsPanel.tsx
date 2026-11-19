@@ -60,11 +60,14 @@ function ArtifactFilterRow({ filter, onFilterChange, total, sources, runbooks, a
   </div>;
 }
 
-function SectionHeading({ icon: Icon, label, count }: { icon: ElementType; label: string; count: number }) {
+/** No count for a section that failed to load and has nothing to show, so an error never sits beside a misleading 0. */
+const shownCount = (failed: boolean, count: number): number | undefined => (failed && count === 0 ? undefined : count);
+
+function SectionHeading({ icon: Icon, label, count }: { icon: ElementType; label: string; count?: number }) {
   return <div className="mb-2 flex items-center gap-2 text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
     <Icon size={12} aria-hidden="true" />
     <h3>{label}</h3>
-    <span className={cn(COUNT_PILL, "normal-case tracking-normal")}>{count}</span>
+    {count !== undefined && <span className={cn(COUNT_PILL, "normal-case tracking-normal")}>{count}</span>}
     <span aria-hidden="true" className="h-px flex-1 bg-border" />
   </div>;
 }
@@ -228,7 +231,7 @@ export default function IncidentArtifactsPanel({ isOpen, filter, focusOnOpen = f
       </section>}
 
       <Section label={t("incidents.integrationRail.sources")} visible={showSources}>
-        <SectionHeading icon={Link2} label={t("incidents.integrationRail.sources")} count={sources.rows.length} />
+        <SectionHeading icon={Link2} label={t("incidents.integrationRail.sources")} count={shownCount(sources.failed, sources.rows.length)} />
         <IntegrationSourcesView threadId={threadId} rows={sources.rows} failed={sources.failed} disabled={disabled || sourceActions.busy} onSelect={sourceActions.select} onRefresh={sourceActions.refresh} actionError={sourceActions.error} showExecution={false} />
       </Section>
 
@@ -238,7 +241,7 @@ export default function IncidentArtifactsPanel({ isOpen, filter, focusOnOpen = f
       </Section>
 
       <Section label={t("incidents.integrationRail.ticketActions")} visible={showActions}>
-        <SectionHeading icon={Ticket} label={t("incidents.integrationRail.ticketActions")} count={operationRows.length} />
+        <SectionHeading icon={Ticket} label={t("incidents.integrationRail.ticketActions")} count={shownCount(actions.failed, operationRows.length)} />
         <div className="space-y-2">
           {(actions.failed || decisions.failed) && <p role="alert" className={ERROR_BOX}>{t("incidents.integrationWrites.error")}</p>}
           {sectionOperations.map(operationCard)}
@@ -247,7 +250,7 @@ export default function IncidentArtifactsPanel({ isOpen, filter, focusOnOpen = f
       </Section>
 
       <Section label={t("incidents.integrationRail.deliveries")} visible={showDeliveries}>
-        <SectionHeading icon={Webhook} label={t("incidents.integrationRail.deliveries")} count={deliveryRows.rows.length} />
+        <SectionHeading icon={Webhook} label={t("incidents.integrationRail.deliveries")} count={shownCount(deliveryRows.failed, deliveryRows.rows.length)} />
         <div className="space-y-2">
           {deliveryRows.failed && <p role="alert" className={ERROR_BOX}>{t("incidents.deliveries.error")}</p>}
           {sectionDeliveries.map(deliveryCard)}

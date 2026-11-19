@@ -205,6 +205,15 @@ describe('the Artifacts panel counts', () => {
     expect(labels).toEqual(['All', 'Ticket actions'])
   })
 
+  it('shows no count beside a section that failed to load', async () => {
+    const failing: IntegrationDeliveriesPort = { list: async () => { throw new Error('offline') }, retry: async () => undefined, reconcile: async () => undefined }
+    render(<Host operations={operationsPort({ current: [operation()] })} deliveries={failing} />)
+    await waitFor(() => { expect(screen.getAllByRole('alert').length).toBeGreaterThan(0) })
+
+    const section = screen.getByRole('region', { name: 'Deliveries' })
+    expect(within(section).getByRole('heading', { name: 'Deliveries' }).parentElement?.textContent).toBe('Deliveries')
+  })
+
   it('says a single item needs you in the singular', async () => {
     render(<Host operations={operationsPort({ current: [operation()] })} />)
     await waitFor(() => { expect(panelIsOpen()).toBe(true) })
