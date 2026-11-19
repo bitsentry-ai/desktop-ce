@@ -36,7 +36,7 @@ import type {
   TranslationFn,
 } from "./types";
 
-/** "Show more" sits at the end of the clamped description, over a fade, so the header gains no line; "Show less" follows the full text. */
+/** From 640px "Show more" sits at the end of the clamped description over a fade, so the header gains no line; on phones, where the description is one line, it takes its own line. "Show less" follows the full text. */
 const DESCRIPTION_TOGGLE_CLASS =
   "rounded-sm text-xs font-medium leading-[18px] text-foreground/80 underline-offset-2 transition-colors hover:text-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
 
@@ -416,7 +416,7 @@ function DescriptionField({
               onClick={() => {
                 setExpanded(true);
               }}
-              className={cn(DESCRIPTION_TOGGLE_CLASS, "absolute bottom-0 right-0 bg-[linear-gradient(to_right,transparent,hsl(var(--background))_2rem)] pl-12")}
+              className={cn(DESCRIPTION_TOGGLE_CLASS, "mt-0.5 max-sm:py-2 sm:absolute sm:bottom-0 sm:right-0 sm:mt-0 sm:bg-[linear-gradient(to_right,transparent,hsl(var(--background))_2rem)] sm:pl-12")}
             >
               {t("runbooks.runbook.showFullDescription")}
             </button>
