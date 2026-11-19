@@ -676,6 +676,7 @@
   "common.profile.disableTotpAuthentication": "禁用 TOTP 身份验证",
   "common.profile.disabling": "正在禁用……",
   "common.profile.email": "邮箱",
+  "common.profile.emailSubtitle": "您用于登录的地址。",
   "common.profile.firstNameSubtitle": "您的名字，显示在仪表盘中。",
   "common.profile.lastNameSubtitle": "您的姓氏，显示在仪表盘中。",
   "common.profile.enterThe6DigitCode": "输入验证器应用中的 6 位验证码",

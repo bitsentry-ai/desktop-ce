@@ -676,6 +676,7 @@
   "common.profile.disableTotpAuthentication": "Désactiver l'authentification TOTP",
   "common.profile.disabling": "Désactivation en cours…",
   "common.profile.email": "E-mail",
+  "common.profile.emailSubtitle": "L’adresse avec laquelle vous vous connectez.",
   "common.profile.firstNameSubtitle": "Votre prenom, affiche dans le tableau de bord.",
   "common.profile.lastNameSubtitle": "Votre nom de famille, affiche dans le tableau de bord.",
   "common.profile.enterThe6DigitCode": "Saisissez le code à 6 chiffres de votre application d'authentification",

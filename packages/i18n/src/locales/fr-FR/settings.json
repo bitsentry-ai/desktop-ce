@@ -204,7 +204,7 @@
   "settings.integrationConnections.availability.credentials_missing": "Identifiants manquants",
   "settings.integrationConnections.availability.destination_blocked": "Destination bloquée par la politique hôte",
   "settings.integrationConnections.targetImmutable": "Les cibles sont permanentes. Créez une nouvelle connexion pour une autre instance ; les identifiants restent modifiables ici.",
-  "settings.integrationConnections.pageDescription": "Connectez les outils de tickets et de connaissances que le chat peut utiliser. Les identifiants restent dans ce produit.",
+  "settings.integrationConnections.pageDescription": "Connectez vos outils de tickets et de connaissances au chat d’incident. Leurs identifiants restent sur cet appareil.",
   "settings.integrationConnections.loading": "Chargement des intégrations…",
   "settings.integrationConnections.noPlugins": "Aucun plugin installé ne prend encore en charge les connexions nommées.",
   "settings.integrationConnections.noPluginsHint": "Installez un plugin qui prend en charge les connexions, comme iTop ou Outline, puis ajoutez une connexion ici.",

@@ -204,7 +204,7 @@
   "settings.integrationConnections.availability.credentials_missing": "Credentials missing",
   "settings.integrationConnections.availability.destination_blocked": "Destination blocked by host policy",
   "settings.integrationConnections.targetImmutable": "Connection targets are permanent. Create a new named connection for another instance; credentials can be updated here.",
-  "settings.integrationConnections.pageDescription": "Connect the ticketing and knowledge tools that chat can use. Credentials stay in this product.",
+  "settings.integrationConnections.pageDescription": "Connect ticketing and knowledge tools to incident chat. Their credentials stay on this device.",
   "settings.integrationConnections.loading": "Loading integrations…",
   "settings.integrationConnections.noPlugins": "No installed plugin supports named connections yet.",
   "settings.integrationConnections.noPluginsHint": "Install a plugin that supports connections, such as iTop or Outline, then add a connection here.",

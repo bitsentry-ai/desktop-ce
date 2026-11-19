@@ -171,7 +171,7 @@ function selectIncidentNavItems(state: { incidents: IncidentThread[] }): Inciden
   return state.incidents.map(toIncidentNavItem);
 }
 
-const SHOWN_INCIDENT_LIMIT = 7;
+const SHOWN_INCIDENT_LIMIT = 5;
 
 function shownIncidentNavItems(incidents: IncidentNavItem[]): IncidentNavItem[] {
   return incidents.filter((incident) => incident.archived !== true).slice(0, SHOWN_INCIDENT_LIMIT);
