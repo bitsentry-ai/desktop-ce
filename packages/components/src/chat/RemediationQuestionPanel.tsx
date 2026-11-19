@@ -121,23 +121,26 @@ export function moveRemediationSelection(flow: ComposerRemediationFlow, key: str
   return true;
 }
 
-/** Shown above the composer while the remediation card is closed. */
+/**
+ * Shown above the composer while the remediation card is closed: the flow, its state, and a solid Resume button, so
+ * a remediation that waits on the engineer reads as the next step rather than as a quiet tag.
+ */
 export function RemediationResumeChip({ flow, disabled }: { flow: ComposerRemediationFlow; disabled: boolean }) {
   const { t } = useTranslation();
   return (
-    <button
-      type="button"
-      onClick={flow.resume}
-      disabled={disabled}
-      className="mb-2 ml-0.5 inline-flex max-w-full items-center gap-2 rounded-full border border-primary/25 bg-primary/5 py-1 pl-2.5 pr-3 text-xs transition-colors duration-150 animate-in fade-in hover:bg-primary/10 disabled:cursor-not-allowed disabled:opacity-60 dark:border-primary/30 dark:bg-primary/10 dark:hover:bg-primary/15"
-    >
-      <span className="font-semibold text-foreground">{t("common.incidents.remediation.title")}</span>
+    <div className="mb-2 flex max-w-full items-center gap-2.5 rounded-xl border border-primary/30 bg-primary/5 py-1.5 pl-3 pr-1.5 text-[13px] animate-in fade-in dark:bg-primary/10">
+      <span className="min-w-0 truncate font-semibold text-foreground">{t("common.incidents.remediation.title")}</span>
       <StatusBadge status={flow.status} />
-      <span className="inline-flex items-center gap-0.5 font-semibold text-primary">
+      <button
+        type="button"
+        onClick={flow.resume}
+        disabled={disabled}
+        className="ml-auto inline-flex h-8 shrink-0 items-center gap-1 rounded-lg bg-primary px-3 text-[13px] font-semibold text-primary-foreground transition-colors hover:bg-[hsl(var(--primary-hover))] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60 max-sm:h-11 max-sm:px-4"
+      >
         {t("common.incidents.remediation.resume")}
-        <ChevronRight size={12} aria-hidden="true" />
-      </span>
-    </button>
+        <ChevronRight size={14} aria-hidden="true" />
+      </button>
+    </div>
   );
 }
 
@@ -267,7 +270,7 @@ function CompactOptions({ flow, label }: { flow: ComposerRemediationFlow; label:
 const STEP_SCROLL = "-mr-2 max-h-[min(50dvh,32rem)] overflow-y-auto overscroll-y-contain pr-2 outline-none focus-visible:ring-2 focus-visible:ring-primary/30 [scrollbar-color:hsl(var(--border))_transparent] [scrollbar-width:thin]";
 
 const RESULT_TONES: Record<RemediationFlowTone, string> = {
-  success: "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-400",
+  success: "bg-primary/10 text-primary",
   destructive: "bg-destructive/10 text-destructive",
   neutral: "bg-muted text-muted-foreground",
 };

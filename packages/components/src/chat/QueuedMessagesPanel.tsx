@@ -109,7 +109,7 @@ export function QueuedMessagesPanel({ queue }: { queue: ComposerQueue }) {
               {queue.held && (
                 <>
                   <span aria-hidden className="text-muted-foreground/40">·</span>
-                  <span className="text-amber-600 dark:text-amber-400">{t("common.incidents.queue.paused")}</span>
+                  <span className="font-medium text-foreground">{t("common.incidents.queue.paused")}</span>
                 </>
               )}
             </span>

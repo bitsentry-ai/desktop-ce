@@ -267,7 +267,7 @@ export default function TourResultsPreview() {
 
                     let statusClassName = "text-destructive";
                     if (step.status === "completed") {
-                      statusClassName = "text-emerald-500";
+                      statusClassName = "text-primary";
                     }
 
                     return (

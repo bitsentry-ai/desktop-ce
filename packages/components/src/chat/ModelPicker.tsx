@@ -351,11 +351,11 @@ export function ModelPicker({
       }
 
       let starClassName =
-        "opacity-0 group-hover:opacity-100 text-muted-foreground/40 hover:text-amber-400";
+        "opacity-0 group-hover:opacity-100 text-muted-foreground/40 hover:text-foreground";
       let starTitle = t("common.modelPicker.addToFavorites");
       let starIconClassName = "";
       if (starred) {
-        starClassName = "opacity-100 text-amber-400";
+        starClassName = "opacity-100 text-foreground";
         starTitle = t("common.modelPicker.removeFromFavorites");
         starIconClassName = "fill-current";
       }

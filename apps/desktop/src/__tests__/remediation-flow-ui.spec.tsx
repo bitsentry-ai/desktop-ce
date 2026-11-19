@@ -283,8 +283,8 @@ describe("CVE remediation in the composer", () => {
 
     fireEvent.click(screen.getByRole("button", { name: `${K}.close` }));
 
-    const chip = screen.getByRole("button", { name: new RegExp(`${K}.resume`) });
-    expect(chip.textContent).toBe(`${K}.titlePending approval${K}.resume`);
+    const resume = screen.getByRole("button", { name: new RegExp(`${K}.resume`) });
+    expect(resume.parentElement?.textContent).toBe(`${K}.titlePending approval${K}.resume`);
   });
 
   it("waits while the agent works", () => {

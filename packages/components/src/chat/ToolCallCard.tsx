@@ -12,10 +12,10 @@ export function ToolCard({ card, messageId }: { card: ToolCallCard; messageId: s
   let dot = "bg-destructive";
   let label = t("common.incidents.toolStateFailed");
   if (card.state === "running") {
-    dot = "bg-amber-400";
+    dot = "animate-pulse bg-primary/60";
     label = "";
   } else if (card.state === "done") {
-    dot = "bg-emerald-400";
+    dot = "bg-primary";
     label = t("common.incidents.toolStateDone");
   }
   const modelContext = card.modelContext?.trim();
@@ -153,13 +153,13 @@ export function WorkLogGroup({
           <span className="ml-auto flex items-center gap-2">
             {runningCount > 0 && (
               <span className="flex items-center gap-1">
-                <span className="size-1.5 rounded-full bg-amber-400" />
+                <span className="size-1.5 animate-pulse rounded-full bg-primary/60" />
                 {runningCount}
               </span>
             )}
             {doneCount > 0 && (
               <span className="flex items-center gap-1 text-muted-foreground">
-                <span className="size-1.5 rounded-full bg-emerald-400" />
+                <span className="size-1.5 rounded-full bg-primary" />
                 {doneCount}
               </span>
             )}

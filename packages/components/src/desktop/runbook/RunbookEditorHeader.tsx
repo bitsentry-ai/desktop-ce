@@ -131,7 +131,7 @@ function MetadataWarning({
         <span
           role="img"
           aria-label={t("runbooks.runbook.runbookMetadataWarning")}
-          className="mt-0.5 flex size-5 shrink-0 cursor-help items-center justify-center text-amber-600 dark:text-amber-400"
+          className="mt-0.5 flex size-5 shrink-0 cursor-help items-center justify-center text-muted-foreground hover:text-foreground"
         >
           <AlertTriangle size={16} aria-hidden="true" />
         </span>

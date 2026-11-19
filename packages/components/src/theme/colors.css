@@ -43,17 +43,21 @@
   --input: 0 0% 87%;
   --ring: 167 100% 30%;
 
-  /* --- Status (kept apart from the brand green: success is a yellower green) --- */
+  /*
+   * --- Status: three colour families only. Success is the brand green, warning is a strong neutral a step off the
+   * text colour (it marks what needs a person with weight and an icon, not a new hue), info is a quiet neutral, and red
+   * is kept for errors.
+   */
   --destructive: 0 72% 50%;
   --destructive-foreground: 0 0% 100%;
-  --success: 142 64% 32%;
-  --warning: 32 95% 40%;
-  --info: 217 85% 50%;
+  --success: 167 100% 26%;
+  --warning: 0 0% 15%;
+  --info: 0 0% 40%;
   /* Status text: AA (>= 4.5:1) on the surface and on a 12% status tint. */
-  --success-text: 142 70% 26%;
-  --warning-text: 30 90% 31%;
+  --success-text: 167 100% 21%;
+  --warning-text: 0 0% 22%;
   --destructive-text: 0 72% 43%;
-  --info-text: 217 85% 44%;
+  --info-text: 0 0% 32%;
   /*
    * The status text colours under names Sonner does not use. Sonner sets its own --success-text, --info-text and
    * --warning-text on the toaster, so inside a toast those names stop meaning ours. These resolve here at the root
@@ -121,13 +125,13 @@
   /* --- Status --- */
   --destructive: 0 70% 52%;
   --destructive-foreground: 0 0% 98%;
-  --success: 142 55% 50%;
-  --warning: 38 90% 60%;
-  --info: 213 94% 70%;
-  --success-text: 142 60% 62%;
-  --warning-text: 38 90% 62%;
+  --success: 166 100% 41%;
+  --warning: 0 0% 85%;
+  --info: 0 0% 65%;
+  --success-text: 166 80% 52%;
+  --warning-text: 0 0% 82%;
   --destructive-text: 0 85% 72%;
-  --info-text: 213 94% 74%;
+  --info-text: 0 0% 72%;
 
   /* --- Scrollbar --- */
   --scrollbar-track: 0 0% 0% / 0;

@@ -354,7 +354,7 @@ export default function RunbookProposalArtifact({
                     reason: "Rejected from the runbook artifact sidebar.",
                   });
                 })}
-                className="inline-flex items-center gap-1 rounded-lg border border-red-500/30 px-3 py-1.5 text-xs font-medium text-red-600 hover:bg-red-500/5 disabled:opacity-50"
+                className="inline-flex items-center gap-1 rounded-lg border border-destructive/30 px-3 py-1.5 text-xs font-medium text-destructive hover:bg-destructive/5 disabled:opacity-50"
               >
                 <X size={13} />
                 {t("common.incidentArtifactsRail.proposal.reject")}
@@ -363,7 +363,7 @@ export default function RunbookProposalArtifact({
           </div>
         )}
 
-        {error.length > 0 && <div className="text-xs text-red-600">{error}</div>}
+        {error.length > 0 && <div className="text-xs text-destructive">{error}</div>}
       </div>
     </div>
   );
