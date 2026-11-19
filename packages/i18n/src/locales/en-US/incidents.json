@@ -21,7 +21,7 @@
   "incidents.incidents.createARunbookToEnable": "Create a runbook to enable chat…",
   "incidents.incidents.createOrOpenAnIncident": "Create or open an incident to start chatting with the assistant.",
   "incidents.incidents.describeTheSecurityIssueTo": "Describe the security issue to investigate…",
-  "incidents.incidents.failedToLoadModelProviders": "Failed to load model providers.",
+  "incidents.incidents.failedToLoadModelProviders": "Chat is unavailable: couldn’t load model providers.",
   "incidents.incidents.failedToStartTelemetryRun": "Failed to start telemetry run.",
   "incidents.incidents.incidentDetailTrigger": "Incident detail trigger",
   "incidents.incidents.incidentHistory": "Incident history",

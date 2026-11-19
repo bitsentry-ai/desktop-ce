@@ -21,7 +21,7 @@
   "incidents.incidents.createARunbookToEnable": "Buat runbook untuk mengaktifkan obrolan…",
   "incidents.incidents.createOrOpenAnIncident": "Buat atau buka insiden untuk mulai berbicara dengan asisten.",
   "incidents.incidents.describeTheSecurityIssueTo": "Jelaskan masalah keamanan yang akan diselidiki…",
-  "incidents.incidents.failedToLoadModelProviders": "Gagal memuat penyedia model.",
+  "incidents.incidents.failedToLoadModelProviders": "Chat tidak tersedia: gagal memuat penyedia model.",
   "incidents.incidents.failedToStartTelemetryRun": "Gagal memulai jalankan telemetri.",
   "incidents.incidents.incidentDetailTrigger": "Pemicu detail insiden",
   "incidents.incidents.incidentHistory": "Riwayat insiden",
