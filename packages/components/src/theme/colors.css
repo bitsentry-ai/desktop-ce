@@ -44,17 +44,18 @@
   --ring: 167 100% 30%;
 
   /*
-   * --- Status: three colour families only. Success is the brand green, warning is the strongest neutral (it marks
-   * what needs a person with weight and an icon, not a new hue), info is a quiet neutral, and red is kept for errors.
+   * --- Status: three colour families only. Success is the brand green, warning is a strong neutral a step off the
+   * text colour (it marks what needs a person with weight and an icon, not a new hue), info is a quiet neutral, and red
+   * is kept for errors.
    */
   --destructive: 0 72% 50%;
   --destructive-foreground: 0 0% 100%;
   --success: 167 100% 26%;
-  --warning: 0 0% 9%;
+  --warning: 0 0% 15%;
   --info: 0 0% 40%;
   /* Status text: AA (>= 4.5:1) on the surface and on a 12% status tint. */
   --success-text: 167 100% 21%;
-  --warning-text: 0 0% 9%;
+  --warning-text: 0 0% 22%;
   --destructive-text: 0 72% 43%;
   --info-text: 0 0% 32%;
   /*
@@ -125,10 +126,10 @@
   --destructive: 0 70% 52%;
   --destructive-foreground: 0 0% 98%;
   --success: 166 100% 41%;
-  --warning: 0 0% 93%;
+  --warning: 0 0% 85%;
   --info: 0 0% 65%;
   --success-text: 166 80% 52%;
-  --warning-text: 0 0% 93%;
+  --warning-text: 0 0% 82%;
   --destructive-text: 0 85% 72%;
   --info-text: 0 0% 72%;
 
