@@ -48,7 +48,7 @@
    * text colour (it marks what needs a person with weight and an icon, not a new hue), info is a quiet neutral, and red
    * is kept for errors.
    */
-  --destructive: 0 72% 50%;
+  --destructive: 0 74% 42%;
   --destructive-foreground: 0 0% 100%;
   --success: 167 100% 26%;
   --warning: 0 0% 15%;
@@ -56,7 +56,7 @@
   /* Status text: AA (>= 4.5:1) on the surface and on a 12% status tint. */
   --success-text: 167 100% 21%;
   --warning-text: 0 0% 22%;
-  --destructive-text: 0 72% 43%;
+  --destructive-text: 0 74% 40%;
   --info-text: 0 0% 32%;
   /*
    * The status text colours under names Sonner does not use. Sonner sets its own --success-text, --info-text and
