@@ -772,11 +772,12 @@ const MARKDOWN_COMPONENTS = {
       </MarkdownCodeBlock>
     );
     const child = Children.toArray(children)[0];
-    const isJson =
-      isValidElement<{ className?: string }>(child) &&
-      child.props.className?.split(" ").includes("language-json");
-    if (!collapsedJsonLabel || !isJson) return block;
-    if (renderJsonBlock !== undefined) return renderJsonBlock(code, block, collapsedJsonLabel);
+    const languages = isValidElement<{ className?: string }>(child) ? (child.props.className ?? "").split(" ") : [];
+    const untagged = !languages.some((name) => name.startsWith("language-"));
+    const isJson = languages.includes("language-json") || (untagged && /^\s*[[{]/.test(code));
+    if (!isJson) return block;
+    if (renderJsonBlock !== undefined) return renderJsonBlock(code, block, collapsedJsonLabel ?? "");
+    if (!collapsedJsonLabel) return block;
     return (
       <details className="my-3 min-w-0 rounded-lg border border-border bg-muted/30 p-3">
         <summary className="cursor-pointer text-sm font-medium text-muted-foreground">

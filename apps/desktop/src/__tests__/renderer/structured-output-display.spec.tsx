@@ -167,11 +167,12 @@ describe("StructuredOutputDisplay", () => {
     const text = container.textContent ?? "";
 
     expect(text).not.toContain("\\n");
-    expect(text).toContain(
-      "External Source Query Results\nSource: Sentry Sandbox API",
-    );
-    expect(text).toContain('"sourceType": "sentry"');
-    expect(text).toContain('["sentry"]');
+    expect(text).toContain("External Source Query Results");
+    expect(text).toContain("Source: Sentry Sandbox API");
+    expect(text).toMatch(/Source type/i);
+    expect(text).toContain("sentry");
+    expect(text).not.toContain('["sentry"]');
+    expect(text).not.toContain('"sourceType"');
     expect(text).toContain("source_evidence");
   });
 

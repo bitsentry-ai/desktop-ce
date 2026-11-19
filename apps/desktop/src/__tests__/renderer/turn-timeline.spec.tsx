@@ -115,7 +115,9 @@ describe("TurnTimeline", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /common.chat.tools.joinTwo/ }));
     fireEvent.click(screen.getByText("Check nginx"));
-    expect(screen.getByText(/"runbookTitle": "Check nginx"/)).toBeTruthy();
+    expect(screen.getByText(/^Runbook title$/i)).toBeTruthy();
+    expect(screen.getAllByText("Check nginx").length).toBeGreaterThan(1);
+    expect(screen.queryByText(/"runbookTitle"/)).toBeNull();
   });
 
   it("labels a working turn by its duration until nothing new arrives for half an hour", () => {

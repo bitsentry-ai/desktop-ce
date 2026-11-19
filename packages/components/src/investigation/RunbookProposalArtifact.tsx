@@ -8,6 +8,8 @@ import type {
 } from "../services/contracts";
 import { notifyIncidentAttentionChanged } from "../layout/incident-nav-status";
 import { SELECTED_ARTIFACT_CARD_CLASS } from "./selectedArtifactCard";
+import { StructuredValue } from "../runbook/StructuredValue";
+import { readableKey } from "../runbook/recordTable";
 import {
   Select,
   SelectContent,
@@ -37,23 +39,59 @@ function RunbookProposalOperation({
 }) {
   const { t } = useTranslation();
 
+  const hasChange = hasValue(diff.before) || hasValue(diff.after);
   return (
-    <label className="flex gap-2 rounded-xl border border-border px-3 py-2">
-      <input
-        type="checkbox"
-        checked={checked}
-        disabled={disabled}
-        onChange={onToggle}
-        aria-label={t("common.incidentArtifactsRail.proposal.approveOperation", {
-          type: diff.type,
-        })}
-        className="mt-1"
-      />
-      <span className="min-w-0">
-        <span className="block text-sm font-medium">{diff.rationale}</span>
-        <span className="block text-xs text-muted-foreground">{diff.type}</span>
-      </span>
-    </label>
+    <div className="rounded-xl border border-border px-3 py-2">
+      <label className="flex gap-2">
+        <input
+          type="checkbox"
+          checked={checked}
+          disabled={disabled}
+          onChange={onToggle}
+          aria-label={t("common.incidentArtifactsRail.proposal.approveOperation", {
+            type: diff.type,
+          })}
+          className="mt-1"
+        />
+        <span className="min-w-0">
+          <span className="block text-sm font-medium">{diff.rationale}</span>
+          <span className="block text-xs text-muted-foreground">{readableKey(diff.type)}</span>
+        </span>
+      </label>
+      {hasChange && (
+        <details className="mt-2 min-w-0 pl-6">
+          <summary className="cursor-pointer text-xs font-medium text-foreground/80 hover:text-foreground">
+            {t("common.structured.showChange")}
+          </summary>
+          <div className="mt-2 space-y-3">
+            {hasValue(diff.before) && (
+              <ChangeSide label={t("common.structured.before")} value={diff.before} />
+            )}
+            {hasValue(diff.after) && (
+              <ChangeSide label={t("common.structured.after")} value={diff.after} />
+            )}
+          </div>
+        </details>
+      )}
+    </div>
+  );
+}
+
+function hasValue(value: unknown): boolean {
+  if (value === null || value === undefined) return false;
+  if (Array.isArray(value)) return value.length > 0;
+  if (typeof value === "object") return Object.keys(value).length > 0;
+  return true;
+}
+
+function ChangeSide({ label, value }: { label: string; value: unknown }) {
+  return (
+    <div className="min-w-0 space-y-1">
+      <p className="text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">{label}</p>
+      <div className="rounded-lg border border-border bg-muted/30 px-3 py-2">
+        <StructuredValue value={value} />
+      </div>
+    </div>
   );
 }
 
@@ -240,7 +278,7 @@ export default function RunbookProposalArtifact({
           <div className="space-y-2">
             {selectedProposal.proposedRunbook.actions.map((action, index) => (
               <div key={action.id} className="rounded-xl border border-border px-3 py-2">
-                <div className="text-xs text-muted-foreground">{index + 1} · {action.type}</div>
+                <div className="text-xs text-muted-foreground">{index + 1} · {readableKey(action.type)}</div>
                 <div className="mt-0.5 text-sm font-medium">{action.title}</div>
               </div>
             ))}
@@ -287,15 +325,6 @@ export default function RunbookProposalArtifact({
             ))}
           </div>
         )}
-
-        <details className="min-w-0 w-full">
-          <summary className="cursor-pointer text-xs font-medium text-muted-foreground hover:text-foreground">
-            {t("common.incidentArtifactsRail.proposal.rawJson")}
-          </summary>
-          <pre className="mt-2 min-w-0 max-w-full max-h-72 overflow-x-hidden overflow-y-auto rounded-lg border border-border bg-muted/30 p-3 text-xs leading-relaxed whitespace-pre-wrap break-all">
-            {JSON.stringify(selectedProposal, null, 2)}
-          </pre>
-        </details>
 
         {canDecide && (
           <div className="space-y-2 border-t border-border pt-4">

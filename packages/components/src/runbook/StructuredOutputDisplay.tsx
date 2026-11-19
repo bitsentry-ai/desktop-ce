@@ -3,13 +3,36 @@ import { ChevronRight } from "lucide-react";
 import type { ReactNode } from "react";
 
 import { formatStructuredValue } from "../lib/jsonDisplay";
+import { StructuredValue } from "./StructuredValue";
 
 // Past this many lines a value stops being a glanceable cell and starts pushing
 // the rest of the table off screen, so it scrolls within a fixed height instead.
 const SCROLLABLE_VALUE_LINE_THRESHOLD = 12;
 
+function parsedObject(value: unknown): object | null {
+  if (value !== null && typeof value === "object") return value;
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  if (!trimmed.startsWith("{") && !trimmed.startsWith("[")) return null;
+  try {
+    const parsed: unknown = JSON.parse(trimmed);
+    return parsed !== null && typeof parsed === "object" ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
 function StructuredValueCell({ value }: { value: unknown }) {
   const formatted = formatStructuredValue(value);
+  const nested = parsedObject(value);
+  if (nested !== null) {
+    const long = formatted.split("\n").length > SCROLLABLE_VALUE_LINE_THRESHOLD;
+    return (
+      <div className={long ? "max-h-64 overflow-y-auto" : undefined}>
+        <StructuredValue value={nested} />
+      </div>
+    );
+  }
 
   if (formatted.split("\n").length <= SCROLLABLE_VALUE_LINE_THRESHOLD) {
     return <span className="whitespace-pre-wrap">{formatted}</span>;

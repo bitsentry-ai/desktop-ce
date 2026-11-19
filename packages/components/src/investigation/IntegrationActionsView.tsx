@@ -11,6 +11,7 @@ import { Button } from "../ui/button";
 import { useNow } from "../hooks/useNow";
 import { relativeTime } from "./relative-time";
 import { SELECTED_ARTIFACT_CARD_CLASS } from "./selectedArtifactCard";
+import { StructuredValue } from "../runbook/StructuredValue";
 export interface IntegrationOperationsPort {
   renew?(threadId: string, id: string): Promise<unknown>;
   reconcile?(threadId: string, id: string, applied: boolean, confirmed: boolean, externalId?: string): Promise<unknown>;
@@ -140,10 +141,10 @@ export function OperationBody({ row, disabled, busy, refusal, closeRequested, on
     <details className="text-xs">
       <summary className="cursor-pointer text-muted-foreground">{t("incidents.integrationWrites.details")}</summary>
       <p className="mt-2 font-medium">{t("incidents.integrationWrites.request")}</p>
-      <pre className="max-h-48 overflow-auto whitespace-pre-wrap break-all rounded-md bg-muted p-2">{JSON.stringify(row.input, null, 2)}</pre>
+      <div className="max-h-48 overflow-auto rounded-md bg-muted p-2"><StructuredValue value={row.input} /></div>
       {row.result !== undefined && <>
         <p className="mt-2 font-medium">{t("incidents.integrationWrites.result")}</p>
-        <pre className="max-h-48 overflow-auto whitespace-pre-wrap break-all rounded-md bg-muted p-2">{JSON.stringify(row.result, null, 2)}</pre>
+        <div className="max-h-48 overflow-auto rounded-md bg-muted p-2"><StructuredValue value={row.result} /></div>
       </>}
     </details>
     {awaiting && refusal !== undefined && <p role="alert" className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">{refusal}</p>}
