@@ -31,6 +31,7 @@ import { useTranslation } from "@bitsentry-ce/i18n";
 import RunbookProposalArtifact, {
   RunbookProposalListItem,
 } from "./RunbookProposalArtifact";
+import { SELECTED_ARTIFACT_CARD_CLASS } from "./selectedArtifactCard";
 
 type IncidentArtifactsToolCallState = "running" | "done" | "failed";
 
@@ -1048,7 +1049,7 @@ function ArtifactListItem({
   }
   let itemClassName = "border-border bg-muted/10 hover:bg-muted/20";
   if (isSelected) {
-    itemClassName = "border-primary bg-primary/5";
+    itemClassName = SELECTED_ARTIFACT_CARD_CLASS;
   }
   let iconClassName = "text-muted-foreground";
   if (isPendingExecution) {
@@ -1059,6 +1060,7 @@ function ArtifactListItem({
     <button
       type="button"
       onClick={onSelect}
+      aria-current={isSelected ? "true" : undefined}
       className={cn(
         "w-full rounded-2xl border p-3 text-left transition-colors",
         itemClassName,

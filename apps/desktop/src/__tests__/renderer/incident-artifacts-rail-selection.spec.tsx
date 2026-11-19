@@ -213,16 +213,16 @@ describe("IncidentArtifactsRail step selection", () => {
 
     await waitFor(() => { expect(runButton("Check backend logs")).toBeTruthy(); });
     const unselected = ["Retrieve errors from Sentry", "Check backend logs"].find(
-      (title) => runButton(title)?.className.includes("border-primary") !== true,
+      (title) => runButton(title)?.getAttribute("aria-current") !== "true",
     ) ?? "";
     fireEvent.click(runButton(unselected) as HTMLElement);
-    await waitFor(() => { expect(runButton(unselected)?.className).toContain("border-primary"); });
+    await waitFor(() => { expect(runButton(unselected)?.getAttribute("aria-current")).toBe("true"); });
 
     rerender(rail(false));
     await waitFor(() => { expect(screen.queryByText(unselected)).toBeNull(); });
     rerender(rail(true));
 
-    await waitFor(() => { expect(runButton(unselected)?.className).toContain("border-primary"); });
+    await waitFor(() => { expect(runButton(unselected)?.getAttribute("aria-current")).toBe("true"); });
   });
 
   it("selects only the clicked step when execution steps share an action id", async () => {
