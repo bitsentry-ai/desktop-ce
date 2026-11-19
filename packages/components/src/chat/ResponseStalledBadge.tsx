@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { TriangleAlert } from "lucide-react";
 import { useTranslation } from "@bitsentry-ce/i18n";
 
@@ -19,11 +19,12 @@ function latestAgentMessage(messages: readonly ChatMessage[]) {
 }
 
 /**
- * Shown beside the incident's status when its latest reply stopped making progress, so the header says both what the
- * incident is (for example Completed) and that the response under way has stalled. It renders nothing otherwise. Only
- * this badge re-renders on its minute clock, and only while the latest reply is running.
+ * The incident header's status. When the latest reply stopped making progress, the stall replaces the incident's own
+ * status (`children`), so the header never says "Incident completed" above a reply that is still hanging. The
+ * conversation's stalled row carries the detail and Stop. Only this badge re-renders on its minute clock, and only
+ * while the latest reply is running.
  */
-export function ResponseStalledBadge({ messages }: { messages: readonly ChatMessage[] }) {
+export function ResponseStalledBadge({ messages, children }: { messages: readonly ChatMessage[]; children?: ReactNode }) {
   const { t } = useTranslation();
   const latest = latestAgentMessage(messages);
   const running = latest !== undefined && (latest.status === "thinking" || latest.status === "streaming");
@@ -40,7 +41,7 @@ export function ResponseStalledBadge({ messages }: { messages: readonly ChatMess
     };
   }, [running]);
 
-  if (latest === undefined || !isTurnStalled(latest, nowMs)) return null;
+  if (latest === undefined || !isTurnStalled(latest, nowMs)) return <>{children}</>;
   return (
     <span
       className={cn(
