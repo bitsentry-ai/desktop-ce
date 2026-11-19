@@ -965,7 +965,7 @@ export default function IncidentsPage() {
     return (
       <PageShell>
         <div className="flex flex-1 flex-col overflow-hidden">
-          <div className="bs-page-header flex min-h-[3.25rem] shrink-0 items-center gap-2 border-b border-border px-4 py-2">
+          <div className="bs-page-header flex min-h-[3.25rem] shrink-0 items-center gap-2 border-b border-border px-4 py-2 sm:px-6">
             <span className="flex-1 truncate text-lg font-semibold tracking-[-0.015em] text-foreground">
               {t("common.incidents.allIncidents")}
             </span>
