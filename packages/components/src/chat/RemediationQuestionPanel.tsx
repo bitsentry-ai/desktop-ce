@@ -137,7 +137,7 @@ export function RemediationResumeChip({ flow, disabled }: { flow: ComposerRemedi
             <span className="shrink-0 text-xs tabular-nums text-muted-foreground">{`${String(flow.step.index)}/${String(flow.step.total)}`}</span>
           )}
         </div>
-        {flow.question !== undefined && flow.question.length > 0 && (
+        {flow.step !== undefined && flow.question !== undefined && flow.question.length > 0 && (
           <p className="mt-0.5 truncate text-xs text-muted-foreground">{flow.question}</p>
         )}
       </div>
