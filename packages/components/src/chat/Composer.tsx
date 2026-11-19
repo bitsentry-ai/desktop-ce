@@ -668,7 +668,8 @@ export function Composer({
         </div>
 
         {/* ── Toolbar ─────────────────────────────────────────────────────── */}
-        <div className="flex items-center justify-between gap-1.5 px-2.5 pb-2.5 sm:px-3 sm:pb-3">
+        {/* While a notice blocks the composer there is no model to pick or message to send; the notice carries the recovery. */}
+        <div className="flex items-center justify-between gap-1.5 px-2.5 pb-2.5 sm:px-3 sm:pb-3" hidden={notice !== undefined}>
           {/* Left: model picker + traits + mode + access */}
           <div className="flex min-w-0 flex-1 items-center gap-1">
             {/* Model picker */}
