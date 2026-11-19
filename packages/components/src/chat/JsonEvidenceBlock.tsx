@@ -6,7 +6,7 @@ import { findRecordTable } from "../runbook/recordTable";
 import { RecordTableView } from "../runbook/RecordTableView";
 import { detectRunOutputFormat } from "../runbook/runOutputFormat";
 
-const SUMMARY_FIELDS = 6;
+const SUMMARY_FIELDS = 4;
 
 /**
  * A JSON block in a chat reply, shown as evidence a person can read, never as raw JSON: a list of records as a table,
