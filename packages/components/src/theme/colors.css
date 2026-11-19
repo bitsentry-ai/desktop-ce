@@ -41,6 +41,8 @@
   --border: 0 0% 90%;
   --border-hover: 0 0% 80%;
   --input: 0 0% 87%;
+  --field-border: 0 0% 64%;
+  --field-border-hover: 0 0% 48%;
   --ring: 167 100% 30%;
 
   /*
@@ -120,6 +122,8 @@
   --border-hover: 0 0% 25%;
   /* Enabled control borders (#404040), a step above card dividers so inputs and buttons read as controls. */
   --input: 0 0% 25%;
+  --field-border: 0 0% 41%;
+  --field-border-hover: 0 0% 54%;
   --ring: 166 100% 41%;
 
   /* --- Status --- */
