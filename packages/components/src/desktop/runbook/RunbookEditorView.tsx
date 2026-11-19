@@ -24,7 +24,7 @@ import {
   resolvedIdleTimeoutMinutes,
 } from "./editorStateHelpers";
 import type { LlmModelOption } from "./RunbookActionFieldShared";
-import { RunbookActionList } from "./RunbookActionList";
+import { RunbookActionList, type SortableItemComponent } from "./RunbookActionList";
 import { RunbookCollapsedActionCard } from "./RunbookCollapsedActionCard";
 import { RunbookEditorHeader } from "./RunbookEditorHeader";
 import { RunbookEmptyState } from "./RunbookEmptyState";
@@ -37,20 +37,6 @@ type DesktopDragEndEvent = {
   operation: {
     source: unknown;
   };
-};
-
-type UseSortableRuntime = (options: {
-  id: string;
-  index: number;
-  disabled: boolean;
-  group: string;
-  type: string;
-  accept: string;
-}) => {
-  ref: (node: HTMLElement | null) => void;
-  isDragging: boolean;
-  isDragSource: boolean;
-  isDropTarget: boolean;
 };
 
 // Module scope so every collapsed card gets the same function on every render.
@@ -79,7 +65,7 @@ type RunbookEditorViewProps = {
   onDelete: () => void;
   onCreateRunbook: () => void;
   DragDropProvider: DragDropProviderComponent;
-  useSortableRuntime: UseSortableRuntime;
+  SortableItem: SortableItemComponent;
   expandedId: string | null;
   expandedCardRef: RefObject<HTMLDivElement | null>;
   modelDropdownOpen: boolean;
@@ -135,7 +121,7 @@ export function RunbookEditorView({
   onDelete,
   onCreateRunbook,
   DragDropProvider,
-  useSortableRuntime,
+  SortableItem,
   expandedId,
   expandedCardRef,
   modelDropdownOpen,
@@ -239,7 +225,7 @@ export function RunbookEditorView({
             <RunbookActionList
               className="max-w-[960px]"
               actions={runbook.actions}
-              useSortableRuntime={useSortableRuntime}
+              SortableItem={SortableItem}
               isExpanded={(action) => expandedId === action.id}
               renderExpandedCard={(action) => {
                 const {

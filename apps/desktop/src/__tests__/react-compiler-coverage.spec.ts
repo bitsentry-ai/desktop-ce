@@ -17,7 +17,6 @@ const compilerPlugin = requireFromDesktop.resolve('babel-plugin-react-compiler')
 const KNOWN_BAILOUTS: Record<string, string> = {
   'packages/components/src/chat/useCustomerReportIntake.ts': 'try/finally in answer and dismiss',
   'packages/components/src/desktop/DesktopStateBootstrap.tsx': 'try/finally; ++ on a variable captured by a closure',
-  'packages/components/src/desktop/runbook/RunbookActionList.tsx': 'hook chosen dynamically at render',
   'packages/components/src/desktop/runbook/useRunbookCatalogFlow.ts': 'try without catch',
   'packages/components/src/desktop/runbook/useRunbookDeleteFlow.ts': 'try/finally',
   'packages/components/src/desktop/runbook/useRunbookImportFlow.ts': 'throw inside try; try/finally',

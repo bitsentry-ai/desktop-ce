@@ -6,26 +6,37 @@ import type { RunbookActionRecord } from "../../services";
 import { RUNBOOK_ADD_ACTION_BUTTON_CLASS } from "./runbookButtonStyles";
 import type { TranslationFn } from "./types";
 
-type UseSortableRuntime = (options: {
+export type SortableItemOptions = {
   id: string;
   index: number;
   disabled: boolean;
   group: string;
   type: string;
   accept: string;
-}) => {
+};
+
+export type SortableItemState = {
   ref: (node: HTMLElement | null) => void;
   isDragging: boolean;
   isDragSource: boolean;
   isDropTarget: boolean;
 };
 
+export type SortableItemProps = SortableItemOptions & {
+  children: (sortable: SortableItemState) => ReactNode;
+};
+
+// A component, not a hook: the drag-and-drop runtime is injected, and React
+// Compiler only compiles hooks it can see statically. The host defines this
+// component once at module level and calls the sortable hook inside it.
+export type SortableItemComponent = (props: SortableItemProps) => ReactNode;
+
 type SortableActionWrapperProps = {
   id: string;
   index: number;
   disabled: boolean;
   showConnector: boolean;
-  useSortableRuntime: UseSortableRuntime;
+  SortableItem: SortableItemComponent;
   children: (api: {
     isDragging: boolean;
     isDragSource: boolean;
@@ -38,50 +49,56 @@ function SortableActionWrapper({
   index,
   disabled,
   showConnector,
-  useSortableRuntime,
+  SortableItem,
   children,
 }: SortableActionWrapperProps) {
-  const { ref, isDragging, isDragSource, isDropTarget } = useSortableRuntime({
-    id,
-    index,
-    disabled,
-    group: "runbook-actions",
-    type: "runbook-action",
-    accept: "runbook-action",
-  });
-  const showDropGap = isDropTarget && !isDragSource;
-
-  // The connector arrow lives inside the sortable element so it moves with
-  // its card while dnd-kit reorders the DOM; a sibling connector would be
-  // left behind mid-drag and cards would pile up between stale arrows.
   return (
-    <div
-      ref={ref}
-      data-runbook-action-id={id}
-      className={cn(
-        "transition-[padding,margin] duration-150 ease-out",
-        showDropGap && "py-5",
-      )}
+    <SortableItem
+      id={id}
+      index={index}
+      disabled={disabled}
+      group="runbook-actions"
+      type="runbook-action"
+      accept="runbook-action"
     >
-      {children({ isDragging, isDragSource, isDropTarget })}
-      {showConnector && (
-        <div
-          aria-hidden="true"
-          className={cn(
-            "pointer-events-none flex h-7 items-center justify-center text-muted-foreground/50",
-            (isDragSource || isDragging) && "opacity-0",
-          )}
-        >
-          <ArrowDown size={15} strokeWidth={1.8} />
-        </div>
-      )}
-    </div>
+      {({ ref, isDragging, isDragSource, isDropTarget }) => {
+        const showDropGap = isDropTarget && !isDragSource;
+
+        // The connector arrow lives inside the sortable element so it moves
+        // with its card while dnd-kit reorders the DOM; a sibling connector
+        // would be left behind mid-drag and cards would pile up between stale
+        // arrows.
+        return (
+          <div
+            ref={ref}
+            data-runbook-action-id={id}
+            className={cn(
+              "transition-[padding,margin] duration-150 ease-out",
+              showDropGap && "py-5",
+            )}
+          >
+            {children({ isDragging, isDragSource, isDropTarget })}
+            {showConnector && (
+              <div
+                aria-hidden="true"
+                className={cn(
+                  "pointer-events-none flex h-7 items-center justify-center text-muted-foreground/50",
+                  (isDragSource || isDragging) && "opacity-0",
+                )}
+              >
+                <ArrowDown size={15} strokeWidth={1.8} />
+              </div>
+            )}
+          </div>
+        );
+      }}
+    </SortableItem>
   );
 }
 
 type RunbookActionListProps = {
   actions: RunbookActionRecord[];
-  useSortableRuntime: UseSortableRuntime;
+  SortableItem: SortableItemComponent;
   isExpanded: (action: RunbookActionRecord) => boolean;
   renderExpandedCard: (
     action: RunbookActionRecord,
@@ -103,7 +120,7 @@ type RunbookActionListProps = {
 
 export function RunbookActionList({
   actions,
-  useSortableRuntime,
+  SortableItem,
   isExpanded,
   renderExpandedCard,
   renderCollapsedCard,
@@ -157,7 +174,7 @@ export function RunbookActionList({
             index={index}
             disabled={expanded}
             showConnector={showConnector}
-            useSortableRuntime={useSortableRuntime}
+            SortableItem={SortableItem}
           >
             {(sortableApi) => (
               <>

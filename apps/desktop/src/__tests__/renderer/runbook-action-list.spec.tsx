@@ -1,23 +1,19 @@
 // @vitest-environment jsdom
 
-import React, { useCallback, useRef, useState } from "react";
+import React, { useState } from "react";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
-import { RunbookActionList } from "@bitsentry-ce/components/desktop/runbook/RunbookActionList";
+import {
+  RunbookActionList,
+  type SortableItemComponent,
+  type SortableItemProps,
+} from "@bitsentry-ce/components/desktop/runbook/RunbookActionList";
 import { useRunbookActionEditorFlow } from "@bitsentry-ce/components/desktop/runbook/useRunbookActionEditorFlow";
 import type {
   RunbookActionRecord,
   RunbookRecord,
 } from "@bitsentry-ce/components/services";
 
-type SortableOptions = {
-  id: string;
-  index: number;
-  disabled: boolean;
-  group: string;
-  type: string;
-  accept: string;
-};
 
 type SortableNodeRegistry = Map<string, HTMLElement>;
 
@@ -42,19 +38,33 @@ function makeRunbook(actions: RunbookActionRecord[]): RunbookRecord {
   };
 }
 
-function makeSortableRuntime(registry: SortableNodeRegistry) {
-  return ({ id }: SortableOptions) => ({
-    ref: (node: HTMLElement | null) => {
-      if (node === null) {
-        registry.delete(id);
-      } else {
-        registry.set(id, node);
-      }
-    },
-    isDragging: false,
-    isDragSource: false,
-    isDropTarget: false,
-  });
+// One stable component per registry, so a rerender keeps the same element type
+// (a new type would remount every card and hide the reorder behaviour).
+const sortableItems = new WeakMap<SortableNodeRegistry, SortableItemComponent>();
+
+function makeSortableItem(registry: SortableNodeRegistry): SortableItemComponent {
+  const existing = sortableItems.get(registry);
+  if (existing !== undefined) {
+    return existing;
+  }
+
+  function FakeSortableItem({ id, children }: SortableItemProps) {
+    return children({
+      ref: (node: HTMLElement | null) => {
+        if (node === null) {
+          registry.delete(id);
+        } else {
+          registry.set(id, node);
+        }
+      },
+      isDragging: false,
+      isDragSource: false,
+      isDropTarget: false,
+    });
+  }
+
+  sortableItems.set(registry, FakeSortableItem);
+  return FakeSortableItem;
 }
 
 function renderList(
@@ -64,7 +74,7 @@ function renderList(
   return render(
     <RunbookActionList
       actions={actions}
-      useSortableRuntime={makeSortableRuntime(registry)}
+      SortableItem={makeSortableItem(registry)}
       isExpanded={() => false}
       renderExpandedCard={() => null}
       renderCollapsedCard={(action) => (
@@ -118,12 +128,7 @@ function DesktopDragRevalidationHarness() {
   );
   const currentRunbook =
     runbook ?? makeRunbook([makeAction("a"), makeAction("b"), makeAction("c")]);
-  const registryRef = useRef<SortableNodeRegistry>(new Map());
-  const sortableRuntime = useCallback(
-    (options: SortableOptions) =>
-      makeSortableRuntime(registryRef.current)(options),
-    [],
-  );
+  const [registry] = useState<SortableNodeRegistry>(() => new Map());
   const flow = useRunbookActionEditorFlow({
     activeRunbook: currentRunbook,
     activeEditingRunbook: currentRunbook,
@@ -142,7 +147,7 @@ function DesktopDragRevalidationHarness() {
       <button
         type="button"
         onClick={() => {
-          moveActionAfter(registryRef.current, "a", "c");
+          moveActionAfter(registry, "a", "c");
           flow.handleActionDragEnd(
             { canceled: true, operation: { source: null } },
             (value): value is { initialIndex: number; index: number } =>
@@ -154,7 +159,7 @@ function DesktopDragRevalidationHarness() {
       </button>
       <RunbookActionList
         actions={currentRunbook.actions}
-        useSortableRuntime={sortableRuntime}
+        SortableItem={makeSortableItem(registry)}
         isExpanded={() => false}
         renderExpandedCard={() => null}
         renderCollapsedCard={(action) => (
@@ -183,7 +188,7 @@ describe("RunbookActionList render outcomes", () => {
     rerender(
       <RunbookActionList
         actions={[...actions]}
-        useSortableRuntime={makeSortableRuntime(registry)}
+        SortableItem={makeSortableItem(registry)}
         isExpanded={() => false}
         renderExpandedCard={() => null}
         renderCollapsedCard={(action) => (
@@ -208,7 +213,7 @@ describe("RunbookActionList render outcomes", () => {
     render(
       <RunbookActionList
         actions={[makeAction("a"), makeAction("b")]}
-        useSortableRuntime={makeSortableRuntime(registry)}
+        SortableItem={makeSortableItem(registry)}
         isExpanded={(action) => action.id === "a"}
         renderExpandedCard={(action) => (
           <div data-testid={`expanded-${action.id}`}>{action.title}</div>
