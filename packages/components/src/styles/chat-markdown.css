@@ -186,6 +186,10 @@
     border-color: hsl(var(--foreground) / 0.35);
   }
 
+  /*
+   * A wide table scrolls sideways. Scroll shadows show which side has more: the covers scroll with the content and hide
+   * the shadow at an end that is already in view, so a table that fits shows no shadow at all.
+   */
   .chat-markdown .chat-markdown-table-scroll {
     display: block;
     width: 100%;
@@ -193,6 +197,11 @@
     max-width: 100%;
     overflow-x: auto;
     overflow-y: hidden;
+    background:
+      linear-gradient(90deg, hsl(var(--background)) 40%, hsl(var(--background) / 0)) left center / 2.5rem 100% no-repeat local,
+      linear-gradient(270deg, hsl(var(--background)) 40%, hsl(var(--background) / 0)) right center / 2.5rem 100% no-repeat local,
+      radial-gradient(farthest-side at 0 50%, hsl(var(--foreground) / 0.14), hsl(var(--foreground) / 0)) left center / 0.75rem 100% no-repeat scroll,
+      radial-gradient(farthest-side at 100% 50%, hsl(var(--foreground) / 0.14), hsl(var(--foreground) / 0)) right center / 0.75rem 100% no-repeat scroll;
   }
 
   .chat-markdown .chat-markdown-table-scroll:focus-visible {
