@@ -313,7 +313,7 @@ export default function RunbookProposalArtifact({
             {riskLabels.length > 0 && (
               <div className="mt-1">
                 {t("common.incidentArtifactsRail.proposal.risks", {
-                  risks: riskLabels.map((risk) => risk.replace(/_/g, " ")).join(", "),
+                  risks: riskLabels.map((risk) => readableKey(risk)).join(", "),
                 })}
               </div>
             )}
