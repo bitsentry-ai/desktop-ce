@@ -204,7 +204,7 @@
   "settings.integrationConnections.availability.credentials_missing": "Kredensial belum diisi",
   "settings.integrationConnections.availability.destination_blocked": "Tujuan diblokir kebijakan host",
   "settings.integrationConnections.targetImmutable": "Target koneksi tetap. Buat koneksi baru untuk instans lain; kredensial dapat diperbarui di sini.",
-  "settings.integrationConnections.pageDescription": "Hubungkan alat tiket dan basis pengetahuan yang dapat dipakai chat. Kredensial tetap di produk ini.",
+  "settings.integrationConnections.pageDescription": "Hubungkan alat tiket dan pengetahuan ke obrolan insiden. Kredensialnya tetap di perangkat ini.",
   "settings.integrationConnections.loading": "Memuat integrasi…",
   "settings.integrationConnections.noPlugins": "Belum ada plugin terpasang yang mendukung koneksi bernama.",
   "settings.integrationConnections.noPluginsHint": "Pasang plugin yang mendukung koneksi, seperti iTop atau Outline, lalu tambahkan koneksi di sini.",
