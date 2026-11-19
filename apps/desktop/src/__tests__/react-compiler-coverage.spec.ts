@@ -16,7 +16,6 @@ const compilerPlugin = requireFromDesktop.resolve('babel-plugin-react-compiler')
 // delete its entry in the same change.
 const KNOWN_BAILOUTS: Record<string, string> = {
   'packages/components/src/chat/useCustomerReportIntake.ts': 'try/finally in answer and dismiss',
-  'packages/components/src/desktop/DesktopAppSettingsScaffold.tsx': 'try/finally and throw inside try',
   'packages/components/src/desktop/DesktopStateBootstrap.tsx': 'try/finally; ++ on a variable captured by a closure',
   'packages/components/src/desktop/runbook/RunbookActionList.tsx': 'hook chosen dynamically at render',
   'packages/components/src/desktop/runbook/useRunbookCatalogFlow.ts': 'try without catch',
@@ -24,19 +23,16 @@ const KNOWN_BAILOUTS: Record<string, string> = {
   'packages/components/src/desktop/runbook/useRunbookImportFlow.ts': 'throw inside try; try/finally',
   'packages/components/src/desktop/runbook/useRunbookPersistenceFlow.ts': 'conditional or optional chaining inside try',
   'packages/components/src/desktop/runbook/useRunbookResourceData.ts': 'try/finally; throw inside try',
-  'packages/components/src/desktop/useDesktopCodingAgentPrimary.ts': 'conditional or optional chaining inside try',
   'packages/components/src/hooks/useDebouncedAutoSave.ts': 'arrow function default value; try/finally',
   'packages/components/src/investigation/IntegrationActionsView.tsx': 'try/finally',
   'packages/components/src/investigation/IntegrationDeliveriesView.tsx': 'try/finally',
   'packages/components/src/investigation/KnowledgeExecutionPanel.tsx': 'try/finally',
   'packages/components/src/investigation/RunbookPicker.tsx': 'eslint-disable of a react-hooks rule',
-  'packages/components/src/investigation/RunbookProposalArtifact.tsx': 'try/finally',
   'packages/components/src/settings/CodingAgentProvidersSection.tsx': 'conditional or optional chaining inside try',
   'packages/components/src/settings/GlobalVariablesSettingsSection.tsx': 'conditional or optional chaining inside try',
   'packages/components/src/settings/TelemetrySection.tsx': 'try/finally and throw inside try',
   'packages/components/src/settings/UpdateSettingsSection.tsx': 'try/finally',
   'packages/components/src/tutorial/HelpSection.tsx': 'manual memoization the compiler cannot preserve',
-  'packages/components/src/tutorial/useTour.ts': 'conditional or optional chaining inside try',
 }
 
 const SOURCE_ROOTS = ['packages/components/src', 'apps/desktop/src/renderer/src']

@@ -1,5 +1,4 @@
 import {
-  useCallback,
   useEffect,
   useRef,
   useState,
@@ -171,6 +170,59 @@ function formatErrorMessage(error: unknown, fallback: string): string {
   return fallback;
 }
 
+interface ResetDesktopDatabaseDeps {
+  captureDesktopAnalyticsEvent: CaptureDesktopAnalyticsEvent;
+  t: ReturnType<typeof useTranslation>["t"];
+  toast: ReturnType<typeof useToast>["toast"];
+  setIsResetDialogOpen: (open: boolean) => void;
+  setResetConfirmationText: (text: string) => void;
+  setIsResettingDatabase: (resetting: boolean) => void;
+}
+
+// Kept outside the component so the React Compiler can compile it: it cannot lower try/finally or throw inside try.
+async function resetDesktopDatabase({
+  captureDesktopAnalyticsEvent,
+  t,
+  toast,
+  setIsResetDialogOpen,
+  setResetConfirmationText,
+  setIsResettingDatabase,
+}: ResetDesktopDatabaseDeps) {
+  setIsResettingDatabase(true);
+
+  try {
+    const desktopApi = getDesktopApi();
+    if (typeof desktopApi?.database?.reset !== "function") {
+      throw new Error("Desktop database API is unavailable.");
+    }
+
+    await desktopApi.database.reset();
+    captureDesktopAnalyticsEvent("desktop_database_reset_confirmed");
+    toast({
+      title: t("settings.appSettings.databaseReset"),
+      description: t("settings.appSettings.localSqliteDataWasReset"),
+    });
+    setIsResetDialogOpen(false);
+    setResetConfirmationText("");
+    window.localStorage.clear();
+    window.sessionStorage.clear();
+    window.setTimeout(() => {
+      window.location.assign("/");
+    }, 150);
+  } catch (error) {
+    toast({
+      variant: "destructive",
+      title: t("settings.appSettings.resetFailed"),
+      description: formatErrorMessage(
+        error,
+        t("settings.appSettings.failedToResetLocalSqliteDatabase"),
+      ),
+    });
+  } finally {
+    setIsResettingDatabase(false);
+  }
+}
+
 export function DesktopAppSettingsScaffold({
   primaryAgent,
   isPrimarySelectionPending,
@@ -255,57 +307,28 @@ export function DesktopAppSettingsScaffold({
     };
   }, [scrollsToTarget, targetId]);
 
-  const handleResetDatabaseDialogChange = useCallback(
-    (open: boolean) => {
-      if (open) {
-        captureDesktopAnalyticsEvent("desktop_database_reset_requested");
-      } else if (isResetDialogOpen && !isResettingDatabase) {
-        captureDesktopAnalyticsEvent("desktop_database_reset_cancelled");
-      }
-
-      setIsResetDialogOpen(open);
-      if (!open && !isResettingDatabase) {
-        setResetConfirmationText("");
-      }
-    },
-    [captureDesktopAnalyticsEvent, isResetDialogOpen, isResettingDatabase],
-  );
-
-  const handleResetDatabase = useCallback(async () => {
-    setIsResettingDatabase(true);
-
-    try {
-      const desktopApi = getDesktopApi();
-      if (typeof desktopApi?.database?.reset !== "function") {
-        throw new Error("Desktop database API is unavailable.");
-      }
-
-      await desktopApi.database.reset();
-      captureDesktopAnalyticsEvent("desktop_database_reset_confirmed");
-      toast({
-        title: t("settings.appSettings.databaseReset"),
-        description: t("settings.appSettings.localSqliteDataWasReset"),
-      });
-      setIsResetDialogOpen(false);
-      setResetConfirmationText("");
-      window.localStorage.clear();
-      window.sessionStorage.clear();
-      window.setTimeout(() => {
-        window.location.assign("/");
-      }, 150);
-    } catch (error) {
-      toast({
-        variant: "destructive",
-        title: t("settings.appSettings.resetFailed"),
-        description: formatErrorMessage(
-          error,
-          t("settings.appSettings.failedToResetLocalSqliteDatabase"),
-        ),
-      });
-    } finally {
-      setIsResettingDatabase(false);
+  const handleResetDatabaseDialogChange = (open: boolean) => {
+    if (open) {
+      captureDesktopAnalyticsEvent("desktop_database_reset_requested");
+    } else if (isResetDialogOpen && !isResettingDatabase) {
+      captureDesktopAnalyticsEvent("desktop_database_reset_cancelled");
     }
-  }, [captureDesktopAnalyticsEvent, t, toast]);
+
+    setIsResetDialogOpen(open);
+    if (!open && !isResettingDatabase) {
+      setResetConfirmationText("");
+    }
+  };
+
+  const handleResetDatabase = () =>
+    resetDesktopDatabase({
+      captureDesktopAnalyticsEvent,
+      t,
+      toast,
+      setIsResetDialogOpen,
+      setResetConfirmationText,
+      setIsResettingDatabase,
+    });
 
   const databaseResetConfirmationText = t(
     "settings.appSettings.databaseResetConfirmationText",

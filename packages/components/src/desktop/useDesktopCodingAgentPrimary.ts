@@ -97,6 +97,38 @@ export async function saveDesktopPrimaryCodingAgent(
   await llmApi.saveProvider(providerId, { isPrimary: true });
 }
 
+// Kept outside the hook so the React Compiler can compile it: it cannot lower conditionals inside try.
+async function loadSavedProvidersAtRevision(
+  loadRevision: number,
+  savedProvidersRef: { current: DesktopSavedLlmProviders | null },
+  savedProvidersRevisionRef: { readonly current: number },
+  setPrimaryAgent: (agent: CodingAgentId | null) => void,
+): Promise<DesktopSavedLlmProviders | null> {
+  try {
+    const llmApi = requireDesktopLlmApi();
+    const saved = await llmApi.getProviders();
+    if (loadRevision !== savedProvidersRevisionRef.current) {
+      const cachedPrimaryProviderKey = getPrimaryProviderKey(
+        savedProvidersRef.current ?? {},
+      );
+      if (cachedPrimaryProviderKey !== null) {
+        const merged = withPrimarySavedProvider(
+          saved,
+          cachedPrimaryProviderKey,
+        );
+        savedProvidersRef.current = merged;
+        return merged;
+      }
+      return savedProvidersRef.current;
+    }
+    savedProvidersRef.current = saved;
+    setPrimaryAgent(getPrimaryCodingAgentFromSavedProviders(saved));
+    return saved;
+  } catch {
+    return null;
+  }
+}
+
 export function useDesktopSavedLlmProviders() {
   const savedProvidersRef = useRef<DesktopSavedLlmProviders | null>(null);
   const loadSavedProvidersPromiseRef = useRef<
@@ -115,31 +147,12 @@ export function useDesktopSavedLlmProviders() {
       }
 
       const loadRevision = savedProvidersRevisionRef.current;
-      const loadPromise = (async () => {
-        try {
-  const llmApi = requireDesktopLlmApi();
-          const saved = await llmApi.getProviders();
-          if (loadRevision !== savedProvidersRevisionRef.current) {
-            const cachedPrimaryProviderKey = getPrimaryProviderKey(
-              savedProvidersRef.current ?? {},
-            );
-            if (cachedPrimaryProviderKey !== null) {
-              const merged = withPrimarySavedProvider(
-                saved,
-                cachedPrimaryProviderKey,
-              );
-              savedProvidersRef.current = merged;
-              return merged;
-            }
-            return savedProvidersRef.current;
-          }
-          savedProvidersRef.current = saved;
-          setPrimaryAgent(getPrimaryCodingAgentFromSavedProviders(saved));
-          return saved;
-        } catch {
-          return null;
-        }
-      })();
+      const loadPromise = loadSavedProvidersAtRevision(
+        loadRevision,
+        savedProvidersRef,
+        savedProvidersRevisionRef,
+        setPrimaryAgent,
+      );
 
       loadSavedProvidersPromiseRef.current = loadPromise;
       return loadPromise;

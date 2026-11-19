@@ -19,6 +19,26 @@ function messageForError(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+// Kept outside the component so the React Compiler can compile it: it cannot lower try/finally.
+async function runProposalDecision(
+  operation: () => Promise<void>,
+  onRefresh: () => Promise<void>,
+  setBusy: (busy: boolean) => void,
+  setError: (message: string) => void,
+) {
+  setBusy(true);
+  setError("");
+  try {
+    await operation();
+    await onRefresh();
+  } catch (decisionError) {
+    setError(messageForError(decisionError));
+  } finally {
+    setBusy(false);
+    notifyIncidentAttentionChanged();
+  }
+}
+
 function statusLabel(status: RunbookAuthoringProposalReview["status"]): string {
   return status.replaceAll("_", " ");
 }
@@ -135,19 +155,8 @@ export default function RunbookProposalArtifact({
     [proposals, selectedProposal.artifactId],
   );
 
-  const runDecision = async (operation: () => Promise<void>) => {
-    setBusy(true);
-    setError("");
-    try {
-      await operation();
-      await onRefresh();
-    } catch (decisionError) {
-      setError(messageForError(decisionError));
-    } finally {
-      setBusy(false);
-      notifyIncidentAttentionChanged();
-    }
-  };
+  const runDecision = (operation: () => Promise<void>) =>
+    runProposalDecision(operation, onRefresh, setBusy, setError);
 
   const canDecide =
     selectedProposal.isLatest &&
