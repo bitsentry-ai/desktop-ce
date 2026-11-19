@@ -1,79 +1,41 @@
 import type { ReactNode } from "react";
-import { useTranslation } from "@bitsentry-ce/i18n";
 
 import type { JsonBlockRenderer } from "../markdown";
-import { FieldRows } from "../runbook/FinalOutputPreview";
-import { RunOutputBlock } from "../runbook/RunOutputBlock";
+import { StructuredValue } from "../runbook/StructuredValue";
 import { findRecordTable } from "../runbook/recordTable";
-import { detectRunOutputFormat, jsonSummary } from "../runbook/runOutputFormat";
+import { RecordTableView } from "../runbook/RecordTableView";
+import { detectRunOutputFormat } from "../runbook/runOutputFormat";
 
 const SUMMARY_FIELDS = 6;
 
 /**
- * A JSON block in a chat reply, shown as evidence a reader can scan instead of a raw dump: a list of records opens as
- * a table (with a JSON view), an object as its first fields; the raw JSON stays one click away.
+ * A JSON block in a chat reply, shown as evidence a person can read, never as raw JSON: a list of records as a table,
+ * a single record (alone or in a one-item list) as labelled rows with the first fields shown and the rest one click
+ * away, anything else as readable values. Text that does not parse as JSON stays a code block.
  */
-function JsonEvidenceBlock({
-  code,
-  rawBlock,
-  label,
-}: {
-  code: string;
-  rawBlock: ReactNode;
-  label: string;
-}) {
-  const { t } = useTranslation();
+function JsonEvidenceBlock({ code, rawBlock }: { code: string; rawBlock: ReactNode }) {
   const format = detectRunOutputFormat(code);
   if (format.kind !== "json") return rawBlock;
 
-  if (findRecordTable(format.value) !== null) {
+  const table = findRecordTable(format.value);
+  if (table !== null) {
     return (
       <div className="my-3 min-w-0">
-        <RunOutputBlock value={code} emptyMessage="" />
+        <RecordTableView table={table} />
       </div>
     );
   }
 
-  // A list holding one record (a single evaluation, a single finding) reads best as that record's fields.
-  const soleRecord =
-    Array.isArray(format.value) &&
-    format.value.length === 1 &&
-    typeof format.value[0] === "object" &&
-    format.value[0] !== null
-      ? JSON.stringify(format.value[0])
-      : null;
-  const summary = jsonSummary(soleRecord ?? code, SUMMARY_FIELDS);
-  if (summary === null || summary.fields.length === 0) {
-    return (
-      <details className="my-3 min-w-0">
-        <summary className="cursor-pointer text-xs font-medium text-muted-foreground hover:text-foreground">
-          {label}
-        </summary>
-        {rawBlock}
-      </details>
-    );
-  }
-
-  const hidden = summary.total - summary.fields.length;
+  const value =
+    Array.isArray(format.value) && format.value.length === 1 && typeof format.value[0] === "object" && format.value[0] !== null
+      ? (format.value[0] as unknown)
+      : format.value;
   return (
-    <div className="my-3 min-w-0 space-y-2 rounded-lg border border-border bg-muted/30 px-3 py-2.5">
-      <FieldRows fields={summary.fields} />
-      {hidden > 0 && (
-        <p className="text-xs text-muted-foreground">
-          {t("common.results.moreFields", { count: hidden })}
-        </p>
-      )}
-      <details className="min-w-0">
-        <summary className="cursor-pointer text-xs font-medium text-muted-foreground hover:text-foreground">
-          {label}
-        </summary>
-        {rawBlock}
-      </details>
+    <div className="my-3 min-w-0 rounded-lg border border-border bg-muted/30 px-3 py-2.5">
+      <StructuredValue value={value} limit={SUMMARY_FIELDS} />
     </div>
   );
 }
 
 /** A {@link JsonBlockRenderer} for chat replies; module-level so markdown memoization keeps working. */
-export const renderJsonEvidence: JsonBlockRenderer = (code, rawBlock, label) => (
-  <JsonEvidenceBlock code={code} rawBlock={rawBlock} label={label} />
-);
+export const renderJsonEvidence: JsonBlockRenderer = (code, rawBlock) => <JsonEvidenceBlock code={code} rawBlock={rawBlock} />;

@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import React from "react";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   RECORD_TABLE_MAX_ROWS,
@@ -113,23 +113,20 @@ describe("recordColumnLabel and severityTone", () => {
 });
 
 describe("RunOutputBlock record table", () => {
-  it("leads with the table and switches to the raw JSON", () => {
+  it("shows the table with no raw JSON view", () => {
     render(<RunOutputBlock value={JSON.stringify(payload)} emptyMessage="empty" />);
 
     expect(screen.getAllByRole("row")).toHaveLength(4);
     expect(screen.getByRole("columnheader", { name: "Severity" })).toBeTruthy();
     expect(screen.getByText("CVE-2026-1001")).toBeTruthy();
     expect(document.querySelector("pre")).toBeNull();
-
-    fireEvent.click(screen.getByRole("button", { name: "JSON" }));
-    expect(screen.queryByRole("table")).toBeNull();
-    expect(document.querySelector("pre")?.textContent).toContain('"findings"');
-    expect(screen.getByRole("button", { name: "common.results.wrapLines" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "JSON" })).toBeNull();
   });
 
-  it("keeps plain JSON objects in the JSON view", () => {
+  it("shows a plain JSON object as labelled fields, not as a table or raw JSON", () => {
     render(<RunOutputBlock value='{"a":1}' emptyMessage="empty" />);
     expect(screen.queryByRole("table")).toBeNull();
-    expect(screen.queryByRole("button", { name: "common.results.viewTable" })).toBeNull();
+    expect(document.querySelector("pre")).toBeNull();
+    expect(screen.getByText("A")).toBeTruthy();
   });
 });

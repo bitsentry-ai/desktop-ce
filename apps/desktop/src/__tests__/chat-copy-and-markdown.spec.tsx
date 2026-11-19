@@ -2,7 +2,7 @@
 
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
+import { cleanup, render, screen, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { ChatBubble, getCopyableMarkdown } from '@bitsentry-ce/components/chat/ChatBubble'
@@ -50,7 +50,7 @@ function makeAgentMessage(overrides: Partial<Extract<ChatMessage, { kind: 'agent
 }
 
 describe('incident response copy and markdown extraction', () => {
-  it("collapses JSON only when requested and preserves the complete response", () => {
+  it("shows JSON in a reply as readable fields and still copies the complete response", () => {
     const content =
       'Evaluation record\n\nPlugin evaluation\n\n```json\n[{"eligibility":"eligible","reviewRequired":true}]\n```\n\n```sh\necho hello\n```';
     const message = makeAgentMessage({
@@ -58,28 +58,21 @@ describe('incident response copy and markdown extraction', () => {
       finalText: content,
       status: "done",
     });
-    render(
+    const { container } = render(
       <TooltipProvider>
         <ChatBubble msg={message} collapsedJsonLabel="Lihat JSON" />
       </TooltipProvider>,
     );
-    const summary = screen.getByText("Lihat JSON");
-    const disclosure = summary.closest("details")!;
-    expect(disclosure.open).toEqual(false);
     expect(screen.getByText("Evaluation record")).toBeTruthy();
-    fireEvent.click(summary);
-    expect(disclosure.open).toEqual(true);
-    expect(disclosure.querySelector("code")?.textContent).toEqual(
-      '[{"eligibility":"eligible","reviewRequired":true}]\n',
-    );
+    expect(screen.getByText("Eligibility")).toBeTruthy();
+    expect(screen.queryByText("Lihat JSON")).toBeNull();
+    expect(container.textContent).not.toContain('"eligibility"');
     expect(screen.getByText("echo hello").closest("details")).toBeNull();
     expect(getCopyableMarkdown(message)).toEqual(content);
-    fireEvent.click(summary);
-    expect(disclosure.open).toEqual(false);
   });
 
-  it("keeps desktop JSON expanded when the option is absent", () => {
-    render(
+  it("reads desktop JSON the same way when no label is given", () => {
+    const { container } = render(
       <TooltipProvider>
         <ChatBubble
           msg={makeAgentMessage({
@@ -90,7 +83,8 @@ describe('incident response copy and markdown extraction', () => {
         />
       </TooltipProvider>,
     );
-    expect(screen.getByText('{"value":1}').closest("details")).toBeNull();
+    expect(screen.getByText("Value")).toBeTruthy();
+    expect(container.textContent).not.toContain('{"value":1}');
   });
 
   it('keeps inline code pipes inside one markdown table cell', () => {
