@@ -9,6 +9,7 @@ import {
   isIdentifierColumn,
   recordColumnLabel,
   severityTone,
+  readableKey,
 } from "@bitsentry-ce/components/runbook/recordTable";
 import { RunOutputBlock } from "@bitsentry-ce/components/runbook/RunOutputBlock";
 
@@ -85,9 +86,16 @@ describe("findRecordTable", () => {
 describe("recordColumnLabel and severityTone", () => {
   it("keeps the parent segment for generic or shared names", () => {
     const columns = ["vulnerability.severity", "vulnerability.id", "package.name"];
-    expect(recordColumnLabel("vulnerability.severity", columns)).toBe("severity");
-    expect(recordColumnLabel("vulnerability.id", columns)).toBe("vulnerability.id");
-    expect(recordColumnLabel("package.name", columns)).toBe("package.name");
+    expect(recordColumnLabel("vulnerability.severity", columns)).toBe("Severity");
+    expect(recordColumnLabel("vulnerability.id", columns)).toBe("Vulnerability ID");
+    expect(recordColumnLabel("package.name", columns)).toBe("Package name");
+  });
+
+  it("turns data keys into header text", () => {
+    expect(readableKey("matchConfidence")).toBe("Match confidence");
+    expect(readableKey("score.base")).toBe("Score base");
+    expect(readableKey("cve_id")).toBe("CVE ID");
+    expect(readableKey("host")).toBe("Host");
   });
 
   it("treats id, key and CVE columns as identifiers", () => {
@@ -109,7 +117,7 @@ describe("RunOutputBlock record table", () => {
     render(<RunOutputBlock value={JSON.stringify(payload)} emptyMessage="empty" />);
 
     expect(screen.getAllByRole("row")).toHaveLength(4);
-    expect(screen.getByRole("columnheader", { name: "severity" })).toBeTruthy();
+    expect(screen.getByRole("columnheader", { name: "Severity" })).toBeTruthy();
     expect(screen.getByText("CVE-2026-1001")).toBeTruthy();
     expect(document.querySelector("pre")).toBeNull();
 
