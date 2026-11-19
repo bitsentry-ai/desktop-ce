@@ -21,7 +21,7 @@
   "incidents.incidents.createARunbookToEnable": "创建一个运行手册以启用聊天……",
   "incidents.incidents.createOrOpenAnIncident": "创建或打开一个事件，即可开始与助手对话。",
   "incidents.incidents.describeTheSecurityIssueTo": "描述需要调查的安全问题……",
-  "incidents.incidents.failedToLoadModelProviders": "加载模型提供商失败。",
+  "incidents.incidents.failedToLoadModelProviders": "聊天不可用：无法加载模型提供商。",
   "incidents.incidents.failedToStartTelemetryRun": "启动遥测运行失败。",
   "incidents.incidents.incidentDetailTrigger": "事件详情触发器",
   "incidents.incidents.incidentHistory": "事件历史",
