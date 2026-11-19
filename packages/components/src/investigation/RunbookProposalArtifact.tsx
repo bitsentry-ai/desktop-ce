@@ -7,6 +7,7 @@ import type {
   RunbookAuthoringProposalReview,
 } from "../services/contracts";
 import { notifyIncidentAttentionChanged } from "../layout/incident-nav-status";
+import { SELECTED_ARTIFACT_CARD_CLASS } from "./selectedArtifactCard";
 import {
   Select,
   SelectContent,
@@ -91,9 +92,10 @@ export function RunbookProposalListItem({
     <button
       type="button"
       onClick={onSelect}
+      aria-current={isSelected ? "true" : undefined}
       className={`w-full rounded-2xl border px-3 py-3 text-left transition-colors ${
         isSelected
-          ? "border-primary bg-primary/5"
+          ? SELECTED_ARTIFACT_CARD_CLASS
           : "border-border bg-background hover:bg-muted/40"
       }`}
     >
