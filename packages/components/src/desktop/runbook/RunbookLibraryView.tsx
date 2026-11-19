@@ -13,12 +13,11 @@ import type { TranslationFn } from "./types";
 import { cn } from "../../lib/utils";
 
 /**
- * A row's Export and History buttons stay quiet but recognisable as buttons: a soft resting outline around a muted
- * icon, taking the full border, a fill and full colour on hover or focus, so a list of runbooks reads as names first
- * without its actions looking like passive glyphs.
+ * A row's Export and History buttons stay quieter than the runbook's name but read as available: a full resting border
+ * around a 16px icon at 70% of the text colour, with a fill and full colour on hover or focus.
  */
 const ROW_ACTION_QUIET_CLASS =
-  "border-border/70 bg-transparent text-muted-foreground hover:border-border hover:bg-muted hover:text-foreground focus-visible:text-foreground";
+  "border-border bg-transparent text-foreground/70 hover:bg-muted hover:text-foreground focus-visible:text-foreground";
 
 function formatRelativeTime(iso: string): string {
   const diff = Date.now() - new Date(iso).getTime();
@@ -109,7 +108,7 @@ export function RunbookLibraryView({
                   aria-label={t("runbooks.runbook.export")}
                   className={cn(RUNBOOK_ICON_BUTTON_CLASS, ROW_ACTION_QUIET_CLASS)}
                 >
-                  <Upload size={14} aria-hidden="true" />
+                  <Upload size={16} aria-hidden="true" />
                 </button>
               </TooltipTrigger>
               <TooltipContent side="bottom">
@@ -126,7 +125,7 @@ export function RunbookLibraryView({
                   aria-label={t("runbooks.runbook.viewRunbookResults")}
                   className={cn(RUNBOOK_ICON_BUTTON_CLASS, ROW_ACTION_QUIET_CLASS)}
                 >
-                  <History size={14} aria-hidden="true" />
+                  <History size={16} aria-hidden="true" />
                 </button>
               </TooltipTrigger>
               <TooltipContent side="bottom">
