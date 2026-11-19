@@ -386,18 +386,23 @@ function RecordTableView({ table }: { table: RecordTable }) {
                 {table.columns.map((column) => {
                   const text = formatCell(row[column]);
                   const tone = severityTone(column, row[column]);
+                  // Identifiers and numbers stay on one line; other text wraps to two, so names that differ only near
+                  // the end (package versions, hostnames) stay readable.
+                  const singleLine = numeric.has(column) || isIdentifierColumn(column);
+                  const plain = singleLine ? text : <span className="line-clamp-2 [overflow-wrap:anywhere]">{text}</span>;
                   return (
                     <td
                       key={column}
                       title={text}
                       className={cn(
-                        "h-9 truncate px-3 text-foreground",
+                        "h-9 px-3 text-foreground",
+                        singleLine ? "truncate" : "py-1.5",
                         numeric.has(column) && "text-right tabular-nums",
                         isIdentifierColumn(column) && "font-mono text-xs",
                       )}
                     >
                       {tone === null ? (
-                        text
+                        plain
                       ) : (
                         <span className="inline-flex items-center gap-1.5 font-medium">
                           <span
