@@ -21,7 +21,7 @@
   "incidents.incidents.createARunbookToEnable": "Créez un runbook pour activer le chat…",
   "incidents.incidents.createOrOpenAnIncident": "Créez ou ouvrez un incident pour commencer à discuter avec l'assistant.",
   "incidents.incidents.describeTheSecurityIssueTo": "Décrivez le problème de sécurité à investiguer…",
-  "incidents.incidents.failedToLoadModelProviders": "Impossible de charger les fournisseurs de modèles.",
+  "incidents.incidents.failedToLoadModelProviders": "Chat indisponible : impossible de charger les fournisseurs de modèles.",
   "incidents.incidents.failedToStartTelemetryRun": "Impossible de démarrer l'exécution de télémétrie.",
   "incidents.incidents.incidentDetailTrigger": "Déclencheur de détail d'incident",
   "incidents.incidents.incidentHistory": "Historique des incidents",
