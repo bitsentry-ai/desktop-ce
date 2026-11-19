@@ -86,9 +86,9 @@ describe('the ticket actions view', () => {
     renderView([resolveRequest({ status: 'succeeded', createdAt: '2026-09-30T00:00:00.000Z' }), operation()])
 
     const region = proposal('create')
-    expect(within(region).getByText('https://itop.example/webservices/rest.php')).toBeTruthy()
-    expect(within(region).getByText('create_object')).toBeTruthy()
-    expect(within(region).getByText('UserRequest')).toBeTruthy()
+    expect(within(region).getAllByText('https://itop.example/webservices/rest.php').length).toBeGreaterThan(0)
+    expect(within(region).getAllByText('create_object').length).toBeGreaterThan(0)
+    expect(within(region).getAllByText('UserRequest').length).toBeGreaterThan(0)
 
     const changes = within(region).getByText(label('changes')).parentElement as HTMLElement
     expect(within(changes).getByText('title')).toBeTruthy()
@@ -99,7 +99,8 @@ describe('the ticket actions view', () => {
 
     const details = within(region).getByText(label('details')).closest('details') as HTMLDetailsElement
     expect(details.open).toBe(false)
-    expect(within(details).getByText(/"title": "QA 565 disposable"/)).toBeTruthy()
+    expect(within(details).getAllByText('QA 565 disposable').length).toBeGreaterThan(0)
+    expect(details.textContent).not.toContain('"title"')
     expect(screen.queryByRole('region', { name: label('operation.resolve') })).toBeNull()
   })
 
@@ -110,8 +111,8 @@ describe('the ticket actions view', () => {
     fireEvent.click(listItems().find((item) => item.textContent?.includes(label('operation.resolve')))!)
 
     const region = proposal('resolve')
-    expect(within(region).getByText('12')).toBeTruthy()
-    expect(within(region).getByText('ev_resolve')).toBeTruthy()
+    expect(within(region).getAllByText('12').length).toBeGreaterThan(0)
+    expect(within(region).getAllByText('ev_resolve').length).toBeGreaterThan(0)
     expect(within(region).getByText(label('noChanges'))).toBeTruthy()
     expect(screen.queryByRole('region', { name: label('operation.create') })).toBeNull()
   })
@@ -189,7 +190,8 @@ describe('the ticket actions view', () => {
     expect(within(proposal('create')).getByText(label('uncertain'))).toBeTruthy()
 
     const details = screen.getByText(label('details')).closest('details') as HTMLDetailsElement
-    expect(within(details).getByText(/"code": 100/)).toBeTruthy()
+    expect(within(details).getByText(/^Code$/i)).toBeTruthy()
+    expect(within(details).getByText('100')).toBeTruthy()
   })
 
   it('reports a list failure', () => {
@@ -264,9 +266,11 @@ describe('non-iTop operations', () => {
     renderView([outline()])
 
     const details = screen.getByText(label('details')).closest('details') as HTMLDetailsElement
-    for (const text of [/"title": "Postmortem"/, /"id": "doc-1"/, /"class": "runbook"/, /"stimulus": "draft"/, /"outputFields": "id"/]) {
-      expect(within(details).getByText(text)).toBeTruthy()
+    for (const text of ['Postmortem', 'doc-1', 'runbook', 'draft']) {
+      expect(within(details).getAllByText(text).length).toBeGreaterThan(0)
     }
+    expect(within(details).getByText(/^Output fields$/i)).toBeTruthy()
+    expect(details.textContent).not.toContain('"title"')
   })
 })
 

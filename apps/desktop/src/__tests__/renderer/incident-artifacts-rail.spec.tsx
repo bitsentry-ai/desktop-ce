@@ -886,12 +886,11 @@ describe("IncidentArtifactsRail", () => {
     });
 
     const rendered = detailPane().textContent ?? "";
-    expect(rendered).toContain("structuredOutput");
     expect(rendered).toContain("CVE-2026-1000");
-    expect(rendered).toContain("vendor_fix_available");
-    expect(rendered).toContain("reviewRequired");
+    expect(rendered).toMatch(/Vendor fix available/i);
     expect(rendered).toContain("CVE-2026-1001");
-    expect(rendered).toContain("no_vendor_fix");
+    expect(rendered).toMatch(/No vendor fix/i);
+    expect(rendered).not.toContain('"reviewRequired"');
     expect(rendered.indexOf("CVE-2026-1000")).toBeLessThan(
       rendered.indexOf("CVE-2026-1001"),
     );

@@ -34,6 +34,8 @@ import { useDisclosure } from "./disclosureStore";
 import { CITATION_SOURCE_ATTRIBUTE } from "./citationDom";
 import type { ChatMessage, ToolCallCard } from "./types";
 import { renderJsonEvidence } from "./JsonEvidenceBlock";
+import { StructuredValue } from "../runbook/StructuredValue";
+import { detectRunOutputFormat } from "../runbook/runOutputFormat";
 
 type AgentMessage = Extract<ChatMessage, { kind: "agent" }>;
 
@@ -75,23 +77,26 @@ function ToolIcon({ kind }: { kind: ToolKind }) {
   return <Icon className="size-4 shrink-0 stroke-2 text-muted-foreground opacity-70" aria-hidden />;
 }
 
-function stringifyInput(input: Record<string, unknown> | undefined): string | null {
-  if (input === undefined || Object.keys(input).length === 0) return null;
-  try {
-    return JSON.stringify(input, null, 2);
-  } catch {
-    return null;
-  }
-}
 
 const detailBlockClassName =
   "max-h-64 cursor-text overflow-auto whitespace-pre-wrap break-words rounded-md bg-muted/50 p-2 font-mono text-xs leading-relaxed text-muted-foreground select-text";
+
+/** A tool's output: JSON reads as labelled rows or a table; anything else stays as the text the tool returned. */
+function ToolOutput({ output }: { output: string }) {
+  const format = detectRunOutputFormat(output);
+  if (format.kind !== "json") return <pre className={detailBlockClassName}>{output}</pre>;
+  return (
+    <div className="max-h-64 overflow-auto rounded-md bg-muted/50 p-2">
+      <StructuredValue value={format.value} />
+    </div>
+  );
+}
 
 function ToolDetails({ card, messageId }: { card: ToolCallCard; messageId: string }) {
   const { t } = useTranslation();
   const [detailsOpen, setDetailsOpen] = useDisclosure(`${messageId}:${card.toolCallId}:details`, false);
   const [contextOpen, setContextOpen] = useDisclosure(`${messageId}:${card.toolCallId}:context`, false);
-  const input = stringifyInput(card.input);
+  const input = card.input !== undefined && Object.keys(card.input).length > 0 ? card.input : null;
   const output = card.output?.trim();
   const modelContext = card.modelContext?.trim();
   const failure = card.error !== undefined && card.error.trim().length > 0 ? parseHostToolError(card.error) : undefined;
@@ -106,13 +111,15 @@ function ToolDetails({ card, messageId }: { card: ToolCallCard; messageId: strin
       {input !== null && (
         <div className="space-y-1">
           <p className="text-xs font-medium text-muted-foreground">{t("common.chat.tools.input")}</p>
-          <pre className={detailBlockClassName}>{input}</pre>
+          <div className="max-h-64 overflow-auto rounded-md bg-muted/50 p-2">
+            <StructuredValue value={input} />
+          </div>
         </div>
       )}
       {output !== undefined && output.length > 0 && (
         <div className="space-y-1">
           <p className="text-xs font-medium text-muted-foreground">{t("common.chat.tools.output")}</p>
-          <pre className={detailBlockClassName}>{output}</pre>
+          <ToolOutput output={output} />
         </div>
       )}
       {failure !== undefined && (failure.structured || failure.raw !== failure.summary) && (

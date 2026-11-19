@@ -29,7 +29,7 @@ function renderJson(json: unknown) {
 }
 
 describe("JSON blocks in chat replies", () => {
-  it("summarises an object as fields with the raw JSON behind a disclosure", () => {
+  it("shows an object as labelled fields with no raw JSON view", () => {
     const { container } = renderJson({
       eligibility: "blocked",
       reason: "vendor_fix_pending",
@@ -37,9 +37,10 @@ describe("JSON blocks in chat replies", () => {
     });
     expect(screen.getByText("Eligibility")).toBeTruthy();
     expect(screen.getByText("blocked")).toBeTruthy();
-    const details = container.querySelector("details");
-    expect(details?.open).toBe(false);
-    expect(details?.querySelector("summary")?.textContent).toBe("View JSON");
+    expect(screen.getByText("Vendor fix pending")).toBeTruthy();
+    expect(container.querySelector("details")).toBeNull();
+    expect(screen.queryByText("View JSON")).toBeNull();
+    expect(container.querySelector("pre")).toBeNull();
   });
 
   it("opens a list of records as a table", () => {
@@ -58,9 +59,18 @@ describe("JSON blocks in chat replies", () => {
     expect(screen.queryByRole("table")).toBeNull();
   });
 
-  it("keeps plain JSON values collapsed", () => {
+  it("shows a list of plain values as words, not JSON", () => {
     const { container } = renderJson(["a", "b"]);
-    expect(container.querySelector("details summary")?.textContent).toBe("View JSON");
+    expect(screen.getByText("a")).toBeTruthy();
+    expect(screen.getByText("b")).toBeTruthy();
+    expect(container.querySelector("pre")).toBeNull();
     expect(screen.queryByRole("table")).toBeNull();
+  });
+
+  it("reads an untagged code block that holds JSON the same way", () => {
+    const content = "Result\n\n```\n" + JSON.stringify({ host: "web-1", healthy: true }) + "\n```";
+    render(<MarkdownContent content={content} renderJsonBlock={renderJsonEvidence} />);
+    expect(screen.getByText("Host")).toBeTruthy();
+    expect(screen.getByText("web-1")).toBeTruthy();
   });
 });

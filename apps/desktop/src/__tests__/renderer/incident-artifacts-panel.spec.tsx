@@ -446,7 +446,7 @@ describe('ticket actions in the panel', () => {
     render(<Host operations={port} />)
     await waitFor(() => { expect(panelIsOpen()).toBe(true) })
     const card = within(needsYou()).getByRole('article', { name: 'create_document' })
-    expect(within(card).getByText('Exact approved title')).toBeTruthy()
+    expect(within(card).getAllByText('Exact approved title').length).toBeGreaterThan(0)
 
     fireEvent.click(within(card).getByRole('button', { name: 'Approve this exact change' }))
 

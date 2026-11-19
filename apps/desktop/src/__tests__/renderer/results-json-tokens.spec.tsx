@@ -98,13 +98,11 @@ describe("HighlightedJson", () => {
 });
 
 describe("RunOutputBlock layout", () => {
-  it("scrolls JSON sideways instead of wrapping it", () => {
+  it("shows JSON as readable fields instead of a monospace scroller", () => {
     render(<RunOutputBlock value='{"a":"x"}' emptyMessage="empty" />);
-    const pre = document.querySelector("pre");
-    const classes = pre?.className.split(" ") ?? [];
-    expect(classes).toContain("whitespace-pre");
-    expect(classes).not.toContain("whitespace-pre-wrap");
-    expect(pre?.parentElement?.className).toContain("overflow-x-auto");
+    expect(document.querySelector("pre")).toBeNull();
+    expect(screen.getByText("x")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "common.results.wrapLines" })).toBeNull();
   });
 
   it("keeps plain text wrapping", () => {
@@ -114,19 +112,6 @@ describe("RunOutputBlock layout", () => {
 });
 
 describe("RunOutputBlock wrap toggle", () => {
-  it("wraps JSON on demand and keeps the scroller and its shadows", () => {
-    render(<RunOutputBlock value='{"a":"x"}' emptyMessage="empty" />);
-    const toggle = screen.getByRole("button", { name: "common.results.wrapLines" });
-    expect(toggle.getAttribute("aria-pressed")).toBe("false");
-
-    fireEvent.click(toggle);
-    expect(toggle.getAttribute("aria-pressed")).toBe("true");
-    const pre = document.querySelector("pre");
-    expect(pre?.className).toContain("whitespace-pre-wrap");
-    expect(pre?.parentElement?.className).toContain("overflow-x-auto");
-    expect(document.querySelectorAll("[aria-hidden='true'].bg-gradient-to-r")).toHaveLength(1);
-  });
-
   it("starts plain text wrapped and unwraps it into a sideways scroller", () => {
     render(<RunOutputBlock value="Pages free: 76905." emptyMessage="empty" />);
     const toggle = screen.getByRole("button", { name: "common.results.wrapLines" });

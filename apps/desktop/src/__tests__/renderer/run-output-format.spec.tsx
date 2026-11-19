@@ -127,12 +127,12 @@ describe("truncateLines", () => {
 });
 
 describe("RunOutputBlock", () => {
-  it("renders JSON in monospace with a copy button", () => {
+  it("renders JSON as readable fields and keeps a copy button", () => {
     render(<RunOutputBlock value='{"a":1}' emptyMessage="empty" />);
 
-    const pre = document.querySelector("pre");
-    expect(pre?.className).toContain("font-mono");
-    expect(pre?.textContent).toBe('{\n  "a": 1\n}');
+    expect(document.querySelector("pre")).toBeNull();
+    expect(screen.getByText("A")).toBeTruthy();
+    expect(screen.getByText("1")).toBeTruthy();
     expect(screen.getByRole("button", { name: "common.results.copyOutput" })).toBeTruthy();
   });
 

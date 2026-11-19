@@ -18,6 +18,8 @@ import { MarkdownContent } from "../markdown";
 import { cn } from "../lib/utils";
 import { formatJsonBlockForDisplay } from "../lib/jsonDisplay";
 import { StructuredOutputDisplay } from "../runbook/StructuredOutputDisplay";
+import { StructuredValue } from "../runbook/StructuredValue";
+import { detectRunOutputFormat } from "../runbook/runOutputFormat";
 import type {
   RunbookActionType,
   RunbookAuthoringProposalKind,
@@ -413,6 +415,15 @@ function OutputContent({
     return (
       <div className="min-w-0 max-w-full overflow-x-hidden rounded-xl border border-border bg-muted/15 p-3">
         <MarkdownContent content={text} />
+      </div>
+    );
+  }
+
+  const parsed = detectRunOutputFormat(text);
+  if (parsed.kind === "json") {
+    return (
+      <div className="min-w-0 max-w-full overflow-x-hidden rounded-xl border border-border bg-muted/15 p-3">
+        <StructuredValue value={parsed.value} />
       </div>
     );
   }
