@@ -93,8 +93,8 @@ export function StatusPill({ state, interrupted = false, quiet = false, scoped =
   const label = scoped ? t(SCOPED_STATUS_KEYS[state]) : map[state].label;
   if (quiet && state === "COMPLETED") {
     return (
-      <span className="inline-flex shrink-0 items-center gap-1 text-xs font-medium text-[hsl(var(--success-text))]">
-        <Check size={14} strokeWidth={2.5} aria-hidden="true" />
+      <span className="inline-flex shrink-0 items-center gap-1 text-xs font-medium text-muted-foreground">
+        <Check size={14} strokeWidth={2.5} aria-hidden="true" className="text-[hsl(var(--success-text))]" />
         {label}
       </span>
     );
