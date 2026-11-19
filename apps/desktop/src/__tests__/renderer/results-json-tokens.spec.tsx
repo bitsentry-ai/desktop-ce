@@ -183,7 +183,7 @@ describe("FinalOutputPreview", () => {
     );
 
     const keys = [...document.querySelectorAll("dt")].map((node) => node.textContent);
-    expect(keys).toEqual(Array.from({ length: 8 }, (_, index) => `field${String(index)}`));
+    expect(keys).toEqual(Array.from({ length: 8 }, (_, index) => `Field${String(index)}`));
     expect(document.querySelector("dd")?.textContent).toBe("ok");
     expect(document.querySelectorAll("dd")[1]?.textContent).toBe("1 field");
     expect(screen.getByText("common.results.moreFields")).toBeTruthy();
@@ -210,7 +210,7 @@ describe("FinalOutputPreview", () => {
     const details = document.querySelector("details");
     expect(details?.open).toBe(false);
     const detailKeys = [...(details?.querySelectorAll("dt") ?? [])].map((node) => node.textContent);
-    expect(detailKeys).toEqual(["offset", "hasMore", "page"]);
+    expect(detailKeys).toEqual(["Offset", "Has more", "Page"]);
     expect(screen.getByText("2026-10-29 07:39 UTC")).toBeTruthy();
     cleanup();
 

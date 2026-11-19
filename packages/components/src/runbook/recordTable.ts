@@ -159,9 +159,27 @@ export function recordColumnLabel(column: string, columns: readonly string[]): s
     (other) => other !== column && lastSegment(other) === last,
   );
   if (segments.length > 1 && (GENERIC_SEGMENTS.has(last) || shared)) {
-    return segments.slice(-2).join(".");
+    return readableKey(segments.slice(-2).join("."));
   }
-  return last;
+  return readableKey(last);
+}
+
+/** Abbreviations that read as capitals in a column header. */
+const HEADER_ACRONYMS = new Set(["id", "cve", "cvss", "url", "ip", "os", "cpu", "api", "ssh", "dns", "http", "uuid"]);
+
+/** A data key as header text: "vulnerability.id" reads "Vulnerability ID", "matchConfidence" reads "Match confidence". */
+export function readableKey(key: string): string {
+  const words = key
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .split(/[\s._-]+/)
+    .filter((word) => word.length > 0)
+    .map((word) => {
+      const lower = word.toLowerCase();
+      return HEADER_ACRONYMS.has(lower) ? lower.toUpperCase() : lower;
+    });
+  if (words.length === 0) return key;
+  const [first, ...rest] = words;
+  return [first.charAt(0).toUpperCase() + first.slice(1), ...rest].join(" ");
 }
 
 /** Whether a column holds identifiers, which the table never truncates. */

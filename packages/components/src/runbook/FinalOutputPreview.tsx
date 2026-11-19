@@ -1,4 +1,5 @@
 import { useMemo } from "react";
+import { readableKey } from "./recordTable";
 import { ArrowRight } from "lucide-react";
 import { useTranslation } from "@bitsentry-ce/i18n";
 
@@ -78,13 +79,13 @@ function humanizeKey(key: string): string {
 /** Key/value rows for a JSON summary, in the run output monospace. */
 export function FieldRows({ fields }: { fields: JsonSummary["fields"] }) {
   return (
-    <dl className="grid grid-cols-[minmax(0,max-content)_minmax(0,1fr)] gap-x-3 gap-y-1 font-mono text-[13px] leading-5">
+    <dl className="grid grid-cols-[minmax(0,max-content)_minmax(0,1fr)] gap-x-4 gap-y-1 text-[13px] leading-5">
       {fields.map((field) => (
         <div key={field.key} className="contents">
-          <dt className="max-w-[9rem] truncate text-muted-foreground" title={field.key}>
-            {field.key}
+          <dt className="max-w-[11rem] truncate text-muted-foreground" title={field.key}>
+            {readableKey(field.key)}
           </dt>
-          <dd className="m-0 line-clamp-2 break-words text-foreground [overflow-wrap:anywhere]" title={field.value}>
+          <dd className="m-0 line-clamp-2 break-words font-mono text-foreground [overflow-wrap:anywhere]" title={field.value}>
             {field.value.length > 0 ? field.value : "\u00a0"}
           </dd>
         </div>
