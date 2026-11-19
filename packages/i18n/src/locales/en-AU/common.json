@@ -427,7 +427,7 @@
   "common.incidentArtifactsRail.proposal.reviewNotes": "Review notes",
   "common.incidentArtifactsRail.proposal.reviseInChat": "Revise in chat",
   "common.incidentArtifactsRail.proposal.revisionPlaceholder": "Describe what the agent should revise…",
-  "common.incidentArtifactsRail.proposal.risks": "Risks: {{risks}}",
+  "common.incidentArtifactsRail.proposal.risks": "Review note: {{risks}}",
   "common.incidentArtifactsRail.proposal.runbookUpdate": "Runbook update",
   "common.incidentArtifactsRail.proposal.steps": "Steps",
   "common.incidentArtifactsRail.proposal.versionOption": "v{{version}}",
