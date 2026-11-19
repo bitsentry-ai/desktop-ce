@@ -196,6 +196,15 @@ describe('the Artifacts panel counts', () => {
     expect(screen.queryByText(/need you/)).toBeNull()
   })
 
+  it('offers filters only for categories that hold something', async () => {
+    render(<Host operations={operationsPort({ current: [operation()] })} />)
+    await waitFor(() => { expect(panelIsOpen()).toBe(true) })
+
+    const filters = screen.getByRole('group', { name: 'Filter artifacts' })
+    const labels = within(filters).getAllByRole('button').map((button) => button.childNodes[0]?.textContent)
+    expect(labels).toEqual(['All', 'Ticket actions'])
+  })
+
   it('says a single item needs you in the singular', async () => {
     render(<Host operations={operationsPort({ current: [operation()] })} />)
     await waitFor(() => { expect(panelIsOpen()).toBe(true) })
