@@ -274,7 +274,7 @@ function sourceLabel(execution: RunbookExecutionRecord | null | undefined) {
 
 function sourceClass(execution: RunbookExecutionRecord | null | undefined) {
   if (executionSource(execution) === "agent") {
-    return "border-primary/25 bg-primary/10 text-primary";
+    return "border-primary/25 bg-[hsl(var(--success)/0.12)] text-[hsl(var(--success-text))]";
   }
 
   return "border-border bg-muted/60 text-muted-foreground";

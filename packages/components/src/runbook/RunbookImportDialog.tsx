@@ -138,7 +138,7 @@ function formatResultStatus(
 function resultStatusClass(status: "imported" | "skipped" | "failed"): string {
   switch (status) {
     case "imported":
-      return "border-primary/30 bg-primary/10 text-primary";
+      return "border-primary/30 bg-[hsl(var(--success)/0.12)] text-[hsl(var(--success-text))]";
     case "skipped":
       return "border-border bg-muted text-muted-foreground";
     case "failed":
