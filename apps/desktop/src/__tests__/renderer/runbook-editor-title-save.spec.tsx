@@ -9,6 +9,7 @@ import { isSortable, useSortable } from "@dnd-kit/react/sortable";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { I18nProvider, loadNamespaces } from "@bitsentry-ce/i18n";
 import DesktopRunbookPage from "@bitsentry-ce/components/desktop/DesktopRunbookPage";
+import type { SortableItemProps } from "@bitsentry-ce/components/desktop/runbook/RunbookActionList";
 import { BitsentryServicesProvider } from "@bitsentry-ce/components/services/context";
 import { createDesktopLocalBitsentryServices } from "@bitsentry-ce/components/services/desktop-local-services";
 import { TooltipProvider } from "@bitsentry-ce/components/ui/tooltip";
@@ -41,10 +42,15 @@ vi.hoisted(() => {
 
 type PageProps = ComponentProps<typeof DesktopRunbookPage>;
 
+function SortableItem({ children, ...options }: SortableItemProps) {
+  const { ref, isDragging, isDragSource, isDropTarget } = useSortable(options);
+  return children({ ref, isDragging, isDragSource, isDropTarget });
+}
+
 const dragDropRuntime = {
   DragDropProvider,
   isSortable: isSortable as PageProps["dragDropRuntime"]["isSortable"],
-  useSortable: useSortable as PageProps["dragDropRuntime"]["useSortable"],
+  SortableItem,
 } satisfies PageProps["dragDropRuntime"];
 
 

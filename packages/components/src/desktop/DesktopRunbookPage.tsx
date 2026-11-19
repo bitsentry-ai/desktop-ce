@@ -3,6 +3,7 @@ import {
 } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useToast } from "../hooks/use-toast";
+import type { SortableItemComponent } from "./runbook/RunbookActionList";
 import { RunbookEditorScreen } from "./runbook/RunbookEditorScreen";
 import { RunbookLibraryScreen } from "./runbook/RunbookLibraryScreen";
 import { useRunbookDeleteFlow } from "./runbook/useRunbookDeleteFlow";
@@ -57,19 +58,7 @@ type DesktopDragDropRuntime = {
     onDragEnd: (event: DesktopDragEndEvent) => void;
   }) => ReactNode;
   isSortable: (value: unknown) => value is SortableSourceLike;
-  useSortable: (options: {
-    id: string;
-    index: number;
-    disabled: boolean;
-    group: string;
-    type: string;
-    accept: string;
-  }) => {
-    ref: (node: HTMLElement | null) => void;
-    isDragging: boolean;
-    isDragSource: boolean;
-    isDropTarget: boolean;
-  };
+  SortableItem: SortableItemComponent;
 };
 
 type DesktopRunbookPageProps = {
@@ -336,7 +325,7 @@ export default function DesktopRunbookPage({
           void handleNew();
         },
         DragDropProvider,
-        useSortableRuntime: dragDropRuntime.useSortable,
+        SortableItem: dragDropRuntime.SortableItem,
         expandedId,
         expandedCardRef,
         modelDropdownOpen,
