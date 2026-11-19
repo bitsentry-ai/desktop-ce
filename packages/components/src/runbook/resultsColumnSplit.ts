@@ -11,7 +11,7 @@ export type ResultsColumnSplit = readonly [number, number];
 /** Index of a divider: 0 sits after Summary, 1 after Steps. */
 export type ResultsColumnDivider = 0 | 1;
 
-export const DEFAULT_RESULTS_COLUMN_SPLIT: ResultsColumnSplit = [320, 240];
+export const DEFAULT_RESULTS_COLUMN_SPLIT: ResultsColumnSplit = [300, 280];
 
 /** Narrowest and widest each fixed column may be dragged to. */
 export const RESULTS_COLUMN_LIMITS: readonly [
