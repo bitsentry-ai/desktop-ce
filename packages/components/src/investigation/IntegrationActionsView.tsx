@@ -10,6 +10,7 @@ import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
 import { useNow } from "../hooks/useNow";
 import { relativeTime } from "./relative-time";
+import { SELECTED_ARTIFACT_CARD_CLASS } from "./selectedArtifactCard";
 export interface IntegrationOperationsPort {
   renew?(threadId: string, id: string): Promise<unknown>;
   reconcile?(threadId: string, id: string, applied: boolean, confirmed: boolean, externalId?: string): Promise<unknown>;
@@ -88,7 +89,7 @@ function OperationListItem({ row, isSelected, onSelect }: { row: IntegrationOper
   const now = useNow();
   const Icon = row.ticketOperation === undefined ? FileText : Ticket;
   return <button type="button" aria-pressed={isSelected} onClick={onSelect}
-    className={cn("w-full rounded-2xl border p-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring", isSelected ? "border-primary bg-primary/5" : "border-border bg-muted/10 hover:bg-muted/20")}>
+    className={cn("w-full rounded-2xl border p-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring", isSelected ? SELECTED_ARTIFACT_CARD_CLASS : "border-border bg-muted/10 hover:bg-muted/20")}>
     <div className="flex items-start gap-3">
       <div className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-xl border border-border/70 bg-background"><Icon size={15} className="text-muted-foreground" aria-hidden="true" /></div>
       <div className="min-w-0 flex-1">
