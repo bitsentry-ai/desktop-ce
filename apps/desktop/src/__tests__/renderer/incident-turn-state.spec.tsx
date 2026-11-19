@@ -91,21 +91,27 @@ describe("a running turn's state", () => {
 describe("the header's response badge", () => {
   const user: ChatMessage = { kind: "user", text: "Why is the disk full?" };
 
-  it("shows Response stalled beside the status only while the latest reply is stalled", () => {
-    renderAt(startedMs + 24 * 60 * 60_000, <ResponseStalledBadge messages={[user, runningTurn()]} />);
+  const status = <span>Incident completed</span>;
+
+  it("replaces the incident status while the latest reply is stalled", () => {
+    renderAt(startedMs + 24 * 60 * 60_000, <ResponseStalledBadge messages={[user, runningTurn()]}>{status}</ResponseStalledBadge>);
     expect(screen.getByText("common.incidentDetail.responseStalled")).toBeTruthy();
+    expect(screen.queryByText("Incident completed")).toBeNull();
   });
 
-  it("stays hidden for a reply still inside the stall window, a finished reply, or no reply", () => {
-    const { rerender } = renderAt(startedMs + 60_000, <ResponseStalledBadge messages={[runningTurn()]} />);
+  it("keeps the incident status for a reply still inside the stall window, a finished reply, or no reply", () => {
+    const { rerender } = renderAt(startedMs + 60_000, <ResponseStalledBadge messages={[runningTurn()]}>{status}</ResponseStalledBadge>);
     expect(screen.queryByText("common.incidentDetail.responseStalled")).toBeNull();
+    expect(screen.getByText("Incident completed")).toBeTruthy();
 
     vi.setSystemTime(startedMs + 24 * 60 * 60_000);
-    rerender(<TooltipProvider><ResponseStalledBadge messages={[{ ...runningTurn(), status: "done" }]} /></TooltipProvider>);
+    rerender(<TooltipProvider><ResponseStalledBadge messages={[{ ...runningTurn(), status: "done" }]}>{status}</ResponseStalledBadge></TooltipProvider>);
     expect(screen.queryByText("common.incidentDetail.responseStalled")).toBeNull();
+    expect(screen.getByText("Incident completed")).toBeTruthy();
 
-    rerender(<TooltipProvider><ResponseStalledBadge messages={[user]} /></TooltipProvider>);
+    rerender(<TooltipProvider><ResponseStalledBadge messages={[user]}>{status}</ResponseStalledBadge></TooltipProvider>);
     expect(screen.queryByText("common.incidentDetail.responseStalled")).toBeNull();
+    expect(screen.getByText("Incident completed")).toBeTruthy();
   });
 });
 
