@@ -676,6 +676,7 @@
   "common.profile.disableTotpAuthentication": "Nonaktifkan Autentikasi TOTP",
   "common.profile.disabling": "Menonaktifkan...",
   "common.profile.email": "Email",
+  "common.profile.emailSubtitle": "Alamat yang Anda gunakan untuk masuk.",
   "common.profile.firstNameSubtitle": "Nama depan Anda, ditampilkan di seluruh dasbor.",
   "common.profile.lastNameSubtitle": "Nama belakang Anda, ditampilkan di seluruh dasbor.",
   "common.profile.enterThe6DigitCode": "Masukkan kode 6 digit dari aplikasi autentikator Anda",

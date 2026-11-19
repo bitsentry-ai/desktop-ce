@@ -676,6 +676,7 @@
   "common.profile.disableTotpAuthentication": "Disable TOTP Authentication",
   "common.profile.disabling": "Disabling...",
   "common.profile.email": "Email",
+  "common.profile.emailSubtitle": "The address you sign in with.",
   "common.profile.firstNameSubtitle": "Your given name, shown across the dashboard.",
   "common.profile.lastNameSubtitle": "Your family name, shown across the dashboard.",
   "common.profile.enterThe6DigitCode": "Enter the 6-digit code from your authenticator app",
