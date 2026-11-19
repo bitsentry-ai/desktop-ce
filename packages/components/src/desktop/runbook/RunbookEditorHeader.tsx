@@ -36,6 +36,10 @@ import type {
   TranslationFn,
 } from "./types";
 
+/** "Show more" sits at the end of the clamped description, over a fade, so the header gains no line; "Show less" follows the full text. */
+const DESCRIPTION_TOGGLE_CLASS =
+  "rounded-sm text-xs font-medium leading-[18px] text-foreground/80 underline-offset-2 transition-colors hover:text-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
+
 /** An infrequent runbook action shown among the header's secondary actions. */
 export type RunbookHeaderMenuAction = {
   id: string;
@@ -390,33 +394,45 @@ function DescriptionField({
   return (
     <div className="relative mt-0.5">
       {showPreview && (
-        <p
-          ref={previewRef}
-          aria-hidden="true"
-          title={expanded ? undefined : value}
-          onClick={() => {
-            ref.current?.focus();
-          }}
-          className={cn(
-            "cursor-text break-words text-[13px] leading-[18px] text-muted-foreground",
-            !expanded && "line-clamp-2 max-sm:line-clamp-1",
+        <div className="relative">
+          <p
+            ref={previewRef}
+            aria-hidden="true"
+            title={expanded ? undefined : value}
+            onClick={() => {
+              ref.current?.focus();
+            }}
+            className={cn(
+              "cursor-text break-words text-[13px] leading-[18px] text-muted-foreground",
+              !expanded && "line-clamp-2 max-sm:line-clamp-1",
+            )}
+          >
+            {value}
+          </p>
+          {!expanded && clamped && (
+            <button
+              type="button"
+              aria-expanded={false}
+              onClick={() => {
+                setExpanded(true);
+              }}
+              className={cn(DESCRIPTION_TOGGLE_CLASS, "absolute bottom-0 right-0 bg-[linear-gradient(to_right,transparent,hsl(var(--background))_2rem)] pl-12")}
+            >
+              {t("runbooks.runbook.showFullDescription")}
+            </button>
           )}
-        >
-          {value}
-        </p>
+        </div>
       )}
-      {showPreview && (expanded || clamped) && (
+      {showPreview && expanded && (
         <button
           type="button"
-          aria-expanded={expanded}
+          aria-expanded
           onClick={() => {
-            setExpanded((current) => !current);
+            setExpanded(false);
           }}
-          className="mt-0.5 rounded-sm text-xs font-medium text-foreground/80 underline-offset-2 transition-colors hover:text-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring max-sm:py-2"
+          className={cn(DESCRIPTION_TOGGLE_CLASS, "mt-0.5 max-sm:py-2")}
         >
-          {expanded
-            ? t("runbooks.runbook.showShortDescription")
-            : t("runbooks.runbook.showFullDescription")}
+          {t("runbooks.runbook.showShortDescription")}
         </button>
       )}
       <textarea
