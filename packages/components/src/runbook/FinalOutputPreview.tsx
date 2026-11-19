@@ -77,6 +77,14 @@ function humanizeKey(key: string): string {
 }
 
 /** Key/value rows for a JSON summary, in the run output monospace. */
+/** A lower-case snake_case token such as `vendor_fix_pending`: a state name, which reads better as words. */
+const ENUM_VALUE = /^[a-z]+(?:_[a-z]+)+$/;
+
+function fieldValueText(value: string): string {
+  if (value.length === 0) return "\u00a0";
+  return ENUM_VALUE.test(value) ? readableKey(value) : value;
+}
+
 export function FieldRows({ fields }: { fields: JsonSummary["fields"] }) {
   return (
     <dl className="grid grid-cols-[minmax(0,max-content)_minmax(0,1fr)] gap-x-4 gap-y-1 text-[13px] leading-5">
@@ -85,8 +93,14 @@ export function FieldRows({ fields }: { fields: JsonSummary["fields"] }) {
           <dt className="max-w-[11rem] truncate text-muted-foreground" title={field.key}>
             {readableKey(field.key)}
           </dt>
-          <dd className="m-0 line-clamp-2 break-words font-mono text-foreground [overflow-wrap:anywhere]" title={field.value}>
-            {field.value.length > 0 ? field.value : "\u00a0"}
+          <dd
+            className={cn(
+              "m-0 line-clamp-2 break-words text-foreground [overflow-wrap:anywhere]",
+              !ENUM_VALUE.test(field.value) && "font-mono",
+            )}
+            title={field.value}
+          >
+            {fieldValueText(field.value)}
           </dd>
         </div>
       ))}

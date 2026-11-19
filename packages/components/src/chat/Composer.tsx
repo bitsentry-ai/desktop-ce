@@ -231,6 +231,11 @@ function showsContextIndicator(isBlocked: boolean, tokenUsage: AgentThreadTokenU
   return !isBlocked && (tokenUsage !== undefined || contextWindowLimit !== undefined);
 }
 
+/** The toolbar row; the `hidden` class keeps it hidden while blocked, since its `flex` class would override the attribute. */
+function composerToolbarClass(blocked: boolean): string {
+  return cn("flex items-center justify-between gap-1.5 px-2.5 pb-2.5 sm:px-3 sm:pb-3", blocked && "hidden");
+}
+
 /** Why the send button is unavailable while the composer is blocked; undefined while it is not. */
 function sendUnavailableReason(t: (key: string) => string, isBlocked: boolean, threadStatus: ThreadStatus | undefined): string | undefined {
   if (!isBlocked) return undefined;
@@ -669,7 +674,7 @@ export function Composer({
 
         {/* ── Toolbar ─────────────────────────────────────────────────────── */}
         {/* While a notice blocks the composer there is no model to pick or message to send; the notice carries the recovery. */}
-        <div className="flex items-center justify-between gap-1.5 px-2.5 pb-2.5 sm:px-3 sm:pb-3" hidden={notice !== undefined}>
+        <div className={composerToolbarClass(notice !== undefined)} hidden={notice !== undefined}>
           {/* Left: model picker + traits + mode + access */}
           <div className="flex min-w-0 flex-1 items-center gap-1">
             {/* Model picker */}
