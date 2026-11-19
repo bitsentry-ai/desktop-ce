@@ -427,7 +427,7 @@
   "common.incidentArtifactsRail.proposal.reviewNotes": "Catatan tinjauan",
   "common.incidentArtifactsRail.proposal.reviseInChat": "Revisi di chat",
   "common.incidentArtifactsRail.proposal.revisionPlaceholder": "Jelaskan apa yang harus direvisi oleh agen…",
-  "common.incidentArtifactsRail.proposal.risks": "Risiko: {{risks}}",
+  "common.incidentArtifactsRail.proposal.risks": "Catatan tinjauan: {{risks}}",
   "common.incidentArtifactsRail.proposal.runbookUpdate": "Pembaruan runbook",
   "common.incidentArtifactsRail.proposal.steps": "Langkah",
   "common.incidentArtifactsRail.proposal.versionOption": "v{{version}}",

@@ -427,7 +427,7 @@
   "common.incidentArtifactsRail.proposal.reviewNotes": "Notes de révision",
   "common.incidentArtifactsRail.proposal.reviseInChat": "Réviser dans le chat",
   "common.incidentArtifactsRail.proposal.revisionPlaceholder": "Décrivez ce que l’agent doit réviser…",
-  "common.incidentArtifactsRail.proposal.risks": "Risques : {{risks}}",
+  "common.incidentArtifactsRail.proposal.risks": "À vérifier : {{risks}}",
   "common.incidentArtifactsRail.proposal.runbookUpdate": "Mise à jour du runbook",
   "common.incidentArtifactsRail.proposal.steps": "Étapes",
   "common.incidentArtifactsRail.proposal.versionOption": "v{{version}}",
