@@ -205,6 +205,25 @@
       radial-gradient(farthest-side at 100% 50%, hsl(var(--foreground) / 0.14), hsl(var(--foreground) / 0)) right center / 0.75rem 100% no-repeat scroll;
   }
 
+  .chat-markdown .chat-markdown-table-scroll {
+    scrollbar-width: thin;
+    scrollbar-color: hsl(var(--foreground) / 0.25) transparent;
+  }
+
+  /* The first column names each row, so it stays in view while the rest of a wide table scrolls under it. */
+  .chat-markdown .chat-markdown-table-scroll th:first-child,
+  .chat-markdown .chat-markdown-table-scroll td:first-child {
+    position: sticky;
+    left: 0;
+    z-index: 1;
+    background: hsl(var(--background));
+    box-shadow: inset -1px 0 0 hsl(var(--border));
+  }
+
+  .chat-markdown .chat-markdown-table-scroll tbody tr:nth-child(even) td:first-child {
+    background: linear-gradient(hsl(var(--muted) / 0.5), hsl(var(--muted) / 0.5)), hsl(var(--background));
+  }
+
   .chat-markdown .chat-markdown-table-scroll:focus-visible {
     outline: 2px solid hsl(var(--ring));
     outline-offset: 2px;
