@@ -287,6 +287,16 @@ describe("CVE remediation in the composer", () => {
     expect(resume.parentElement?.textContent).toBe(`${K}.titlePending approval${K}.resume`);
   });
 
+  it("shows the step and the question it waits on beside resume", () => {
+    render(<Page steps={[connectionStep]} />);
+
+    fireEvent.click(screen.getByRole("button", { name: `${K}.close` }));
+
+    const row = screen.getByRole("button", { name: new RegExp(`${K}.resume`) }).parentElement;
+    expect(row?.textContent).toContain("1/3");
+    expect(row?.textContent).toContain("Which SSH connection should run the fix?");
+  });
+
   it("waits while the agent works", () => {
     render(<Page steps={[connectionStep]} processing />);
 

@@ -151,7 +151,7 @@ export function ResultsDetailPanels({
           role="tablist"
           aria-label={t("common.results.sectionsLabel")}
           onKeyDown={handleKeyDown}
-          className="grid h-8 grid-cols-3 rounded-md bg-muted p-0.5"
+          className="grid h-8 grid-cols-3 rounded-md bg-muted p-0.5 max-sm:h-11"
         >
           {PANEL_IDS.map((panel) => {
             const selected = panel === activePanel;
@@ -171,7 +171,7 @@ export function ResultsDetailPanels({
                   onActivePanelChange(panel);
                 }}
                 className={cn(
-                  "rounded-[5px] text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
+                  "rounded-[5px] text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 max-sm:text-[13px]",
                   selected
                     ? "bg-background text-foreground shadow-sm"
                     : "text-muted-foreground hover:text-foreground",

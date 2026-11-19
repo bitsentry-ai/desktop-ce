@@ -329,8 +329,8 @@ function formatCell(cell: unknown): string {
 }
 
 const SEVERITY_DOT_CLASS = {
-  critical: "bg-destructive",
-  warning: "bg-[hsl(var(--warning))]",
+  critical: "bg-foreground",
+  warning: "bg-muted-foreground/60",
 } as const;
 
 /** A record list as a table: one row per record, the columns that tell records apart. */
