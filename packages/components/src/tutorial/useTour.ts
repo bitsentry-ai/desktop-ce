@@ -83,93 +83,98 @@ async function waitForElement(
   return false;
 }
 
+type Translate = ReturnType<typeof useTranslation>["t"];
+
+// Kept outside the hook so the React Compiler can compile useTour: it cannot lower the dynamic import() calls.
+async function startTour(tourId: TourId, t: Translate, opts?: StartTourOpts) {
+  try {
+    // Loaded on start, like driver.js below, to keep tours out of the startup bundle.
+    const { getTours } = await import("./tour-definitions");
+    const tours = getTours(t);
+    const tourDef = tours[tourId];
+    if (tourDef === undefined) return;
+
+    if (opts?.force !== true && isTourCompleted(tourId)) return;
+
+    // Tear down any previous tour
+    activeTourDriver?.destroy();
+
+    // Capture navigate + route for post-tour navigation
+    activeTourNavigate = opts?.navigate ?? null;
+    activeTourRoute = tourDef.route ?? null;
+    activeTourReturnRoute = tourDef.returnRoute ?? null;
+
+    // 1. Navigate to the preview page
+    if (tourDef.route !== undefined && opts?.navigate !== undefined) {
+      opts.navigate(tourDef.route);
+
+      // Poll until the first real tour-target element appears (max 3 s).
+      const firstTargeted = tourDef.steps.find((s) => s.element);
+      if (firstTargeted !== undefined) {
+        const resolveEl = () => {
+          if (typeof firstTargeted.element === "function") {
+            const el = firstTargeted.element();
+            if (el !== null && el !== document.body) {
+              return el;
+            }
+
+            return null;
+          }
+          if (typeof firstTargeted.element === "string") {
+            return document.querySelector(firstTargeted.element);
+          }
+          return null;
+        };
+
+        await waitForElement(resolveEl, 3000);
+      } else {
+        await new Promise((r) => setTimeout(r, 600));
+      }
+    }
+
+    // 2. Create driver and start the tour
+    const config: Config = {
+      showProgress: true,
+      animate: true,
+      // A neutral dark scrim in both themes: it dims the page around the step without washing it out.
+      overlayColor: "rgb(15 23 42)",
+      overlayOpacity: 0.42,
+      stagePadding: 6,
+      stageRadius: 8,
+      popoverClass: "bitsentry-tour-popover",
+      steps: tourDef.steps,
+      onDestroyed: () => {
+        markTourCompleted(tourId);
+        // Navigate from preview page (/tour/*) to the real page
+        if (activeTourNavigate !== null && activeTourRoute !== null) {
+          let realRoute = activeTourRoute.replace(/^\/tour\//, "/");
+          if (activeTourReturnRoute !== null) {
+            realRoute = activeTourReturnRoute;
+          }
+
+          activeTourNavigate(realRoute);
+        }
+        activeTourDriver = null;
+        activeTourNavigate = null;
+        activeTourRoute = null;
+        activeTourReturnRoute = null;
+      },
+    };
+
+    // Loaded here so the tour library stays out of the startup bundle.
+    const { driver } = await import("driver.js");
+    const instance = driver(config);
+    activeTourDriver = instance;
+    instance.drive();
+  } catch (err) {
+    console.error(`[tour:${tourId}] start() failed:`, err);
+  }
+}
+
 export function useTour(tourId: TourId = "main") {
   const { t } = useTranslation();
   const start = useCallback(
-    async (opts?: StartTourOpts) => {
-      try {
-        // Loaded on start, like driver.js below, to keep tours out of the startup bundle.
-        const { getTours } = await import("./tour-definitions");
-        const tours = getTours(t);
-        const tourDef = tours[tourId];
-        if (tourDef === undefined) return;
-
-        if (opts?.force !== true && isTourCompleted(tourId)) return;
-
-        // Tear down any previous tour
-        activeTourDriver?.destroy();
-
-        // Capture navigate + route for post-tour navigation
-        activeTourNavigate = opts?.navigate ?? null;
-        activeTourRoute = tourDef.route ?? null;
-        activeTourReturnRoute = tourDef.returnRoute ?? null;
-
-        // 1. Navigate to the preview page
-        if (tourDef.route !== undefined && opts?.navigate !== undefined) {
-          opts.navigate(tourDef.route);
-
-          // Poll until the first real tour-target element appears (max 3 s).
-          const firstTargeted = tourDef.steps.find((s) => s.element);
-          if (firstTargeted !== undefined) {
-            const resolveEl = () => {
-              if (typeof firstTargeted.element === "function") {
-                const el = firstTargeted.element();
-                if (el !== null && el !== document.body) {
-                  return el;
-                }
-
-                return null;
-              }
-              if (typeof firstTargeted.element === "string") {
-                return document.querySelector(firstTargeted.element);
-              }
-              return null;
-            };
-
-            await waitForElement(resolveEl, 3000);
-          } else {
-            await new Promise((r) => setTimeout(r, 600));
-          }
-        }
-
-        // 2. Create driver and start the tour
-        const config: Config = {
-          showProgress: true,
-          animate: true,
-          // A neutral dark scrim in both themes: it dims the page around the step without washing it out.
-          overlayColor: "rgb(15 23 42)",
-          overlayOpacity: 0.42,
-          stagePadding: 6,
-          stageRadius: 8,
-          popoverClass: "bitsentry-tour-popover",
-          steps: tourDef.steps,
-          onDestroyed: () => {
-            markTourCompleted(tourId);
-            // Navigate from preview page (/tour/*) to the real page
-            if (activeTourNavigate !== null && activeTourRoute !== null) {
-              let realRoute = activeTourRoute.replace(/^\/tour\//, "/");
-              if (activeTourReturnRoute !== null) {
-                realRoute = activeTourReturnRoute;
-              }
-
-              activeTourNavigate(realRoute);
-            }
-            activeTourDriver = null;
-            activeTourNavigate = null;
-            activeTourRoute = null;
-            activeTourReturnRoute = null;
-          },
-        };
-
-        // Loaded here so the tour library stays out of the startup bundle.
-        const { driver } = await import("driver.js");
-        const instance = driver(config);
-        activeTourDriver = instance;
-        instance.drive();
-      } catch (err) {
-        console.error(`[tour:${tourId}] start() failed:`, err);
-      }
-    },
+    (opts?: StartTourOpts) => startTour(tourId, t, opts),
     [t, tourId],
   );
 

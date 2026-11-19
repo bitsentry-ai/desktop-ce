@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { createElement, type ReactNode } from 'react'
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter, useLocation } from 'react-router-dom'
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 
@@ -44,8 +44,9 @@ vi.mock('@bitsentry-ce/components/shortcuts', () => ({
   defaultNavigationCommands: () => [],
   KeyboardShortcutsList: () => createElement('div', { 'data-testid': 'shortcut-list' }),
 }))
+const toast = vi.hoisted(() => vi.fn())
 vi.mock('@bitsentry-ce/components/hooks/use-toast', () => ({
-  useToast: () => ({ toast: vi.fn() }),
+  useToast: () => ({ toast }),
 }))
 
 import { DesktopAppSettingsScaffold } from '@bitsentry-ce/components/desktop/DesktopAppSettingsScaffold'
@@ -85,6 +86,7 @@ beforeAll(() => {
 
 afterEach(() => {
   cleanup()
+  toast.mockReset()
 })
 
 describe('DesktopAppSettingsScaffold sections', () => {
@@ -139,5 +141,35 @@ describe('DesktopAppSettingsScaffold sections', () => {
     renderSettings('/app-settings#llm-providers', { withExtras: true })
     expect(screen.getByTestId('section-llm-providers')).toBeTruthy()
     expect(screen.queryByTestId('section-coding-agents')).toBeNull()
+  })
+
+  it('reports a failed database reset and lets the user try again', async () => {
+    const captureDesktopAnalyticsEvent = vi.fn()
+    render(
+      <MemoryRouter initialEntries={['/app-settings#danger-zone']}>
+        <DesktopAppSettingsScaffold
+          primaryAgent={null}
+          isPrimarySelectionPending={false}
+          onSetPrimaryAgent={vi.fn()}
+          captureDesktopAnalyticsEvent={captureDesktopAnalyticsEvent}
+          helpSectionTourMarker="settings-help"
+        />
+      </MemoryRouter>,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'settings.appSettings.resetDatabase' }))
+    fireEvent.change(screen.getByPlaceholderText('settings.appSettings.databaseResetConfirmationText'), {
+      target: { value: 'settings.appSettings.databaseResetConfirmationText' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'settings.appSettings.deleteAndRecreateDatabase' }))
+
+    await waitFor(() => {
+      expect(toast).toHaveBeenCalledWith(
+        expect.objectContaining({ variant: 'destructive', title: 'settings.appSettings.resetFailed' }),
+      )
+    })
+    const confirm = await screen.findByRole('button', { name: 'settings.appSettings.deleteAndRecreateDatabase' })
+    expect((confirm as HTMLButtonElement).disabled).toBe(false)
+    expect(captureDesktopAnalyticsEvent).not.toHaveBeenCalledWith('desktop_database_reset_confirmed')
   })
 })

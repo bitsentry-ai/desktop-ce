@@ -518,6 +518,55 @@ describe("IncidentArtifactsRail", () => {
     });
   });
 
+  it("shows a failed decision, re-enables the actions and skips the refresh", async () => {
+    const proposal: RunbookAuthoringProposalReview = {
+      proposalId: "proposal-failing-approval",
+      artifactId: "artifact-failing-approval",
+      artifactVersion: 1,
+      isLatest: true,
+      status: "pending_approval",
+      approvalRequired: true,
+      saved: false,
+      supportsOperationApproval: false,
+      kind: "create_new_runbook",
+      incidentThreadId: INCIDENT_ID,
+      proposedRunbook: {
+        id: "failing-draft",
+        title: "Failing approval",
+        description: "Approval fails on the backend.",
+        revisionNumber: 0,
+        actionCount: 0,
+        actions: [],
+      },
+      validation: { valid: true, errors: [], warnings: [] },
+      operationDiffs: [],
+      nextStep: "Review the proposal.",
+    };
+    let rejectApproval!: (error: Error) => void;
+    const approveRunbookAuthoringProposal = vi.fn(
+      () => new Promise((_resolve, reject) => { rejectApproval = reject; }),
+    );
+    const listRunbookAuthoringProposals = vi.fn().mockResolvedValue([proposal]);
+    const agent = {
+      listRunbookAuthoringProposals,
+      approveRunbookAuthoringProposal,
+    } as unknown as AgentServicePort;
+
+    renderRail({ agent });
+
+    const approve = await screen.findByRole("button", { name: "Approve" });
+    await waitFor(() => expect(listRunbookAuthoringProposals).toHaveBeenCalled());
+    const listCallsBefore = listRunbookAuthoringProposals.mock.calls.length;
+    fireEvent.click(approve);
+    await waitFor(() => expect((approve as HTMLButtonElement).disabled).toBe(true));
+
+    rejectApproval(new Error("Approval rejected by the backend"));
+
+    expect(await screen.findByText("Approval rejected by the backend")).toBeTruthy();
+    await waitFor(() => expect((approve as HTMLButtonElement).disabled).toBe(false));
+    expect(listRunbookAuthoringProposals.mock.calls).toHaveLength(listCallsBefore);
+  });
+
   it("renders validation warnings for a runbook proposal", async () => {
     const warning =
       'Warning: action "Removed check" was removed from the parent draft.';
