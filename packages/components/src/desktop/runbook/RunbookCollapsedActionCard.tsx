@@ -70,7 +70,7 @@ export function RunbookCollapsedActionCard({
           </span>
           {renderTypeBadge(actionType)}
         </div>
-        <p className="mt-1.5 truncate font-mono text-[13px] leading-5 text-muted-foreground">
+        <p className="mt-1.5 line-clamp-2 font-mono text-[13px] leading-5 text-muted-foreground [overflow-wrap:anywhere]">
           {summary}
         </p>
       </div>
