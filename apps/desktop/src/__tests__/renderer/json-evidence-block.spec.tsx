@@ -54,7 +54,7 @@ describe("JSON blocks in chat replies", () => {
   it("summarises a list that holds a single record as that record's fields", () => {
     renderJson([{ eligibility: "blocked", reason: "vendor_fix_pending", cveId: "CVE-2026-89526" }]);
     expect(screen.getByText("Eligibility")).toBeTruthy();
-    expect(screen.getByText("vendor_fix_pending")).toBeTruthy();
+    expect(screen.getByText("Vendor fix pending")).toBeTruthy();
     expect(screen.queryByRole("table")).toBeNull();
   });
 
