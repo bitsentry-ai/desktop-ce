@@ -54,22 +54,23 @@
     margin-top: 1.55rem;
   }
 
+  /* Headings and inline code scale with the reply's own size (15px in replies, 14px elsewhere). */
   .chat-markdown h1 {
-    font-size: 1.25rem;
+    font-size: 1.35em;
   }
 
   .chat-markdown h2 {
-    font-size: 1.1rem;
+    font-size: 1.2em;
   }
 
   .chat-markdown h3 {
-    font-size: 1rem;
+    font-size: 1.07em;
   }
 
   .chat-markdown h4,
   .chat-markdown h5,
   .chat-markdown h6 {
-    font-size: 0.9rem;
+    font-size: 1em;
   }
 
   .chat-markdown ul {
@@ -124,7 +125,7 @@
     background: hsl(var(--muted));
     padding: 0.1rem 0.35rem;
     color: hsl(var(--foreground));
-    font-size: 0.75rem;
+    font-size: 0.85em;
   }
 
   .chat-markdown pre {
