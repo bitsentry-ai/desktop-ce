@@ -170,7 +170,7 @@ function blockedComposer(overrides: Partial<ComposerProps> = {}): ComposerProps 
 }
 
 describe("the composer while chat is unavailable", () => {
-  it("states the reason on one line and shows send as unavailable, without the context meter", () => {
+  it("states the reason on one line and drops the model picker, send and context meter", () => {
     const onAction = vi.fn();
     render(
       <TooltipProvider>
@@ -191,10 +191,8 @@ describe("the composer while chat is unavailable", () => {
     fireEvent.click(screen.getByRole("button", { name: "Open Settings" }));
     expect(onAction).toHaveBeenCalledTimes(1);
 
-    const send = screen.getByRole("button", { name: "common.incidents.sendMessage" }) as HTMLButtonElement;
-    expect(send.disabled).toBe(true);
-    expect(send.getAttribute("aria-disabled")).toBe("true");
-    expect(send.getAttribute("aria-description")).toBe("common.incidentDetail.sendNeedsProvider");
+    // With nothing to pick or send, the composer is the notice alone.
+    expect(screen.queryByRole("button", { name: "common.incidents.sendMessage" })).toBeNull();
     expect(screen.queryByRole("button", { name: /common.contextIndicator.contextWindowAriaLabel/ })).toBeNull();
   });
 
