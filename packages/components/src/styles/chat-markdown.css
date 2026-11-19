@@ -210,8 +210,12 @@
     outline-offset: 2px;
   }
 
+  /*
+   * Tables fit the reply's width first: columns wrap (code included) down to their 6.5rem minimum, and only a table
+   * that still does not fit scrolls sideways, with the scroll shadows on its wrapper.
+   */
   .chat-markdown table {
-    width: max-content;
+    width: 100%;
     min-width: 100%;
     max-width: none;
     border-collapse: collapse;
@@ -235,6 +239,11 @@
 
   .chat-markdown td {
     min-width: 6.5rem;
+    overflow-wrap: anywhere;
+  }
+
+  .chat-markdown td code {
+    white-space: normal;
     overflow-wrap: anywhere;
   }
 
