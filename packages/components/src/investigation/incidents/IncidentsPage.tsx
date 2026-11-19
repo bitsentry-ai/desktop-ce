@@ -87,6 +87,7 @@ import {
 } from "./incidentStorage";
 import { IncidentComposer } from "./IncidentComposer";
 import { ComposerBlockedNotice } from "../../chat/ComposerBlockedNotice";
+import { ResponseStalledBadge } from "../../chat/ResponseStalledBadge";
 import { TurnStopContext } from "../../chat/turnStop";
 import { addIncidentCitation, readComposedDraft, useIncidentDraftStore } from "./incidentDraftStore";
 import { useIncidentListStore } from "./incidentListStore";
@@ -1085,13 +1086,12 @@ export default function IncidentsPage() {
                   }}
                 />
               </div>
-              {/* The incident's status. A stalled reply shows once, on its own row in the conversation, with the turn's
-                  elapsed time and Stop. */}
               <div className="flex shrink-0 items-center gap-1.5">
-                {/* The pill names its scope ("Incident completed"), so it never reads as the state of the latest reply. */}
                 <div className="flex items-center" title={t("common.incidentDetail.incidentStatus")}>
                   <div data-tour="incidents-status">
-                    <StatusPill state={incidentState} interrupted={isLastAgentTurnInterrupted(rawMessages)} scoped />
+                    <ResponseStalledBadge messages={rawMessages}>
+                      <StatusPill state={incidentState} interrupted={isLastAgentTurnInterrupted(rawMessages)} scoped />
+                    </ResponseStalledBadge>
                   </div>
                 </div>
               </div>
