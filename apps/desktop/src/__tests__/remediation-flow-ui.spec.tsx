@@ -278,13 +278,23 @@ describe("CVE remediation in the composer", () => {
     expect(pressed()).toEqual(["Sandbox Workerdev@129.212.227.169"]);
   });
 
-  it("closes from the close button and shows the status and question on the resume chip", () => {
+  it("closes from the close button and shows the status on the resume chip", () => {
     render(<Page steps={[approvalStep]} />);
 
     fireEvent.click(screen.getByRole("button", { name: `${K}.close` }));
 
     const resume = screen.getByRole("button", { name: new RegExp(`${K}.resume`) });
-    expect(resume.parentElement?.textContent).toBe(`${K}.titlePending approvalApprove this remediation?${K}.resume`);
+    expect(resume.parentElement?.textContent).toBe(`${K}.titlePending approval${K}.resume`);
+  });
+
+  it("shows the step and the question it waits on beside resume", () => {
+    render(<Page steps={[connectionStep]} />);
+
+    fireEvent.click(screen.getByRole("button", { name: `${K}.close` }));
+
+    const row = screen.getByRole("button", { name: new RegExp(`${K}.resume`) }).parentElement;
+    expect(row?.textContent).toContain("1/3");
+    expect(row?.textContent).toContain("Which SSH connection should run the fix?");
   });
 
   it("waits while the agent works", () => {
