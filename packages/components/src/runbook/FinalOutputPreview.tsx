@@ -19,10 +19,10 @@ import {
 } from "./runOutputStyles";
 
 /** Outputs up to this many lines show whole in the Summary. */
-export const FINAL_OUTPUT_SHORT_MAX_LINES = 6;
+export const FINAL_OUTPUT_SHORT_MAX_LINES = 10;
 // A few very long lines wrap into many in the narrow Summary column, so a
 // "short" output must also be short in characters.
-const FINAL_OUTPUT_SHORT_MAX_CHARS = 480;
+const FINAL_OUTPUT_SHORT_MAX_CHARS = 640;
 
 const VIEW_FULL_OUTPUT_BUTTON_CLASS =
   "inline-flex h-8 items-center gap-1.5 rounded-md border border-border bg-background px-2.5 text-xs font-medium text-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 max-sm:h-11";
@@ -40,8 +40,8 @@ function lineCount(text: string): number {
   return count;
 }
 
-/** Lines of a longer plain-text output shown in the Summary (about 120px). */
-export const FINAL_OUTPUT_PREVIEW_LINES = 6;
+/** Lines of a longer plain-text output shown in the Summary (about 160px). */
+export const FINAL_OUTPUT_PREVIEW_LINES = 8;
 /** Top-level fields of a longer JSON object shown in the Summary. */
 export const FINAL_OUTPUT_SUMMARY_FIELDS = 8;
 

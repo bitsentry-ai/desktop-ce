@@ -129,15 +129,18 @@ function useProviderNotice(loaded: boolean, openSettings: () => void): ReactNode
 const NEW_INCIDENT_HEADER_BASE =
   "flex h-8 shrink-0 items-center gap-1.5 rounded-md px-2.5 text-[13px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:opacity-50 max-sm:h-11";
 
-/** The header's New incident is the page's primary action once there are incidents. */
+/** On the incident list the header's New incident is the page's primary action. */
 const NEW_INCIDENT_HEADER_CLASS = `${NEW_INCIDENT_HEADER_BASE} bg-primary text-primary-foreground hover:bg-[hsl(var(--primary-hover))]`;
 
-/** While the list is empty the empty state's New incident is the primary action, so the header's copy is outlined. */
+/**
+ * Outlined inside an incident, where recovering or continuing that incident comes first, and while the list is empty,
+ * where the empty state's New incident is the primary action.
+ */
 const NEW_INCIDENT_HEADER_QUIET_CLASS = `${NEW_INCIDENT_HEADER_BASE} border border-border bg-background text-foreground hover:bg-muted`;
 
 function newIncidentHeaderClass(activeId: string | null, incidentCount: number): string {
-  const listIsEmpty = (activeId === null || activeId.length === 0) && incidentCount === 0;
-  return listIsEmpty ? NEW_INCIDENT_HEADER_QUIET_CLASS : NEW_INCIDENT_HEADER_CLASS;
+  const onList = activeId === null || activeId.length === 0;
+  return onList && incidentCount > 0 ? NEW_INCIDENT_HEADER_CLASS : NEW_INCIDENT_HEADER_QUIET_CLASS;
 }
 
 export default function IncidentsPage() {
