@@ -142,7 +142,7 @@ describe("FinalOutputPreview", () => {
     expect(screen.queryByRole("button")).toBeNull();
   });
 
-  it("previews a longer output in six lines with a View full output button", () => {
+  it("previews a longer output in eight lines with a View full output button", () => {
     const onViewOutput = vi.fn();
     const output = Array.from({ length: 12 }, (_, index) => `line ${String(index)}`).join("\n");
     render(<FinalOutputPreview output={output} emptyMessage="empty" onViewOutput={onViewOutput} />);
@@ -150,7 +150,7 @@ describe("FinalOutputPreview", () => {
     const pre = document.querySelector("pre");
     expect(pre?.className).toContain("whitespace-pre-wrap");
     expect([...(pre?.children ?? [])].map((line) => line.textContent)).toEqual(
-      Array.from({ length: 6 }, (_, index) => `line ${String(index)}`),
+      Array.from({ length: 8 }, (_, index) => `line ${String(index)}`),
     );
     expect(pre?.children[1]?.className).not.toContain("truncate");
     expect(pre?.className).not.toContain("mask-image");
@@ -212,8 +212,14 @@ describe("FinalOutputPreview", () => {
     expect([...(mainKeys ?? [])].map((node) => node.textContent)).not.toContain("offset");
   });
 
+  it("keeps aligned terminal labels next to their values in a short output shown whole", () => {
+    const output = Array.from({ length: 4 }, (_, index) => `Pages free:                          ${String(76905 + index)}.`).join("\n");
+    render(<FinalOutputPreview output={output} emptyMessage="empty" onViewOutput={vi.fn()} />);
+    expect(document.querySelector("pre")?.textContent?.split("\n")[0]).toBe("Pages free: 76905.");
+  });
+
   it("keeps aligned terminal labels next to their values in the preview", () => {
-    const output = Array.from({ length: 8 }, (_, index) => `Pages free:                          ${String(76905 + index)}.`).join("\n");
+    const output = Array.from({ length: 14 }, (_, index) => `Pages free:                          ${String(76905 + index)}.`).join("\n");
     render(<FinalOutputPreview output={output} emptyMessage="empty" onViewOutput={vi.fn()} />);
     expect(document.querySelector("pre")?.children[0]?.textContent).toBe("Pages free: 76905.");
   });
