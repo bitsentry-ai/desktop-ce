@@ -10,10 +10,11 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { CheckIcon, CopyIcon } from "lucide-react";
+import { CheckIcon, CopyIcon, Maximize2 } from "lucide-react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { cn } from "./lib/utils";
+import { Dialog, DialogContent, DialogTitle } from "./ui/dialog";
 import { useTranslation } from "@bitsentry-ce/i18n";
 
 const HTML_BREAK_TAG_REGEX = /<br\s*\/?>/gi;
@@ -743,8 +744,28 @@ export function getCodeText(children: ReactNode): string {
 
 export type JsonBlockRenderer = (code: string, rawBlock: ReactNode, label: string) => ReactNode;
 
+
+/** Whether the element is wider inside than it shows, kept current as it or its first child resizes. */
+function useOverflowsHorizontally(ref: { readonly current: HTMLElement | null }): boolean {
+  const [overflows, setOverflows] = useState(false);
+  useEffect(() => {
+    const element = ref.current;
+    if (element === null) return undefined;
+    const check = () => { setOverflows(element.scrollWidth > element.clientWidth + 1); };
+    check();
+    if (typeof ResizeObserver === "undefined") return undefined;
+    const observer = new ResizeObserver(check);
+    observer.observe(element);
+    if (element.firstElementChild !== null) observer.observe(element.firstElementChild);
+    return () => { observer.disconnect(); };
+  }, [ref]);
+  return overflows;
+}
+
 interface MarkdownRendererContextValue {
   scrollableTableLabel: string;
+  expandTableLabel: string;
+  fullTableLabel: string;
   collapsedJsonLabel: string | undefined;
   renderJsonBlock: JsonBlockRenderer | undefined;
 }
@@ -752,6 +773,8 @@ interface MarkdownRendererContextValue {
 // Per-render values the hoisted renderers need; the renderers themselves stay module-level.
 const MarkdownRendererContext = createContext<MarkdownRendererContextValue>({
   scrollableTableLabel: "",
+  expandTableLabel: "",
+  fullTableLabel: "",
   collapsedJsonLabel: undefined,
   renderJsonBlock: undefined,
 });
@@ -788,10 +811,30 @@ const MARKDOWN_COMPONENTS = {
     );
   },
   table: function MarkdownTable({ children, node: _node, ref: _ref, ...props }) {
-    const { scrollableTableLabel } = useContext(MarkdownRendererContext);
+    const { scrollableTableLabel, expandTableLabel, fullTableLabel } = useContext(MarkdownRendererContext);
+    const scrollRef = useRef<HTMLDivElement>(null);
+    const overflows = useOverflowsHorizontally(scrollRef);
+    const [expanded, setExpanded] = useState(false);
+    const table = <table {...props}>{children}</table>;
     return (
-      <div className="chat-markdown-table-scroll" role="region" aria-label={scrollableTableLabel} tabIndex={0}>
-        <table {...props}>{children}</table>
+      <div className="chat-markdown-table">
+        <div ref={scrollRef} className="chat-markdown-table-scroll" role="region" aria-label={scrollableTableLabel} tabIndex={0}>
+          {table}
+        </div>
+        {overflows && (
+          <button type="button" className="chat-markdown-table-expand" onClick={() => { setExpanded(true); }}>
+            <Maximize2 aria-hidden="true" size={14} />
+            {expandTableLabel}
+          </button>
+        )}
+        <Dialog open={expanded} onOpenChange={setExpanded}>
+          <DialogContent aria-describedby={undefined} className="max-w-[min(96vw,90rem)]">
+            <DialogTitle>{fullTableLabel}</DialogTitle>
+            <div className="chat-markdown min-w-0 text-sm">
+              <div className="chat-markdown-table-scroll">{table}</div>
+            </div>
+          </DialogContent>
+        </Dialog>
       </div>
     );
   },
@@ -868,8 +911,13 @@ export const MarkdownContent = memo(function MarkdownContent({
   streaming = false,
 }: MarkdownContentProps) {
   const { t } = useTranslation();
-  const scrollableTableLabel = t("common.markdown.scrollableTable");
-  const rendererContext = { scrollableTableLabel, collapsedJsonLabel, renderJsonBlock };
+  const rendererContext = {
+    scrollableTableLabel: t("common.markdown.scrollableTable"),
+    expandTableLabel: t("common.markdown.expandTable"),
+    fullTableLabel: t("common.markdown.fullTable"),
+    collapsedJsonLabel,
+    renderJsonBlock,
+  };
   const normalizedContent = normalizeMarkdownContent(
     paragraphizeSoftBreaks ? paragraphizePlainTextSoftBreaks(content) : content,
   );
