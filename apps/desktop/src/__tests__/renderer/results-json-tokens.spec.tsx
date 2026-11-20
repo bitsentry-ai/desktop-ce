@@ -142,7 +142,7 @@ describe("FinalOutputPreview", () => {
     expect(screen.queryByRole("button")).toBeNull();
   });
 
-  it("previews a longer output in ten lines with a View full output button", () => {
+  it("previews a longer output in six lines with a View full output button", () => {
     const onViewOutput = vi.fn();
     const output = Array.from({ length: 12 }, (_, index) => `line ${String(index)}`).join("\n");
     render(<FinalOutputPreview output={output} emptyMessage="empty" onViewOutput={onViewOutput} />);
@@ -150,7 +150,7 @@ describe("FinalOutputPreview", () => {
     const pre = document.querySelector("pre");
     expect(pre?.className).toContain("whitespace-pre-wrap");
     expect([...(pre?.children ?? [])].map((line) => line.textContent)).toEqual(
-      Array.from({ length: 10 }, (_, index) => `line ${String(index)}`),
+      Array.from({ length: 6 }, (_, index) => `line ${String(index)}`),
     );
     expect(pre?.children[1]?.className).not.toContain("truncate");
     expect(pre?.className).toContain("mask-image");
