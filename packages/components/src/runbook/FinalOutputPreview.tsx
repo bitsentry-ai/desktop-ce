@@ -40,8 +40,8 @@ function lineCount(text: string): number {
   return count;
 }
 
-/** Lines of a longer plain-text output shown in the Summary (about 200px). */
-export const FINAL_OUTPUT_PREVIEW_LINES = 10;
+/** Lines of a longer plain-text output shown in the Summary (about 120px). */
+export const FINAL_OUTPUT_PREVIEW_LINES = 6;
 /** Top-level fields of a longer JSON object shown in the Summary. */
 export const FINAL_OUTPUT_SUMMARY_FIELDS = 8;
 
@@ -58,7 +58,7 @@ function PlainTextPreviewLines({ text }: { text: string }) {
     <pre
       className={cn(
         RUN_OUTPUT_MONO_CLASS,
-        "max-h-60 min-w-0 max-w-full overflow-hidden whitespace-pre-wrap [overflow-wrap:anywhere]",
+        "max-h-40 min-w-0 max-w-full overflow-hidden whitespace-pre-wrap [overflow-wrap:anywhere]",
         allLines.length > FINAL_OUTPUT_PREVIEW_LINES && "[mask-image:linear-gradient(to_bottom,black_calc(100%-1.5rem),transparent)]",
       )}
     >
