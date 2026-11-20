@@ -26,9 +26,9 @@ const toastClassNames = {
   actionButton:
     "!h-8 !rounded-md !border !border-solid !border-[hsl(var(--input))] !bg-[hsl(var(--card))] !px-3 !text-xs !font-medium !text-[hsl(var(--foreground))] hover:!bg-[hsl(var(--secondary-hover))]",
   cancelButton: "!h-7 !rounded-md !bg-muted !px-2.5 !text-xs !text-muted-foreground",
-  // Inside the top-right corner with a 28px target, instead of floating off the top-left edge.
+  // Inside the top-right corner with a 32px target, instead of floating off the top-left edge.
   closeButton:
-    "!left-auto !right-2 !top-2 !size-7 !translate-x-0 !translate-y-0 !rounded-md !border-0 !bg-transparent !text-muted-foreground hover:!bg-accent hover:!text-foreground [&>svg]:!size-4",
+    "!left-auto !right-1.5 !top-1.5 !size-8 !translate-x-0 !translate-y-0 !rounded-md !border-0 !bg-transparent !text-foreground/70 hover:!bg-accent hover:!text-foreground focus-visible:!ring-2 focus-visible:!ring-ring [&>svg]:!size-4 [&>svg]:!stroke-[2]",
 };
 
 /** Each type's icon in its status text colour (AA on the popover surface), matching the accent bar. */
@@ -55,7 +55,7 @@ const Toaster = ({ ...props }: ToasterProps) => {
       // (French strings run ~20% longer than English). Honors caller override.
       style={style}
       icons={toastIcons}
-      // Every toast can be dismissed with a visible 28px target in its top-right corner.
+      // Every toast can be dismissed with a visible 32px target in its top-right corner.
       closeButton
       toastOptions={{ classNames: toastClassNames }}
       {...props}
