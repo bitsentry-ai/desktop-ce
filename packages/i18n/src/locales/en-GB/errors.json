@@ -12,7 +12,7 @@
   "errors.integrations.failedToLoad": "Failed to load integrations:",
   "errors.lessonsLearned.failedToUpdate": "Failed to update",
   "errors.notFound.oopsPageNotFound": "Oops! Page not found",
-  "errors.notFound.returnToHome": "Return to Home",
+  "errors.notFound.returnToHome": "Return to home",
   "errors.offlineSync.failedToSync": "Failed to sync data",
   "errors.passkey.failedToDelete": "Failed to delete passkey. Please try again.",
   "errors.passkey.failedToLoad": "Failed to load passkeys",
