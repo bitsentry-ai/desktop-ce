@@ -1,6 +1,6 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { readableKey } from "./recordTable";
-import { ArrowRight } from "lucide-react";
+import { ArrowRight, ChevronDown } from "lucide-react";
 import { useTranslation } from "@bitsentry-ce/i18n";
 
 import { cn } from "../lib/utils";
@@ -47,30 +47,43 @@ export const FINAL_OUTPUT_SUMMARY_FIELDS = 8;
 
 /**
  * The first lines of a longer plain-text output. Runs of alignment spaces collapse to one, so a label stays next to its
- * value ("Pages free: 76905.") in the narrow Summary. Each line wraps to at most two rows, and an output longer than the
- * preview ends with how many lines it leaves out, above "View full output". The Output column keeps the exact spacing.
+ * value ("Pages free: 76905.") in the narrow Summary. Each line wraps to at most two rows; an output longer than the
+ * preview ends with a "Show N more lines" toggle that opens the rest in place. The Output column keeps the exact spacing.
  */
 function PlainTextPreviewLines({ text }: { text: string }) {
   const { t } = useTranslation();
+  const [expanded, setExpanded] = useState(false);
   const allLines = text.split("\n");
-  const lines = allLines.slice(0, FINAL_OUTPUT_PREVIEW_LINES).map((line) => line.replace(/ {2,}/g, " ").trimEnd());
-  const hidden = allLines.length - lines.length;
+  const hidden = Math.max(0, allLines.length - FINAL_OUTPUT_PREVIEW_LINES);
+  const shown = expanded ? allLines : allLines.slice(0, FINAL_OUTPUT_PREVIEW_LINES);
+  const lines = shown.map((line) => line.replace(/ {2,}/g, " ").trimEnd());
   return (
-    <pre
-      className={cn(
-        RUN_OUTPUT_MONO_CLASS,
-        "min-w-0 max-w-full overflow-hidden whitespace-pre-wrap [overflow-wrap:anywhere]",
-      )}
-    >
-      {lines.map((line, index) => (
-        <span key={`${String(index)}:${line}`} className="line-clamp-2">
-          {line.length > 0 ? line : " "}
-        </span>
-      ))}
+    <div className="min-w-0">
+      <pre
+        className={cn(
+          RUN_OUTPUT_MONO_CLASS,
+          "min-w-0 max-w-full whitespace-pre-wrap [overflow-wrap:anywhere]",
+          expanded ? "max-h-80 overflow-y-auto" : "overflow-hidden",
+        )}
+      >
+        {lines.map((line, index) => (
+          <span key={`${String(index)}:${line}`} className={expanded ? "block" : "line-clamp-2"}>
+            {line.length > 0 ? line : " "}
+          </span>
+        ))}
+      </pre>
       {hidden > 0 && (
-        <span className="mt-1 block font-sans text-muted-foreground">{t("common.results.moreLines", { count: hidden })}</span>
+        <button
+          type="button"
+          aria-expanded={expanded}
+          onClick={() => { setExpanded((current) => !current); }}
+          className="mt-1.5 inline-flex h-7 items-center gap-1 rounded-md px-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring max-sm:h-11"
+        >
+          <ChevronDown aria-hidden="true" className={cn("size-3.5 transition-transform", expanded && "rotate-180")} />
+          {expanded ? t("common.results.showFewerLines") : t("common.results.moreLines", { count: hidden })}
+        </button>
       )}
-    </pre>
+    </div>
   );
 }
 
