@@ -32,7 +32,7 @@ const listLinkClass =
   "flex h-8 items-center gap-2.5 whitespace-nowrap rounded-md px-2.5 text-[13px] text-muted-foreground transition-colors hover:bg-accent/70 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50";
 
 const selectClass =
-  "h-10 w-full appearance-none rounded-md border border-input bg-background pl-3 pr-9 text-sm text-foreground transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50";
+  "h-11 w-full appearance-none rounded-md border border-[hsl(var(--field-border))] bg-background pl-3 pr-9 text-base text-foreground transition-colors hover:border-[hsl(var(--field-border-hover))] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50";
 
 /**
  * Section navigation for a settings page that shows one section at a time. On `md` and wider it is a 208px list on
