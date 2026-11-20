@@ -786,6 +786,8 @@
   "common.results.durationMinutes": "{{minutes}} mnt {{seconds}} dtk",
   "common.results.durationHours": "{{hours}} j {{minutes}} mnt",
   "common.results.viewFullOutput": "Lihat output lengkap",
+  "common.results.moreLines_one": "{{count}} baris lagi",
+  "common.results.moreLines_other": "{{count}} baris lagi",
   "common.results.viewTable": "Tabel",
   "common.results.outputView": "Tampilan keluaran",
   "common.results.recordCount": "{{count}} catatan",
