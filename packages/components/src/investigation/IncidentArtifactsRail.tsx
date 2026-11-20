@@ -34,6 +34,7 @@ import RunbookProposalArtifact, {
   RunbookProposalListItem,
 } from "./RunbookProposalArtifact";
 import { SELECTED_ARTIFACT_CARD_CLASS } from "./selectedArtifactCard";
+import { actionTypeLabel, stepStatusLabel } from "../runbook/stepLabels";
 
 type IncidentArtifactsToolCallState = "running" | "done" | "failed";
 
@@ -258,48 +259,7 @@ function actionIcon(type: RunbookActionType) {
   }
 }
 
-function actionTypeLabel(t: TranslationFn, type: RunbookActionType): string {
-  switch (type) {
-    case "shell":
-      return t("common.incidentArtifactsRail.actionType.shell");
-    case "llm":
-      return t("common.incidentArtifactsRail.actionType.llm");
-    case "http":
-      return t("common.incidentArtifactsRail.actionType.http");
-    case "plugin":
-      return t("common.incidentArtifactsRail.actionType.plugin");
-    case "external_source":
-      return t("common.incidentArtifactsRail.actionType.external_source");
-    case "telemetry_existing_entry":
-      return t(
-        "common.incidentArtifactsRail.actionType.telemetry_existing_entry",
-      );
-    case "data_source_query":
-      return t("common.incidentArtifactsRail.actionType.data_source_query");
-    case "telemetry_ingest":
-      return t("common.incidentArtifactsRail.actionType.telemetry_ingest");
-    case "diagnosis":
-      return t("common.incidentArtifactsRail.actionType.diagnosis_diagnose");
-  }
-}
 
-function stepStatusLabel(
-  t: TranslationFn,
-  status: RunbookExecutionStepRecord["status"],
-): string {
-  switch (status) {
-    case "pending":
-      return t("common.incidentArtifactsRail.stepStatus.pending");
-    case "running":
-      return t("common.incidentArtifactsRail.stepStatus.running");
-    case "completed":
-      return t("common.incidentArtifactsRail.stepStatus.completed");
-    case "failed":
-      return t("common.incidentArtifactsRail.stepStatus.failed");
-    case "cancelled":
-      return t("common.incidentArtifactsRail.stepStatus.cancelled");
-  }
-}
 
 function statusClasses(status: IncidentArtifactEntry["status"]): string {
   switch (status) {

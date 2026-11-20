@@ -48,6 +48,7 @@ import type {
 } from "../services/contracts";
 import { useRunbooksService } from "../services/hooks";
 import { useTranslation } from "@bitsentry-ce/i18n";
+import { actionTypeLabel, stepStatusLabel } from "./stepLabels";
 
 type RunResultStatus =
   | "queued"
@@ -585,10 +586,10 @@ function StepsPanel({
                 <span className={RESULTS_STEP_TITLE_CLASS}>{stepTitle}</span>
               </div>
               <div className="mt-1.5 flex items-center gap-2 text-xs text-muted-foreground">
-                <span className="uppercase tracking-wide">{step.type}</span>
-                <span aria-hidden="true">•</span>
+                <span>{actionTypeLabel(t, step.type)}</span>
+                <span aria-hidden="true">·</span>
                 <span className={resultsStepStatusClass(step.status)}>
-                  {step.status}
+                  {stepStatusLabel(t, step.status)}
                 </span>
               </div>
               {stepErrorContent}
@@ -640,7 +641,7 @@ function OutputPanel({ step }: { step: RunbookExecutionStepRecord | null }) {
         <div>
           <div className="text-sm font-medium">{stepTitle}</div>
           <div className="mt-1 text-xs text-muted-foreground">
-            {step.type} • {step.status}
+            {actionTypeLabel(t, step.type)} · {stepStatusLabel(t, step.status)}
           </div>
         </div>
         <div>
