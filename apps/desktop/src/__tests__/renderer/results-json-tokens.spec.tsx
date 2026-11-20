@@ -149,11 +149,12 @@ describe("FinalOutputPreview", () => {
 
     const pre = document.querySelector("pre");
     expect(pre?.className).toContain("whitespace-pre-wrap");
-    expect([...(pre?.children ?? [])].map((line) => line.textContent)).toEqual(
-      Array.from({ length: 6 }, (_, index) => `line ${String(index)}`),
-    );
+    expect([...(pre?.children ?? [])].map((line) => line.textContent)).toEqual([
+      ...Array.from({ length: 6 }, (_, index) => `line ${String(index)}`),
+      "common.results.moreLines",
+    ]);
     expect(pre?.children[1]?.className).not.toContain("truncate");
-    expect(pre?.className).toContain("mask-image");
+    expect(pre?.className).not.toContain("mask-image");
     expect(screen.queryByText("common.results.showMore")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "common.results.viewFullOutput" }));
     expect(onViewOutput).toHaveBeenCalledTimes(1);

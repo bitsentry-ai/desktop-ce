@@ -786,6 +786,8 @@
   "common.results.durationMinutes": "{{minutes}} 分 {{seconds}} 秒",
   "common.results.durationHours": "{{hours}} 小时 {{minutes}} 分",
   "common.results.viewFullOutput": "查看完整输出",
+  "common.results.moreLines_one": "还有 {{count}} 行",
+  "common.results.moreLines_other": "还有 {{count}} 行",
   "common.results.viewTable": "表格",
   "common.results.outputView": "输出视图",
   "common.results.recordCount": "{{count}} 条记录",
