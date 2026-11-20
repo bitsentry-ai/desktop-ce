@@ -212,6 +212,12 @@ describe("FinalOutputPreview", () => {
     expect([...(mainKeys ?? [])].map((node) => node.textContent)).not.toContain("offset");
   });
 
+  it("keeps aligned terminal labels next to their values in a short output shown whole", () => {
+    const output = Array.from({ length: 4 }, (_, index) => `Pages free:                          ${String(76905 + index)}.`).join("\n");
+    render(<FinalOutputPreview output={output} emptyMessage="empty" onViewOutput={vi.fn()} />);
+    expect(document.querySelector("pre")?.textContent?.split("\n")[0]).toBe("Pages free: 76905.");
+  });
+
   it("keeps aligned terminal labels next to their values in the preview", () => {
     const output = Array.from({ length: 14 }, (_, index) => `Pages free:                          ${String(76905 + index)}.`).join("\n");
     render(<FinalOutputPreview output={output} emptyMessage="empty" onViewOutput={vi.fn()} />);
