@@ -625,6 +625,8 @@
   "common.markdown.copyCode_2": "复制代码",
   "common.markdown.copyResponseMarkdown": "复制 Markdown 格式的回复",
   "common.markdown.scrollableTable": "可滚动表格",
+  "common.markdown.expandTable": "展开表格",
+  "common.markdown.fullTable": "完整表格",
   "common.modelPicker.addToFavorites": "添加到收藏",
   "common.modelPicker.noModelsFound": "未找到模型",
   "common.modelPicker.modelsUnavailable": "无法加载模型",
