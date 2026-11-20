@@ -45,6 +45,15 @@ export const FINAL_OUTPUT_PREVIEW_LINES = 8;
 /** Top-level fields of a longer JSON object shown in the Summary. */
 export const FINAL_OUTPUT_SUMMARY_FIELDS = 8;
 
+/** Collapses runs of alignment spaces to one, so a label stays beside its value when the narrow Summary wraps a line. */
+function withoutAlignmentLine(line: string): string {
+  return line.replace(/ {2,}/g, " ").trimEnd();
+}
+
+function withoutAlignmentSpaces(text: string): string {
+  return text.split("\n").map(withoutAlignmentLine).join("\n");
+}
+
 /**
  * The first lines of a longer plain-text output. Runs of alignment spaces collapse to one, so a label stays next to its
  * value ("Pages free: 76905.") in the narrow Summary. Each line wraps to at most two rows; an output longer than the
@@ -56,7 +65,7 @@ function PlainTextPreviewLines({ text }: { text: string }) {
   const allLines = text.split("\n");
   const hidden = Math.max(0, allLines.length - FINAL_OUTPUT_PREVIEW_LINES);
   const shown = expanded ? allLines : allLines.slice(0, FINAL_OUTPUT_PREVIEW_LINES);
-  const lines = shown.map((line) => line.replace(/ {2,}/g, " ").trimEnd());
+  const lines = shown.map(withoutAlignmentLine);
   return (
     <div className="min-w-0">
       <pre
@@ -237,7 +246,7 @@ export function FinalOutputPreview({
                 {preview.json ? (
                   <HighlightedJson text={preview.body} />
                 ) : (
-                  preview.body
+                  withoutAlignmentSpaces(preview.body)
                 )}
               </pre>
             )}
