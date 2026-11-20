@@ -36,7 +36,7 @@ import type {
   TranslationFn,
 } from "./types";
 
-/** From 640px "Show more" sits at the end of the clamped description over a fade, so the header gains no line; on phones, where the description is one line, it takes its own line. "Show less" follows the full text. */
+/** "Show more" sits on its own line under the clamped description, so no sentence fades out under it; "Show less" follows the full text. */
 const DESCRIPTION_TOGGLE_CLASS =
   "rounded-sm text-xs font-medium leading-[18px] text-foreground/80 underline-offset-2 transition-colors hover:text-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
 
@@ -403,7 +403,7 @@ function DescriptionField({
               ref.current?.focus();
             }}
             className={cn(
-              "cursor-text break-words text-[13px] leading-[18px] text-muted-foreground",
+              "max-w-[48rem] cursor-text break-words text-sm leading-5 text-muted-foreground",
               !expanded && "line-clamp-2 max-sm:line-clamp-1",
             )}
           >
@@ -416,7 +416,7 @@ function DescriptionField({
               onClick={() => {
                 setExpanded(true);
               }}
-              className={cn(DESCRIPTION_TOGGLE_CLASS, "mt-0.5 max-sm:py-2 sm:absolute sm:bottom-0 sm:right-0 sm:mt-0 sm:bg-[linear-gradient(to_right,transparent,hsl(var(--background))_2rem)] sm:pl-12")}
+              className={cn(DESCRIPTION_TOGGLE_CLASS, "mt-0.5 max-sm:py-2")}
             >
               {t("runbooks.runbook.showFullDescription")}
             </button>
@@ -452,7 +452,7 @@ function DescriptionField({
         }}
         aria-label={t("runbooks.runbook.addADescription")}
         className={cn(
-          "block max-h-[36px] w-full resize-none overflow-hidden break-words bg-transparent text-[13px] leading-[18px] text-muted-foreground outline-none placeholder:text-muted-foreground/70 focus:overflow-y-auto",
+          "block max-h-10 w-full max-w-[48rem] resize-none overflow-hidden break-words bg-transparent text-sm leading-5 text-muted-foreground outline-none placeholder:text-muted-foreground/70 focus:overflow-y-auto",
           showPreview && "sr-only",
         )}
         placeholder={t("runbooks.runbook.addADescription")}
