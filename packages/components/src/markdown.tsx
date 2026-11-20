@@ -818,15 +818,15 @@ const MARKDOWN_COMPONENTS = {
     const table = <table {...props}>{children}</table>;
     return (
       <div className="chat-markdown-table">
-        <div ref={scrollRef} className="chat-markdown-table-scroll" role="region" aria-label={scrollableTableLabel} tabIndex={0}>
-          {table}
-        </div>
         {overflows && (
           <button type="button" className="chat-markdown-table-expand" onClick={() => { setExpanded(true); }}>
             <Maximize2 aria-hidden="true" size={14} />
             {expandTableLabel}
           </button>
         )}
+        <div ref={scrollRef} className="chat-markdown-table-scroll" role="region" aria-label={scrollableTableLabel} tabIndex={0}>
+          {table}
+        </div>
         <Dialog open={expanded} onOpenChange={setExpanded}>
           <DialogContent aria-describedby={undefined} className="max-w-[min(96vw,90rem)]">
             <DialogTitle>{fullTableLabel}</DialogTitle>
