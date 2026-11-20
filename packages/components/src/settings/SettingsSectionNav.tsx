@@ -22,7 +22,7 @@ export interface SettingsSectionNavProps {
   selectLabel: string;
   /**
    * The page title, such as "Settings". It is the page's `h1`: a small heading above the list on wide screens and
-   * read only by assistive technology on narrow ones, where the section picker and section title stand for it.
+   * above the section picker on narrow ones, so the page keeps its name when the picker shows only a section.
    */
   heading?: string;
   className?: string;
@@ -62,7 +62,7 @@ export function SettingsSectionNav({
       className={cn("min-[900px]:sticky min-[900px]:top-0 min-[900px]:w-52 min-[900px]:shrink-0 min-[900px]:self-start", className)}
     >
       {heading !== undefined && (
-        <h1 className="sr-only min-[900px]:not-sr-only min-[900px]:mb-2 min-[900px]:block min-[900px]:px-2.5 min-[900px]:text-xs min-[900px]:font-medium min-[900px]:uppercase min-[900px]:leading-4 min-[900px]:tracking-[0.06em] min-[900px]:text-muted-foreground">
+        <h1 className="mb-2 block text-xs font-medium uppercase leading-4 tracking-[0.06em] text-muted-foreground min-[900px]:px-2.5">
           {heading}
         </h1>
       )}
