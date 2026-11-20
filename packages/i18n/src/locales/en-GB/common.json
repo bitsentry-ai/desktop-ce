@@ -624,6 +624,8 @@
   "common.markdown.copyCode_2": "Copy code",
   "common.markdown.copyResponseMarkdown": "Copy response as Markdown",
   "common.markdown.scrollableTable": "Scrollable table",
+  "common.markdown.expandTable": "Expand table",
+  "common.markdown.fullTable": "Full table",
   "common.modelPicker.addToFavorites": "Add to favorites",
   "common.modelPicker.noModelsFound": "No models found",
   "common.modelPicker.modelsUnavailable": "Unable to load models",

@@ -625,6 +625,8 @@
   "common.markdown.copyCode_2": "Salin kode",
   "common.markdown.copyResponseMarkdown": "Salin respons sebagai Markdown",
   "common.markdown.scrollableTable": "Tabel yang dapat digulir",
+  "common.markdown.expandTable": "Perluas tabel",
+  "common.markdown.fullTable": "Tabel lengkap",
   "common.modelPicker.addToFavorites": "Tambahkan ke favorit",
   "common.modelPicker.noModelsFound": "Tidak ada model yang ditemukan",
   "common.modelPicker.modelsUnavailable": "Model tidak dapat dimuat",
