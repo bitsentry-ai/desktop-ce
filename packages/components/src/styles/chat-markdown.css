@@ -6,6 +6,18 @@
     word-break: break-word;
   }
 
+  /* Prose keeps a readable measure; tables, code and structured blocks still use the reply's full width. */
+  .chat-markdown p,
+  .chat-markdown ul,
+  .chat-markdown ol,
+  .chat-markdown blockquote,
+  .chat-markdown h1,
+  .chat-markdown h2,
+  .chat-markdown h3,
+  .chat-markdown h4 {
+    max-width: 80ch;
+  }
+
   .chat-markdown > :first-child {
     margin-top: 0;
   }

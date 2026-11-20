@@ -149,14 +149,14 @@ export function SidebarRow({
           "flex min-h-9 items-center gap-2 rounded-md px-2.5 py-1.5 text-sm leading-5 text-muted-foreground transition-colors",
           "hover:bg-[hsl(var(--accent)/0.7)] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
           // Selection is a neutral surface. Rows sit beside their section's guide line, so a second brand bar here would
-          // read as a doubled edge; the surface and medium weight mark the row on their own.
+          // read as a doubled edge; the surface and the title's medium weight mark the row on their own.
           active && "bg-[hsl(var(--selection))] text-foreground hover:bg-[hsl(var(--selection))]",
         )}
       >
         {leading}
         <span className="min-w-0 flex-1">
           {/* Every row shows up to two lines, so similarly named items stay distinguishable. */}
-          <span className={cn("line-clamp-2 break-words text-[13px] leading-[18px]", !active && "text-foreground/85")}>{title}</span>
+          <span className={cn("line-clamp-2 break-words text-[13px] leading-[18px]", active ? "font-medium" : "text-foreground/85")}>{title}</span>
           {meta !== undefined && <span className="block truncate text-xs leading-4 text-muted-foreground">{meta}</span>}
         </span>
         {trailing !== undefined && (
