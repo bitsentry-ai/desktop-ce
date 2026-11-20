@@ -137,7 +137,7 @@ const chip = (label: string) => screen.getByRole('button', { name: new RegExp(`^
 const chipCounts = () => ['All', 'Sources', 'Runbooks', 'Ticket actions', 'Deliveries'].map((label) => within(chip(label)).getByText(/^\d+$/).textContent)
 const needsYou = () => screen.getByRole('region', { name: 'Needs you' })
 const noNeedsYou = () => screen.queryByRole('region', { name: 'Needs you' })
-const runbookResults = () => screen.getByRole('region', { name: 'Runbook Results' })
+const runbookResults = () => screen.getByRole('region', { name: 'Runbook results' })
 const names = (container: HTMLElement) => within(container).getAllByRole('article').map((article) => article.getAttribute('aria-label')).sort()
 const tick = (ms: number) => act(async () => { await vi.advanceTimersByTimeAsync(ms) })
 const scrolled: Element[] = []
