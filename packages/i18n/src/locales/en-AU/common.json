@@ -786,6 +786,8 @@
   "common.results.durationMinutes": "{{minutes}} min {{seconds}} s",
   "common.results.durationHours": "{{hours}} h {{minutes}} min",
   "common.results.viewFullOutput": "View full output",
+  "common.results.moreLines_one": "{{count}} more line",
+  "common.results.moreLines_other": "{{count}} more lines",
   "common.results.viewTable": "Table",
   "common.results.outputView": "Output view",
   "common.results.recordCount": "{{count}} records",
