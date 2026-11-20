@@ -50,6 +50,8 @@ vi.mock("@bitsentry-ce/i18n", () => ({
         "common.incidentArtifactsRail.proposal.revisionPlaceholder":
           "Describe what the agent should revise…",
         "common.incidentArtifactsRail.proposal.risks": "Risks: {{risks}}",
+        "common.incidentArtifactsRail.proposal.risk.shell":
+          "Runs shell commands on a host.",
         "common.incidentArtifactsRail.proposal.runbookUpdate":
           "Runbook update",
         "common.incidentArtifactsRail.proposal.steps": "Steps",
@@ -609,6 +611,7 @@ describe("IncidentArtifactsRail", () => {
 
     expect(await screen.findByText("Warning runbook")).toBeTruthy();
     expect(await screen.findByText(warning)).toBeTruthy();
+    expect(screen.getByText("Runs shell commands on a host.")).toBeTruthy();
   });
 
   it("clears old proposals and ignores a stale refresh after an incident switch", async () => {

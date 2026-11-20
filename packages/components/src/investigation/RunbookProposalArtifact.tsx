@@ -159,6 +159,23 @@ export function RunbookProposalListItem({
   );
 }
 
+
+const RISK_NOTE_KEYS: Readonly<Record<string, string>> = {
+  shell: "common.incidentArtifactsRail.proposal.risk.shell",
+  http_write: "common.incidentArtifactsRail.proposal.risk.httpWrite",
+  webhook: "common.incidentArtifactsRail.proposal.risk.webhook",
+  external_source: "common.incidentArtifactsRail.proposal.risk.externalSource",
+  secret_consuming: "common.incidentArtifactsRail.proposal.risk.secretConsuming",
+  local_ai: "common.incidentArtifactsRail.proposal.risk.localAi",
+  unsupported: "common.incidentArtifactsRail.proposal.risk.unsupported",
+};
+
+/** What a risk label means for the reviewer, in a sentence; a label this build doesn't know reads as words. */
+function riskNote(risk: string, t: ReturnType<typeof useTranslation>["t"]): string {
+  const key = RISK_NOTE_KEYS[risk];
+  return key === undefined ? t("common.incidentArtifactsRail.proposal.risks", { risks: readableKey(risk) }) : t(key);
+}
+
 export default function RunbookProposalArtifact({
   agent,
   incidentId,
@@ -319,13 +336,11 @@ export default function RunbookProposalArtifact({
               <AlertCircle size={13} className="text-muted-foreground" aria-hidden="true" />
               {t("common.incidentArtifactsRail.proposal.reviewNotes")}
             </div>
-            {riskLabels.length > 0 && (
-              <div className="mt-1">
-                {t("common.incidentArtifactsRail.proposal.risks", {
-                  risks: riskLabels.map((risk) => readableKey(risk)).join(", "),
-                })}
+            {riskLabels.map((risk) => (
+              <div key={risk} className="mt-1">
+                {riskNote(risk, t)}
               </div>
-            )}
+            ))}
             {selectedProposal.validation.errors.map((validationError) => (
               <div key={validationError} className="mt-1">{validationError}</div>
             ))}

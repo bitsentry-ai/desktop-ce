@@ -1,5 +1,5 @@
 {
-  "agents.activity.configurationCheck": "Configuration Check",
+  "agents.activity.configurationCheck": "Configuration check",
   "agents.activity.detectedUnusualPortScanning": "Detected unusual port scanning activity from IP 203.0.113.42",
   "agents.activity.failedToCompleteDeepScan": "Failed to complete deep scan of database servers - timeout occurred",
   "agents.activity.verifiedFirewallRules": "Verified firewall rules on network perimeter devices",
