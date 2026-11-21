@@ -199,9 +199,9 @@ describe('IntegrationConnectionsPanel', () => {
     fill('Service URL', 'https://tickets.example/api')
     save()
 
-    expect(await screen.findByText('https://tickets.example/api')).toBeTruthy()
+    expect((await screen.findByText('tickets.example/api')).getAttribute('title')).toBe('https://tickets.example/api')
     await act(async () => { initialList.resolve([]) })
-    await waitFor(() => expect(screen.getByText('https://tickets.example/api')).toBeTruthy())
+    await waitFor(() => expect(screen.getByText('tickets.example/api')).toBeTruthy())
   })
 
   it('builds the form from the plugin contract and saves settings apart from credentials', async () => {
