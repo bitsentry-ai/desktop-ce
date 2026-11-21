@@ -35,12 +35,18 @@ describe("JSON blocks in chat replies", () => {
       reason: "vendor_fix_pending",
       vendorStatus: "pending",
     });
-    expect(screen.getByText("Eligibility")).toBeTruthy();
-    expect(screen.getByText("blocked")).toBeTruthy();
-    expect(screen.getByText("Vendor fix pending")).toBeTruthy();
+    expect(screen.getByText("Blocked").textContent).toBe("Blocked · Vendor fix pending");
+    expect(screen.getByText("Vendor status")).toBeTruthy();
+    expect(screen.queryByText("Eligibility")).toBeNull();
     expect(container.querySelector("details")).toBeNull();
     expect(screen.queryByText("View JSON")).toBeNull();
     expect(container.querySelector("pre")).toBeNull();
+  });
+
+  it("leaves a record without a verdict as plain labelled fields", () => {
+    renderJson({ host: "web-1", reason: "disk_full" });
+    expect(screen.getByText("Reason")).toBeTruthy();
+    expect(screen.getByText("Disk full")).toBeTruthy();
   });
 
   it("opens a list of records as a table", () => {
@@ -54,8 +60,8 @@ describe("JSON blocks in chat replies", () => {
 
   it("summarises a list that holds a single record as that record's fields", () => {
     renderJson([{ eligibility: "blocked", reason: "vendor_fix_pending", cveId: "CVE-2026-89526" }]);
-    expect(screen.getByText("Eligibility")).toBeTruthy();
-    expect(screen.getByText("Vendor fix pending")).toBeTruthy();
+    expect(screen.getByText("Blocked").textContent).toBe("Blocked · Vendor fix pending");
+    expect(screen.getByText("CVE-2026-89526")).toBeTruthy();
     expect(screen.queryByRole("table")).toBeNull();
   });
 
