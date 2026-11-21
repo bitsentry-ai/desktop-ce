@@ -121,12 +121,15 @@ export function ResultsDetailPanels({
   summary,
   steps,
   output,
+  stepsProgress,
 }: {
   activePanel: ResultsPanelId;
   onActivePanelChange: (panel: ResultsPanelId) => void;
   summary: ReactNode;
   steps: ReactNode;
   output: ReactNode;
+  /** Completed and total steps, shown on the narrow Steps tab so its progress stays visible while another tab is open. */
+  stepsProgress?: { completed: number; total: number };
 }) {
   const { t } = useTranslation();
   const idPrefix = useId();
@@ -178,6 +181,13 @@ export function ResultsDetailPanels({
                 )}
               >
                 {t(PANEL_LABEL_KEYS[panel])}
+                {panel === "steps" &&
+                  stepsProgress !== undefined &&
+                  stepsProgress.total > 0 && (
+                    <span className="tabular-nums text-muted-foreground">
+                      {` · ${String(stepsProgress.completed)}/${String(stepsProgress.total)}`}
+                    </span>
+                  )}
               </button>
             );
           })}

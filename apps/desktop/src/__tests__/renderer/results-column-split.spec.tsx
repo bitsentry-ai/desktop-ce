@@ -236,3 +236,22 @@ describe("ResultsDetailPanels column dividers", () => {
     expect(summaryDivider.releasePointerCapture).toHaveBeenCalledWith(1);
   });
 });
+
+describe("ResultsDetailPanels steps tab", () => {
+  afterEach(cleanup);
+
+  it("shows completed of total steps on the Steps tab", () => {
+    render(
+      <ResultsDetailPanels
+        activePanel="summary"
+        onActivePanelChange={vi.fn()}
+        summary={<div>summary body</div>}
+        steps={<div>steps body</div>}
+        output={<div>output body</div>}
+        stepsProgress={{ completed: 2, total: 3 }}
+      />,
+    );
+    const tabs = screen.getAllByRole("tab").map((tab) => tab.textContent);
+    expect(tabs[1]).toMatch(/· 2\/3$/);
+  });
+});

@@ -350,6 +350,16 @@ function finalOutputStep(
   );
 }
 
+function stepsProgressOf(
+  execution: RunbookExecutionRecord | null | undefined,
+): { completed: number; total: number } | undefined {
+  if (execution === null || execution === undefined) return undefined;
+  return {
+    completed: execution.steps.filter((step) => step.status === "completed").length,
+    total: execution.steps.length,
+  };
+}
+
 function stepSelectionKey(step: RunbookExecutionStepRecord): string {
   let actionPart: string = step.type;
   if (step.actionId !== undefined && step.actionId.length > 0) {
@@ -1181,6 +1191,7 @@ export default function ResultsPage() {
                   />
                 }
                 output={<OutputPanel step={activeStep} />}
+                stepsProgress={stepsProgressOf(activeExecution)}
               />
             </div>
           )}
