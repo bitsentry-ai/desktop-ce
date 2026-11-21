@@ -19,9 +19,9 @@ function latestAgentMessage(messages: readonly ChatMessage[]) {
 }
 
 /**
- * The incident header's status. When the latest reply stopped making progress, the stall replaces the incident's own
- * status (`children`), so the header never says "Incident completed" above a reply that is still hanging. The
- * conversation's stalled row carries the detail and Stop. Only this badge re-renders on its minute clock, and only
+ * The incident header's status. When the latest reply stopped making progress, a "Latest reply stalled" pill follows the
+ * incident's own status (`children`): the incident's lifecycle and the reply's state are separate facts, so both show.
+ * The conversation's stalled row carries the detail and Stop. Only this badge re-renders on its minute clock, and only
  * while the latest reply is running.
  */
 export function ResponseStalledBadge({ messages, children }: { messages: readonly ChatMessage[]; children?: ReactNode }) {
@@ -43,14 +43,17 @@ export function ResponseStalledBadge({ messages, children }: { messages: readonl
 
   if (latest === undefined || !isTurnStalled(latest, nowMs)) return <>{children}</>;
   return (
-    <span
-      className={cn(
-        statusPillBaseClass,
-        "gap-1 border border-[hsl(var(--warning)/0.35)] before:hidden bg-[hsl(var(--warning)/0.1)] text-[hsl(var(--warning-text))]",
-      )}
-    >
-      <TriangleAlert aria-hidden="true" className="size-3 shrink-0" />
-      {t("common.incidentDetail.responseStalled")}
+    <span className="flex flex-wrap items-center gap-2">
+      {children}
+      <span
+        className={cn(
+          statusPillBaseClass,
+          "gap-1 border border-[hsl(var(--warning)/0.35)] before:hidden bg-[hsl(var(--warning)/0.1)] text-[hsl(var(--warning-text))]",
+        )}
+      >
+        <TriangleAlert aria-hidden="true" className="size-3 shrink-0" />
+        {t("common.incidentDetail.responseStalled")}
+      </span>
     </span>
   );
 }
