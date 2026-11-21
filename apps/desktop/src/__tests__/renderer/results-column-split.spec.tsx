@@ -123,7 +123,7 @@ describe("split persistence", () => {
   });
 
   it("starts from the pixel defaults and drops the old percentage split", () => {
-    expect(DEFAULT_RESULTS_COLUMN_SPLIT).toEqual([300, 280]);
+    expect(DEFAULT_RESULTS_COLUMN_SPLIT).toEqual([260, 240]);
     const storage = memoryStorage({
       [LEGACY_RESULTS_COLUMN_SPLIT_STORAGE_KEY]: "[26,24,50]",
     });
@@ -183,11 +183,11 @@ describe("ResultsDetailPanels column dividers", () => {
   it("starts from the default pixel widths with two labelled separators", () => {
     const { container } = renderPanels();
 
-    expect(columnWidths(container)).toEqual(["300px", "280px"]);
+    expect(columnWidths(container)).toEqual(["260px", "240px"]);
     const separators = screen.getAllByRole("separator", { hidden: true });
     expect(separators).toHaveLength(2);
     expect(separators[0].getAttribute("aria-orientation")).toBe("vertical");
-    expect(separators[0].getAttribute("aria-valuenow")).toBe("300");
+    expect(separators[0].getAttribute("aria-valuenow")).toBe("260");
     expect(separators[0].getAttribute("aria-valuemin")).toBe(
       String(RESULTS_COLUMN_LIMITS[0].min),
     );
@@ -211,12 +211,12 @@ describe("ResultsDetailPanels column dividers", () => {
     const [, stepsDivider] = screen.getAllByRole("separator", { hidden: true });
 
     fireEvent.keyDown(stepsDivider, { key: "ArrowRight" });
-    expect(columnWidths(container)).toEqual(["300px", "296px"]);
-    expect(stepsDivider.getAttribute("aria-valuenow")).toBe("296");
-    expect(window.localStorage.getItem(RESULTS_COLUMN_SPLIT_STORAGE_KEY)).toBe("[300,296]");
+    expect(columnWidths(container)).toEqual(["260px", "256px"]);
+    expect(stepsDivider.getAttribute("aria-valuenow")).toBe("256");
+    expect(window.localStorage.getItem(RESULTS_COLUMN_SPLIT_STORAGE_KEY)).toBe("[260,256]");
 
     fireEvent.doubleClick(stepsDivider);
-    expect(columnWidths(container)).toEqual(["300px", "280px"]);
+    expect(columnWidths(container)).toEqual(["260px", "240px"]);
   });
 
   it("resizes by dragging and saves when the pointer is released", () => {
@@ -228,11 +228,11 @@ describe("ResultsDetailPanels column dividers", () => {
 
     fireEvent.pointerDown(summaryDivider, { button: 0, pointerId: 1, clientX: 300 });
     fireEvent.pointerMove(summaryDivider, { pointerId: 1, clientX: 340 });
-    expect(columnWidths(container)).toEqual(["340px", "280px"]);
+    expect(columnWidths(container)).toEqual(["300px", "240px"]);
     expect(window.localStorage.getItem(RESULTS_COLUMN_SPLIT_STORAGE_KEY)).toBeNull();
 
     fireEvent.pointerUp(summaryDivider, { pointerId: 1, clientX: 340 });
-    expect(window.localStorage.getItem(RESULTS_COLUMN_SPLIT_STORAGE_KEY)).toBe("[340,280]");
+    expect(window.localStorage.getItem(RESULTS_COLUMN_SPLIT_STORAGE_KEY)).toBe("[300,240]");
     expect(summaryDivider.releasePointerCapture).toHaveBeenCalledWith(1);
   });
 });
