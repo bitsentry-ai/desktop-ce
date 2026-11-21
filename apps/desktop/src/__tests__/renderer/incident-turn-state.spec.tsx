@@ -93,10 +93,10 @@ describe("the header's response badge", () => {
 
   const status = <span>Incident completed</span>;
 
-  it("replaces the incident status while the latest reply is stalled", () => {
+  it("shows the stall beside the incident status while the latest reply is stalled", () => {
     renderAt(startedMs + 24 * 60 * 60_000, <ResponseStalledBadge messages={[user, runningTurn()]}>{status}</ResponseStalledBadge>);
     expect(screen.getByText("common.incidentDetail.responseStalled")).toBeTruthy();
-    expect(screen.queryByText("Incident completed")).toBeNull();
+    expect(screen.getByText("Incident completed")).toBeTruthy();
   });
 
   it("keeps the incident status for a reply still inside the stall window, a finished reply, or no reply", () => {
