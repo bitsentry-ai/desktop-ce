@@ -146,6 +146,11 @@ function ConnectionMenu({ name, disabled, onRemove }: { name: string; disabled: 
   </DropdownMenu>;
 }
 
+/** A connection address without "https://" or a trailing slash; the full one stays in the tooltip. */
+function withoutWebScheme(target: string): string {
+  return target.replace(/^https?:\/\//i, "").replace(/\/$/, "");
+}
+
 /** The saved connections, in a card of their own above the form that adds one. */
 function ConnectionList({ titleId, rows, plugins, loaded, busy, onEdit, onRemove, onAdd, formOpen }: ConnectionListProps) {
   const { t } = useTranslation();
@@ -168,7 +173,7 @@ function ConnectionList({ titleId, rows, plugins, loaded, busy, onEdit, onRemove
           {/* The service it connects to, so Outline and iTop rows are told apart without the sidebar. */}
           <ConnectionService name={plugins.find((item) => item.id === row.pluginId)?.name} />
         </p>
-        <p className="truncate font-mono text-[12.5px] leading-5 text-muted-foreground" title={row.target}>{row.target}</p>
+        <p className="truncate font-mono text-[12.5px] leading-5 text-muted-foreground" title={row.target}>{withoutWebScheme(row.target)}</p>
       </div>
       <div className="flex shrink-0 flex-wrap items-center gap-2">
         <ConnectionStatus row={row} />
