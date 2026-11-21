@@ -197,7 +197,7 @@ export function RunbookEditorView({
           {t("runbooks.runbook.addThemInAppSettings")}
         </div>
       )}
-      <div className="flex-1 overflow-y-auto px-6 py-6">
+      <div className="flex-1 overflow-y-auto px-4 py-4 sm:px-6 sm:py-6">
         {runbook.actions.length === 0 && (
           <RunbookEmptyState
             icon={<BookOpen />}
