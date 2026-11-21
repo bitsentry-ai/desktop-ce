@@ -64,7 +64,8 @@ describe('incident response copy and markdown extraction', () => {
       </TooltipProvider>,
     );
     expect(screen.getByText("Evaluation record")).toBeTruthy();
-    expect(screen.getByText("Eligibility")).toBeTruthy();
+    expect(screen.getByText("Eligible")).toBeTruthy();
+    expect(screen.getByText("Review required")).toBeTruthy();
     expect(screen.queryByText("Lihat JSON")).toBeNull();
     expect(container.textContent).not.toContain('"eligibility"');
     expect(screen.getByText("echo hello").closest("details")).toBeNull();

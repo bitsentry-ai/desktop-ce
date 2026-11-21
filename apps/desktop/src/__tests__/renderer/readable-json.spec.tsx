@@ -50,8 +50,7 @@ describe("JSON in a chat reply", () => {
   it("renders a JSON object as fields with no raw JSON toggle", () => {
     const code = JSON.stringify({ eligibility: "blocked", reason: "vendor_fix_pending", cveId: "CVE-2026-1" });
     const { container } = render(<>{renderJsonEvidence(code, <pre>{code}</pre>, "View JSON")}</>);
-    expect(screen.getByText("blocked")).toBeTruthy();
-    expect(screen.getByText("Vendor fix pending")).toBeTruthy();
+    expect(screen.getByText("Blocked").textContent).toBe("Blocked · Vendor fix pending");
     expect(screen.getByText("CVE-2026-1")).toBeTruthy();
     expect(screen.queryByText("View JSON")).toBeNull();
     expect(container.querySelector("pre")).toBeNull();
