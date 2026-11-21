@@ -67,10 +67,10 @@ function JsonEvidenceBlock({ code, rawBlock }: { code: string; rawBlock: ReactNo
   return (
     <div className="my-3 min-w-0 rounded-lg border border-border bg-muted/30 px-3 py-2.5">
       {verdict !== null && (
-        <p className="mb-2 text-[15px] font-semibold leading-6 text-foreground">
+        <div className="mb-2 text-[15px] font-semibold leading-6 text-foreground">
           {verdict.headline}
           {verdict.reason !== null && <span className="font-normal text-muted-foreground">{` · ${verdict.reason}`}</span>}
-        </p>
+        </div>
       )}
       <StructuredValue value={verdict === null ? value : verdict.rest} limit={SUMMARY_FIELDS} />
     </div>
