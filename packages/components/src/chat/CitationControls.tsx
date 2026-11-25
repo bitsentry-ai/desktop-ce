@@ -6,7 +6,7 @@
  * goes back to its source, where the quote pulses.
  */
 
-import { useEffect, useEffectEvent, useLayoutEffect, useMemo, useRef, useState, type RefObject } from "react";
+import { useEffect, useEffectEvent, useId, useLayoutEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { createPortal } from "react-dom";
 import * as PopoverPrimitive from "@radix-ui/react-popover";
 import { Pencil, Quote, X } from "lucide-react";
@@ -184,11 +184,6 @@ export function CitationSelectionToolbar({
 
   // The list mounts its scroll container after the first render; wait for it.
   useEffect(() => {
-    const found = getViewport();
-    if (found !== null) {
-      setViewport(found);
-      return;
-    }
     let frame = 0;
     const check = () => {
       const next = getViewport();
@@ -316,6 +311,35 @@ const trimmedComment = (comment: string): string | undefined => {
   return trimmed.length > 0 ? trimmed : undefined;
 };
 
+/** Where the comment editor points: under the end of the quoted text right after Cite, else the chip. */
+function commentEditorAnchor(
+  chipId: string,
+  target: CitationSourceAnchor | undefined,
+): RefObject<{ getBoundingClientRect: () => DOMRect; contextElement?: Element }> {
+  const chip = () => Array.from(document.querySelectorAll("[data-citation-chip-id]"))
+    .find((element) => element.getAttribute("data-citation-chip-id") === chipId);
+  if (target === undefined) {
+    const measurable = { getBoundingClientRect: () => chip()?.getBoundingClientRect() ?? new DOMRect() };
+    // Read when the popover opens, after the chip has mounted.
+    Object.defineProperty(measurable, "contextElement", { get: chip });
+    return { current: measurable };
+  }
+  return {
+    current: {
+      getBoundingClientRect: () => {
+        const rect = Array.from(target.range.getClientRects()).at(-1) ?? target.range.getBoundingClientRect();
+        // Code blocks and tables scroll sideways inside the answer, so the quote can end in their hidden overflow.
+        const bounds = target.source.getBoundingClientRect();
+        const left = Math.min(Math.max(rect.left, bounds.left), bounds.right);
+        const right = Math.max(Math.min(rect.right, bounds.right), left);
+        return new DOMRect(left, rect.top, right - left, rect.height);
+      },
+      // Lets the popover follow the quote as the messages scroll.
+      contextElement: target.source,
+    },
+  };
+}
+
 /** A citation in the composer: the quote goes back to its source, the pencil edits the comment, the cross removes it. */
 export function CitationChip({
   citation,
@@ -334,19 +358,10 @@ export function CitationChip({
   const [lostAnchor, setLostAnchor] = useState<CitationSourceAnchor | null>(null);
   const open = commentEditor?.open === true;
   const sourceAnchor = commentEditor?.sourceAnchor === lostAnchor ? undefined : commentEditor?.sourceAnchor;
-  const virtualAnchor = useMemo(() => sourceAnchor === undefined ? null : {
-    current: {
-      getBoundingClientRect: () => {
-        const rects = sourceAnchor.range.getClientRects();
-        const rect = Array.from(rects).at(-1) ?? sourceAnchor.range.getBoundingClientRect();
-        // Code blocks and tables scroll sideways inside the answer, so the quote can end in their hidden overflow.
-        const bounds = sourceAnchor.source.getBoundingClientRect();
-        const left = Math.min(Math.max(rect.left, bounds.left), bounds.right);
-        const right = Math.max(Math.min(rect.right, bounds.right), left);
-        return new DOMRect(left, rect.top, right - left, rect.height);
-      },
-    },
-  }, [sourceAnchor]);
+  // The editor's only anchor; a Radix trigger would register a second one and strand the editor in a corner.
+  const chipId = useId();
+  const pencilRef = useRef<HTMLButtonElement>(null);
+  const virtualAnchor = useMemo(() => commentEditorAnchor(chipId, sourceAnchor), [chipId, sourceAnchor]);
 
   // A fresh editor starts from the saved comment.
   useEffect(() => {
@@ -394,10 +409,11 @@ export function CitationChip({
         else if (settleDraft()) commentEditor?.onOpenChange(false);
       }}
     >
-      {virtualAnchor !== null && <PopoverPrimitive.Anchor virtualRef={virtualAnchor} />}
+      <PopoverPrimitive.Anchor virtualRef={virtualAnchor} />
       {/* Like T3 Code's citation chip: brand ink, the label underlined on hover, small actions beside it. */}
       <span
         data-citation-chip="true"
+        data-citation-chip-id={chipId}
         className="inline-flex max-w-full items-center gap-0.5 rounded-md border border-[hsl(var(--brand-emphasis-border))] bg-[hsl(var(--brand-emphasis-surface))] py-0.5 pl-1.5 pr-0.5 align-middle text-xs font-medium leading-normal text-[hsl(var(--brand-emphasis))]"
       >
         <button
@@ -412,16 +428,22 @@ export function CitationChip({
           </span>
         </button>
         {commentEditor !== undefined && (
-          <PopoverPrimitive.Trigger asChild>
-            <button
-              type="button"
-              aria-label={commentLabel}
-              data-citation-comment-trigger="true"
-              className="ml-0.5 flex size-4 shrink-0 items-center justify-center rounded-sm opacity-80 transition-colors hover:bg-[hsl(var(--brand-emphasis)/0.17)] hover:opacity-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring"
-            >
-              <Pencil className="size-3" aria-hidden />
-            </button>
-          </PopoverPrimitive.Trigger>
+          // A plain button, not a Radix trigger: a trigger would register itself as a second anchor.
+          <button
+            ref={pencilRef}
+            type="button"
+            aria-label={commentLabel}
+            aria-haspopup="dialog"
+            aria-expanded={open}
+            data-citation-comment-trigger="true"
+            onClick={() => {
+              if (!open) commentEditor.onOpenChange(true);
+              else if (settleDraft()) commentEditor.onOpenChange(false);
+            }}
+            className="ml-0.5 flex size-4 shrink-0 items-center justify-center rounded-sm opacity-80 transition-colors hover:bg-[hsl(var(--brand-emphasis)/0.17)] hover:opacity-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring"
+          >
+            <Pencil className="size-3" aria-hidden />
+          </button>
         )}
         {onRemove !== undefined && (
           <button
@@ -454,8 +476,10 @@ export function CitationChip({
               commentEditor.onCancel();
             }}
             onInteractOutside={(event) => {
-              // A comment too long to keep holds the editor open.
-              if ((draftRef.current?.length ?? 0) > CITATION_MAX_COMMENT_LENGTH) event.preventDefault();
+              // The pencil toggles the editor itself; a comment too long to keep holds the editor open.
+              const target = event.target instanceof Node ? event.target : null;
+              const onPencil = target !== null && pencilRef.current?.contains(target) === true;
+              if (onPencil || (draftRef.current?.length ?? 0) > CITATION_MAX_COMMENT_LENGTH) event.preventDefault();
             }}
             className="z-50 w-[min(26rem,calc(100vw-1rem))] rounded-xl border border-border bg-popover p-2 text-popover-foreground shadow-lg outline-none"
           >

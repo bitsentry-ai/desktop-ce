@@ -125,6 +125,8 @@ describe("citation capture", () => {
     }
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "requestAnimationFrame", "cancelAnimationFrame"] });
     render(<Harness />);
+    // The toolbar finds the list's scroll container on the next frame.
+    act(() => { vi.runAllTimers(); });
     const text = screen.getByText(/The cause/).firstChild as Text;
 
     selectText(text, 11, text, 34);
