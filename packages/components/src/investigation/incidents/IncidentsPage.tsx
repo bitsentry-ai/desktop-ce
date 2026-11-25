@@ -1142,12 +1142,13 @@ export default function IncidentsPage() {
                     <CitationSelectionToolbar
                       getViewport={getMessageViewport}
                       threadId={activeIncident.id}
-                      onCite={(citation) => { addIncidentCitation(activeIncident.id, citation); }}
+                      onCite={(citation, anchor) => { addIncidentCitation(activeIncident.id, citation, anchor); }}
                     />
                   )}
                   {activeIncident !== null && (
                     <IncidentMessageList
                       key={activeId}
+                      threadId={activeIncident.id}
                       messages={messages}
                       providerKey={selectedProviderKey}
                       listRef={messageListRef}

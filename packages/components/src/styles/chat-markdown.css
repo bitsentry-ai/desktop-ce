@@ -329,7 +329,20 @@
   }
 }
 
-/* A cited quote in an agent answer, briefly highlighted when the engineer goes to its source. */
+/*
+ * A cited quote in an agent answer, as in T3 Code: it pulses when the engineer goes to its source (the answer animates
+ * the opacity), and stays marked while its comment is written.
+ */
+@property --bitsentry-citation-highlight-opacity {
+  syntax: "<number>";
+  inherits: true;
+  initial-value: 0;
+}
+
 ::highlight(bitsentry-citation) {
-  background-color: hsl(var(--primary) / 0.25);
+  background-color: hsl(var(--primary) / var(--bitsentry-citation-highlight-opacity));
+}
+
+::highlight(bitsentry-citation-comment) {
+  background-color: hsl(var(--primary) / 0.45);
 }

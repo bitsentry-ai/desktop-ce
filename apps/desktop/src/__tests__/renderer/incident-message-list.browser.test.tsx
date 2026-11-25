@@ -61,7 +61,7 @@ function mountList(initial: ChatMessage[], height = 600) {
   const view = (messages: ChatMessage[]) => (
     <TooltipProvider>
       <div style={{ position: "relative", height, width: 800 }}>
-        <IncidentMessageList messages={messages} providerKey={null} listRef={listRef} headerClassName="h-6" onAtEndChange={onAtEndChange} />
+        <IncidentMessageList threadId="incident-1" messages={messages} providerKey={null} listRef={listRef} headerClassName="h-6" onAtEndChange={onAtEndChange} />
       </div>
     </TooltipProvider>
   );

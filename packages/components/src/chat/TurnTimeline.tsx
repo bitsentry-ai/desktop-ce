@@ -235,7 +235,7 @@ function TimelineRows({ rows, messageId, collapsedJsonLabel, streaming = false }
     <>
       {rows.map((row, index) => {
         if (row.kind === "text") {
-          // The final answer of a message without iterations has no stable id, so it cannot be cited.
+          // The answer of an unsaved message without iterations has no stable id, so it cannot be cited.
           const citationSource = row.key === "final" ? {} : { [CITATION_SOURCE_ATTRIBUTE]: row.key };
           return (
             <div key={row.key} {...citationSource} className="py-1 text-sm leading-[22px] text-foreground [&_.chat-markdown]:leading-[22px]">

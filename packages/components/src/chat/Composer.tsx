@@ -60,8 +60,8 @@ import { SendButton } from "./SendButton";
 import { ContextIndicator } from "./ContextIndicator";
 import { QueuedMessagesPanel, type ComposerQueue } from "./QueuedMessagesPanel";
 import { resolveComposerDispatchMode } from "./composerDispatch";
-import { CitationChip } from "./CitationControls";
-import { CHAT_MESSAGE_MAX_LENGTH, joinCitations, type AssistantCitation } from "./citations";
+import { CitationChip, type CitationCommentEditorState } from "./CitationControls";
+import { CHAT_MESSAGE_MAX_LENGTH, joinCitations, withCitationComment, type AssistantCitation } from "./citations";
 import type { AgentMessageDelivery } from "../services/contracts";
 
 export interface ComposerProps {
@@ -83,6 +83,8 @@ export interface ComposerProps {
   citations?: AssistantCitation[];
   onRemoveCitation?: (index: number) => void;
   onCitationCommentChange?: (index: number, comment: string | undefined) => void;
+  /** The comment editor of each citation, when the host keeps which one is open (Cite opens the new one's). */
+  citationCommentEditor?: (index: number) => Omit<CitationCommentEditorState, "onSave" | "onSaveAndSend" | "restoreFocusRef">;
   isProcessing: boolean;
   isBlocked: boolean;
   /** Shown in place of the text area while blocked: what is missing and where to fix it. */
@@ -296,6 +298,7 @@ export function Composer({
   citations = [],
   onRemoveCitation,
   onCitationCommentChange,
+  citationCommentEditor,
 }: ComposerProps) {
   const { t } = useTranslation();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -405,6 +408,30 @@ export function Composer({
       delivery = mode === "steer" ? "steer" : "queue";
     }
     onSend({ accessLevel, interactionMode, traitValues, delivery });
+  };
+
+  // Without a host that tracks it, the composer keeps which citation's comment editor is open.
+  const [openCommentIndex, setOpenCommentIndex] = useState<number | null>(null);
+  const commentEditorFor = (index: number): CitationCommentEditorState | undefined => {
+    if (onCitationCommentChange === undefined) return undefined;
+    const hosted = citationCommentEditor?.(index) ?? {
+      open: openCommentIndex === index,
+      onOpenChange: (open: boolean) => { setOpenCommentIndex(open ? index : null); },
+      onCancel: () => { setOpenCommentIndex(null); },
+    };
+    return {
+      ...hosted,
+      restoreFocusRef: textareaRef,
+      onSave: (comment) => { onCitationCommentChange(index, comment); },
+      // Command/Ctrl+Enter in the comment saves it and sends the message, when the message could be sent.
+      onSaveAndSend: (comment) => {
+        onCitationCommentChange(index, comment);
+        const next = citations.map((citation, position) => (position === index ? withCitationComment(citation, comment) : citation));
+        if (!composerCanSend(isBlocked, prompt, composerImages.length + next.length)) return;
+        if (joinCitations(next, prompt).length > CHAT_MESSAGE_MAX_LENGTH) return;
+        submit(false);
+      },
+    };
   };
 
   // ── Keyboard: Enter sends, Shift+Enter newline ─────────────────────────────
@@ -532,7 +559,7 @@ export function Composer({
                   key={`${citation.sourceId}:${String(citation.start)}:${String(index)}`}
                   citation={citation}
                   onRemove={() => { onRemoveCitation?.(index); }}
-                  onCommentChange={(comment) => { onCitationCommentChange?.(index, comment); }}
+                  commentEditor={commentEditorFor(index)}
                 />
               ))}
             </div>

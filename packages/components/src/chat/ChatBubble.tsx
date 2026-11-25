@@ -10,8 +10,8 @@ import type { ChatMessage, AgentIteration } from "./types";
 import { TurnTimeline } from "./TurnTimeline";
 import { isInterruptedAgentTurn } from "./runtimeProjection";
 import { isTurnStalled } from "./turnTimelineRows";
-import { CitationChip } from "./CitationControls";
-import { splitCitations } from "./citations";
+import { CitationCard } from "./CitationControls";
+import { splitCitations, type MessageSegment } from "./citations";
 import { useTranslation } from "@bitsentry-ce/i18n";
 import {
   CheckIcon,
@@ -206,10 +206,10 @@ function UserTextBubble({ msg, t }: { msg: UserMessage; t: (key: string, values?
   const textContent = bodyText.length > 0
     ? (
         <div className="whitespace-pre-wrap break-words">
-          {splitCitations(bodyText).map((segment, index) =>
+          {messageBlocks(bodyText).map((segment, index, segments) =>
             segment.kind === "text"
               ? <span key={index}>{segment.text}</span>
-              : <CitationChip key={index} citation={segment.citation} />,
+              : <CitationCard key={index} citation={segment.citation} leading={index === 0} trailing={index === segments.length - 1} />,
           )}
         </div>
       )
@@ -224,6 +224,18 @@ function UserTextBubble({ msg, t }: { msg: UserMessage; t: (key: string, values?
       </div>
     </div>
   );
+}
+
+/** A message's text and quote cards. Cards are blocks, so the spaces that join them to the text are dropped. */
+function messageBlocks(text: string): MessageSegment[] {
+  const segments = splitCitations(text);
+  return segments.flatMap((segment, index): MessageSegment[] => {
+    if (segment.kind === "citation") return [segment];
+    let value = segment.text;
+    if (segments[index - 1]?.kind === "citation") value = value.trimStart();
+    if (segments[index + 1]?.kind === "citation") value = value.trimEnd();
+    return value.length === 0 ? [] : [{ kind: "text" as const, text: value }];
+  });
 }
 
 function getVisibleIterationText(
