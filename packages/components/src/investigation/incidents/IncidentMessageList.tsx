@@ -107,12 +107,15 @@ export const IncidentMessageList = memo(function IncidentMessageList({
 
   // Going to a citation's source leaves the end, so following stops first. A source row outside the render window
   // is not mounted, so the list scrolls to its message and highlights the quote once the row mounts.
+  const stopRevealRef = useRef<(() => void) | null>(null);
   useCitationRevealer(threadId, (citation, onSettled) => {
     liveFollowRef.current = false;
     leftEndRef.current = true;
     setLiveFollow(false);
-    revealCitationInList({ citation, messages, list: listRef.current, onSettled });
+    stopRevealRef.current = revealCitationInList({ citation, messages, list: listRef.current, onSettled });
   });
+  // A reveal still waiting for its row belongs to this list, so it stops with it.
+  useEffect(() => () => { stopRevealRef.current?.(); }, []);
 
   useEffect(() => {
     const node = listRef.current?.getScrollableNode();

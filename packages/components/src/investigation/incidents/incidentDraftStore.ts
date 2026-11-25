@@ -4,7 +4,7 @@ import type { CitationSourceAnchor } from "../../chat/citationDom";
 import { joinCitations, separateCitations, withCitationComment, type AssistantCitation } from "../../chat/citations";
 
 /** The citation whose comment editor is open in an incident's composer. */
-export interface OpenCitationComment {
+interface OpenCitationComment {
   index: number;
   /** Set right after Cite: the editor opens under the quoted text, and Cancel drops the citation. */
   sourceAnchor?: CitationSourceAnchor;
@@ -81,10 +81,20 @@ export function readComposedDraft(incidentId: string): string {
   return joinCitations(state.citations[incidentId] ?? [], state.drafts[incidentId] ?? "");
 }
 
-/** Adds a quote to an incident's composer, after the ones already there, and opens its comment under the quote. */
+/**
+ * Adds a quote to an incident's composer, after the ones already there, and opens its comment under the quote. Citing
+ * the same text again opens the existing chip's comment instead of adding a copy.
+ */
 export function addIncidentCitation(incidentId: string, citation: AssistantCitation, sourceAnchor?: CitationSourceAnchor): void {
   const state = useIncidentDraftStore.getState();
-  const citations = [...(state.citations[incidentId] ?? []), citation];
+  const existing = state.citations[incidentId] ?? [];
+  const same = existing.findIndex((quote) =>
+    quote.sourceId === citation.sourceId && quote.start === citation.start && quote.end === citation.end);
+  if (same !== -1) {
+    state.setOpenComment(incidentId, { index: same });
+    return;
+  }
+  const citations = [...existing, citation];
   state.setCitations(incidentId, citations);
   state.setOpenComment(incidentId, { index: citations.length - 1, ...(sourceAnchor === undefined ? {} : { sourceAnchor }) });
 }

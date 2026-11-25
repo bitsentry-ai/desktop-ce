@@ -126,7 +126,8 @@ export function observeSelectionActions({
   const onSelectionStart = (event: PointerEvent) => {
     if (!event.isPrimary) return;
     const target = event.target instanceof Element ? event.target : null;
-    if (target?.closest("button, a, [role=button]")) return;
+    // Links in an answer are text the engineer may quote; only buttons start no selection.
+    if (target?.closest("button, [role=button]")) return;
     gestureActive = event.button === 0 && !event.defaultPrevented;
     dismissed = !gestureActive;
   };

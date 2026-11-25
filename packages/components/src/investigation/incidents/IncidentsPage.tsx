@@ -1138,8 +1138,9 @@ export default function IncidentsPage() {
                 )}
                 <TurnStopContext value={stopActiveTurn}>
                 <CustomerReportIntakeChatContext.Provider value={customerReportIntake.chat}>
-                  {activeIncident !== null && (
+                  {activeIncident !== null && !isArchivedIncident && (
                     <CitationSelectionToolbar
+                      key={activeIncident.id}
                       getViewport={getMessageViewport}
                       threadId={activeIncident.id}
                       onCite={(citation, anchor) => { addIncidentCitation(activeIncident.id, citation, anchor); }}

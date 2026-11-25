@@ -30,6 +30,11 @@ import {
 } from "./citationDom";
 import { observeSelectionActions, resolveSelectionActionPosition, type SelectionActionPoint } from "./selectionActions";
 
+/** The last line box of a selection or quote, where its floating controls sit. */
+function lastRect(rects: DOMRectList): DOMRect | undefined {
+  return rects.length > 0 ? Array.from(rects)[rects.length - 1] : undefined;
+}
+
 type CitationReveal = (citation: AssistantCitation, onSettled: (outcome: CitationRevealOutcome) => void) => void;
 
 // The message list of each thread registers how to go to a quote in it, so a chip anywhere on the page can.
@@ -99,7 +104,8 @@ function CitationCommentEditor({
       data-citation-comment-editor="true"
       onKeyDown={(event) => {
         event.stopPropagation();
-        if (event.nativeEvent.isComposing) return;
+        // WebKit ends an input method's candidates with keyCode 229 and isComposing false.
+        if (event.nativeEvent.isComposing || event.keyCode === 229) return;
         if (event.key === "Escape") {
           event.preventDefault();
           onCancel();
@@ -120,7 +126,7 @@ function CitationCommentEditor({
           onDraftChange(event.target.value);
         }}
         onKeyDown={(event) => {
-          if (event.key !== "Enter" || event.shiftKey || event.nativeEvent.isComposing) return;
+          if (event.key !== "Enter" || event.shiftKey || event.nativeEvent.isComposing || event.keyCode === 229) return;
           event.preventDefault();
           if (tooLong) return;
           if ((event.metaKey || event.ctrlKey) && onSaveAndSend !== undefined) onSaveAndSend(comment);
@@ -182,17 +188,24 @@ export function CitationSelectionToolbar({
   const buttonRef = useRef<HTMLButtonElement>(null);
   const actionsRef = useRef<ReturnType<typeof observeSelectionActions> | null>(null);
 
-  // The list mounts its scroll container after the first render; wait for it.
+  // The scroll container can mount after the toolbar or be replaced when the list remounts (a thread switch, or the
+  // list appearing once messages load), so it is looked up after every render; until it exists, every frame.
+  const readViewport = useEffectEvent(getViewport);
   useEffect(() => {
+    const found = readViewport();
+    if (found !== null) {
+      setViewport((current) => (current === found ? current : found));
+      return;
+    }
     let frame = 0;
     const check = () => {
-      const next = getViewport();
+      const next = readViewport();
       if (next !== null) setViewport(next);
       else frame = requestAnimationFrame(check);
     };
     frame = requestAnimationFrame(check);
     return () => { cancelAnimationFrame(frame); };
-  }, [getViewport]);
+  });
 
   useLayoutEffect(() => {
     const button = buttonRef.current;
@@ -218,7 +231,7 @@ export function CitationSelectionToolbar({
         ...captured,
         position: resolveSelectionActionPosition({
           bounds: viewport.getBoundingClientRect(),
-          selectionRect: Array.from(rects).at(-1) ?? captured.anchor.range.getBoundingClientRect(),
+          selectionRect: lastRect(rects) ?? captured.anchor.range.getBoundingClientRect(),
           pointer: pointerOnText ? pointer : null,
           viewport: { width: window.innerWidth, height: window.innerHeight },
         }),
@@ -250,6 +263,8 @@ export function CitationSelectionToolbar({
       document.removeEventListener("selectionchange", actions.selectionChanged);
       actions.dispose();
       actionsRef.current = null;
+      // A pill for the previous thread's selection must not outlive it.
+      setSelection(null);
     };
   }, [threadId, viewport]);
 
@@ -301,7 +316,8 @@ export interface CitationCommentEditorState {
   /** Cancel, or Escape. A citation added a moment ago is dropped; an earlier one keeps its comment. */
   onCancel: () => void;
   onSave: (comment: string | undefined) => void;
-  onSaveAndSend?: (comment: string | undefined) => void;
+  /** Saves and sends; false when the message cannot be sent, which keeps the editor open. */
+  onSaveAndSend?: (comment: string | undefined) => boolean;
   /** Where the focus goes once the editor closes. */
   restoreFocusRef?: RefObject<HTMLElement | null>;
 }
@@ -327,7 +343,7 @@ function commentEditorAnchor(
   return {
     current: {
       getBoundingClientRect: () => {
-        const rect = Array.from(target.range.getClientRects()).at(-1) ?? target.range.getBoundingClientRect();
+        const rect = lastRect(target.range.getClientRects()) ?? target.range.getBoundingClientRect();
         // Code blocks and tables scroll sideways inside the answer, so the quote can end in their hidden overflow.
         const bounds = target.source.getBoundingClientRect();
         const left = Math.min(Math.max(rect.left, bounds.left), bounds.right);
@@ -361,6 +377,8 @@ export function CitationChip({
   // The editor's only anchor; a Radix trigger would register a second one and strand the editor in a corner.
   const chipId = useId();
   const pencilRef = useRef<HTMLButtonElement>(null);
+  // Set when a click or focus outside closes the editor: the focus then stays where the engineer put it.
+  const interactedOutsideRef = useRef(false);
   const virtualAnchor = useMemo(() => commentEditorAnchor(chipId, sourceAnchor), [chipId, sourceAnchor]);
 
   // A fresh editor starts from the saved comment.
@@ -379,9 +397,11 @@ export function CitationChip({
 
   // The quoted text is marked while its comment is written.
   const currentCitation = useEffectEvent(() => citation);
+  // Only an editor under the quote depends on it; one opened from the pencil sits by the chip.
   const onSourceUnavailable = useEffectEvent(() => {
+    if (sourceAnchor === undefined) return;
     if (settleDraft()) commentEditor?.onOpenChange(false);
-    else if (sourceAnchor !== undefined) setLostAnchor(sourceAnchor);
+    else setLostAnchor(sourceAnchor);
   });
   useEffect(() => {
     if (!open) return;
@@ -464,15 +484,26 @@ export function CitationChip({
             sideOffset={6}
             collisionPadding={8}
             aria-label={t("common.chat.citations.editComment")}
-            onOpenAutoFocus={(event) => { event.preventDefault(); }}
-            onCloseAutoFocus={(event) => {
-              const target = commentEditor.restoreFocusRef?.current;
-              if (target === null || target === undefined) return;
+            onOpenAutoFocus={(event) => {
               event.preventDefault();
-              target.focus({ preventScroll: true });
+              interactedOutsideRef.current = false;
+            }}
+            onCloseAutoFocus={(event) => {
+              event.preventDefault();
+              // Back to the composer, unless the engineer already moved on: clicked away (perhaps starting a new
+              // selection in an answer) or focused something else.
+              if (interactedOutsideRef.current) {
+                interactedOutsideRef.current = false;
+                return;
+              }
+              const active = document.activeElement;
+              if (active !== null && active !== document.body) return;
+              commentEditor.restoreFocusRef?.current?.focus({ preventScroll: true });
             }}
             onEscapeKeyDown={(event) => {
               event.preventDefault();
+              // Escape that closes an input method's candidates is not meant for the editor.
+              if (event.isComposing || event.keyCode === 229) return;
               commentEditor.onCancel();
             }}
             onInteractOutside={(event) => {
@@ -480,6 +511,7 @@ export function CitationChip({
               const target = event.target instanceof Node ? event.target : null;
               const onPencil = target !== null && pencilRef.current?.contains(target) === true;
               if (onPencil || (draftRef.current?.length ?? 0) > CITATION_MAX_COMMENT_LENGTH) event.preventDefault();
+              else interactedOutsideRef.current = true;
             }}
             className="z-50 w-[min(26rem,calc(100vw-1rem))] rounded-xl border border-border bg-popover p-2 text-popover-foreground shadow-lg outline-none"
           >
@@ -495,8 +527,7 @@ export function CitationChip({
                 ? {}
                 : {
                     onSaveAndSend: (comment: string) => {
-                      commentEditor.onOpenChange(false);
-                      commentEditor.onSaveAndSend?.(trimmedComment(comment));
+                      if (commentEditor.onSaveAndSend?.(trimmedComment(comment)) === true) commentEditor.onOpenChange(false);
                     },
                   })}
             />

@@ -292,12 +292,27 @@ function prefersReducedMotion(): boolean {
 }
 
 /** Pulses the quote in its source, then fades it. Returns a stop that clears it early. */
-function pulseCitation(source: HTMLElement, range: Range, onDone: () => void): () => void {
+function pulseCitation(source: HTMLElement, citation: AssistantCitation, initialRange: Range, onDone: () => void): () => void {
   const api = highlightApi();
   let stopped = false;
   let selected: Range | null = null;
+  let range = initialRange;
+  let highlight: HighlightInstance | null = null;
+  let disconnect: (() => void) | null = null;
   if (api !== null) {
-    api.registry.set(HIGHLIGHT_NAME, new api.Highlight(range));
+    highlight = new api.Highlight(range);
+    api.registry.set(HIGHLIGHT_NAME, highlight);
+    // A streaming answer rewrites its text nodes, which can shift or collapse the range; find the quote again.
+    const observer = new MutationObserver(() => {
+      if (stopped || highlight === null) return;
+      const repaired = resolveCitationRange(source, citation);
+      if (repaired === null) return;
+      highlight.delete(range);
+      range = repaired;
+      highlight.add(range);
+    });
+    observer.observe(source, { childList: true, characterData: true, subtree: true });
+    disconnect = () => { observer.disconnect(); };
   } else {
     // Without the highlight API the quote is selected instead, as T3 Code does.
     const selection = source.ownerDocument.getSelection();
@@ -328,9 +343,9 @@ function pulseCitation(source: HTMLElement, range: Range, onDone: () => void): (
     if (stopped) return;
     stopped = true;
     clearTimeout(timer);
+    disconnect?.();
     animation?.cancel();
-    const current = api?.registry.get(HIGHLIGHT_NAME) as { has?: (range: Range) => boolean } | undefined;
-    if (api !== null && current?.has?.(range) === true) api.registry.delete(HIGHLIGHT_NAME);
+    if (api !== null && highlight !== null && api.registry.get(HIGHLIGHT_NAME) === highlight) api.registry.delete(HIGHLIGHT_NAME);
     if (selected !== null) {
       const selection = source.ownerDocument.getSelection();
       if (selection?.rangeCount === 1 && selection.getRangeAt(0) === selected) selection.removeAllRanges();
@@ -405,6 +420,8 @@ export function revealCitationInList({
 
   const dispose = () => {
     if (stopped) return;
+    // A newer reveal or the list going away also stops this one's scroll.
+    stopScroll();
     stopped = true;
     if (frame !== null) cancelAnimationFrame(frame);
     document.removeEventListener("keydown", onKeyDown);
@@ -418,6 +435,7 @@ export function revealCitationInList({
   const stopScroll = () => {
     if (!scrolling || root === null || list === null) return;
     scrolling = false;
+    if (!root.isConnected) return;
     void list.scrollToOffset({ offset: root.scrollTop, animated: false });
   };
   const onNavigation = () => {
@@ -451,7 +469,7 @@ export function revealCitationInList({
       return;
     }
     settle("highlighted");
-    stopPulse = pulseCitation(source, range, dispose);
+    stopPulse = pulseCitation(source, citation, range, dispose);
   };
 
   const scrollTo = (source: HTMLElement) => {
@@ -486,6 +504,8 @@ export function revealCitationInList({
         highlight(current, resolveCitationRange(current, citation));
       },
       () => {
+        // A scroll cancelled on purpose rejects too; only a real failure reports the source missing.
+        if (stopped || !scrolling) return;
         scrolling = false;
         settle("missing");
         dispose();
@@ -498,10 +518,12 @@ export function revealCitationInList({
     if (stopped) return;
     const source = findCitationSource(root ?? document, citation);
     if (source !== null) {
+      scrolling = false;
       scrollTo(source);
       return;
     }
     if (attempt >= REVEAL_MOUNT_FRAMES) {
+      scrolling = false;
       settle("missing");
       dispose();
       return;
@@ -527,6 +549,8 @@ export function revealCitationInList({
     return dispose;
   }
   if (holder.folded && holder.messageId !== undefined) openDisclosure(`${holder.messageId}:worked`);
+  // Pending until the row mounts, so Escape or the engineer's own scrolling can still stop it.
+  scrolling = true;
   void list.scrollToIndex({ index: holder.index, animated: false, viewPosition: 0.3 });
   frame = requestAnimationFrame(() => { waitForSource(1); });
   return dispose;

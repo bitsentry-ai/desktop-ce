@@ -104,6 +104,31 @@ describe("citation capture", () => {
     expect(range?.toString()).toBe("finding.Second");
   });
 
+  it("offers Cite for a selection that starts on a link in the answer", () => {
+    const onCite = vi.fn();
+    function Harness() {
+      const viewportRef = useRef<HTMLDivElement>(null);
+      return (
+        <div ref={viewportRef}>
+          <div data-citation-source="iteration-1:text"><p>See <a href="https://example.com">the nginx runbook</a> first.</p></div>
+          <CitationSelectionToolbar getViewport={() => viewportRef.current} threadId="incident-1" onCite={onCite} />
+        </div>
+      );
+    }
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "requestAnimationFrame", "cancelAnimationFrame"] });
+    render(<Harness />);
+    act(() => { vi.runAllTimers(); });
+    const link = screen.getByText("the nginx runbook");
+    const text = link.firstChild as Text;
+    selectText(text, 4, text, 9);
+    act(() => {
+      link.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, isPrimary: true, button: 0 }));
+      window.dispatchEvent(new MouseEvent("mouseup", { detail: 2, button: 0 }));
+      vi.runAllTimers();
+    });
+    expect(screen.getByRole("button", { name: "common.chat.citations.citeSelection" })).toBeTruthy();
+  });
+
   it("ignores a selection that spans two answers", () => {
     document.body.innerHTML = `<div id="viewport"><div data-citation-source="a"><p>One.</p></div><div data-citation-source="b"><p>Two.</p></div></div>`;
     const [first, second] = [...document.querySelectorAll("p")].map((paragraph) => paragraph.firstChild as Text);
@@ -149,7 +174,7 @@ describe("citation capture", () => {
 
 describe("a citation's comment in the composer", () => {
   function renderChip(overrides: Partial<React.ComponentProps<typeof CitationChip>["commentEditor"] & object> = {}) {
-    const commentEditor = { open: true, onOpenChange: vi.fn(), onCancel: vi.fn(), onSave: vi.fn(), onSaveAndSend: vi.fn(), ...overrides };
+    const commentEditor = { open: true, onOpenChange: vi.fn(), onCancel: vi.fn(), onSave: vi.fn(), onSaveAndSend: vi.fn(() => true), ...overrides };
     render(<CitationChip citation={{ ...citation, comment: undefined }} onRemove={vi.fn()} commentEditor={commentEditor} />);
     return commentEditor;
   }
@@ -174,6 +199,28 @@ describe("a citation's comment in the composer", () => {
 
     fireEvent.keyDown(input, { key: "Escape" });
     expect(editor.onCancel).toHaveBeenCalled();
+  });
+
+  it("stays open when Command+Enter cannot send the message", () => {
+    const editor = renderChip({ onSaveAndSend: vi.fn(() => false) });
+    const input = screen.getByPlaceholderText("common.chat.citations.commentPlaceholder");
+    fireEvent.change(input, { target: { value: "Which host?" } });
+    fireEvent.keyDown(input, { key: "Enter", ctrlKey: true });
+    expect(editor.onSaveAndSend).toHaveBeenCalledWith("Which host?");
+    expect(editor.onOpenChange).not.toHaveBeenCalledWith(false);
+  });
+
+  it("keeps an editor opened from the pencil when its answer leaves the list", async () => {
+    document.body.innerHTML = "";
+    const answer = document.createElement("div");
+    answer.setAttribute("data-citation-source", citation.sourceId);
+    answer.innerHTML = "<p>The cause: nginx is out of workers.</p>";
+    document.body.append(answer);
+    const editor = renderChip();
+    answer.remove();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(editor.onOpenChange).not.toHaveBeenCalled();
+    expect(screen.getByPlaceholderText("common.chat.citations.commentPlaceholder")).toBeTruthy();
   });
 
   it("will not save a comment over the limit", () => {
@@ -253,6 +300,18 @@ describe("going to a citation's source in a virtualized list", () => {
     await waitFor(() => { expect(onSettled).toHaveBeenCalledWith("changed"); });
   });
 
+  it("stops a pending scroll to an unmounted source on Escape", () => {
+    document.body.innerHTML = "";
+    const list = fakeList(() => undefined);
+    const onSettled = vi.fn();
+    revealCitationInList({ citation, messages: [agentMessage("iteration-1")], list, onSettled });
+    expect(list.scrollToIndex).toHaveBeenCalled();
+
+    document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+
+    expect(list.scrollToOffset).toHaveBeenCalledWith({ offset: 0, animated: false });
+  });
+
   it("reports a source that is not in the list", () => {
     const list = fakeList(() => undefined);
     const onSettled = vi.fn();
@@ -274,7 +333,7 @@ describe("an incident's quotes", () => {
 
   it("belong to their incident, and the composer removes one or changes its comment", () => {
     addIncidentCitation("incident-1", citation);
-    addIncidentCitation("incident-1", { ...citation, text: "nginx", comment: undefined });
+    addIncidentCitation("incident-1", { ...citation, text: "nginx", comment: undefined, start: 10, end: 15 });
     addIncidentCitation("incident-2", citation);
     const { result } = renderHook(() => useIncidentCitations("incident-1"));
     expect(result.current.citations.map((quote) => quote.text)).toEqual(["nginx is out of workers", "nginx"]);
@@ -290,7 +349,7 @@ describe("an incident's quotes", () => {
   it("opens a new quote's comment under it, and Cancel takes the quote back", () => {
     const anchor = { source: document.body, range: document.createRange(), viewport: document.body };
     addIncidentCitation("incident-1", citation);
-    addIncidentCitation("incident-1", { ...citation, text: "nginx" }, anchor);
+    addIncidentCitation("incident-1", { ...citation, text: "nginx", start: 10, end: 15 }, anchor);
     const { result } = renderHook(() => useIncidentCitations("incident-1"));
     expect(result.current.citationCommentEditor(1)).toMatchObject({ open: true, sourceAnchor: anchor });
     expect(result.current.citationCommentEditor(0).open).toBe(false);
@@ -299,6 +358,16 @@ describe("an incident's quotes", () => {
 
     expect(result.current.citations.map((quote) => quote.text)).toEqual(["nginx is out of workers"]);
     expect(result.current.citationCommentEditor(0).open).toBe(false);
+  });
+
+  it("opens the existing chip when the same text is cited again", () => {
+    addIncidentCitation("incident-1", citation);
+    addIncidentCitation("incident-1", citation, { source: document.body, range: document.createRange(), viewport: document.body });
+    const { result } = renderHook(() => useIncidentCitations("incident-1"));
+    expect(result.current.citations).toHaveLength(1);
+    expect(result.current.citationCommentEditor(0).open).toBe(true);
+    act(() => { result.current.citationCommentEditor(0).onCancel(); });
+    expect(result.current.citations).toHaveLength(1);
   });
 
   it("keeps an earlier quote when its reopened comment is cancelled", () => {
