@@ -99,7 +99,7 @@ export function useDesktopIntegrationPorts(): { resources?: IntegrationResources
   return useMemo(() => ({
     resources: plugins?.listResources ? { list: plugins.listResources.bind(plugins), select: plugins.selectResource?.bind(plugins), refresh: plugins.refreshResource?.bind(plugins) } : undefined,
     operations: plugins?.listOperations && plugins.approveOperation && plugins.cancelOperation ? {
-      renew: plugins.renewOperation?.bind(plugins), reconcile: plugins.reconcileOperation?.bind(plugins),
+      currentUserId: plugins.currentUserId, renew: plugins.renewOperation?.bind(plugins), reconcile: plugins.reconcileOperation?.bind(plugins),
       list: plugins.listOperations.bind(plugins), approve: plugins.approveOperation.bind(plugins), cancel: plugins.cancelOperation.bind(plugins),
     } : undefined,
     customerReportIntake: plugins?.getCustomerReportIntake && plugins.answerCustomerReportIntake && plugins.dismissCustomerReportIntake ? {
