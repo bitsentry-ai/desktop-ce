@@ -446,6 +446,8 @@ export function Composer({
       onSave: (comment) => { onCitationCommentChange(index, comment); },
       // Command/Ctrl+Enter in the comment saves it and sends the message, when the message could be sent.
       onSaveAndSend: (comment) => {
+        // Without a queue, a message cannot go out while the agent runs.
+        if (isProcessing && queue === undefined) return false;
         const next = citations.map((citation, position) => (position === index ? withCitationComment(citation, comment) : citation));
         if (!composerCanSend(isBlocked, prompt, composerImages.length + next.length)) return false;
         if (joinCitations(next, prompt).length > CHAT_MESSAGE_MAX_LENGTH) return false;

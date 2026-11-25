@@ -199,12 +199,16 @@ export function resolveCitationRange(source: Element, citation: AssistantCitatio
   return range;
 }
 
-/** The rendered source of a citation under root, if it is mounted. */
+/**
+ * The rendered source of a citation under root, if it is mounted. An answer can be shown under another id than the one
+ * it was cited under (the Dashboard streams each step under its own id, then reloads the turn as one answer), so a
+ * mounted answer that still holds the quote with its surrounding text counts too, the latest first.
+ */
 export function findCitationSource(root: ParentNode, citation: AssistantCitation): HTMLElement | null {
-  for (const element of root.querySelectorAll<HTMLElement>(`[${CITATION_SOURCE_ATTRIBUTE}]`)) {
-    if (element.getAttribute(CITATION_SOURCE_ATTRIBUTE) === citation.sourceId) return element;
-  }
-  return null;
+  const sources = [...root.querySelectorAll<HTMLElement>(`[${CITATION_SOURCE_ATTRIBUTE}]`)];
+  const exact = sources.find((element) => element.getAttribute(CITATION_SOURCE_ATTRIBUTE) === citation.sourceId);
+  if (exact !== undefined) return exact;
+  return sources.reverse().find((element) => resolveCitationRange(element, citation) !== null) ?? null;
 }
 
 type HighlightRegistry = Map<string, unknown>;

@@ -312,6 +312,16 @@ describe("going to a citation's source in a virtualized list", () => {
     expect(list.scrollToOffset).toHaveBeenCalledWith({ offset: 0, animated: false });
   });
 
+  it("finds a quote in an answer shown under another id", async () => {
+    document.body.innerHTML = "";
+    const list = fakeList(() => undefined);
+    (list.getScrollableNode() as HTMLElement).innerHTML = `<div data-citation-source="message-9:text"><p>The cause: nginx is out of workers.</p></div>`;
+    const onSettled = vi.fn();
+    revealCitationInList({ citation: { ...citation, sourceId: "live-step:text" }, messages: [], list, onSettled });
+    await waitFor(() => { expect(onSettled).toHaveBeenCalledWith("highlighted"); });
+    expect(document.getSelection()?.toString()).toBe("nginx is out of workers");
+  });
+
   it("reports a source that is not in the list", () => {
     const list = fakeList(() => undefined);
     const onSettled = vi.fn();
