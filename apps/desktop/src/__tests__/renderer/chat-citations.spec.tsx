@@ -322,6 +322,40 @@ describe("going to a citation's source in a virtualized list", () => {
     expect(document.getSelection()?.toString()).toBe("nginx is out of workers");
   });
 
+  it("does not reveal a short quote in an unrelated answer while its own answer is unmounted", async () => {
+    document.body.innerHTML = "";
+    const list = fakeList(() => {
+      (list.getScrollableNode() as HTMLElement).insertAdjacentHTML("beforeend", `<div data-citation-source="iteration-1:text"><p>The cause: nginx is out of workers.</p></div>`);
+    });
+    (list.getScrollableNode() as HTMLElement).innerHTML = `<div data-citation-source="iteration-2:text"><p>Later: nginx is out of workers again.</p></div>`;
+    const onSettled = vi.fn();
+    revealCitationInList({ citation, messages: [agentMessage("iteration-1"), agentMessage("iteration-2")], list, onSettled });
+    expect(list.scrollToIndex).toHaveBeenCalledWith(expect.objectContaining({ index: 0 }));
+    await waitFor(() => { expect(onSettled).toHaveBeenCalledWith("highlighted"); });
+    expect(document.activeElement?.getAttribute("data-citation-source")).toBe("iteration-1:text");
+  });
+
+  it("scrolls to a reloaded answer that is not mounted, found by its quote", async () => {
+    document.body.innerHTML = "";
+    const reloaded: ChatMessage = { ...agentMessage("message-7"), finalText: "The cause: nginx is out of workers." };
+    const list = fakeList(() => {
+      (list.getScrollableNode() as HTMLElement).innerHTML = `<div data-citation-source="message-7:text"><p>The cause: nginx is out of workers.</p></div>`;
+    });
+    const onSettled = vi.fn();
+    revealCitationInList({ citation: { ...citation, sourceId: "live-step:text" }, messages: [reloaded, { kind: "user", text: "Why?" }], list, onSettled });
+    expect(list.scrollToIndex).toHaveBeenCalledWith(expect.objectContaining({ index: 0 }));
+    await waitFor(() => { expect(onSettled).toHaveBeenCalledWith("highlighted"); });
+  });
+
+  it("reports a reveal the engineer cancels", () => {
+    document.body.innerHTML = "";
+    const list = fakeList(() => undefined);
+    const onSettled = vi.fn();
+    revealCitationInList({ citation, messages: [agentMessage("iteration-1")], list, onSettled });
+    document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+    expect(onSettled).toHaveBeenCalledWith("cancelled");
+  });
+
   it("reports a source that is not in the list", () => {
     const list = fakeList(() => undefined);
     const onSettled = vi.fn();

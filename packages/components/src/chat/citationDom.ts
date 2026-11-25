@@ -199,16 +199,32 @@ export function resolveCitationRange(source: Element, citation: AssistantCitatio
   return range;
 }
 
-/**
- * The rendered source of a citation under root, if it is mounted. An answer can be shown under another id than the one
- * it was cited under (the Dashboard streams each step under its own id, then reloads the turn as one answer), so a
- * mounted answer that still holds the quote with its surrounding text counts too, the latest first.
- */
+/** The rendered source of a citation under root, if it is mounted. */
 export function findCitationSource(root: ParentNode, citation: AssistantCitation): HTMLElement | null {
-  const sources = [...root.querySelectorAll<HTMLElement>(`[${CITATION_SOURCE_ATTRIBUTE}]`)];
-  const exact = sources.find((element) => element.getAttribute(CITATION_SOURCE_ATTRIBUTE) === citation.sourceId);
-  if (exact !== undefined) return exact;
-  return sources.reverse().find((element) => resolveCitationRange(element, citation) !== null) ?? null;
+  for (const element of root.querySelectorAll<HTMLElement>(`[${CITATION_SOURCE_ATTRIBUTE}]`)) {
+    if (element.getAttribute(CITATION_SOURCE_ATTRIBUTE) === citation.sourceId) return element;
+  }
+  return null;
+}
+
+const flatten = (value: string) => value.replace(/\s+/g, " ");
+
+/** Whether text holds the quote exactly once together with the text that was around it when it was cited. */
+function holdsQuoteInContext(text: string, citation: AssistantCitation): boolean {
+  const needle = `${citation.prefix}${flatten(citation.text).trim()}${citation.suffix}`;
+  const haystack = flatten(text);
+  const first = haystack.indexOf(needle);
+  return first >= 0 && !haystack.includes(needle, first + 1);
+}
+
+/**
+ * A mounted answer that shows the quote under another id than the one it was cited under: the Dashboard streams each
+ * step under its own id, then reloads the turn as one answer. Only an answer that holds the quote with its surrounding
+ * text counts, the latest first, so a short quote never lands in an unrelated answer.
+ */
+function findMovedCitationSource(root: ParentNode, citation: AssistantCitation): HTMLElement | null {
+  const sources = [...root.querySelectorAll<HTMLElement>(`[${CITATION_SOURCE_ATTRIBUTE}]`)].reverse();
+  return sources.find((element) => holdsQuoteInContext(readSourceText(element).text, citation)) ?? null;
 }
 
 type HighlightRegistry = Map<string, unknown>;
@@ -362,7 +378,8 @@ function pulseCitation(source: HTMLElement, citation: AssistantCitation, initial
   return stop;
 }
 
-export type CitationRevealOutcome = "highlighted" | "changed" | "missing";
+/** How a reveal ended; "cancelled" when the engineer scrolled, clicked, pressed Escape or started another reveal first. */
+export type CitationRevealOutcome = "highlighted" | "changed" | "missing" | "cancelled";
 
 export interface CitationRevealList {
   /** The element that scrolls the messages. */
@@ -385,6 +402,18 @@ function findSourceMessage(messages: readonly ChatMessage[], sourceId: string): 
     if (!ownsSource) continue;
     const folded = deriveTurnTimeline(message).foldedRows.some((row) => row.key === sourceId);
     return { index, folded, ...(message.id === undefined ? {} : { messageId: message.id }) };
+  }
+  return null;
+}
+
+/** The latest agent message whose text holds the quote, for an answer reloaded under another id and not mounted. */
+function findMovedSourceMessage(messages: readonly ChatMessage[], citation: AssistantCitation): number | null {
+  const quote = flatten(citation.text).trim();
+  for (let index = messages.length - 1; index >= 0; index--) {
+    const message = messages[index];
+    if (message.kind !== "agent") continue;
+    const text = [...message.iterations.map((iteration) => iteration.text), message.finalText ?? ""].join("\n");
+    if (flatten(text).includes(quote)) return index;
   }
   return null;
 }
@@ -427,6 +456,7 @@ export function revealCitationInList({
     // A newer reveal or the list going away also stops this one's scroll.
     stopScroll();
     stopped = true;
+    settle("cancelled");
     if (frame !== null) cancelAnimationFrame(frame);
     document.removeEventListener("keydown", onKeyDown);
     document.removeEventListener("pointerdown", onNavigation, true);
@@ -476,6 +506,8 @@ export function revealCitationInList({
     stopPulse = pulseCitation(source, citation, range, dispose);
   };
 
+  // How the source is looked up: by its id, or by the quote once the answer turns out to be shown under another id.
+  let findSource = (scope: ParentNode) => findCitationSource(scope, citation);
   const scrollTo = (source: HTMLElement) => {
     const range = resolveCitationRange(source, citation);
     if (root === null || list === null) {
@@ -499,7 +531,7 @@ export function revealCitationInList({
         if (stopped || !scrolling) return;
         scrolling = false;
         // The answer can re-render while the list scrolls; find the quote again in what is there now.
-        const current = source.isConnected ? source : findCitationSource(root, citation);
+        const current = source.isConnected ? source : findSource(root);
         if (current === null) {
           settle("missing");
           dispose();
@@ -520,7 +552,7 @@ export function revealCitationInList({
   const waitForSource = (attempt: number) => {
     frame = null;
     if (stopped) return;
-    const source = findCitationSource(root ?? document, citation);
+    const source = findSource(root ?? document);
     if (source !== null) {
       scrolling = false;
       scrollTo(source);
@@ -541,21 +573,32 @@ export function revealCitationInList({
   root?.addEventListener("wheel", onWheel, { passive: true });
   root?.addEventListener("touchmove", onNavigation, { passive: true });
 
-  const mounted = findCitationSource(root ?? document, citation);
+  const scope = root ?? document;
+  const mounted = findCitationSource(scope, citation);
   if (mounted !== null) {
     scrollTo(mounted);
     return dispose;
   }
   const holder = findSourceMessage(messages, citation.sourceId);
-  if (holder === null || list === null) {
+  if (holder === null) {
+    // No message owns the id any more: the answer was reloaded under another one.
+    findSource = (within) => findMovedCitationSource(within, citation);
+    const moved = findSource(scope);
+    if (moved !== null) {
+      scrollTo(moved);
+      return dispose;
+    }
+  }
+  const index = holder?.index ?? findMovedSourceMessage(messages, citation);
+  if (index === null || list === null) {
     settle("missing");
     dispose();
     return dispose;
   }
-  if (holder.folded && holder.messageId !== undefined) openDisclosure(`${holder.messageId}:worked`);
+  if (holder?.folded === true && holder.messageId !== undefined) openDisclosure(`${holder.messageId}:worked`);
   // Pending until the row mounts, so Escape or the engineer's own scrolling can still stop it.
   scrolling = true;
-  void list.scrollToIndex({ index: holder.index, animated: false, viewPosition: 0.3 });
+  void list.scrollToIndex({ index, animated: false, viewPosition: 0.3 });
   frame = requestAnimationFrame(() => { waitForSource(1); });
   return dispose;
 }
