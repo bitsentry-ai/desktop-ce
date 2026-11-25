@@ -1,4 +1,4 @@
-import { useActionPermissions } from "../services/context";
+import { useActionPermissions, useRunbookPermissions } from "../services/context";
 import { useEffect, useId, useRef, useState } from "react";
 import { z } from "zod";
 import { useTranslation } from "@bitsentry-ce/i18n";
@@ -80,6 +80,7 @@ function ExecutionResult({ execution }: { execution: RunbookExecutionRecord }) {
  */
 export function KnowledgeExecutionPanel({ threadId, disabled, active = true, hideTitle = false }: { threadId: string; disabled: boolean; active?: boolean; hideTitle?: boolean }) {
   const { canOperate, operatorTitle } = useActionPermissions();
+  const runbookPermissions = useRunbookPermissions();
   const { runbooks } = useBitsentryServices();
   const { t } = useTranslation();
   const parametersId = useId();
@@ -151,7 +152,7 @@ export function KnowledgeExecutionPanel({ threadId, disabled, active = true, hid
           <Textarea id={parametersId} className="font-mono text-xs" value={parameters} disabled={disabled || busy} onChange={(event) => { setParameters(event.target.value); setApproved(false); }} />
         </div>
         <label className="flex items-start gap-2 text-sm"><input type="checkbox" className="mt-0.5 accent-primary" checked={approved} disabled={disabled || busy} onChange={(event) => { setApproved(event.target.checked); }} /> {t("incidents.knowledge.approveExecution")}</label>
-        <Button title={operatorTitle} disabled={!canOperate || disabled || busy || !approved} onClick={() => { void execute(); }}>{t("incidents.knowledge.execute")}</Button>
+        <Button title={runbookPermissions.canRun ? operatorTitle : runbookPermissions.runTitle} disabled={!canOperate || !runbookPermissions.canRun || disabled || busy || !approved} onClick={() => { void execute(); }}>{t("incidents.knowledge.execute")}</Button>
       </>}
     </>}
     {currentExecution && <ExecutionResult execution={currentExecution} />}

@@ -17,6 +17,9 @@ interface ActionPermissions {
   /** Ask the assistant to draft or revise runbooks. Defaults to true. */
   canProposeRunbooks?: boolean;
   proposeRunbooksTitle?: string;
+  /** Run at least read-only runbooks. Defaults to true. */
+  canRunRunbooks?: boolean;
+  runRunbooksTitle?: string;
 }
 
 // Local desktop execution has no organization roles; Dashboard supplies its policy.
@@ -33,6 +36,8 @@ export function useRunbookPermissions() {
     writeTitle: permissions.writeRunbooksTitle,
     canPropose: permissions.canProposeRunbooks ?? true,
     proposeTitle: permissions.proposeRunbooksTitle,
+    canRun: permissions.canRunRunbooks ?? true,
+    runTitle: permissions.runRunbooksTitle,
   };
 }
 

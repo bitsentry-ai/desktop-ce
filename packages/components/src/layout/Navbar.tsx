@@ -7,7 +7,7 @@ import {
   useAuthSession,
   useRunbooksService,
 } from "../services/hooks";
-import { useBitsentryServices } from "../services/context";
+import { useBitsentryServices, useRunbookPermissions } from "../services/context";
 import {
   getDesktopApi,
   type DesktopBitsentryApi,
@@ -289,6 +289,7 @@ function RunbookSubNavigation({ runbooks, search, t, onDelete }: {
   t: ReturnType<typeof useTranslation>["t"];
   onDelete: (runbook: Pick<RunbookNavItem, "id" | "title">) => void;
 }) {
+  const { canWrite } = useRunbookPermissions();
   const currentId = new URLSearchParams(search).get("id");
   const shown = runbooks.slice(0, SHOWN_INCIDENT_LIMIT);
   const overflow = runbooks.length - shown.length;
@@ -299,7 +300,7 @@ function RunbookSubNavigation({ runbooks, search, t, onDelete }: {
       title={runbook.title}
       active={currentId === runbook.id}
       trailing={runbook.actions.length > 0 ? <SidebarCount count={runbook.actions.length} label={t("navigation.navbar.actionCount", { count: runbook.actions.length })} /> : undefined}
-      hoverAction={<SidebarHoverButton tone="danger" label={t("common.navbar.deleteRunbook")} onClick={() => { onDelete(runbook); }}><Trash2 size={12} /></SidebarHoverButton>}
+      hoverAction={canWrite ? <SidebarHoverButton tone="danger" label={t("common.navbar.deleteRunbook")} onClick={() => { onDelete(runbook); }}><Trash2 size={12} /></SidebarHoverButton> : undefined}
     />)}
     {overflow > 0 && <SidebarMoreLink to="/runbooks" label={t("navigation.navbar.viewAll", { count: runbooks.length })} />}
     {runbooks.length === 0 && <SidebarEmpty>{t("navigation.navbar.noRunbooksYet")}</SidebarEmpty>}

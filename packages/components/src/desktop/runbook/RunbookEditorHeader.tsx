@@ -184,7 +184,7 @@ function IdleTimeoutPicker({
               aria-label={t("runbooks.runbook.executionIdleTimeout")}
               disabled={disabledTitle !== undefined}
               title={disabledTitle}
-              className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-md border border-border bg-background px-2.5 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60 disabled:pointer-events-none disabled:opacity-50 max-sm:h-11"
+              className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-md border border-border bg-background px-2.5 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60 disabled:cursor-not-allowed disabled:opacity-50 max-sm:h-11"
             >
               <Hourglass size={12} aria-hidden="true" />
               <span>
@@ -277,7 +277,7 @@ function NewRunbookButton({
           onClick={onCreateRunbook}
           aria-label={label}
           disabled={disabledTitle !== undefined}
-          className={cn(RUNBOOK_ICON_BUTTON_CLASS, "disabled:pointer-events-none disabled:opacity-50")}
+          className={cn(RUNBOOK_ICON_BUTTON_CLASS, "disabled:cursor-not-allowed disabled:opacity-50")}
         >
           <SquarePen size={14} aria-hidden="true" />
         </button>
