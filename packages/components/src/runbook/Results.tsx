@@ -1,3 +1,4 @@
+import { useActionPermissions } from "../services/context";
 import {
   useCallback,
   useEffect,
@@ -802,6 +803,7 @@ export default function ResultsPage() {
   const [traceMap, setTraceMap] =
     useState<Record<string, ResultTraceMemory>>(loadResultTraces);
   const [selectedStepKey, setSelectedStepKey] = useState<string | null>(null);
+  const { canOperate, operatorTitle } = useActionPermissions();
   // Which panel shows below lg; at lg+ all three are visible side by side.
   const [activePanel, setActivePanel] = useState<ResultsPanelId>("summary");
   const [cancelPending, setCancelPending] = useState(false);
@@ -1151,7 +1153,8 @@ export default function ResultsPage() {
                 {activeResult.status === "running" && (
                   <button
                     onClick={() => { void handleCancel(); }}
-                    disabled={cancelPending}
+                    title={operatorTitle}
+                    disabled={!canOperate || cancelPending}
                     className="flex h-8 shrink-0 items-center gap-1.5 rounded-md border border-border px-2.5 text-[13px] max-sm:h-11 hover:bg-muted transition-colors disabled:opacity-50"
                   >
                     {cancelPending && <Loader2 size={11} className="animate-spin" />}

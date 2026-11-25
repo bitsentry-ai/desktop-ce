@@ -1,3 +1,4 @@
+import { useActionPermissions } from "../../services/context";
 import {
   useLayoutEffect,
   useRef,
@@ -483,6 +484,7 @@ export function RunbookEditorHeader({
   overflowActions = NO_MENU_ACTIONS,
   t,
 }: RunbookEditorHeaderProps) {
+  const { canOperate, operatorTitle } = useActionPermissions();
   const hasMetaIssue =
     metaIssues.titleIssue !== null || metaIssues.descriptionIssue !== null;
   const titleRef = useAutoHeight(runbook.title);
@@ -531,7 +533,8 @@ export function RunbookEditorHeader({
                 size="sm"
                 data-tour="runbooks-run-btn"
                 onClick={onRun}
-                disabled={runbook.actions.length === 0}
+                title={operatorTitle}
+                disabled={!canOperate || runbook.actions.length === 0}
                 aria-label={t("runbooks.runbook.runRunbook")}
                 className="gap-1.5 px-3.5 font-semibold max-sm:h-11 max-sm:px-4 max-sm:text-sm [&_svg]:size-3.5"
               >
