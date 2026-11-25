@@ -92,6 +92,7 @@ export function KnowledgeExecutionPanel({ threadId, disabled, active = true, hid
   const [busy, setBusy] = useState(false);
   const [loadError, setLoadError] = useState(false);
   const [executeError, setExecuteError] = useState(false);
+  const [refusal, setRefusal] = useState<string | null>(null);
   const [changed, setChanged] = useState(false);
   const [executionId, setExecutionId] = useState<string | null>(null);
   const [execution, setExecution] = useState<RunbookExecutionRecord | null>(null);
@@ -123,7 +124,7 @@ export function KnowledgeExecutionPanel({ threadId, disabled, active = true, hid
   }, [executionId, runbooks]);
   async function execute() {
     if (!selected || !approved || disabled || busy) return;
-    setBusy(true); setExecuteError(false);
+    setBusy(true); setExecuteError(false); setRefusal(null);
     try {
       const values = z.record(z.string(), z.string()).parse(JSON.parse(parameters));
       const canonical = JSON.stringify([threadId, selected.id, selected.revisionNumber, Object.entries(values).sort(([a], [b]) => compareKeys(a, b))]);
@@ -134,12 +135,12 @@ export function KnowledgeExecutionPanel({ threadId, disabled, active = true, hid
       const result = await runbooks.execute({ runbookId: selected.id, expectedRevisionNumber: selected.revisionNumber, requestKey, incidentThreadId: threadId, parameterValues: values });
       attempt.current = null;
       setExecutionId(result.executionId); setApproved(false);
-    } catch { setExecuteError(true); } finally { setBusy(false); }
+    } catch (error) { setRefusal(permissionRefusal(error)); setExecuteError(true); } finally { setBusy(false); }
   }
   if (!active && executionId === null) return null;
   return <section aria-label={t("incidents.knowledge.executeTitle")} className="space-y-3 border-t border-border pt-3">
     {!hideTitle && <h3 className="text-sm font-semibold">{t("incidents.knowledge.executeTitle")}</h3>}
-    {executeError && <p role="alert" className="text-sm text-destructive">{t("incidents.knowledge.executeError")}</p>}
+    {executeError && <p role="alert" className="text-sm text-destructive">{refusal ?? t("incidents.knowledge.executeError")}</p>}
     {loadError && <p role="alert" className="text-sm text-destructive">{t("incidents.knowledge.loadError")}</p>}
     {changed && <p role="status" className="text-sm text-muted-foreground">{t("incidents.knowledge.changed")}</p>}
     {active && <>
@@ -152,9 +153,18 @@ export function KnowledgeExecutionPanel({ threadId, disabled, active = true, hid
           <Textarea id={parametersId} className="font-mono text-xs" value={parameters} disabled={disabled || busy} onChange={(event) => { setParameters(event.target.value); setApproved(false); }} />
         </div>
         <label className="flex items-start gap-2 text-sm"><input type="checkbox" className="mt-0.5 accent-primary" checked={approved} disabled={disabled || busy} onChange={(event) => { setApproved(event.target.checked); }} /> {t("incidents.knowledge.approveExecution")}</label>
-        <Button title={runbookPermissions.canRun ? operatorTitle : runbookPermissions.runTitle} disabled={!canOperate || !runbookPermissions.canRun || disabled || busy || !approved} onClick={() => { void execute(); }}>{t("incidents.knowledge.execute")}</Button>
+        {!runbookPermissions.canRun && runbookPermissions.runTitle !== undefined && <p className="text-xs text-muted-foreground">{runbookPermissions.runTitle}</p>}
+        <Button title={operatorTitle} disabled={!canOperate || !runbookPermissions.canRun || disabled || busy || !approved} onClick={() => { void execute(); }}>{t("incidents.knowledge.execute")}</Button>
       </>}
     </>}
     {currentExecution && <ExecutionResult execution={currentExecution} />}
   </section>;
+}
+
+/** The server's plain reason when the member's role refused the run; other failures keep the generic message. */
+function permissionRefusal(error: unknown): string | null {
+  if (!(error instanceof Error) || typeof error !== "object") return null;
+  const data: unknown = Reflect.get(error, "data");
+  const code: unknown = typeof data === "object" && data !== null ? Reflect.get(data, "code") : undefined;
+  return code === "FORBIDDEN" ? error.message : null;
 }
