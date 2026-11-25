@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import { GripVertical, Trash2 } from "../../icons";
 import { cn } from "../../lib/utils";
 import type { RunbookActionType } from "../../services";
+import { useRunbookPermissions } from "../../services/context";
 
 type RunbookCollapsedActionCardProps = {
   index: number;
@@ -31,6 +32,7 @@ export function RunbookCollapsedActionCard({
   deleteTitle,
   renderTypeBadge,
 }: RunbookCollapsedActionCardProps) {
+  const { canWrite } = useRunbookPermissions();
   let dataTour: string | undefined;
   if (index === 0) {
     dataTour = "runbooks-first-action";
@@ -51,12 +53,14 @@ export function RunbookCollapsedActionCard({
     >
       {/* The whole card is the drag source. The grip says so at a glance:
           always visible at reduced emphasis, full emphasis on hover/focus. */}
-      <span
-        aria-hidden="true"
-        className="flex shrink-0 cursor-grab items-center text-muted-foreground opacity-60 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100 active:cursor-grabbing max-sm:hidden"
-      >
-        <GripVertical size={16} />
-      </span>
+      {canWrite && (
+        <span
+          aria-hidden="true"
+          className="flex shrink-0 cursor-grab items-center text-muted-foreground opacity-60 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100 active:cursor-grabbing max-sm:hidden"
+        >
+          <GripVertical size={16} />
+        </span>
+      )}
       <span className="w-5 shrink-0 text-right text-xs tabular-nums text-muted-foreground max-sm:mt-0.5 max-sm:w-4 max-sm:text-left">
         {index + 1}
       </span>
@@ -74,18 +78,20 @@ export function RunbookCollapsedActionCard({
           {summary}
         </p>
       </div>
-      <button
-        type="button"
-        onClick={(event) => {
-          event.stopPropagation();
-          onDelete();
-        }}
-        title={deleteTitle}
-        aria-label={deleteTitle}
-        className="inline-flex size-8 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60 max-sm:-mr-1.5 max-sm:-mt-1.5 max-sm:size-11"
-      >
-        <Trash2 size={14} aria-hidden="true" />
-      </button>
+      {canWrite && (
+        <button
+          type="button"
+          onClick={(event) => {
+            event.stopPropagation();
+            onDelete();
+          }}
+          title={deleteTitle}
+          aria-label={deleteTitle}
+          className="inline-flex size-8 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60 max-sm:-mr-1.5 max-sm:-mt-1.5 max-sm:size-11"
+        >
+          <Trash2 size={14} aria-hidden="true" />
+        </button>
+      )}
     </div>
   );
 }

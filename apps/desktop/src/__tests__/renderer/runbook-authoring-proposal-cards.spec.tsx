@@ -4,6 +4,7 @@ import React from "react";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { RunbookAuthoringProposalCards } from "@bitsentry-ce/components/investigation/Incidents";
+import { BitsentryServicesProvider } from "@bitsentry-ce/components/services/context";
 import type { ChatMessage } from "@bitsentry-ce/components/chat/types";
 import type {
   AgentServicePort,
@@ -129,6 +130,50 @@ function renderCards(
     />,
   );
 }
+
+describe("RunbookAuthoringProposalCards permissions", () => {
+  const writeReason = "Your role cannot create, change or delete runbooks.";
+  const proposeReason = "Your role cannot ask the assistant to draft runbooks.";
+
+  function renderAs(permissions: Parameters<typeof BitsentryServicesProvider>[0]["permissions"]) {
+    const agent = makeAgent();
+    render(
+      <BitsentryServicesProvider services={{} as never} permissions={permissions}>
+        <RunbookAuthoringProposalCards
+          agent={agent}
+          incidentId="incident-1"
+          sessionId="session-1"
+          message={messageFor(makeProposal())}
+          onRevisionRequested={vi.fn()}
+        />
+      </BitsentryServicesProvider>,
+    );
+    return agent;
+  }
+
+  it("lets a member who may propose but not write revise or deny, but not approve", async () => {
+    renderAs({ canOperate: true, canWriteRunbooks: false, writeRunbooksTitle: writeReason, canProposeRunbooks: true });
+    const approve = await screen.findByRole("button", { name: "Approve" });
+    expect(approve).toHaveProperty("disabled", true);
+    expect(approve.getAttribute("title")).toBe(writeReason);
+    expect(screen.getByRole("button", { name: "Deny" })).toHaveProperty("disabled", false);
+  });
+
+  it("leaves every decision disabled, with the reason, for a member who may not propose", async () => {
+    renderAs({
+      canOperate: true,
+      canWriteRunbooks: false,
+      writeRunbooksTitle: writeReason,
+      canProposeRunbooks: false,
+      proposeRunbooksTitle: proposeReason,
+    });
+    expect(await screen.findByRole("button", { name: "Approve" })).toHaveProperty("disabled", true);
+    const deny = screen.getByRole("button", { name: "Deny" });
+    expect(deny).toHaveProperty("disabled", true);
+    expect(deny.getAttribute("title")).toBe(proposeReason);
+    expect(screen.getByRole("button", { name: "Suggest" })).toHaveProperty("disabled", true);
+  });
+});
 
 describe("RunbookAuthoringProposalCards", () => {
   it("renders the live approved status over a pending tool-call snapshot", async () => {

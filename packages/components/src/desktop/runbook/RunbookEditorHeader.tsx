@@ -1,4 +1,4 @@
-import { useActionPermissions } from "../../services/context";
+import { useActionPermissions, useRunbookPermissions } from "../../services/context";
 import {
   useLayoutEffect,
   useRef,
@@ -162,6 +162,7 @@ function IdleTimeoutPicker({
   idleTimeoutPresets,
   onIdleTimeoutChange,
   t,
+  disabledTitle,
 }: Pick<
   RunbookEditorHeaderProps,
   | "currentTimeoutMinutes"
@@ -169,7 +170,10 @@ function IdleTimeoutPicker({
   | "idleTimeoutPresets"
   | "onIdleTimeoutChange"
   | "t"
->) {
+> & {
+  /** Set when the member may not change the runbook; disables the picker and explains why. */
+  disabledTitle?: string;
+}) {
   return (
     <DropdownMenu>
       <Tooltip>
@@ -178,7 +182,9 @@ function IdleTimeoutPicker({
             <button
               type="button"
               aria-label={t("runbooks.runbook.executionIdleTimeout")}
-              className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-md border border-border bg-background px-2.5 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60 max-sm:h-11"
+              disabled={disabledTitle !== undefined}
+              title={disabledTitle}
+              className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-md border border-border bg-background px-2.5 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60 disabled:pointer-events-none disabled:opacity-50 max-sm:h-11"
             >
               <Hourglass size={12} aria-hidden="true" />
               <span>
@@ -259,7 +265,8 @@ function HeaderIconButton({
 function NewRunbookButton({
   onCreateRunbook,
   t,
-}: Pick<RunbookEditorHeaderProps, "onCreateRunbook" | "t">) {
+  disabledTitle,
+}: Pick<RunbookEditorHeaderProps, "onCreateRunbook" | "t"> & { disabledTitle?: string }) {
   const label = t("runbooks.runbook.newRunbook");
   return (
     <Tooltip>
@@ -269,12 +276,15 @@ function NewRunbookButton({
           data-tour="runbooks-new-btn"
           onClick={onCreateRunbook}
           aria-label={label}
-          className={RUNBOOK_ICON_BUTTON_CLASS}
+          disabled={disabledTitle !== undefined}
+          className={cn(RUNBOOK_ICON_BUTTON_CLASS, "disabled:pointer-events-none disabled:opacity-50")}
         >
           <SquarePen size={14} aria-hidden="true" />
         </button>
       </TooltipTrigger>
-      <TooltipContent side="bottom">{label}</TooltipContent>
+      <TooltipContent side="bottom">
+        {disabledTitle !== undefined && disabledTitle !== "" ? disabledTitle : label}
+      </TooltipContent>
     </Tooltip>
   );
 }
@@ -292,8 +302,11 @@ function RunbookOverflowMenu({
   onCreateRunbook,
   overflowActions,
   t,
+  writeDisabledTitle,
 }: Pick<RunbookEditorHeaderProps, "onExport" | "onDelete" | "onOpenResults" | "onCreateRunbook" | "t"> & {
   overflowActions: readonly RunbookHeaderMenuAction[];
+  /** Set when the member may not change runbooks: New runbook and Delete are disabled with this reason. */
+  writeDisabledTitle?: string;
 }) {
   const label = t("runbooks.runbook.moreRunbookActions");
   // Non-modal so the delete confirmation dialog can take focus right after
@@ -320,7 +333,12 @@ function RunbookOverflowMenu({
           <History size={14} aria-hidden="true" />
           {t("runbooks.runbook.viewRunbookResultHistory")}
         </DropdownMenuItem>
-        <DropdownMenuItem onSelect={onCreateRunbook} className={cn(MENU_ITEM_CLASS, "sm:hidden")}>
+        <DropdownMenuItem
+          onSelect={onCreateRunbook}
+          disabled={writeDisabledTitle !== undefined}
+          title={writeDisabledTitle}
+          className={cn(MENU_ITEM_CLASS, "sm:hidden")}
+        >
           <SquarePen size={14} aria-hidden="true" />
           {t("runbooks.runbook.newRunbook")}
         </DropdownMenuItem>
@@ -341,6 +359,8 @@ function RunbookOverflowMenu({
         <DropdownMenuSeparator />
         <DropdownMenuItem
           onSelect={onDelete}
+          disabled={writeDisabledTitle !== undefined}
+          title={writeDisabledTitle}
           className={cn(
             MENU_ITEM_CLASS,
             "text-destructive focus:bg-destructive/10 focus:text-destructive",
@@ -363,11 +383,13 @@ function DescriptionField({
   value,
   onChange,
   onBlur,
+  readOnly = false,
   t,
 }: {
   value: string;
   onChange: (value: string) => void;
   onBlur: () => void;
+  readOnly?: boolean;
   t: TranslationFn;
 }) {
   const ref = useAutoHeight(value);
@@ -444,6 +466,7 @@ function DescriptionField({
           onChange(singleLine(event.target.value));
         }}
         onKeyDown={preventLineBreak}
+        readOnly={readOnly}
         onFocus={() => {
           setEditing(true);
         }}
@@ -485,6 +508,12 @@ export function RunbookEditorHeader({
   t,
 }: RunbookEditorHeaderProps) {
   const { canOperate, operatorTitle } = useActionPermissions();
+  const runbookPermissions = useRunbookPermissions();
+  // Without write permission the runbook reads as is: nothing here can change it.
+  const writeDisabledTitle = runbookPermissions.canWrite
+    ? undefined
+    : (runbookPermissions.writeTitle ?? "");
+  const readOnly = !runbookPermissions.canWrite;
   const hasMetaIssue =
     metaIssues.titleIssue !== null || metaIssues.descriptionIssue !== null;
   const titleRef = useAutoHeight(runbook.title);
@@ -511,6 +540,8 @@ export function RunbookEditorHeader({
               }}
               onKeyDown={preventLineBreak}
               onBlur={onTitleBlur}
+              readOnly={readOnly}
+              title={writeDisabledTitle}
               aria-label={t("runbooks.runbook.runbookTitle")}
               className="block max-h-[48px] w-full resize-none overflow-hidden break-words bg-transparent text-lg font-semibold leading-6 tracking-[-0.015em] text-foreground outline-none placeholder:text-muted-foreground focus:overflow-y-auto"
               placeholder={t("runbooks.runbook.runbookTitle")}
@@ -519,6 +550,7 @@ export function RunbookEditorHeader({
               value={runbook.description}
               onChange={onDescriptionChange}
               onBlur={onDescriptionBlur}
+              readOnly={readOnly}
               t={t}
             />
           </div>
@@ -565,6 +597,7 @@ export function RunbookEditorHeader({
               currentTimeoutLabel={currentTimeoutLabel}
               idleTimeoutPresets={idleTimeoutPresets}
               onIdleTimeoutChange={onIdleTimeoutChange}
+              disabledTitle={writeDisabledTitle}
               t={t}
             />
             {extraActions}
@@ -578,7 +611,11 @@ export function RunbookEditorHeader({
                 icon={<History size={14} aria-hidden="true" />}
                 dataTour="runbooks-history-btn"
               />
-              <NewRunbookButton onCreateRunbook={onCreateRunbook} t={t} />
+              <NewRunbookButton
+                onCreateRunbook={onCreateRunbook}
+                disabledTitle={writeDisabledTitle}
+                t={t}
+              />
             </span>
             <RunbookOverflowMenu
               onExport={onExport}
@@ -586,6 +623,7 @@ export function RunbookEditorHeader({
               onOpenResults={onOpenResults}
               onCreateRunbook={onCreateRunbook}
               overflowActions={overflowActions}
+              writeDisabledTitle={writeDisabledTitle}
               t={t}
             />
           </div>
