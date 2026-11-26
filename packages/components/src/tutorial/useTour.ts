@@ -168,6 +168,16 @@ export function openFirstLinked(
 }
 
 /**
+ * A tour `prepare` that waits for the page's data to draw (any element matching `selector`, such as a list or its empty
+ * state), so steps that point into data that loads late are not dropped as missing.
+ */
+export function waitForElement(selector: string, timeoutMs = 6000): NonNullable<TourDefinition["prepare"]> {
+  return async () => {
+    await waitForSelector(selector, timeoutMs);
+  };
+}
+
+/**
  * Waits until the page has drawn the tour's targets: every target is present, or the first one is and no new one
  * has appeared for a short while (data still loading adds rows late), or the time runs out.
  */
