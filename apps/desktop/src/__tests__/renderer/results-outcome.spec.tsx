@@ -26,6 +26,7 @@ const messages: Record<string, string> = {
   "common.results.outcomeInterrupted": "Interrupted after {{completed}} of {{count}} steps",
   "common.results.outcomeRunning": "Running: {{completed}} of {{count}} steps done",
   "common.results.outcomeWaiting": "Waiting to start",
+  "common.results.statusAwaitingApproval": "Awaiting approval",
   "common.results.durationSeconds": "{{value}} s",
   "common.results.durationMinutes": "{{minutes}} min {{seconds}} s",
   "common.results.durationHours": "{{hours}} h {{minutes}} min",
@@ -110,6 +111,13 @@ describe("describeRunOutcome", () => {
     expect(describeRunOutcome(input({ status: "claim_expired", completedSteps: 0 }), t).text).toBe(
       "Interrupted after 0 of 3 steps",
     );
+  });
+
+  it("flags a run paused for approval", () => {
+    expect(describeRunOutcome(input({ status: "awaiting_approval", completedSteps: 1 }), t)).toEqual({
+      text: "Awaiting approval",
+      tone: "warning",
+    });
   });
 });
 

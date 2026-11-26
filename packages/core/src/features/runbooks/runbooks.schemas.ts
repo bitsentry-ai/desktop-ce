@@ -415,6 +415,7 @@ export const exportRunbookContextOutputSchema = runbookContextSchema.nullable();
 
 // Execution status enum
 export const executionStatusSchema = z.enum([
+  "awaiting_approval",
   "queued",
   "pending",
   "running",
@@ -426,6 +427,8 @@ export const executionStatusSchema = z.enum([
 
 // Execution step status enum
 export const executionStepStatusSchema = z.enum([
+  "awaiting_approval",
+  "skipped",
   "pending",
   "running",
   "completed",

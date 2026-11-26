@@ -52,6 +52,7 @@ import { useTranslation } from "@bitsentry-ce/i18n";
 import { actionTypeLabel, stepStatusLabel } from "./stepLabels";
 
 type RunResultStatus =
+  | "awaiting_approval"
   | "queued"
   | "pending"
   | "running"
@@ -208,6 +209,8 @@ function effectiveCompletedAt(
 
 function statusLabel(status: RunResultStatus): string {
   switch (status) {
+    case "awaiting_approval":
+      return "Awaiting approval";
     case "queued":
       return "Queued";
     case "pending":
@@ -225,12 +228,13 @@ function statusLabel(status: RunResultStatus): string {
   }
 }
 
-function statusClass(status: RunResultStatus): string {
+function statusClass(status: RunResultStatus | "skipped"): string {
   switch (status) {
     case "queued":
       return "bg-[hsl(var(--info)/0.1)] text-[hsl(var(--info-text))]";
     case "pending":
       return "bg-[hsl(var(--info)/0.1)] text-[hsl(var(--info-text))]";
+    case "awaiting_approval":
     case "running":
       return "bg-[hsl(var(--warning)/0.12)] text-[hsl(var(--warning-text))]";
     case "claim_expired":
@@ -239,6 +243,7 @@ function statusClass(status: RunResultStatus): string {
       return "bg-[hsl(var(--success)/0.1)] text-[hsl(var(--success-text))]";
     case "failed":
       return "bg-destructive/15 text-destructive";
+    case "skipped":
     case "cancelled":
       return "bg-muted text-muted-foreground";
   }
@@ -823,6 +828,7 @@ export default function ResultsPage() {
       total: 0,
       queued: 0,
       pending: 0,
+      awaiting_approval: 0,
       running: 0,
       claim_expired: 0,
       completed: 0,

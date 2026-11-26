@@ -269,6 +269,7 @@ function statusClasses(status: IncidentArtifactEntry["status"]): string {
       return "bg-[hsl(var(--info)/0.1)] text-[hsl(var(--info-text))]";
     case "pending":
       return "bg-[hsl(var(--info)/0.1)] text-[hsl(var(--info-text))]";
+    case "awaiting_approval":
     case "running":
       return "bg-[hsl(var(--warning)/0.12)] text-[hsl(var(--warning-text))]";
     case "claim_expired":
@@ -287,6 +288,8 @@ function statusLabel(
   status: IncidentArtifactEntry["status"],
 ): string {
   switch (status) {
+    case "awaiting_approval":
+      return t("common.results.statusAwaitingApproval");
     case "starting":
       return t("common.incidentArtifactsRail.status.starting");
     case "queued":
@@ -526,6 +529,8 @@ function artifactStatusPriority(
   status: IncidentArtifactEntry["status"],
 ): number {
   switch (status) {
+    case "awaiting_approval":
+      return 6;
     case "running":
       return 5;
     case "queued":

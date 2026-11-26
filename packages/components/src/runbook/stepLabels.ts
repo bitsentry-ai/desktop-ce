@@ -35,6 +35,10 @@ export function stepStatusLabel(
   status: RunbookExecutionStepRecord["status"],
 ): string {
   switch (status) {
+    case "awaiting_approval":
+      return t("common.results.statusAwaitingApproval");
+    case "skipped":
+      return t("common.results.statusSkipped");
     case "pending":
       return t("common.incidentArtifactsRail.stepStatus.pending");
     case "running":
