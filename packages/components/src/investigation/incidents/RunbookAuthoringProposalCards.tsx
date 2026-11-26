@@ -1,4 +1,4 @@
-import { useActionPermissions } from "../../services/context";
+import { useActionPermissions, useRunbookPermissions } from "../../services/context";
 import { useCallback, useEffect, useState } from "react";
 import { Ban, Check, RefreshCw } from "lucide-react";
 import { useTranslation } from "@bitsentry-ce/i18n";
@@ -142,6 +142,7 @@ export function RunbookAuthoringProposalCards({
   }, [refreshLiveProposals]);
 
   const { canOperate, operatorTitle } = useActionPermissions();
+  const runbookPermissions = useRunbookPermissions();
 
   if (proposals.length === 0) return null;
 
@@ -313,8 +314,8 @@ export function RunbookAuthoringProposalCards({
                   <button
                     type="button"
                     onClick={handleApprove}
-                    title={operatorTitle}
-                    disabled={!canOperate || isBusy || !canDecideProposals || !proposal.validation.valid || (proposal.kind === "edit_existing_runbook" && selectedOperationIds.length === 0)}
+                    title={!runbookPermissions.canWrite ? runbookPermissions.writeTitle : operatorTitle}
+                    disabled={!canOperate || !runbookPermissions.canWrite || isBusy || !canDecideProposals || !proposal.validation.valid || (proposal.kind === "edit_existing_runbook" && selectedOperationIds.length === 0)}
                     className="inline-flex h-8 items-center gap-1.5 rounded-md border border-primary/40 bg-primary/10 px-2.5 text-xs font-medium text-primary transition-colors hover:bg-primary/15 disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     <Check size={13} />
@@ -323,8 +324,8 @@ export function RunbookAuthoringProposalCards({
                   <button
                     type="button"
                     onClick={handleReject}
-                    title={operatorTitle}
-                    disabled={!canOperate || isBusy || !canDecideProposals}
+                    title={!runbookPermissions.canPropose ? runbookPermissions.proposeTitle : operatorTitle}
+                    disabled={!canOperate || !runbookPermissions.canPropose || isBusy || !canDecideProposals}
                     className="inline-flex h-8 items-center gap-1.5 rounded-md border border-border bg-muted/60 px-2.5 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     <Ban size={13} />
@@ -411,8 +412,8 @@ export function RunbookAuthoringProposalCards({
                 <button
                   type="button"
                   onClick={handleRequestRevision}
-                  title={operatorTitle}
-                  disabled={!canOperate || isBusy || !canDecideProposals || revisionDraft.trim().length === 0}
+                  title={!runbookPermissions.canPropose ? runbookPermissions.proposeTitle : operatorTitle}
+                  disabled={!canOperate || !runbookPermissions.canPropose || isBusy || !canDecideProposals || revisionDraft.trim().length === 0}
                   className="inline-flex h-8 shrink-0 items-center justify-center gap-1.5 rounded-md border border-border bg-muted/60 px-2.5 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   <RefreshCw size={13} />

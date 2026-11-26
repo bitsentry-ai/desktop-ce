@@ -11,6 +11,7 @@ import type {
   RunbookHttpMethod,
   RunbookLlmProviderKey,
 } from "../../services";
+import { useRunbookPermissions } from "../../services/context";
 import { RunbookActionAdvancedSections } from "./RunbookActionAdvancedSections";
 import type { ActionMeta, SupportedActionType } from "./actionHelpers";
 import type { LlmModelOption } from "./RunbookActionFieldShared";
@@ -151,6 +152,8 @@ export function RunbookExpandedActionCardShell({
   onSaveAction,
   t,
 }: RunbookExpandedActionCardShellProps) {
+  // Without write permission the step reads as is: fields are disabled and Done only closes it.
+  const { canWrite, writeTitle } = useRunbookPermissions();
   return (
     <div
       ref={expandedCardRef}
@@ -180,6 +183,8 @@ export function RunbookExpandedActionCardShell({
                 title: event.target.value,
               });
             }}
+            readOnly={!canWrite}
+            title={canWrite ? undefined : writeTitle}
             className="w-full bg-transparent text-sm font-medium outline-none placeholder:text-muted-foreground/50"
             placeholder={t("runbooks.runbooks.untitledAction")}
           />
@@ -187,27 +192,38 @@ export function RunbookExpandedActionCardShell({
         {typeBadge}
       </div>
 
-      <div className="space-y-4 p-4">{children}</div>
+      <fieldset
+        disabled={!canWrite}
+        title={canWrite ? undefined : writeTitle}
+        className="m-0 min-w-0 space-y-4 border-0 p-4"
+      >
+        {children}
+      </fieldset>
 
       <div className="flex items-center justify-between border-t border-border px-4 py-3">
-        <button
-          onClick={() => {
-            onDeleteAction(action.id);
-          }}
-          className="flex items-center gap-1.5 rounded-lg border border-destructive/20 px-3 py-1.5 text-xs font-medium text-destructive hover:bg-destructive/10 transition-colors"
-        >
-          <Trash2 size={11} />
-          {t("runbooks.runbooks.deleteAction")}
-        </button>
+        {canWrite ? (
+          <button
+            onClick={() => {
+              onDeleteAction(action.id);
+            }}
+            className="flex items-center gap-1.5 rounded-lg border border-destructive/20 px-3 py-1.5 text-xs font-medium text-destructive hover:bg-destructive/10 transition-colors"
+          >
+            <Trash2 size={11} />
+            {t("runbooks.runbooks.deleteAction")}
+          </button>
+        ) : (
+          <span className="text-xs text-muted-foreground">{writeTitle}</span>
+        )}
         <div className="flex items-center gap-3">
           <span className="text-xs text-muted-foreground/40">
             {t("runbooks.runbooks.escapeToClose")}
           </span>
           <button
             onClick={() => {
-              onSaveAction(action.id);
+              if (canWrite) onSaveAction(action.id);
+              else collapse();
             }}
-            disabled={!canSaveAction}
+            disabled={canWrite && !canSaveAction}
             className="flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-[hsl(var(--primary-hover))] disabled:opacity-40 transition-colors"
           >
             <Check size={11} />

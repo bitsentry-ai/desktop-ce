@@ -3,6 +3,7 @@ import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { ArrowDown, Plus } from "../../icons";
 import { cn } from "../../lib/utils";
 import type { RunbookActionRecord } from "../../services";
+import { useRunbookPermissions } from "../../services/context";
 import { RUNBOOK_ADD_ACTION_BUTTON_CLASS } from "./runbookButtonStyles";
 import type { TranslationFn } from "./types";
 
@@ -128,6 +129,8 @@ export function RunbookActionList({
   className,
   t,
 }: RunbookActionListProps) {
+  // Without write permission the steps can be read but not added or reordered.
+  const { canWrite } = useRunbookPermissions();
   const actionsListRef = useRef<HTMLDivElement>(null);
   const validatedActionsRef = useRef(actions);
   const [renderRevision, setRenderRevision] = useState(0);
@@ -172,7 +175,7 @@ export function RunbookActionList({
             key={action.id}
             id={action.id}
             index={index}
-            disabled={expanded}
+            disabled={expanded || !canWrite}
             showConnector={showConnector}
             SortableItem={SortableItem}
           >
@@ -181,7 +184,7 @@ export function RunbookActionList({
                 {expanded
                   ? renderExpandedCard(action, index)
                   : renderCollapsedCard(action, index, sortableApi)}
-                {expanded && (
+                {expanded && canWrite && (
                   <div className="flex py-3">
                     <button
                       type="button"
@@ -202,7 +205,7 @@ export function RunbookActionList({
           </SortableActionWrapper>
         );
       })}
-      {actions.length > 0 && !actions.some(isExpanded) && (
+      {canWrite && actions.length > 0 && !actions.some(isExpanded) && (
         <div className="mt-3 flex">
           <button
             type="button"

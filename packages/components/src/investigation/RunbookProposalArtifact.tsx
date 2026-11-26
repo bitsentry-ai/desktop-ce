@@ -1,4 +1,4 @@
-import { useActionPermissions } from "../services/context";
+import { useActionPermissions, useRunbookPermissions } from "../services/context";
 import { useMemo, useState } from "react";
 import { AlertCircle, Check, RotateCcw, X } from "lucide-react";
 import { useTranslation } from "@bitsentry-ce/i18n";
@@ -198,6 +198,7 @@ export default function RunbookProposalArtifact({
 }) {
   const { t } = useTranslation();
   const { canOperate, operatorTitle } = useActionPermissions();
+  const runbookPermissions = useRunbookPermissions();
   // The rail keys this component by proposal id, so state resets only when another proposal is selected.
   // A refresh that returns the same proposal as a new object (the end of every turn) keeps the draft.
   const [selectedOperationIds, setSelectedOperationIds] = useState<string[]>(
@@ -271,8 +272,8 @@ export default function RunbookProposalArtifact({
         {!selectedProposal.isLatest && (
           <button
             type="button"
-            title={operatorTitle}
-            disabled={!canOperate || busy}
+            title={!runbookPermissions.canPropose ? runbookPermissions.proposeTitle : operatorTitle}
+            disabled={!canOperate || !runbookPermissions.canPropose || busy}
             onClick={() => void runDecision(async () => {
               const result = await agent.restoreRunbookAuthoringProposal({
                 sessionId,
@@ -366,8 +367,8 @@ export default function RunbookProposalArtifact({
             <div className="flex flex-wrap gap-2">
               <button
                 type="button"
-                title={operatorTitle}
-                disabled={!canOperate || busy || (supportsOperationApproval && selectedOperationIds.length === 0)}
+                title={!runbookPermissions.canWrite ? runbookPermissions.writeTitle : operatorTitle}
+                disabled={!canOperate || !runbookPermissions.canWrite || busy || (supportsOperationApproval && selectedOperationIds.length === 0)}
                 onClick={() => void runDecision(async () => {
                   await agent.approveRunbookAuthoringProposal({
                     sessionId,
@@ -385,8 +386,8 @@ export default function RunbookProposalArtifact({
               </button>
               <button
                 type="button"
-                title={operatorTitle}
-                disabled={!canOperate || busy || revisionDraft.trim().length === 0}
+                title={!runbookPermissions.canPropose ? runbookPermissions.proposeTitle : operatorTitle}
+                disabled={!canOperate || !runbookPermissions.canPropose || busy || revisionDraft.trim().length === 0}
                 onClick={() => void runDecision(async () => {
                   const requestedEdit = revisionDraft.trim();
                   await agent.requestRunbookAuthoringRevision({
@@ -405,8 +406,8 @@ export default function RunbookProposalArtifact({
               </button>
               <button
                 type="button"
-                title={operatorTitle}
-                disabled={!canOperate || busy}
+                title={!runbookPermissions.canPropose ? runbookPermissions.proposeTitle : operatorTitle}
+                disabled={!canOperate || !runbookPermissions.canPropose || busy}
                 onClick={() => void runDecision(async () => {
                   await agent.rejectRunbookAuthoringProposal({
                     sessionId,
