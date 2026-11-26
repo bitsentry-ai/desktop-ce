@@ -468,5 +468,11 @@
   "runbooks.runbook.savedPluginAuthMergedAtExecution": "L'authentification plugin enregistree dans les parametres reste fusionnee a l'execution lorsque ce JSON omet des champs.",
   "runbooks.runbook.selectAPlugin": "Sélectionnez un plugin",
   "runbooks.runbook.selectAPluginAction": "Sélectionnez une action du plugin",
-  "runbooks.runbook.usePluginDefault": "Utiliser la valeur par defaut du plugin"
+  "runbooks.runbook.usePluginDefault": "Utiliser la valeur par defaut du plugin",
+  "runbooks.runbook.unsavedChanges": "Modifications non enregistrées",
+  "runbooks.runbook.unsavedChangesNudge": "Enregistrez ou annulez d’abord vos modifications",
+  "runbooks.runbook.discardChanges": "Annuler",
+  "runbooks.runbook.saveNeedsTitle": "Ajoutez un titre pour enregistrer",
+  "runbooks.runbook.saveNeedsFixes": "Corrigez les champs ci-dessus pour enregistrer",
+  "runbooks.runbook.saveStepFailed": "Impossible d’enregistrer cette étape. Vos modifications sont conservées."
 }

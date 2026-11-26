@@ -106,7 +106,7 @@ export function SidebarStatusDot({ state, label }: { state: SidebarRunState; lab
   );
 }
 
-export function SidebarGroupLabel({ children, count, action }: { children: ReactNode; count?: number; action?: ReactNode }) {
+export function SidebarGroupLabel({ children, count, action }: { children: ReactNode; count?: number | string; action?: ReactNode }) {
   return (
     <div className="flex h-6 items-center gap-1.5 px-2.5 pt-1 text-xs font-medium text-muted-foreground">
       <span className="truncate">{children}</span>

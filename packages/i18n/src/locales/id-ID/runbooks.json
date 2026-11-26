@@ -468,5 +468,11 @@
   "runbooks.runbook.pluginRiskLevel": "Tingkat risiko",
   "runbooks.runbook.selectAPlugin": "Pilih plugin",
   "runbooks.runbook.selectAPluginAction": "Pilih tindakan plugin",
-  "runbooks.runbook.usePluginDefault": "Gunakan default plugin"
+  "runbooks.runbook.usePluginDefault": "Gunakan default plugin",
+  "runbooks.runbook.unsavedChanges": "Perubahan belum disimpan",
+  "runbooks.runbook.unsavedChangesNudge": "Simpan atau buang perubahan Anda terlebih dahulu",
+  "runbooks.runbook.discardChanges": "Buang",
+  "runbooks.runbook.saveNeedsTitle": "Tambahkan judul untuk menyimpan",
+  "runbooks.runbook.saveNeedsFixes": "Perbaiki kolom di atas untuk menyimpan",
+  "runbooks.runbook.saveStepFailed": "Langkah ini tidak dapat disimpan. Perubahan Anda masih ada."
 }

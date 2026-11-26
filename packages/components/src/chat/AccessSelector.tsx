@@ -58,7 +58,7 @@ export function AccessSelector({
   const Icon = ACCESS_ICONS[value];
 
   return (
-    <div ref={ref} className="relative z-20 shrink-0">
+    <div ref={ref} data-tour="incidents-access-mode" className="relative z-20 shrink-0">
       <button
         type="button"
         onClick={() => { setOpen((v) => !v); }}

@@ -196,13 +196,23 @@ export function RemediationFlowButtons({ flow }: { flow: ComposerRemediationFlow
   );
 }
 
-/** The finding as one muted line: the CVE id, then the package change and the agent. */
+/** A file path such as `/usr/lib/python3/dist-packages/...`: one word with slashes, long enough to push the rest off the line. */
+function isPathItem(item: string): boolean {
+  return item.includes("/") && !/\s/.test(item.trim());
+}
+
+/**
+ * The finding as one muted line: the CVE id, then the package, the agent and the check. File paths go last, so a
+ * long path is what the line cuts off and the agent stays readable.
+ */
 function ContextLine({ context }: { context: string[] }) {
   const [cveId, ...rest] = context;
+  const ordered = [...rest.filter((item) => !isPathItem(item)), ...rest.filter(isPathItem)];
+  // One line; the full finding (long package paths included) is in the tooltip.
   return (
-    <p className="mt-0.5 text-xs text-muted-foreground">
+    <p className="mt-0.5 truncate text-xs text-muted-foreground" title={[cveId, ...ordered].join(" · ")}>
       <span className="font-mono font-semibold text-foreground">{cveId}</span>
-      {rest.map((item) => ` · ${item}`).join("")}
+      {ordered.map((item) => ` · ${item}`).join("")}
     </p>
   );
 }
@@ -257,11 +267,11 @@ function CompactOptions({ flow, label }: { flow: ComposerRemediationFlow; label:
     );
   };
   return (
-    <div role="group" aria-label={label} className="mt-2.5">
+    <div role="group" aria-label={label} className="-mx-2.5 mt-1.5">
       {keyed.length === 0 && searching && <p className="px-3 py-2.5 text-[13px] text-muted-foreground">{t("common.incidents.remediation.noConnectionMatch")}</p>}
       {keyed.length > 0 && (
         <div className="relative">
-          <div ref={scroll} className="grid max-h-[9.75rem] gap-1 overflow-y-auto pr-0.5 [scrollbar-color:hsl(var(--border))_transparent] [scrollbar-width:thin]">
+          <div ref={scroll} className="grid max-h-[8.5rem] gap-0.5 overflow-y-auto pr-0.5 [scrollbar-color:hsl(var(--border))_transparent] [scrollbar-width:thin]">
             {keyed.map((index, keyIndex) => option(index, keyIndex))}
           </div>
           <div
@@ -273,7 +283,7 @@ function CompactOptions({ flow, label }: { flow: ComposerRemediationFlow; label:
           />
         </div>
       )}
-      {pinned.length > 0 && <div className="mt-1.5 grid gap-1">{pinned.map((index) => option(index, -1))}</div>}
+      {pinned.length > 0 && <div className="mt-0.5 grid gap-0.5">{pinned.map((index) => option(index, -1))}</div>}
     </div>
   );
 }
@@ -282,8 +292,8 @@ function CompactOptions({ flow, label }: { flow: ComposerRemediationFlow; label:
  * One CVE remediation step above the composer text, built from the customer report card's parts. Number keys pick an
  * option and Enter runs the primary button while focus is outside a text field; Escape closes the card.
  */
-// At most half the visible height, so the conversation stays usable on a phone; one scroll, with no nested boxes.
-const STEP_SCROLL = "-mr-2 max-h-[min(50dvh,32rem)] overflow-y-auto overscroll-y-contain pr-2 outline-none focus-visible:ring-2 focus-visible:ring-primary/30 [scrollbar-color:hsl(var(--border))_transparent] [scrollbar-width:thin]";
+// At most about a third of the visible height, so the conversation above stays readable; longer steps scroll here.
+const STEP_SCROLL = "-mx-2.5 max-h-[min(34dvh,22rem)] overflow-y-auto overscroll-y-contain px-2.5 outline-none focus-visible:ring-2 focus-visible:ring-primary/30 [scrollbar-color:hsl(var(--border))_transparent] [scrollbar-width:thin]";
 
 const RESULT_TONES: Record<RemediationFlowTone, string> = {
   success: "bg-[hsl(var(--success)/0.12)] text-[hsl(var(--success-text))]",

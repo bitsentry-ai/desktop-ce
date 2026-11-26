@@ -468,5 +468,11 @@
   "runbooks.runbook.savedPluginAuthMergedAtExecution": "Saved plugin auth from settings is still merged at execution time when this JSON omits fields.",
   "runbooks.runbook.selectAPlugin": "Select a plugin",
   "runbooks.runbook.selectAPluginAction": "Select a plugin action",
-  "runbooks.runbook.usePluginDefault": "Use plugin default"
+  "runbooks.runbook.usePluginDefault": "Use plugin default",
+  "runbooks.runbook.unsavedChanges": "Unsaved changes",
+  "runbooks.runbook.unsavedChangesNudge": "Save or discard your changes first",
+  "runbooks.runbook.discardChanges": "Discard",
+  "runbooks.runbook.saveNeedsTitle": "Add a title to save",
+  "runbooks.runbook.saveNeedsFixes": "Fix the fields above to save",
+  "runbooks.runbook.saveStepFailed": "Couldn't save this step. Your changes are still here."
 }

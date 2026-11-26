@@ -184,7 +184,7 @@ function IdleTimeoutPicker({
               aria-label={t("runbooks.runbook.executionIdleTimeout")}
               disabled={disabledTitle !== undefined}
               title={disabledTitle}
-              className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-md border border-border bg-background px-2.5 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60 disabled:cursor-not-allowed disabled:opacity-50 max-sm:h-11"
+              className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-md border border-border bg-background px-2.5 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60 disabled:cursor-not-allowed disabled:opacity-50 max-sm:h-11 [@media(pointer:coarse)]:h-10"
             >
               <Hourglass size={12} aria-hidden="true" />
               <span>
@@ -580,27 +580,30 @@ export function RunbookEditorHeader({
           </Tooltip>
         </div>
 
-        <div className="col-span-2 col-start-1 row-start-2 flex min-w-0 flex-wrap items-center gap-2">
-          <span className="shrink-0 text-xs tabular-nums text-muted-foreground [@container(max-width:27.99rem)]:hidden">
-            {t("runbooks.runbooks.actionCount", {
-              count: runbook.actions.length,
-            })}
-          </span>
-          {/* Execution settings stay together as one group. */}
-          <div
-            role="group"
-            aria-label={t("runbooks.runbook.executionSettings")}
-            className="flex min-w-0 flex-wrap items-center gap-2"
-          >
-            <IdleTimeoutPicker
-              currentTimeoutMinutes={currentTimeoutMinutes}
-              currentTimeoutLabel={currentTimeoutLabel}
-              idleTimeoutPresets={idleTimeoutPresets}
-              onIdleTimeoutChange={onIdleTimeoutChange}
-              disabledTitle={writeDisabledTitle}
-              t={t}
-            />
-            {extraActions}
+        <div className="col-span-2 col-start-1 row-start-2 flex min-w-0 items-start gap-2">
+          {/* Settings wrap among themselves; the icon buttons hold the top-right corner of the row. */}
+          <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
+            <span className="shrink-0 text-xs tabular-nums text-muted-foreground [@container(max-width:27.99rem)]:hidden">
+              {t("runbooks.runbooks.actionCount", {
+                count: runbook.actions.length,
+              })}
+            </span>
+            {/* Execution settings are one group for assistive tech but wrap in the same row as the step count. */}
+            <div
+              role="group"
+              aria-label={t("runbooks.runbook.executionSettings")}
+              className="contents"
+            >
+              <IdleTimeoutPicker
+                currentTimeoutMinutes={currentTimeoutMinutes}
+                currentTimeoutLabel={currentTimeoutLabel}
+                idleTimeoutPresets={idleTimeoutPresets}
+                onIdleTimeoutChange={onIdleTimeoutChange}
+                disabledTitle={writeDisabledTitle}
+                t={t}
+              />
+              {extraActions}
+            </div>
           </div>
           <div className="ml-auto flex shrink-0 items-center gap-2">
             {/* History and New runbook move into ⋯ below 640px, leaving the title, settings and Run. */}
