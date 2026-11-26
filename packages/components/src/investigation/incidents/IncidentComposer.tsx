@@ -5,7 +5,7 @@ import { useIncidentCitations, useIncidentDraftStore } from "./incidentDraftStor
 export function IncidentComposer({
   incidentId,
   ...props
-}: Omit<ComposerProps, "prompt" | "onPromptChange" | "citations" | "onRemoveCitation" | "onCitationCommentChange"> & { incidentId: string }) {
+}: Omit<ComposerProps, "prompt" | "onPromptChange" | "citations" | "onRemoveCitation" | "onCitationCommentChange" | "citationCommentEditor"> & { incidentId: string }) {
   const prompt = useIncidentDraftStore((state) => state.drafts[incidentId] ?? "");
   const setDraft = useIncidentDraftStore((state) => state.setDraft);
   const citations = useIncidentCitations(incidentId);

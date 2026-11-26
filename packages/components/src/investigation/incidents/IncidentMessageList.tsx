@@ -2,9 +2,8 @@ import { memo, useEffect, useImperativeHandle, useRef, useState, type RefObject 
 import { LegendList, type LegendListRef, type MaintainScrollAtEndOptions } from "@legendapp/list/react";
 import { useTranslation } from "@bitsentry-ce/i18n";
 import { ChatBubble } from "../../chat/ChatBubble";
-import { CitationRevealContext } from "../../chat/CitationControls";
-import { revealCitationInMessages } from "../../chat/citationDom";
-import type { AssistantCitation } from "../../chat/citations";
+import { useCitationRevealer } from "../../chat/CitationControls";
+import { revealCitationInList } from "../../chat/citationDom";
 import type { ChatMessage } from "../../chat/types";
 import { useLiveMessage } from "./liveMessageStore";
 
@@ -68,6 +67,7 @@ function LiveChatBubble({ msg, providerKey }: { msg: ChatMessage; providerKey: s
  * otherwise, anywhere short of the very end.
  */
 export const IncidentMessageList = memo(function IncidentMessageList({
+  threadId,
   messages,
   providerKey,
   listRef,
@@ -76,6 +76,8 @@ export const IncidentMessageList = memo(function IncidentMessageList({
   scrollToEndRef,
   onStartReached,
 }: {
+  /** The incident; citations of its answers come back to this list. */
+  threadId: string;
   messages: ChatMessage[];
   providerKey: string | null;
   listRef: RefObject<LegendListRef | null>;
@@ -105,14 +107,15 @@ export const IncidentMessageList = memo(function IncidentMessageList({
 
   // Going to a citation's source leaves the end, so following stops first. A source row outside the render window
   // is not mounted, so the list scrolls to its message and highlights the quote once the row mounts.
-  const revealSource = (citation: AssistantCitation) => {
+  const stopRevealRef = useRef<(() => void) | null>(null);
+  useCitationRevealer(threadId, (citation, onSettled) => {
     liveFollowRef.current = false;
     leftEndRef.current = true;
     setLiveFollow(false);
-    revealCitationInMessages(citation, messages, (index) => {
-      void listRef.current?.scrollToIndex({ index, animated: false, viewPosition: 0.5 });
-    });
-  };
+    stopRevealRef.current = revealCitationInList({ citation, messages, list: listRef.current, onSettled });
+  });
+  // A reveal still waiting for its row belongs to this list, so it stops with it.
+  useEffect(() => () => { stopRevealRef.current?.(); }, []);
 
   useEffect(() => {
     const node = listRef.current?.getScrollableNode();
@@ -170,7 +173,7 @@ export const IncidentMessageList = memo(function IncidentMessageList({
     };
   }, [listRef]);
   return (
-    <CitationRevealContext value={revealSource}>
+    <>
       <LegendList<ChatMessage>
         ref={listRef}
         data={messages}
@@ -219,6 +222,6 @@ export const IncidentMessageList = memo(function IncidentMessageList({
         // 24px under the last message so it never sits against the composer, even before the list settles at the end.
         ListFooterComponent={<div className="h-6" />}
       />
-    </CitationRevealContext>
+    </>
   );
 });

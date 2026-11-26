@@ -60,9 +60,20 @@ import { SendButton } from "./SendButton";
 import { ContextIndicator } from "./ContextIndicator";
 import { QueuedMessagesPanel, type ComposerQueue } from "./QueuedMessagesPanel";
 import { resolveComposerDispatchMode } from "./composerDispatch";
-import { CitationChip } from "./CitationControls";
-import { CHAT_MESSAGE_MAX_LENGTH, joinCitations, type AssistantCitation } from "./citations";
+import { CitationChip, type CitationCommentEditorState } from "./CitationControls";
+import { CHAT_MESSAGE_MAX_LENGTH, joinCitations, withCitationComment, type AssistantCitation } from "./citations";
 import type { AgentMessageDelivery } from "../services/contracts";
+
+/** A stable key per citation: where it quotes from, and which repeat of the same quote it is. */
+function citationChipKeys(citations: AssistantCitation[]): string[] {
+  const seen = new Map<string, number>();
+  return citations.map((citation) => {
+    const base = `${citation.sourceId}:${String(citation.start)}:${String(citation.end)}`;
+    const repeat = seen.get(base) ?? 0;
+    seen.set(base, repeat + 1);
+    return `${base}:${String(repeat)}`;
+  });
+}
 
 export interface ComposerProps {
   prompt: string;
@@ -83,6 +94,8 @@ export interface ComposerProps {
   citations?: AssistantCitation[];
   onRemoveCitation?: (index: number) => void;
   onCitationCommentChange?: (index: number, comment: string | undefined) => void;
+  /** The comment editor of each citation, when the host keeps which one is open (Cite opens the new one's). */
+  citationCommentEditor?: (index: number) => Omit<CitationCommentEditorState, "onSave" | "onSaveAndSend" | "restoreFocusRef">;
   isProcessing: boolean;
   isBlocked: boolean;
   /** Shown in place of the text area while blocked: what is missing and where to fix it. */
@@ -296,6 +309,7 @@ export function Composer({
   citations = [],
   onRemoveCitation,
   onCitationCommentChange,
+  citationCommentEditor,
 }: ComposerProps) {
   const { t } = useTranslation();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -405,6 +419,43 @@ export function Composer({
       delivery = mode === "steer" ? "steer" : "queue";
     }
     onSend({ accessLevel, interactionMode, traitValues, delivery });
+  };
+
+  // Chips keep their identity, and an open editor its draft, when an earlier chip is removed.
+  const citationKeys = citationChipKeys(citations);
+  // Without a host that tracks it, the composer keeps which citation's comment editor is open.
+  const [openCommentIndex, setOpenCommentIndex] = useState<number | null>(null);
+  const removeCitation = (index: number) => {
+    onRemoveCitation?.(index);
+    setOpenCommentIndex((current) => {
+      if (current === null || current === index) return null;
+      return current > index ? current - 1 : current;
+    });
+  };
+  const commentEditorFor = (index: number): CitationCommentEditorState | undefined => {
+    if (onCitationCommentChange === undefined) return undefined;
+    const closeLocal = () => { setOpenCommentIndex((current) => (current === index ? null : current)); };
+    const hosted = citationCommentEditor?.(index) ?? {
+      open: openCommentIndex === index,
+      onOpenChange: (open: boolean) => { if (open) setOpenCommentIndex(index); else closeLocal(); },
+      onCancel: closeLocal,
+    };
+    return {
+      ...hosted,
+      restoreFocusRef: textareaRef,
+      onSave: (comment) => { onCitationCommentChange(index, comment); },
+      // Command/Ctrl+Enter in the comment saves it and sends the message, when the message could be sent.
+      onSaveAndSend: (comment) => {
+        // Without a queue, a message cannot go out while the agent runs.
+        if (isProcessing && queue === undefined) return false;
+        const next = citations.map((citation, position) => (position === index ? withCitationComment(citation, comment) : citation));
+        if (!composerCanSend(isBlocked, prompt, composerImages.length + next.length)) return false;
+        if (joinCitations(next, prompt).length > CHAT_MESSAGE_MAX_LENGTH) return false;
+        onCitationCommentChange(index, comment);
+        submit(false);
+        return true;
+      },
+    };
   };
 
   // ── Keyboard: Enter sends, Shift+Enter newline ─────────────────────────────
@@ -529,10 +580,10 @@ export function Composer({
             <div className="mb-2 flex flex-wrap gap-1.5">
               {citations.map((citation, index) => (
                 <CitationChip
-                  key={`${citation.sourceId}:${String(citation.start)}:${String(index)}`}
+                  key={citationKeys[index]}
                   citation={citation}
-                  onRemove={() => { onRemoveCitation?.(index); }}
-                  onCommentChange={(comment) => { onCitationCommentChange?.(index, comment); }}
+                  onRemove={() => { removeCitation(index); }}
+                  commentEditor={commentEditorFor(index)}
                 />
               ))}
             </div>

@@ -41,6 +41,11 @@ export function iterationTextSourceId(iterationId: string): string {
   return `${iterationId}:text`;
 }
 
+/** The id of the answer of a message without iterations; citations of that text name it as their source. */
+export function finalTextSourceId(messageId: string): string {
+  return `${messageId}:final`;
+}
+
 function visibleIterationText(message: AgentMessage, iteration: AgentIteration, isLast: boolean): string {
   if (iteration.text.trim().length > 0) return iteration.text;
   return isLast ? message.finalText ?? "" : "";
@@ -129,7 +134,9 @@ export function deriveTurnTimeline(message: AgentMessage): TurnTimeline {
     iterationEntries(message, iteration, index === message.iterations.length - 1, tools),
   );
   if (message.iterations.length === 0 && (message.finalText ?? "").trim().length > 0) {
-    entries.push({ kind: "text", key: "final", text: message.finalText ?? "" });
+    // Only a saved message has an id that a citation can name again.
+    const key = message.id === undefined ? "final" : finalTextSourceId(message.id);
+    entries.push({ kind: "text", key, text: message.finalText ?? "" });
   }
 
   // Like T3 Code, only a finished turn folds, and only when it hides tool work.

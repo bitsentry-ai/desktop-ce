@@ -23,3 +23,8 @@ export function useDisclosure(key: string, defaultOpen: boolean): [boolean, (nex
   const setOpen = useDisclosureStore((state) => state.set);
   return [isOpen, (next: boolean) => { setOpen(key, next); }];
 }
+
+/** Opens a disclosure from outside its row, for example to show a cited answer folded behind "Worked for". */
+export function openDisclosure(key: string): void {
+  useDisclosureStore.getState().set(key, true);
+}
