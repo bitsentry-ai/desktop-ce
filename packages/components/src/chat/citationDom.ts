@@ -219,12 +219,14 @@ function holdsQuoteInContext(text: string, citation: AssistantCitation): boolean
 
 /**
  * A mounted answer that shows the quote under another id than the one it was cited under: the Dashboard streams each
- * step under its own id, then reloads the turn as one answer. Only an answer that holds the quote with its surrounding
- * text counts, the latest first, so a short quote never lands in an unrelated answer.
+ * step under its own id, then reloads the turn as one answer. Only the one answer that holds the quote with its
+ * surrounding text counts, so a short quote, or a whole step cited with no text around it, never lands in an unrelated
+ * answer.
  */
 function findMovedCitationSource(root: ParentNode, citation: AssistantCitation): HTMLElement | null {
-  const sources = [...root.querySelectorAll<HTMLElement>(`[${CITATION_SOURCE_ATTRIBUTE}]`)].reverse();
-  return sources.find((element) => holdsQuoteInContext(readSourceText(element).text, citation)) ?? null;
+  const sources = [...root.querySelectorAll<HTMLElement>(`[${CITATION_SOURCE_ATTRIBUTE}]`)];
+  const matches = sources.filter((element) => holdsQuoteInContext(readSourceText(element).text, citation));
+  return matches.length === 1 ? matches[0] : null;
 }
 
 type HighlightRegistry = Map<string, unknown>;
@@ -406,16 +408,45 @@ function findSourceMessage(messages: readonly ChatMessage[], sourceId: string): 
   return null;
 }
 
-/** The latest agent message whose text holds the quote, for an answer reloaded under another id and not mounted. */
-function findMovedSourceMessage(messages: readonly ChatMessage[], citation: AssistantCitation): number | null {
-  const quote = flatten(citation.text).trim();
-  for (let index = messages.length - 1; index >= 0; index--) {
-    const message = messages[index];
-    if (message.kind !== "agent") continue;
-    const text = [...message.iterations.map((iteration) => iteration.text), message.finalText ?? ""].join("\n");
-    if (flatten(text).includes(quote)) return index;
+function withoutLinkTargets(markdown: string): string {
+  let text = "";
+  let at = 0;
+  for (;;) {
+    const open = markdown.indexOf("](", at);
+    const close = open < 0 ? -1 : markdown.indexOf(")", open + 2);
+    if (close < 0) return text + markdown.slice(at);
+    text += markdown.slice(at, open);
+    at = close + 1;
   }
-  return null;
+}
+
+/** Text with markdown markers and whitespace runs left out, so rendered text and its markdown compare equal. */
+const looseText = (value: string) => flatten(value.replace(/[*_`~[\]]/g, "")).trim();
+
+/** Message markdown near enough to what the reader sees to find a quote in it: no list or heading marks, links as their text. */
+function markdownAsText(markdown: string): string {
+  const lines = markdown.split("\n").map((line) => line.trimStart().replace(/^(?:[-*+>]|\d{1,9}[.)]|#{1,6}) /, ""));
+  return looseText(withoutLinkTargets(lines.join("\n")));
+}
+
+/**
+ * The agent message that holds the quote, for an answer reloaded under another id and not mounted: the latest one with
+ * the quote and the text around it, else the only one with the quote at all.
+ */
+function findMovedSourceMessage(messages: readonly ChatMessage[], citation: AssistantCitation): number | null {
+  const quote = looseText(citation.text);
+  const context = looseText(`${citation.prefix}${citation.text}${citation.suffix}`);
+  const inContext: number[] = [];
+  const anywhere: number[] = [];
+  messages.forEach((message, index) => {
+    if (message.kind !== "agent") return;
+    const text = markdownAsText([...message.iterations.map((iteration) => iteration.text), message.finalText ?? ""].join("\n"));
+    const first = text.indexOf(context);
+    if (first >= 0 && !text.includes(context, first + 1)) inContext.push(index);
+    else if (text.includes(quote)) anywhere.push(index);
+  });
+  if (inContext.length > 0) return inContext[inContext.length - 1];
+  return anywhere.length === 1 ? anywhere[0] : null;
 }
 
 let activeReveal: (() => void) | null = null;

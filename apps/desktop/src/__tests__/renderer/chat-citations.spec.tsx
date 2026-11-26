@@ -347,6 +347,28 @@ describe("going to a citation's source in a virtualized list", () => {
     await waitFor(() => { expect(onSettled).toHaveBeenCalledWith("highlighted"); });
   });
 
+  it("finds a reloaded answer by its quote in context, past later answers that repeat the quote, and through markdown", async () => {
+    document.body.innerHTML = "";
+    const original: ChatMessage = { ...agentMessage("message-7"), finalText: "- The cause: **nginx** is out of [workers](https://nginx.org)." };
+    const later: ChatMessage = { ...agentMessage("message-8"), finalText: "Later, nginx is out of workers again" };
+    const list = fakeList(() => {
+      (list.getScrollableNode() as HTMLElement).innerHTML = `<div data-citation-source="message-7:text"><p>The cause: <strong>nginx</strong> is out of workers.</p></div>`;
+    });
+    const onSettled = vi.fn();
+    revealCitationInList({ citation: { ...citation, sourceId: "live-step:text" }, messages: [original, later], list, onSettled });
+    expect(list.scrollToIndex).toHaveBeenCalledWith(expect.objectContaining({ index: 0 }));
+    await waitFor(() => { expect(onSettled).toHaveBeenCalledWith("highlighted"); });
+  });
+
+  it("does not guess between two answers that both hold a whole-answer quote", () => {
+    document.body.innerHTML = "";
+    const list = fakeList(() => undefined);
+    (list.getScrollableNode() as HTMLElement).innerHTML = `<div data-citation-source="a:text"><p>Checking the logs.</p></div><div data-citation-source="b:text"><p>Checking the logs.</p></div>`;
+    const onSettled = vi.fn();
+    revealCitationInList({ citation: { ...citation, sourceId: "gone:text", text: "Checking the logs.", prefix: "", suffix: "", start: 0, end: 18 }, messages: [], list, onSettled });
+    expect(onSettled).toHaveBeenCalledWith("missing");
+  });
+
   it("reports a reveal the engineer cancels", () => {
     document.body.innerHTML = "";
     const list = fakeList(() => undefined);
