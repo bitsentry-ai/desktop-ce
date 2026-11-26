@@ -596,3 +596,44 @@ describe('the Artifacts panel while a reply streams', () => {
     }
   })
 })
+
+describe('a run with a large payload in the panel', () => {
+  it('folds a JSON parameter to its name and size, previews only the prose of a step output, and names the run once', async () => {
+    const findings = Array.from({ length: 50 }, (_, index) => ({ cveId: `CVE-2024-${String(index)}`, agentId: '004', packageName: 'Jinja2' }))
+    const executionId = '77777777-7777-4777-8777-222222222222'
+    const resultId = '77777777-7777-4777-8777-111111111111'
+    const execution = {
+      executionId, runbookId: 'runbook-cve', incidentThreadId: INCIDENT, runbookTitle: 'Evaluate vendor fixes', status: 'completed',
+      startedAt: '2026-10-05T09:07:00.000Z', completedAt: '2026-10-05T09:07:30.000Z', parameterValues: { findings: JSON.stringify(findings), agent: '004' },
+      steps: [{ actionId: 'evaluate', order: 0, type: 'plugin', title: 'Evaluate eligibility', status: 'completed', input: { actionType: 'plugin', pluginId: 'linux-cve-status', parameterValues: { findings: JSON.stringify(findings), agent: '004' } }, output: `Evaluated 50 findings.\n\n${JSON.stringify({ decisions: [{ eligibility: 'blocked' }] }, null, 2)}` }],
+    }
+    localStorage.setItem(RESULTS_KEY, JSON.stringify([{ id: resultId, executionId, incidentThreadId: INCIDENT, runbookId: 'runbook-cve', runbookTitle: 'Evaluate vendor fixes', status: 'completed', startedAt: execution.startedAt, completedAt: execution.completedAt }]))
+    localStorage.setItem(RESULT_TRACES_KEY, JSON.stringify({ [resultId]: { execution } }))
+    render(<Host />)
+    act(() => { window.dispatchEvent(new Event('bitsentry:results-updated')) })
+    await waitFor(() => { expect(panelIsOpen()).toBe(true) })
+
+    const results = runbookResults()
+    const findingsToggle = await within(results).findByRole('button', { name: /^Findings/ })
+    expect(findingsToggle.getAttribute('aria-expanded')).toBe('false')
+    expect(findingsToggle.textContent).toContain('50 items')
+    expect(within(results).queryByText('CVE-2024-0')).toBeNull()
+    expect(within(results).getByText('004')).toBeTruthy()
+
+    fireEvent.click(findingsToggle)
+    expect(findingsToggle.getAttribute('aria-expanded')).toBe('true')
+    expect(within(results).getByText('CVE-2024-0')).toBeTruthy()
+
+    const preview = within(results).getByText('Evaluated 50 findings.', { selector: 'button div' })
+    expect(preview.textContent).not.toContain('{')
+    expect(within(results).getAllByText('Evaluate vendor fixes')).toHaveLength(1)
+
+    // The Dashboard stores step orders from zero; the panel numbers steps from one.
+    const stepButton = within(results).getAllByRole('button', { name: /Evaluate eligibility/ }).find((button) => button.hasAttribute('aria-pressed'))
+    expect(stepButton?.querySelector('span')?.textContent).toBe('1')
+    // The step input keeps its own fields but not the run parameters already shown above it.
+    expect(within(results).getByText('linux-cve-status')).toBeTruthy()
+    expect(within(results).queryByText('Parameter values')).toBeNull()
+    expect(within(results).getAllByRole('button', { name: /^Findings/ })).toHaveLength(1)
+  })
+})

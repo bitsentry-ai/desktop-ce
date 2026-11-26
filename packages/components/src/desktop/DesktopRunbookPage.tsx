@@ -159,6 +159,10 @@ export default function DesktopRunbookPage({
     handleSaveAction,
     handleUpdateActionDraft,
     collapse,
+    requestCollapse,
+    expandedDraftDirty,
+    unsavedNudge,
+    savingStep,
     setModelDropdownOpen,
   } = useRunbookActionEditorFlow({
     activeRunbook,
@@ -172,6 +176,13 @@ export default function DesktopRunbookPage({
     validErrorSourceIds,
     validPluginActionIdsByPluginId,
     llmModelOptions,
+    onActionSaveFailed: (error) => {
+      toast({
+        title: t("runbooks.runbook.saveStepFailed"),
+        description: error instanceof Error ? error.message : undefined,
+        variant: "destructive",
+      });
+    },
   });
 
   const {
@@ -359,7 +370,11 @@ export default function DesktopRunbookPage({
           void handleSaveAction(actionId);
         },
         onUpdateActionDraft: handleUpdateActionDraft,
-        onCollapse: collapse,
+        onCollapse: requestCollapse,
+        draftDirty: expandedDraftDirty,
+        unsavedNudge,
+        savingStep,
+        onDiscardDraft: collapse,
         runDialogOpen,
         runtimeParameters,
         runtimeParameterValues,

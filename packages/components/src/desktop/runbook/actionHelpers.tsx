@@ -457,7 +457,7 @@ function summarizePluginAction(
   if (action.pluginId !== undefined && action.pluginId.length > 0) {
     selectedPlugin = pluginDescriptors.find((plugin) => plugin.id === action.pluginId);
     pluginLabel =
-      selectedPlugin?.name ?? `${t("runbooks.runbook.plugin")} (${action.pluginId})`;
+      selectedPlugin?.name ?? action.pluginId;
   }
 
   let actionLabel = t("runbooks.runbook.noPluginActionSelected");
@@ -474,7 +474,7 @@ function summarizePluginAction(
     actionLabel = action.pluginActionId;
   }
 
-  return `${pluginLabel} - ${actionLabel}${suffix}`;
+  return `${pluginLabel} · ${actionLabel}${suffix}`;
 }
 
 function summarizeExternalSourceAction(

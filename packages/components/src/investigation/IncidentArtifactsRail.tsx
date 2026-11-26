@@ -4,6 +4,7 @@ import {
   ArrowRight,
   BookOpen,
   Bot,
+  ChevronRight,
   Database,
   FileText,
   Globe,
@@ -19,8 +20,10 @@ import { cn } from "../lib/utils";
 import { formatJsonBlockForDisplay } from "../lib/jsonDisplay";
 import { StructuredOutputDisplay } from "../runbook/StructuredOutputDisplay";
 import { StructuredValue } from "../runbook/StructuredValue";
-import { detectRunOutputFormat } from "../runbook/runOutputFormat";
+import { detectRunOutputFormat, parseJsonContainer } from "../runbook/runOutputFormat";
+import { readableKey } from "../runbook/recordTable";
 import type {
+  RunbookParameterValues,
   RunbookActionType,
   RunbookAuthoringProposalKind,
   RunbookExecutionRecord,
@@ -261,6 +264,10 @@ function actionIcon(type: RunbookActionType) {
 
 
 
+function isFinishedStatus(status: IncidentArtifactEntry["status"]): boolean {
+  return status === "completed" || status === "failed" || status === "cancelled" || status === "claim_expired";
+}
+
 function statusClasses(status: IncidentArtifactEntry["status"]): string {
   switch (status) {
     case "starting":
@@ -384,8 +391,10 @@ function OutputContent({
 
   const parsed = detectRunOutputFormat(text);
   if (parsed.kind === "json") {
+    const lead = parsed.lead.trim();
     return (
-      <div className="min-w-0 max-w-full overflow-x-hidden rounded-xl border border-border bg-muted/15 p-3">
+      <div className="min-w-0 max-w-full space-y-2 overflow-x-hidden rounded-xl border border-border bg-muted/15 p-3">
+        {lead.length > 0 && <p className="whitespace-pre-line text-[13px] leading-5 text-foreground">{lead}</p>}
         <StructuredValue value={parsed.value} />
       </div>
     );
@@ -400,6 +409,92 @@ function OutputContent({
 
 function formatJsonBlock(value: unknown): string {
   return formatJsonBlockForDisplay(value);
+}
+
+function sameParameterValues(left: unknown, right: RunbookParameterValues | undefined): boolean {
+  if (right === undefined || typeof left !== "object" || left === null || Array.isArray(left)) return false;
+  const leftEntries = Object.entries(left as Record<string, unknown>);
+  const rightEntries = Object.entries(right);
+  return leftEntries.length === rightEntries.length && leftEntries.every(([key, value]) => right[key] === value);
+}
+
+/**
+ * A step's input without the run's parameter values when it only repeats them: they already show under Execution
+ * parameters, and a large one (such as findings) would otherwise fill the panel twice.
+ */
+function stepInputForDisplay(input: unknown, runParameters: RunbookParameterValues | undefined): unknown {
+  if (typeof input !== "object" || input === null || Array.isArray(input)) return input;
+  const record = input as Record<string, unknown>;
+  if (!("parameterValues" in record) || !sameParameterValues(record.parameterValues, runParameters)) return input;
+  return Object.fromEntries(Object.entries(record).filter(([key]) => key !== "parameterValues"));
+}
+
+/** A step's output as a short preview: the prose summary, without the JSON payload that follows it. */
+function stepOutputPreview(text: string): string {
+  const format = detectRunOutputFormat(text);
+  return format.kind === "json" ? format.lead.trim() : text;
+}
+
+function dataCountLabel(value: object, t: ReturnType<typeof useTranslation>["t"]): string {
+  if (Array.isArray(value)) return t("common.structured.items", { count: value.length });
+  return t("common.structured.fields", { count: Object.keys(value).length });
+}
+
+/** A parameter that holds JSON, such as the findings a runbook was given, collapsed to its name and size. */
+function ParameterData({ name, value }: { name: string; value: object }) {
+  const { t } = useTranslation();
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="min-w-0">
+      <button
+        type="button"
+        aria-expanded={open}
+        onClick={() => { setOpen((current) => !current); }}
+        className="flex w-full min-w-0 items-center gap-1.5 rounded-md py-0.5 text-left text-[13px] leading-5 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      >
+        <ChevronRight
+          size={14}
+          aria-hidden="true"
+          className={cn("shrink-0 text-muted-foreground transition-transform", open && "rotate-90")}
+        />
+        <span className="truncate font-medium text-foreground" title={name}>{readableKey(name)}</span>
+        <span className="shrink-0 text-muted-foreground">{`· ${dataCountLabel(value, t)}`}</span>
+      </button>
+      {open && (
+        <div className="mt-1.5 max-h-80 overflow-y-auto overscroll-contain border-l border-border pl-3 [scrollbar-width:thin]">
+          <StructuredValue value={value} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * The values a run was started with: plain values as labelled rows, JSON values (lists of findings, records) folded to
+ * their name and size so a large payload never stretches the panel.
+ */
+function ExecutionParameters({ values }: { values: RunbookParameterValues | undefined }) {
+  const { t } = useTranslation();
+  const entries = Object.entries(values ?? {});
+  if (entries.length === 0) {
+    return <p className="text-xs italic text-muted-foreground">{t("common.incidentArtifactsRail.empty.params")}</p>;
+  }
+  return (
+    <div className="min-w-0 max-w-full space-y-1.5 overflow-x-hidden rounded-xl border border-border bg-muted/15 p-3">
+      {entries.map(([name, raw]) => {
+        const data = parseJsonContainer(raw);
+        if (data !== null) return <ParameterData key={name} name={name} value={data} />;
+        return (
+          <dl key={name} className="flex min-w-0 gap-3 text-[13px] leading-5">
+            <dt className="w-28 shrink-0 truncate text-muted-foreground" title={name}>{readableKey(name)}</dt>
+            <dd className="m-0 min-w-0 flex-1 text-foreground [overflow-wrap:anywhere]">
+              {raw.length > 0 ? raw : <span className="text-muted-foreground">{t("common.structured.empty")}</span>}
+            </dd>
+          </dl>
+        );
+      })}
+    </div>
+  );
 }
 
 function normalizeStoredRunResult(value: unknown): StoredRunResult | null {
@@ -1126,14 +1221,13 @@ function ArtifactDetails({
     artifact?.latestStep ??
     artifact?.execution?.steps[0] ??
     null;
-  const selectedInput = formatJsonBlock(selectedStep?.input);
+  const selectedInput = formatJsonBlock(
+    stepInputForDisplay(selectedStep?.input, artifact?.execution?.parameterValues),
+  );
   let selectedOutput = finalOutput(artifact?.execution ?? null);
   if (selectedStep !== null) {
     selectedOutput = getStepVisibleOutput(selectedStep);
   }
-  const executionParameters = formatJsonBlock(
-    artifact?.execution?.parameterValues,
-  );
 
   if (artifact === null) {
     return (
@@ -1157,19 +1251,22 @@ function ArtifactDetails({
           : "flex h-full min-w-0 flex-col overflow-hidden rounded-2xl border border-border bg-card"
       }
     >
-      <div className="border-b border-border px-4 py-3">
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="text-sm font-semibold">{artifact.runbookTitle}</div>
-          <span
-            className={cn(
-              "rounded-full px-2 py-0.5 text-xs font-medium",
-              statusClasses(artifact.status),
-            )}
-          >
-            {statusLabel(t, artifact.status)}
-          </span>
-        </div>
-        <div className="mt-1 text-xs text-muted-foreground">
+      <div className={cn("border-b border-border px-4", flow ? "py-2" : "py-3")}>
+        {/* In the flow layout the selected run's card sits right above, with the same title and status. */}
+        {!flow && (
+          <div className="mb-1 flex flex-wrap items-center gap-2">
+            <div className="text-sm font-semibold">{artifact.runbookTitle}</div>
+            <span
+              className={cn(
+                "rounded-full px-2 py-0.5 text-xs font-medium",
+                statusClasses(artifact.status),
+              )}
+            >
+              {statusLabel(t, artifact.status)}
+            </span>
+          </div>
+        )}
+        <div className="text-xs text-muted-foreground">
           {artifact.executionId !== null &&
             t("common.incidentArtifactsRail.executionShortId", {
               shortId: artifact.executionId.slice(0, 8),
@@ -1188,15 +1285,21 @@ function ArtifactDetails({
       >
         <div className={flow ? "px-4 py-4" : "min-h-0 overflow-y-auto px-4 py-4"}>
           <div className="mb-3 flex items-center justify-between text-xs font-medium uppercase tracking-[0.06em] text-muted-foreground">
-            <span>{t("common.incidentArtifactsRail.liveSteps")}</span>
+            <span>
+              {isFinishedStatus(artifact.status)
+                ? t("common.incidentArtifactsRail.steps")
+                : t("common.incidentArtifactsRail.liveSteps")}
+            </span>
             <span>
               {artifact.completedStepCount}/{artifact.stepCount || 0}
             </span>
           </div>
 
           <div className="space-y-2">
-            {artifact.execution?.steps.map((step) => {
+            {artifact.execution?.steps.map((step, stepIndex) => {
               const Icon = actionIcon(step.type);
+              // Positions count from one; stored step orders start at zero on the Dashboard and at one on Desktop.
+              const position = stepIndex + 1;
               const stepKey = stepSelectionKey(step);
               let isActive = false;
               if (selectedStep !== null) {
@@ -1208,7 +1311,7 @@ function ArtifactDetails({
                 stepButtonClassName = "border-primary bg-primary/5";
               }
               const providerSummary = getStepProviderSummary(step);
-              const visibleOutput = getStepVisibleOutput(step);
+              const outputPreview = stepOutputPreview(getStepVisibleOutput(step));
 
               return (
                 <button
@@ -1222,14 +1325,14 @@ function ArtifactDetails({
                   )}
                 >
                   <div className="flex items-center gap-2">
-                    <span className="text-xs font-mono text-muted-foreground">
-                      {step.order}
+                    <span className="text-xs font-mono tabular-nums text-muted-foreground">
+                      {position}
                     </span>
                     <Icon size={13} className="text-muted-foreground" />
                     <span className="truncate text-sm font-medium">
                       {step.title ||
                         t("common.incidentArtifactsRail.stepNumber", {
-                          order: step.order,
+                          order: position,
                         })}
                     </span>
                   </div>
@@ -1249,9 +1352,9 @@ function ArtifactDetails({
                   )}
                   {isActive &&
                     (step.error === undefined || step.error.length === 0) &&
-                    visibleOutput.length > 0 && (
+                    outputPreview.length > 0 && (
                     <div className="mt-2 line-clamp-4 text-xs text-muted-foreground">
-                      {visibleOutput}
+                      {outputPreview}
                     </div>
                   )}
                 </button>
@@ -1278,10 +1381,7 @@ function ArtifactDetails({
               <div className="mb-2 text-xs font-medium uppercase tracking-[0.06em] text-muted-foreground">
                 {t("common.incidentArtifactsRail.executionParameters")}
               </div>
-              <OutputContent
-                value={executionParameters}
-                emptyMessage={t("common.incidentArtifactsRail.empty.params")}
-              />
+              <ExecutionParameters values={artifact.execution?.parameterValues} />
             </div>
             <div>
               <div className="mb-2 text-xs font-medium uppercase tracking-[0.06em] text-muted-foreground">

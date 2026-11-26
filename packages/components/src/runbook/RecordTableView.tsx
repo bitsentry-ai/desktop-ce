@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useTranslation } from "@bitsentry-ce/i18n";
 
 import { cn } from "../lib/utils";
@@ -24,9 +25,18 @@ const SEVERITY_DOT_CLASS = {
   warning: "bg-muted-foreground/60",
 } as const;
 
-/** A record list as a table: one row per record, the columns that tell records apart. */
-export function RecordTableView({ table }: { table: RecordTable }) {
+/** A preview only hides rows when it saves at least this many. */
+const MIN_HIDDEN_ROWS = 3;
+
+/**
+ * A record list as a table: one row per record, the columns that tell records apart. With `previewRows`, a long table
+ * shows that many rows first and the rest one click away.
+ */
+export function RecordTableView({ table, previewRows }: { table: RecordTable; previewRows?: number }) {
   const { t } = useTranslation();
+  const [showAllRows, setShowAllRows] = useState(false);
+  const previewable = previewRows !== undefined && table.rows.length >= previewRows + MIN_HIDDEN_ROWS;
+  const rows = previewable && !showAllRows ? table.rows.slice(0, previewRows) : table.rows;
   // Number columns are short; they take a narrow right-aligned track so the
   // text columns share the rest of the pane instead of scrolling sideways.
   const numeric = new Set(
@@ -68,7 +78,7 @@ export function RecordTableView({ table }: { table: RecordTable }) {
             </tr>
           </thead>
           <tbody>
-            {table.rows.map((row, index) => (
+            {rows.map((row, index) => (
               <tr
                 // Records have no stable id of their own; their order is fixed by the payload.
                 key={index}
@@ -111,13 +121,29 @@ export function RecordTableView({ table }: { table: RecordTable }) {
           </tbody>
         </table>
       </div>
-      {table.total > table.rows.length && (
-        <p className="border-t border-border px-3 py-2 text-xs text-muted-foreground">
-          {t("common.results.recordsShown", {
-            shown: table.rows.length,
-            count: table.total,
-          })}
-        </p>
+      {(previewable || table.total > table.rows.length) && (
+        <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 border-t border-border px-3 py-2 text-xs text-muted-foreground">
+          <span>
+            {t("common.results.recordsShown", {
+              shown: rows.length,
+              count: table.total,
+            })}
+          </span>
+          {previewable && (
+            <button
+              type="button"
+              aria-expanded={showAllRows}
+              onClick={() => {
+                setShowAllRows((current) => !current);
+              }}
+              className="rounded-sm font-medium text-foreground/80 underline-offset-2 hover:text-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              {showAllRows
+                ? t("common.structured.showFewer")
+                : t("common.markdown.showAllRows", { count: table.rows.length })}
+            </button>
+          )}
+        </div>
       )}
     </div>
   );

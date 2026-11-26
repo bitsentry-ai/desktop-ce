@@ -403,7 +403,6 @@ export function DesktopAppSettingsScaffold({
           navigate={(path) => {
             void navigate(path);
           }}
-          excludedTourIds={["dashboard"]}
         />
       </section>
     ),

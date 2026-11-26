@@ -7,6 +7,17 @@ import {
   reorderRunbookActions,
 } from "./actionHelpers";
 import { cloneRunbook } from "./runbookRecordHelpers";
+import {
+  actionDraftBaseline,
+  isActionDraftDirty,
+  type ActionDraftBaseline,
+} from "./actionDraftGuard";
+import {
+  applyStoredStepDraft,
+  clearStoredStepDraft,
+  readStoredStepDraft,
+  writeStoredStepDraft,
+} from "./stepDraftStore";
 import type {
   DesktopRpcChannel,
   RunbookActionRecord,
@@ -52,6 +63,8 @@ type UseRunbookActionEditorFlowOptions = {
   validErrorSourceIds: Set<string>;
   validPluginActionIdsByPluginId: Map<string, Set<string>>;
   llmModelOptions?: LlmModelOption[];
+  /** Tells the user a step did not save; the open step keeps their edits so they can try again. */
+  onActionSaveFailed?: (error: unknown) => void;
 };
 
 export function useRunbookActionEditorFlow({
@@ -66,8 +79,13 @@ export function useRunbookActionEditorFlow({
   validErrorSourceIds,
   validPluginActionIdsByPluginId,
   llmModelOptions = [],
+  onActionSaveFailed,
 }: UseRunbookActionEditorFlowOptions) {
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [draftBaseline, setDraftBaseline] =
+    useState<ActionDraftBaseline | null>(null);
+  const [unsavedNudge, setUnsavedNudge] = useState(0);
+  const [savingActionId, setSavingActionId] = useState<string | null>(null);
   const expandedCardRef = useRef<HTMLDivElement | null>(null);
   const tempActionIdsRef = useRef(new Set<string>());
   const [modelDropdownOpen, setModelDropdownOpen] = useState(false);
@@ -79,12 +97,36 @@ export function useRunbookActionEditorFlow({
 
   const resetActionEditorState = useCallback(() => {
     setExpandedId(null);
+    setDraftBaseline(null);
+    setUnsavedNudge(0);
     tempActionIdsRef.current.clear();
   }, []);
 
   useEffect(() => {
     resetActionEditorState();
   }, [activeRunbook?.id, resetActionEditorState]);
+
+  const restoreCheckedForRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (activeEditingRunbook === null) {
+      restoreCheckedForRef.current = null;
+      return;
+    }
+    if (restoreCheckedForRef.current === activeEditingRunbook.id) return;
+    restoreCheckedForRef.current = activeEditingRunbook.id;
+    const stored = readStoredStepDraft(activeEditingRunbook.id);
+    if (stored === null) return;
+    const restored = applyStoredStepDraft(activeEditingRunbook, stored);
+    if (restored === null) {
+      clearStoredStepDraft(activeEditingRunbook.id);
+      return;
+    }
+    if (stored.isNew) tempActionIdsRef.current.add(stored.action.id);
+    setEditingRunbook(restored);
+    setDraftBaseline({ id: stored.action.id, snapshot: stored.baseline });
+    setUnsavedNudge(0);
+    setExpandedId(stored.action.id);
+  }, [activeEditingRunbook, setEditingRunbook]);
 
   useEffect(() => {
     setModelDropdownOpen(false);
@@ -111,6 +153,8 @@ export function useRunbookActionEditorFlow({
   }, [modelDropdownOpen]);
 
   const collapse = useCallback(() => {
+    setUnsavedNudge(0);
+    if (activeEditingRunbook !== null) clearStoredStepDraft(activeEditingRunbook.id);
     if (activeEditingRunbook === null || expandedId === null) {
       setExpandedId(null);
       return;
@@ -179,6 +223,33 @@ export function useRunbookActionEditorFlow({
     summarizeRunbookForTelemetry,
   ]);
 
+  const expandedDraftDirty = isActionDraftDirty(
+    draftBaseline,
+    expandedId === null
+      ? undefined
+      : activeEditingRunbook?.actions.find((action) => action.id === expandedId),
+    expandedId === null
+      ? undefined
+      : activeRunbook?.actions.find((action) => action.id === expandedId),
+  );
+
+  const nudgeUnsavedDraft = useCallback(() => {
+    setUnsavedNudge((count) => count + 1);
+    expandedCardRef.current?.scrollIntoView({
+      behavior: "smooth",
+      block: "nearest",
+    });
+  }, []);
+
+  /** A click outside the open step, or Escape: closes it, unless that would throw away unsaved edits. */
+  const requestCollapse = useCallback(() => {
+    if (expandedDraftDirty) {
+      nudgeUnsavedDraft();
+      return;
+    }
+    collapse();
+  }, [collapse, expandedDraftDirty, nudgeUnsavedDraft]);
+
   useEffect(() => {
     if (expandedId === null) {
       return;
@@ -189,7 +260,7 @@ export function useRunbookActionEditorFlow({
         expandedCardRef.current !== null &&
         !expandedCardRef.current.contains(event.target as Node)
       ) {
-        collapse();
+        requestCollapse();
       }
     };
     const timer = window.setTimeout(() => {
@@ -200,9 +271,29 @@ export function useRunbookActionEditorFlow({
       window.clearTimeout(timer);
       document.removeEventListener("mousedown", handler);
     };
-  }, [collapse, expandedId]);
+  }, [requestCollapse, expandedId]);
+
+  const keepStepDraft = (action: RunbookActionRecord) => {
+    if (activeEditingRunbook === null || action.id !== expandedId) return;
+    const dirty = isActionDraftDirty(
+      draftBaseline,
+      action,
+      activeRunbook?.actions.find((saved) => saved.id === action.id),
+    );
+    if (!dirty) {
+      clearStoredStepDraft(activeEditingRunbook.id);
+      return;
+    }
+    writeStoredStepDraft(activeEditingRunbook.id, {
+      action,
+      baseline: draftBaseline?.snapshot ?? JSON.stringify(action),
+      isNew: tempActionIdsRef.current.has(action.id),
+      index: activeEditingRunbook.actions.findIndex((item) => item.id === action.id),
+    });
+  };
 
   const handleUpdateActionDraft = (updatedAction: RunbookActionRecord) => {
+    keepStepDraft(updatedAction);
     setEditingRunbook((prev) => {
       if (prev === null) {
         return prev;
@@ -225,8 +316,14 @@ export function useRunbookActionEditorFlow({
     if (activeEditingRunbook === null) {
       return;
     }
+    if (expandedDraftDirty) {
+      nudgeUnsavedDraft();
+      return;
+    }
 
     const newAction = createDraftAction();
+    setDraftBaseline(actionDraftBaseline(newAction));
+    setUnsavedNudge(0);
     tempActionIdsRef.current.add(newAction.id);
     setEditingRunbook((prev) => {
       if (prev === null) {
@@ -251,7 +348,7 @@ export function useRunbookActionEditorFlow({
   };
 
   const handleSaveAction = async (actionId: string) => {
-    if (activeEditingRunbook === null) {
+    if (activeEditingRunbook === null || savingActionId !== null) {
       return;
     }
 
@@ -273,6 +370,7 @@ export function useRunbookActionEditorFlow({
       return;
     }
 
+    setSavingActionId(actionId);
     try {
       const updated = await ipcInvoke<RunbookRecord>("runbooks:saveAction", {
         runbookId: activeEditingRunbook.id,
@@ -284,17 +382,18 @@ export function useRunbookActionEditorFlow({
         },
       });
       tempActionIdsRef.current.delete(actionId);
+      clearStoredStepDraft(activeEditingRunbook.id);
       replaceRunbook(updated);
       setExpandedId(null);
+      setSavingActionId(null);
       captureDesktopAnalyticsEvent("desktop_runbook_action_saved", {
         ...summarizeRunbookForTelemetry(updated),
         ...summarizeRunbookActionForTelemetry(action),
       });
     } catch (error) {
+      setSavingActionId(null);
       console.error("Failed to save runbook action:", error);
-      if (activeRunbook !== null) {
-        setEditingRunbook(cloneRunbook(activeRunbook));
-      }
+      onActionSaveFailed?.(error);
     }
   };
 
@@ -309,6 +408,8 @@ export function useRunbookActionEditorFlow({
     const previousRunbook = cloneRunbook(activeRunbook);
     setExpandedId(null);
     tempActionIdsRef.current.delete(actionId);
+    const stored = readStoredStepDraft(activeEditingRunbook.id);
+    if (stored?.action.id === actionId) clearStoredStepDraft(activeEditingRunbook.id);
 
     setEditingRunbook((prev) => {
       if (prev === null) {
@@ -425,7 +526,17 @@ export function useRunbookActionEditorFlow({
       suppressExpandOnNextClickRef.current = false;
       return;
     }
+    if (expandedDraftDirty && actionId !== expandedId) {
+      nudgeUnsavedDraft();
+      return;
+    }
 
+    setDraftBaseline(
+      actionDraftBaseline(
+        activeEditingRunbook?.actions.find((action) => action.id === actionId),
+      ),
+    );
+    setUnsavedNudge(0);
     setExpandedId(actionId);
   };
 
@@ -451,6 +562,10 @@ export function useRunbookActionEditorFlow({
     handleSaveAction,
     handleUpdateActionDraft,
     collapse,
+    requestCollapse,
+    expandedDraftDirty,
+    unsavedNudge,
+    savingStep: savingActionId !== null,
     resetActionEditorState,
     setModelDropdownOpen,
   };

@@ -16,6 +16,7 @@ import remarkGfm from "remark-gfm";
 import { cn } from "./lib/utils";
 import { Dialog, DialogContent, DialogTitle } from "./ui/dialog";
 import { useTranslation } from "@bitsentry-ce/i18n";
+import { readCollapsible, readHiddenColumns, readRowCount, rehypeCompactTables } from "./markdownTableCompaction";
 
 const HTML_BREAK_TAG_REGEX = /<br\s*\/?>/gi;
 
@@ -780,6 +781,7 @@ const MarkdownRendererContext = createContext<MarkdownRendererContextValue>({
 });
 
 const MARKDOWN_REMARK_PLUGINS = [remarkGfm];
+const MARKDOWN_REHYPE_PLUGINS = [rehypeCompactTables];
 
 // Keep renderer component types stable across renders, so code blocks and tables are not remounted.
 const MARKDOWN_COMPONENTS = {
@@ -810,14 +812,19 @@ const MARKDOWN_COMPONENTS = {
       </details>
     );
   },
-  table: function MarkdownTable({ children, node: _node, ref: _ref, ...props }) {
+  table: function MarkdownTable({ children, node, ref: _ref, ...props }) {
     const { scrollableTableLabel, expandTableLabel, fullTableLabel } = useContext(MarkdownRendererContext);
+    const { t } = useTranslation();
     const scrollRef = useRef<HTMLDivElement>(null);
     const overflows = useOverflowsHorizontally(scrollRef);
     const [expanded, setExpanded] = useState(false);
+    const [showAllRows, setShowAllRows] = useState(false);
+    const hiddenColumns = readHiddenColumns(node?.properties);
+    const rowCount = readRowCount(node?.properties);
+    const collapsible = readCollapsible(node?.properties);
     const table = <table {...props}>{children}</table>;
     return (
-      <div className="chat-markdown-table">
+      <div className="chat-markdown-table" data-collapsed={collapsible && !showAllRows ? "true" : undefined}>
         {overflows && (
           <button type="button" className="chat-markdown-table-expand" onClick={() => { setExpanded(true); }}>
             <Maximize2 aria-hidden="true" size={14} />
@@ -827,11 +834,32 @@ const MARKDOWN_COMPONENTS = {
         <div ref={scrollRef} className="chat-markdown-table-scroll" role="region" aria-label={scrollableTableLabel} tabIndex={0}>
           {table}
         </div>
+        {(collapsible || hiddenColumns.length > 0) && (
+          <div className="chat-markdown-table-footer">
+            {hiddenColumns.length > 0 && (
+              <span className="chat-markdown-table-note" title={hiddenColumns.join(", ")}>
+                {t("common.markdown.emptyColumns", { columns: hiddenColumns.join(", ") })}
+              </span>
+            )}
+            {collapsible && (
+              <button
+                type="button"
+                className="chat-markdown-table-rows"
+                aria-expanded={showAllRows}
+                onClick={() => { setShowAllRows((current) => !current); }}
+              >
+                {showAllRows
+                  ? t("common.markdown.showFewerRows")
+                  : t("common.markdown.showAllRows", { count: rowCount })}
+              </button>
+            )}
+          </div>
+        )}
         <Dialog open={expanded} onOpenChange={setExpanded}>
           <DialogContent aria-describedby={undefined} className="max-w-[min(96vw,90rem)]">
             <DialogTitle>{fullTableLabel}</DialogTitle>
             <div className="chat-markdown min-w-0 text-sm">
-              <div className="chat-markdown-table-scroll">{table}</div>
+              <div className="chat-markdown-table-scroll chat-markdown-table-dialog-scroll">{table}</div>
             </div>
           </DialogContent>
         </Dialog>
@@ -896,7 +924,7 @@ function splitMarkdownBlocks(markdown: string): string[] | null {
 
 const MarkdownBlock = memo(function MarkdownBlock({ source }: { source: string }) {
   return (
-    <ReactMarkdown remarkPlugins={MARKDOWN_REMARK_PLUGINS} components={MARKDOWN_COMPONENTS}>
+    <ReactMarkdown remarkPlugins={MARKDOWN_REMARK_PLUGINS} rehypePlugins={MARKDOWN_REHYPE_PLUGINS} components={MARKDOWN_COMPONENTS}>
       {source}
     </ReactMarkdown>
   );

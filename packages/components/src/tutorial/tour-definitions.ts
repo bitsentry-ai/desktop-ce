@@ -2,7 +2,6 @@ import type { DriveStep } from "driver.js";
 
 export type TourId =
   | "main"
-  | "dashboard"
   | "incidents"
   | "runbooks"
   | "results"
@@ -10,8 +9,12 @@ export type TourId =
   | "runbookCreation"
   | "dataSources";
 
+/**
+ * A guided tour. Desktop tours use the ids in {@link TourId}; a product can define its own tours (the Dashboard does)
+ * with any other id and run them through the same runner and Help section.
+ */
 export interface TourDefinition {
-  id: TourId;
+  id: string;
   label: string;
   description: string;
   steps: DriveStep[];
@@ -19,6 +22,16 @@ export interface TourDefinition {
   route?: string;
   /** Page path to navigate to after a preview tour is dismissed. */
   returnRoute?: string;
+  /**
+   * Runs after navigating to `route` and before the first step, for example to open the record the steps point at.
+   * It gets the router navigate function when the caller passed one.
+   */
+  prepare?: (navigate?: (path: string) => void) => Promise<void>;
+  /**
+   * Leave out steps whose target is not on the page (an empty list, a control the member cannot use) instead of
+   * pointing them at the whole page. Tours over real pages set this; preview tours always have every target.
+   */
+  skipMissingTargets?: boolean;
 }
 
 type Translate = (
@@ -124,50 +137,6 @@ export function getTours(t: Translate): Record<TourId, TourDefinition> {
         },
       },
       {
-        element: tourEl("incidents-title"),
-        popover: {
-          title: t("common.tours.incidents.title.incidentTitle"),
-          description: t(
-            "common.tours.incidents.description.clickToRenameTheIncidentTitlesAutoGenerateFromYour",
-          ),
-          side: "bottom",
-          align: "start",
-        },
-      },
-      {
-        element: tourEl("incidents-status"),
-        popover: {
-          title: t("common.tours.incidents.title.statusIndicator"),
-          description: t(
-            "common.tours.incidents.description.showsTheInvestigationStatusIdleRunningCompletedOrF",
-          ),
-          side: "bottom",
-          align: "start",
-        },
-      },
-      {
-        element: tourEl("incidents-history-btn"),
-        popover: {
-          title: t("common.tours.incidents.title.incidentHistory"),
-          description: t(
-            "common.tours.incidents.description.viewAllYourIncidentsInAListEachRowShowsTheTitlePre",
-          ),
-          side: "bottom",
-          align: "end",
-        },
-      },
-      {
-        element: tourEl("incidents-new-btn"),
-        popover: {
-          title: t("common.tours.incidents.title.newIncident"),
-          description: t(
-            "common.tours.incidents.description.startANewAIAssistedInvestigationDescribeWhatSHappe",
-          ),
-          side: "bottom",
-          align: "end",
-        },
-      },
-      {
         element: tourEl("incidents-composer"),
         popover: {
           title: t("common.tours.incidents.title.messageComposer"),
@@ -223,17 +192,6 @@ export function getTours(t: Translate): Record<TourId, TourDefinition> {
         },
       },
       {
-        element: tourEl("incidents-artifacts-list"),
-        popover: {
-          title: t("common.tours.incidents.title.executionList"),
-          description: t(
-            "common.tours.incidents.description.eachRunbookExecutionIsListedWithItsNameStatusAndSt",
-          ),
-          side: "left",
-          align: "start",
-        },
-      },
-      {
         element: tourEl("incidents-artifacts-detail"),
         popover: {
           title: t("common.tours.incidents.title.executionDetails"),
@@ -245,11 +203,14 @@ export function getTours(t: Translate): Record<TourId, TourDefinition> {
         },
       },
       {
+        element: tourEl("incidents-new-btn"),
         popover: {
-          title: t("common.tours.incidents.title.thatSTheIncidentsPage!"),
+          title: t("common.tours.incidents.title.newIncident"),
           description: t(
-            "common.tours.incidents.description.youCanReplayThisTourAnytimeFromTheHelpSectionInSet",
+            "common.tours.incidents.description.startANewAIAssistedInvestigationDescribeWhatSHappe",
           ),
+          side: "bottom",
+          align: "end",
         },
       },
     ],
@@ -311,18 +272,6 @@ export function getTours(t: Translate): Record<TourId, TourDefinition> {
         },
       },
       {
-        element: tourEl("runbooks-action-card"),
-        popover: {
-          title: t("common.tours.runbooks.title.actionCard"),
-          description: t(
-            "common.tours.runbooks.description.configureEachActionSFieldsCommandsPromptsURLsOrQue",
-            { placeholders: "{{placeholders}}" },
-          ),
-          side: "right",
-          align: "start",
-        },
-      },
-      {
         element: tourEl("runbooks-run-btn"),
         popover: {
           title: t("common.tours.runbooks.title.runRunbook"),
@@ -345,17 +294,6 @@ export function getTours(t: Translate): Record<TourId, TourDefinition> {
         },
       },
       {
-        element: tourEl("runbooks-import-btn"),
-        popover: {
-          title: t("common.tours.runbooks.title.importRunbooks"),
-          description: t(
-            "common.tours.runbooks.description.importARunbookBundleFromAJsonFileOrPastedJSONImpor",
-          ),
-          side: "bottom",
-          align: "end",
-        },
-      },
-      {
         element: tourEl("runbooks-new-btn"),
         popover: {
           title: t("common.tours.runbooks.title.createRunbook"),
@@ -364,14 +302,6 @@ export function getTours(t: Translate): Record<TourId, TourDefinition> {
           ),
           side: "bottom",
           align: "end",
-        },
-      },
-      {
-        popover: {
-          title: t("common.tours.runbooks.title.thatSTheRunbooksPage"),
-          description: t(
-            "common.tours.runbooks.description.buildDeterministicPlaybooksToSpeedUpIncidentRespon",
-          ),
         },
       },
     ],
@@ -706,70 +636,8 @@ export function getTours(t: Translate): Record<TourId, TourDefinition> {
     ],
   };
 
-  const dashboardTour: TourDefinition = {
-    id: "dashboard",
-    label: t("common.tours.dashboard.label.dashboardTour"),
-    description: t(
-      "common.tours.dashboard.description.connectExternalSourcesAndTriageDiagnosesFromOnePla",
-    ),
-    route: "/tour/dashboard",
-    returnRoute: "/diagnosis",
-    steps: [
-      {
-        popover: {
-          title: t("common.tours.dashboard.title.welcomeToTheDashboard"),
-          description: t(
-            "common.tours.dashboard.description.theDashboardPullsInErrorAndLogDataFromYourConnecte",
-          ),
-        },
-      },
-      {
-        element: tourEl("dashboard-source-picker"),
-        popover: {
-          title: t("common.tours.dashboard.title.externalSource"),
-          description: t(
-            "common.tours.dashboard.description.pickWhichConnectedServiceToSyncYourLastSelectionIs",
-          ),
-          side: "bottom",
-          align: "start",
-        },
-      },
-      {
-        element: tourEl("dashboard-sync-now"),
-        popover: {
-          title: t("common.tours.dashboard.title.syncNow"),
-          description: t(
-            "common.tours.dashboard.description.pullTheLatestIssuesFromTheSelectedSourceOnDemandFi",
-          ),
-          side: "bottom",
-          align: "end",
-        },
-      },
-      {
-        element: tourEl("dashboard-diagnoses"),
-        popover: {
-          title: t("common.tours.dashboard.title.diagnoses"),
-          description: t(
-            "common.tours.dashboard.description.eachRowIsAnIncidentTheSystemHasTriagedFromTheSynce",
-          ),
-          side: "top",
-          align: "start",
-        },
-      },
-      {
-        popover: {
-          title: t("common.tours.dashboard.title.thatSTheDashboard"),
-          description: t(
-            "common.tours.dashboard.description.addASourceFromSettingsSyncAndYourTriagedDiagnosesA",
-          ),
-        },
-      },
-    ],
-  };
-
   return {
     main: mainTour,
-    dashboard: dashboardTour,
     incidents: incidentsTour,
     runbooks: runbooksTour,
     results: resultsTour,

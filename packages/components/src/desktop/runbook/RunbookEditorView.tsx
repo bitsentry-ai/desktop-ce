@@ -94,6 +94,10 @@ type RunbookEditorViewProps = {
   onSaveAction: (actionId: string) => void;
   onUpdateActionDraft: (action: RunbookActionRecord) => void;
   onCollapse: () => void;
+  draftDirty?: boolean;
+  unsavedNudge?: number;
+  savingStep?: boolean;
+  onDiscardDraft?: () => void;
   runDialogOpen: boolean;
   runtimeParameters: RuntimeParameterDefinition[];
   runtimeParameterValues: Record<string, string>;
@@ -150,6 +154,10 @@ export function RunbookEditorView({
   onSaveAction,
   onUpdateActionDraft,
   onCollapse,
+  draftDirty,
+  unsavedNudge,
+  savingStep,
+  onDiscardDraft,
   runDialogOpen,
   runtimeParameters,
   runtimeParameterValues,
@@ -300,6 +308,10 @@ export function RunbookEditorView({
                     logFilterSample={logFilterSample}
                     logFilterToggleText={logFilterToggleText}
                     onCollapse={onCollapse}
+                    draftDirty={draftDirty}
+                    unsavedNudge={unsavedNudge}
+                    saving={savingStep}
+                    onDiscardDraft={onDiscardDraft}
                     onActionChange={onUpdateActionDraft}
                     onLogFilterSampleChange={(value) => {
                       onLogFilterSampleChange(action.id, value);

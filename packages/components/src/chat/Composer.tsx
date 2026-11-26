@@ -676,7 +676,7 @@ export function Composer({
         {/* While a notice blocks the composer there is no model to pick or message to send; the notice carries the recovery. */}
         <div className={composerToolbarClass(notice !== undefined)} hidden={notice !== undefined}>
           {/* Left: model picker + traits + mode + access */}
-          <div className="flex min-w-0 flex-1 items-center gap-1">
+          <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1">
             {/* Model picker */}
             <ModelPicker
               selectedProviderKey={selectedProviderKey}

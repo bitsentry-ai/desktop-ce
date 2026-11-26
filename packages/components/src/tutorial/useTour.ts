@@ -1,60 +1,99 @@
 import { useCallback } from "react";
-import type { Config, Driver } from "driver.js";
+import type { Config, DriveStep, Driver } from "driver.js";
 import { useTranslation } from "@bitsentry-ce/i18n";
-import type { TourId } from "./tour-definitions";
+import type { TourDefinition, TourId } from "./tour-definitions";
 
 const STORAGE_KEY = "bitsentry_completed_tours";
-const TOUR_IDS = new Set<string>([
-  "main",
-  "dashboard",
-  "incidents",
-  "runbooks",
-  "results",
-  "settings",
-  "runbookCreation",
-  "dataSources",
-]);
+/** Fired on window whenever a tour is marked done or reset, so open Help sections can update. */
+const TOUR_PROGRESS_EVENT = "bitsentry:tour-progress";
+/** Tour ids are short identifiers; anything else in storage is ignored. */
+const STORED_TOUR_ID = /^[A-Za-z][A-Za-z0-9_-]{0,63}$/;
 
-function isTourId(value: unknown): value is TourId {
-  return typeof value === "string" && TOUR_IDS.has(value);
+function isStoredTourId(value: unknown): value is string {
+  return typeof value === "string" && STORED_TOUR_ID.test(value);
 }
 
-function getCompletedTours(): Set<TourId> {
+function readStoredProgress(): string {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw === null) {
-      return new Set();
-    }
+    return localStorage.getItem(STORAGE_KEY) ?? "";
+  } catch {
+    return "";
+  }
+}
 
-    const parsed: unknown = JSON.parse(raw);
+/** The finished tour ids in a stored progress string (see {@link getTourProgressSnapshot}). */
+export function completedTourIds(progress: string): Set<string> {
+  if (progress === "") {
+    return new Set();
+  }
+  try {
+    const parsed: unknown = JSON.parse(progress);
     if (!Array.isArray(parsed)) {
       return new Set();
     }
 
-    return new Set(parsed.filter(isTourId));
+    return new Set(parsed.filter(isStoredTourId));
   } catch {
     return new Set();
   }
 }
 
-function markTourCompleted(tourId: TourId) {
+function getCompletedTours(): Set<string> {
+  return completedTourIds(readStoredProgress());
+}
+
+function writeCompletedTours(completed: Set<string>) {
+  try {
+    if (completed.size === 0) {
+      localStorage.removeItem(STORAGE_KEY);
+    } else {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify([...completed]));
+    }
+  } catch {
+    // Storage can be unavailable (private mode); tours then simply replay.
+  }
+  window.dispatchEvent(new Event(TOUR_PROGRESS_EVENT));
+}
+
+function markTourCompleted(tourId: string) {
   const completed = getCompletedTours();
   completed.add(tourId);
-  localStorage.setItem(STORAGE_KEY, JSON.stringify([...completed]));
+  writeCompletedTours(completed);
 }
 
-export function resetTourProgress(tourId?: TourId) {
-  if (tourId !== undefined) {
-    const completed = getCompletedTours();
-    completed.delete(tourId);
-    localStorage.setItem(STORAGE_KEY, JSON.stringify([...completed]));
-  } else {
-    localStorage.removeItem(STORAGE_KEY);
+export function resetTourProgress(tourId?: string) {
+  if (tourId === undefined) {
+    writeCompletedTours(new Set());
+    return;
   }
+  const completed = getCompletedTours();
+  completed.delete(tourId);
+  writeCompletedTours(completed);
 }
 
-export function isTourCompleted(tourId: TourId): boolean {
+export function isTourCompleted(tourId: string): boolean {
   return getCompletedTours().has(tourId);
+}
+
+/**
+ * Subscribes to tour progress for `useSyncExternalStore`: tours finishing in this tab and in other tabs.
+ * Pair it with {@link getTourProgressSnapshot}.
+ */
+export function subscribeToTourProgress(onChange: () => void): () => void {
+  const onStorage = (event: StorageEvent) => {
+    if (event.key === null || event.key === STORAGE_KEY) onChange();
+  };
+  window.addEventListener(TOUR_PROGRESS_EVENT, onChange);
+  window.addEventListener("storage", onStorage);
+  return () => {
+    window.removeEventListener(TOUR_PROGRESS_EVENT, onChange);
+    window.removeEventListener("storage", onStorage);
+  };
+}
+
+/** The stored progress as a string, a stable snapshot for `useSyncExternalStore`. */
+export function getTourProgressSnapshot(): string {
+  return readStoredProgress();
 }
 
 export interface StartTourOpts {
@@ -69,32 +108,111 @@ let activeTourDriver: Driver | null = null;
 let activeTourNavigate: ((path: string) => void) | null = null;
 let activeTourRoute: string | null = null;
 let activeTourReturnRoute: string | null = null;
+/** True while a tour navigates and prepares its page, before its first step shows. */
+let startingTour = false;
 
-async function waitForElement(
-  resolve: () => Element | null,
-  timeoutMs: number,
-): Promise<boolean> {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    const el = resolve();
-    if (el !== null && el !== document.body) return true;
-    await new Promise((r) => setTimeout(r, 100));
+/** The element a step points at, or null when it points at nothing on this page (a missing target falls back to body). */
+function resolveStepTarget(step: DriveStep): Element | null {
+  const { element } = step;
+  if (element === undefined) return null;
+  let resolved: Element | null | undefined;
+  if (typeof element === "string") {
+    resolved = document.querySelector(element);
+  } else if (typeof element === "function") {
+    resolved = element();
+  } else {
+    resolved = element;
   }
-  return false;
+  if (resolved === null || resolved === undefined || resolved === document.body || !resolved.isConnected) {
+    return null;
+  }
+  return resolved;
 }
 
-type Translate = ReturnType<typeof useTranslation>["t"];
+function stepTargetPresent(step: DriveStep): boolean {
+  return step.element === undefined || resolveStepTarget(step) !== null;
+}
 
-// Kept outside the hook so the React Compiler can compile useTour: it cannot lower the dynamic import() calls.
-async function startTour(tourId: TourId, t: Translate, opts?: StartTourOpts) {
+const POLL_MS = 100;
+
+async function waitForSelector(selector: string, timeoutMs: number): Promise<Element | null> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const element = document.querySelector(selector);
+    if (element !== null) return element;
+    await new Promise((resolve) => setTimeout(resolve, POLL_MS));
+  }
+  return null;
+}
+
+/**
+ * A tour `prepare` that opens the first record a link points at (a runbook, a run) unless `readySelector` is already
+ * on the page, then waits for it to draw. With nothing to open, the tour runs with the steps that remain.
+ */
+export function openFirstLinked(
+  linkSelector: string,
+  readySelector: string,
+): NonNullable<TourDefinition["prepare"]> {
+  return async (navigate) => {
+    if (document.querySelector(readySelector) !== null) return;
+    const link = await waitForSelector(linkSelector, 2000);
+    if (link === null) return;
+    const href = link.getAttribute("href");
+    if (href !== null && navigate !== undefined) {
+      navigate(href);
+    } else if (link instanceof HTMLElement) {
+      link.click();
+    }
+    await waitForSelector(readySelector, 3000);
+  };
+}
+
+/**
+ * A tour `prepare` that waits for the page's data to draw (any element matching `selector`, such as a list or its empty
+ * state), so steps that point into data that loads late are not dropped as missing.
+ */
+export function waitForElement(selector: string, timeoutMs = 6000): NonNullable<TourDefinition["prepare"]> {
+  return async () => {
+    await waitForSelector(selector, timeoutMs);
+  };
+}
+
+/**
+ * Waits until the page has drawn the tour's targets: every target is present, or the first one is and no new one
+ * has appeared for a short while (data still loading adds rows late), or the time runs out.
+ */
+async function waitForTargets(steps: DriveStep[], timeoutMs: number): Promise<void> {
+  const targeted = steps.filter((step) => step.element !== undefined);
+  if (targeted.length === 0) {
+    await new Promise((resolve) => setTimeout(resolve, 600));
+    return;
+  }
+  const settleMs = 600;
+  const deadline = Date.now() + timeoutMs;
+  let lastCount = -1;
+  let stableSince = Date.now();
+  while (Date.now() < deadline) {
+    const count = targeted.filter((step) => resolveStepTarget(step) !== null).length;
+    if (count === targeted.length) return;
+    if (count !== lastCount) {
+      lastCount = count;
+      stableSince = Date.now();
+    } else if (count > 0 && Date.now() - stableSince >= settleMs) {
+      return;
+    }
+    await new Promise((resolve) => setTimeout(resolve, POLL_MS));
+  }
+}
+
+/**
+ * Runs a tour: navigates to its route, lets it prepare the page, then drives its steps. Steps whose targets are not
+ * on the page are left out when the tour asks for it, and a tour left with no steps does not start.
+ */
+export async function startTourDefinition(tourDef: TourDefinition, opts?: StartTourOpts): Promise<void> {
+  // An automatic start never interrupts a tour that is running or that the person just opened from Help.
+  if (opts?.force !== true && (isTourCompleted(tourDef.id) || activeTourDriver !== null || startingTour)) return;
+  startingTour = true;
   try {
-    // Loaded on start, like driver.js below, to keep tours out of the startup bundle.
-    const { getTours } = await import("./tour-definitions");
-    const tours = getTours(t);
-    const tourDef = tours[tourId];
-    if (tourDef === undefined) return;
-
-    if (opts?.force !== true && isTourCompleted(tourId)) return;
 
     // Tear down any previous tour
     activeTourDriver?.destroy();
@@ -104,35 +222,24 @@ async function startTour(tourId: TourId, t: Translate, opts?: StartTourOpts) {
     activeTourRoute = tourDef.route ?? null;
     activeTourReturnRoute = tourDef.returnRoute ?? null;
 
-    // 1. Navigate to the preview page
+    // 1. Navigate to the tour's page
     if (tourDef.route !== undefined && opts?.navigate !== undefined) {
       opts.navigate(tourDef.route);
-
-      // Poll until the first real tour-target element appears (max 3 s).
-      const firstTargeted = tourDef.steps.find((s) => s.element);
-      if (firstTargeted !== undefined) {
-        const resolveEl = () => {
-          if (typeof firstTargeted.element === "function") {
-            const el = firstTargeted.element();
-            if (el !== null && el !== document.body) {
-              return el;
-            }
-
-            return null;
-          }
-          if (typeof firstTargeted.element === "string") {
-            return document.querySelector(firstTargeted.element);
-          }
-          return null;
-        };
-
-        await waitForElement(resolveEl, 3000);
-      } else {
-        await new Promise((r) => setTimeout(r, 600));
-      }
     }
 
-    // 2. Create driver and start the tour
+    // 2. Let the tour open what its steps point at, then wait for the page to draw them (max 3 s).
+    if (tourDef.prepare !== undefined) {
+      await tourDef.prepare(opts?.navigate);
+    }
+    await waitForTargets(tourDef.steps, 3000);
+
+    const steps = tourDef.skipMissingTargets === true ? tourDef.steps.filter(stepTargetPresent) : tourDef.steps;
+    if (steps.length === 0) return;
+
+    const tourId = tourDef.id;
+    // Set when the person clicks Done on the last step; closing the tour earlier does not count as finishing it.
+    let finished = false;
+    // 3. Create driver and start the tour
     const config: Config = {
       showProgress: true,
       animate: true,
@@ -142,17 +249,20 @@ async function startTour(tourId: TourId, t: Translate, opts?: StartTourOpts) {
       stagePadding: 6,
       stageRadius: 8,
       popoverClass: "bitsentry-tour-popover",
-      steps: tourDef.steps,
+      steps,
+      onNextClick: (_element, _step, { driver: instance }) => {
+        if (!instance.hasNextStep()) finished = true;
+        instance.moveNext();
+      },
       onDestroyed: () => {
-        markTourCompleted(tourId);
-        // Navigate from preview page (/tour/*) to the real page
+        if (finished) markTourCompleted(tourId);
+        // Leave a preview page (/tour/*) for the real page; tours over real pages stay where the person is.
         if (activeTourNavigate !== null && activeTourRoute !== null) {
-          let realRoute = activeTourRoute.replace(/^\/tour\//, "/");
           if (activeTourReturnRoute !== null) {
-            realRoute = activeTourReturnRoute;
+            activeTourNavigate(activeTourReturnRoute);
+          } else if (activeTourRoute.startsWith("/tour/")) {
+            activeTourNavigate(activeTourRoute.replace(/^\/tour\//, "/"));
           }
-
-          activeTourNavigate(realRoute);
         }
         activeTourDriver = null;
         activeTourNavigate = null;
@@ -166,6 +276,23 @@ async function startTour(tourId: TourId, t: Translate, opts?: StartTourOpts) {
     const instance = driver(config);
     activeTourDriver = instance;
     instance.drive();
+  } catch (err) {
+    console.error(`[tour:${tourDef.id}] start() failed:`, err);
+  } finally {
+    startingTour = false;
+  }
+}
+
+type Translate = ReturnType<typeof useTranslation>["t"];
+
+// Kept outside the hook so the React Compiler can compile useTour: it cannot lower the dynamic import() calls.
+async function startTour(tourId: TourId, t: Translate, opts?: StartTourOpts) {
+  try {
+    // Loaded on start, like driver.js, to keep tours out of the startup bundle.
+    const { getTours } = await import("./tour-definitions");
+    const tourDef = getTours(t)[tourId];
+    if (tourDef === undefined) return;
+    await startTourDefinition(tourDef, opts);
   } catch (err) {
     console.error(`[tour:${tourId}] start() failed:`, err);
   }
